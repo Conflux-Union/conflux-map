@@ -149,8 +149,12 @@ public final class EntityIconManager {
         map.put(EntityType.CREEPER, biped64x32);
         map.put(EntityType.ENDERMAN, biped64x32);
         map.put(EntityType.SLIME, biped64x32);
-        map.put(EntityType.MAGMA_CUBE, biped64x32);
         map.put(EntityType.PIG, biped64x32);
+        // MagmaCubeEntityModel does NOT share SlimeEntityModel's layout despite the shared
+        // texture folder: magmacube.png is a stack of per-segment strips. Pixel-measured -
+        // the x32-40 column carries the assembled face: both orange eyes on the top strip
+        // plus the yellow mouth pixels on the bottom strip, dark crust between.
+        map.put(EntityType.MAGMA_CUBE, px(32, 16, 40, 28, 64, 32));
 
         // VillagerResemblingModel head = uv(0,0).cuboid(8,10,8), shared verbatim by
         // VillagerEntityModel, ZombieVillagerEntityModel and WitchEntityModel.
