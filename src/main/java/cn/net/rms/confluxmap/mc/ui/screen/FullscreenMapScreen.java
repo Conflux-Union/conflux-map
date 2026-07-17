@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
+import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
@@ -51,6 +52,12 @@ public final class FullscreenMapScreen extends Screen {
     private static final int ARROW_OUTLINE = 0xFF101010;
     private static final int ARROW_FILL = 0xFFFFE066;
     private static final double MIN_GRID_SPACING_PX = 8.0;
+    /** Xaero-style faint dark lattice on chunk borders, understated over both light and dark terrain. */
+    private static final int CHUNK_GRID_COLOR = 0x40000000;
+    private static final int CHUNK_HIGHLIGHT_FILL = 0x22FFFFFF;
+    private static final int CHUNK_HIGHLIGHT_BORDER = 0x66FFFFFF;
+    /** Below this on-screen chunk width, skip the chunk grid/highlight entirely to avoid moire noise when zoomed out. */
+    private static final double MIN_CHUNK_GRID_SPACING_PX = 6.0;
     /** Half of the ~9px-across VoxelMap-style marker (deliverable C) - slightly larger than the minimap's ~7px. */
     private static final float MARKER_HALF_SIZE = 4.5f;
     /** Blocks-per-pixel threshold below which every marker's name shows continuously, not just on hover (deliverable C). */
@@ -65,6 +72,7 @@ public final class FullscreenMapScreen extends Screen {
     private final FullscreenMapViewState viewState;
     private final LayerSelector layerSelector;
     private final WaypointService waypointService;
+    private final ConfluxConfig config;
 
     /** World point currently at screen center, and blocks-per-pixel; all mutable, panned/zoomed by input. */
     private double centerX;
@@ -84,6 +92,7 @@ public final class FullscreenMapScreen extends Screen {
         this.viewState = app.fullscreenMapViewState();
         this.layerSelector = app.layerSelector();
         this.waypointService = app.waypointService();
+        this.config = app.config();
 
         final DimensionId dimension = gameBridge.session().dimension();
         final FullscreenMapViewState.View remembered = viewState.get(dimension);
@@ -179,6 +188,8 @@ public final class FullscreenMapScreen extends Screen {
         RenderUtil.beginTexturedQuads();
         drawTiles(matrices);
 
+        drawChunkGrid(matrices, mouseX, mouseY);
+
         drawWaypoints(matrices, mouseX, mouseY);
         drawPlayerMarker(matrices, tickDelta);
         drawDimensionLabel(matrices);
@@ -240,6 +251,58 @@ public final class FullscreenMapScreen extends Screen {
             final float screenY = (float) (height / 2.0 + (tz * (double) TileMath.TILE_SIZE - centerZ) * pxPerBlock);
             RenderUtil.fillRect(matrices, 0f, screenY, width, 1f, GRID_COLOR);
         }
+    }
+
+    /**
+     * Faint chunk-border lattice (Xaero-World-Map-style: thin, low-alpha, dark - readable over
+     * both light and dark terrain) plus a highlight on the chunk under the cursor. Drawn after
+     * the map tiles but before waypoint markers. Guarded by {@link ConfluxConfig#fullmapChunkGrid}
+     * and skipped once a chunk would render under {@link #MIN_CHUNK_GRID_SPACING_PX} wide, to
+     * avoid moire noise when zoomed far out.
+     */
+    private void drawChunkGrid(final MatrixStack matrices, final int mouseX, final int mouseY) {
+        if (!config.fullmapChunkGrid) {
+            return;
+        }
+        final double pxPerBlock = 1.0 / scale;
+        final double chunkSpacingPx = 16.0 * pxPerBlock;
+        if (chunkSpacingPx < MIN_CHUNK_GRID_SPACING_PX) {
+            return;
+        }
+
+        // Floor/ceil-then-blockToChunk (arithmetic shift) keeps lines exact on chunk borders
+        // for negative world coordinates too.
+        final int firstChunkX = TileMath.blockToChunk((int) Math.floor(centerX - width / 2.0 * scale));
+        final int lastChunkX = TileMath.blockToChunk((int) Math.ceil(centerX + width / 2.0 * scale));
+        for (int cx = firstChunkX; cx <= lastChunkX + 1; cx++) {
+            final float screenX = (float) (width / 2.0 + (cx * 16.0 - centerX) * pxPerBlock);
+            RenderUtil.fillRect(matrices, screenX, 0f, 1f, height, CHUNK_GRID_COLOR);
+        }
+        final int firstChunkZ = TileMath.blockToChunk((int) Math.floor(centerZ - height / 2.0 * scale));
+        final int lastChunkZ = TileMath.blockToChunk((int) Math.ceil(centerZ + height / 2.0 * scale));
+        for (int cz = firstChunkZ; cz <= lastChunkZ + 1; cz++) {
+            final float screenY = (float) (height / 2.0 + (cz * 16.0 - centerZ) * pxPerBlock);
+            RenderUtil.fillRect(matrices, 0f, screenY, width, 1f, CHUNK_GRID_COLOR);
+        }
+
+        drawHoveredChunkHighlight(matrices, mouseX, mouseY, pxPerBlock);
+    }
+
+    /** Fills the 16x16-block chunk under the cursor and outlines it, layered on top of the grid lines drawn just above. */
+    private void drawHoveredChunkHighlight(final MatrixStack matrices, final int mouseX, final int mouseY, final double pxPerBlock) {
+        final double hoverWorldX = centerX + (mouseX - width / 2.0) * scale;
+        final double hoverWorldZ = centerZ + (mouseY - height / 2.0) * scale;
+        final int chunkX = TileMath.blockToChunk((int) Math.floor(hoverWorldX));
+        final int chunkZ = TileMath.blockToChunk((int) Math.floor(hoverWorldZ));
+        final float screenX = (float) (width / 2.0 + (chunkX * 16.0 - centerX) * pxPerBlock);
+        final float screenY = (float) (height / 2.0 + (chunkZ * 16.0 - centerZ) * pxPerBlock);
+        final float sizePx = (float) (16.0 * pxPerBlock);
+
+        RenderUtil.fillRect(matrices, screenX, screenY, sizePx, sizePx, CHUNK_HIGHLIGHT_FILL);
+        RenderUtil.fillRect(matrices, screenX, screenY, sizePx, 1f, CHUNK_HIGHLIGHT_BORDER);
+        RenderUtil.fillRect(matrices, screenX, screenY + sizePx - 1f, sizePx, 1f, CHUNK_HIGHLIGHT_BORDER);
+        RenderUtil.fillRect(matrices, screenX, screenY, 1f, sizePx, CHUNK_HIGHLIGHT_BORDER);
+        RenderUtil.fillRect(matrices, screenX + sizePx - 1f, screenY, 1f, sizePx, CHUNK_HIGHLIGHT_BORDER);
     }
 
     /** Always north-locked, so only the arrow itself rotates with the player's facing (mirrors {@code MinimapHudRenderer}'s north-locked mode). */

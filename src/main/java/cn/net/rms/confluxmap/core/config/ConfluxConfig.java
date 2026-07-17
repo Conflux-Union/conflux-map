@@ -30,6 +30,8 @@ public final class ConfluxConfig {
     public int minimapZoomIndex = 1;
     public boolean showCoordinates = true;
     public boolean showBiome = true;
+    /** Fullscreen map only: subtle chunk-border grid with a highlight on the hovered chunk. */
+    public boolean fullmapChunkGrid = true;
 
     /** cave-nether-layers.md §1/§6: manual pin, or AUTO for the per-dimension automatic detection. */
     public LayerOverride layerOverride = LayerOverride.AUTO;
@@ -78,6 +80,7 @@ public final class ConfluxConfig {
         c.minimapZoomIndex = minimapZoomIndex;
         c.showCoordinates = showCoordinates;
         c.showBiome = showBiome;
+        c.fullmapChunkGrid = fullmapChunkGrid;
         c.layerOverride = layerOverride;
         c.showLayerIndicator = showLayerIndicator;
         c.caveSliceY = caveSliceY;

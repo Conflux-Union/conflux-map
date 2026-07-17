@@ -50,6 +50,7 @@
   "confluxmap.config.minimap.zoom": "缩放：%s",
   "confluxmap.config.minimap.show_coordinates": "显示坐标：%s",
   "confluxmap.config.minimap.show_biome": "显示生物群系：%s",
+  "confluxmap.config.fullmap.chunk_grid": "区块网格：%s",
   "confluxmap.config.layers.override": "图层模式：%s",
   "confluxmap.config.layers.show_indicator": "显示图层标签：%s",
   "confluxmap.config.layers.cave_slice_y": "洞穴切片高度：%s",

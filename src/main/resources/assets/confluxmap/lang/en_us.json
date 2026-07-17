@@ -50,6 +50,7 @@
   "confluxmap.config.minimap.zoom": "Zoom: %s",
   "confluxmap.config.minimap.show_coordinates": "Show Coordinates: %s",
   "confluxmap.config.minimap.show_biome": "Show Biome: %s",
+  "confluxmap.config.fullmap.chunk_grid": "Chunk Grid: %s",
   "confluxmap.config.layers.override": "Layer Override: %s",
   "confluxmap.config.layers.show_indicator": "Show Layer Label: %s",
   "confluxmap.config.layers.cave_slice_y": "Cave Slice Y: %s",
