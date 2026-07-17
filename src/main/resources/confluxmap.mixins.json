@@ -3,7 +3,10 @@
   "package": "cn.net.rms.confluxmap.mixin",
   "compatibilityLevel": "JAVA_$java_version",
   "mixins": [],
-  "client": [],
+  "client": [
+    "ClientChunkManagerMixin",
+    "ClientPlayNetworkHandlerMixin"
+  ],
   "injectors": {
     "defaultRequire": 1
   }

@@ -24,6 +24,11 @@ loom {
         client {
             property("mixin.debug.export", "true")
             ideConfigGenerated true
+            // Automated smoke tests: -PautoServer makes the client join a local
+            // offline server on launch so world-dependent code paths load headlessly.
+            if (project.hasProperty('autoServer')) {
+                programArgs '--server', '127.0.0.1', '--port', '25565'
+            }
         }
     }
 }

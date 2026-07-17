@@ -3,10 +3,12 @@ package cn.net.rms.confluxmap;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.mc.McGameBridge;
 import cn.net.rms.confluxmap.mc.input.Keybinds;
+import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureService;
 import cn.net.rms.confluxmap.mc.world.WorldSessionTracker;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
@@ -23,6 +25,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private SessionGuard sessionGuard;
     private WorldSessionTracker sessionTracker;
     private GameBridge gameBridge;
+    private MapWorldService mapWorlds;
+    private ChunkCaptureService chunkCapture;
 
     public static ConfluxMapClient get() {
         return instance;
@@ -40,7 +44,12 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionGuard = new SessionGuard();
         gameBridge = new McGameBridge(MinecraftClient.getInstance(), sessionGuard);
         sessionTracker = new WorldSessionTracker(sessionGuard);
+        mapWorlds = new MapWorldService();
+        chunkCapture = new ChunkCaptureService(MinecraftClient.getInstance(), config, mapWorlds, executors);
+        sessionTracker.addListener(mapWorlds::onSessionChanged);
+        sessionTracker.addListener(chunkCapture::onSessionChanged);
         sessionTracker.register();
+        chunkCapture.register();
         new Keybinds(config, configIo);
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> shutdown());
         ConfluxMapMod.LOGGER.info("Conflux Map client services started ({} workers)", executors.workerCount());
@@ -73,5 +82,13 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public GameBridge gameBridge() {
         return gameBridge;
+    }
+
+    public MapWorldService mapWorlds() {
+        return mapWorlds;
+    }
+
+    public ChunkCaptureService chunkCapture() {
+        return chunkCapture;
     }
 }
