@@ -62,9 +62,30 @@ public final class ChunkCaptureService {
         ClientTickEvents.END_CLIENT_TICK.register(c -> tick());
     }
 
-    /** Main thread, from the session tracker. */
+    /**
+     * Main thread, from the session tracker. The initial spawn-area chunk batch
+     * arrives before the first session tick, so marks made during the loading
+     * phase reference a world this session never saw. Instead of trusting them,
+     * reseed the whole view-distance square around the player: chunks that are
+     * not actually loaded are skipped by the snapshot factory at drain time.
+     */
     public void onSessionChanged(final SessionGuard.Session session) {
         dirtyChunks.clear();
+        if (!session.active()) {
+            return;
+        }
+        final ClientPlayerEntity player = client.player;
+        if (player == null) {
+            return;
+        }
+        final int centerX = player.getBlockPos().getX() >> 4;
+        final int centerZ = player.getBlockPos().getZ() >> 4;
+        final int radius = client.options.viewDistance + 1;
+        for (int dz = -radius; dz <= radius; dz++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                dirtyChunks.mark(centerX + dx, centerZ + dz);
+            }
+        }
     }
 
     /** Main thread, from packet mixins. */
