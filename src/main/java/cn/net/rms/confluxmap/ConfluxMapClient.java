@@ -71,6 +71,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
             FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("cache"),
             mapWorlds, executors, tileService, ConfluxMapMod.LOGGER
         );
+        tileService.bindRegionCache(regionCache);
 
         spriteColorSampler = new SpriteColorSampler(client);
         biomeTintResolver = new BiomeTintResolver(client);
@@ -89,6 +90,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(chunkCapture::onSessionChanged);
         sessionTracker.addListener(tileService::onSessionChanged);
         sessionTracker.addListener(radarScanner::onSessionChanged);
+        sessionTracker.addListener(fullscreenMapViewState::onSessionChanged);
         sessionTracker.addListener(session -> gameBridge.runOnRenderThread(tileTextureManager::releaseAll));
         sessionTracker.register();
 
@@ -142,6 +144,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public TileService tileService() {
         return tileService;
+    }
+
+    public RegionCacheService regionCache() {
+        return regionCache;
     }
 
     public ChunkCaptureService chunkCapture() {
