@@ -55,11 +55,17 @@ confirm it isn't structured like the thing it's compatible with.
 | `cave-nether-layers.md` | Cave-mode auto-detection, Nether current-layer/ceiling/Y-slice modes, End rendering | S7 |
 | `waypoint-ux.md` | Waypoint data model, cross-dimension coordinate conversion, death points, list/edit UI, in-world and minimap indicators | S8 |
 | `radar-icons.md` | Entity classification, radar dot rendering, above/below elevation cues | S9 |
+| `radar-auto-icons-voxelmap.md` | VoxelMap's offscreen model-render icon pipeline (part selection, FBO bake, pixel post-processing, caching) — reference for a future dynamic-icon tier | unbuilt |
+| `radar-auto-icons-xaero.md` | Xaero's mixin-instrumented render-trace icon pipeline (trace → head replay → GPU outline → atlas) — reference for a future dynamic-icon tier | unbuilt |
 
 ## Ground rules that apply to every spec in this directory
 
 - No source code, class/method/field names, comments, or verbatim UI strings
-  from the reference implementation appear in these documents.
+  from the reference implementation appear in the normative body of these
+  documents. The `radar-auto-icons-*` specs additionally carry a segregated
+  **Source anchors** appendix listing real class/method names purely for
+  traceability — anyone auditing can cross-check a behavioral claim against the
+  named anchor without those identifiers bleeding into the implementation.
 - Numeric constants and thresholds *are* included where they matter, because
   they are behavior (e.g. "zoom in 4 steps of 0.5/1/2/4 blocks-per-pixel"),
   not expression.
