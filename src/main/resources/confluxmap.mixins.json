@@ -1,8 +1,9 @@
 {
   "required": true,
-  "package": "com.example.mixin",
+  "package": "cn.net.rms.confluxmap.mixin",
   "compatibilityLevel": "JAVA_$java_version",
   "mixins": [],
+  "client": [],
   "injectors": {
     "defaultRequire": 1
   }

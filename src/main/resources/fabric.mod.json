@@ -2,21 +2,24 @@
   "schemaVersion": 1,
   "id": "$id",
   "version": "$version",
-  "name": "Example Mod",
-  "description": "This is an example description! Tell everyone what your mod is about!",
+  "name": "Conflux Map",
+  "description": "Minimap and world map with multiplayer-aware features: HUD minimap, fullscreen map, waypoints, death points, cave/nether layers, and entity radar.",
   "authors": [
-    "Me!"
+    "Conflux Union"
   ],
   "contact": {
-    "homepage": "https://github.com/RMS-Server/preprocessor-example-mod",
-    "sources": "https://github.com/RMS-Server/preprocessor-example-mod"
+    "homepage": "https://github.com/Conflux-Union/conflux-map",
+    "sources": "https://github.com/Conflux-Union/conflux-map"
   },
   "license": "GPL-3.0",
   "icon": "assets/$id/icon.png",
   "environment": "*",
   "entrypoints": {
     "main": [
-      "com.example.ExampleMod"
+      "cn.net.rms.confluxmap.ConfluxMapMod"
+    ],
+    "client": [
+      "cn.net.rms.confluxmap.ConfluxMapClient"
     ]
   },
   "mixins": [
@@ -25,6 +28,7 @@
   "accessWidener": "${id}.accesswidener",
   "depends": {
     "fabricloader": ">=$loader_version",
+    "fabric": "*",
     "minecraft": "$minecraft_version"
   }
 }
