@@ -1,6 +1,8 @@
 package cn.net.rms.confluxmap.mc.snapshot;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
+import cn.net.rms.confluxmap.core.cache.RegionCacheService;
+import cn.net.rms.confluxmap.core.cache.RegionDiskCache;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
 import cn.net.rms.confluxmap.core.model.MapLayer;
@@ -34,6 +36,7 @@ public final class ChunkCaptureService {
     private final MapWorldService worlds;
     private final MapExecutors executors;
     private final TileService tiles;
+    private final RegionCacheService regionCache;
     private final McChunkSnapshotFactory factory;
     private final DirtyChunkSet dirtyChunks = new DirtyChunkSet();
     private final AtomicLong storedSnapshots = new AtomicLong();
@@ -46,6 +49,7 @@ public final class ChunkCaptureService {
         final MapWorldService worlds,
         final MapExecutors executors,
         final TileService tiles,
+        final RegionCacheService regionCache,
         final SpriteColorSampler sampler,
         final BiomeTintResolver tintResolver
     ) {
@@ -54,6 +58,7 @@ public final class ChunkCaptureService {
         this.worlds = worlds;
         this.executors = executors;
         this.tiles = tiles;
+        this.regionCache = regionCache;
         this.factory = new McChunkSnapshotFactory(client, sampler, tintResolver);
     }
 
@@ -108,16 +113,18 @@ public final class ChunkCaptureService {
             return;
         }
         final long token = world.session().token();
-        final List<long[]> batch = dirtyChunks.drainNearest(
-            config.snapshotBudgetPerTick,
-            player.getBlockPos().getX() >> 4,
-            player.getBlockPos().getZ() >> 4
-        );
+        final int playerChunkX = player.getBlockPos().getX() >> 4;
+        final int playerChunkZ = player.getBlockPos().getZ() >> 4;
+        final List<long[]> batch = dirtyChunks.drainNearest(config.snapshotBudgetPerTick, playerChunkX, playerChunkZ);
         for (final long[] chunkPos : batch) {
             final ChunkSnapshot snapshot = factory.snapshot((int) chunkPos[0], (int) chunkPos[1], token);
             if (snapshot != null) {
                 executors.workers().execute(() -> storeSnapshot(snapshot));
             }
+        }
+        final RegionDiskCache cache = regionCache.current();
+        if (cache != null) {
+            cache.tick(playerChunkX >> 4, playerChunkZ >> 4);
         }
         logPeriodically(world);
     }
@@ -129,6 +136,10 @@ public final class ChunkCaptureService {
             tiles.markChunkStored(
                 snapshot.sessionToken, world.session().dimension(), MapLayer.SURFACE, snapshot.chunkX, snapshot.chunkZ
             );
+            final RegionDiskCache cache = regionCache.current();
+            if (cache != null) {
+                cache.ensureRegionLoaded(snapshot.chunkX >> 4, snapshot.chunkZ >> 4);
+            }
         }
     }
 

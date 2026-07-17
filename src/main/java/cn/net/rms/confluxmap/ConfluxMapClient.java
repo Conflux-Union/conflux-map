@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap;
 
 import cn.net.rms.confluxmap.bridge.GameBridge;
+import cn.net.rms.confluxmap.core.cache.RegionCacheService;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
@@ -37,6 +38,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private GameBridge gameBridge;
     private MapWorldService mapWorlds;
     private TileService tileService;
+    private RegionCacheService regionCache;
     private SpriteColorSampler spriteColorSampler;
     private BiomeTintResolver biomeTintResolver;
     private TileTextureManager tileTextureManager;
@@ -65,18 +67,24 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker = new WorldSessionTracker(sessionGuard);
         mapWorlds = new MapWorldService();
         tileService = new TileService(mapWorlds, executors);
+        regionCache = new RegionCacheService(
+            FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("cache"),
+            mapWorlds, executors, tileService, ConfluxMapMod.LOGGER
+        );
 
         spriteColorSampler = new SpriteColorSampler(client);
         biomeTintResolver = new BiomeTintResolver(client);
         tileTextureManager = new TileTextureManager(config, tileService);
 
         chunkCapture = new ChunkCaptureService(
-            client, config, mapWorlds, executors, tileService, spriteColorSampler, biomeTintResolver
+            client, config, mapWorlds, executors, tileService, regionCache, spriteColorSampler, biomeTintResolver
         );
         radarScanner = new EntityRadarScanner(client, config);
         minimapHudRenderer = new MinimapHudRenderer(client, config, gameBridge, tileService, tileTextureManager, radarScanner);
         fullscreenMapViewState = new FullscreenMapViewState();
 
+        // regionCache must flush BEFORE mapWorlds swaps the ending world out (see RegionCacheService javadoc).
+        sessionTracker.addListener(regionCache::onSessionChanged);
         sessionTracker.addListener(mapWorlds::onSessionChanged);
         sessionTracker.addListener(chunkCapture::onSessionChanged);
         sessionTracker.addListener(tileService::onSessionChanged);
@@ -97,6 +105,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
     }
 
     private void shutdown() {
+        // Quitting mid-world fires no session tick, so flush the cache explicitly
+        // before the executors stop accepting work.
+        regionCache.onSessionChanged(SessionGuard.Session.NONE);
         configIo.save(config);
         executors.shutdown(5000L);
     }

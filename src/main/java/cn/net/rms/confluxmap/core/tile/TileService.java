@@ -1,5 +1,7 @@
 package cn.net.rms.confluxmap.core.tile;
 
+import cn.net.rms.confluxmap.core.cache.RegionCacheService;
+import cn.net.rms.confluxmap.core.cache.RegionDiskCache;
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
 import cn.net.rms.confluxmap.core.model.DimensionId;
@@ -49,10 +51,22 @@ public final class TileService {
     private volatile int viewpointX;
     private volatile int viewpointZ;
 
+    /**
+     * Late-bound instead of a constructor parameter: {@link RegionCacheService} itself needs a
+     * {@link TileService} reference (to mark tiles dirty after a disk-cache merge), so the two
+     * can't both take each other as constructor arguments. The composition root wires this once
+     * after constructing both.
+     */
+    private volatile RegionCacheService regionCache;
+
     public TileService(final MapWorldService mapWorlds, final MapExecutors executors) {
         this.mapWorlds = mapWorlds;
         this.executors = executors;
         this.maxConcurrentCompositions = Math.max(1, executors.workerCount());
+    }
+
+    public void bindRegionCache(final RegionCacheService regionCache) {
+        this.regionCache = regionCache;
     }
 
     /** Main thread, from the session tracker: forget every queued/in-flight tile and pending upload. */
@@ -135,6 +149,23 @@ public final class TileService {
             return;
         }
         markDirty(key, session.token());
+        // LOD0 tile coordinates are region coordinates; higher LODs cover many regions at once and
+        // the disk cache only ever stores LOD0 data, so there's nothing more specific to load there -
+        // those regions get pulled in individually as their own LOD0 tiles are requested/captured.
+        if (key.lod() == 0) {
+            requestRegionLoad(key.tileX(), key.tileZ());
+        }
+    }
+
+    private void requestRegionLoad(final int regionX, final int regionZ) {
+        final RegionCacheService cacheService = regionCache;
+        if (cacheService == null) {
+            return;
+        }
+        final RegionDiskCache cache = cacheService.current();
+        if (cache != null) {
+            cache.ensureRegionLoaded(regionX, regionZ);
+        }
     }
 
     private void markDirty(final TileKey key, final long token) {

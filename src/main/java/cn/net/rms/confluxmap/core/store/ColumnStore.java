@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.core.store;
 
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
 import cn.net.rms.confluxmap.core.model.SampleSource;
+import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -35,6 +36,24 @@ public final class ColumnStore {
 
     public int regionCount() {
         return regions.size();
+    }
+
+    /**
+     * Live, weakly-consistent view of every region currently in memory. Safe to
+     * iterate while concurrently calling {@link #remove} (including removing the
+     * element the iterator is currently on) - {@link ConcurrentHashMap}'s views
+     * never throw {@code ConcurrentModificationException}.
+     */
+    public Collection<RegionColumns> allRegions() {
+        return regions.values();
+    }
+
+    /**
+     * Drops a region from memory, e.g. for distance-based eviction. Callers must
+     * have already flushed any unwritten data first - this never touches disk.
+     */
+    public boolean remove(final int regionX, final int regionZ) {
+        return regions.remove(key(regionX, regionZ)) != null;
     }
 
     public void clear() {

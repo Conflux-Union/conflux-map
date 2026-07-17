@@ -113,4 +113,25 @@ public final class RegionColumns {
     public synchronized short surfaceYAt(final int localX, final int localZ) {
         return surfaceY[localZ * SIZE + localX];
     }
+
+    /**
+     * Copy every column row together with the chunk table (source + update time),
+     * all under one lock, so a disk-cache flush captures a single consistent
+     * point-in-time snapshot of the whole region instead of two separately-locked
+     * reads that could straddle a concurrent {@link #putChunk}.
+     */
+    public synchronized void copyForFlush(
+        final short[] outSurfaceY,
+        final byte[] outFluidDepth,
+        final int[] outBaseArgb,
+        final int[] outTintArgb,
+        final int[] outOverlayArgb,
+        final byte[] outKind,
+        final byte[] outChunkSource,
+        final int[] outChunkUpdateSeconds
+    ) {
+        copyChunkRows(0, SIZE, outSurfaceY, outFluidDepth, outBaseArgb, outTintArgb, outOverlayArgb, outKind);
+        System.arraycopy(chunkSource, 0, outChunkSource, 0, chunkSource.length);
+        System.arraycopy(chunkUpdateSeconds, 0, outChunkUpdateSeconds, 0, chunkUpdateSeconds.length);
+    }
 }
