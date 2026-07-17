@@ -1,1 +1,5 @@
 accessWidener v2 named
+
+# SpriteColorSampler reads a sprite's un-stitched frame-0 source image directly
+# (rather than reading back the stitched atlas texture) to box-filter its colors.
+accessible field net/minecraft/client/texture/Sprite images [Lnet/minecraft/client/texture/NativeImage;

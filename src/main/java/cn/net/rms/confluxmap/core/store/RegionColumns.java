@@ -21,6 +21,7 @@ public final class RegionColumns {
     private final byte[] fluidDepth = new byte[SIZE * SIZE];
     private final int[] baseArgb = new int[SIZE * SIZE];
     private final int[] tintArgb = new int[SIZE * SIZE];
+    private final int[] overlayArgb = new int[SIZE * SIZE];
     private final byte[] kind = new byte[SIZE * SIZE];
     private final byte[] chunkSource = new byte[CHUNKS * CHUNKS];
     private final int[] chunkUpdateSeconds = new int[CHUNKS * CHUNKS];
@@ -54,6 +55,7 @@ public final class RegionColumns {
             System.arraycopy(snapshot.fluidDepth, rowFrom, fluidDepth, rowTo, 16);
             System.arraycopy(snapshot.baseArgb, rowFrom, baseArgb, rowTo, 16);
             System.arraycopy(snapshot.tintArgb, rowFrom, tintArgb, rowTo, 16);
+            System.arraycopy(snapshot.overlayArgb, rowFrom, overlayArgb, rowTo, 16);
             System.arraycopy(snapshot.kind, rowFrom, kind, rowTo, 16);
         }
         chunkSource[chunkIndex] = (byte) source.ordinal();
@@ -94,6 +96,7 @@ public final class RegionColumns {
         final byte[] outFluidDepth,
         final int[] outBaseArgb,
         final int[] outTintArgb,
+        final int[] outOverlayArgb,
         final byte[] outKind
     ) {
         final int from = startRow * SIZE;
@@ -102,6 +105,12 @@ public final class RegionColumns {
         System.arraycopy(fluidDepth, from, outFluidDepth, 0, length);
         System.arraycopy(baseArgb, from, outBaseArgb, 0, length);
         System.arraycopy(tintArgb, from, outTintArgb, 0, length);
+        System.arraycopy(overlayArgb, from, outOverlayArgb, 0, length);
         System.arraycopy(kind, from, outKind, 0, length);
+    }
+
+    /** Surface height at one column, for cross-tile edge shading. {@link ChunkSnapshot#NO_SURFACE} if unset. */
+    public synchronized short surfaceYAt(final int localX, final int localZ) {
+        return surfaceY[localZ * SIZE + localX];
     }
 }

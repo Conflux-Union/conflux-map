@@ -6,14 +6,22 @@ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
+import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.mc.McGameBridge;
+import cn.net.rms.confluxmap.mc.color.BiomeTintResolver;
+import cn.net.rms.confluxmap.mc.color.ColorReloadListener;
+import cn.net.rms.confluxmap.mc.color.SpriteColorSampler;
 import cn.net.rms.confluxmap.mc.input.Keybinds;
+import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureService;
+import cn.net.rms.confluxmap.mc.ui.hud.MinimapHudRenderer;
 import cn.net.rms.confluxmap.mc.world.WorldSessionTracker;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.resource.ResourceType;
 
 /** Composition root: builds and wires every client-side service. */
 public final class ConfluxMapClient implements ClientModInitializer {
@@ -26,7 +34,12 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private WorldSessionTracker sessionTracker;
     private GameBridge gameBridge;
     private MapWorldService mapWorlds;
+    private TileService tileService;
+    private SpriteColorSampler spriteColorSampler;
+    private BiomeTintResolver biomeTintResolver;
+    private TileTextureManager tileTextureManager;
     private ChunkCaptureService chunkCapture;
+    private MinimapHudRenderer minimapHudRenderer;
 
     public static ConfluxMapClient get() {
         return instance;
@@ -35,6 +48,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         instance = this;
+        final MinecraftClient client = MinecraftClient.getInstance();
+
         configIo = new ConfigIo(
             FabricLoader.getInstance().getConfigDir().resolve(ConfluxMapMod.ID).resolve("config.json"),
             ConfluxMapMod.LOGGER
@@ -42,16 +57,34 @@ public final class ConfluxMapClient implements ClientModInitializer {
         config = configIo.load();
         executors = new MapExecutors();
         sessionGuard = new SessionGuard();
-        gameBridge = new McGameBridge(MinecraftClient.getInstance(), sessionGuard);
+        gameBridge = new McGameBridge(client, sessionGuard);
         sessionTracker = new WorldSessionTracker(sessionGuard);
         mapWorlds = new MapWorldService();
-        chunkCapture = new ChunkCaptureService(MinecraftClient.getInstance(), config, mapWorlds, executors);
+        tileService = new TileService(mapWorlds, executors);
+
+        spriteColorSampler = new SpriteColorSampler(client);
+        biomeTintResolver = new BiomeTintResolver(client);
+        tileTextureManager = new TileTextureManager(config, tileService);
+
+        chunkCapture = new ChunkCaptureService(
+            client, config, mapWorlds, executors, tileService, spriteColorSampler, biomeTintResolver
+        );
+        minimapHudRenderer = new MinimapHudRenderer(client, config, gameBridge, tileService, tileTextureManager);
+
         sessionTracker.addListener(mapWorlds::onSessionChanged);
         sessionTracker.addListener(chunkCapture::onSessionChanged);
+        sessionTracker.addListener(tileService::onSessionChanged);
+        sessionTracker.addListener(session -> gameBridge.runOnRenderThread(tileTextureManager::releaseAll));
         sessionTracker.register();
+
         chunkCapture.register();
+        minimapHudRenderer.register();
+        ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
+            new ColorReloadListener(spriteColorSampler)
+        );
+
         new Keybinds(config, configIo);
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> shutdown());
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client2 -> shutdown());
         ConfluxMapMod.LOGGER.info("Conflux Map client services started ({} workers)", executors.workerCount());
     }
 
@@ -86,6 +119,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public MapWorldService mapWorlds() {
         return mapWorlds;
+    }
+
+    public TileService tileService() {
+        return tileService;
     }
 
     public ChunkCaptureService chunkCapture() {

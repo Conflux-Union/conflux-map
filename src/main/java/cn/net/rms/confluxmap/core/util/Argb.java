@@ -44,7 +44,7 @@ public final class Argb {
         return (argb & 0xFF000000) | r << 16 | g << 8 | b;
     }
 
-    /** Blend {@code over} onto {@code under} using {@code over}'s alpha. */
+    /** Blend {@code over} onto {@code under} using {@code over}'s alpha, keeping {@code under}'s alpha. */
     public static int blendOver(final int under, final int over) {
         final int a = alpha(over);
         if (a == 255) {
@@ -58,6 +58,32 @@ public final class Argb {
         final int g = (green(over) * a + green(under) * inv) / 255;
         final int b = (blue(over) * a + blue(under) * inv) / 255;
         return (under & 0xFF000000) | r << 16 | g << 8 | b;
+    }
+
+    /**
+     * Standard Porter-Duff "over" composite: {@code resultAlpha = topAlpha + bottomAlpha*(1-topAlpha)},
+     * RGB weighted accordingly. Unlike {@link #blendOver}, the result alpha is genuinely computed rather
+     * than inherited from the bottom layer, matching the color spec's water/overlay composite rule.
+     */
+    public static int over(final int top, final int bottom) {
+        final int topA = alpha(top);
+        if (topA == 255) {
+            return top;
+        }
+        if (topA == 0) {
+            return bottom;
+        }
+        final int bottomA = alpha(bottom);
+        final int outA = topA + bottomA * (255 - topA) / 255;
+        if (outA == 0) {
+            return TRANSPARENT;
+        }
+        final int topWeight = topA * 255;
+        final int bottomWeight = bottomA * (255 - topA);
+        final int r = (red(top) * topWeight + red(bottom) * bottomWeight) / (outA * 255);
+        final int g = (green(top) * topWeight + green(bottom) * bottomWeight) / (outA * 255);
+        final int b = (blue(top) * topWeight + blue(bottom) * bottomWeight) / (outA * 255);
+        return pack(outA, r, g, b);
     }
 
     /** Convert to the ABGR byte order used by native image buffers. */

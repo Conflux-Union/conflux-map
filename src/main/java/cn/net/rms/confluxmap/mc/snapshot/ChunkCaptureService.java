@@ -10,6 +10,9 @@ import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.DirtyChunkSet;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
+import cn.net.rms.confluxmap.core.tile.TileService;
+import cn.net.rms.confluxmap.mc.color.BiomeTintResolver;
+import cn.net.rms.confluxmap.mc.color.SpriteColorSampler;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -20,7 +23,8 @@ import net.minecraft.client.network.ClientPlayerEntity;
  * Drives the capture pipeline: packet hooks mark chunks dirty (via
  * {@link ChunkCaptureHandler}); each tick a bounded number of the nearest
  * dirty chunks is snapshotted on the main thread and merged into the store
- * on a worker thread.
+ * on a worker thread, which then tells the {@link TileService} which tile(s)
+ * need recomposing.
  */
 public final class ChunkCaptureService {
     private static final int LOG_INTERVAL_TICKS = 100;
@@ -29,6 +33,7 @@ public final class ChunkCaptureService {
     private final ConfluxConfig config;
     private final MapWorldService worlds;
     private final MapExecutors executors;
+    private final TileService tiles;
     private final McChunkSnapshotFactory factory;
     private final DirtyChunkSet dirtyChunks = new DirtyChunkSet();
     private final AtomicLong storedSnapshots = new AtomicLong();
@@ -39,13 +44,17 @@ public final class ChunkCaptureService {
         final MinecraftClient client,
         final ConfluxConfig config,
         final MapWorldService worlds,
-        final MapExecutors executors
+        final MapExecutors executors,
+        final TileService tiles,
+        final SpriteColorSampler sampler,
+        final BiomeTintResolver tintResolver
     ) {
         this.client = client;
         this.config = config;
         this.worlds = worlds;
         this.executors = executors;
-        this.factory = new McChunkSnapshotFactory(client);
+        this.tiles = tiles;
+        this.factory = new McChunkSnapshotFactory(client, sampler, tintResolver);
     }
 
     public void register() {
@@ -96,6 +105,9 @@ public final class ChunkCaptureService {
         final MapWorld world = worlds.ifCurrent(snapshot.sessionToken);
         if (world != null && world.store(MapLayer.SURFACE).put(snapshot, SampleSource.REAL_LIVE)) {
             storedSnapshots.incrementAndGet();
+            tiles.markChunkStored(
+                snapshot.sessionToken, world.session().dimension(), MapLayer.SURFACE, snapshot.chunkX, snapshot.chunkZ
+            );
         }
     }
 

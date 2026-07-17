@@ -7,7 +7,7 @@ package cn.net.rms.confluxmap.core.model;
  */
 public final class ChunkSnapshot {
     public static final int COLUMNS = 256;
-    /** Marker in {@link #surfaceY} for columns with no surface (void). */
+    /** Marker in {@link #surfaceY} for columns a region has never received data for. */
     public static final short NO_SURFACE = Short.MIN_VALUE;
 
     public final int chunkX;
@@ -17,6 +17,8 @@ public final class ChunkSnapshot {
     public final byte[] fluidDepth;
     public final int[] baseArgb;
     public final int[] tintArgb;
+    /** Overlay color with its own tint already applied, 0 = no overlay. See surface-color-sampling.md §1/§5. */
+    public final int[] overlayArgb;
     public final byte[] kind;
 
     public ChunkSnapshot(
@@ -27,10 +29,12 @@ public final class ChunkSnapshot {
         final byte[] fluidDepth,
         final int[] baseArgb,
         final int[] tintArgb,
+        final int[] overlayArgb,
         final byte[] kind
     ) {
         if (surfaceY.length != COLUMNS || fluidDepth.length != COLUMNS
-            || baseArgb.length != COLUMNS || tintArgb.length != COLUMNS || kind.length != COLUMNS) {
+            || baseArgb.length != COLUMNS || tintArgb.length != COLUMNS
+            || overlayArgb.length != COLUMNS || kind.length != COLUMNS) {
             throw new IllegalArgumentException("snapshot arrays must have 256 entries");
         }
         this.chunkX = chunkX;
@@ -40,6 +44,7 @@ public final class ChunkSnapshot {
         this.fluidDepth = fluidDepth;
         this.baseArgb = baseArgb;
         this.tintArgb = tintArgb;
+        this.overlayArgb = overlayArgb;
         this.kind = kind;
     }
 }
