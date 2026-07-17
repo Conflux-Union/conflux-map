@@ -23,9 +23,14 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.client.world.ClientWorld;
 import net.minecraft.text.TranslatableText;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.Util;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3f;
+import net.minecraft.util.registry.Registry;
 
 /**
  * Fullscreen, panning/zooming explorable map. Opened and closed by the
@@ -64,6 +69,8 @@ public final class FullscreenMapScreen extends Screen {
     private static final double NAME_LABEL_MAX_SCALE = 2.0;
     private static final double HOVER_RADIUS_PX = 6.0;
     private static final double DEFAULT_CREATE_Y = 64.0;
+    /** Cursor travel between left-press and left-release below which a hovered marker click edits it, not pans (see {@link #mouseReleased}). */
+    private static final double CLICK_DRAG_TOLERANCE_PX = 4.0;
 
     private final KeyBinding openMapKey;
     private final GameBridge gameBridge;
@@ -81,6 +88,10 @@ public final class FullscreenMapScreen extends Screen {
 
     /** Recomputed every frame by {@link #drawWaypoints} - the marker nearest the cursor within {@link #HOVER_RADIUS_PX}, or none. */
     private Waypoint hoveredWaypoint;
+
+    /** Cursor position at the last left-button press, so {@link #mouseReleased} can tell a click from a pan drag. */
+    private double leftPressX;
+    private double leftPressY;
 
     public FullscreenMapScreen(final KeyBinding openMapKey) {
         super(new TranslatableText("confluxmap.screen.map.title"));
@@ -132,8 +143,9 @@ public final class FullscreenMapScreen extends Screen {
 
     /**
      * Right-click always creates a new waypoint prefilled with the clicked block
-     * position (no click-to-edit-existing on this screen - that flow lives on
-     * {@link WaypointListScreen}'s edit button instead, keeping this one simple).
+     * position. Left-click on a hovered marker instead opens that waypoint's edit
+     * screen - see {@link #mouseReleased}, which fires once the click (as opposed
+     * to a pan drag) completes.
      */
     @Override
     public boolean mouseClicked(final double mouseX, final double mouseY, final int button) {
@@ -146,7 +158,28 @@ public final class FullscreenMapScreen extends Screen {
             );
             return true;
         }
+        if (button == 0) {
+            leftPressX = mouseX;
+            leftPressY = mouseY;
+        }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    /**
+     * Completes the left-click-a-marker-to-edit gesture: if the cursor is still on
+     * {@link #hoveredWaypoint} and travelled less than {@link #CLICK_DRAG_TOLERANCE_PX}
+     * since {@link #mouseClicked}'s press, this was a click rather than a
+     * {@link #mouseDragged} pan, so open the same edit flow {@link WaypointListScreen}
+     * uses, returning to this screen on save/cancel.
+     */
+    @Override
+    public boolean mouseReleased(final double mouseX, final double mouseY, final int button) {
+        if (button == 0 && hoveredWaypoint != null
+            && Math.hypot(mouseX - leftPressX, mouseY - leftPressY) < CLICK_DRAG_TOLERANCE_PX) {
+            MinecraftClient.getInstance().setScreen(WaypointEditScreen.forEdit(this, hoveredWaypoint));
+            return true;
+        }
+        return super.mouseReleased(mouseX, mouseY, button);
     }
 
     @Override
@@ -404,7 +437,8 @@ public final class FullscreenMapScreen extends Screen {
      * Bottom-center footer: the raw cursor position, or - while hovering a marker
      * (deliverable C) - that waypoint's own X/Y/Z instead (converted for the viewed
      * dimension, per {@link DimensionScale}; Y is shown as stored, per waypoint-ux.md S3's
-     * "Y is never scaled" rule).
+     * "Y is never scaled" rule). When not hovering a marker, the cursor's biome name
+     * (see {@link #cursorBiomeName}) is appended if it can be resolved.
      */
     private void drawCursorCoords(final MatrixStack matrices, final int mouseX, final int mouseY) {
         final String text;
@@ -414,12 +448,34 @@ public final class FullscreenMapScreen extends Screen {
             final double worldZ = DimensionScale.convertHorizontal(hoveredWaypoint.z, hoveredWaypoint.dimensionId, currentDimension);
             text = (int) Math.floor(worldX) + ", " + (int) Math.floor(hoveredWaypoint.y) + ", " + (int) Math.floor(worldZ);
         } else {
-            final double worldX = centerX + (mouseX - width / 2.0) * scale;
-            final double worldZ = centerZ + (mouseY - height / 2.0) * scale;
-            text = (int) Math.floor(worldX) + ", " + (int) Math.floor(worldZ);
+            final int blockX = (int) Math.floor(centerX + (mouseX - width / 2.0) * scale);
+            final int blockZ = (int) Math.floor(centerZ + (mouseY - height / 2.0) * scale);
+            final String biomeName = cursorBiomeName(blockX, blockZ);
+            text = blockX + ", " + blockZ + (biomeName == null ? "" : " · " + biomeName);
         }
         final int textWidth = textRenderer.getWidth(text);
         textRenderer.drawWithShadow(matrices, text, width / 2f - textWidth / 2f, height - MARGIN - 10, TEXT_COLOR);
+    }
+
+    /**
+     * Best-effort biome name at the given column, for the footer readout. Uses the
+     * local player's block Y (clamped to the world's vertical bounds) rather than a
+     * true 3-D sample - close enough for a map readout, per the implementation
+     * brief. Returns null - footer falls back to coordinates only - if there's no
+     * world, the chunk isn't loaded, or the biome's identifier can't be resolved.
+     */
+    private String cursorBiomeName(final int blockX, final int blockZ) {
+        final ClientWorld world = client.world;
+        if (world == null) {
+            return null;
+        }
+        final int playerY = gameBridge.player().map(p -> p.blockY()).orElse(world.getBottomY());
+        final BlockPos pos = new BlockPos(blockX, MathHelper.clamp(playerY, world.getBottomY(), world.getTopY() - 1), blockZ);
+        if (!world.isChunkLoaded(pos)) {
+            return null;
+        }
+        final Identifier biomeId = world.getRegistryManager().get(Registry.BIOME_KEY).getId(world.getBiome(pos));
+        return biomeId == null ? null : new TranslatableText(Util.createTranslationKey("biome", biomeId)).getString();
     }
 
     private static String dimensionDisplayName(final DimensionId dimension) {
