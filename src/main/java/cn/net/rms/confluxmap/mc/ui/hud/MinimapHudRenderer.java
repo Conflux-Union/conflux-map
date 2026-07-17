@@ -72,8 +72,8 @@ public final class MinimapHudRenderer {
     // fallback path.
     private static final float RADAR_ICON_HALF_SIZE = 4f;
     private static final float RADAR_ICON_SIZE = RADAR_ICON_HALF_SIZE * 2f;
-    private static final float RADAR_ICON_RING_RADIUS = 6f;
-    private static final float RADAR_ICON_RING_THICKNESS = 1.25f;
+    /** Name labels sit just below the icon's 1px square border. */
+    private static final float RADAR_NAME_OFFSET = 7f;
     private static final int RADAR_RING_PLAYER_COLOR = 0xFFFFFFFF;
     private static final int RADAR_RING_HOSTILE_COLOR = 0xFFE04040;
     private static final int RADAR_RING_PASSIVE_COLOR = 0xFF40C040;
@@ -347,7 +347,7 @@ public final class MinimapHudRenderer {
             if (icon != null) {
                 drawRadarIcon(matrices, entry.category(), icon, x, y, yDelta);
                 if (config.radarShowPlayerNames && entry.category() == RadarCategory.PLAYER && entry.name() != null) {
-                    drawCenteredLine(matrices, entry.name(), x, y + RADAR_ICON_RING_RADIUS + 2f);
+                    drawCenteredLine(matrices, entry.name(), x, y + RADAR_NAME_OFFSET);
                 }
                 return;
             }
