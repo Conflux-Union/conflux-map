@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.mc.ui.hud;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.radar.RadarCategory;
@@ -10,6 +11,9 @@ import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.TileMath;
+import cn.net.rms.confluxmap.core.waypoint.DimensionScale;
+import cn.net.rms.confluxmap.core.waypoint.Waypoint;
+import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
@@ -65,6 +69,7 @@ public final class MinimapHudRenderer {
     private final TileTextureManager textures;
     private final EntityRadarScanner radarScanner;
     private final LayerSelector layerSelector;
+    private final WaypointService waypointService;
 
     public MinimapHudRenderer(
         final MinecraftClient client,
@@ -73,7 +78,8 @@ public final class MinimapHudRenderer {
         final TileService tiles,
         final TileTextureManager textures,
         final EntityRadarScanner radarScanner,
-        final LayerSelector layerSelector
+        final LayerSelector layerSelector,
+        final WaypointService waypointService
     ) {
         this.client = client;
         this.config = config;
@@ -82,6 +88,7 @@ public final class MinimapHudRenderer {
         this.textures = textures;
         this.radarScanner = radarScanner;
         this.layerSelector = layerSelector;
+        this.waypointService = waypointService;
     }
 
     public void register() {
@@ -145,8 +152,93 @@ public final class MinimapHudRenderer {
 
         drawRadar(matrices, centerX, centerY, size, mapAngle, player, tickDelta);
         drawCardinals(matrices, centerX, centerY, size, mapAngle);
+        drawWaypointMarkers(matrices, centerX, centerY, size, mapAngle, player);
         drawPlayerArrow(matrices, centerX, centerY, rotate ? 0f : player.yawDegrees() + 180f);
         drawInfoText(matrices, player, x0, y0, size);
+    }
+
+    /**
+     * In-range dots and out-of-range edge indicators for waypoints visible in the
+     * current dimension. Reuses {@link #drawCardinal}'s exact rotation trick: the
+     * marker's screen *position* is computed with the same manual cos/sin rotation
+     * as the cardinal letters (this method runs after the tile-drawing push/pop, so
+     * the active matrix here is unrotated - see the render() javadoc), while the
+     * in-range marker glyph itself is drawn with no rotation applied (upright). The
+     * out-of-range edge arrow is the one deliberate exception - it rotates to point
+     * at the waypoint's true on-screen bearing, per waypoint-ux.md S7.
+     */
+    private void drawWaypointMarkers(
+        final MatrixStack matrices,
+        final float centerX,
+        final float centerY,
+        final int size,
+        final float mapAngle,
+        final PlayerView player
+    ) {
+        final float blocksPerPixel = BLOCKS_PER_PIXEL[config.minimapZoomIndex];
+        final float pxPerBlock = 1f / blocksPerPixel;
+        final double rad = Math.toRadians(mapAngle);
+        final float cos = (float) Math.cos(rad);
+        final float sin = (float) Math.sin(rad);
+        final float limit = size / 2f - 2f;
+        final boolean circleFrame = config.minimapShape == ConfluxConfig.Shape.CIRCLE;
+        final DimensionId currentDimension = gameBridge.session().dimension();
+
+        for (final Waypoint waypoint : waypointService.list()) {
+            if (!waypoint.visible || !DimensionScale.isVisibleFrom(waypoint.dimensionId, currentDimension)) {
+                continue;
+            }
+            final double worldX = DimensionScale.convertHorizontal(waypoint.x, waypoint.dimensionId, currentDimension);
+            final double worldZ = DimensionScale.convertHorizontal(waypoint.z, waypoint.dimensionId, currentDimension);
+            final double dx = worldX - player.x();
+            final double dz = worldZ - player.z();
+            if (config.waypointRenderDistance > 0) {
+                final double dy = waypoint.y - player.y();
+                if (Math.sqrt(dx * dx + dy * dy + dz * dz) > config.waypointRenderDistance) {
+                    continue;
+                }
+            }
+
+            final float rawX = (float) (dx * pxPerBlock);
+            final float rawY = (float) (dz * pxPerBlock);
+            final float screenOffX = rawX * cos - rawY * sin;
+            final float screenOffY = rawX * sin + rawY * cos;
+
+            final boolean inRange = circleFrame
+                ? Math.hypot(screenOffX, screenOffY) <= limit
+                : Math.abs(screenOffX) <= limit && Math.abs(screenOffY) <= limit;
+
+            if (inRange) {
+                drawWaypointDot(matrices, centerX + screenOffX, centerY + screenOffY, waypoint.colorArgb);
+            } else if (config.waypointEdgeIndicatorsEnabled) {
+                final float k = circleFrame
+                    ? limit / (float) Math.hypot(screenOffX, screenOffY)
+                    : limit / Math.max(Math.abs(screenOffX), Math.abs(screenOffY));
+                final float edgeX = screenOffX * k;
+                final float edgeY = screenOffY * k;
+                final float angle = (float) Math.toDegrees(Math.atan2(screenOffX, -screenOffY));
+                drawWaypointEdgeArrow(matrices, centerX + edgeX, centerY + edgeY, angle, waypoint.colorArgb);
+            }
+        }
+    }
+
+    private void drawWaypointDot(final MatrixStack matrices, final float x, final float y, final int colorArgb) {
+        final int fill = colorArgb | 0xFF000000;
+        RenderUtil.fillTriangle(matrices, x, y - 4f, x - 4f, y, x + 4f, y, ARROW_OUTLINE);
+        RenderUtil.fillTriangle(matrices, x, y + 4f, x - 4f, y, x + 4f, y, ARROW_OUTLINE);
+        RenderUtil.fillTriangle(matrices, x, y - 2f, x - 2f, y, x + 2f, y, fill);
+        RenderUtil.fillTriangle(matrices, x, y + 2f, x - 2f, y, x + 2f, y, fill);
+    }
+
+    /** Rotated to point at the waypoint's true on-screen bearing - deliberately not counter-rotated. */
+    private void drawWaypointEdgeArrow(
+        final MatrixStack matrices, final float x, final float y, final float angleDegrees, final int colorArgb
+    ) {
+        matrices.push();
+        matrices.translate(x, y, 0);
+        matrices.multiply(Vec3f.POSITIVE_Z.getDegreesQuaternion(angleDegrees));
+        RenderUtil.fillTriangle(matrices, 0f, -5f, -4f, 4f, 4f, 4f, colorArgb | 0xFF000000);
+        matrices.pop();
     }
 
     /**

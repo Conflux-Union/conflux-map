@@ -1,9 +1,14 @@
 package cn.net.rms.confluxmap.mc.input;
 
+import cn.net.rms.confluxmap.ConfluxMapClient;
+import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
+import cn.net.rms.confluxmap.mc.ui.screen.WaypointEditScreen;
+import cn.net.rms.confluxmap.mc.ui.screen.WaypointListScreen;
+import java.util.Optional;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.MinecraftClient;
@@ -19,6 +24,8 @@ public final class Keybinds {
     private final KeyBinding zoomOut;
     private final KeyBinding openMap;
     private final KeyBinding cycleLayer;
+    private final KeyBinding openWaypoints;
+    private final KeyBinding newWaypoint;
     private final ConfluxConfig config;
     private final ConfigIo configIo;
     private final LayerSelector layerSelector;
@@ -32,6 +39,8 @@ public final class Keybinds {
         zoomOut = register("zoom_out", GLFW.GLFW_KEY_LEFT_BRACKET);
         openMap = register("open_map", GLFW.GLFW_KEY_M);
         cycleLayer = register("cycle_layer", GLFW.GLFW_KEY_Y);
+        openWaypoints = register("waypoints", GLFW.GLFW_KEY_U);
+        newWaypoint = register("new_waypoint", GLFW.GLFW_KEY_B);
         ClientTickEvents.END_CLIENT_TICK.register(client -> poll());
     }
 
@@ -72,8 +81,29 @@ public final class Keybinds {
                 client.setScreen(new FullscreenMapScreen(openMap));
             }
         }
+        while (openWaypoints.wasPressed()) {
+            final MinecraftClient client = MinecraftClient.getInstance();
+            if (client.player != null && client.currentScreen == null) {
+                client.setScreen(new WaypointListScreen());
+            }
+        }
+        while (newWaypoint.wasPressed()) {
+            final MinecraftClient client = MinecraftClient.getInstance();
+            if (client.player != null && client.currentScreen == null) {
+                openNewWaypointAtPlayer(client);
+            }
+        }
         if (changed) {
             configIo.save(config);
         }
+    }
+
+    private static void openNewWaypointAtPlayer(final MinecraftClient client) {
+        final Optional<PlayerView> playerView = ConfluxMapClient.get().gameBridge().player();
+        if (playerView.isEmpty()) {
+            return;
+        }
+        final PlayerView player = playerView.get();
+        client.setScreen(WaypointEditScreen.forCreate(null, player.dimension(), player.blockX(), player.blockY(), player.blockZ()));
     }
 }

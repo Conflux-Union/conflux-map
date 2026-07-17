@@ -8,10 +8,15 @@ import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.util.TileMath;
+import cn.net.rms.confluxmap.core.waypoint.DimensionScale;
+import cn.net.rms.confluxmap.core.waypoint.Waypoint;
+import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
+import java.util.List;
 import java.util.Optional;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.math.MatrixStack;
@@ -44,6 +49,11 @@ public final class FullscreenMapScreen extends Screen {
     private static final int ARROW_OUTLINE = 0xFF101010;
     private static final int ARROW_FILL = 0xFFFFE066;
     private static final double MIN_GRID_SPACING_PX = 8.0;
+    private static final int MARKER_HALF_SIZE = 5;
+    private static final int MARKER_OUTLINE = 0xFF101010;
+    private static final double ALWAYS_SHOW_NAMES_SCALE = 1.0;
+    private static final double HOVER_RADIUS_PX = 7.0;
+    private static final double DEFAULT_CREATE_Y = 64.0;
 
     private final KeyBinding openMapKey;
     private final GameBridge gameBridge;
@@ -51,6 +61,7 @@ public final class FullscreenMapScreen extends Screen {
     private final TileTextureManager textures;
     private final FullscreenMapViewState viewState;
     private final LayerSelector layerSelector;
+    private final WaypointService waypointService;
 
     /** World point currently at screen center, and blocks-per-pixel; all mutable, panned/zoomed by input. */
     private double centerX;
@@ -66,6 +77,7 @@ public final class FullscreenMapScreen extends Screen {
         this.textures = app.tileTextureManager();
         this.viewState = app.fullscreenMapViewState();
         this.layerSelector = app.layerSelector();
+        this.waypointService = app.waypointService();
 
         final DimensionId dimension = gameBridge.session().dimension();
         final FullscreenMapViewState.View remembered = viewState.get(dimension);
@@ -101,6 +113,25 @@ public final class FullscreenMapScreen extends Screen {
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    /**
+     * Right-click always creates a new waypoint prefilled with the clicked block
+     * position (no click-to-edit-existing on this screen - that flow lives on
+     * {@link WaypointListScreen}'s edit button instead, keeping this one simple).
+     */
+    @Override
+    public boolean mouseClicked(final double mouseX, final double mouseY, final int button) {
+        if (button == 1) {
+            final double worldX = Math.floor(centerX + (mouseX - width / 2.0) * scale);
+            final double worldZ = Math.floor(centerZ + (mouseY - height / 2.0) * scale);
+            final double worldY = gameBridge.player().map(p -> (double) p.blockY()).orElse(DEFAULT_CREATE_Y);
+            MinecraftClient.getInstance().setScreen(
+                WaypointEditScreen.forCreate(this, gameBridge.session().dimension(), worldX, worldY, worldZ)
+            );
+            return true;
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override
@@ -142,6 +173,7 @@ public final class FullscreenMapScreen extends Screen {
         RenderUtil.beginTexturedQuads();
         drawTiles(matrices);
 
+        drawWaypoints(matrices, mouseX, mouseY);
         drawPlayerMarker(matrices, tickDelta);
         drawDimensionLabel(matrices);
         drawLayerLabel(matrices);
@@ -220,6 +252,49 @@ public final class FullscreenMapScreen extends Screen {
         RenderUtil.fillTriangle(matrices, 0f, -7f, -5.5f, 6f, 5.5f, 6f, ARROW_OUTLINE);
         RenderUtil.fillTriangle(matrices, 0f, -5.5f, -4f, 4.5f, 4f, 4.5f, ARROW_FILL);
         matrices.pop();
+    }
+
+    /**
+     * Markers for waypoints visible in the viewed dimension (see
+     * {@link DimensionScale#isVisibleFrom}), coordinates converted for display.
+     * Fixed on-screen size regardless of zoom - only their world position, and
+     * thus screen position, changes with pan/zoom. Names are shown continuously
+     * once zoomed in past {@link #ALWAYS_SHOW_NAMES_SCALE}, otherwise only on
+     * hover (mirrors the minimap's in-range-marker rules from waypoint-ux.md S7,
+     * adapted for this always-north-locked, unbounded-viewport screen).
+     */
+    private void drawWaypoints(final MatrixStack matrices, final int mouseX, final int mouseY) {
+        final DimensionId currentDimension = gameBridge.session().dimension();
+        final double pxPerBlock = 1.0 / scale;
+        final List<Waypoint> waypoints = waypointService.list();
+        for (final Waypoint waypoint : waypoints) {
+            if (!waypoint.visible || !DimensionScale.isVisibleFrom(waypoint.dimensionId, currentDimension)) {
+                continue;
+            }
+            final double worldX = DimensionScale.convertHorizontal(waypoint.x, waypoint.dimensionId, currentDimension);
+            final double worldZ = DimensionScale.convertHorizontal(waypoint.z, waypoint.dimensionId, currentDimension);
+            final float screenX = (float) (width / 2.0 + (worldX - centerX) * pxPerBlock);
+            final float screenY = (float) (height / 2.0 + (worldZ - centerZ) * pxPerBlock);
+            if (screenX < -MARKER_HALF_SIZE || screenX > width + MARKER_HALF_SIZE
+                || screenY < -MARKER_HALF_SIZE || screenY > height + MARKER_HALF_SIZE) {
+                continue;
+            }
+            drawDiamondMarker(matrices, screenX, screenY, waypoint.colorArgb);
+
+            final double hoverDist = Math.hypot(mouseX - screenX, mouseY - screenY);
+            if (scale <= ALWAYS_SHOW_NAMES_SCALE || hoverDist <= HOVER_RADIUS_PX) {
+                textRenderer.drawWithShadow(matrices, waypoint.name, screenX + MARKER_HALF_SIZE + 2, screenY - 4, TEXT_COLOR);
+            }
+        }
+    }
+
+    private void drawDiamondMarker(final MatrixStack matrices, final float x, final float y, final int colorArgb) {
+        final int fill = colorArgb | 0xFF000000;
+        RenderUtil.fillTriangle(matrices, x, y - MARKER_HALF_SIZE, x - MARKER_HALF_SIZE, y, x + MARKER_HALF_SIZE, y, MARKER_OUTLINE);
+        RenderUtil.fillTriangle(matrices, x, y + MARKER_HALF_SIZE, x - MARKER_HALF_SIZE, y, x + MARKER_HALF_SIZE, y, MARKER_OUTLINE);
+        final int inner = MARKER_HALF_SIZE - 2;
+        RenderUtil.fillTriangle(matrices, x, y - inner, x - inner, y, x + inner, y, fill);
+        RenderUtil.fillTriangle(matrices, x, y + inner, x - inner, y, x + inner, y, fill);
     }
 
     private void drawDimensionLabel(final MatrixStack matrices) {

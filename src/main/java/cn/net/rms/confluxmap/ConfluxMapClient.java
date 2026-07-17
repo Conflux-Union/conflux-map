@@ -8,6 +8,7 @@ import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
+import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.mc.McGameBridge;
 import cn.net.rms.confluxmap.mc.color.BiomeTintResolver;
 import cn.net.rms.confluxmap.mc.color.ColorReloadListener;
@@ -18,6 +19,7 @@ import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureService;
 import cn.net.rms.confluxmap.mc.ui.hud.MinimapHudRenderer;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapViewState;
+import cn.net.rms.confluxmap.mc.world.DeathWatcher;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import cn.net.rms.confluxmap.mc.world.WorldSessionTracker;
 import net.fabricmc.api.ClientModInitializer;
@@ -48,6 +50,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private MinimapHudRenderer minimapHudRenderer;
     private FullscreenMapViewState fullscreenMapViewState;
     private LayerSelector layerSelector;
+    private WaypointService waypointService;
+    private DeathWatcher deathWatcher;
 
     public static ConfluxMapClient get() {
         return instance;
@@ -84,8 +88,13 @@ public final class ConfluxMapClient implements ClientModInitializer {
             client, config, mapWorlds, executors, tileService, regionCache, spriteColorSampler, biomeTintResolver, layerSelector
         );
         radarScanner = new EntityRadarScanner(client, config);
+        waypointService = new WaypointService(
+            FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("waypoints"),
+            executors, ConfluxMapMod.LOGGER
+        );
+        deathWatcher = new DeathWatcher(gameBridge, config, waypointService);
         minimapHudRenderer = new MinimapHudRenderer(
-            client, config, gameBridge, tileService, tileTextureManager, radarScanner, layerSelector
+            client, config, gameBridge, tileService, tileTextureManager, radarScanner, layerSelector, waypointService
         );
         fullscreenMapViewState = new FullscreenMapViewState();
 
@@ -96,12 +105,14 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(tileService::onSessionChanged);
         sessionTracker.addListener(radarScanner::onSessionChanged);
         sessionTracker.addListener(fullscreenMapViewState::onSessionChanged);
+        sessionTracker.addListener(waypointService::onSessionChanged);
         sessionTracker.addListener(session -> gameBridge.runOnRenderThread(tileTextureManager::releaseAll));
         sessionTracker.register();
 
         chunkCapture.register();
         radarScanner.register();
         minimapHudRenderer.register();
+        deathWatcher.register();
         ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
             new ColorReloadListener(spriteColorSampler)
         );
@@ -173,5 +184,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public LayerSelector layerSelector() {
         return layerSelector;
+    }
+
+    public WaypointService waypointService() {
+        return waypointService;
     }
 }

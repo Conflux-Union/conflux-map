@@ -55,6 +55,11 @@ public final class ConfluxConfig {
     public int radarRange = 80;
     public boolean radarShowPlayerNames = true;
     public int radarMaxEntities = 100;
+    /** 3-D straight-line blocks; 0 means "no cutoff" (see waypoint-ux.md S7). */
+    public int waypointRenderDistance = 0;
+    public boolean waypointEdgeIndicatorsEnabled = true;
+    /** Death points kept per dimension, oldest auto-pruned; 0 disables creating new ones. */
+    public int deathPointsKept = 5;
 
     public ConfluxConfig copy() {
         final ConfluxConfig c = new ConfluxConfig();
@@ -81,6 +86,9 @@ public final class ConfluxConfig {
         c.radarRange = radarRange;
         c.radarShowPlayerNames = radarShowPlayerNames;
         c.radarMaxEntities = radarMaxEntities;
+        c.waypointRenderDistance = waypointRenderDistance;
+        c.waypointEdgeIndicatorsEnabled = waypointEdgeIndicatorsEnabled;
+        c.deathPointsKept = deathPointsKept;
         return c;
     }
 
@@ -103,6 +111,8 @@ public final class ConfluxConfig {
         gpuTileCacheLimit = clamp(gpuTileCacheLimit, 16, 2048);
         radarRange = clamp(radarRange, 16, 256);
         radarMaxEntities = clamp(radarMaxEntities, 1, 500);
+        waypointRenderDistance = clamp(waypointRenderDistance, 0, 100_000);
+        deathPointsKept = clamp(deathPointsKept, 0, 50);
     }
 
     private static int clamp(final int v, final int min, final int max) {
