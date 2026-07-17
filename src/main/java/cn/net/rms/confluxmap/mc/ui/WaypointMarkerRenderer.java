@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.mc.ui;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3f;
@@ -28,13 +29,21 @@ public final class WaypointMarkerRenderer {
     private WaypointMarkerRenderer() {
     }
 
+    private static final int BADGE_HEIGHT = 11;
+    private static final int DARK_TEXT = 0xFF202020;
+
     /**
      * In-range marker at a fixed screen position, upright - the caller is responsible for
      * counter-rotating the *position* in rotate mode (see {@code drawCardinals}'s rotate ->
      * translate -> counter-rotate mechanism); this method never applies its own rotation.
+     *
+     * <p>Normal waypoints render as a text badge - the first two characters of the name on
+     * a color-filled plate (user feedback: shape markers were too easy to miss); a nameless
+     * waypoint falls back to the diamond. Death points keep the skull-convention X.
      */
     public static void draw(
         final MatrixStack matrices,
+        final TextRenderer textRenderer,
         final Waypoint waypoint,
         final float x,
         final float y,
@@ -47,9 +56,35 @@ public final class WaypointMarkerRenderer {
         final int inner = withAlpha(INNER_RING, alpha);
         if (waypoint.type == Waypoint.Type.DEATH) {
             drawCross(matrices, x, y, halfSize, outer, inner, fill);
-        } else {
-            drawDiamond(matrices, x, y, halfSize, outer, inner, fill);
+            return;
         }
+        final String badge = badgeText(waypoint.name);
+        if (badge.isEmpty()) {
+            drawDiamond(matrices, x, y, halfSize, outer, inner, fill);
+            return;
+        }
+        final int textWidth = textRenderer.getWidth(badge);
+        final float plateWidth = textWidth + 4f;
+        final float left = x - plateWidth / 2f;
+        final float top = y - BADGE_HEIGHT / 2f;
+        RenderUtil.fillRect(matrices, left - 1f, top - 1f, plateWidth + 2f, BADGE_HEIGHT + 2f, outer);
+        RenderUtil.fillRect(matrices, left, top, plateWidth, BADGE_HEIGHT, fill);
+        final int textColor = withAlpha(luminance(waypoint.colorArgb) > 0.62f ? DARK_TEXT : 0xFFFFFFFF, alpha);
+        textRenderer.drawWithShadow(matrices, badge, x - textWidth / 2f, top + 2f, textColor);
+    }
+
+    /** First two code points of the trimmed name ("矿洞入口" -> "矿洞", "Base" -> "Ba"). */
+    private static String badgeText(final String name) {
+        final String trimmed = name == null ? "" : name.trim();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+        final int[] codePoints = trimmed.codePoints().limit(2).toArray();
+        return new String(codePoints, 0, codePoints.length);
+    }
+
+    private static float luminance(final int argb) {
+        return (0.299f * Argb.red(argb) + 0.587f * Argb.green(argb) + 0.114f * Argb.blue(argb)) / 255f;
     }
 
     /**

@@ -303,7 +303,9 @@ public final class FullscreenMapScreen extends Screen {
         for (final ScreenMarker marker : markers) {
             final Waypoint waypoint = marker.waypoint();
             final boolean isHovered = waypoint == hoveredWaypoint;
-            WaypointMarkerRenderer.draw(matrices, waypoint, marker.screenX(), marker.screenY(), MARKER_HALF_SIZE, 1f, isHovered);
+            WaypointMarkerRenderer.draw(
+                matrices, client.textRenderer, waypoint, marker.screenX(), marker.screenY(), MARKER_HALF_SIZE, 1f, isHovered
+            );
             if (scale <= NAME_LABEL_MAX_SCALE || isHovered) {
                 textRenderer.drawWithShadow(
                     matrices, waypoint.name, marker.screenX() + MARKER_HALF_SIZE + 2, marker.screenY() - 4, TEXT_COLOR
