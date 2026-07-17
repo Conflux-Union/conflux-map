@@ -2,5 +2,11 @@
   "key.categories.confluxmap": "Conflux 地图",
   "key.confluxmap.toggle_minimap": "开关小地图",
   "key.confluxmap.zoom_in": "小地图放大",
-  "key.confluxmap.zoom_out": "小地图缩小"
+  "key.confluxmap.zoom_out": "小地图缩小",
+  "key.confluxmap.open_map": "打开世界地图",
+  "confluxmap.screen.map.title": "世界地图",
+  "confluxmap.map.scale": "缩放：%s",
+  "confluxmap.dimension.overworld": "主世界",
+  "confluxmap.dimension.the_nether": "下界",
+  "confluxmap.dimension.the_end": "末地"
 }

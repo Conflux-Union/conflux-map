@@ -2,5 +2,11 @@
   "key.categories.confluxmap": "Conflux Map",
   "key.confluxmap.toggle_minimap": "Toggle Minimap",
   "key.confluxmap.zoom_in": "Minimap Zoom In",
-  "key.confluxmap.zoom_out": "Minimap Zoom Out"
+  "key.confluxmap.zoom_out": "Minimap Zoom Out",
+  "key.confluxmap.open_map": "Open World Map",
+  "confluxmap.screen.map.title": "World Map",
+  "confluxmap.map.scale": "Scale: %s",
+  "confluxmap.dimension.overworld": "Overworld",
+  "confluxmap.dimension.the_nether": "The Nether",
+  "confluxmap.dimension.the_end": "The End"
 }

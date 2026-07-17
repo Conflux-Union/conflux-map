@@ -9,6 +9,7 @@ import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
+import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 import java.util.Optional;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
@@ -63,8 +64,17 @@ public final class MinimapHudRenderer {
         HudRenderCallback.EVENT.register(this::render);
     }
 
+    /**
+     * {@link net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback} fires once
+     * per rendered frame regardless of whether a {@link net.minecraft.client.gui.screen.Screen}
+     * is open (the HUD layer draws before the screen layer, it just ends up covered).
+     * That makes this the single per-frame call site for {@link TileTextureManager#beginFrame()} -
+     * {@link FullscreenMapScreen} relies on it having already run this frame and never
+     * calls it itself, so it's never invoked twice in one frame.
+     */
     private void render(final MatrixStack matrices, final float tickDelta) {
-        if (!config.minimapEnabled || !gameBridge.session().active()) {
+        textures.beginFrame();
+        if (!config.minimapEnabled || !gameBridge.session().active() || client.currentScreen instanceof FullscreenMapScreen) {
             return;
         }
         final Optional<PlayerView> playerView = gameBridge.player(tickDelta);
@@ -73,7 +83,6 @@ public final class MinimapHudRenderer {
         }
         final PlayerView player = playerView.get();
 
-        textures.beginFrame();
         tiles.setViewpoint(player.blockX(), player.blockZ());
 
         final int size = config.minimapSize;

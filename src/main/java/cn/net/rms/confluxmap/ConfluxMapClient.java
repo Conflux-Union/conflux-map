@@ -15,6 +15,7 @@ import cn.net.rms.confluxmap.mc.input.Keybinds;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureService;
 import cn.net.rms.confluxmap.mc.ui.hud.MinimapHudRenderer;
+import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapViewState;
 import cn.net.rms.confluxmap.mc.world.WorldSessionTracker;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
@@ -40,6 +41,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private TileTextureManager tileTextureManager;
     private ChunkCaptureService chunkCapture;
     private MinimapHudRenderer minimapHudRenderer;
+    private FullscreenMapViewState fullscreenMapViewState;
 
     public static ConfluxMapClient get() {
         return instance;
@@ -70,11 +72,13 @@ public final class ConfluxMapClient implements ClientModInitializer {
             client, config, mapWorlds, executors, tileService, spriteColorSampler, biomeTintResolver
         );
         minimapHudRenderer = new MinimapHudRenderer(client, config, gameBridge, tileService, tileTextureManager);
+        fullscreenMapViewState = new FullscreenMapViewState();
 
         sessionTracker.addListener(mapWorlds::onSessionChanged);
         sessionTracker.addListener(chunkCapture::onSessionChanged);
         sessionTracker.addListener(tileService::onSessionChanged);
         sessionTracker.addListener(session -> gameBridge.runOnRenderThread(tileTextureManager::releaseAll));
+        sessionTracker.addListener(fullscreenMapViewState::onSessionChanged);
         sessionTracker.register();
 
         chunkCapture.register();
@@ -127,5 +131,13 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public ChunkCaptureService chunkCapture() {
         return chunkCapture;
+    }
+
+    public TileTextureManager tileTextureManager() {
+        return tileTextureManager;
+    }
+
+    public FullscreenMapViewState fullscreenMapViewState() {
+        return fullscreenMapViewState;
     }
 }

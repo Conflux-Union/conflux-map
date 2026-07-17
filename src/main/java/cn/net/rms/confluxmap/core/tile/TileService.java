@@ -13,6 +13,7 @@ import cn.net.rms.confluxmap.core.store.RegionColumns;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.util.Argb;
+import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -70,10 +71,14 @@ public final class TileService {
     }
 
     /**
-     * Called by the capture pipeline after a chunk was newly stored. Marks the tile
-     * covering that chunk dirty, and - when the chunk sits on the tile's east or
+     * Called by the capture pipeline after a chunk was newly stored. Marks the LOD-0
+     * tile covering that chunk dirty, and - when the chunk sits on the tile's east or
      * north edge - also marks the neighboring tile whose opposite edge depends on
-     * this chunk's data for slope shading (see {@link #edgeNeighbor}).
+     * this chunk's data for slope shading (see {@link #edgeNeighbor}). Also marks the
+     * covering tile at every higher LOD (1-{@link TileMath#MAX_LOD}) dirty, so an
+     * already-composed zoomed-out tile refreshes to include this chunk's data next
+     * time it's viewed; the {@link #dirty} map dedupes cheaply since each LOD is a
+     * distinct {@link TileKey}.
      */
     public void markChunkStored(
         final long token,
@@ -91,6 +96,11 @@ public final class TileService {
         final TileKey edge = edgeNeighbor(key, chunkX, chunkZ);
         if (edge != null) {
             markDirty(edge, token);
+        }
+        final int blockX = chunkX << 4;
+        final int blockZ = chunkZ << 4;
+        for (int lod = 1; lod <= TileMath.MAX_LOD; lod++) {
+            markDirty(TileKey.ofBlock(world.session().world(), dimensionId, layer, lod, blockX, blockZ), token);
         }
     }
 
@@ -165,8 +175,11 @@ public final class TileService {
         TileKey best = null;
         long bestDist = Long.MAX_VALUE;
         for (final TileKey key : dirty.keySet()) {
-            final long dx = key.originBlockX() + 128L - vx;
-            final long dz = key.originBlockZ() + 128L - vz;
+            // Half the tile's own edge length in blocks, e.g. 128 at LOD0, 2048 at LOD4 -
+            // using a fixed LOD0-sized offset here would skew priority for higher-LOD tiles.
+            final long half = 128L << key.lod();
+            final long dx = key.originBlockX() + half - vx;
+            final long dz = key.originBlockZ() + half - vz;
             final long dist = dx * dx + dz * dz;
             if (dist < bestDist) {
                 bestDist = dist;
@@ -196,15 +209,89 @@ public final class TileService {
             return null;
         }
         final ColumnStore store = world.store(MapLayer.SURFACE);
-        final RegionColumns region = store.region(key.tileX(), key.tileZ());
+        final int[] pixels = key.lod() == 0
+            ? composeLod0(store, key.tileX(), key.tileZ())
+            : composeLodN(store, key);
+        return TileUpdate.fullTile(key, pixels);
+    }
+
+    /** One LOD-0 region (256x256 blocks, 1 pixel/block), fully transparent where untouched. */
+    private static int[] composeLod0(final ColumnStore store, final int regionX, final int regionZ) {
         final int[] pixels = new int[RegionColumns.SIZE * RegionColumns.SIZE];
+        final RegionColumns region = store.region(regionX, regionZ);
         if (region != null) {
-            final RegionColumns west = store.region(key.tileX() - 1, key.tileZ());
-            final RegionColumns south = store.region(key.tileX(), key.tileZ() + 1);
-            final RegionColumns southWest = store.region(key.tileX() - 1, key.tileZ() + 1);
+            final RegionColumns west = store.region(regionX - 1, regionZ);
+            final RegionColumns south = store.region(regionX, regionZ + 1);
+            final RegionColumns southWest = store.region(regionX - 1, regionZ + 1);
             composeRegion(region, west, south, southWest, pixels);
         }
-        return TileUpdate.fullTile(key, pixels);
+        return pixels;
+    }
+
+    /**
+     * A LOD-{@code key.lod()} tile covers {@code 2^lod x 2^lod} LOD-0 regions. Each
+     * covered region is composed exactly as at LOD0 (reusing {@link #composeLod0}, so
+     * cross-region slope shading at every LOD-0 boundary - including ones that fall
+     * inside this LOD's tile, not just at its own edges - stays correct), then
+     * box-averaged down by {@code 2^lod} (via repeated 2x2 {@link Argb#average4}
+     * passes, i.e. a small mipmap chain) and stitched into its quadrant of the
+     * 256x256 output. Regions with no data at all are skipped, leaving their
+     * quadrant at the default fully-transparent value.
+     */
+    private static int[] composeLodN(final ColumnStore store, final TileKey key) {
+        final int lod = key.lod();
+        final int size = RegionColumns.SIZE;
+        final int regionsPerSide = 1 << lod;
+        final int subSize = size >> lod;
+        final int baseRegionX = key.tileX() << lod;
+        final int baseRegionZ = key.tileZ() << lod;
+        final int[] outPixels = new int[size * size];
+        for (int dz = 0; dz < regionsPerSide; dz++) {
+            for (int dx = 0; dx < regionsPerSide; dx++) {
+                final int regionX = baseRegionX + dx;
+                final int regionZ = baseRegionZ + dz;
+                if (store.region(regionX, regionZ) == null) {
+                    continue;
+                }
+                final int[] full = composeLod0(store, regionX, regionZ);
+                final int[] downsampled = downsample(full, size, lod);
+                stitch(downsampled, subSize, outPixels, dx * subSize, dz * subSize);
+            }
+        }
+        return outPixels;
+    }
+
+    /** Repeated 2x2 box-average halving, {@code steps} times: {@code size -> size >> steps}. */
+    private static int[] downsample(final int[] src, final int size, final int steps) {
+        int[] current = src;
+        int currentSize = size;
+        for (int step = 0; step < steps; step++) {
+            final int nextSize = currentSize / 2;
+            final int[] next = new int[nextSize * nextSize];
+            for (int z = 0; z < nextSize; z++) {
+                final int z0 = z * 2;
+                final int z1 = z0 + 1;
+                for (int x = 0; x < nextSize; x++) {
+                    final int x0 = x * 2;
+                    final int x1 = x0 + 1;
+                    next[z * nextSize + x] = Argb.average4(
+                        current[z0 * currentSize + x0], current[z0 * currentSize + x1],
+                        current[z1 * currentSize + x0], current[z1 * currentSize + x1]
+                    );
+                }
+            }
+            current = next;
+            currentSize = nextSize;
+        }
+        return current;
+    }
+
+    /** Copies a {@code blockSize x blockSize} block into the 256x256 {@code out} at pixel offset (offsetX, offsetZ). */
+    private static void stitch(final int[] block, final int blockSize, final int[] out, final int offsetX, final int offsetZ) {
+        final int outSize = RegionColumns.SIZE;
+        for (int z = 0; z < blockSize; z++) {
+            System.arraycopy(block, z * blockSize, out, (offsetZ + z) * outSize + offsetX, blockSize);
+        }
     }
 
     private static void composeRegion(
