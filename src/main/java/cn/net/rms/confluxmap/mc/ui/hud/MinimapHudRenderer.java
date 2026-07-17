@@ -13,17 +13,31 @@ import java.util.Optional;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.text.Text;
+import net.minecraft.text.TranslatableText;
+import net.minecraft.util.Identifier;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Vec3f;
+import net.minecraft.util.registry.Registry;
+import net.minecraft.world.biome.Biome;
 
 /**
- * Renders the always-on minimap HUD: a north-locked square, 1 block/pixel at
- * LOD0, centered on the player, showing {@link MapLayer#SURFACE} (other layers
- * are a later slice). Render thread only (it's an {@link HudRenderCallback}).
+ * Renders the always-on minimap HUD showing {@link MapLayer#SURFACE}.
+ * Supports zoom (0.5/1/2/4 blocks per pixel), player-facing-up rotation
+ * (map rotates, arrow stays up) or north-locked mode (arrow rotates),
+ * square scissor or circular alpha-mask clipping, a center arrow,
+ * upright cardinal letters, and a coordinates/biome info line.
+ * Render thread only (it's an {@link HudRenderCallback}).
  */
 public final class MinimapHudRenderer {
     private static final int MARGIN = 4;
     private static final int BORDER_THICKNESS = 1;
     private static final int BORDER_COLOR = 0xB0FFFFFF;
     private static final int BACKGROUND_COLOR = 0x80101018;
+    private static final int TEXT_COLOR = 0xFFFFFFFF;
+    private static final int ARROW_OUTLINE = 0xFF101010;
+    private static final int ARROW_FILL = 0xFFFFFFFF;
+    private static final float[] BLOCKS_PER_PIXEL = {0.5f, 1f, 2f, 4f};
 
     private final MinecraftClient client;
     private final ConfluxConfig config;
@@ -53,7 +67,7 @@ public final class MinimapHudRenderer {
         if (!config.minimapEnabled || !gameBridge.session().active()) {
             return;
         }
-        final Optional<PlayerView> playerView = gameBridge.player();
+        final Optional<PlayerView> playerView = gameBridge.player(tickDelta);
         if (playerView.isEmpty()) {
             return;
         }
@@ -63,82 +77,159 @@ public final class MinimapHudRenderer {
         tiles.setViewpoint(player.blockX(), player.blockZ());
 
         final int size = config.minimapSize;
-        final int screenWidth = client.getWindow().getScaledWidth();
-        final int screenHeight = client.getWindow().getScaledHeight();
-        final int x0 = originX(screenWidth, size);
-        final int y0 = originY(screenHeight, size);
+        final int x0 = originX(client.getWindow().getScaledWidth(), size);
+        final int y0 = originY(client.getWindow().getScaledHeight(), size);
+        final float centerX = x0 + size / 2f;
+        final float centerY = y0 + size / 2f;
+        final boolean circle = config.minimapShape == ConfluxConfig.Shape.CIRCLE;
+        final boolean rotate = config.minimapRotate;
+        final float mapAngle = rotate ? 180f - player.yawDegrees() : 0f;
 
-        RenderUtil.fillRect(matrices, x0, y0, size, size, BACKGROUND_COLOR);
+        if (circle) {
+            RenderUtil.stampCircleAlpha(matrices, centerX, centerY, size / 2f);
+            RenderUtil.beginMaskedQuads();
+        } else {
+            RenderUtil.fillRect(matrices, x0, y0, size, size, BACKGROUND_COLOR);
+            RenderUtil.enableScissor(client, x0, y0, size, size);
+            RenderUtil.beginTexturedQuads();
+        }
 
-        RenderUtil.enableScissor(client, x0, y0, size, size);
-        RenderUtil.beginTexturedQuads();
-        drawTiles(matrices, x0, y0, size, player.blockX(), player.blockZ());
-        RenderUtil.disableScissor();
+        matrices.push();
+        matrices.translate(centerX, centerY, 0);
+        if (rotate) {
+            matrices.multiply(Vec3f.POSITIVE_Z.getDegreesQuaternion(mapAngle));
+        }
+        drawTiles(matrices, size, rotate, player);
+        matrices.pop();
 
-        drawBorder(matrices, x0, y0, size);
+        if (circle) {
+            RenderUtil.endMaskedQuads(matrices, x0, y0, size, size);
+            RenderUtil.drawRing(matrices, centerX, centerY, size / 2f, BORDER_THICKNESS, BORDER_COLOR);
+        } else {
+            RenderUtil.disableScissor();
+            drawBorder(matrices, x0, y0, size);
+        }
+
+        drawCardinals(matrices, centerX, centerY, size, mapAngle);
+        drawPlayerArrow(matrices, centerX, centerY, rotate ? 0f : player.yawDegrees() + 180f);
+        drawInfoText(matrices, player, x0, y0, size);
     }
 
-    private void drawTiles(
-        final MatrixStack matrices,
-        final int x0,
-        final int y0,
-        final int size,
-        final int centerBlockX,
-        final int centerBlockZ
-    ) {
-        final int minX = centerBlockX - size / 2;
-        final int minZ = centerBlockZ - size / 2;
-        final int maxX = minX + size;
-        final int maxZ = minZ + size;
+    /**
+     * Tiles are drawn as full 256-block quads positioned relative to the player,
+     * in a coordinate space whose origin is the minimap center (the caller has
+     * already translated/rotated the matrix). Clipping crops the excess.
+     */
+    private void drawTiles(final MatrixStack matrices, final int size, final boolean rotate, final PlayerView player) {
+        final float blocksPerPixel = BLOCKS_PER_PIXEL[config.minimapZoomIndex];
+        final float pxPerBlock = 1f / blocksPerPixel;
+        final float coverRadius = size / 2f * blocksPerPixel * (rotate ? 1.4143f : 1f) + 8f;
 
-        final int firstTileX = TileMath.blockToTile(minX);
-        final int lastTileX = TileMath.blockToTile(maxX - 1);
-        final int firstTileZ = TileMath.blockToTile(minZ);
-        final int lastTileZ = TileMath.blockToTile(maxZ - 1);
+        final int firstTileX = TileMath.blockToTile((int) Math.floor(player.x() - coverRadius));
+        final int lastTileX = TileMath.blockToTile((int) Math.ceil(player.x() + coverRadius));
+        final int firstTileZ = TileMath.blockToTile((int) Math.floor(player.z() - coverRadius));
+        final int lastTileZ = TileMath.blockToTile((int) Math.ceil(player.z() + coverRadius));
 
         for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
             for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
-                drawOneTile(matrices, x0, y0, minX, minZ, maxX, maxZ, tileX, tileZ);
+                final TileKey key = new TileKey(
+                    gameBridge.session().world(), gameBridge.session().dimension(),
+                    MapLayer.SURFACE.cacheId(), 0, tileX, tileZ
+                );
+                if (!textures.bind(key)) {
+                    continue;
+                }
+                final float screenX = (float) ((key.originBlockX() - player.x()) * pxPerBlock);
+                final float screenY = (float) ((key.originBlockZ() - player.z()) * pxPerBlock);
+                final float quadSize = TileMath.TILE_SIZE * pxPerBlock;
+                RenderUtil.drawQuad(matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f);
             }
         }
     }
 
-    private void drawOneTile(
+    private void drawPlayerArrow(final MatrixStack matrices, final float centerX, final float centerY, final float angle) {
+        matrices.push();
+        matrices.translate(centerX, centerY, 0);
+        matrices.multiply(Vec3f.POSITIVE_Z.getDegreesQuaternion(angle));
+        RenderUtil.fillTriangle(matrices, 0f, -6.5f, -5f, 5.5f, 5f, 5.5f, ARROW_OUTLINE);
+        RenderUtil.fillTriangle(matrices, 0f, -5f, -3.5f, 4f, 3.5f, 4f, ARROW_FILL);
+        matrices.pop();
+    }
+
+    /** Cardinal letters sit on the (possibly rotated) compass ring but are always drawn upright. */
+    private void drawCardinals(final MatrixStack matrices, final float centerX, final float centerY, final int size, final float mapAngle) {
+        final float radius = size / 2f - 7f;
+        final double rad = Math.toRadians(mapAngle);
+        final float cos = (float) Math.cos(rad);
+        final float sin = (float) Math.sin(rad);
+        drawCardinal(matrices, "N", centerX, centerY, 0f, -radius, cos, sin);
+        drawCardinal(matrices, "E", centerX, centerY, radius, 0f, cos, sin);
+        drawCardinal(matrices, "S", centerX, centerY, 0f, radius, cos, sin);
+        drawCardinal(matrices, "W", centerX, centerY, -radius, 0f, cos, sin);
+    }
+
+    private void drawCardinal(
         final MatrixStack matrices,
-        final int x0,
-        final int y0,
-        final int minX,
-        final int minZ,
-        final int maxX,
-        final int maxZ,
-        final int tileX,
-        final int tileZ
+        final String letter,
+        final float centerX,
+        final float centerY,
+        final float dirX,
+        final float dirY,
+        final float cos,
+        final float sin
     ) {
-        final TileKey key = new TileKey(
-            gameBridge.session().world(), gameBridge.session().dimension(), MapLayer.SURFACE.cacheId(), 0, tileX, tileZ
-        );
-        final int tileOriginX = key.originBlockX();
-        final int tileOriginZ = key.originBlockZ();
-        final int overlapMinX = Math.max(minX, tileOriginX);
-        final int overlapMaxX = Math.min(maxX, tileOriginX + TileMath.TILE_SIZE);
-        final int overlapMinZ = Math.max(minZ, tileOriginZ);
-        final int overlapMaxZ = Math.min(maxZ, tileOriginZ + TileMath.TILE_SIZE);
-        if (overlapMinX >= overlapMaxX || overlapMinZ >= overlapMaxZ) {
+        final float x = centerX + dirX * cos - dirY * sin;
+        final float y = centerY + dirX * sin + dirY * cos;
+        final int width = client.textRenderer.getWidth(letter);
+        client.textRenderer.drawWithShadow(matrices, letter, x - width / 2f, y - 4f, TEXT_COLOR);
+    }
+
+    private void drawInfoText(final MatrixStack matrices, final PlayerView player, final int x0, final int y0, final int size) {
+        if (!config.showCoordinates && !config.showBiome) {
             return;
         }
-        if (!textures.bind(key)) {
-            // Not cached yet (already requested by bind()); background shows through until composed.
-            return;
+        final boolean topCorner = config.minimapCorner == ConfluxConfig.Corner.TOP_LEFT
+            || config.minimapCorner == ConfluxConfig.Corner.TOP_RIGHT;
+        final int lineHeight = 10;
+        int lines = 0;
+        if (config.showCoordinates) {
+            lines++;
         }
-        final float screenX = x0 + (overlapMinX - minX);
-        final float screenY = y0 + (overlapMinZ - minZ);
-        final float width = overlapMaxX - overlapMinX;
-        final float height = overlapMaxZ - overlapMinZ;
-        final float u0 = (overlapMinX - tileOriginX) / (float) TileMath.TILE_SIZE;
-        final float u1 = (overlapMaxX - tileOriginX) / (float) TileMath.TILE_SIZE;
-        final float v0 = (overlapMinZ - tileOriginZ) / (float) TileMath.TILE_SIZE;
-        final float v1 = (overlapMaxZ - tileOriginZ) / (float) TileMath.TILE_SIZE;
-        RenderUtil.drawQuad(matrices, screenX, screenY, width, height, u0, v0, u1, v1);
+        if (config.showBiome) {
+            lines++;
+        }
+        float y = topCorner ? y0 + size + 3 : y0 - lines * lineHeight - 3;
+        final float centerX = x0 + size / 2f;
+
+        if (config.showCoordinates) {
+            final String coords = player.blockX() + ", " + player.blockY() + ", " + player.blockZ();
+            drawCenteredLine(matrices, coords, centerX, y);
+            y += lineHeight;
+        }
+        if (config.showBiome) {
+            final String biome = biomeName(player);
+            if (!biome.isEmpty()) {
+                drawCenteredLine(matrices, biome, centerX, y);
+            }
+        }
+    }
+
+    private void drawCenteredLine(final MatrixStack matrices, final String text, final float centerX, final float y) {
+        final int width = client.textRenderer.getWidth(text);
+        client.textRenderer.drawWithShadow(matrices, text, centerX - width / 2f, y, TEXT_COLOR);
+    }
+
+    private String biomeName(final PlayerView player) {
+        if (client.world == null) {
+            return "";
+        }
+        final Biome biome = client.world.getBiome(new BlockPos(player.blockX(), player.blockY(), player.blockZ()));
+        final Identifier id = client.world.getRegistryManager().get(Registry.BIOME_KEY).getId(biome);
+        if (id == null) {
+            return "";
+        }
+        final Text name = new TranslatableText("biome." + id.getNamespace() + "." + id.getPath());
+        return name.getString();
     }
 
     private void drawBorder(final MatrixStack matrices, final int x0, final int y0, final int size) {

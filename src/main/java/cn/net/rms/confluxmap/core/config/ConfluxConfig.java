@@ -18,7 +18,7 @@ public final class ConfluxConfig {
     public Corner minimapCorner = Corner.TOP_RIGHT;
     public Shape minimapShape = Shape.SQUARE;
     public int minimapSize = 128;
-    public boolean minimapRotate = false;
+    public boolean minimapRotate = true;
     public int minimapZoomIndex = 1;
     public boolean showCoordinates = true;
     public boolean showBiome = true;

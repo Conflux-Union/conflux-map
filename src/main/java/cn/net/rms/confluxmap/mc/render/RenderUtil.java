@@ -83,6 +83,136 @@ public final class RenderUtil {
         RenderSystem.disableScissor();
     }
 
+    /** Flat-colored filled triangle in GUI space (player arrow etc.). */
+    public static void fillTriangle(
+        final MatrixStack matrices,
+        final float x0, final float y0,
+        final float x1, final float y1,
+        final float x2, final float y2,
+        final int argbColor
+    ) {
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        final float a = Argb.alpha(argbColor) / 255f;
+        final float r = Argb.red(argbColor) / 255f;
+        final float g = Argb.green(argbColor) / 255f;
+        final float b = Argb.blue(argbColor) / 255f;
+        final Matrix4f model = matrices.peek().getModel();
+        final Tessellator tessellator = Tessellator.getInstance();
+        final BufferBuilder buffer = tessellator.getBuffer();
+        buffer.begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
+        buffer.vertex(model, x0, y0, 0).color(r, g, b, a).next();
+        buffer.vertex(model, x1, y1, 0).color(r, g, b, a).next();
+        buffer.vertex(model, x2, y2, 0).color(r, g, b, a).next();
+        tessellator.draw();
+    }
+
+    /**
+     * Pass 1 of the circular mask: stamp the destination alpha channel with 0 across
+     * the bounding square, then 1 inside the circle. Colors are untouched. After this,
+     * draw the map with {@link #beginMaskedQuads()} so it only lands inside the circle,
+     * then call {@link #endMaskedQuads(MatrixStack, float, float, float, float)}.
+     */
+    public static void stampCircleAlpha(
+        final MatrixStack matrices,
+        final float centerX,
+        final float centerY,
+        final float radius
+    ) {
+        RenderSystem.colorMask(false, false, false, true);
+        RenderSystem.disableBlend();
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+        final Matrix4f model = matrices.peek().getModel();
+        final Tessellator tessellator = Tessellator.getInstance();
+        final BufferBuilder buffer = tessellator.getBuffer();
+        buffer.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+        buffer.vertex(model, centerX - radius, centerY + radius, 0).color(0f, 0f, 0f, 0f).next();
+        buffer.vertex(model, centerX + radius, centerY + radius, 0).color(0f, 0f, 0f, 0f).next();
+        buffer.vertex(model, centerX + radius, centerY - radius, 0).color(0f, 0f, 0f, 0f).next();
+        buffer.vertex(model, centerX - radius, centerY - radius, 0).color(0f, 0f, 0f, 0f).next();
+        tessellator.draw();
+        buffer.begin(VertexFormat.DrawMode.TRIANGLE_FAN, VertexFormats.POSITION_COLOR);
+        buffer.vertex(model, centerX, centerY, 0).color(0f, 0f, 0f, 1f).next();
+        final int segments = 48;
+        for (int i = 0; i <= segments; i++) {
+            final double angle = 2.0 * Math.PI * i / segments;
+            buffer.vertex(model, centerX + (float) (Math.cos(angle) * radius), centerY + (float) (Math.sin(angle) * radius), 0)
+                .color(0f, 0f, 0f, 1f).next();
+        }
+        tessellator.draw();
+        RenderSystem.colorMask(true, true, true, true);
+    }
+
+    /** Pass 2 setup: textured quads that only render where the destination alpha was stamped 1. */
+    public static void beginMaskedQuads() {
+        RenderSystem.setShader(GameRenderer::getPositionTexShader);
+        RenderSystem.enableBlend();
+        RenderSystem.blendFuncSeparate(
+            com.mojang.blaze3d.platform.GlStateManager.SrcFactor.DST_ALPHA,
+            com.mojang.blaze3d.platform.GlStateManager.DstFactor.ONE_MINUS_DST_ALPHA,
+            com.mojang.blaze3d.platform.GlStateManager.SrcFactor.ZERO,
+            com.mojang.blaze3d.platform.GlStateManager.DstFactor.ONE
+        );
+    }
+
+    /** Restores default blending and repairs the destination alpha the mask pass dirtied. */
+    public static void endMaskedQuads(
+        final MatrixStack matrices,
+        final float x,
+        final float y,
+        final float width,
+        final float height
+    ) {
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.colorMask(false, false, false, true);
+        RenderSystem.disableBlend();
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+        final Matrix4f model = matrices.peek().getModel();
+        final Tessellator tessellator = Tessellator.getInstance();
+        final BufferBuilder buffer = tessellator.getBuffer();
+        buffer.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+        buffer.vertex(model, x, y + height, 0).color(0f, 0f, 0f, 1f).next();
+        buffer.vertex(model, x + width, y + height, 0).color(0f, 0f, 0f, 1f).next();
+        buffer.vertex(model, x + width, y, 0).color(0f, 0f, 0f, 1f).next();
+        buffer.vertex(model, x, y, 0).color(0f, 0f, 0f, 1f).next();
+        tessellator.draw();
+        RenderSystem.colorMask(true, true, true, true);
+        RenderSystem.enableBlend();
+    }
+
+    /** Anti-clockwise ring outline (circle border), drawn as a triangle strip. */
+    public static void drawRing(
+        final MatrixStack matrices,
+        final float centerX,
+        final float centerY,
+        final float outerRadius,
+        final float thickness,
+        final int argbColor
+    ) {
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        final float a = Argb.alpha(argbColor) / 255f;
+        final float r = Argb.red(argbColor) / 255f;
+        final float g = Argb.green(argbColor) / 255f;
+        final float b = Argb.blue(argbColor) / 255f;
+        final Matrix4f model = matrices.peek().getModel();
+        final Tessellator tessellator = Tessellator.getInstance();
+        final BufferBuilder buffer = tessellator.getBuffer();
+        buffer.begin(VertexFormat.DrawMode.TRIANGLE_STRIP, VertexFormats.POSITION_COLOR);
+        final int segments = 48;
+        final float inner = outerRadius - thickness;
+        for (int i = 0; i <= segments; i++) {
+            final double angle = 2.0 * Math.PI * i / segments;
+            final float cos = (float) Math.cos(angle);
+            final float sin = (float) Math.sin(angle);
+            buffer.vertex(model, centerX + cos * outerRadius, centerY + sin * outerRadius, 0).color(r, g, b, a).next();
+            buffer.vertex(model, centerX + cos * inner, centerY + sin * inner, 0).color(r, g, b, a).next();
+        }
+        tessellator.draw();
+    }
+
     /** Flat-colored axis-aligned quad (background/border), independent of any bound texture. */
     public static void fillRect(final MatrixStack matrices, final float x, final float y, final float width, final float height, final int argbColor) {
         RenderSystem.setShader(GameRenderer::getPositionColorShader);

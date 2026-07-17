@@ -8,6 +8,7 @@ import java.util.Optional;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.math.MathHelper;
 
 public final class McGameBridge implements GameBridge {
     private final MinecraftClient client;
@@ -24,15 +25,17 @@ public final class McGameBridge implements GameBridge {
     }
 
     @Override
-    public Optional<PlayerView> player() {
+    public Optional<PlayerView> player(final float tickDelta) {
         final ClientPlayerEntity player = client.player;
         if (player == null || client.world == null) {
             return Optional.empty();
         }
         final Identifier dim = client.world.getRegistryKey().getValue();
         return Optional.of(new PlayerView(
-            player.getX(), player.getY(), player.getZ(),
-            player.getYaw(1.0F),
+            MathHelper.lerp(tickDelta, player.prevX, player.getX()),
+            MathHelper.lerp(tickDelta, player.prevY, player.getY()),
+            MathHelper.lerp(tickDelta, player.prevZ, player.getZ()),
+            player.getYaw(tickDelta),
             DimensionId.of(dim.getNamespace(), dim.getPath())
         ));
     }
