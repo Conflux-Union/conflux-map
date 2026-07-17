@@ -71,6 +71,9 @@ public final class ConfigScreen extends Screen {
 
     private Category category = Category.MINIMAP;
     private int rowWidth = MAX_ROW_WIDTH;
+    /** Rows scroll in ROW_HEIGHT steps; widgets outside the viewport are simply not built. */
+    private int scrollOffset;
+    private int contentHeight;
 
     public ConfigScreen() {
         super(new TranslatableText("confluxmap.screen.config.title"));
@@ -88,7 +91,27 @@ public final class ConfigScreen extends Screen {
     @Override
     protected void init() {
         rowWidth = Math.min(MAX_ROW_WIDTH, width - MARGIN * 2);
+        scrollOffset = 0;
         rebuild();
+    }
+
+    private int viewportHeight() {
+        return Math.max(ROW_HEIGHT, height - BOTTOM_MARGIN - ROW_TOP);
+    }
+
+    private boolean rowVisible(final int y) {
+        return y >= ROW_TOP && y + ROW_HEIGHT - 2 <= height - BOTTOM_MARGIN;
+    }
+
+    @Override
+    public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
+        final int maxScroll = Math.max(0, contentHeight - viewportHeight());
+        final int next = Math.max(0, Math.min(maxScroll, scrollOffset - (int) Math.signum(amount) * ROW_HEIGHT));
+        if (next != scrollOffset) {
+            scrollOffset = next;
+            rebuild();
+        }
+        return true;
     }
 
     /** Funnel point for every close path (ESC via the default {@code keyPressed}, or the Done button below). */
@@ -127,11 +150,12 @@ public final class ConfigScreen extends Screen {
 
     private void selectCategory(final Category c) {
         category = c;
+        scrollOffset = 0;
         rebuild();
     }
 
     private void addRows() {
-        int y = ROW_TOP;
+        int y = ROW_TOP - scrollOffset;
         switch (category) {
             case MINIMAP:
                 y = addToggleRow(y, "confluxmap.config.minimap.enabled", () -> config.minimapEnabled, v -> config.minimapEnabled = v);
@@ -219,6 +243,7 @@ public final class ConfigScreen extends Screen {
             default:
                 break;
         }
+        contentHeight = y + scrollOffset - ROW_TOP;
     }
 
     private int rowX() {
@@ -226,14 +251,16 @@ public final class ConfigScreen extends Screen {
     }
 
     private int addToggleRow(final int y, final String labelKey, final BooleanSupplier getter, final Consumer<Boolean> setter) {
-        addDrawableChild(new ButtonWidget(
-            rowX(), y, rowWidth, ROW_HEIGHT - 2, boolLabel(labelKey, getter.getAsBoolean()),
-            b -> {
-                final boolean next = !getter.getAsBoolean();
-                setter.accept(next);
-                b.setMessage(boolLabel(labelKey, next));
-            }
-        ));
+        if (rowVisible(y)) {
+            addDrawableChild(new ButtonWidget(
+                rowX(), y, rowWidth, ROW_HEIGHT - 2, boolLabel(labelKey, getter.getAsBoolean()),
+                b -> {
+                    final boolean next = !getter.getAsBoolean();
+                    setter.accept(next);
+                    b.setMessage(boolLabel(labelKey, next));
+                }
+            ));
+        }
         return y + ROW_HEIGHT;
     }
 
@@ -245,26 +272,30 @@ public final class ConfigScreen extends Screen {
         final Consumer<T> setter,
         final Function<T, String> valueKeyFn
     ) {
-        addDrawableChild(new ButtonWidget(
-            rowX(), y, rowWidth, ROW_HEIGHT - 2, enumLabel(labelKey, getter.get(), valueKeyFn),
-            b -> {
-                final T next = nextValue(values, getter.get());
-                setter.accept(next);
-                b.setMessage(enumLabel(labelKey, next, valueKeyFn));
-            }
-        ));
+        if (rowVisible(y)) {
+            addDrawableChild(new ButtonWidget(
+                rowX(), y, rowWidth, ROW_HEIGHT - 2, enumLabel(labelKey, getter.get(), valueKeyFn),
+                b -> {
+                    final T next = nextValue(values, getter.get());
+                    setter.accept(next);
+                    b.setMessage(enumLabel(labelKey, next, valueKeyFn));
+                }
+            ));
+        }
         return y + ROW_HEIGHT;
     }
 
     private int addZoomRow(final int y) {
-        addDrawableChild(new ButtonWidget(
-            rowX(), y, rowWidth, ROW_HEIGHT - 2, zoomLabel(config.minimapZoomIndex),
-            b -> {
-                final int next = (config.minimapZoomIndex + 1) % ZOOM_VALUE_KEYS.length;
-                config.minimapZoomIndex = next;
-                b.setMessage(zoomLabel(next));
-            }
-        ));
+        if (rowVisible(y)) {
+            addDrawableChild(new ButtonWidget(
+                rowX(), y, rowWidth, ROW_HEIGHT - 2, zoomLabel(config.minimapZoomIndex),
+                b -> {
+                    final int next = (config.minimapZoomIndex + 1) % ZOOM_VALUE_KEYS.length;
+                    config.minimapZoomIndex = next;
+                    b.setMessage(zoomLabel(next));
+                }
+            ));
+        }
         return y + ROW_HEIGHT;
     }
 
@@ -277,7 +308,9 @@ public final class ConfigScreen extends Screen {
         final IntConsumer setter,
         final IntFunction<String> valueText
     ) {
-        addDrawableChild(new IntSliderWidget(rowX(), y, rowWidth, ROW_HEIGHT - 2, min, max, labelKey, getter, setter, valueText));
+        if (rowVisible(y)) {
+            addDrawableChild(new IntSliderWidget(rowX(), y, rowWidth, ROW_HEIGHT - 2, min, max, labelKey, getter, setter, valueText));
+        }
         return y + ROW_HEIGHT;
     }
 
