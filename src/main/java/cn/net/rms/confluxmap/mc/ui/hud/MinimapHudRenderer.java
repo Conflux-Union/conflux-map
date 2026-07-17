@@ -16,6 +16,7 @@ import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
+import cn.net.rms.confluxmap.mc.render.OffscreenCanvas;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
@@ -83,6 +84,7 @@ public final class MinimapHudRenderer {
     private final GameBridge gameBridge;
     private final TileService tiles;
     private final TileTextureManager textures;
+    private final OffscreenCanvas canvas = new OffscreenCanvas();
     private final EntityRadarScanner radarScanner;
     private final EntityIconManager iconManager;
     private final LayerSelector layerSelector;
@@ -145,31 +147,40 @@ public final class MinimapHudRenderer {
         final float mapAngle = rotate ? 180f - player.yawDegrees() : 0f;
 
         if (circle) {
-            RenderUtil.stampCircleAlpha(matrices, centerX, centerY, size / 2f);
-            // The alpha mask only shapes pixels INSIDE the stamped square; the scissor
-            // stops rotated tile quads from spilling across the rest of the screen
-            // (framebuffer alpha is ~1 out there, so DST_ALPHA blending would pass).
-            RenderUtil.enableScissor(client, x0, y0, size, size);
-            RenderUtil.beginMaskedQuads();
+            // Real geometric clipping: render the square map into an off-screen canvas,
+            // then sample it back as a textured disk. Unlike destination-alpha masking
+            // this cannot leak outside the circle regardless of framebuffer state.
+            final int canvasPx = Math.max(64, (int) Math.round(size * client.getWindow().getScaleFactor()));
+            canvas.begin(canvasPx);
+            final MatrixStack fbo = new MatrixStack();
+            final float unit = canvasPx / (float) size;
+            fbo.scale(unit, unit, 1f);
+            RenderUtil.fillRect(fbo, 0, 0, size, size, BACKGROUND_COLOR);
+            fbo.push();
+            fbo.translate(size / 2f, size / 2f, 0);
+            if (rotate) {
+                fbo.multiply(Vec3f.POSITIVE_Z.getDegreesQuaternion(mapAngle));
+            }
+            RenderUtil.beginTexturedQuads();
+            drawTiles(fbo, size, rotate, player);
+            fbo.pop();
+            canvas.end(client);
+
+            RenderUtil.beginTexturedQuads();
+            RenderUtil.bindTexture(canvas.textureId());
+            RenderUtil.drawTexturedDisk(matrices, centerX, centerY, size / 2f);
+            RenderUtil.drawRing(matrices, centerX, centerY, size / 2f, BORDER_THICKNESS, BORDER_COLOR);
         } else {
             RenderUtil.fillRect(matrices, x0, y0, size, size, BACKGROUND_COLOR);
             RenderUtil.enableScissor(client, x0, y0, size, size);
             RenderUtil.beginTexturedQuads();
-        }
-
-        matrices.push();
-        matrices.translate(centerX, centerY, 0);
-        if (rotate) {
-            matrices.multiply(Vec3f.POSITIVE_Z.getDegreesQuaternion(mapAngle));
-        }
-        drawTiles(matrices, size, rotate, player);
-        matrices.pop();
-
-        if (circle) {
-            RenderUtil.endMaskedQuads(matrices, x0, y0, size, size);
-            RenderUtil.disableScissor();
-            RenderUtil.drawRing(matrices, centerX, centerY, size / 2f, BORDER_THICKNESS, BORDER_COLOR);
-        } else {
+            matrices.push();
+            matrices.translate(centerX, centerY, 0);
+            if (rotate) {
+                matrices.multiply(Vec3f.POSITIVE_Z.getDegreesQuaternion(mapAngle));
+            }
+            drawTiles(matrices, size, rotate, player);
+            matrices.pop();
             RenderUtil.disableScissor();
             drawBorder(matrices, x0, y0, size);
         }
@@ -234,7 +245,8 @@ public final class MinimapHudRenderer {
 
             if (inRange) {
                 WaypointMarkerRenderer.draw(
-                    matrices, waypoint, centerX + screenOffX, centerY + screenOffY, WAYPOINT_MARKER_HALF_SIZE, 1f, false
+                    matrices, client.textRenderer, waypoint, centerX + screenOffX, centerY + screenOffY,
+                    WAYPOINT_MARKER_HALF_SIZE, 1f, false
                 );
             } else if (config.waypointEdgeIndicatorsEnabled) {
                 final float k = circleFrame
