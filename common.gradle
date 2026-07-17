@@ -1,0 +1,40 @@
+apply plugin: 'fabric-loom'
+apply plugin: 'com.replaymod.preprocess'
+base { archivesName = "$id-$name" }
+repositories {
+    // Add repositories to retrieve artifacts from in here.
+    // You should only use this when depending on other mods because
+    // Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
+    // See https://docs.gradle.org/current/userguide/declaring_repositories.html
+    // for more information about repositories.
+}
+dependencies {
+    minecraft "com.mojang:minecraft:$name"
+    mappings "net.fabricmc:yarn:$name+build.$yarn_mappings:v2"
+    modImplementation "net.fabricmc:fabric-loader:$loader_version"
+}
+loom {
+    accessWidenerPath = file "${id}.accesswidener"
+    runs {
+        server {
+            property("mixin.debug.export", "true")
+            ideConfigGenerated true
+        }
+        client {
+            property("mixin.debug.export", "true")
+            ideConfigGenerated true
+        }
+    }
+}
+JavaVersion javaCompatibility
+if (mcVersion < 11700) javaCompatibility = JavaVersion.VERSION_1_8 else if (mcVersion < 11800) javaCompatibility = JavaVersion.VERSION_16 else if (mcVersion < 12005) javaCompatibility = JavaVersion.VERSION_17 else javaCompatibility = JavaVersion.VERSION_21
+processResources {
+    from "${id}.accesswidener"
+    filesMatching('fabric.mod.json') { expand id: id, version: version, minecraft_version: project.name, loader_version: loader_version }
+    filesMatching("${id}.mixins.json") { expand java_version: javaCompatibility.getMajorVersion() }
+}
+java {
+    sourceCompatibility = javaCompatibility
+    targetCompatibility = javaCompatibility
+}
+jar { from '../../LICENSE' }
