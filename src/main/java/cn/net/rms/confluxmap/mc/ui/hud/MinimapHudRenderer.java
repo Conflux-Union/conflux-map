@@ -70,14 +70,13 @@ public final class MinimapHudRenderer {
     // size, with a colored ring around it indicating the category - independent of the plain
     // dot colors above, which stay unchanged for the config.radarIconsEnabled=false / no-icon
     // fallback path.
-    private static final float RADAR_ICON_HALF_SIZE = 4f;
+    private static final float RADAR_ICON_HALF_SIZE = 5f;
     private static final float RADAR_ICON_SIZE = RADAR_ICON_HALF_SIZE * 2f;
     /** Name labels sit just below the icon's 1px square border. */
     private static final float RADAR_NAME_OFFSET = 7f;
-    private static final int RADAR_RING_PLAYER_COLOR = 0xFFFFFFFF;
-    private static final int RADAR_RING_HOSTILE_COLOR = 0xFFE04040;
-    private static final int RADAR_RING_PASSIVE_COLOR = 0xFF40C040;
-    private static final int RADAR_RING_OTHER_COLOR = 0xFF909090;
+    private static final int RADAR_ICON_CONTOUR = 0xB0000000;
+    /** No elevation treatment inside this band - nearby mobs always render fully readable. */
+    private static final int RADAR_DEADZONE = 8;
 
     private final MinecraftClient client;
     private final ConfluxConfig config;
@@ -345,7 +344,7 @@ public final class MinimapHudRenderer {
         if (config.radarIconsEnabled && live != null) {
             final EntityIconManager.FaceIcon icon = iconManager.iconFor(live);
             if (icon != null) {
-                drawRadarIcon(matrices, entry.category(), icon, x, y, yDelta);
+                drawRadarIcon(matrices, icon, x, y, yDelta);
                 if (config.radarShowPlayerNames && entry.category() == RadarCategory.PLAYER && entry.name() != null) {
                     drawCenteredLine(matrices, entry.name(), x, y + RADAR_NAME_OFFSET);
                 }
@@ -379,7 +378,7 @@ public final class MinimapHudRenderer {
      * reference spec applies the same alpha/dim multiply to its headgear overlay layer.
      */
     private void drawRadarIcon(
-        final MatrixStack matrices, final RadarCategory category, final EntityIconManager.FaceIcon icon, final float x, final float y, final int yDelta
+        final MatrixStack matrices, final EntityIconManager.FaceIcon icon, final float x, final float y, final int yDelta
     ) {
         final int tint = elevationColor(0xFFFFFFFF, yDelta);
         RenderUtil.bindTexture(client, icon.texture());
@@ -394,9 +393,10 @@ public final class MinimapHudRenderer {
                 icon.ou0(), icon.ov0(), icon.ou1(), icon.ov1(), tint
             );
         }
-        // VoxelMap-style presentation: a clean face icon with a thin 1px square border
-        // (faction-colored), instead of a heavy circular ring.
-        final int borderColor = elevationColor(ringColor(category), yDelta);
+        // VoxelMap-style presentation: a clean face icon with only a thin dark contour
+        // for contrast against the terrain - no faction frames (user feedback: match
+        // VoxelMap; a night full of hostiles turned colored frames into visual noise).
+        final int borderColor = elevationColor(RADAR_ICON_CONTOUR, yDelta);
         final float left = x - RADAR_ICON_HALF_SIZE - 1f;
         final float top = y - RADAR_ICON_HALF_SIZE - 1f;
         final float edge = RADAR_ICON_SIZE + 2f;
@@ -419,20 +419,6 @@ public final class MinimapHudRenderer {
         }
     }
 
-    /** Border-ring colors (radar-icons.md P2 feedback: red/green/white/gray), distinct from the plain-dot palette above. */
-    private static int ringColor(final RadarCategory category) {
-        switch (category) {
-            case PLAYER:
-                return RADAR_RING_PLAYER_COLOR;
-            case HOSTILE:
-                return RADAR_RING_HOSTILE_COLOR;
-            case PASSIVE:
-                return RADAR_RING_PASSIVE_COLOR;
-            default:
-                return RADAR_RING_OTHER_COLOR;
-        }
-    }
-
     /**
      * Above/below indication (radar-icons.md sec 3), simplified to a fixed 32-block window
      * (no zoom scaling, no doubled window for phantoms) rather than the spec's Full-mode icon
@@ -442,13 +428,13 @@ public final class MinimapHudRenderer {
      * toward black as closeness drops, floored at 30% brightness so it never fully vanishes.
      */
     private static int elevationColor(final int base, final int yDelta) {
-        final float linear = 1f - Math.min(Math.abs(yDelta), RADAR_VERTICAL_WINDOW) / (float) RADAR_VERTICAL_WINDOW;
-        final float closeness = linear * linear;
+        final int beyond = Math.max(0, Math.abs(yDelta) - RADAR_DEADZONE);
+        final float closeness = 1f - Math.min(beyond / (float) (RADAR_VERTICAL_WINDOW - RADAR_DEADZONE), 1f);
         if (yDelta > 0) {
-            final int alpha = Math.round(closeness * 255f);
+            final int alpha = Math.round(Math.max(closeness, 0.35f) * 255f);
             return (base & 0x00FFFFFF) | (alpha << 24);
         }
-        final float brightness = Math.max(closeness, RADAR_DIM_FLOOR);
+        final float brightness = Math.max(closeness, 0.5f);
         return Argb.scale(base, brightness);
     }
 
