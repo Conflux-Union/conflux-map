@@ -1,0 +1,80 @@
+package cn.net.rms.confluxmap.core.util;
+
+/** Packed 0xAARRGGBB color math used by the map pipeline. */
+public final class Argb {
+    public static final int OPAQUE_BLACK = 0xFF000000;
+    public static final int TRANSPARENT = 0x00000000;
+
+    private Argb() {
+    }
+
+    public static int pack(final int a, final int r, final int g, final int b) {
+        return (a & 0xFF) << 24 | (r & 0xFF) << 16 | (g & 0xFF) << 8 | (b & 0xFF);
+    }
+
+    public static int alpha(final int argb) {
+        return argb >>> 24;
+    }
+
+    public static int red(final int argb) {
+        return (argb >> 16) & 0xFF;
+    }
+
+    public static int green(final int argb) {
+        return (argb >> 8) & 0xFF;
+    }
+
+    public static int blue(final int argb) {
+        return argb & 0xFF;
+    }
+
+    /** Per-channel multiply of two colors, alpha taken from {@code base}. */
+    public static int multiply(final int base, final int tint) {
+        final int r = red(base) * red(tint) / 255;
+        final int g = green(base) * green(tint) / 255;
+        final int b = blue(base) * blue(tint) / 255;
+        return (base & 0xFF000000) | r << 16 | g << 8 | b;
+    }
+
+    /** Scale RGB channels by {@code factor} in [0, 1], keeping alpha. */
+    public static int scale(final int argb, final float factor) {
+        final int r = clampChannel((int) (red(argb) * factor));
+        final int g = clampChannel((int) (green(argb) * factor));
+        final int b = clampChannel((int) (blue(argb) * factor));
+        return (argb & 0xFF000000) | r << 16 | g << 8 | b;
+    }
+
+    /** Blend {@code over} onto {@code under} using {@code over}'s alpha. */
+    public static int blendOver(final int under, final int over) {
+        final int a = alpha(over);
+        if (a == 255) {
+            return over;
+        }
+        if (a == 0) {
+            return under;
+        }
+        final int inv = 255 - a;
+        final int r = (red(over) * a + red(under) * inv) / 255;
+        final int g = (green(over) * a + green(under) * inv) / 255;
+        final int b = (blue(over) * a + blue(under) * inv) / 255;
+        return (under & 0xFF000000) | r << 16 | g << 8 | b;
+    }
+
+    /** Convert to the ABGR byte order used by native image buffers. */
+    public static int toAbgr(final int argb) {
+        return (argb & 0xFF00FF00) | (argb & 0x00FF0000) >>> 16 | (argb & 0x000000FF) << 16;
+    }
+
+    /** Average of 4 colors, used by LOD downsampling. */
+    public static int average4(final int c0, final int c1, final int c2, final int c3) {
+        final int a = (alpha(c0) + alpha(c1) + alpha(c2) + alpha(c3)) >> 2;
+        final int r = (red(c0) + red(c1) + red(c2) + red(c3)) >> 2;
+        final int g = (green(c0) + green(c1) + green(c2) + green(c3)) >> 2;
+        final int b = (blue(c0) + blue(c1) + blue(c2) + blue(c3)) >> 2;
+        return pack(a, r, g, b);
+    }
+
+    private static int clampChannel(final int v) {
+        return v < 0 ? 0 : Math.min(v, 255);
+    }
+}

@@ -39,3 +39,29 @@ java {
     targetCompatibility = javaCompatibility
 }
 jar { from '../../LICENSE' }
+tasks.register('checkCoreIsolation') {
+    group = 'verification'
+    description = 'Fails if core/bridge/spi packages import Minecraft, Fabric, mixin, or LWJGL classes'
+    doLast {
+        final List<String> violations = []
+        final def forbidden = ~/^import\s+(static\s+)?(net\.minecraft|net\.fabricmc|com\.mojang|org\.spongepowered|org\.lwjgl)/
+        ['core', 'bridge', 'spi'].each { final String pkg ->
+            final File dir = rootProject.file("src/main/java/cn/net/rms/confluxmap/$pkg")
+            if (dir.exists()) {
+                dir.eachFileRecurse { final File f ->
+                    if (f.name.endsWith('.java')) {
+                        f.readLines().eachWithIndex { final String line, final int i ->
+                            if (line.trim() =~ forbidden) {
+                                violations << "${f.absolutePath}:${i + 1}: ${line.trim()}"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (!violations.empty) {
+            throw new GradleException("Core isolation violated:\n" + violations.join('\n'))
+        }
+    }
+}
+check.dependsOn 'checkCoreIsolation'
