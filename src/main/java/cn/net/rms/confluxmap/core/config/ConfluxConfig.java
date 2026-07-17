@@ -55,6 +55,8 @@ public final class ConfluxConfig {
     public int radarRange = 80;
     public boolean radarShowPlayerNames = true;
     public int radarMaxEntities = 100;
+    /** VoxelMap-style entity head icons with a hostile/passive/player/other border ring, instead of the plain shaped dot. */
+    public boolean radarIconsEnabled = true;
     /** 3-D straight-line blocks; 0 means "no cutoff" (see waypoint-ux.md S7). */
     public int waypointRenderDistance = 0;
     public boolean waypointEdgeIndicatorsEnabled = true;
@@ -90,6 +92,7 @@ public final class ConfluxConfig {
         c.radarRange = radarRange;
         c.radarShowPlayerNames = radarShowPlayerNames;
         c.radarMaxEntities = radarMaxEntities;
+        c.radarIconsEnabled = radarIconsEnabled;
         c.waypointRenderDistance = waypointRenderDistance;
         c.waypointEdgeIndicatorsEnabled = waypointEdgeIndicatorsEnabled;
         c.deathPointsKept = deathPointsKept;

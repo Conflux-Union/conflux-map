@@ -62,6 +62,7 @@
   "confluxmap.config.radar.range": "Range: %s",
   "confluxmap.config.radar.show_player_names": "Show Player Names: %s",
   "confluxmap.config.radar.max_entities": "Max Entities: %s",
+  "confluxmap.config.radar.icons_enabled": "Entity Head Icons: %s",
   "confluxmap.config.waypoints.render_distance": "Render Distance: %s",
   "confluxmap.config.waypoints.edge_indicators": "Edge Indicators: %s",
   "confluxmap.config.waypoints.death_points_kept": "Death Points Kept: %s",

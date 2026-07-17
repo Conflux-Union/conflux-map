@@ -14,6 +14,7 @@ import cn.net.rms.confluxmap.mc.color.BiomeTintResolver;
 import cn.net.rms.confluxmap.mc.color.ColorReloadListener;
 import cn.net.rms.confluxmap.mc.color.SpriteColorSampler;
 import cn.net.rms.confluxmap.mc.input.Keybinds;
+import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureService;
@@ -48,6 +49,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private TileTextureManager tileTextureManager;
     private ChunkCaptureService chunkCapture;
     private EntityRadarScanner radarScanner;
+    private EntityIconManager entityIconManager;
     private MinimapHudRenderer minimapHudRenderer;
     private FullscreenMapViewState fullscreenMapViewState;
     private LayerSelector layerSelector;
@@ -90,13 +92,14 @@ public final class ConfluxMapClient implements ClientModInitializer {
             client, config, mapWorlds, executors, tileService, regionCache, spriteColorSampler, biomeTintResolver, layerSelector
         );
         radarScanner = new EntityRadarScanner(client, config);
+        entityIconManager = new EntityIconManager(client);
         waypointService = new WaypointService(
             FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("waypoints"),
             executors, ConfluxMapMod.LOGGER
         );
         deathWatcher = new DeathWatcher(gameBridge, config, waypointService);
         minimapHudRenderer = new MinimapHudRenderer(
-            client, config, gameBridge, tileService, tileTextureManager, radarScanner, layerSelector, waypointService
+            client, config, gameBridge, tileService, tileTextureManager, radarScanner, entityIconManager, layerSelector, waypointService
         );
         waypointWorldRenderer = new WaypointWorldRenderer(client, config, gameBridge, waypointService);
         fullscreenMapViewState = new FullscreenMapViewState();

@@ -182,6 +182,7 @@ public final class ConfigScreen extends Screen {
                     y, "confluxmap.config.radar.max_entities", 1, 500,
                     () -> config.radarMaxEntities, v -> config.radarMaxEntities = v, ConfigScreen::plainText
                 );
+                y = addToggleRow(y, "confluxmap.config.radar.icons_enabled", () -> config.radarIconsEnabled, v -> config.radarIconsEnabled = v);
                 break;
             case WAYPOINTS:
                 y = addIntSliderRow(

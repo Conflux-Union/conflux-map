@@ -14,6 +14,7 @@ import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.core.waypoint.DimensionScale;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
+import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
@@ -65,12 +66,26 @@ public final class MinimapHudRenderer {
     private static final int RADAR_VERTICAL_WINDOW = 32;
     private static final float RADAR_DIM_FLOOR = 0.3f;
 
+    // Entity head icons (radar-icons.md sec "approach"): the icon quad is drawn at fixed pixel
+    // size, with a colored ring around it indicating the category - independent of the plain
+    // dot colors above, which stay unchanged for the config.radarIconsEnabled=false / no-icon
+    // fallback path.
+    private static final float RADAR_ICON_HALF_SIZE = 4f;
+    private static final float RADAR_ICON_SIZE = RADAR_ICON_HALF_SIZE * 2f;
+    private static final float RADAR_ICON_RING_RADIUS = 6f;
+    private static final float RADAR_ICON_RING_THICKNESS = 1.25f;
+    private static final int RADAR_RING_PLAYER_COLOR = 0xFFFFFFFF;
+    private static final int RADAR_RING_HOSTILE_COLOR = 0xFFE04040;
+    private static final int RADAR_RING_PASSIVE_COLOR = 0xFF40C040;
+    private static final int RADAR_RING_OTHER_COLOR = 0xFF909090;
+
     private final MinecraftClient client;
     private final ConfluxConfig config;
     private final GameBridge gameBridge;
     private final TileService tiles;
     private final TileTextureManager textures;
     private final EntityRadarScanner radarScanner;
+    private final EntityIconManager iconManager;
     private final LayerSelector layerSelector;
     private final WaypointService waypointService;
 
@@ -81,6 +96,7 @@ public final class MinimapHudRenderer {
         final TileService tiles,
         final TileTextureManager textures,
         final EntityRadarScanner radarScanner,
+        final EntityIconManager iconManager,
         final LayerSelector layerSelector,
         final WaypointService waypointService
     ) {
@@ -90,6 +106,7 @@ public final class MinimapHudRenderer {
         this.tiles = tiles;
         this.textures = textures;
         this.radarScanner = radarScanner;
+        this.iconManager = iconManager;
         this.layerSelector = layerSelector;
         this.waypointService = waypointService;
     }
@@ -306,11 +323,30 @@ public final class MinimapHudRenderer {
             }
             final float x = centerX + dirX * cos - dirY * sin;
             final float y = centerY + dirX * sin + dirY * cos;
-            drawRadarMarker(matrices, entry, x, y, yDelta);
+            drawRadarMarker(matrices, entry, x, y, yDelta, live);
         }
     }
 
-    private void drawRadarMarker(final MatrixStack matrices, final RadarEntry entry, final float x, final float y, final int yDelta) {
+    /**
+     * Draws the entity head icon (VoxelMap-style: a small sub-UV crop of the entity's own skin/
+     * mob texture, ringed in a category color) when available, falling back to the original
+     * shaped dot otherwise - either because icons are disabled, the entity isn't currently loaded
+     * (only the scan-time snapshot position survived - see {@link #drawRadar} javadoc), or its
+     * species has no entry in {@link EntityIconManager}'s UV table.
+     */
+    private void drawRadarMarker(
+        final MatrixStack matrices, final RadarEntry entry, final float x, final float y, final int yDelta, final Entity live
+    ) {
+        if (config.radarIconsEnabled && live != null) {
+            final EntityIconManager.FaceIcon icon = iconManager.iconFor(live);
+            if (icon != null) {
+                drawRadarIcon(matrices, entry.category(), icon, x, y, yDelta);
+                if (config.radarShowPlayerNames && entry.category() == RadarCategory.PLAYER && entry.name() != null) {
+                    drawCenteredLine(matrices, entry.name(), x, y + RADAR_ICON_RING_RADIUS + 2f);
+                }
+                return;
+            }
+        }
         final int color = elevationColor(baseRadarColor(entry.category()), yDelta);
         switch (entry.category()) {
             case PLAYER:
@@ -331,6 +367,32 @@ public final class MinimapHudRenderer {
         }
     }
 
+    /**
+     * Icon quad tinted by the same elevation alpha/dim as the dot markers (base color white, so
+     * the entity's real texture colors show through untouched), then a category-colored ring
+     * drawn just outside it - the ring also gets the elevation treatment, matching how the
+     * reference spec applies the same alpha/dim multiply to its headgear overlay layer.
+     */
+    private void drawRadarIcon(
+        final MatrixStack matrices, final RadarCategory category, final EntityIconManager.FaceIcon icon, final float x, final float y, final int yDelta
+    ) {
+        final int tint = elevationColor(0xFFFFFFFF, yDelta);
+        RenderUtil.bindTexture(client, icon.texture());
+        RenderUtil.drawTintedQuad(
+            matrices, x - RADAR_ICON_HALF_SIZE, y - RADAR_ICON_HALF_SIZE, RADAR_ICON_SIZE, RADAR_ICON_SIZE,
+            icon.u0(), icon.v0(), icon.u1(), icon.v1(), tint
+        );
+        if (icon.hasOverlay()) {
+            RenderUtil.bindTexture(client, icon.overlayTexture());
+            RenderUtil.drawTintedQuad(
+                matrices, x - RADAR_ICON_HALF_SIZE, y - RADAR_ICON_HALF_SIZE, RADAR_ICON_SIZE, RADAR_ICON_SIZE,
+                icon.ou0(), icon.ov0(), icon.ou1(), icon.ov1(), tint
+            );
+        }
+        final int ringColor = elevationColor(ringColor(category), yDelta);
+        RenderUtil.drawRing(matrices, x, y, RADAR_ICON_RING_RADIUS, RADAR_ICON_RING_THICKNESS, ringColor);
+    }
+
     private static int baseRadarColor(final RadarCategory category) {
         switch (category) {
             case PLAYER:
@@ -341,6 +403,20 @@ public final class MinimapHudRenderer {
                 return RADAR_PASSIVE_COLOR;
             default:
                 return RADAR_OTHER_COLOR;
+        }
+    }
+
+    /** Border-ring colors (radar-icons.md P2 feedback: red/green/white/gray), distinct from the plain-dot palette above. */
+    private static int ringColor(final RadarCategory category) {
+        switch (category) {
+            case PLAYER:
+                return RADAR_RING_PLAYER_COLOR;
+            case HOSTILE:
+                return RADAR_RING_HOSTILE_COLOR;
+            case PASSIVE:
+                return RADAR_RING_PASSIVE_COLOR;
+            default:
+                return RADAR_RING_OTHER_COLOR;
         }
     }
 

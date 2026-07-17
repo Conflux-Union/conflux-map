@@ -62,6 +62,7 @@
   "confluxmap.config.radar.range": "范围：%s",
   "confluxmap.config.radar.show_player_names": "显示玩家名称：%s",
   "confluxmap.config.radar.max_entities": "最大实体数：%s",
+  "confluxmap.config.radar.icons_enabled": "实体头像图标：%s",
   "confluxmap.config.waypoints.render_distance": "渲染距离：%s",
   "confluxmap.config.waypoints.edge_indicators": "边缘指示器：%s",
   "confluxmap.config.waypoints.death_points_kept": "保留死亡点数：%s",

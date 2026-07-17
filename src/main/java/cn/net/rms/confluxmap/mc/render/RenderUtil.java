@@ -10,6 +10,7 @@ import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.Window;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Matrix4f;
 
 /**
@@ -30,6 +31,17 @@ public final class RenderUtil {
 
     public static void bindTexture(final int glId) {
         RenderSystem.setShaderTexture(0, glId);
+    }
+
+    /**
+     * Binds an already-vanilla-managed texture (player skin, mob texture, etc.) by identifier,
+     * lazily loading/registering it via {@link MinecraftClient#getTextureManager()} if it isn't
+     * resident yet - the same entry point vanilla itself uses for e.g. tab-list head icons.
+     * Unlike {@link #bindTexture(int)} (which binds a raw GL id from our own
+     * {@code NativeImageBackedTexture} cache), callers don't need to resolve a GL id themselves.
+     */
+    public static void bindTexture(final MinecraftClient client, final Identifier id) {
+        client.getTextureManager().bindTexture(id);
     }
 
     /**
@@ -55,6 +67,44 @@ public final class RenderUtil {
         buffer.vertex(model, x + width, y + height, 0).texture(u1, v1).next();
         buffer.vertex(model, x + width, y, 0).texture(u1, v0).next();
         buffer.vertex(model, x, y, 0).texture(u0, v0).next();
+        tessellator.draw();
+    }
+
+    /**
+     * Self-contained (sets its own shader/blend, unlike {@link #drawQuad} which expects
+     * {@link #beginTexturedQuads()} to have been called by a tile-drawing loop) single-texture
+     * quad with a per-vertex ARGB tint, multiplied over the sampled texture color. Used for radar
+     * entity icons: alpha carries the above/below elevation fade, RGB carries the brightness dim,
+     * matching the plain {@link #fillRect}/{@link #fillTriangle}/{@link #drawRing} markers'
+     * per-call convention.
+     */
+    public static void drawTintedQuad(
+        final MatrixStack matrices,
+        final float x,
+        final float y,
+        final float width,
+        final float height,
+        final float u0,
+        final float v0,
+        final float u1,
+        final float v1,
+        final int argbColor
+    ) {
+        RenderSystem.setShader(GameRenderer::getPositionColorTexShader);
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        final float a = Argb.alpha(argbColor) / 255f;
+        final float r = Argb.red(argbColor) / 255f;
+        final float g = Argb.green(argbColor) / 255f;
+        final float b = Argb.blue(argbColor) / 255f;
+        final Matrix4f model = matrices.peek().getModel();
+        final Tessellator tessellator = Tessellator.getInstance();
+        final BufferBuilder buffer = tessellator.getBuffer();
+        buffer.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR_TEXTURE);
+        buffer.vertex(model, x, y + height, 0).color(r, g, b, a).texture(u0, v1).next();
+        buffer.vertex(model, x + width, y + height, 0).color(r, g, b, a).texture(u1, v1).next();
+        buffer.vertex(model, x + width, y, 0).color(r, g, b, a).texture(u1, v0).next();
+        buffer.vertex(model, x, y, 0).color(r, g, b, a).texture(u0, v0).next();
         tessellator.draw();
     }
 
