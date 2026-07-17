@@ -147,6 +147,10 @@ public final class MinimapHudRenderer {
 
         if (circle) {
             RenderUtil.stampCircleAlpha(matrices, centerX, centerY, size / 2f);
+            // The alpha mask only shapes pixels INSIDE the stamped square; the scissor
+            // stops rotated tile quads from spilling across the rest of the screen
+            // (framebuffer alpha is ~1 out there, so DST_ALPHA blending would pass).
+            RenderUtil.enableScissor(client, x0, y0, size, size);
             RenderUtil.beginMaskedQuads();
         } else {
             RenderUtil.fillRect(matrices, x0, y0, size, size, BACKGROUND_COLOR);
@@ -164,6 +168,7 @@ public final class MinimapHudRenderer {
 
         if (circle) {
             RenderUtil.endMaskedQuads(matrices, x0, y0, size, size);
+            RenderUtil.disableScissor();
             RenderUtil.drawRing(matrices, centerX, centerY, size / 2f, BORDER_THICKNESS, BORDER_COLOR);
         } else {
             RenderUtil.disableScissor();
@@ -389,8 +394,16 @@ public final class MinimapHudRenderer {
                 icon.ou0(), icon.ov0(), icon.ou1(), icon.ov1(), tint
             );
         }
-        final int ringColor = elevationColor(ringColor(category), yDelta);
-        RenderUtil.drawRing(matrices, x, y, RADAR_ICON_RING_RADIUS, RADAR_ICON_RING_THICKNESS, ringColor);
+        // VoxelMap-style presentation: a clean face icon with a thin 1px square border
+        // (faction-colored), instead of a heavy circular ring.
+        final int borderColor = elevationColor(ringColor(category), yDelta);
+        final float left = x - RADAR_ICON_HALF_SIZE - 1f;
+        final float top = y - RADAR_ICON_HALF_SIZE - 1f;
+        final float edge = RADAR_ICON_SIZE + 2f;
+        RenderUtil.fillRect(matrices, left, top, edge, 1f, borderColor);
+        RenderUtil.fillRect(matrices, left, top + edge - 1f, edge, 1f, borderColor);
+        RenderUtil.fillRect(matrices, left, top + 1f, 1f, edge - 2f, borderColor);
+        RenderUtil.fillRect(matrices, left + edge - 1f, top + 1f, 1f, edge - 2f, borderColor);
     }
 
     private static int baseRadarColor(final RadarCategory category) {

@@ -40,8 +40,13 @@ public final class RenderUtil {
      * Unlike {@link #bindTexture(int)} (which binds a raw GL id from our own
      * {@code NativeImageBackedTexture} cache), callers don't need to resolve a GL id themselves.
      */
+    /**
+     * Core shaders sample what {@code RenderSystem.setShaderTexture} points at, not the
+     * legacy {@code TextureManager} bind - using the latter leaves unit 0 on whatever was
+     * drawn last (map tiles), which is exactly the "icons show dark terrain" bug.
+     */
     public static void bindTexture(final MinecraftClient client, final Identifier id) {
-        client.getTextureManager().bindTexture(id);
+        RenderSystem.setShaderTexture(0, id);
     }
 
     /**
