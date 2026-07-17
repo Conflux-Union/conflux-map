@@ -28,10 +28,14 @@ import org.apache.logging.log4j.Logger;
 /**
  * Owns the on-disk region cache for one world session (see {@link RegionCacheService}, which
  * creates/discards instances of this class as sessions rotate). Only {@link MapLayer.Type#persistent()}
- * layers are ever touched; M1's capture pipeline only ever populates {@link MapLayer#SURFACE}, so
- * that's the only layer {@link #ensureRegionLoaded} and the live-capture touch point deal with, but
- * the periodic sweep ({@link #tick}) and the final flush walk every persistent layer type generically
- * so a future layer just needs to start writing chunks to start getting cached too.
+ * layers are ever touched - {@link #ensureRegionLoaded} no-ops immediately for a non-persistent
+ * layer type, and every call site that drives it (the live-capture touch point, {@link
+ * cn.net.rms.confluxmap.core.tile.TileService#requestTile}) additionally gates on {@link
+ * MapLayer.Type#persistent()} itself before calling in, so dynamic layers (CAVE_AUTO,
+ * NETHER_CURRENT, the Y-slices) never reach disk IO at all. The periodic sweep ({@link #tick})
+ * and the final flush walk every persistent layer type generically, so a newly-captured
+ * persistent layer (SURFACE, NETHER_CEILING, END_SURFACE) just needs to start writing chunks to
+ * start getting cached.
  *
  * <p>All file IO runs on {@link MapExecutors#io()}. Writes are atomic (tmp file, fsync, {@code
  * ATOMIC_MOVE}); unreadable or corrupt files are quarantined to {@code *.bad} and treated as empty
@@ -45,9 +49,6 @@ public final class RegionDiskCache {
         .filter(MapLayer.Type::persistent)
         .toArray(MapLayer.Type[]::new);
 
-    private record RegionRef(int regionX, int regionZ) {
-    }
-
     private record RegionSlot(MapLayer.Type layer, int regionX, int regionZ) {
     }
 
@@ -59,8 +60,8 @@ public final class RegionDiskCache {
     private final TileService tiles;
     private final Logger logger;
 
-    /** Regions {@link #ensureRegionLoaded} has already claimed for {@link MapLayer#SURFACE} this session. */
-    private final Set<RegionRef> surfaceTouched = ConcurrentHashMap.newKeySet();
+    /** Regions {@link #ensureRegionLoaded} has already claimed, per (layer, region), this session. */
+    private final Set<RegionSlot> regionLoadTouched = ConcurrentHashMap.newKeySet();
     /** Last {@link RegionColumns#version()} successfully written to disk, per (layer, region). */
     private final Map<RegionSlot, Integer> flushedVersion = new ConcurrentHashMap<>();
     private volatile long lastSweepAtMs = System.currentTimeMillis();
@@ -84,26 +85,31 @@ public final class RegionDiskCache {
 
     /**
      * Main/worker thread: the capture or tile path just touched {@code (regionX, regionZ)} in
-     * {@link MapLayer#SURFACE}. If this region has never been loaded this session, schedules an
-     * IO-thread read that merges its cached chunks into the live {@link ColumnStore} as
-     * {@link SampleSource#REAL_CACHED}. Cheap and safe to call repeatedly for the same region -
-     * only the first caller wins the race and actually schedules work.
+     * {@code layerType}. No-ops immediately for a non-persistent layer type (belt-and-suspenders;
+     * callers should already gate on {@link MapLayer.Type#persistent()} themselves). Otherwise, if
+     * this (layer, region) pair has never been loaded this session, schedules an IO-thread read
+     * that merges its cached chunks into the live {@link ColumnStore} as {@link
+     * SampleSource#REAL_CACHED}. Cheap and safe to call repeatedly for the same region - only the
+     * first caller wins the race and actually schedules work.
      */
-    public void ensureRegionLoaded(final int regionX, final int regionZ) {
-        if (!surfaceTouched.add(new RegionRef(regionX, regionZ))) {
+    public void ensureRegionLoaded(final MapLayer.Type layerType, final int regionX, final int regionZ) {
+        if (!layerType.persistent()) {
             return;
         }
-        executors.io().execute(() -> loadRegion(regionX, regionZ));
+        if (!regionLoadTouched.add(new RegionSlot(layerType, regionX, regionZ))) {
+            return;
+        }
+        executors.io().execute(() -> loadRegion(layerType, regionX, regionZ));
     }
 
-    private void loadRegion(final int regionX, final int regionZ) {
-        final Path file = regionFile(MapLayer.Type.SURFACE, regionX, regionZ);
+    private void loadRegion(final MapLayer.Type layerType, final int regionX, final int regionZ) {
+        final Path file = regionFile(layerType, regionX, regionZ);
         if (!Files.exists(file)) {
             return;
         }
         final RegionFileCodec.RegionData data;
         try (InputStream in = new BufferedInputStream(Files.newInputStream(file))) {
-            data = RegionFileCodec.decode(in, regionX, regionZ, MapLayer.Type.SURFACE.ordinal());
+            data = RegionFileCodec.decode(in, regionX, regionZ, layerType.ordinal());
         } catch (final IOException | RegionFileCodec.RegionFileException e) {
             logger.warn("cache: region file {} unreadable ({}), quarantining and treating as empty", file, e.toString());
             quarantine(file);
@@ -114,7 +120,8 @@ public final class RegionDiskCache {
         if (world == null) {
             return;
         }
-        final ColumnStore store = world.store(MapLayer.SURFACE);
+        final MapLayer layer = new MapLayer(layerType, 0);
+        final ColumnStore store = world.store(layer);
         int merged = 0;
         for (int chunkLocalZ = 0; chunkLocalZ < RegionColumns.CHUNKS; chunkLocalZ++) {
             for (int chunkLocalX = 0; chunkLocalX < RegionColumns.CHUNKS; chunkLocalX++) {
@@ -125,12 +132,12 @@ public final class RegionDiskCache {
                 final ChunkSnapshot snapshot = extractChunkSnapshot(data, chunkLocalX, chunkLocalZ, token);
                 if (store.put(snapshot, SampleSource.REAL_CACHED)) {
                     merged++;
-                    tiles.markChunkStored(token, dimension, MapLayer.SURFACE, snapshot.chunkX, snapshot.chunkZ);
+                    tiles.markChunkStored(token, dimension, layer, snapshot.chunkX, snapshot.chunkZ);
                 }
             }
         }
         if (merged > 0) {
-            logger.info("cache: loaded region r.{}.{} ({} chunks) as REAL_CACHED", regionX, regionZ, merged);
+            logger.info("cache: loaded region r.{}.{} layer={} ({} chunks) as REAL_CACHED", regionX, regionZ, layerType.id(), merged);
         }
     }
 
@@ -192,9 +199,7 @@ public final class RegionDiskCache {
                 if (farAway) {
                     store.remove(region.regionX, region.regionZ);
                     flushedVersion.remove(new RegionSlot(type, region.regionX, region.regionZ));
-                    if (type == MapLayer.Type.SURFACE) {
-                        surfaceTouched.remove(new RegionRef(region.regionX, region.regionZ));
-                    }
+                    regionLoadTouched.remove(new RegionSlot(type, region.regionX, region.regionZ));
                     evicted++;
                 }
             }

@@ -14,6 +14,14 @@ public final class ConfluxConfig {
 
     public enum Shape { SQUARE, CIRCLE }
 
+    /**
+     * Manual layer override cycled by {@code key.confluxmap.cycle_layer}; see
+     * {@code mc.world.LayerSelector} for how each dimension interprets these
+     * (e.g. FORCE_UNDERGROUND means CAVE_AUTO in the Overworld, NETHER_CEILING
+     * in the Nether, and is a no-op in the End).
+     */
+    public enum LayerOverride { AUTO, FORCE_SURFACE, FORCE_UNDERGROUND }
+
     public boolean minimapEnabled = true;
     public Corner minimapCorner = Corner.TOP_RIGHT;
     public Shape minimapShape = Shape.SQUARE;
@@ -22,6 +30,15 @@ public final class ConfluxConfig {
     public int minimapZoomIndex = 1;
     public boolean showCoordinates = true;
     public boolean showBiome = true;
+
+    /** cave-nether-layers.md §1/§6: manual pin, or AUTO for the per-dimension automatic detection. */
+    public LayerOverride layerOverride = LayerOverride.AUTO;
+    /** Minimap/fullscreen-map info line: a small text label naming the currently active layer. */
+    public boolean showLayerIndicator = true;
+    /** Fixed-band Y for {@code MapLayer.CAVE_SLICE}; not yet reachable via the cycle keybind (UI deferred). */
+    public int caveSliceY = 32;
+    /** Fixed-band Y for {@code MapLayer.NETHER_SLICE}; not yet reachable via the cycle keybind (UI deferred). */
+    public int netherSliceY = 64;
 
     public int snapshotBudgetPerTick = 8;
     public int gpuTileCacheLimit = 256;
@@ -50,6 +67,10 @@ public final class ConfluxConfig {
         c.minimapZoomIndex = minimapZoomIndex;
         c.showCoordinates = showCoordinates;
         c.showBiome = showBiome;
+        c.layerOverride = layerOverride;
+        c.showLayerIndicator = showLayerIndicator;
+        c.caveSliceY = caveSliceY;
+        c.netherSliceY = netherSliceY;
         c.snapshotBudgetPerTick = snapshotBudgetPerTick;
         c.gpuTileCacheLimit = gpuTileCacheLimit;
         c.radarEnabled = radarEnabled;
@@ -71,8 +92,13 @@ public final class ConfluxConfig {
         if (minimapShape == null) {
             minimapShape = Shape.SQUARE;
         }
+        if (layerOverride == null) {
+            layerOverride = LayerOverride.AUTO;
+        }
         minimapSize = clamp(minimapSize, 64, 256);
         minimapZoomIndex = clamp(minimapZoomIndex, 0, 3);
+        caveSliceY = clamp(caveSliceY, 0, 255);
+        netherSliceY = clamp(netherSliceY, 0, 127);
         snapshotBudgetPerTick = clamp(snapshotBudgetPerTick, 1, 64);
         gpuTileCacheLimit = clamp(gpuTileCacheLimit, 16, 2048);
         radarRange = clamp(radarRange, 16, 256);

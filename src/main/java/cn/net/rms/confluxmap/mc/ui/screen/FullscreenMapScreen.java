@@ -4,13 +4,13 @@ import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.core.model.DimensionId;
-import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
+import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import java.util.Optional;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.option.KeyBinding;
@@ -50,6 +50,7 @@ public final class FullscreenMapScreen extends Screen {
     private final TileService tiles;
     private final TileTextureManager textures;
     private final FullscreenMapViewState viewState;
+    private final LayerSelector layerSelector;
 
     /** World point currently at screen center, and blocks-per-pixel; all mutable, panned/zoomed by input. */
     private double centerX;
@@ -64,6 +65,7 @@ public final class FullscreenMapScreen extends Screen {
         this.tiles = app.tileService();
         this.textures = app.tileTextureManager();
         this.viewState = app.fullscreenMapViewState();
+        this.layerSelector = app.layerSelector();
 
         final DimensionId dimension = gameBridge.session().dimension();
         final FullscreenMapViewState.View remembered = viewState.get(dimension);
@@ -142,6 +144,7 @@ public final class FullscreenMapScreen extends Screen {
 
         drawPlayerMarker(matrices, tickDelta);
         drawDimensionLabel(matrices);
+        drawLayerLabel(matrices);
         drawScaleLabel(matrices);
         drawCursorCoords(matrices, mouseX, mouseY);
 
@@ -165,9 +168,10 @@ public final class FullscreenMapScreen extends Screen {
         final int lastTileZ = TileMath.blockToTile((int) Math.ceil(centerZ + halfHeightBlocks), lod);
 
         final SessionGuard.Session session = gameBridge.session();
+        final String layerId = layerSelector.current().layer().cacheId();
         for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
             for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
-                final TileKey key = new TileKey(session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), lod, tileX, tileZ);
+                final TileKey key = new TileKey(session.world(), session.dimension(), layerId, lod, tileX, tileZ);
                 if (!textures.bind(key)) {
                     continue;
                 }
@@ -221,6 +225,14 @@ public final class FullscreenMapScreen extends Screen {
     private void drawDimensionLabel(final MatrixStack matrices) {
         final String text = dimensionDisplayName(gameBridge.session().dimension());
         textRenderer.drawWithShadow(matrices, text, MARGIN, MARGIN, TEXT_COLOR);
+    }
+
+    /** Deliverable D: the fullscreen map shows the active layer for the current dimension. */
+    private void drawLayerLabel(final MatrixStack matrices) {
+        final String text = new TranslatableText(
+            "confluxmap.layer." + layerSelector.current().layer().type().id()
+        ).getString();
+        textRenderer.drawWithShadow(matrices, text, MARGIN, MARGIN + textRenderer.fontHeight + 2, TEXT_COLOR);
     }
 
     private void drawScaleLabel(final MatrixStack matrices) {

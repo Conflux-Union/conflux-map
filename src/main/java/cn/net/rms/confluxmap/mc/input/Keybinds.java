@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.mc.input;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
+import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.MinecraftClient;
@@ -17,16 +18,20 @@ public final class Keybinds {
     private final KeyBinding zoomIn;
     private final KeyBinding zoomOut;
     private final KeyBinding openMap;
+    private final KeyBinding cycleLayer;
     private final ConfluxConfig config;
     private final ConfigIo configIo;
+    private final LayerSelector layerSelector;
 
-    public Keybinds(final ConfluxConfig config, final ConfigIo configIo) {
+    public Keybinds(final ConfluxConfig config, final ConfigIo configIo, final LayerSelector layerSelector) {
         this.config = config;
         this.configIo = configIo;
+        this.layerSelector = layerSelector;
         toggleMinimap = register("toggle_minimap", GLFW.GLFW_KEY_H);
         zoomIn = register("zoom_in", GLFW.GLFW_KEY_RIGHT_BRACKET);
         zoomOut = register("zoom_out", GLFW.GLFW_KEY_LEFT_BRACKET);
         openMap = register("open_map", GLFW.GLFW_KEY_M);
+        cycleLayer = register("cycle_layer", GLFW.GLFW_KEY_Y);
         ClientTickEvents.END_CLIENT_TICK.register(client -> poll());
     }
 
@@ -53,6 +58,10 @@ public final class Keybinds {
                 config.minimapZoomIndex++;
                 changed = true;
             }
+        }
+        while (cycleLayer.wasPressed()) {
+            layerSelector.cycleOverride();
+            changed = true;
         }
         // KeyBinding state stops updating while any screen with passEvents=false is open (vanilla
         // Keyboard#onKey behavior), so this never re-fires while FullscreenMapScreen is showing;

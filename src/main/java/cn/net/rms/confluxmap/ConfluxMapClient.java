@@ -18,6 +18,7 @@ import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureService;
 import cn.net.rms.confluxmap.mc.ui.hud.MinimapHudRenderer;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapViewState;
+import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import cn.net.rms.confluxmap.mc.world.WorldSessionTracker;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
@@ -46,6 +47,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private EntityRadarScanner radarScanner;
     private MinimapHudRenderer minimapHudRenderer;
     private FullscreenMapViewState fullscreenMapViewState;
+    private LayerSelector layerSelector;
 
     public static ConfluxMapClient get() {
         return instance;
@@ -76,12 +78,15 @@ public final class ConfluxMapClient implements ClientModInitializer {
         spriteColorSampler = new SpriteColorSampler(client);
         biomeTintResolver = new BiomeTintResolver(client);
         tileTextureManager = new TileTextureManager(config, tileService);
+        layerSelector = new LayerSelector(client, config);
 
         chunkCapture = new ChunkCaptureService(
-            client, config, mapWorlds, executors, tileService, regionCache, spriteColorSampler, biomeTintResolver
+            client, config, mapWorlds, executors, tileService, regionCache, spriteColorSampler, biomeTintResolver, layerSelector
         );
         radarScanner = new EntityRadarScanner(client, config);
-        minimapHudRenderer = new MinimapHudRenderer(client, config, gameBridge, tileService, tileTextureManager, radarScanner);
+        minimapHudRenderer = new MinimapHudRenderer(
+            client, config, gameBridge, tileService, tileTextureManager, radarScanner, layerSelector
+        );
         fullscreenMapViewState = new FullscreenMapViewState();
 
         // regionCache must flush BEFORE mapWorlds swaps the ending world out (see RegionCacheService javadoc).
@@ -101,7 +106,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
             new ColorReloadListener(spriteColorSampler)
         );
 
-        new Keybinds(config, configIo);
+        new Keybinds(config, configIo, layerSelector);
         ClientLifecycleEvents.CLIENT_STOPPING.register(client2 -> shutdown());
         ConfluxMapMod.LOGGER.info("Conflux Map client services started ({} workers)", executors.workerCount());
     }
@@ -164,5 +169,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public FullscreenMapViewState fullscreenMapViewState() {
         return fullscreenMapViewState;
+    }
+
+    public LayerSelector layerSelector() {
+        return layerSelector;
     }
 }

@@ -1,6 +1,8 @@
 package cn.net.rms.confluxmap.mc.snapshot;
 
+import cn.net.rms.confluxmap.core.color.LightTint;
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
+import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.mc.color.BiomeTintResolver;
@@ -17,21 +19,24 @@ import net.minecraft.fluid.FluidState;
 import net.minecraft.state.property.Properties;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.Heightmap;
+import net.minecraft.world.LightType;
 import net.minecraft.world.chunk.ChunkStatus;
 import net.minecraft.world.chunk.WorldChunk;
 
 /**
  * Builds immutable {@link ChunkSnapshot}s from live client chunks, per
- * surface-color-sampling.md §1 (surface determination) and §2/§3 (color and
- * tint sourcing). Must only be called on the main thread; the produced
- * snapshot is safe to hand to worker threads.
- *
- * <p>Only §1's top-down, world-heightmap-based surface search is implemented
- * (the "cave/nether-style" viewer-relative search is a later slice, since this
- * factory is only ever used for {@code MapLayer.SURFACE} so far).
+ * surface-color-sampling.md §1-§3 (top-down surface/color/tint) for
+ * {@link MapLayer.Type#SURFACE}/{@link MapLayer.Type#END_SURFACE}, and per
+ * cave-nether-layers.md §2 (bounded pivot-relative floor scan) for every other
+ * layer. Must only be called on the main thread; the produced snapshot is safe
+ * to hand to worker threads.
  */
 public final class McChunkSnapshotFactory {
+    /** cave-nether-layers.md §2.1: the upward branch's fixed search window above the pivot. */
+    private static final int UPWARD_SCAN_CAP = 10;
+
     private final MinecraftClient client;
     private final SpriteColorSampler sampler;
     private final BiomeTintResolver tintResolver;
@@ -46,8 +51,13 @@ public final class McChunkSnapshotFactory {
         this.tintResolver = tintResolver;
     }
 
-    /** Null if the chunk is not currently loaded. */
-    public ChunkSnapshot snapshot(final int chunkX, final int chunkZ, final long sessionToken) {
+    /**
+     * Null if the chunk is not currently loaded. {@code pivotY} is only consulted for
+     * layers using the cave-nether-layers.md §2 floor scan (ignored for SURFACE/END_SURFACE,
+     * which keep using the world heightmap); see {@link cn.net.rms.confluxmap.mc.world.LayerSelector}
+     * for how callers derive it (debounced player Y, a slice's fixed Y, or the nether-roof pivot).
+     */
+    public ChunkSnapshot snapshot(final int chunkX, final int chunkZ, final MapLayer layer, final int pivotY, final long sessionToken) {
         final ClientWorld world = client.world;
         if (world == null) {
             return null;
@@ -56,8 +66,6 @@ public final class McChunkSnapshotFactory {
         if (chunk == null) {
             return null;
         }
-        final ClientPlayerEntity player = client.player;
-        final int playerY = player != null ? player.getBlockPos().getY() : world.getBottomY();
 
         final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
         final byte[] fluidDepth = new byte[ChunkSnapshot.COLUMNS];
@@ -66,18 +74,34 @@ public final class McChunkSnapshotFactory {
         final int[] overlayArgb = new int[ChunkSnapshot.COLUMNS];
         final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
 
-        final Heightmap heightmap = chunk.getHeightmap(Heightmap.Type.MOTION_BLOCKING);
         final BlockPos.Mutable pos = new BlockPos.Mutable();
-        final int bottomY = world.getBottomY();
         final int baseX = chunkX << 4;
         final int baseZ = chunkZ << 4;
 
-        for (int z = 0; z < 16; z++) {
-            for (int x = 0; x < 16; x++) {
-                sampleColumn(
-                    chunk, world, pos, baseX, baseZ, x, z, bottomY, playerY, heightmap, z * 16 + x,
-                    surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind
-                );
+        if (layer.type() == MapLayer.Type.SURFACE || layer.type() == MapLayer.Type.END_SURFACE) {
+            final ClientPlayerEntity player = client.player;
+            final int playerY = player != null ? player.getBlockPos().getY() : world.getBottomY();
+            final Heightmap heightmap = chunk.getHeightmap(Heightmap.Type.MOTION_BLOCKING);
+            final int bottomY = world.getBottomY();
+            for (int z = 0; z < 16; z++) {
+                for (int x = 0; x < 16; x++) {
+                    sampleColumn(
+                        chunk, world, pos, baseX, baseZ, x, z, bottomY, playerY, heightmap, z * 16 + x,
+                        surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind
+                    );
+                }
+            }
+        } else {
+            final boolean netherAmbient = isNetherLayer(layer.type());
+            final int worldMinY = world.getBottomY();
+            final int worldMaxY = world.getTopY();
+            for (int z = 0; z < 16; z++) {
+                for (int x = 0; x < 16; x++) {
+                    sampleFloorColumn(
+                        chunk, world, pos, baseX, baseZ, x, z, pivotY, worldMinY, worldMaxY, netherAmbient, z * 16 + x,
+                        surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind
+                    );
+                }
             }
         }
         return new ChunkSnapshot(chunkX, chunkZ, sessionToken, surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind);
@@ -169,30 +193,8 @@ public final class McChunkSnapshotFactory {
         }
 
         final Block surfaceBlock = surfaceState.getBlock();
-        final SurfaceKind resolvedKind;
-        final boolean seafloorScan;
-        if (surfaceBlock == Blocks.LAVA) {
-            resolvedKind = SurfaceKind.LAVA;
-            seafloorScan = false;
-        } else if (surfaceBlock == Blocks.WATER) {
-            resolvedKind = SurfaceKind.WATER;
-            seafloorScan = true;
-        } else if (surfaceBlock == Blocks.ICE) {
-            resolvedKind = SurfaceKind.ICE;
-            seafloorScan = true;
-        } else if (surfaceBlock instanceof SnowBlock) {
-            resolvedKind = SurfaceKind.SNOW;
-            seafloorScan = false;
-        } else if (surfaceBlock instanceof LeavesBlock) {
-            resolvedKind = SurfaceKind.FOLIAGE;
-            seafloorScan = false;
-        } else if (surfaceBlock == Blocks.SAND || surfaceBlock == Blocks.RED_SAND) {
-            resolvedKind = SurfaceKind.SAND;
-            seafloorScan = false;
-        } else {
-            resolvedKind = SurfaceKind.LAND;
-            seafloorScan = false;
-        }
+        final SurfaceKind resolvedKind = classifySurfaceKind(surfaceBlock);
+        final boolean seafloorScan = resolvedKind == SurfaceKind.WATER || resolvedKind == SurfaceKind.ICE;
 
         BlockState seafloorState = null;
         int seafloorY = 0;
@@ -315,6 +317,179 @@ public final class McChunkSnapshotFactory {
         final int base = sampler.colorFor(state, world, pos);
         final int tint = tintResolver.resolve(state, world, pos);
         return Argb.multiply(base, tint);
+    }
+
+    /**
+     * cave-nether-layers.md §2.1's bounded nearest-floor scan around {@code pivotY}:
+     * unbounded downward when the pivot itself sits in open space, or capped {@link
+     * #UPWARD_SCAN_CAP} blocks upward when the pivot starts inside solid/lava material.
+     * Shared by every layer that isn't a top-down surface scan (CAVE_AUTO/CAVE_SLICE,
+     * NETHER_CURRENT/NETHER_SLICE, NETHER_CEILING) - only the pivot Y and whether the
+     * nether ambient-light floor applies (§5.2, via {@link #isNetherLayer}) differ.
+     *
+     * <p>Unlike the surface scan, {@link ChunkSnapshot#surfaceY} here stores the actual
+     * solid/lava block's Y (not the spec's own "one above" return convention) to match
+     * every other layer's "surfaceY = the ground block" contract, since {@link
+     * cn.net.rms.confluxmap.core.tile.TileService}'s height/slope shading reads that
+     * field generically regardless of layer.
+     */
+    private void sampleFloorColumn(
+        final WorldChunk chunk,
+        final ClientWorld world,
+        final BlockPos.Mutable pos,
+        final int baseX,
+        final int baseZ,
+        final int localX,
+        final int localZ,
+        final int pivotY,
+        final int worldMinY,
+        final int worldMaxY,
+        final boolean netherAmbient,
+        final int index,
+        final short[] surfaceY,
+        final byte[] fluidDepth,
+        final int[] baseArgb,
+        final int[] tintArgb,
+        final int[] overlayArgb,
+        final byte[] kind
+    ) {
+        final int worldX = baseX + localX;
+        final int worldZ = baseZ + localZ;
+        final int clampedPivot = MathHelper.clamp(pivotY, worldMinY, worldMaxY - 1);
+
+        pos.set(worldX, clampedPivot, worldZ);
+        final boolean pivotOpen = isOpenForFloorScan(collapse(chunk.getBlockState(pos)), world, pos);
+
+        final int openY;
+        if (pivotOpen) {
+            int y = clampedPivot;
+            boolean found = false;
+            while (y > worldMinY) {
+                y--;
+                pos.setY(y);
+                if (!isOpenForFloorScan(collapse(chunk.getBlockState(pos)), world, pos)) {
+                    found = true;
+                    break;
+                }
+            }
+            openY = found ? y + 1 : worldMinY;
+        } else {
+            final int upperBound = Math.min(clampedPivot + UPWARD_SCAN_CAP, worldMaxY - 1);
+            int y = clampedPivot;
+            boolean found = false;
+            while (y < upperBound) {
+                y++;
+                pos.setY(y);
+                if (isOpenForFloorScan(collapse(chunk.getBlockState(pos)), world, pos)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                // §2.1's NO_FLOOR_FOUND sentinel: nothing open within the upward window -> §5.3 transparent.
+                writeVoid(index, pivotY, surfaceY, kind, baseArgb, tintArgb, overlayArgb, fluidDepth);
+                return;
+            }
+            openY = y;
+        }
+
+        final int solidY = openY - 1;
+        if (solidY < worldMinY) {
+            // Only reachable if the downward scan ran all the way to the world floor without
+            // finding anything solid (an all-air column) - treat exactly like "no floor found".
+            writeVoid(index, pivotY, surfaceY, kind, baseArgb, tintArgb, overlayArgb, fluidDepth);
+            return;
+        }
+
+        pos.set(worldX, solidY, worldZ);
+        final BlockState solidState = collapse(chunk.getBlockState(pos));
+        final Block solidBlock = solidState.getBlock();
+
+        final int solidBase = sampler.colorFor(solidState, world, pos);
+        final int solidTint = tintResolver.resolve(solidState, world, pos);
+        // Light is baked directly into baseArgb (tintArgb left neutral) rather than threading a
+        // separate light channel through ChunkSnapshot/RegionColumns/the disk codec - see
+        // McChunkSnapshotFactory's class javadoc and the S7 report for why.
+        final int litColor = applyLight(Argb.multiply(solidBase, solidTint), pos, world, solidBlock, netherAmbient);
+
+        int overlayColor = Argb.TRANSPARENT;
+        if (solidY + 1 < worldMaxY) {
+            pos.set(worldX, solidY + 1, worldZ);
+            final BlockState above = collapse(chunk.getBlockState(pos));
+            if (isFloorOverlayCandidate(above)) {
+                final int overlayBase = sampler.colorFor(above, world, pos);
+                final int overlayTint = tintResolver.resolve(above, world, pos);
+                overlayColor = applyLight(Argb.multiply(overlayBase, overlayTint), pos, world, above.getBlock(), netherAmbient);
+            }
+        }
+
+        surfaceY[index] = clampSurfaceY(solidY);
+        kind[index] = (byte) classifySurfaceKind(solidBlock).ordinal();
+        baseArgb[index] = litColor;
+        tintArgb[index] = 0xFFFFFFFF;
+        overlayArgb[index] = overlayColor;
+        fluidDepth[index] = 0;
+    }
+
+    /** §2.1's pivot-scan open test: non-opaque (§1's opacity test) and not lava. */
+    private static boolean isOpenForFloorScan(final BlockState state, final ClientWorld world, final BlockPos pos) {
+        return !isOpaque(state, world, pos) && state.getBlock() != Blocks.LAVA;
+    }
+
+    /** §2.1's overhang/foliage overlay eligibility: snow, or anything that isn't air/lava/water. */
+    private static boolean isFloorOverlayCandidate(final BlockState state) {
+        if (state.getBlock() instanceof SnowBlock) {
+            return true;
+        }
+        return !state.isAir() && state.getBlock() != Blocks.LAVA && state.getBlock() != Blocks.WATER;
+    }
+
+    /** §2/§6 unified block-type classification, shared by the surface scan and the floor scan. */
+    private static SurfaceKind classifySurfaceKind(final Block surfaceBlock) {
+        if (surfaceBlock == Blocks.LAVA) {
+            return SurfaceKind.LAVA;
+        } else if (surfaceBlock == Blocks.WATER) {
+            return SurfaceKind.WATER;
+        } else if (surfaceBlock == Blocks.ICE) {
+            return SurfaceKind.ICE;
+        } else if (surfaceBlock instanceof SnowBlock) {
+            return SurfaceKind.SNOW;
+        } else if (surfaceBlock instanceof LeavesBlock) {
+            return SurfaceKind.FOLIAGE;
+        } else if (surfaceBlock == Blocks.SAND || surfaceBlock == Blocks.RED_SAND) {
+            return SurfaceKind.SAND;
+        } else {
+            return SurfaceKind.LAND;
+        }
+    }
+
+    /**
+     * cave-nether-layers.md §5.1/§5.2: darken/tint {@code argb} by the block+sky light at
+     * {@code pos}, with lava/magma's block-light forced to 14 (§3's lava-glow override) and
+     * the result forced fully transparent when both channels are exactly zero (§5.3 - the
+     * same treatment as a "no floor found" column). See {@link LightTint} for the
+     * (simplified) block-light/sky-light -> color curve itself.
+     */
+    private static int applyLight(
+        final int argb,
+        final BlockPos pos,
+        final ClientWorld world,
+        final Block block,
+        final boolean netherAmbient
+    ) {
+        final int skyLevel = world.getLightLevel(LightType.SKY, pos);
+        final int blockLevel = block == Blocks.LAVA || block == Blocks.MAGMA_BLOCK
+            ? 14
+            : world.getLightLevel(LightType.BLOCK, pos);
+        if (blockLevel == 0 && skyLevel == 0) {
+            return argb & 0x00FFFFFF;
+        }
+        return Argb.multiply(argb, LightTint.multiplier(blockLevel, skyLevel, netherAmbient));
+    }
+
+    /** Whether {@code type} is one of the Nether's floor-scan layers, for §5.2's ambient-light floor. */
+    private static boolean isNetherLayer(final MapLayer.Type type) {
+        return type == MapLayer.Type.NETHER_CURRENT || type == MapLayer.Type.NETHER_CEILING || type == MapLayer.Type.NETHER_SLICE;
     }
 
     private void writeVoid(

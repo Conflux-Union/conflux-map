@@ -14,6 +14,7 @@ import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
+import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import java.util.Optional;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
@@ -29,7 +30,8 @@ import net.minecraft.util.registry.Registry;
 import net.minecraft.world.biome.Biome;
 
 /**
- * Renders the always-on minimap HUD showing {@link MapLayer#SURFACE}.
+ * Renders the always-on minimap HUD, showing whichever layer {@link LayerSelector}
+ * currently has active for the player's dimension (surface, cave, nether, etc).
  * Supports zoom (0.5/1/2/4 blocks per pixel), player-facing-up rotation
  * (map rotates, arrow stays up) or north-locked mode (arrow rotates),
  * square scissor or circular alpha-mask clipping, a center arrow,
@@ -62,6 +64,7 @@ public final class MinimapHudRenderer {
     private final TileService tiles;
     private final TileTextureManager textures;
     private final EntityRadarScanner radarScanner;
+    private final LayerSelector layerSelector;
 
     public MinimapHudRenderer(
         final MinecraftClient client,
@@ -69,7 +72,8 @@ public final class MinimapHudRenderer {
         final GameBridge gameBridge,
         final TileService tiles,
         final TileTextureManager textures,
-        final EntityRadarScanner radarScanner
+        final EntityRadarScanner radarScanner,
+        final LayerSelector layerSelector
     ) {
         this.client = client;
         this.config = config;
@@ -77,6 +81,7 @@ public final class MinimapHudRenderer {
         this.tiles = tiles;
         this.textures = textures;
         this.radarScanner = radarScanner;
+        this.layerSelector = layerSelector;
     }
 
     public void register() {
@@ -158,12 +163,13 @@ public final class MinimapHudRenderer {
         final int lastTileX = TileMath.blockToTile((int) Math.ceil(player.x() + coverRadius));
         final int firstTileZ = TileMath.blockToTile((int) Math.floor(player.z() - coverRadius));
         final int lastTileZ = TileMath.blockToTile((int) Math.ceil(player.z() + coverRadius));
+        final String layerId = layerSelector.current().layer().cacheId();
 
         for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
             for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
                 final TileKey key = new TileKey(
                     gameBridge.session().world(), gameBridge.session().dimension(),
-                    MapLayer.SURFACE.cacheId(), 0, tileX, tileZ
+                    layerId, 0, tileX, tileZ
                 );
                 if (!textures.bind(key)) {
                     continue;
@@ -317,7 +323,7 @@ public final class MinimapHudRenderer {
     }
 
     private void drawInfoText(final MatrixStack matrices, final PlayerView player, final int x0, final int y0, final int size) {
-        if (!config.showCoordinates && !config.showBiome) {
+        if (!config.showCoordinates && !config.showBiome && !config.showLayerIndicator) {
             return;
         }
         final boolean topCorner = config.minimapCorner == ConfluxConfig.Corner.TOP_LEFT
@@ -328,6 +334,9 @@ public final class MinimapHudRenderer {
             lines++;
         }
         if (config.showBiome) {
+            lines++;
+        }
+        if (config.showLayerIndicator) {
             lines++;
         }
         float y = topCorner ? y0 + size + 3 : y0 - lines * lineHeight - 3;
@@ -343,7 +352,17 @@ public final class MinimapHudRenderer {
             if (!biome.isEmpty()) {
                 drawCenteredLine(matrices, biome, centerX, y);
             }
+            y += lineHeight;
         }
+        if (config.showLayerIndicator) {
+            drawCenteredLine(matrices, layerIndicatorText(), centerX, y);
+        }
+    }
+
+    /** cave-nether-layers.md-driven layer name, keyed off {@link MapLayer.Type#id()} (e.g. "confluxmap.layer.cave"). */
+    private String layerIndicatorText() {
+        final MapLayer.Type type = layerSelector.current().layer().type();
+        return new TranslatableText("confluxmap.layer." + type.id()).getString();
     }
 
     private void drawCenteredLine(final MatrixStack matrices, final String text, final float centerX, final float y) {

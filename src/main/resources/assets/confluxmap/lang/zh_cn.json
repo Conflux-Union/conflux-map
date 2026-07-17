@@ -4,9 +4,17 @@
   "key.confluxmap.zoom_in": "小地图放大",
   "key.confluxmap.zoom_out": "小地图缩小",
   "key.confluxmap.open_map": "打开世界地图",
+  "key.confluxmap.cycle_layer": "切换地图图层",
   "confluxmap.screen.map.title": "世界地图",
   "confluxmap.map.scale": "缩放：%s",
   "confluxmap.dimension.overworld": "主世界",
   "confluxmap.dimension.the_nether": "下界",
-  "confluxmap.dimension.the_end": "末地"
+  "confluxmap.dimension.the_end": "末地",
+  "confluxmap.layer.surface": "地表",
+  "confluxmap.layer.cave": "洞穴",
+  "confluxmap.layer.cave_y": "洞穴切片",
+  "confluxmap.layer.nether": "下界",
+  "confluxmap.layer.nether_roof": "下界顶层",
+  "confluxmap.layer.nether_y": "下界切片",
+  "confluxmap.layer.end": "末地"
 }

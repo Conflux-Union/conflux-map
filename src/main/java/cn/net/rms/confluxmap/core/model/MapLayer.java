@@ -56,4 +56,29 @@ public record MapLayer(Type type, int param) {
                 return type.id();
         }
     }
+
+    /**
+     * Reconstructs the {@link MapLayer} that produced a given {@link #cacheId()} string
+     * (tile keys and disk-cache paths only carry the id, not the layer object itself).
+     */
+    public static MapLayer parse(final String cacheId) {
+        for (final Type type : Type.values()) {
+            if (type != Type.CAVE_SLICE && type != Type.NETHER_SLICE && type.id().equals(cacheId)) {
+                return new MapLayer(type, 0);
+            }
+        }
+        final String caveSlicePrefix = Type.CAVE_SLICE.id() + "_";
+        if (cacheId.startsWith(caveSlicePrefix)) {
+            return new MapLayer(Type.CAVE_SLICE, parseSliceParam(cacheId.substring(caveSlicePrefix.length())));
+        }
+        final String netherSlicePrefix = Type.NETHER_SLICE.id() + "_";
+        if (cacheId.startsWith(netherSlicePrefix)) {
+            return new MapLayer(Type.NETHER_SLICE, parseSliceParam(cacheId.substring(netherSlicePrefix.length())));
+        }
+        throw new IllegalArgumentException("unknown layer cache id: " + cacheId);
+    }
+
+    private static int parseSliceParam(final String suffix) {
+        return suffix.startsWith("m") ? -Integer.parseInt(suffix.substring(1)) : Integer.parseInt(suffix);
+    }
 }

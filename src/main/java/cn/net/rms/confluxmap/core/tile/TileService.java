@@ -30,8 +30,9 @@ import java.util.Set;
  * {@link #drainUploads(int)} is meant to be called from the render thread.
  *
  * <p>M1 always recomposes a tile from scratch on every dirty event (see
- * {@link TileUpdate}'s javadoc) and only ever renders {@link MapLayer#SURFACE};
- * other layers are a later slice.
+ * {@link TileUpdate}'s javadoc). {@link TileKey#layerId()} carries which
+ * {@link MapLayer} a tile belongs to ({@link MapLayer#parse} recovers it);
+ * every layer shares this one composition path.
  */
 public final class TileService {
     private static final int UPLOAD_QUEUE_CAPACITY = 64;
@@ -152,19 +153,24 @@ public final class TileService {
         // LOD0 tile coordinates are region coordinates; higher LODs cover many regions at once and
         // the disk cache only ever stores LOD0 data, so there's nothing more specific to load there -
         // those regions get pulled in individually as their own LOD0 tiles are requested/captured.
+        // Only MapLayer.Type.persistent() layers ever touch the disk cache at all (dynamic layers
+        // like CAVE_AUTO/NETHER_CURRENT are memory-only per cave-nether-layers.md's live-map model).
         if (key.lod() == 0) {
-            requestRegionLoad(key.tileX(), key.tileZ());
+            final MapLayer.Type layerType = MapLayer.parse(key.layerId()).type();
+            if (layerType.persistent()) {
+                requestRegionLoad(layerType, key.tileX(), key.tileZ());
+            }
         }
     }
 
-    private void requestRegionLoad(final int regionX, final int regionZ) {
+    private void requestRegionLoad(final MapLayer.Type layerType, final int regionX, final int regionZ) {
         final RegionCacheService cacheService = regionCache;
         if (cacheService == null) {
             return;
         }
         final RegionDiskCache cache = cacheService.current();
         if (cache != null) {
-            cache.ensureRegionLoaded(regionX, regionZ);
+            cache.ensureRegionLoaded(layerType, regionX, regionZ);
         }
     }
 
@@ -239,7 +245,7 @@ public final class TileService {
         if (world == null) {
             return null;
         }
-        final ColumnStore store = world.store(MapLayer.SURFACE);
+        final ColumnStore store = world.store(MapLayer.parse(key.layerId()));
         final int[] pixels = key.lod() == 0
             ? composeLod0(store, key.tileX(), key.tileZ())
             : composeLodN(store, key);

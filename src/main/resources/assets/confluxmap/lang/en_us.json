@@ -4,9 +4,17 @@
   "key.confluxmap.zoom_in": "Minimap Zoom In",
   "key.confluxmap.zoom_out": "Minimap Zoom Out",
   "key.confluxmap.open_map": "Open World Map",
+  "key.confluxmap.cycle_layer": "Cycle Map Layer",
   "confluxmap.screen.map.title": "World Map",
   "confluxmap.map.scale": "Scale: %s",
   "confluxmap.dimension.overworld": "Overworld",
   "confluxmap.dimension.the_nether": "The Nether",
-  "confluxmap.dimension.the_end": "The End"
+  "confluxmap.dimension.the_end": "The End",
+  "confluxmap.layer.surface": "Surface",
+  "confluxmap.layer.cave": "Cave",
+  "confluxmap.layer.cave_y": "Cave Slice",
+  "confluxmap.layer.nether": "Nether",
+  "confluxmap.layer.nether_roof": "Nether Roof",
+  "confluxmap.layer.nether_y": "Nether Slice",
+  "confluxmap.layer.end": "The End"
 }
