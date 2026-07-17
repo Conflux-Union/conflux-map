@@ -32,6 +32,13 @@ public final class LightTint {
     private static final float SOFTEN_TARGET = 0.75f;
     /** Vanilla's Nether {@code DimensionType.ambientLight}; Overworld/End are 0. */
     private static final float NETHER_AMBIENT_FLOOR = 0.1f;
+    /**
+     * Map-readability floor, NOT a vanilla constant: a faithfully-vanilla curve renders
+     * unlit caves as ~3% brightness, i.e. invisible on the map. The floor compresses the
+     * light gradient into [floor, 1] so pitch-black areas stay readable while torch-lit
+     * areas still stand out.
+     */
+    private static final float READABILITY_FLOOR = 0.30f;
 
     private static final int[] TABLE_NORMAL = build(0.0f);
     private static final int[] TABLE_NETHER = build(NETHER_AMBIENT_FLOOR);
@@ -76,6 +83,10 @@ public final class LightTint {
         r += skyStrength;
         g += skyStrength;
         b += skyStrength * 1.05f;
+
+        r = READABILITY_FLOOR + r * (1f - READABILITY_FLOOR);
+        g = READABILITY_FLOOR + g * (1f - READABILITY_FLOOR);
+        b = READABILITY_FLOOR + b * (1f - READABILITY_FLOOR);
 
         r = mix(r, SOFTEN_TARGET, SOFTEN_AMOUNT);
         g = mix(g, SOFTEN_TARGET, SOFTEN_AMOUNT);
