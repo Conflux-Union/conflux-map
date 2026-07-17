@@ -99,6 +99,12 @@ public final class SpriteColorSampler {
 
     private int sampleModel(final BlockState state, final BlockView world, final BlockPos pos) {
         final BakedModel model = client.getBlockRenderManager().getModel(state);
+        if (model == null) {
+            // §2 tier 1 (model sprite average) is unavailable for this state - fall straight
+            // through to tier 3 (MapColor) rather than crash. Seen for some states very early
+            // after a world join, before every block's model is baked.
+            return fallbackToMapColor(state, world, pos);
+        }
         final List<Sprite> faceSprites = new ArrayList<>();
         for (final BakedQuad quad : model.getQuads(state, Direction.UP, modelRandom)) {
             faceSprites.add(quad.getSprite());
