@@ -34,6 +34,8 @@ import net.minecraft.world.chunk.WorldChunk;
  * to hand to worker threads.
  */
 public final class McChunkSnapshotFactory {
+    /** Brightness of the solid-rock cross-section drawn where the floor scan finds no opening. */
+    private static final float CROSS_SECTION_DARKEN = 0.4f;
     /** cave-nether-layers.md §2.1: the upward branch's fixed search window above the pivot. */
     private static final int UPWARD_SCAN_CAP = 10;
 
@@ -386,8 +388,20 @@ public final class McChunkSnapshotFactory {
                 }
             }
             if (!found) {
-                // §2.1's NO_FLOOR_FOUND sentinel: nothing open within the upward window -> §5.3 transparent.
-                writeVoid(index, pivotY, surfaceY, kind, baseArgb, tintArgb, overlayArgb, fluidDepth);
+                // Solid rock throughout the window: render a darkened cross-section of the
+                // block at the pivot instead of the spec's transparent sentinel - a mostly
+                // blank map reads as broken, and the cross-section shows ores near the
+                // pivot Y as colored specks (Xaero-style cave view, deliberate deviation).
+                pos.set(worldX, clampedPivot, worldZ);
+                final BlockState rockState = collapse(chunk.getBlockState(pos));
+                final int rockBase = sampler.colorFor(rockState, world, pos);
+                final int rockTint = tintResolver.resolve(rockState, world, pos);
+                surfaceY[index] = clampSurfaceY(clampedPivot);
+                kind[index] = (byte) SurfaceKind.LAND.ordinal();
+                baseArgb[index] = Argb.scale(Argb.multiply(rockBase, rockTint), CROSS_SECTION_DARKEN);
+                tintArgb[index] = 0xFFFFFFFF;
+                overlayArgb[index] = Argb.TRANSPARENT;
+                fluidDepth[index] = 0;
                 return;
             }
             openY = y;
