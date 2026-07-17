@@ -6,12 +6,17 @@ import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.TileKey;
+import cn.net.rms.confluxmap.core.radar.RadarEntry;
+import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.core.waypoint.DimensionScale;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
+import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
+import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
+import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
@@ -24,6 +29,7 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.client.world.ClientWorld;
+import net.minecraft.entity.Entity;
 import net.minecraft.text.TranslatableText;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.Util;
@@ -71,6 +77,8 @@ public final class FullscreenMapScreen extends Screen {
     private static final double DEFAULT_CREATE_Y = 64.0;
     /** Cursor travel between left-press and left-release below which a hovered marker click edits it, not pans (see {@link #mouseReleased}). */
     private static final double CLICK_DRAG_TOLERANCE_PX = 4.0;
+    /** Radar markers are ~12px across including their contour (see RadarMarkerRenderer); cull with that margin so one straddling the edge doesn't pop. */
+    private static final float RADAR_CULL_MARGIN = 8f;
 
     private final KeyBinding openMapKey;
     private final GameBridge gameBridge;
@@ -80,6 +88,9 @@ public final class FullscreenMapScreen extends Screen {
     private final LayerSelector layerSelector;
     private final WaypointService waypointService;
     private final ConfluxConfig config;
+    private final EntityRadarScanner radarScanner;
+    private final EntityIconManager radarIconManager;
+    private final RadarViewRange radarViewRange;
 
     /** World point currently at screen center, and blocks-per-pixel; all mutable, panned/zoomed by input. */
     private double centerX;
@@ -104,6 +115,9 @@ public final class FullscreenMapScreen extends Screen {
         this.layerSelector = app.layerSelector();
         this.waypointService = app.waypointService();
         this.config = app.config();
+        this.radarScanner = app.radarScanner();
+        this.radarIconManager = app.entityIconManager();
+        this.radarViewRange = app.radarViewRange();
 
         final DimensionId dimension = gameBridge.session().dimension();
         final FullscreenMapViewState.View remembered = viewState.get(dimension);
@@ -214,6 +228,9 @@ public final class FullscreenMapScreen extends Screen {
     @Override
     public void render(final MatrixStack matrices, final int mouseX, final int mouseY, final float tickDelta) {
         tiles.setViewpoint((int) Math.floor(centerX), (int) Math.floor(centerZ));
+        // This screen owns radarViewRange while it's open (MinimapHudRenderer stops writing it -
+        // see its render() javadoc); the viewport half-diagonal is what's actually visible here.
+        radarViewRange.set(Math.hypot(width, height) / 2.0 * scale);
 
         RenderUtil.fillRect(matrices, 0, 0, width, height, BACKGROUND_COLOR);
         drawGrid(matrices);
@@ -222,6 +239,7 @@ public final class FullscreenMapScreen extends Screen {
         drawTiles(matrices);
 
         drawChunkGrid(matrices, mouseX, mouseY);
+        drawRadar(matrices, tickDelta);
 
         drawWaypoints(matrices, mouseX, mouseY);
         drawPlayerMarker(matrices, tickDelta);
@@ -262,6 +280,46 @@ public final class FullscreenMapScreen extends Screen {
                 final float quadSize = (float) (blocksPerTile * pxPerBlock);
                 RenderUtil.drawQuad(matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f);
             }
+        }
+    }
+
+    /**
+     * Radar entries above the map tiles but below waypoint markers (see {@link #render}), reusing
+     * {@link RadarMarkerRenderer} - the exact same icon/dot drawing {@code MinimapHudRenderer} uses,
+     * so both surfaces look identical. Always north-up (this screen never rotates), and positions
+     * use the same live-interpolated-position-over-scan-snapshot preference as the minimap (see
+     * {@code MinimapHudRenderer#drawRadar}'s javadoc). Category toggles and {@code radarEnabled}
+     * already apply upstream in the scanner, so no extra filtering happens here beyond viewport culling.
+     */
+    private void drawRadar(final MatrixStack matrices, final float tickDelta) {
+        if (client.world == null) {
+            return;
+        }
+        final Optional<PlayerView> playerView = gameBridge.player(tickDelta);
+        if (playerView.isEmpty()) {
+            return;
+        }
+        final PlayerView player = playerView.get();
+        final double pxPerBlock = 1.0 / scale;
+
+        for (final RadarEntry entry : radarScanner.snapshot()) {
+            double ex = entry.x();
+            double ez = entry.z();
+            int yDelta = entry.yDelta();
+            final Entity live = client.world.getEntityById(entry.entityId());
+            if (live != null) {
+                ex = MathHelper.lerp(tickDelta, live.prevX, live.getX());
+                ez = MathHelper.lerp(tickDelta, live.prevZ, live.getZ());
+                yDelta = (int) Math.round(live.getY() - player.y());
+            }
+
+            final float screenX = (float) (width / 2.0 + (ex - centerX) * pxPerBlock);
+            final float screenY = (float) (height / 2.0 + (ez - centerZ) * pxPerBlock);
+            if (screenX < -RADAR_CULL_MARGIN || screenX > width + RADAR_CULL_MARGIN
+                || screenY < -RADAR_CULL_MARGIN || screenY > height + RADAR_CULL_MARGIN) {
+                continue;
+            }
+            RadarMarkerRenderer.draw(matrices, client, config, radarIconManager, entry, screenX, screenY, yDelta, live);
         }
     }
 

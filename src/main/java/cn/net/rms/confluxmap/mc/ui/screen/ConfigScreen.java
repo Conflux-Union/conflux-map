@@ -198,10 +198,6 @@ public final class ConfigScreen extends Screen {
                 y = addToggleRow(y, "confluxmap.config.radar.show_hostile", () -> config.radarShowHostile, v -> config.radarShowHostile = v);
                 y = addToggleRow(y, "confluxmap.config.radar.show_passive", () -> config.radarShowPassive, v -> config.radarShowPassive = v);
                 y = addToggleRow(y, "confluxmap.config.radar.show_other", () -> config.radarShowOther, v -> config.radarShowOther = v);
-                y = addIntSliderRow(
-                    y, "confluxmap.config.radar.range", 16, 256,
-                    () -> config.radarRange, v -> config.radarRange = v, ConfigScreen::blocksText
-                );
                 y = addToggleRow(y, "confluxmap.config.radar.show_player_names", () -> config.radarShowPlayerNames, v -> config.radarShowPlayerNames = v);
                 y = addIntSliderRow(
                     y, "confluxmap.config.radar.max_entities", 1, 500,

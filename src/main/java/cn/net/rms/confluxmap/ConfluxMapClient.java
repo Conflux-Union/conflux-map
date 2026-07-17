@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.core.cache.RegionCacheService;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
@@ -48,6 +49,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private BiomeTintResolver biomeTintResolver;
     private TileTextureManager tileTextureManager;
     private ChunkCaptureService chunkCapture;
+    private RadarViewRange radarViewRange;
     private EntityRadarScanner radarScanner;
     private EntityIconManager entityIconManager;
     private MinimapHudRenderer minimapHudRenderer;
@@ -91,7 +93,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
         chunkCapture = new ChunkCaptureService(
             client, config, mapWorlds, executors, tileService, regionCache, spriteColorSampler, biomeTintResolver, layerSelector
         );
-        radarScanner = new EntityRadarScanner(client, config);
+        radarViewRange = new RadarViewRange();
+        radarScanner = new EntityRadarScanner(client, config, radarViewRange);
         entityIconManager = new EntityIconManager(client);
         waypointService = new WaypointService(
             FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("waypoints"),
@@ -99,7 +102,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
         );
         deathWatcher = new DeathWatcher(gameBridge, config, waypointService);
         minimapHudRenderer = new MinimapHudRenderer(
-            client, config, gameBridge, tileService, tileTextureManager, radarScanner, entityIconManager, layerSelector, waypointService
+            client, config, gameBridge, tileService, tileTextureManager, radarScanner, entityIconManager, layerSelector, waypointService,
+            radarViewRange
         );
         waypointWorldRenderer = new WaypointWorldRenderer(client, config, gameBridge, waypointService);
         fullscreenMapViewState = new FullscreenMapViewState();
@@ -179,6 +183,14 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public EntityRadarScanner radarScanner() {
         return radarScanner;
+    }
+
+    public RadarViewRange radarViewRange() {
+        return radarViewRange;
+    }
+
+    public EntityIconManager entityIconManager() {
+        return entityIconManager;
     }
 
     public TileTextureManager tileTextureManager() {

@@ -53,8 +53,6 @@ public final class ConfluxConfig {
     public boolean radarShowPassive = false;
     /** Defensive fallback bucket (see {@code core.radar.RadarCategory}); off by default alongside PASSIVE. */
     public boolean radarShowOther = false;
-    /** Horizontal radar tracking radius, in world blocks (independent of minimap zoom/size). */
-    public int radarRange = 80;
     public boolean radarShowPlayerNames = true;
     public int radarMaxEntities = 100;
     /** VoxelMap-style entity head icons with a hostile/passive/player/other border ring, instead of the plain shaped dot. */
@@ -92,7 +90,6 @@ public final class ConfluxConfig {
         c.radarShowHostile = radarShowHostile;
         c.radarShowPassive = radarShowPassive;
         c.radarShowOther = radarShowOther;
-        c.radarRange = radarRange;
         c.radarShowPlayerNames = radarShowPlayerNames;
         c.radarMaxEntities = radarMaxEntities;
         c.radarIconsEnabled = radarIconsEnabled;
@@ -121,7 +118,6 @@ public final class ConfluxConfig {
         netherSliceY = clamp(netherSliceY, 0, 127);
         snapshotBudgetPerTick = clamp(snapshotBudgetPerTick, 1, 64);
         gpuTileCacheLimit = clamp(gpuTileCacheLimit, 16, 2048);
-        radarRange = clamp(radarRange, 16, 256);
         radarMaxEntities = clamp(radarMaxEntities, 1, 500);
         waypointRenderDistance = clamp(waypointRenderDistance, 0, 100_000);
         deathPointsKept = clamp(deathPointsKept, 0, 50);

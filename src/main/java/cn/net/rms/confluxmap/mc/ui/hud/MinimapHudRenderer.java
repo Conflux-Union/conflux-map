@@ -6,16 +6,16 @@ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
-import cn.net.rms.confluxmap.core.radar.RadarCategory;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
+import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.tile.TileService;
-import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.core.waypoint.DimensionScale;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
+import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
 import cn.net.rms.confluxmap.mc.render.OffscreenCanvas;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
@@ -57,28 +57,6 @@ public final class MinimapHudRenderer {
     /** Half of the ~7px-across VoxelMap-style diamond/cross marker (deliverable B). */
     private static final float WAYPOINT_MARKER_HALF_SIZE = 3.5f;
 
-    // Radar marker colors and above/below indication, per docs/reference-specs/radar-icons.md sec 3:
-    // entities above the player fade toward transparent; entities at/below dim toward black,
-    // floored so they never go fully dark. See #elevationColor for the exact formula.
-    private static final int RADAR_PLAYER_COLOR = 0xFFFFFFFF;
-    private static final int RADAR_HOSTILE_COLOR = 0xFFFF4040;
-    private static final int RADAR_PASSIVE_COLOR = 0xFF50E060;
-    private static final int RADAR_OTHER_COLOR = 0xFFA0A0A0;
-    private static final int RADAR_VERTICAL_WINDOW = 32;
-    private static final float RADAR_DIM_FLOOR = 0.3f;
-
-    // Entity head icons (radar-icons.md sec "approach"): the icon quad is drawn at fixed pixel
-    // size, with a colored ring around it indicating the category - independent of the plain
-    // dot colors above, which stay unchanged for the config.radarIconsEnabled=false / no-icon
-    // fallback path.
-    private static final float RADAR_ICON_HALF_SIZE = 5f;
-    private static final float RADAR_ICON_SIZE = RADAR_ICON_HALF_SIZE * 2f;
-    /** Name labels sit just below the icon's 1px square border. */
-    private static final float RADAR_NAME_OFFSET = 7f;
-    private static final int RADAR_ICON_CONTOUR = 0xB0000000;
-    /** No elevation treatment inside this band - nearby mobs always render fully readable. */
-    private static final int RADAR_DEADZONE = 8;
-
     private final MinecraftClient client;
     private final ConfluxConfig config;
     private final GameBridge gameBridge;
@@ -89,6 +67,7 @@ public final class MinimapHudRenderer {
     private final EntityIconManager iconManager;
     private final LayerSelector layerSelector;
     private final WaypointService waypointService;
+    private final RadarViewRange radarViewRange;
 
     public MinimapHudRenderer(
         final MinecraftClient client,
@@ -99,7 +78,8 @@ public final class MinimapHudRenderer {
         final EntityRadarScanner radarScanner,
         final EntityIconManager iconManager,
         final LayerSelector layerSelector,
-        final WaypointService waypointService
+        final WaypointService waypointService,
+        final RadarViewRange radarViewRange
     ) {
         this.client = client;
         this.config = config;
@@ -110,6 +90,7 @@ public final class MinimapHudRenderer {
         this.iconManager = iconManager;
         this.layerSelector = layerSelector;
         this.waypointService = waypointService;
+        this.radarViewRange = radarViewRange;
     }
 
     public void register() {
@@ -126,11 +107,18 @@ public final class MinimapHudRenderer {
      */
     private void render(final MatrixStack matrices, final float tickDelta) {
         textures.beginFrame();
-        if (!config.minimapEnabled || !gameBridge.session().active() || client.currentScreen instanceof FullscreenMapScreen) {
+        final boolean fullscreenOpen = client.currentScreen instanceof FullscreenMapScreen;
+        if (!config.minimapEnabled || !gameBridge.session().active() || fullscreenOpen) {
+            // FullscreenMapScreen owns radarViewRange while it's open; otherwise the minimap
+            // isn't rendering at all, so there's no visible map surface for the radar to scan.
+            if (!fullscreenOpen) {
+                radarViewRange.set(0);
+            }
             return;
         }
         final Optional<PlayerView> playerView = gameBridge.player(tickDelta);
         if (playerView.isEmpty()) {
+            radarViewRange.set(0);
             return;
         }
         final PlayerView player = playerView.get();
@@ -145,6 +133,12 @@ public final class MinimapHudRenderer {
         final boolean circle = config.minimapShape == ConfluxConfig.Shape.CIRCLE;
         final boolean rotate = config.minimapRotate;
         final float mapAngle = rotate ? 180f - player.yawDegrees() : 0f;
+
+        // Radar scans exactly what this frame's minimap will show: the circle's radius, or
+        // the square's half-diagonal (so a corner-cropped mob is still caught by the scan).
+        final float minimapBlocksPerPixel = BLOCKS_PER_PIXEL[config.minimapZoomIndex];
+        final double visibleRadius = size / 2.0 * minimapBlocksPerPixel * (circle ? 1.0 : Math.sqrt(2));
+        radarViewRange.set(visibleRadius);
 
         if (circle) {
             // Real geometric clipping: render the square map into an off-screen canvas,
@@ -339,115 +333,8 @@ public final class MinimapHudRenderer {
             }
             final float x = centerX + dirX * cos - dirY * sin;
             final float y = centerY + dirX * sin + dirY * cos;
-            drawRadarMarker(matrices, entry, x, y, yDelta, live);
+            RadarMarkerRenderer.draw(matrices, client, config, iconManager, entry, x, y, yDelta, live);
         }
-    }
-
-    /**
-     * Draws the entity head icon (VoxelMap-style: a small sub-UV crop of the entity's own skin/
-     * mob texture, ringed in a category color) when available, falling back to the original
-     * shaped dot otherwise - either because icons are disabled, the entity isn't currently loaded
-     * (only the scan-time snapshot position survived - see {@link #drawRadar} javadoc), or its
-     * species has no entry in {@link EntityIconManager}'s UV table.
-     */
-    private void drawRadarMarker(
-        final MatrixStack matrices, final RadarEntry entry, final float x, final float y, final int yDelta, final Entity live
-    ) {
-        if (config.radarIconsEnabled && live != null) {
-            final EntityIconManager.FaceIcon icon = iconManager.iconFor(live);
-            if (icon != null) {
-                drawRadarIcon(matrices, icon, x, y, yDelta);
-                if (config.radarShowPlayerNames && entry.category() == RadarCategory.PLAYER && entry.name() != null) {
-                    drawCenteredLine(matrices, entry.name(), x, y + RADAR_NAME_OFFSET);
-                }
-                return;
-            }
-        }
-        final int color = elevationColor(baseRadarColor(entry.category()), yDelta);
-        switch (entry.category()) {
-            case PLAYER:
-                RenderUtil.fillRect(matrices, x - 2f, y - 2f, 4f, 4f, color);
-                if (config.radarShowPlayerNames && entry.name() != null) {
-                    drawCenteredLine(matrices, entry.name(), x, y + 3f);
-                }
-                break;
-            case HOSTILE:
-                RenderUtil.fillTriangle(matrices, x, y - 3.5f, x - 3f, y + 2.5f, x + 3f, y + 2.5f, color);
-                break;
-            case PASSIVE:
-                RenderUtil.drawRing(matrices, x, y, 2.5f, 2.5f, color);
-                break;
-            default:
-                RenderUtil.fillRect(matrices, x - 1.5f, y - 1.5f, 3f, 3f, color);
-                break;
-        }
-    }
-
-    /**
-     * Icon quad tinted by the same elevation alpha/dim as the dot markers (base color white, so
-     * the entity's real texture colors show through untouched), then a category-colored ring
-     * drawn just outside it - the ring also gets the elevation treatment, matching how the
-     * reference spec applies the same alpha/dim multiply to its headgear overlay layer.
-     */
-    private void drawRadarIcon(
-        final MatrixStack matrices, final EntityIconManager.FaceIcon icon, final float x, final float y, final int yDelta
-    ) {
-        final int tint = elevationColor(0xFFFFFFFF, yDelta);
-        RenderUtil.bindTexture(client, icon.texture());
-        RenderUtil.drawTintedQuad(
-            matrices, x - RADAR_ICON_HALF_SIZE, y - RADAR_ICON_HALF_SIZE, RADAR_ICON_SIZE, RADAR_ICON_SIZE,
-            icon.u0(), icon.v0(), icon.u1(), icon.v1(), tint
-        );
-        if (icon.hasOverlay()) {
-            RenderUtil.bindTexture(client, icon.overlayTexture());
-            RenderUtil.drawTintedQuad(
-                matrices, x - RADAR_ICON_HALF_SIZE, y - RADAR_ICON_HALF_SIZE, RADAR_ICON_SIZE, RADAR_ICON_SIZE,
-                icon.ou0(), icon.ov0(), icon.ou1(), icon.ov1(), tint
-            );
-        }
-        // VoxelMap-style presentation: a clean face icon with only a thin dark contour
-        // for contrast against the terrain - no faction frames (user feedback: match
-        // VoxelMap; a night full of hostiles turned colored frames into visual noise).
-        final int borderColor = elevationColor(RADAR_ICON_CONTOUR, yDelta);
-        final float left = x - RADAR_ICON_HALF_SIZE - 1f;
-        final float top = y - RADAR_ICON_HALF_SIZE - 1f;
-        final float edge = RADAR_ICON_SIZE + 2f;
-        RenderUtil.fillRect(matrices, left, top, edge, 1f, borderColor);
-        RenderUtil.fillRect(matrices, left, top + edge - 1f, edge, 1f, borderColor);
-        RenderUtil.fillRect(matrices, left, top + 1f, 1f, edge - 2f, borderColor);
-        RenderUtil.fillRect(matrices, left + edge - 1f, top + 1f, 1f, edge - 2f, borderColor);
-    }
-
-    private static int baseRadarColor(final RadarCategory category) {
-        switch (category) {
-            case PLAYER:
-                return RADAR_PLAYER_COLOR;
-            case HOSTILE:
-                return RADAR_HOSTILE_COLOR;
-            case PASSIVE:
-                return RADAR_PASSIVE_COLOR;
-            default:
-                return RADAR_OTHER_COLOR;
-        }
-    }
-
-    /**
-     * Above/below indication (radar-icons.md sec 3), simplified to a fixed 32-block window
-     * (no zoom scaling, no doubled window for phantoms) rather than the spec's Full-mode icon
-     * treatment: a "closeness" value is 1 right at the player's own height and falls off
-     * (linearly, then squared) to 0 at the window edge. An entity above the player fades toward
-     * transparent as closeness drops; an entity at or below stays opaque but its color dims
-     * toward black as closeness drops, floored at 30% brightness so it never fully vanishes.
-     */
-    private static int elevationColor(final int base, final int yDelta) {
-        final int beyond = Math.max(0, Math.abs(yDelta) - RADAR_DEADZONE);
-        final float closeness = 1f - Math.min(beyond / (float) (RADAR_VERTICAL_WINDOW - RADAR_DEADZONE), 1f);
-        if (yDelta > 0) {
-            final int alpha = Math.round(Math.max(closeness, 0.35f) * 255f);
-            return (base & 0x00FFFFFF) | (alpha << 24);
-        }
-        final float brightness = Math.max(closeness, 0.5f);
-        return Argb.scale(base, brightness);
     }
 
     private void drawPlayerArrow(final MatrixStack matrices, final float centerX, final float centerY, final float angle) {

@@ -60,7 +60,6 @@
   "confluxmap.config.radar.show_hostile": "显示敌对生物：%s",
   "confluxmap.config.radar.show_passive": "显示被动生物：%s",
   "confluxmap.config.radar.show_other": "显示其他实体：%s",
-  "confluxmap.config.radar.range": "范围：%s",
   "confluxmap.config.radar.show_player_names": "显示玩家名称：%s",
   "confluxmap.config.radar.max_entities": "最大实体数：%s",
   "confluxmap.config.radar.icons_enabled": "实体头像图标：%s",

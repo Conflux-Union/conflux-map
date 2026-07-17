@@ -60,7 +60,6 @@
   "confluxmap.config.radar.show_hostile": "Show Hostile Mobs: %s",
   "confluxmap.config.radar.show_passive": "Show Passive Mobs: %s",
   "confluxmap.config.radar.show_other": "Show Other Entities: %s",
-  "confluxmap.config.radar.range": "Range: %s",
   "confluxmap.config.radar.show_player_names": "Show Player Names: %s",
   "confluxmap.config.radar.max_entities": "Max Entities: %s",
   "confluxmap.config.radar.icons_enabled": "Entity Head Icons: %s",

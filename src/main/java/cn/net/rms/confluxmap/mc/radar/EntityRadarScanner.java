@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.radar.RadarCategory;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.radar.RadarFilter;
+import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import java.util.ArrayList;
 import java.util.List;
@@ -53,16 +54,28 @@ public final class EntityRadarScanner {
     private static final int VERTICAL_RANGE = 32;
     /** Doubled vertical window for the one flying-hostile exception the spec calls out (the Phantom). */
     private static final int PHANTOM_VERTICAL_RANGE = 64;
+    /**
+     * If the visible-map radius grows past this fraction of the last completed scan's radius,
+     * a rescan is triggered on the very next tick instead of waiting out the full
+     * {@link #SCAN_INTERVAL_TICKS} interval - so e.g. opening the fullscreen map (a much larger
+     * viewport than the minimap) fills in its radar entries immediately rather than showing an
+     * empty/stale ring for up to 16 ticks.
+     */
+    private static final double RESCAN_GROWTH_THRESHOLD = 1.25;
 
     private final MinecraftClient client;
     private final ConfluxConfig config;
+    private final RadarViewRange viewRange;
 
     private volatile List<RadarEntry> snapshot = List.of();
     private int tickCounter;
+    /** The view radius used by the most recently completed scan; 0 means "no scan yet". */
+    private double lastScannedRadius;
 
-    public EntityRadarScanner(final MinecraftClient client, final ConfluxConfig config) {
+    public EntityRadarScanner(final MinecraftClient client, final ConfluxConfig config, final RadarViewRange viewRange) {
         this.client = client;
         this.config = config;
+        this.viewRange = viewRange;
     }
 
     public void register() {
@@ -73,6 +86,7 @@ public final class EntityRadarScanner {
     public void onSessionChanged(final SessionGuard.Session session) {
         snapshot = List.of();
         tickCounter = 0;
+        lastScannedRadius = 0;
     }
 
     /** Render thread (== client thread here); immutable, safe to iterate without copying. */
@@ -87,14 +101,24 @@ public final class EntityRadarScanner {
             }
             return;
         }
-        if (++tickCounter < SCAN_INTERVAL_TICKS) {
+        final double radius = viewRange.radius();
+        if (radius <= 0) {
+            // No map surface is visible - nothing to project the radar onto.
+            if (!snapshot.isEmpty()) {
+                snapshot = List.of();
+            }
+            return;
+        }
+        final boolean radiusJumped = lastScannedRadius > 0 && radius > lastScannedRadius * RESCAN_GROWTH_THRESHOLD;
+        if (++tickCounter < SCAN_INTERVAL_TICKS && !radiusJumped) {
             return;
         }
         tickCounter = 0;
-        snapshot = scan();
+        lastScannedRadius = radius;
+        snapshot = scan(radius);
     }
 
-    private List<RadarEntry> scan() {
+    private List<RadarEntry> scan(final double radius) {
         final PlayerEntity self = client.player;
         if (self == null || client.world == null) {
             return List.of();
@@ -102,7 +126,8 @@ public final class EntityRadarScanner {
         final double px = self.getX();
         final double py = self.getY();
         final double pz = self.getZ();
-        final long horizontalRangeSq = square(config.radarRange + SCAN_RANGE_BUFFER);
+        final double bufferedRadius = radius + SCAN_RANGE_BUFFER;
+        final double horizontalRangeSq = bufferedRadius * bufferedRadius;
 
         final List<RadarEntry> raw = new ArrayList<>();
         for (final Entity entity : client.world.getEntities()) {
@@ -152,9 +177,5 @@ public final class EntityRadarScanner {
             return RadarCategory.PASSIVE;
         }
         return RadarCategory.OTHER;
-    }
-
-    private static long square(final int v) {
-        return (long) v * v;
     }
 }
