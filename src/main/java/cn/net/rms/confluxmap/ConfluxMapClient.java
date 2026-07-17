@@ -12,6 +12,7 @@ import cn.net.rms.confluxmap.mc.color.BiomeTintResolver;
 import cn.net.rms.confluxmap.mc.color.ColorReloadListener;
 import cn.net.rms.confluxmap.mc.color.SpriteColorSampler;
 import cn.net.rms.confluxmap.mc.input.Keybinds;
+import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureService;
 import cn.net.rms.confluxmap.mc.ui.hud.MinimapHudRenderer;
@@ -40,6 +41,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private BiomeTintResolver biomeTintResolver;
     private TileTextureManager tileTextureManager;
     private ChunkCaptureService chunkCapture;
+    private EntityRadarScanner radarScanner;
     private MinimapHudRenderer minimapHudRenderer;
     private FullscreenMapViewState fullscreenMapViewState;
 
@@ -71,17 +73,19 @@ public final class ConfluxMapClient implements ClientModInitializer {
         chunkCapture = new ChunkCaptureService(
             client, config, mapWorlds, executors, tileService, spriteColorSampler, biomeTintResolver
         );
-        minimapHudRenderer = new MinimapHudRenderer(client, config, gameBridge, tileService, tileTextureManager);
+        radarScanner = new EntityRadarScanner(client, config);
+        minimapHudRenderer = new MinimapHudRenderer(client, config, gameBridge, tileService, tileTextureManager, radarScanner);
         fullscreenMapViewState = new FullscreenMapViewState();
 
         sessionTracker.addListener(mapWorlds::onSessionChanged);
         sessionTracker.addListener(chunkCapture::onSessionChanged);
         sessionTracker.addListener(tileService::onSessionChanged);
+        sessionTracker.addListener(radarScanner::onSessionChanged);
         sessionTracker.addListener(session -> gameBridge.runOnRenderThread(tileTextureManager::releaseAll));
-        sessionTracker.addListener(fullscreenMapViewState::onSessionChanged);
         sessionTracker.register();
 
         chunkCapture.register();
+        radarScanner.register();
         minimapHudRenderer.register();
         ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
             new ColorReloadListener(spriteColorSampler)
@@ -131,6 +135,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public ChunkCaptureService chunkCapture() {
         return chunkCapture;
+    }
+
+    public EntityRadarScanner radarScanner() {
+        return radarScanner;
     }
 
     public TileTextureManager tileTextureManager() {

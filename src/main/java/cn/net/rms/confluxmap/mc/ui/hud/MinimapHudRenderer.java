@@ -5,8 +5,12 @@ import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
+import cn.net.rms.confluxmap.core.radar.RadarCategory;
+import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.tile.TileService;
+import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.TileMath;
+import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
@@ -14,10 +18,12 @@ import java.util.Optional;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.Entity;
 import net.minecraft.text.Text;
 import net.minecraft.text.TranslatableText;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3f;
 import net.minecraft.util.registry.Registry;
 import net.minecraft.world.biome.Biome;
@@ -40,24 +46,37 @@ public final class MinimapHudRenderer {
     private static final int ARROW_FILL = 0xFFFFFFFF;
     private static final float[] BLOCKS_PER_PIXEL = {0.5f, 1f, 2f, 4f};
 
+    // Radar marker colors and above/below indication, per docs/reference-specs/radar-icons.md sec 3:
+    // entities above the player fade toward transparent; entities at/below dim toward black,
+    // floored so they never go fully dark. See #elevationColor for the exact formula.
+    private static final int RADAR_PLAYER_COLOR = 0xFFFFFFFF;
+    private static final int RADAR_HOSTILE_COLOR = 0xFFFF4040;
+    private static final int RADAR_PASSIVE_COLOR = 0xFF50E060;
+    private static final int RADAR_OTHER_COLOR = 0xFFA0A0A0;
+    private static final int RADAR_VERTICAL_WINDOW = 32;
+    private static final float RADAR_DIM_FLOOR = 0.3f;
+
     private final MinecraftClient client;
     private final ConfluxConfig config;
     private final GameBridge gameBridge;
     private final TileService tiles;
     private final TileTextureManager textures;
+    private final EntityRadarScanner radarScanner;
 
     public MinimapHudRenderer(
         final MinecraftClient client,
         final ConfluxConfig config,
         final GameBridge gameBridge,
         final TileService tiles,
-        final TileTextureManager textures
+        final TileTextureManager textures,
+        final EntityRadarScanner radarScanner
     ) {
         this.client = client;
         this.config = config;
         this.gameBridge = gameBridge;
         this.tiles = tiles;
         this.textures = textures;
+        this.radarScanner = radarScanner;
     }
 
     public void register() {
@@ -119,6 +138,7 @@ public final class MinimapHudRenderer {
             drawBorder(matrices, x0, y0, size);
         }
 
+        drawRadar(matrices, centerX, centerY, size, mapAngle, player, tickDelta);
         drawCardinals(matrices, centerX, centerY, size, mapAngle);
         drawPlayerArrow(matrices, centerX, centerY, rotate ? 0f : player.yawDegrees() + 180f);
         drawInfoText(matrices, player, x0, y0, size);
@@ -154,6 +174,109 @@ public final class MinimapHudRenderer {
                 RenderUtil.drawQuad(matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f);
             }
         }
+    }
+
+    /**
+     * Draws one dot per {@link RadarEntry} in {@link #radarScanner}'s latest snapshot. Positions
+     * use the same world-delta * pxPerBlock projection as {@link #drawTiles}, but — like
+     * {@link #drawCardinals}/{@link #drawCardinal} — rotate the offset by {@code mapAngle}
+     * explicitly and draw the marker shape unrotated afterward, so markers stay upright
+     * regardless of the minimap's current rotation.
+     */
+    private void drawRadar(
+        final MatrixStack matrices,
+        final float centerX,
+        final float centerY,
+        final int size,
+        final float mapAngle,
+        final PlayerView player,
+        final float tickDelta
+    ) {
+        if (!config.radarEnabled || client.world == null) {
+            return;
+        }
+        final float blocksPerPixel = BLOCKS_PER_PIXEL[config.minimapZoomIndex];
+        final float pxPerBlock = 1f / blocksPerPixel;
+        final float cullRadiusSq = (size / 2f) * (size / 2f);
+        final double rad = Math.toRadians(mapAngle);
+        final float cos = (float) Math.cos(rad);
+        final float sin = (float) Math.sin(rad);
+
+        for (final RadarEntry entry : radarScanner.snapshot()) {
+            double ex = entry.x();
+            double ez = entry.z();
+            int yDelta = entry.yDelta();
+            // Prefer a live, per-frame interpolated position over the scan-time snapshot so
+            // motion is smooth every frame instead of snapping once per scan interval (spec sec 5).
+            final Entity live = client.world.getEntityById(entry.entityId());
+            if (live != null) {
+                ex = MathHelper.lerp(tickDelta, live.prevX, live.getX());
+                ez = MathHelper.lerp(tickDelta, live.prevZ, live.getZ());
+                yDelta = (int) Math.round(live.getY() - player.y());
+            }
+
+            final float dirX = (float) ((ex - player.x()) * pxPerBlock);
+            final float dirY = (float) ((ez - player.z()) * pxPerBlock);
+            if (dirX * dirX + dirY * dirY > cullRadiusSq) {
+                continue;
+            }
+            final float x = centerX + dirX * cos - dirY * sin;
+            final float y = centerY + dirX * sin + dirY * cos;
+            drawRadarMarker(matrices, entry, x, y, yDelta);
+        }
+    }
+
+    private void drawRadarMarker(final MatrixStack matrices, final RadarEntry entry, final float x, final float y, final int yDelta) {
+        final int color = elevationColor(baseRadarColor(entry.category()), yDelta);
+        switch (entry.category()) {
+            case PLAYER:
+                RenderUtil.fillRect(matrices, x - 2f, y - 2f, 4f, 4f, color);
+                if (config.radarShowPlayerNames && entry.name() != null) {
+                    drawCenteredLine(matrices, entry.name(), x, y + 3f);
+                }
+                break;
+            case HOSTILE:
+                RenderUtil.fillTriangle(matrices, x, y - 3.5f, x - 3f, y + 2.5f, x + 3f, y + 2.5f, color);
+                break;
+            case PASSIVE:
+                RenderUtil.drawRing(matrices, x, y, 2.5f, 2.5f, color);
+                break;
+            default:
+                RenderUtil.fillRect(matrices, x - 1.5f, y - 1.5f, 3f, 3f, color);
+                break;
+        }
+    }
+
+    private static int baseRadarColor(final RadarCategory category) {
+        switch (category) {
+            case PLAYER:
+                return RADAR_PLAYER_COLOR;
+            case HOSTILE:
+                return RADAR_HOSTILE_COLOR;
+            case PASSIVE:
+                return RADAR_PASSIVE_COLOR;
+            default:
+                return RADAR_OTHER_COLOR;
+        }
+    }
+
+    /**
+     * Above/below indication (radar-icons.md sec 3), simplified to a fixed 32-block window
+     * (no zoom scaling, no doubled window for phantoms) rather than the spec's Full-mode icon
+     * treatment: a "closeness" value is 1 right at the player's own height and falls off
+     * (linearly, then squared) to 0 at the window edge. An entity above the player fades toward
+     * transparent as closeness drops; an entity at or below stays opaque but its color dims
+     * toward black as closeness drops, floored at 30% brightness so it never fully vanishes.
+     */
+    private static int elevationColor(final int base, final int yDelta) {
+        final float linear = 1f - Math.min(Math.abs(yDelta), RADAR_VERTICAL_WINDOW) / (float) RADAR_VERTICAL_WINDOW;
+        final float closeness = linear * linear;
+        if (yDelta > 0) {
+            final int alpha = Math.round(closeness * 255f);
+            return (base & 0x00FFFFFF) | (alpha << 24);
+        }
+        final float brightness = Math.max(closeness, RADAR_DIM_FLOOR);
+        return Argb.scale(base, brightness);
     }
 
     private void drawPlayerArrow(final MatrixStack matrices, final float centerX, final float centerY, final float angle) {

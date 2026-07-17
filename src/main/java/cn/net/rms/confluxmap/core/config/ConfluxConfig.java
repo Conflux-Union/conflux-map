@@ -26,6 +26,19 @@ public final class ConfluxConfig {
     public int snapshotBudgetPerTick = 8;
     public int gpuTileCacheLimit = 256;
 
+    /** Master toggle for the whole entity-radar overlay (docs/reference-specs/radar-icons.md sec 4). */
+    public boolean radarEnabled = true;
+    public boolean radarShowPlayers = true;
+    public boolean radarShowHostile = true;
+    /** Spec default for the "neutral" category is off; M1's PASSIVE bucket is that same category. */
+    public boolean radarShowPassive = false;
+    /** Defensive fallback bucket (see {@code core.radar.RadarCategory}); off by default alongside PASSIVE. */
+    public boolean radarShowOther = false;
+    /** Horizontal radar tracking radius, in world blocks (independent of minimap zoom/size). */
+    public int radarRange = 80;
+    public boolean radarShowPlayerNames = true;
+    public int radarMaxEntities = 100;
+
     public ConfluxConfig copy() {
         final ConfluxConfig c = new ConfluxConfig();
         c.schemaVersion = schemaVersion;
@@ -39,6 +52,14 @@ public final class ConfluxConfig {
         c.showBiome = showBiome;
         c.snapshotBudgetPerTick = snapshotBudgetPerTick;
         c.gpuTileCacheLimit = gpuTileCacheLimit;
+        c.radarEnabled = radarEnabled;
+        c.radarShowPlayers = radarShowPlayers;
+        c.radarShowHostile = radarShowHostile;
+        c.radarShowPassive = radarShowPassive;
+        c.radarShowOther = radarShowOther;
+        c.radarRange = radarRange;
+        c.radarShowPlayerNames = radarShowPlayerNames;
+        c.radarMaxEntities = radarMaxEntities;
         return c;
     }
 
@@ -54,6 +75,8 @@ public final class ConfluxConfig {
         minimapZoomIndex = clamp(minimapZoomIndex, 0, 3);
         snapshotBudgetPerTick = clamp(snapshotBudgetPerTick, 1, 64);
         gpuTileCacheLimit = clamp(gpuTileCacheLimit, 16, 2048);
+        radarRange = clamp(radarRange, 16, 256);
+        radarMaxEntities = clamp(radarMaxEntities, 1, 500);
     }
 
     private static int clamp(final int v, final int min, final int max) {
