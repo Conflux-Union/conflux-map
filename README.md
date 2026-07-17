@@ -1,87 +1,81 @@
-# Preprocessor Example Mod
+# Conflux Map
 
 **English** | [简体中文](README-CN.md)
 
-Example mod for [Fallen_Breath](https://github.com/Fallen-Breath)'
-s [implementation](https://github.com/Fallen-Breath/preprocessor) of [ReplayMod](https://github.com/ReplayMod)'
-s [preprocessor](https://github.com/ReplayMod/preprocessor).
+Conflux Map is a Fabric client-side minimap and world map mod for Minecraft,
+built from a clean-room specification (see
+[`docs/reference-specs/`](docs/reference-specs/README.md)) rather than any
+existing mod's source. It is not affiliated with, endorsed by, or derived
+from **VoxelMap** or **Xaero's Minimap/World Map** - see
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for exactly how those
+projects were and weren't involved.
 
-## Disclaimer
+## Features (as of Milestone 1)
 
-If you are new to fabric modding, this template is not for you. Please learn to
-use [Fabric Example Mod](https://github.com/FabricMC/fabric-example-mod) instead.
+Milestone 1 is the client-side core: everything below works standalone
+against any server, vanilla or modded, with no server-side component
+required.
 
-## Features
+- **HUD minimap** - always-on corner overlay, square or circular, 4 corners,
+  4 sizes, 4 zoom levels, optional player-facing rotation, coordinates and
+  biome info line.
+- **Fullscreen world map** - pan/zoom explorable map with multi-resolution
+  tiles, cursor-anchored zoom, right-click to drop a waypoint.
+- **Cave / Nether / End layers** - automatic underground detection in the
+  Overworld with hysteresis so it doesn't flicker at the boundary, Nether
+  current-layer/ceiling/manual-Y-slice modes, End void-background rendering.
+- **Waypoints and death points** - create, edit, color, group, and toggle
+  waypoints; automatic death-point markers; correct 8:1 coordinate
+  conversion between the Overworld and the Nether; edge-of-minimap direction
+  indicators for out-of-range waypoints.
+- **Entity radar** - hostile/passive/player/other classification with
+  independent on/off toggles, range, and max-entity cap.
+- **Disk cache** - explored terrain persists to disk per world/server per
+  dimension per layer, so revisiting a world shows previously-mapped terrain
+  immediately instead of a blank map.
+- **In-game settings screen** - every setting above is exposed and takes
+  effect immediately, no restart required (see the keybind table below).
+- **Full English and Simplified Chinese localization.**
 
-This repository provides some unique features that no other preprocessor template repositories provide, including:
+Seed-based chunk prediction and a dual-sided (client+server) protocol are
+deliberately out of scope for Milestone 1; `cn.net.rms.confluxmap.spi` holds
+the reserved extension points (`PredictionProvider`, `MapProtocolClient`) for
+that future work.
 
-- Automatic Gradle subproject creation and linking (majorly implemented by @Jog_Ming )
-- GitHub Actions matrix publishing and cache refresh (majorly implemented by @XRain66 )
+## Keybinds
 
-## Setup
+All keybinds are rebindable in Minecraft's normal Controls screen, under the
+"Conflux Map" category.
 
-To set up the project, you will need to change the following fields in specified files:
+| Default key | Action |
+|---|---|
+| `H` | Toggle the minimap on/off |
+| `]` | Minimap zoom in |
+| `[` | Minimap zoom out |
+| `M` | Open the fullscreen world map |
+| `Y` | Cycle the manual map layer override |
+| `U` | Open the waypoint list |
+| `B` | Create a new waypoint at your current position |
+| `,` | Open the settings screen |
 
-- `group` and `id` (corresponding to `maven_group` and `archives_base_name` in conventional fabric mods) in
-  `gradle.properties`
-- The directory and file names in `src/main`
-- The `name`, `description`, `authors`, `contact`, and `entrypoints` field in `fabric.mod.json`
-- The `package` field in `<modid>.mixins.json`
+## Building
 
-This template defaults to Minecraft version 1.17.1. To change that, simply rename the folder in `versions` and change
-the contents of `versions/mainProject` to the version of desire, and sync Gradle.
+Requires a JDK compatible with Minecraft 1.17.1's toolchain (Java 16); Loom
+will otherwise fetch everything else (Minecraft, mappings, Fabric Loader)
+automatically.
 
-To add support for a new version, do:
+```sh
+./gradlew :1.17.1:build
+```
 
-- Create a new folder in `versions` named to be the version you want to add
-- Create a txt file in `versions` named `mapping-<old version>-<new version>.txt`
-    - This file is required, but could be left blank. It could also feature the translations of classes between the old
-      version and the new version.
-    - For example, in 1.17.1, the class responsible for spawning phantoms is `net.minecraft.world.gen.PhantomSpawner`
-    - However, in 1.20.1, it was renamed (moved) to `net.minecraft.world.spawner.PhantomSpawner`.
-    - To allow this translation to happen automatically, write the entry
-      `net.minecraft.world.gen.PhantomSpawner net.minecraft.world.spawner.PhantomSpawner` in
-      `versions/mapping-1.17.1-1.20.1.txt`.
-    - Each translation entry should occupy one line.
-- If you want to add support for more than two versions, make sure that the mapping files are chained together from
-  older versions to newer versions
-    - For example, if you want to support three versions, 1.17.1, 1.20.1 and 1.21.1, the mapping files should be
-      `versions/mapping-1.17.1-1.20.1.txt` and `versions/mapping-1.20.1-1.21.1.txt`
-- After adding the mapping txt files, sync Gradle.
-- If you want to focus development on a version other than 1.17.1, modify the file `versions/mainProject`, and sync
-  Gradle
-- In each of the version folders, create a `gradle.properties` file and a `<modid>.accesswidener` file.
-    - In `gradle.properties`, specify the fabric loader and the yarn mapping versions to be used. Refer to the examples
-      given in `versions/1.17.1/gradle.properties` if unsure
-    - `<modid>.accesswidener` is necessary but could have no entries (must declare `accessWidener v2 named` at the very
-      start of the file though)
-
-To add a mod as dependency, more changes had to be made:
-
-- Declare the mod repository in `common.gradle`.
-- Go to `fabric.mod.json` and make space to insert the dependency declarations.
-    - Find the `"depends"` key and insert the dependency declaration like this:
-      `"depends": { ..., "carpet": ">=$carpet_version", ... }`
-- In every version folder's `gradle.properties` file, create entries to store the dependency's version information. You
-  will likely need two entries for each dependency, one for the full version string to be used in dependency
-  declaration (such as `carpet_full_version=1.17.1-1.4.57+v220119`), and another for the simplified version string to be
-  used in `fabric.mod.json` (such as `carpet_version=1.4.57`)
-- In the `dependencies` section of `common.gradle`, insert the respective `modImplementation` or `include`
-  declarations. (i.e. `modImplementation "carpet:fabric-carpet:$carpet_full_version"`)
-- In the `processResources` section of `common.gradle`, find the line starting with `filesMatching('fabric.mod.json')`,
-  and insert a key-value pair like this:
-  `filesMatching('fabric.mod.json') { expand ..., carpet_version: carpet_version, ... }`
-
-If you want the GitHub `release` action to automatically publish to Modrinth, make sure to set the environment variable
-`MODRINTH_ID` and secret `MODRINTH_TOKEN`. If you have mod dependencies, declare them in `.github/workflows/release.yml`
-in the `dependencies` field. Refer to [mc-publish](https://github.com/Kira-NT/mc-publish) for declaration syntax.
-
-For more information on preprocessor, including its exact usage, purpose, and mechanics, refer
-to [ReplayMod's repository](https://github.com/ReplayMod/preprocessor).
-
-For more information on changes made by Fallen_Breath, refer
-to [his repository](https://github.com/Fallen-Breath/preprocessor).
+The built jar is written to `versions/1.17.1/build/libs/`. Milestone 1
+targets Minecraft 1.17.1 only; later milestones add further versions under
+`versions/` using the preprocessor-driven multi-version layout described in
+[`docs/reference-specs/README.md`](docs/reference-specs/README.md) and this
+repository's implementation plan.
 
 ## License
 
-This template is available under the GPL-3.0 license.
+Conflux Map is licensed under the **GNU General Public License v3.0** - see
+[`LICENSE`](LICENSE). Third-party components and behavior-reference sources
+are documented in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

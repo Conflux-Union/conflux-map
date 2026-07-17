@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.mc.ui.screen.ConfigScreen;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import cn.net.rms.confluxmap.mc.ui.screen.WaypointEditScreen;
@@ -26,6 +27,7 @@ public final class Keybinds {
     private final KeyBinding cycleLayer;
     private final KeyBinding openWaypoints;
     private final KeyBinding newWaypoint;
+    private final KeyBinding openConfig;
     private final ConfluxConfig config;
     private final ConfigIo configIo;
     private final LayerSelector layerSelector;
@@ -41,6 +43,7 @@ public final class Keybinds {
         cycleLayer = register("cycle_layer", GLFW.GLFW_KEY_Y);
         openWaypoints = register("waypoints", GLFW.GLFW_KEY_U);
         newWaypoint = register("new_waypoint", GLFW.GLFW_KEY_B);
+        openConfig = register("open_config", GLFW.GLFW_KEY_COMMA);
         ClientTickEvents.END_CLIENT_TICK.register(client -> poll());
     }
 
@@ -91,6 +94,12 @@ public final class Keybinds {
             final MinecraftClient client = MinecraftClient.getInstance();
             if (client.player != null && client.currentScreen == null) {
                 openNewWaypointAtPlayer(client);
+            }
+        }
+        while (openConfig.wasPressed()) {
+            final MinecraftClient client = MinecraftClient.getInstance();
+            if (client.player != null && client.currentScreen == null) {
+                client.setScreen(new ConfigScreen());
             }
         }
         if (changed) {

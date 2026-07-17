@@ -1,74 +1,71 @@
-# Preprocessor Example Mod
+# Conflux Map
 
 [English](README.md) | **简体中文**
 
-这是为 [Fallen_Breath](https://github.com/Fallen-Breath)
-的 [preprocessor 实现](https://github.com/Fallen-Breath/preprocessor)
-而制作的示例模组，该实现基于 [ReplayMod](https://github.com/ReplayMod)
-的 [preprocessor](https://github.com/ReplayMod/preprocessor) 。
+Conflux Map 是一个 Fabric 客户端小地图 / 世界地图模组。它基于洁室（clean-room）
+行为规格实现（见 [`docs/reference-specs/`](docs/reference-specs/README.md)），
+而非基于任何现有模组的源码。本项目与 **VoxelMap**、**Xaero's Minimap/World
+Map** 均无关联、非其背书、也不是从它们衍生而来——具体它们在多大程度上被参考、又
+在哪些方面完全没有被使用，见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 
-## 免责声明
+## 功能特性（截至里程碑 M1）
 
-如果你是Fabric模组开发的新手，那这个模板不适合你。请先学习使用 [Fabric Example Mod](https://github.com/FabricMC/fabric-example-mod) 。
+M1 是纯客户端核心功能，以下所有功能对任意服务端（原版或模组端）均可独立工作，
+不需要任何服务端组件配合。
 
-## 特性
+- **小地图 HUD** —— 常驻屏幕角落的浮层，方形或圆形，4 个角落位置、4 档尺寸、
+  4 档缩放，可选跟随视角旋转，坐标与生物群系信息行。
+- **全屏世界地图** —— 可拖动缩放的探索地图，多分辨率瓦片，以光标为中心缩放，
+  右键点击可直接创建路径点。
+- **洞穴 / 下界 / 末地图层** —— 主世界地下模式自动检测（带滞回，边界处不会来回
+  闪烁）、下界当前层/基岩顶层/手动 Y 切片三种模式、末地虚空背景渲染。
+- **路径点与死亡点** —— 创建、编辑、上色、分组、显示/隐藏切换路径点；死亡自动
+  生成死亡点；主世界与下界之间正确的 8:1 坐标换算；小地图边缘方向指示器提示
+  范围外的路径点。
+- **实体雷达** —— 敌对 / 被动 / 玩家 / 其他四类实体独立开关，可配置范围与实体
+  数量上限。
+- **磁盘缓存** —— 已探索地形按世界/服务器、维度、图层分别持久化到磁盘，重新
+  进入世界时已探索区域立即显示，无需重新扫描。
+- **游戏内设置界面** —— 上述所有设置项均可在游戏内直接调整，改动立即生效、
+  无需重启（默认按键见下表）。
+- **完整的中英文本地化。**
 
-这个仓库提供了一些其他preprocessor模板仓库没有的独特功能，包括：
+基于种子的区块预测与双端（客户端+服务端）协议不在 M1 范围内，故意只留了扩展
+接口：`cn.net.rms.confluxmap.spi` 包中的 `PredictionProvider`、
+`MapProtocolClient` 为后续里程碑预留了落地位置。
 
-- 自动创建和链接Gradle子项目（主要由 @Jog_Ming 实现）
-- GitHub Actions矩阵发布和缓存刷新（主要由 @XRain66 实现）
+## 按键绑定
 
-## 设置
+以下所有按键均可在 Minecraft 原版的按键设置界面中重新绑定，分类名为
+"Conflux Map"。
 
-要设置项目，你需要修改以下指定文件中的字段：
+| 默认按键 | 功能 |
+|---|---|
+| `H` | 开关小地图 |
+| `]` | 小地图放大 |
+| `[` | 小地图缩小 |
+| `M` | 打开全屏世界地图 |
+| `Y` | 切换手动图层模式 |
+| `U` | 打开路径点列表 |
+| `B` | 在当前位置新建路径点 |
+| `,` | 打开设置界面 |
 
-- `gradle.properties` 中的 `group` 和 `id`（对应传统fabric模组中的 `maven_group` 和 `archives_base_name`）
-- `src/main` 中的目录和文件名
-- `fabric.mod.json` 中的 `name`、`description`、`authors`、`contact` 和 `entrypoints` 字段
-- `<modid>.mixins.json` 中的 `package` 字段
+## 构建
 
-这个模板默认使用Minecraft版本1.17.1。要更改版本，只需重命名 `versions` 文件夹中的目录，并将 `versions/mainProject`
-的内容改为所需的版本，然后同步Gradle。要添加对新版本的支持，请执行以下操作：
+需要与 Minecraft 1.17.1 工具链兼容的 JDK（Java 16）；其余依赖（Minecraft、
+映射表、Fabric Loader）Loom 会自动下载。
 
-- 在 `versions` 中创建一个新文件夹，命名为你想要添加的版本
-- 在 `versions` 中创建一个名为 `mapping-<旧版本>-<新版本>.txt` 的txt文件
-    - 这个文件是必需的，但可以留空。它也可以包含旧版本和新版本之间类的转换关系。
-    - 例如，在1.17.1中，负责生成幻翼的类是 `net.minecraft.world.gen.PhantomSpawner`
-    - 然而，在1.20.1中，它被重命名（移动）为 `net.minecraft.world.spawner.PhantomSpawner`。
-    - 为了让这个转换自动进行，在 `versions/mapping-1.17.1-1.20.1.txt` 中写入条目
-      `net.minecraft.world.gen.PhantomSpawner net.minecraft.world.spawner.PhantomSpawner`。
-    - 每个转换条目应占一行。
-- 如果你想要支持两个以上的版本，请确保映射文件是按从旧到新的顺序链接的
-    - 例如，如果你想支持三个版本：1.17.1、1.20.1和1.21.1，映射文件应该是 `versions/mapping-1.17.1-1.20.1.txt` 和
-      `versions/mapping-1.20.1-1.21.1.txt`
-- 添加映射txt文件后，同步Gradle。
-- 如果你想专注于开发1.17.1以外的版本，修改文件 `versions/mainProject`，然后同步Gradle
-- 在每个版本文件夹中，创建一个 `gradle.properties` 文件和一个 `<modid>.accesswidener` 文件。
-    - 在 `gradle.properties` 中，指定要使用的fabric加载器和yarn映射版本。如果不确定，请参考
-      `versions/1.17.1/gradle.properties` 中的示例
-    - `<modid>.accesswidener` 是必需的，但可以没有条目（不过必须在文件开头声明 `accessWidener v2 named`）
+```sh
+./gradlew :1.17.1:build
+```
 
-若要添加一个模组作为依赖，则需要进行更多更改：
-
-- 在 `common.gradle` 中声明模组仓库。
-- 转到 `fabric.mod.json` 并留出空间插入依赖声明。
-    - 找到 `"depends"` 键并插入依赖声明，如下所示：`"depends": { ..., "carpet": ">=$carpet_version", ... }`
-- 在每个版本文件夹的 `gradle.properties` 文件中，创建条目来存储依赖的版本信息。每个依赖很可能需要两个条目：一个用于依赖声明中使用的完整版本字符串（例如
-  `carpet_full_version=1.17.1-1.4.57+v220119`），另一个用于 `fabric.mod.json` 中使用的简化版本字符串（例如
-  `carpet_version=1.4.57`）
-- 在 `common.gradle` 的 `dependencies` 部分，插入相应的 `modImplementation` 或 `include` 声明。（例如
-  `modImplementation "carpet:fabric-carpet:$carpet_full_version"`）
-- 在 `common.gradle` 的 `processResources` 部分，找到以 `filesMatching('fabric.mod.json')` 开头的行，并插入一个键值对，如下所示：
-  `filesMatching('fabric.mod.json') { expand ..., carpet_version: carpet_version, ... }`
-
-如果你希望GitHub的 `release` 操作自动发布到Modrinth，请确保设置环境变量 `MODRINTH_ID` 和密钥 `MODRINTH_TOKEN`。如果你有模组依赖，请在
-`.github/workflows/release.yml` 的 `dependencies`
-字段中声明它们。有关声明语法，请参考 [mc-publish](https://github.com/Kira-NT/mc-publish) 。
-
-有关preprocessor的更多信息，包括其确切用法、目的和机制，请参考 [ReplayMod的仓库](https://github.com/ReplayMod/preprocessor) 。
-
-有关Fallen_Breath所做更改的更多信息，请参考 [他的仓库](https://github.com/Fallen-Breath/preprocessor) 。
+构建产物输出到 `versions/1.17.1/build/libs/`。M1 仅面向 Minecraft 1.17.1；
+后续里程碑会按照 [`docs/reference-specs/README.md`](docs/reference-specs/README.md)
+及本仓库实施计划中描述的、由 preprocessor 驱动的多版本布局，在 `versions/`
+下加入更多版本。
 
 ## 许可证
 
-本模板在GPL-3.0许可证下提供。
+Conflux Map 基于 **GNU General Public License v3.0** 发布——见
+[`LICENSE`](LICENSE)。第三方组件与行为参考来源记录在
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) 中。

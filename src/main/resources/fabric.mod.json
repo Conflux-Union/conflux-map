@@ -3,7 +3,7 @@
   "id": "$id",
   "version": "$version",
   "name": "Conflux Map",
-  "description": "Minimap and world map with multiplayer-aware features: HUD minimap, fullscreen map, waypoints, death points, cave/nether layers, and entity radar.",
+  "description": "Minimap and world map with multiplayer-aware features: HUD minimap, fullscreen map, waypoints, death points, cave/nether layers, entity radar, and an in-game settings screen.",
   "authors": [
     "Conflux Union"
   ],

@@ -216,7 +216,7 @@ public final class WaypointListScreen extends Screen {
     }
 
     private static String formatDistance(final double distance) {
-        return Math.round(distance) + "m";
+        return new TranslatableText("confluxmap.value.blocks", Math.round(distance)).getString();
     }
 
     private static String dimensionLabel(final DimensionId dimension) {
