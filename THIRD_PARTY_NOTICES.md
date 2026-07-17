@@ -24,6 +24,12 @@ build. Neither is bundled inside the mod's output jar.
 | [Fabric API](https://github.com/FabricMC/fabric-api) | Apache License 2.0 | A separate Fabric Loader mod this project depends on (`modImplementation` in `common.gradle`, declared in `fabric.mod.json`'s `depends`) for `HudRenderCallback`, `ClientTickEvents`, `KeyBindingHelper`, `ClientPlayConnectionEvents`, `WorldRenderEvents`, and resource-reload hooks. End users must have Fabric API installed alongside this mod; it ships as its own jar, not inside ours. |
 | [preprocessor](https://github.com/Fallen-Breath/preprocessor) (Fallen_Breath's fork of [ReplayMod/preprocessor](https://github.com/ReplayMod/preprocessor)) | GPL-3.0 | A Gradle plugin (`com.replaymod.preprocess`, applied in `build.gradle`/`settings.gradle`) that manages the multi-Minecraft-version source layout under `versions/` and will drive the `//#if` conditional blocks once a second version is added (see the M1 plan). It contributes no runtime classes to the built mod - it only runs as part of the Gradle build itself. This repository started from this plugin's own example-mod template; the template's placeholder mod code has since been fully replaced by Conflux Map's own implementation. |
 
+## Bundled assets
+
+| Component | License | Role |
+|---|---|---|
+| [Entity-Icons](https://github.com/Simplexity-Development/Entity-Icons) by Simplexity-Development | CC0-1.0 (public domain) | Source of the hand-drawn mob face icons bundled at `assets/confluxmap/textures/radar/entity_icons.png` (a 208x240px, 13-col x 15-row sheet of 16x16 icons), used for radar/minimap entity markers instead of live in-game skin/mob-texture crops. The CC0 license text ships alongside it at `assets/confluxmap/textures/radar/ENTITY_ICONS_LICENSE.txt`. |
+
 ## Behavior references (no code or assets used)
 
 | Project | License (as published) | How it was used |

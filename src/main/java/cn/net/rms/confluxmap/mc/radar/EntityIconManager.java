@@ -1,56 +1,54 @@
 package cn.net.rms.confluxmap.mc.radar;
 
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
-import net.minecraft.client.MinecraftClient;
+import java.util.function.Function;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
-import net.minecraft.client.render.entity.EntityRenderer;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.passive.AxolotlEntity;
+import net.minecraft.entity.passive.CatEntity;
+import net.minecraft.entity.passive.FoxEntity;
+import net.minecraft.entity.passive.LlamaEntity;
+import net.minecraft.entity.passive.MooshroomEntity;
+import net.minecraft.entity.passive.PandaEntity;
+import net.minecraft.entity.passive.ParrotEntity;
+import net.minecraft.entity.passive.RabbitEntity;
+import net.minecraft.entity.passive.SheepEntity;
+import net.minecraft.entity.passive.StriderEntity;
+import net.minecraft.entity.passive.VillagerEntity;
+import net.minecraft.entity.passive.WolfEntity;
 import net.minecraft.util.Identifier;
 
 /**
- * Render-thread lookup from a live entity to a small sub-region ("face") of that entity's
- * already-loaded skin/mob texture, for drawing VoxelMap-style head icons on the radar instead
- * of the plain shaped dots (docs/reference-specs/radar-icons.md sec 2 documents the reference
- * implementation's much heavier runtime model-baking approach; that is out of scope here). This
- * is deliberately a "sub-UV" approach: no offscreen render, no pixel readback, no
- * {@code NativeImageBackedTexture} baking - just binding a texture Minecraft already has
- * resident on the GPU and drawing a small quad with hand-picked UV coordinates, exactly like
- * the vanilla tab-list player-head icons do.
+ * Render-thread lookup from a live entity to its radar face icon: for players, a sub-UV crop of
+ * the player's own skin (face + hat overlay), exactly as before; for vanilla mobs, one 16x16 cell
+ * of a single bundled sprite sheet, replacing the previous approach of hand-picked UV crops into
+ * each mob's live in-game texture.
  *
- * <p><b>Players</b> use the real equipped skin: {@link AbstractClientPlayerEntity#getSkinTexture()}
- * (always returns a usable identifier - the client's default per-UUID skin if the real one
- * hasn't finished downloading yet) sub-UV'd to the 8x8 face region at (8,8)-(16,16) of the 64x64
- * skin, with the separate 8x8 hat-layer overlay at (40,8)-(48,16) composited on top - both
- * verified directly against {@code BipedEntityModel.getModelData} (head/hat cuboids), since the
- * player model and the skin layout are one and the same box-UV scheme.
+ * <p>The sheet is {@code assets/confluxmap/textures/radar/entity_icons.png}: a 208x240px, 13-col
+ * x 15-row grid of 16x16 hand-drawn face icons, originally "Entity-Icons" by Simplexity-Development
+ * (CC0-1.0 / public domain, see {@code THIRD_PARTY_NOTICES.md} and the license text bundled
+ * alongside the sheet). Cell (row, col) are 1-based, row 1 at the top, col 1 at the left; pixel
+ * origin of cell (r, c) is {@code x = (c-1)*16, y = (r-1)*16}. The species-to-cell map in
+ * {@link #buildSheetTable()} is transcribed verbatim from the authoritative
+ * {@code docs/reference-specs/entity-icon-cellmap.json} spec, which documents how each cell was
+ * chosen and verified; that JSON is a build-time artifact and is not read at runtime.
  *
- * <p><b>Mobs</b> use {@code EntityRenderDispatcher#getRenderer(entity).getTexture(entity)} to
- * resolve the correct texture identifier <em>per instance</em> - this automatically handles
- * per-entity texture variants (horse coat color, cat/ocelot breed, etc.) exactly like the
- * vanilla renderer does, without this class needing to know about any of them. Paired with that
- * is a static {@link EntityType}-to-face-rectangle table below: the face position within the
- * texture is a property of the shared *model*, not of which specific texture file a given
- * instance resolves to, so one fractional UV rect per species is enough regardless of variant.
+ * <p>Several species render different textures/models per instance (sheep wool, cat breed, llama
+ * coat, etc). Rather than trying to bake that into the (single, shared) sheet layout, each such
+ * species carries a small resolver ({@link CellIcon#variantKey}) that reads the cheap client-side
+ * entity state driving that difference and maps it to an alternate cell; species whose variant
+ * state isn't cheaply reachable, or whose resolver returns an unmapped key, fall back to the
+ * species' base cell.
  *
- * <p>Every rectangle in {@link #UV_TABLE} is grounded in real vanilla 1.17.1 assets, not guessed,
- * via one of two methods (see the per-group comments below for which applies): (1) read directly
- * off the decompiled entity model classes' {@code getTexturedModelData()}/{@code getModelData()}
- * head cuboid ({@code uv(u, v).cuboid(x, y, z, w, h, d)}) and converted with {@link #headBox}; or
- * (2), for species whose visible "head" isn't a single front-facing box (fish, squid, guardian,
- * shulker, the horse family, etc.), located by extracting the actual PNG from the vanilla client
- * jar (mc/textures/entity/**) and visually pinpointing the eyes/face pixel rect directly with
- * {@link #px}. The box-to-UV formula for method (1) is Minecraft's standard cuboid unwrap: for a
- * box of size (w, h, d) at texture offset (u, v), the box's front/north face lands at pixel rect
- * {@code (u+d, v+d)} to {@code (u+d+w, v+d+h)}.
- *
- * <p>Species without a table entry (including every non-vanilla/modded entity) simply get no
- * icon here ({@link #iconFor} returns {@code null}); the caller keeps drawing the existing
- * shaped-dot marker for those, unchanged.
+ * <p>Species without a table entry (including every non-vanilla/modded entity) simply get no icon
+ * here ({@link #iconFor} returns {@code null}); the caller keeps drawing the existing shaped-dot
+ * marker for those, unchanged.
  */
 public final class EntityIconManager {
-    /** One species' pre-computed fractional face UV rect (0..1), independent of which specific per-instance texture file is bound. */
+    /** One species' fractional UV rect (0..1) into whichever texture it's paired with. */
     private record FaceUv(float u0, float v0, float u1, float v1) {
     }
 
@@ -67,6 +65,23 @@ public final class EntityIconManager {
         }
     }
 
+    /** One species' base sheet cell, plus an optional per-instance variant resolver. */
+    private record CellIcon(FaceUv base, Map<String, FaceUv> variants, Function<Entity, String> variantKey) {
+        /** Render thread. {@code entity} is guaranteed to be of the species this table entry was registered under. */
+        FaceUv resolve(final Entity entity) {
+            if (variantKey != null) {
+                final String key = variantKey.apply(entity);
+                if (key != null) {
+                    final FaceUv variant = variants.get(key);
+                    if (variant != null) {
+                        return variant;
+                    }
+                }
+            }
+            return base;
+        }
+    }
+
     /** Player skins are always 64x64 in 1.17.1 (legacy 64x32 skins are upgraded on load). */
     private static final int SKIN_SIZE = 64;
     /** BipedEntityModel.getModelData: head = uv(0,0).cuboid(w=8,h=8,d=8). */
@@ -74,18 +89,29 @@ public final class EntityIconManager {
     /** BipedEntityModel.getModelData: hat = uv(32,0).cuboid(w=8,h=8,d=8). */
     private static final FaceUv PLAYER_HAT = px(40, 8, 48, 16, SKIN_SIZE, SKIN_SIZE);
 
-    private static final Map<EntityType<?>, FaceUv> UV_TABLE = buildUvTable();
+    private static final Identifier SHEET = new Identifier("confluxmap", "textures/radar/entity_icons.png");
+    /** entity_icons.png is a 13-col x 15-row grid of 16x16 cells (docs/reference-specs/entity-icon-cellmap.json). */
+    private static final int SHEET_W = 208;
+    private static final int SHEET_H = 240;
+    private static final int CELL_PX = 16;
 
-    private final MinecraftClient client;
+    /**
+     * 1.17.1 CatEntity.getCatType() int-to-breed order, verified against the vanilla class'
+     * TABBY_TYPE..ALL_BLACK_TYPE constant values (0..10) via decompiled bytecode, not guessed.
+     */
+    private static final String[] CAT_TYPE_NAMES = {
+        "tabby", "black", "red", "siamese", "british_shorthair", "calico", "persian", "ragdoll", "white", "jellie", "all_black"
+    };
 
-    public EntityIconManager(final MinecraftClient client) {
-        this.client = client;
+    private static final Map<EntityType<?>, CellIcon> SHEET_TABLE = buildSheetTable();
+
+    public EntityIconManager() {
     }
 
     /**
      * Render thread. Returns the face icon for this live entity, or {@code null} if none is
-     * available (unknown/modded species, or the entity's renderer/texture lookup failed) - the
-     * caller should fall back to the shaped-dot marker in that case.
+     * available (unknown/modded species) - the caller should fall back to the shaped-dot marker
+     * in that case.
      */
     public FaceIcon iconFor(final Entity entity) {
         if (entity instanceof AbstractClientPlayerEntity) {
@@ -103,205 +129,215 @@ public final class EntityIconManager {
     }
 
     private FaceIcon mobIcon(final Entity entity) {
-        final FaceUv uv = UV_TABLE.get(entity.getType());
-        if (uv == null) {
+        final CellIcon icon = SHEET_TABLE.get(entity.getType());
+        if (icon == null) {
             return null;
         }
-        final EntityRenderer<? super Entity> renderer = client.getEntityRenderDispatcher().getRenderer(entity);
-        if (renderer == null) {
-            return null;
-        }
-        final Identifier texture = renderer.getTexture(entity);
-        if (texture == null) {
-            return null;
-        }
-        return new FaceIcon(texture, uv.u0(), uv.v0(), uv.u1(), uv.v1(), null, 0f, 0f, 0f, 0f);
+        final FaceUv uv = icon.resolve(entity);
+        return new FaceIcon(SHEET, uv.u0(), uv.v0(), uv.u1(), uv.v1(), null, 0f, 0f, 0f, 0f);
     }
 
     private static FaceUv px(final int x0, final int y0, final int x1, final int y1, final int texW, final int texH) {
         return new FaceUv(x0 / (float) texW, y0 / (float) texH, x1 / (float) texW, y1 / (float) texH);
     }
 
-    /** Standard Minecraft cuboid-to-UV unwrap: front face of a (w,h,d) box at texture offset (u,v). */
-    private static FaceUv headBox(final int u, final int v, final int w, final int h, final int d, final int texW, final int texH) {
-        final int x0 = u + d;
-        final int y0 = v + d;
-        return px(x0, y0, x0 + w, y0 + h, texW, texH);
+    /** 1-based (row, col) sheet cell -> fractional UV rect, per the grid convention documented on the class. */
+    private static FaceUv cell(final int row, final int col) {
+        final int x0 = (col - 1) * CELL_PX;
+        final int y0 = (row - 1) * CELL_PX;
+        return px(x0, y0, x0 + CELL_PX, y0 + CELL_PX, SHEET_W, SHEET_H);
     }
 
-    private static Map<EntityType<?>, FaceUv> buildUvTable() {
-        final Map<EntityType<?>, FaceUv> map = new HashMap<>();
+    private static CellIcon icon(final int row, final int col) {
+        return new CellIcon(cell(row, col), Map.of(), null);
+    }
 
-        // Standard humanoid head box (0,0) cuboid(8,8,8), shared verbatim by BipedEntityModel and
-        // every mob model that doesn't override "head" (ZombieEntityModel/AbstractZombieModel,
-        // SkeletonEntityModel), plus CreeperEntityModel/EndermanEntityModel/PigEntityModel which
-        // independently use the exact same (0,0,8,8,8) box, and SlimeEntityModel's outer-shell
-        // "cube" (the translucent overlay mesh - picked over the smaller inner body+eyes because
-        // a single UV rect can't reproduce the eyes, which are separate overlapping cuboids).
-        final FaceUv biped64x64 = headBox(0, 0, 8, 8, 8, 64, 64);
-        map.put(EntityType.ZOMBIE, biped64x64);
-        map.put(EntityType.HUSK, biped64x64);
-        map.put(EntityType.DROWNED, biped64x64);
-        final FaceUv biped64x32 = headBox(0, 0, 8, 8, 8, 64, 32);
-        map.put(EntityType.SKELETON, biped64x32);
-        map.put(EntityType.STRAY, biped64x32);
-        map.put(EntityType.WITHER_SKELETON, biped64x32);
-        map.put(EntityType.CREEPER, biped64x32);
-        map.put(EntityType.ENDERMAN, biped64x32);
-        map.put(EntityType.SLIME, biped64x32);
-        map.put(EntityType.PIG, biped64x32);
-        // MagmaCubeEntityModel does NOT share SlimeEntityModel's layout despite the shared
-        // texture folder: magmacube.png is a stack of per-segment strips. Pixel-measured -
-        // the x32-40 column carries the assembled face: both orange eyes on the top strip
-        // plus the yellow mouth pixels on the bottom strip, dark crust between.
-        map.put(EntityType.MAGMA_CUBE, px(32, 16, 40, 28, 64, 32));
+    @SafeVarargs
+    private static CellIcon icon(
+        final int row, final int col, final Function<Entity, String> variantKey, final Map.Entry<String, FaceUv>... variants
+    ) {
+        return new CellIcon(cell(row, col), Map.ofEntries(variants), variantKey);
+    }
 
-        // VillagerResemblingModel head = uv(0,0).cuboid(8,10,8), shared verbatim by
-        // VillagerEntityModel, ZombieVillagerEntityModel and WitchEntityModel.
-        // IronGolemEntityModel independently uses the same (0,0,8,10,8) box on its 128x128 texture.
-        final FaceUv villagerHead = headBox(0, 0, 8, 10, 8, 64, 64);
-        map.put(EntityType.VILLAGER, villagerHead);
-        map.put(EntityType.ZOMBIE_VILLAGER, villagerHead);
-        // WanderingTraderEntity extends VillagerEntity and reuses VillagerEntityModel verbatim.
-        map.put(EntityType.WANDERING_TRADER, villagerHead);
-        map.put(EntityType.WITCH, headBox(0, 0, 8, 10, 8, 64, 128));
-        map.put(EntityType.IRON_GOLEM, headBox(0, 0, 8, 10, 8, 128, 128));
-        // IllagerEntityModel head is the same VillagerResemblingModel shape with a slightly larger
-        // nose cuboid; pixel-measured against illager/{evoker,vindicator,pillager,illusioner}.png
-        // (all 64x64, identical layout) rather than headBox() because of that nose bulge. Shared
-        // verbatim by the whole illager family per docs/reference-specs/radar-icons.md's grouping.
-        final FaceUv illagerHead = px(6, 7, 18, 17, 64, 64);
-        map.put(EntityType.EVOKER, illagerHead);
-        map.put(EntityType.VINDICATOR, illagerHead);
-        map.put(EntityType.PILLAGER, illagerHead);
-        map.put(EntityType.ILLUSIONER, illagerHead);
+    private static Map.Entry<String, FaceUv> v(final String key, final int row, final int col) {
+        return Map.entry(key, cell(row, col));
+    }
 
-        // SpiderEntityModel head = uv(32,4).cuboid(8,8,8); CaveSpiderEntity reuses SpiderEntityModel.
-        final FaceUv spiderHead = headBox(32, 4, 8, 8, 8, 64, 32);
-        map.put(EntityType.SPIDER, spiderHead);
-        map.put(EntityType.CAVE_SPIDER, spiderHead);
-        // SilverfishEntityModel/EndermiteEntityModel: tiny 64x32 body-segment textures with no
-        // headBox-sized cuboid; pixel-measured against silverfish.png/endermite.png - both put
-        // their small dark eye pair in the same top-left segment corner.
-        final FaceUv tinySegmentHead = px(0, 0, 8, 5, 64, 32);
-        map.put(EntityType.SILVERFISH, tinySegmentHead);
-        map.put(EntityType.ENDERMITE, tinySegmentHead);
+    // -- Variant resolvers: one per variantBy value in entity-icon-cellmap.json. Each reads only
+    // cheap client-side entity state that exists in 1.17.1, verified against the decompiled/mapped
+    // vanilla classes before use (see per-method comments for what was checked).
 
-        // Species-specific quadruped head boxes (all on 64x32 textures), read from
-        // CowEntityModel/SheepEntityModel/ChickenEntityModel/WolfEntityModel(.realHead)/
-        // OcelotEntityModel(.head, shared by CatEntityModel - CatEntity resolves its own
-        // breed-specific texture file per instance via getTexture(entity), independent of this UV).
-        final FaceUv cowHead = headBox(0, 0, 8, 8, 6, 64, 32);
-        map.put(EntityType.COW, cowHead);
-        // MooshroomEntity extends CowEntity and reuses CowEntityModel/its 64x32 head layout
-        // verbatim (verified against cow/red_mooshroom.png - same eye pixels, same offset).
-        map.put(EntityType.MOOSHROOM, cowHead);
-        map.put(EntityType.SHEEP, headBox(0, 0, 6, 6, 8, 64, 32));
-        map.put(EntityType.CHICKEN, headBox(0, 0, 4, 6, 3, 64, 32));
-        map.put(EntityType.WOLF, headBox(0, 0, 6, 6, 4, 64, 32));
-        final FaceUv catHead = headBox(0, 0, 5, 4, 5, 64, 32);
-        map.put(EntityType.CAT, catHead);
-        map.put(EntityType.OCELOT, catHead);
-        // RabbitEntityModel head, pixel-measured against rabbit/brown.png (eyes + pink nose).
-        map.put(EntityType.RABBIT, px(33, 0, 48, 11, 64, 32));
-        // BlazeEntityModel head = uv(0,0).cuboid(8,8,8) on the same 64x32 layout as biped64x32
-        // above (verified pixel-for-pixel against blaze.png), so it reuses that constant.
-        map.put(EntityType.BLAZE, biped64x32);
+    /** DyeColor.getName() (verified in mappings.tiny) already returns the "gray"/"light_gray" spelling the JSON uses. */
+    private static String sheepVariant(final Entity entity) {
+        return ((SheepEntity) entity).getColor().getName();
+    }
 
-        // Horse family: HorseBaseModel's visible head is a rotated multi-part assembly (an outer
-        // "head_parts" trunk cuboid plus a nested "head" sub-cuboid plus mane/ear/mouth pieces),
-        // not a single front-facing box headBox() can express. Pixel-measured instead against
-        // horse/{horse_brown,donkey,mule,horse_skeleton,horse_zombie}.png: despite the rotated
-        // unwrap, one rect at this offset lands on both eyes + the nose/nostril shading for every
-        // variant, since HorseEntityModel/DonkeyEntityModel/etc. all share the base head geometry.
-        final FaceUv horseHead = px(0, 18, 19, 34, 64, 64);
-        map.put(EntityType.HORSE, horseHead);
-        map.put(EntityType.DONKEY, horseHead);
-        map.put(EntityType.MULE, horseHead);
-        map.put(EntityType.SKELETON_HORSE, horseHead);
-        map.put(EntityType.ZOMBIE_HORSE, horseHead);
+    private static String mooshroomVariant(final Entity entity) {
+        return ((MooshroomEntity) entity).getMooshroomType().name().toLowerCase(Locale.ROOT);
+    }
 
-        // Piglin family (PiglinEntityModel, shared by PiglinBruteEntityModel and reused for
-        // ZombifiedPiglinEntityModel's snout shape): pixel-measured against
-        // piglin/{piglin,piglin_brute,zombified_piglin}.png - eyes sit at the same offset on all
-        // three despite the different skin tones/decay overlay.
-        final FaceUv piglinHead = px(0, 7, 17, 16, 64, 64);
-        map.put(EntityType.PIGLIN, piglinHead);
-        map.put(EntityType.PIGLIN_BRUTE, piglinHead);
-        map.put(EntityType.ZOMBIFIED_PIGLIN, piglinHead);
+    /** See {@link #CAT_TYPE_NAMES} for the verified int-to-breed order. */
+    private static String catVariant(final Entity entity) {
+        final int type = ((CatEntity) entity).getCatType();
+        return type >= 0 && type < CAT_TYPE_NAMES.length ? CAT_TYPE_NAMES[type] : null;
+    }
 
-        // HoglinEntityModel head, pixel-measured against hoglin/hoglin.png (128x64) - eyes plus
-        // tusk row. ZoglinEntity extends HoglinEntity and reuses the same model/layout verbatim
-        // (its texture just recolors/decays the same region into an exposed-skull look).
-        final FaceUv hoglinHead = px(76, 0, 104, 18, 128, 64);
-        map.put(EntityType.HOGLIN, hoglinHead);
-        map.put(EntityType.ZOGLIN, hoglinHead);
+    private static String foxVariant(final Entity entity) {
+        return ((FoxEntity) entity).getFoxType().name().toLowerCase(Locale.ROOT);
+    }
 
-        // Every remaining species below has its own model with no shared head shape - each rect
-        // is pixel-measured individually against that species' own texture.
-        map.put(EntityType.FOX, px(2, 10, 17, 16, 48, 32));
-        map.put(EntityType.PANDA, px(2, 13, 19, 22, 64, 64));
-        // LlamaEntityModel head, pixel-measured against llama/brown.png (128x64). TraderLlamaEntity
-        // extends LlamaEntity and reuses the same model/base coat textures verbatim - only its
-        // decor-carpet overlay differs, which this base-layer crop doesn't touch.
-        final FaceUv llamaHead = px(0, 16, 11, 28, 128, 64);
-        map.put(EntityType.LLAMA, llamaHead);
-        map.put(EntityType.TRADER_LLAMA, llamaHead);
-        map.put(EntityType.PARROT, px(0, 0, 10, 8, 32, 32));
-        map.put(EntityType.POLAR_BEAR, px(6, 8, 15, 15, 128, 64));
-        // GoatEntityModel: no clean single "head" cuboid (horns/ears occupy most of the top-left
-        // UV region); pixel-measured judgment call - the muzzle region at the bottom of
-        // goat/goat.png carries both eyes plus the nose, the most face-like crop available.
-        map.put(EntityType.GOAT, px(33, 53, 59, 64, 64, 64));
-        // AxolotlEntityModel head, pixel-measured against axolotl/axolotl_blue.png.
-        map.put(EntityType.AXOLOTL, px(0, 2, 16, 16, 64, 64));
-        // BeeEntityModel head, pixel-measured against bee/bee.png.
-        map.put(EntityType.BEE, px(4, 7, 21, 18, 64, 64));
-        // BatEntityModel head, pixel-measured against bat.png.
-        map.put(EntityType.BAT, px(2, 5, 12, 13, 64, 64));
-        // DolphinEntityModel head/snout (top-down), pixel-measured against dolphin.png.
-        map.put(EntityType.DOLPHIN, px(0, 0, 20, 12, 64, 64));
-        // SnowGolemEntityModel pumpkin head, pixel-measured against snow_golem.png.
-        map.put(EntityType.SNOW_GOLEM, px(3, 4, 17, 13, 64, 64));
-        // PhantomEntityModel head (top-down view, per its top-mounted eyes), pixel-measured
-        // against phantom.png.
-        map.put(EntityType.PHANTOM, px(0, 0, 12, 8, 64, 64));
-        // StriderEntityModel head, pixel-measured against strider/strider.png (64x128).
-        map.put(EntityType.STRIDER, px(8, 21, 34, 29, 64, 128));
-        // VexEntityModel head, pixel-measured against illager/vex.png.
-        map.put(EntityType.VEX, px(0, 7, 16, 16, 64, 64));
-        // RavagerEntityModel head, pixel-measured against illager/ravager.png (128x128).
-        map.put(EntityType.RAVAGER, px(13, 25, 31, 33, 128, 128));
-        // GhastEntityModel head/face, pixel-measured against ghast/ghast.png (64x32).
-        map.put(EntityType.GHAST, px(16, 16, 32, 28, 64, 32));
+    private static String parrotVariant(final Entity entity) {
+        return String.valueOf(((ParrotEntity) entity).getVariant());
+    }
 
-        // No single facing "head" cuboid: judgment-call crops per docs/reference-specs/radar-icons.md
-        // guidance, pixel-measured against the real texture for a region that reads as a face.
-        // GuardianEntityModel's whole body is its "face" - crop centers the single large eye.
-        // GuardianEntity/ElderGuardianEntity share the same model/UV layout at different scale.
-        final FaceUv guardianFace = px(14, 12, 30, 28, 64, 64);
-        map.put(EntityType.GUARDIAN, guardianFace);
-        map.put(EntityType.ELDER_GUARDIAN, guardianFace);
-        // SquidEntityModel/front-of-body panel carrying the two eye dots; GlowSquidEntity reuses
-        // SquidEntityModel verbatim with a glowing texture at the same offset.
-        final FaceUv squidFace = px(12, 12, 24, 24, 64, 32);
-        map.put(EntityType.SQUID, squidFace);
-        map.put(EntityType.GLOW_SQUID, squidFace);
-        // Fish use a side head profile (both eyes visible from the unwrap's lateral view).
-        map.put(EntityType.COD, px(8, 0, 22, 10, 32, 32));
-        map.put(EntityType.SALMON, px(22, 1, 32, 8, 32, 32));
-        map.put(EntityType.PUFFERFISH, px(6, 7, 22, 13, 32, 32));
-        map.put(EntityType.TROPICAL_FISH, px(2, 2, 15, 9, 32, 32));
-        // TurtleEntityModel head (side profile), pixel-measured against turtle/big_sea_turtle.png.
-        map.put(EntityType.TURTLE, px(0, 1, 18, 9, 128, 64));
-        // ShulkerEntityModel's tiny extruded "face" foot at the base of the shell, pixel-measured
-        // against shulker/shulker.png.
-        map.put(EntityType.SHULKER, px(0, 55, 16, 64, 64, 64));
-        // WitherEntityModel's central head (ignoring the two side heads), pixel-measured against
-        // wither/wither.png.
-        map.put(EntityType.WITHER, px(6, 2, 20, 15, 64, 64));
-        // EnderDragonEntityModel head region, pixel-measured against enderdragon/dragon.png (256x256).
-        map.put(EntityType.ENDER_DRAGON, px(120, 40, 180, 65, 256, 256));
+    /** Shared by llama and trader_llama - TraderLlamaEntity extends LlamaEntity and inherits getVariant(). */
+    private static String llamaVariant(final Entity entity) {
+        return String.valueOf(((LlamaEntity) entity).getVariant());
+    }
+
+    private static String rabbitVariant(final Entity entity) {
+        return String.valueOf(((RabbitEntity) entity).getRabbitType());
+    }
+
+    private static String axolotlVariant(final Entity entity) {
+        return String.valueOf(((AxolotlEntity) entity).getVariant().getId());
+    }
+
+    /**
+     * getProductGene() (as opposed to getMainGene()) is the gene that's actually expressed in this
+     * panda's appearance - a recessive main gene only shows through if the hidden gene matches it,
+     * otherwise the panda looks NORMAL despite carrying the rarer gene. NORMAL has no sheet entry,
+     * so it naturally falls back to the base cell via CellIcon#resolve.
+     */
+    private static String pandaVariant(final Entity entity) {
+        return ((PandaEntity) entity).getProductGene().name().toLowerCase(Locale.ROOT);
+    }
+
+    private static String striderVariant(final Entity entity) {
+        return String.valueOf(((StriderEntity) entity).isCold());
+    }
+
+    /**
+     * VillagerProfession.getId() (verified against the vanilla registration calls) returns the
+     * plain registry path ("armorer", "butcher", ...) directly - no Registry lookup needed.
+     */
+    private static String villagerVariant(final Entity entity) {
+        return ((VillagerEntity) entity).getVillagerData().getProfession().getId();
+    }
+
+    /**
+     * 1.17.1 WolfEntity has no coat variants - only "tame"/"angry" alternate cells exist. A tamed
+     * wolf shows as tame regardless of anger; an untamed wolf shows as angry only while it has
+     * anger time (Angerable#hasAngerTime, verified on WolfEntity's implemented interface); a plain
+     * wild, non-angry wolf falls back to the base cell.
+     */
+    private static String wolfVariant(final Entity entity) {
+        final WolfEntity wolf = (WolfEntity) entity;
+        if (wolf.isTamed()) {
+            return "tame";
+        }
+        if (wolf.hasAngerTime()) {
+            return "angry";
+        }
+        return null;
+    }
+
+    private static Map<EntityType<?>, CellIcon> buildSheetTable() {
+        final Map<EntityType<?>, CellIcon> map = new HashMap<>();
+
+        map.put(EntityType.AXOLOTL, icon(3, 9, EntityIconManager::axolotlVariant,
+            v("0", 3, 9), v("1", 4, 3), v("2", 6, 11), v("3", 11, 11), v("4", 12, 12)));
+        map.put(EntityType.BAT, icon(7, 13));
+        map.put(EntityType.BEE, icon(6, 13));
+        map.put(EntityType.BLAZE, icon(1, 13));
+        map.put(EntityType.CAT, icon(6, 6, EntityIconManager::catVariant,
+            v("all_black", 10, 13), v("black", 5, 13), v("british_shorthair", 12, 8), v("calico", 10, 12),
+            v("jellie", 9, 10), v("persian", 9, 1), v("ragdoll", 8, 1), v("red", 5, 8),
+            v("siamese", 7, 5), v("tabby", 6, 6), v("white", 5, 2)));
+        map.put(EntityType.CAVE_SPIDER, icon(9, 12));
+        map.put(EntityType.CHICKEN, icon(7, 12));
+        map.put(EntityType.COD, icon(6, 12));
+        map.put(EntityType.COW, icon(4, 12));
+        map.put(EntityType.CREEPER, icon(1, 12));
+        map.put(EntityType.DOLPHIN, icon(11, 8));
+        map.put(EntityType.DONKEY, icon(11, 7));
+        map.put(EntityType.DROWNED, icon(11, 6));
+        map.put(EntityType.ELDER_GUARDIAN, icon(11, 5));
+        map.put(EntityType.ENDER_DRAGON, icon(11, 4));
+        map.put(EntityType.ENDERMAN, icon(11, 3));
+        map.put(EntityType.ENDERMITE, icon(11, 2));
+        map.put(EntityType.EVOKER, icon(11, 1));
+        map.put(EntityType.FOX, icon(10, 11, EntityIconManager::foxVariant,
+            v("red", 10, 11), v("snow", 5, 7)));
+        map.put(EntityType.GHAST, icon(9, 11));
+        map.put(EntityType.GLOW_SQUID, icon(8, 11));
+        map.put(EntityType.GOAT, icon(7, 11));
+        map.put(EntityType.GUARDIAN, icon(10, 6));
+        map.put(EntityType.HOGLIN, icon(10, 5));
+        map.put(EntityType.HORSE, icon(10, 4));
+        map.put(EntityType.HUSK, icon(10, 3));
+        map.put(EntityType.ILLUSIONER, icon(10, 2));
+        map.put(EntityType.IRON_GOLEM, icon(10, 1));
+        map.put(EntityType.LLAMA, icon(3, 12, EntityIconManager::llamaVariant,
+            v("0", 3, 12), v("1", 5, 1), v("2", 12, 7), v("3", 1, 11)));
+        map.put(EntityType.MAGMA_CUBE, icon(9, 8));
+        map.put(EntityType.MOOSHROOM, icon(9, 7, EntityIconManager::mooshroomVariant,
+            v("brown", 12, 6), v("red", 9, 7)));
+        map.put(EntityType.MULE, icon(9, 6));
+        map.put(EntityType.OCELOT, icon(9, 5));
+        map.put(EntityType.PANDA, icon(9, 2, EntityIconManager::pandaVariant,
+            v("aggressive", 12, 13), v("brown", 12, 5), v("lazy", 8, 10),
+            v("playful", 8, 7), v("weak", 5, 3), v("worried", 3, 3)));
+        map.put(EntityType.PARROT, icon(6, 8, EntityIconManager::parrotVariant,
+            v("0", 6, 8), v("1", 12, 11), v("2", 4, 11), v("3", 3, 2), v("4", 10, 10)));
+        map.put(EntityType.PHANTOM, icon(8, 9));
+        map.put(EntityType.PIG, icon(7, 9));
+        map.put(EntityType.PIGLIN, icon(6, 9));
+        map.put(EntityType.PIGLIN_BRUTE, icon(5, 9));
+        map.put(EntityType.PILLAGER, icon(4, 9));
+        map.put(EntityType.POLAR_BEAR, icon(8, 6));
+        map.put(EntityType.PUFFERFISH, icon(8, 5));
+        map.put(EntityType.RABBIT, icon(12, 4, EntityIconManager::rabbitVariant,
+            v("0", 12, 4), v("1", 4, 5), v("2", 4, 13), v("3", 1, 5), v("4", 5, 11), v("5", 1, 8), v("99", 11, 12)));
+        map.put(EntityType.RAVAGER, icon(7, 8));
+        map.put(EntityType.SALMON, icon(2, 8));
+        map.put(EntityType.SHEEP, icon(3, 5, EntityIconManager::sheepVariant,
+            v("black", 3, 13), v("blue", 12, 10), v("brown", 12, 3), v("cyan", 11, 10),
+            v("gray", 10, 9), v("green", 3, 11), v("light_blue", 7, 10), v("light_gray", 5, 10),
+            v("lime", 3, 10), v("magenta", 1, 10), v("orange", 9, 4), v("pink", 2, 9),
+            v("purple", 8, 3), v("red", 4, 8), v("white", 3, 5), v("yellow", 3, 1)));
+        map.put(EntityType.SHULKER, icon(7, 6));
+        map.put(EntityType.SILVERFISH, icon(7, 4));
+        map.put(EntityType.SKELETON, icon(7, 3));
+        map.put(EntityType.SKELETON_HORSE, icon(7, 2));
+        map.put(EntityType.SLIME, icon(6, 7));
+        map.put(EntityType.SNOW_GOLEM, icon(8, 4));
+        map.put(EntityType.SPIDER, icon(4, 7));
+        map.put(EntityType.SQUID, icon(3, 7));
+        map.put(EntityType.STRAY, icon(2, 7));
+        map.put(EntityType.STRIDER, icon(5, 4, EntityIconManager::striderVariant,
+            v("false", 5, 4), v("true", 1, 7)));
+        map.put(EntityType.TRADER_LLAMA, icon(2, 12, EntityIconManager::llamaVariant,
+            v("0", 2, 12), v("1", 4, 4), v("2", 12, 1), v("3", 10, 7)));
+        map.put(EntityType.TROPICAL_FISH, icon(6, 1));
+        map.put(EntityType.TURTLE, icon(5, 6));
+        map.put(EntityType.VEX, icon(4, 6));
+        // The cellmap's villager_profession variant table is empty (no vanilla profession got its
+        // own cell), so every villager currently renders its base cell regardless of profession;
+        // the resolver is still wired up so a future non-empty table needs no code change here.
+        map.put(EntityType.VILLAGER, icon(8, 8, EntityIconManager::villagerVariant));
+        map.put(EntityType.VINDICATOR, icon(3, 6));
+        map.put(EntityType.WANDERING_TRADER, icon(2, 6));
+        map.put(EntityType.WITCH, icon(4, 2));
+        map.put(EntityType.WITHER, icon(4, 1));
+        map.put(EntityType.WITHER_SKELETON, icon(3, 4));
+        map.put(EntityType.WOLF, icon(1, 4, EntityIconManager::wolfVariant,
+            v("angry", 8, 13), v("tame", 6, 4)));
+        map.put(EntityType.ZOGLIN, icon(1, 2));
+        map.put(EntityType.ZOMBIE, icon(1, 3));
+        map.put(EntityType.ZOMBIE_HORSE, icon(2, 2));
+        map.put(EntityType.ZOMBIE_VILLAGER, icon(2, 1));
+        map.put(EntityType.ZOMBIFIED_PIGLIN, icon(1, 1));
 
         return Map.copyOf(map);
     }

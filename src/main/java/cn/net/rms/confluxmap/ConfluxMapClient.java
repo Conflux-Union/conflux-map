@@ -100,7 +100,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         );
         radarViewRange = new RadarViewRange();
         radarScanner = new EntityRadarScanner(client, config, radarViewRange);
-        entityIconManager = new EntityIconManager(client);
+        entityIconManager = new EntityIconManager();
         waypointService = new WaypointService(
             FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("waypoints"),
             executors, ConfluxMapMod.LOGGER
