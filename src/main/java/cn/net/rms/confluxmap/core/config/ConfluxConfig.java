@@ -60,6 +60,10 @@ public final class ConfluxConfig {
     public boolean waypointEdgeIndicatorsEnabled = true;
     /** Death points kept per dimension, oldest auto-pruned; 0 disables creating new ones. */
     public int deathPointsKept = 5;
+    /** In-world vertical beam at each visible waypoint's column (see {@code mc.ui.world.WaypointWorldRenderer}). */
+    public boolean waypointBeamsEnabled = true;
+    /** In-world floating name/distance label above each visible waypoint. */
+    public boolean waypointLabelsEnabled = true;
 
     public ConfluxConfig copy() {
         final ConfluxConfig c = new ConfluxConfig();
@@ -89,6 +93,8 @@ public final class ConfluxConfig {
         c.waypointRenderDistance = waypointRenderDistance;
         c.waypointEdgeIndicatorsEnabled = waypointEdgeIndicatorsEnabled;
         c.deathPointsKept = deathPointsKept;
+        c.waypointBeamsEnabled = waypointBeamsEnabled;
+        c.waypointLabelsEnabled = waypointLabelsEnabled;
         return c;
     }
 

@@ -19,6 +19,7 @@ import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureService;
 import cn.net.rms.confluxmap.mc.ui.hud.MinimapHudRenderer;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapViewState;
+import cn.net.rms.confluxmap.mc.ui.world.WaypointWorldRenderer;
 import cn.net.rms.confluxmap.mc.world.DeathWatcher;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import cn.net.rms.confluxmap.mc.world.WorldSessionTracker;
@@ -52,6 +53,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private LayerSelector layerSelector;
     private WaypointService waypointService;
     private DeathWatcher deathWatcher;
+    private WaypointWorldRenderer waypointWorldRenderer;
 
     public static ConfluxMapClient get() {
         return instance;
@@ -96,6 +98,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         minimapHudRenderer = new MinimapHudRenderer(
             client, config, gameBridge, tileService, tileTextureManager, radarScanner, layerSelector, waypointService
         );
+        waypointWorldRenderer = new WaypointWorldRenderer(client, config, gameBridge, waypointService);
         fullscreenMapViewState = new FullscreenMapViewState();
 
         // regionCache must flush BEFORE mapWorlds swaps the ending world out (see RegionCacheService javadoc).
@@ -112,6 +115,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         chunkCapture.register();
         radarScanner.register();
         minimapHudRenderer.register();
+        waypointWorldRenderer.register();
         deathWatcher.register();
         ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
             new ColorReloadListener(spriteColorSampler)

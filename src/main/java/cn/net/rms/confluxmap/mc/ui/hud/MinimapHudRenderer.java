@@ -17,6 +17,7 @@ import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
+import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import java.util.Optional;
@@ -51,6 +52,8 @@ public final class MinimapHudRenderer {
     private static final int ARROW_OUTLINE = 0xFF101010;
     private static final int ARROW_FILL = 0xFFFFFFFF;
     private static final float[] BLOCKS_PER_PIXEL = {0.5f, 1f, 2f, 4f};
+    /** Half of the ~7px-across VoxelMap-style diamond/cross marker (deliverable B). */
+    private static final float WAYPOINT_MARKER_HALF_SIZE = 3.5f;
 
     // Radar marker colors and above/below indication, per docs/reference-specs/radar-icons.md sec 3:
     // entities above the player fade toward transparent; entities at/below dim toward black,
@@ -209,7 +212,9 @@ public final class MinimapHudRenderer {
                 : Math.abs(screenOffX) <= limit && Math.abs(screenOffY) <= limit;
 
             if (inRange) {
-                drawWaypointDot(matrices, centerX + screenOffX, centerY + screenOffY, waypoint.colorArgb);
+                WaypointMarkerRenderer.draw(
+                    matrices, waypoint, centerX + screenOffX, centerY + screenOffY, WAYPOINT_MARKER_HALF_SIZE, 1f, false
+                );
             } else if (config.waypointEdgeIndicatorsEnabled) {
                 final float k = circleFrame
                     ? limit / (float) Math.hypot(screenOffX, screenOffY)
@@ -217,28 +222,9 @@ public final class MinimapHudRenderer {
                 final float edgeX = screenOffX * k;
                 final float edgeY = screenOffY * k;
                 final float angle = (float) Math.toDegrees(Math.atan2(screenOffX, -screenOffY));
-                drawWaypointEdgeArrow(matrices, centerX + edgeX, centerY + edgeY, angle, waypoint.colorArgb);
+                WaypointMarkerRenderer.drawEdgeArrow(matrices, centerX + edgeX, centerY + edgeY, angle, waypoint.colorArgb, 1f);
             }
         }
-    }
-
-    private void drawWaypointDot(final MatrixStack matrices, final float x, final float y, final int colorArgb) {
-        final int fill = colorArgb | 0xFF000000;
-        RenderUtil.fillTriangle(matrices, x, y - 4f, x - 4f, y, x + 4f, y, ARROW_OUTLINE);
-        RenderUtil.fillTriangle(matrices, x, y + 4f, x - 4f, y, x + 4f, y, ARROW_OUTLINE);
-        RenderUtil.fillTriangle(matrices, x, y - 2f, x - 2f, y, x + 2f, y, fill);
-        RenderUtil.fillTriangle(matrices, x, y + 2f, x - 2f, y, x + 2f, y, fill);
-    }
-
-    /** Rotated to point at the waypoint's true on-screen bearing - deliberately not counter-rotated. */
-    private void drawWaypointEdgeArrow(
-        final MatrixStack matrices, final float x, final float y, final float angleDegrees, final int colorArgb
-    ) {
-        matrices.push();
-        matrices.translate(x, y, 0);
-        matrices.multiply(Vec3f.POSITIVE_Z.getDegreesQuaternion(angleDegrees));
-        RenderUtil.fillTriangle(matrices, 0f, -5f, -4f, 4f, 4f, 4f, colorArgb | 0xFF000000);
-        matrices.pop();
     }
 
     /**

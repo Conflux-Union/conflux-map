@@ -13,7 +13,9 @@ import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
+import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import net.minecraft.client.MinecraftClient;
@@ -49,10 +51,11 @@ public final class FullscreenMapScreen extends Screen {
     private static final int ARROW_OUTLINE = 0xFF101010;
     private static final int ARROW_FILL = 0xFFFFE066;
     private static final double MIN_GRID_SPACING_PX = 8.0;
-    private static final int MARKER_HALF_SIZE = 5;
-    private static final int MARKER_OUTLINE = 0xFF101010;
-    private static final double ALWAYS_SHOW_NAMES_SCALE = 1.0;
-    private static final double HOVER_RADIUS_PX = 7.0;
+    /** Half of the ~9px-across VoxelMap-style marker (deliverable C) - slightly larger than the minimap's ~7px. */
+    private static final float MARKER_HALF_SIZE = 4.5f;
+    /** Blocks-per-pixel threshold below which every marker's name shows continuously, not just on hover (deliverable C). */
+    private static final double NAME_LABEL_MAX_SCALE = 2.0;
+    private static final double HOVER_RADIUS_PX = 6.0;
     private static final double DEFAULT_CREATE_Y = 64.0;
 
     private final KeyBinding openMapKey;
@@ -67,6 +70,9 @@ public final class FullscreenMapScreen extends Screen {
     private double centerX;
     private double centerZ;
     private double scale;
+
+    /** Recomputed every frame by {@link #drawWaypoints} - the marker nearest the cursor within {@link #HOVER_RADIUS_PX}, or none. */
+    private Waypoint hoveredWaypoint;
 
     public FullscreenMapScreen(final KeyBinding openMapKey) {
         super(new TranslatableText("confluxmap.screen.map.title"));
@@ -256,18 +262,19 @@ public final class FullscreenMapScreen extends Screen {
 
     /**
      * Markers for waypoints visible in the viewed dimension (see
-     * {@link DimensionScale#isVisibleFrom}), coordinates converted for display.
-     * Fixed on-screen size regardless of zoom - only their world position, and
-     * thus screen position, changes with pan/zoom. Names are shown continuously
-     * once zoomed in past {@link #ALWAYS_SHOW_NAMES_SCALE}, otherwise only on
-     * hover (mirrors the minimap's in-range-marker rules from waypoint-ux.md S7,
-     * adapted for this always-north-locked, unbounded-viewport screen).
+     * {@link DimensionScale#isVisibleFrom}), coordinates converted for display. Fixed
+     * on-screen size regardless of zoom - only their world position, and thus screen
+     * position, changes with pan/zoom. Names are shown continuously once zoomed in past
+     * {@link #NAME_LABEL_MAX_SCALE} blocks-per-pixel, or always for the single marker
+     * nearest the cursor within {@link #HOVER_RADIUS_PX} (deliverable C), which also gets
+     * brightened (see {@link WaypointMarkerRenderer}) and has its coordinates shown in the
+     * footer by {@link #drawCursorCoords}.
      */
     private void drawWaypoints(final MatrixStack matrices, final int mouseX, final int mouseY) {
         final DimensionId currentDimension = gameBridge.session().dimension();
         final double pxPerBlock = 1.0 / scale;
-        final List<Waypoint> waypoints = waypointService.list();
-        for (final Waypoint waypoint : waypoints) {
+        final List<ScreenMarker> markers = new ArrayList<>();
+        for (final Waypoint waypoint : waypointService.list()) {
             if (!waypoint.visible || !DimensionScale.isVisibleFrom(waypoint.dimensionId, currentDimension)) {
                 continue;
             }
@@ -279,22 +286,34 @@ public final class FullscreenMapScreen extends Screen {
                 || screenY < -MARKER_HALF_SIZE || screenY > height + MARKER_HALF_SIZE) {
                 continue;
             }
-            drawDiamondMarker(matrices, screenX, screenY, waypoint.colorArgb);
+            markers.add(new ScreenMarker(waypoint, screenX, screenY));
+        }
 
-            final double hoverDist = Math.hypot(mouseX - screenX, mouseY - screenY);
-            if (scale <= ALWAYS_SHOW_NAMES_SCALE || hoverDist <= HOVER_RADIUS_PX) {
-                textRenderer.drawWithShadow(matrices, waypoint.name, screenX + MARKER_HALF_SIZE + 2, screenY - 4, TEXT_COLOR);
+        Waypoint hovered = null;
+        double bestHoverDist = HOVER_RADIUS_PX;
+        for (final ScreenMarker marker : markers) {
+            final double hoverDist = Math.hypot(mouseX - marker.screenX(), mouseY - marker.screenY());
+            if (hoverDist <= bestHoverDist) {
+                bestHoverDist = hoverDist;
+                hovered = marker.waypoint();
+            }
+        }
+        hoveredWaypoint = hovered;
+
+        for (final ScreenMarker marker : markers) {
+            final Waypoint waypoint = marker.waypoint();
+            final boolean isHovered = waypoint == hoveredWaypoint;
+            WaypointMarkerRenderer.draw(matrices, waypoint, marker.screenX(), marker.screenY(), MARKER_HALF_SIZE, 1f, isHovered);
+            if (scale <= NAME_LABEL_MAX_SCALE || isHovered) {
+                textRenderer.drawWithShadow(
+                    matrices, waypoint.name, marker.screenX() + MARKER_HALF_SIZE + 2, marker.screenY() - 4, TEXT_COLOR
+                );
             }
         }
     }
 
-    private void drawDiamondMarker(final MatrixStack matrices, final float x, final float y, final int colorArgb) {
-        final int fill = colorArgb | 0xFF000000;
-        RenderUtil.fillTriangle(matrices, x, y - MARKER_HALF_SIZE, x - MARKER_HALF_SIZE, y, x + MARKER_HALF_SIZE, y, MARKER_OUTLINE);
-        RenderUtil.fillTriangle(matrices, x, y + MARKER_HALF_SIZE, x - MARKER_HALF_SIZE, y, x + MARKER_HALF_SIZE, y, MARKER_OUTLINE);
-        final int inner = MARKER_HALF_SIZE - 2;
-        RenderUtil.fillTriangle(matrices, x, y - inner, x - inner, y, x + inner, y, fill);
-        RenderUtil.fillTriangle(matrices, x, y + inner, x - inner, y, x + inner, y, fill);
+    /** One waypoint's already-converted, already-viewport-culled screen position for this frame's {@link #drawWaypoints} pass. */
+    private record ScreenMarker(Waypoint waypoint, float screenX, float screenY) {
     }
 
     private void drawDimensionLabel(final MatrixStack matrices) {
@@ -316,10 +335,24 @@ public final class FullscreenMapScreen extends Screen {
         textRenderer.drawWithShadow(matrices, text, width - MARGIN - textWidth, MARGIN, TEXT_COLOR);
     }
 
+    /**
+     * Bottom-center footer: the raw cursor position, or - while hovering a marker
+     * (deliverable C) - that waypoint's own X/Y/Z instead (converted for the viewed
+     * dimension, per {@link DimensionScale}; Y is shown as stored, per waypoint-ux.md S3's
+     * "Y is never scaled" rule).
+     */
     private void drawCursorCoords(final MatrixStack matrices, final int mouseX, final int mouseY) {
-        final double worldX = centerX + (mouseX - width / 2.0) * scale;
-        final double worldZ = centerZ + (mouseY - height / 2.0) * scale;
-        final String text = (int) Math.floor(worldX) + ", " + (int) Math.floor(worldZ);
+        final String text;
+        if (hoveredWaypoint != null) {
+            final DimensionId currentDimension = gameBridge.session().dimension();
+            final double worldX = DimensionScale.convertHorizontal(hoveredWaypoint.x, hoveredWaypoint.dimensionId, currentDimension);
+            final double worldZ = DimensionScale.convertHorizontal(hoveredWaypoint.z, hoveredWaypoint.dimensionId, currentDimension);
+            text = (int) Math.floor(worldX) + ", " + (int) Math.floor(hoveredWaypoint.y) + ", " + (int) Math.floor(worldZ);
+        } else {
+            final double worldX = centerX + (mouseX - width / 2.0) * scale;
+            final double worldZ = centerZ + (mouseY - height / 2.0) * scale;
+            text = (int) Math.floor(worldX) + ", " + (int) Math.floor(worldZ);
+        }
         final int textWidth = textRenderer.getWidth(text);
         textRenderer.drawWithShadow(matrices, text, width / 2f - textWidth / 2f, height - MARGIN - 10, TEXT_COLOR);
     }

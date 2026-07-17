@@ -213,6 +213,58 @@ public final class RenderUtil {
         tessellator.draw();
     }
 
+    /**
+     * Selects the flat position+color shader and additive-ish blending
+     * ({@code src*alpha + dst*1}), for glow-style translucent 3D geometry like waypoint
+     * beams (see {@code mc.ui.world.WaypointWorldRenderer}). Unlike {@link #fillTriangle}
+     * and {@link #fillRect}, this does not reset itself on every draw call - callers issue
+     * this once, draw as many {@link #fillTriangle3D} calls as needed, then restore normal
+     * blending with {@link #restoreDefaultBlend()} when done.
+     */
+    public static void beginAdditiveTriangles() {
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+        RenderSystem.enableBlend();
+        RenderSystem.blendFuncSeparate(
+            com.mojang.blaze3d.platform.GlStateManager.SrcFactor.SRC_ALPHA,
+            com.mojang.blaze3d.platform.GlStateManager.DstFactor.ONE,
+            com.mojang.blaze3d.platform.GlStateManager.SrcFactor.ONE,
+            com.mojang.blaze3d.platform.GlStateManager.DstFactor.ZERO
+        );
+    }
+
+    /** Restores standard alpha blending after {@link #beginAdditiveTriangles()}. */
+    public static void restoreDefaultBlend() {
+        RenderSystem.defaultBlendFunc();
+    }
+
+    /**
+     * Flat-colored filled triangle with three independent coordinates, for true 3D
+     * world-space geometry drawn from a {@code WorldRenderEvents} callback (unlike
+     * {@link #fillTriangle}, which always draws on the local matrix's Z=0 plane for flat
+     * GUI shapes). Assumes the shader and blend state are already set up by the caller -
+     * see {@link #beginAdditiveTriangles()}.
+     */
+    public static void fillTriangle3D(
+        final MatrixStack matrices,
+        final float x0, final float y0, final float z0,
+        final float x1, final float y1, final float z1,
+        final float x2, final float y2, final float z2,
+        final int argbColor
+    ) {
+        final float a = Argb.alpha(argbColor) / 255f;
+        final float r = Argb.red(argbColor) / 255f;
+        final float g = Argb.green(argbColor) / 255f;
+        final float b = Argb.blue(argbColor) / 255f;
+        final Matrix4f model = matrices.peek().getModel();
+        final Tessellator tessellator = Tessellator.getInstance();
+        final BufferBuilder buffer = tessellator.getBuffer();
+        buffer.begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
+        buffer.vertex(model, x0, y0, z0).color(r, g, b, a).next();
+        buffer.vertex(model, x1, y1, z1).color(r, g, b, a).next();
+        buffer.vertex(model, x2, y2, z2).color(r, g, b, a).next();
+        tessellator.draw();
+    }
+
     /** Flat-colored axis-aligned quad (background/border), independent of any bound texture. */
     public static void fillRect(final MatrixStack matrices, final float x, final float y, final float width, final float height, final int argbColor) {
         RenderSystem.setShader(GameRenderer::getPositionColorShader);

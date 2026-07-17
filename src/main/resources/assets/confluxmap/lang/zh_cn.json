@@ -65,6 +65,8 @@
   "confluxmap.config.waypoints.render_distance": "渲染距离：%s",
   "confluxmap.config.waypoints.edge_indicators": "边缘指示器：%s",
   "confluxmap.config.waypoints.death_points_kept": "保留死亡点数：%s",
+  "confluxmap.config.waypoints.beams_enabled": "路径点光柱：%s",
+  "confluxmap.config.waypoints.labels_enabled": "路径点标签：%s",
   "confluxmap.config.performance.snapshot_budget": "每 Tick 快照数：%s",
   "confluxmap.config.performance.gpu_tile_cache_limit": "GPU 瓦片缓存上限：%s",
   "confluxmap.config.corner.top_left": "左上",

@@ -65,6 +65,8 @@
   "confluxmap.config.waypoints.render_distance": "Render Distance: %s",
   "confluxmap.config.waypoints.edge_indicators": "Edge Indicators: %s",
   "confluxmap.config.waypoints.death_points_kept": "Death Points Kept: %s",
+  "confluxmap.config.waypoints.beams_enabled": "Waypoint Beams: %s",
+  "confluxmap.config.waypoints.labels_enabled": "Waypoint Labels: %s",
   "confluxmap.config.performance.snapshot_budget": "Snapshot Budget / Tick: %s",
   "confluxmap.config.performance.gpu_tile_cache_limit": "GPU Tile Cache Limit: %s",
   "confluxmap.config.corner.top_left": "Top Left",

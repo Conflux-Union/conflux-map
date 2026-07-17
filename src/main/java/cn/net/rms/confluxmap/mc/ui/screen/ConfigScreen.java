@@ -196,6 +196,14 @@ public final class ConfigScreen extends Screen {
                     y, "confluxmap.config.waypoints.death_points_kept", 0, 50,
                     () -> config.deathPointsKept, v -> config.deathPointsKept = v, ConfigScreen::plainText
                 );
+                y = addToggleRow(
+                    y, "confluxmap.config.waypoints.beams_enabled",
+                    () -> config.waypointBeamsEnabled, v -> config.waypointBeamsEnabled = v
+                );
+                y = addToggleRow(
+                    y, "confluxmap.config.waypoints.labels_enabled",
+                    () -> config.waypointLabelsEnabled, v -> config.waypointLabelsEnabled = v
+                );
                 break;
             case PERFORMANCE:
                 y = addIntSliderRow(
