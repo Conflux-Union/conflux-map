@@ -23,6 +23,8 @@ public final class RegionColumns {
     private final int[] tintArgb = new int[SIZE * SIZE];
     private final int[] overlayArgb = new int[SIZE * SIZE];
     private final byte[] kind = new byte[SIZE * SIZE];
+    /** Block-light (0-15) per column; see {@link ChunkSnapshot#light}. Only read back by the SURFACE layer. */
+    private final byte[] light = new byte[SIZE * SIZE];
     private final byte[] chunkSource = new byte[CHUNKS * CHUNKS];
     private final int[] chunkUpdateSeconds = new int[CHUNKS * CHUNKS];
     private volatile int version;
@@ -57,6 +59,7 @@ public final class RegionColumns {
             System.arraycopy(snapshot.tintArgb, rowFrom, tintArgb, rowTo, 16);
             System.arraycopy(snapshot.overlayArgb, rowFrom, overlayArgb, rowTo, 16);
             System.arraycopy(snapshot.kind, rowFrom, kind, rowTo, 16);
+            System.arraycopy(snapshot.light, rowFrom, light, rowTo, 16);
         }
         chunkSource[chunkIndex] = (byte) source.ordinal();
         chunkUpdateSeconds[chunkIndex] = (int) (System.currentTimeMillis() / 1000L);
@@ -97,7 +100,8 @@ public final class RegionColumns {
         final int[] outBaseArgb,
         final int[] outTintArgb,
         final int[] outOverlayArgb,
-        final byte[] outKind
+        final byte[] outKind,
+        final byte[] outLight
     ) {
         final int from = startRow * SIZE;
         final int length = rows * SIZE;
@@ -107,6 +111,7 @@ public final class RegionColumns {
         System.arraycopy(tintArgb, from, outTintArgb, 0, length);
         System.arraycopy(overlayArgb, from, outOverlayArgb, 0, length);
         System.arraycopy(kind, from, outKind, 0, length);
+        System.arraycopy(light, from, outLight, 0, length);
     }
 
     /** Surface height at one column, for cross-tile edge shading. {@link ChunkSnapshot#NO_SURFACE} if unset. */
@@ -127,10 +132,11 @@ public final class RegionColumns {
         final int[] outTintArgb,
         final int[] outOverlayArgb,
         final byte[] outKind,
+        final byte[] outLight,
         final byte[] outChunkSource,
         final int[] outChunkUpdateSeconds
     ) {
-        copyChunkRows(0, SIZE, outSurfaceY, outFluidDepth, outBaseArgb, outTintArgb, outOverlayArgb, outKind);
+        copyChunkRows(0, SIZE, outSurfaceY, outFluidDepth, outBaseArgb, outTintArgb, outOverlayArgb, outKind, outLight);
         System.arraycopy(chunkSource, 0, outChunkSource, 0, chunkSource.length);
         System.arraycopy(chunkUpdateSeconds, 0, outChunkUpdateSeconds, 0, chunkUpdateSeconds.length);
     }

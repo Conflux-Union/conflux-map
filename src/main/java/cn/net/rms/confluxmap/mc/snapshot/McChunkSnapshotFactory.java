@@ -75,6 +75,7 @@ public final class McChunkSnapshotFactory {
         final int[] tintArgb = new int[ChunkSnapshot.COLUMNS];
         final int[] overlayArgb = new int[ChunkSnapshot.COLUMNS];
         final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
+        final byte[] light = new byte[ChunkSnapshot.COLUMNS];
 
         final BlockPos.Mutable pos = new BlockPos.Mutable();
         final int baseX = chunkX << 4;
@@ -85,11 +86,12 @@ public final class McChunkSnapshotFactory {
             final int playerY = player != null ? player.getBlockPos().getY() : world.getBottomY();
             final Heightmap heightmap = chunk.getHeightmap(Heightmap.Type.MOTION_BLOCKING);
             final int bottomY = world.getBottomY();
+            final int topY = world.getTopY();
             for (int z = 0; z < 16; z++) {
                 for (int x = 0; x < 16; x++) {
                     sampleColumn(
-                        chunk, world, pos, baseX, baseZ, x, z, bottomY, playerY, heightmap, z * 16 + x,
-                        surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind
+                        chunk, world, pos, baseX, baseZ, x, z, bottomY, topY, playerY, heightmap, z * 16 + x,
+                        surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light
                     );
                 }
             }
@@ -101,12 +103,12 @@ public final class McChunkSnapshotFactory {
                 for (int x = 0; x < 16; x++) {
                     sampleFloorColumn(
                         chunk, world, pos, baseX, baseZ, x, z, pivotY, worldMinY, worldMaxY, netherAmbient, z * 16 + x,
-                        surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind
+                        surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light
                     );
                 }
             }
         }
-        return new ChunkSnapshot(chunkX, chunkZ, sessionToken, surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind);
+        return new ChunkSnapshot(chunkX, chunkZ, sessionToken, surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light);
     }
 
     private void sampleColumn(
@@ -118,6 +120,7 @@ public final class McChunkSnapshotFactory {
         final int localX,
         final int localZ,
         final int bottomY,
+        final int topY,
         final int playerY,
         final Heightmap heightmap,
         final int index,
@@ -126,14 +129,15 @@ public final class McChunkSnapshotFactory {
         final int[] baseArgb,
         final int[] tintArgb,
         final int[] overlayArgb,
-        final byte[] kind
+        final byte[] kind,
+        final byte[] light
     ) {
         final int worldX = baseX + localX;
         final int worldZ = baseZ + localZ;
 
         int y = heightmap.get(localX, localZ) - 1;
         if (y < bottomY) {
-            writeVoid(index, playerY, surfaceY, kind, baseArgb, tintArgb, overlayArgb, fluidDepth);
+            writeVoid(index, playerY, surfaceY, kind, baseArgb, tintArgb, overlayArgb, fluidDepth, light);
             return;
         }
         pos.set(worldX, y, worldZ);
@@ -159,7 +163,7 @@ public final class McChunkSnapshotFactory {
         }
         if (!isOpaque(state, world, pos)) {
             // World bottom reached and never found an opaque block: §1 void fallback.
-            writeVoid(index, playerY, surfaceY, kind, baseArgb, tintArgb, overlayArgb, fluidDepth);
+            writeVoid(index, playerY, surfaceY, kind, baseArgb, tintArgb, overlayArgb, fluidDepth, light);
             return;
         }
 
@@ -229,11 +233,11 @@ public final class McChunkSnapshotFactory {
         }
 
         writeSurface(
-            index, worldX, worldZ, pos, world,
+            index, worldX, worldZ, topY, pos, world,
             surfaceState, surfaceYVal, resolvedKind,
             transparentOverlay, transparentOverlayY, foliageOverlay, foliageOverlayY,
             seafloorState, seafloorY, bottomless,
-            surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind
+            surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light
         );
     }
 
@@ -241,6 +245,7 @@ public final class McChunkSnapshotFactory {
         final int index,
         final int worldX,
         final int worldZ,
+        final int topY,
         final BlockPos.Mutable pos,
         final ClientWorld world,
         final BlockState surfaceState,
@@ -258,11 +263,13 @@ public final class McChunkSnapshotFactory {
         final int[] baseArgb,
         final int[] tintArgb,
         final int[] overlayArgb,
-        final byte[] kind
+        final byte[] kind,
+        final byte[] light
     ) {
         pos.set(worldX, surfaceYVal, worldZ);
         final int surfaceBaseColor = sampler.colorFor(surfaceState, world, pos);
         final int surfaceTintColor = tintResolver.resolve(surfaceState, world, pos);
+        light[index] = sampleBlockLightAbove(world, pos, worldX, surfaceYVal, worldZ, topY);
 
         if (resolvedKind == SurfaceKind.WATER || resolvedKind == SurfaceKind.ICE) {
             // baseArgb/tintArgb hold the water/ice surface's own color; overlayArgb is repurposed to
@@ -353,7 +360,8 @@ public final class McChunkSnapshotFactory {
         final int[] baseArgb,
         final int[] tintArgb,
         final int[] overlayArgb,
-        final byte[] kind
+        final byte[] kind,
+        final byte[] light
     ) {
         final int worldX = baseX + localX;
         final int worldZ = baseZ + localZ;
@@ -402,6 +410,7 @@ public final class McChunkSnapshotFactory {
                 tintArgb[index] = 0xFFFFFFFF;
                 overlayArgb[index] = Argb.TRANSPARENT;
                 fluidDepth[index] = 0;
+                light[index] = sampleBlockLightAbove(world, pos, worldX, clampedPivot, worldZ, worldMaxY);
                 return;
             }
             openY = y;
@@ -411,7 +420,7 @@ public final class McChunkSnapshotFactory {
         if (solidY < worldMinY) {
             // Only reachable if the downward scan ran all the way to the world floor without
             // finding anything solid (an all-air column) - treat exactly like "no floor found".
-            writeVoid(index, pivotY, surfaceY, kind, baseArgb, tintArgb, overlayArgb, fluidDepth);
+            writeVoid(index, pivotY, surfaceY, kind, baseArgb, tintArgb, overlayArgb, fluidDepth, light);
             return;
         }
 
@@ -421,10 +430,13 @@ public final class McChunkSnapshotFactory {
 
         final int solidBase = sampler.colorFor(solidState, world, pos);
         final int solidTint = tintResolver.resolve(solidState, world, pos);
-        // Light is baked directly into baseArgb (tintArgb left neutral) rather than threading a
-        // separate light channel through ChunkSnapshot/RegionColumns/the disk codec - see
-        // McChunkSnapshotFactory's class javadoc and the S7 report for why.
+        // This layer's own visible light is baked directly into baseArgb (tintArgb left neutral)
+        // rather than read back from the light[] plane below - see this class's javadoc and the S7
+        // report for why. light[] is still filled here (cheap - one extra lookup) purely so every
+        // layer produces a uniform ChunkSnapshot; SURFACE is the only layer that ever reads it back
+        // (core.color.ShadingPipeline#applyDaylight), for its dynamic day/night shading.
         final int litColor = applyLight(Argb.multiply(solidBase, solidTint), pos, world, solidBlock, netherAmbient);
+        light[index] = sampleBlockLightAbove(world, pos, worldX, solidY, worldZ, worldMaxY);
 
         int overlayColor = Argb.TRANSPARENT;
         if (solidY + 1 < worldMaxY) {
@@ -506,6 +518,23 @@ public final class McChunkSnapshotFactory {
         return type == MapLayer.Type.NETHER_CURRENT || type == MapLayer.Type.NETHER_CEILING || type == MapLayer.Type.NETHER_SLICE;
     }
 
+    /**
+     * {@link ChunkSnapshot#light}: block-light (0-15) at the air block directly above {@code y}
+     * (clamped to stay under the world's build limit), the same position whose color was just
+     * sampled. Mutates {@code pos}; callers must not rely on its value afterward.
+     */
+    private static byte sampleBlockLightAbove(
+        final ClientWorld world,
+        final BlockPos.Mutable pos,
+        final int worldX,
+        final int y,
+        final int worldZ,
+        final int topY
+    ) {
+        pos.set(worldX, Math.min(y + 1, topY - 1), worldZ);
+        return (byte) MathHelper.clamp(world.getLightLevel(LightType.BLOCK, pos), 0, 15);
+    }
+
     private void writeVoid(
         final int index,
         final int playerY,
@@ -514,7 +543,8 @@ public final class McChunkSnapshotFactory {
         final int[] baseArgb,
         final int[] tintArgb,
         final int[] overlayArgb,
-        final byte[] fluidDepth
+        final byte[] fluidDepth,
+        final byte[] light
     ) {
         surfaceY[index] = clampSurfaceY(playerY + 1);
         kind[index] = (byte) SurfaceKind.VOID.ordinal();
@@ -522,6 +552,7 @@ public final class McChunkSnapshotFactory {
         tintArgb[index] = 0xFFFFFFFF;
         overlayArgb[index] = Argb.TRANSPARENT;
         fluidDepth[index] = 0;
+        light[index] = 0;
     }
 
     private static short clampSurfaceY(final int v) {

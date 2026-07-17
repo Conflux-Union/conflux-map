@@ -24,11 +24,17 @@ import java.util.zip.InflaterInputStream;
  * </pre>
  *
  * <p>Column record layout is {@code i16 surfaceY, u8 fluidDepth, u8 kind, i32 baseArgb,
- * i32 biomeTint, i32 overlayArgb} - 16 bytes/column, matching {@link RegionColumns}' six
- * per-column arrays one-for-one ({@code biomeTint} here is {@code RegionColumns.tintArgb} /
- * {@code ChunkSnapshot.tintArgb} under the format's own name). Note: the implementation
- * plan describes this record as "17B/col"; summing its own listed fields gives 16, and
- * this codec follows the field list (the authoritative part) rather than that count.
+ * i32 biomeTint, i32 overlayArgb, u8 light} - 17 bytes/column, matching {@link RegionColumns}'
+ * seven per-column arrays one-for-one ({@code biomeTint} here is {@code RegionColumns.tintArgb} /
+ * {@code ChunkSnapshot.tintArgb} under the format's own name). Note: the implementation plan
+ * originally described this record as "17B/col" back when it only listed 6 fields (summing
+ * those alone gives 16); {@code light} is the field that makes the count actually match.
+ *
+ * <p>{@code light} was added in {@link #SCHEMA_VERSION} 2 (day/night dynamic lighting for the
+ * SURFACE layer). {@link #decode} still accepts {@link #SCHEMA_VERSION_NO_LIGHT} files written
+ * before that - their column records are one byte shorter (no trailing {@code light} byte) and
+ * every column is filled with {@link #DEFAULT_LIGHT_FULL_BRIGHT} instead, so previously-cached
+ * terrain doesn't render pitch-black at night until it's recaptured.
  *
  * <p>All multi-byte integers are big-endian (plain {@link DataOutputStream}/
  * {@link DataInputStream} semantics). This class only encodes/decodes streams; file
@@ -37,7 +43,11 @@ import java.util.zip.InflaterInputStream;
 public final class RegionFileCodec {
     public static final byte[] MAGIC = {'C', 'F', 'R', 'M'};
     public static final int FORMAT_VERSION = 1;
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
+    /** The pre-{@code light}-plane schema; still readable, see this class's javadoc. */
+    public static final int SCHEMA_VERSION_NO_LIGHT = 1;
+    /** Backfilled {@code light} value for {@link #SCHEMA_VERSION_NO_LIGHT} files: full bright, never darkens at night. */
+    public static final byte DEFAULT_LIGHT_FULL_BRIGHT = 15;
     /** Discriminates the on-disk record family; 0 = the fixed-width column layout described above. */
     public static final int SOURCE_CLASS = 0;
 
@@ -50,7 +60,7 @@ public final class RegionFileCodec {
     public static final int CHUNK_TABLE_SIZE = CHUNK_TABLE_ENTRIES * CHUNK_TABLE_ENTRY_SIZE;
 
     public static final int COLUMN_COUNT = RegionColumns.SIZE * RegionColumns.SIZE;
-    public static final int COLUMN_RECORD_SIZE = 2 + 1 + 1 + 4 + 4 + 4;
+    public static final int COLUMN_RECORD_SIZE = 2 + 1 + 1 + 4 + 4 + 4 + 1;
 
     private RegionFileCodec() {
     }
@@ -78,7 +88,8 @@ public final class RegionFileCodec {
         byte[] kind,
         int[] baseArgb,
         int[] biomeTint,
-        int[] overlayArgb
+        int[] overlayArgb,
+        byte[] light
     ) {
         public RegionData {
             requireLength("chunkSourceOrdinal", chunkSourceOrdinal.length, CHUNK_TABLE_ENTRIES);
@@ -89,6 +100,7 @@ public final class RegionFileCodec {
             requireLength("baseArgb", baseArgb.length, COLUMN_COUNT);
             requireLength("biomeTint", biomeTint.length, COLUMN_COUNT);
             requireLength("overlayArgb", overlayArgb.length, COLUMN_COUNT);
+            requireLength("light", light.length, COLUMN_COUNT);
         }
 
         private static void requireLength(final String name, final int actual, final int expected) {
@@ -134,6 +146,7 @@ public final class RegionFileCodec {
                 columns.writeInt(data.baseArgb()[i]);
                 columns.writeInt(data.biomeTint()[i]);
                 columns.writeInt(data.overlayArgb()[i]);
+                columns.writeByte(data.light()[i]);
             }
             columns.flush();
             compressed.finish();
@@ -166,7 +179,7 @@ public final class RegionFileCodec {
             throw new RegionFileException("unsupported format version " + formatVersion);
         }
         final int schemaVersion = header.readUnsignedByte();
-        if (schemaVersion != SCHEMA_VERSION) {
+        if (schemaVersion != SCHEMA_VERSION && schemaVersion != SCHEMA_VERSION_NO_LIGHT) {
             throw new RegionFileException("unsupported schema version " + schemaVersion);
         }
         final int sourceClass = header.readUnsignedByte();
@@ -200,6 +213,8 @@ public final class RegionFileCodec {
         final int[] baseArgb = new int[COLUMN_COUNT];
         final int[] biomeTint = new int[COLUMN_COUNT];
         final int[] overlayArgb = new int[COLUMN_COUNT];
+        final byte[] light = new byte[COLUMN_COUNT];
+        final boolean hasLight = schemaVersion == SCHEMA_VERSION;
         final DataInputStream columns = new DataInputStream(new InflaterInputStream(rawIn, new Inflater(), 8192));
         for (int i = 0; i < COLUMN_COUNT; i++) {
             surfaceY[i] = columns.readShort();
@@ -208,11 +223,12 @@ public final class RegionFileCodec {
             baseArgb[i] = columns.readInt();
             biomeTint[i] = columns.readInt();
             overlayArgb[i] = columns.readInt();
+            light[i] = hasLight ? columns.readByte() : DEFAULT_LIGHT_FULL_BRIGHT;
         }
 
         return new RegionData(
             rx, rz, lastWriteEpochMs, chunkSourceOrdinal, chunkUpdateEpochSeconds,
-            surfaceY, fluidDepth, kind, baseArgb, biomeTint, overlayArgb
+            surfaceY, fluidDepth, kind, baseArgb, biomeTint, overlayArgb, light
         );
     }
 }

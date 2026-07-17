@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap;
 
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.core.cache.RegionCacheService;
+import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
@@ -24,6 +25,7 @@ import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapViewState;
 import cn.net.rms.confluxmap.mc.ui.world.WaypointWorldRenderer;
 import cn.net.rms.confluxmap.mc.world.DeathWatcher;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
+import cn.net.rms.confluxmap.mc.world.McDaylightTracker;
 import cn.net.rms.confluxmap.mc.world.WorldSessionTracker;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
@@ -58,6 +60,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private WaypointService waypointService;
     private DeathWatcher deathWatcher;
     private WaypointWorldRenderer waypointWorldRenderer;
+    private DaylightModel daylightModel;
+    private McDaylightTracker daylightTracker;
 
     public static ConfluxMapClient get() {
         return instance;
@@ -78,7 +82,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
         gameBridge = new McGameBridge(client, sessionGuard);
         sessionTracker = new WorldSessionTracker(sessionGuard);
         mapWorlds = new MapWorldService();
-        tileService = new TileService(mapWorlds, executors);
+        daylightModel = new DaylightModel();
+        tileService = new TileService(mapWorlds, executors, config, daylightModel);
         regionCache = new RegionCacheService(
             FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("cache"),
             mapWorlds, executors, tileService, ConfluxMapMod.LOGGER
@@ -107,6 +112,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         );
         waypointWorldRenderer = new WaypointWorldRenderer(client, config, gameBridge, waypointService);
         fullscreenMapViewState = new FullscreenMapViewState();
+        daylightTracker = new McDaylightTracker(client, config, daylightModel, mapWorlds, tileService);
 
         // regionCache must flush BEFORE mapWorlds swaps the ending world out (see RegionCacheService javadoc).
         sessionTracker.addListener(regionCache::onSessionChanged);
@@ -124,6 +130,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         minimapHudRenderer.register();
         waypointWorldRenderer.register();
         deathWatcher.register();
+        daylightTracker.register();
         ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
             new ColorReloadListener(spriteColorSampler)
         );

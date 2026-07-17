@@ -41,6 +41,11 @@ public final class ConfluxConfig {
     public int caveSliceY = 32;
     /** Fixed-band Y for {@code MapLayer.NETHER_SLICE}; not yet reachable via the cycle keybind (UI deferred). */
     public int netherSliceY = 64;
+    /**
+     * VoxelMap-style day/night + block-light darkening on the SURFACE layer only (cave/nether/end
+     * layers always keep their baked light). Off = exactly today's fixed-brightness rendering.
+     */
+    public boolean dynamicLighting = true;
 
     public int snapshotBudgetPerTick = 8;
     public int gpuTileCacheLimit = 256;
@@ -83,6 +88,7 @@ public final class ConfluxConfig {
         c.showLayerIndicator = showLayerIndicator;
         c.caveSliceY = caveSliceY;
         c.netherSliceY = netherSliceY;
+        c.dynamicLighting = dynamicLighting;
         c.snapshotBudgetPerTick = snapshotBudgetPerTick;
         c.gpuTileCacheLimit = gpuTileCacheLimit;
         c.radarEnabled = radarEnabled;

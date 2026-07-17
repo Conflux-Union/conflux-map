@@ -20,6 +20,14 @@ public final class ChunkSnapshot {
     /** Overlay color with its own tint already applied, 0 = no overlay. See surface-color-sampling.md §1/§5. */
     public final int[] overlayArgb;
     public final byte[] kind;
+    /**
+     * Block-light level (0-15) at the air block above the sampled surface position. Captured
+     * for every layer (cheap, one extra light query per column) but only consumed by the SURFACE
+     * layer's dynamic day/night shading ({@code core.color.ShadingPipeline#applyDaylight}) -
+     * CAVE/NETHER/END layers already bake their light into {@link #baseArgb} at snapshot time
+     * (see {@code McChunkSnapshotFactory}'s class javadoc) and ignore this field entirely.
+     */
+    public final byte[] light;
 
     public ChunkSnapshot(
         final int chunkX,
@@ -30,11 +38,12 @@ public final class ChunkSnapshot {
         final int[] baseArgb,
         final int[] tintArgb,
         final int[] overlayArgb,
-        final byte[] kind
+        final byte[] kind,
+        final byte[] light
     ) {
         if (surfaceY.length != COLUMNS || fluidDepth.length != COLUMNS
             || baseArgb.length != COLUMNS || tintArgb.length != COLUMNS
-            || overlayArgb.length != COLUMNS || kind.length != COLUMNS) {
+            || overlayArgb.length != COLUMNS || kind.length != COLUMNS || light.length != COLUMNS) {
             throw new IllegalArgumentException("snapshot arrays must have 256 entries");
         }
         this.chunkX = chunkX;
@@ -46,5 +55,6 @@ public final class ChunkSnapshot {
         this.tintArgb = tintArgb;
         this.overlayArgb = overlayArgb;
         this.kind = kind;
+        this.light = light;
     }
 }

@@ -12,13 +12,26 @@ import cn.net.rms.confluxmap.core.util.Argb;
  * The live pass's viewer-relative reference is a later slice; the tile service
  * only tracks a 2D viewpoint for tile selection, not a Y for shading.
  *
- * <p>The ice-specific extra darkening multiply in §5 is gated behind the
- * "dynamic lighting" toggle, which this slice does not implement at all (no
- * day/night light table exists yet) - so it is always a no-op here.
+ * <p>{@link #applyDaylight} is a deliberately simplified slice of §4's "Light-based
+ * (day/night) shading": a single global day/night factor (see {@link DaylightModel})
+ * blended with per-column block-light, applied only to the live SURFACE layer. It does
+ * not reproduce the full reference curve (per-pixel torch flicker, gamma-setting
+ * response, night-vision ramp, the ice-specific extra seafloor darkening, or the
+ * cached-pass "recolor with today's palette" rule) - those remain unimplemented. Cave/
+ * Nether/End layers never call this; they keep baking light into their colors at
+ * snapshot time via {@link LightTint} instead (see {@code McChunkSnapshotFactory}).
  */
 public final class ShadingPipeline {
     /** §4: the cached/world-map pass's fixed height-shading reference. */
     public static final int REFERENCE_HEIGHT = 80;
+    /**
+     * Map-readability floor for {@link #applyDaylight}: even at the darkest night with no
+     * block light, the SURFACE layer never scales below this fraction of its lit color -
+     * the same "never invisible" rationale as {@link LightTint}'s readability floor for the
+     * baked cave/nether curve, kept as a separate constant since the two layers' color
+     * pipelines are otherwise independent.
+     */
+    private static final float DAYLIGHT_FLOOR = 0.3f;
 
     private static final double HEIGHT_STEP = 8.0;
     private static final double K_ALONE = 1.8;
@@ -108,5 +121,26 @@ public final class ShadingPipeline {
             return shadedTopArgb;
         }
         return Argb.over(shadedTopArgb, shadedBottomArgb);
+    }
+
+    /**
+     * Darkens a fully-composed SURFACE-layer pixel for the current point in the day/night
+     * cycle, except where block light (torches, glowstone, ...) keeps that column bright.
+     * {@code blockLevel} is the raw 0-15 block-light reading (see {@link
+     * cn.net.rms.confluxmap.core.model.ChunkSnapshot#light}); {@code daylightFactor} is
+     * {@link DaylightModel#factor()} at compose time.
+     *
+     * <p>{@code b = max(daylightFactor, blockLevel/15)} is the column's effective
+     * brightness, then the result is scaled by {@code DAYLIGHT_FLOOR + (1 - DAYLIGHT_FLOOR) * b}
+     * so a fully unlit column at night still reads at {@link #DAYLIGHT_FLOOR}, never pure
+     * black. Alpha is untouched (see {@link Argb#scale}). At {@code daylightFactor == 1.0}
+     * (full daylight, or dynamic lighting disabled entirely at the call site) {@code b} is
+     * always 1 regardless of block light, so the scale factor is exactly 1 and this is a
+     * bit-identical no-op - today's undarkened rendering.
+     */
+    public static int applyDaylight(final int argb, final float daylightFactor, final int blockLevel) {
+        final float b = Math.max(daylightFactor, blockLevel / 15f);
+        final float scale = DAYLIGHT_FLOOR + (1f - DAYLIGHT_FLOOR) * b;
+        return Argb.scale(argb, scale);
     }
 }

@@ -2,7 +2,9 @@ package cn.net.rms.confluxmap.core.tile;
 
 import cn.net.rms.confluxmap.core.cache.RegionCacheService;
 import cn.net.rms.confluxmap.core.cache.RegionDiskCache;
+import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
+import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
@@ -39,6 +41,8 @@ public final class TileService {
 
     private final MapWorldService mapWorlds;
     private final MapExecutors executors;
+    private final ConfluxConfig config;
+    private final DaylightModel daylightModel;
     private final int maxConcurrentCompositions;
 
     /** Guarded by {@code this}: tiles waiting to be composed, with the session token that requested them. */
@@ -60,9 +64,16 @@ public final class TileService {
      */
     private volatile RegionCacheService regionCache;
 
-    public TileService(final MapWorldService mapWorlds, final MapExecutors executors) {
+    public TileService(
+        final MapWorldService mapWorlds,
+        final MapExecutors executors,
+        final ConfluxConfig config,
+        final DaylightModel daylightModel
+    ) {
         this.mapWorlds = mapWorlds;
         this.executors = executors;
+        this.config = config;
+        this.daylightModel = daylightModel;
         this.maxConcurrentCompositions = Math.max(1, executors.workerCount());
     }
 
@@ -137,6 +148,32 @@ public final class TileService {
             return new TileKey(key.world(), key.dimension(), key.layerId(), key.lod(), key.tileX(), key.tileZ() - 1);
         }
         return null;
+    }
+
+    /**
+     * Called (from {@code mc.world.McDaylightTracker}) whenever {@link DaylightModel}'s
+     * quantized bucket changes: marks every currently-resident SURFACE-layer LOD-0 tile
+     * (one per region already in the {@link ColumnStore}) dirty so it recomposes with the
+     * new day/night + block-light blend. Uses the existing dirty-queue prioritization/budget
+     * (see {@link #pump}), so this never stalls the queue even for a large resident set - it
+     * only fires on a slow drift (a few dozen times per full day/night cycle), not per-frame.
+     * Higher-LOD SURFACE tiles recompose from the live {@link ColumnStore} the next time they
+     * are themselves marked dirty (e.g. a chunk update, or {@link #requestTile}); they are not
+     * force-refreshed here.
+     */
+    public void markSurfaceRelit(final long token) {
+        final MapWorld world = mapWorlds.ifCurrent(token);
+        if (world == null) {
+            return;
+        }
+        final SessionGuard.Session session = world.session();
+        final ColumnStore store = world.store(MapLayer.SURFACE);
+        for (final RegionColumns region : store.allRegions()) {
+            final TileKey key = new TileKey(
+                session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), 0, region.regionX, region.regionZ
+            );
+            markDirty(key, token);
+        }
     }
 
     /** For a tile that's visible but has never been composed (or requested again after being evicted). */
@@ -245,22 +282,31 @@ public final class TileService {
         if (world == null) {
             return null;
         }
-        final ColumnStore store = world.store(MapLayer.parse(key.layerId()));
+        final MapLayer layer = MapLayer.parse(key.layerId());
+        final ColumnStore store = world.store(layer);
+        // Dynamic lighting only ever touches the live SURFACE layer (never CAVE/NETHER/END, which
+        // already bake their light at snapshot time - see ChunkSnapshot#light's javadoc). Reading
+        // the model's factor once per tile compose (rather than per-column) is fine: it's a slow
+        // drift, not a per-frame value, so a tile composing mid-bucket-change is harmless.
+        final boolean applyDaylight = layer.type() == MapLayer.Type.SURFACE && config.dynamicLighting;
+        final float daylightFactor = applyDaylight ? daylightModel.factor() : 1f;
         final int[] pixels = key.lod() == 0
-            ? composeLod0(store, key.tileX(), key.tileZ())
-            : composeLodN(store, key);
+            ? composeLod0(store, key.tileX(), key.tileZ(), applyDaylight, daylightFactor)
+            : composeLodN(store, key, applyDaylight, daylightFactor);
         return TileUpdate.fullTile(key, pixels);
     }
 
     /** One LOD-0 region (256x256 blocks, 1 pixel/block), fully transparent where untouched. */
-    private static int[] composeLod0(final ColumnStore store, final int regionX, final int regionZ) {
+    private static int[] composeLod0(
+        final ColumnStore store, final int regionX, final int regionZ, final boolean applyDaylight, final float daylightFactor
+    ) {
         final int[] pixels = new int[RegionColumns.SIZE * RegionColumns.SIZE];
         final RegionColumns region = store.region(regionX, regionZ);
         if (region != null) {
             final RegionColumns west = store.region(regionX - 1, regionZ);
             final RegionColumns south = store.region(regionX, regionZ + 1);
             final RegionColumns southWest = store.region(regionX - 1, regionZ + 1);
-            composeRegion(region, west, south, southWest, pixels);
+            composeRegion(region, west, south, southWest, pixels, applyDaylight, daylightFactor);
         }
         return pixels;
     }
@@ -275,7 +321,9 @@ public final class TileService {
      * 256x256 output. Regions with no data at all are skipped, leaving their
      * quadrant at the default fully-transparent value.
      */
-    private static int[] composeLodN(final ColumnStore store, final TileKey key) {
+    private static int[] composeLodN(
+        final ColumnStore store, final TileKey key, final boolean applyDaylight, final float daylightFactor
+    ) {
         final int lod = key.lod();
         final int size = RegionColumns.SIZE;
         final int regionsPerSide = 1 << lod;
@@ -290,7 +338,7 @@ public final class TileService {
                 if (store.region(regionX, regionZ) == null) {
                     continue;
                 }
-                final int[] full = composeLod0(store, regionX, regionZ);
+                final int[] full = composeLod0(store, regionX, regionZ, applyDaylight, daylightFactor);
                 final int[] downsampled = downsample(full, size, lod);
                 stitch(downsampled, subSize, outPixels, dx * subSize, dz * subSize);
             }
@@ -336,7 +384,9 @@ public final class TileService {
         final RegionColumns west,
         final RegionColumns south,
         final RegionColumns southWest,
-        final int[] outPixels
+        final int[] outPixels,
+        final boolean applyDaylight,
+        final float daylightFactor
     ) {
         final int size = RegionColumns.SIZE;
         final short[] surfaceY = new short[size * size];
@@ -345,7 +395,8 @@ public final class TileService {
         final int[] tintArgb = new int[size * size];
         final int[] overlayArgb = new int[size * size];
         final byte[] kind = new byte[size * size];
-        region.copyChunkRows(0, size, surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind);
+        final byte[] light = new byte[size * size];
+        region.copyChunkRows(0, size, surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light);
 
         for (int z = 0; z < size; z++) {
             for (int x = 0; x < size; x++) {
@@ -363,9 +414,13 @@ public final class TileService {
                 final int shadedOverlay = overlayArgb[idx] == Argb.TRANSPARENT
                     ? Argb.TRANSPARENT
                     : ShadingPipeline.applyShade(overlayArgb[idx], shade);
-                outPixels[idx] = k == SurfaceKind.WATER.ordinal() || k == SurfaceKind.ICE.ordinal()
+                int composed = k == SurfaceKind.WATER.ordinal() || k == SurfaceKind.ICE.ordinal()
                     ? ShadingPipeline.compositeOver(shadedBase, shadedOverlay)
                     : ShadingPipeline.compositeOver(shadedOverlay, shadedBase);
+                if (applyDaylight) {
+                    composed = ShadingPipeline.applyDaylight(composed, daylightFactor, light[idx]);
+                }
+                outPixels[idx] = composed;
             }
         }
     }

@@ -191,6 +191,9 @@ public final class ConfigScreen extends Screen {
                     y, "confluxmap.config.layers.nether_slice_y", 0, 127,
                     () -> config.netherSliceY, v -> config.netherSliceY = v, ConfigScreen::plainText
                 );
+                y = addToggleRow(
+                    y, "confluxmap.config.map.dynamic_lighting", () -> config.dynamicLighting, v -> config.dynamicLighting = v
+                );
                 break;
             case RADAR:
                 y = addToggleRow(y, "confluxmap.config.radar.enabled", () -> config.radarEnabled, v -> config.radarEnabled = v);

@@ -55,6 +55,7 @@
   "confluxmap.config.layers.show_indicator": "Show Layer Label: %s",
   "confluxmap.config.layers.cave_slice_y": "Cave Slice Y: %s",
   "confluxmap.config.layers.nether_slice_y": "Nether Slice Y: %s",
+  "confluxmap.config.map.dynamic_lighting": "Dynamic Lighting: %s",
   "confluxmap.config.radar.enabled": "Radar: %s",
   "confluxmap.config.radar.show_players": "Show Players: %s",
   "confluxmap.config.radar.show_hostile": "Show Hostile Mobs: %s",

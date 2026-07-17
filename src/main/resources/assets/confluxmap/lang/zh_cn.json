@@ -55,6 +55,7 @@
   "confluxmap.config.layers.show_indicator": "显示图层标签：%s",
   "confluxmap.config.layers.cave_slice_y": "洞穴切片高度：%s",
   "confluxmap.config.layers.nether_slice_y": "下界切片高度：%s",
+  "confluxmap.config.map.dynamic_lighting": "动态光照：%s",
   "confluxmap.config.radar.enabled": "雷达：%s",
   "confluxmap.config.radar.show_players": "显示玩家：%s",
   "confluxmap.config.radar.show_hostile": "显示敌对生物：%s",

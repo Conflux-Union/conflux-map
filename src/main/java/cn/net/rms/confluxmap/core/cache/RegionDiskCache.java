@@ -153,6 +153,7 @@ public final class RegionDiskCache {
         final int[] baseArgb = new int[ChunkSnapshot.COLUMNS];
         final int[] tintArgb = new int[ChunkSnapshot.COLUMNS];
         final int[] overlayArgb = new int[ChunkSnapshot.COLUMNS];
+        final byte[] light = new byte[ChunkSnapshot.COLUMNS];
         final int baseX = chunkLocalX * 16;
         final int baseZ = chunkLocalZ * 16;
         for (int z = 0; z < 16; z++) {
@@ -164,10 +165,11 @@ public final class RegionDiskCache {
             System.arraycopy(data.baseArgb(), srcRow, baseArgb, dstRow, 16);
             System.arraycopy(data.biomeTint(), srcRow, tintArgb, dstRow, 16);
             System.arraycopy(data.overlayArgb(), srcRow, overlayArgb, dstRow, 16);
+            System.arraycopy(data.light(), srcRow, light, dstRow, 16);
         }
         final int chunkX = (data.rx() << 4) + chunkLocalX;
         final int chunkZ = (data.rz() << 4) + chunkLocalZ;
-        return new ChunkSnapshot(chunkX, chunkZ, token, surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind);
+        return new ChunkSnapshot(chunkX, chunkZ, token, surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light);
     }
 
     /**
@@ -260,13 +262,14 @@ public final class RegionDiskCache {
         final int[] tintArgb = new int[size * size];
         final int[] overlayArgb = new int[size * size];
         final byte[] kind = new byte[size * size];
+        final byte[] light = new byte[size * size];
         final byte[] chunkSource = new byte[RegionFileCodec.CHUNK_TABLE_ENTRIES];
         final int[] chunkUpdateSeconds = new int[RegionFileCodec.CHUNK_TABLE_ENTRIES];
-        region.copyForFlush(surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, chunkSource, chunkUpdateSeconds);
+        region.copyForFlush(surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light, chunkSource, chunkUpdateSeconds);
 
         final RegionFileCodec.RegionData data = new RegionFileCodec.RegionData(
             region.regionX, region.regionZ, System.currentTimeMillis(),
-            chunkSource, chunkUpdateSeconds, surfaceY, fluidDepth, kind, baseArgb, tintArgb, overlayArgb
+            chunkSource, chunkUpdateSeconds, surfaceY, fluidDepth, kind, baseArgb, tintArgb, overlayArgb, light
         );
         writeAtomic(regionFile(type, region.regionX, region.regionZ), data, type.ordinal());
     }
