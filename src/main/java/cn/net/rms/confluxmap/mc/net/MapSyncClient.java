@@ -59,7 +59,10 @@ public final class MapSyncClient {
             || lod > companion.policy().budgets().maxPatchLod()) {
             return;
         }
-        corrections.setNamespace("multiplayer", companion.worldIdOverride().orElse("world"));
+        // Integrated servers also speak the companion channel, but their cache must not share a
+        // namespace with a remote server that happens to advertise the same fallback world id.
+        final String serverNamespace = client.isInSingleplayer() ? "singleplayer" : "multiplayer";
+        corrections.setNamespace(serverNamespace, companion.worldIdOverride().orElse("world"));
         final long now = System.currentTimeMillis();
         corrections.flushIfDue(now);
         final boolean changed = lod != lastLod || minX != lastMinX || maxX != lastMaxX || minZ != lastMinZ || maxZ != lastMaxZ;

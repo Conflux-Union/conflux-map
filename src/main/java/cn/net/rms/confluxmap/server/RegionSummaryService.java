@@ -11,6 +11,8 @@ import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -57,10 +59,17 @@ public final class RegionSummaryService {
                 }
                 return;
             }
+            if (request.lod() > PatchBuilder.MAX_SUPPORTED_LOD) {
+                for (final MapViewReqC2S.TileReq tile : request.tiles()) {
+                    sender.accept(new MapPatchS2C(request.reqId(), request.dimIndex(), request.lod(), tile.tileX(), tile.tileZ(),
+                        Proto.PATCH_MODE_UNAVAILABLE, 0L, new byte[Proto.PATCH_PRESENCE_BYTES], new byte[0]));
+                }
+                return;
+            }
+            final SummaryDiskCache disk = new SummaryDiskCache(server.getSavePath(WorldSavePath.ROOT));
             for (final MapViewReqC2S.TileReq tile : request.tiles()) {
-                final SummaryDiskCache disk = new SummaryDiskCache(server.getSavePath(WorldSavePath.ROOT));
-                final SummaryCodec.Region summary = readTile(world, tile.tileX(), tile.tileZ(), disk);
-                final PatchBuilder.Result result = buildPatch(world, summary, tile, request.lod());
+                final SummaryTile summary = readTile(world, tile.tileX(), tile.tileZ(), request.lod(), disk);
+                final PatchBuilder.Result result = buildPatch(world, summary, tile);
                 final MapPatchS2C patch = new MapPatchS2C(request.reqId(), request.dimIndex(), request.lod(), tile.tileX(), tile.tileZ(),
                     result.mode(), result.revision(), result.presence(), result.body());
                 final byte[] estimated = cn.net.rms.confluxmap.core.net.MsgCodec.encode(patch);
@@ -82,7 +91,7 @@ public final class RegionSummaryService {
     }
 
     private PatchBuilder.Result buildPatch(
-        final ServerWorld world, final SummaryCodec.Region summary, final MapViewReqC2S.TileReq tile, final int lod
+        final ServerWorld world, final SummaryTile summary, final MapViewReqC2S.TileReq tile
     ) {
         if (NativeLib.available()) {
             final int nativeDim = PredictionDimensions.isEnd(
@@ -93,7 +102,7 @@ public final class RegionSummaryService {
             final java.util.OptionalInt version = McVersions.toCubiomes("1.17.1");
             if (version.isPresent()) {
                 final PatchBuilder.Result residual = patchBuilder.buildFromSampler(
-                    summary, lod, tile.tileX(), tile.tileZ(), tile.sinceRevision(),
+                    summary, tile.sinceRevision(),
                     new NativeBaselineSampler(version.getAsInt(), world.getSeed(), nativeDim), nativeDim == 1,
                     world.getSeed(), false
                 );
@@ -102,14 +111,36 @@ public final class RegionSummaryService {
                 }
             }
         }
-        return patchBuilder.buildAbsolute(summary, lod, tile.sinceRevision());
+        return patchBuilder.buildAbsolute(summary, tile.sinceRevision());
     }
 
-    private SummaryCodec.Region readTile(
-        final ServerWorld world, final int tileX, final int tileZ, final SummaryDiskCache disk
+    /** Reads every LOD-0 region covered by one coarse prediction tile. */
+    private SummaryTile readTile(
+        final ServerWorld world, final int tileX, final int tileZ, final int lod, final SummaryDiskCache disk
     ) {
+        final int regionsPerSide = 1 << Math.max(0, lod);
+        final long baseRegionX = (long) tileX * regionsPerSide;
+        final long baseRegionZ = (long) tileZ * regionsPerSide;
+        if (baseRegionX < Integer.MIN_VALUE || baseRegionX > Integer.MAX_VALUE
+            || baseRegionZ < Integer.MIN_VALUE || baseRegionZ > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("requested tile is outside the region coordinate range");
+        }
         final String dimension = world.getRegistryKey().getValue().toString();
-        final SummaryCodec.Region cached = disk.load(dimension, tileX, tileZ);
+        final List<SummaryCodec.Region> regions = new ArrayList<>(regionsPerSide * regionsPerSide);
+        for (int dz = 0; dz < regionsPerSide; dz++) {
+            for (int dx = 0; dx < regionsPerSide; dx++) {
+                final int regionX = (int) baseRegionX + dx;
+                final int regionZ = (int) baseRegionZ + dz;
+                regions.add(readRegion(world, dimension, regionX, regionZ, disk));
+            }
+        }
+        return new SummaryTile(lod, tileX, tileZ, regions);
+    }
+
+    private SummaryCodec.Region readRegion(
+        final ServerWorld world, final String dimension, final int regionX, final int regionZ, final SummaryDiskCache disk
+    ) {
+        final SummaryCodec.Region cached = disk.load(dimension, regionX, regionZ);
         // A zero source mtime is the conservative marker used by the live reader: without a
         // reliable region-file timestamp, never serve an older summary over a newly written chunk.
         if (cached != null && cached.sourceMcaMtimeMs() > 0L) {
@@ -118,7 +149,7 @@ public final class RegionSummaryService {
         final SummaryCodec.Chunk[] chunks = new SummaryCodec.Chunk[SummaryCodec.CHUNKS];
         for (int z = 0; z < 16; z++) {
             for (int x = 0; x < 16; x++) {
-                final ChunkPos pos = new ChunkPos(tileX * 16 + x, tileZ * 16 + z);
+                final ChunkPos pos = new ChunkPos(regionX * 16 + x, regionZ * 16 + z);
                 NbtCompound nbt = null;
                 try {
                     nbt = world.getChunkManager().threadedAnvilChunkStorage.getNbt(pos);
@@ -128,7 +159,7 @@ public final class RegionSummaryService {
                 chunks[z * 16 + x] = nbt == null ? SummaryCodec.Chunk.empty() : summarizer.summarize(nbt);
             }
         }
-        final SummaryCodec.Region region = new SummaryCodec.Region(tileX, tileZ, 0L, chunks);
+        final SummaryCodec.Region region = new SummaryCodec.Region(regionX, regionZ, 0L, chunks);
         try {
             disk.save(dimension, region);
         } catch (IOException ignored) {

@@ -15,7 +15,7 @@ import java.util.List;
 public record MapViewReqC2S(int reqId, int dimIndex, int lod, List<TileReq> tiles) implements Message {
 
     /**
-     * @param tileX          tile X coordinate (tile = 16 chunks = 256 blocks)
+     * @param tileX          tile X coordinate (256 output pixels; world span is 256 << lod blocks)
      * @param tileZ          tile Z coordinate
      * @param sinceRevision  last {@code tileRevision} the client has cached for this tile; 0 = cold
      */

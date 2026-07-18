@@ -72,7 +72,7 @@ public final class Proto {
     /** Sentinel written/read as the {@code mapColorId} when no vanilla map color applies. */
     public static final int MAP_COLOR_NONE = 0xFF;
 
-    /** Length of the {@code presence} bitmap carried in every MAP_PATCH (one bit per chunk, 16x16 = 256 bits). */
+    /** Length of the {@code presence} bitmap carried in every MAP_PATCH (one bit per 16x16 output-pixel cell). */
     public static final int PATCH_PRESENCE_BYTES = 32;
 
     /** {@code mode} field in MAP_PATCH: server's baseline matches the client's prediction exactly. */

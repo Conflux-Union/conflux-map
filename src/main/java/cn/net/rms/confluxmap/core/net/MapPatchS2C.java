@@ -17,9 +17,9 @@ import java.util.List;
  *                      {@link Proto#PATCH_MODE_ABSOLUTE} / {@link Proto#PATCH_MODE_UNAVAILABLE}
  * @param tileRevision  server's current revision counter for this tile (game-time ticks); the client
  *                      echoes it back as {@link MapViewReqC2S.TileReq#sinceRevision()} on the next request
- * @param presence      exactly {@value Proto#PATCH_PRESENCE_BYTES} bytes; one bit per chunk (16x16 =
- *                      256 chunks per tile). Bit set = server has real data for that chunk in this tile.
- *                      Used by S5's {@code GENERATED_ONLY} prediction view mode.
+ * @param presence      exactly {@value Proto#PATCH_PRESENCE_BYTES} bytes; one bit per 16x16 output
+ *                      pixel cell. At LOD0 a cell is one chunk; at higher LODs it is the union of
+ *                      chunks touched by that cell. Used by S5's {@code GENERATED_ONLY} view mode.
  * @param body          PatchCodec-compressed payload; its interpretation depends on {@code mode}:
  *                      <ul>
  *                        <li>{@link Proto#PATCH_MODE_UNCHANGED} / {@link Proto#PATCH_MODE_UNAVAILABLE}:

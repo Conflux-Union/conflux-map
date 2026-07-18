@@ -14,7 +14,9 @@ outside the biome's expected set is retained as a correction so player builds ar
 ## Companion protocol
 
 `confluxmap:m2` v1 uses big-endian framed messages. `MAP_VIEW_REQ` carries up to eight tile
-coordinates and a cached revision. `MAP_PATCH` carries a 16x16 chunk presence bitmap and a
+coordinates and a cached revision. A tile is 256 output pixels per edge and covers `2^lod` LOD-0
+regions per side. `MAP_PATCH` carries a 16x16 output-cell presence bitmap (one chunk per cell at
+LOD0, the union of touched chunks at higher LOD) and a
 deflate-compressed two-level sparse mask: 32-byte coarse mask, one 32-byte fine mask per coarse
 cell, then six-byte absolute column records. Server patches are capped at LOD 2; higher LODs stay
 local. A missing or mismatched predictor uses absolute samples, never a false residual.

@@ -57,31 +57,24 @@ public final class CorrectionTile {
         return new PatchCodec.Patch(copy);
     }
 
-    public synchronized boolean hasGeneratedChunk(final int chunkX, final int chunkZ) {
-        if (chunkX < 0 || chunkX >= 16 || chunkZ < 0 || chunkZ >= 16) {
+    public synchronized boolean hasGeneratedChunk(final int cellX, final int cellZ) {
+        if (cellX < 0 || cellX >= 16 || cellZ < 0 || cellZ >= 16) {
             return false;
         }
-        final int index = chunkZ * 16 + chunkX;
+        final int index = cellZ * 16 + cellX;
         return (presence[index >>> 3] & (1 << (index & 7))) != 0;
     }
 
-    /** Presence cells cover every chunk touched by a LOD pixel; any generated chunk makes it visible. */
+    /** Presence cells are 16x16 output-pixel blocks; at LOD0 each block is exactly one chunk. */
     public synchronized boolean hasGeneratedChunkForPixel(final int pixelIndex, final int lod) {
-        final int x = pixelIndex & 255;
-        final int z = pixelIndex >>> 8;
-        final int blocks = 1 << Math.max(0, Math.min(4, lod));
-        final int startX = (x * blocks) >>> 4;
-        final int startZ = (z * blocks) >>> 4;
-        final int endX = ((x + 1) * blocks - 1) >>> 4;
-        final int endZ = ((z + 1) * blocks - 1) >>> 4;
-        for (int cz = startZ; cz <= Math.min(15, endZ); cz++) {
-            for (int cx = startX; cx <= Math.min(15, endX); cx++) {
-                if (hasGeneratedChunk(cx, cz)) {
-                    return true;
-                }
-            }
+        // The bitmap is expressed in output pixels, so its lookup no longer depends on LOD. Keep
+        // the parameter in the seam used by existing view-mode callers.
+        if (pixelIndex < 0 || pixelIndex >= PIXELS) {
+            return false;
         }
-        return false;
+        final int cellX = (pixelIndex & 255) >>> 4;
+        final int cellZ = (pixelIndex >>> 8) >>> 4;
+        return hasGeneratedChunk(cellX, cellZ);
     }
 
     public synchronized void clear() {
