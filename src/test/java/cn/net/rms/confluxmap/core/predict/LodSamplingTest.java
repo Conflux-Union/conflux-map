@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.predict;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
@@ -101,5 +102,18 @@ class LodSamplingTest {
         assertNotNull(grid);
         final DerivedGrid derived = BaselineDeriver.derive(grid);
         assertEquals(SurfaceKind.WATER.ordinal(), derived.kind[BaselineGrid.index(0, 0)]);
+    }
+
+    @org.junit.jupiter.api.Test
+    void lod1HeightsAreBilinearlyInterpolatedNotTwoPixelStepped() {
+        // LOD1 covers 2 blocks/pixel but heights come from 4-block native samples. Bilinear
+        // interpolation must give adjacent pixels different values inside the same native cell,
+        // rather than the old nearest x2 expand where two pixels snapped to one sample - this is
+        // what closes the resolution gap to the real LOD1 tile (a downsample of full-res LOD0).
+        final BaselineGrid grid = LodSampling.sample(SAMPLER, false, 1, 0, 0);
+        assertNotNull(grid);
+        final int h0 = grid.terrainY[BaselineGrid.index(0, 0)];
+        final int h1 = grid.terrainY[BaselineGrid.index(1, 0)];
+        assertNotEquals(h0, h1, "adjacent LOD1 pixels should bilinearly differ within one native cell");
     }
 }

@@ -14,8 +14,10 @@ import cn.net.rms.confluxmap.core.color.ShadingPipeline;
  *   <li>LOD0: biomes at native scale 1 (1:1 with pixels); heights at native 1:4 scale, expanded
  *       x4 by fixed-point integer bilinear (per-axis lerp, composed - {@link Math#floorDiv} only,
  *       no float/double anywhere in this class).
- *   <li>LOD1: biomes/heights both at native scale 4 (4 blocks/sample = exactly 2 pixels/sample
- *       at this LOD's 2 blocks/pixel), nearest-neighbor expanded x2.
+ *   <li>LOD1: biomes at native scale 4 (4 blocks/sample = exactly 2 pixels/sample at this LOD's
+ *       2 blocks/pixel), nearest-neighbor expanded x2; heights at native 1:4 scale, fixed-point
+ *       bilinear interpolated to per-pixel resolution (matching the real LOD1 tile, which is a
+ *       downsample of full-resolution LOD0 data, far better than the old nearest x2 expand).
  *   <li>LOD2: biomes/heights both at native scale 4, exactly 1:1 with this LOD's 4-block pixels -
  *       no expansion at all.
  *   <li>LOD3: biomes at native scale 16, nearest-neighbor expanded x2; heights still queried at
@@ -98,9 +100,13 @@ public final class LodSampling {
     ) {
         switch (lod) {
             case 0:
-                return sampleHeightsBilinear(sampler, end, tileOriginX, tileOriginZ, grid);
+                return sampleHeightsBilinear(sampler, end, tileOriginX, tileOriginZ, grid, 1);
             case 1:
-                return sampleHeightsNearest(sampler, end, tileOriginX, tileOriginZ, grid, 2);
+                // Heights at 1:4 native, bilinear-interpolated to this LOD's 2-block pixels: matches
+                // the real LOD1 tile (a downsample of full-res LOD0 data) far closer than the nearest
+                // x2 expand did, and smooths the height-gated water rule so ocean samples stop flipping
+                // to land at coast transitions.
+                return sampleHeightsBilinear(sampler, end, tileOriginX, tileOriginZ, grid, 2);
             case 2:
                 return sampleHeightsNearest(sampler, end, tileOriginX, tileOriginZ, grid, 1);
             case 3:
@@ -115,12 +121,18 @@ public final class LodSampling {
         }
     }
 
-    /** LOD0: 4-block native samples, bilinearly expanded x4 to per-pixel resolution. */
+    /**
+     * 4-block native samples, bilinearly interpolated to per-pixel resolution. {@code blocksPerPixel}
+     * is this LOD's pixel stride (1 at LOD0, 2 at LOD1): the bilinear fraction comes from where each
+     * pixel's block offset lands inside its 4-block native cell, so LOD1 stays as sharp as the 1:4
+     * native data allows instead of two pixels snapping to one nearest sample.
+     */
     private static boolean sampleHeightsBilinear(
-        final BaselineSampler sampler, final boolean end, final int tileOriginX, final int tileOriginZ, final BaselineGrid grid
+        final BaselineSampler sampler, final boolean end, final int tileOriginX, final int tileOriginZ,
+        final BaselineGrid grid, final int blocksPerPixel
     ) {
-        final int sMin = Math.floorDiv(P_MIN, 4);
-        final int sMax = Math.floorDiv(P_MAX, 4) + 1; // +1: bilinear's upper corner sample
+        final int sMin = Math.floorDiv(P_MIN * blocksPerPixel, 4);
+        final int sMax = Math.floorDiv(P_MAX * blocksPerPixel, 4) + 1; // +1: bilinear's upper corner sample
         final int sw = sMax - sMin + 1;
         final int x4Origin = Math.floorDiv(tileOriginX, 4) + sMin;
         final int z4Origin = Math.floorDiv(tileOriginZ, 4) + sMin;
@@ -130,13 +142,15 @@ public final class LodSampling {
             return false;
         }
         for (int pz = P_MIN; pz <= P_MAX; pz++) {
-            final int baseZ = Math.floorDiv(pz, 4);
-            final int fz = pz - baseZ * 4;
+            final int blockZ = pz * blocksPerPixel;
+            final int baseZ = Math.floorDiv(blockZ, 4);
+            final int fz = blockZ - baseZ * 4;
             final int sz0 = baseZ - sMin;
             final int sz1 = sz0 + 1;
             for (int px = P_MIN; px <= P_MAX; px++) {
-                final int baseX = Math.floorDiv(px, 4);
-                final int fx = px - baseX * 4;
+                final int blockX = px * blocksPerPixel;
+                final int baseX = Math.floorDiv(blockX, 4);
+                final int fx = blockX - baseX * 4;
                 final int sx0 = baseX - sMin;
                 final int sx1 = sx0 + 1;
                 final int h00 = raw[sz0 * sw + sx0];

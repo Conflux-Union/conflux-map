@@ -15,7 +15,7 @@ public final class PredictorVersion {
     public static final int CFX_ABI = 1;
 
     /** Bumped whenever Java-side baseline derivation (LOD expansion, canopy, kind rules) changes. */
-    public static final int BASELINE_ALGO = 1;
+    public static final int BASELINE_ALGO = 2;
 
     private PredictorVersion() {
     }

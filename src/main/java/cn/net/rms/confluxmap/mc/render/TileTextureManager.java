@@ -24,7 +24,9 @@ import net.minecraft.client.texture.NativeImageBackedTexture;
  * {@link NativeImageBackedTexture} (which stores ABGR, hence {@link Argb#toAbgr}).
  */
 public final class TileTextureManager {
-    private static final int UPLOADS_PER_FRAME = 4;
+    // Real and predicted tiles share one upload queue; a slow predicted underlay leaves the real
+    // tile's transparent (unexplored) pixels showing the screen background, so drain generously.
+    private static final int UPLOADS_PER_FRAME = 8;
     private static final int TILE_SIZE = 256;
 
     private final ConfluxConfig config;

@@ -17,8 +17,8 @@ import java.util.Set;
 
 /**
  * Predicted-underlay twin of {@code core.tile.TileService}: a synchronized dirty-tile queue
- * bounded by an in-flight cap (one per worker), nearest-viewpoint-first outside a visible viewport
- * (where it is serialized in top-left row-major order), session-token guarded - same discipline,
+ * bounded by an in-flight cap (one per worker outside a visible viewport, a small bounded cap
+ * inside one that still picks tiles in top-left row-major order), session-token guarded - same discipline,
  * entirely separate data. Predictions never enter {@code ColumnStore}/{@code
  * RegionDiskCache}; composition here samples cubiomes directly (via {@link NativeBaselineSampler})
  * and shares {@code TileService}'s upload queue through {@link TileService#submitUpload}. Native
@@ -34,6 +34,12 @@ public final class PredictionTileService {
     private final ConfluxConfig config;
     private final DaylightModel daylightModel;
     private final int maxConcurrentCompositions;
+    /**
+     * Bounded concurrency while a fullscreen viewport is active. Strict serialization (1) left the
+     * predicted underlay trailing the real tile's transparent unexplored pixels during pans, so the
+     * screen background bled through as black gaps; row-major ordering still picks the next tile.
+     */
+    private static final int VISIBLE_CONCURRENCY = 3;
     private volatile CorrectionStore correctionStore;
     private volatile PredictionViewMode viewMode = PredictionViewMode.EVERYWHERE;
 
@@ -203,7 +209,9 @@ public final class PredictionTileService {
             final long token;
             final long generation;
             synchronized (this) {
-                final int compositionLimit = viewport == null ? maxConcurrentCompositions : 1;
+                final int compositionLimit = viewport == null
+                    ? maxConcurrentCompositions
+                    : Math.min(maxConcurrentCompositions, VISIBLE_CONCURRENCY);
                 if (inFlight.size() >= compositionLimit || dirty.isEmpty()) {
                     return;
                 }

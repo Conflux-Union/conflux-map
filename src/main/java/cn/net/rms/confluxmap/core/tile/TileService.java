@@ -375,10 +375,11 @@ public final class TileService {
      * covered region is composed exactly as at LOD0 (reusing {@link #composeLod0}, so
      * cross-region slope shading at every LOD-0 boundary - including ones that fall
      * inside this LOD's tile, not just at its own edges - stays correct), then
-     * box-averaged down by {@code 2^lod} (via repeated 2x2 {@link Argb#average4}
-     * passes, i.e. a small mipmap chain) and stitched into its quadrant of the
-     * 256x256 output. Regions with no data at all are skipped, leaving their
-     * quadrant at the default fully-transparent value.
+     * box-averaged down by {@code 2^lod} (via repeated 2x2 alpha-weighted {@link Argb#average4Weighted}
+     * passes, i.e. a small mipmap chain, so a region that is only partly explored downsamples to a
+     * clean translucent value instead of darkening toward black) and stitched into its quadrant of
+     * the 256x256 output. Regions with no data at all are skipped, leaving their quadrant at the
+     * default fully-transparent value.
      */
     private static int[] composeLodN(
         final ColumnStore store, final TileKey key, final boolean applyDaylight, final float daylightFactor
@@ -418,7 +419,7 @@ public final class TileService {
                 for (int x = 0; x < nextSize; x++) {
                     final int x0 = x * 2;
                     final int x1 = x0 + 1;
-                    next[z * nextSize + x] = Argb.average4(
+                    next[z * nextSize + x] = Argb.average4Weighted(
                         current[z0 * currentSize + x0], current[z0 * currentSize + x1],
                         current[z1 * currentSize + x0], current[z1 * currentSize + x1]
                     );

@@ -100,6 +100,29 @@ public final class Argb {
         return pack(a, r, g, b);
     }
 
+    /**
+     * Alpha-weighted average of 4 colors for LOD mipmap downsampling: a fully-transparent
+     * (unexplored) pixel contributes its alpha to the result's coverage but not its (zero) RGB,
+     * so a region that is only partly explored downsamples to a clean translucent value instead
+     * of darkening toward black. {@link #average4} would average the transparent pixel's RGB=0
+     * in, producing a half-transparent muddy edge that muddies the predicted underlay beneath.
+     */
+    public static int average4Weighted(final int c0, final int c1, final int c2, final int c3) {
+        final int a0 = alpha(c0);
+        final int a1 = alpha(c1);
+        final int a2 = alpha(c2);
+        final int a3 = alpha(c3);
+        final int outA = (a0 + a1 + a2 + a3) >> 2;
+        final int w = a0 + a1 + a2 + a3;
+        if (w == 0) {
+            return TRANSPARENT;
+        }
+        final int r = (red(c0) * a0 + red(c1) * a1 + red(c2) * a2 + red(c3) * a3) / w;
+        final int g = (green(c0) * a0 + green(c1) * a1 + green(c2) * a2 + green(c3) * a3) / w;
+        final int b = (blue(c0) * a0 + blue(c1) * a1 + blue(c2) * a2 + blue(c3) * a3) / w;
+        return pack(outA, r, g, b);
+    }
+
     private static int clampChannel(final int v) {
         return v < 0 ? 0 : Math.min(v, 255);
     }

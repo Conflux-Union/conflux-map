@@ -64,4 +64,20 @@ class PredictedTileComposerTest {
         final int expected = ShadingPipeline.applyShade(base, ShadingPipeline.heightShade(88, 80, false));
         assertEquals(expected, pixels[pixel]);
     }
+
+    @Test
+    void oceanWaterColorIsUnifiedAcrossBiomeVariants() {
+        // warm ocean (id 44) and plain ocean (id 0) carry different live waterColors, but the
+        // composer renders one unified ocean tint so adjacent predicted tiles along a coast don't
+        // fracture into visibly different hues.
+        final BaselineGrid grid = new BaselineGrid();
+        final DerivedGrid derived = new DerivedGrid();
+        Arrays.fill(derived.kind, (byte) cn.net.rms.confluxmap.core.model.SurfaceKind.WATER.ordinal());
+        Arrays.fill(derived.surfaceY, BaselineDeriver.WATER_LEVEL);
+        Arrays.fill(derived.fluidDepth, 10);
+        grid.biomeId[BaselineGrid.index(5, 5)] = 0;
+        grid.biomeId[BaselineGrid.index(6, 6)] = 44;
+        final int[] pixels = PredictedTileComposer.compose(derived, grid, PredictionPalette.defaults(), false, 1f);
+        assertEquals(pixels[5 * 256 + 5], pixels[6 * 256 + 6]);
+    }
 }
