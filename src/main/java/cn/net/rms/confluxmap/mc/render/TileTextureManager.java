@@ -3,6 +3,8 @@ package cn.net.rms.confluxmap.mc.render;
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.TileKey;
+import cn.net.rms.confluxmap.core.predict.PredictedTileKeys;
+import cn.net.rms.confluxmap.core.predict.PredictionTileService;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.tile.TileUpdate;
 import cn.net.rms.confluxmap.core.util.Argb;
@@ -26,12 +28,14 @@ public final class TileTextureManager {
 
     private final ConfluxConfig config;
     private final TileService tiles;
+    private final PredictionTileService predictionTiles;
     /** Access-order so the least-recently-bound tile is always first (LRU eviction). */
     private final LinkedHashMap<TileKey, NativeImageBackedTexture> textures = new LinkedHashMap<>(64, 0.75f, true);
 
-    public TileTextureManager(final ConfluxConfig config, final TileService tiles) {
+    public TileTextureManager(final ConfluxConfig config, final TileService tiles, final PredictionTileService predictionTiles) {
         this.config = config;
         this.tiles = tiles;
+        this.predictionTiles = predictionTiles;
     }
 
     /** Render thread: drains a handful of freshly-composed tiles and uploads them to the GPU. */
@@ -74,11 +78,20 @@ public final class TileTextureManager {
         }
     }
 
-    /** Binds the tile's texture for drawing; returns false (and requests it) if not yet cached. */
+    /**
+     * Binds the tile's texture for drawing; returns false (and requests it) if not yet cached.
+     * A {@link PredictedTileKeys#isPredicted predicted} key is routed to {@link
+     * PredictionTileService} instead of {@link TileService} - {@code TileService.requestTile}
+     * would throw on a {@code "!pred"} layer id, since {@code MapLayer.parse} doesn't know it.
+     */
     public boolean bind(final TileKey key) {
         final NativeImageBackedTexture texture = textures.get(key);
         if (texture == null) {
-            tiles.requestTile(key);
+            if (PredictedTileKeys.isPredicted(key)) {
+                predictionTiles.requestTile(key);
+            } else {
+                tiles.requestTile(key);
+            }
             return false;
         }
         RenderUtil.bindTexture(texture.getGlId());

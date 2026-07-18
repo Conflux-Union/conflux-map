@@ -5,6 +5,8 @@ import cn.net.rms.confluxmap.core.cache.RegionCacheService;
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.predict.PredictionState;
+import cn.net.rms.confluxmap.core.predict.PredictionTileService;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
@@ -16,6 +18,8 @@ import cn.net.rms.confluxmap.mc.color.BiomeTintResolver;
 import cn.net.rms.confluxmap.mc.color.ColorReloadListener;
 import cn.net.rms.confluxmap.mc.color.SpriteColorSampler;
 import cn.net.rms.confluxmap.mc.input.Keybinds;
+import cn.net.rms.confluxmap.mc.predict.PredictionBootstrap;
+import cn.net.rms.confluxmap.mc.predict.PredictionPaletteBuilder;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
@@ -27,6 +31,7 @@ import cn.net.rms.confluxmap.mc.world.DeathWatcher;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import cn.net.rms.confluxmap.mc.world.McDaylightTracker;
 import cn.net.rms.confluxmap.mc.world.WorldSessionTracker;
+import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
@@ -62,6 +67,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private WaypointWorldRenderer waypointWorldRenderer;
     private DaylightModel daylightModel;
     private McDaylightTracker daylightTracker;
+    private PredictionState predictionState;
+    private PredictionTileService predictionTileService;
+    private PredictionBootstrap predictionBootstrap;
+    private PredictionPaletteBuilder predictionPaletteBuilder;
 
     public static ConfluxMapClient get() {
         return instance;
@@ -90,9 +99,17 @@ public final class ConfluxMapClient implements ClientModInitializer {
         );
         tileService.bindRegionCache(regionCache);
 
+        // Beside (not inside) the cache/waypoints directories above, same confluxmap/ root; a
+        // failed load just leaves NativeLib.available() false and prediction permanently disabled.
+        NativeLib.init(FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID));
+        predictionState = new PredictionState();
+        predictionTileService = new PredictionTileService(sessionGuard, predictionState, executors, tileService, config, daylightModel);
+        predictionBootstrap = new PredictionBootstrap(client, predictionState);
+        predictionPaletteBuilder = new PredictionPaletteBuilder(client, predictionState);
+
         spriteColorSampler = new SpriteColorSampler(client);
         biomeTintResolver = new BiomeTintResolver(client);
-        tileTextureManager = new TileTextureManager(config, tileService);
+        tileTextureManager = new TileTextureManager(config, tileService, predictionTileService);
         layerSelector = new LayerSelector(client, config);
 
         chunkCapture = new ChunkCaptureService(
@@ -122,6 +139,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(radarScanner::onSessionChanged);
         sessionTracker.addListener(fullscreenMapViewState::onSessionChanged);
         sessionTracker.addListener(waypointService::onSessionChanged);
+        sessionTracker.addListener(predictionBootstrap::onSessionChanged);
+        sessionTracker.addListener(predictionPaletteBuilder::onSessionChanged);
+        sessionTracker.addListener(predictionTileService::onSessionChanged);
         sessionTracker.addListener(session -> gameBridge.runOnRenderThread(tileTextureManager::releaseAll));
         sessionTracker.register();
 
@@ -214,5 +234,13 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public WaypointService waypointService() {
         return waypointService;
+    }
+
+    public PredictionState predictionState() {
+        return predictionState;
+    }
+
+    public PredictionTileService predictionTileService() {
+        return predictionTileService;
     }
 }

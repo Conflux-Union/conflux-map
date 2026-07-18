@@ -468,6 +468,15 @@ public final class TileService {
         }
     }
 
+    /**
+     * Public entry point for a composer that isn't this class's own {@link #pump}/{@link
+     * #composeAndFinish} pipeline (see {@code core.predict.PredictionTileService}) to share this
+     * same bounded, key-deduped upload queue instead of maintaining a second one.
+     */
+    public void submitUpload(final TileUpdate update) {
+        pushUpload(update);
+    }
+
     /** Render thread: pop up to {@code max} freshly-composed tiles to upload to the GPU. */
     public List<TileUpdate> drainUploads(final int max) {
         final List<TileUpdate> result = new ArrayList<>(Math.min(max, UPLOAD_QUEUE_CAPACITY));

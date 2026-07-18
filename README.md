@@ -37,10 +37,14 @@ required.
   effect immediately, no restart required (see the keybind table below).
 - **Full English and Simplified Chinese localization.**
 
-Seed-based chunk prediction and a dual-sided (client+server) protocol are
-deliberately out of scope for Milestone 1; `cn.net.rms.confluxmap.spi` holds
-the reserved extension points (`PredictionProvider`, `MapProtocolClient`) for
-that future work.
+Milestone 2 (in progress) adds a seed-predicted underlay for the fullscreen
+map, backed by a vendored native [cubiomes](https://github.com/Cubitect/cubiomes)
+build (`cn.net.rms.confluxmap.nativepredict`) and MC-free prediction logic
+under `cn.net.rms.confluxmap.core.predict`: panning into unexplored Overworld
+or End terrain in singleplayer shows an instant seed-based guess (biomes,
+terrain height, and a synthesized tree canopy texture) that real captured
+tiles draw over as they load. A dual-sided (client+server) protocol for
+multiplayer seed sharing and server-verified corrections is still to come.
 
 ## Keybinds
 

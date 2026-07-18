@@ -72,6 +72,9 @@ public final class ConfluxConfig {
     /** In-world floating name/distance label above each visible waypoint. */
     public boolean waypointLabelsEnabled = true;
 
+    /** Master toggle for the M2 seed-predicted fullscreen-map underlay (singleplayer only this slice). */
+    public boolean predictionEnabled = true;
+
     public ConfluxConfig copy() {
         final ConfluxConfig c = new ConfluxConfig();
         c.schemaVersion = schemaVersion;
@@ -104,6 +107,7 @@ public final class ConfluxConfig {
         c.deathPointsKept = deathPointsKept;
         c.waypointBeamsEnabled = waypointBeamsEnabled;
         c.waypointLabelsEnabled = waypointLabelsEnabled;
+        c.predictionEnabled = predictionEnabled;
         return c;
     }
 

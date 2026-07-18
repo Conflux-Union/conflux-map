@@ -5,7 +5,11 @@ import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
+import cn.net.rms.confluxmap.core.predict.PredictedTileKeys;
+import cn.net.rms.confluxmap.core.predict.PredictionState;
+import cn.net.rms.confluxmap.core.predict.PredictionTileService;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
@@ -84,6 +88,8 @@ public final class FullscreenMapScreen extends Screen {
     private final GameBridge gameBridge;
     private final TileService tiles;
     private final TileTextureManager textures;
+    private final PredictionState predictionState;
+    private final PredictionTileService predictionTiles;
     private final FullscreenMapViewState viewState;
     private final LayerSelector layerSelector;
     private final WaypointService waypointService;
@@ -111,6 +117,8 @@ public final class FullscreenMapScreen extends Screen {
         this.gameBridge = app.gameBridge();
         this.tiles = app.tileService();
         this.textures = app.tileTextureManager();
+        this.predictionState = app.predictionState();
+        this.predictionTiles = app.predictionTileService();
         this.viewState = app.fullscreenMapViewState();
         this.layerSelector = app.layerSelector();
         this.waypointService = app.waypointService();
@@ -228,6 +236,7 @@ public final class FullscreenMapScreen extends Screen {
     @Override
     public void render(final MatrixStack matrices, final int mouseX, final int mouseY, final float tickDelta) {
         tiles.setViewpoint((int) Math.floor(centerX), (int) Math.floor(centerZ));
+        predictionTiles.setViewpoint((int) Math.floor(centerX), (int) Math.floor(centerZ));
         // This screen owns radarViewRange while it's open (MinimapHudRenderer stops writing it -
         // see its render() javadoc); the viewport half-diagonal is what's actually visible here.
         radarViewRange.set(Math.hypot(width, height) / 2.0 * scale);
@@ -255,6 +264,16 @@ public final class FullscreenMapScreen extends Screen {
         return MathHelper.clamp((int) Math.floor(Math.log(scale) / Math.log(2)), 0, TileMath.MAX_LOD);
     }
 
+    /**
+     * Draws the real tile grid, and - when a seed-predicted underlay is available for the
+     * current dimension+layer (only {@link MapLayer.Type#SURFACE} in the Overworld and {@link
+     * MapLayer.Type#END_SURFACE} in the End; never a cave/nether layer, which cubiomes can't
+     * predict at all) - the matching predicted tile drawn first underneath each real one. Real
+     * tiles already render {@code UNKNOWN}/unexplored pixels as fully transparent (see {@code
+     * TileService#composeRegion}), and blending is already enabled for this whole pass (see
+     * {@link #render}'s {@code RenderUtil.beginTexturedQuads()} call), so the predicted layer
+     * simply shows through wherever the real tile has nothing yet.
+     */
     private void drawTiles(final MatrixStack matrices) {
         final int lod = currentLod();
         final double pxPerBlock = 1.0 / scale;
@@ -268,17 +287,29 @@ public final class FullscreenMapScreen extends Screen {
         final int lastTileZ = TileMath.blockToTile((int) Math.ceil(centerZ + halfHeightBlocks), lod);
 
         final SessionGuard.Session session = gameBridge.session();
-        final String layerId = layerSelector.current().layer().cacheId();
+        final MapLayer layer = layerSelector.current().layer();
+        final String layerId = layer.cacheId();
+        final boolean predictionEligibleLayer = layer.type() == MapLayer.Type.SURFACE || layer.type() == MapLayer.Type.END_SURFACE;
+        final boolean predictionActive = config.predictionEnabled
+            && predictionEligibleLayer
+            && predictionState.predictable(session.dimension());
+        if (predictionActive) {
+            predictionTiles.setViewport(session.dimension(), lod, firstTileX, lastTileX, firstTileZ, lastTileZ);
+        }
+
         for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
             for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
                 final TileKey key = new TileKey(session.world(), session.dimension(), layerId, lod, tileX, tileZ);
-                if (!textures.bind(key)) {
-                    continue;
-                }
                 final float screenX = (float) (width / 2.0 + (key.originBlockX() - centerX) * pxPerBlock);
                 final float screenY = (float) (height / 2.0 + (key.originBlockZ() - centerZ) * pxPerBlock);
                 final float quadSize = (float) (blocksPerTile * pxPerBlock);
-                RenderUtil.drawQuad(matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f);
+
+                if (predictionActive && textures.bind(PredictedTileKeys.toPredicted(key))) {
+                    RenderUtil.drawQuad(matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f);
+                }
+                if (textures.bind(key)) {
+                    RenderUtil.drawQuad(matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f);
+                }
             }
         }
     }
