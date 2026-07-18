@@ -18,6 +18,8 @@ import cn.net.rms.confluxmap.mc.color.BiomeTintResolver;
 import cn.net.rms.confluxmap.mc.color.ColorReloadListener;
 import cn.net.rms.confluxmap.mc.color.SpriteColorSampler;
 import cn.net.rms.confluxmap.mc.input.Keybinds;
+import cn.net.rms.confluxmap.mc.net.ClientNetworking;
+import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.predict.PredictionBootstrap;
 import cn.net.rms.confluxmap.mc.predict.PredictionPaletteBuilder;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
@@ -71,6 +73,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private PredictionTileService predictionTileService;
     private PredictionBootstrap predictionBootstrap;
     private PredictionPaletteBuilder predictionPaletteBuilder;
+    private CompanionSession companionSession;
+    private ClientNetworking clientNetworking;
 
     public static ConfluxMapClient get() {
         return instance;
@@ -89,7 +93,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
         executors = new MapExecutors();
         sessionGuard = new SessionGuard();
         gameBridge = new McGameBridge(client, sessionGuard);
-        sessionTracker = new WorldSessionTracker(sessionGuard);
+        companionSession = new CompanionSession();
+        sessionTracker = new WorldSessionTracker(sessionGuard, companionSession);
         mapWorlds = new MapWorldService();
         daylightModel = new DaylightModel();
         tileService = new TileService(mapWorlds, executors, config, daylightModel);
@@ -104,8 +109,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
         NativeLib.init(FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID));
         predictionState = new PredictionState();
         predictionTileService = new PredictionTileService(sessionGuard, predictionState, executors, tileService, config, daylightModel);
-        predictionBootstrap = new PredictionBootstrap(client, predictionState);
+        predictionBootstrap = new PredictionBootstrap(client, predictionState, companionSession);
         predictionPaletteBuilder = new PredictionPaletteBuilder(client, predictionState);
+        clientNetworking = new ClientNetworking(companionSession);
+        clientNetworking.register();
 
         spriteColorSampler = new SpriteColorSampler(client);
         biomeTintResolver = new BiomeTintResolver(client);
@@ -242,5 +249,13 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public PredictionTileService predictionTileService() {
         return predictionTileService;
+    }
+
+    public CompanionSession companionSession() {
+        return companionSession;
+    }
+
+    public ClientNetworking clientNetworking() {
+        return clientNetworking;
     }
 }

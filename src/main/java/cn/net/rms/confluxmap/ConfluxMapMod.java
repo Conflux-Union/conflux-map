@@ -1,5 +1,7 @@
 package cn.net.rms.confluxmap;
 
+import cn.net.rms.confluxmap.server.ConfluxMapCompanion;
+import cn.net.rms.confluxmap.server.ServerConfigIo;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.loader.api.metadata.ModMetadata;
@@ -29,6 +31,15 @@ public final class ConfluxMapMod implements ModInitializer {
             .getMetadata();
         name = metadata.getName();
         version = metadata.getVersion().getFriendlyString();
+
+        // The same jar runs on dedicated + integrated servers via this entrypoint. The companion
+        // is safe to construct unconditionally: it only registers Fabric-API global receivers,
+        // which are inert until a player connects on the physical server.
+        final ConfluxMapCompanion companion = new ConfluxMapCompanion(
+            ServerConfigIo.atDefault(FabricLoader.getInstance().getConfigDir())
+        );
+        companion.initialize();
+
         LOGGER.info("{} {} initialized", name, version);
     }
 }

@@ -4,8 +4,10 @@ import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
+import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Consumer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
@@ -13,16 +15,24 @@ import net.minecraft.client.network.ServerInfo;
 import net.minecraft.util.Identifier;
 
 /**
- * Watches the client for world joins, disconnects and dimension changes and
- * rotates the {@link SessionGuard} session accordingly. Detection is tick-based
- * so it also covers paths that fire no Fabric event (e.g. some proxy setups).
+ * Watches the client for world joins, disconnects, dimension changes and identity rotations
+ * and rotates the {@link SessionGuard} session accordingly. Detection is tick-based so it also
+ * covers paths that fire no Fabric event (e.g. some proxy setups).
+ *
+ * <p>Identity rotation: when a companion server is active, its advertised {@code worldId}
+ * overrides the non-companion fallback. If a proxy world switch re-fires JOIN and the server
+ * advertises a different {@code worldId} on the new backend, the freshly-resolved identity will
+ * no longer {@code equals} the session's current one - this tracker detects that and rotates the
+ * session, so caches are namespaced under the new world.
  */
 public final class WorldSessionTracker {
     private final SessionGuard guard;
     private final List<Consumer<SessionGuard.Session>> listeners = new ArrayList<>();
+    private final CompanionSession companion;
 
-    public WorldSessionTracker(final SessionGuard guard) {
+    public WorldSessionTracker(final SessionGuard guard, final CompanionSession companion) {
         this.guard = guard;
+        this.companion = companion;
     }
 
     public void register() {
@@ -35,6 +45,9 @@ public final class WorldSessionTracker {
     }
 
     private void tick(final MinecraftClient client) {
+        // Pump the handshake state machine once per tick so the HELLO_SENT timeout fires on schedule.
+        companion.tick();
+
         final SessionGuard.Session current = guard.current();
         if (client.world == null || client.player == null) {
             if (current.active()) {
@@ -56,6 +69,18 @@ public final class WorldSessionTracker {
             final SessionGuard.Session session = guard.begin(current.world(), dimension);
             ConfluxMapMod.LOGGER.info("Map session dimension change: {} (token {})", dimension, session.token());
             notifyListeners(session);
+        } else {
+            // Same dimension - but a proxy world switch can re-fire JOIN mid-session and leave
+            // the companion advertising a different worldId. Re-resolve and rotate if it moved.
+            final WorldIdentity fresh = resolveWorldIdentity(client);
+            if (!current.world().equals(fresh)) {
+                final SessionGuard.Session session = guard.begin(fresh, dimension);
+                ConfluxMapMod.LOGGER.info(
+                    "Map session identity change: {}/{} (token {}) - companion worldId rotated",
+                    session.world().serverId(), session.world().worldId(), session.token()
+                );
+                notifyListeners(session);
+            }
         }
     }
 
@@ -69,17 +94,30 @@ public final class WorldSessionTracker {
         return DimensionId.of(id.getNamespace(), id.getPath());
     }
 
-    private static WorldIdentity resolveWorldIdentity(final MinecraftClient client) {
+    /**
+     * Resolves the client's current world identity, honoring a companion-provided {@code worldId}
+     * when one is available. Pure-MC accessors live here; the {@code companion -> worldId}
+     * selection is the only S3 addition and is covered by {@link WorldIdentity#multiplayer(String, String)}.
+     */
+    private WorldIdentity resolveWorldIdentity(final MinecraftClient client) {
         if (client.isInSingleplayer() && client.getServer() != null) {
             return WorldIdentity.singleplayer(client.getServer().getSaveProperties().getLevelName());
         }
+        final String address = resolveAddress(client);
+        final Optional<String> override = companion.worldIdOverride();
+        return override
+            .<WorldIdentity>map(id -> WorldIdentity.multiplayer(address, id))
+            .orElseGet(() -> WorldIdentity.multiplayer(address));
+    }
+
+    private static String resolveAddress(final MinecraftClient client) {
         final ServerInfo server = client.getCurrentServerEntry();
         if (server != null) {
-            return WorldIdentity.multiplayer(server.address);
+            return server.address;
         }
-        if (client.getNetworkHandler() != null) {
-            return WorldIdentity.multiplayer(client.getNetworkHandler().getConnection().getAddress().toString());
+        if (client.getNetworkHandler() != null && client.getNetworkHandler().getConnection() != null) {
+            return client.getNetworkHandler().getConnection().getAddress().toString();
         }
-        return WorldIdentity.multiplayer("unknown");
+        return "unknown";
     }
 }

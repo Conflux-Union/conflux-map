@@ -74,6 +74,13 @@ public final class ConfluxConfig {
 
     /** Master toggle for the M2 seed-predicted fullscreen-map underlay (singleplayer only this slice). */
     public boolean predictionEnabled = true;
+    /**
+     * Client-side opt-out for the companion handshake / correction sync. When false the client
+     * skips HELLO_C2S and never sends MAP_VIEW_REQ; the predicted underlay still works in
+     * singleplayer. S5's request planner reads this flag; S3 only adds it so the config schema
+     * is stable before the sync loop lands.
+     */
+    public boolean predictionNetworkSync = true;
 
     public ConfluxConfig copy() {
         final ConfluxConfig c = new ConfluxConfig();
@@ -108,6 +115,7 @@ public final class ConfluxConfig {
         c.waypointBeamsEnabled = waypointBeamsEnabled;
         c.waypointLabelsEnabled = waypointLabelsEnabled;
         c.predictionEnabled = predictionEnabled;
+        c.predictionNetworkSync = predictionNetworkSync;
         return c;
     }
 
