@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.core.predict;
 
+import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -56,8 +57,34 @@ public final class StructureIndex {
     private final Map<String, Marker> markers = new HashMap<>();
     private boolean dirty;
 
+    /**
+     * Compatibility constructor for callers that do not have a world identity. New callers must
+     * use {@link #StructureIndex(Path, WorldIdentity, String, CandidateProvider)}; without that
+     * namespace there is no way to safely separate two worlds sharing a dimension.
+     */
+    @Deprecated
     public StructureIndex(final Path cacheRoot, final String dimension, final CandidateProvider provider) {
-        this.file = cacheRoot.resolve("structures_" + sanitize(dimension) + ".json");
+        this(cacheRoot.resolve("structures_" + sanitize(dimension) + ".json"), provider);
+    }
+
+    public StructureIndex(
+        final Path cacheRoot,
+        final WorldIdentity world,
+        final String dimension,
+        final CandidateProvider provider
+    ) {
+        this(
+            cacheRoot
+                .resolve("structures")
+                .resolve(sanitize(world.serverId()))
+                .resolve(sanitize(world.worldId()))
+                .resolve("structures_" + sanitize(dimension) + ".json"),
+            provider
+        );
+    }
+
+    private StructureIndex(final Path file, final CandidateProvider provider) {
+        this.file = file;
         this.provider = provider;
         load();
     }
