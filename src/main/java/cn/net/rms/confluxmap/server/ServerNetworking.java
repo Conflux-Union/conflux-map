@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.server;
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.core.net.HelloC2S;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
+import cn.net.rms.confluxmap.core.net.ErrorS2C;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.MsgCodec;
@@ -12,9 +13,11 @@ import io.netty.buffer.Unpooled;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.network.PacketByteBuf;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -35,8 +38,8 @@ public final class ServerNetworking {
     public static final Identifier CHANNEL = new Identifier(Proto.CHANNEL_ID);
 
     private final ConfluxMapCompanion companion;
-    /** Per-player last-request timestamps; S5 will replace this with a real rate limiter. */
-    private final ConcurrentMap<UUID, Long> lastReqTick = new ConcurrentHashMap<>();
+    private final ConcurrentMap<UUID, Integer> malformedStrikes = new ConcurrentHashMap<>();
+    private final Set<UUID> mutedPlayers = ConcurrentHashMap.newKeySet();
 
     public ServerNetworking(final ConfluxMapCompanion companion) {
         this.companion = companion;
@@ -44,6 +47,11 @@ public final class ServerNetworking {
 
     public void register() {
         ServerPlayNetworking.registerGlobalReceiver(CHANNEL, this::onReceive);
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            final UUID uuid = handler.getPlayer().getUuid();
+            malformedStrikes.remove(uuid);
+            mutedPlayers.remove(uuid);
+        });
     }
 
     private void onReceive(
@@ -53,11 +61,15 @@ public final class ServerNetworking {
         final PacketByteBuf buf,
         final net.fabricmc.fabric.api.networking.v1.PacketSender responseSender
     ) {
+        if (mutedPlayers.contains(player.getUuid())) {
+            return;
+        }
         final byte[] payload;
         try {
             payload = readPayload(buf);
         } catch (final ProtoException e) {
             ConfluxMapMod.LOGGER.warn("companion: dropping malformed payload from {} ({})", player.getEntityName(), e.getMessage());
+            recordMalformed(player);
             return;
         }
         try {
@@ -75,6 +87,15 @@ public final class ServerNetworking {
         } catch (final ProtoException e) {
             ConfluxMapMod.LOGGER.warn("companion: undecodable {}-byte payload from {} ({})",
                 payload.length, player.getEntityName(), e.getMessage());
+            recordMalformed(player);
+        }
+    }
+
+    private void recordMalformed(final ServerPlayerEntity player) {
+        final int strikes = malformedStrikes.merge(player.getUuid(), 1, Integer::sum);
+        send(player, new ErrorS2C(ErrorS2C.ERR_MALFORMED_REQUEST, "malformed companion payload (strike " + strikes + ")"));
+        if (strikes >= 3) {
+            mutedPlayers.add(player.getUuid());
         }
     }
 
@@ -92,25 +113,11 @@ public final class ServerNetworking {
     }
 
     private void handleMapViewReq(final MinecraftServer server, final ServerPlayerEntity player, final MapViewReqC2S req) {
-        // S4: real rate-limit (PlayerBudget) + PatchBuilder + ChunkSummarizer. For S3 the channel
-        //     must be observably wired, so we log each request and drop it - no patch goes out.
-        //     The per-player timestamp map is kept as a hook for S4's rate limiter; the simple
-        //     "ignore bursts faster than minRequestIntervalMs" check below is its placeholder.
-        final long now = server.getOverworld().getTime();
-        final UUID key = player.getUuid();
-        final Long prev = lastReqTick.put(key, now);
-        final long minIntervalTicks = companion.config().minRequestIntervalMs / 50L;
-        if (prev != null && now - prev < minIntervalTicks) {
-            ConfluxMapMod.LOGGER.debug(
-                "companion: MAP_VIEW_REQ from {} arrived {} ticks after the previous one (cap {} ms = {} ticks), dropping",
-                player.getEntityName(), now - prev, companion.config().minRequestIntervalMs, minIntervalTicks
-            );
+        if (!companion.config().shareCorrections) {
+            send(player, new ErrorS2C(ErrorS2C.ERR_COMPANION_DISABLED, "map corrections are disabled"));
             return;
         }
-        ConfluxMapMod.LOGGER.debug(
-            "companion: MAP_VIEW_REQ from {} (reqId={} dim={} lod={} tiles={}) - S4 will serve",
-            player.getEntityName(), req.reqId(), req.dimIndex(), req.lod(), req.tiles().size()
-        );
+        companion.summaries().request(server, player, req, msg -> send(player, msg));
     }
 
     private HelloPolicyS2C buildPolicy(final MinecraftServer server) {

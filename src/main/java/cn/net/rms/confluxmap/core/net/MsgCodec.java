@@ -158,13 +158,23 @@ public final class MsgCodec {
         out.writeInt(m.tileZ());
         out.writeByte(m.mode());
         out.writeLong(m.tileRevision());
-        if (m.presence().length != Proto.PATCH_PRESENCE_BYTES) {
+        if (m.presence() == null || m.presence().length != Proto.PATCH_PRESENCE_BYTES) {
             throw new ProtoException(
-                "presence bitmap must be " + Proto.PATCH_PRESENCE_BYTES + " bytes, got " + m.presence().length
+                "presence bitmap must be " + Proto.PATCH_PRESENCE_BYTES + " bytes, got "
+                    + (m.presence() == null ? "null" : m.presence().length)
             );
         }
         out.write(m.presence());
-        // S4: PatchCodec.encode/decode the body. Until then it is opaque bytes the codec round-trips verbatim.
+        if (m.structures().size() > 255) {
+            throw new ProtoException("too many structure entries");
+        }
+        out.writeByte(m.structures().size());
+        for (final MapPatchS2C.StructureEntry entry : m.structures()) {
+            out.writeByte(entry.structType());
+            out.writeInt(entry.blockX());
+            out.writeInt(entry.blockZ());
+            out.writeByte(entry.state());
+        }
         writeBoundedBytes(out, m.body(), Proto.MAX_S2C_PAYLOAD);
     }
 
@@ -298,8 +308,13 @@ public final class MsgCodec {
         final long tileRevision = in.readLong();
         final byte[] presence = new byte[Proto.PATCH_PRESENCE_BYTES];
         in.readFully(presence);
+        final int structCount = in.readUnsignedByte();
+        final List<MapPatchS2C.StructureEntry> structures = new ArrayList<>(structCount);
+        for (int i = 0; i < structCount; i++) {
+            structures.add(new MapPatchS2C.StructureEntry(in.readUnsignedByte(), in.readInt(), in.readInt(), in.readUnsignedByte()));
+        }
         final byte[] body = readBoundedBytes(in, Proto.MAX_S2C_PAYLOAD);
-        return new MapPatchS2C(reqId, dimIndex, lod, tileX, tileZ, mode, tileRevision, presence, body);
+        return new MapPatchS2C(reqId, dimIndex, lod, tileX, tileZ, mode, tileRevision, presence, body, structures);
     }
 
     private static PolicyUpdateS2C decodePolicyUpdateS2C(final DataInputStream in) throws IOException, ProtoException {

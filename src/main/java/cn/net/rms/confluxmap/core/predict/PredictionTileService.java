@@ -33,6 +33,8 @@ public final class PredictionTileService {
     private final ConfluxConfig config;
     private final DaylightModel daylightModel;
     private final int maxConcurrentCompositions;
+    private volatile CorrectionStore correctionStore;
+    private volatile PredictionViewMode viewMode = PredictionViewMode.EVERYWHERE;
 
     /** Guarded by {@code this}: tiles waiting to be composed, with the session token that requested them. */
     private final Map<TileKey, Long> dirty = new HashMap<>();
@@ -57,6 +59,37 @@ public final class PredictionTileService {
         this.config = config;
         this.daylightModel = daylightModel;
         this.maxConcurrentCompositions = Math.max(1, executors.workerCount());
+    }
+
+    public void bindCorrectionStore(final CorrectionStore store) {
+        this.correctionStore = store;
+    }
+
+    public void setViewMode(final PredictionViewMode mode) {
+        this.viewMode = mode == null ? PredictionViewMode.EVERYWHERE : mode;
+    }
+
+    public PredictionViewMode viewMode() {
+        return viewMode;
+    }
+
+    /** Applies a server patch and queues the affected predicted tile for recomposition. */
+    public boolean applyCorrection(
+        final CorrectionStore.Key key, final long revision, final byte[] presence, final cn.net.rms.confluxmap.core.net.PatchCodec.Patch patch
+    ) {
+        final CorrectionStore store = correctionStore;
+        if (store == null || !store.apply(key, revision, presence, patch)) {
+            return false;
+        }
+        final SessionGuard.Session session = sessionGuard.current();
+        final DimensionId patchDimension = DimensionId.parse(key.dimension());
+        final String realLayer = PredictionDimensions.isEnd(patchDimension)
+            ? MapLayer.END_SURFACE.cacheId() : MapLayer.SURFACE.cacheId();
+        final TileKey tile = new TileKey(
+            session.world(), session.dimension(), realLayer + PredictedTileKeys.SUFFIX, key.lod(), key.tileX(), key.tileZ()
+        );
+        markDirty(tile, session.token());
+        return true;
     }
 
     /** Main thread, from the session tracker: forget every queued/in-flight predicted tile, and invalidate cached native contexts. */
@@ -197,7 +230,13 @@ public final class PredictionTileService {
 
         final boolean applyDaylight = layer.type() == MapLayer.Type.SURFACE && config.dynamicLighting;
         final float daylightFactor = applyDaylight ? daylightModel.factor() : 1f;
-        final int[] pixels = PredictedTileComposer.compose(derived, grid, state.palette(), applyDaylight, daylightFactor);
+        final CorrectionStore store = correctionStore;
+        final CorrectionTile corrections = store == null
+            ? null
+            : store.get(key.dimension(), lod, key.tileX(), key.tileZ());
+        final int[] pixels = PredictedTileComposer.compose(
+            derived, grid, state.palette(), applyDaylight, daylightFactor, corrections, viewMode, lod
+        );
         return TileUpdate.fullTile(key, pixels);
     }
 

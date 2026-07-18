@@ -3,12 +3,13 @@ package cn.net.rms.confluxmap.server;
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.server.MinecraftServer;
+import cn.net.rms.confluxmap.nativepredict.NativeLib;
+import net.minecraft.util.WorldSavePath;
 
 /**
  * Top-level companion service, owned by {@code ConfluxMapMod}'s {@code main} entrypoint so the
- * same jar serves dedicated and integrated servers. S3 owns only the handshake: load the config,
- * register the {@code confluxmap:m2} receiver, and answer HELLO_POLICY. The patch-serving
- * machinery (chunk summarizer, patch builder, rate limiter) is S4's job.
+ * same jar serves dedicated and integrated servers. It owns the handshake, summary service, and
+ * per-player correction budgets for the {@code confluxmap:m2} channel.
  *
  * <p>State is started/stopped on {@link ServerLifecycleEvents#SERVER_STARTED} / {@link
  * ServerLifecycleEvents#SERVER_STOPPING}. The companion is safe to construct on either side
@@ -20,6 +21,7 @@ public final class ConfluxMapCompanion {
     private final WorldIds worldIds;
     private final ServerNetworking networking;
     private volatile ServerConfig config;
+    private volatile RegionSummaryService summaries;
 
     public ConfluxMapCompanion(final ServerConfigIo configIo) {
         this.configIo = configIo;
@@ -31,7 +33,7 @@ public final class ConfluxMapCompanion {
     public void initialize() {
         ServerLifecycleEvents.SERVER_STARTED.register(this::onServerStarted);
         ServerLifecycleEvents.SERVER_STOPPING.register(this::onServerStopping);
-        ConfluxMapMod.LOGGER.info("companion initialized (handshake only this slice)");
+        ConfluxMapMod.LOGGER.info("companion initialized");
     }
 
     private void onServerStarted(final MinecraftServer server) {
@@ -40,6 +42,10 @@ public final class ConfluxMapCompanion {
             ConfluxMapMod.LOGGER.info("companion disabled by server.json (enabled=false); no HELLO replies");
             return;
         }
+        summaries = new RegionSummaryService(config);
+        // Corrections can use the same predictor as the client when a bundled native exists;
+        // failure is non-fatal and RegionSummaryService falls back to absolute samples.
+        NativeLib.init(server.getSavePath(WorldSavePath.ROOT).resolve("confluxmap"));
         networking.register();
         ConfluxMapMod.LOGGER.info(
             "companion ready (shareSeed={} shareCorrections={} maxPatchLod={} maxTilesPerRequest={})",
@@ -62,5 +68,14 @@ public final class ConfluxMapCompanion {
 
     public WorldIds worldIds() {
         return worldIds;
+    }
+
+    public RegionSummaryService summaries() {
+        RegionSummaryService current = summaries;
+        if (current == null) {
+            current = new RegionSummaryService(config);
+            summaries = current;
+        }
+        return current;
     }
 }

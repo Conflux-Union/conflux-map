@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.ConfluxMapClient;
+import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
@@ -10,6 +11,7 @@ import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.predict.PredictedTileKeys;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionTileService;
+import cn.net.rms.confluxmap.core.predict.StructureIndex;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
@@ -24,6 +26,7 @@ import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
+import cn.net.rms.confluxmap.mc.ui.StructureMarkerRenderer;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import java.util.ArrayList;
 import java.util.List;
@@ -97,6 +100,7 @@ public final class FullscreenMapScreen extends Screen {
     private final EntityRadarScanner radarScanner;
     private final EntityIconManager radarIconManager;
     private final RadarViewRange radarViewRange;
+    private final StructureIndex structureIndex;
 
     /** World point currently at screen center, and blocks-per-pixel; all mutable, panned/zoomed by input. */
     private double centerX;
@@ -126,6 +130,24 @@ public final class FullscreenMapScreen extends Screen {
         this.radarScanner = app.radarScanner();
         this.radarIconManager = app.entityIconManager();
         this.radarViewRange = app.radarViewRange();
+        this.structureIndex = new StructureIndex(
+            net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("cache"),
+            gameBridge.session().dimension().fileName(),
+            (type, regionX, regionZ) -> {
+                if (!predictionState.seedKnown() || !cn.net.rms.confluxmap.nativepredict.NativeLib.available()) {
+                    return new long[0];
+                }
+                final int nativeDim = cn.net.rms.confluxmap.core.predict.PredictionDimensions.nativeDim(gameBridge.session().dimension());
+                final cn.net.rms.confluxmap.nativepredict.CubiomesContext context =
+                    cn.net.rms.confluxmap.nativepredict.CubiomesContexts.get(predictionState.mcVersion(), predictionState.seed(), nativeDim, 0);
+                if (context == null) {
+                    return new long[0];
+                }
+                final long[] positions = new long[64];
+                final int count = context.structures(type.nativeId(), regionX, regionZ, regionX, regionZ, positions);
+                return java.util.Arrays.copyOf(positions, Math.max(0, Math.min(count, positions.length)));
+            }
+        );
 
         final DimensionId dimension = gameBridge.session().dimension();
         final FullscreenMapViewState.View remembered = viewState.get(dimension);
@@ -248,12 +270,14 @@ public final class FullscreenMapScreen extends Screen {
         drawTiles(matrices);
 
         drawChunkGrid(matrices, mouseX, mouseY);
+        drawStructures(matrices, mouseX, mouseY);
         drawRadar(matrices, tickDelta);
 
         drawWaypoints(matrices, mouseX, mouseY);
         drawPlayerMarker(matrices, tickDelta);
         drawDimensionLabel(matrices);
         drawLayerLabel(matrices);
+        drawPredictionLabel(matrices);
         drawScaleLabel(matrices);
         drawCursorCoords(matrices, mouseX, mouseY);
 
@@ -295,6 +319,9 @@ public final class FullscreenMapScreen extends Screen {
             && predictionState.predictable(session.dimension());
         if (predictionActive) {
             predictionTiles.setViewport(session.dimension(), lod, firstTileX, lastTileX, firstTileZ, lastTileZ);
+            ConfluxMapClient.get().mapSyncClient().reportViewport(
+                session.dimension(), lod, firstTileX, lastTileX, firstTileZ, lastTileZ
+            );
         }
 
         for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
@@ -352,6 +379,36 @@ public final class FullscreenMapScreen extends Screen {
             }
             RadarMarkerRenderer.draw(matrices, client, config, radarIconManager, entry, screenX, screenY, yDelta, live);
         }
+    }
+
+    private void drawStructures(final MatrixStack matrices, final int mouseX, final int mouseY) {
+        if (!config.predictionShowStructures || currentLod() > 2 || !predictionState.seedKnown()) {
+            return;
+        }
+        final int lod = currentLod();
+        final int minX = (int) Math.floor(centerX - width / 2.0 * scale);
+        final int maxX = (int) Math.ceil(centerX + width / 2.0 * scale);
+        final int minZ = (int) Math.floor(centerZ - height / 2.0 * scale);
+        final int maxZ = (int) Math.ceil(centerZ + height / 2.0 * scale);
+        final double pxPerBlock = 1.0 / scale;
+        final List<StructureIndex.Marker> markers = structureIndex.query(minX, maxX, minZ, maxZ);
+        markers.sort(java.util.Comparator.comparingLong(marker -> {
+            final long dx = marker.blockX() - (long) centerX;
+            final long dz = marker.blockZ() - (long) centerZ;
+            return dx * dx + dz * dz;
+        }));
+        final int limit = Math.min(64, markers.size());
+        for (int i = 0; i < limit; i++) {
+            final StructureIndex.Marker marker = markers.get(i);
+            final float screenX = (float) (width / 2.0 + (marker.blockX() - centerX) * pxPerBlock);
+            final float screenY = (float) (height / 2.0 + (marker.blockZ() - centerZ) * pxPerBlock);
+            if (screenX < -8 || screenX > width + 8 || screenY < -8 || screenY > height + 8) {
+                continue;
+            }
+            final boolean hovered = Math.hypot(mouseX - screenX, mouseY - screenY) <= 8;
+            StructureMarkerRenderer.draw(matrices, textRenderer, marker, screenX, screenY, hovered);
+        }
+        structureIndex.save();
     }
 
     /** Faint lines on LOD-0 tile boundaries (256-block spacing), skipped once they'd be denser than {@link #MIN_GRID_SPACING_PX}. */
@@ -514,6 +571,19 @@ public final class FullscreenMapScreen extends Screen {
             "confluxmap.layer." + layerSelector.current().layer().type().id()
         ).getString();
         textRenderer.drawWithShadow(matrices, text, MARGIN, MARGIN + textRenderer.fontHeight + 2, TEXT_COLOR);
+    }
+
+    private void drawPredictionLabel(final MatrixStack matrices) {
+        if (!config.predictionEnabled || !predictionState.seedKnown()) {
+            return;
+        }
+        final String mode = new TranslatableText(
+            "confluxmap.config.prediction.mode." + config.predictionViewMode.name().toLowerCase(java.util.Locale.ROOT)
+        ).getString();
+        final String text = new TranslatableText("confluxmap.config.prediction.view_mode", mode).getString();
+        textRenderer.drawWithShadow(
+            matrices, text, MARGIN, MARGIN + textRenderer.fontHeight * 2 + 4, TEXT_COLOR
+        );
     }
 
     private void drawScaleLabel(final MatrixStack matrices) {

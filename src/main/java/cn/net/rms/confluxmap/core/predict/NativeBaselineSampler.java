@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.core.predict;
 
 import cn.net.rms.confluxmap.nativepredict.CubiomesContext;
 import cn.net.rms.confluxmap.nativepredict.CubiomesContexts;
+import cn.net.rms.confluxmap.nativepredict.NativeLib;
 
 /**
  * Real {@link BaselineSampler}, backed by the calling thread's cached {@link CubiomesContext}
@@ -25,23 +26,38 @@ public final class NativeBaselineSampler implements BaselineSampler {
 
     @Override
     public boolean biomes(final int scale, final int x, final int z, final int w, final int h, final int[] out) {
-        final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, FLAGS);
-        return ctx != null && ctx.biomes(scale, x, z, w, h, out) == 0;
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, FLAGS);
+            return ctx != null && ctx.biomes(scale, x, z, w, h, out) == 0;
+        } catch (final Throwable fault) {
+            NativeLib.disableForSession(fault);
+            return false;
+        }
     }
 
     @Override
     public boolean heights(final int x4, final int z4, final int w, final int h, final int[] outY) {
-        final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, FLAGS);
-        if (ctx == null) {
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, FLAGS);
+            if (ctx == null) {
+                return false;
+            }
+            final int[] scratchIds = new int[w * h];
+            return ctx.heights(x4, z4, w, h, outY, scratchIds) == 0;
+        } catch (final Throwable fault) {
+            NativeLib.disableForSession(fault);
             return false;
         }
-        final int[] scratchIds = new int[w * h];
-        return ctx.heights(x4, z4, w, h, outY, scratchIds) == 0;
     }
 
     @Override
     public boolean endHeights(final int x4, final int z4, final int w, final int h, final int[] outY) {
-        final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, FLAGS);
-        return ctx != null && ctx.endHeights(x4, z4, w, h, outY) == 0;
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, FLAGS);
+            return ctx != null && ctx.endHeights(x4, z4, w, h, outY) == 0;
+        } catch (final Throwable fault) {
+            NativeLib.disableForSession(fault);
+            return false;
+        }
     }
 }

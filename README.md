@@ -37,14 +37,15 @@ required.
   effect immediately, no restart required (see the keybind table below).
 - **Full English and Simplified Chinese localization.**
 
-Milestone 2 (in progress) adds a seed-predicted underlay for the fullscreen
+Milestone 2 adds a seed-predicted underlay and optional server correction sync for the fullscreen
 map, backed by a vendored native [cubiomes](https://github.com/Cubitect/cubiomes)
 build (`cn.net.rms.confluxmap.nativepredict`) and MC-free prediction logic
 under `cn.net.rms.confluxmap.core.predict`: panning into unexplored Overworld
 or End terrain in singleplayer shows an instant seed-based guess (biomes,
 terrain height, and a synthesized tree canopy texture) that real captured
-tiles draw over as they load. A dual-sided (client+server) protocol for
-multiplayer seed sharing and server-verified corrections is still to come.
+tiles draw over as they load. The optional companion shares a seed only when configured and
+returns compact per-column corrections; correction tiles and generated presence persist across
+rejoin.
 
 ## Keybinds
 
@@ -61,6 +62,7 @@ All keybinds are rebindable in Minecraft's normal Controls screen, under the
 | `U` | Open the waypoint list |
 | `B` | Create a new waypoint at your current position |
 | `,` | Open the settings screen |
+| `P` | Cycle prediction view mode |
 
 ## Building
 

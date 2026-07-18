@@ -7,6 +7,7 @@ import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionTileService;
+import cn.net.rms.confluxmap.core.predict.CorrectionStore;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
@@ -20,6 +21,7 @@ import cn.net.rms.confluxmap.mc.color.SpriteColorSampler;
 import cn.net.rms.confluxmap.mc.input.Keybinds;
 import cn.net.rms.confluxmap.mc.net.ClientNetworking;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
+import cn.net.rms.confluxmap.mc.net.MapSyncClient;
 import cn.net.rms.confluxmap.mc.predict.PredictionBootstrap;
 import cn.net.rms.confluxmap.mc.predict.PredictionPaletteBuilder;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
@@ -75,6 +77,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private PredictionPaletteBuilder predictionPaletteBuilder;
     private CompanionSession companionSession;
     private ClientNetworking clientNetworking;
+    private CorrectionStore correctionStore;
+    private MapSyncClient mapSyncClient;
 
     public static ConfluxMapClient get() {
         return instance;
@@ -109,9 +113,16 @@ public final class ConfluxMapClient implements ClientModInitializer {
         NativeLib.init(FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID));
         predictionState = new PredictionState();
         predictionTileService = new PredictionTileService(sessionGuard, predictionState, executors, tileService, config, daylightModel);
+        predictionTileService.setViewMode(config.predictionViewMode);
+        correctionStore = new CorrectionStore(
+            FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("cache").resolve("prediction")
+        );
+        predictionTileService.bindCorrectionStore(correctionStore);
         predictionBootstrap = new PredictionBootstrap(client, predictionState, companionSession);
         predictionPaletteBuilder = new PredictionPaletteBuilder(client, predictionState);
         clientNetworking = new ClientNetworking(companionSession);
+        mapSyncClient = new MapSyncClient(client, companionSession, clientNetworking, correctionStore, predictionTileService, config);
+        clientNetworking.bindMapSync(mapSyncClient);
         clientNetworking.register();
 
         spriteColorSampler = new SpriteColorSampler(client);
@@ -149,6 +160,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(predictionBootstrap::onSessionChanged);
         sessionTracker.addListener(predictionPaletteBuilder::onSessionChanged);
         sessionTracker.addListener(predictionTileService::onSessionChanged);
+        sessionTracker.addListener(session -> {
+            correctionStore.flush();
+            correctionStore.clear();
+        });
         sessionTracker.addListener(session -> gameBridge.runOnRenderThread(tileTextureManager::releaseAll));
         sessionTracker.register();
 
@@ -171,6 +186,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         // Quitting mid-world fires no session tick, so flush the cache explicitly
         // before the executors stop accepting work.
         regionCache.onSessionChanged(SessionGuard.Session.NONE);
+        correctionStore.flush();
         configIo.save(config);
         executors.shutdown(5000L);
     }
@@ -257,5 +273,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public ClientNetworking clientNetworking() {
         return clientNetworking;
+    }
+
+    public MapSyncClient mapSyncClient() {
+        return mapSyncClient;
     }
 }

@@ -51,6 +51,9 @@ the full provenance and the pinned commit.
 
 ## Everything else
 
+`MapColorTable` is an original compact ARGB table. Its numeric values are a behavior reference to
+vanilla map colours, not copied Minecraft implementation code.
+
 Every other file under `src/`, `docs/reference-specs/`, `versions/`, and
 `native/` (except `native/cubiomes/` and `native/jni/`, both vendored and
 listed above) is original work written for Conflux Map, licensed under

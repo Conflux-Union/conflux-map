@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import cn.net.rms.confluxmap.core.util.Argb;
+import cn.net.rms.confluxmap.core.color.ShadingPipeline;
+import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 
 /** {@link PredictedTileComposer} determinism, using the pure-Java {@link PositionBasedFakeSampler}. */
@@ -44,5 +46,22 @@ class PredictedTileComposerTest {
         CanopyStylizer.apply(derived, grid, 9L, 2, 0, 0);
         final int[] night = PredictedTileComposer.compose(derived, grid, PredictionPalette.defaults(), true, 0.0f);
         assertNotEquals(fullDaylight[0], night[0], "night-time daylight factor should darken the pixel");
+    }
+
+    @Test
+    void predictionDoesNotApplyDiscreteSlopeContourTerm() {
+        final BaselineGrid grid = new BaselineGrid();
+        final DerivedGrid derived = new DerivedGrid();
+        Arrays.fill(grid.biomeId, 1);
+        Arrays.fill(derived.kind, (byte) cn.net.rms.confluxmap.core.model.SurfaceKind.LAND.ordinal());
+        Arrays.fill(derived.surfaceY, 80);
+        Arrays.fill(derived.fluidDepth, 0);
+        final int pixel = 10 * 256 + 10;
+        derived.surfaceY[BaselineGrid.index(10, 10)] = 88;
+        derived.surfaceY[BaselineGrid.index(9, 11)] = 70;
+        final int[] pixels = PredictedTileComposer.compose(derived, grid, PredictionPalette.defaults(), false, 1f);
+        final int base = Argb.multiply(PredictionPalette.defaults().landBase, PredictionPalette.defaults().grassTint(1));
+        final int expected = ShadingPipeline.applyShade(base, ShadingPipeline.heightShade(88, 80, false));
+        assertEquals(expected, pixels[pixel]);
     }
 }

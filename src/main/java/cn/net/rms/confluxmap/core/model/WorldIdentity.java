@@ -25,7 +25,7 @@ public record WorldIdentity(String serverId, String worldId) {
      * as the non-companion path so a server operator can still find the right cache directory.
      */
     public static WorldIdentity multiplayer(final String address, final String worldId) {
-        return new WorldIdentity(sanitize(address), sanitize(worldId));
+        return new WorldIdentity(sanitize(address), sanitizeWorldId(worldId));
     }
 
     public static WorldIdentity singleplayer(final String levelName) {
@@ -35,6 +35,13 @@ public record WorldIdentity(String serverId, String worldId) {
     private static String sanitize(final String s) {
         final String cleaned = s.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._-]", "_");
         return cleaned.isEmpty() ? "unknown" : cleaned;
+    }
+
+    private static String sanitizeWorldId(final String s) {
+        final String cleaned = sanitize(s);
+        // A companion controls this component. Neutralize a leading dot run so values such as
+        // ".." cannot be interpreted as a parent directory by any cache path consumer.
+        return cleaned.replaceFirst("^\\.+", "_");
     }
 
     public boolean isPresent() {

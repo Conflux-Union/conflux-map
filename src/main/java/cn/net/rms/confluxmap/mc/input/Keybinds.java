@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.mc.ui.screen.ConfigScreen;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
@@ -28,6 +29,7 @@ public final class Keybinds {
     private final KeyBinding openWaypoints;
     private final KeyBinding newWaypoint;
     private final KeyBinding openConfig;
+    private final KeyBinding cyclePrediction;
     private final ConfluxConfig config;
     private final ConfigIo configIo;
     private final LayerSelector layerSelector;
@@ -44,6 +46,7 @@ public final class Keybinds {
         openWaypoints = register("waypoints", GLFW.GLFW_KEY_U);
         newWaypoint = register("new_waypoint", GLFW.GLFW_KEY_B);
         openConfig = register("open_config", GLFW.GLFW_KEY_COMMA);
+        cyclePrediction = register("cycle_prediction", GLFW.GLFW_KEY_P);
         ClientTickEvents.END_CLIENT_TICK.register(client -> poll());
     }
 
@@ -73,6 +76,11 @@ public final class Keybinds {
         }
         while (cycleLayer.wasPressed()) {
             layerSelector.cycleOverride();
+            changed = true;
+        }
+        while (cyclePrediction.wasPressed()) {
+            config.predictionViewMode = config.predictionViewMode.next();
+            ConfluxMapClient.get().predictionTileService().setViewMode(config.predictionViewMode);
             changed = true;
         }
         // KeyBinding state stops updating while any screen with passEvents=false is open (vanilla

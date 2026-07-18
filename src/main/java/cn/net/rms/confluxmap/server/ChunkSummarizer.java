@@ -1,0 +1,148 @@
+package cn.net.rms.confluxmap.server;
+
+import cn.net.rms.confluxmap.core.model.SurfaceKind;
+import cn.net.rms.confluxmap.core.net.PackedBits;
+import cn.net.rms.confluxmap.core.net.SummaryCodec;
+import java.util.ArrayList;
+import java.util.List;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtList;
+
+/** Converts a serialized 1.17.1 chunk into a cheap surface-only summary without loading a chunk. */
+public final class ChunkSummarizer {
+    private static final int SEA_LEVEL = 62;
+
+    public SummaryCodec.Chunk summarize(final NbtCompound root) {
+        if (root == null || !root.contains("Level", 10)) {
+            return SummaryCodec.Chunk.empty();
+        }
+        final NbtCompound level = root.getCompound("Level");
+        final long[] heights = level.contains("Heightmaps", 10)
+            ? level.getCompound("Heightmaps").getLongArray("MOTION_BLOCKING") : new long[0];
+        final int[] biomes = level.contains("Biomes", 11) ? level.getIntArray("Biomes") : new int[0];
+        final NbtList sections = level.contains("Sections", 9) ? level.getList("Sections", 10) : new NbtList();
+        final List<Section> parsed = parseSections(sections);
+        final SummaryCodec.Column[] columns = new SummaryCodec.Column[SummaryCodec.COLUMNS];
+        for (int z = 0; z < 16; z++) {
+            for (int x = 0; x < 16; x++) {
+                final int index = z * 16 + x;
+                final int top = heights.length == 0 ? 0 : PackedBits.decode(heights, 9, index);
+                final BlockInfo block = blockAt(parsed, x, top - 1, z);
+                final int biome = biomeAt(biomes, x, z, top);
+                final int fluidDepth = block.kind == SurfaceKind.WATER ? clamp(SEA_LEVEL - top) : 0;
+                columns[index] = new SummaryCodec.Column(biome & 255, clampShort(top), block.kind.ordinal(), block.mapColorId, fluidDepth);
+            }
+        }
+        final long revision = level.contains("LastUpdate", 4) ? level.getLong("LastUpdate") : 0L;
+        return new SummaryCodec.Chunk(true, revision, columns);
+    }
+
+    private static List<Section> parseSections(final NbtList list) {
+        final List<Section> result = new ArrayList<>(list.size());
+        for (int i = 0; i < list.size(); i++) {
+            final NbtCompound section = list.getCompound(i);
+            final int y = section.getByte("Y");
+            final NbtList palette = section.contains("Palette", 9) ? section.getList("Palette", 10) : new NbtList();
+            final String[] names = new String[Math.max(1, palette.size())];
+            for (int p = 0; p < palette.size(); p++) {
+                names[p] = palette.getCompound(p).getString("Name");
+            }
+            if (palette.isEmpty()) {
+                names[0] = "minecraft:air";
+            }
+            final long[] states = section.contains("BlockStates", 12) ? section.getLongArray("BlockStates") : new long[0];
+            final int bits = Math.max(4, bitsFor(names.length));
+            result.add(new Section(y, names, states, bits));
+        }
+        return result;
+    }
+
+    private static BlockInfo blockAt(final List<Section> sections, final int x, final int y, final int z) {
+        final int sectionY = Math.floorDiv(y, 16);
+        final int localY = Math.floorMod(y, 16);
+        for (final Section section : sections) {
+            if (section.y != sectionY) {
+                continue;
+            }
+            final int localIndex = (localY * 16 + z) * 16 + x;
+            final int paletteIndex = section.states.length == 0 ? 0 : PackedBits.decode(section.states, section.bits, localIndex);
+            final String name = section.names[Math.min(paletteIndex, section.names.length - 1)];
+            return classify(name);
+        }
+        return classify("minecraft:air");
+    }
+
+    private static int biomeAt(final int[] biomes, final int x, final int z, final int top) {
+        if (biomes.length == 0) {
+            return 1;
+        }
+        final int quartY = Math.max(0, Math.min(63, Math.floorDiv(top, 4)));
+        final int index = (x >>> 2) + ((z >>> 2) * 4) + quartY * 16;
+        return index >= 0 && index < biomes.length ? biomes[index] : 1;
+    }
+
+    private static BlockInfo classify(final String value) {
+        final String name = value == null ? "minecraft:air" : value;
+        final SurfaceKind kind;
+        final int color;
+        if (name.contains("water")) {
+            kind = SurfaceKind.WATER;
+            color = 12;
+        } else if (name.contains("lava")) {
+            kind = SurfaceKind.LAVA;
+            color = 4;
+        } else if (name.contains("leaves") || name.contains("vine")) {
+            kind = SurfaceKind.FOLIAGE;
+            color = 7;
+        } else if (name.contains("snow") || name.contains("powder_snow")) {
+            kind = SurfaceKind.SNOW;
+            color = 3;
+        } else if (name.contains("ice")) {
+            kind = SurfaceKind.ICE;
+            color = 12;
+        } else if (name.endsWith("sand") || name.contains("sandstone")) {
+            kind = SurfaceKind.SAND;
+            color = 2;
+        } else if (name.contains("bedrock")) {
+            kind = SurfaceKind.BEDROCK_CEILING;
+            color = 11;
+        } else if (name.endsWith("air") || name.endsWith("cave_air") || name.endsWith("void_air")) {
+            kind = SurfaceKind.UNKNOWN;
+            color = ProtoColor.NONE;
+        } else {
+            kind = SurfaceKind.LAND;
+            // The exact registry MapColor is not available while reading NBT off-thread. This
+            // conservative id is enough to flag non-natural block names through the same wire.
+            color = name.contains("stone") || name.contains("brick") || name.contains("concrete") ? 11 : 1;
+        }
+        return new BlockInfo(kind, color);
+    }
+
+    private static int bitsFor(final int size) {
+        int bits = 0;
+        int value = Math.max(1, size - 1);
+        while (value > 0) {
+            bits++;
+            value >>>= 1;
+        }
+        return bits;
+    }
+
+    private static int clamp(final int value) {
+        return Math.max(0, Math.min(255, value));
+    }
+
+    private static short clampShort(final int value) {
+        return (short) Math.max(Short.MIN_VALUE + 1, Math.min(Short.MAX_VALUE, value));
+    }
+
+    private record Section(int y, String[] names, long[] states, int bits) {
+    }
+
+    private record BlockInfo(SurfaceKind kind, int mapColorId) {
+    }
+
+    private static final class ProtoColor {
+        private static final int NONE = 255;
+    }
+}

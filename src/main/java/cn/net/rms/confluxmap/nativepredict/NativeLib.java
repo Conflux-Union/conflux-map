@@ -34,6 +34,7 @@ public final class NativeLib {
 
     private static volatile boolean available;
     private static volatile boolean permanentlyFailed;
+    private static volatile boolean faultLogged;
 
     private NativeLib() {
     }
@@ -41,6 +42,16 @@ public final class NativeLib {
     /** Whether the native predictor is loaded and ready to use. */
     public static boolean available() {
         return available;
+    }
+
+    /** Latches a runtime/native fault for the rest of this game process. */
+    public static synchronized void disableForSession(final Throwable fault) {
+        available = false;
+        permanentlyFailed = true;
+        if (!faultLogged) {
+            faultLogged = true;
+            LOGGER.error("native: prediction disabled after a predictor fault", fault);
+        }
     }
 
     /**

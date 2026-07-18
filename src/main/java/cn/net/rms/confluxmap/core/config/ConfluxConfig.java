@@ -1,5 +1,7 @@
 package cn.net.rms.confluxmap.core.config;
 
+import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
+
 /**
  * All client settings, serialized as one JSON document.
  * Add fields with defaults only; never rename without bumping
@@ -81,6 +83,11 @@ public final class ConfluxConfig {
      * is stable before the sync loop lands.
      */
     public boolean predictionNetworkSync = true;
+    /** View filter for the predicted plane; EVERYWHERE is the honest default. */
+    public PredictionViewMode predictionViewMode = PredictionViewMode.EVERYWHERE;
+    public boolean predictionShowStructures = true;
+    /** Pan-settle debounce, clamped to 100..2000 ms. */
+    public int predictionDebounceMs = 300;
 
     public ConfluxConfig copy() {
         final ConfluxConfig c = new ConfluxConfig();
@@ -116,6 +123,9 @@ public final class ConfluxConfig {
         c.waypointLabelsEnabled = waypointLabelsEnabled;
         c.predictionEnabled = predictionEnabled;
         c.predictionNetworkSync = predictionNetworkSync;
+        c.predictionViewMode = predictionViewMode;
+        c.predictionShowStructures = predictionShowStructures;
+        c.predictionDebounceMs = predictionDebounceMs;
         return c;
     }
 
@@ -139,6 +149,10 @@ public final class ConfluxConfig {
         radarMaxEntities = clamp(radarMaxEntities, 1, 500);
         waypointRenderDistance = clamp(waypointRenderDistance, 0, 100_000);
         deathPointsKept = clamp(deathPointsKept, 0, 50);
+        if (predictionViewMode == null) {
+            predictionViewMode = PredictionViewMode.EVERYWHERE;
+        }
+        predictionDebounceMs = clamp(predictionDebounceMs, 100, 2000);
     }
 
     private static int clamp(final int v, final int min, final int max) {

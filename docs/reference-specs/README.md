@@ -57,6 +57,7 @@ confirm it isn't structured like the thing it's compatible with.
 | `radar-icons.md` | Entity classification, radar dot rendering, above/below elevation cues | S9 |
 | `radar-auto-icons-voxelmap.md` | VoxelMap's offscreen model-render icon pipeline (part selection, FBO bake, pixel post-processing, caching) — reference for a future dynamic-icon tier | unbuilt |
 | `radar-auto-icons-xaero.md` | Xaero's mixin-instrumented render-trace icon pipeline (trace → head replay → GPU outline → atlas) — reference for a future dynamic-icon tier | unbuilt |
+| `predicted-map.md` | Seed prediction, tolerant correction diff, and companion patch wire format | M2 |
 
 ## Ground rules that apply to every spec in this directory
 

@@ -21,7 +21,7 @@ import net.minecraft.util.Identifier;
 /**
  * Client-side wiring for the {@code confluxmap:m2} companion channel. Owns one global
  * receiver; on every S2C message it decodes the payload and dispatches to {@link CompanionSession}
- * (HELLO_POLICY), to the S5 patch-apply seam (MAP_PATCH - stubbed here), or logs
+ * (HELLO_POLICY), to the correction sync loop (MAP_PATCH), or logs
  * (POLICY_UPDATE / ERROR). On {@link ClientPlayConnectionEvents#JOIN} it sends a HELLO_C2S
  * immediately (fabric-api's JOIN fires at the RETURN of {@code onGameJoin} with the channel
  * ready - see the research report); on {@link ClientPlayConnectionEvents#DISCONNECT} it resets
@@ -31,6 +31,7 @@ public final class ClientNetworking {
     public static final Identifier CHANNEL = new Identifier(Proto.CHANNEL_ID);
 
     private final CompanionSession session;
+    private volatile MapSyncClient mapSync;
 
     public ClientNetworking(final CompanionSession session) {
         this.session = session;
@@ -39,7 +40,17 @@ public final class ClientNetworking {
     public void register() {
         ClientPlayNetworking.registerGlobalReceiver(CHANNEL, this::onReceive);
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> sendHello());
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> session.reset());
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+            session.reset();
+            final MapSyncClient sync = mapSync;
+            if (sync != null) {
+                sync.reset();
+            }
+        });
+    }
+
+    public void bindMapSync(final MapSyncClient mapSync) {
+        this.mapSync = mapSync;
     }
 
     private void onReceive(
@@ -76,13 +87,13 @@ public final class ClientNetworking {
         }
     }
 
-    /** Constructs and sends HELLO_C2S; called from JOIN and (in S5) from config-driven re-handshakes. */
+    /** Constructs and sends HELLO_C2S; called from JOIN and config-driven re-handshakes. */
     public void sendHello() {
         final HelloC2S hello = new HelloC2S(
             ConfluxMapMod.getVersion(),
             PredictorVersion.full()
         );
-        if (!send(hello)) {
+        if (!sendMessage(hello)) {
             return;
         }
         session.onHelloSent();
@@ -92,7 +103,7 @@ public final class ClientNetworking {
         );
     }
 
-    private boolean send(final Message msg) {
+    boolean sendMessage(final Message msg) {
         final byte[] payload;
         try {
             payload = MsgCodec.encode(msg);
@@ -127,8 +138,10 @@ public final class ClientNetworking {
     }
 
     private void onMapPatch(final MapPatchS2C patch) {
-        // S5: PatchCodec.decode the body, apply samples to CorrectionTile/Store, recompose. For S3
-        //     we just verify the channel carries patches without dropping them.
+        final MapSyncClient sync = mapSync;
+        if (sync != null) {
+            sync.onPatch(patch);
+        }
         ConfluxMapMod.LOGGER.debug(
             "companion: MAP_PATCH mode={} tileX={} tileZ={} lod={} body={} bytes",
             patch.mode(), patch.tileX(), patch.tileZ(), patch.lod(), patch.body().length

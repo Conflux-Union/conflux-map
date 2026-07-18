@@ -1,11 +1,12 @@
 package cn.net.rms.confluxmap.core.net;
 
+import java.util.List;
+
 /**
  * {@code 0x04 S2C MAP_PATCH}: one tile's worth of server-side correction data.
  *
- * <p><b>S3 framing only.</b> The fixed header fields are fully parsed here; {@link #body} is
- * an opaque blob the codec round-trips without inspecting. {@code PatchCodec.encode/decode}
- * the body lands in S4, at which point the {@code // S4:} comments below mark the seam.
+ * <p>The fixed header, presence bitmap, structure entries, and compressed sparse body are all
+ * parsed by {@link MsgCodec}; {@link PatchCodec} owns the body representation.
  *
  * @param reqId         echo of {@link MapViewReqC2S#reqId()}
  * @param dimIndex      echo of {@link MapViewReqC2S#dimIndex()}
@@ -19,12 +20,12 @@ package cn.net.rms.confluxmap.core.net;
  * @param presence      exactly {@value Proto#PATCH_PRESENCE_BYTES} bytes; one bit per chunk (16x16 =
  *                      256 chunks per tile). Bit set = server has real data for that chunk in this tile.
  *                      Used by S5's {@code GENERATED_ONLY} prediction view mode.
- * @param body          opaque payload; its interpretation depends on {@code mode}:
+ * @param body          PatchCodec-compressed payload; its interpretation depends on {@code mode}:
  *                      <ul>
  *                        <li>{@link Proto#PATCH_MODE_UNCHANGED} / {@link Proto#PATCH_MODE_UNAVAILABLE}:
  *                            always empty.</li>
  *                        <li>{@link Proto#PATCH_MODE_ABSOLUTE} / {@link Proto#PATCH_MODE_RESIDUAL}:
- *                            PatchCodec-encoded records. S3 carries this verbatim; S4 parses it.</li>
+ *                            PatchCodec-encoded records.</li>
  *                      </ul>
  */
 public record MapPatchS2C(
@@ -36,11 +37,27 @@ public record MapPatchS2C(
     int mode,
     long tileRevision,
     byte[] presence,
-    byte[] body
+    byte[] body,
+    List<StructureEntry> structures
 ) implements Message {
-    // S4: PatchCodec.encode/decode the body. Until then, body is opaque bytes whose length
-    //     the codec caps at Proto.MAX_S2C_PAYLOAD minus the fixed header size.
+    public record StructureEntry(int structType, int blockX, int blockZ, int state) {
+    }
 
+    public MapPatchS2C(
+        final int reqId, final int dimIndex, final int lod, final int tileX, final int tileZ, final int mode,
+        final long tileRevision, final byte[] presence, final byte[] body
+    ) {
+        this(reqId, dimIndex, lod, tileX, tileZ, mode, tileRevision, presence, body, List.of());
+    }
+
+    public MapPatchS2C {
+        presence = presence == null ? null : presence.clone();
+        body = body == null ? null : body.clone();
+        structures = structures == null ? List.of() : List.copyOf(structures);
+        if (structures.size() > 255) {
+            throw new IllegalArgumentException("too many structure entries");
+        }
+    }
     @Override
     public int typeId() {
         return Proto.MSG_MAP_PATCH_S2C;

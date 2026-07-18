@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import java.util.Arrays;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -41,7 +42,8 @@ public final class ConfigScreen extends Screen {
         LAYERS("confluxmap.screen.config.category.layers"),
         RADAR("confluxmap.screen.config.category.radar"),
         WAYPOINTS("confluxmap.screen.config.category.waypoints"),
-        PERFORMANCE("confluxmap.screen.config.category.performance");
+        PERFORMANCE("confluxmap.screen.config.category.performance"),
+        PREDICTION("confluxmap.screen.config.category.prediction");
 
         private final String labelKey;
 
@@ -240,6 +242,23 @@ public final class ConfigScreen extends Screen {
                     () -> config.gpuTileCacheLimit, v -> config.gpuTileCacheLimit = v, ConfigScreen::plainText
                 );
                 break;
+            case PREDICTION:
+                y = addToggleRow(y, "confluxmap.config.prediction.enabled", () -> config.predictionEnabled, v -> config.predictionEnabled = v);
+                y = addToggleRow(y, "confluxmap.config.prediction.network_sync", () -> config.predictionNetworkSync, v -> config.predictionNetworkSync = v);
+                y = addToggleRow(y, "confluxmap.config.prediction.show_structures", () -> config.predictionShowStructures, v -> config.predictionShowStructures = v);
+                y = addEnumRow(
+                    y, "confluxmap.config.prediction.view_mode", PredictionViewMode.values(),
+                    () -> config.predictionViewMode,
+                    v -> {
+                        config.predictionViewMode = v;
+                        ConfluxMapClient.get().predictionTileService().setViewMode(v);
+                    }, ConfigScreen::predictionViewModeKey
+                );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.prediction.debounce", 100, 2000,
+                    () -> config.predictionDebounceMs, v -> config.predictionDebounceMs = v, ConfigScreen::plainText
+                );
+                break;
             default:
                 break;
         }
@@ -376,6 +395,17 @@ public final class ConfigScreen extends Screen {
                 return "confluxmap.config.layer_override.force_underground";
             default:
                 return "confluxmap.config.layer_override.auto";
+        }
+    }
+
+    private static String predictionViewModeKey(final PredictionViewMode mode) {
+        switch (mode) {
+            case GENERATED_ONLY:
+                return "confluxmap.config.prediction.mode.generated_only";
+            case VISITED_ONLY:
+                return "confluxmap.config.prediction.mode.visited_only";
+            default:
+                return "confluxmap.config.prediction.mode.everywhere";
         }
     }
 

@@ -44,7 +44,7 @@ class WorldIdentityTest {
         // so it cannot escape its parent directory.
         final WorldIdentity id = WorldIdentity.multiplayer("example.net", "../../etc/passwd");
         assertEquals("example.net", id.serverId());
-        assertEquals(".._.._etc_passwd", id.worldId());
+        assertEquals("__.._etc_passwd", id.worldId());
     }
 
     @Test
