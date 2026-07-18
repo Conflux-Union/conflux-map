@@ -8,6 +8,7 @@ import cn.net.rms.confluxmap.core.predict.PredictionTileService;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.tile.TileUpdate;
 import cn.net.rms.confluxmap.core.util.Argb;
+import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -66,6 +67,15 @@ public final class TileTextureManager {
             }
         }
         texture.upload();
+        configureSampling(texture);
+    }
+
+    /** Keep tile edges independent: repeat/linear state can leak from another texture or shader. */
+    private static void configureSampling(final NativeImageBackedTexture texture) {
+        texture.setFilter(false, false);
+        GlStateManager._bindTexture(texture.getGlId());
+        GlStateManager._texParameter(3553, 10242, 33071);
+        GlStateManager._texParameter(3553, 10243, 33071);
     }
 
     private void evictOverLimit() {
@@ -106,5 +116,23 @@ public final class TileTextureManager {
         }
         textures.clear();
         ConfluxMapMod.LOGGER.debug("TileTextureManager: released all tile textures");
+    }
+
+    /** Render thread: drop only predicted textures, leaving captured map tiles intact. */
+    public void releasePredicted() {
+        assert RenderSystem.isOnRenderThread() : "TileTextureManager.releasePredicted() must run on the render thread";
+        final Iterator<Map.Entry<TileKey, NativeImageBackedTexture>> it = textures.entrySet().iterator();
+        int released = 0;
+        while (it.hasNext()) {
+            final Map.Entry<TileKey, NativeImageBackedTexture> entry = it.next();
+            if (PredictedTileKeys.isPredicted(entry.getKey())) {
+                entry.getValue().close();
+                it.remove();
+                released++;
+            }
+        }
+        if (released > 0) {
+            ConfluxMapMod.LOGGER.info("TileTextureManager: released {} predicted tile textures", released);
+        }
     }
 }

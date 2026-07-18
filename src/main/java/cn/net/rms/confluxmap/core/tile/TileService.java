@@ -25,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /**
  * Owns the dirty-tile composition queue and the bounded render-thread upload
@@ -34,7 +35,8 @@ import java.util.Set;
  * <p>M1 always recomposes a tile from scratch on every dirty event (see
  * {@link TileUpdate}'s javadoc). {@link TileKey#layerId()} carries which
  * {@link MapLayer} a tile belongs to ({@link MapLayer#parse} recovers it);
- * every layer shares this one composition path.
+ * every layer shares this one composition path. During a visible fullscreen/minimap viewport the
+ * queue is serialized and uses top-left row-major order; background work retains distance priority.
  */
 public final class TileService {
     private static final int UPLOAD_QUEUE_CAPACITY = 64;
@@ -52,6 +54,9 @@ public final class TileService {
 
     /** Guarded by {@code this}: bounded, key-deduped upload queue (newest composition wins). */
     private final LinkedHashMap<TileKey, TileUpdate> uploads = new LinkedHashMap<>();
+
+    /** Latest fullscreen viewport. Visible requests use deterministic top-left row-major order. */
+    private ViewportRect viewport;
 
     private volatile int viewpointX;
     private volatile int viewpointZ;
@@ -94,6 +99,27 @@ public final class TileService {
     public void setViewpoint(final int blockX, final int blockZ) {
         viewpointX = blockX;
         viewpointZ = blockZ;
+    }
+
+    /**
+     * Main thread: tells the composer which tiles the fullscreen map is about to request. Requests
+     * inside this rectangle are started from the top-left, left-to-right, then top-to-bottom.
+     */
+    public void setViewport(
+        final int lod, final int minTileX, final int maxTileX, final int minTileZ, final int maxTileZ
+    ) {
+        synchronized (this) {
+            viewport = new ViewportRect(lod, minTileX, maxTileX, minTileZ, maxTileZ);
+        }
+        pump();
+    }
+
+    /** Clears fullscreen ordering after the screen closes so minimap requests return to distance priority. */
+    public void clearViewport() {
+        synchronized (this) {
+            viewport = null;
+        }
+        pump();
     }
 
     /**
@@ -186,7 +212,15 @@ public final class TileService {
         if (!key.world().equals(session.world()) || !key.dimension().equals(session.dimension())) {
             return;
         }
-        markDirty(key, session.token());
+        synchronized (this) {
+            // A missing texture is checked once per rendered frame. Do not turn that repeated
+            // check into an invalidation loop while the same tile is already queued or composing.
+            if (dirty.containsKey(key) || inFlight.contains(key)) {
+                return;
+            }
+            dirty.put(key, session.token());
+        }
+        pump();
         // LOD0 tile coordinates are region coordinates; higher LODs cover many regions at once and
         // the disk cache only ever stores LOD0 data, so there's nothing more specific to load there -
         // those regions get pulled in individually as their own LOD0 tiles are requested/captured.
@@ -231,10 +265,14 @@ public final class TileService {
             final TileKey next;
             final long token;
             synchronized (this) {
-                if (inFlight.size() >= maxConcurrentCompositions || dirty.isEmpty()) {
+                final int compositionLimit = viewport == null ? maxConcurrentCompositions : 1;
+                if (inFlight.size() >= compositionLimit || dirty.isEmpty()) {
                     return;
                 }
                 next = nearestDirty();
+                if (next == null) {
+                    return;
+                }
                 token = dirty.remove(next);
                 inFlight.add(next);
             }
@@ -246,9 +284,25 @@ public final class TileService {
     private TileKey nearestDirty() {
         final int vx = viewpointX;
         final int vz = viewpointZ;
+        final ViewportRect activeViewport = viewport;
         TileKey best = null;
         long bestDist = Long.MAX_VALUE;
+        boolean bestInViewport = false;
         for (final TileKey key : dirty.keySet()) {
+            if (inFlight.contains(key)) {
+                continue;
+            }
+            final boolean inViewport = activeViewport != null && activeViewport.contains(key);
+            if (inViewport) {
+                if (!bestInViewport || best == null || rowMajorBefore(key, best)) {
+                    best = key;
+                    bestInViewport = true;
+                }
+                continue;
+            }
+            if (bestInViewport) {
+                continue;
+            }
             // Half the tile's own edge length in blocks, e.g. 128 at LOD0, 2048 at LOD4 -
             // using a fixed LOD0-sized offset here would skew priority for higher-LOD tiles.
             final long half = 128L << key.lod();
@@ -261,6 +315,11 @@ public final class TileService {
             }
         }
         return best;
+    }
+
+    private static boolean rowMajorBefore(final TileKey candidate, final TileKey current) {
+        return candidate.tileZ() < current.tileZ()
+            || (candidate.tileZ() == current.tileZ() && candidate.tileX() < current.tileX());
     }
 
     private void composeAndFinish(final TileKey key, final long token) {
@@ -468,6 +527,14 @@ public final class TileService {
         }
     }
 
+    private record ViewportRect(int lod, int minTileX, int maxTileX, int minTileZ, int maxTileZ) {
+        boolean contains(final TileKey key) {
+            return key.lod() == lod
+                && key.tileX() >= minTileX && key.tileX() <= maxTileX
+                && key.tileZ() >= minTileZ && key.tileZ() <= maxTileZ;
+        }
+    }
+
     /**
      * Public entry point for a composer that isn't this class's own {@link #pump}/{@link
      * #composeAndFinish} pipeline (see {@code core.predict.PredictionTileService}) to share this
@@ -475,6 +542,11 @@ public final class TileService {
      */
     public void submitUpload(final TileUpdate update) {
         pushUpload(update);
+    }
+
+    /** Drops queued uploads matching a cache-plane predicate before that plane is rebuilt. */
+    public synchronized void discardUploads(final Predicate<TileKey> predicate) {
+        uploads.keySet().removeIf(predicate);
     }
 
     /** Render thread: pop up to {@code max} freshly-composed tiles to upload to the GPU. */

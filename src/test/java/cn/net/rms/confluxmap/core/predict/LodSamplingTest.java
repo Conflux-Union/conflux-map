@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.core.predict;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -66,11 +67,39 @@ class LodSamplingTest {
     }
 
     @org.junit.jupiter.api.Test
-    void lod4IsAlwaysFlatAtTheReferenceHeight() {
+    void lod4UsesCoarseHeightsForWaterClassification() {
         final BaselineGrid grid = LodSampling.sample(SAMPLER, false, 4, 12345, -6789);
         assertNotNull(grid);
+        boolean hasSampledHeight = false;
         for (final int y : grid.terrainY) {
-            assertEquals(cn.net.rms.confluxmap.core.color.ShadingPipeline.REFERENCE_HEIGHT, y);
+            hasSampledHeight |= y != cn.net.rms.confluxmap.core.color.ShadingPipeline.REFERENCE_HEIGHT;
         }
+        org.junit.jupiter.api.Assertions.assertTrue(hasSampledHeight);
+    }
+
+    @org.junit.jupiter.api.Test
+    void lod4KeepsOceanBiomesAsWaterInsteadOfTurningThemIntoLand() {
+        final BaselineSampler oceanSampler = new BaselineSampler() {
+            @Override
+            public boolean biomes(final int scale, final int x, final int z, final int w, final int h, final int[] out) {
+                java.util.Arrays.fill(out, 0);
+                return true;
+            }
+
+            @Override
+            public boolean heights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+                java.util.Arrays.fill(outY, 40);
+                return true;
+            }
+
+            @Override
+            public boolean endHeights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+                return false;
+            }
+        };
+        final BaselineGrid grid = LodSampling.sample(oceanSampler, false, 4, 0, 0);
+        assertNotNull(grid);
+        final DerivedGrid derived = BaselineDeriver.derive(grid);
+        assertEquals(SurfaceKind.WATER.ordinal(), derived.kind[BaselineGrid.index(0, 0)]);
     }
 }

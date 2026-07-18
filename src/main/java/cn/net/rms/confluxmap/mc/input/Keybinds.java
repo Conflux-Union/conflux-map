@@ -30,6 +30,7 @@ public final class Keybinds {
     private final KeyBinding newWaypoint;
     private final KeyBinding openConfig;
     private final KeyBinding cyclePrediction;
+    private final KeyBinding reloadPrediction;
     private final ConfluxConfig config;
     private final ConfigIo configIo;
     private final LayerSelector layerSelector;
@@ -47,6 +48,7 @@ public final class Keybinds {
         newWaypoint = register("new_waypoint", GLFW.GLFW_KEY_B);
         openConfig = register("open_config", GLFW.GLFW_KEY_COMMA);
         cyclePrediction = register("cycle_prediction", GLFW.GLFW_KEY_P);
+        reloadPrediction = register("reload_prediction", GLFW.GLFW_KEY_F9);
         ClientTickEvents.END_CLIENT_TICK.register(client -> poll());
     }
 
@@ -82,6 +84,9 @@ public final class Keybinds {
             config.predictionViewMode = config.predictionViewMode.next();
             ConfluxMapClient.get().predictionTileService().setViewMode(config.predictionViewMode);
             changed = true;
+        }
+        while (reloadPrediction.wasPressed()) {
+            ConfluxMapClient.get().reloadPredictionTiles();
         }
         // KeyBinding state stops updating while any screen with passEvents=false is open (vanilla
         // Keyboard#onKey behavior), so this never re-fires while FullscreenMapScreen is showing;

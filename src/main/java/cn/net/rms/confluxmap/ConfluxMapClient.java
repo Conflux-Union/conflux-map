@@ -247,6 +247,13 @@ public final class ConfluxMapClient implements ClientModInitializer {
         return tileTextureManager;
     }
 
+    /** Forces a prediction-only cache/queue reload; captured map textures remain resident. */
+    public void reloadPredictionTiles() {
+        predictionTileService.reloadAll();
+        gameBridge.runOnRenderThread(tileTextureManager::releasePredicted);
+        ConfluxMapMod.LOGGER.info("Prediction tiles force-reloaded");
+    }
+
     public FullscreenMapViewState fullscreenMapViewState() {
         return fullscreenMapViewState;
     }

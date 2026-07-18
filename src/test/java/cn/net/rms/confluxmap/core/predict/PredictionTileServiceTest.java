@@ -101,6 +101,38 @@ class PredictionTileServiceTest {
         }
     }
 
+    @Test
+    void reloadRequeuesInFlightTilesWithoutSchedulingDuplicates() throws InterruptedException {
+        final SessionGuard sessionGuard = new SessionGuard();
+        final MapExecutors executors = new MapExecutors();
+        final TileService uploads = new TileService(new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel());
+        final PredictionTileService predictionTiles = newService(sessionGuard, executors, uploads);
+        sessionGuard.begin(WORLD, DIM);
+
+        final int cap = executors.workerCount();
+        final CountDownLatch release = new CountDownLatch(1);
+        for (int i = 0; i < cap; i++) {
+            executors.workers().execute(() -> {
+                try {
+                    release.await();
+                } catch (final InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+        }
+        Thread.sleep(50);
+
+        final TileKey key = new TileKey(WORLD, DIM, "surface!pred", 2, 3, 4);
+        try {
+            predictionTiles.requestTile(key);
+            predictionTiles.reloadAll();
+            assertTrue(predictionTiles.pendingKeysForTest().contains(key), "reload must requeue an in-flight tile");
+        } finally {
+            release.countDown();
+            executors.shutdown(2000);
+        }
+    }
+
     private static void awaitIdle(final PredictionTileService service) throws InterruptedException {
         final long deadline = System.currentTimeMillis() + 2000;
         while (!service.isIdleForTest() && System.currentTimeMillis() < deadline) {

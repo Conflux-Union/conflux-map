@@ -21,8 +21,8 @@ import cn.net.rms.confluxmap.core.color.ShadingPipeline;
  *   <li>LOD3: biomes at native scale 16, nearest-neighbor expanded x2; heights still queried at
  *       native 1:4 scale (finer than this LOD's 8-block pixels by exactly 2x per axis), then
  *       2x2-integer-mean pooled down to pixel resolution.
- *   <li>LOD4: biomes at native scale 16, 1:1 with pixels; no height query at all - every pixel
- *       uses the flat {@link ShadingPipeline#REFERENCE_HEIGHT}.
+ *   <li>LOD4: biomes at native scale 16, 1:1 with pixels; heights use one nearest 1:4 sample
+ *       per pixel so the coarse preview can still distinguish ocean from elevated land.
  * </ul>
  *
  * <p>Every grid (both biomes and heights) is sampled over the full margin range {@code
@@ -105,15 +105,14 @@ public final class LodSampling {
                 return sampleHeightsNearest(sampler, end, tileOriginX, tileOriginZ, grid, 1);
             case 3:
                 return sampleHeightsMeanPool(sampler, end, tileOriginX, tileOriginZ, grid);
+            case 4:
+                // A flat reference height makes every ocean biome look like land because the
+                // water rule is height-gated. One coarse 1:4 sample per 16-block pixel keeps the
+                // high-LOD preview's water mask correct without paying for a full 4x4 pool.
+                return sampleHeightsNearest(sampler, end, tileOriginX, tileOriginZ, grid, 1);
             default:
-                flatHeights(grid);
-                return true;
+                return false;
         }
-    }
-
-    private static void flatHeights(final BaselineGrid grid) {
-        final int flat = ShadingPipeline.REFERENCE_HEIGHT;
-        java.util.Arrays.fill(grid.terrainY, flat);
     }
 
     /** LOD0: 4-block native samples, bilinearly expanded x4 to per-pixel resolution. */

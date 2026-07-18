@@ -17,8 +17,9 @@ import java.util.Set;
 
 /**
  * Predicted-underlay twin of {@code core.tile.TileService}: a synchronized dirty-tile queue
- * bounded by an in-flight cap (one per worker), nearest-viewpoint-first, session-token guarded -
- * same discipline, entirely separate data. Predictions never enter {@code ColumnStore}/{@code
+ * bounded by an in-flight cap (one per worker), nearest-viewpoint-first outside a visible viewport
+ * (where it is serialized in top-left row-major order), session-token guarded - same discipline,
+ * entirely separate data. Predictions never enter {@code ColumnStore}/{@code
  * RegionDiskCache}; composition here samples cubiomes directly (via {@link NativeBaselineSampler})
  * and shares {@code TileService}'s upload queue through {@link TileService#submitUpload}. Native
  * availability, a known seed, and a supported dimension all gate every request - see {@link
@@ -40,6 +41,11 @@ public final class PredictionTileService {
     private final Map<TileKey, Long> dirty = new HashMap<>();
     /** Guarded by {@code this}: tiles currently being composed on a worker. */
     private final Set<TileKey> inFlight = new HashSet<>();
+    /** Guarded by {@code this}: invalidates compositions started before a manual/session reload. */
+    private long reloadGeneration;
+
+    /** Latest fullscreen viewport; visible predictions are scheduled in row-major order. */
+    private ViewportRect viewport;
 
     private volatile int viewpointX;
     private volatile int viewpointZ;
@@ -95,10 +101,33 @@ public final class PredictionTileService {
     /** Main thread, from the session tracker: forget every queued/in-flight predicted tile, and invalidate cached native contexts. */
     public void onSessionChanged(final SessionGuard.Session session) {
         synchronized (this) {
+            reloadGeneration++;
             dirty.clear();
-            inFlight.clear();
         }
         CubiomesContexts.bumpEpoch();
+    }
+
+    /**
+     * Drops every queued/uploaded prediction and invalidates native contexts. Visible tiles are
+     * requested again by the next map render, making this a clean diagnostic reload without
+     * touching real-map tiles or persisted server corrections.
+     */
+    public void reloadAll() {
+        final SessionGuard.Session session = sessionGuard.current();
+        synchronized (this) {
+            reloadGeneration++;
+            dirty.clear();
+            if (session.active()) {
+                for (final TileKey key : inFlight) {
+                    if (key.world().equals(session.world()) && key.dimension().equals(session.dimension())) {
+                        dirty.put(key, session.token());
+                    }
+                }
+            }
+        }
+        uploads.discardUploads(PredictedTileKeys::isPredicted);
+        CubiomesContexts.bumpEpoch();
+        pump();
     }
 
     /** Where the viewer currently is, for dirty-tile composition priority (mirrors {@code TileService#setViewpoint}). */
@@ -119,8 +148,18 @@ public final class PredictionTileService {
     ) {
         final ViewportRect rect = new ViewportRect(dimension, lod, minTileX, maxTileX, minTileZ, maxTileZ);
         synchronized (this) {
+            viewport = rect;
             dirty.keySet().removeIf(key -> !rect.containsPadded(key));
         }
+        pump();
+    }
+
+    /** Clears fullscreen ordering after the screen closes. */
+    public void clearViewport() {
+        synchronized (this) {
+            viewport = null;
+        }
+        pump();
     }
 
     /**
@@ -137,7 +176,15 @@ public final class PredictionTileService {
         if (!key.world().equals(session.world()) || !key.dimension().equals(session.dimension())) {
             return;
         }
-        markDirty(key, session.token());
+        synchronized (this) {
+            // The renderer retries a missing texture every frame. Keep that retry idempotent so
+            // one slow native composition cannot continuously requeue itself.
+            if (dirty.containsKey(key) || inFlight.contains(key)) {
+                return;
+            }
+            dirty.put(key, session.token());
+        }
+        pump();
     }
 
     private void markDirty(final TileKey key, final long token) {
@@ -154,15 +201,21 @@ public final class PredictionTileService {
         while (true) {
             final TileKey next;
             final long token;
+            final long generation;
             synchronized (this) {
-                if (inFlight.size() >= maxConcurrentCompositions || dirty.isEmpty()) {
+                final int compositionLimit = viewport == null ? maxConcurrentCompositions : 1;
+                if (inFlight.size() >= compositionLimit || dirty.isEmpty()) {
                     return;
                 }
                 next = nearestDirty();
+                if (next == null) {
+                    return;
+                }
                 token = dirty.remove(next);
+                generation = reloadGeneration;
                 inFlight.add(next);
             }
-            executors.workers().execute(() -> composeAndFinish(next, token));
+            executors.workers().execute(() -> composeAndFinish(next, token, generation));
         }
     }
 
@@ -170,9 +223,25 @@ public final class PredictionTileService {
     private TileKey nearestDirty() {
         final int vx = viewpointX;
         final int vz = viewpointZ;
+        final ViewportRect activeViewport = viewport;
         TileKey best = null;
         long bestDist = Long.MAX_VALUE;
+        boolean bestInViewport = false;
         for (final TileKey key : dirty.keySet()) {
+            if (inFlight.contains(key)) {
+                continue;
+            }
+            final boolean inViewport = activeViewport != null && activeViewport.contains(key);
+            if (inViewport) {
+                if (!bestInViewport || best == null || rowMajorBefore(key, best)) {
+                    best = key;
+                    bestInViewport = true;
+                }
+                continue;
+            }
+            if (bestInViewport) {
+                continue;
+            }
             final long half = 128L << key.lod();
             final long dx = key.originBlockX() + half - vx;
             final long dz = key.originBlockZ() + half - vz;
@@ -185,14 +254,20 @@ public final class PredictionTileService {
         return best;
     }
 
-    private void composeAndFinish(final TileKey key, final long token) {
+    private static boolean rowMajorBefore(final TileKey candidate, final TileKey current) {
+        return candidate.tileZ() < current.tileZ()
+            || (candidate.tileZ() == current.tileZ() && candidate.tileX() < current.tileX());
+    }
+
+    private void composeAndFinish(final TileKey key, final long token, final long generation) {
+        TileUpdate update = null;
         try {
-            final TileUpdate update = composeTile(key, token);
-            if (update != null) {
-                uploads.submitUpload(update);
-            }
+            update = composeTile(key, token);
         } finally {
             synchronized (this) {
+                if (update != null && generation == reloadGeneration) {
+                    uploads.submitUpload(update);
+                }
                 inFlight.remove(key);
             }
             pump();
@@ -200,7 +275,10 @@ public final class PredictionTileService {
     }
 
     private TileUpdate composeTile(final TileKey key, final long token) {
-        if (!sessionGuard.isCurrent(token) || !state.predictable(key.dimension())) {
+        final SessionGuard.Session session = sessionGuard.current();
+        if (!sessionGuard.isCurrent(token) || !session.active()
+            || !key.world().equals(session.world()) || !key.dimension().equals(session.dimension())
+            || !state.predictable(key.dimension())) {
             return null;
         }
         final int nativeDim = PredictionDimensions.nativeDim(key.dimension());
@@ -251,6 +329,14 @@ public final class PredictionTileService {
     }
 
     private record ViewportRect(DimensionId dimension, int lod, int minTileX, int maxTileX, int minTileZ, int maxTileZ) {
+        boolean contains(final TileKey key) {
+            if (!dimension.equals(key.dimension()) || lod != key.lod()) {
+                return false;
+            }
+            return key.tileX() >= minTileX && key.tileX() <= maxTileX
+                && key.tileZ() >= minTileZ && key.tileZ() <= maxTileZ;
+        }
+
         boolean containsPadded(final TileKey key) {
             if (!dimension.equals(key.dimension()) || lod != key.lod()) {
                 return false;

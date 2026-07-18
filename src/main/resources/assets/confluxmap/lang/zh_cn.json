@@ -9,6 +9,7 @@
   "key.confluxmap.new_waypoint": "在此新建路径点",
   "key.confluxmap.open_config": "打开设置",
   "key.confluxmap.cycle_prediction": "切换种子预览范围",
+  "key.confluxmap.reload_prediction": "强制重载预测地图",
   "confluxmap.screen.map.title": "世界地图",
   "confluxmap.map.scale": "缩放：%s",
   "confluxmap.dimension.overworld": "主世界",

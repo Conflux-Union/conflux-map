@@ -46,6 +46,20 @@ public final class TileMath {
         return TILE_SIZE << lod;
     }
 
+    /**
+     * Chooses the coarsest available LOD whose texel is at least one screen pixel wide. Using
+     * floor here minifies the selected texture between power-of-two zoom steps, which aliases
+     * prediction's deterministic canopy grid into large stripe patterns.
+     */
+    public static int lodForScale(final double blocksPerScreenPixel) {
+        if (!Double.isFinite(blocksPerScreenPixel) || blocksPerScreenPixel <= 1.0) {
+            return 0;
+        }
+        final double exact = Math.log(blocksPerScreenPixel) / Math.log(2.0);
+        final int lod = (int) Math.ceil(exact - 1.0e-10);
+        return Math.max(0, Math.min(MAX_LOD, lod));
+    }
+
     /** Tile coordinate containing the block at the given LOD. */
     public static int blockToTile(final int block, final int lod) {
         return block >> (TILE_SHIFT + lod);

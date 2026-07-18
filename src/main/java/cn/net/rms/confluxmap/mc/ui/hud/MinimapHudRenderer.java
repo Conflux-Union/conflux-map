@@ -112,12 +112,14 @@ public final class MinimapHudRenderer {
             // FullscreenMapScreen owns radarViewRange while it's open; otherwise the minimap
             // isn't rendering at all, so there's no visible map surface for the radar to scan.
             if (!fullscreenOpen) {
+                tiles.clearViewport();
                 radarViewRange.set(0);
             }
             return;
         }
         final Optional<PlayerView> playerView = gameBridge.player(tickDelta);
         if (playerView.isEmpty()) {
+            tiles.clearViewport();
             radarViewRange.set(0);
             return;
         }
@@ -269,9 +271,10 @@ public final class MinimapHudRenderer {
         final int firstTileZ = TileMath.blockToTile((int) Math.floor(player.z() - coverRadius));
         final int lastTileZ = TileMath.blockToTile((int) Math.ceil(player.z() + coverRadius));
         final String layerId = layerSelector.current().layer().cacheId();
+        tiles.setViewport(0, firstTileX, lastTileX, firstTileZ, lastTileZ);
 
-        for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
-            for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
+        for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
+            for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
                 final TileKey key = new TileKey(
                     gameBridge.session().world(), gameBridge.session().dimension(),
                     layerId, 0, tileX, tileZ

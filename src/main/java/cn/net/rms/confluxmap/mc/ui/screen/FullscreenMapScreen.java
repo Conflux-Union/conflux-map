@@ -44,6 +44,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3f;
 import net.minecraft.util.registry.Registry;
+import org.lwjgl.glfw.GLFW;
 
 /**
  * Fullscreen, panning/zooming explorable map. Opened and closed by the
@@ -173,11 +174,17 @@ public final class FullscreenMapScreen extends Screen {
     @Override
     public void onClose() {
         viewState.put(gameBridge.session().dimension(), new FullscreenMapViewState.View(centerX, centerZ, scale));
+        tiles.clearViewport();
+        predictionTiles.clearViewport();
         super.onClose();
     }
 
     @Override
     public boolean keyPressed(final int keyCode, final int scanCode, final int modifiers) {
+        if (keyCode == GLFW.GLFW_KEY_F9) {
+            ConfluxMapClient.get().reloadPredictionTiles();
+            return true;
+        }
         if (openMapKey.matchesKey(keyCode, scanCode)) {
             onClose();
             return true;
@@ -285,7 +292,7 @@ public final class FullscreenMapScreen extends Screen {
     }
 
     private int currentLod() {
-        return MathHelper.clamp((int) Math.floor(Math.log(scale) / Math.log(2)), 0, TileMath.MAX_LOD);
+        return TileMath.lodForScale(scale);
     }
 
     /**
@@ -317,11 +324,14 @@ public final class FullscreenMapScreen extends Screen {
         final boolean predictionActive = config.predictionEnabled
             && predictionEligibleLayer
             && predictionState.predictable(session.dimension());
+        tiles.setViewport(lod, firstTileX, lastTileX, firstTileZ, lastTileZ);
         if (predictionActive) {
             predictionTiles.setViewport(session.dimension(), lod, firstTileX, lastTileX, firstTileZ, lastTileZ);
             ConfluxMapClient.get().mapSyncClient().reportViewport(
                 session.dimension(), lod, firstTileX, lastTileX, firstTileZ, lastTileZ
             );
+        } else {
+            predictionTiles.clearViewport();
         }
 
         for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {

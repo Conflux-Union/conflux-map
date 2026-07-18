@@ -9,6 +9,7 @@
   "key.confluxmap.new_waypoint": "New Waypoint Here",
   "key.confluxmap.open_config": "Open Settings",
   "key.confluxmap.cycle_prediction": "Cycle Prediction View",
+  "key.confluxmap.reload_prediction": "Reload Prediction Map",
   "confluxmap.screen.map.title": "World Map",
   "confluxmap.map.scale": "Scale: %s",
   "confluxmap.dimension.overworld": "Overworld",
