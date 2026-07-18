@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.core.model;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -69,4 +70,15 @@ class WorldIdentityTest {
         assertEquals("local", id.serverId());
         assertEquals("new_world", id.worldId());
     }
+
+    @Test
+    void sameDisplayNameSavesUseTheirDistinctFolders() {
+        final WorldIdentity first = WorldIdentity.singleplayerSave(Path.of("/minecraft/saves/New World"));
+        final WorldIdentity second = WorldIdentity.singleplayerSave(Path.of("/minecraft/saves/New World-1"));
+
+        assertNotEquals(first, second);
+        assertEquals("new_world", first.worldId());
+        assertEquals("new_world-1", second.worldId());
+    }
+
 }

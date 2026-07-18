@@ -13,6 +13,7 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ServerInfo;
 import net.minecraft.util.Identifier;
+import net.minecraft.util.WorldSavePath;
 
 /**
  * Watches the client for world joins, disconnects, dimension changes and identity rotations
@@ -58,29 +59,25 @@ public final class WorldSessionTracker {
             return;
         }
         final DimensionId dimension = toDimensionId(client.world.getRegistryKey().getValue());
+        final WorldIdentity fresh = resolveWorldIdentity(client);
         if (!current.active()) {
-            final SessionGuard.Session session = guard.begin(resolveWorldIdentity(client), dimension);
+            final SessionGuard.Session session = guard.begin(fresh, dimension);
             ConfluxMapMod.LOGGER.info(
                 "Map session started: {}/{} in {} (token {})",
                 session.world().serverId(), session.world().worldId(), dimension, session.token()
             );
             notifyListeners(session);
-        } else if (!current.dimension().equals(dimension)) {
-            final SessionGuard.Session session = guard.begin(current.world(), dimension);
-            ConfluxMapMod.LOGGER.info("Map session dimension change: {} (token {})", dimension, session.token());
-            notifyListeners(session);
-        } else {
-            // Same dimension - but a proxy world switch can re-fire JOIN mid-session and leave
-            // the companion advertising a different worldId. Re-resolve and rotate if it moved.
-            final WorldIdentity fresh = resolveWorldIdentity(client);
-            if (!current.world().equals(fresh)) {
-                final SessionGuard.Session session = guard.begin(fresh, dimension);
+        } else if (!current.dimension().equals(dimension) || !current.world().equals(fresh)) {
+            final SessionGuard.Session session = guard.begin(fresh, dimension);
+            if (!current.dimension().equals(dimension) && current.world().equals(fresh)) {
+                ConfluxMapMod.LOGGER.info("Map session dimension change: {} (token {})", dimension, session.token());
+            } else {
                 ConfluxMapMod.LOGGER.info(
-                    "Map session identity change: {}/{} (token {}) - companion worldId rotated",
-                    session.world().serverId(), session.world().worldId(), session.token()
+                    "Map session identity change: {}/{} in {} (token {})",
+                    session.world().serverId(), session.world().worldId(), dimension, session.token()
                 );
-                notifyListeners(session);
             }
+            notifyListeners(session);
         }
     }
 
@@ -101,7 +98,7 @@ public final class WorldSessionTracker {
      */
     private WorldIdentity resolveWorldIdentity(final MinecraftClient client) {
         if (client.isInSingleplayer() && client.getServer() != null) {
-            return WorldIdentity.singleplayer(client.getServer().getSaveProperties().getLevelName());
+            return WorldIdentity.singleplayerSave(client.getServer().getSavePath(WorldSavePath.ROOT));
         }
         final String address = resolveAddress(client);
         final Optional<String> override = companion.worldIdOverride();

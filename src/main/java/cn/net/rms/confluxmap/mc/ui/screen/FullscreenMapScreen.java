@@ -8,6 +8,7 @@ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
+import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.predict.PredictedTileKeys;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionTileService;
@@ -28,6 +29,7 @@ import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.StructureMarkerRenderer;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -101,7 +103,10 @@ public final class FullscreenMapScreen extends Screen {
     private final EntityRadarScanner radarScanner;
     private final EntityIconManager radarIconManager;
     private final RadarViewRange radarViewRange;
-    private final StructureIndex structureIndex;
+    private final Path structureCacheRoot;
+    private StructureIndex structureIndex;
+    private WorldIdentity structureWorld;
+    private DimensionId structureDimension;
 
     /** World point currently at screen center, and blocks-per-pixel; all mutable, panned/zoomed by input. */
     private double centerX;
@@ -131,24 +136,12 @@ public final class FullscreenMapScreen extends Screen {
         this.radarScanner = app.radarScanner();
         this.radarIconManager = app.entityIconManager();
         this.radarViewRange = app.radarViewRange();
-        this.structureIndex = new StructureIndex(
-            net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("cache"),
-            gameBridge.session().dimension().fileName(),
-            (type, regionX, regionZ) -> {
-                if (!predictionState.seedKnown() || !cn.net.rms.confluxmap.nativepredict.NativeLib.available()) {
-                    return new long[0];
-                }
-                final int nativeDim = cn.net.rms.confluxmap.core.predict.PredictionDimensions.nativeDim(gameBridge.session().dimension());
-                final cn.net.rms.confluxmap.nativepredict.CubiomesContext context =
-                    cn.net.rms.confluxmap.nativepredict.CubiomesContexts.get(predictionState.mcVersion(), predictionState.seed(), nativeDim, 0);
-                if (context == null) {
-                    return new long[0];
-                }
-                final long[] positions = new long[64];
-                final int count = context.structures(type.nativeId(), regionX, regionZ, regionX, regionZ, positions);
-                return java.util.Arrays.copyOf(positions, Math.max(0, Math.min(count, positions.length)));
-            }
-        );
+        this.structureCacheRoot = net.fabricmc.loader.api.FabricLoader.getInstance()
+            .getGameDir().resolve(ConfluxMapMod.ID).resolve("cache");
+        final SessionGuard.Session session = gameBridge.session();
+        this.structureWorld = session.world();
+        this.structureDimension = session.dimension();
+        this.structureIndex = createStructureIndex(session);
 
         final DimensionId dimension = gameBridge.session().dimension();
         final FullscreenMapViewState.View remembered = viewState.get(dimension);
@@ -162,6 +155,43 @@ public final class FullscreenMapScreen extends Screen {
             centerZ = player.isPresent() ? player.get().z() : 0.0;
             scale = DEFAULT_SCALE;
         }
+    }
+
+    private StructureIndex createStructureIndex(final SessionGuard.Session session) {
+        return new StructureIndex(
+            structureCacheRoot,
+            session.world(),
+            session.dimension().fileName(),
+            (type, regionX, regionZ) -> {
+                if (!predictionState.seedKnown() || !cn.net.rms.confluxmap.nativepredict.NativeLib.available()) {
+                    return new long[0];
+                }
+                final int nativeDim = cn.net.rms.confluxmap.core.predict.PredictionDimensions.nativeDim(session.dimension());
+                if (nativeDim < 0) {
+                    return new long[0];
+                }
+                final cn.net.rms.confluxmap.nativepredict.CubiomesContext context =
+                    cn.net.rms.confluxmap.nativepredict.CubiomesContexts.get(predictionState.mcVersion(), predictionState.seed(), nativeDim, 0);
+                if (context == null) {
+                    return new long[0];
+                }
+                final long[] positions = new long[64];
+                final int count = context.structures(type.nativeId(), regionX, regionZ, regionX, regionZ, positions);
+                return java.util.Arrays.copyOf(positions, Math.max(0, Math.min(count, positions.length)));
+            }
+        );
+    }
+
+    /** Rebinds the persistent prediction metadata when the open screen crosses a session boundary. */
+    private void refreshStructureIndex() {
+        final SessionGuard.Session session = gameBridge.session();
+        if (structureWorld.equals(session.world()) && structureDimension.equals(session.dimension())) {
+            return;
+        }
+        structureIndex.save();
+        structureWorld = session.world();
+        structureDimension = session.dimension();
+        structureIndex = createStructureIndex(session);
     }
 
     /** Keep the world (and this session's capture pipeline) running while the map is open. */
@@ -395,6 +425,7 @@ public final class FullscreenMapScreen extends Screen {
         if (!config.predictionShowStructures || currentLod() > 2 || !predictionState.seedKnown()) {
             return;
         }
+        refreshStructureIndex();
         final int lod = currentLod();
         final int minX = (int) Math.floor(centerX - width / 2.0 * scale);
         final int maxX = (int) Math.ceil(centerX + width / 2.0 * scale);
