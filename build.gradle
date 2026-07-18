@@ -13,3 +13,81 @@ preprocess {
         versions[i].link versions[i + 1], file("versions/mapping-${versions[i].project}-${versions[i + 1].project}.txt")
     }
 }
+
+// Native prediction library (native/README.md has the full maintainer writeup). Neither task
+// runs as part of the normal build/check lifecycle: contributors without a C toolchain build
+// against the binaries already committed under native/prebuilt/, which common.gradle copies
+// into every version subproject's jar via processResources.
+final List<String> nativeSources = [
+    'native/shim/confluxnative.c',
+    'native/cubiomes/biomenoise.c',
+    'native/cubiomes/biomes.c',
+    'native/cubiomes/generator.c',
+    'native/cubiomes/layers.c',
+    'native/cubiomes/noise.c',
+    'native/cubiomes/finders.c',
+]
+final List<String> nativeCflags = [
+    '-shared', '-fPIC', '-O2', '-fno-fast-math', '-ffp-contract=off', '-fvisibility=hidden', '-Wall',
+    '-Inative/jni', '-Inative/cubiomes',
+]
+
+tasks.register('buildNativesHost', Exec) {
+    group = 'build'
+    description = 'Compiles the cubiomes+shim native library for this host (linux-x86_64) into native/prebuilt/.'
+    final File outFile = rootProject.file('native/prebuilt/linux-x86_64/libconfluxnative.so')
+    inputs.files(nativeSources.collect { final String src -> rootProject.file(src) })
+    inputs.dir rootProject.file('native/cubiomes/tables')
+    inputs.dir rootProject.file('native/jni')
+    outputs.file outFile
+    doFirst {
+        outFile.parentFile.mkdirs()
+    }
+    workingDir rootProject.projectDir
+    commandLine(['cc'] + nativeCflags + ['-o', outFile.absolutePath] + nativeSources + ['-lm'])
+}
+
+tasks.register('buildNativesAll') {
+    group = 'build'
+    description = 'Cross-compiles the native library for every supported target with zig cc (maintainer-only; see native/README.md).'
+    doLast {
+        final Process which = ['which', 'zig'].execute()
+        which.waitFor()
+        if (which.exitValue() != 0) {
+            throw new GradleException(
+                'buildNativesAll requires the `zig` toolchain (zig cc) on PATH, which is not installed on this machine. ' +
+                'Install zig (https://ziglang.org/download/) and re-run, or build a single target with buildNativesHost. ' +
+                'See native/README.md for the target list.'
+            )
+        }
+        final List<Map<String, String>> targets = [
+            [zigTarget: 'x86_64-linux-gnu.2.17', dir: 'linux-x86_64', lib: 'libconfluxnative.so'],
+            [zigTarget: 'aarch64-linux-gnu.2.17', dir: 'linux-aarch64', lib: 'libconfluxnative.so'],
+            [zigTarget: 'x86_64-windows-gnu', dir: 'windows-x86_64', lib: 'confluxnative.dll'],
+            [zigTarget: 'x86_64-macos', dir: 'macos-x86_64', lib: 'libconfluxnative.dylib'],
+            [zigTarget: 'aarch64-macos', dir: 'macos-aarch64', lib: 'libconfluxnative.dylib'],
+        ]
+        targets.each { final Map<String, String> target ->
+            final File outDir = rootProject.file("native/prebuilt/${target.dir}")
+            outDir.mkdirs()
+            final File outFile = new File(outDir, target.lib)
+            final List<String> command = ['zig', 'cc', '-target', target.zigTarget] + nativeCflags + ['-o', outFile.absolutePath] + nativeSources + ['-lm']
+            final Process process = command.execute(null, rootProject.projectDir)
+            final StringWriter output = new StringWriter()
+            process.waitForProcessOutput(output, output)
+            if (process.exitValue() != 0) {
+                throw new GradleException("zig cc failed for target ${target.zigTarget} (exit ${process.exitValue()}):\n${output}")
+            }
+            // The Windows (MinGW) link step also drops an import lib + a multi-megabyte PDB next
+            // to the DLL; both are link-time-only artifacts a JNI System.load() never touches,
+            // not worth committing.
+            final String baseName = target.lib.replaceAll(/\.[^.]+$/, '')
+            [".lib", ".pdb"].each { final String ext ->
+                final File byproduct = new File(outDir, baseName + ext)
+                if (byproduct.exists()) {
+                    byproduct.delete()
+                }
+            }
+        }
+    }
+}
