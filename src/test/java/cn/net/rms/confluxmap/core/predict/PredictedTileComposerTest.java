@@ -6,6 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
+import cn.net.rms.confluxmap.core.model.SurfaceKind;
+import cn.net.rms.confluxmap.core.net.PatchCodec;
+import cn.net.rms.confluxmap.core.net.Proto;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 
@@ -79,5 +82,48 @@ class PredictedTileComposerTest {
         grid.biomeId[BaselineGrid.index(6, 6)] = 44;
         final int[] pixels = PredictedTileComposer.compose(derived, grid, PredictionPalette.defaults(), false, 1f);
         assertEquals(pixels[5 * 256 + 5], pixels[6 * 256 + 6]);
+    }
+
+    @Test
+    void correctedWaterUsesTheSameWaterPipelineAsPredictedWater() {
+        final BaselineGrid grid = new BaselineGrid();
+        final DerivedGrid derived = new DerivedGrid();
+        Arrays.fill(grid.biomeId, 0);
+        Arrays.fill(derived.kind, (byte) SurfaceKind.WATER.ordinal());
+        Arrays.fill(derived.surfaceY, BaselineDeriver.WATER_LEVEL);
+        Arrays.fill(derived.fluidDepth, 12);
+        final int pixel = 20 * 256 + 10;
+        final int[] baseline = PredictedTileComposer.compose(derived, grid, PredictionPalette.defaults(), false, 1f);
+
+        final CorrectionTile corrections = new CorrectionTile();
+        corrections.applyPatch(1L, new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(java.util.List.of(
+            new PatchCodec.Sample(pixel, 46, BaselineDeriver.WATER_LEVEL, SurfaceKind.WATER.ordinal(), 12, 12)
+        )));
+        final int[] corrected = PredictedTileComposer.compose(
+            derived, grid, PredictionPalette.defaults(), false, 1f, corrections, PredictionViewMode.EVERYWHERE, 2
+        );
+
+        assertEquals(baseline[pixel], corrected[pixel], "a natural water correction must not become an opaque blue map-color block");
+    }
+
+    @Test
+    void unknownCorrectionDoesNotPunchATransparentHoleInThePrediction() {
+        final BaselineGrid grid = new BaselineGrid();
+        final DerivedGrid derived = new DerivedGrid();
+        Arrays.fill(grid.biomeId, 1);
+        Arrays.fill(derived.kind, (byte) SurfaceKind.LAND.ordinal());
+        Arrays.fill(derived.surfaceY, 70);
+        final int pixel = 22 * 256 + 11;
+        final int[] baseline = PredictedTileComposer.compose(derived, grid, PredictionPalette.defaults(), false, 1f);
+
+        final CorrectionTile corrections = new CorrectionTile();
+        corrections.applyPatch(1L, new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(java.util.List.of(
+            new PatchCodec.Sample(pixel, 1, 0, SurfaceKind.UNKNOWN.ordinal(), Proto.MAP_COLOR_NONE, 0)
+        )));
+        final int[] corrected = PredictedTileComposer.compose(
+            derived, grid, PredictionPalette.defaults(), false, 1f, corrections, PredictionViewMode.EVERYWHERE, 2
+        );
+
+        assertEquals(baseline[pixel], corrected[pixel], "an incomplete server summary must not erase a valid predicted pixel");
     }
 }

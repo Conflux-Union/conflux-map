@@ -56,14 +56,24 @@ public final class PredictedTileComposer {
         final int[] surface = derived.surfaceY.clone();
         final byte[] kinds = derived.kind.clone();
         final int[] fluids = derived.fluidDepth.clone();
+        final int[] biomes = grid.biomeId.clone();
         final int[] colors = new int[size * size];
         final boolean[] corrected = new boolean[size * size];
         if (corrections != null) {
             for (final PatchCodec.Sample sample : corrections.copyPatch().samples()) {
                 final int pixel = sample.pixelIndex();
-                surface[BaselineGrid.index(pixel & 255, pixel >>> 8)] = sample.surfaceY();
-                kinds[BaselineGrid.index(pixel & 255, pixel >>> 8)] = (byte) sample.kind();
-                fluids[BaselineGrid.index(pixel & 255, pixel >>> 8)] = sample.fluidDepth();
+                final SurfaceKind correctedKind = SurfaceKind.byOrdinal(sample.kind());
+                // UNKNOWN means the server summary did not have a usable surface column (most
+                // commonly a structure_starts chunk without heightmaps). It is not authoritative
+                // terrain and must never erase the deterministic baseline underneath it.
+                if (correctedKind == SurfaceKind.UNKNOWN) {
+                    continue;
+                }
+                final int gridIndex = BaselineGrid.index(pixel & 255, pixel >>> 8);
+                surface[gridIndex] = sample.surfaceY();
+                kinds[gridIndex] = (byte) sample.kind();
+                fluids[gridIndex] = sample.fluidDepth();
+                biomes[gridIndex] = sample.biomeId();
                 colors[pixel] = sample.mapColorId();
                 corrected[pixel] = true;
             }
@@ -90,12 +100,10 @@ public final class PredictedTileComposer {
                     // absolute-height shading. Real captured tiles retain slope shading.
                     true, false, surfaceY, ShadingPipeline.REFERENCE_HEIGHT, null
                 );
-                final int biomeId = grid.biomeId[idx];
+                final int biomeId = biomes[idx];
 
                 int composed;
-                if (corrected[outIdx] && colors[outIdx] != 0xFF) {
-                    composed = ShadingPipeline.applyShade(MapColorTable.argb(colors[outIdx]), shade);
-                } else if (kind == SurfaceKind.WATER) {
+                if (kind == SurfaceKind.WATER) {
                     // A single unified ocean tint instead of the per-biome waterColor: warm/cold/
                     // lukewarm ocean each carry different hues, and cubiomes' coarse biome grid makes
                     // adjacent predicted tiles snap to different ocean variants along a coast, fracturing
@@ -106,6 +114,8 @@ public final class PredictedTileComposer {
                     final int shadedWater = ShadingPipeline.applyShade(water, shade);
                     final int shadedFloor = ShadingPipeline.applyShade(floor, shade);
                     composed = ShadingPipeline.compositeOver(shadedWater, shadedFloor);
+                } else if (corrected[outIdx] && colors[outIdx] != 0xFF) {
+                    composed = ShadingPipeline.applyShade(MapColorTable.argb(colors[outIdx]), shade);
                 } else {
                     composed = ShadingPipeline.applyShade(colorFor(kind, biomeId, palette), shade);
                 }

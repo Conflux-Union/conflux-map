@@ -21,9 +21,64 @@ public interface BaselineSampler {
      */
     boolean biomes(int scale, int x, int z, int w, int h, int[] out);
 
+    /**
+     * Fills an output grid whose neighboring cells are {@code stride} native coordinates apart.
+     * The default implementation batches one dense source row at a time; native-backed samplers
+     * override this with one JNI call so high LODs do not materialize a mostly-discarded square.
+     */
+    default boolean biomesStrided(
+        final int scale, final int x, final int z, final int w, final int h, final int stride, final int[] out
+    ) {
+        final int rawWidth = (w - 1) * stride + 1;
+        final int[] row = new int[rawWidth];
+        for (int zz = 0; zz < h; zz++) {
+            if (!biomes(scale, x, z + zz * stride, rawWidth, 1, row)) {
+                return false;
+            }
+            for (int xx = 0; xx < w; xx++) {
+                out[zz * w + xx] = row[xx * stride];
+            }
+        }
+        return true;
+    }
+
     /** Overworld: floored heights for a w*h rectangle at 1:4 scale ({@code x4}/{@code z4} = blockX/4, blockZ/4). */
     boolean heights(int x4, int z4, int w, int h, int[] outY);
 
+    /** Strided Overworld height equivalent of {@link #biomesStrided}. */
+    default boolean heightsStrided(
+        final int x4, final int z4, final int w, final int h, final int stride, final int[] outY
+    ) {
+        final int rawWidth = (w - 1) * stride + 1;
+        final int[] row = new int[rawWidth];
+        for (int zz = 0; zz < h; zz++) {
+            if (!heights(x4, z4 + zz * stride, rawWidth, 1, row)) {
+                return false;
+            }
+            for (int xx = 0; xx < w; xx++) {
+                outY[zz * w + xx] = row[xx * stride];
+            }
+        }
+        return true;
+    }
+
     /** End: floored End surface heights (0 = void) for a w*h rectangle at 1:4 scale. */
     boolean endHeights(int x4, int z4, int w, int h, int[] outY);
+
+    /** Strided End height equivalent of {@link #biomesStrided}. */
+    default boolean endHeightsStrided(
+        final int x4, final int z4, final int w, final int h, final int stride, final int[] outY
+    ) {
+        final int rawWidth = (w - 1) * stride + 1;
+        final int[] row = new int[rawWidth];
+        for (int zz = 0; zz < h; zz++) {
+            if (!endHeights(x4, z4 + zz * stride, rawWidth, 1, row)) {
+                return false;
+            }
+            for (int xx = 0; xx < w; xx++) {
+                outY[zz * w + xx] = row[xx * stride];
+            }
+        }
+        return true;
+    }
 }

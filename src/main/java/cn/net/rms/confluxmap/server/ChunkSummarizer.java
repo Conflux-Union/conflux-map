@@ -17,8 +17,17 @@ public final class ChunkSummarizer {
             return SummaryCodec.Chunk.empty();
         }
         final NbtCompound level = root.getCompound("Level");
+        // Region files contain partially-generated chunks as early as structure_starts. They
+        // have no usable surface heightmap yet; treating them as generated produced 0-height
+        // UNKNOWN corrections which punched transparent/black holes into valid predictions.
+        if (!"full".equals(level.getString("Status"))) {
+            return SummaryCodec.Chunk.empty();
+        }
         final long[] heights = level.contains("Heightmaps", 10)
             ? level.getCompound("Heightmaps").getLongArray("MOTION_BLOCKING") : new long[0];
+        if (heights.length == 0) {
+            return SummaryCodec.Chunk.empty();
+        }
         final int[] biomes = level.contains("Biomes", 11) ? level.getIntArray("Biomes") : new int[0];
         final NbtList sections = level.contains("Sections", 9) ? level.getList("Sections", 10) : new NbtList();
         final List<Section> parsed = parseSections(sections);

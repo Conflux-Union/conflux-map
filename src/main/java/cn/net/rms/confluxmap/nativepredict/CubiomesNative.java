@@ -49,6 +49,9 @@ final class CubiomesNative {
      */
     static native int cfxBiomes(long handle, int scale, int x, int z, int w, int h, int[] out);
 
+    /** Strided variant: adjacent output cells are {@code stride} coordinates apart at {@code scale}. */
+    static native int cfxBiomesStrided(long handle, int scale, int x, int z, int w, int h, int stride, int[] out);
+
     /**
      * Overworld-only: fills {@code outY} (floored block heights) and {@code outIds} (biome ids)
      * for a {@code w*h} rectangle at 1:4 scale, {@code x4}/{@code z4} being {@code blockX/4} and
@@ -57,6 +60,9 @@ final class CubiomesNative {
      */
     static native int cfxHeights(long handle, int x4, int z4, int w, int h, int[] outY, int[] outIds);
 
+    /** Strided 1:4 Overworld heights; adjacent output cells are {@code stride} native cells apart. */
+    static native int cfxHeightsStrided(long handle, int x4, int z4, int w, int h, int stride, int[] outY, int[] outIds);
+
     /**
      * End-only: fills {@code outY} with floored End surface heights for a {@code w*h} rectangle
      * at 1:4 scale (same coordinate convention as {@link #cfxHeights}). A height of {@code 0}
@@ -64,6 +70,9 @@ final class CubiomesNative {
      * handle's dimension isn't End.
      */
     static native int cfxEndHeights(long handle, int x4, int z4, int w, int h, int[] outY);
+
+    /** Strided 1:4 End heights; adjacent output cells are {@code stride} native cells apart. */
+    static native int cfxEndHeightsStrided(long handle, int x4, int z4, int w, int h, int stride, int[] outY);
 
     /**
      * Packs one structure-generation-attempt block position per region in

@@ -2,9 +2,12 @@ package cn.net.rms.confluxmap.core.predict;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.util.Argb;
+import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import java.util.OptionalInt;
@@ -80,5 +83,26 @@ class PredictionNativeIntegrationTest {
             }
         }
         assertTrue(anyTransparent, "expected at least one void/transparent pixel far from the End's main island");
+    }
+
+    @Test
+    void reportedOceanCoordinateStaysWaterAtLod4() {
+        final long reportedSeed = 6512112982729996127L;
+        final int blockX = -2819;
+        final int blockZ = -96;
+        final int lod = 4;
+        final int originX = TileMath.blockToTile(blockX, lod) * TileMath.blocksPerTile(lod);
+        final int originZ = TileMath.blockToTile(blockZ, lod) * TileMath.blocksPerTile(lod);
+        final NativeBaselineSampler sampler = new NativeBaselineSampler(mc17(), reportedSeed, PredictionDimensions.OVERWORLD);
+        final BaselineGrid grid = LodSampling.sample(sampler, false, lod, originX, originZ);
+        assertNotNull(grid);
+        final DerivedGrid derived = BaselineDeriver.derive(grid);
+        final int pixelX = TileMath.blockToPixelInTile(blockX, lod);
+        final int pixelZ = TileMath.blockToPixelInTile(blockZ, lod);
+        assertEquals(
+            SurfaceKind.WATER,
+            SurfaceKind.byOrdinal(derived.kind[BaselineGrid.index(pixelX, pixelZ)]),
+            "the reported ocean coordinate must not turn into green land at the LOD4 threshold"
+        );
     }
 }

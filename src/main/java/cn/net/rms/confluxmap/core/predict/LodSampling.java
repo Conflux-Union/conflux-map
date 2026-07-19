@@ -14,17 +14,19 @@ import cn.net.rms.confluxmap.core.color.ShadingPipeline;
  *   <li>LOD0: biomes at native scale 1 (1:1 with pixels); heights at native 1:4 scale, expanded
  *       x4 by fixed-point integer bilinear (per-axis lerp, composed - {@link Math#floorDiv} only,
  *       no float/double anywhere in this class).
- *   <li>LOD1: biomes at native scale 4 (4 blocks/sample = exactly 2 pixels/sample at this LOD's
- *       2 blocks/pixel), nearest-neighbor expanded x2; heights at native 1:4 scale, fixed-point
+ *   <li>LOD1: biomes at final scale 1, sampled every 2 blocks (one distinct biome lookup per
+ *       output pixel); heights at native 1:4 scale, fixed-point
  *       bilinear interpolated to per-pixel resolution (matching the real LOD1 tile, which is a
  *       downsample of full-resolution LOD0 data, far better than the old nearest x2 expand).
  *   <li>LOD2: biomes/heights both at native scale 4, exactly 1:1 with this LOD's 4-block pixels -
  *       no expansion at all.
- *   <li>LOD3: biomes at native scale 16, nearest-neighbor expanded x2; heights still queried at
+ *   <li>LOD3: biomes at final scale 4, sampled every 2 native cells; heights still queried at
  *       native 1:4 scale (finer than this LOD's 8-block pixels by exactly 2x per axis), then
  *       2x2-integer-mean pooled down to pixel resolution.
- *   <li>LOD4: biomes at native scale 16, 1:1 with pixels; heights use one nearest 1:4 sample
- *       per pixel so the coarse preview can still distinguish ocean from elevated land.
+ *   <li>LOD4: biomes use final scale 4 with a 4-cell stride, preserving one distinct sample per
+ *       16-block output pixel without falling back to cubiomes' visibly coarser scale-16
+ *       pre-zoom layer. Heights are sampled on a 64-block grid and bilinearly interpolated to
+ *       16-block pixels, spanning the correct world area without making each tile prohibitively slow.
  * </ul>
  *
  * <p>Every grid (both biomes and heights) is sampled over the full margin range {@code
@@ -39,10 +41,10 @@ public final class LodSampling {
     private static final int P_MIN = -BaselineGrid.MARGIN;
     private static final int P_MAX = PIXELS - 1 + BaselineGrid.MARGIN;
 
-    /** Native biome scale per LOD (cubiomes {@code Range} scale: 1, 4 or 16). */
-    private static final int[] BIOME_SCALE = {1, 4, 4, 16, 16};
-    /** Pixels sharing one nearest-neighbor biome sample per LOD (1 = no expansion). */
-    private static final int[] BIOME_EXPAND = {1, 2, 1, 2, 1};
+    /** Final biome layer used per LOD (cubiomes {@code Range} scale: 1 or 4). */
+    private static final int[] BIOME_SCALE = {1, 1, 4, 4, 4};
+    /** Native coordinates advanced per output pixel at each LOD. */
+    private static final int[] BIOME_STRIDE = {1, 2, 1, 2, 4};
 
     private LodSampling() {
     }
@@ -73,24 +75,14 @@ public final class LodSampling {
         final BaselineSampler sampler, final int lod, final int tileOriginX, final int tileOriginZ, final BaselineGrid grid
     ) {
         final int scale = BIOME_SCALE[lod];
-        final int expand = BIOME_EXPAND[lod];
-        final int sMin = Math.floorDiv(P_MIN, expand);
-        final int sMax = Math.floorDiv(P_MAX, expand);
-        final int sw = sMax - sMin + 1;
-        final int nativeX0 = Math.floorDiv(tileOriginX, scale) + sMin;
-        final int nativeZ0 = Math.floorDiv(tileOriginZ, scale) + sMin;
-
-        final int[] raw = new int[sw * sw];
-        if (!sampler.biomes(scale, nativeX0, nativeZ0, sw, sw, raw)) {
+        final int stride = BIOME_STRIDE[lod];
+        final int nativeX0 = Math.floorDiv(tileOriginX, scale) + P_MIN * stride;
+        final int nativeZ0 = Math.floorDiv(tileOriginZ, scale) + P_MIN * stride;
+        final int[] raw = new int[BaselineGrid.SIZE * BaselineGrid.SIZE];
+        if (!sampler.biomesStrided(scale, nativeX0, nativeZ0, BaselineGrid.SIZE, BaselineGrid.SIZE, stride, raw)) {
             return false;
         }
-        for (int pz = P_MIN; pz <= P_MAX; pz++) {
-            final int sz = Math.floorDiv(pz, expand) - sMin;
-            for (int px = P_MIN; px <= P_MAX; px++) {
-                final int sx = Math.floorDiv(px, expand) - sMin;
-                grid.biomeId[BaselineGrid.index(px, pz)] = raw[sz * sw + sx];
-            }
-        }
+        System.arraycopy(raw, 0, grid.biomeId, 0, raw.length);
         return true;
     }
 
@@ -113,9 +105,11 @@ public final class LodSampling {
                 return sampleHeightsMeanPool(sampler, end, tileOriginX, tileOriginZ, grid);
             case 4:
                 // A flat reference height makes every ocean biome look like land because the
-                // water rule is height-gated. One coarse 1:4 sample per 16-block pixel keeps the
-                // high-LOD preview's water mask correct without paying for a full 4x4 pool.
-                return sampleHeightsNearest(sampler, end, tileOriginX, tileOriginZ, grid, 1);
+                // water rule is height-gated. Sample the whole tile on a coarser 64-block grid,
+                // then interpolate to its 16-block pixels. This keeps world coordinates correct
+                // (the old stride-1 query only covered one quarter per axis) while avoiding the
+                // multi-second cost of calculating 258 full height rows per tile.
+                return sampleHeightsBilinearCoarse(sampler, end, tileOriginX, tileOriginZ, grid, 4);
             default:
                 return false;
         }
@@ -171,27 +165,75 @@ public final class LodSampling {
         return true;
     }
 
-    /** LOD1 (expand=2) / LOD2 (expand=1): 4-block native samples, nearest-neighbor expanded. */
-    private static boolean sampleHeightsNearest(
+    /**
+     * Samples one height every {@code pixelsPerSample} output pixels, then fixed-point bilinearly
+     * interpolates between those anchors. Used by LOD4, where one output pixel is 16 blocks and
+     * a four-pixel anchor interval is therefore a 64-block terrain grid.
+     */
+    private static boolean sampleHeightsBilinearCoarse(
         final BaselineSampler sampler, final boolean end, final int tileOriginX, final int tileOriginZ,
-        final BaselineGrid grid, final int expand
+        final BaselineGrid grid, final int pixelsPerSample
     ) {
-        final int sMin = Math.floorDiv(P_MIN, expand);
-        final int sMax = Math.floorDiv(P_MAX, expand);
+        final int nativeStride = pixelsPerSample * 4; // 16 blocks/pixel divided by native 4-block cells
+        final int sMin = Math.floorDiv(P_MIN, pixelsPerSample);
+        final int sMax = Math.floorDiv(P_MAX, pixelsPerSample) + 1;
         final int sw = sMax - sMin + 1;
-        final int x4Origin = Math.floorDiv(tileOriginX, 4) + sMin;
-        final int z4Origin = Math.floorDiv(tileOriginZ, 4) + sMin;
-
+        final int x4Origin = Math.floorDiv(tileOriginX, 4) + sMin * nativeStride;
+        final int z4Origin = Math.floorDiv(tileOriginZ, 4) + sMin * nativeStride;
         final int[] raw = new int[sw * sw];
-        if (!fetchHeights(sampler, end, x4Origin, z4Origin, sw, sw, raw)) {
+        final boolean sampled = end
+            ? sampler.endHeightsStrided(x4Origin, z4Origin, sw, sw, nativeStride, raw)
+            : sampler.heightsStrided(x4Origin, z4Origin, sw, sw, nativeStride, raw);
+        if (!sampled) {
             return false;
         }
         for (int pz = P_MIN; pz <= P_MAX; pz++) {
-            final int sz = Math.floorDiv(pz, expand) - sMin;
+            final int baseZ = Math.floorDiv(pz, pixelsPerSample);
+            final int fz = pz - baseZ * pixelsPerSample;
+            final int sz0 = baseZ - sMin;
+            final int sz1 = sz0 + 1;
             for (int px = P_MIN; px <= P_MAX; px++) {
-                final int sx = Math.floorDiv(px, expand) - sMin;
-                final int raw0 = raw[sz * sw + sx];
-                grid.terrainY[BaselineGrid.index(px, pz)] = end && raw0 == 0 ? BaselineGrid.NO_SURFACE : raw0;
+                final int baseX = Math.floorDiv(px, pixelsPerSample);
+                final int fx = px - baseX * pixelsPerSample;
+                final int sx0 = baseX - sMin;
+                final int sx1 = sx0 + 1;
+                final int h00 = raw[sz0 * sw + sx0];
+                final int h10 = raw[sz0 * sw + sx1];
+                final int h01 = raw[sz1 * sw + sx0];
+                final int h11 = raw[sz1 * sw + sx1];
+                final int value;
+                if (end && h00 == 0 && h10 == 0 && h01 == 0 && h11 == 0) {
+                    value = BaselineGrid.NO_SURFACE;
+                } else {
+                    final int top = h00 + Math.floorDiv((h10 - h00) * fx, pixelsPerSample);
+                    final int bottom = h01 + Math.floorDiv((h11 - h01) * fx, pixelsPerSample);
+                    value = top + Math.floorDiv((bottom - top) * fz, pixelsPerSample);
+                }
+                grid.terrainY[BaselineGrid.index(px, pz)] = value;
+            }
+        }
+        return true;
+    }
+
+    /** 4-block native samples selected at {@code nativeStride} cells per output pixel. */
+    private static boolean sampleHeightsNearest(
+        final BaselineSampler sampler, final boolean end, final int tileOriginX, final int tileOriginZ,
+        final BaselineGrid grid, final int nativeStride
+    ) {
+        final int[] raw = new int[BaselineGrid.SIZE * BaselineGrid.SIZE];
+        final int x4 = Math.floorDiv(tileOriginX, 4) + P_MIN * nativeStride;
+        final int z4 = Math.floorDiv(tileOriginZ, 4) + P_MIN * nativeStride;
+        final boolean sampled = end
+            ? sampler.endHeightsStrided(x4, z4, BaselineGrid.SIZE, BaselineGrid.SIZE, nativeStride, raw)
+            : sampler.heightsStrided(x4, z4, BaselineGrid.SIZE, BaselineGrid.SIZE, nativeStride, raw);
+        if (!sampled) {
+            return false;
+        }
+        for (int pz = P_MIN; pz <= P_MAX; pz++) {
+            for (int px = P_MIN; px <= P_MAX; px++) {
+                final int index = BaselineGrid.index(px, pz);
+                final int raw0 = raw[index];
+                grid.terrainY[index] = end && raw0 == 0 ? BaselineGrid.NO_SURFACE : raw0;
             }
         }
         return true;

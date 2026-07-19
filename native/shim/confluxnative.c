@@ -31,7 +31,7 @@
 
 #include "finders.h"
 
-#define CFX_ABI 1
+#define CFX_ABI 2
 
 #define CFX_OK              0
 #define CFX_ERR_BAD_HANDLE  1
@@ -144,6 +144,54 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     return CFX_OK;
 }
 
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxBiomesStrided(
+    JNIEnv *env, jclass clazz, jlong handle, jint scale, jint x, jint z, jint w, jint h, jint stride, jintArray out
+) {
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL) {
+        return CFX_ERR_BAD_HANDLE;
+    }
+    if (!cfxValidCells(w, h) || stride <= 0) {
+        return CFX_ERR_BAD_SIZE;
+    }
+    if (!cfxValidScale(scale)) {
+        return CFX_ERR_BAD_ARGS;
+    }
+    const int64_t rawWidth64 = (int64_t) (w - 1) * stride + 1;
+    if (rawWidth64 <= 0 || rawWidth64 > CFX_MAX_CELLS || (*env)->GetArrayLength(env, out) < w * h) {
+        return CFX_ERR_BAD_SIZE;
+    }
+    const int rawWidth = (int) rawWidth64;
+    int *sampled = malloc(sizeof(int) * (size_t) w * (size_t) h);
+    if (sampled == NULL) {
+        return CFX_ERR_ALLOC;
+    }
+
+    for (int j = 0; j < h; j++) {
+        const Range r = { scale, x, z + j * stride, rawWidth, 1, 0, 1 };
+        int *row = allocCache(&ctx->g, r);
+        if (row == NULL) {
+            free(sampled);
+            return CFX_ERR_ALLOC;
+        }
+        const int err = genBiomes(&ctx->g, row, r);
+        if (err != 0) {
+            free(row);
+            free(sampled);
+            return CFX_ERR_GENERATION;
+        }
+        for (int i = 0; i < w; i++) {
+            sampled[j * w + i] = row[i * stride];
+        }
+        free(row);
+    }
+
+    (*env)->SetIntArrayRegion(env, out, 0, w * h, sampled);
+    free(sampled);
+    return CFX_OK;
+}
+
 JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxHeights(
     JNIEnv *env, jclass clazz, jlong handle, jint x4, jint z4, jint w, jint h, jintArray outY, jintArray outIds
 ) {
@@ -197,6 +245,64 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     return CFX_OK;
 }
 
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxHeightsStrided(
+    JNIEnv *env, jclass clazz, jlong handle, jint x4, jint z4, jint w, jint h, jint stride,
+    jintArray outY, jintArray outIds
+) {
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL) {
+        return CFX_ERR_BAD_HANDLE;
+    }
+    if (ctx->dim != DIM_OVERWORLD) {
+        return CFX_ERR_WRONG_DIM;
+    }
+    if (!cfxValidCells(w, h) || stride <= 0) {
+        return CFX_ERR_BAD_SIZE;
+    }
+    const int64_t rawWidth64 = (int64_t) (w - 1) * stride + 1;
+    if (rawWidth64 <= 0 || rawWidth64 > CFX_MAX_CELLS
+        || (*env)->GetArrayLength(env, outY) < w * h || (*env)->GetArrayLength(env, outIds) < w * h) {
+        return CFX_ERR_BAD_SIZE;
+    }
+    const int rawWidth = (int) rawWidth64;
+    float *rowY = malloc(sizeof(float) * (size_t) rawWidth);
+    int *rowIds = malloc(sizeof(int) * (size_t) rawWidth);
+    int *sampledY = malloc(sizeof(int) * (size_t) w * (size_t) h);
+    int *sampledIds = malloc(sizeof(int) * (size_t) w * (size_t) h);
+    if (rowY == NULL || rowIds == NULL || sampledY == NULL || sampledIds == NULL) {
+        free(rowY);
+        free(rowIds);
+        free(sampledY);
+        free(sampledIds);
+        return CFX_ERR_ALLOC;
+    }
+
+    for (int j = 0; j < h; j++) {
+        const int err = mapApproxHeight(rowY, rowIds, &ctx->g, &ctx->sn, x4, z4 + j * stride, rawWidth, 1);
+        if (err != 0) {
+            free(rowY);
+            free(rowIds);
+            free(sampledY);
+            free(sampledIds);
+            return CFX_ERR_GENERATION;
+        }
+        for (int i = 0; i < w; i++) {
+            const int source = i * stride;
+            sampledY[j * w + i] = (int) floorf(rowY[source]);
+            sampledIds[j * w + i] = rowIds[source];
+        }
+    }
+
+    (*env)->SetIntArrayRegion(env, outY, 0, w * h, sampledY);
+    (*env)->SetIntArrayRegion(env, outIds, 0, w * h, sampledIds);
+    free(rowY);
+    free(rowIds);
+    free(sampledY);
+    free(sampledIds);
+    return CFX_OK;
+}
+
 JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxEndHeights(
     JNIEnv *env, jclass clazz, jlong handle, jint x4, jint z4, jint w, jint h, jintArray outY
 ) {
@@ -244,6 +350,51 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
 
     free(y);
     free(iy);
+    return CFX_OK;
+}
+
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxEndHeightsStrided(
+    JNIEnv *env, jclass clazz, jlong handle, jint x4, jint z4, jint w, jint h, jint stride, jintArray outY
+) {
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL) {
+        return CFX_ERR_BAD_HANDLE;
+    }
+    if (ctx->dim != DIM_END) {
+        return CFX_ERR_WRONG_DIM;
+    }
+    if (!cfxValidCells(w, h) || stride <= 0) {
+        return CFX_ERR_BAD_SIZE;
+    }
+    const int64_t rawWidth64 = (int64_t) (w - 1) * stride + 1;
+    if (rawWidth64 <= 0 || rawWidth64 > CFX_MAX_CELLS || (*env)->GetArrayLength(env, outY) < w * h) {
+        return CFX_ERR_BAD_SIZE;
+    }
+    const int rawWidth = (int) rawWidth64;
+    float *rowY = malloc(sizeof(float) * (size_t) rawWidth);
+    int *sampledY = malloc(sizeof(int) * (size_t) w * (size_t) h);
+    if (rowY == NULL || sampledY == NULL) {
+        free(rowY);
+        free(sampledY);
+        return CFX_ERR_ALLOC;
+    }
+
+    for (int j = 0; j < h; j++) {
+        const int err = mapEndSurfaceHeight(rowY, &ctx->g.en, &ctx->sn, x4, z4 + j * stride, rawWidth, 1, 4, 0);
+        if (err != 0) {
+            free(rowY);
+            free(sampledY);
+            return CFX_ERR_GENERATION;
+        }
+        for (int i = 0; i < w; i++) {
+            sampledY[j * w + i] = (int) floorf(rowY[i * stride]);
+        }
+    }
+
+    (*env)->SetIntArrayRegion(env, outY, 0, w * h, sampledY);
+    free(rowY);
+    free(sampledY);
     return CFX_OK;
 }
 

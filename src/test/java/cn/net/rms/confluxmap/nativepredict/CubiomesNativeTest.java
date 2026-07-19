@@ -74,6 +74,50 @@ class CubiomesNativeTest {
     }
 
     @Test
+    void stridedQueriesMatchDenseGridSelection() {
+        final int w = 5;
+        final int h = 4;
+        final int stride = 3;
+        final int rawW = (w - 1) * stride + 1;
+        final int rawH = (h - 1) * stride + 1;
+        try (CubiomesContext ctx = open(OVERWORLD)) {
+            final int[] denseBiomes = new int[rawW * rawH];
+            final int[] stridedBiomes = new int[w * h];
+            assertEquals(0, ctx.biomes(4, -20, 30, rawW, rawH, denseBiomes));
+            assertEquals(0, ctx.biomesStrided(4, -20, 30, w, h, stride, stridedBiomes));
+
+            final int[] denseY = new int[rawW * rawH];
+            final int[] denseIds = new int[rawW * rawH];
+            final int[] stridedY = new int[w * h];
+            final int[] stridedIds = new int[w * h];
+            assertEquals(0, ctx.heights(-20, 30, rawW, rawH, denseY, denseIds));
+            assertEquals(0, ctx.heightsStrided(-20, 30, w, h, stride, stridedY, stridedIds));
+
+            for (int z = 0; z < h; z++) {
+                for (int x = 0; x < w; x++) {
+                    final int dense = (z * stride) * rawW + x * stride;
+                    final int sampled = z * w + x;
+                    assertEquals(denseBiomes[dense], stridedBiomes[sampled]);
+                    assertEquals(denseY[dense], stridedY[sampled]);
+                    assertEquals(denseIds[dense], stridedIds[sampled]);
+                }
+            }
+        }
+
+        try (CubiomesContext ctx = open(END)) {
+            final int[] denseY = new int[rawW * rawH];
+            final int[] stridedY = new int[w * h];
+            assertEquals(0, ctx.endHeights(-20, 30, rawW, rawH, denseY));
+            assertEquals(0, ctx.endHeightsStrided(-20, 30, w, h, stride, stridedY));
+            for (int z = 0; z < h; z++) {
+                for (int x = 0; x < w; x++) {
+                    assertEquals(denseY[(z * stride) * rawW + x * stride], stridedY[z * w + x]);
+                }
+            }
+        }
+    }
+
+    @Test
     void spotBiomesShowARealisticMix() {
         // captured from cubiomes e61f90580cbd on 2026-07-17: savanna(35), river(7), forest(4),
         // desert_hills(17), desert(2), ocean(0) - a plausible, non-degenerate mix of land/water.

@@ -17,8 +17,8 @@ import java.util.Arrays;
 /** Atomic on-disk codec for one client's absolute prediction correction tile. */
 public final class PredictionTileCodec {
     public static final byte[] MAGIC = {'C', 'F', 'P', 'T'};
-    /** Bumped when tile/presence coordinate semantics change; old corrections are non-authoritative. */
-    public static final int FORMAT_VERSION = 2;
+    /** Bumped whenever persisted correction semantics change; old corrections are non-authoritative. */
+    public static final int FORMAT_VERSION = 3;
 
     private PredictionTileCodec() {
     }

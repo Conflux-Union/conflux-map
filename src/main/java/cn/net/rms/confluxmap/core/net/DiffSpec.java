@@ -99,11 +99,12 @@ public final class DiffSpec {
     public static Set<Integer> expectedMapColors(final int biomeId) {
         final BiomeTable.Entry entry = BiomeTable.get(biomeId);
         final Set<Integer> result = new HashSet<>();
+        if (entry.waterBiome()) {
+            result.add(12);
+            result.add(13);
+            return Collections.unmodifiableSet(result);
+        }
         switch (entry.kind()) {
-            case WATER:
-                result.add(12);
-                result.add(13);
-                break;
             case SAND:
                 result.add(2);
                 result.add(15);

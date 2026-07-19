@@ -6,7 +6,7 @@ overlays it; predictions never enter the `.cfr` column cache.
 ## Determinism
 
 The wire baseline is `{biomeId u8, surfaceY i16, kind u8, fluidDepth u8}`. The predictor version
-is `cb:e61f90580cbd|shim:1|base:1`; palette colours are local and never sent. Forest `LAND` and
+is `cb:e61f90580cbd|shim:2|base:3`; palette colours are local and never sent. Forest `LAND` and
 `FOLIAGE` are equivalent for diffing, height differences up to 2 blocks are tolerated (6 in
 forested pixels), and fluid depth compares in buckets `0`, `1-3`, `4-9`, `10+`. A real map colour
 outside the biome's expected set is retained as a correction so player builds are visible.

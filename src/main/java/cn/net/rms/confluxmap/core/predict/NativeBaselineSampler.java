@@ -36,6 +36,19 @@ public final class NativeBaselineSampler implements BaselineSampler {
     }
 
     @Override
+    public boolean biomesStrided(
+        final int scale, final int x, final int z, final int w, final int h, final int stride, final int[] out
+    ) {
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, FLAGS);
+            return ctx != null && ctx.biomesStrided(scale, x, z, w, h, stride, out) == 0;
+        } catch (final Throwable fault) {
+            NativeLib.disableForSession(fault);
+            return false;
+        }
+    }
+
+    @Override
     public boolean heights(final int x4, final int z4, final int w, final int h, final int[] outY) {
         try {
             final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, FLAGS);
@@ -51,10 +64,40 @@ public final class NativeBaselineSampler implements BaselineSampler {
     }
 
     @Override
+    public boolean heightsStrided(
+        final int x4, final int z4, final int w, final int h, final int stride, final int[] outY
+    ) {
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, FLAGS);
+            if (ctx == null) {
+                return false;
+            }
+            final int[] scratchIds = new int[w * h];
+            return ctx.heightsStrided(x4, z4, w, h, stride, outY, scratchIds) == 0;
+        } catch (final Throwable fault) {
+            NativeLib.disableForSession(fault);
+            return false;
+        }
+    }
+
+    @Override
     public boolean endHeights(final int x4, final int z4, final int w, final int h, final int[] outY) {
         try {
             final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, FLAGS);
             return ctx != null && ctx.endHeights(x4, z4, w, h, outY) == 0;
+        } catch (final Throwable fault) {
+            NativeLib.disableForSession(fault);
+            return false;
+        }
+    }
+
+    @Override
+    public boolean endHeightsStrided(
+        final int x4, final int z4, final int w, final int h, final int stride, final int[] outY
+    ) {
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, FLAGS);
+            return ctx != null && ctx.endHeightsStrided(x4, z4, w, h, stride, outY) == 0;
         } catch (final Throwable fault) {
             NativeLib.disableForSession(fault);
             return false;

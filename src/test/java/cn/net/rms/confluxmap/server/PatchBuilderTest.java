@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.server;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
+import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.predict.BaselineGrid;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -30,6 +31,25 @@ class PatchBuilderTest {
         assertEquals(1100, patch.sampleAt(64).surfaceY());
         assertEquals(1200, patch.sampleAt(128).surfaceY());
         assertEquals(1300, patch.sampleAt(192).surfaceY());
+    }
+
+    @Test
+    void unknownColumnsAreNotPublishedAsTransparentCorrections() {
+        final SummaryCodec.Column[] columns = new SummaryCodec.Column[SummaryCodec.COLUMNS];
+        Arrays.fill(columns, new SummaryCodec.Column(1, 0, SurfaceKind.UNKNOWN.ordinal(), Proto.MAP_COLOR_NONE, 0));
+        final SummaryCodec.Chunk generated = new SummaryCodec.Chunk(true, 10L, columns);
+        final SummaryCodec.Chunk[] chunks = new SummaryCodec.Chunk[SummaryCodec.CHUNKS];
+        Arrays.fill(chunks, SummaryCodec.Chunk.empty());
+        chunks[0] = generated;
+        final SummaryTile summary = new SummaryTile(0, 0, 0, List.of(new SummaryCodec.Region(0, 0, 0L, chunks)));
+        final BaselineGrid baseline = new BaselineGrid();
+        Arrays.fill(baseline.biomeId, 1);
+        Arrays.fill(baseline.terrainY, 70);
+
+        final PatchBuilder.Result result = new PatchBuilder().build(summary, 0L, baseline, true);
+
+        assertEquals(Proto.PATCH_MODE_UNCHANGED, result.mode());
+        assertEquals(0, result.recordCount());
     }
 
     private static SummaryCodec.Region region(final int rx, final int rz, final int surfaceY) {

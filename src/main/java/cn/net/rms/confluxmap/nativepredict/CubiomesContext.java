@@ -40,6 +40,15 @@ public final class CubiomesContext implements AutoCloseable {
         return CubiomesNative.cfxBiomes(handle, scale, x, z, w, h, out);
     }
 
+    /** Strided biome grid; adjacent output cells are {@code stride} native coordinates apart. */
+    public int biomesStrided(
+        final int scale, final int x, final int z, final int w, final int h, final int stride, final int[] out
+    ) {
+        requireOpen();
+        requireCapacity(out, w, h);
+        return CubiomesNative.cfxBiomesStrided(handle, scale, x, z, w, h, stride, out);
+    }
+
     /** Overworld-only: floored block heights (+ biome ids) for a {@code w*h} rectangle at 1:4 scale. */
     public int heights(final int x4, final int z4, final int w, final int h, final int[] outY, final int[] outIds) {
         requireOpen();
@@ -48,11 +57,30 @@ public final class CubiomesContext implements AutoCloseable {
         return CubiomesNative.cfxHeights(handle, x4, z4, w, h, outY, outIds);
     }
 
+    /** Strided Overworld height grid at 1:4 native scale. */
+    public int heightsStrided(
+        final int x4, final int z4, final int w, final int h, final int stride, final int[] outY, final int[] outIds
+    ) {
+        requireOpen();
+        requireCapacity(outY, w, h);
+        requireCapacity(outIds, w, h);
+        return CubiomesNative.cfxHeightsStrided(handle, x4, z4, w, h, stride, outY, outIds);
+    }
+
     /** End-only: floored End surface heights for a {@code w*h} rectangle at 1:4 scale ({@code 0} = no surface). */
     public int endHeights(final int x4, final int z4, final int w, final int h, final int[] outY) {
         requireOpen();
         requireCapacity(outY, w, h);
         return CubiomesNative.cfxEndHeights(handle, x4, z4, w, h, outY);
+    }
+
+    /** Strided End height grid at 1:4 native scale. */
+    public int endHeightsStrided(
+        final int x4, final int z4, final int w, final int h, final int stride, final int[] outY
+    ) {
+        requireOpen();
+        requireCapacity(outY, w, h);
+        return CubiomesNative.cfxEndHeightsStrided(handle, x4, z4, w, h, stride, outY);
     }
 
     /**

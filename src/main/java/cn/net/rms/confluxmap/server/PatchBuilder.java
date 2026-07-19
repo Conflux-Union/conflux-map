@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.core.net.DiffSpec;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
+import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.predict.BaselineDeriver;
 import cn.net.rms.confluxmap.core.predict.BaselineGrid;
 import cn.net.rms.confluxmap.core.predict.BaselineSampler;
@@ -73,6 +74,9 @@ public final class PatchBuilder {
                     derived.fluidDepth[baseIndex]
                 );
                 final SummaryCodec.Column column = actual.column();
+                if (column.kind() == SurfaceKind.UNKNOWN.ordinal()) {
+                    continue;
+                }
                 final DiffSpec.Sample observed = new DiffSpec.Sample(
                     column.biomeId(), column.surfaceY(), column.kind(), column.mapColorId(), column.fluidDepth()
                 );
@@ -143,6 +147,9 @@ public final class PatchBuilder {
                 final SummaryTile.Pixel actual = summary.pixel(x, z);
                 if (actual == null || !actual.chunk().generated() || actual.column() == null
                     || actual.chunk().revision() <= sinceRevision) {
+                    continue;
+                }
+                if (actual.column().kind() == SurfaceKind.UNKNOWN.ordinal()) {
                     continue;
                 }
                 records.add(toSample(x, z, actual.column()));
