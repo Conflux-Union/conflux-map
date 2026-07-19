@@ -2,15 +2,13 @@
 
 **English** | [简体中文](README-CN.md)
 
-Conflux Map is a Fabric client-side minimap and world map mod for Minecraft,
-built from a clean-room specification (see
-[`docs/reference-specs/`](docs/reference-specs/README.md)) rather than any
-existing mod's source. It is not affiliated with, endorsed by, or derived
-from **VoxelMap** or **Xaero's Minimap/World Map** - see
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for exactly how those
-projects were and weren't involved.
+Conflux Map is a Fabric client-side minimap and world map mod for Minecraft
+1.17.1. Its larger features are built from behavior specifications (see
+[`docs/reference-specs/`](docs/reference-specs/README.md)) and reimplemented
+from scratch in this project's own code. Third-party components and
+attribution are documented in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
-## Features (as of Milestone 1)
+## Features
 
 Milestone 1 is the client-side core: everything below works standalone
 against any server, vanilla or modded, with no server-side component
@@ -37,15 +35,28 @@ required.
   effect immediately, no restart required (see the keybind table below).
 - **Full English and Simplified Chinese localization.**
 
-Milestone 2 adds a seed-predicted underlay and optional server correction sync for the fullscreen
-map, backed by a vendored native [cubiomes](https://github.com/Cubitect/cubiomes)
-build (`cn.net.rms.confluxmap.nativepredict`) and MC-free prediction logic
-under `cn.net.rms.confluxmap.core.predict`: panning into unexplored Overworld
-or End terrain in singleplayer shows an instant seed-based guess (biomes,
-terrain height, and a synthesized tree canopy texture) that real captured
-tiles draw over as they load. The optional companion shares a seed only when configured and
-returns compact per-column corrections; correction tiles and generated presence persist across
-rejoin.
+Milestone 2 adds a seed-predicted underlay and optional server correction
+sync for the fullscreen map, backed by a vendored native
+[cubiomes](https://github.com/Cubitect/cubiomes) build
+(`cn.net.rms.confluxmap.nativepredict`) and MC-free prediction logic under
+`cn.net.rms.confluxmap.core.predict`:
+
+- **Seed-predicted underlay** - panning into unexplored Overworld or End
+  terrain shows an instant seed-based guess (biomes, terrain height, and a
+  synthesized tree canopy texture) that real captured tiles draw over as
+  they load.
+- **Structure candidate markers** - villages, ocean monuments, woodland
+  mansions, outposts, ruined portals, and end cities show up as
+  semi-transparent candidates until real data confirms or rules them out.
+  Toggle with the `predictionShowStructures` setting.
+- **Prediction view modes** - cycle with `P` between *everywhere* (underlay
+  across the whole map, default), *generated-only* (underlay masked to
+  chunks the server has generated; works offline from persisted
+  corrections), and *visited-only* (no underlay, pure M1).
+- **Optional companion sync** - the same jar runs an optional server
+  companion that compares the prediction against the real world and returns
+  compact per-column corrections; the seed is shared only when the operator
+  opts in. Correction tiles and generated-presence persist across rejoin.
 
 ## Keybinds
 
@@ -62,7 +73,8 @@ All keybinds are rebindable in Minecraft's normal Controls screen, under the
 | `U` | Open the waypoint list |
 | `B` | Create a new waypoint at your current position |
 | `,` | Open the settings screen |
-| `P` | Cycle prediction view mode |
+| `P` | Cycle prediction view mode (everywhere / generated-only / visited-only) |
+| `F9` | Reload prediction tiles |
 
 ## Building
 
