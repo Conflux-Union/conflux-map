@@ -1,0 +1,3 @@
+[submodule "native/cubiomes"]
+	path = native/cubiomes
+	url = https://github.com/Conflux-Union/cubiomes

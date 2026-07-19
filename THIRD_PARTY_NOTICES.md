@@ -10,9 +10,10 @@ and by reviewing every build dependency declared in `common.gradle` /
 `versions/*/gradle.properties`. No code, identifiers, textures, or other
 assets from Dynmap or BlueMap have been copied or adapted into this project -
 neither project is referenced anywhere in the source, and none of their code
-exists here. cubiomes *is* vendored, deliberately and under its own MIT
-license, as of the M2 seed-prediction native library - see "Vendored native
-code" below and `native/README.md` for the full provenance.
+exists here. cubiomes *is* used, deliberately and under its own MIT license,
+as of the M2 seed-prediction native library - pulled in as a git submodule
+pointing at this project's fork (see "Native code" below and
+`native/README.md` for the full provenance).
 
 ## Build-time dependencies
 
@@ -24,16 +25,17 @@ build. Neither is bundled inside the mod's output jar.
 | [Fabric API](https://github.com/FabricMC/fabric-api) | Apache License 2.0 | A separate Fabric Loader mod this project depends on (`modImplementation` in `common.gradle`, declared in `fabric.mod.json`'s `depends`) for `HudRenderCallback`, `ClientTickEvents`, `KeyBindingHelper`, `ClientPlayConnectionEvents`, `WorldRenderEvents`, and resource-reload hooks. End users must have Fabric API installed alongside this mod; it ships as its own jar, not inside ours. |
 | [preprocessor](https://github.com/Fallen-Breath/preprocessor) (Fallen_Breath's fork of [ReplayMod/preprocessor](https://github.com/ReplayMod/preprocessor)) | GPL-3.0 | A Gradle plugin (`com.replaymod.preprocess`, applied in `build.gradle`/`settings.gradle`) that manages the multi-Minecraft-version source layout under `versions/` and will drive the `//#if` conditional blocks once a second version is added (see the M1 plan). It contributes no runtime classes to the built mod - it only runs as part of the Gradle build itself. This repository started from this plugin's own example-mod template; the template's placeholder mod code has since been fully replaced by Conflux Map's own implementation. |
 
-## Vendored native code
+## Native code
 
-Source files copied directly into this repository (not fetched by Gradle),
-used to build the optional native seed-prediction library under `native/`.
-See [`native/README.md`](native/README.md) and `native/CUBIOMES_COMMIT` for
-the full provenance and the pinned commit.
+cubiomes is pulled in as a git submodule at `native/cubiomes/`; the JNI
+headers are still vendored directly at `native/jni/`. Both build the optional
+native seed-prediction library under `native/`. See
+[`native/README.md`](native/README.md) and `native/CUBIOMES_COMMIT` for the
+full provenance and the pinned commit.
 
 | Component | License | Role |
 |---|---|---|
-| [cubiomes](https://github.com/Cubitect/cubiomes) by Cubitect | MIT | Vendored unmodified at `native/cubiomes/` (commit pinned in `native/CUBIOMES_COMMIT`). Compiled by the `buildNativesHost`/`buildNativesAll` Gradle tasks together with this project's own `native/shim/confluxnative.c` into `native/prebuilt/<target>/libconfluxnative.*`, which **are committed and bundled inside the built jar** (as `natives/<target>/...`, copied in by `common.gradle`'s `processResources`) so the mod ships a working predictor without requiring end users to have a C toolchain. Loaded at runtime, if present for the current platform, by `cn.net.rms.confluxmap.nativepredict.NativeLib`. |
+| [cubiomes](https://github.com/Cubitect/cubiomes) by Cubitect | MIT | Referenced as a git submodule at `native/cubiomes/` pointing to this project's fork [`Conflux-Union/cubiomes`](https://github.com/Conflux-Union/cubiomes) (a fork of `Cubitect/cubiomes`), pinned to commit `e61f905` (see `native/CUBIOMES_COMMIT`). Compiled by the `buildNativesHost`/`buildNativesAll` Gradle tasks together with this project's own `native/shim/confluxnative.c` into `native/prebuilt/<target>/libconfluxnative.*`, which **are committed and bundled inside the built jar** (as `natives/<target>/...`, copied in by `common.gradle`'s `processResources`) so the mod ships a working predictor without requiring end users to have a C toolchain. Loaded at runtime, if present for the current platform, by `cn.net.rms.confluxmap.nativepredict.NativeLib`. |
 | OpenJDK JNI headers (`jni.h`, `jni_md.h`), copied from a local Eclipse Temurin 21 JDK install | GPL-2.0 WITH Classpath-exception-2.0 | Vendored at `native/jni/` purely so `native/shim/confluxnative.c` can be compiled against the JNI ABI. Build-time only - neither file is bundled inside the mod's output jar. |
 
 ## Bundled assets
@@ -55,7 +57,7 @@ the full provenance and the pinned commit.
 vanilla map colours, not copied Minecraft implementation code.
 
 Every other file under `src/`, `docs/reference-specs/`, `versions/`, and
-`native/` (except `native/cubiomes/` and `native/jni/`, both vendored and
-listed above) is original work written for Conflux Map, licensed under
-GPL-3.0 along with the rest of the project. That includes
+`native/` (except `native/cubiomes/` (git submodule) and `native/jni/`
+(vendored), both listed above) is original work written for Conflux Map,
+licensed under GPL-3.0 along with the rest of the project. That includes
 `native/shim/confluxnative.c`, the JNI shim around cubiomes.

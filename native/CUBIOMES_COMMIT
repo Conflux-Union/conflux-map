@@ -1,14 +1,16 @@
 upstream: https://github.com/Cubitect/cubiomes
-commit: e61f90580cbdd883214a8054670dacae655e59c0
+fork:     https://github.com/Conflux-Union/cubiomes (this project's fork)
+commit:   e61f90580cbdd883214a8054670dacae655e59c0
 commit date: 2024-11-10T13:21:31+01:00
-vendored on: 2026-07-17
+pinned via: native/cubiomes git submodule (converted from a vendored copy on 2026-07-17)
 license: MIT (see native/cubiomes/LICENSE)
 
-Vendored files (unmodified copies from the commit above):
+Files compiled from this commit by buildNativesHost/buildNativesAll
+(unmodified upstream sources, selected subset):
   biomenoise.c/h, biomes.c/h, generator.c/h, layers.c/h, noise.c/h,
   finders.c/h, rng.h, tables/btree18.h, tables/btree192.h,
   tables/btree19.h, tables/btree20.h, tables/btree21wd.h
 
-Not vendored (unused by this project - see native/README.md for the
-minimal-file-set rationale): quadbase.c/h, util.c/h, tests.c, docs/,
+Not compiled (upstream utilities/tests/docs present in the submodule but
+unused by this project): quadbase.c/h, util.c/h, tests.c, docs/,
 CMakeLists.txt, makefile.

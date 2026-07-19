@@ -1,23 +1,28 @@
 # Native prediction library
 
 This directory holds everything needed to build `confluxnative`, the small JNI
-shim (`shim/confluxnative.c`) around a vendored copy of
-[cubiomes](https://github.com/Cubitect/cubiomes) that the
+shim (`shim/confluxnative.c`) around [cubiomes](https://github.com/Cubitect/cubiomes),
+pulled in as a git submodule (our fork), that the
 `cn.net.rms.confluxmap.nativepredict` Java package loads to answer batch
 biome/height/structure queries. See `docs/reference-specs/` and the M2 plan
 for why this exists; this file is only the build/maintenance side of it.
 
 ## Layout
 
-- `cubiomes/` - vendored cubiomes sources, unmodified, MIT-licensed. Pinned
-  commit + upstream URL are in `CUBIOMES_COMMIT`. Only the files actually
-  needed to link `setupGenerator`/`applySeed`/`genBiomes`/`mapApproxHeight`/
-  `mapEndSurfaceHeight`/`getStructurePos`/`isViableStructurePos` are copied in
-  (`biomenoise`, `biomes`, `generator`, `layers`, `noise`, `finders`, `rng.h`,
-  `tables/`) - `quadbase.c/h` (multi-threaded quad-seed search) and `util.c/h`
-  (misc CLI helpers) are upstream utilities this project never calls, so they
-  were left out to keep the vendored tree minimal. Do not edit anything here;
-  if cubiomes needs a fix, vendor a newer commit instead.
+- `cubiomes/` - a git submodule pointing at this project's fork
+  [`Conflux-Union/cubiomes`](https://github.com/Conflux-Union/cubiomes) (itself
+  a fork of [`Cubitect/cubiomes`](https://github.com/Cubitect/cubiomes)),
+  MIT-licensed. Pinned to commit `e61f905` via the submodule gitlink; the
+  pinned commit and upstream URL are also recorded in `CUBIOMES_COMMIT` for
+  readability. Only the files needed to link
+  `setupGenerator`/`applySeed`/`genBiomes`/`mapApproxHeight`/
+  `mapEndSurfaceHeight`/`getStructurePos`/`isViableStructurePos` are compiled
+  by `buildNativesHost`/`buildNativesAll` (`biomenoise`, `biomes`, `generator`,
+  `layers`, `noise`, `finders`, `rng.h`, `tables/`) - upstream utilities this
+  project never calls (`quadbase.c/h`, `util.c/h`) ship in the submodule but
+  are not compiled. To change cubiomes, commit on the fork and bump the
+  submodule pin (`git -C native/cubiomes checkout <commit> && git add native/cubiomes`);
+  do not keep a divergent local copy.
 - `jni/` - `jni.h` + `jni_md.h` copied from a local OpenJDK 21 (Temurin)
   install's `include/` (GPL-2.0 WITH Classpath-exception-2.0, build-time
   only - see `THIRD_PARTY_NOTICES.md`). Only the **Linux** `jni_md.h` variant

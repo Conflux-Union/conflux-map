@@ -36,9 +36,10 @@ required.
 - **Full English and Simplified Chinese localization.**
 
 Milestone 2 adds a seed-predicted underlay and optional server correction
-sync for the fullscreen map, backed by a vendored native
-[cubiomes](https://github.com/Cubitect/cubiomes) build
-(`cn.net.rms.confluxmap.nativepredict`) and MC-free prediction logic under
+sync for the fullscreen map, backed by a native
+[cubiomes](https://github.com/Cubitect/cubiomes) build (pulled in as a git
+submodule from our Conflux-Union/cubiomes fork;
+`cn.net.rms.confluxmap.nativepredict`) and MC-free prediction logic under
 `cn.net.rms.confluxmap.core.predict`:
 
 - **Seed-predicted underlay** - panning into unexplored Overworld or End
