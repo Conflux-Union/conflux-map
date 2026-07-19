@@ -118,6 +118,23 @@ class CubiomesNativeTest {
     }
 
     @Test
+    void scaleOneStridedBiomeRowsMatchDenseTileAtReportedStripeCoordinate() {
+        final int w = 3;
+        final int h = 3;
+        try (CubiomesContext ctx = CubiomesContext.create(mc17(), 6512112982729996127L, OVERWORLD, 0)) {
+            assertNotNull(ctx);
+            final int[] dense = new int[w * h];
+            final int[] first = new int[w * h];
+            final int[] second = new int[w * h];
+            assertEquals(0, ctx.biomes(1, -830, -438, w, h, dense));
+            assertEquals(0, ctx.biomesStrided(1, -830, -438, w, h, 1, first));
+            assertEquals(0, ctx.biomesStrided(1, -830, -438, w, h, 1, second));
+            assertArrayEquals(first, second, "the row-wise result must be deterministic across calls");
+            assertArrayEquals(dense, first, "stride-one sampling must be identical to one dense scale-one query");
+        }
+    }
+
+    @Test
     void spotBiomesShowARealisticMix() {
         // captured from cubiomes e61f90580cbd on 2026-07-17: savanna(35), river(7), forest(4),
         // desert_hills(17), desert(2), ocean(0) - a plausible, non-degenerate mix of land/water.

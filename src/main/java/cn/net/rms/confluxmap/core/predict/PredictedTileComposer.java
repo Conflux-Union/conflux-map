@@ -13,10 +13,9 @@ import cn.net.rms.confluxmap.core.util.Argb;
  * ShadingPipeline#heightShade} against the same fixed {@link
  * ShadingPipeline#REFERENCE_HEIGHT} reference, water rendered as a translucent surface color
  * pre-composited over an approximated seafloor (see {@link #seafloorColor}, since there is no
- * real seafloor block to sample - cubiomes gives biome + terrain height only), and the same
- * day/night {@link ShadingPipeline#applyDaylight} blend applied to Overworld SURFACE tiles only
- * (never End, exactly like {@code MapLayer.Type.END_SURFACE} never gets it in the real pipeline -
- * the caller simply never passes {@code applyDaylight=true} for an End tile).
+ * real seafloor block to sample - cubiomes gives biome + terrain height only). Day/night lighting
+ * is deliberately not baked into these cached pixels: the fullscreen renderer applies one global
+ * tint to the entire predicted plane, so tiles composed at different times stay identical.
  *
  * <p>Deterministic: every input here is already-sampled/derived data plus a per-session {@link
  * PredictionPalette}; no randomness, no wall-clock or otherwise non-reproducible state.
@@ -33,11 +32,9 @@ public final class PredictedTileComposer {
     public static int[] compose(
         final DerivedGrid derived,
         final BaselineGrid grid,
-        final PredictionPalette palette,
-        final boolean applyDaylight,
-        final float daylightFactor
+        final PredictionPalette palette
     ) {
-        return compose(derived, grid, palette, applyDaylight, daylightFactor, null, PredictionViewMode.EVERYWHERE, 0);
+        return compose(derived, grid, palette, null, PredictionViewMode.EVERYWHERE, 0);
     }
 
     /** Composes with an optional absolute correction overlay and generated-only mask. */
@@ -45,8 +42,6 @@ public final class PredictedTileComposer {
         final DerivedGrid derived,
         final BaselineGrid grid,
         final PredictionPalette palette,
-        final boolean applyDaylight,
-        final float daylightFactor,
         final CorrectionTile corrections,
         final PredictionViewMode viewMode,
         final int lod
@@ -118,12 +113,6 @@ public final class PredictedTileComposer {
                     composed = ShadingPipeline.applyShade(MapColorTable.argb(colors[outIdx]), shade);
                 } else {
                     composed = ShadingPipeline.applyShade(colorFor(kind, biomeId, palette), shade);
-                }
-                if (applyDaylight) {
-                    // Predicted tiles have no per-column block-light data at all, so the darkening
-                    // curve reduces to the same "no artificial light" case a real unlit outdoor
-                    // column takes - see ShadingPipeline#applyDaylight's own javadoc.
-                    composed = ShadingPipeline.applyDaylight(composed, daylightFactor, 0);
                 }
                 out[outIdx] = composed;
             }

@@ -43,7 +43,7 @@ class PredictionNativeIntegrationTest {
         assertNotNull(grid, "native sampling must succeed for a valid version/seed");
         final DerivedGrid derived = BaselineDeriver.derive(grid);
         CanopyStylizer.apply(derived, grid, SEED, lod, tileOriginX, tileOriginZ);
-        return PredictedTileComposer.compose(derived, grid, PredictionPalette.defaults(), true, 1.0f);
+        return PredictedTileComposer.compose(derived, grid, PredictionPalette.defaults());
     }
 
     @Test
@@ -104,5 +104,56 @@ class PredictionNativeIntegrationTest {
             SurfaceKind.byOrdinal(derived.kind[BaselineGrid.index(pixelX, pixelZ)]),
             "the reported ocean coordinate must not turn into green land at the LOD4 threshold"
         );
+    }
+
+    // The broken scale-one row sampler produced 217 and 106 wide scanline transitions here;
+    // clean terrain still has some from long coastlines, so each fixture keeps its own bound.
+
+    @Test
+    void reportedLod1CoordinateDoesNotProduceHorizontalStripeCorruption() {
+        final int[] pixels = composeReportedTile(1, -633, -477);
+        final int wideTransitions = wideHorizontalTransitions(pixels);
+        assertTrue(
+            wideTransitions < 100,
+            "found " + wideTransitions + " scanline boundaries changing over half the tile width"
+        );
+    }
+
+    @Test
+    void reportedLod0CoordinateDoesNotProduceHorizontalStripeCorruption() {
+        final int[] pixels = composeReportedTile(0, -822, -430);
+        final int wideTransitions = wideHorizontalTransitions(pixels);
+        assertTrue(
+            wideTransitions < 64,
+            "found " + wideTransitions + " scanline boundaries changing over half the tile width"
+        );
+    }
+
+    private static int[] composeReportedTile(final int lod, final int blockX, final int blockZ) {
+        final long seed = 6512112982729996127L;
+        final int originX = TileMath.blockToTile(blockX, lod) * TileMath.blocksPerTile(lod);
+        final int originZ = TileMath.blockToTile(blockZ, lod) * TileMath.blocksPerTile(lod);
+        final NativeBaselineSampler sampler = new NativeBaselineSampler(mc17(), seed, PredictionDimensions.OVERWORLD);
+        final BaselineGrid grid = LodSampling.sample(sampler, false, lod, originX, originZ);
+        assertNotNull(grid);
+        final DerivedGrid derived = BaselineDeriver.derive(grid);
+        CanopyStylizer.apply(derived, grid, seed, lod, originX, originZ);
+        return PredictedTileComposer.compose(derived, grid, PredictionPalette.defaults());
+    }
+
+    private static int wideHorizontalTransitions(final int[] pixels) {
+        int wide = 0;
+        for (int z = 1; z < 256; z++) {
+            int changed = 0;
+            for (int x = 0; x < 256; x++) {
+                if (pixels[z * 256 + x] != pixels[(z - 1) * 256 + x]) {
+                    changed++;
+                }
+            }
+            if (changed > 128) {
+                wide++;
+            }
+        }
+        return wide;
     }
 }

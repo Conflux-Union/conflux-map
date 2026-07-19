@@ -28,9 +28,7 @@ class PredictionTileServiceTest {
     private static final WorldIdentity WORLD = WorldIdentity.singleplayer("prediction-tile-service-test");
 
     private static PredictionTileService newService(final SessionGuard sessionGuard, final MapExecutors executors, final TileService uploads) {
-        final ConfluxConfig config = new ConfluxConfig();
-        final DaylightModel daylightModel = new DaylightModel();
-        return new PredictionTileService(sessionGuard, new PredictionState(), executors, uploads, config, daylightModel);
+        return new PredictionTileService(sessionGuard, new PredictionState(), executors, uploads);
     }
 
     @Test

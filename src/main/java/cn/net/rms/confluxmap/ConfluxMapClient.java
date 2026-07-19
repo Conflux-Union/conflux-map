@@ -112,7 +112,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         // failed load just leaves NativeLib.available() false and prediction permanently disabled.
         NativeLib.init(FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID));
         predictionState = new PredictionState();
-        predictionTileService = new PredictionTileService(sessionGuard, predictionState, executors, tileService, config, daylightModel);
+        predictionTileService = new PredictionTileService(sessionGuard, predictionState, executors, tileService);
         predictionTileService.setViewMode(config.predictionViewMode);
         correctionStore = new CorrectionStore(
             FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("cache").resolve("prediction")
@@ -221,6 +221,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public TileService tileService() {
         return tileService;
+    }
+
+    public DaylightModel daylightModel() {
+        return daylightModel;
     }
 
     public RegionCacheService regionCache() {

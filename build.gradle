@@ -28,7 +28,7 @@ final List<String> nativeSources = [
     'native/cubiomes/finders.c',
 ]
 final List<String> nativeCflags = [
-    '-shared', '-fPIC', '-O2', '-fno-fast-math', '-ffp-contract=off', '-fvisibility=hidden', '-Wall',
+    '-shared', '-fPIC', '-O2', '-g0', '-fno-fast-math', '-ffp-contract=off', '-fvisibility=hidden', '-Wall',
     '-Inative/jni', '-Inative/cubiomes',
 ]
 

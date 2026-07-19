@@ -159,7 +159,10 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
         return CFX_ERR_BAD_ARGS;
     }
     const int64_t rawWidth64 = (int64_t) (w - 1) * stride + 1;
-    if (rawWidth64 <= 0 || rawWidth64 > CFX_MAX_CELLS || (*env)->GetArrayLength(env, out) < w * h) {
+    const int64_t rawHeight64 = (int64_t) (h - 1) * stride + 1;
+    if (rawWidth64 <= 0 || rawWidth64 > CFX_MAX_CELLS
+        || rawHeight64 <= 0 || rawHeight64 > CFX_MAX_CELLS
+        || (*env)->GetArrayLength(env, out) < w * h) {
         return CFX_ERR_BAD_SIZE;
     }
     const int rawWidth = (int) rawWidth64;
@@ -168,23 +171,55 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
         return CFX_ERR_ALLOC;
     }
 
-    for (int j = 0; j < h; j++) {
-        const Range r = { scale, x, z + j * stride, rawWidth, 1, 0, 1 };
-        int *row = allocCache(&ctx->g, r);
-        if (row == NULL) {
+    if (scale == 1) {
+        /* The final Voronoi layer is not query-shape invariant for one-row
+         * rectangles: splitting a 2D area into h independent rows can choose
+         * different parent cells and produces horizontal biome stripes. Both
+         * production scale-1 requests fit under the batch cap (258x258 for
+         * LOD0, 515x515 before selecting stride 2 for LOD1), so generate their
+         * full 2D source rectangle before taking the strided cells. */
+        if (rawWidth64 * rawHeight64 > CFX_MAX_CELLS) {
+            free(sampled);
+            return CFX_ERR_BAD_SIZE;
+        }
+        const int rawHeight = (int) rawHeight64;
+        const Range r = { scale, x, z, rawWidth, rawHeight, 0, 1 };
+        int *dense = allocCache(&ctx->g, r);
+        if (dense == NULL) {
             free(sampled);
             return CFX_ERR_ALLOC;
         }
-        const int err = genBiomes(&ctx->g, row, r);
+        const int err = genBiomes(&ctx->g, dense, r);
         if (err != 0) {
-            free(row);
+            free(dense);
             free(sampled);
             return CFX_ERR_GENERATION;
         }
-        for (int i = 0; i < w; i++) {
-            sampled[j * w + i] = row[i * stride];
+        for (int j = 0; j < h; j++) {
+            for (int i = 0; i < w; i++) {
+                sampled[j * w + i] = dense[(j * stride) * rawWidth + i * stride];
+            }
         }
-        free(row);
+        free(dense);
+    } else {
+        for (int j = 0; j < h; j++) {
+            const Range r = { scale, x, z + j * stride, rawWidth, 1, 0, 1 };
+            int *row = allocCache(&ctx->g, r);
+            if (row == NULL) {
+                free(sampled);
+                return CFX_ERR_ALLOC;
+            }
+            const int err = genBiomes(&ctx->g, row, r);
+            if (err != 0) {
+                free(row);
+                free(sampled);
+                return CFX_ERR_GENERATION;
+            }
+            for (int i = 0; i < w; i++) {
+                sampled[j * w + i] = row[i * stride];
+            }
+            free(row);
+        }
     }
 
     (*env)->SetIntArrayRegion(env, out, 0, w * h, sampled);

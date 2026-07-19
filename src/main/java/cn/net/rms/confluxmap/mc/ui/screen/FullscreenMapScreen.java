@@ -4,12 +4,14 @@ import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
+import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.predict.PredictedTileKeys;
+import cn.net.rms.confluxmap.core.predict.PredictionLighting;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionTileService;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
@@ -94,6 +96,7 @@ public final class FullscreenMapScreen extends Screen {
     private final GameBridge gameBridge;
     private final TileService tiles;
     private final TileTextureManager textures;
+    private final DaylightModel daylightModel;
     private final PredictionState predictionState;
     private final PredictionTileService predictionTiles;
     private final FullscreenMapViewState viewState;
@@ -127,6 +130,7 @@ public final class FullscreenMapScreen extends Screen {
         this.gameBridge = app.gameBridge();
         this.tiles = app.tileService();
         this.textures = app.tileTextureManager();
+        this.daylightModel = app.daylightModel();
         this.predictionState = app.predictionState();
         this.predictionTiles = app.predictionTileService();
         this.viewState = app.fullscreenMapViewState();
@@ -303,7 +307,6 @@ public final class FullscreenMapScreen extends Screen {
         RenderUtil.fillRect(matrices, 0, 0, width, height, BACKGROUND_COLOR);
         drawGrid(matrices);
 
-        RenderUtil.beginTexturedQuads();
         drawTiles(matrices);
 
         drawChunkGrid(matrices, mouseX, mouseY);
@@ -331,9 +334,8 @@ public final class FullscreenMapScreen extends Screen {
      * MapLayer.Type#END_SURFACE} in the End; never a cave/nether layer, which cubiomes can't
      * predict at all) - the matching predicted tile drawn first underneath each real one. Real
      * tiles already render {@code UNKNOWN}/unexplored pixels as fully transparent (see {@code
-     * TileService#composeRegion}), and blending is already enabled for this whole pass (see
-     * {@link #render}'s {@code RenderUtil.beginTexturedQuads()} call), so the predicted layer
-     * simply shows through wherever the real tile has nothing yet.
+     * TileService#composeRegion}), and both texture passes enable alpha blending, so the predicted
+     * layer simply shows through wherever the real tile has nothing yet.
      */
     private void drawTiles(final MatrixStack matrices) {
         final int lod = currentLod();
@@ -364,17 +366,34 @@ public final class FullscreenMapScreen extends Screen {
             predictionTiles.clearViewport();
         }
 
+        if (predictionActive) {
+            final int predictionTint = PredictionLighting.renderTint(
+                config.dynamicLighting && layer.type() == MapLayer.Type.SURFACE,
+                daylightModel.factor()
+            );
+            for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
+                for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
+                    final TileKey key = new TileKey(session.world(), session.dimension(), layerId, lod, tileX, tileZ);
+                    if (textures.bind(PredictedTileKeys.toPredicted(key))) {
+                        final float screenX = (float) (width / 2.0 + (key.originBlockX() - centerX) * pxPerBlock);
+                        final float screenY = (float) (height / 2.0 + (key.originBlockZ() - centerZ) * pxPerBlock);
+                        final float quadSize = (float) (blocksPerTile * pxPerBlock);
+                        RenderUtil.drawTintedQuad(
+                            matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f, predictionTint
+                        );
+                    }
+                }
+            }
+        }
+
+        RenderUtil.beginTexturedQuads();
         for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
             for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
                 final TileKey key = new TileKey(session.world(), session.dimension(), layerId, lod, tileX, tileZ);
-                final float screenX = (float) (width / 2.0 + (key.originBlockX() - centerX) * pxPerBlock);
-                final float screenY = (float) (height / 2.0 + (key.originBlockZ() - centerZ) * pxPerBlock);
-                final float quadSize = (float) (blocksPerTile * pxPerBlock);
-
-                if (predictionActive && textures.bind(PredictedTileKeys.toPredicted(key))) {
-                    RenderUtil.drawQuad(matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f);
-                }
                 if (textures.bind(key)) {
+                    final float screenX = (float) (width / 2.0 + (key.originBlockX() - centerX) * pxPerBlock);
+                    final float screenY = (float) (height / 2.0 + (key.originBlockZ() - centerZ) * pxPerBlock);
+                    final float quadSize = (float) (blocksPerTile * pxPerBlock);
                     RenderUtil.drawQuad(matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f);
                 }
             }

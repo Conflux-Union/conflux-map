@@ -14,13 +14,13 @@ public final class PredictorVersion {
     /** Must match {@code CFX_ABI} in {@code native/shim/confluxnative.c}. */
     public static final int CFX_ABI = 2;
 
-    /** Bumped whenever Java-side baseline derivation (LOD expansion, canopy, kind rules) changes. */
-    public static final int BASELINE_ALGO = 3;
+    /** Bumped whenever baseline sampling or derivation (LOD expansion, canopy, kind rules) changes. */
+    public static final int BASELINE_ALGO = 4;
 
     private PredictorVersion() {
     }
 
-    /** Wire/cache format for {@code predictorVersion}, e.g. {@code "cb:e61f90580cbd|shim:2|base:3"}. */
+    /** Wire/cache format for {@code predictorVersion}, e.g. {@code "cb:e61f90580cbd|shim:2|base:4"}. */
     public static String full() {
         return "cb:" + CUBIOMES_COMMIT_12 + "|shim:" + CFX_ABI + "|base:" + BASELINE_ALGO;
     }

@@ -1,7 +1,5 @@
 package cn.net.rms.confluxmap.core.predict;
 
-import cn.net.rms.confluxmap.core.color.DaylightModel;
-import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
@@ -31,8 +29,6 @@ public final class PredictionTileService {
     private final PredictionState state;
     private final MapExecutors executors;
     private final TileService uploads;
-    private final ConfluxConfig config;
-    private final DaylightModel daylightModel;
     private final int maxConcurrentCompositions;
     /**
      * Bounded concurrency while a fullscreen viewport is active. Strict serialization (1) left the
@@ -60,16 +56,12 @@ public final class PredictionTileService {
         final SessionGuard sessionGuard,
         final PredictionState state,
         final MapExecutors executors,
-        final TileService uploads,
-        final ConfluxConfig config,
-        final DaylightModel daylightModel
+        final TileService uploads
     ) {
         this.sessionGuard = sessionGuard;
         this.state = state;
         this.executors = executors;
         this.uploads = uploads;
-        this.config = config;
-        this.daylightModel = daylightModel;
         this.maxConcurrentCompositions = Math.max(1, executors.workerCount());
     }
 
@@ -293,9 +285,8 @@ public final class PredictionTileService {
         if (nativeDim < 0) {
             return null;
         }
-        final MapLayer layer;
         try {
-            layer = MapLayer.parse(PredictedTileKeys.realLayerId(key.layerId()));
+            MapLayer.parse(PredictedTileKeys.realLayerId(key.layerId()));
         } catch (final IllegalArgumentException e) {
             return null;
         }
@@ -314,14 +305,12 @@ public final class PredictionTileService {
         final DerivedGrid derived = BaselineDeriver.derive(grid);
         CanopyStylizer.apply(derived, grid, seed, lod, tileOriginX, tileOriginZ);
 
-        final boolean applyDaylight = layer.type() == MapLayer.Type.SURFACE && config.dynamicLighting;
-        final float daylightFactor = applyDaylight ? daylightModel.factor() : 1f;
         final CorrectionStore store = correctionStore;
         final CorrectionTile corrections = store == null
             ? null
             : store.get(key.dimension(), lod, key.tileX(), key.tileZ());
         final int[] pixels = PredictedTileComposer.compose(
-            derived, grid, state.palette(), applyDaylight, daylightFactor, corrections, viewMode, lod
+            derived, grid, state.palette(), corrections, viewMode, lod
         );
         return TileUpdate.fullTile(key, pixels);
     }

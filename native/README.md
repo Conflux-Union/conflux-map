@@ -75,9 +75,10 @@ Zig target triples used, and the resulting file per OS:
 | macOS x86_64 | `x86_64-macos` | `libconfluxnative.dylib` |
 | macOS aarch64 | `aarch64-macos` | `libconfluxnative.dylib` |
 
-Both tasks use the same compile flags: `-shared -fPIC -O2 -fno-fast-math
+Both tasks use the same compile flags: `-shared -fPIC -O2 -g0 -fno-fast-math
 -ffp-contract=off -fvisibility=hidden -Wall -Inative/jni -Inative/cubiomes`.
-`-fno-fast-math`/`-ffp-contract=off` matter for determinism (see the M2 plan's
+`-g0` prevents compiler-version defaults from embedding debug information in
+release binaries. `-fno-fast-math`/`-ffp-contract=off` matter for determinism (see the M2 plan's
 "Determinism spec") - predictions must be bit-identical run to run and peer
 to peer, and both flags disable float reassociation/fused-multiply-add that
 would otherwise vary by codegen. `-fvisibility=hidden` keeps every cubiomes
