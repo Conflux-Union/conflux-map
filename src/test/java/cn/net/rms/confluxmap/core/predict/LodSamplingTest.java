@@ -144,6 +144,56 @@ class LodSamplingTest {
         assertNotEquals(h0, h1, "adjacent LOD1 pixels should bilinearly differ within one native cell");
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1, 3, 4})
+    void aggregatedCoastHeightsDoNotRaiseOceanAboveSeaLevel(final int lod) {
+        final int coastBlockX = 4 << lod;
+        final int landHeightStartX4 = lod == 3 ? coastBlockX / 4 - 1 : coastBlockX / 4;
+        final BaselineSampler coastSampler = new BaselineSampler() {
+            @Override
+            public boolean biomes(final int scale, final int x, final int z, final int w, final int h, final int[] out) {
+                for (int zz = 0; zz < h; zz++) {
+                    for (int xx = 0; xx < w; xx++) {
+                        out[zz * w + xx] = (x + xx) * scale < coastBlockX ? 0 : 1;
+                    }
+                }
+                return true;
+            }
+
+            @Override
+            public boolean heights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+                for (int zz = 0; zz < h; zz++) {
+                    for (int xx = 0; xx < w; xx++) {
+                        outY[zz * w + xx] = x4 + xx < landHeightStartX4 ? 40 : 100;
+                    }
+                }
+                return true;
+            }
+
+            @Override
+            public boolean endHeights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+                return false;
+            }
+        };
+
+        final BaselineGrid grid = LodSampling.sample(coastSampler, false, lod, 0, 0);
+        assertNotNull(grid);
+        final int oceanEdge = BaselineGrid.index(3, 0);
+        assertEquals(0, grid.biomeId[oceanEdge]);
+        assertEquals(
+            BaselineDeriver.WATER_LEVEL - 1,
+            grid.terrainY[oceanEdge],
+            "land height anchors must not lift the final ocean pixel above the waterline at LOD " + lod
+        );
+
+        final DerivedGrid derived = BaselineDeriver.derive(grid);
+        assertEquals(
+            SurfaceKind.WATER.ordinal(), derived.kind[oceanEdge],
+            "a final-layer ocean pixel must remain water when aggregated height samples cross the shoreline"
+        );
+        assertEquals(BaselineDeriver.WATER_LEVEL, derived.surfaceY[oceanEdge]);
+    }
+
     @org.junit.jupiter.api.Test
     void highLodBiomesUseOneFinalLayerSamplePerOutputPixel() {
         final int[] lastScale = {-1};

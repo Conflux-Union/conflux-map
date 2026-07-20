@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 
 class PredictionTileCodecTest {
     @Test
-    void versionTwoCorrectionsAreRejectedSoUnknownHolesCannotSurviveTheFix() throws Exception {
+    void olderCorrectionsAreRejectedWhenBaselineSemanticsChange() throws Exception {
         final PredictionTileCodec.FileData data = new PredictionTileCodec.FileData(
             2, -1, -1, 10L, new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(List.of())
         );
@@ -24,7 +24,7 @@ class PredictionTileCodecTest {
         assertEquals(data.revision(), decoded.revision());
         assertArrayEquals(data.presence(), decoded.presence());
         assertEquals(0, decoded.patch().size());
-        encoded[4] = 2;
+        encoded[4] = (byte) (PredictionTileCodec.FORMAT_VERSION - 1);
 
         assertThrows(ProtoException.class, () -> PredictionTileCodec.decode(encoded));
     }

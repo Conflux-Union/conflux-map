@@ -28,6 +28,10 @@ import cn.net.rms.confluxmap.core.color.ShadingPipeline;
  *       pre-zoom layer. Heights are sampled on a 64-block grid and bilinearly interpolated to
  *       16-block pixels, spanning the correct world area without making each tile prohibitively slow.
  * </ul>
+ * Height aggregation preserves the waterline for final-layer water biomes when the contributing
+ * height anchors straddle it. This prevents neighboring land anchors from lifting a shoreline
+ * ocean pixel above sea level while retaining genuinely elevated ocean-biome terrain when every
+ * contributing anchor is already above the waterline.
  *
  * <p>Every grid (both biomes and heights) is sampled over the full margin range {@code
  * [-BaselineGrid.MARGIN, BaselineGrid.PIXELS-1+BaselineGrid.MARGIN]} on both axes - see {@link
@@ -157,7 +161,8 @@ public final class LodSampling {
                 } else {
                     final int top = h00 + Math.floorDiv((h10 - h00) * fx, 4);
                     final int bottom = h01 + Math.floorDiv((h11 - h01) * fx, 4);
-                    value = top + Math.floorDiv((bottom - top) * fz, 4);
+                    final int interpolated = top + Math.floorDiv((bottom - top) * fz, 4);
+                    value = preserveWaterline(grid, px, pz, interpolated, h00, h10, h01, h11);
                 }
                 grid.terrainY[BaselineGrid.index(px, pz)] = value;
             }
@@ -207,7 +212,8 @@ public final class LodSampling {
                 } else {
                     final int top = h00 + Math.floorDiv((h10 - h00) * fx, pixelsPerSample);
                     final int bottom = h01 + Math.floorDiv((h11 - h01) * fx, pixelsPerSample);
-                    value = top + Math.floorDiv((bottom - top) * fz, pixelsPerSample);
+                    final int interpolated = top + Math.floorDiv((bottom - top) * fz, pixelsPerSample);
+                    value = preserveWaterline(grid, px, pz, interpolated, h00, h10, h01, h11);
                 }
                 grid.terrainY[BaselineGrid.index(px, pz)] = value;
             }
@@ -267,7 +273,8 @@ public final class LodSampling {
                 if (end && a == 0 && b == 0 && c == 0 && d == 0) {
                     value = BaselineGrid.NO_SURFACE;
                 } else {
-                    value = Math.floorDiv(a + b + c + d, 4);
+                    final int mean = Math.floorDiv(a + b + c + d, 4);
+                    value = preserveWaterline(grid, px, pz, mean, a, b, c, d);
                 }
                 grid.terrainY[BaselineGrid.index(px, pz)] = value;
             }
@@ -279,5 +286,26 @@ public final class LodSampling {
         final BaselineSampler sampler, final boolean end, final int x4, final int z4, final int w, final int h, final int[] out
     ) {
         return end ? sampler.endHeights(x4, z4, w, h, out) : sampler.heights(x4, z4, w, h, out);
+    }
+
+    private static int preserveWaterline(
+        final BaselineGrid grid,
+        final int pixelX,
+        final int pixelZ,
+        final int aggregated,
+        final int a,
+        final int b,
+        final int c,
+        final int d
+    ) {
+        if (aggregated < BaselineDeriver.WATER_LEVEL
+            || !BiomeTable.get(grid.biomeId[BaselineGrid.index(pixelX, pixelZ)]).waterBiome()) {
+            return aggregated;
+        }
+        if (a < BaselineDeriver.WATER_LEVEL || b < BaselineDeriver.WATER_LEVEL
+            || c < BaselineDeriver.WATER_LEVEL || d < BaselineDeriver.WATER_LEVEL) {
+            return BaselineDeriver.WATER_LEVEL - 1;
+        }
+        return aggregated;
     }
 }
