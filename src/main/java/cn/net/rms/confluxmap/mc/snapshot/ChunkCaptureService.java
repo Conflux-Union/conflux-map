@@ -155,7 +155,7 @@ public final class ChunkCaptureService {
 
     private void storeSnapshot(final ChunkSnapshot snapshot, final MapLayer layer) {
         final MapWorld world = worlds.ifCurrent(snapshot.sessionToken);
-        if (world != null && world.store(layer).put(snapshot, SampleSource.REAL_LIVE)) {
+        if (world != null && world.put(layer, snapshot, SampleSource.REAL_LIVE)) {
             storedSnapshots.incrementAndGet();
             tiles.markChunkStored(snapshot.sessionToken, world.session().dimension(), layer, snapshot.chunkX, snapshot.chunkZ);
             // Non-persistent layers (CAVE_AUTO, NETHER_CURRENT, the Y-slices) never touch disk -

@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -25,7 +26,7 @@ class ServerConfigTest {
         assertEquals(false, c.shareSeed);
         assertTrue(c.enabled);
         assertTrue(c.shareCorrections);
-        assertTrue(c.shareStructureInfo);
+        assertFalse(c.shareStructureInfo);
         assertEquals(2, c.maxPatchLod);
         assertEquals(8, c.maxTilesPerRequest);
     }
@@ -39,6 +40,7 @@ class ServerConfigTest {
         c.maxBytesPerSecondPerPlayer = 1;
         c.minRequestIntervalMs = -100;
         c.maxChunkSummariesPerSecond = 0;
+        c.shareStructureInfo = true;
         c.normalize();
         assertEquals(4, c.maxPatchLod);
         assertEquals(1, c.maxTilesPerRequest);
@@ -46,6 +48,7 @@ class ServerConfigTest {
         assertEquals(1024, c.maxBytesPerSecondPerPlayer);
         assertEquals(0, c.minRequestIntervalMs);
         assertEquals(1, c.maxChunkSummariesPerSecond);
+        assertFalse(c.shareStructureInfo);
     }
 
     @Test

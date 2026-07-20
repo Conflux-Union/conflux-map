@@ -5,9 +5,8 @@ package cn.net.rms.confluxmap.server;
  * {@code <configDir>/confluxmap/server.json}. Add fields with defaults only; never
  * rename without bumping {@link #SCHEMA_VERSION}.
  *
- * <p>Security-relevant defaults are OFF ({@link #shareSeed}); the rest default ON so a
- * fresh server install gets map-sync benefits without extra setup once the operator opts
- * into seed sharing.
+ * <p>Security-relevant or not-yet-implemented capabilities default OFF. Map corrections default
+ * ON so a fresh server install gets map-sync benefits without extra setup.
  */
 public final class ServerConfig {
     public static final int SCHEMA_VERSION = 1;
@@ -25,8 +24,8 @@ public final class ServerConfig {
     public boolean shareSeed = false;
     /** Whether the server will serve map corrections (MAP_PATCH). S3 frames the channel; S4 fills it. */
     public boolean shareCorrections = true;
-    /** Whether structure-bounds info is included. S6 consumes this; S3 only carries the flag. */
-    public boolean shareStructureInfo = true;
+    /** Reserved protocol setting. Forced OFF until the server emits real structure verification data. */
+    public boolean shareStructureInfo = false;
     /** Hard ceiling on which LOD the server will compute patches for; above this returns UNAVAILABLE. */
     public int maxPatchLod = 2;
     /** One MAP_VIEW_REQ carries at most this many tiles. */
@@ -42,6 +41,7 @@ public final class ServerConfig {
 
     /** Clamp out-of-range values loaded from a hand-edited file. */
     public void normalize() {
+        shareStructureInfo = false;
         maxPatchLod = clamp(maxPatchLod, 0, 4);
         maxTilesPerRequest = clamp(maxTilesPerRequest, 1, 255);
         maxPendingTilesPerPlayer = clamp(maxPendingTilesPerPlayer, 1, 1024);

@@ -124,7 +124,8 @@ public final class ServerNetworking {
         final ServerConfig cfg = companion.config();
         final boolean shareSeed = cfg.enabled && cfg.shareSeed;
         final boolean shareCorrections = cfg.enabled && cfg.shareCorrections;
-        final boolean shareStructures = cfg.enabled && cfg.shareStructureInfo;
+        // The v1 frame reserves structure entries, but RegionSummaryService does not emit them yet.
+        final boolean shareStructures = false;
         final HelloPolicyS2C.Flags flags = new HelloPolicyS2C.Flags(shareSeed, shareCorrections, shareStructures);
         final UUID worldId = companion.worldIds().get(server);
         final HelloPolicyS2C.Budgets budgets = new HelloPolicyS2C.Budgets(

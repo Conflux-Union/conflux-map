@@ -40,4 +40,19 @@ class WorldSessionTrackerTest {
         assertEquals(2, events.size());
         assertEquals(guard.current(), events.get(1));
     }
+
+    @Test
+    void explicitEndNotifiesListenersExactlyOnce() {
+        final SessionGuard guard = new SessionGuard();
+        guard.begin(WorldIdentity.singleplayer("world"), DimensionId.OVERWORLD);
+        final WorldSessionTracker tracker = new WorldSessionTracker(guard, new CompanionSession());
+        final List<SessionGuard.Session> events = new ArrayList<>();
+        tracker.addListener(events::add);
+
+        tracker.endSession();
+        tracker.endSession();
+
+        assertFalse(guard.current().active());
+        assertEquals(List.of(SessionGuard.Session.NONE), events);
+    }
 }

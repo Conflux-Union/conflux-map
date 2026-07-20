@@ -43,14 +43,31 @@ public final class MapExecutors {
         return workerCount;
     }
 
-    /** Blocks up to {@code timeoutMs} for queued IO (cache flushes) to finish. */
+    /**
+     * Stops accepting worker jobs, drains them while IO remains open, then drains queued IO. This
+     * ordering lets an already-accepted worker finish scheduling its persistence work.
+     */
     public void shutdown(final long timeoutMs) {
+        final long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.max(0L, timeoutMs));
+        boolean interrupted = false;
         workers.shutdown();
+        try {
+            workers.awaitTermination(remainingNanos(deadline), TimeUnit.NANOSECONDS);
+        } catch (final InterruptedException e) {
+            interrupted = true;
+        }
         io.shutdown();
         try {
-            io.awaitTermination(timeoutMs, TimeUnit.MILLISECONDS);
+            io.awaitTermination(remainingNanos(deadline), TimeUnit.NANOSECONDS);
         } catch (final InterruptedException e) {
+            interrupted = true;
+        }
+        if (interrupted) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    private static long remainingNanos(final long deadline) {
+        return Math.max(0L, deadline - System.nanoTime());
     }
 }

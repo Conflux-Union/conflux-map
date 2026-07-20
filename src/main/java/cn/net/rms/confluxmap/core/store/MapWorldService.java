@@ -3,15 +3,20 @@ package cn.net.rms.confluxmap.core.store;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 
 /**
- * Owns the current {@link MapWorld}. Rotated by the session tracker on the
- * main thread; async consumers must check the session token before writing.
+ * Owns the current {@link MapWorld}. A transition seals the ending world before publishing the
+ * replacement, giving persistence code a stable object that cannot receive late async writes.
  */
 public final class MapWorldService {
     private volatile MapWorld current;
 
-    /** Main thread only: called when a session starts or ends. */
-    public void onSessionChanged(final SessionGuard.Session session) {
+    /** Main thread only: switches sessions and returns the sealed ending world, if any. */
+    public synchronized MapWorld switchSession(final SessionGuard.Session session) {
+        final MapWorld ending = current;
+        if (ending != null) {
+            ending.deactivate();
+        }
         current = session.active() ? new MapWorld(session) : null;
+        return ending;
     }
 
     /** The active world, or null between sessions. */
@@ -22,6 +27,6 @@ public final class MapWorldService {
     /** The active world if it still matches {@code token}, else null. */
     public MapWorld ifCurrent(final long token) {
         final MapWorld world = current;
-        return world != null && world.session().token() == token ? world : null;
+        return world != null && world.active() && world.session().token() == token ? world : null;
     }
 }

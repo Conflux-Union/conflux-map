@@ -53,6 +53,9 @@ public final class RegionDiskCache {
     private record RegionSlot(MapLayer.Type layer, int regionX, int regionZ) {
     }
 
+    private record FlushResult(boolean written, int diskVersion) {
+    }
+
     private final Path baseDir;
     private final long token;
     private final DimensionId dimension;
@@ -122,7 +125,6 @@ public final class RegionDiskCache {
             return;
         }
         final MapLayer layer = new MapLayer(layerType, 0);
-        final ColumnStore store = world.store(layer);
         int merged = 0;
         for (int chunkLocalZ = 0; chunkLocalZ < RegionColumns.CHUNKS; chunkLocalZ++) {
             for (int chunkLocalX = 0; chunkLocalX < RegionColumns.CHUNKS; chunkLocalX++) {
@@ -131,7 +133,7 @@ public final class RegionDiskCache {
                     continue;
                 }
                 final ChunkSnapshot snapshot = extractChunkSnapshot(data, chunkLocalX, chunkLocalZ, token);
-                if (store.put(snapshot, SampleSource.REAL_CACHED)) {
+                if (world.put(layer, snapshot, SampleSource.REAL_CACHED)) {
                     merged++;
                     tiles.markChunkStored(token, dimension, layer, snapshot.chunkX, snapshot.chunkZ);
                 }
@@ -197,10 +199,10 @@ public final class RegionDiskCache {
         for (final MapLayer.Type type : PERSISTENT_LAYER_TYPES) {
             final ColumnStore store = world.store(new MapLayer(type, 0));
             for (final RegionColumns region : store.allRegions()) {
-                flushed += flushIfDirty(store, region, type);
+                final FlushResult result = flushIfDirty(region, type);
+                flushed += result.written() ? 1 : 0;
                 final boolean farAway = chebyshev(region.regionX, region.regionZ, playerRegionX, playerRegionZ) > EVICT_DISTANCE_REGIONS;
-                if (farAway) {
-                    store.remove(region.regionX, region.regionZ);
+                if (farAway && result.diskVersion() >= 0 && store.evictIfUnchanged(region, result.diskVersion())) {
                     flushedVersion.remove(new RegionSlot(type, region.regionX, region.regionZ));
                     regionLoadTouched.remove(new RegionSlot(type, region.regionX, region.regionZ));
                     evicted++;
@@ -215,21 +217,19 @@ public final class RegionDiskCache {
         }
     }
 
-    /** Returns 1 if the region was dirty and got written, 0 otherwise. */
-    private int flushIfDirty(final ColumnStore store, final RegionColumns region, final MapLayer.Type type) {
+    private FlushResult flushIfDirty(final RegionColumns region, final MapLayer.Type type) {
         final RegionSlot slot = new RegionSlot(type, region.regionX, region.regionZ);
-        // Read the version BEFORE copying data out: the copy is guaranteed to see at least
-        // everything written up to this point, so recording this (possibly stale-low) version
-        // as "flushed" never overstates what's actually on disk - worst case we redundantly
-        // reflush unchanged data next sweep, never lose a write.
         final int versionAtDecision = region.version();
         final Integer last = flushedVersion.get(slot);
         if (last != null && versionAtDecision <= last) {
-            return 0;
+            return new FlushResult(false, last);
         }
-        writeRegion(region, type);
-        flushedVersion.put(slot, versionAtDecision);
-        return 1;
+        final int writtenVersion = writeRegion(region, type);
+        if (writtenVersion < 0) {
+            return new FlushResult(false, -1);
+        }
+        flushedVersion.put(slot, writtenVersion);
+        return new FlushResult(true, writtenVersion);
     }
 
     /**
@@ -245,8 +245,9 @@ public final class RegionDiskCache {
             for (final MapLayer.Type type : PERSISTENT_LAYER_TYPES) {
                 final ColumnStore store = world.store(new MapLayer(type, 0));
                 for (final RegionColumns region : store.allRegions()) {
-                    writeRegion(region, type);
-                    flushed++;
+                    if (writeRegion(region, type) >= 0) {
+                        flushed++;
+                    }
                 }
             }
             if (flushed > 0) {
@@ -255,7 +256,7 @@ public final class RegionDiskCache {
         });
     }
 
-    private void writeRegion(final RegionColumns region, final MapLayer.Type type) {
+    private int writeRegion(final RegionColumns region, final MapLayer.Type type) {
         final int size = RegionColumns.SIZE;
         final short[] surfaceY = new short[size * size];
         final byte[] fluidDepth = new byte[size * size];
@@ -266,16 +267,26 @@ public final class RegionDiskCache {
         final byte[] light = new byte[size * size];
         final byte[] chunkSource = new byte[RegionFileCodec.CHUNK_TABLE_ENTRIES];
         final int[] chunkUpdateSeconds = new int[RegionFileCodec.CHUNK_TABLE_ENTRIES];
-        region.copyForFlush(surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light, chunkSource, chunkUpdateSeconds);
+        final int copiedVersion = region.copyForFlush(
+            surfaceY,
+            fluidDepth,
+            baseArgb,
+            tintArgb,
+            overlayArgb,
+            kind,
+            light,
+            chunkSource,
+            chunkUpdateSeconds
+        );
 
         final RegionFileCodec.RegionData data = new RegionFileCodec.RegionData(
             region.regionX, region.regionZ, System.currentTimeMillis(),
             chunkSource, chunkUpdateSeconds, surfaceY, fluidDepth, kind, baseArgb, tintArgb, overlayArgb, light
         );
-        writeAtomic(regionFile(type, region.regionX, region.regionZ), data, type.ordinal());
+        return writeAtomic(regionFile(type, region.regionX, region.regionZ), data, type.ordinal()) ? copiedVersion : -1;
     }
 
-    private void writeAtomic(final Path file, final RegionFileCodec.RegionData data, final int layerOrdinal) {
+    private boolean writeAtomic(final Path file, final RegionFileCodec.RegionData data, final int layerOrdinal) {
         try {
             Files.createDirectories(file.getParent());
             final Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
@@ -285,8 +296,10 @@ public final class RegionDiskCache {
                 fos.getChannel().force(true);
             }
             move(tmp, file);
+            return true;
         } catch (final IOException e) {
             logger.warn("cache: failed to write region file {} ({})", file, e.toString());
+            return false;
         }
     }
 

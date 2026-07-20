@@ -40,5 +40,6 @@ deflate-compressed two-level sparse mask: 32-byte coarse mask, one 32-byte fine 
 cell, then six-byte absolute column records. Server patches are capped at LOD 2; higher LODs stay
 local. A missing or mismatched predictor uses absolute samples, never a false residual.
 
-Prediction is honest about its limits: structures are candidates until verified by the companion,
-and no server seed is shared unless the operator enables `shareSeed`.
+Prediction is honest about its limits: the v1 companion does not verify structure existence, so
+structure markers remain candidates. No server seed is shared unless the operator enables
+`shareSeed`.

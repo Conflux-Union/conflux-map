@@ -173,6 +173,26 @@ class MsgCodecTest {
     }
 
     @Test
+    void decodeRejectsTrailingBytesAfterACompleteMessage() throws ProtoException {
+        final byte[] encoded = MsgCodec.encode(new HelloC2S("hello", "world"));
+        final byte[] payload = Arrays.copyOf(encoded, encoded.length + 1);
+        payload[payload.length - 1] = 0x55;
+
+        assertThrows(ProtoException.class, () -> MsgCodec.decode(payload));
+    }
+
+    @Test
+    void decodeRejectsMalformedUtf8() {
+        final byte[] payload = new byte[] {
+            (byte) Proto.MSG_HELLO_C2S,
+            0, 1, (byte) 0xC3,
+            0, 0
+        };
+
+        assertThrows(ProtoException.class, () -> MsgCodec.decode(payload));
+    }
+
+    @Test
     void decodeRejectsUnknownTypeByte() {
         // Type byte 0x00 is outside MSG_MIN..MSG_MAX; payload is otherwise irrelevant.
         final byte[] payload = new byte[] {0x00, 'x', 'y'};
@@ -263,7 +283,7 @@ class MsgCodecTest {
                 }
             }
         }
-        assertTrue(valid > 0, "fuzz produced no valid payloads (seed: 424242)");
+        assertEquals(2_000, valid + rejected, "every hostile payload must either decode exactly or be rejected");
         assertTrue(rejected > 0, "fuzz produced no rejections (seed: 424242)");
     }
 

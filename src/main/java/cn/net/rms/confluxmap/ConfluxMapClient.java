@@ -24,6 +24,7 @@ import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.net.MapSyncClient;
 import cn.net.rms.confluxmap.mc.predict.PredictionBootstrap;
 import cn.net.rms.confluxmap.mc.predict.PredictionPaletteBuilder;
+import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
@@ -75,6 +76,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private PredictionTileService predictionTileService;
     private PredictionBootstrap predictionBootstrap;
     private PredictionPaletteBuilder predictionPaletteBuilder;
+    private StructureMarkerService structureMarkerService;
     private CompanionSession companionSession;
     private ClientNetworking clientNetworking;
     private CorrectionStore correctionStore;
@@ -112,6 +114,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
         // failed load just leaves NativeLib.available() false and prediction permanently disabled.
         NativeLib.init(FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID));
         predictionState = new PredictionState();
+        structureMarkerService = new StructureMarkerService(
+            FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("cache"),
+            predictionState
+        );
         predictionTileService = new PredictionTileService(sessionGuard, predictionState, executors, tileService);
         predictionTileService.setViewMode(config.predictionViewMode);
         correctionStore = new CorrectionStore(
@@ -149,9 +155,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
         fullscreenMapViewState = new FullscreenMapViewState();
         daylightTracker = new McDaylightTracker(client, config, daylightModel, mapWorlds, tileService);
 
-        // regionCache must flush BEFORE mapWorlds swaps the ending world out (see RegionCacheService javadoc).
+        // RegionCacheService owns the map-world rotation and final-flush boundary as one transition.
         sessionTracker.addListener(regionCache::onSessionChanged);
-        sessionTracker.addListener(mapWorlds::onSessionChanged);
         sessionTracker.addListener(chunkCapture::onSessionChanged);
         sessionTracker.addListener(tileService::onSessionChanged);
         sessionTracker.addListener(radarScanner::onSessionChanged);
@@ -162,6 +167,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(predictionBootstrap::onSessionChanged);
         sessionTracker.addListener(predictionPaletteBuilder::onSessionChanged);
         sessionTracker.addListener(predictionTileService::onSessionChanged);
+        sessionTracker.addListener(structureMarkerService::onSessionChanged);
         sessionTracker.addListener(session -> gameBridge.runOnRenderThread(tileTextureManager::releaseAll));
         sessionTracker.register();
 
@@ -181,9 +187,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
     }
 
     private void shutdown() {
-        // Quitting mid-world fires no session tick, so flush the cache explicitly
-        // before the executors stop accepting work.
-        regionCache.onSessionChanged(SessionGuard.Session.NONE);
+        // Quitting mid-world fires no session tick, so close the complete session lifecycle here.
+        sessionTracker.endSession();
         correctionStore.flush();
         configIo.save(config);
         executors.shutdown(5000L);
@@ -274,6 +279,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public PredictionTileService predictionTileService() {
         return predictionTileService;
+    }
+
+    public StructureMarkerService structureMarkerService() {
+        return structureMarkerService;
     }
 
     public CompanionSession companionSession() {

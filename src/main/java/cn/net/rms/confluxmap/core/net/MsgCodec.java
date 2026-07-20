@@ -5,7 +5,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.io.UTFDataFormatException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -23,6 +25,7 @@ import java.util.List;
  *   <li>Every length is bounds-checked against a hardcoded cap before allocation.</li>
  *   <li>Every string is read into a fixed-size buffer; the standard {@link DataInputStream#readUTF()}
  *       65535-byte ceiling is not relied on (it is too generous for the protocol's actual needs).</li>
+ *   <li>Malformed UTF-8 and trailing bytes after the one expected message are rejected.</li>
  *   <li>{@link ProtoException} is thrown on any violation; never a negative-array-size, {@code OOM},
  *       or silent corruption.</li>
  *   <li>The decoder returns the one specific {@link Message} subtype matching the type byte; an
@@ -214,25 +217,27 @@ public final class MsgCodec {
         if (typeId < Proto.MSG_MIN || typeId > Proto.MSG_MAX) {
             throw new ProtoException("unknown message type id: 0x" + Integer.toHexString(typeId));
         }
+        requireLen(payload.length, capForType(typeId));
         final DataInputStream in = new DataInputStream(new ByteArrayInputStream(payload, 1, payload.length - 1));
         try {
-            return switch (typeId) {
+            final Message message = switch (typeId) {
                 case Proto.MSG_HELLO_C2S -> decodeHelloC2S(in);
-                case Proto.MSG_HELLO_POLICY_S2C -> decodeHelloPolicyS2C(in, payload.length);
-                case Proto.MSG_MAP_VIEW_REQ_C2S -> decodeMapViewReqC2S(in, payload.length);
-                case Proto.MSG_MAP_PATCH_S2C -> decodeMapPatchS2C(in, payload.length);
+                case Proto.MSG_HELLO_POLICY_S2C -> decodeHelloPolicyS2C(in);
+                case Proto.MSG_MAP_VIEW_REQ_C2S -> decodeMapViewReqC2S(in);
+                case Proto.MSG_MAP_PATCH_S2C -> decodeMapPatchS2C(in);
                 case Proto.MSG_POLICY_UPDATE_S2C -> decodePolicyUpdateS2C(in);
                 case Proto.MSG_ERROR_S2C -> decodeErrorS2C(in);
                 default -> throw new ProtoException("unhandled message type id: 0x" + Integer.toHexString(typeId));
             };
+            if (in.available() != 0) {
+                throw new ProtoException("trailing bytes after message: " + in.available());
+            }
+            return message;
         } catch (final ProtoException e) {
             throw e;
-        } catch (final UTFDataFormatException e) {
-            throw new ProtoException("invalid utf-8: " + e.getMessage(), e);
         } catch (final IOException e) {
             // DataInputStream on a ByteArrayInputStream throws EOFException when truncated;
-            // UTFDataFormatException is handled above. Anything else means the input is hostile
-            // but in a shape we didn't anticipate.
+            // anything else means the input is hostile but in a shape we didn't anticipate.
             throw new ProtoException("decode io error: " + e.getMessage(), e);
         }
     }
@@ -243,8 +248,7 @@ public final class MsgCodec {
         return new HelloC2S(modVersion, predictorVersion);
     }
 
-    private static HelloPolicyS2C decodeHelloPolicyS2C(final DataInputStream in, final int payloadLen) throws IOException, ProtoException {
-        requireLen(payloadLen, Proto.MAX_S2C_PAYLOAD);
+    private static HelloPolicyS2C decodeHelloPolicyS2C(final DataInputStream in) throws IOException, ProtoException {
         final int flagBits = in.readUnsignedByte();
         final HelloPolicyS2C.Flags flags = new HelloPolicyS2C.Flags(
             (flagBits & 1) != 0,
@@ -278,8 +282,7 @@ public final class MsgCodec {
         return new HelloPolicyS2C(flags, worldId, worldgenVersion, budgets, dims);
     }
 
-    private static MapViewReqC2S decodeMapViewReqC2S(final DataInputStream in, final int payloadLen) throws IOException, ProtoException {
-        requireLen(payloadLen, Proto.MAX_C2S_PAYLOAD);
+    private static MapViewReqC2S decodeMapViewReqC2S(final DataInputStream in) throws IOException, ProtoException {
         final int reqId = in.readInt();
         final int dimIndex = in.readUnsignedByte();
         final int lod = in.readUnsignedByte();
@@ -297,8 +300,7 @@ public final class MsgCodec {
         return new MapViewReqC2S(reqId, dimIndex, lod, tiles);
     }
 
-    private static MapPatchS2C decodeMapPatchS2C(final DataInputStream in, final int payloadLen) throws IOException, ProtoException {
-        requireLen(payloadLen, Proto.MAX_S2C_PAYLOAD);
+    private static MapPatchS2C decodeMapPatchS2C(final DataInputStream in) throws IOException, ProtoException {
         final int reqId = in.readInt();
         final int dimIndex = in.readUnsignedByte();
         final int lod = in.readUnsignedByte();
@@ -363,7 +365,15 @@ public final class MsgCodec {
         }
         final byte[] bytes = new byte[len];
         in.readFully(bytes);
-        return new String(bytes, StandardCharsets.UTF_8);
+        try {
+            return StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes))
+                .toString();
+        } catch (final CharacterCodingException e) {
+            throw new ProtoException("invalid utf-8", e);
+        }
     }
 
     /**

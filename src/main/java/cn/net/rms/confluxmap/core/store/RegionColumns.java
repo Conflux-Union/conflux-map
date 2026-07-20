@@ -40,7 +40,7 @@ public final class RegionColumns {
         return version;
     }
 
-    public synchronized boolean putChunk(final ChunkSnapshot snapshot, final SampleSource source) {
+    synchronized boolean putChunk(final ChunkSnapshot snapshot, final SampleSource source) {
         final int chunkLocalX = snapshot.chunkX & (CHUNKS - 1);
         final int chunkLocalZ = snapshot.chunkZ & (CHUNKS - 1);
         final int chunkIndex = chunkLocalZ * CHUNKS + chunkLocalX;
@@ -125,7 +125,7 @@ public final class RegionColumns {
      * point-in-time snapshot of the whole region instead of two separately-locked
      * reads that could straddle a concurrent {@link #putChunk}.
      */
-    public synchronized void copyForFlush(
+    public synchronized int copyForFlush(
         final short[] outSurfaceY,
         final byte[] outFluidDepth,
         final int[] outBaseArgb,
@@ -139,5 +139,6 @@ public final class RegionColumns {
         copyChunkRows(0, SIZE, outSurfaceY, outFluidDepth, outBaseArgb, outTintArgb, outOverlayArgb, outKind, outLight);
         System.arraycopy(chunkSource, 0, outChunkSource, 0, chunkSource.length);
         System.arraycopy(chunkUpdateSeconds, 0, outChunkUpdateSeconds, 0, chunkUpdateSeconds.length);
+        return version;
     }
 }

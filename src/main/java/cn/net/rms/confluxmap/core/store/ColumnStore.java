@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
 import cn.net.rms.confluxmap.core.model.SampleSource;
 import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * Column samples for one dimension+layer, grouped into 256x256-column regions
@@ -13,6 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class ColumnStore {
     private final ConcurrentHashMap<Long, RegionColumns> regions = new ConcurrentHashMap<>();
+    private final ReentrantReadWriteLock lifecycle = new ReentrantReadWriteLock();
 
     private static long key(final int regionX, final int regionZ) {
         return ((long) regionX << 32) | (regionZ & 0xFFFFFFFFL);
@@ -22,11 +24,19 @@ public final class ColumnStore {
      * Merge a chunk snapshot. Returns true if the region changed (i.e. the
      * write was not discarded by the priority rule).
      */
-    public boolean put(final ChunkSnapshot snapshot, final SampleSource source) {
-        final int regionX = snapshot.chunkX >> 4;
-        final int regionZ = snapshot.chunkZ >> 4;
-        final RegionColumns region = regions.computeIfAbsent(key(regionX, regionZ), k -> new RegionColumns(regionX, regionZ));
-        return region.putChunk(snapshot, source);
+    boolean put(final ChunkSnapshot snapshot, final SampleSource source) {
+        lifecycle.readLock().lock();
+        try {
+            final int regionX = snapshot.chunkX >> 4;
+            final int regionZ = snapshot.chunkZ >> 4;
+            final RegionColumns region = regions.computeIfAbsent(
+                key(regionX, regionZ),
+                ignored -> new RegionColumns(regionX, regionZ)
+            );
+            return region.putChunk(snapshot, source);
+        } finally {
+            lifecycle.readLock().unlock();
+        }
     }
 
     /** The region backing the LOD-0 tile at (regionX, regionZ), or null if untouched. */
@@ -53,10 +63,39 @@ public final class ColumnStore {
      * have already flushed any unwritten data first - this never touches disk.
      */
     public boolean remove(final int regionX, final int regionZ) {
-        return regions.remove(key(regionX, regionZ)) != null;
+        lifecycle.writeLock().lock();
+        try {
+            return regions.remove(key(regionX, regionZ)) != null;
+        } finally {
+            lifecycle.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Evicts {@code region} only when it is still the mapped instance and has not changed since
+     * {@code flushedVersion} was copied to disk. The write lock closes the check/remove race with
+     * {@link #put}: a concurrent writer either completes before the version check or creates a new
+     * region after removal.
+     */
+    public boolean evictIfUnchanged(final RegionColumns region, final int flushedVersion) {
+        lifecycle.writeLock().lock();
+        try {
+            final long key = key(region.regionX, region.regionZ);
+            if (regions.get(key) != region || region.version() != flushedVersion) {
+                return false;
+            }
+            return regions.remove(key, region);
+        } finally {
+            lifecycle.writeLock().unlock();
+        }
     }
 
     public void clear() {
-        regions.clear();
+        lifecycle.writeLock().lock();
+        try {
+            regions.clear();
+        } finally {
+            lifecycle.writeLock().unlock();
+        }
     }
 }

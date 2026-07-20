@@ -48,6 +48,15 @@ public final class WorldSessionTracker {
         listeners.add(listener);
     }
 
+    /** Ends the active session and notifies every lifecycle owner; safe to call repeatedly. */
+    public void endSession() {
+        if (!guard.current().active()) {
+            return;
+        }
+        guard.end();
+        notifyListeners(guard.current());
+    }
+
     private void tick(final MinecraftClient client) {
         // Pump the handshake state machine once per tick so the HELLO_SENT timeout fires on schedule.
         companion.tick();
@@ -57,9 +66,8 @@ public final class WorldSessionTracker {
             singleplayerSaveRoot = null;
             singleplayerIdentity = null;
             if (current.active()) {
-                guard.end();
+                endSession();
                 ConfluxMapMod.LOGGER.info("Map session ended (token {})", current.token());
-                notifyListeners(guard.current());
             }
             return;
         }
@@ -72,12 +80,11 @@ public final class WorldSessionTracker {
         final SessionGuard.Session current = guard.current();
         if (resolved.isEmpty()) {
             if (current.active()) {
-                guard.end();
+                endSession();
                 ConfluxMapMod.LOGGER.info(
                     "Map session suspended while waiting for a stable multiplayer world identity (token {})",
                     current.token()
                 );
-                notifyListeners(guard.current());
             }
             return;
         }

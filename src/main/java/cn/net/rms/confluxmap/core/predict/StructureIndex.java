@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.core.predict;
 
+import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -13,33 +14,48 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Lazy, persistent structure candidates with tri-state server verification. */
 public final class StructureIndex {
     public enum StructureType {
-        VILLAGE(6, "village", "V"),
-        OCEAN_MONUMENT(9, "ocean_monument", "M"),
-        WOODLAND_MANSION(10, "woodland_mansion", "W"),
-        PILLAGER_OUTPOST(11, "pillager_outpost", "P"),
-        RUINED_PORTAL(12, "ruined_portal", "R"),
-        END_CITY(21, "end_city", "E");
+        VILLAGE(6, "village", "V", 32, DimensionId.OVERWORLD),
+        OCEAN_MONUMENT(9, "ocean_monument", "M", 32, DimensionId.OVERWORLD),
+        WOODLAND_MANSION(10, "woodland_mansion", "W", 80, DimensionId.OVERWORLD),
+        PILLAGER_OUTPOST(11, "pillager_outpost", "P", 32, DimensionId.OVERWORLD),
+        RUINED_PORTAL(12, "ruined_portal", "R", 40, DimensionId.OVERWORLD),
+        END_CITY(21, "end_city", "E", 20, DimensionId.END);
 
         private final int nativeId;
         private final String id;
         private final String badge;
+        private final int regionSizeBlocks;
+        private final DimensionId dimension;
 
-        StructureType(final int nativeId, final String id, final String badge) {
+        StructureType(
+            final int nativeId,
+            final String id,
+            final String badge,
+            final int spacingChunks,
+            final DimensionId dimension
+        ) {
             this.nativeId = nativeId;
             this.id = id;
             this.badge = badge;
+            this.regionSizeBlocks = spacingChunks * 16;
+            this.dimension = dimension;
         }
 
         public int nativeId() { return nativeId; }
         public String id() { return id; }
         public String badge() { return badge; }
+        public int regionSizeBlocks() { return regionSizeBlocks; }
+        public boolean supports(final DimensionId candidate) { return dimension.equals(candidate); }
     }
 
     public enum State { CANDIDATE, VERIFIED, NONEXISTENT }
@@ -53,24 +69,36 @@ public final class StructureIndex {
     }
 
     private final Path file;
+    private final DimensionId dimension;
     private final CandidateProvider provider;
     private final Map<String, Marker> markers = new HashMap<>();
+    private final Map<StructureType, Set<Long>> queriedRegions = new EnumMap<>(StructureType.class);
     private boolean dirty;
 
     /**
      * Compatibility constructor for callers that do not have a world identity. New callers must
-     * use {@link #StructureIndex(Path, WorldIdentity, String, CandidateProvider)}; without that
+     * use {@link #StructureIndex(Path, WorldIdentity, DimensionId, CandidateProvider)}; without that
      * namespace there is no way to safely separate two worlds sharing a dimension.
      */
     @Deprecated
     public StructureIndex(final Path cacheRoot, final String dimension, final CandidateProvider provider) {
-        this(cacheRoot.resolve("structures_" + sanitize(dimension) + ".json"), provider);
+        this(cacheRoot.resolve("structures_" + sanitize(dimension) + ".json"), DimensionId.parse(dimension), provider);
+    }
+
+    @Deprecated
+    public StructureIndex(
+        final Path cacheRoot,
+        final WorldIdentity world,
+        final String dimension,
+        final CandidateProvider provider
+    ) {
+        this(cacheRoot, world, DimensionId.parse(dimension), provider);
     }
 
     public StructureIndex(
         final Path cacheRoot,
         final WorldIdentity world,
-        final String dimension,
+        final DimensionId dimension,
         final CandidateProvider provider
     ) {
         this(
@@ -78,34 +106,50 @@ public final class StructureIndex {
                 .resolve("structures")
                 .resolve(sanitize(world.serverId()))
                 .resolve(sanitize(world.worldId()))
-                .resolve("structures_" + sanitize(dimension) + ".json"),
+                .resolve("structures_" + sanitize(dimension.fileName()) + ".json"),
+            dimension,
             provider
         );
     }
 
-    private StructureIndex(final Path file, final CandidateProvider provider) {
+    private StructureIndex(final Path file, final DimensionId dimension, final CandidateProvider provider) {
         this.file = file;
+        this.dimension = dimension;
         this.provider = provider;
+        for (final StructureType type : StructureType.values()) {
+            queriedRegions.put(type, new HashSet<>());
+        }
         load();
     }
 
     public synchronized List<Marker> query(final int minBlockX, final int maxBlockX, final int minBlockZ, final int maxBlockZ) {
-        final int minRegionX = Math.floorDiv(minBlockX, 32);
-        final int maxRegionX = Math.floorDiv(maxBlockX, 32);
-        final int minRegionZ = Math.floorDiv(minBlockZ, 32);
-        final int maxRegionZ = Math.floorDiv(maxBlockZ, 32);
         if (provider != null) {
             for (final StructureType type : StructureType.values()) {
+                if (!type.supports(dimension)) {
+                    continue;
+                }
+                final int regionSize = type.regionSizeBlocks();
+                final int minRegionX = Math.floorDiv(minBlockX, regionSize);
+                final int maxRegionX = Math.floorDiv(maxBlockX, regionSize);
+                final int minRegionZ = Math.floorDiv(minBlockZ, regionSize);
+                final int maxRegionZ = Math.floorDiv(maxBlockZ, regionSize);
+                final Set<Long> covered = queriedRegions.get(type);
                 for (int rz = minRegionZ; rz <= maxRegionZ; rz++) {
                     for (int rx = minRegionX; rx <= maxRegionX; rx++) {
+                        final long region = packRegion(rx, rz);
+                        if (covered.contains(region)) {
+                            continue;
+                        }
                         addCandidates(type, provider.candidates(type, rx, rz));
+                        covered.add(region);
                     }
                 }
             }
         }
         final List<Marker> visible = new ArrayList<>();
         for (final Marker marker : markers.values()) {
-            if (marker.blockX() >= minBlockX && marker.blockX() <= maxBlockX
+            if (marker.type().supports(dimension)
+                && marker.blockX() >= minBlockX && marker.blockX() <= maxBlockX
                 && marker.blockZ() >= minBlockZ && marker.blockZ() <= maxBlockZ
                 && marker.state() != State.NONEXISTENT) {
                 visible.add(marker);
@@ -194,6 +238,10 @@ public final class StructureIndex {
 
     private static String key(final StructureType type, final int x, final int z) {
         return type.id() + ":" + x + ":" + z;
+    }
+
+    private static long packRegion(final int x, final int z) {
+        return ((long) x << 32) | (z & 0xFFFF_FFFFL);
     }
 
     private static StructureType typeById(final String id) {
