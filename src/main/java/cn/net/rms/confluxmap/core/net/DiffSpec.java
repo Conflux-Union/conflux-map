@@ -9,6 +9,7 @@ import java.util.Set;
 /** Shared tolerant equivalence predicate used by both the client and companion server. */
 public final class DiffSpec {
     private static final int MAP_COLOR_NONE = Proto.MAP_COLOR_NONE;
+    private static final Set<Integer> NATURAL_GROUND_MAP_COLORS = Set.of(MAP_COLOR_NONE, 1, 2, 7, 8, 13);
 
     private DiffSpec() {
     }
@@ -31,11 +32,14 @@ public final class DiffSpec {
         final Sample actual,
         final double treeCover
     ) {
+        final SurfaceKind expectedKind = SurfaceKind.byOrdinal(baselineKind);
+        final SurfaceKind actualKind = SurfaceKind.byOrdinal(actual.kind());
+        if (keepsPredictedCanopy(expectedKind, actualKind, actual.mapColorId())) {
+            return false;
+        }
         if (baselineBiomeId != actual.biomeId()) {
             return true;
         }
-        final SurfaceKind expectedKind = SurfaceKind.byOrdinal(baselineKind);
-        final SurfaceKind actualKind = SurfaceKind.byOrdinal(actual.kind());
         if (!kindEquivalent(expectedKind, actualKind, treeCover)) {
             return true;
         }
@@ -53,11 +57,14 @@ public final class DiffSpec {
     }
 
     public static boolean differs(final Sample baseline, final Sample actual, final int baselineFluidDepth) {
+        final SurfaceKind expected = SurfaceKind.byOrdinal(baseline.kind());
+        final SurfaceKind observed = SurfaceKind.byOrdinal(actual.kind());
+        if (keepsPredictedCanopy(expected, observed, actual.mapColorId())) {
+            return false;
+        }
         if (baseline.biomeId() != actual.biomeId()) {
             return true;
         }
-        final SurfaceKind expected = SurfaceKind.byOrdinal(baseline.kind());
-        final SurfaceKind observed = SurfaceKind.byOrdinal(actual.kind());
         final double cover = BiomeTable.get(baseline.biomeId()).treeCover();
         if (!kindEquivalent(expected, observed, cover)) {
             return true;
@@ -66,6 +73,17 @@ public final class DiffSpec {
         return Math.abs(baseline.surfaceY() - actual.surfaceY()) > tolerance
             || fluidBucket(baselineFluidDepth) != fluidBucket(actual.fluidDepth())
             || (actual.mapColorId() != MAP_COLOR_NONE && !expectedMapColors(baseline.biomeId()).contains(actual.mapColorId()));
+    }
+
+    public static boolean keepsPredictedCanopy(
+        final SurfaceKind expected,
+        final SurfaceKind actual,
+        final int actualMapColorId
+    ) {
+        return actual == SurfaceKind.FOLIAGE
+            || (expected == SurfaceKind.FOLIAGE
+                && actual == SurfaceKind.LAND
+                && NATURAL_GROUND_MAP_COLORS.contains(actualMapColorId));
     }
 
     public static int fluidBucket(final int depth) {

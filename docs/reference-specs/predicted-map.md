@@ -6,10 +6,11 @@ overlays it; predictions never enter the `.cfr` column cache.
 ## Determinism
 
 The wire baseline is `{biomeId u8, surfaceY i16, kind u8, fluidDepth u8}`. The predictor version
-is `cb:32a72991c22a|shim:3|base:6`; palette colours are local and never sent. Forest `LAND` and
-`FOLIAGE` are equivalent for diffing, height differences up to 2 blocks are tolerated (6 in
-forested pixels), and fluid depth compares in buckets `0`, `1-3`, `4-9`, `10+`. A real map colour
-outside the biome's expected set is retained as a correction so player builds are visible.
+is `cb:32a72991c22a|shim:3|base:6`; palette colours are local and never sent. Natural canopy stays
+on the predicted plane instead of becoming a generated-chunk correction, so generated frontiers
+cannot introduce foliage-colour seams. Other height differences up to 2 blocks are tolerated, and
+fluid depth compares in buckets `0`, `1-3`, `4-9`, `10+`. A real map colour outside the biome's
+expected set is retained as a correction so player builds are visible.
 
 Predicted tile textures contain time-independent terrain colours. Dynamic day/night brightness is
 applied as one render-time tint across the whole predicted plane, so composition order cannot leave

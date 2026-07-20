@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.predict;
 
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
+import cn.net.rms.confluxmap.core.net.DiffSpec;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.util.Argb;
@@ -66,6 +67,10 @@ public final class PredictedTileComposer {
                     continue;
                 }
                 final int gridIndex = BaselineGrid.index(pixel & 255, pixel >>> 8);
+                final SurfaceKind predictedKind = SurfaceKind.byOrdinal(kinds[gridIndex]);
+                if (DiffSpec.keepsPredictedCanopy(predictedKind, correctedKind, sample.mapColorId())) {
+                    continue;
+                }
                 surface[gridIndex] = sample.surfaceY();
                 kinds[gridIndex] = (byte) sample.kind();
                 fluids[gridIndex] = sample.fluidDepth();
