@@ -2,15 +2,19 @@ package cn.net.rms.confluxmap.core.predict;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
+import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.model.TileKey;
+import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.tile.TileUpdate;
+import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.nativepredict.CubiomesContexts;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.Set;
 
 /**
@@ -43,6 +47,8 @@ public final class PredictionTileService {
     private final Map<TileKey, Long> dirty = new HashMap<>();
     /** Guarded by {@code this}: tiles currently being composed on a worker. */
     private final Set<TileKey> inFlight = new HashSet<>();
+    /** Guarded by {@code this}: output-pixel biome ids retained for fullscreen cursor readout. */
+    private final Map<TileKey, byte[]> biomeTiles = new HashMap<>();
     /** Guarded by {@code this}: invalidates compositions started before a manual/session reload. */
     private long reloadGeneration;
 
@@ -92,6 +98,9 @@ public final class PredictionTileService {
         final TileKey tile = new TileKey(
             session.world(), session.dimension(), realLayer + PredictedTileKeys.SUFFIX, key.lod(), key.tileX(), key.tileZ()
         );
+        synchronized (this) {
+            biomeTiles.remove(tile);
+        }
         markDirty(tile, session.token());
         return true;
     }
@@ -101,6 +110,7 @@ public final class PredictionTileService {
         synchronized (this) {
             reloadGeneration++;
             dirty.clear();
+            biomeTiles.clear();
         }
         CubiomesContexts.bumpEpoch();
     }
@@ -115,6 +125,7 @@ public final class PredictionTileService {
         synchronized (this) {
             reloadGeneration++;
             dirty.clear();
+            biomeTiles.clear();
             if (session.active()) {
                 for (final TileKey key : inFlight) {
                     if (key.world().equals(session.world()) && key.dimension().equals(session.dimension())) {
@@ -148,6 +159,7 @@ public final class PredictionTileService {
         synchronized (this) {
             viewport = rect;
             dirty.keySet().removeIf(key -> !rect.containsPadded(key));
+            biomeTiles.keySet().removeIf(key -> !rect.containsPadded(key));
         }
         pump();
     }
@@ -156,8 +168,53 @@ public final class PredictionTileService {
     public void clearViewport() {
         synchronized (this) {
             viewport = null;
+            biomeTiles.clear();
         }
         pump();
+    }
+
+    /**
+     * Predicted biome at one visible fullscreen-map pixel, using the same LOD sample that produced
+     * the rendered tile. Returns empty until that tile has composed, when prediction is hidden at
+     * the pixel, or when the requested dimension is not the active predictable session.
+     */
+    public OptionalInt predictedBiomeAt(
+        final DimensionId dimension,
+        final int lod,
+        final int blockX,
+        final int blockZ
+    ) {
+        final SessionGuard.Session session = sessionGuard.current();
+        if (!session.active() || !dimension.equals(session.dimension()) || !state.predictable(dimension)) {
+            return OptionalInt.empty();
+        }
+        final int tileX = TileMath.blockToTile(blockX, lod);
+        final int tileZ = TileMath.blockToTile(blockZ, lod);
+        final int pixelX = TileMath.blockToPixelInTile(blockX, lod);
+        final int pixelZ = TileMath.blockToPixelInTile(blockZ, lod);
+        final int pixel = pixelZ * TileMath.TILE_SIZE + pixelX;
+        final String layer = PredictionDimensions.isEnd(dimension)
+            ? MapLayer.END_SURFACE.cacheId()
+            : MapLayer.SURFACE.cacheId();
+        final TileKey key = new TileKey(
+            session.world(), dimension, layer + PredictedTileKeys.SUFFIX, lod, tileX, tileZ
+        );
+        final CorrectionStore store = correctionStore;
+        final CorrectionTile corrections = store == null ? null : store.get(dimension, lod, tileX, tileZ);
+        if (!viewMode.showsPredictedPixels(corrections, pixel, lod)) {
+            return OptionalInt.empty();
+        }
+        final byte[] biomes;
+        synchronized (this) {
+            biomes = biomeTiles.get(key);
+        }
+        if (biomes == null) {
+            // GPU textures can outlive viewport metadata. Rehydrate this one tile lazily when the
+            // cursor returns to it; requestTile is idempotent while a composition is queued/running.
+            requestTile(key);
+            return OptionalInt.empty();
+        }
+        return OptionalInt.of(Byte.toUnsignedInt(biomes[pixel]));
     }
 
     /**
@@ -260,13 +317,14 @@ public final class PredictionTileService {
     }
 
     private void composeAndFinish(final TileKey key, final long token, final long generation) {
-        TileUpdate update = null;
+        Composition composition = null;
         try {
-            update = composeTile(key, token);
+            composition = composeTile(key, token);
         } finally {
             synchronized (this) {
-                if (update != null && generation == reloadGeneration) {
-                    uploads.submitUpload(update);
+                if (composition != null && generation == reloadGeneration) {
+                    biomeTiles.put(key, composition.biomes());
+                    uploads.submitUpload(composition.update());
                 }
                 inFlight.remove(key);
             }
@@ -274,7 +332,7 @@ public final class PredictionTileService {
         }
     }
 
-    private TileUpdate composeTile(final TileKey key, final long token) {
+    private Composition composeTile(final TileKey key, final long token) {
         final SessionGuard.Session session = sessionGuard.current();
         if (!sessionGuard.isCurrent(token) || !session.active()
             || !key.world().equals(session.world()) || !key.dimension().equals(session.dimension())
@@ -312,7 +370,24 @@ public final class PredictionTileService {
         final int[] pixels = PredictedTileComposer.compose(
             derived, grid, state.palette(), corrections, viewMode, lod
         );
-        return TileUpdate.fullTile(key, pixels);
+        return new Composition(TileUpdate.fullTile(key, pixels), biomeIds(grid, corrections));
+    }
+
+    private static byte[] biomeIds(final BaselineGrid grid, final CorrectionTile corrections) {
+        final byte[] biomes = new byte[BaselineGrid.PIXELS * BaselineGrid.PIXELS];
+        for (int z = 0; z < BaselineGrid.PIXELS; z++) {
+            for (int x = 0; x < BaselineGrid.PIXELS; x++) {
+                biomes[z * BaselineGrid.PIXELS + x] = (byte) grid.biomeId[BaselineGrid.index(x, z)];
+            }
+        }
+        if (corrections != null) {
+            for (final PatchCodec.Sample sample : corrections.copyPatch().samples()) {
+                if (SurfaceKind.byOrdinal(sample.kind()) != SurfaceKind.UNKNOWN) {
+                    biomes[sample.pixelIndex()] = (byte) sample.biomeId();
+                }
+            }
+        }
+        return biomes;
     }
 
     /** Test-support only: a snapshot of currently-queued (not yet in-flight) predicted tile keys. */
@@ -323,6 +398,9 @@ public final class PredictionTileService {
     /** Test-support only: whether every queued/in-flight tile has drained. */
     public synchronized boolean isIdleForTest() {
         return dirty.isEmpty() && inFlight.isEmpty();
+    }
+
+    private record Composition(TileUpdate update, byte[] biomes) {
     }
 
     private record ViewportRect(DimensionId dimension, int lod, int minTileX, int maxTileX, int minTileZ, int maxTileZ) {

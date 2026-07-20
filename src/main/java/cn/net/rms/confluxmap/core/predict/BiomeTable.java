@@ -30,6 +30,7 @@ import java.util.Set;
  * entry and the water/canopy/kind mechanics reading them consistently.
  */
 public final class BiomeTable {
+    private static final int NO_SNOW_LINE = Integer.MAX_VALUE;
     /** Pre-tint base ARGB per {@link SurfaceKind}; {@link PredictionPalette} copies these as its own per-kind defaults. */
     public static final int LAND_BASE = 0xFF96966E;
     public static final int SAND_BASE = 0xFFDDCE9B;
@@ -57,6 +58,7 @@ public final class BiomeTable {
     }
 
     private static final Map<Integer, Entry> TABLE = new HashMap<>();
+    private static final Map<Integer, Integer> SNOW_LINES = new HashMap<>();
 
     private BiomeTable() {
     }
@@ -71,12 +73,28 @@ public final class BiomeTable {
         return TABLE.keySet();
     }
 
+    /**
+     * Whether vanilla's altitude cooling would turn a predicted land surface into snow. The
+     * exact game rule varies the cutoff by roughly four blocks using horizontal temperature
+     * noise; prediction uses the deterministic midpoint because {@link BaselineGrid} carries no
+     * temperature-noise sample.
+     */
+    public static boolean hasAltitudeSnow(final int cubiomesBiomeId, final int surfaceY) {
+        return surfaceY >= SNOW_LINES.getOrDefault(cubiomesBiomeId, NO_SNOW_LINE);
+    }
+
     private static final Entry DEFAULT_FALLBACK =
         new Entry(SurfaceKind.LAND, false, 0.0, DEFAULT_GRASS_TINT, DEFAULT_FOLIAGE_TINT, DEFAULT_WATER_TINT);
 
     private static void put(final Entry entry, final int... ids) {
         for (final int id : ids) {
             TABLE.put(id, entry);
+        }
+    }
+
+    private static void snowLine(final int surfaceY, final int... ids) {
+        for (final int id : ids) {
+            SNOW_LINES.put(id, surfaceY);
         }
     }
 
@@ -179,5 +197,12 @@ public final class BiomeTable {
         // The End: pale end-stone look, no vegetation, never water.
         put(new Entry(SurfaceKind.LAND, false, 0.0, NEUTRAL_TINT, foliageGreen, DEFAULT_WATER_TINT),
             the_end, small_end_islands, end_midlands, end_highlands, end_barrens);
+
+        // Vanilla 1.17.1 cools rainy biomes above Y=64 by 0.05 per 30 blocks. These
+        // midpoint snow lines cover every generated biome cold enough to cross the 0.15 snow
+        // threshold within the 1.17 build height; already-snowy biomes keep their SNOW kind.
+        snowLine(95, mountains, wooded_mountains, gravelly_mountains, modified_gravelly_mountains, stone_shore);
+        snowLine(125, taiga, taiga_hills, taiga_mountains, giant_spruce_taiga, giant_spruce_taiga_hills);
+        snowLine(155, giant_tree_taiga, giant_tree_taiga_hills);
     }
 }

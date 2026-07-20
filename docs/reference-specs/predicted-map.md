@@ -6,7 +6,7 @@ overlays it; predictions never enter the `.cfr` column cache.
 ## Determinism
 
 The wire baseline is `{biomeId u8, surfaceY i16, kind u8, fluidDepth u8}`. The predictor version
-is `cb:32a72991c22a|shim:3|base:6`; palette colours are local and never sent. Natural canopy stays
+is `cb:32a72991c22a|shim:3|base:7`; palette colours are local and never sent. Natural canopy stays
 on the predicted plane instead of becoming a generated-chunk correction, so generated frontiers
 cannot introduce foliage-colour seams. Other height differences up to 2 blocks are tolerated, and
 fluid depth compares in buckets `0`, `1-3`, `4-9`, `10+`. A real map colour outside the biome's
@@ -15,6 +15,13 @@ expected set is retained as a correction so player builds are visible.
 Predicted tile textures contain time-independent terrain colours. Dynamic day/night brightness is
 applied as one render-time tint across the whole predicted plane, so composition order cannot leave
 adjacent tiles at different brightness levels.
+
+Rainy 1.17.1 biomes that cross vanilla's high-altitude freezing threshold render a deterministic
+snow cover. Prediction uses the midpoint snow line because the baseline does not carry vanilla's
+small horizontal temperature-noise offset: Y=95 for mountain/stone-shore families, Y=125 for
+taiga/giant-spruce families, and Y=155 for giant-tree taiga.
+Frozen-ocean and frozen-river baselines keep an ice surface at sea level instead of being flattened
+through the ordinary open-water branch.
 
 LOD0-1 canopy uses cubiomes' 1.17.1 natural tree candidates. A chunk with an unsupported vegetation
 pipeline keeps the previous deterministic canopy locally; a native failure falls back for the full

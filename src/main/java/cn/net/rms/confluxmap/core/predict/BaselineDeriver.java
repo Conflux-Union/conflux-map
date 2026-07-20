@@ -31,11 +31,18 @@ public final class BaselineDeriver {
             }
             final BiomeTable.Entry entry = BiomeTable.get(grid.biomeId[i]);
             if (terrainY < WATER_LEVEL && entry.waterBiome()) {
-                out.kind[i] = (byte) SurfaceKind.WATER.ordinal();
+                final SurfaceKind surface = entry.kind() == SurfaceKind.ICE
+                    ? SurfaceKind.ICE
+                    : SurfaceKind.WATER;
+                out.kind[i] = (byte) surface.ordinal();
                 out.surfaceY[i] = WATER_LEVEL;
                 out.fluidDepth[i] = Math.min(WATER_LEVEL - terrainY, 255);
             } else {
-                out.kind[i] = (byte) entry.kind().ordinal();
+                final SurfaceKind kind = entry.kind() == SurfaceKind.LAND
+                    && BiomeTable.hasAltitudeSnow(grid.biomeId[i], terrainY)
+                    ? SurfaceKind.SNOW
+                    : entry.kind();
+                out.kind[i] = (byte) kind.ordinal();
                 out.surfaceY[i] = terrainY;
                 out.fluidDepth[i] = 0;
             }

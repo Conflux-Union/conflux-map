@@ -1,19 +1,29 @@
 package cn.net.rms.confluxmap.core.predict;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
+import cn.net.rms.confluxmap.core.net.PatchCodec;
+import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
+import cn.net.rms.confluxmap.nativepredict.McVersions;
+import cn.net.rms.confluxmap.nativepredict.NativeLib;
+import java.nio.file.Path;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * {@link PredictionTileService}'s queue discipline, independent of native availability (see
@@ -28,7 +38,63 @@ class PredictionTileServiceTest {
     private static final WorldIdentity WORLD = WorldIdentity.singleplayer("prediction-tile-service-test");
 
     private static PredictionTileService newService(final SessionGuard sessionGuard, final MapExecutors executors, final TileService uploads) {
-        return new PredictionTileService(sessionGuard, new PredictionState(), executors, uploads);
+        return newService(sessionGuard, new PredictionState(), executors, uploads);
+    }
+
+    private static PredictionTileService newService(
+        final SessionGuard sessionGuard,
+        final PredictionState state,
+        final MapExecutors executors,
+        final TileService uploads
+    ) {
+        return new PredictionTileService(sessionGuard, state, executors, uploads);
+    }
+
+    @Test
+    void composedPredictionExposesItsBiomeForCursorReadout(@TempDir final Path tempDir) throws InterruptedException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final SessionGuard sessionGuard = new SessionGuard();
+        final MapExecutors executors = new MapExecutors();
+        final TileService uploads = new TileService(new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel());
+        final PredictionState state = new PredictionState();
+        state.set(146008555L, McVersions.toCubiomes("1.17").orElseThrow());
+        final PredictionTileService predictionTiles = newService(sessionGuard, state, executors, uploads);
+        final CorrectionStore corrections = new CorrectionStore(tempDir);
+        predictionTiles.bindCorrectionStore(corrections);
+        sessionGuard.begin(WORLD, DIM);
+
+        try {
+            predictionTiles.requestTile(new TileKey(WORLD, DIM, "surface!pred", 4, 0, 0));
+            awaitIdle(predictionTiles, 10_000L);
+
+            assertEquals(35, predictionTiles.predictedBiomeAt(DIM, 4, 0, 0).orElse(-1));
+
+            final PatchCodec.Sample correction = new PatchCodec.Sample(
+                0, 4, 80, SurfaceKind.LAND.ordinal(), Proto.MAP_COLOR_NONE, 0
+            );
+            assertTrue(predictionTiles.applyCorrection(
+                new CorrectionStore.Key(DIM.toString(), 4, 0, 0),
+                1L,
+                new byte[Proto.PATCH_PRESENCE_BYTES],
+                new PatchCodec.Patch(List.of(correction))
+            ));
+            awaitIdle(predictionTiles, 10_000L);
+            assertEquals(4, predictionTiles.predictedBiomeAt(DIM, 4, 0, 0).orElse(-1));
+
+            predictionTiles.setViewMode(PredictionViewMode.VISITED_ONLY);
+            assertTrue(predictionTiles.predictedBiomeAt(DIM, 4, 0, 0).isEmpty());
+
+            predictionTiles.setViewMode(PredictionViewMode.EVERYWHERE);
+            predictionTiles.clearViewport();
+            assertTrue(
+                predictionTiles.predictedBiomeAt(DIM, 4, 0, 0).isEmpty(),
+                "a cleared metadata entry should be requeued instead of returning stale data"
+            );
+            awaitIdle(predictionTiles, 10_000L);
+            assertEquals(4, predictionTiles.predictedBiomeAt(DIM, 4, 0, 0).orElse(-1));
+        } finally {
+            executors.shutdown(2000);
+        }
     }
 
     @Test
@@ -132,7 +198,11 @@ class PredictionTileServiceTest {
     }
 
     private static void awaitIdle(final PredictionTileService service) throws InterruptedException {
-        final long deadline = System.currentTimeMillis() + 2000;
+        awaitIdle(service, 2000L);
+    }
+
+    private static void awaitIdle(final PredictionTileService service, final long timeoutMillis) throws InterruptedException {
+        final long deadline = System.currentTimeMillis() + timeoutMillis;
         while (!service.isIdleForTest() && System.currentTimeMillis() < deadline) {
             Thread.sleep(10);
         }

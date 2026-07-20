@@ -15,12 +15,12 @@ public final class PredictorVersion {
     public static final int CFX_ABI = 3;
 
     /** Bumped whenever baseline sampling or derivation (LOD expansion, canopy, kind rules) changes. */
-    public static final int BASELINE_ALGO = 6;
+    public static final int BASELINE_ALGO = 7;
 
     private PredictorVersion() {
     }
 
-    /** Wire/cache format for {@code predictorVersion}, e.g. {@code "cb:32a72991c22a|shim:3|base:6"}. */
+    /** Wire/cache format for {@code predictorVersion}, e.g. {@code "cb:32a72991c22a|shim:3|base:7"}. */
     public static String full() {
         return "cb:" + CUBIOMES_COMMIT_12 + "|shim:" + CFX_ABI + "|base:" + BASELINE_ALGO;
     }

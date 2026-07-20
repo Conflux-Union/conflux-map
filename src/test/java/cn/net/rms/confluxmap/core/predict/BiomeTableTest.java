@@ -1,6 +1,8 @@
 package cn.net.rms.confluxmap.core.predict;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -72,5 +74,19 @@ class BiomeTableTest {
     void expectedIdCountMatchesTheDocumentedTotal() {
         // 66 overworld + 5 End, see BiomeTable's javadoc derivation.
         assertEquals(71, EXPECTED_IDS.size());
+    }
+
+    @Test
+    void altitudeSnowLinesCoverEveryColdRainyFamily() {
+        assertFalse(BiomeTable.hasAltitudeSnow(3, 94));
+        assertTrue(BiomeTable.hasAltitudeSnow(3, 95));
+
+        assertFalse(BiomeTable.hasAltitudeSnow(5, 124));
+        assertTrue(BiomeTable.hasAltitudeSnow(5, 125));
+
+        assertFalse(BiomeTable.hasAltitudeSnow(32, 154));
+        assertTrue(BiomeTable.hasAltitudeSnow(32, 155));
+
+        assertFalse(BiomeTable.hasAltitudeSnow(4, 255), "warm forest must not gain a false snow line");
     }
 }

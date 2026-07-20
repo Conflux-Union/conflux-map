@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Test;
 class BaselineDeriverTest {
     private static final int OCEAN = 0;
     private static final int PLAINS = 1;
+    private static final int MOUNTAINS = 3;
+    private static final int FROZEN_OCEAN = 10;
     private static final int SNOWY_TUNDRA = 12;
 
     private static DerivedGrid deriveOne(final int biomeId, final int terrainY) {
@@ -24,6 +26,16 @@ class BaselineDeriverTest {
         final DerivedGrid derived = deriveOne(OCEAN, 40);
         final int idx = BaselineGrid.index(0, 0);
         assertEquals(SurfaceKind.WATER.ordinal(), derived.kind[idx]);
+        assertEquals(BaselineDeriver.WATER_LEVEL, derived.surfaceY[idx]);
+        assertEquals(22, derived.fluidDepth[idx]);
+    }
+
+    @Test
+    void frozenOceanBelowSeaLevelBecomesIceAtSeaLevel() {
+        final DerivedGrid derived = deriveOne(FROZEN_OCEAN, 40);
+        final int idx = BaselineGrid.index(0, 0);
+
+        assertEquals(SurfaceKind.ICE.ordinal(), derived.kind[idx]);
         assertEquals(BaselineDeriver.WATER_LEVEL, derived.surfaceY[idx]);
         assertEquals(22, derived.fluidDepth[idx]);
     }
@@ -50,6 +62,16 @@ class BaselineDeriverTest {
     void snowyBiomeGivesSnowKind() {
         final DerivedGrid derived = deriveOne(SNOWY_TUNDRA, 70);
         assertEquals(SurfaceKind.SNOW.ordinal(), derived.kind[BaselineGrid.index(0, 0)]);
+    }
+
+    @Test
+    void coldMountainSurfaceBecomesSnowCoveredAtHighAltitude() {
+        final DerivedGrid low = deriveOne(MOUNTAINS, 80);
+        final DerivedGrid high = deriveOne(MOUNTAINS, 120);
+        final int idx = BaselineGrid.index(0, 0);
+
+        assertEquals(SurfaceKind.LAND.ordinal(), low.kind[idx]);
+        assertEquals(SurfaceKind.SNOW.ordinal(), high.kind[idx]);
     }
 
     @Test

@@ -10,6 +10,7 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
+import cn.net.rms.confluxmap.core.predict.CubiomesBiomeIds;
 import cn.net.rms.confluxmap.core.predict.PredictedTileKeys;
 import cn.net.rms.confluxmap.core.predict.PredictionLighting;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
@@ -35,6 +36,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.option.KeyBinding;
@@ -677,24 +679,37 @@ public final class FullscreenMapScreen extends Screen {
     }
 
     /**
-     * Best-effort biome name at the given column, for the footer readout. Uses the
-     * local player's block Y (clamped to the world's vertical bounds) rather than a
-     * true 3-D sample - close enough for a map readout, per the implementation
-     * brief. Returns null - footer falls back to coordinates only - if there's no
-     * world, the chunk isn't loaded, or the biome's identifier can't be resolved.
+     * Best-effort biome name at the given column, for the footer readout. Loaded real chunks win;
+     * unexplored columns fall back to the same predicted biome sample and LOD as the rendered
+     * underlay. Returns null when neither source has a resolvable biome identifier.
      */
     private String cursorBiomeName(final int blockX, final int blockZ) {
         final ClientWorld world = client.world;
-        if (world == null) {
+        if (world != null) {
+            final int playerY = gameBridge.player().map(p -> p.blockY()).orElse(world.getBottomY());
+            final BlockPos pos = new BlockPos(
+                blockX, MathHelper.clamp(playerY, world.getBottomY(), world.getTopY() - 1), blockZ
+            );
+            if (world.isChunkLoaded(pos)) {
+                final Identifier biomeId = world.getRegistryManager().get(Registry.BIOME_KEY).getId(world.getBiome(pos));
+                if (biomeId != null) {
+                    return translatedBiomeName(biomeId);
+                }
+            }
+        }
+        final OptionalInt predicted = predictionTiles.predictedBiomeAt(
+            gameBridge.session().dimension(), currentLod(), blockX, blockZ
+        );
+        if (predicted.isEmpty()) {
             return null;
         }
-        final int playerY = gameBridge.player().map(p -> p.blockY()).orElse(world.getBottomY());
-        final BlockPos pos = new BlockPos(blockX, MathHelper.clamp(playerY, world.getBottomY(), world.getTopY() - 1), blockZ);
-        if (!world.isChunkLoaded(pos)) {
-            return null;
-        }
-        final Identifier biomeId = world.getRegistryManager().get(Registry.BIOME_KEY).getId(world.getBiome(pos));
-        return biomeId == null ? null : new TranslatableText(Util.createTranslationKey("biome", biomeId)).getString();
+        return CubiomesBiomeIds.nameForId(predicted.getAsInt())
+            .map(name -> translatedBiomeName(new Identifier("minecraft", name)))
+            .orElse(null);
+    }
+
+    private static String translatedBiomeName(final Identifier biomeId) {
+        return new TranslatableText(Util.createTranslationKey("biome", biomeId)).getString();
     }
 
     private static String dimensionDisplayName(final DimensionId dimension) {
