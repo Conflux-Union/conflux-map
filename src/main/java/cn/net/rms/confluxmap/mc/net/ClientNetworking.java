@@ -73,9 +73,9 @@ public final class ClientNetworking {
             } else if (msg instanceof final PolicyUpdateS2C u) {
                 onPolicyUpdate(u);
             } else if (msg instanceof final MapPatchS2C p) {
-                onMapPatch(p);
+                onMapPatch(p, payload.length);
             } else if (msg instanceof final ErrorS2C e) {
-                onError(e);
+                onError(e, payload.length);
             } else {
                 ConfluxMapMod.LOGGER.warn(
                     "companion: unexpected S2C {} from server",
@@ -93,7 +93,7 @@ public final class ClientNetworking {
             ConfluxMapMod.getVersion(),
             PredictorVersion.full()
         );
-        if (!sendMessage(hello)) {
+        if (sendMessage(hello) < 0) {
             return;
         }
         session.onHelloSent();
@@ -103,23 +103,23 @@ public final class ClientNetworking {
         );
     }
 
-    boolean sendMessage(final Message msg) {
+    int sendMessage(final Message msg) {
         final byte[] payload;
         try {
             payload = MsgCodec.encode(msg);
         } catch (final ProtoException e) {
             ConfluxMapMod.LOGGER.error("companion: failed to serialize {}: {}", msg.getClass().getSimpleName(), e.getMessage());
-            return false;
+            return -1;
         }
         final PacketByteBuf buf = new PacketByteBuf(Unpooled.wrappedBuffer(payload));
         try {
             ClientPlayNetworking.send(CHANNEL, buf);
-            return true;
+            return payload.length;
         } catch (final IllegalStateException e) {
             // Channel not ready (e.g. fired before JOIN completes, or after DISCONNECT). Don't
             // crash the caller - WorldSessionTracker will retry on the next session.
             ConfluxMapMod.LOGGER.debug("companion: send failed for {}: {}", msg.getClass().getSimpleName(), e.getMessage());
-            return false;
+            return -1;
         }
     }
 
@@ -137,10 +137,10 @@ public final class ClientNetworking {
         session.onPolicy(updated);
     }
 
-    private void onMapPatch(final MapPatchS2C patch) {
+    private void onMapPatch(final MapPatchS2C patch, final int payloadBytes) {
         final MapSyncClient sync = mapSync;
         if (sync != null) {
-            sync.onPatch(patch);
+            sync.onPatch(patch, payloadBytes);
         }
         ConfluxMapMod.LOGGER.debug(
             "companion: MAP_PATCH mode={} tileX={} tileZ={} lod={} body={} bytes",
@@ -148,7 +148,11 @@ public final class ClientNetworking {
         );
     }
 
-    private void onError(final ErrorS2C err) {
+    private void onError(final ErrorS2C err, final int payloadBytes) {
+        final MapSyncClient sync = mapSync;
+        if (sync != null) {
+            sync.onError(payloadBytes);
+        }
         ConfluxMapMod.LOGGER.warn("companion: server error code={} detail={}", err.code(), err.detail());
     }
 

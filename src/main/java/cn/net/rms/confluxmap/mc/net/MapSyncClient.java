@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.net.MapPatchS2C;
+import cn.net.rms.confluxmap.core.net.MapSyncProgress;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
@@ -12,8 +13,8 @@ import cn.net.rms.confluxmap.core.predict.CorrectionStore;
 import cn.net.rms.confluxmap.core.predict.PredictionTileService;
 import cn.net.rms.confluxmap.core.predict.ViewRequestPlanner;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /** Client-side viewport debounce, request planning, and correction application. */
@@ -23,6 +24,7 @@ public final class MapSyncClient {
     private final CorrectionStore corrections;
     private final PredictionTileService predictionTiles;
     private final ConfluxConfig config;
+    private final MapSyncProgress progress = new MapSyncProgress();
     private int nextReqId;
     private long stableSince = Long.MIN_VALUE;
     private long lastSent;
@@ -99,8 +101,11 @@ public final class MapSyncClient {
         if (dimIndex < 0) {
             return;
         }
-        if (networking.sendMessage(new MapViewReqC2S(nextReqId++ & 0x7FFF, dimIndex, lod, planned))) {
+        final MapViewReqC2S request = new MapViewReqC2S(nextReqId++ & 0x7FFF, dimIndex, lod, planned);
+        final int payloadBytes = networking.sendMessage(request);
+        if (payloadBytes >= 0) {
             lastSent = now;
+            progress.requestStarted(request, payloadBytes, System.nanoTime());
             final long requestNanos = now * 1_000_000L;
             for (final MapViewReqC2S.TileReq tile : planned) {
                 lastRequestNanos.put(ViewRequestPlanner.key(tile.tileX(), tile.tileZ()), requestNanos);
@@ -108,7 +113,15 @@ public final class MapSyncClient {
         }
     }
 
-    public void onPatch(final MapPatchS2C patch) {
+    public void onPatch(final MapPatchS2C patch, final int payloadBytes) {
+        try {
+            applyPatch(patch);
+        } finally {
+            progress.patchReceived(patch, payloadBytes, System.nanoTime());
+        }
+    }
+
+    private void applyPatch(final MapPatchS2C patch) {
         if (patch.mode() == Proto.PATCH_MODE_UNAVAILABLE || patch.mode() == Proto.PATCH_MODE_UNCHANGED) {
             final CorrectionStore.Key key = keyFor(patch);
             if (key != null) {
@@ -132,6 +145,15 @@ public final class MapSyncClient {
         stableSince = Long.MIN_VALUE;
         lastSent = 0L;
         lastLod = -1;
+        progress.reset();
+    }
+
+    public MapSyncProgress.Snapshot status() {
+        return progress.snapshot();
+    }
+
+    public void onError(final int payloadBytes) {
+        progress.requestFailed(payloadBytes, System.nanoTime());
     }
 
     private CorrectionStore.Key keyFor(final MapPatchS2C patch) {

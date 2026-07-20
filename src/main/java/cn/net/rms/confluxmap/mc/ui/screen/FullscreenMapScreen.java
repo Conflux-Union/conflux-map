@@ -10,6 +10,7 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
+import cn.net.rms.confluxmap.core.net.MapSyncProgress;
 import cn.net.rms.confluxmap.core.predict.CubiomesBiomeIds;
 import cn.net.rms.confluxmap.core.predict.PredictedTileKeys;
 import cn.net.rms.confluxmap.core.predict.PredictionLighting;
@@ -72,6 +73,9 @@ public final class FullscreenMapScreen extends Screen {
 
     private static final int MARGIN = 6;
     private static final int TEXT_COLOR = 0xFFFFFFFF;
+    private static final int SYNCING_TEXT_COLOR = 0xFFFFE066;
+    private static final int SYNCED_TEXT_COLOR = 0xFF80E080;
+    private static final int SYNC_FAILED_TEXT_COLOR = 0xFFFF7777;
     private static final int BACKGROUND_COLOR = 0xFF101018;
     private static final int GRID_COLOR = 0x22FFFFFF;
     private static final int ARROW_OUTLINE = 0xFF101010;
@@ -320,6 +324,7 @@ public final class FullscreenMapScreen extends Screen {
         drawDimensionLabel(matrices);
         drawLayerLabel(matrices);
         drawPredictionLabel(matrices);
+        drawServerSyncLabel(matrices);
         drawScaleLabel(matrices);
         drawCursorCoords(matrices, mouseX, mouseY);
 
@@ -646,6 +651,56 @@ public final class FullscreenMapScreen extends Screen {
         textRenderer.drawWithShadow(
             matrices, text, MARGIN, MARGIN + textRenderer.fontHeight * 2 + 4, TEXT_COLOR
         );
+    }
+
+    private void drawServerSyncLabel(final MatrixStack matrices) {
+        final MapSyncProgress.Snapshot status = ConfluxMapClient.get().mapSyncClient().status();
+        if (status.state() == MapSyncProgress.State.IDLE) {
+            return;
+        }
+        final String text;
+        final int color;
+        switch (status.state()) {
+            case SYNCING -> {
+                text = new TranslatableText("confluxmap.map.server_sync.syncing").getString();
+                color = SYNCING_TEXT_COLOR;
+            }
+            case COMPLETED -> {
+                text = new TranslatableText(
+                    "confluxmap.map.server_sync.completed",
+                    formatSyncDuration(status.durationNanos()), formatSyncTraffic(status.trafficBytes())
+                ).getString();
+                color = SYNCED_TEXT_COLOR;
+            }
+            case FAILED -> {
+                text = new TranslatableText("confluxmap.map.server_sync.failed").getString();
+                color = SYNC_FAILED_TEXT_COLOR;
+            }
+            default -> {
+                return;
+            }
+        }
+        final boolean predictionLabelVisible = config.predictionEnabled && predictionState.seedKnown();
+        final int row = predictionLabelVisible ? 3 : 2;
+        textRenderer.drawWithShadow(matrices, text, MARGIN, MARGIN + row * (textRenderer.fontHeight + 2), color);
+    }
+
+    private static String formatSyncDuration(final long durationNanos) {
+        final long durationMillis = durationNanos / 1_000_000L;
+        if (durationMillis < 1_000L) {
+            return durationMillis + " ms";
+        }
+        return String.format(java.util.Locale.ROOT, "%.2f s", durationNanos / 1_000_000_000.0);
+    }
+
+    private static String formatSyncTraffic(final long trafficBytes) {
+        if (trafficBytes < 1_024L) {
+            return trafficBytes + " B";
+        }
+        if (trafficBytes < 1_048_576L) {
+            return String.format(java.util.Locale.ROOT, "%.1f KiB", trafficBytes / 1_024.0);
+        }
+        return String.format(java.util.Locale.ROOT, "%.2f MiB", trafficBytes / 1_048_576.0);
     }
 
     private void drawScaleLabel(final MatrixStack matrices) {

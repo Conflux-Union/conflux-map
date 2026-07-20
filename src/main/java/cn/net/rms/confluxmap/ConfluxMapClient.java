@@ -158,6 +158,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(fullscreenMapViewState::onSessionChanged);
         sessionTracker.addListener(waypointService::onSessionChanged);
         sessionTracker.addListener(correctionStore::onSessionChanged);
+        sessionTracker.addListener(session -> mapSyncClient.reset());
         sessionTracker.addListener(predictionBootstrap::onSessionChanged);
         sessionTracker.addListener(predictionPaletteBuilder::onSessionChanged);
         sessionTracker.addListener(predictionTileService::onSessionChanged);
