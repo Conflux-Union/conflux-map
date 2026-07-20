@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.mc.net;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
+import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import java.util.Optional;
 import java.util.OptionalLong;
@@ -27,10 +28,9 @@ import org.jetbrains.annotations.Nullable;
  *   <li>{@code PredictionBootstrap} / {@code WorldSessionTracker} read the getters.</li>
  * </ul>
  *
- * <p>Non-companion servers never respond: the timeout fires and the session settles at
- * NO_COMPANION, so {@link #worldIdOverride()} returns empty and {@link WorldIdentity} resolution
- * is byte-identical to today's {@code multiplayer(address)} path. This is the compatibility
- * guarantee for S3.
+ * <p>Non-companion servers never respond: while the handshake is pending no world identity is
+ * exposed, then the timeout settles at NO_COMPANION and {@link #resolveWorldIdentity(String)}
+ * releases the address-based fallback.
  */
 public final class CompanionSession {
     /** After JOIN, wait at most this many ticks for HELLO_POLICY before giving up (100 ticks = 5 s). */
@@ -88,12 +88,21 @@ public final class CompanionSession {
         return state.get() == State.ACTIVE;
     }
 
-    /** Active session's worldId, or empty if no companion / not yet active. */
-    public Optional<String> worldIdOverride() {
-        if (state.get() != State.ACTIVE || policy == null) {
+    /**
+     * Resolves a multiplayer cache identity only when the companion capability is known. While a
+     * HELLO is outstanding, returning empty prevents the client from briefly opening the shared
+     * address fallback before a stable server world id arrives.
+     */
+    public Optional<WorldIdentity> resolveWorldIdentity(final String address) {
+        final State current = state.get();
+        if (current == State.HELLO_SENT) {
             return Optional.empty();
         }
-        return Optional.of(policy.worldId());
+        final HelloPolicyS2C currentPolicy = policy;
+        if (current == State.ACTIVE && currentPolicy != null) {
+            return Optional.of(WorldIdentity.multiplayer(address, currentPolicy.worldId()));
+        }
+        return Optional.of(WorldIdentity.multiplayer(address));
     }
 
     /**

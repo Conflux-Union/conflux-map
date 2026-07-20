@@ -1,6 +1,5 @@
 package cn.net.rms.confluxmap.mc.net;
 
-import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
@@ -16,11 +15,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
-import net.minecraft.client.MinecraftClient;
 
 /** Client-side viewport debounce, request planning, and correction application. */
 public final class MapSyncClient {
-    private final MinecraftClient client;
     private final CompanionSession companion;
     private final ClientNetworking networking;
     private final CorrectionStore corrections;
@@ -37,14 +34,12 @@ public final class MapSyncClient {
     private final Map<Long, Long> lastRequestNanos = new HashMap<>();
 
     public MapSyncClient(
-        final MinecraftClient client,
         final CompanionSession companion,
         final ClientNetworking networking,
         final CorrectionStore corrections,
         final PredictionTileService predictionTiles,
         final ConfluxConfig config
     ) {
-        this.client = client;
         this.companion = companion;
         this.networking = networking;
         this.corrections = corrections;
@@ -59,10 +54,6 @@ public final class MapSyncClient {
             || lod > companion.policy().budgets().maxPatchLod()) {
             return;
         }
-        // Integrated servers also speak the companion channel, but their cache must not share a
-        // namespace with a remote server that happens to advertise the same fallback world id.
-        final String serverNamespace = client.isInSingleplayer() ? "singleplayer" : "multiplayer";
-        corrections.setNamespace(serverNamespace, companion.worldIdOverride().orElse("world"));
         final long now = System.currentTimeMillis();
         corrections.flushIfDue(now);
         final boolean changed = lod != lastLod || minX != lastMinX || maxX != lastMaxX || minZ != lastMinZ || maxZ != lastMaxZ;

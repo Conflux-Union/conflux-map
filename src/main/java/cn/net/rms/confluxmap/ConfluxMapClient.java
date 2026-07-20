@@ -121,7 +121,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         predictionBootstrap = new PredictionBootstrap(client, predictionState, companionSession);
         predictionPaletteBuilder = new PredictionPaletteBuilder(client, predictionState);
         clientNetworking = new ClientNetworking(companionSession);
-        mapSyncClient = new MapSyncClient(client, companionSession, clientNetworking, correctionStore, predictionTileService, config);
+        mapSyncClient = new MapSyncClient(companionSession, clientNetworking, correctionStore, predictionTileService, config);
         clientNetworking.bindMapSync(mapSyncClient);
         clientNetworking.register();
 
@@ -157,13 +157,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(radarScanner::onSessionChanged);
         sessionTracker.addListener(fullscreenMapViewState::onSessionChanged);
         sessionTracker.addListener(waypointService::onSessionChanged);
+        sessionTracker.addListener(correctionStore::onSessionChanged);
         sessionTracker.addListener(predictionBootstrap::onSessionChanged);
         sessionTracker.addListener(predictionPaletteBuilder::onSessionChanged);
         sessionTracker.addListener(predictionTileService::onSessionChanged);
-        sessionTracker.addListener(session -> {
-            correctionStore.flush();
-            correctionStore.clear();
-        });
         sessionTracker.addListener(session -> gameBridge.runOnRenderThread(tileTextureManager::releaseAll));
         sessionTracker.register();
 

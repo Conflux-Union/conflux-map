@@ -1,7 +1,9 @@
 package cn.net.rms.confluxmap.core.predict;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
+import cn.net.rms.confluxmap.core.task.SessionGuard;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,20 +16,13 @@ public final class CorrectionStore {
     }
 
     private final Path root;
-    private String serverId;
-    private String worldId;
+    private WorldIdentity world = new WorldIdentity("local", "world");
     private final Map<Key, CorrectionTile> tiles = new HashMap<>();
     private final Map<Key, Boolean> dirty = new HashMap<>();
     private long lastFlushMillis;
 
     public CorrectionStore(final Path root) {
-        this(root, "local", "world");
-    }
-
-    public CorrectionStore(final Path root, final String serverId, final String worldId) {
         this.root = root;
-        this.serverId = sanitize(serverId);
-        this.worldId = sanitize(worldId);
     }
 
     public synchronized CorrectionTile get(final DimensionId dimension, final int lod, final int tileX, final int tileZ) {
@@ -90,21 +85,28 @@ public final class CorrectionStore {
         dirty.clear();
     }
 
-    /** Switches cache namespace when a companion adopts a new world identity. */
-    public synchronized void setNamespace(final String nextServerId, final String nextWorldId) {
-        final String safeServer = sanitize(nextServerId);
-        final String safeWorld = sanitize(nextWorldId);
-        if (serverId.equals(safeServer) && worldId.equals(safeWorld)) {
+    /** Main thread, from the session tracker: binds corrections to the same identity as all other world storage. */
+    public synchronized void onSessionChanged(final SessionGuard.Session session) {
+        if (!session.active()) {
+            flush();
+            clear();
+            return;
+        }
+        setNamespace(session.world());
+    }
+
+    public synchronized void setNamespace(final WorldIdentity world) {
+        if (this.world.equals(world)) {
             return;
         }
         flush();
         clear();
-        serverId = safeServer;
-        worldId = safeWorld;
+        this.world = world;
     }
 
     private Path pathFor(final Key key) {
-        return root.resolve(serverId).resolve(worldId).resolve(sanitize(key.dimension())).resolve("pred").resolve(Integer.toString(key.lod()))
+        return root.resolve(sanitize(world.serverId())).resolve(sanitize(world.worldId()))
+            .resolve(sanitize(key.dimension())).resolve("pred").resolve(Integer.toString(key.lod()))
             .resolve("t." + key.tileX() + "." + key.tileZ() + ".cfp");
     }
 

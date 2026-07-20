@@ -1,10 +1,15 @@
 package cn.net.rms.confluxmap.core.model;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Pure-Java coverage of the S3 companion-aware identity factories. Verifies the compatibility
@@ -72,13 +77,60 @@ class WorldIdentityTest {
     }
 
     @Test
-    void sameDisplayNameSavesUseTheirDistinctFolders() {
-        final WorldIdentity first = WorldIdentity.singleplayerSave(Path.of("/minecraft/saves/New World"));
-        final WorldIdentity second = WorldIdentity.singleplayerSave(Path.of("/minecraft/saves/New World-1"));
+    void sameDisplayNameSavesUseTheirDistinctFolders(@TempDir final Path tempDir) throws IOException {
+        final Path firstSave = createSave(tempDir.resolve("New World"));
+        final Path secondSave = createSave(tempDir.resolve("New World-1"));
+        final WorldIdentity first = WorldIdentity.singleplayerSave(firstSave);
+        final WorldIdentity second = WorldIdentity.singleplayerSave(secondSave);
 
         assertNotEquals(first, second);
-        assertEquals("new_world", first.worldId());
-        assertEquals("new_world-1", second.worldId());
+        assertEquals("new_world--411b5590ae9bc2b58edb8ffc8605bff8d6d0ff0e69e245963a04b06e59b0e053", first.worldId());
+        assertEquals("new_world-1--8da26504d4ec2c157fe3000e9d02cd97d28dce6d6d9ccfa3b276755deb4290a1", second.worldId());
+        assertEquals("new_world", first.legacyWorldId());
+        assertEquals("new_world-1", second.legacyWorldId());
+    }
+
+    @Test
+    void collidingLegacyNamesNeverShareIdentityOrMigrationSource(@TempDir final Path tempDir) throws IOException {
+        final Path firstSave = createSave(tempDir.resolve("A B"));
+        final Path secondSave = createSave(tempDir.resolve("a_b"));
+        final WorldIdentity first = WorldIdentity.singleplayerSave(firstSave);
+        final WorldIdentity second = WorldIdentity.singleplayerSave(secondSave);
+
+        assertNotEquals(first, second);
+        assertNotEquals(first.worldId(), second.worldId());
+        assertFalse(first.hasLegacyStorageId());
+        assertFalse(second.hasLegacyStorageId());
+    }
+
+    @Test
+    void migrationMetadataDoesNotChangeWorldEquality(@TempDir final Path tempDir) throws IOException {
+        final Path uniqueSave = createSave(tempDir.resolve("unique").resolve("New World"));
+        final Path collidingParent = tempDir.resolve("colliding");
+        final Path collidingSave = createSave(collidingParent.resolve("New World"));
+        createSave(collidingParent.resolve("new_world"));
+
+        final WorldIdentity migratable = WorldIdentity.singleplayerSave(uniqueSave);
+        final WorldIdentity isolated = WorldIdentity.singleplayerSave(collidingSave);
+
+        assertTrue(migratable.hasLegacyStorageId());
+        assertFalse(isolated.hasLegacyStorageId());
+        assertEquals(migratable, isolated);
+        assertEquals(migratable.hashCode(), isolated.hashCode());
+    }
+
+    @Test
+    void unrelatedDirectoryDoesNotBlockLegacyMigration(@TempDir final Path tempDir) throws IOException {
+        final Path save = createSave(tempDir.resolve("New World"));
+        Files.createDirectories(tempDir.resolve("new_world"));
+
+        assertTrue(WorldIdentity.singleplayerSave(save).hasLegacyStorageId());
+    }
+
+    private static Path createSave(final Path root) throws IOException {
+        Files.createDirectories(root);
+        Files.writeString(root.resolve("level.dat"), "test save");
+        return root;
     }
 
 }

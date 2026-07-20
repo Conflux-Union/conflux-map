@@ -1,0 +1,60 @@
+package cn.net.rms.confluxmap.core.predict;
+
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.model.WorldIdentity;
+import cn.net.rms.confluxmap.core.net.PatchCodec;
+import cn.net.rms.confluxmap.core.net.Proto;
+import cn.net.rms.confluxmap.core.task.SessionGuard;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class CorrectionStoreTest {
+    @Test
+    void singleplayerCorrectionsUseTheCurrentSaveIdentity(@TempDir final Path tempDir) {
+        final WorldIdentity world = WorldIdentity.singleplayerSave(Path.of("/minecraft/saves/New World"));
+        final CorrectionStore store = new CorrectionStore(tempDir);
+        store.onSessionChanged(new SessionGuard.Session(1L, world, DimensionId.OVERWORLD));
+
+        final CorrectionStore.Key key = new CorrectionStore.Key("minecraft:overworld", 0, 3, -2);
+        store.apply(key, 1L, new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(List.of()));
+        store.flush();
+
+        final Path file = tempDir.resolve(world.serverId()).resolve(world.worldId())
+            .resolve("minecraft_overworld").resolve("pred").resolve("0").resolve("t.3.-2.cfp");
+        assertTrue(Files.isRegularFile(file));
+    }
+
+    @Test
+    void sessionChangesFlushEachWorldBeforeClearing(@TempDir final Path tempDir) {
+        final WorldIdentity first = WorldIdentity.singleplayer("first-world");
+        final WorldIdentity second = WorldIdentity.singleplayer("second-world");
+        final CorrectionStore store = new CorrectionStore(tempDir);
+        final CorrectionStore.Key key = new CorrectionStore.Key("minecraft:overworld", 0, 0, 0);
+
+        store.onSessionChanged(new SessionGuard.Session(1L, first, DimensionId.OVERWORLD));
+        store.apply(key, 1L, new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(List.of()));
+        store.onSessionChanged(new SessionGuard.Session(2L, second, DimensionId.OVERWORLD));
+
+        store.apply(key, 2L, new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(List.of()));
+        store.onSessionChanged(SessionGuard.Session.NONE);
+
+        assertTrue(Files.isRegularFile(correctionFile(tempDir, first, 0, 0)));
+        assertTrue(Files.isRegularFile(correctionFile(tempDir, second, 0, 0)));
+    }
+
+    private static Path correctionFile(
+        final Path root,
+        final WorldIdentity world,
+        final int tileX,
+        final int tileZ
+    ) {
+        return root.resolve(world.serverId()).resolve(world.worldId())
+            .resolve("minecraft_overworld").resolve("pred").resolve("0")
+            .resolve("t." + tileX + "." + tileZ + ".cfp");
+    }
+}

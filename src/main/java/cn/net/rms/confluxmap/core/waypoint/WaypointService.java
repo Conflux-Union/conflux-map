@@ -1,12 +1,15 @@
 package cn.net.rms.confluxmap.core.waypoint;
 
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
+import cn.net.rms.confluxmap.core.store.WorldStorageMigration;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import org.apache.logging.log4j.Logger;
 
 /**
@@ -46,13 +49,14 @@ public final class WaypointService {
             return;
         }
         if (current != null) {
-            saveSnapshot(current.world(), current.list());
+            saveOutgoingSnapshot(current.world(), current.list());
         }
         if (newWorld == null) {
             current = null;
             return;
         }
-        final List<Waypoint> loaded = WaypointIo.load(fileFor(newWorld), logger);
+        final Path file = WorldStorageMigration.file(baseDir, newWorld, ".json", logger);
+        final List<Waypoint> loaded = WaypointIo.load(file, logger);
         final WaypointStore store = new WaypointStore(newWorld, loaded);
         store.addListener(waypoints -> saveSnapshot(newWorld, waypoints));
         current = store;
@@ -72,6 +76,26 @@ public final class WaypointService {
     private void saveSnapshot(final WorldIdentity world, final List<Waypoint> snapshot) {
         final Path file = fileFor(world);
         executors.io().execute(() -> WaypointIo.save(file, snapshot, logger));
+    }
+
+    private void saveOutgoingSnapshot(final WorldIdentity world, final List<Waypoint> snapshot) {
+        final Path file = fileFor(world);
+        final Future<?> save = executors.io().submit(() -> WaypointIo.save(file, snapshot, logger));
+        boolean interrupted = false;
+        while (true) {
+            try {
+                save.get();
+                break;
+            } catch (final InterruptedException e) {
+                interrupted = true;
+            } catch (final ExecutionException e) {
+                logger.error("Failed to save outgoing waypoints for {}", world, e.getCause());
+                break;
+            }
+        }
+        if (interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private Path fileFor(final WorldIdentity world) {

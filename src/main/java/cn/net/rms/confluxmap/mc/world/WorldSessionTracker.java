@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -30,6 +31,8 @@ public final class WorldSessionTracker {
     private final SessionGuard guard;
     private final List<Consumer<SessionGuard.Session>> listeners = new ArrayList<>();
     private final CompanionSession companion;
+    private Path singleplayerSaveRoot;
+    private WorldIdentity singleplayerIdentity;
 
     public WorldSessionTracker(final SessionGuard guard, final CompanionSession companion) {
         this.guard = guard;
@@ -51,6 +54,8 @@ public final class WorldSessionTracker {
 
         final SessionGuard.Session current = guard.current();
         if (client.world == null || client.player == null) {
+            singleplayerSaveRoot = null;
+            singleplayerIdentity = null;
             if (current.active()) {
                 guard.end();
                 ConfluxMapMod.LOGGER.info("Map session ended (token {})", current.token());
@@ -59,7 +64,24 @@ public final class WorldSessionTracker {
             return;
         }
         final DimensionId dimension = toDimensionId(client.world.getRegistryKey().getValue());
-        final WorldIdentity fresh = resolveWorldIdentity(client);
+        updateSession(resolveWorldIdentity(client), dimension);
+    }
+
+    /** Applies one MC-free identity observation to the session state machine. */
+    void updateSession(final Optional<WorldIdentity> resolved, final DimensionId dimension) {
+        final SessionGuard.Session current = guard.current();
+        if (resolved.isEmpty()) {
+            if (current.active()) {
+                guard.end();
+                ConfluxMapMod.LOGGER.info(
+                    "Map session suspended while waiting for a stable multiplayer world identity (token {})",
+                    current.token()
+                );
+                notifyListeners(guard.current());
+            }
+            return;
+        }
+        final WorldIdentity fresh = resolved.get();
         if (!current.active()) {
             final SessionGuard.Session session = guard.begin(fresh, dimension);
             ConfluxMapMod.LOGGER.info(
@@ -92,19 +114,23 @@ public final class WorldSessionTracker {
     }
 
     /**
-     * Resolves the client's current world identity, honoring a companion-provided {@code worldId}
-     * when one is available. Pure-MC accessors live here; the {@code companion -> worldId}
-     * selection is the only S3 addition and is covered by {@link WorldIdentity#multiplayer(String, String)}.
+     * Resolves the client's current world identity. Local sessions use the save directory; remote
+     * sessions delegate handshake state and companion world ids to {@link CompanionSession}.
+     * Empty means a HELLO is outstanding and any existing session must be suspended.
      */
-    private WorldIdentity resolveWorldIdentity(final MinecraftClient client) {
+    private Optional<WorldIdentity> resolveWorldIdentity(final MinecraftClient client) {
         if (client.isInSingleplayer() && client.getServer() != null) {
-            return WorldIdentity.singleplayerSave(client.getServer().getSavePath(WorldSavePath.ROOT));
+            final Path saveRoot = client.getServer().getSavePath(WorldSavePath.ROOT).normalize();
+            if (!saveRoot.equals(singleplayerSaveRoot)) {
+                singleplayerSaveRoot = saveRoot;
+                singleplayerIdentity = WorldIdentity.singleplayerSave(saveRoot);
+            }
+            return Optional.of(singleplayerIdentity);
         }
+        singleplayerSaveRoot = null;
+        singleplayerIdentity = null;
         final String address = resolveAddress(client);
-        final Optional<String> override = companion.worldIdOverride();
-        return override
-            .<WorldIdentity>map(id -> WorldIdentity.multiplayer(address, id))
-            .orElseGet(() -> WorldIdentity.multiplayer(address));
+        return companion.resolveWorldIdentity(address);
     }
 
     private static String resolveAddress(final MinecraftClient client) {

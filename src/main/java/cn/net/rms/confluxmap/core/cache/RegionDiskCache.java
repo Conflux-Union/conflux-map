@@ -8,6 +8,7 @@ import cn.net.rms.confluxmap.core.store.ColumnStore;
 import cn.net.rms.confluxmap.core.store.MapWorld;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.store.RegionColumns;
+import cn.net.rms.confluxmap.core.store.WorldStorageMigration;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
@@ -74,7 +75,7 @@ public final class RegionDiskCache {
         final TileService tiles,
         final Logger logger
     ) {
-        this.baseDir = root.resolve(session.world().serverId()).resolve(session.world().worldId()).resolve(session.dimension().fileName());
+        this.baseDir = WorldStorageMigration.directory(root, session.world(), logger).resolve(session.dimension().fileName());
         this.token = session.token();
         this.dimension = session.dimension();
         this.mapWorlds = mapWorlds;
