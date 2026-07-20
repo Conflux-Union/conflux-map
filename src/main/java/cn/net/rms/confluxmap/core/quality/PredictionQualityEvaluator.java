@@ -6,6 +6,7 @@ import java.util.Arrays;
 
 /** Compares a generated reference tile with its prediction using visual and semantic metrics. */
 public final class PredictionQualityEvaluator {
+    private static final int EDGE_TOLERANCE_PIXELS = 1;
     private static final double COLOR_RANGE = Math.sqrt(3.0 * 255.0 * 255.0);
     private static final double SSIM_C1 = square(0.01 * 255.0);
     private static final double SSIM_C2 = square(0.03 * 255.0);
@@ -36,11 +37,13 @@ public final class PredictionQualityEvaluator {
         double coverageAccuracy,
         double surfaceKindAccuracy,
         double heightMae,
+        double heightBias,
         double heightP95,
         double heightWithinTwo,
         double fluidBucketAccuracy,
         double colorSimilarity,
         double structuralSimilarity,
+        double exactEdgeF1,
         double edgeF1,
         double combinedScore
     ) {
@@ -60,6 +63,7 @@ public final class PredictionQualityEvaluator {
         int fluidSamples = 0;
         int fluidMatches = 0;
         double heightErrorSum = 0.0;
+        double signedHeightErrorSum = 0.0;
         double colorSimilaritySum = 0.0;
         final int[] heightErrors = new int[length];
         final double[] referenceLuminance = new double[length];
@@ -80,6 +84,7 @@ public final class PredictionQualityEvaluator {
             final int error = Math.abs(reference.surfaceY()[i] - prediction.surfaceY()[i]);
             heightErrors[overlap] = error;
             heightErrorSum += error;
+            signedHeightErrorSum += prediction.surfaceY()[i] - reference.surfaceY()[i];
             if (error <= 2) {
                 withinTwo++;
             }
@@ -102,12 +107,14 @@ public final class PredictionQualityEvaluator {
         final double coverage = ratio(coverageMatches, length);
         final double kind = ratio(kindMatches, overlap);
         final double heightMae = overlap == 0 ? Double.POSITIVE_INFINITY : heightErrorSum / overlap;
+        final double heightBias = overlap == 0 ? Double.NaN : signedHeightErrorSum / overlap;
         final double heightP95 = overlap == 0 ? Double.POSITIVE_INFINITY : heightErrors[p95Index(overlap)];
         final double heightWithinTwo = ratio(withinTwo, overlap);
         final double fluid = fluidSamples == 0 ? 1.0 : ratio(fluidMatches, fluidSamples);
         final double color = overlap == 0 ? 0.0 : colorSimilaritySum / overlap;
         final double structural = structuralSimilarity(referenceLuminance, predictionLuminance, overlap);
-        final double edges = edgeF1(reference, prediction);
+        final double exactEdges = exactEdgeF1(reference, prediction);
+        final double edges = tolerantEdgeF1(reference, prediction);
         final double combined = 0.10 * coverage
             + 0.20 * kind
             + 0.20 * heightWithinTwo
@@ -121,11 +128,13 @@ public final class PredictionQualityEvaluator {
             coverage,
             kind,
             heightMae,
+            heightBias,
             heightP95,
             heightWithinTwo,
             fluid,
             color,
             structural,
+            exactEdges,
             edges,
             combined
         );
@@ -198,7 +207,7 @@ public final class PredictionQualityEvaluator {
         return clamp01(score);
     }
 
-    private static double edgeF1(final TileData actual, final TileData predicted) {
+    private static double exactEdgeF1(final TileData actual, final TileData predicted) {
         int actualEdges = 0;
         int predictedEdges = 0;
         int matchingEdges = 0;
@@ -227,6 +236,85 @@ public final class PredictionQualityEvaluator {
             return 1.0;
         }
         return ratio(2 * matchingEdges, actualEdges + predictedEdges);
+    }
+
+    private static double tolerantEdgeF1(final TileData actual, final TileData predicted) {
+        final boolean[] actualEdges = semanticEdgePixels(actual);
+        final boolean[] predictedEdges = semanticEdgePixels(predicted);
+        final int actualCount = count(actualEdges);
+        final int predictedCount = count(predictedEdges);
+        if (actualCount == 0 && predictedCount == 0) {
+            return 1.0;
+        }
+        if (actualCount == 0 || predictedCount == 0) {
+            return 0.0;
+        }
+        final double recall = ratio(
+            matchedEdges(actualEdges, predictedEdges, actual.width(), actual.height()),
+            actualCount
+        );
+        final double precision = ratio(
+            matchedEdges(predictedEdges, actualEdges, actual.width(), actual.height()),
+            predictedCount
+        );
+        return 2.0 * precision * recall / (precision + recall);
+    }
+
+    private static boolean[] semanticEdgePixels(final TileData tile) {
+        final boolean[] edges = new boolean[tile.width() * tile.height()];
+        for (int z = 0; z < tile.height(); z++) {
+            for (int x = 0; x < tile.width(); x++) {
+                final int index = z * tile.width() + x;
+                final int semantic = semanticClass(tile, index);
+                edges[index] = x > 0 && semantic != semanticClass(tile, index - 1)
+                    || x + 1 < tile.width() && semantic != semanticClass(tile, index + 1)
+                    || z > 0 && semantic != semanticClass(tile, index - tile.width())
+                    || z + 1 < tile.height() && semantic != semanticClass(tile, index + tile.width());
+            }
+        }
+        return edges;
+    }
+
+    private static int matchedEdges(
+        final boolean[] source,
+        final boolean[] target,
+        final int width,
+        final int height
+    ) {
+        int matches = 0;
+        for (int z = 0; z < height; z++) {
+            for (int x = 0; x < width; x++) {
+                if (!source[z * width + x]) {
+                    continue;
+                }
+                boolean matched = false;
+                for (int dz = -EDGE_TOLERANCE_PIXELS; dz <= EDGE_TOLERANCE_PIXELS && !matched; dz++) {
+                    final int targetZ = z + dz;
+                    if (targetZ < 0 || targetZ >= height) {
+                        continue;
+                    }
+                    for (int dx = -EDGE_TOLERANCE_PIXELS; dx <= EDGE_TOLERANCE_PIXELS; dx++) {
+                        final int targetX = x + dx;
+                        if (targetX >= 0 && targetX < width && target[targetZ * width + targetX]) {
+                            matched = true;
+                            break;
+                        }
+                    }
+                }
+                if (matched) {
+                    matches++;
+                }
+            }
+        }
+        return matches;
+    }
+
+    private static int count(final boolean[] values) {
+        int count = 0;
+        for (final boolean value : values) {
+            count += value ? 1 : 0;
+        }
+        return count;
     }
 
     private static boolean edge(final TileData tile, final int first, final int second) {

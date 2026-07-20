@@ -6,7 +6,7 @@ overlays it; predictions never enter the `.cfr` column cache.
 ## Determinism
 
 The wire baseline is `{biomeId u8, surfaceY i16, kind u8, fluidDepth u8}`. The predictor version
-is `cb:32a72991c22a|shim:3|base:7`; palette colours are local and never sent. Natural canopy stays
+is `cb:32a72991c22a|shim:3|base:8`; palette colours are local and never sent. Natural canopy stays
 on the predicted plane instead of becoming a generated-chunk correction, so generated frontiers
 cannot introduce foliage-colour seams. Other height differences up to 2 blocks are tolerated, and
 fluid depth compares in buckets `0`, `1-3`, `4-9`, `10+`. A real map colour outside the biome's
@@ -22,11 +22,15 @@ small horizontal temperature-noise offset: Y=95 for mountain/stone-shore familie
 taiga/giant-spruce families, and Y=155 for giant-tree taiga.
 Frozen-ocean and frozen-river baselines keep an ice surface at sea level instead of being flattened
 through the ordinary open-water branch.
+All Overworld terrain below sea level uses Vanilla's default water fill, including low ground whose
+sampled biome is not itself oceanic; End terrain is explicitly excluded from this rule.
 
 LOD0-1 canopy uses cubiomes' 1.17.1 natural tree candidates. A chunk with an unsupported vegetation
 pipeline keeps the previous deterministic canopy locally; a native failure falls back for the full
 tile. Higher LODs retain the aggregate canopy texture because individual tree candidates are no
 longer distinguishable.
+Jungle-tree candidates use a deterministic tall-canopy estimate instead of the ordinary-tree height,
+so dense jungle does not collapse into a flat surface a few blocks above the predicted ground.
 The terrain-feature cave mask is not applied to the surface plane, and approximate structure bounds
 remain candidate markers rather than being painted as terrain.
 

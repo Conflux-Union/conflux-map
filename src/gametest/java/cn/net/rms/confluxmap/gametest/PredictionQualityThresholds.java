@@ -9,16 +9,17 @@ final class PredictionQualityThresholds {
     private static final int EXPECTED_SAMPLES = PredictionQualityCorpus.DEFAULT_OVERWORLD_SAMPLES
         + PredictionQualityCorpus.DEFAULT_END_SAMPLES;
     private static final int MIN_REFERENCE_PIXELS = 20_000;
-    private static final double MIN_MEAN_COMBINED = 0.65;
-    private static final double MIN_SAMPLE_COMBINED = 0.45;
+    private static final double MIN_MEAN_COMBINED = 0.75;
+    private static final double MIN_SAMPLE_COMBINED = 0.60;
     private static final double MIN_MEAN_COVERAGE = 0.97;
-    private static final double MIN_MEAN_KIND = 0.75;
-    private static final double MAX_MEAN_HEIGHT_MAE = 2.50;
-    private static final double MIN_MEAN_HEIGHT_WITHIN_TWO = 0.78;
-    private static final double MIN_MEAN_FLUID = 0.50;
-    private static final double MIN_MEAN_COLOR = 0.70;
-    private static final double MIN_MEAN_STRUCTURAL = 0.35;
-    private static final double MIN_MEAN_EDGE = 0.05;
+    private static final double MIN_MEAN_KIND = 0.85;
+    private static final double MAX_MEAN_HEIGHT_MAE = 2.10;
+    private static final double MIN_MEAN_HEIGHT_WITHIN_TWO = 0.81;
+    private static final double MIN_MEAN_FLUID = 0.80;
+    private static final double MIN_MEAN_COLOR = 0.80;
+    private static final double MIN_MEAN_STRUCTURAL = 0.40;
+    private static final double MIN_MEAN_EXACT_EDGE = 0.08;
+    private static final double MIN_MEAN_TOLERANT_EDGE = 0.40;
 
     private PredictionQualityThresholds() {
     }
@@ -85,9 +86,14 @@ final class PredictionQualityThresholds {
             MIN_MEAN_STRUCTURAL
         );
         requireMinimum(
-            "mean edge F1",
+            "mean exact edge F1",
+            PredictionQualityAggregate.mean(results, metrics -> metrics.exactEdgeF1()),
+            MIN_MEAN_EXACT_EDGE
+        );
+        requireMinimum(
+            "mean one-pixel-tolerant edge F1",
             PredictionQualityAggregate.mean(results, metrics -> metrics.edgeF1()),
-            MIN_MEAN_EDGE
+            MIN_MEAN_TOLERANT_EDGE
         );
     }
 

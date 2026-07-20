@@ -83,6 +83,7 @@ final class PredictionQualityReport {
             PredictionQualityAggregate.mean(results, metrics -> metrics.surfaceKindAccuracy())
         );
         aggregate.addProperty("meanHeightMae", PredictionQualityAggregate.mean(results, metrics -> metrics.heightMae()));
+        aggregate.addProperty("meanHeightBias", PredictionQualityAggregate.mean(results, metrics -> metrics.heightBias()));
         aggregate.addProperty(
             "meanHeightWithinTwo",
             PredictionQualityAggregate.mean(results, metrics -> metrics.heightWithinTwo())
@@ -99,6 +100,10 @@ final class PredictionQualityReport {
             "meanStructuralSimilarity",
             PredictionQualityAggregate.mean(results, metrics -> metrics.structuralSimilarity())
         );
+        aggregate.addProperty(
+            "meanExactEdgeF1",
+            PredictionQualityAggregate.mean(results, metrics -> metrics.exactEdgeF1())
+        );
         aggregate.addProperty("meanEdgeF1", PredictionQualityAggregate.mean(results, metrics -> metrics.edgeF1()));
         return aggregate;
     }
@@ -110,11 +115,13 @@ final class PredictionQualityReport {
         json.addProperty("coverageAccuracy", metrics.coverageAccuracy());
         json.addProperty("surfaceKindAccuracy", metrics.surfaceKindAccuracy());
         json.addProperty("heightMae", metrics.heightMae());
+        json.addProperty("heightBias", metrics.heightBias());
         json.addProperty("heightP95", metrics.heightP95());
         json.addProperty("heightWithinTwo", metrics.heightWithinTwo());
         json.addProperty("fluidBucketAccuracy", metrics.fluidBucketAccuracy());
         json.addProperty("colorSimilarity", metrics.colorSimilarity());
         json.addProperty("structuralSimilarity", metrics.structuralSimilarity());
+        json.addProperty("exactEdgeF1", metrics.exactEdgeF1());
         json.addProperty("edgeF1", metrics.edgeF1());
         json.addProperty("combinedScore", metrics.combinedScore());
         return json;
@@ -164,10 +171,17 @@ final class PredictionQualityReport {
                 .append(percent(metrics.combinedScore())).append("</td><td>")
                 .append(percent(metrics.coverageAccuracy())).append("</td><td>")
                 .append(percent(metrics.surfaceKindAccuracy())).append("</td><td>")
-                .append(String.format(Locale.ROOT, "%.2f / %.0f", metrics.heightMae(), metrics.heightP95()))
+                .append(String.format(
+                    Locale.ROOT,
+                    "%.2f / %+.2f / %.0f",
+                    metrics.heightMae(),
+                    metrics.heightBias(),
+                    metrics.heightP95()
+                ))
                 .append("</td><td>")
                 .append(percent(metrics.colorSimilarity())).append("</td><td>")
                 .append(percent(metrics.structuralSimilarity())).append("</td><td>")
+                .append(percent(metrics.exactEdgeF1())).append("</td><td>")
                 .append(percent(metrics.edgeF1())).append("</td><td>");
             if (i < Math.min(WORST_ARTIFACTS, results.size())) {
                 final String prefix = String.format(Locale.ROOT, "worst-%02d-%s", i + 1, result.sample().id());
@@ -188,7 +202,8 @@ final class PredictionQualityReport {
             + percent(PredictionQualityAggregate.minimum(results, metrics -> metrics.combinedScore()))
             + "</p>"
             + "<table><thead><tr><th>Sample</th><th>Biome ID</th><th>Combined</th><th>Coverage</th><th>Kind</th>"
-            + "<th>Height MAE/P95</th><th>Color</th><th>SSIM</th><th>Edge F1</th><th>Artifacts</th></tr></thead><tbody>"
+            + "<th>Height MAE/bias/P95</th><th>Color</th><th>SSIM</th><th>Exact edge F1</th>"
+            + "<th>Tolerant edge F1</th><th>Artifacts</th></tr></thead><tbody>"
             + body + "</tbody></table></body></html>";
     }
 

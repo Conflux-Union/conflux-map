@@ -11,6 +11,7 @@ import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.util.Argb;
 import java.util.Arrays;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /** {@link PredictedTileComposer} determinism, using the pure-Java {@link PositionBasedFakeSampler}. */
@@ -122,6 +123,23 @@ class PredictedTileComposerTest {
         grid.biomeId[BaselineGrid.index(6, 6)] = 44;
         final int[] pixels = PredictedTileComposer.compose(derived, grid, PredictionPalette.defaults());
         assertEquals(pixels[5 * 256 + 5], pixels[6 * 256 + 6]);
+    }
+
+    @Test
+    void endLandUsesUntintedEndStoneInsteadOfTheGrassSurfaceModel() {
+        final BaselineGrid grid = new BaselineGrid();
+        final DerivedGrid derived = new DerivedGrid();
+        Arrays.fill(grid.biomeId, 9);
+        Arrays.fill(derived.kind, (byte) SurfaceKind.LAND.ordinal());
+        Arrays.fill(derived.surfaceY, ShadingPipeline.REFERENCE_HEIGHT);
+        final PredictionPalette palette = PredictionPalette.fromSamples(Map.of(
+            9,
+            new int[] {0xFF00FF00, 0xFF00FF00, 0xFF0000FF}
+        ));
+
+        final int[] pixels = PredictedTileComposer.compose(derived, grid, palette);
+
+        assertEquals(MapColorTable.argb(2), pixels[10 * 256 + 10]);
     }
 
     @Test

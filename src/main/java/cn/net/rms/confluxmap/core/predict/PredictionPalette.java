@@ -1,13 +1,14 @@
 package cn.net.rms.confluxmap.core.predict;
 
+import cn.net.rms.confluxmap.core.util.Argb;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
  * Per-session color data for {@link PredictedTileComposer}: a small fixed set of per-{@link
- * cn.net.rms.confluxmap.core.model.SurfaceKind} base colors (copied from {@link BiomeTable}'s
- * compiled-in constants - never overridden, there's no live-game equivalent of "the sand
- * color") plus a per-biome-id tint table ({@code grassTint}/{@code foliageTint}/{@code
+ * cn.net.rms.confluxmap.core.model.SurfaceKind} base colors plus per-biome ground bases from
+ * {@link BiomeTable} (never overridden, because there is no live-game equivalent of "the sand
+ * color") and a per-biome-id tint table ({@code grassTint}/{@code foliageTint}/{@code
  * waterTint}) that starts at {@link BiomeTable}'s fallback and gets overwritten, once per
  * session, by {@code mc.predict.PredictionPaletteBuilder} sampling the client's live biome
  * registry. Palette data never affects which pixels are water/land/foliage (that's {@link
@@ -45,6 +46,14 @@ public final class PredictionPalette {
     public int grassTint(final int biomeId) {
         final int[] sampled = tints.get(biomeId);
         return sampled != null ? sampled[0] : BiomeTable.get(biomeId).grassTint();
+    }
+
+    /** Ground color for a LAND prediction, including biome tint only for grass-like surfaces. */
+    public int groundColor(final int biomeId) {
+        final BiomeTable.Entry entry = BiomeTable.get(biomeId);
+        return entry.grassTinted()
+            ? Argb.multiply(entry.groundBase(), grassTint(biomeId))
+            : entry.groundBase();
     }
 
     public int foliageTint(final int biomeId) {

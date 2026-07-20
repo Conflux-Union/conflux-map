@@ -138,7 +138,7 @@ public final class PredictedTileComposer {
                 return Argb.multiply(palette.foliageBase, palette.foliageTint(biomeId));
             case LAND:
             default:
-                return Argb.multiply(palette.landBase, palette.grassTint(biomeId));
+                return palette.groundColor(biomeId);
         }
     }
 

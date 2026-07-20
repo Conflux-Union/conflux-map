@@ -5,9 +5,9 @@ import cn.net.rms.confluxmap.core.model.SurfaceKind;
 /**
  * Turns a {@link BaselineGrid} (raw biome id + terrain height) into a {@link DerivedGrid}
  * (kind/surfaceY/fluidDepth), per the plan's determinism spec water rule: a column below sea
- * level in an oceanic/river biome renders as flooded water at sea level, with a fluid depth
- * clamped to a byte; every other column keeps its own terrain height and takes its kind
- * straight from {@link BiomeTable}. Runs over the whole margin-inclusive grid (not just the
+ * level in the Overworld renders with the default water fluid at sea level, with a fluid depth
+ * clamped to a byte; End columns and terrain above sea level keep their own terrain height and
+ * take their kind straight from {@link BiomeTable}. Runs over the whole margin-inclusive grid (not just the
  * pixels that get rendered) so {@link CanopyStylizer} can stylize the margin too, keeping both
  * diagonal slope samples at tile edges consistent with ordinary pixels.
  */
@@ -30,8 +30,8 @@ public final class BaselineDeriver {
                 continue;
             }
             final BiomeTable.Entry entry = BiomeTable.get(grid.biomeId[i]);
-            if (terrainY < WATER_LEVEL && entry.waterBiome()) {
-                final SurfaceKind surface = entry.kind() == SurfaceKind.ICE
+            if (terrainY < WATER_LEVEL && !BiomeTable.isEnd(grid.biomeId[i])) {
+                final SurfaceKind surface = entry.kind() == SurfaceKind.ICE || entry.kind() == SurfaceKind.SNOW
                     ? SurfaceKind.ICE
                     : SurfaceKind.WATER;
                 out.kind[i] = (byte) surface.ordinal();

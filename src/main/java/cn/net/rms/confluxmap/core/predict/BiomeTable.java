@@ -8,8 +8,8 @@ import java.util.Set;
 /**
  * Static per-cubiomes-biome-id data used to turn a raw (biomeId, terrainY) baseline sample
  * into a renderable pixel: which {@link SurfaceKind} the biome renders as when the water rule
- * (see {@link BaselineDeriver}) doesn't apply, whether it counts as "oceanic/river" for that
- * water rule, how dense its tree canopy is (see {@link CanopyStylizer}), and fallback tint/base
+ * (see {@link BaselineDeriver}) doesn't apply, whether it counts as oceanic/river, how dense its
+ * tree canopy is (see {@link CanopyStylizer}), whether its ground accepts a grass tint, and fallback tint/base
  * colors used until {@code mc.predict.PredictionPaletteBuilder} overwrites the tint fields with
  * real client biome-registry samples (or forever, for a biome id the running client doesn't
  * know about at all).
@@ -51,6 +51,8 @@ public final class BiomeTable {
         SurfaceKind kind,
         boolean waterBiome,
         double treeCover,
+        int groundBase,
+        boolean grassTinted,
         int grassTint,
         int foliageTint,
         int waterTint
@@ -59,6 +61,7 @@ public final class BiomeTable {
 
     private static final Map<Integer, Entry> TABLE = new HashMap<>();
     private static final Map<Integer, Integer> SNOW_LINES = new HashMap<>();
+    private static final Set<Integer> END_IDS = Set.of(9, 40, 41, 42, 43);
 
     private BiomeTable() {
     }
@@ -73,6 +76,11 @@ public final class BiomeTable {
         return TABLE.keySet();
     }
 
+    /** Whether this cubiomes biome belongs to the End, where Overworld sea-level fill does not apply. */
+    public static boolean isEnd(final int cubiomesBiomeId) {
+        return END_IDS.contains(cubiomesBiomeId);
+    }
+
     /**
      * Whether vanilla's altitude cooling would turn a predicted land surface into snow. The
      * exact game rule varies the cutoff by roughly four blocks using horizontal temperature
@@ -84,7 +92,16 @@ public final class BiomeTable {
     }
 
     private static final Entry DEFAULT_FALLBACK =
-        new Entry(SurfaceKind.LAND, false, 0.0, DEFAULT_GRASS_TINT, DEFAULT_FOLIAGE_TINT, DEFAULT_WATER_TINT);
+        new Entry(
+            SurfaceKind.LAND,
+            false,
+            0.0,
+            LAND_BASE,
+            true,
+            DEFAULT_GRASS_TINT,
+            DEFAULT_FOLIAGE_TINT,
+            DEFAULT_WATER_TINT
+        );
 
     private static void put(final Entry entry, final int... ids) {
         for (final int id : ids) {
@@ -99,15 +116,42 @@ public final class BiomeTable {
     }
 
     private static Entry land(final double treeCover, final int grassTint, final int foliageTint) {
-        return new Entry(SurfaceKind.LAND, false, treeCover, grassTint, foliageTint, DEFAULT_WATER_TINT);
+        return new Entry(
+            SurfaceKind.LAND,
+            false,
+            treeCover,
+            LAND_BASE,
+            true,
+            grassTint,
+            foliageTint,
+            DEFAULT_WATER_TINT
+        );
     }
 
     private static Entry water(final boolean waterBiome, final int waterTint) {
-        return new Entry(SurfaceKind.LAND, waterBiome, 0.0, DEFAULT_GRASS_TINT, DEFAULT_FOLIAGE_TINT, waterTint);
+        return new Entry(
+            SurfaceKind.LAND,
+            waterBiome,
+            0.0,
+            LAND_BASE,
+            true,
+            DEFAULT_GRASS_TINT,
+            DEFAULT_FOLIAGE_TINT,
+            waterTint
+        );
     }
 
     private static Entry frozenWater(final int waterTint) {
-        return new Entry(SurfaceKind.ICE, true, 0.0, DEFAULT_GRASS_TINT, DEFAULT_FOLIAGE_TINT, waterTint);
+        return new Entry(
+            SurfaceKind.ICE,
+            true,
+            0.0,
+            ICE_BASE,
+            false,
+            DEFAULT_GRASS_TINT,
+            DEFAULT_FOLIAGE_TINT,
+            waterTint
+        );
     }
 
     static {
@@ -147,7 +191,9 @@ public final class BiomeTable {
         put(land(0.02, green, foliageGreen), plains, sunflower_plains);
 
         // Desert (SAND kind, no vegetation).
-        put(new Entry(SurfaceKind.SAND, false, 0.0, NEUTRAL_TINT, foliageGreen, DEFAULT_WATER_TINT), desert, desert_hills, desert_lakes);
+        put(new Entry(
+            SurfaceKind.SAND, false, 0.0, SAND_BASE, false, NEUTRAL_TINT, foliageGreen, DEFAULT_WATER_TINT
+        ), desert, desert_hills, desert_lakes);
 
         // Mountains: bare rock is sparse, "wooded" variants have real forest cover.
         put(land(0.05, 0xFF8FA377, foliageGreen), mountains, gravelly_mountains, modified_gravelly_mountains);
@@ -163,7 +209,9 @@ public final class BiomeTable {
         // Taiga family (non-snowy: LAND; snowy: SNOW per the plan's biome-kind table).
         put(land(0.2, 0xFF6C8E56, 0xFF3B6E3B), taiga, taiga_hills, taiga_mountains);
         put(land(0.4, 0xFF5E8250, 0xFF335F33), giant_tree_taiga, giant_tree_taiga_hills, giant_spruce_taiga, giant_spruce_taiga_hills);
-        put(new Entry(SurfaceKind.SNOW, false, 0.2, green, 0xFF3B6E3B, DEFAULT_WATER_TINT), snowy_taiga, snowy_taiga_hills, snowy_taiga_mountains);
+        put(new Entry(
+            SurfaceKind.SNOW, false, 0.2, SNOW_BASE, false, green, 0xFF3B6E3B, DEFAULT_WATER_TINT
+        ), snowy_taiga, snowy_taiga_hills, snowy_taiga_mountains);
 
         // Jungle family.
         put(land(0.5, 0xFF59C93C, 0xFF44C430), jungle, jungle_hills, modified_jungle, bamboo_jungle, bamboo_jungle_hills);
@@ -178,24 +226,41 @@ public final class BiomeTable {
         put(land(0.15, 0xFFD8956B, foliageGreen), wooded_badlands_plateau, modified_wooded_badlands_plateau);
 
         // Snowy tundra family (SNOW kind, no trees).
-        put(new Entry(SurfaceKind.SNOW, false, 0.0, green, foliageGreen, DEFAULT_WATER_TINT), snowy_tundra, snowy_mountains, ice_spikes);
+        put(new Entry(
+            SurfaceKind.SNOW, false, 0.0, SNOW_BASE, false, green, foliageGreen, DEFAULT_WATER_TINT
+        ), snowy_tundra, snowy_mountains, ice_spikes);
 
         // Mushroom fields: mycelium look via grassTint override, same trick as badlands.
         put(land(0.0, 0xFFAD9EBD, foliageGreen), mushroom_fields, mushroom_field_shore);
 
         // Beaches.
-        put(new Entry(SurfaceKind.SAND, false, 0.0, NEUTRAL_TINT, foliageGreen, DEFAULT_WATER_TINT), beach);
-        put(new Entry(SurfaceKind.SNOW, false, 0.0, NEUTRAL_TINT, foliageGreen, DEFAULT_WATER_TINT), snowy_beach);
+        put(new Entry(
+            SurfaceKind.SAND, false, 0.0, SAND_BASE, false, NEUTRAL_TINT, foliageGreen, DEFAULT_WATER_TINT
+        ), beach);
+        put(new Entry(
+            SurfaceKind.SNOW, false, 0.0, SNOW_BASE, false, NEUTRAL_TINT, foliageGreen, DEFAULT_WATER_TINT
+        ), snowy_beach);
 
         // Stone shore: bare rock, no grass tint.
         put(land(0.0, NEUTRAL_TINT, foliageGreen), stone_shore);
 
         // Swamp: murky tints (including its own water color), sparse trees. Its ponds are not
         // modeled as water since cubiomes' isOceanic/river doesn't cover swamp - see this class's javadoc.
-        put(new Entry(SurfaceKind.LAND, false, 0.15, 0xFF6A7039, 0xFF6A7039, 0xFF617B64), swamp, swamp_hills);
+        put(new Entry(
+            SurfaceKind.LAND, false, 0.15, LAND_BASE, true, 0xFF6A7039, 0xFF6A7039, 0xFF617B64
+        ), swamp, swamp_hills);
 
         // The End: pale end-stone look, no vegetation, never water.
-        put(new Entry(SurfaceKind.LAND, false, 0.0, NEUTRAL_TINT, foliageGreen, DEFAULT_WATER_TINT),
+        put(new Entry(
+            SurfaceKind.LAND,
+            false,
+            0.0,
+            MapColorTable.argb(2),
+            false,
+            NEUTRAL_TINT,
+            foliageGreen,
+            DEFAULT_WATER_TINT
+        ),
             the_end, small_end_islands, end_midlands, end_highlands, end_barrens);
 
         // Vanilla 1.17.1 cools rainy biomes above Y=64 by 0.05 per 30 blocks. These

@@ -9,6 +9,8 @@ import cn.net.rms.confluxmap.core.util.Argb;
 
 /** Renders generated map data into the same 2D map-color space used for quality comparison. */
 public final class GeneratedTileComposer {
+    private static final int SNOW_MAP_COLOR_ID = 8;
+
     public record Grid(
         int width,
         int height,
@@ -39,10 +41,12 @@ public final class GeneratedTileComposer {
         final PredictionPalette palette
     ) {
         final int[] pixels = new int[grid.width() * grid.height()];
+        final byte[] visibleKind = grid.kind().clone();
         for (int z = 0; z < grid.height(); z++) {
             for (int x = 0; x < grid.width(); x++) {
                 final int index = z * grid.width() + x;
-                final SurfaceKind kind = SurfaceKind.byOrdinal(grid.kind()[index]);
+                final SurfaceKind kind = visibleKind(grid, index);
+                visibleKind[index] = (byte) kind.ordinal();
                 if (kind == SurfaceKind.UNKNOWN || kind == SurfaceKind.VOID) {
                     pixels[index] = Argb.TRANSPARENT;
                     continue;
@@ -65,9 +69,18 @@ public final class GeneratedTileComposer {
             grid.height(),
             pixels,
             grid.surfaceY().clone(),
-            grid.kind().clone(),
+            visibleKind,
             grid.fluidDepth().clone()
         );
+    }
+
+    private static SurfaceKind visibleKind(final Grid grid, final int index) {
+        final SurfaceKind kind = SurfaceKind.byOrdinal(grid.kind()[index]);
+        if (kind == SurfaceKind.LAND
+            && Byte.toUnsignedInt(grid.mapColorId()[index]) == SNOW_MAP_COLOR_ID) {
+            return SurfaceKind.SNOW;
+        }
+        return kind;
     }
 
     private static int baseColor(

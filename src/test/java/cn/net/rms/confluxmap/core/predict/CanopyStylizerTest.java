@@ -14,6 +14,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 class CanopyStylizerTest {
     /** cubiomes id for {@code forest}: {@link BiomeTable#get}'s treeCover is 0.35. */
     private static final int FOREST = 4;
+    private static final int JUNGLE = 21;
 
     private static BaselineGrid uniformGrid(final int biomeId, final int terrainY) {
         final BaselineGrid grid = new BaselineGrid();
@@ -90,6 +91,30 @@ class CanopyStylizerTest {
         assertEquals((byte) SurfaceKind.FOLIAGE.ordinal(), derived.kind[BaselineGrid.index(8, 8)]);
         assertEquals(73, derived.surfaceY[BaselineGrid.index(8, 8)]);
         assertEquals((byte) SurfaceKind.LAND.ordinal(), derived.kind[BaselineGrid.index(100, 100)]);
+    }
+
+    @Test
+    void nativeJungleTreeUsesATallerCanopyEstimateThanAnOrdinaryTree() {
+        final int ordinaryCanopyY = nativeCanopyY(FOREST, 0);
+        final int jungleCanopyY = nativeCanopyY(JUNGLE, 3);
+
+        assertTrue(jungleCanopyY > ordinaryCanopyY, "jungle canopy should be taller than an ordinary tree");
+    }
+
+    private static int nativeCanopyY(final int biomeId, final int treeType) {
+        final BaselineGrid grid = uniformGrid(biomeId, 70);
+        final DerivedGrid derived = BaselineDeriver.derive(grid);
+        final BaselineSampler sampler = treeSampler((chunkX, chunkZ, out) -> {
+            if (chunkX == 0 && chunkZ == 0) {
+                out[0] = new TreeCandidate(8, 71, 8, treeType, biomeId, 0);
+                return 1;
+            }
+            return 0;
+        });
+
+        CanopyStylizer.apply(derived, grid, sampler, 99L, 0, 0, 0);
+
+        return derived.surfaceY[BaselineGrid.index(8, 8)];
     }
 
     @Test

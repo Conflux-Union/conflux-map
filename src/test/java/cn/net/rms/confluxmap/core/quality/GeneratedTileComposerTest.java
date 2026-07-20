@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.quality;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.predict.PredictionPalette;
@@ -33,5 +34,25 @@ class GeneratedTileComposerTest {
             new int[] {0xFF707070, 0xFF707070, 0xFF707070, 0xFF707070},
             rendered.pixels()
         );
+    }
+
+    @Test
+    void visibleSnowMapColorPromotesCoveredLandToSnowSemantics() {
+        final GeneratedTileComposer.Grid grid = new GeneratedTileComposer.Grid(
+            1,
+            1,
+            new short[] {70},
+            new byte[] {(byte) SurfaceKind.LAND.ordinal()},
+            new byte[] {0},
+            new byte[] {8},
+            new int[] {12}
+        );
+
+        final PredictionQualityEvaluator.TileData rendered = GeneratedTileComposer.compose(
+            grid,
+            PredictionPalette.defaults()
+        );
+
+        assertEquals(SurfaceKind.SNOW.ordinal(), rendered.kind()[0]);
     }
 }

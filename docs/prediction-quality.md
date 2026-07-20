@@ -35,15 +35,16 @@ Every sample reports:
 
 - generated-pixel coverage accuracy;
 - surface-kind accuracy;
-- height mean absolute error, P95 error, and the fraction within two blocks;
+- height mean absolute error, signed bias, P95 error, and the fraction within two blocks;
 - water-depth bucket accuracy (`0`, `1-3`, `4-9`, or `10+` blocks);
 - normalized RGB similarity;
 - global luminance SSIM;
-- exact semantic-edge F1;
+- exact semantic-edge F1 plus a primary edge F1 that tolerates one pixel of boundary displacement;
 - a weighted combined score.
 
 The combined score weights coverage at 10%, surface kind at 20%, height-within-two at 20%, fluid
-depth at 10%, color at 20%, SSIM at 10%, and edge F1 at 10%. Absolute floors guard against silent
+depth at 10%, color at 20%, SSIM at 10%, and one-pixel-tolerant edge F1 at 10%. The exact edge score
+remains in the report for strict diagnosis. Absolute floors guard against silent
 regressions while the complete raw metrics remain available for diagnosis. Aggregate fluid
 accuracy is weighted by the number of reference water pixels, so water-free End samples cannot
 inflate it.

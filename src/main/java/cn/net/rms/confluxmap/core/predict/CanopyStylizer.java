@@ -221,7 +221,7 @@ public final class CanopyStylizer {
 
     private static int canopyHeight(final int type) {
         return switch (type) {
-            case TREE_JUNGLE -> 5;
+            case TREE_JUNGLE -> 10;
             case TREE_DARK_OAK, TREE_HUGE_BROWN_MUSHROOM, TREE_HUGE_RED_MUSHROOM -> 4;
             case TREE_JUNGLE_BUSH -> 2;
             default -> 3;

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 class BaselineDeriverTest {
     private static final int OCEAN = 0;
     private static final int PLAINS = 1;
+    private static final int THE_END = 9;
     private static final int MOUNTAINS = 3;
     private static final int FROZEN_OCEAN = 10;
     private static final int SNOWY_TUNDRA = 12;
@@ -50,8 +51,17 @@ class BaselineDeriverTest {
     }
 
     @Test
-    void nonOceanicBiomeBelowSeaLevelStaysLand() {
+    void overworldLandBiomeBelowSeaLevelUsesTheDefaultWaterFluid() {
         final DerivedGrid derived = deriveOne(PLAINS, 40);
+        final int idx = BaselineGrid.index(0, 0);
+        assertEquals(SurfaceKind.WATER.ordinal(), derived.kind[idx]);
+        assertEquals(BaselineDeriver.WATER_LEVEL, derived.surfaceY[idx]);
+        assertEquals(22, derived.fluidDepth[idx]);
+    }
+
+    @Test
+    void endTerrainBelowOverworldSeaLevelStaysLand() {
+        final DerivedGrid derived = deriveOne(THE_END, 40);
         final int idx = BaselineGrid.index(0, 0);
         assertEquals(SurfaceKind.LAND.ordinal(), derived.kind[idx]);
         assertEquals(40, derived.surfaceY[idx]);
@@ -62,6 +72,15 @@ class BaselineDeriverTest {
     void snowyBiomeGivesSnowKind() {
         final DerivedGrid derived = deriveOne(SNOWY_TUNDRA, 70);
         assertEquals(SurfaceKind.SNOW.ordinal(), derived.kind[BaselineGrid.index(0, 0)]);
+    }
+
+    @Test
+    void snowyBiomeBelowSeaLevelFreezesTheDefaultWaterSurface() {
+        final DerivedGrid derived = deriveOne(SNOWY_TUNDRA, 40);
+        final int idx = BaselineGrid.index(0, 0);
+        assertEquals(SurfaceKind.ICE.ordinal(), derived.kind[idx]);
+        assertEquals(BaselineDeriver.WATER_LEVEL, derived.surfaceY[idx]);
+        assertEquals(22, derived.fluidDepth[idx]);
     }
 
     @Test
