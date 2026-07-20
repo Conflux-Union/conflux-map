@@ -50,6 +50,13 @@ jobs:
         run: chmod +x ./gradlew
       - name: Build for ${{ matrix.minecraft_version }}
         run: ./gradlew :${{ matrix.minecraft_version }}:build
+      - name: Upload prediction quality report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prediction-quality-${{ matrix.minecraft_version }}
+          path: versions/${{ matrix.minecraft_version }}/build/reports/prediction-quality/
+          if-no-files-found: warn
       - name: Stop Gradle daemon
+        if: always()
         run: ./gradlew --stop
-

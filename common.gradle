@@ -48,6 +48,9 @@ loom {
             source sourceSets.gametest
             vmArg "-Dfabric-api.gametest"
             vmArg "-Dfabric-api.gametest.report-file=${project.buildDir}/gametest-results.xml"
+            vmArg "-Djava.awt.headless=true"
+            vmArg "-Dconfluxmap.quality.world-seed=0"
+            vmArg "-Dconfluxmap.quality.report-dir=${project.buildDir}/reports/prediction-quality"
             runDir "build/gametest"
         }
     }
@@ -96,7 +99,16 @@ check.dependsOn 'checkCoreIsolation'
 check.dependsOn 'runGametest'
 tasks.named('runGametest') {
     doFirst {
-        delete project.file("${project.buildDir}/gametest")
+        final File runDirectory = project.file("${project.buildDir}/gametest")
+        delete runDirectory
         delete project.file("${project.buildDir}/gametest-results.xml")
+        runDirectory.mkdirs()
+        new File(runDirectory, 'server.properties').text = '''\
+level-seed=0
+max-tick-time=0
+online-mode=false
+sync-chunk-writes=true
+view-distance=2
+'''
     }
 }

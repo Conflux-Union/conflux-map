@@ -4,9 +4,13 @@
   "version": "1.0.0",
   "name": "Conflux Map Game Tests",
   "environment": "server",
+  "mixins": [
+    "confluxmap-gametest.mixins.json"
+  ],
   "entrypoints": {
     "fabric-gametest": [
-      "cn.net.rms.confluxmap.gametest.PredictionSyncGameTest"
+      "cn.net.rms.confluxmap.gametest.PredictionSyncGameTest",
+      "cn.net.rms.confluxmap.gametest.PredictionQualityGameTest"
     ]
   },
   "depends": {

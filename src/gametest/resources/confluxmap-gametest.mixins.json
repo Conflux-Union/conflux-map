@@ -1,0 +1,11 @@
+{
+  "required": true,
+  "package": "cn.net.rms.confluxmap.gametest.mixin",
+  "compatibilityLevel": "JAVA_16",
+  "mixins": [
+    "TestServerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
