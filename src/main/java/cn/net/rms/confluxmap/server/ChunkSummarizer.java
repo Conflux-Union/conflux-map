@@ -10,8 +10,6 @@ import net.minecraft.nbt.NbtList;
 
 /** Converts a serialized 1.17.1 chunk into a cheap surface-only summary without loading a chunk. */
 public final class ChunkSummarizer {
-    private static final int SEA_LEVEL = 62;
-
     public SummaryCodec.Chunk summarize(final NbtCompound root) {
         if (root == null || !root.contains("Level", 10)) {
             return SummaryCodec.Chunk.empty();
@@ -23,11 +21,13 @@ public final class ChunkSummarizer {
         if (!"full".equals(level.getString("Status"))) {
             return SummaryCodec.Chunk.empty();
         }
-        final long[] heights = level.contains("Heightmaps", 10)
-            ? level.getCompound("Heightmaps").getLongArray("MOTION_BLOCKING") : new long[0];
+        final NbtCompound heightmaps = level.contains("Heightmaps", 10)
+            ? level.getCompound("Heightmaps") : new NbtCompound();
+        final long[] heights = heightmaps.getLongArray("MOTION_BLOCKING");
         if (heights.length == 0) {
             return SummaryCodec.Chunk.empty();
         }
+        final long[] oceanFloor = heightmaps.getLongArray("OCEAN_FLOOR");
         final int[] biomes = level.contains("Biomes", 11) ? level.getIntArray("Biomes") : new int[0];
         final NbtList sections = level.contains("Sections", 9) ? level.getList("Sections", 10) : new NbtList();
         final List<Section> parsed = parseSections(sections);
@@ -36,10 +36,21 @@ public final class ChunkSummarizer {
             for (int x = 0; x < 16; x++) {
                 final int index = z * 16 + x;
                 final int top = heights.length == 0 ? 0 : PackedBits.decode(heights, 9, index);
-                final BlockInfo block = blockAt(parsed, x, top - 1, z);
-                final int biome = biomeAt(biomes, x, z, top);
-                final int fluidDepth = block.kind == SurfaceKind.WATER ? clamp(SEA_LEVEL - top) : 0;
-                columns[index] = new SummaryCodec.Column(biome & 255, clampShort(top), block.kind.ordinal(), block.mapColorId, fluidDepth);
+                final int surfaceY = top - 1;
+                final BlockInfo block = blockAt(parsed, x, surfaceY, z);
+                final int biome = biomeAt(biomes, x, z, surfaceY);
+                final boolean fluidSurface = block.kind == SurfaceKind.WATER || block.kind == SurfaceKind.ICE;
+                final int fluidDepth;
+                if (!fluidSurface) {
+                    fluidDepth = 0;
+                } else if (block.kind == SurfaceKind.WATER && oceanFloor.length != 0) {
+                    fluidDepth = clamp(top - PackedBits.decode(oceanFloor, 9, index));
+                } else {
+                    fluidDepth = scanFluidDepth(parsed, x, surfaceY, z);
+                }
+                columns[index] = new SummaryCodec.Column(
+                    biome & 255, clampShort(surfaceY), block.kind.ordinal(), block.mapColorId, fluidDepth
+                );
             }
         }
         final long revision = level.contains("LastUpdate", 4) ? level.getLong("LastUpdate") : 0L;
@@ -67,6 +78,10 @@ public final class ChunkSummarizer {
     }
 
     private static BlockInfo blockAt(final List<Section> sections, final int x, final int y, final int z) {
+        return classify(blockNameAt(sections, x, y, z));
+    }
+
+    private static String blockNameAt(final List<Section> sections, final int x, final int y, final int z) {
         final int sectionY = Math.floorDiv(y, 16);
         final int localY = Math.floorMod(y, 16);
         for (final Section section : sections) {
@@ -75,10 +90,22 @@ public final class ChunkSummarizer {
             }
             final int localIndex = (localY * 16 + z) * 16 + x;
             final int paletteIndex = section.states.length == 0 ? 0 : PackedBits.decode(section.states, section.bits, localIndex);
-            final String name = section.names[Math.min(paletteIndex, section.names.length - 1)];
-            return classify(name);
+            return section.names[Math.min(paletteIndex, section.names.length - 1)];
         }
-        return classify("minecraft:air");
+        return "minecraft:air";
+    }
+
+    private static int scanFluidDepth(final List<Section> sections, final int x, final int surfaceY, final int z) {
+        int floorY = surfaceY - 1;
+        while (floorY >= 0 && isUnderwaterColumnBlock(blockNameAt(sections, x, floorY, z))) {
+            floorY--;
+        }
+        return clamp(surfaceY - floorY);
+    }
+
+    private static boolean isUnderwaterColumnBlock(final String name) {
+        return name.contains("water") || name.contains("bubble_column") || name.contains("kelp")
+            || name.contains("seagrass") || name.contains("sea_pickle") || name.contains("coral_fan");
     }
 
     private static int biomeAt(final int[] biomes, final int x, final int z, final int top) {

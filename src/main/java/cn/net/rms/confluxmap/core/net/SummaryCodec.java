@@ -16,8 +16,8 @@ import java.util.zip.InflaterInputStream;
 /** Disk codec for server-side region summaries ({@code .cfs}). */
 public final class SummaryCodec {
     public static final byte[] MAGIC = {'C', 'F', 'S', 'M'};
-    /** Version 2 invalidates summaries that treated pre-full chunks as generated surface data. */
-    public static final int FORMAT_VERSION = 2;
+    /** Version 3 fixes heightmap surface coordinates and water-depth summaries. */
+    public static final int FORMAT_VERSION = 3;
     public static final int CHUNKS = 256;
     public static final int COLUMNS = 256;
     public static final int RECORD_BYTES = 6;

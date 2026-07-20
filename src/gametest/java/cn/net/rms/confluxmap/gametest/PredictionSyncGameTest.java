@@ -39,8 +39,8 @@ import net.minecraft.util.math.BlockPos;
 public final class PredictionSyncGameTest implements FabricGameTest {
     private static final int FLOOR_SIZE = 64;
     private static final int FLOOR_Y = 79;
-    private static final int EXPECTED_SURFACE_Y = FLOOR_Y + 1;
-    private static final int EXPECTED_STONE_ARGB = 0xFF707070;
+    private static final int EXPECTED_SURFACE_Y = FLOOR_Y;
+    private static final int EXPECTED_STONE_ARGB = 0xFF6D6D6D;
 
     @GameTest(structureName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = 400)
     public void stoneFloorRoundTripsFromServerWorldToClientPrediction(final TestContext context) {
