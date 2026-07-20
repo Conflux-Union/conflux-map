@@ -6,7 +6,7 @@ overlays it; predictions never enter the `.cfr` column cache.
 ## Determinism
 
 The wire baseline is `{biomeId u8, surfaceY i16, kind u8, fluidDepth u8}`. The predictor version
-is `cb:e61f90580cbd|shim:2|base:4`; palette colours are local and never sent. Forest `LAND` and
+is `cb:32a72991c22a|shim:3|base:5`; palette colours are local and never sent. Forest `LAND` and
 `FOLIAGE` are equivalent for diffing, height differences up to 2 blocks are tolerated (6 in
 forested pixels), and fluid depth compares in buckets `0`, `1-3`, `4-9`, `10+`. A real map colour
 outside the biome's expected set is retained as a correction so player builds are visible.
@@ -14,6 +14,13 @@ outside the biome's expected set is retained as a correction so player builds ar
 Predicted tile textures contain time-independent terrain colours. Dynamic day/night brightness is
 applied as one render-time tint across the whole predicted plane, so composition order cannot leave
 adjacent tiles at different brightness levels.
+
+LOD0-1 canopy uses cubiomes' 1.17.1 natural tree candidates. A chunk with an unsupported vegetation
+pipeline keeps the previous deterministic canopy locally; a native failure falls back for the full
+tile. Higher LODs retain the aggregate canopy texture because individual tree candidates are no
+longer distinguishable.
+The terrain-feature cave mask is not applied to the surface plane, and approximate structure bounds
+remain candidate markers rather than being painted as terrain.
 
 ## Companion protocol
 

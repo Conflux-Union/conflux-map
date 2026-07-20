@@ -16,6 +16,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * error - and every query method throws {@link IllegalStateException} once closed.
  */
 public final class CubiomesContext implements AutoCloseable {
+    public static final int STATUS_FEATURE_PARTIAL = 7;
+
     private final long handle;
     private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -84,6 +86,28 @@ public final class CubiomesContext implements AutoCloseable {
     }
 
     /**
+     * Overworld-only natural tree candidates for one 1.17.1 chunk. All field arrays must have the
+     * same capacity; {@code outCount[0]} receives the number of records on success.
+     */
+    public int treeCandidates(
+        final int chunkX, final int chunkZ,
+        final int[] outX, final int[] outY, final int[] outZ, final int[] outType,
+        final int[] outBiome, final int[] outFlags, final int[] outCount
+    ) {
+        requireOpen();
+        final int capacity = outX.length;
+        requireCapacity(outY, capacity);
+        requireCapacity(outZ, capacity);
+        requireCapacity(outType, capacity);
+        requireCapacity(outBiome, capacity);
+        requireCapacity(outFlags, capacity);
+        requireCapacity(outCount, 1);
+        return CubiomesNative.cfxTreeCandidates(
+            handle, chunkX, chunkZ, outX, outY, outZ, outType, outBiome, outFlags, outCount, capacity
+        );
+    }
+
+    /**
      * Packs one structure-attempt block position per region in {@code [regX0,regX1] x
      * [regZ0,regZ1]} into {@code out}, up to {@code out.length} entries. Returns the number
      * written; see {@link CubiomesNative#cfxStructures} for the packing format and for why a
@@ -116,6 +140,12 @@ public final class CubiomesContext implements AutoCloseable {
     private static void requireCapacity(final int[] array, final int w, final int h) {
         final long needed = (long) w * (long) h;
         if (needed < 0 || array.length < needed) {
+            throw new IllegalArgumentException("array too small: need " + needed + ", got " + array.length);
+        }
+    }
+
+    private static void requireCapacity(final int[] array, final int needed) {
+        if (array.length < needed) {
             throw new IllegalArgumentException("array too small: need " + needed + ", got " + array.length);
         }
     }

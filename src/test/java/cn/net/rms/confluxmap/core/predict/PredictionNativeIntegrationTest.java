@@ -42,7 +42,7 @@ class PredictionNativeIntegrationTest {
         final BaselineGrid grid = LodSampling.sample(sampler, end, lod, tileOriginX, tileOriginZ);
         assertNotNull(grid, "native sampling must succeed for a valid version/seed");
         final DerivedGrid derived = BaselineDeriver.derive(grid);
-        CanopyStylizer.apply(derived, grid, SEED, lod, tileOriginX, tileOriginZ);
+        CanopyStylizer.apply(derived, grid, sampler, SEED, lod, tileOriginX, tileOriginZ);
         return PredictedTileComposer.compose(derived, grid, PredictionPalette.defaults());
     }
 
@@ -137,7 +137,7 @@ class PredictionNativeIntegrationTest {
         final BaselineGrid grid = LodSampling.sample(sampler, false, lod, originX, originZ);
         assertNotNull(grid);
         final DerivedGrid derived = BaselineDeriver.derive(grid);
-        CanopyStylizer.apply(derived, grid, seed, lod, originX, originZ);
+        CanopyStylizer.apply(derived, grid, sampler, seed, lod, originX, originZ);
         return PredictedTileComposer.compose(derived, grid, PredictionPalette.defaults());
     }
 

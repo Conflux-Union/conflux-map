@@ -14,6 +14,11 @@ package cn.net.rms.confluxmap.core.predict;
  * tile's own dimension.
  */
 public interface BaselineSampler {
+    /** The biome decorator is not modeled for this chunk; retain the synthetic canopy fallback. */
+    int TREES_UNSUPPORTED = -1;
+    /** Native feature sampling failed; retain the synthetic canopy fallback. */
+    int TREES_FAILED = -2;
+
     /**
      * Fills {@code out} (length &ge; w*h) with cubiomes biome ids for a w*h rectangle at native
      * {@code scale} (1, 4 or 16 for this milestone's LOD table), {@code x}/{@code z} already
@@ -80,5 +85,14 @@ public interface BaselineSampler {
             }
         }
         return true;
+    }
+
+    /**
+     * Fills {@code out} with the 1.17.1 tree-like decoration candidates for one Overworld chunk.
+     * Returns the number written, {@link #TREES_UNSUPPORTED}, or {@link #TREES_FAILED}. The
+     * default keeps non-native test samplers and other implementations on the synthetic path.
+     */
+    default int treeCandidates(final int chunkX, final int chunkZ, final TreeCandidate[] out) {
+        return TREES_UNSUPPORTED;
     }
 }

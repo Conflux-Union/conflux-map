@@ -303,7 +303,7 @@ public final class PredictionTileService {
             return null;
         }
         final DerivedGrid derived = BaselineDeriver.derive(grid);
-        CanopyStylizer.apply(derived, grid, seed, lod, tileOriginX, tileOriginZ);
+        CanopyStylizer.apply(derived, grid, sampler, seed, lod, tileOriginX, tileOriginZ);
 
         final CorrectionStore store = correctionStore;
         final CorrectionTile corrections = store == null

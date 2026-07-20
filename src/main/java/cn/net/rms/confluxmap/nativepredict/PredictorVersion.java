@@ -9,18 +9,18 @@ package cn.net.rms.confluxmap.nativepredict;
  */
 public final class PredictorVersion {
     /** First 12 hex characters of the pinned cubiomes commit (see {@code native/CUBIOMES_COMMIT}). */
-    public static final String CUBIOMES_COMMIT_12 = "e61f90580cbd";
+    public static final String CUBIOMES_COMMIT_12 = "32a72991c22a";
 
     /** Must match {@code CFX_ABI} in {@code native/shim/confluxnative.c}. */
-    public static final int CFX_ABI = 2;
+    public static final int CFX_ABI = 3;
 
     /** Bumped whenever baseline sampling or derivation (LOD expansion, canopy, kind rules) changes. */
-    public static final int BASELINE_ALGO = 4;
+    public static final int BASELINE_ALGO = 5;
 
     private PredictorVersion() {
     }
 
-    /** Wire/cache format for {@code predictorVersion}, e.g. {@code "cb:e61f90580cbd|shim:2|base:4"}. */
+    /** Wire/cache format for {@code predictorVersion}, e.g. {@code "cb:32a72991c22a|shim:3|base:5"}. */
     public static String full() {
         return "cb:" + CUBIOMES_COMMIT_12 + "|shim:" + CFX_ABI + "|base:" + BASELINE_ALGO;
     }

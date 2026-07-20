@@ -17,6 +17,7 @@ package cn.net.rms.confluxmap.nativepredict;
  *   <li>4 - native allocation failed
  *   <li>5 - cubiomes reported a generation failure
  *   <li>6 - wrong dimension for this query (e.g. {@link #cfxEndHeights} on an Overworld handle)
+ *   <li>7 - requested terrain feature is only partially supported for this biome
  * </ul>
  *
  * <p>Nothing in this class loads the native library itself; that is {@link NativeLib}'s job.
@@ -73,6 +74,18 @@ final class CubiomesNative {
 
     /** Strided 1:4 End heights; adjacent output cells are {@code stride} native cells apart. */
     static native int cfxEndHeightsStrided(long handle, int x4, int z4, int w, int h, int stride, int[] outY);
+
+    /**
+     * Overworld-only 1.17.1 natural tree candidates for one chunk. Candidate fields are written
+     * in parallel to the six output arrays and {@code outCount[0]} receives the number written.
+     * Status 7 means cubiomes does not model that biome's decoration pipeline, so callers should
+     * retain their existing synthetic fallback instead of treating the empty output as exact.
+     */
+    static native int cfxTreeCandidates(
+        long handle, int chunkX, int chunkZ,
+        int[] outX, int[] outY, int[] outZ, int[] outType, int[] outBiome, int[] outFlags,
+        int[] outCount, int cap
+    );
 
     /**
      * Packs one structure-generation-attempt block position per region in

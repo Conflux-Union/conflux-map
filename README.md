@@ -43,9 +43,9 @@ submodule from our Conflux-Union/cubiomes fork;
 `cn.net.rms.confluxmap.core.predict`:
 
 - **Seed-predicted underlay** - panning into unexplored Overworld or End
-  terrain shows an instant seed-based guess (biomes, terrain height, and a
-  synthesized tree canopy texture) that real captured tiles draw over as
-  they load.
+  terrain shows an instant seed-based guess (biomes, terrain height, and
+  cubiomes-backed 1.17 tree candidates with a deterministic fallback) that
+  real captured tiles draw over as they load.
 - **Structure candidate markers** - villages, ocean monuments, woodland
   mansions, outposts, ruined portals, and end cities show up as
   semi-transparent candidates until real data confirms or rules them out.

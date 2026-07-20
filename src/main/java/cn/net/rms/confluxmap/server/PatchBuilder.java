@@ -112,7 +112,7 @@ public final class PatchBuilder {
             return unavailable();
         }
         final DerivedGrid derived = BaselineDeriver.derive(baseline);
-        CanopyStylizer.apply(derived, baseline, seed, summary.lod(), (int) originX, (int) originZ);
+        CanopyStylizer.apply(derived, baseline, sampler, seed, summary.lod(), (int) originX, (int) originZ);
         return buildWithDerived(summary, sinceRevision, baseline, derived, absolute);
     }
 

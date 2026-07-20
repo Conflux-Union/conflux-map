@@ -26,6 +26,7 @@ final List<String> nativeSources = [
     'native/cubiomes/layers.c',
     'native/cubiomes/noise.c',
     'native/cubiomes/finders.c',
+    'native/cubiomes/terrain_features.c',
 ]
 final List<String> nativeCflags = [
     '-shared', '-fPIC', '-O2', '-g0', '-fno-fast-math', '-ffp-contract=off', '-fvisibility=hidden', '-Wall',

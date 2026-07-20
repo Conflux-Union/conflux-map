@@ -55,7 +55,7 @@ class CubiomesNativeTest {
 
     @Test
     void biomeGridMatchesFrozenGoldenValues() {
-        // captured from cubiomes e61f90580cbd on 2026-07-17: 8x8 grid at scale 4, offset (-32,-32)
+        // verified against cubiomes 32a72991c22a on 2026-07-20: 8x8 grid at scale 4, offset (-32,-32)
         final int[] expected = {
             2, 2, 35, 35, 35, 35, 35, 35,
             2, 2, 35, 35, 35, 35, 35, 35,
@@ -136,7 +136,7 @@ class CubiomesNativeTest {
 
     @Test
     void spotBiomesShowARealisticMix() {
-        // captured from cubiomes e61f90580cbd on 2026-07-17: savanna(35), river(7), forest(4),
+        // verified against cubiomes 32a72991c22a on 2026-07-20: savanna(35), river(7), forest(4),
         // desert_hills(17), desert(2), ocean(0) - a plausible, non-degenerate mix of land/water.
         try (CubiomesContext ctx = open(OVERWORLD)) {
             assertEquals(35, spotBiome(ctx, 0, 0));
@@ -214,8 +214,39 @@ class CubiomesNativeTest {
     }
 
     @Test
+    void naturalTreeCandidatesExposePinnedCoordinatesAndPartialCoverage() {
+        final long featureSeed = 6512112982729996127L;
+        try (CubiomesContext ctx = CubiomesContext.create(mc17(), featureSeed, OVERWORLD, 0)) {
+            assertNotNull(ctx);
+            final int capacity = 64;
+            final int[] xs = new int[capacity];
+            final int[] ys = new int[capacity];
+            final int[] zs = new int[capacity];
+            final int[] types = new int[capacity];
+            final int[] biomes = new int[capacity];
+            final int[] flags = new int[capacity];
+            final int[] count = new int[1];
+
+            assertEquals(0, ctx.treeCandidates(16, 0, xs, ys, zs, types, biomes, flags, count));
+            assertEquals(10, count[0]);
+            assertEquals(258, xs[0]);
+            assertEquals(4, zs[0]);
+            assertEquals(2, types[0], "cubiomes TREE_SPRUCE");
+            assertEquals(30, biomes[0], "cubiomes snowy_taiga");
+            assertTrue((flags[0] & (1 << 5)) != 0, "the first candidate X/Z must be exact");
+            assertTrue((flags[0] & (1 << 6)) != 0, "the first candidate type must be exact");
+
+            assertEquals(
+                CubiomesContext.STATUS_FEATURE_PARTIAL,
+                ctx.treeCandidates(59, -316, xs, ys, zs, types, biomes, flags, count),
+                "unsupported biome decorators must not masquerade as an exact empty chunk"
+            );
+        }
+    }
+
+    @Test
     void structurePositionsAreDeterministicAndRoundTrip() {
-        // captured from cubiomes e61f90580cbd on 2026-07-17: 16 village attempts in this 4x4
+        // verified against cubiomes 32a72991c22a on 2026-07-20: 16 village attempts in this 4x4
         // region block (regions [-2,1]x[-2,1]); first entry is region (-2,-2).
         try (CubiomesContext ctx = open(OVERWORLD)) {
             final long[] out = new long[32];

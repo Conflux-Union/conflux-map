@@ -23,15 +23,18 @@
  *   4  CFX_ERR_ALLOC         - native allocation failed
  *   5  CFX_ERR_GENERATION    - cubiomes reported a generation failure
  *   6  CFX_ERR_WRONG_DIM     - handle's dimension doesn't support this query
+ *   7  CFX_ERR_FEATURE_PARTIAL - requested feature coverage is unavailable
  */
 
 #include <jni.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <math.h>
 
 #include "finders.h"
+#include "terrain_features.h"
 
-#define CFX_ABI 2
+#define CFX_ABI 3
 
 #define CFX_OK              0
 #define CFX_ERR_BAD_HANDLE  1
@@ -40,6 +43,7 @@
 #define CFX_ERR_ALLOC       4
 #define CFX_ERR_GENERATION  5
 #define CFX_ERR_WRONG_DIM   6
+#define CFX_ERR_FEATURE_PARTIAL 7
 
 /* Largest w*h (or region count) accepted by any batch query. */
 #define CFX_MAX_CELLS (1 << 20)
@@ -430,6 +434,103 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     (*env)->SetIntArrayRegion(env, outY, 0, w * h, sampledY);
     free(rowY);
     free(sampledY);
+    return CFX_OK;
+}
+
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxTreeCandidates(
+    JNIEnv *env, jclass clazz, jlong handle, jint chunkX, jint chunkZ,
+    jintArray outX, jintArray outY, jintArray outZ, jintArray outType,
+    jintArray outBiome, jintArray outFlags, jintArray outCount, jint cap
+) {
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL) {
+        return CFX_ERR_BAD_HANDLE;
+    }
+    if (ctx->dim != DIM_OVERWORLD) {
+        return CFX_ERR_WRONG_DIM;
+    }
+    if (cap < 0 || cap > 256) {
+        return CFX_ERR_BAD_SIZE;
+    }
+    if ((*env)->GetArrayLength(env, outX) < cap
+        || (*env)->GetArrayLength(env, outY) < cap
+        || (*env)->GetArrayLength(env, outZ) < cap
+        || (*env)->GetArrayLength(env, outType) < cap
+        || (*env)->GetArrayLength(env, outBiome) < cap
+        || (*env)->GetArrayLength(env, outFlags) < cap
+        || (*env)->GetArrayLength(env, outCount) < 1) {
+        return CFX_ERR_BAD_SIZE;
+    }
+
+    size_t required = 0;
+    const int countStatus = getChunkNaturalTreeCandidates(
+        &ctx->g, chunkX, chunkZ, NULL, 0, &required
+    );
+    if (countStatus == FEATURE_PARTIAL) {
+        return CFX_ERR_FEATURE_PARTIAL;
+    }
+    if (countStatus != FEATURE_OK || required > (size_t) cap) {
+        return countStatus == FEATURE_OK ? CFX_ERR_BAD_SIZE : CFX_ERR_GENERATION;
+    }
+    if (required == 0) {
+        const jint count = 0;
+        (*env)->SetIntArrayRegion(env, outCount, 0, 1, &count);
+        return CFX_OK;
+    }
+
+    NaturalTreeCandidate *records = malloc(sizeof(NaturalTreeCandidate) * required);
+    if (records == NULL) {
+        return CFX_ERR_ALLOC;
+    }
+    size_t actual = 0;
+    const int fillStatus = getChunkNaturalTreeCandidates(
+        &ctx->g, chunkX, chunkZ, records, required, &actual
+    );
+    if (fillStatus != FEATURE_OK || actual > required) {
+        free(records);
+        return fillStatus == FEATURE_PARTIAL ? CFX_ERR_FEATURE_PARTIAL : CFX_ERR_GENERATION;
+    }
+
+    jint *xs = malloc(sizeof(jint) * actual);
+    jint *ys = malloc(sizeof(jint) * actual);
+    jint *zs = malloc(sizeof(jint) * actual);
+    jint *types = malloc(sizeof(jint) * actual);
+    jint *biomes = malloc(sizeof(jint) * actual);
+    jint *flags = malloc(sizeof(jint) * actual);
+    if (xs == NULL || ys == NULL || zs == NULL || types == NULL || biomes == NULL || flags == NULL) {
+        free(records);
+        free(xs);
+        free(ys);
+        free(zs);
+        free(types);
+        free(biomes);
+        free(flags);
+        return CFX_ERR_ALLOC;
+    }
+    for (size_t i = 0; i < actual; i++) {
+        xs[i] = records[i].pos.x;
+        ys[i] = records[i].pos.y;
+        zs[i] = records[i].pos.z;
+        types[i] = records[i].type;
+        biomes[i] = records[i].biome;
+        flags[i] = (jint) records[i].flags;
+    }
+    (*env)->SetIntArrayRegion(env, outX, 0, (jsize) actual, xs);
+    (*env)->SetIntArrayRegion(env, outY, 0, (jsize) actual, ys);
+    (*env)->SetIntArrayRegion(env, outZ, 0, (jsize) actual, zs);
+    (*env)->SetIntArrayRegion(env, outType, 0, (jsize) actual, types);
+    (*env)->SetIntArrayRegion(env, outBiome, 0, (jsize) actual, biomes);
+    (*env)->SetIntArrayRegion(env, outFlags, 0, (jsize) actual, flags);
+    const jint count = (jint) actual;
+    (*env)->SetIntArrayRegion(env, outCount, 0, 1, &count);
+    free(records);
+    free(xs);
+    free(ys);
+    free(zs);
+    free(types);
+    free(biomes);
+    free(flags);
     return CFX_OK;
 }
 

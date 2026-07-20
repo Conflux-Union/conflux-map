@@ -103,4 +103,38 @@ public final class NativeBaselineSampler implements BaselineSampler {
             return false;
         }
     }
+
+    @Override
+    public int treeCandidates(final int chunkX, final int chunkZ, final TreeCandidate[] out) {
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, FLAGS);
+            if (ctx == null) {
+                return TREES_FAILED;
+            }
+            final int capacity = out.length;
+            final int[] xs = new int[capacity];
+            final int[] ys = new int[capacity];
+            final int[] zs = new int[capacity];
+            final int[] types = new int[capacity];
+            final int[] biomes = new int[capacity];
+            final int[] flags = new int[capacity];
+            final int[] count = new int[1];
+            final int status = ctx.treeCandidates(
+                chunkX, chunkZ, xs, ys, zs, types, biomes, flags, count
+            );
+            if (status == CubiomesContext.STATUS_FEATURE_PARTIAL) {
+                return TREES_UNSUPPORTED;
+            }
+            if (status != 0 || count[0] < 0 || count[0] > capacity) {
+                return TREES_FAILED;
+            }
+            for (int i = 0; i < count[0]; i++) {
+                out[i] = new TreeCandidate(xs[i], ys[i], zs[i], types[i], biomes[i], flags[i]);
+            }
+            return count[0];
+        } catch (final Throwable fault) {
+            NativeLib.disableForSession(fault);
+            return TREES_FAILED;
+        }
+    }
 }
