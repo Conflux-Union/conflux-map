@@ -95,6 +95,47 @@ class PredictedTileComposerTest {
     }
 
     @Test
+    void correctedFoliageKeepsTheContinuousPredictedCanopyPlane() {
+        final BaselineGrid grid = new BaselineGrid();
+        final DerivedGrid derived = new DerivedGrid();
+        Arrays.fill(grid.biomeId, 7);
+        Arrays.fill(derived.kind, (byte) SurfaceKind.LAND.ordinal());
+        Arrays.fill(derived.surfaceY, 64);
+        final int pixel = 30 * 256 + 20;
+        final int[] baseline = PredictedTileComposer.compose(derived, grid, PredictionPalette.defaults());
+
+        final CorrectionTile corrections = new CorrectionTile();
+        corrections.applyPatch(1L, new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(java.util.List.of(
+            new PatchCodec.Sample(pixel, 7, 68, SurfaceKind.FOLIAGE.ordinal(), 7, 0)
+        )));
+        final int[] corrected = PredictedTileComposer.compose(
+            derived, grid, PredictionPalette.defaults(), corrections, PredictionViewMode.EVERYWHERE, 0
+        );
+
+        assertEquals(baseline[pixel], corrected[pixel], "natural foliage corrections must not create chunk-edge colour patches");
+    }
+
+    @Test
+    void correctedStoneReplacesAFalsePredictedCanopy() {
+        final BaselineGrid grid = new BaselineGrid();
+        final DerivedGrid derived = new DerivedGrid();
+        Arrays.fill(grid.biomeId, 35);
+        Arrays.fill(derived.kind, (byte) SurfaceKind.FOLIAGE.ordinal());
+        Arrays.fill(derived.surfaceY, 73);
+        final int pixel = 31 * 256 + 21;
+
+        final CorrectionTile corrections = new CorrectionTile();
+        corrections.applyPatch(1L, new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(java.util.List.of(
+            new PatchCodec.Sample(pixel, 35, 79, SurfaceKind.LAND.ordinal(), 11, 0)
+        )));
+        final int[] corrected = PredictedTileComposer.compose(
+            derived, grid, PredictionPalette.defaults(), corrections, PredictionViewMode.EVERYWHERE, 0
+        );
+
+        assertEquals(0xFF6D6D6D, corrected[pixel], "player-built stone must remain visible through predicted canopy");
+    }
+
+    @Test
     void unknownCorrectionDoesNotPunchATransparentHoleInThePrediction() {
         final BaselineGrid grid = new BaselineGrid();
         final DerivedGrid derived = new DerivedGrid();
