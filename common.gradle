@@ -58,12 +58,31 @@ loom {
 JavaVersion javaCompatibility
 if (mcVersion < 11700) javaCompatibility = JavaVersion.VERSION_1_8 else if (mcVersion < 11800) javaCompatibility = JavaVersion.VERSION_16 else if (mcVersion < 12005) javaCompatibility = JavaVersion.VERSION_17 else javaCompatibility = JavaVersion.VERSION_21
 processResources {
+    inputs.property 'modId', id
+    inputs.property 'modVersion', project.version.toString()
+    inputs.property 'minecraftVersion', project.name
+    inputs.property 'loaderVersion', loader_version
+    inputs.property 'javaVersion', javaCompatibility.getMajorVersion()
     from "${id}.accesswidener"
     filesMatching('fabric.mod.json') { expand id: id, version: version, minecraft_version: project.name, loader_version: loader_version }
     filesMatching("${id}.mixins.json") { expand java_version: javaCompatibility.getMajorVersion() }
     // Bundles the committed native/prebuilt/<target>/ binaries into the jar (and dev classpath)
     // as natives/<target>/<libname>, so NativeLib can find them without any extra toolchain.
     from(rootProject.file('native/prebuilt')) { into 'natives' }
+}
+tasks.register('checkModMetadata') {
+    group = 'verification'
+    description = 'Verifies that expanded mod metadata matches the project version'
+    dependsOn tasks.named('processResources')
+    inputs.file layout.buildDirectory.file('resources/main/fabric.mod.json')
+    inputs.property 'expectedVersion', project.version.toString()
+    doLast {
+        final File metadataFile = layout.buildDirectory.file('resources/main/fabric.mod.json').get().asFile
+        final Map<String, ?> metadata = new groovy.json.JsonSlurper().parse(metadataFile) as Map<String, ?>
+        if (metadata.version != project.version.toString()) {
+            throw new GradleException("Expanded fabric.mod.json version ${metadata.version} does not match project version ${project.version}")
+        }
+    }
 }
 java {
     sourceCompatibility = javaCompatibility
@@ -96,6 +115,7 @@ tasks.register('checkCoreIsolation') {
     }
 }
 check.dependsOn 'checkCoreIsolation'
+check.dependsOn 'checkModMetadata'
 check.dependsOn 'runGametest'
 tasks.named('runGametest') {
     doFirst {

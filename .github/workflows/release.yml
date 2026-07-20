@@ -77,9 +77,15 @@ jobs:
           MOD_VERSION=$(grep '^version=' gradle.properties | cut -d'=' -f2)
           MOD_ID=$(grep '^id=' gradle.properties | cut -d'=' -f2)
           MOD_NAME=$(jq -r '.name' src/main/resources/fabric.mod.json)
+          case "$MOD_VERSION" in
+            *-alpha*) VERSION_TYPE=alpha ;;
+            *-beta*|*-rc*) VERSION_TYPE=beta ;;
+            *) VERSION_TYPE=release ;;
+          esac
           echo "mod_version=$MOD_VERSION" >> $GITHUB_OUTPUT
           echo "mod_id=$MOD_ID" >> $GITHUB_OUTPUT
           echo "mod_name=$MOD_NAME" >> $GITHUB_OUTPUT
+          echo "version_type=$VERSION_TYPE" >> $GITHUB_OUTPUT
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
@@ -100,7 +106,7 @@ jobs:
           version: ${{ format('v{0}-mc{1}',
             steps.Version_Info.outputs.mod_version,
             matrix.minecraft_version) }}
-          version-type: release
+          version-type: ${{ steps.Version_Info.outputs.version_type }}
           loaders: fabric
           game-versions: |
             ${{ matrix.minecraft_version }}
