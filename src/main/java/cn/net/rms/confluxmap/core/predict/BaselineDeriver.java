@@ -8,8 +8,8 @@ import cn.net.rms.confluxmap.core.model.SurfaceKind;
  * level in an oceanic/river biome renders as flooded water at sea level, with a fluid depth
  * clamped to a byte; every other column keeps its own terrain height and takes its kind
  * straight from {@link BiomeTable}. Runs over the whole margin-inclusive grid (not just the
- * pixels that get rendered) so {@link CanopyStylizer} can stylize the margin too, keeping the
- * slope-shading neighbor at a tile's own west/south edge consistent with an ordinary pixel.
+ * pixels that get rendered) so {@link CanopyStylizer} can stylize the margin too, keeping both
+ * diagonal slope samples at tile edges consistent with ordinary pixels.
  */
 public final class BaselineDeriver {
     /** 1.17.1 sea level. */

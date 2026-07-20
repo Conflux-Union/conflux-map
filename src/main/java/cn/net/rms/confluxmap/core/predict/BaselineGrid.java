@@ -2,17 +2,13 @@ package cn.net.rms.confluxmap.core.predict;
 
 /**
  * One predicted tile's raw sampled data at one LOD: a cubiomes biome id and a terrain height
- * per pixel, plus a 1-pixel margin on every edge so slope shading can read the diagonal
- * neighbor (x-1, z+1) - the same convention {@link
- * cn.net.rms.confluxmap.core.tile.TileService#combinedShade} (via {@code composeRegion}) reads
- * from an adjacent already-captured region - without needing another tile's data at all: unlike
- * real captured tiles, a predicted tile can simply sample a slightly larger area directly from
- * the seed.
+ * per pixel, plus a 1-pixel margin on every edge so continuous slope shading can read both
+ * diagonal samples around an output pixel without needing another tile's data. Unlike real
+ * captured tiles, a predicted tile can simply sample a slightly larger area directly from the
+ * seed.
  *
  * <p>Indexed via {@link #index(int, int)}, local pixel coordinates {@code [-MARGIN,
- * PIXELS-1+MARGIN]} in both axes (only the west column and south row of the margin are ever
- * actually read - see {@link LodSampling} - but the grid fetches a full symmetric margin on
- * every edge for a single simple indexing scheme rather than two different asymmetric ones).
+ * PIXELS-1+MARGIN]} in both axes.
  */
 public final class BaselineGrid {
     public static final int PIXELS = 256;

@@ -37,6 +37,7 @@ public final class ShadingPipeline {
     private static final double K_ALONE = 1.8;
     private static final double K_WITH_SLOPE = 3.0;
     private static final double SLOPE_STEP = 1.0 / 8.0;
+    private static final double BLOCKS_PER_FULL_SLOPE = 8.0;
 
     private ShadingPipeline() {
     }
@@ -66,6 +67,30 @@ public final class ShadingPipeline {
             return -SLOPE_STEP;
         }
         return 0.0;
+    }
+
+    /**
+     * Continuous form of {@link #slopeShade} for interpolated or aggregated height fields.
+     * The centered difference between the lit-side and dark-side diagonal samples is normalized
+     * by their two-pixel LOD distance. A normalized rise of {@value #BLOCKS_PER_FULL_SLOPE}
+     * reaches the same maximum shade as the discrete map slope; smaller differences remain
+     * proportional instead of turning every one-block quantization boundary into a full-strength
+     * contour line.
+     */
+    public static double continuousSlopeShade(
+        final Integer litSideHeight,
+        final Integer darkSideHeight,
+        final int blocksPerPixel
+    ) {
+        if (litSideHeight == null || darkSideHeight == null) {
+            return 0.0;
+        }
+        if (blocksPerPixel <= 0) {
+            throw new IllegalArgumentException("blocksPerPixel must be positive");
+        }
+        final double risePerBlock = (litSideHeight - darkSideHeight) / (2.0 * blocksPerPixel);
+        final double normalized = Math.max(-1.0, Math.min(1.0, risePerBlock / BLOCKS_PER_FULL_SLOPE));
+        return normalized * SLOPE_STEP;
     }
 
     /** Sum of the active height/slope terms, per §4's "layered on top of" combination. */

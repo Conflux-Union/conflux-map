@@ -2,12 +2,14 @@ package cn.net.rms.confluxmap.core.predict;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
+import cn.net.rms.confluxmap.core.util.Argb;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 
@@ -40,20 +42,70 @@ class PredictedTileComposerTest {
     }
 
     @Test
-    void predictionDoesNotApplyDiscreteSlopeContourTerm() {
+    void predictionKeepsDirectionalSlopeDetail() {
+        final int flat = composeSlopePixel(80, 80, 0);
+        final int higherNeighbor = composeSlopePixel(80, 88, 0);
+        final int lowerNeighbor = composeSlopePixel(80, 72, 0);
+
+        assertTrue(Argb.red(higherNeighbor) > Argb.red(flat), "a higher lit-side neighbor should brighten the pixel");
+        assertTrue(Argb.red(lowerNeighbor) < Argb.red(flat), "a lower lit-side neighbor should darken the pixel");
+    }
+
+    @Test
+    void predictionSlopeUsesContinuousMagnitudeInsteadOfAFixedContourStep() {
+        final int flat = composeSlopePixel(80, 80, 0);
+        final int oneBlockRise = composeSlopePixel(80, 81, 0);
+        final int eightBlockRise = composeSlopePixel(80, 88, 0);
+        final int base = Argb.multiply(PredictionPalette.defaults().landBase, PredictionPalette.defaults().grassTint(1));
+        final int oldDiscreteStep = ShadingPipeline.applyShade(base, ShadingPipeline.slopeShade(80, 81));
+
+        assertNotEquals(flat, oneBlockRise, "small predicted slopes must not disappear");
+        assertNotEquals(oldDiscreteStep, oneBlockRise, "a one-block quantization step must not become a full contour band");
+        assertTrue(
+            Argb.red(eightBlockRise) - Argb.red(flat) > Argb.red(oneBlockRise) - Argb.red(flat),
+            "larger slopes should produce stronger shading"
+        );
+    }
+
+    @Test
+    void predictionSlopeNormalizesForBlocksPerPixel() {
+        assertEquals(
+            composeSlopePixel(80, 81, 0),
+            composeSlopePixel(80, 88, 3),
+            "the same one-block-per-block slope should shade equally across LODs"
+        );
+    }
+
+    @Test
+    void predictionDoesNotShadeAcrossVoidBoundary() {
         final BaselineGrid grid = new BaselineGrid();
         final DerivedGrid derived = new DerivedGrid();
         Arrays.fill(grid.biomeId, 1);
-        Arrays.fill(derived.kind, (byte) cn.net.rms.confluxmap.core.model.SurfaceKind.LAND.ordinal());
+        Arrays.fill(derived.kind, (byte) SurfaceKind.LAND.ordinal());
+        Arrays.fill(derived.surfaceY, 80);
+        derived.kind[BaselineGrid.index(9, 11)] = (byte) SurfaceKind.VOID.ordinal();
+        derived.surfaceY[BaselineGrid.index(11, 9)] = 72;
+
+        final int[] pixels = PredictedTileComposer.compose(derived, grid, PredictionPalette.defaults());
+
+        assertEquals(composeSlopePixel(80, 80, 0), pixels[10 * 256 + 10]);
+    }
+
+    private static int composeSlopePixel(final int centerHeight, final int neighborHeight, final int lod) {
+        final BaselineGrid grid = new BaselineGrid();
+        final DerivedGrid derived = new DerivedGrid();
+        Arrays.fill(grid.biomeId, 1);
+        Arrays.fill(derived.kind, (byte) SurfaceKind.LAND.ordinal());
         Arrays.fill(derived.surfaceY, 80);
         Arrays.fill(derived.fluidDepth, 0);
         final int pixel = 10 * 256 + 10;
-        derived.surfaceY[BaselineGrid.index(10, 10)] = 88;
-        derived.surfaceY[BaselineGrid.index(9, 11)] = 70;
-        final int[] pixels = PredictedTileComposer.compose(derived, grid, PredictionPalette.defaults());
-        final int base = Argb.multiply(PredictionPalette.defaults().landBase, PredictionPalette.defaults().grassTint(1));
-        final int expected = ShadingPipeline.applyShade(base, ShadingPipeline.heightShade(88, 80, false));
-        assertEquals(expected, pixels[pixel]);
+        derived.surfaceY[BaselineGrid.index(10, 10)] = centerHeight;
+        derived.surfaceY[BaselineGrid.index(9, 11)] = neighborHeight;
+        derived.surfaceY[BaselineGrid.index(11, 9)] = centerHeight - (neighborHeight - centerHeight);
+        final int[] pixels = PredictedTileComposer.compose(
+            derived, grid, PredictionPalette.defaults(), null, PredictionViewMode.EVERYWHERE, lod
+        );
+        return pixels[pixel];
     }
 
     @Test

@@ -1,15 +1,11 @@
 package cn.net.rms.confluxmap.core.predict;
 
-import cn.net.rms.confluxmap.core.color.ShadingPipeline;
-
 /**
  * Fills a {@link BaselineGrid} for one predicted tile (dimension/LOD/tile origin), matching the
  * plan's per-LOD table: biome scale/expansion is shared between Overworld and End (the same
  * cubiomes {@code Range} scales apply regardless of dimension), while terrain height source and
- * expansion mode differ per LOD. The margin this fills in exists for the same reason {@code
- * cn.net.rms.confluxmap.core.tile.TileService#composeRegion} reads an adjacent region's edge
- * column/row: {@link cn.net.rms.confluxmap.core.color.ShadingPipeline#slopeShade}'s fixed
- * diagonal neighbor is (x-1, z+1).
+ * expansion mode differ per LOD. The margin this fills lets prediction estimate a centered
+ * diagonal slope from (x-1,z+1) and (x+1,z-1) at every output pixel, including tile edges.
  * <ul>
  *   <li>LOD0: biomes at native scale 1 (1:1 with pixels); heights at native 1:4 scale, expanded
  *       x4 by fixed-point integer bilinear (per-axis lerp, composed - {@link Math#floorDiv} only,
@@ -34,11 +30,8 @@ import cn.net.rms.confluxmap.core.color.ShadingPipeline;
  * contributing anchor is already above the waterline.
  *
  * <p>Every grid (both biomes and heights) is sampled over the full margin range {@code
- * [-BaselineGrid.MARGIN, BaselineGrid.PIXELS-1+BaselineGrid.MARGIN]} on both axes - see {@link
- * BaselineGrid}'s javadoc for why a uniform (if slightly wasteful) two-sided margin is fetched
- * rather than the tighter asymmetric west/south-only range the slope-shading neighbor actually
- * needs: one indexing scheme for every LOD, dimension and axis is worth a handful of native
- * samples neither is ever read back from.
+ * [-BaselineGrid.MARGIN, BaselineGrid.PIXELS-1+BaselineGrid.MARGIN]} on both axes so both slope
+ * samples remain local to the tile.
  */
 public final class LodSampling {
     private static final int PIXELS = BaselineGrid.PIXELS;

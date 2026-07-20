@@ -28,9 +28,8 @@ import java.util.Set;
  *       aren't distinguishable anyway, so per-pixel noise reads as an aggregate canopy texture.
  * </ul>
  *
- * <p>Runs over the whole margin-inclusive grid (not just the rendered 256x256), so the
- * slope-shading neighbor read at a tile's own west/south edge sees the same stylization an
- * ordinary pixel would.
+ * <p>Runs over the whole margin-inclusive grid (not just the rendered 256x256), so both diagonal
+ * slope samples at tile edges see the same stylization ordinary pixels would.
  */
 public final class CanopyStylizer {
     private static final int MAX_NATURAL_LOD = 1;

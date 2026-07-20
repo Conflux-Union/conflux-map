@@ -4,18 +4,19 @@ import cn.net.rms.confluxmap.core.color.ShadingPipeline;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.util.Argb;
+import cn.net.rms.confluxmap.core.util.TileMath;
 
 /**
  * Turns a {@link DerivedGrid} (+ the {@link BaselineGrid} it was derived from, for biome ids)
  * into a 256x256 ARGB pixel array, mirroring {@code
  * cn.net.rms.confluxmap.core.tile.TileService#composeRegion}'s visual pipeline as closely as a
- * baseline with no real block/light data can: continuous height shading via {@link
- * ShadingPipeline#heightShade} against the same fixed {@link
- * ShadingPipeline#REFERENCE_HEIGHT} reference, water rendered as a translucent surface color
- * pre-composited over an approximated seafloor (see {@link #seafloorColor}, since there is no
- * real seafloor block to sample - cubiomes gives biome + terrain height only). Day/night lighting
- * is deliberately not baked into these cached pixels: the fullscreen renderer applies one global
- * tint to the entire predicted plane, so tiles composed at different times stay identical.
+ * baseline with no real block/light data can: continuous height shading against the same fixed
+ * {@link ShadingPipeline#REFERENCE_HEIGHT} reference plus LOD-normalized continuous slope shading,
+ * water rendered as a translucent surface color pre-composited over an approximated seafloor (see
+ * {@link #seafloorColor}, since there is no real seafloor block to sample - cubiomes gives biome +
+ * terrain height only). Day/night lighting is deliberately not baked into these cached pixels:
+ * the fullscreen renderer applies one global tint to the entire predicted plane, so tiles composed
+ * at different times stay identical.
  *
  * <p>Deterministic: every input here is already-sampled/derived data plus a per-session {@link
  * PredictionPalette}; no randomness, no wall-clock or otherwise non-reproducible state.
@@ -88,12 +89,12 @@ public final class PredictedTileComposer {
                 }
 
                 final int surfaceY = surface[idx];
-                final double shade = ShadingPipeline.combinedShade(
-                    // Predicted heights are integer-quantized interpolations. Applying the real
-                    // map's discrete +/-1/8 diagonal slope term to every predicted pixel creates
-                    // a regular contour/stripe artifact, so prediction uses only continuous
-                    // absolute-height shading. Real captured tiles retain slope shading.
-                    true, false, surfaceY, ShadingPipeline.REFERENCE_HEIGHT, null
+                final Integer litSideHeight = slopeSampleHeight(surface, kinds, x - 1, z + 1);
+                final Integer darkSideHeight = slopeSampleHeight(surface, kinds, x + 1, z - 1);
+                final double shade = ShadingPipeline.heightShade(
+                    surfaceY, ShadingPipeline.REFERENCE_HEIGHT, false
+                ) + ShadingPipeline.continuousSlopeShade(
+                    litSideHeight, darkSideHeight, TileMath.blocksPerPixel(lod)
                 );
                 final int biomeId = biomes[idx];
 
@@ -140,6 +141,21 @@ public final class PredictedTileComposer {
     private static int seafloorColor(final int fluidDepth) {
         final float brightness = Math.max(SEAFLOOR_MIN_BRIGHTNESS, 1f - fluidDepth / SEAFLOOR_DARKEN_RANGE_BLOCKS);
         return Argb.scale(SEAFLOOR_BASE, brightness);
+    }
+
+    /** Height at one slope sample, with void/unknown boundaries treated as unavailable. */
+    private static Integer slopeSampleHeight(
+        final int[] surface,
+        final byte[] kinds,
+        final int x,
+        final int z
+    ) {
+        final int idx = BaselineGrid.index(x, z);
+        final SurfaceKind neighborKind = SurfaceKind.byOrdinal(kinds[idx]);
+        if (neighborKind == SurfaceKind.VOID || neighborKind == SurfaceKind.UNKNOWN) {
+            return null;
+        }
+        return surface[idx];
     }
 
 }
