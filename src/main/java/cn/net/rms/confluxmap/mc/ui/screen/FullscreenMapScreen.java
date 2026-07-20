@@ -31,6 +31,7 @@ import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.StructureMarkerRenderer;
+import cn.net.rms.confluxmap.mc.world.ClientChunkLookup;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import java.util.ArrayList;
 import java.util.List;
@@ -697,7 +698,7 @@ public final class FullscreenMapScreen extends Screen {
             final BlockPos pos = new BlockPos(
                 blockX, MathHelper.clamp(playerY, world.getBottomY(), world.getTopY() - 1), blockZ
             );
-            if (world.isChunkLoaded(pos)) {
+            if (ClientChunkLookup.isLoaded(world, blockX, blockZ)) {
                 final Identifier biomeId = world.getRegistryManager().get(Registry.BIOME_KEY).getId(world.getBiome(pos));
                 if (biomeId != null) {
                     return translatedBiomeName(biomeId);
