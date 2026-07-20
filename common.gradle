@@ -8,6 +8,12 @@ repositories {
     // See https://docs.gradle.org/current/userguide/declaring_repositories.html
     // for more information about repositories.
 }
+sourceSets {
+    gametest {
+        compileClasspath += main.compileClasspath
+        runtimeClasspath += main.runtimeClasspath
+    }
+}
 dependencies {
     minecraft "com.mojang:minecraft:$name"
     mappings "net.fabricmc:yarn:$name+build.$yarn_mappings:v2"
@@ -15,6 +21,7 @@ dependencies {
     modImplementation "net.fabricmc.fabric-api:fabric-api:$fabric_api_version"
     testImplementation "org.junit.jupiter:junit-jupiter:5.10.2"
     testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+    gametestImplementation sourceSets.main.output
 }
 test {
     useJUnitPlatform()
@@ -34,6 +41,14 @@ loom {
             if (project.hasProperty('autoServer')) {
                 programArgs '--server', '127.0.0.1', '--port', '25565'
             }
+        }
+        gametest {
+            server()
+            name "Game Test"
+            source sourceSets.gametest
+            vmArg "-Dfabric-api.gametest"
+            vmArg "-Dfabric-api.gametest.report-file=${project.buildDir}/gametest-results.xml"
+            runDir "build/gametest"
         }
     }
 }
@@ -78,3 +93,10 @@ tasks.register('checkCoreIsolation') {
     }
 }
 check.dependsOn 'checkCoreIsolation'
+check.dependsOn 'runGametest'
+tasks.named('runGametest') {
+    doFirst {
+        delete project.file("${project.buildDir}/gametest")
+        delete project.file("${project.buildDir}/gametest-results.xml")
+    }
+}

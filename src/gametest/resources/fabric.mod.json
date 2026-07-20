@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "confluxmap-gametest",
+  "version": "1.0.0",
+  "name": "Conflux Map Game Tests",
+  "environment": "server",
+  "entrypoints": {
+    "fabric-gametest": [
+      "cn.net.rms.confluxmap.gametest.PredictionSyncGameTest"
+    ]
+  },
+  "depends": {
+    "fabricloader": "*",
+    "fabric-gametest-api-v1": "*",
+    "confluxmap": "*"
+  }
+}
