@@ -1,10 +1,7 @@
-# Cave, Nether, and End Layer Rendering — Behavior Specification
+# Cave, Nether, and End Layer Rendering
 
-This document specifies the observed behavior of a Minecraft minimap/world-map mod's
-underground and non-overworld rendering, for the purpose of an independent, clean-room
-reimplementation. It describes *what the system does and why*, in language-neutral terms
-and pseudocode. It is derived from reading the reference implementation's runtime logic,
-not from copying any of its source text, identifiers, or structure.
+Underground and non-Overworld rendering: cave-mode auto-detection, the Nether's
+current-layer / ceiling / manual-Y-slice modes, and the End's void background.
 
 Two independent renderers exist in the reference system and are treated separately below:
 

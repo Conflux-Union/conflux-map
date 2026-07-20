@@ -1,12 +1,7 @@
-# Surface Color Sampling — Behavior Specification
+# Surface Color Sampling
 
-This document specifies the observable *behavior* of a Minecraft minimap
-mod's "turn a loaded chunk column into one map pixel" pipeline, derived by
-reading a reference implementation for clean-room purposes. It intentionally
-avoids describing source code organization, class/method/field names, or
-verbatim strings. Everything below is a behavioral rule, data shape, or
-numeric constant — implement it however fits the target codebase's
-architecture.
+How a loaded chunk column becomes one map pixel: block color, biome tint,
+slope and water shading, and the split between the live and cached passes.
 
 The reference implementation has **two parallel rendering passes** that
 recompute pixel colors with the same core algorithm and constants:

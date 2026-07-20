@@ -1,12 +1,7 @@
-# Minimap & World Map Zoom / Scale / Rotation — Behavior Specification
+# Minimap & World Map Zoom / Scale / Rotation
 
-This document specifies the observable *behavior* of a Minecraft minimap
-mod's zoom, rotation, layout, and multi-resolution world-map systems,
-derived by reading a reference implementation for clean-room purposes. It
-intentionally avoids describing source code organization, identifier names,
-or verbatim UI copy. All facts below are behavioral rules, data shapes, and
-numeric constants — implement them however fits the target codebase's
-architecture.
+Zoom steps, rotation, corner/size layout, and the multi-resolution world-map
+LOD system, across the three map surfaces kept separate below.
 
 ### Three map surfaces, up front
 

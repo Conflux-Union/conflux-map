@@ -1,15 +1,7 @@
-# Entity Radar — Behavior Specification
+# Entity Radar
 
-This document specifies the observed *behavior* of a Minecraft minimap mod's entity-radar
-feature, derived by reading a read-only reference implementation. It intentionally contains
-no source code, no identifiers, and no comments/strings copied from that implementation —
-only prose and generic pseudocode describing externally observable behavior, plus numeric
-constants and thresholds (which are behavior, not expression).
-
-This is written for a clean-room reimplementation: an implementer should be able to reproduce
-the same observable behavior from this document without ever having seen the original code.
-
----
+Entity classification, radar dot rendering, above/below elevation cues, and
+the icon mapping for minimap markers.
 
 ## 1. Entity collection
 

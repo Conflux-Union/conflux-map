@@ -1,15 +1,9 @@
-# Waypoints — Behavior Specification
+# Waypoints
 
-This document specifies the observable *behavior* of a Minecraft minimap
-mod's waypoint system — data model, cross-dimension coordinate handling,
-death-point capture, list/edit UI, in-world rendering, minimap indicators,
-and fullscreen-map interaction — derived by reading a reference
-implementation for clean-room purposes. It intentionally avoids describing
-source code organization, class/field/method names, or verbatim strings.
-Everything below is a behavioral rule, data shape, or numeric constant —
-implement it however fits the target codebase's architecture. Where a rule
-is a vanilla Minecraft fact (e.g. the Nether coordinate ratio) rather than
-something the reference mod invented, that is called out explicitly.
+The waypoint system: data model, cross-dimension coordinate handling,
+death-point capture, list/edit UI, in-world and minimap indicators, and
+fullscreen-map interaction. Vanilla Minecraft facts (e.g. the Nether
+coordinate ratio) are called out where they matter.
 
 ## 1. Waypoint data model
 

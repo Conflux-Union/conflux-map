@@ -4,8 +4,8 @@ This directory holds everything needed to build `confluxnative`, the small JNI
 shim (`shim/confluxnative.c`) around [cubiomes](https://github.com/Cubitect/cubiomes),
 pulled in as a git submodule (our fork), that the
 `cn.net.rms.confluxmap.nativepredict` Java package loads to answer batch
-biome/height/structure queries. See `docs/reference-specs/` and the M2 plan
-for why this exists; this file is only the build/maintenance side of it.
+biome/height/structure queries. See `docs/reference-specs/predicted-map.md`
+for what it predicts; this file is only the build/maintenance side.
 
 ## Layout
 
@@ -35,8 +35,7 @@ for why this exists; this file is only the build/maintenance side of it.
   (`*-windows-gnu`, what `buildNativesAll` uses - not MSVC, which would need
   `__declspec(dllexport)` instead). Verified for all 5 targets after building
   (`nm -D` for the two Linux `.so`s, `objdump -p` for the `.dll`'s export
-  table, a small Mach-O symtab parse for the two `.dylib`s - see the S1
-  implementation notes) - every `Java_...` entry point shows up correctly
+  table, a small Mach-O symtab parse for the two `.dylib`) - every `Java_...` entry point shows up correctly
   exported and nothing else does.
 - `shim/confluxnative.c` - this project's own code (GPL-3.0), the only file
   here that isn't vendored.
@@ -84,8 +83,8 @@ Zig target triples used, and the resulting file per OS:
 Both tasks use the same compile flags: `-shared -fPIC -O2 -g0 -fno-fast-math
 -ffp-contract=off -fvisibility=hidden -Wall -Inative/jni -Inative/cubiomes`.
 `-g0` prevents compiler-version defaults from embedding debug information in
-release binaries. `-fno-fast-math`/`-ffp-contract=off` matter for determinism (see the M2 plan's
-"Determinism spec") - predictions must be bit-identical run to run and peer
+release binaries. `-fno-fast-math`/`-ffp-contract=off` matter for determinism -
+predictions must be bit-identical run to run and peer
 to peer, and both flags disable float reassociation/fused-multiply-add that
 would otherwise vary by codegen. `-fvisibility=hidden` keeps every cubiomes
 symbol private to the shared library; only the `Java_...` JNI entry points

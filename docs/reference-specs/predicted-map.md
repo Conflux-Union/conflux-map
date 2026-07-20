@@ -1,4 +1,4 @@
-# Predicted Map Reference
+# Predicted Map
 
 Conflux Map keeps prediction in a separate `!pred` tile plane. A real live or cached tile always
 overlays it; predictions never enter the `.cfr` column cache.
