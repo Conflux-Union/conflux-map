@@ -35,8 +35,8 @@ public final class WaypointListScreen extends Screen {
 
     private static final int ROW_HEIGHT = 28;
     private static final int SHARED_LIST_TOP = 56;
+    private static final int LOCAL_IDLE_LIST_TOP = 80;
     private static final int LOCAL_LIST_TOP = 104;
-    private static final int LOCAL_NARROW_LIST_TOP = 128;
     private static final int BOTTOM_MARGIN = 34;
     private static final int MIN_SIDE_MARGIN = 16;
     private static final int MAX_CONTENT_WIDTH = 880;
@@ -54,6 +54,40 @@ public final class WaypointListScreen extends Screen {
     private static final int NARROW_ROW_WIDTH = 254;
     private static final int NARROW_ACTION_WIDTH = 36;
     private static final int NARROW_DELETE_WIDTH = 40;
+    private static final int DROPDOWN_MAX_WIDTH = 200;
+    private static final int DROPDOWN_ROW_HEIGHT = 20;
+    private static final int DROPDOWN_MAX_VISIBLE_ROWS = 6;
+    private static final int DROPDOWN_SCROLLBAR_WIDTH = 6;
+    private static final int DROPDOWN_ACTION_HEIGHT = 22;
+
+    private enum SetDropdown { FILTER, MOVE_TARGET }
+
+    private record DropdownGeometry(
+        int x,
+        int triggerY,
+        int width,
+        int popupY,
+        int visibleRows,
+        int actionHeight
+    ) {
+        int optionHeight() {
+            return visibleRows * DROPDOWN_ROW_HEIGHT;
+        }
+
+        int popupHeight() {
+            return optionHeight() + actionHeight;
+        }
+
+        boolean containsTrigger(final double mouseX, final double mouseY) {
+            return mouseX >= x && mouseX < x + width
+                && mouseY >= triggerY && mouseY < triggerY + TOOLBAR_HEIGHT;
+        }
+
+        boolean containsPopup(final double mouseX, final double mouseY) {
+            return mouseX >= x && mouseX < x + width
+                && mouseY >= popupY && mouseY < popupY + popupHeight();
+        }
+    }
 
     private record RowInfo(
         Waypoint local,
@@ -104,6 +138,16 @@ public final class WaypointListScreen extends Screen {
     private UUID pendingDeleteId;
     private String selectedSetFilter;
     private String moveTargetSet = WaypointSet.DEFAULT_NAME;
+    private SetDropdown openSetDropdown;
+    private int dropdownScrollOffset;
+    private int dropdownKeyboardIndex;
+    private boolean draggingDropdownScrollbar;
+    private int filterDropdownX;
+    private int filterDropdownY;
+    private int filterDropdownWidth;
+    private int moveDropdownX;
+    private int moveDropdownY;
+    private int moveDropdownWidth;
     private List<RowInfo> rows = new ArrayList<>();
     private List<UUID> filteredLocalIds = List.of();
     private long lastSharedRevision = Long.MIN_VALUE;
@@ -174,8 +218,11 @@ public final class WaypointListScreen extends Screen {
     private void rebuild() {
         clearChildren();
         rows.clear();
+        filterDropdownWidth = 0;
+        moveDropdownWidth = 0;
         final WaypointStore store = waypointService.current();
         normalizeSetState(store);
+        normalizeDropdownState(store);
         final Optional<PlayerView> playerView = gameBridge.player();
         final DimensionId currentDimension = gameBridge.session().dimension();
         final double px = playerView.map(PlayerView::x).orElse(0.0);
@@ -285,51 +332,21 @@ public final class WaypointListScreen extends Screen {
             addNarrowLocalSetControls(store, writable);
             return;
         }
-        final int newWidth = 52;
-        final int renameWidth = 60;
-        final int deleteWidth = 80;
-        final int filterWidth = Math.max(44, contentWidth() - newWidth - renameWidth - deleteWidth - GAP * 3);
-        int x = contentLeft();
-        addDrawableChild(new ButtonWidget(
-            x, TOOLBAR_Y, filterWidth, TOOLBAR_HEIGHT,
-            fitButtonLabel(setFilterLabel(), filterWidth), button -> cycleSetFilter(store)
-        ));
-        x += filterWidth + GAP;
-        final ButtonWidget createSet = addDrawableChild(new ButtonWidget(
-            x, TOOLBAR_Y, newWidth, TOOLBAR_HEIGHT,
-            fitButtonLabel(new TranslatableText("confluxmap.screen.waypoints.set_new"), newWidth),
-            button -> openSetNameScreen(store, null)
-        ));
-        createSet.active = writable;
-        x += newWidth + GAP;
-        final ButtonWidget renameSet = addDrawableChild(new ButtonWidget(
-            x, TOOLBAR_Y, renameWidth, TOOLBAR_HEIGHT,
-            fitButtonLabel(new TranslatableText("confluxmap.screen.waypoints.set_rename"), renameWidth),
-            button -> openSetNameScreen(store, selectedSetFilter)
-        ));
-        renameSet.active = writable && isCustomSetSelected();
-        x += renameWidth + GAP;
-        final int members = store == null || !isCustomSetSelected()
-            ? 0
-            : store.waypointCount(selectedSetFilter);
-        final ButtonWidget deleteSet = addDrawableChild(new ButtonWidget(
-            x, TOOLBAR_Y, deleteWidth, TOOLBAR_HEIGHT,
-            fitButtonLabel(
-                new TranslatableText("confluxmap.screen.waypoints.set_delete", members),
-                deleteWidth
-            ),
-            button -> openDeleteSetConfirm(store, members)
-        ));
-        deleteSet.active = writable && isCustomSetSelected();
-
-        final int secondY = TOOLBAR_Y + TOOLBAR_HEIGHT + GAP;
         final int selectWidth = 84;
-        final int moveWidth = 92;
-        final int targetWidth = Math.max(48, contentWidth() - selectWidth - moveWidth - GAP * 2);
+        final int filterWidth = Math.min(
+            DROPDOWN_MAX_WIDTH,
+            Math.max(44, contentWidth() - selectWidth - GAP)
+        );
+        final int firstRowWidth = filterWidth + GAP + selectWidth;
+        final int x = contentLeft() + Math.max(0, (contentWidth() - firstRowWidth) / 2);
+        addSetDropdownButton(SetDropdown.FILTER, x, TOOLBAR_Y, filterWidth, setFilterLabel(), store);
         final boolean allFilteredSelected = !filteredLocalIds.isEmpty()
             && selectedWaypointIds.containsAll(filteredLocalIds);
         final ButtonWidget selectAll = addDrawableChild(new ButtonWidget(
-            contentLeft(), secondY, selectWidth, TOOLBAR_HEIGHT,
+            x + filterWidth + GAP,
+            TOOLBAR_Y,
+            selectWidth,
+            TOOLBAR_HEIGHT,
             fitButtonLabel(new TranslatableText(
                 allFilteredSelected
                     ? "confluxmap.screen.waypoints.selection_clear"
@@ -337,18 +354,37 @@ public final class WaypointListScreen extends Screen {
             ), selectWidth),
             button -> toggleSelectAll(store)
         ));
-        selectAll.active = writable;
-        final ButtonWidget target = addDrawableChild(new ButtonWidget(
-            contentLeft() + selectWidth + GAP,
+        selectAll.active = writable && !filteredLocalIds.isEmpty();
+
+        if (selectedWaypointIds.isEmpty()) {
+            return;
+        }
+
+        final int secondY = TOOLBAR_Y + TOOLBAR_HEIGHT + GAP;
+        final int clearWidth = 84;
+        final int moveWidth = 92;
+        final int targetWidth = Math.min(
+            DROPDOWN_MAX_WIDTH,
+            Math.max(48, contentWidth() - clearWidth - moveWidth - GAP * 2)
+        );
+        final int secondRowWidth = clearWidth + targetWidth + moveWidth + GAP * 2;
+        final int secondRowX = contentLeft() + Math.max(0, (contentWidth() - secondRowWidth) / 2);
+        final ButtonWidget clearSelection = addDrawableChild(new ButtonWidget(
+            secondRowX, secondY, clearWidth, TOOLBAR_HEIGHT,
+            fitButtonLabel(selectionClearLabel(), clearWidth),
+            button -> clearSelection()
+        ));
+        clearSelection.active = writable;
+        addSetDropdownButton(
+            SetDropdown.MOVE_TARGET,
+            secondRowX + clearWidth + GAP,
             secondY,
             targetWidth,
-            TOOLBAR_HEIGHT,
-            fitButtonLabel(moveTargetLabel(), targetWidth),
-            button -> cycleMoveTarget(store)
-        ));
-        target.active = store != null && store.sets().size() > 1;
+            moveTargetLabel(),
+            store
+        );
         final ButtonWidget move = addDrawableChild(new ButtonWidget(
-            contentRight() - moveWidth,
+            secondRowX + clearWidth + GAP + targetWidth + GAP,
             secondY,
             moveWidth,
             TOOLBAR_HEIGHT,
@@ -362,63 +398,49 @@ public final class WaypointListScreen extends Screen {
     }
 
     private void addNarrowLocalSetControls(final WaypointStore store, final boolean writable) {
-        addDrawableChild(new ButtonWidget(
-            contentLeft(), TOOLBAR_Y, contentWidth(), TOOLBAR_HEIGHT,
-            fitButtonLabel(setFilterLabel(), contentWidth()), button -> cycleSetFilter(store)
-        ));
-
-        final int firstColumnWidth = Math.max(1, (contentWidth() - GAP * 2) / 3);
-        final int setActionsY = TOOLBAR_Y + TOOLBAR_HEIGHT + GAP;
-        int x = contentLeft();
-        final ButtonWidget createSet = addDrawableChild(new ButtonWidget(
-            x, setActionsY, firstColumnWidth, TOOLBAR_HEIGHT,
-            fitButtonLabel(new TranslatableText("confluxmap.screen.waypoints.set_new"), firstColumnWidth),
-            button -> openSetNameScreen(store, null)
-        ));
-        createSet.active = writable;
-        x += firstColumnWidth + GAP;
-        final ButtonWidget renameSet = addDrawableChild(new ButtonWidget(
-            x, setActionsY, firstColumnWidth, TOOLBAR_HEIGHT,
-            fitButtonLabel(new TranslatableText("confluxmap.screen.waypoints.set_rename"), firstColumnWidth),
-            button -> openSetNameScreen(store, selectedSetFilter)
-        ));
-        renameSet.active = writable && isCustomSetSelected();
-        x += firstColumnWidth + GAP;
-        final int lastColumnWidth = Math.max(1, contentRight() - x);
-        final int members = store == null || !isCustomSetSelected()
-            ? 0
-            : store.waypointCount(selectedSetFilter);
-        final ButtonWidget deleteSet = addDrawableChild(new ButtonWidget(
-            x, setActionsY, lastColumnWidth, TOOLBAR_HEIGHT,
-            fitButtonLabel(
-                new TranslatableText("confluxmap.screen.waypoints.set_delete", members),
-                lastColumnWidth
-            ),
-            button -> openDeleteSetConfirm(store, members)
-        ));
-        deleteSet.active = writable && isCustomSetSelected();
-
-        final int batchActionsY = setActionsY + TOOLBAR_HEIGHT + GAP;
-        x = contentLeft();
+        final int selectWidth = Math.min(84, Math.max(44, contentWidth() / 3));
+        final int filterWidth = Math.max(44, contentWidth() - selectWidth - GAP);
+        addSetDropdownButton(
+            SetDropdown.FILTER, contentLeft(), TOOLBAR_Y, filterWidth, setFilterLabel(), store
+        );
         final boolean allFilteredSelected = !filteredLocalIds.isEmpty()
             && selectedWaypointIds.containsAll(filteredLocalIds);
         final ButtonWidget selectAll = addDrawableChild(new ButtonWidget(
-            x, batchActionsY, firstColumnWidth, TOOLBAR_HEIGHT,
+            contentLeft() + filterWidth + GAP,
+            TOOLBAR_Y,
+            selectWidth,
+            TOOLBAR_HEIGHT,
             fitButtonLabel(new TranslatableText(
                 allFilteredSelected
                     ? "confluxmap.screen.waypoints.selection_clear"
                     : "confluxmap.screen.waypoints.selection_all"
-            ), firstColumnWidth),
+            ), selectWidth),
             button -> toggleSelectAll(store)
         ));
-        selectAll.active = writable;
-        x += firstColumnWidth + GAP;
-        final ButtonWidget target = addDrawableChild(new ButtonWidget(
+        selectAll.active = writable && !filteredLocalIds.isEmpty();
+
+        if (selectedWaypointIds.isEmpty()) {
+            return;
+        }
+
+        final int firstColumnWidth = Math.max(1, (contentWidth() - GAP * 2) / 3);
+        final int batchActionsY = TOOLBAR_Y + TOOLBAR_HEIGHT + GAP;
+        int x = contentLeft();
+        final ButtonWidget clearSelection = addDrawableChild(new ButtonWidget(
             x, batchActionsY, firstColumnWidth, TOOLBAR_HEIGHT,
-            fitButtonLabel(moveTargetLabel(), firstColumnWidth),
-            button -> cycleMoveTarget(store)
+            fitButtonLabel(selectionClearLabel(), firstColumnWidth),
+            button -> clearSelection()
         ));
-        target.active = store != null && store.sets().size() > 1;
+        clearSelection.active = writable;
+        x += firstColumnWidth + GAP;
+        addSetDropdownButton(
+            SetDropdown.MOVE_TARGET,
+            x,
+            batchActionsY,
+            firstColumnWidth,
+            moveTargetLabel(),
+            store
+        );
         x += firstColumnWidth + GAP;
         final ButtonWidget move = addDrawableChild(new ButtonWidget(
             x, batchActionsY, Math.max(1, contentRight() - x), TOOLBAR_HEIGHT,
@@ -565,6 +587,7 @@ public final class WaypointListScreen extends Screen {
         scrollOffset = 0;
         pendingDeleteId = null;
         selectedWaypointIds.clear();
+        closeSetDropdown();
         rebuild();
     }
 
@@ -679,6 +702,13 @@ public final class WaypointListScreen extends Screen {
         rebuild();
     }
 
+    private void clearSelection() {
+        selectedWaypointIds.clear();
+        clearPendingActions();
+        closeSetDropdown();
+        rebuild();
+    }
+
     private void moveSelection(final WaypointStore store) {
         if (store == null
             || store != waypointService.current()
@@ -695,31 +725,122 @@ public final class WaypointListScreen extends Screen {
         rebuild();
     }
 
-    private void cycleMoveTarget(final WaypointStore store) {
-        if (store == null || store != waypointService.current() || store.sets().isEmpty()) {
-            return;
+    private void addSetDropdownButton(
+        final SetDropdown dropdown,
+        final int x,
+        final int y,
+        final int buttonWidth,
+        final Text label,
+        final WaypointStore store
+    ) {
+        final ButtonWidget button = addDrawableChild(new ButtonWidget(
+            x,
+            y,
+            buttonWidth,
+            TOOLBAR_HEIGHT,
+            fitButtonLabel(label, buttonWidth),
+            ignored -> toggleSetDropdown(dropdown, store)
+        ));
+        if (dropdown == SetDropdown.FILTER) {
+            filterDropdownX = x;
+            filterDropdownY = y;
+            filterDropdownWidth = buttonWidth;
+            button.active = store != null;
+        } else {
+            moveDropdownX = x;
+            moveDropdownY = y;
+            moveDropdownWidth = buttonWidth;
+            button.active = store != null && store.sets().size() > 1;
         }
-        final List<String> names = store.sets().stream().map(WaypointSet::name).toList();
-        final int current = names.indexOf(moveTargetSet);
-        moveTargetSet = names.get((current + 1 + names.size()) % names.size());
-        clearPendingActions();
-        rebuild();
     }
 
-    private void cycleSetFilter(final WaypointStore store) {
+    private void toggleSetDropdown(final SetDropdown dropdown, final WaypointStore store) {
         if (store == null || store != waypointService.current()) {
             return;
         }
-        final List<String> filters = new ArrayList<>();
-        filters.add(null);
-        for (final WaypointSet set : store.sets()) {
-            filters.add(set.name());
+        if (openSetDropdown == dropdown) {
+            closeSetDropdown();
+        } else {
+            openSetDropdown = dropdown;
+            dropdownKeyboardIndex = selectedDropdownIndex(store);
+            dropdownScrollOffset = DropdownScroll.ensureVisible(
+                dropdownKeyboardIndex,
+                dropdownOptions(store).size(),
+                dropdownVisibleRows(store)
+            );
+            draggingDropdownScrollbar = false;
         }
-        final int current = filters.indexOf(selectedSetFilter);
-        selectedSetFilter = filters.get((current + 1 + filters.size()) % filters.size());
-        scrollOffset = 0;
-        selectedWaypointIds.clear();
+        rebuild();
+    }
+
+    private void closeSetDropdown() {
+        openSetDropdown = null;
+        dropdownScrollOffset = 0;
+        dropdownKeyboardIndex = 0;
+        draggingDropdownScrollbar = false;
+    }
+
+    private List<String> dropdownOptions(final WaypointStore store) {
+        if (store == null) {
+            return List.of();
+        }
+        final List<String> options = new ArrayList<>();
+        if (openSetDropdown == SetDropdown.FILTER) {
+            options.add(null);
+        }
+        for (final WaypointSet set : store.sets()) {
+            options.add(set.name());
+        }
+        return options;
+    }
+
+    private int selectedDropdownIndex(final WaypointStore store) {
+        final String selected = openSetDropdown == SetDropdown.FILTER
+            ? selectedSetFilter
+            : moveTargetSet;
+        return Math.max(0, dropdownOptions(store).indexOf(selected));
+    }
+
+    private int dropdownVisibleRows(final WaypointStore store) {
+        final int popupY = dropdownTriggerY() + TOOLBAR_HEIGHT;
+        final int actionHeight = openSetDropdown == SetDropdown.FILTER ? DROPDOWN_ACTION_HEIGHT : 0;
+        final int availableHeight = height - BOTTOM_MARGIN - popupY - actionHeight;
+        final int rowsByHeight = Math.max(1, availableHeight / DROPDOWN_ROW_HEIGHT);
+        return Math.min(dropdownOptions(store).size(), Math.min(DROPDOWN_MAX_VISIBLE_ROWS, rowsByHeight));
+    }
+
+    private DropdownGeometry dropdownGeometry(final WaypointStore store) {
+        if (openSetDropdown == null || store == null) {
+            return null;
+        }
+        final int x = openSetDropdown == SetDropdown.FILTER ? filterDropdownX : moveDropdownX;
+        final int y = dropdownTriggerY();
+        final int dropdownWidth = openSetDropdown == SetDropdown.FILTER
+            ? filterDropdownWidth
+            : moveDropdownWidth;
+        if (dropdownWidth <= 0) {
+            return null;
+        }
+        final int actionHeight = openSetDropdown == SetDropdown.FILTER ? DROPDOWN_ACTION_HEIGHT : 0;
+        return new DropdownGeometry(
+            x, y, dropdownWidth, y + TOOLBAR_HEIGHT, dropdownVisibleRows(store), actionHeight
+        );
+    }
+
+    private int dropdownTriggerY() {
+        return openSetDropdown == SetDropdown.FILTER ? filterDropdownY : moveDropdownY;
+    }
+
+    private void selectDropdownOption(final WaypointStore store, final String option) {
+        if (openSetDropdown == SetDropdown.FILTER) {
+            selectedSetFilter = option;
+            scrollOffset = 0;
+            selectedWaypointIds.clear();
+        } else {
+            moveTargetSet = option;
+        }
         clearPendingActions();
+        closeSetDropdown();
         rebuild();
     }
 
@@ -783,6 +904,24 @@ public final class WaypointListScreen extends Screen {
         }
     }
 
+    private void normalizeDropdownState(final WaypointStore store) {
+        if (openSetDropdown == null) {
+            return;
+        }
+        final List<String> options = dropdownOptions(store);
+        if (options.isEmpty()) {
+            closeSetDropdown();
+            return;
+        }
+        dropdownKeyboardIndex = MathHelper.clamp(dropdownKeyboardIndex, 0, options.size() - 1);
+        dropdownScrollOffset = DropdownScroll.keepVisible(
+            dropdownScrollOffset,
+            dropdownKeyboardIndex,
+            options.size(),
+            dropdownVisibleRows(store)
+        );
+    }
+
     private boolean isCustomSetSelected() {
         return selectedSetFilter != null && !selectedSetFilter.isEmpty();
     }
@@ -793,10 +932,21 @@ public final class WaypointListScreen extends Screen {
         selectedWaypointIds.clear();
         pendingDeleteId = null;
         scrollOffset = 0;
+        closeSetDropdown();
     }
 
     @Override
     public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
+        final WaypointStore store = waypointService.current();
+        final DropdownGeometry dropdown = dropdownGeometry(store);
+        if (amount != 0 && dropdown != null
+            && (dropdown.containsPopup(mouseX, mouseY) || dropdown.containsTrigger(mouseX, mouseY))) {
+            final int optionCount = dropdownOptions(store).size();
+            dropdownScrollOffset = DropdownScroll.afterWheel(
+                dropdownScrollOffset, amount, optionCount, dropdown.visibleRows()
+            );
+            return true;
+        }
         if (amount != 0) {
             scrollOffset -= (int) Math.signum(amount);
             rebuild();
@@ -807,6 +957,36 @@ public final class WaypointListScreen extends Screen {
 
     @Override
     public boolean mouseClicked(final double mouseX, final double mouseY, final int button) {
+        final WaypointStore store = waypointService.current();
+        final DropdownGeometry dropdown = dropdownGeometry(store);
+        if (button == 0 && dropdown != null) {
+            if (dropdown.containsPopup(mouseX, mouseY)) {
+                final List<String> options = dropdownOptions(store);
+                final int optionBottom = dropdown.popupY() + dropdown.optionHeight();
+                if (mouseY >= optionBottom && dropdown.actionHeight() > 0) {
+                    activateDropdownAction(store, dropdownActionAt(mouseX, dropdown));
+                    return true;
+                }
+                if (mouseY < optionBottom
+                    && options.size() > dropdown.visibleRows()
+                    && mouseX >= dropdown.x() + dropdown.width() - DROPDOWN_SCROLLBAR_WIDTH) {
+                    draggingDropdownScrollbar = true;
+                    updateDropdownScrollFromMouse(mouseY, dropdown, options.size());
+                    return true;
+                }
+                final int visibleIndex = (int) ((mouseY - dropdown.popupY()) / DROPDOWN_ROW_HEIGHT);
+                final int optionIndex = dropdownScrollOffset + visibleIndex;
+                if (optionIndex >= 0 && optionIndex < options.size()) {
+                    selectDropdownOption(store, options.get(optionIndex));
+                }
+                return true;
+            }
+            if (!dropdown.containsTrigger(mouseX, mouseY)) {
+                closeSetDropdown();
+                rebuild();
+                return true;
+            }
+        }
         if (super.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
@@ -815,15 +995,135 @@ public final class WaypointListScreen extends Screen {
                 if (row.local() != null
                     && mouseY >= row.y() && mouseY < row.y() + ROW_HEIGHT
                     && mouseX >= nameX() && mouseX < nameRight()) {
-                    final WaypointStore store = waypointService.current();
-                    if (store == lastLocalStore && store != null && store.persistenceWritable()) {
-                        openEdit(store, row.local());
+                    final WaypointStore currentStore = waypointService.current();
+                    if (currentStore == lastLocalStore
+                        && currentStore != null
+                        && currentStore.persistenceWritable()) {
+                        openEdit(currentStore, row.local());
                     }
                     return true;
                 }
             }
         }
         return false;
+    }
+
+    @Override
+    public boolean mouseDragged(
+        final double mouseX,
+        final double mouseY,
+        final int button,
+        final double deltaX,
+        final double deltaY
+    ) {
+        if (button == 0 && draggingDropdownScrollbar) {
+            final WaypointStore store = waypointService.current();
+            final DropdownGeometry dropdown = dropdownGeometry(store);
+            if (dropdown != null) {
+                updateDropdownScrollFromMouse(mouseY, dropdown, dropdownOptions(store).size());
+                return true;
+            }
+            draggingDropdownScrollbar = false;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+    }
+
+    @Override
+    public boolean mouseReleased(final double mouseX, final double mouseY, final int button) {
+        if (button == 0 && draggingDropdownScrollbar) {
+            draggingDropdownScrollbar = false;
+            return true;
+        }
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean keyPressed(final int keyCode, final int scanCode, final int modifiers) {
+        if (openSetDropdown != null) {
+            final WaypointStore store = waypointService.current();
+            final List<String> options = dropdownOptions(store);
+            if (keyCode == 256) {
+                closeSetDropdown();
+                rebuild();
+                return true;
+            }
+            if (!options.isEmpty() && (keyCode == 264 || keyCode == 265 || keyCode == 268 || keyCode == 269)) {
+                dropdownKeyboardIndex = switch (keyCode) {
+                    case 264 -> Math.min(options.size() - 1, dropdownKeyboardIndex + 1);
+                    case 265 -> Math.max(0, dropdownKeyboardIndex - 1);
+                    case 268 -> 0;
+                    case 269 -> options.size() - 1;
+                    default -> dropdownKeyboardIndex;
+                };
+                dropdownScrollOffset = DropdownScroll.keepVisible(
+                    dropdownScrollOffset,
+                    dropdownKeyboardIndex,
+                    options.size(),
+                    dropdownVisibleRows(store)
+                );
+                return true;
+            }
+            if (!options.isEmpty() && (keyCode == 257 || keyCode == 335)) {
+                selectDropdownOption(store, options.get(dropdownKeyboardIndex));
+                return true;
+            }
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    private int dropdownActionAt(final double mouseX, final DropdownGeometry dropdown) {
+        final double relativeX = MathHelper.clamp(mouseX - dropdown.x(), 0.0, dropdown.width() - 1.0);
+        return Math.min(2, (int) (relativeX * 3.0 / dropdown.width()));
+    }
+
+    private void activateDropdownAction(final WaypointStore store, final int actionIndex) {
+        if (!dropdownActionActive(store, actionIndex)) {
+            return;
+        }
+        closeSetDropdown();
+        if (actionIndex == 0) {
+            openSetNameScreen(store, null);
+        } else if (actionIndex == 1) {
+            openSetNameScreen(store, selectedSetFilter);
+        } else {
+            openDeleteSetConfirm(store, store.waypointCount(selectedSetFilter));
+        }
+    }
+
+    private boolean dropdownActionActive(final WaypointStore store, final int actionIndex) {
+        final boolean writable = store != null
+            && store == waypointService.current()
+            && store.persistenceWritable();
+        return writable && (actionIndex == 0 || isCustomSetSelected());
+    }
+
+    private Text dropdownActionLabel(final WaypointStore store, final int actionIndex) {
+        return switch (actionIndex) {
+            case 0 -> new TranslatableText("confluxmap.screen.waypoints.set_new");
+            case 1 -> new TranslatableText("confluxmap.screen.waypoints.set_rename");
+            default -> new TranslatableText(
+                "confluxmap.screen.waypoints.set_delete",
+                store == null || !isCustomSetSelected() ? 0 : store.waypointCount(selectedSetFilter)
+            );
+        };
+    }
+
+    private void updateDropdownScrollFromMouse(
+        final double mouseY,
+        final DropdownGeometry dropdown,
+        final int optionCount
+    ) {
+        final int trackTop = dropdown.popupY() + 1;
+        final int trackHeight = Math.max(1, dropdown.popupHeight() - 2);
+        final int thumbHeight = dropdownThumbHeight(trackHeight, optionCount, dropdown.visibleRows());
+        dropdownScrollOffset = DropdownScroll.fromThumbPosition(
+            mouseY,
+            trackTop,
+            trackHeight,
+            thumbHeight,
+            optionCount,
+            dropdown.visibleRows()
+        );
     }
 
     @Override
@@ -889,6 +1189,177 @@ public final class WaypointListScreen extends Screen {
         }
 
         super.render(matrices, mouseX, mouseY, tickDelta);
+        renderSetDropdown(matrices, mouseX, mouseY);
+    }
+
+    private void renderSetDropdown(final MatrixStack matrices, final int mouseX, final int mouseY) {
+        final WaypointStore store = waypointService.current();
+        final DropdownGeometry dropdown = dropdownGeometry(store);
+        if (dropdown == null || dropdown.visibleRows() <= 0) {
+            return;
+        }
+        final List<String> options = dropdownOptions(store);
+        dropdownScrollOffset = DropdownScroll.clamp(
+            dropdownScrollOffset, options.size(), dropdown.visibleRows()
+        );
+        final boolean hasScrollbar = options.size() > dropdown.visibleRows();
+        final int textRightPadding = hasScrollbar ? DROPDOWN_SCROLLBAR_WIDTH + 5 : 5;
+
+        fill(
+            matrices,
+            dropdown.x() - 1,
+            dropdown.popupY() - 1,
+            dropdown.x() + dropdown.width() + 1,
+            dropdown.popupY() + dropdown.popupHeight() + 1,
+            0xFF000000
+        );
+        for (int visibleIndex = 0; visibleIndex < dropdown.visibleRows(); visibleIndex++) {
+            final int optionIndex = dropdownScrollOffset + visibleIndex;
+            if (optionIndex >= options.size()) {
+                break;
+            }
+            final int rowY = dropdown.popupY() + visibleIndex * DROPDOWN_ROW_HEIGHT;
+            final boolean hovered = mouseX >= dropdown.x()
+                && mouseX < dropdown.x() + dropdown.width() - (hasScrollbar ? DROPDOWN_SCROLLBAR_WIDTH : 0)
+                && mouseY >= rowY
+                && mouseY < rowY + DROPDOWN_ROW_HEIGHT;
+            final String option = options.get(optionIndex);
+            final boolean selected = openSetDropdown == SetDropdown.FILTER
+                ? java.util.Objects.equals(option, selectedSetFilter)
+                : java.util.Objects.equals(option, moveTargetSet);
+            final boolean keyboardFocused = optionIndex == dropdownKeyboardIndex;
+            fill(
+                matrices,
+                dropdown.x(),
+                rowY,
+                dropdown.x() + dropdown.width(),
+                rowY + DROPDOWN_ROW_HEIGHT,
+                hovered || keyboardFocused ? 0xFF6E6E6E : selected ? 0xFF505050 : 0xFF2A2A2A
+            );
+            if (selected) {
+                fill(matrices, dropdown.x(), rowY + 2, dropdown.x() + 2, rowY + DROPDOWN_ROW_HEIGHT - 2, 0xFFFFFFFF);
+            }
+            final String count = Integer.toString(dropdownOptionCount(store, option));
+            final int textRight = dropdown.x() + dropdown.width() - textRightPadding;
+            final int countWidth = textRenderer.getWidth(count);
+            final String label = textRenderer.trimToWidth(
+                setDisplayName(option), Math.max(8, textRight - countWidth - GAP - dropdown.x() - 5)
+            );
+            textRenderer.drawWithShadow(
+                matrices,
+                label,
+                dropdown.x() + 5,
+                rowY + (DROPDOWN_ROW_HEIGHT - textRenderer.fontHeight) / 2f,
+                selected ? 0xFFFFFFFF : 0xFFE0E0E0
+            );
+            textRenderer.drawWithShadow(
+                matrices,
+                count,
+                textRight - countWidth,
+                rowY + (DROPDOWN_ROW_HEIGHT - textRenderer.fontHeight) / 2f,
+                0xFFAAAAAA
+            );
+        }
+
+        if (hasScrollbar) {
+            final int trackX = dropdown.x() + dropdown.width() - DROPDOWN_SCROLLBAR_WIDTH;
+            final int trackTop = dropdown.popupY() + 1;
+            final int trackHeight = Math.max(1, dropdown.popupHeight() - 2);
+            final int thumbHeight = dropdownThumbHeight(trackHeight, options.size(), dropdown.visibleRows());
+            final int maxOffset = DropdownScroll.maxOffset(options.size(), dropdown.visibleRows());
+            final int thumbTravel = Math.max(0, trackHeight - thumbHeight);
+            final int thumbTop = trackTop + (maxOffset == 0
+                ? 0
+                : Math.round(thumbTravel * (dropdownScrollOffset / (float) maxOffset)));
+            fill(
+                matrices,
+                trackX,
+                dropdown.popupY(),
+                dropdown.x() + dropdown.width(),
+                dropdown.popupY() + dropdown.popupHeight(),
+                0xFF151515
+            );
+            fill(
+                matrices,
+                trackX + 1,
+                thumbTop,
+                dropdown.x() + dropdown.width() - 1,
+                thumbTop + thumbHeight,
+                draggingDropdownScrollbar ? 0xFFFFFFFF : 0xFFAAAAAA
+            );
+        }
+
+        if (dropdown.actionHeight() > 0) {
+            renderDropdownActions(matrices, mouseX, mouseY, store, dropdown);
+        }
+    }
+
+    private int dropdownOptionCount(final WaypointStore store, final String option) {
+        return store == null
+            ? 0
+            : option == null ? store.size() : store.waypointCount(option);
+    }
+
+    private void renderDropdownActions(
+        final MatrixStack matrices,
+        final int mouseX,
+        final int mouseY,
+        final WaypointStore store,
+        final DropdownGeometry dropdown
+    ) {
+        final int actionY = dropdown.popupY() + dropdown.optionHeight();
+        fill(
+            matrices,
+            dropdown.x(),
+            actionY,
+            dropdown.x() + dropdown.width(),
+            actionY + 1,
+            0xFF111111
+        );
+        for (int actionIndex = 0; actionIndex < 3; actionIndex++) {
+            final int actionLeft = dropdown.x() + dropdown.width() * actionIndex / 3;
+            final int actionRight = dropdown.x() + dropdown.width() * (actionIndex + 1) / 3;
+            final boolean active = dropdownActionActive(store, actionIndex);
+            final boolean hovered = active
+                && mouseX >= actionLeft
+                && mouseX < actionRight
+                && mouseY >= actionY
+                && mouseY < actionY + dropdown.actionHeight();
+            fill(
+                matrices,
+                actionLeft,
+                actionY,
+                actionRight,
+                actionY + dropdown.actionHeight(),
+                actionIndex == 2 && active
+                    ? hovered ? 0xFF8A3A3A : 0xFF5A2A2A
+                    : hovered ? 0xFF6E6E6E : active ? 0xFF383838 : 0xFF202020
+            );
+            if (actionIndex > 0) {
+                fill(matrices, actionLeft, actionY + 3, actionLeft + 1, actionY + dropdown.actionHeight() - 3, 0xFF101010);
+            }
+            final String label = textRenderer.trimToWidth(
+                dropdownActionLabel(store, actionIndex).getString(), Math.max(8, actionRight - actionLeft - 6)
+            );
+            textRenderer.drawWithShadow(
+                matrices,
+                label,
+                (actionLeft + actionRight - textRenderer.getWidth(label)) / 2f,
+                actionY + (dropdown.actionHeight() - textRenderer.fontHeight) / 2f,
+                active ? 0xFFFFFFFF : 0xFF777777
+            );
+        }
+    }
+
+    private static int dropdownThumbHeight(
+        final int trackHeight,
+        final int optionCount,
+        final int visibleRows
+    ) {
+        if (optionCount <= 0) {
+            return trackHeight;
+        }
+        return Math.max(8, Math.round(trackHeight * (visibleRows / (float) optionCount)));
     }
 
     private String emptyKey() {
@@ -917,6 +1388,13 @@ public final class WaypointListScreen extends Screen {
         );
     }
 
+    private Text selectionClearLabel() {
+        return Text.of(
+            new TranslatableText("confluxmap.screen.waypoints.selection_clear").getString()
+                + " (" + selectedWaypointIds.size() + ")"
+        );
+    }
+
     private Text fitButtonLabel(final Text label, final int buttonWidth) {
         return Text.of(textRenderer.trimToWidth(label.getString(), Math.max(8, buttonWidth - 8)));
     }
@@ -935,7 +1413,7 @@ public final class WaypointListScreen extends Screen {
         if (tab != Tab.LOCAL) {
             return SHARED_LIST_TOP;
         }
-        return narrowToolbar() ? LOCAL_NARROW_LIST_TOP : LOCAL_LIST_TOP;
+        return selectedWaypointIds.isEmpty() ? LOCAL_IDLE_LIST_TOP : LOCAL_LIST_TOP;
     }
 
     private int contentLeft() {
