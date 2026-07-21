@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.server;
 
+import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.core.net.ErrorS2C;
 import cn.net.rms.confluxmap.core.net.MapPatchS2C;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
@@ -24,12 +25,28 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.WorldSavePath;
 
-/** Serves summary-backed corrections without asking the world chunk manager to generate chunks. */
+/**
+ * Serves summary-backed corrections without asking the world chunk manager to generate chunks.
+ *
+ * <p>Delivery is queued per player ({@link PatchDispatcher}): a request's tiles are enqueued,
+ * as many as the byte budget allows are sent inline, and the remainder drains on subsequent
+ * server ticks as the token bucket refills. Only queue overflow is answered with
+ * {@code ERR_RATE_LIMITED}; a temporarily exhausted byte budget never drops tiles.
+ */
 public final class RegionSummaryService {
     private final ServerConfig config;
     private final ChunkSummarizer summarizer = new ChunkSummarizer();
     private final PatchBuilder patchBuilder = new PatchBuilder();
-    private final Map<UUID, PlayerBudget> budgets = new ConcurrentHashMap<>();
+    private final Map<UUID, PlayerChannel> channels = new ConcurrentHashMap<>();
+
+    private static final class PlayerChannel {
+        final PatchDispatcher dispatcher;
+        volatile Consumer<Message> sender;
+
+        PlayerChannel(final PatchDispatcher dispatcher) {
+            this.dispatcher = dispatcher;
+        }
+    }
 
     public RegionSummaryService(final ServerConfig config) {
         this.config = config;
@@ -42,56 +59,83 @@ public final class RegionSummaryService {
         final Consumer<Message> sender
     ) {
         final long now = System.nanoTime();
-        final PlayerBudget budget = budgets.computeIfAbsent(player.getUuid(), ignored -> new PlayerBudget(
-            config.maxBytesPerSecondPerPlayer, config.maxPendingTilesPerPlayer, config.minRequestIntervalMs
+        final PlayerChannel channel = channels.computeIfAbsent(player.getUuid(), ignored -> new PlayerChannel(
+            new PatchDispatcher(
+                new PlayerBudget(config.maxBytesPerSecondPerPlayer, config.minRequestIntervalMs),
+                config.maxPendingTilesPerPlayer
+            )
         ));
+        channel.sender = sender;
         if (request.lod() > config.maxPatchLod || request.tiles().size() > config.maxTilesPerRequest
-            || request.dimIndex() < 0 || !budget.beginRequest(now)) {
+            || request.dimIndex() < 0 || !channel.dispatcher.budget().beginRequest(now)) {
             sender.accept(new ErrorS2C(ErrorS2C.ERR_RATE_LIMITED, "map correction request is rate limited"));
             return;
         }
-        try {
-            final ServerWorld world = worldAt(server, request.dimIndex());
-            if (world == null || !config.shareCorrections) {
-                for (final MapViewReqC2S.TileReq tile : request.tiles()) {
-                    sender.accept(new MapPatchS2C(request.reqId(), request.dimIndex(), request.lod(), tile.tileX(), tile.tileZ(),
-                        Proto.PATCH_MODE_UNAVAILABLE, 0L, new byte[Proto.PATCH_PRESENCE_BYTES], new byte[0]));
-                }
-                return;
+        final List<PatchDispatcher.TileJob> jobs = new ArrayList<>(request.tiles().size());
+        for (final MapViewReqC2S.TileReq tile : request.tiles()) {
+            jobs.add(new PatchDispatcher.TileJob(
+                request.reqId(), request.dimIndex(), request.lod(), tile.tileX(), tile.tileZ(), tile.sinceRevision()
+            ));
+        }
+        final int overflow = channel.dispatcher.submit(jobs);
+        if (overflow > 0) {
+            sender.accept(new ErrorS2C(ErrorS2C.ERR_RATE_LIMITED, "map correction queue is full"));
+        }
+        drain(server, channel, now);
+    }
+
+    /** Server tick: keep draining queued patches as each player's byte budget refills. */
+    public void tick(final MinecraftServer server) {
+        final long now = System.nanoTime();
+        for (final PlayerChannel channel : channels.values()) {
+            if (channel.dispatcher.queued() > 0 && channel.sender != null) {
+                drain(server, channel, now);
             }
-            if (request.lod() > PatchBuilder.MAX_SUPPORTED_LOD) {
-                for (final MapViewReqC2S.TileReq tile : request.tiles()) {
-                    sender.accept(new MapPatchS2C(request.reqId(), request.dimIndex(), request.lod(), tile.tileX(), tile.tileZ(),
-                        Proto.PATCH_MODE_UNAVAILABLE, 0L, new byte[Proto.PATCH_PRESENCE_BYTES], new byte[0]));
-                }
-                return;
-            }
-            final SummaryDiskCache disk = new SummaryDiskCache(server.getSavePath(WorldSavePath.ROOT));
-            for (final MapViewReqC2S.TileReq tile : request.tiles()) {
-                final SummaryTile summary = readTile(world, tile.tileX(), tile.tileZ(), request.lod(), disk);
-                final PatchBuilder.Result result = buildPatch(world, summary, tile);
-                final MapPatchS2C patch = new MapPatchS2C(request.reqId(), request.dimIndex(), request.lod(), tile.tileX(), tile.tileZ(),
-                    result.mode(), result.revision(), result.presence(), result.body());
-                final byte[] estimated = cn.net.rms.confluxmap.core.net.MsgCodec.encode(patch);
-                if (!budget.allowBytes(estimated.length, System.nanoTime())) {
-                    sender.accept(new ErrorS2C(ErrorS2C.ERR_RATE_LIMITED, "map correction bandwidth budget exhausted"));
-                    break;
-                }
-                sender.accept(patch);
-            }
-        } catch (final Exception e) {
-            sender.accept(new ErrorS2C(ErrorS2C.ERR_INTERNAL, "map correction summary failed"));
-        } finally {
-            budget.finishRequest();
         }
     }
 
     public void remove(final UUID player) {
-        budgets.remove(player);
+        final PlayerChannel channel = channels.remove(player);
+        if (channel != null) {
+            channel.dispatcher.clear();
+        }
+    }
+
+    private void drain(final MinecraftServer server, final PlayerChannel channel, final long nowNanos) {
+        final Consumer<Message> sender = channel.sender;
+        if (sender == null) {
+            return;
+        }
+        final SummaryDiskCache disk = new SummaryDiskCache(server.getSavePath(WorldSavePath.ROOT));
+        channel.dispatcher.drain(nowNanos, job -> buildJob(server, disk, job), sender);
+    }
+
+    private MapPatchS2C buildJob(final MinecraftServer server, final SummaryDiskCache disk, final PatchDispatcher.TileJob job) {
+        try {
+            final ServerWorld world = worldAt(server, job.dimIndex());
+            if (world == null || !config.shareCorrections || job.lod() > PatchBuilder.MAX_SUPPORTED_LOD) {
+                return unavailable(job);
+            }
+            final SummaryTile summary = readTile(world, job.tileX(), job.tileZ(), job.lod(), disk);
+            final PatchBuilder.Result result = buildPatch(world, summary, job.sinceRevision());
+            return new MapPatchS2C(job.reqId(), job.dimIndex(), job.lod(), job.tileX(), job.tileZ(),
+                result.mode(), result.revision(), result.presence(), result.body());
+        } catch (final Exception e) {
+            ConfluxMapMod.LOGGER.warn(
+                "companion: patch build failed for tile {},{} lod {} ({})",
+                job.tileX(), job.tileZ(), job.lod(), e.getMessage()
+            );
+            return unavailable(job);
+        }
+    }
+
+    private static MapPatchS2C unavailable(final PatchDispatcher.TileJob job) {
+        return new MapPatchS2C(job.reqId(), job.dimIndex(), job.lod(), job.tileX(), job.tileZ(),
+            Proto.PATCH_MODE_UNAVAILABLE, 0L, new byte[Proto.PATCH_PRESENCE_BYTES], new byte[0]);
     }
 
     private PatchBuilder.Result buildPatch(
-        final ServerWorld world, final SummaryTile summary, final MapViewReqC2S.TileReq tile
+        final ServerWorld world, final SummaryTile summary, final long sinceRevision
     ) {
         if (NativeLib.available()) {
             final int nativeDim = PredictionDimensions.isEnd(
@@ -102,7 +146,7 @@ public final class RegionSummaryService {
             final java.util.OptionalInt version = McVersions.toCubiomes("1.17.1");
             if (version.isPresent()) {
                 final PatchBuilder.Result residual = patchBuilder.buildFromSampler(
-                    summary, tile.sinceRevision(),
+                    summary, sinceRevision,
                     new NativeBaselineSampler(version.getAsInt(), world.getSeed(), nativeDim), nativeDim == 1,
                     world.getSeed(), false
                 );
@@ -111,7 +155,7 @@ public final class RegionSummaryService {
                 }
             }
         }
-        return patchBuilder.buildAbsolute(summary, tile.sinceRevision());
+        return patchBuilder.buildAbsolute(summary, sinceRevision);
     }
 
     /** Reads every LOD-0 region covered by one coarse prediction tile. */

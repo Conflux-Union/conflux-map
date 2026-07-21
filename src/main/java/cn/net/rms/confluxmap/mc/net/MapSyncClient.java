@@ -16,24 +16,57 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.LongSupplier;
 
 /** Client-side viewport debounce, request planning, and correction application. */
 public final class MapSyncClient {
+    /** Narrow send seam so the sync loop is testable without a live Fabric channel. */
+    @FunctionalInterface
+    interface Sender {
+        int send(cn.net.rms.confluxmap.core.net.Message message);
+    }
+
+    /** Extra client-side spacing over the server's minimum, so arrival jitter cannot trip its rate limit. */
+    private static final long REQUEST_INTERVAL_MARGIN_MS = 50L;
+    /** After a server ERROR (rate limit, queue overflow), hold off so the byte budget can refill. */
+    private static final long ERROR_BACKOFF_MS = 1_000L;
+    /** A request silent for this long is considered dropped; its unanswered tiles become plannable again. */
+    private static final long REQUEST_TIMEOUT_MS = 10_000L;
+    /**
+     * Outstanding-request window. Two full requests match the server's default 16-tile delivery
+     * queue ({@code maxPendingTilesPerPlayer}), so the client never overflows it while still
+     * hiding one round trip of latency.
+     */
+    private static final int MAX_INFLIGHT_REQUESTS = 2;
+
     private final CompanionSession companion;
-    private final ClientNetworking networking;
+    private final Sender sender;
     private final CorrectionStore corrections;
     private final PredictionTileService predictionTiles;
     private final ConfluxConfig config;
+    private final LongSupplier millisClock;
     private final MapSyncProgress progress = new MapSyncProgress();
     private int nextReqId;
     private long stableSince = Long.MIN_VALUE;
     private long lastSent;
+    private long suppressedUntil;
     private int lastLod = -1;
     private int lastMinX;
     private int lastMaxX;
     private int lastMinZ;
     private int lastMaxZ;
     private final Map<Long, Long> lastRequestNanos = new HashMap<>();
+    /** Requests awaiting patches, keyed by reqId; tracks each tile's request stamp for rollback. */
+    private final Map<Integer, InFlightRequest> inFlightRequests = new HashMap<>();
+
+    private static final class InFlightRequest {
+        long lastActivityMs;
+        final Map<Long, Long> pendingStamps = new HashMap<>();
+
+        InFlightRequest(final long sentAtMs) {
+            this.lastActivityMs = sentAtMs;
+        }
+    }
 
     public MapSyncClient(
         final CompanionSession companion,
@@ -42,22 +75,35 @@ public final class MapSyncClient {
         final PredictionTileService predictionTiles,
         final ConfluxConfig config
     ) {
+        this(companion, networking::sendMessage, corrections, predictionTiles, config, System::currentTimeMillis);
+    }
+
+    MapSyncClient(
+        final CompanionSession companion,
+        final Sender sender,
+        final CorrectionStore corrections,
+        final PredictionTileService predictionTiles,
+        final ConfluxConfig config,
+        final LongSupplier millisClock
+    ) {
         this.companion = companion;
-        this.networking = networking;
+        this.sender = sender;
         this.corrections = corrections;
         this.predictionTiles = predictionTiles;
         this.config = config;
+        this.millisClock = millisClock;
     }
 
-    public void reportViewport(
+    public synchronized void reportViewport(
         final DimensionId dimension, final int lod, final int minX, final int maxX, final int minZ, final int maxZ
     ) {
         if (!config.predictionNetworkSync || !companion.isActive() || !companion.policy().flags().correctionsEnabled()
             || lod > companion.policy().budgets().maxPatchLod()) {
             return;
         }
-        final long now = System.currentTimeMillis();
+        final long now = millisClock.getAsLong();
         corrections.flushIfDue(now);
+        expireStalledRequests(now);
         final boolean changed = lod != lastLod || minX != lastMinX || maxX != lastMaxX || minZ != lastMinZ || maxZ != lastMaxZ;
         if (changed) {
             stableSince = now;
@@ -69,8 +115,9 @@ public final class MapSyncClient {
             return;
         }
         final long debounce = Math.max(100L, Math.min(2000L, config.predictionDebounceMs));
-        final long minInterval = companion.policy().budgets().minReqIntervalMs();
-        if (stableSince == Long.MIN_VALUE || now - stableSince < debounce || now - lastSent < minInterval) {
+        final long minInterval = companion.policy().budgets().minReqIntervalMs() + REQUEST_INTERVAL_MARGIN_MS;
+        if (stableSince == Long.MIN_VALUE || now - stableSince < debounce || now - lastSent < minInterval
+            || now < suppressedUntil || inFlightRequests.size() >= MAX_INFLIGHT_REQUESTS) {
             return;
         }
         final List<ViewRequestPlanner.Tile> tiles = new ArrayList<>();
@@ -102,18 +149,23 @@ public final class MapSyncClient {
             return;
         }
         final MapViewReqC2S request = new MapViewReqC2S(nextReqId++ & 0x7FFF, dimIndex, lod, planned);
-        final int payloadBytes = networking.sendMessage(request);
+        final int payloadBytes = sender.send(request);
         if (payloadBytes >= 0) {
             lastSent = now;
             progress.requestStarted(request, payloadBytes, System.nanoTime());
             final long requestNanos = now * 1_000_000L;
+            final InFlightRequest inFlight = new InFlightRequest(now);
             for (final MapViewReqC2S.TileReq tile : planned) {
-                lastRequestNanos.put(ViewRequestPlanner.key(tile.tileX(), tile.tileZ()), requestNanos);
+                final long key = ViewRequestPlanner.key(tile.tileX(), tile.tileZ());
+                lastRequestNanos.put(key, requestNanos);
+                inFlight.pendingStamps.put(key, requestNanos);
             }
+            inFlightRequests.put(request.reqId(), inFlight);
         }
     }
 
-    public void onPatch(final MapPatchS2C patch, final int payloadBytes) {
+    public synchronized void onPatch(final MapPatchS2C patch, final int payloadBytes) {
+        completeTile(patch.reqId(), ViewRequestPlanner.key(patch.tileX(), patch.tileZ()));
         try {
             applyPatch(patch);
         } finally {
@@ -140,10 +192,12 @@ public final class MapSyncClient {
         }
     }
 
-    public void reset() {
+    public synchronized void reset() {
         lastRequestNanos.clear();
+        inFlightRequests.clear();
         stableSince = Long.MIN_VALUE;
         lastSent = 0L;
+        suppressedUntil = 0L;
         lastLod = -1;
         progress.reset();
     }
@@ -152,8 +206,54 @@ public final class MapSyncClient {
         return progress.snapshot();
     }
 
-    public void onError(final int payloadBytes) {
+    /**
+     * A server ERROR means at least the tail of an in-flight request was dropped (rate limit or
+     * bandwidth break). Roll back the request stamps of every unanswered tile so the planner may
+     * pick them again, and back off briefly so the server budget can refill. Without the rollback,
+     * dropped unexplored tiles sat in the planner's long empty-tile cooldown and large viewports
+     * never finished syncing.
+     */
+    public synchronized void onError(final int payloadBytes) {
+        rollbackPendingTiles();
+        suppressedUntil = millisClock.getAsLong() + ERROR_BACKOFF_MS;
         progress.requestFailed(payloadBytes, System.nanoTime());
+    }
+
+    private void completeTile(final int reqId, final long tileKey) {
+        final InFlightRequest request = inFlightRequests.get(reqId);
+        if (request == null) {
+            return;
+        }
+        request.lastActivityMs = millisClock.getAsLong();
+        request.pendingStamps.remove(tileKey);
+        if (request.pendingStamps.isEmpty()) {
+            inFlightRequests.remove(reqId);
+        }
+    }
+
+    private void rollbackPendingTiles() {
+        for (final InFlightRequest request : inFlightRequests.values()) {
+            unstamp(request);
+        }
+        inFlightRequests.clear();
+    }
+
+    private void expireStalledRequests(final long now) {
+        final java.util.Iterator<InFlightRequest> pending = inFlightRequests.values().iterator();
+        while (pending.hasNext()) {
+            final InFlightRequest request = pending.next();
+            if (now - request.lastActivityMs >= REQUEST_TIMEOUT_MS) {
+                unstamp(request);
+                pending.remove();
+            }
+        }
+    }
+
+    /** Clears each pending tile's stamp unless a newer request has already re-stamped it. */
+    private void unstamp(final InFlightRequest request) {
+        for (final Map.Entry<Long, Long> entry : request.pendingStamps.entrySet()) {
+            lastRequestNanos.remove(entry.getKey(), entry.getValue());
+        }
     }
 
     private CorrectionStore.Key keyFor(final MapPatchS2C patch) {

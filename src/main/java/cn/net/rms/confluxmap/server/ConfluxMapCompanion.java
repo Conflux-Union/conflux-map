@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.server.MinecraftServer;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import net.minecraft.util.WorldSavePath;
@@ -33,7 +34,15 @@ public final class ConfluxMapCompanion {
     public void initialize() {
         ServerLifecycleEvents.SERVER_STARTED.register(this::onServerStarted);
         ServerLifecycleEvents.SERVER_STOPPING.register(this::onServerStopping);
+        ServerTickEvents.END_SERVER_TICK.register(this::onServerTick);
         ConfluxMapMod.LOGGER.info("companion initialized");
+    }
+
+    private void onServerTick(final MinecraftServer server) {
+        final RegionSummaryService current = summaries;
+        if (current != null && config.enabled) {
+            current.tick(server);
+        }
     }
 
     private void onServerStarted(final MinecraftServer server) {

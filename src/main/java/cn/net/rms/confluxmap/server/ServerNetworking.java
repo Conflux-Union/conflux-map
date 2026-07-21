@@ -51,6 +51,7 @@ public final class ServerNetworking {
             final UUID uuid = handler.getPlayer().getUuid();
             malformedStrikes.remove(uuid);
             mutedPlayers.remove(uuid);
+            companion.summaries().remove(uuid);
         });
     }
 

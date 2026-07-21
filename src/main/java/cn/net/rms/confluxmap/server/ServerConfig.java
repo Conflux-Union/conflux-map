@@ -30,7 +30,7 @@ public final class ServerConfig {
     public int maxPatchLod = 2;
     /** One MAP_VIEW_REQ carries at most this many tiles. */
     public int maxTilesPerRequest = 8;
-    /** Per-player queue cap on outstanding tiles (request arrives before any patch reply). */
+    /** Per-player cap on tiles queued for paced delivery; only tiles beyond this are rejected. */
     public int maxPendingTilesPerPlayer = 16;
     /** Per-player token-bucket rate, bytes/sec. */
     public int maxBytesPerSecondPerPlayer = 65_536;
