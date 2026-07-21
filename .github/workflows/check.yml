@@ -49,7 +49,99 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
       - name: Build for ${{ matrix.minecraft_version }}
+        id: build
         run: ./gradlew :${{ matrix.minecraft_version }}:build
+      - name: Publish prediction quality summary
+        if: always()
+        env:
+          ARTIFACT_NAME: prediction-quality-${{ matrix.minecraft_version }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          MINECRAFT_VERSION: ${{ matrix.minecraft_version }}
+          REPORT_PATH: versions/${{ matrix.minecraft_version }}/build/reports/prediction-quality/report.json
+        run: |
+          if [[ ! -f "$REPORT_PATH" ]]; then
+            {
+              echo "## Prediction quality - Minecraft $MINECRAFT_VERSION"
+              echo
+              echo "> The build finished with \`$BUILD_OUTCOME\`, but no prediction quality report was generated."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          import os
+
+          with open(os.environ["REPORT_PATH"], encoding="utf-8") as report_file:
+              report = json.load(report_file)
+
+          def percent(value):
+              return f"{value * 100:.2f}%"
+
+          aggregate = report["aggregate"]
+          version = os.environ["MINECRAFT_VERSION"]
+          outcome = os.environ["BUILD_OUTCOME"]
+          artifact_name = os.environ["ARTIFACT_NAME"]
+          artifact_url = (
+              f"https://github.com/{os.environ['GITHUB_REPOSITORY']}"
+              f"/actions/runs/{os.environ['GITHUB_RUN_ID']}#artifacts"
+          )
+
+          print(f"## Prediction quality - Minecraft {version}")
+          print()
+          print(
+              f"Build: **{outcome}** · World seed: `{report['worldSeed']}` · "
+              f"Corpus seed: `{report['corpusSeed']}` · Samples: **{report['sampleCount']}**"
+          )
+          print()
+          print("### Aggregate metrics")
+          print()
+          print("| Metric | Value |")
+          print("| --- | ---: |")
+          aggregate_rows = (
+              ("Mean combined score", percent(aggregate["meanCombinedScore"])),
+              ("Minimum combined score", percent(aggregate["minimumCombinedScore"])),
+              ("Mean coverage accuracy", percent(aggregate["meanCoverageAccuracy"])),
+              ("Mean surface-kind accuracy", percent(aggregate["meanSurfaceKindAccuracy"])),
+              ("Mean height MAE", f"{aggregate['meanHeightMae']:.2f} blocks"),
+              ("Mean height bias", f"{aggregate['meanHeightBias']:+.2f} blocks"),
+              ("Mean height within two blocks", percent(aggregate["meanHeightWithinTwo"])),
+              ("Water-weighted fluid-bucket accuracy", percent(aggregate["waterWeightedFluidBucketAccuracy"])),
+              ("Mean color similarity", percent(aggregate["meanColorSimilarity"])),
+              ("Mean structural similarity", percent(aggregate["meanStructuralSimilarity"])),
+              ("Mean exact edge F1", percent(aggregate["meanExactEdgeF1"])),
+              ("Mean tolerant edge F1", percent(aggregate["meanEdgeF1"])),
+          )
+          for name, value in aggregate_rows:
+              print(f"| {name} | {value} |")
+
+          print()
+          print("### Per-sample metrics")
+          print()
+          print(
+              "| Sample | Dimension | Tile | Biome | Combined | Coverage | Kind | "
+              "Height MAE / bias / P95 | Fluid | Color | SSIM | Exact edge F1 | Tolerant edge F1 |"
+          )
+          print("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+          for sample in report["samples"]:
+              metrics = sample["metrics"]
+              height = f"{metrics['heightMae']:.2f} / {metrics['heightBias']:+.2f} / {metrics['heightP95']:.0f}"
+              print(
+                  f"| `{sample['id']}` | `{sample['dimension']}` | "
+                  f"{sample['tileX']}, {sample['tileZ']} | {sample['dominantBiomeId']} | "
+                  f"{percent(metrics['combinedScore'])} | {percent(metrics['coverageAccuracy'])} | "
+                  f"{percent(metrics['surfaceKindAccuracy'])} | {height} | "
+                  f"{percent(metrics['fluidBucketAccuracy'])} | {percent(metrics['colorSimilarity'])} | "
+                  f"{percent(metrics['structuralSimilarity'])} | {percent(metrics['exactEdgeF1'])} | "
+                  f"{percent(metrics['edgeF1'])} |"
+              )
+
+          print()
+          print(
+              f"Raw JSON, the HTML report, and worst-case images remain available in "
+              f"the [{artifact_name}]({artifact_url}) artifact."
+          )
+          PY
       - name: Upload prediction quality report
         if: always()
         uses: actions/upload-artifact@v4
