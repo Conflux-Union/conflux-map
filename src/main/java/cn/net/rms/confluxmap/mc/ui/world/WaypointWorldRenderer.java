@@ -190,28 +190,39 @@ public final class WaypointWorldRenderer {
         }
 
         if (!visibleWaypointIds.isEmpty()) {
-            // LAST runs after clouds/weather; disabling depth makes this a true player-facing overlay.
-            RenderSystem.disableDepthTest();
-            RenderSystem.depthMask(false);
-            final VertexConsumerProvider.Immediate immediate = client.getBufferBuilders().getEntityVertexConsumers();
-            for (final WaypointRenderEntry waypoint : waypoints) {
-                if (!visibleWaypointIds.contains(waypoint.id())) {
-                    continue;
+            // LAST retains a global camera ModelView from late world passes. Reset it temporarily
+            // so the context matrix below is the sole camera transform, matching the original
+            // AFTER_TRANSLUCENT coordinate system without allowing clouds to draw afterward.
+            final MatrixStack modelViewStack = RenderSystem.getModelViewStack();
+            modelViewStack.push();
+            modelViewStack.loadIdentity();
+            RenderSystem.applyModelViewMatrix();
+            try {
+                RenderSystem.disableDepthTest();
+                RenderSystem.depthMask(false);
+                final VertexConsumerProvider.Immediate immediate = client.getBufferBuilders().getEntityVertexConsumers();
+                for (final WaypointRenderEntry waypoint : waypoints) {
+                    if (!visibleWaypointIds.contains(waypoint.id())) {
+                        continue;
+                    }
+                    final double dx = waypoint.x() - player.x();
+                    final double dy = waypoint.y() - player.y();
+                    final double dz = waypoint.z() - player.z();
+                    final double distance3d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                    final boolean targeted = targetedWaypoint != null && targetedWaypoint.id().equals(waypoint.id());
+                    final float progress = updateLabelAnimation(waypoint.id(), targeted, animationDeltaSeconds);
+                    drawLabel(
+                        matrices, immediate, camera, cameraPos, waypoint.x(), waypoint.y(), waypoint.z(),
+                        waypoint, distance3d, progress
+                    );
                 }
-                final double dx = waypoint.x() - player.x();
-                final double dy = waypoint.y() - player.y();
-                final double dz = waypoint.z() - player.z();
-                final double distance3d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                final boolean targeted = targetedWaypoint != null && targetedWaypoint.id().equals(waypoint.id());
-                final float progress = updateLabelAnimation(waypoint.id(), targeted, animationDeltaSeconds);
-                drawLabel(
-                    matrices, immediate, camera, cameraPos, waypoint.x(), waypoint.y(), waypoint.z(),
-                    waypoint, distance3d, progress
-                );
+                immediate.draw();
+            } finally {
+                RenderSystem.depthMask(true);
+                RenderSystem.enableDepthTest();
+                modelViewStack.pop();
+                RenderSystem.applyModelViewMatrix();
             }
-            immediate.draw();
-            RenderSystem.depthMask(true);
-            RenderSystem.enableDepthTest();
         }
 
         labelAnimationProgress.keySet().retainAll(visibleWaypointIds);

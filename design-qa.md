@@ -76,6 +76,7 @@ final result: blocked
 - Verify local, shared, and locked outlines against bright sky, foliage, darkness, and terrain occlusion.
 - Stand behind a solid wall and confirm the icon, expanded panel, and text remain fully visible while the beam keeps its world-space occlusion.
 - Fly through and above the cloud layer and confirm clouds and weather never tint or cover the HUD marker.
+- Rotate through yaw and pitch extremes after cloud rendering; confirm the icon remains anchored to the waypoint, does not jump, and expands when the crosshair overlaps it.
 - Verify the existing vertical light beam is visually unchanged.
 
 **Comparison History**
