@@ -22,6 +22,9 @@ line of code here is written from scratch; see
 - **Waypoints and death points** — create, edit, color, group, toggle;
   automatic death-point markers; correct 8:1 Overworld↔Nether conversion;
   edge-of-minimap direction indicators for out-of-range waypoints.
+- **Public and chat-shared coordinates** — an optional server-owned public
+  waypoint catalog with operator locks, plus preview-before-send chat sharing
+  and click-to-import coordinate messages on servers without the companion.
 - **Entity radar** — hostile / passive / player / other classification, each
   with its own toggle, range, and entity cap.
 - **Disk cache** — explored terrain persists per world / server / dimension /
@@ -39,7 +42,7 @@ line of code here is written from scratch; see
   (pure captured map, no prediction).
 - **Optional server companion** — the same jar can run a server-side companion
   that returns compact per-column corrections against the real world; the seed
-  is shared only when the operator opts in.
+  and public waypoint catalog are shared only when the operator opts in.
 - **Settings screen** — everything above is exposed in-game and takes effect
   immediately, no restart. Full English and Simplified Chinese localization.
 
@@ -56,9 +59,30 @@ category.
 | `Y` | Cycle the manual layer override |
 | `U` | Open the waypoint list |
 | `B` | New waypoint at your position |
+| `J` | Toggle local waypoints |
+| `K` | Toggle public waypoints |
+| `O` | Open public waypoint management |
 | `,` | Open the settings screen |
 | `P` | Cycle prediction mode (everywhere / generated-only / visited-only) |
 | `F9` | Reload prediction tiles |
+
+## Public waypoints
+
+Public waypoints require the same jar on the server and are disabled by
+default. A level-2 operator can use `/confluxmap waypoints enable`, `disable`,
+or `status`; the setting is persisted in `config/confluxmap/server.json`.
+Public points are stored in the world directory, are visible to all connected
+mod clients, and cannot be edited after publication. Any player can delete an
+unlocked point; only operators can lock, unlock, or delete locked points.
+The defaults are 512 points per world, 64 per publisher, and 30 mutations per
+player per minute. Operators can tune `maxSharedWaypointsPerWorld`,
+`maxSharedWaypointsPerPlayer`, and `sharedWaypointMutationsPerMinute` in the
+same server config.
+
+Chat sharing remains available on every server. Each send shows its name,
+dimension, coordinates, and audience before confirmation. Recognized Conflux
+Map or labelled `X/Y/Z` messages expose a click-to-import action that opens the
+local waypoint editor before anything is saved.
 
 ## Building
 
