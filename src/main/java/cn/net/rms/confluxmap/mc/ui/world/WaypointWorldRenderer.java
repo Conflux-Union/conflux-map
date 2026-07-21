@@ -32,12 +32,12 @@ import net.minecraft.util.math.Vec3d;
  * have NO in-world presence"): a vertical translucent beam at each visible waypoint's
  * column, and a camera-facing name/distance label floating above it.
  *
- * <p>Registers on {@link WorldRenderEvents#AFTER_TRANSLUCENT}, which fires once solid,
- * cutout AND translucent terrain (water, glass, ...) are already in the framebuffer -
- * so the depth-tested beam correctly occludes against all of that, not just solid blocks;
- * the HUD marker is then deliberately drawn with depth testing disabled so terrain cannot
- * hide player-facing navigation information. Per that event's own javadoc in
- * fabric-rendering-v1 1.10.1 (bundled with the
+ * <p>The beam registers on {@link WorldRenderEvents#AFTER_TRANSLUCENT}, which fires once
+ * solid, cutout AND translucent terrain (water, glass, ...) are already in the framebuffer,
+ * so it correctly participates in world occlusion. The HUD marker registers separately on
+ * {@link WorldRenderEvents#LAST}, after clouds and weather have finished writing to the
+ * framebuffer, and draws with depth testing disabled so world content cannot hide
+ * player-facing navigation information. In fabric-rendering-v1 1.10.1 (bundled with the
  * installed fabric-api 0.46.1+1.17), {@link WorldRenderContext#consumers()} is {@code
  * null} at this phase and its matrix stack carries no pre-existing camera translation -
  * both are handled here: the beam is drawn with plain {@code Tessellator}/{@code
@@ -101,11 +101,12 @@ public final class WaypointWorldRenderer {
     }
 
     public void register() {
-        WorldRenderEvents.AFTER_TRANSLUCENT.register(this::render);
+        WorldRenderEvents.AFTER_TRANSLUCENT.register(this::renderBeams);
+        WorldRenderEvents.LAST.register(this::renderHud);
     }
 
-    private void render(final WorldRenderContext context) {
-        if (!config.waypointBeamsEnabled && !config.waypointLabelsEnabled) {
+    private void renderBeams(final WorldRenderContext context) {
+        if (!config.waypointBeamsEnabled) {
             return;
         }
         if (!gameBridge.session().active()) {
@@ -126,18 +127,11 @@ public final class WaypointWorldRenderer {
         final double bottomY = 0.0;
         final double topY = currentDimension.equals(DimensionId.NETHER) ? 128.0 : 256.0;
         final List<WaypointRenderEntry> waypoints = waypointRenderCatalog.snapshot(currentDimension);
-        final WaypointRenderEntry targetedWaypoint = config.waypointLabelsEnabled
-            ? targetedWaypoint(waypoints, camera, cameraPos, maxDistance)
-            : null;
-        final float animationDeltaSeconds = animationDeltaSeconds();
-        final Set<UUID> visibleWaypointIds = new HashSet<>();
 
         RenderSystem.enableDepthTest();
-        if (config.waypointBeamsEnabled) {
-            RenderSystem.depthMask(false);
-            RenderSystem.disableCull();
-            RenderUtil.beginAdditiveTriangles();
-        }
+        RenderSystem.depthMask(false);
+        RenderSystem.disableCull();
+        RenderUtil.beginAdditiveTriangles();
 
         for (final WaypointRenderEntry waypoint : waypoints) {
             final double worldX = waypoint.x();
@@ -149,25 +143,54 @@ public final class WaypointWorldRenderer {
             if (distance3d > maxDistance) {
                 continue;
             }
-            visibleWaypointIds.add(waypoint.id());
+            final double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
+            drawBeam(
+                matrices, cameraPos, worldX, worldZ, bottomY, topY,
+                waypoint.colorArgb(), horizontalDistance, maxDistance
+            );
+        }
 
-            if (config.waypointBeamsEnabled) {
-                final double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
-                drawBeam(
-                    matrices, cameraPos, worldX, worldZ, bottomY, topY,
-                    waypoint.colorArgb(), horizontalDistance, maxDistance
-                );
+        RenderUtil.restoreDefaultBlend();
+        RenderSystem.enableCull();
+        RenderSystem.depthMask(true);
+    }
+
+    private void renderHud(final WorldRenderContext context) {
+        if (!config.waypointLabelsEnabled) {
+            labelAnimationProgress.clear();
+            return;
+        }
+        if (!gameBridge.session().active()) {
+            return;
+        }
+        final Optional<PlayerView> playerViewOpt = gameBridge.player(context.tickDelta());
+        if (playerViewOpt.isEmpty()) {
+            return;
+        }
+        final PlayerView player = playerViewOpt.get();
+        final DimensionId currentDimension = gameBridge.session().dimension();
+        final Camera camera = context.camera();
+        final Vec3d cameraPos = camera.getPos();
+        final MatrixStack matrices = context.matrixStack();
+        final double maxDistance = config.waypointRenderDistance > 0
+            ? config.waypointRenderDistance
+            : UNLIMITED_RENDER_DISTANCE_CAP;
+        final List<WaypointRenderEntry> waypoints = waypointRenderCatalog.snapshot(currentDimension);
+        final WaypointRenderEntry targetedWaypoint = targetedWaypoint(waypoints, camera, cameraPos, maxDistance);
+        final float animationDeltaSeconds = animationDeltaSeconds();
+        final Set<UUID> visibleWaypointIds = new HashSet<>();
+
+        for (final WaypointRenderEntry waypoint : waypoints) {
+            final double dx = waypoint.x() - player.x();
+            final double dy = waypoint.y() - player.y();
+            final double dz = waypoint.z() - player.z();
+            if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= maxDistance) {
+                visibleWaypointIds.add(waypoint.id());
             }
         }
 
-        if (config.waypointBeamsEnabled) {
-            RenderUtil.restoreDefaultBlend();
-            RenderSystem.enableCull();
-            RenderSystem.depthMask(true);
-        }
-
-        if (config.waypointLabelsEnabled && !visibleWaypointIds.isEmpty()) {
-            // HUD markers must remain readable through terrain, unlike the world-space beams.
+        if (!visibleWaypointIds.isEmpty()) {
+            // LAST runs after clouds/weather; disabling depth makes this a true player-facing overlay.
             RenderSystem.disableDepthTest();
             RenderSystem.depthMask(false);
             final VertexConsumerProvider.Immediate immediate = client.getBufferBuilders().getEntityVertexConsumers();
@@ -189,8 +212,6 @@ public final class WaypointWorldRenderer {
             immediate.draw();
             RenderSystem.depthMask(true);
             RenderSystem.enableDepthTest();
-        } else if (!config.waypointLabelsEnabled) {
-            labelAnimationProgress.clear();
         }
 
         labelAnimationProgress.keySet().retainAll(visibleWaypointIds);
