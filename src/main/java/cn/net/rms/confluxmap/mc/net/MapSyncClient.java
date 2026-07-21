@@ -55,15 +55,29 @@ public final class MapSyncClient {
     private int lastMaxX;
     private int lastMinZ;
     private int lastMaxZ;
-    private final Map<Long, Long> lastRequestNanos = new HashMap<>();
+    /**
+     * Request cooldown stamps, keyed by the same identity as the correction tiles they guard.
+     * Tile coordinates alone are not unique across LODs (or dimensions): LOD-2 tile (1,1) and
+     * LOD-1 tile (1,1) are different world areas, and a shared stamp let a zoom-2 browse push
+     * numerically-colliding zoom-1 tiles into the long empty-tile cooldown, leaving them
+     * predicted-only for minutes.
+     */
+    private final Map<TileStamp, Long> lastRequestNanos = new HashMap<>();
     /** Requests awaiting patches, keyed by reqId; tracks each tile's request stamp for rollback. */
     private final Map<Integer, InFlightRequest> inFlightRequests = new HashMap<>();
 
-    private static final class InFlightRequest {
-        long lastActivityMs;
-        final Map<Long, Long> pendingStamps = new HashMap<>();
+    private record TileStamp(String dimension, int lod, int tileX, int tileZ) {
+    }
 
-        InFlightRequest(final long sentAtMs) {
+    private static final class InFlightRequest {
+        final String dimension;
+        final int lod;
+        long lastActivityMs;
+        final Map<TileStamp, Long> pendingStamps = new HashMap<>();
+
+        InFlightRequest(final String dimension, final int lod, final long sentAtMs) {
+            this.dimension = dimension;
+            this.lod = lod;
             this.lastActivityMs = sentAtMs;
         }
     }
@@ -120,17 +134,18 @@ public final class MapSyncClient {
             || now < suppressedUntil || inFlightRequests.size() >= MAX_INFLIGHT_REQUESTS) {
             return;
         }
+        final String dimensionId = dimension.toString();
         final List<ViewRequestPlanner.Tile> tiles = new ArrayList<>();
         for (int z = minZ; z <= maxZ; z++) {
             for (int x = minX; x <= maxX; x++) {
-                final CorrectionStore.Key key = new CorrectionStore.Key(dimension.toString(), lod, x, z);
+                final CorrectionStore.Key key = new CorrectionStore.Key(dimensionId, lod, x, z);
                 final cn.net.rms.confluxmap.core.predict.CorrectionTile tile = corrections.get(key);
                 final byte[] presence = tile.presence();
                 boolean empty = true;
                 for (final byte value : presence) {
                     empty &= value == 0;
                 }
-                final Long previous = lastRequestNanos.get(ViewRequestPlanner.key(x, z));
+                final Long previous = lastRequestNanos.get(new TileStamp(dimensionId, lod, x, z));
                 tiles.add(new ViewRequestPlanner.Tile(x, z, tile.revision(), previous == null ? Long.MIN_VALUE : previous, empty));
             }
         }
@@ -154,18 +169,18 @@ public final class MapSyncClient {
             lastSent = now;
             progress.requestStarted(request, payloadBytes, System.nanoTime());
             final long requestNanos = now * 1_000_000L;
-            final InFlightRequest inFlight = new InFlightRequest(now);
+            final InFlightRequest inFlight = new InFlightRequest(dimensionId, lod, now);
             for (final MapViewReqC2S.TileReq tile : planned) {
-                final long key = ViewRequestPlanner.key(tile.tileX(), tile.tileZ());
-                lastRequestNanos.put(key, requestNanos);
-                inFlight.pendingStamps.put(key, requestNanos);
+                final TileStamp stamp = new TileStamp(inFlight.dimension, lod, tile.tileX(), tile.tileZ());
+                lastRequestNanos.put(stamp, requestNanos);
+                inFlight.pendingStamps.put(stamp, requestNanos);
             }
             inFlightRequests.put(request.reqId(), inFlight);
         }
     }
 
     public synchronized void onPatch(final MapPatchS2C patch, final int payloadBytes) {
-        completeTile(patch.reqId(), ViewRequestPlanner.key(patch.tileX(), patch.tileZ()));
+        completeTile(patch.reqId(), patch.tileX(), patch.tileZ());
         try {
             applyPatch(patch);
         } finally {
@@ -219,13 +234,13 @@ public final class MapSyncClient {
         progress.requestFailed(payloadBytes, System.nanoTime());
     }
 
-    private void completeTile(final int reqId, final long tileKey) {
+    private void completeTile(final int reqId, final int tileX, final int tileZ) {
         final InFlightRequest request = inFlightRequests.get(reqId);
         if (request == null) {
             return;
         }
         request.lastActivityMs = millisClock.getAsLong();
-        request.pendingStamps.remove(tileKey);
+        request.pendingStamps.remove(new TileStamp(request.dimension, request.lod, tileX, tileZ));
         if (request.pendingStamps.isEmpty()) {
             inFlightRequests.remove(reqId);
         }
@@ -251,7 +266,7 @@ public final class MapSyncClient {
 
     /** Clears each pending tile's stamp unless a newer request has already re-stamped it. */
     private void unstamp(final InFlightRequest request) {
-        for (final Map.Entry<Long, Long> entry : request.pendingStamps.entrySet()) {
+        for (final Map.Entry<TileStamp, Long> entry : request.pendingStamps.entrySet()) {
             lastRequestNanos.remove(entry.getKey(), entry.getValue());
         }
     }
