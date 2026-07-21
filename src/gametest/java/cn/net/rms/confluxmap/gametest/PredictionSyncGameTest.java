@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.gametest;
 
+import cn.net.rms.confluxmap.core.color.ShadingPipeline;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.MapPatchS2C;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
@@ -14,6 +15,7 @@ import cn.net.rms.confluxmap.core.predict.CanopyStylizer;
 import cn.net.rms.confluxmap.core.predict.CorrectionTile;
 import cn.net.rms.confluxmap.core.predict.DerivedGrid;
 import cn.net.rms.confluxmap.core.predict.LodSampling;
+import cn.net.rms.confluxmap.core.predict.MapColorTable;
 import cn.net.rms.confluxmap.core.predict.NativeBaselineSampler;
 import cn.net.rms.confluxmap.core.predict.PredictedTileComposer;
 import cn.net.rms.confluxmap.core.predict.PredictionPalette;
@@ -40,7 +42,10 @@ public final class PredictionSyncGameTest implements FabricGameTest {
     private static final int FLOOR_SIZE = 64;
     private static final int FLOOR_Y = 79;
     private static final int EXPECTED_SURFACE_Y = FLOOR_Y;
-    private static final int EXPECTED_STONE_ARGB = 0xFF6D6D6D;
+    private static final int EXPECTED_STONE_ARGB = ShadingPipeline.applyShade(
+        MapColorTable.argb(11),
+        ShadingPipeline.heightShade(EXPECTED_SURFACE_Y, ShadingPipeline.REFERENCE_HEIGHT, false)
+    );
 
     @GameTest(structureName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = 400)
     public void stoneFloorRoundTripsFromServerWorldToClientPrediction(final TestContext context) {

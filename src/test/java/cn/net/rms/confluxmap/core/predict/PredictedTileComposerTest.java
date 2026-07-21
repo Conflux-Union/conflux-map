@@ -10,6 +10,7 @@ import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.util.Argb;
+import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.Arrays;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -53,6 +54,29 @@ class PredictedTileComposerTest {
     }
 
     @Test
+    void directionalReliefPreservesAbsoluteHeightShadingOnFlatPlateaus() {
+        final int lowPlateau = composeSlopePixel(48, 48, 0);
+        final int highPlateau = composeSlopePixel(160, 160, 0);
+        final PredictionPalette palette = PredictionPalette.defaults();
+        final int paletteColor = palette.groundColor(1);
+
+        assertEquals(
+            ShadingPipeline.applyShade(
+                paletteColor,
+                ShadingPipeline.heightShade(48, ShadingPipeline.REFERENCE_HEIGHT, false)
+            ),
+            lowPlateau
+        );
+        assertEquals(
+            ShadingPipeline.applyShade(
+                paletteColor,
+                ShadingPipeline.heightShade(160, ShadingPipeline.REFERENCE_HEIGHT, false)
+            ),
+            highPlateau
+        );
+    }
+
+    @Test
     void predictionSlopeUsesContinuousMagnitudeInsteadOfAFixedContourStep() {
         final int flat = composeSlopePixel(80, 80, 0);
         final int oneBlockRise = composeSlopePixel(80, 81, 0);
@@ -66,6 +90,41 @@ class PredictedTileComposerTest {
             Argb.red(eightBlockRise) - Argb.red(flat) > Argb.red(oneBlockRise) - Argb.red(flat),
             "larger slopes should produce stronger shading"
         );
+    }
+
+    @Test
+    void predictionReliefMakesOrdinarySlopesVisuallyDistinct() {
+        final int flat = composeReliefPlanePixel(80, 0, 0);
+        final int litSlope = composeReliefPlanePixel(80, 1, 0);
+        final int shadedSlope = composeReliefPlanePixel(80, -1, 0);
+
+        assertTrue(
+            Argb.red(litSlope) - Argb.red(flat) >= 20,
+            "a one-block-per-block lit slope should have visible relief"
+        );
+        assertTrue(
+            Argb.red(flat) - Argb.red(shadedSlope) >= 20,
+            "a one-block-per-block shaded slope should have visible relief"
+        );
+    }
+
+    private static int composeReliefPlanePixel(final int centerHeight, final int risePerBlock, final int lod) {
+        final BaselineGrid grid = new BaselineGrid();
+        final DerivedGrid derived = new DerivedGrid();
+        Arrays.fill(grid.biomeId, 1);
+        Arrays.fill(derived.kind, (byte) SurfaceKind.LAND.ordinal());
+        Arrays.fill(derived.surfaceY, centerHeight);
+        final int step = risePerBlock * TileMath.blocksPerPixel(lod);
+        derived.surfaceY[BaselineGrid.index(9, 10)] = centerHeight + step;
+        derived.surfaceY[BaselineGrid.index(10, 11)] = centerHeight + step;
+        derived.surfaceY[BaselineGrid.index(9, 11)] = centerHeight + 2 * step;
+        derived.surfaceY[BaselineGrid.index(11, 10)] = centerHeight - step;
+        derived.surfaceY[BaselineGrid.index(10, 9)] = centerHeight - step;
+        derived.surfaceY[BaselineGrid.index(11, 9)] = centerHeight - 2 * step;
+        final int[] pixels = PredictedTileComposer.compose(
+            derived, grid, PredictionPalette.defaults(), null, PredictionViewMode.EVERYWHERE, lod
+        );
+        return pixels[10 * 256 + 10];
     }
 
     @Test
@@ -202,7 +261,14 @@ class PredictedTileComposerTest {
             derived, grid, PredictionPalette.defaults(), corrections, PredictionViewMode.EVERYWHERE, 0
         );
 
-        assertEquals(0xFF6D6D6D, corrected[pixel], "player-built stone must remain visible through predicted canopy");
+        assertEquals(
+            ShadingPipeline.applyShade(
+                MapColorTable.argb(11),
+                ShadingPipeline.heightShade(79, ShadingPipeline.REFERENCE_HEIGHT, false)
+            ),
+            corrected[pixel],
+            "player-built stone must remain visible through predicted canopy"
+        );
     }
 
     @Test

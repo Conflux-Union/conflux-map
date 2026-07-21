@@ -23,7 +23,8 @@ existing world cannot accidentally satisfy the benchmark from spawn generation a
 The reference path reads each generated `WorldChunk` through Vanilla's live motion-blocking
 heightmap, block state, `MapColor`, and biome registry APIs, then applies Conflux Map's normal
 height and slope shading. The prediction path uses the same native sampler, derivation, canopy, and
-tile composer used by the mod. No stored golden images or network service are involved.
+directional-relief tile composer used by the mod. No stored golden images or network service are
+involved.
 
 This measures terrain prediction and CPU-side map composition. It does not validate GPU texture
 uploads, framebuffer behavior, GUI scaling, fonts, or driver-specific rendering. Those remain

@@ -9,11 +9,9 @@ import cn.net.rms.confluxmap.core.util.TileMath;
 
 /**
  * Turns a {@link DerivedGrid} (+ the {@link BaselineGrid} it was derived from, for biome ids)
- * into a 256x256 ARGB pixel array, mirroring {@code
- * cn.net.rms.confluxmap.core.tile.TileService#composeRegion}'s visual pipeline as closely as a
- * baseline with no real block/light data can: continuous height shading against the same fixed
- * {@link ShadingPipeline#REFERENCE_HEIGHT} reference plus LOD-normalized continuous slope shading,
- * water rendered as a translucent surface color pre-composited over an approximated seafloor (see
+ * into a 256x256 ARGB pixel array. The prediction plane layers LOD-normalized directional relief
+ * over the captured-map absolute-height curve, and renders water as a translucent surface color
+ * pre-composited over an approximated seafloor (see
  * {@link #seafloorColor}, since there is no real seafloor block to sample - cubiomes gives biome +
  * terrain height only). Day/night lighting is deliberately not baked into these cached pixels:
  * the fullscreen renderer applies one global tint to the entire predicted plane, so tiles composed
@@ -27,6 +25,7 @@ public final class PredictedTileComposer {
     private static final int SEAFLOOR_BASE = 0xFFC2A876;
     private static final float SEAFLOOR_DARKEN_RANGE_BLOCKS = 48f;
     private static final float SEAFLOOR_MIN_BRIGHTNESS = 0.25f;
+    private static final double RELIEF_CONTRAST = 0.36;
 
     private PredictedTileComposer() {
     }
@@ -93,13 +92,11 @@ public final class PredictedTileComposer {
                     continue;
                 }
 
-                final int surfaceY = surface[idx];
-                final Integer litSideHeight = slopeSampleHeight(surface, kinds, x - 1, z + 1);
-                final Integer darkSideHeight = slopeSampleHeight(surface, kinds, x + 1, z - 1);
-                final double shade = ShadingPipeline.heightShade(
-                    surfaceY, ShadingPipeline.REFERENCE_HEIGHT, false
-                ) + ShadingPipeline.continuousSlopeShade(
-                    litSideHeight, darkSideHeight, TileMath.blocksPerPixel(lod)
+                final double reliefMultiplier = directionalReliefMultiplier(
+                    surface, kinds, x, z, TileMath.blocksPerPixel(lod)
+                );
+                final double heightShade = ShadingPipeline.heightShade(
+                    surface[idx], ShadingPipeline.REFERENCE_HEIGHT, false
                 );
                 final int biomeId = biomes[idx];
 
@@ -112,18 +109,48 @@ public final class PredictedTileComposer {
                     // an approximation (a seafloor stand-in composited beneath), so continuity wins here.
                     final int water = Argb.multiply(palette.waterBase, BiomeTable.DEFAULT_WATER_TINT);
                     final int floor = seafloorColor(fluids[idx]);
-                    final int shadedWater = ShadingPipeline.applyShade(water, shade);
-                    final int shadedFloor = ShadingPipeline.applyShade(floor, shade);
-                    composed = ShadingPipeline.compositeOver(shadedWater, shadedFloor);
+                    composed = ShadingPipeline.compositeOver(water, floor);
                 } else if (corrected[outIdx] && colors[outIdx] != 0xFF) {
-                    composed = ShadingPipeline.applyShade(MapColorTable.argb(colors[outIdx]), shade);
+                    composed = MapColorTable.argb(colors[outIdx]);
                 } else {
-                    composed = ShadingPipeline.applyShade(colorFor(kind, biomeId, palette), shade);
+                    composed = colorFor(kind, biomeId, palette);
                 }
-                out[outIdx] = composed;
+                final int heightShaded = ShadingPipeline.applyShade(composed, heightShade);
+                out[outIdx] = ShadingPipeline.applyBrightnessMultiplier(heightShaded, reliefMultiplier);
             }
         }
         return out;
+    }
+
+    /**
+     * Directional relief from two three-sample shoulders around the output pixel. Averaging the
+     * axial and diagonal samples suppresses single-cell height noise, while the fixed southwest
+     * light direction keeps adjacent tiles visually coherent. A one-block-per-axis diagonal rise
+     * reaches full contrast; steeper terrain is clamped instead of washing out its biome colour.
+     */
+    private static double directionalReliefMultiplier(
+        final int[] surface,
+        final byte[] kinds,
+        final int x,
+        final int z,
+        final int blocksPerPixel
+    ) {
+        final Integer litWest = slopeSampleHeight(surface, kinds, x - 1, z);
+        final Integer litSouth = slopeSampleHeight(surface, kinds, x, z + 1);
+        final Integer litDiagonal = slopeSampleHeight(surface, kinds, x - 1, z + 1);
+        final Integer darkEast = slopeSampleHeight(surface, kinds, x + 1, z);
+        final Integer darkNorth = slopeSampleHeight(surface, kinds, x, z - 1);
+        final Integer darkDiagonal = slopeSampleHeight(surface, kinds, x + 1, z - 1);
+        if (litWest == null || litSouth == null || litDiagonal == null
+            || darkEast == null || darkNorth == null || darkDiagonal == null) {
+            return 1.0;
+        }
+
+        final double litMean = (litWest + litSouth + litDiagonal) / 3.0;
+        final double darkMean = (darkEast + darkNorth + darkDiagonal) / 3.0;
+        final double risePerBlock = (litMean - darkMean) / (2.0 * blocksPerPixel);
+        final double normalized = Math.max(-1.0, Math.min(1.0, risePerBlock));
+        return 1.0 + RELIEF_CONTRAST * normalized;
     }
 
     private static int colorFor(final SurfaceKind kind, final int biomeId, final PredictionPalette palette) {

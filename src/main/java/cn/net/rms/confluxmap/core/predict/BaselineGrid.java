@@ -2,8 +2,8 @@ package cn.net.rms.confluxmap.core.predict;
 
 /**
  * One predicted tile's raw sampled data at one LOD: a cubiomes biome id and a terrain height
- * per pixel, plus a 1-pixel margin on every edge so continuous slope shading can read both
- * diagonal samples around an output pixel without needing another tile's data. Unlike real
+ * per pixel, plus a 1-pixel margin on every edge so directional relief can read both three-sample
+ * shoulders around an output pixel without needing another tile's data. Unlike real
  * captured tiles, a predicted tile can simply sample a slightly larger area directly from the
  * seed.
  *

@@ -123,6 +123,17 @@ public final class ShadingPipeline {
         return (argb & 0xFF000000) | r << 16 | g << 8 | b;
     }
 
+    /** Multiplies RGB brightness while preserving hue and alpha. */
+    public static int applyBrightnessMultiplier(final int argb, final double factor) {
+        if (factor == 1.0) {
+            return argb;
+        }
+        final int r = clampChannel((int) Math.round(Argb.red(argb) * factor));
+        final int g = clampChannel((int) Math.round(Argb.green(argb) * factor));
+        final int b = clampChannel((int) Math.round(Argb.blue(argb) * factor));
+        return (argb & 0xFF000000) | r << 16 | g << 8 | b;
+    }
+
     private static int shadeChannel(final int c, final double shade) {
         final double shaded = shade > 0 ? c + shade * (255 - c) : c - (-shade) * c;
         return clampChannel((int) Math.round(shaded));
