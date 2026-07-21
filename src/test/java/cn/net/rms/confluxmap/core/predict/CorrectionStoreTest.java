@@ -1,5 +1,7 @@
 package cn.net.rms.confluxmap.core.predict;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
@@ -7,6 +9,7 @@ import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -15,8 +18,11 @@ import org.junit.jupiter.api.io.TempDir;
 
 class CorrectionStoreTest {
     @Test
-    void singleplayerCorrectionsUseTheCurrentSaveIdentity(@TempDir final Path tempDir) {
-        final WorldIdentity world = WorldIdentity.singleplayerSave(Path.of("/minecraft/saves/New World"));
+    void singleplayerCorrectionsUseTheCurrentSaveIdentity(@TempDir final Path tempDir) throws IOException {
+        final Path saveRoot = tempDir.resolve("saves").resolve("New World");
+        Files.createDirectories(saveRoot);
+        Files.writeString(saveRoot.resolve("level.dat"), "test save");
+        final WorldIdentity world = WorldIdentity.singleplayerSave(saveRoot);
         final CorrectionStore store = new CorrectionStore(tempDir);
         store.onSessionChanged(new SessionGuard.Session(1L, world, DimensionId.OVERWORLD));
 
@@ -45,6 +51,28 @@ class CorrectionStoreTest {
 
         assertTrue(Files.isRegularFile(correctionFile(tempDir, first, 0, 0)));
         assertTrue(Files.isRegularFile(correctionFile(tempDir, second, 0, 0)));
+    }
+
+    @Test
+    void persistentIdentityMigratesDirectoryBasedCorrections(@TempDir final Path tempDir) throws IOException {
+        final Path saveRoot = tempDir.resolve("saves").resolve("New World");
+        Files.createDirectories(saveRoot);
+        Files.writeString(saveRoot.resolve("level.dat"), "test save");
+        final WorldIdentity currentWorld = WorldIdentity.singleplayerSave(saveRoot);
+        final WorldIdentity directoryBasedWorld = new WorldIdentity("local", currentWorld.legacyStorageIds().get(0));
+        final CorrectionStore.Key key = new CorrectionStore.Key("minecraft:overworld", 0, 3, -2);
+        final CorrectionStore oldStore = new CorrectionStore(tempDir.resolve("corrections"));
+        oldStore.setNamespace(directoryBasedWorld);
+        oldStore.apply(key, 7L, new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(List.of()));
+        oldStore.flush();
+        final Path oldRoot = tempDir.resolve("corrections").resolve("local").resolve(directoryBasedWorld.worldId());
+
+        final CorrectionStore currentStore = new CorrectionStore(tempDir.resolve("corrections"));
+        currentStore.setNamespace(currentWorld);
+
+        assertEquals(7L, currentStore.get(key).revision());
+        assertFalse(Files.exists(oldRoot));
+        assertTrue(Files.isRegularFile(correctionFile(tempDir.resolve("corrections"), currentWorld, 3, -2)));
     }
 
     private static Path correctionFile(

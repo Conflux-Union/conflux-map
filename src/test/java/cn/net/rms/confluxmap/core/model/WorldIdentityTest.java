@@ -69,25 +69,25 @@ class WorldIdentityTest {
     }
 
     @Test
-    void singleplayerUnaffectedByCompanionWork() {
-        // Sanity check that the SP factory still produces its documented shape.
+    void syntheticSingleplayerIdentityUsesSanitizedName() {
+        // Tests and compatibility callers can still construct a non-persistent synthetic identity.
         final WorldIdentity id = WorldIdentity.singleplayer("New World");
         assertEquals("local", id.serverId());
         assertEquals("new_world", id.worldId());
     }
 
     @Test
-    void sameDisplayNameSavesUseTheirDistinctFolders(@TempDir final Path tempDir) throws IOException {
+    void distinctSaveFoldersGetDistinctPersistentIds(@TempDir final Path tempDir) throws IOException {
         final Path firstSave = createSave(tempDir.resolve("New World"));
         final Path secondSave = createSave(tempDir.resolve("New World-1"));
         final WorldIdentity first = WorldIdentity.singleplayerSave(firstSave);
         final WorldIdentity second = WorldIdentity.singleplayerSave(secondSave);
 
         assertNotEquals(first, second);
-        assertEquals("new_world--411b5590ae9bc2b58edb8ffc8605bff8d6d0ff0e69e245963a04b06e59b0e053", first.worldId());
-        assertEquals("new_world-1--8da26504d4ec2c157fe3000e9d02cd97d28dce6d6d9ccfa3b276755deb4290a1", second.worldId());
-        assertEquals("new_world", first.legacyWorldId());
-        assertEquals("new_world-1", second.legacyWorldId());
+        assertTrue(Files.isRegularFile(firstSave.resolve("confluxmap").resolve("world_uuid.json")));
+        assertTrue(Files.isRegularFile(secondSave.resolve("confluxmap").resolve("world_uuid.json")));
+        assertTrue(first.legacyStorageIds().contains("new_world"));
+        assertTrue(second.legacyStorageIds().contains("new_world-1"));
     }
 
     @Test
@@ -99,24 +99,31 @@ class WorldIdentityTest {
 
         assertNotEquals(first, second);
         assertNotEquals(first.worldId(), second.worldId());
-        assertFalse(first.hasLegacyStorageId());
-        assertFalse(second.hasLegacyStorageId());
+        assertFalse(first.legacyStorageIds().contains("a_b"));
+        assertFalse(second.legacyStorageIds().contains("a_b"));
     }
 
     @Test
-    void migrationMetadataDoesNotChangeWorldEquality(@TempDir final Path tempDir) throws IOException {
-        final Path uniqueSave = createSave(tempDir.resolve("unique").resolve("New World"));
-        final Path collidingParent = tempDir.resolve("colliding");
-        final Path collidingSave = createSave(collidingParent.resolve("New World"));
-        createSave(collidingParent.resolve("new_world"));
+    void renamingSaveFolderKeepsIdentity(@TempDir final Path tempDir) throws IOException {
+        final Path original = createSave(tempDir.resolve("New World"));
+        final WorldIdentity beforeRename = WorldIdentity.singleplayerSave(original);
+        final Path renamed = Files.move(original, tempDir.resolve("Renamed World"));
+        final WorldIdentity afterRename = WorldIdentity.singleplayerSave(renamed);
 
-        final WorldIdentity migratable = WorldIdentity.singleplayerSave(uniqueSave);
-        final WorldIdentity isolated = WorldIdentity.singleplayerSave(collidingSave);
+        assertEquals(beforeRename, afterRename);
+        assertEquals(beforeRename.hashCode(), afterRename.hashCode());
+        assertNotEquals(beforeRename.legacyStorageIds(), afterRename.legacyStorageIds());
+    }
 
-        assertTrue(migratable.hasLegacyStorageId());
-        assertFalse(isolated.hasLegacyStorageId());
-        assertEquals(migratable, isolated);
-        assertEquals(migratable.hashCode(), isolated.hashCode());
+    @Test
+    void recreatedSaveAtTheSamePathGetsANewIdentity(@TempDir final Path tempDir) throws IOException {
+        final Path save = createSave(tempDir.resolve("New World"));
+        final WorldIdentity deleted = WorldIdentity.singleplayerSave(save);
+        deleteSave(save);
+
+        final WorldIdentity recreated = WorldIdentity.singleplayerSave(createSave(save));
+
+        assertNotEquals(deleted, recreated);
     }
 
     @Test
@@ -124,13 +131,20 @@ class WorldIdentityTest {
         final Path save = createSave(tempDir.resolve("New World"));
         Files.createDirectories(tempDir.resolve("new_world"));
 
-        assertTrue(WorldIdentity.singleplayerSave(save).hasLegacyStorageId());
+        assertTrue(WorldIdentity.singleplayerSave(save).legacyStorageIds().contains("new_world"));
     }
 
     private static Path createSave(final Path root) throws IOException {
         Files.createDirectories(root);
         Files.writeString(root.resolve("level.dat"), "test save");
         return root;
+    }
+
+    private static void deleteSave(final Path root) throws IOException {
+        Files.delete(root.resolve("confluxmap").resolve("world_uuid.json"));
+        Files.delete(root.resolve("confluxmap"));
+        Files.delete(root.resolve("level.dat"));
+        Files.delete(root);
     }
 
 }

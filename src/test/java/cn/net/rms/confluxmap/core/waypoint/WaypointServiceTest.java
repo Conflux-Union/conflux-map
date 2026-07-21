@@ -26,7 +26,8 @@ class WaypointServiceTest {
     void firstSessionMigratesAndLoadsLegacySingleplayerWaypoints(@TempDir final Path tempDir) throws IOException {
         final Path saveRoot = createSave(tempDir.resolve("saves").resolve("New World"));
         final WorldIdentity world = WorldIdentity.singleplayerSave(saveRoot);
-        final Path legacyFile = tempDir.resolve("local").resolve(world.legacyWorldId() + ".json");
+        final String oldestLegacyId = world.legacyStorageIds().get(world.legacyStorageIds().size() - 1);
+        final Path legacyFile = tempDir.resolve("local").resolve(oldestLegacyId + ".json");
         final Path currentFile = tempDir.resolve("local").resolve(world.worldId() + ".json");
         final Waypoint waypoint = Waypoint.create(
             "Home", DimensionId.OVERWORLD, 12.0, 64.0, -8.0, 0xFFFF0000, "", Waypoint.Type.NORMAL
@@ -65,6 +66,29 @@ class WaypointServiceTest {
 
             assertTrue(service.list().isEmpty());
             assertTrue(Files.isRegularFile(legacyFile));
+        } finally {
+            executors.shutdown(1000L);
+        }
+    }
+
+    @Test
+    void recreatedSaveWithTheSameDirectoryNameDoesNotInheritWaypoints(@TempDir final Path tempDir) throws IOException {
+        final Path saveRoot = createSave(tempDir.resolve("saves").resolve("New World"));
+        final WorldIdentity deletedWorld = WorldIdentity.singleplayerSave(saveRoot);
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final WaypointService service = new WaypointService(tempDir.resolve("waypoints"), executors, LOGGER);
+            service.onSessionChanged(new SessionGuard.Session(1L, deletedWorld, DimensionId.OVERWORLD));
+            service.current().add(Waypoint.create(
+                "Old home", DimensionId.OVERWORLD, 12.0, 64.0, -8.0, 0xFFFF0000, "", Waypoint.Type.NORMAL
+            ));
+            service.onSessionChanged(SessionGuard.Session.NONE);
+
+            deleteSave(saveRoot);
+            final WorldIdentity recreatedWorld = WorldIdentity.singleplayerSave(createSave(saveRoot));
+            service.onSessionChanged(new SessionGuard.Session(2L, recreatedWorld, DimensionId.OVERWORLD));
+
+            assertTrue(service.list().isEmpty());
         } finally {
             executors.shutdown(1000L);
         }
@@ -121,5 +145,12 @@ class WaypointServiceTest {
         Files.createDirectories(root);
         Files.writeString(root.resolve("level.dat"), "test save");
         return root;
+    }
+
+    private static void deleteSave(final Path root) throws IOException {
+        Files.delete(root.resolve("confluxmap").resolve("world_uuid.json"));
+        Files.delete(root.resolve("confluxmap"));
+        Files.delete(root.resolve("level.dat"));
+        Files.delete(root);
     }
 }

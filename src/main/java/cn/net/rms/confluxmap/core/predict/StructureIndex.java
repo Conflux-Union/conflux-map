@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.core.predict;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
+import cn.net.rms.confluxmap.core.store.WorldStorageMigration;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -20,9 +21,13 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /** Lazy, persistent structure candidates with tri-state server verification. */
 public final class StructureIndex {
+    private static final Logger LOGGER = LogManager.getLogger("ConfluxMap/StructureIndex");
+
     public enum StructureType {
         VILLAGE(6, "village", "V", 32, DimensionId.OVERWORLD),
         OCEAN_MONUMENT(9, "ocean_monument", "M", 32, DimensionId.OVERWORLD),
@@ -102,10 +107,7 @@ public final class StructureIndex {
         final CandidateProvider provider
     ) {
         this(
-            cacheRoot
-                .resolve("structures")
-                .resolve(sanitize(world.serverId()))
-                .resolve(sanitize(world.worldId()))
+            WorldStorageMigration.directory(cacheRoot.resolve("structures"), world, LOGGER)
                 .resolve("structures_" + sanitize(dimension.fileName()) + ".json"),
             dimension,
             provider

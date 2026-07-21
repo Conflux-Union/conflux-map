@@ -8,7 +8,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import org.apache.logging.log4j.Logger;
 
-/** Migrates world-scoped files and directories from the original lossy singleplayer key. */
+/** Migrates world-scoped files and directories from older singleplayer identity formats. */
 public final class WorldStorageMigration {
     private WorldStorageMigration() {
     }
@@ -33,11 +33,16 @@ public final class WorldStorageMigration {
         final Logger logger
     ) {
         final Path current = root.resolve(world.serverId()).resolve(world.worldId() + suffix);
-        if (!world.hasLegacyStorageId()) {
-            return current;
+        for (final String legacyId : world.legacyStorageIds()) {
+            if (Files.exists(current)) {
+                break;
+            }
+            final Path legacy = root.resolve(world.serverId()).resolve(legacyId + suffix);
+            if (Files.exists(legacy)) {
+                migrate(legacy, current, logger);
+                break;
+            }
         }
-        final Path legacy = root.resolve(world.serverId()).resolve(world.legacyWorldId() + suffix);
-        migrate(legacy, current, logger);
         return current;
     }
 

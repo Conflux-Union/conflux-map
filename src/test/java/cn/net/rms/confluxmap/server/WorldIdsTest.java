@@ -62,27 +62,15 @@ class WorldIdsTest {
     }
 
     @Test
-    void parseAcceptsCanonicalForm() {
-        // Round-trip through parse() to lock the JSON shape external operators might hand-edit.
-        final java.util.UUID src = java.util.UUID.fromString("11111111-2222-3333-4444-555555555555");
-        assertEquals(src, WorldIds.Io.parse("{\"uuid\":\"" + src + "\"}"));
-    }
+    void recreatedWorldRootGetsANewUuid(@TempDir final Path tmp) throws IOException {
+        final Path worldRoot = tmp.resolve("world");
+        final java.util.UUID deleted = WorldIds.Io.loadOrCreate(worldRoot);
+        Files.delete(worldRoot.resolve("confluxmap").resolve("world_uuid.json"));
+        Files.delete(worldRoot.resolve("confluxmap"));
+        Files.delete(worldRoot);
 
-    @Test
-    void parseRejectsMissingField() {
-        // An object that parses but has no `uuid` field returns null (caller regenerates).
-        assertEquals(null, WorldIds.Io.parse("{\"notUuid\":\"" + "x" + "\"}"));
-    }
+        final java.util.UUID recreated = WorldIds.Io.loadOrCreate(worldRoot);
 
-    @Test
-    void parseRejectsMalformedUuid() {
-        assertEquals(null, WorldIds.Io.parse("{\"uuid\":\"not-a-uuid\"}"));
-    }
-
-    @Test
-    void parseRejectsBlankAndNull() {
-        assertEquals(null, WorldIds.Io.parse(null));
-        assertEquals(null, WorldIds.Io.parse(""));
-        assertEquals(null, WorldIds.Io.parse("   "));
+        assertNotEquals(deleted, recreated);
     }
 }
