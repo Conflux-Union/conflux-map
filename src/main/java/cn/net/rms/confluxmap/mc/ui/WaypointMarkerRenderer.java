@@ -6,7 +6,6 @@ import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3f;
 
 /**
  * VoxelMap-style waypoint marker drawing shared by {@code MinimapHudRenderer} and
@@ -76,34 +75,6 @@ public final class WaypointMarkerRenderer {
         }
         final int[] codePoints = trimmed.codePoints().limit(1).toArray();
         return new String(codePoints, 0, codePoints.length);
-    }
-
-    /**
-     * Directional edge-indicator arrow, rotated to the waypoint's on-screen bearing -
-     * deliberately never counter-rotated (waypoint-ux.md S7: this is the one marker whose
-     * whole purpose is pointing, unlike the upright in-range marker above). Proportioned to
-     * match {@code MinimapHudRenderer#drawPlayerArrow}'s existing arrowhead, with the same
-     * three-layer outline as {@link #draw}.
-     */
-    public static void drawEdgeArrow(
-        final MatrixStack matrices,
-        final float x,
-        final float y,
-        final float angleDegrees,
-        final WaypointRenderEntry waypoint,
-        final float alpha
-    ) {
-        matrices.push();
-        matrices.translate(x, y, 0);
-        matrices.multiply(Vec3f.POSITIVE_Z.getDegreesQuaternion(angleDegrees));
-        final int outer = withAlpha(outlineColor(waypoint), alpha);
-        final int inner = withAlpha(WHITE_TEXT, alpha);
-        final int fill = withAlpha(waypoint.colorArgb() | 0xFF000000, alpha);
-        RenderUtil.fillTriangle(matrices, 0f, -6.5f, -5f, 5.5f, 5f, 5.5f, outer);
-        RenderUtil.fillTriangle(matrices, 0f, -5.5f, -4.2f, 4.6f, 4.2f, 4.6f, inner);
-        RenderUtil.fillTriangle(matrices, 0f, -4.3f, -3f, 3.6f, 3f, 3.6f, fill);
-        matrices.pop();
-        drawLockIndicator(matrices, waypoint, x, y, 4f, alpha);
     }
 
     private static int fillColor(final int colorArgb, final float alpha, final boolean hovered) {

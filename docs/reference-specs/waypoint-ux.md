@@ -464,17 +464,10 @@ addition beyond the reference behavior, not a gap to "restore."
 
 **Out-of-range edge indicators.** A waypoint whose position would fall
 outside the minimap's visible circle/square is redrawn clamped to the
-frame's edge, using a *different* icon — a directional arrow-shaped
-variant of the same waypoint's icon (falling back to a plain generic
-arrow glyph if no arrow variant exists for that icon). Unlike the in-range
-marker, **this arrow is deliberately *not* counter-rotated** — it's the
-one element whose whole purpose is rotating to point toward the
-waypoint's true bearing, so the counter-rotation step is simply skipped
-for it. (The one exception: a temporary "ping"/highlight marker, drawn
-with its own distinct crosshair icon, *does* stay counter-rotated/upright
-even when clamped to the edge — upright-ness there matters more than
-directionality, since its role is "look, right here," not "somewhere off
-that way.")
+frame's edge using the same upright waypoint icon as an in-range marker.
+Keeping the color, name initial, and shared/locked treatment visible at
+the edge makes the destination identifiable without switching to a
+generic direction arrow.
 
 **Edge-clamp geometry differs by frame shape**, consistent with the
 square-vs-round distinction already established generally:

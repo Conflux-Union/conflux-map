@@ -188,14 +188,14 @@ public final class MinimapHudRenderer {
     }
 
     /**
-     * In-range dots and out-of-range edge indicators for waypoints visible in the
+     * In-range and edge-clamped icons for waypoints visible in the
      * current dimension. Reuses {@link #drawCardinal}'s exact rotation trick: the
      * marker's screen *position* is computed with the same manual cos/sin rotation
      * as the cardinal letters (this method runs after the tile-drawing push/pop, so
      * the active matrix here is unrotated - see the render() javadoc), while the
-     * in-range marker glyph itself is drawn with no rotation applied (upright). The
-     * out-of-range edge arrow is the one deliberate exception - it rotates to point
-     * at the waypoint's true on-screen bearing, per waypoint-ux.md S7.
+     * marker glyph itself is drawn with no rotation applied (upright). Out-of-range
+     * waypoints reuse that same icon at the minimap edge so their identity remains
+     * visible instead of changing into a generic direction arrow.
      */
     private void drawWaypointMarkers(
         final MatrixStack matrices,
@@ -210,7 +210,8 @@ public final class MinimapHudRenderer {
         final double rad = Math.toRadians(mapAngle);
         final float cos = (float) Math.cos(rad);
         final float sin = (float) Math.sin(rad);
-        final float limit = size / 2f - 2f;
+        // Keep the marker plate and its one-pixel outline inside the minimap frame.
+        final float limit = size / 2f - WAYPOINT_MARKER_HALF_SIZE - 2f;
         final boolean circleFrame = config.minimapShape == ConfluxConfig.Shape.CIRCLE;
         final DimensionId currentDimension = gameBridge.session().dimension();
 
@@ -244,9 +245,15 @@ public final class MinimapHudRenderer {
                     : limit / Math.max(Math.abs(screenOffX), Math.abs(screenOffY));
                 final float edgeX = screenOffX * k;
                 final float edgeY = screenOffY * k;
-                final float angle = (float) Math.toDegrees(Math.atan2(screenOffX, -screenOffY));
-                WaypointMarkerRenderer.drawEdgeArrow(
-                    matrices, centerX + edgeX, centerY + edgeY, angle, waypoint, 1f
+                WaypointMarkerRenderer.draw(
+                    matrices,
+                    client.textRenderer,
+                    waypoint,
+                    centerX + edgeX,
+                    centerY + edgeY,
+                    WAYPOINT_MARKER_HALF_SIZE,
+                    1f,
+                    false
                 );
             }
         }
