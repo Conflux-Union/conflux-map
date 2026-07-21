@@ -9,6 +9,7 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.net.MapSyncProgress;
+import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.predict.CubiomesBiomeIds;
 import cn.net.rms.confluxmap.core.predict.PredictedTileKeys;
 import cn.net.rms.confluxmap.core.predict.PredictionLighting;
@@ -20,11 +21,11 @@ import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.util.TileMath;
-import cn.net.rms.confluxmap.core.waypoint.DimensionScale;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
+import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
@@ -116,6 +117,7 @@ public final class FullscreenMapScreen extends Screen {
     private final WaypointService waypointService;
     private final WaypointRenderCatalog waypointRenderCatalog;
     private final ConfluxConfig config;
+    private final SharedWaypointClient sharedWaypoints;
     private final EntityRadarScanner radarScanner;
     private final EntityIconManager radarIconManager;
     private final RadarViewRange radarViewRange;
@@ -133,6 +135,9 @@ public final class FullscreenMapScreen extends Screen {
     private double leftPressX;
     private double leftPressY;
     private boolean mapPointerPress;
+    private SharedWaypointAvailability sharedAvailability;
+    private ButtonWidget sharedVisibilityButton;
+    private int waypointControlsBottom;
 
     public FullscreenMapScreen(final KeyBinding openMapKey) {
         super(new TranslatableText("confluxmap.screen.map.title"));
@@ -149,6 +154,7 @@ public final class FullscreenMapScreen extends Screen {
         this.waypointService = app.waypointService();
         this.waypointRenderCatalog = app.waypointRenderCatalog();
         this.config = app.config();
+        this.sharedWaypoints = app.sharedWaypoints();
         this.radarScanner = app.radarScanner();
         this.radarIconManager = app.entityIconManager();
         this.radarViewRange = app.radarViewRange();
@@ -170,6 +176,14 @@ public final class FullscreenMapScreen extends Screen {
 
     @Override
     protected void init() {
+        rebuildWaypointControls();
+    }
+
+    private void rebuildWaypointControls() {
+        clearChildren();
+        sharedAvailability = sharedWaypoints.availability();
+        sharedVisibilityButton = null;
+
         final int x = width - MARGIN - CONTROL_WIDTH;
         int y = MARGIN + textRenderer.fontHeight + 5;
         addDrawableChild(new ButtonWidget(
@@ -180,19 +194,37 @@ public final class FullscreenMapScreen extends Screen {
             }
         ));
         y += CONTROL_HEIGHT + CONTROL_GAP;
-        addDrawableChild(new ButtonWidget(
-            x, y, CONTROL_WIDTH, CONTROL_HEIGHT, visibilityLabel(false), b -> {
-                config.sharedWaypointsVisible = !config.sharedWaypointsVisible;
-                ConfluxMapClient.get().configIo().save(config);
-                b.setMessage(visibilityLabel(false));
-            }
-        ));
-        y += CONTROL_HEIGHT + CONTROL_GAP;
+        if (sharedAvailability.enabled()) {
+            sharedVisibilityButton = addDrawableChild(new ButtonWidget(
+                x, y, CONTROL_WIDTH, CONTROL_HEIGHT, visibilityLabel(false), b -> {
+                    config.sharedWaypointsVisible = !config.sharedWaypointsVisible;
+                    ConfluxMapClient.get().configIo().save(config);
+                    b.setMessage(visibilityLabel(false));
+                }
+            ));
+            sharedVisibilityButton.active = sharedAvailability.ready();
+            y += CONTROL_HEIGHT + CONTROL_GAP;
+        }
         addDrawableChild(new ButtonWidget(
             x, y, CONTROL_WIDTH, CONTROL_HEIGHT,
             new TranslatableText("confluxmap.screen.waypoints.manage"),
-            b -> MinecraftClient.getInstance().setScreen(new WaypointListScreen(this, WaypointListScreen.Tab.PUBLIC))
+            b -> MinecraftClient.getInstance().setScreen(new WaypointListScreen(this, WaypointListScreen.Tab.LOCAL))
         ));
+        waypointControlsBottom = y + CONTROL_HEIGHT;
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        final SharedWaypointAvailability availability = sharedWaypoints.availability();
+        if (sharedAvailability == null || availability.enabled() != sharedAvailability.enabled()) {
+            rebuildWaypointControls();
+            return;
+        }
+        sharedAvailability = availability;
+        if (sharedVisibilityButton != null) {
+            sharedVisibilityButton.active = availability.ready();
+        }
     }
 
     private Text visibilityLabel(final boolean local) {
@@ -304,12 +336,15 @@ public final class FullscreenMapScreen extends Screen {
     private boolean isOverWaypointControls(final double mouseX, final double mouseY) {
         final int left = width - MARGIN - CONTROL_WIDTH;
         final int top = MARGIN + textRenderer.fontHeight + 5;
-        final int bottom = top + CONTROL_HEIGHT * 3 + CONTROL_GAP * 2;
-        return mouseX >= left && mouseX <= width - MARGIN && mouseY >= top && mouseY <= bottom;
+        return mouseX >= left && mouseX <= width - MARGIN
+            && mouseY >= top && mouseY <= waypointControlsBottom;
     }
 
     private void openWaypoint(final WaypointRenderEntry waypoint) {
         if (waypoint.shared()) {
+            if (!sharedWaypoints.availability().enabled()) {
+                return;
+            }
             MinecraftClient.getInstance().setScreen(new WaypointListScreen(
                 this,
                 waypoint.locked() ? WaypointListScreen.Tab.LOCKED : WaypointListScreen.Tab.PUBLIC
@@ -608,8 +643,7 @@ public final class FullscreenMapScreen extends Screen {
     }
 
     /**
-     * Markers for waypoints visible in the viewed dimension (see
-     * {@link DimensionScale#isVisibleFrom}), coordinates converted for display. Fixed
+     * Markers stored in the viewed dimension, using their raw local coordinates. Fixed
      * on-screen size regardless of zoom - only their world position, and thus screen
      * position, changes with pan/zoom. Names are shown continuously once zoomed in past
      * {@link #NAME_LABEL_MAX_SCALE} blocks-per-pixel, or always for the single marker
@@ -621,14 +655,9 @@ public final class FullscreenMapScreen extends Screen {
         final DimensionId currentDimension = gameBridge.session().dimension();
         final double pxPerBlock = 1.0 / scale;
         final List<ScreenMarker> markers = new ArrayList<>();
-        for (final WaypointRenderEntry waypoint : waypointRenderCatalog.snapshot()) {
-            if (!DimensionScale.isVisibleFrom(waypoint.dimensionId(), currentDimension)) {
-                continue;
-            }
-            final double worldX = DimensionScale.convertHorizontal(waypoint.x(), waypoint.dimensionId(), currentDimension);
-            final double worldZ = DimensionScale.convertHorizontal(waypoint.z(), waypoint.dimensionId(), currentDimension);
-            final float screenX = (float) (width / 2.0 + (worldX - centerX) * pxPerBlock);
-            final float screenY = (float) (height / 2.0 + (worldZ - centerZ) * pxPerBlock);
+        for (final WaypointRenderEntry waypoint : waypointRenderCatalog.snapshot(currentDimension)) {
+            final float screenX = (float) (width / 2.0 + (waypoint.x() - centerX) * pxPerBlock);
+            final float screenY = (float) (height / 2.0 + (waypoint.z() - centerZ) * pxPerBlock);
             if (screenX < -MARKER_HALF_SIZE || screenX > width + MARKER_HALF_SIZE
                 || screenY < -MARKER_HALF_SIZE || screenY > height + MARKER_HALF_SIZE) {
                 continue;
@@ -749,22 +778,15 @@ public final class FullscreenMapScreen extends Screen {
 
     /**
      * Bottom-center footer: the raw cursor position, or - while hovering a marker
-     * (deliverable C) - that waypoint's own X/Y/Z instead (converted for the viewed
-     * dimension, per {@link DimensionScale}; Y is shown as stored, per waypoint-ux.md S3's
-     * "Y is never scaled" rule). When not hovering a marker, the cursor's biome name
+     * (deliverable C) - that waypoint's own stored X/Y/Z instead. When not hovering a marker, the cursor's biome name
      * (see {@link #cursorBiomeName}) is appended if it can be resolved.
      */
     private void drawCursorCoords(final MatrixStack matrices, final int mouseX, final int mouseY) {
         final String text;
         if (hoveredWaypoint != null) {
-            final DimensionId currentDimension = gameBridge.session().dimension();
-            final double worldX = DimensionScale.convertHorizontal(
-                hoveredWaypoint.x(), hoveredWaypoint.dimensionId(), currentDimension
-            );
-            final double worldZ = DimensionScale.convertHorizontal(
-                hoveredWaypoint.z(), hoveredWaypoint.dimensionId(), currentDimension
-            );
-            text = (int) Math.floor(worldX) + ", " + (int) Math.floor(hoveredWaypoint.y()) + ", " + (int) Math.floor(worldZ);
+            text = (int) Math.floor(hoveredWaypoint.x()) + ", "
+                + (int) Math.floor(hoveredWaypoint.y()) + ", "
+                + (int) Math.floor(hoveredWaypoint.z());
         } else {
             final int blockX = (int) Math.floor(centerX + (mouseX - width / 2.0) * scale);
             final int blockZ = (int) Math.floor(centerZ + (mouseY - height / 2.0) * scale);

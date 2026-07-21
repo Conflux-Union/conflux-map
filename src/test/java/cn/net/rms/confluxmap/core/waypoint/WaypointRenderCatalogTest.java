@@ -61,6 +61,24 @@ final class WaypointRenderCatalogTest {
         assertEquals(1.0, entry.x());
     }
 
+    @Test
+    void filtersRenderEntriesToTheExactDimensionWithoutPortalConversion() {
+        final WaypointRenderEntry overworld = WaypointRenderCatalog.merge(
+            List.of(local("Home", true)), List.of(), true, true
+        ).get(0);
+        final WaypointRenderEntry nether = WaypointRenderCatalog.merge(
+            List.of(), List.of(shared("Fortress", false)), true, true
+        ).get(0);
+
+        final List<WaypointRenderEntry> entries = WaypointRenderCatalog.inDimension(
+            List.of(overworld, nether), DimensionId.NETHER
+        );
+
+        assertEquals(List.of("Fortress"), entries.stream().map(WaypointRenderEntry::name).toList());
+        assertEquals(3.0, entries.get(0).x());
+        assertThrows(UnsupportedOperationException.class, () -> entries.clear());
+    }
+
     private static Waypoint local(final String name, final boolean visible) {
         return new Waypoint(
             UUID.randomUUID(), name, DimensionId.OVERWORLD, 1.0, 64.0, 2.0,

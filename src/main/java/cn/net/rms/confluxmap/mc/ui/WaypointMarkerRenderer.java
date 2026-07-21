@@ -1,7 +1,6 @@
 package cn.net.rms.confluxmap.mc.ui;
 
 import cn.net.rms.confluxmap.core.util.Argb;
-import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import net.minecraft.client.font.TextRenderer;
@@ -12,18 +11,13 @@ import net.minecraft.util.math.Vec3f;
 /**
  * VoxelMap-style waypoint marker drawing shared by {@code MinimapHudRenderer} and
  * {@code FullscreenMapScreen} (deliverable D) so both surfaces render identical marker
- * shapes - only their size, alpha and hover handling differ per surface. A normal
- * waypoint draws as a filled diamond; a death point draws as a skull-convention X/cross
- * instead (waypoint-ux.md S4: death points are distinguished purely by icon/color
- * convention, never a separate rendering path - deliverable C asks for that distinct
- * look on both map surfaces). Both shapes share the same three-layer dark-outer/
- * white-inner/color-fill contrast outline so a marker stays legible over any tile color
- * underneath, mirroring the existing player-arrow's two-layer outline technique
- * ({@code MinimapHudRenderer#drawPlayerArrow}) one layer further.
+ * shapes - only their size, alpha and hover handling differ per surface. Every waypoint
+ * uses the player-selected color as its plate and a white first-name character, keeping
+ * the minimap and fullscreen map visually consistent.
  */
 public final class WaypointMarkerRenderer {
     private static final int OUTER_CONTRAST = 0xFF101010;
-    private static final int INNER_RING = 0xFFFFFFFF;
+    private static final int WHITE_TEXT = 0xFFFFFFFF;
     private static final int SHARED_OUTLINE = 0xFF55DDE0;
     private static final int LOCKED_OUTLINE = 0xFFFFD166;
     /** 50% white overlay used to brighten a hovered marker's fill color (fullscreen map only). */
@@ -32,17 +26,13 @@ public final class WaypointMarkerRenderer {
     private WaypointMarkerRenderer() {
     }
 
-    private static final int BADGE_HEIGHT = 11;
-    private static final int DARK_TEXT = 0xFF202020;
-
     /**
      * In-range marker at a fixed screen position, upright - the caller is responsible for
      * counter-rotating the *position* in rotate mode (see {@code drawCardinals}'s rotate ->
      * translate -> counter-rotate mechanism); this method never applies its own rotation.
      *
-     * <p>Normal waypoints render as a text badge - the first two characters of the name on
-     * a color-filled plate (user feedback: shape markers were too easy to miss); a nameless
-     * waypoint falls back to the diamond. Death points keep the skull-convention X.
+     * <p>The plate scales with {@code halfSize}; the glyph is scaled down when necessary,
+     * so different surfaces can choose different sizes without changing the icon style.
      */
     public static void draw(
         final MatrixStack matrices,
@@ -56,41 +46,36 @@ public final class WaypointMarkerRenderer {
     ) {
         final int fill = fillColor(waypoint.colorArgb(), alpha, hovered);
         final int outer = withAlpha(outlineColor(waypoint), alpha);
-        final int inner = withAlpha(INNER_RING, alpha);
-        if (waypoint.type() == Waypoint.Type.DEATH) {
-            drawCross(matrices, x, y, halfSize, outer, inner, fill);
-            drawLockIndicator(matrices, waypoint, x, y, halfSize, alpha);
-            return;
-        }
-        final String badge = badgeText(waypoint.name());
-        if (badge.isEmpty()) {
-            drawDiamond(matrices, x, y, halfSize, outer, inner, fill);
-            drawLockIndicator(matrices, waypoint, x, y, halfSize, alpha);
-            return;
-        }
-        final int textWidth = textRenderer.getWidth(badge);
-        final float plateWidth = textWidth + 4f;
-        final float left = x - plateWidth / 2f;
-        final float top = y - BADGE_HEIGHT / 2f;
-        RenderUtil.fillRect(matrices, left - 1f, top - 1f, plateWidth + 2f, BADGE_HEIGHT + 2f, outer);
-        RenderUtil.fillRect(matrices, left, top, plateWidth, BADGE_HEIGHT, fill);
-        final int textColor = withAlpha(luminance(waypoint.colorArgb()) > 0.62f ? DARK_TEXT : 0xFFFFFFFF, alpha);
-        textRenderer.drawWithShadow(matrices, badge, x - textWidth / 2f, top + 2f, textColor);
+        final float plateSize = halfSize * 2f;
+        RenderUtil.fillRect(matrices, x - halfSize - 1f, y - halfSize - 1f, plateSize + 2f, plateSize + 2f, outer);
+        RenderUtil.fillRect(matrices, x - halfSize, y - halfSize, plateSize, plateSize, fill);
+
+        final String initial = initial(waypoint.name());
+        final int textWidth = textRenderer.getWidth(initial);
+        final float available = Math.max(1f, plateSize - 2f);
+        final float textScale = Math.min(1f, available / Math.max(textWidth, textRenderer.fontHeight));
+        matrices.push();
+        matrices.translate(x, y, 0);
+        matrices.scale(textScale, textScale, 1f);
+        textRenderer.drawWithShadow(
+            matrices,
+            initial,
+            -textWidth / 2f,
+            -textRenderer.fontHeight / 2f,
+            withAlpha(WHITE_TEXT, alpha)
+        );
+        matrices.pop();
         drawLockIndicator(matrices, waypoint, x, y, halfSize, alpha);
     }
 
-    /** First two code points of the trimmed name ("矿洞入口" -> "矿洞", "Base" -> "Ba"). */
-    private static String badgeText(final String name) {
+    /** First code point of the trimmed name; validation normally prevents the fallback. */
+    static String initial(final String name) {
         final String trimmed = name == null ? "" : name.trim();
         if (trimmed.isEmpty()) {
-            return "";
+            return "?";
         }
-        final int[] codePoints = trimmed.codePoints().limit(2).toArray();
+        final int[] codePoints = trimmed.codePoints().limit(1).toArray();
         return new String(codePoints, 0, codePoints.length);
-    }
-
-    private static float luminance(final int argb) {
-        return (0.299f * Argb.red(argb) + 0.587f * Argb.green(argb) + 0.114f * Argb.blue(argb)) / 255f;
     }
 
     /**
@@ -112,46 +97,13 @@ public final class WaypointMarkerRenderer {
         matrices.translate(x, y, 0);
         matrices.multiply(Vec3f.POSITIVE_Z.getDegreesQuaternion(angleDegrees));
         final int outer = withAlpha(outlineColor(waypoint), alpha);
-        final int inner = withAlpha(INNER_RING, alpha);
+        final int inner = withAlpha(WHITE_TEXT, alpha);
         final int fill = withAlpha(waypoint.colorArgb() | 0xFF000000, alpha);
         RenderUtil.fillTriangle(matrices, 0f, -6.5f, -5f, 5.5f, 5f, 5.5f, outer);
         RenderUtil.fillTriangle(matrices, 0f, -5.5f, -4.2f, 4.6f, 4.2f, 4.6f, inner);
         RenderUtil.fillTriangle(matrices, 0f, -4.3f, -3f, 3.6f, 3f, 3.6f, fill);
         matrices.pop();
         drawLockIndicator(matrices, waypoint, x, y, 4f, alpha);
-    }
-
-    private static void drawDiamond(
-        final MatrixStack matrices, final float x, final float y, final float halfSize, final int outer, final int inner, final int fill
-    ) {
-        drawDiamondLayer(matrices, x, y, halfSize, outer);
-        drawDiamondLayer(matrices, x, y, Math.max(0.5f, halfSize - 1.2f), inner);
-        drawDiamondLayer(matrices, x, y, Math.max(0.5f, halfSize - 2.2f), fill);
-    }
-
-    private static void drawDiamondLayer(final MatrixStack matrices, final float x, final float y, final float h, final int color) {
-        RenderUtil.fillTriangle(matrices, x, y - h, x - h, y, x + h, y, color);
-        RenderUtil.fillTriangle(matrices, x, y + h, x - h, y, x + h, y, color);
-    }
-
-    /** Skull-convention death marker: an X built from two crossed bars (a "+" rotated 45 degrees). */
-    private static void drawCross(
-        final MatrixStack matrices, final float x, final float y, final float halfSize, final int outer, final int inner, final int fill
-    ) {
-        drawCrossLayer(matrices, x, y, halfSize + 1.2f, Math.max(1f, halfSize * 0.65f), outer);
-        drawCrossLayer(matrices, x, y, halfSize + 0.4f, Math.max(1f, halfSize * 0.5f), inner);
-        drawCrossLayer(matrices, x, y, halfSize, Math.max(1f, halfSize * 0.42f), fill);
-    }
-
-    private static void drawCrossLayer(
-        final MatrixStack matrices, final float x, final float y, final float armHalfLength, final float thickness, final int color
-    ) {
-        matrices.push();
-        matrices.translate(x, y, 0);
-        matrices.multiply(Vec3f.POSITIVE_Z.getDegreesQuaternion(45f));
-        RenderUtil.fillRect(matrices, -armHalfLength, -thickness / 2f, armHalfLength * 2f, thickness, color);
-        RenderUtil.fillRect(matrices, -thickness / 2f, -armHalfLength, thickness, armHalfLength * 2f, color);
-        matrices.pop();
     }
 
     private static int fillColor(final int colorArgb, final float alpha, final boolean hovered) {

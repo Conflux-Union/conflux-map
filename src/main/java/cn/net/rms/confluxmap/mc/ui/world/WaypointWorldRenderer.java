@@ -5,7 +5,6 @@ import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.util.Argb;
-import cn.net.rms.confluxmap.core.waypoint.DimensionScale;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
@@ -117,12 +116,9 @@ public final class WaypointWorldRenderer {
         }
 
         VertexConsumerProvider.Immediate immediate = null;
-        for (final WaypointRenderEntry waypoint : waypointRenderCatalog.snapshot()) {
-            if (!DimensionScale.isVisibleFrom(waypoint.dimensionId(), currentDimension)) {
-                continue;
-            }
-            final double worldX = DimensionScale.convertHorizontal(waypoint.x(), waypoint.dimensionId(), currentDimension);
-            final double worldZ = DimensionScale.convertHorizontal(waypoint.z(), waypoint.dimensionId(), currentDimension);
+        for (final WaypointRenderEntry waypoint : waypointRenderCatalog.snapshot(currentDimension)) {
+            final double worldX = waypoint.x();
+            final double worldZ = waypoint.z();
             final double dx = worldX - player.x();
             final double dy = waypoint.y() - player.y();
             final double dz = worldZ - player.z();

@@ -29,8 +29,6 @@ public final class Keybinds {
     private final KeyBinding openWaypoints;
     private final KeyBinding newWaypoint;
     private final KeyBinding toggleLocalWaypoints;
-    private final KeyBinding toggleSharedWaypoints;
-    private final KeyBinding openSharedWaypoints;
     private final KeyBinding openConfig;
     private final KeyBinding cyclePrediction;
     private final KeyBinding reloadPrediction;
@@ -50,8 +48,6 @@ public final class Keybinds {
         openWaypoints = register("waypoints", GLFW.GLFW_KEY_U);
         newWaypoint = register("new_waypoint", GLFW.GLFW_KEY_B);
         toggleLocalWaypoints = register("toggle_local_waypoints", GLFW.GLFW_KEY_J);
-        toggleSharedWaypoints = register("toggle_shared_waypoints", GLFW.GLFW_KEY_K);
-        openSharedWaypoints = register("shared_waypoints", GLFW.GLFW_KEY_O);
         openConfig = register("open_config", GLFW.GLFW_KEY_COMMA);
         cyclePrediction = register("cycle_prediction", GLFW.GLFW_KEY_P);
         reloadPrediction = register("reload_prediction", GLFW.GLFW_KEY_F9);
@@ -118,16 +114,6 @@ public final class Keybinds {
         while (toggleLocalWaypoints.wasPressed()) {
             config.localWaypointsVisible = !config.localWaypointsVisible;
             changed = true;
-        }
-        while (toggleSharedWaypoints.wasPressed()) {
-            config.sharedWaypointsVisible = !config.sharedWaypointsVisible;
-            changed = true;
-        }
-        while (openSharedWaypoints.wasPressed()) {
-            final MinecraftClient client = MinecraftClient.getInstance();
-            if (client.player != null && client.currentScreen == null) {
-                client.setScreen(new WaypointListScreen(null, WaypointListScreen.Tab.PUBLIC));
-            }
         }
         while (openConfig.wasPressed()) {
             final MinecraftClient client = MinecraftClient.getInstance();

@@ -10,7 +10,6 @@ import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.util.TileMath;
-import cn.net.rms.confluxmap.core.waypoint.DimensionScale;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
@@ -215,14 +214,9 @@ public final class MinimapHudRenderer {
         final boolean circleFrame = config.minimapShape == ConfluxConfig.Shape.CIRCLE;
         final DimensionId currentDimension = gameBridge.session().dimension();
 
-        for (final WaypointRenderEntry waypoint : waypointRenderCatalog.snapshot()) {
-            if (!DimensionScale.isVisibleFrom(waypoint.dimensionId(), currentDimension)) {
-                continue;
-            }
-            final double worldX = DimensionScale.convertHorizontal(waypoint.x(), waypoint.dimensionId(), currentDimension);
-            final double worldZ = DimensionScale.convertHorizontal(waypoint.z(), waypoint.dimensionId(), currentDimension);
-            final double dx = worldX - player.x();
-            final double dz = worldZ - player.z();
+        for (final WaypointRenderEntry waypoint : waypointRenderCatalog.snapshot(currentDimension)) {
+            final double dx = waypoint.x() - player.x();
+            final double dz = waypoint.z() - player.z();
             if (config.waypointRenderDistance > 0) {
                 final double dy = waypoint.y() - player.y();
                 if (Math.sqrt(dx * dx + dy * dy + dz * dz) > config.waypointRenderDistance) {

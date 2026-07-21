@@ -2,7 +2,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.model.DimensionId;
-import cn.net.rms.confluxmap.core.net.shared.SharedWaypointClientState;
+import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import java.math.BigDecimal;
 import net.minecraft.client.MinecraftClient;
@@ -20,6 +20,7 @@ public final class WaypointCreateTargetScreen extends Screen {
     private final double z;
     private final SharedWaypointClient sharedWaypoints;
     private ButtonWidget publicButton;
+    private SharedWaypointAvailability sharedAvailability;
 
     public WaypointCreateTargetScreen(
         final Screen parent,
@@ -39,32 +40,46 @@ public final class WaypointCreateTargetScreen extends Screen {
 
     @Override
     protected void init() {
+        rebuild();
+    }
+
+    private void rebuild() {
+        clearChildren();
+        sharedAvailability = sharedWaypoints.availability();
+        publicButton = null;
+
         final int left = width / 2 - 100;
-        final int top = Math.max(48, height / 2 - 54);
+        final int top = Math.max(48, height / 2 - (sharedAvailability.enabled() ? 54 : 42));
+        int buttonY = top;
         addDrawableChild(new ButtonWidget(
-            left, top, 200, 20,
+            left, buttonY, 200, 20,
             new TranslatableText("confluxmap.screen.waypoint.create_local"),
             button -> MinecraftClient.getInstance().setScreen(
                 WaypointEditScreen.forCreate(parent, dimensionId, x, y, z)
             )
         ));
-        publicButton = addDrawableChild(new ButtonWidget(
-            left, top + 24, 200, 20,
-            new TranslatableText("confluxmap.screen.waypoint.create_public"),
-            button -> MinecraftClient.getInstance().setScreen(
-                WaypointEditScreen.forPublicCreate(parent, dimensionId, x, y, z)
-            )
-        ));
-        refreshPublicButton();
+        buttonY += 24;
+        if (sharedAvailability.enabled()) {
+            publicButton = addDrawableChild(new ButtonWidget(
+                left, buttonY, 200, 20,
+                new TranslatableText("confluxmap.screen.waypoint.create_public"),
+                button -> MinecraftClient.getInstance().setScreen(
+                    WaypointEditScreen.forPublicCreate(parent, dimensionId, x, y, z)
+                )
+            ));
+            publicButton.active = sharedAvailability.ready();
+            buttonY += 24;
+        }
         addDrawableChild(new ButtonWidget(
-            left, top + 48, 200, 20,
+            left, buttonY, 200, 20,
             new TranslatableText("confluxmap.screen.waypoint.create_chat"),
             button -> MinecraftClient.getInstance().setScreen(
                 WaypointEditScreen.forChatCreate(parent, dimensionId, x, y, z)
             )
         ));
+        buttonY += 30;
         addDrawableChild(new ButtonWidget(
-            left, top + 78, 200, 20,
+            left, buttonY, 200, 20,
             new TranslatableText("confluxmap.screen.waypoint.cancel"),
             button -> onClose()
         ));
@@ -82,7 +97,16 @@ public final class WaypointCreateTargetScreen extends Screen {
 
     @Override
     public void tick() {
-        refreshPublicButton();
+        super.tick();
+        final SharedWaypointAvailability availability = sharedWaypoints.availability();
+        if (sharedAvailability == null || availability.enabled() != sharedAvailability.enabled()) {
+            rebuild();
+            return;
+        }
+        sharedAvailability = availability;
+        if (publicButton != null) {
+            publicButton.active = availability.ready();
+        }
     }
 
     @Override
@@ -99,35 +123,25 @@ public final class WaypointCreateTargetScreen extends Screen {
         textRenderer.drawWithShadow(
             matrices, coords, width / 2f - textRenderer.getWidth(coords) / 2f, 34, 0xFFB8B8B8
         );
-        final String status = textRenderer.trimToWidth(
-            new TranslatableText(statusKey()).getString(), Math.max(40, width - 24)
-        );
-        textRenderer.drawWithShadow(
-            matrices,
-            status,
-            width / 2f - textRenderer.getWidth(status) / 2f,
-            height - 18,
-            0xFFB8B8B8
-        );
+        if (sharedAvailability != null && sharedAvailability.enabled()) {
+            final String status = textRenderer.trimToWidth(
+                new TranslatableText(statusKey()).getString(), Math.max(40, width - 24)
+            );
+            textRenderer.drawWithShadow(
+                matrices,
+                status,
+                width / 2f - textRenderer.getWidth(status) / 2f,
+                height - 18,
+                0xFFB8B8B8
+            );
+        }
         super.render(matrices, mouseX, mouseY, tickDelta);
     }
 
     private String statusKey() {
-        return switch (sharedWaypoints.state()) {
-            case UNKNOWN, HANDSHAKE -> "confluxmap.shared_waypoints.status.connecting";
-            case UNSUPPORTED -> "confluxmap.shared_waypoints.status.unsupported";
-            case SUPPORTED_DISABLED -> "confluxmap.shared_waypoints.status.disabled";
-            case ENABLED -> sharedWaypoints.isSynchronized()
-                ? "confluxmap.shared_waypoints.status.enabled"
-                : "confluxmap.shared_waypoints.status.syncing";
-        };
-    }
-
-    private void refreshPublicButton() {
-        if (publicButton != null) {
-            publicButton.active = sharedWaypoints.state() == SharedWaypointClientState.State.ENABLED
-                && sharedWaypoints.isSynchronized();
-        }
+        return sharedAvailability.ready()
+            ? "confluxmap.shared_waypoints.status.enabled"
+            : "confluxmap.shared_waypoints.status.syncing";
     }
 
     private static String formatCoordinate(final double value) {

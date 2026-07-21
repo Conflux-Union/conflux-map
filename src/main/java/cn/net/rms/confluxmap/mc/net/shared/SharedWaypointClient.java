@@ -7,6 +7,7 @@ import cn.net.rms.confluxmap.core.net.shared.HelloC2S;
 import cn.net.rms.confluxmap.core.net.shared.LockC2S;
 import cn.net.rms.confluxmap.core.net.shared.RemoveS2C;
 import cn.net.rms.confluxmap.core.net.shared.ResultS2C;
+import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointClientState;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointCodec;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointMessage;
@@ -99,6 +100,12 @@ public final class SharedWaypointClient {
 
     public SharedWaypointClientState.State state() {
         return stateMachine.view().state();
+    }
+
+    /** UI visibility/readiness derived from one internally consistent state snapshot. */
+    public SharedWaypointAvailability availability() {
+        final SharedWaypointClientState.View view = stateMachine.view();
+        return SharedWaypointAvailability.from(view.state(), view.synchronizedSnapshot());
     }
 
     /** Immutable, atomically published shared-waypoint catalog. */

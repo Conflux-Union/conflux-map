@@ -3,21 +3,16 @@ package cn.net.rms.confluxmap.core.waypoint;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 
 /**
- * Coordinate math and cross-dimension display filtering for waypoints. See
- * {@code docs/reference-specs/waypoint-ux.md} S3 for the behavior this
- * implements.
+ * Portal-coordinate math retained for callers that explicitly need to compare
+ * Overworld and Nether portal locations.
  *
  * <p>Vanilla declares a horizontal coordinate-scale multiplier per dimension
  * (1.0 for the Overworld and the End, 8.0 for the Nether) that its own portal
  * linking logic uses; the classic "Nether = Overworld / 8" rule falls
  * directly out of that. Y is never scaled, in any dimension.
  *
- * <p>Display filtering is a separate concern from the scale math: the
- * Overworld and the Nether are portal-linked (that's the entire reason the
- * 8:1 ratio exists), so a waypoint from either one is shown while standing in
- * the other, coordinates converted. The End has no portal correlation to the
- * other two - a raw coordinate there means nothing in Overworld/Nether space
- * - so End waypoints are confined to the End and vice versa.
+ * <p>Waypoint rendering deliberately does not use this conversion. A waypoint
+ * is visible only in its exact stored dimension.
  */
 public final class DimensionScale {
     private static final double NETHER_SCALE = 8.0;
@@ -44,18 +39,9 @@ public final class DimensionScale {
     }
 
     /**
-     * Whether a waypoint stored in {@code waypointDimension} should be
-     * displayed (minimap, fullscreen map, in-world) while the player is
-     * currently standing in {@code currentDimension}.
+     * Whether a waypoint belongs to the active render dimension.
      */
     public static boolean isVisibleFrom(final DimensionId waypointDimension, final DimensionId currentDimension) {
-        if (waypointDimension.equals(currentDimension)) {
-            return true;
-        }
-        return isPortalLinked(waypointDimension) && isPortalLinked(currentDimension);
-    }
-
-    private static boolean isPortalLinked(final DimensionId dimension) {
-        return dimension.equals(DimensionId.OVERWORLD) || dimension.equals(DimensionId.NETHER);
+        return waypointDimension.equals(currentDimension);
     }
 }

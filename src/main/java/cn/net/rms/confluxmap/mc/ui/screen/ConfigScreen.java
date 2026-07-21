@@ -3,7 +3,9 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
+import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import java.util.Arrays;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -70,18 +72,21 @@ public final class ConfigScreen extends Screen {
 
     private final ConfluxConfig config;
     private final ConfigIo configIo;
+    private final SharedWaypointClient sharedWaypoints;
 
     private Category category = Category.MINIMAP;
     private int rowWidth = MAX_ROW_WIDTH;
     /** Rows scroll in ROW_HEIGHT steps; widgets outside the viewport are simply not built. */
     private int scrollOffset;
     private int contentHeight;
+    private SharedWaypointAvailability sharedAvailability;
 
     public ConfigScreen() {
         super(new TranslatableText("confluxmap.screen.config.title"));
         final ConfluxMapClient app = ConfluxMapClient.get();
         this.config = app.config();
         this.configIo = app.configIo();
+        this.sharedWaypoints = app.sharedWaypoints();
     }
 
     /** Keep the world (and this session's capture pipeline) running while the screen is open. */
@@ -95,6 +100,18 @@ public final class ConfigScreen extends Screen {
         rowWidth = Math.min(MAX_ROW_WIDTH, width - MARGIN * 2);
         scrollOffset = 0;
         rebuild();
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        final SharedWaypointAvailability availability = sharedWaypoints.availability();
+        if (!availability.equals(sharedAvailability)) {
+            sharedAvailability = availability;
+            if (category == Category.WAYPOINTS) {
+                rebuild();
+            }
+        }
     }
 
     private int viewportHeight() {
@@ -124,6 +141,7 @@ public final class ConfigScreen extends Screen {
     }
 
     private void rebuild() {
+        sharedAvailability = sharedWaypoints.availability();
         clearChildren();
         addTabs();
         addRows();
@@ -215,10 +233,13 @@ public final class ConfigScreen extends Screen {
                     y, "confluxmap.config.waypoints.show_local",
                     () -> config.localWaypointsVisible, v -> config.localWaypointsVisible = v
                 );
-                y = addToggleRow(
-                    y, "confluxmap.config.waypoints.show_shared",
-                    () -> config.sharedWaypointsVisible, v -> config.sharedWaypointsVisible = v
-                );
+                if (sharedAvailability.enabled()) {
+                    y = addToggleRow(
+                        y, "confluxmap.config.waypoints.show_shared",
+                        () -> config.sharedWaypointsVisible, v -> config.sharedWaypointsVisible = v,
+                        sharedAvailability.ready()
+                    );
+                }
                 y = addIntSliderRow(
                     y, "confluxmap.config.waypoints.render_distance", 0, 100_000,
                     () -> config.waypointRenderDistance, v -> config.waypointRenderDistance = v, ConfigScreen::renderDistanceText
@@ -278,8 +299,18 @@ public final class ConfigScreen extends Screen {
     }
 
     private int addToggleRow(final int y, final String labelKey, final BooleanSupplier getter, final Consumer<Boolean> setter) {
+        return addToggleRow(y, labelKey, getter, setter, true);
+    }
+
+    private int addToggleRow(
+        final int y,
+        final String labelKey,
+        final BooleanSupplier getter,
+        final Consumer<Boolean> setter,
+        final boolean active
+    ) {
         if (rowVisible(y)) {
-            addDrawableChild(new ButtonWidget(
+            final ButtonWidget button = addDrawableChild(new ButtonWidget(
                 rowX(), y, rowWidth, ROW_HEIGHT - 2, boolLabel(labelKey, getter.getAsBoolean()),
                 b -> {
                     final boolean next = !getter.getAsBoolean();
@@ -287,6 +318,7 @@ public final class ConfigScreen extends Screen {
                     b.setMessage(boolLabel(labelKey, next));
                 }
             ));
+            button.active = active;
         }
         return y + ROW_HEIGHT;
     }

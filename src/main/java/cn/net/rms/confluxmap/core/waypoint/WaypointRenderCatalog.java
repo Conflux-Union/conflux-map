@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.waypoint;
 
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,6 +33,30 @@ public final class WaypointRenderCatalog {
         final List<Waypoint> local = config.localWaypointsVisible ? localWaypoints.list() : List.of();
         final List<SharedWaypoint> shared = config.sharedWaypointsVisible ? sharedWaypoints.get() : List.of();
         return merge(local, shared, config.localWaypointsVisible, config.sharedWaypointsVisible);
+    }
+
+    /**
+     * Immutable render-ready snapshot containing only waypoints stored in the
+     * requested dimension. Coordinates remain raw values in that dimension.
+     */
+    public List<WaypointRenderEntry> snapshot(final DimensionId dimension) {
+        return inDimension(snapshot(), dimension);
+    }
+
+    /** Pure exact-dimension filter kept public for deterministic unit coverage. */
+    public static List<WaypointRenderEntry> inDimension(
+        final List<WaypointRenderEntry> entries,
+        final DimensionId dimension
+    ) {
+        Objects.requireNonNull(entries, "entries");
+        Objects.requireNonNull(dimension, "dimension");
+        final List<WaypointRenderEntry> matching = new ArrayList<>(entries.size());
+        for (final WaypointRenderEntry entry : entries) {
+            if (entry.dimensionId().equals(dimension)) {
+                matching.add(entry);
+            }
+        }
+        return List.copyOf(matching);
     }
 
     /** Pure merge function kept public for deterministic unit coverage. */

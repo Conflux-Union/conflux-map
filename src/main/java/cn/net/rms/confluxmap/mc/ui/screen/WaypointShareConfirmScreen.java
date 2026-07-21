@@ -1,8 +1,10 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.ConfluxMapClient;
+import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatCodec;
+import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import java.math.BigDecimal;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
@@ -21,6 +23,8 @@ public final class WaypointShareConfirmScreen extends Screen {
     private final Screen parent;
     private final Waypoint waypoint;
     private final Target target;
+    private final SharedWaypointClient sharedWaypoints;
+    private ButtonWidget confirmButton;
     private String errorKey;
 
     public WaypointShareConfirmScreen(final Screen parent, final Waypoint waypoint, final Target target) {
@@ -32,12 +36,19 @@ public final class WaypointShareConfirmScreen extends Screen {
         this.parent = parent;
         this.waypoint = waypoint.copy();
         this.target = target;
+        this.sharedWaypoints = ConfluxMapClient.get().sharedWaypoints();
     }
 
     @Override
     protected void init() {
+        confirmButton = null;
+        final SharedWaypointAvailability availability = sharedWaypoints.availability();
+        if (target == Target.PUBLIC && !availability.enabled()) {
+            return;
+        }
+
         final int centerX = width / 2;
-        addDrawableChild(new ButtonWidget(
+        confirmButton = addDrawableChild(new ButtonWidget(
             centerX - 104,
             height - 32,
             100,
@@ -49,6 +60,9 @@ public final class WaypointShareConfirmScreen extends Screen {
             ),
             button -> confirm()
         ));
+        if (target == Target.PUBLIC) {
+            confirmButton.active = availability.ready();
+        }
         addDrawableChild(new ButtonWidget(
             centerX + 4,
             height - 32,
@@ -69,10 +83,26 @@ public final class WaypointShareConfirmScreen extends Screen {
         return false;
     }
 
+    @Override
+    public void tick() {
+        super.tick();
+        if (target != Target.PUBLIC) {
+            return;
+        }
+        final SharedWaypointAvailability availability = sharedWaypoints.availability();
+        if (!availability.enabled()) {
+            onClose();
+            return;
+        }
+        if (confirmButton != null) {
+            confirmButton.active = availability.ready();
+        }
+    }
+
     private void confirm() {
         errorKey = null;
         if (target == Target.PUBLIC) {
-            if (!ConfluxMapClient.get().sharedWaypoints().create(waypoint)) {
+            if (!sharedWaypoints.create(waypoint)) {
                 errorKey = "confluxmap.screen.waypoint.public_unavailable";
                 return;
             }

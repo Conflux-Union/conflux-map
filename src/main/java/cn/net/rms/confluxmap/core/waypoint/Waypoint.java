@@ -12,8 +12,8 @@ import java.util.UUID;
  * snapshots (see the store's class doc for the threading rationale).
  *
  * <p>{@link #x}/{@link #y}/{@link #z} are always the raw local coordinates in
- * {@link #dimensionId} - never pre-converted. {@link DimensionScale} converts
- * on display only when a waypoint is viewed from a different dimension.
+ * {@link #dimensionId} and never converted. Renderers only display a waypoint
+ * when that stored dimension exactly matches the active dimension.
  */
 public final class Waypoint {
     public enum Type { NORMAL, DEATH }
