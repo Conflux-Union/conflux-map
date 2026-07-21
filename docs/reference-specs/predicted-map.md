@@ -17,11 +17,12 @@ applied as one render-time tint across the whole predicted plane, so composition
 adjacent tiles at different brightness levels.
 
 Predicted terrain layers a fixed southwest directional relief over the captured-map absolute-height
-curve. The lit and shaded shoulders each average two axial samples and one diagonal sample, then
-their difference is normalized by the LOD's blocks per pixel. A one-block-per-axis diagonal rise
-reaches the capped 36% RGB brightness contrast. The one-pixel sampled margin makes the relief
-continuous across tile boundaries. Void or unknown cells disable relief for any kernel that crosses
-them.
+curve. At LOD0, where one texel represents one block, relief uses the same one-sided southwest
+neighbor as the captured map so shading cannot bleed into the block before a terrain edge. Higher
+LODs average two axial samples and one diagonal sample on each shoulder, then normalize their
+difference by the LOD's blocks per pixel. A one-block-per-axis diagonal rise reaches the capped 36%
+RGB brightness contrast. The one-pixel sampled margin makes the relief continuous across tile
+boundaries. Void or unknown cells disable relief for any kernel that crosses them.
 
 Rainy 1.17.1 biomes that cross vanilla's high-altitude freezing threshold render a deterministic
 snow cover. Prediction uses the midpoint snow line because the baseline does not carry vanilla's

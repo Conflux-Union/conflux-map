@@ -108,6 +108,31 @@ class PredictedTileComposerTest {
         );
     }
 
+    @Test
+    void lod0ReliefDoesNotBleedAcrossABlockEdge() {
+        final BaselineGrid grid = new BaselineGrid();
+        final DerivedGrid derived = new DerivedGrid();
+        Arrays.fill(grid.biomeId, 1);
+        Arrays.fill(derived.kind, (byte) SurfaceKind.LAND.ordinal());
+        Arrays.fill(derived.surfaceY, 80);
+        for (int z = -BaselineGrid.MARGIN; z < BaselineGrid.PIXELS + BaselineGrid.MARGIN; z++) {
+            for (int x = 128; x < BaselineGrid.PIXELS + BaselineGrid.MARGIN; x++) {
+                derived.surfaceY[BaselineGrid.index(x, z)] = 96;
+            }
+        }
+
+        final int[] pixels = PredictedTileComposer.compose(
+            derived, grid, PredictionPalette.defaults(), null, PredictionViewMode.EVERYWHERE, 0
+        );
+        final int z = 64;
+        final int flatLow = pixels[z * BaselineGrid.PIXELS + 126];
+        final int lowEdge = pixels[z * BaselineGrid.PIXELS + 127];
+        final int highEdge = pixels[z * BaselineGrid.PIXELS + 128];
+
+        assertEquals(flatLow, lowEdge, "LOD0 relief must not soften the block before a height boundary");
+        assertNotEquals(lowEdge, highEdge, "the height boundary itself must remain visible");
+    }
+
     private static int composeReliefPlanePixel(final int centerHeight, final int risePerBlock, final int lod) {
         final BaselineGrid grid = new BaselineGrid();
         final DerivedGrid derived = new DerivedGrid();
@@ -130,8 +155,8 @@ class PredictedTileComposerTest {
     @Test
     void predictionSlopeNormalizesForBlocksPerPixel() {
         assertEquals(
-            composeSlopePixel(80, 81, 0),
-            composeSlopePixel(80, 88, 3),
+            composeReliefPlanePixel(80, 1, 0),
+            composeReliefPlanePixel(80, 1, 3),
             "the same one-block-per-block slope should shade equally across LODs"
         );
     }
@@ -252,10 +277,12 @@ class PredictedTileComposerTest {
         Arrays.fill(derived.kind, (byte) SurfaceKind.FOLIAGE.ordinal());
         Arrays.fill(derived.surfaceY, 73);
         final int pixel = 31 * 256 + 21;
+        final int southwestNeighbor = 32 * 256 + 20;
 
         final CorrectionTile corrections = new CorrectionTile();
         corrections.applyPatch(1L, new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(java.util.List.of(
-            new PatchCodec.Sample(pixel, 35, 79, SurfaceKind.LAND.ordinal(), 11, 0)
+            new PatchCodec.Sample(pixel, 35, 79, SurfaceKind.LAND.ordinal(), 11, 0),
+            new PatchCodec.Sample(southwestNeighbor, 35, 79, SurfaceKind.LAND.ordinal(), 11, 0)
         )));
         final int[] corrected = PredictedTileComposer.compose(
             derived, grid, PredictionPalette.defaults(), corrections, PredictionViewMode.EVERYWHERE, 0

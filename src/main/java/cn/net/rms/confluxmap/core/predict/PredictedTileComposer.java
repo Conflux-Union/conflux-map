@@ -135,6 +135,9 @@ public final class PredictedTileComposer {
         final int z,
         final int blocksPerPixel
     ) {
+        if (blocksPerPixel == 1) {
+            return blockAlignedReliefMultiplier(surface, kinds, x, z);
+        }
         final Integer litWest = slopeSampleHeight(surface, kinds, x - 1, z);
         final Integer litSouth = slopeSampleHeight(surface, kinds, x, z + 1);
         final Integer litDiagonal = slopeSampleHeight(surface, kinds, x - 1, z + 1);
@@ -149,6 +152,27 @@ public final class PredictedTileComposer {
         final double litMean = (litWest + litSouth + litDiagonal) / 3.0;
         final double darkMean = (darkEast + darkNorth + darkDiagonal) / 3.0;
         final double risePerBlock = (litMean - darkMean) / (2.0 * blocksPerPixel);
+        final double normalized = Math.max(-1.0, Math.min(1.0, risePerBlock));
+        return 1.0 + RELIEF_CONTRAST * normalized;
+    }
+
+    /**
+     * LOD0 has one output texel per block, so its relief follows the captured map's fixed
+     * southwest neighbor instead of sampling across both sides of an edge. The magnitude remains
+     * continuous to avoid turning every one-block interpolation step into a full contour band.
+     */
+    private static double blockAlignedReliefMultiplier(
+        final int[] surface,
+        final byte[] kinds,
+        final int x,
+        final int z
+    ) {
+        final Integer litDiagonal = slopeSampleHeight(surface, kinds, x - 1, z + 1);
+        if (litDiagonal == null) {
+            return 1.0;
+        }
+        final int center = surface[BaselineGrid.index(x, z)];
+        final double risePerBlock = (litDiagonal - center) / 2.0;
         final double normalized = Math.max(-1.0, Math.min(1.0, risePerBlock));
         return 1.0 + RELIEF_CONTRAST * normalized;
     }
