@@ -75,6 +75,7 @@ final result: blocked
 - Confirm the panel visually expands to the right and retracts toward the icon.
 - Verify local, shared, and locked outlines against bright sky, foliage, darkness, and terrain occlusion.
 - Stand behind a solid wall and confirm the icon, expanded panel, and text remain fully visible while the beam keeps its world-space occlusion.
+- Fly through and above the cloud layer and confirm clouds and weather never tint or cover the HUD marker.
 - Verify the existing vertical light beam is visually unchanged.
 
 **Comparison History**
