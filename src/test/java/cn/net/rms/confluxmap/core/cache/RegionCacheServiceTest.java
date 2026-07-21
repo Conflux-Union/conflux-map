@@ -26,7 +26,7 @@ class RegionCacheServiceTest {
     void firstSessionMigratesLegacySingleplayerCacheDirectory(@TempDir final Path tempDir) throws IOException {
         final Path saveRoot = createSave(tempDir.resolve("saves").resolve("New World"));
         final WorldIdentity world = WorldIdentity.singleplayerSave(saveRoot);
-        final Path legacyDir = tempDir.resolve("local").resolve(world.legacyWorldId());
+        final Path legacyDir = tempDir.resolve("local").resolve(world.legacyStorageIds().get(0));
         final Path currentDir = tempDir.resolve("local").resolve(world.worldId());
         Files.createDirectories(legacyDir);
         Files.writeString(legacyDir.resolve("marker"), "legacy cache");

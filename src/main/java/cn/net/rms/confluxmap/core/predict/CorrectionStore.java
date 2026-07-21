@@ -3,26 +3,33 @@ package cn.net.rms.confluxmap.core.predict;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
+import cn.net.rms.confluxmap.core.store.WorldStorageMigration;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /** Session-scoped correction store with optional persistent tile files. */
 public final class CorrectionStore {
+    private static final Logger LOGGER = LogManager.getLogger("ConfluxMap/CorrectionStore");
+
     public record Key(String dimension, int lod, int tileX, int tileZ) {
     }
 
     private final Path root;
     private WorldIdentity world = new WorldIdentity("local", "world");
+    private Path worldRoot;
     private final Map<Key, CorrectionTile> tiles = new HashMap<>();
     private final Map<Key, Boolean> dirty = new HashMap<>();
     private long lastFlushMillis;
 
     public CorrectionStore(final Path root) {
         this.root = root;
+        this.worldRoot = root.resolve(world.serverId()).resolve(world.worldId());
     }
 
     public synchronized CorrectionTile get(final DimensionId dimension, final int lod, final int tileX, final int tileZ) {
@@ -102,11 +109,11 @@ public final class CorrectionStore {
         flush();
         clear();
         this.world = world;
+        this.worldRoot = WorldStorageMigration.directory(root, world, LOGGER);
     }
 
     private Path pathFor(final Key key) {
-        return root.resolve(sanitize(world.serverId())).resolve(sanitize(world.worldId()))
-            .resolve(sanitize(key.dimension())).resolve("pred").resolve(Integer.toString(key.lod()))
+        return worldRoot.resolve(sanitize(key.dimension())).resolve("pred").resolve(Integer.toString(key.lod()))
             .resolve("t." + key.tileX() + "." + key.tileZ() + ".cfp");
     }
 

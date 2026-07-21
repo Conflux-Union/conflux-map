@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -82,6 +84,37 @@ class StructureIndexTest {
             "ruined_portal:0:0"
         ), firstQuery);
         assertEquals(firstQuery, requests);
+    }
+
+    @Test
+    void persistentIdentityMigratesDirectoryBasedStructureIndex() throws IOException {
+        final Path saveRoot = tempDir.resolve("saves").resolve("New World");
+        Files.createDirectories(saveRoot);
+        Files.writeString(saveRoot.resolve("level.dat"), "test save");
+        final WorldIdentity currentWorld = WorldIdentity.singleplayerSave(saveRoot);
+        final WorldIdentity directoryBasedWorld = new WorldIdentity("local", currentWorld.legacyStorageIds().get(0));
+        final Path cacheRoot = tempDir.resolve("cache");
+        final StructureIndex oldIndex = new StructureIndex(
+            cacheRoot,
+            directoryBasedWorld,
+            DimensionId.OVERWORLD,
+            (type, regionX, regionZ) -> type == StructureIndex.StructureType.VILLAGE
+                ? new long[] {pack(32, 48)} : new long[0]
+        );
+        oldIndex.query(0, 64, 0, 64);
+        oldIndex.save();
+        final Path oldRoot = cacheRoot.resolve("structures").resolve("local").resolve(directoryBasedWorld.worldId());
+
+        final StructureIndex currentIndex = new StructureIndex(
+            cacheRoot,
+            currentWorld,
+            DimensionId.OVERWORLD,
+            (type, regionX, regionZ) -> new long[0]
+        );
+
+        assertTrue(currentIndex.query(0, 64, 0, 64).stream()
+            .anyMatch(marker -> marker.blockX() == 32 && marker.blockZ() == 48));
+        assertFalse(Files.exists(oldRoot));
     }
 
     @Test
