@@ -76,9 +76,20 @@ public final class FullscreenMapScreen extends Screen {
     private static final double ZOOM_STEP = 1.26;
 
     private static final int MARGIN = 6;
-    private static final int CONTROL_WIDTH = 104;
-    private static final int CONTROL_HEIGHT = 20;
+    private static final int CONTROL_SIZE = 22;
+    private static final int CONTROL_ICON_SIZE = 16;
     private static final int CONTROL_GAP = 3;
+    private static final int LOCAL_CONTROL_ACCENT = 0xFFFFD83D;
+    private static final int SHARED_CONTROL_ACCENT = 0xFF55DDE0;
+    private static final Identifier LOCAL_WAYPOINT_ICON = new Identifier(
+        "confluxmap", "textures/gui/waypoint_local.png"
+    );
+    private static final Identifier SHARED_WAYPOINT_ICON = new Identifier(
+        "confluxmap", "textures/gui/waypoint_shared.png"
+    );
+    private static final Identifier MANAGE_WAYPOINT_ICON = new Identifier(
+        "confluxmap", "textures/gui/waypoint_manage.png"
+    );
     private static final int TEXT_COLOR = 0xFFFFFFFF;
     private static final int SYNCING_TEXT_COLOR = 0xFFFFE066;
     private static final int SYNCED_TEXT_COLOR = 0xFF80E080;
@@ -136,7 +147,9 @@ public final class FullscreenMapScreen extends Screen {
     private double leftPressY;
     private boolean mapPointerPress;
     private SharedWaypointAvailability sharedAvailability;
-    private ButtonWidget sharedVisibilityButton;
+    private MapIconButton localVisibilityButton;
+    private MapIconButton sharedVisibilityButton;
+    private MapIconButton manageWaypointsButton;
     private int waypointControlsBottom;
 
     public FullscreenMapScreen(final KeyBinding openMapKey) {
@@ -182,35 +195,40 @@ public final class FullscreenMapScreen extends Screen {
     private void rebuildWaypointControls() {
         clearChildren();
         sharedAvailability = sharedWaypoints.availability();
+        localVisibilityButton = null;
         sharedVisibilityButton = null;
+        manageWaypointsButton = null;
 
-        final int x = width - MARGIN - CONTROL_WIDTH;
+        final int x = width - MARGIN - CONTROL_SIZE;
         int y = MARGIN + textRenderer.fontHeight + 5;
-        addDrawableChild(new ButtonWidget(
-            x, y, CONTROL_WIDTH, CONTROL_HEIGHT, visibilityLabel(true), b -> {
+        localVisibilityButton = addDrawableChild(new MapIconButton(
+            x, y, LOCAL_WAYPOINT_ICON, LOCAL_CONTROL_ACCENT, b -> {
                 config.localWaypointsVisible = !config.localWaypointsVisible;
                 ConfluxMapClient.get().configIo().save(config);
-                b.setMessage(visibilityLabel(true));
+                localVisibilityButton.setSelected(config.localWaypointsVisible);
             }
         ));
-        y += CONTROL_HEIGHT + CONTROL_GAP;
+        localVisibilityButton.setSelected(config.localWaypointsVisible);
+        y += CONTROL_SIZE + CONTROL_GAP;
         if (sharedAvailability.enabled()) {
-            sharedVisibilityButton = addDrawableChild(new ButtonWidget(
-                x, y, CONTROL_WIDTH, CONTROL_HEIGHT, visibilityLabel(false), b -> {
+            sharedVisibilityButton = addDrawableChild(new MapIconButton(
+                x, y, SHARED_WAYPOINT_ICON, SHARED_CONTROL_ACCENT, b -> {
                     config.sharedWaypointsVisible = !config.sharedWaypointsVisible;
                     ConfluxMapClient.get().configIo().save(config);
-                    b.setMessage(visibilityLabel(false));
+                    sharedVisibilityButton.setSelected(config.sharedWaypointsVisible);
                 }
             ));
+            sharedVisibilityButton.setSelected(config.sharedWaypointsVisible);
             sharedVisibilityButton.active = sharedAvailability.ready();
-            y += CONTROL_HEIGHT + CONTROL_GAP;
+            y += CONTROL_SIZE + CONTROL_GAP;
         }
-        addDrawableChild(new ButtonWidget(
-            x, y, CONTROL_WIDTH, CONTROL_HEIGHT,
-            new TranslatableText("confluxmap.screen.waypoints.manage"),
-            b -> MinecraftClient.getInstance().setScreen(new WaypointListScreen(this, WaypointListScreen.Tab.LOCAL))
+        manageWaypointsButton = addDrawableChild(new MapIconButton(
+            x, y, MANAGE_WAYPOINT_ICON, 0,
+            b -> MinecraftClient.getInstance().setScreen(
+                new WaypointListScreen(this, WaypointListScreen.Tab.LOCAL)
+            )
         ));
-        waypointControlsBottom = y + CONTROL_HEIGHT;
+        waypointControlsBottom = y + CONTROL_SIZE;
     }
 
     @Override
@@ -227,10 +245,12 @@ public final class FullscreenMapScreen extends Screen {
         }
     }
 
-    private Text visibilityLabel(final boolean local) {
+    private Text visibilityTooltip(final boolean local) {
         final boolean visible = local ? config.localWaypointsVisible : config.sharedWaypointsVisible;
         return new TranslatableText(
-            local ? "confluxmap.map.waypoints.local" : "confluxmap.map.waypoints.shared",
+            local
+                ? "confluxmap.map.waypoints.local.tooltip"
+                : "confluxmap.map.waypoints.shared.tooltip",
             new TranslatableText(visible ? "confluxmap.value.on" : "confluxmap.value.off").getString()
         );
     }
@@ -334,7 +354,7 @@ public final class FullscreenMapScreen extends Screen {
     }
 
     private boolean isOverWaypointControls(final double mouseX, final double mouseY) {
-        final int left = width - MARGIN - CONTROL_WIDTH;
+        final int left = width - MARGIN - CONTROL_SIZE;
         final int top = MARGIN + textRenderer.fontHeight + 5;
         return mouseX >= left && mouseX <= width - MARGIN
             && mouseY >= top && mouseY <= waypointControlsBottom;
@@ -404,6 +424,82 @@ public final class FullscreenMapScreen extends Screen {
         drawCursorCoords(matrices, mouseX, mouseY);
 
         super.render(matrices, mouseX, mouseY, tickDelta);
+        renderWaypointControlTooltip(matrices, mouseX, mouseY);
+    }
+
+    private void renderWaypointControlTooltip(
+        final MatrixStack matrices,
+        final int mouseX,
+        final int mouseY
+    ) {
+        final Text tooltip;
+        if (localVisibilityButton != null && localVisibilityButton.isHovered()) {
+            tooltip = visibilityTooltip(true);
+        } else if (sharedVisibilityButton != null && sharedVisibilityButton.isHovered()) {
+            tooltip = sharedVisibilityButton.active
+                ? visibilityTooltip(false)
+                : new TranslatableText("confluxmap.map.waypoints.shared.unavailable");
+        } else if (manageWaypointsButton != null && manageWaypointsButton.isHovered()) {
+            tooltip = new TranslatableText("confluxmap.map.waypoints.manage.tooltip");
+        } else {
+            return;
+        }
+        renderTooltip(matrices, tooltip, mouseX, mouseY);
+    }
+
+    private static final class MapIconButton extends ButtonWidget {
+        private static final int ENABLED_ICON_TINT = 0xFFFFFFFF;
+        private static final int DISABLED_ICON_TINT = 0xFF777777;
+        private final Identifier icon;
+        private final int selectedAccent;
+        private boolean selected;
+
+        MapIconButton(
+            final int x,
+            final int y,
+            final Identifier icon,
+            final int selectedAccent,
+            final PressAction onPress
+        ) {
+            super(x, y, CONTROL_SIZE, CONTROL_SIZE, Text.of(""), onPress);
+            this.icon = icon;
+            this.selectedAccent = selectedAccent;
+        }
+
+        void setSelected(final boolean selected) {
+            this.selected = selected;
+        }
+
+        @Override
+        public void renderButton(
+            final MatrixStack matrices,
+            final int mouseX,
+            final int mouseY,
+            final float delta
+        ) {
+            super.renderButton(matrices, mouseX, mouseY, delta);
+            if (selected && selectedAccent != 0) {
+                RenderUtil.fillRect(matrices, x + 1, y + 1, getWidth() - 2, 1, selectedAccent);
+                RenderUtil.fillRect(matrices, x + 1, y + getHeight() - 2, getWidth() - 2, 1, selectedAccent);
+                RenderUtil.fillRect(matrices, x + 1, y + 1, 1, getHeight() - 2, selectedAccent);
+                RenderUtil.fillRect(matrices, x + getWidth() - 2, y + 1, 1, getHeight() - 2, selectedAccent);
+            }
+            final int iconX = x + (getWidth() - CONTROL_ICON_SIZE) / 2;
+            final int iconY = y + (getHeight() - CONTROL_ICON_SIZE) / 2;
+            RenderUtil.bindTexture(MinecraftClient.getInstance(), icon);
+            RenderUtil.drawTintedQuad(
+                matrices,
+                iconX,
+                iconY,
+                CONTROL_ICON_SIZE,
+                CONTROL_ICON_SIZE,
+                0f,
+                0f,
+                1f,
+                1f,
+                active && (selected || selectedAccent == 0) ? ENABLED_ICON_TINT : DISABLED_ICON_TINT
+            );
+        }
     }
 
     private int currentLod() {
