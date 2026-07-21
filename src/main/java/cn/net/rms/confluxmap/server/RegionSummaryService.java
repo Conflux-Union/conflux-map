@@ -35,7 +35,7 @@ import net.minecraft.util.WorldSavePath;
  */
 public final class RegionSummaryService {
     private final ServerConfig config;
-    private final ChunkSummarizer summarizer = new ChunkSummarizer();
+    private final ChunkSummarizer summarizer = new ChunkSummarizer(new RegistryMapColors());
     private final PatchBuilder patchBuilder = new PatchBuilder();
     private final Map<UUID, PlayerChannel> channels = new ConcurrentHashMap<>();
 

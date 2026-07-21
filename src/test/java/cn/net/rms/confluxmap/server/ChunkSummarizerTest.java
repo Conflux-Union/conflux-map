@@ -68,6 +68,47 @@ class ChunkSummarizerTest {
         assertEquals(SurfaceKind.LAND.ordinal(), column.kind());
     }
 
+    @Test
+    void resolvedMapColorOverridesTheHeuristicLandColor() {
+        final ChunkSummarizer.MapColorResolver resolver =
+            name -> "minecraft:oak_planks".equals(name) ? 13 : -1;
+        final SummaryCodec.Column column = new ChunkSummarizer(resolver)
+            .summarize(oceanChunk("minecraft:oak_planks"))
+            .columns()[0];
+
+        assertEquals(SurfaceKind.LAND.ordinal(), column.kind());
+        assertEquals(13, column.mapColorId());
+    }
+
+    @Test
+    void withoutAResolverTheHeuristicLandColorRemains() {
+        final SummaryCodec.Column column = new ChunkSummarizer()
+            .summarize(oceanChunk("minecraft:oak_planks"))
+            .columns()[0];
+
+        assertEquals(1, column.mapColorId());
+    }
+
+    @Test
+    void clearMapColorFallsBackToTheHeuristic() {
+        final SummaryCodec.Column column = new ChunkSummarizer(name -> 0)
+            .summarize(oceanChunk("minecraft:glass"))
+            .columns()[0];
+
+        assertEquals(SurfaceKind.LAND.ordinal(), column.kind());
+        assertEquals(1, column.mapColorId());
+    }
+
+    @Test
+    void waterKeepsItsFixedColorEvenWithAResolver() {
+        final SummaryCodec.Column column = new ChunkSummarizer(name -> 40)
+            .summarize(oceanChunk())
+            .columns()[0];
+
+        assertEquals(SurfaceKind.WATER.ordinal(), column.kind());
+        assertEquals(12, column.mapColorId());
+    }
+
     private static void assertOceanSurface(final String blockName) {
         final SummaryCodec.Chunk chunk = new ChunkSummarizer().summarize(oceanChunk(blockName));
         final SummaryCodec.Column column = chunk.columns()[0];

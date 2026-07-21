@@ -9,7 +9,10 @@ import java.util.Set;
 /** Shared tolerant equivalence predicate used by both the client and companion server. */
 public final class DiffSpec {
     private static final int MAP_COLOR_NONE = Proto.MAP_COLOR_NONE;
-    private static final Set<Integer> NATURAL_GROUND_MAP_COLORS = Set.of(MAP_COLOR_NONE, 1, 2, 7, 8, 13);
+    // Grass, sand, plant, snow, dirt and wood: what naturally sits under a real tree canopy.
+    // 10 (dirt) is present because the registry-backed summarizer reports real map colours;
+    // the pre-registry heuristic folded dirt into 1.
+    private static final Set<Integer> NATURAL_GROUND_MAP_COLORS = Set.of(MAP_COLOR_NONE, 1, 2, 7, 8, 10, 13);
 
     private DiffSpec() {
     }
@@ -132,12 +135,16 @@ public final class DiffSpec {
             case ICE:
                 result.add(3);
                 result.add(4);
+                result.add(5);
+                result.add(8);
                 result.add(11);
                 result.add(12);
                 break;
             case FOLIAGE:
+                result.add(1);
                 result.add(7);
                 result.add(8);
+                result.add(10);
                 result.add(13);
                 break;
             default:
@@ -147,6 +154,7 @@ public final class DiffSpec {
                 result.add(2);
                 result.add(7);
                 result.add(8);
+                result.add(10);
                 result.add(13);
                 break;
         }

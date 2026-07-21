@@ -10,6 +10,28 @@ import net.minecraft.nbt.NbtList;
 
 /** Converts a serialized 1.17.1 chunk into a cheap surface-only summary without loading a chunk. */
 public final class ChunkSummarizer {
+    /**
+     * Resolves a block id string (e.g. {@code minecraft:oak_planks}) to its vanilla map-colour
+     * id, or a negative value when unknown. Kept as a seam so the registry-backed resolver
+     * (which needs a bootstrapped Minecraft) stays out of this NBT-only class and its tests.
+     */
+    @FunctionalInterface
+    public interface MapColorResolver {
+        int mapColorId(String blockName);
+    }
+
+    private static final MapColorResolver UNRESOLVED = name -> -1;
+
+    private final MapColorResolver mapColors;
+
+    public ChunkSummarizer() {
+        this(UNRESOLVED);
+    }
+
+    public ChunkSummarizer(final MapColorResolver mapColors) {
+        this.mapColors = mapColors == null ? UNRESOLVED : mapColors;
+    }
+
     public SummaryCodec.Chunk summarize(final NbtCompound root) {
         if (root == null || !root.contains("Level", 10)) {
             return SummaryCodec.Chunk.empty();
@@ -77,7 +99,7 @@ public final class ChunkSummarizer {
         return result;
     }
 
-    private static BlockInfo blockAt(final List<Section> sections, final int x, final int y, final int z) {
+    private BlockInfo blockAt(final List<Section> sections, final int x, final int y, final int z) {
         return classify(blockNameAt(sections, x, y, z));
     }
 
@@ -121,7 +143,7 @@ public final class ChunkSummarizer {
         return index >= 0 && index < biomes.length ? biomes[index] : 1;
     }
 
-    private static BlockInfo classify(final String value) {
+    private BlockInfo classify(final String value) {
         final String name = value == null ? "minecraft:air" : value;
         final SurfaceKind kind;
         final int color;
@@ -133,29 +155,39 @@ public final class ChunkSummarizer {
             color = 4;
         } else if (name.contains("leaves") || name.contains("vine")) {
             kind = SurfaceKind.FOLIAGE;
-            color = 7;
+            color = resolveOr(name, 7);
         } else if (name.contains("snow") || name.contains("powder_snow")) {
             kind = SurfaceKind.SNOW;
-            color = 3;
+            color = resolveOr(name, 3);
         } else if (name.contains("ice")) {
             kind = SurfaceKind.ICE;
-            color = 12;
+            color = resolveOr(name, 12);
         } else if (name.endsWith("sand") || name.contains("sandstone")) {
             kind = SurfaceKind.SAND;
-            color = 2;
+            color = resolveOr(name, 2);
         } else if (name.contains("bedrock")) {
             kind = SurfaceKind.BEDROCK_CEILING;
-            color = 11;
+            color = resolveOr(name, 11);
         } else if (name.endsWith("air") || name.endsWith("cave_air") || name.endsWith("void_air")) {
             kind = SurfaceKind.UNKNOWN;
             color = ProtoColor.NONE;
         } else {
             kind = SurfaceKind.LAND;
-            // The exact registry MapColor is not available while reading NBT off-thread. This
-            // conservative id is enough to flag non-natural block names through the same wire.
-            color = name.contains("stone") || name.contains("brick") || name.contains("concrete") ? 11 : 1;
+            // Heuristic fallback for when no registry resolver is wired (tests) or the name is
+            // unknown to it: enough to flag non-natural block names through the same wire.
+            color = resolveOr(name, name.contains("stone") || name.contains("brick") || name.contains("concrete") ? 11 : 1);
         }
         return new BlockInfo(kind, color);
+    }
+
+    /**
+     * The registry colour when available, else the heuristic fallback. Id 0 (CLEAR, e.g. glass)
+     * also falls back: the client renders corrected pixels straight from the map-colour table,
+     * and a transparent pixel would punch a hole where a block demonstrably exists.
+     */
+    private int resolveOr(final String name, final int fallback) {
+        final int resolved = mapColors.mapColorId(name);
+        return resolved > 0 ? resolved : fallback;
     }
 
     private static int bitsFor(final int size) {
