@@ -7,7 +7,7 @@ public final class SharedWaypointProto {
 
     public static final String CHANNEL_ID = "confluxmap:waypoints_v1";
     public static final int PROTO_MAJOR = 1;
-    public static final int PROTO_MINOR = 0;
+    public static final int PROTO_MINOR = 1;
 
     public static final int MSG_HELLO_C2S = 0x01;
     public static final int MSG_STATUS_S2C = 0x02;
@@ -39,4 +39,5 @@ public final class SharedWaypointProto {
     public static final int RESULT_ERROR_PERSISTENCE_FAILED = 8;
     public static final int RESULT_ERROR_ID_GENERATION_FAILED = 9;
     public static final int RESULT_ERROR_DISABLED = 10;
+    public static final int RESULT_ERROR_DUPLICATE_LOCATION = 11;
 }

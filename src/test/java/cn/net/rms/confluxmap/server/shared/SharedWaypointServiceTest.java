@@ -61,6 +61,84 @@ class SharedWaypointServiceTest {
     }
 
     @Test
+    void duplicateBlockLocationIsRejectedAcrossPlayersWithoutPersistence() {
+        final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
+        final SharedWaypointService.CreateRequest first = createRequestAt(
+            uuid(102), 0L, "First", DimensionId.OVERWORLD, 12.1d, 64.9d, -8.1d
+        );
+        final SharedWaypointService.CreateRequest duplicate = createRequestAt(
+            uuid(103), 1L, "Second", DimensionId.OVERWORLD, 12.9d, 64.1d, -8.9d
+        );
+
+        assertTrue(fixture.service.create(PLAYER, first).applied());
+        final SharedWaypointService.MutationResult result = fixture.service.create(OTHER, duplicate);
+
+        assertEquals(SharedWaypointService.MutationError.DUPLICATE_LOCATION, result.error());
+        assertEquals(1L, result.snapshot().revision());
+        assertEquals(1, result.snapshot().waypoints().size());
+        assertEquals(1, fixture.persistence.saves);
+    }
+
+    @Test
+    void sameCoordinatesInDifferentDimensionsAndDifferentHeightsRemainDistinct() {
+        final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
+
+        assertTrue(fixture.service.create(PLAYER, createRequestAt(
+            uuid(104), 0L, "Surface", DimensionId.OVERWORLD, 12d, 64d, -8d
+        )).applied());
+        assertTrue(fixture.service.create(OTHER, createRequestAt(
+            uuid(106), 1L, "Cave", DimensionId.OVERWORLD, 12d, 63d, -8d
+        )).applied());
+        assertTrue(fixture.service.create(OPERATOR, createRequestAt(
+            uuid(107), 2L, "Nether", DimensionId.NETHER, 12d, 64d, -8d
+        )).applied());
+
+        assertEquals(3, fixture.service.snapshot().waypoints().size());
+        assertEquals(3, fixture.persistence.saves);
+    }
+
+    @Test
+    void deletingTheOnlyWaypointAtALocationAllowsRepublishing() {
+        final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
+        final SharedWaypoint created = fixture.service.create(
+            PLAYER, createRequestAt(uuid(108), 0L, "Old", DimensionId.OVERWORLD, 3d, 70d, 4d)
+        ).delta().waypoint();
+
+        assertTrue(fixture.service.delete(
+            PLAYER, new SharedWaypointService.DeleteRequest(uuid(109), 1L, created.id())
+        ).applied());
+        assertTrue(fixture.service.create(
+            OTHER, createRequestAt(uuid(115), 2L, "New", DimensionId.OVERWORLD, 3.9d, 70.1d, 4.2d)
+        ).applied());
+    }
+
+    @Test
+    void historicalDuplicateLocationsRemainReadableButBlockNewDuplicates() {
+        final SharedWaypoint first = new SharedWaypoint(
+            uuid(1_600), PLAYER.playerId(), PLAYER.playerName(), "First", DimensionId.OVERWORLD,
+            8.1d, 70.2d, -4.1d, 0xFF33AA66, Waypoint.Type.NORMAL, false, 1L, 1L
+        );
+        final SharedWaypoint second = new SharedWaypoint(
+            uuid(1_601), OTHER.playerId(), OTHER.playerName(), "Second", DimensionId.OVERWORLD,
+            8.9d, 70.8d, -4.9d, 0xFF33AA66, Waypoint.Type.NORMAL, false, 2L, 2L
+        );
+        final Fixture fixture = fixture(
+            new SharedWaypointStore.Snapshot(2L, List.of(first, second)),
+            new SharedWaypointService.Limits(20, 10, 30)
+        );
+
+        assertEquals(2, fixture.service.snapshot().waypoints().size());
+        final SharedWaypointService.MutationResult result = fixture.service.create(
+            OPERATOR,
+            createRequestAt(uuid(1_602), 2L, "Third", DimensionId.OVERWORLD, 8.5d, 70.5d, -4.5d)
+        );
+
+        assertEquals(SharedWaypointService.MutationError.DUPLICATE_LOCATION, result.error());
+        assertEquals(2, result.snapshot().waypoints().size());
+        assertEquals(0, fixture.persistence.saves);
+    }
+
+    @Test
     void operationIdIsBoundToTheOriginalActionAndPayload() {
         final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
         final UUID operationId = uuid(105);
@@ -352,7 +430,22 @@ class SharedWaypointServiceTest {
     ) {
         return new SharedWaypointService.CreateRequest(
             operationId, expectedRevision, name, DimensionId.OVERWORLD,
-            12.5d, 64d, -8.25d, 0xFF33AA66, Waypoint.Type.NORMAL
+            operationId.getLeastSignificantBits(), 64d, -8.25d, 0xFF33AA66, Waypoint.Type.NORMAL
+        );
+    }
+
+    private static SharedWaypointService.CreateRequest createRequestAt(
+        final UUID operationId,
+        final long expectedRevision,
+        final String name,
+        final DimensionId dimensionId,
+        final double x,
+        final double y,
+        final double z
+    ) {
+        return new SharedWaypointService.CreateRequest(
+            operationId, expectedRevision, name, dimensionId,
+            x, y, z, 0xFF33AA66, Waypoint.Type.NORMAL
         );
     }
 

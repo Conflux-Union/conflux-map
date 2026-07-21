@@ -18,6 +18,7 @@ import cn.net.rms.confluxmap.core.net.shared.StatusS2C;
 import cn.net.rms.confluxmap.core.net.shared.SubscribeC2S;
 import cn.net.rms.confluxmap.core.net.shared.UpsertS2C;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
+import cn.net.rms.confluxmap.core.shared.SharedWaypointLocationKey;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import io.netty.buffer.Unpooled;
 import java.util.LinkedHashMap;
@@ -66,6 +67,12 @@ public final class SharedWaypointClient {
         }
     }
 
+    private record PendingOperation(OperationKind kind, SharedWaypointLocationKey createLocation) {
+        private PendingOperation {
+            Objects.requireNonNull(kind, "kind");
+        }
+    }
+
     public interface Listener {
         default void onStateChanged(final SharedWaypointClientState.State state) {
         }
@@ -80,9 +87,9 @@ public final class SharedWaypointClient {
     private final MinecraftClient client;
     private final SharedWaypointClientState stateMachine = new SharedWaypointClientState();
     private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
-    private final Map<UUID, OperationKind> pendingOperations = new LinkedHashMap<>() {
+    private final Map<UUID, PendingOperation> pendingOperations = new LinkedHashMap<>() {
         @Override
-        protected boolean removeEldestEntry(final Map.Entry<UUID, OperationKind> eldest) {
+        protected boolean removeEldestEntry(final Map.Entry<UUID, PendingOperation> eldest) {
             return size() > MAX_PENDING_OPERATIONS;
         }
     };
@@ -144,15 +151,34 @@ public final class SharedWaypointClient {
         return list().stream().filter(waypoint -> waypoint.id().equals(id)).findFirst();
     }
 
+    public boolean isLocationShared(final Waypoint waypoint) {
+        if (waypoint == null) {
+            return false;
+        }
+        final SharedWaypointLocationKey location = SharedWaypointLocationKey.from(waypoint);
+        return list().stream().anyMatch(shared -> SharedWaypointLocationKey.from(shared).equals(location));
+    }
+
+    public boolean isCreatePending(final Waypoint waypoint) {
+        if (waypoint == null) {
+            return false;
+        }
+        final SharedWaypointLocationKey location = SharedWaypointLocationKey.from(waypoint);
+        return pendingOperations.values().stream()
+            .anyMatch(pending -> location.equals(pending.createLocation()));
+    }
+
     /** Publishes a copy of a local waypoint using the current authoritative revision. */
     public boolean create(final Waypoint waypoint) {
-        if (waypoint == null || !stateMachine.canMutate()) {
+        if (waypoint == null || !stateMachine.canMutate()
+            || isLocationShared(waypoint) || isCreatePending(waypoint)) {
             return false;
         }
         final UUID operationId = UUID.randomUUID();
+        final SharedWaypointLocationKey location = SharedWaypointLocationKey.from(waypoint);
         return sendMutation(
             operationId,
-            OperationKind.CREATE,
+            new PendingOperation(OperationKind.CREATE, location),
             new CreateC2S(
                 operationId,
                 revision(),
@@ -174,7 +200,7 @@ public final class SharedWaypointClient {
         final UUID operationId = UUID.randomUUID();
         return sendMutation(
             operationId,
-            OperationKind.DELETE,
+            new PendingOperation(OperationKind.DELETE, null),
             deleteMessage(operationId, waypoint)
         );
     }
@@ -186,7 +212,7 @@ public final class SharedWaypointClient {
         final UUID operationId = UUID.randomUUID();
         return sendMutation(
             operationId,
-            locked ? OperationKind.LOCK : OperationKind.UNLOCK,
+            new PendingOperation(locked ? OperationKind.LOCK : OperationKind.UNLOCK, null),
             lockMessage(operationId, waypoint, locked)
         );
     }
@@ -327,8 +353,8 @@ public final class SharedWaypointClient {
     }
 
     private void onResult(final ResultS2C result) {
-        final OperationKind kind = pendingOperations.remove(result.operationId());
-        if (kind == null) {
+        final PendingOperation pending = pendingOperations.remove(result.operationId());
+        if (pending == null) {
             ConfluxMapMod.LOGGER.debug(
                 "shared-waypoint: ignoring result for unknown operation {}",
                 result.operationId()
@@ -359,7 +385,7 @@ public final class SharedWaypointClient {
 
         final OperationResult operationResult = new OperationResult(
             result.operationId(),
-            kind,
+            pending.kind(),
             applied,
             result.statusCode(),
             result.errorCode()
@@ -376,13 +402,14 @@ public final class SharedWaypointClient {
 
     private boolean sendMutation(
         final UUID operationId,
-        final OperationKind kind,
+        final PendingOperation pending,
         final SharedWaypointMessage message
     ) {
+        pendingOperations.put(operationId, pending);
         if (!send(message)) {
+            pendingOperations.remove(operationId);
             return false;
         }
-        pendingOperations.put(operationId, kind);
         return true;
     }
 
@@ -460,7 +487,7 @@ public final class SharedWaypointClient {
 
     private static boolean knownError(final int errorCode) {
         return errorCode >= SharedWaypointProto.RESULT_ERROR_NONE
-            && errorCode <= SharedWaypointProto.RESULT_ERROR_DISABLED;
+            && errorCode <= SharedWaypointProto.RESULT_ERROR_DUPLICATE_LOCATION;
     }
 
     private static String resultTranslationKey(final boolean applied, final int errorCode) {
@@ -482,6 +509,8 @@ public final class SharedWaypointClient {
                 "confluxmap.shared_waypoints.result.player_quota";
             case SharedWaypointProto.RESULT_ERROR_RATE_LIMITED ->
                 "confluxmap.shared_waypoints.result.rate_limited";
+            case SharedWaypointProto.RESULT_ERROR_DUPLICATE_LOCATION ->
+                "confluxmap.shared_waypoints.result.duplicate_location";
             case SharedWaypointProto.RESULT_ERROR_PERSISTENCE_FAILED ->
                 "confluxmap.shared_waypoints.result.persistence_failed";
             case SharedWaypointProto.RESULT_ERROR_DISABLED ->

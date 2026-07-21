@@ -61,7 +61,7 @@ public final class WaypointShareConfirmScreen extends Screen {
             button -> confirm()
         ));
         if (target == Target.PUBLIC) {
-            confirmButton.active = availability.ready();
+            updatePublicButton(availability);
         }
         addDrawableChild(new ButtonWidget(
             centerX + 4,
@@ -95,13 +95,34 @@ public final class WaypointShareConfirmScreen extends Screen {
             return;
         }
         if (confirmButton != null) {
-            confirmButton.active = availability.ready();
+            updatePublicButton(availability);
         }
+    }
+
+    private void updatePublicButton(final SharedWaypointAvailability availability) {
+        final boolean shared = sharedWaypoints.isLocationShared(waypoint);
+        final boolean pending = sharedWaypoints.isCreatePending(waypoint);
+        confirmButton.active = availability.ready() && !shared && !pending;
+        confirmButton.setMessage(new TranslatableText(
+            shared
+                ? "confluxmap.screen.waypoint.already_shared"
+                : pending
+                    ? "confluxmap.screen.waypoint.publish_pending"
+                    : "confluxmap.screen.waypoint.publish"
+        ));
     }
 
     private void confirm() {
         errorKey = null;
         if (target == Target.PUBLIC) {
+            if (sharedWaypoints.isLocationShared(waypoint)) {
+                errorKey = "confluxmap.screen.waypoint.duplicate_location";
+                return;
+            }
+            if (sharedWaypoints.isCreatePending(waypoint)) {
+                errorKey = "confluxmap.screen.waypoint.publish_pending_message";
+                return;
+            }
             if (!sharedWaypoints.create(waypoint)) {
                 errorKey = "confluxmap.screen.waypoint.public_unavailable";
                 return;
@@ -116,13 +137,23 @@ public final class WaypointShareConfirmScreen extends Screen {
             return;
         }
         try {
-            client.player.sendChatMessage(WaypointChatCodec.format(
+            final String confluxMessage = WaypointChatCodec.format(
                 waypoint.name,
                 waypoint.dimensionId,
                 waypoint.x,
                 waypoint.y,
                 waypoint.z
-            ));
+            );
+            final String xaeroMessage = WaypointChatCodec.formatXaero(
+                waypoint.name,
+                waypoint.dimensionId,
+                waypoint.x,
+                waypoint.y,
+                waypoint.z,
+                waypoint.colorArgb
+            );
+            client.player.sendChatMessage(confluxMessage);
+            client.player.sendChatMessage(xaeroMessage);
             onClose();
         } catch (final IllegalArgumentException e) {
             errorKey = "confluxmap.screen.waypoint.invalid_share";

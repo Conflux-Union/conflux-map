@@ -20,6 +20,14 @@ public final class WaypointChatCodec {
 
     private static final String MARKER = "[Conflux Map]";
     private static final String PREFIX = MARKER + " ";
+    private static final String XAERO_MARKER = "xaero-waypoint:";
+    private static final int XAERO_MAX_NAME_LENGTH = 32;
+    private static final int[] XAERO_COLORS = {
+        0x000000, 0x0000AA, 0x00AA00, 0x00AAAA,
+        0xAA0000, 0xAA00AA, 0xFFAA00, 0xAAAAAA,
+        0x555555, 0x5555FF, 0x55FF55, 0x55FFFF,
+        0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF
+    };
     private static final String DIMENSION_ID = "[a-z0-9_.-]+:[a-z0-9/._-]+";
     private static final String NUMBER = "[+-]?(?:(?:\\d+(?:\\.\\d*)?)|(?:\\.\\d+))(?:[eE][+-]?\\d+)?";
     private static final String SEPARATOR = "(?:\\s*,\\s*|\\s+)";
@@ -35,6 +43,12 @@ public final class WaypointChatCodec {
     );
     private static final Pattern COORDINATE_LABEL_PATTERN = Pattern.compile(
         "(?<![A-Za-z0-9_])([xXyYzZ])\\s*[:=]"
+    );
+    private static final Pattern XAERO_MESSAGE_PATTERN = Pattern.compile(
+        "^.*?\\Q" + XAERO_MARKER + "\\E([^:\\r\\n]{1,32}):([^:\\r\\n]{1,2}):"
+            + "([+-]?\\d+):([+-]?\\d+):([+-]?\\d+):([+-]?\\d+):"
+            + "(true|false):(" + NUMBER + ")(?::([^:\\r\\n]+))?$",
+        Pattern.CASE_INSENSITIVE
     );
 
     private WaypointChatCodec() {
@@ -74,6 +88,42 @@ public final class WaypointChatCodec {
     }
 
     /**
+     * Produces the Xaero chat-sharing representation. Xaero stores waypoint positions as block
+     * coordinates, so fractional values are floored in the same way as Minecraft block positions.
+     * Unknown dimensions omit Xaero's optional world id and are therefore imported into the
+     * receiver's current dimension instead of inventing an incompatible identifier.
+     */
+    public static String formatXaero(
+        final String name,
+        final DimensionId dimensionId,
+        final double x,
+        final double y,
+        final double z,
+        final int colorArgb
+    ) {
+        Objects.requireNonNull(name, "name");
+        Objects.requireNonNull(dimensionId, "dimensionId");
+        requireValidCoordinates(x, y, z);
+
+        String safeName = sanitizeText(name).replace(':', '_');
+        safeName = truncateUtf16(safeName, XAERO_MAX_NAME_LENGTH);
+        if (safeName.isEmpty()) {
+            safeName = "Waypoint";
+        }
+        final int firstCodePointLength = Character.charCount(safeName.codePointAt(0));
+        final String marker = safeName.substring(0, firstCodePointLength);
+        final String dimension = xaeroDimension(dimensionId);
+        final String message = XAERO_MARKER + safeName + ":" + marker
+            + ":" + floorCoordinate(x) + ":" + floorCoordinate(y) + ":" + floorCoordinate(z)
+            + ":" + nearestXaeroColor(colorArgb) + ":false:0"
+            + (dimension.isEmpty() ? "" : ":" + dimension);
+        if (message.length() > MAX_CHAT_LENGTH) {
+            throw new IllegalArgumentException("Xaero waypoint exceeds the chat message limit");
+        }
+        return message;
+    }
+
+    /**
      * Parses either a Conflux Map message or a strict X/Y/Z labelled coordinate suffix. A regular
      * labelled message is associated with the dimension in which it was received and intentionally
      * has an empty name so the create-waypoint UI can require the user to supply one.
@@ -87,6 +137,9 @@ public final class WaypointChatCodec {
         final String safeMessage = sanitizeText(message);
         if (safeMessage.contains(MARKER)) {
             return parseConfluxMessage(safeMessage);
+        }
+        if (safeMessage.contains(XAERO_MARKER)) {
+            return parseXaeroMessage(safeMessage, receivedDimension);
         }
 
         final ParsedCoordinates coordinates = parseCoordinates(safeMessage, false);
@@ -114,6 +167,102 @@ public final class WaypointChatCodec {
             sanitizeText(messageMatcher.group(1)), dimension,
             coordinates.x, coordinates.y, coordinates.z, true
         ));
+    }
+
+    private static Optional<Candidate> parseXaeroMessage(
+        final String message,
+        final DimensionId receivedDimension
+    ) {
+        final Matcher matcher = XAERO_MESSAGE_PATTERN.matcher(message);
+        if (!matcher.matches()) {
+            return Optional.empty();
+        }
+
+        try {
+            final double x = Double.parseDouble(matcher.group(3));
+            final double y = Double.parseDouble(matcher.group(4));
+            final double z = Double.parseDouble(matcher.group(5));
+            final int color = Integer.parseInt(matcher.group(6));
+            final double yaw = Double.parseDouble(matcher.group(8));
+            if (!validCoordinates(x, y, z) || color < 0 || color >= XAERO_COLORS.length
+                || !Double.isFinite(yaw)) {
+                return Optional.empty();
+            }
+
+            final Optional<DimensionId> dimension = parseXaeroDimension(
+                matcher.group(9), receivedDimension
+            );
+            if (!dimension.isPresent()) {
+                return Optional.empty();
+            }
+            return Optional.of(new Candidate(
+                matcher.group(1), dimension.get(), x, y, z, false
+            ));
+        } catch (final NumberFormatException ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private static Optional<DimensionId> parseXaeroDimension(
+        final String value,
+        final DimensionId receivedDimension
+    ) {
+        if (value == null || value.isEmpty()) {
+            return Optional.of(receivedDimension);
+        }
+        final String normalized = value.toLowerCase(java.util.Locale.ROOT);
+        switch (normalized) {
+            case "internal-overworld":
+            case "internal-overworld-waypoints":
+                return Optional.of(DimensionId.OVERWORLD);
+            case "internal-the-nether":
+            case "internal-the-nether-waypoints":
+                return Optional.of(DimensionId.NETHER);
+            case "internal-the-end":
+            case "internal-the-end-waypoints":
+                return Optional.of(DimensionId.END);
+            default:
+                return Optional.empty();
+        }
+    }
+
+    private static String xaeroDimension(final DimensionId dimensionId) {
+        if (DimensionId.OVERWORLD.equals(dimensionId)) {
+            return "Internal-overworld-waypoints";
+        }
+        if (DimensionId.NETHER.equals(dimensionId)) {
+            return "Internal-the-nether-waypoints";
+        }
+        if (DimensionId.END.equals(dimensionId)) {
+            return "Internal-the-end-waypoints";
+        }
+        return "";
+    }
+
+    private static long floorCoordinate(final double value) {
+        return (long) Math.floor(value);
+    }
+
+    private static int nearestXaeroColor(final int colorArgb) {
+        final int red = colorArgb >>> 16 & 0xFF;
+        final int green = colorArgb >>> 8 & 0xFF;
+        final int blue = colorArgb & 0xFF;
+        int nearest = 0;
+        long nearestDistance = Long.MAX_VALUE;
+        for (int i = 0; i < XAERO_COLORS.length; i++) {
+            final int candidate = XAERO_COLORS[i];
+            final int redDelta = red - (candidate >>> 16 & 0xFF);
+            final int greenDelta = green - (candidate >>> 8 & 0xFF);
+            final int blueDelta = blue - (candidate & 0xFF);
+            final long distance = (long) redDelta * redDelta
+                + (long) greenDelta * greenDelta
+                + (long) blueDelta * blueDelta;
+            if (distance < nearestDistance) {
+                nearest = i;
+                nearestDistance = distance;
+            }
+        }
+        return nearest;
     }
 
     private static ParsedCoordinates parseCoordinates(final String text, final boolean mustStartAtBeginning) {

@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.server.shared;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
+import cn.net.rms.confluxmap.core.shared.SharedWaypointLocationKey;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import java.io.IOException;
 import java.time.Clock;
@@ -38,6 +39,7 @@ public final class SharedWaypointService {
         WORLD_QUOTA_EXCEEDED,
         PLAYER_QUOTA_EXCEEDED,
         RATE_LIMITED,
+        DUPLICATE_LOCATION,
         PERSISTENCE_FAILED,
         ID_GENERATION_FAILED
     }
@@ -265,6 +267,14 @@ public final class SharedWaypointService {
             return finish(player, request, actor, request.operationId(), Action.CREATE, null,
                 rejected(request.operationId(), MutationError.INVALID_REQUEST), now);
         }
+        final SharedWaypointValidator.ValidatedCreate value = validated.get();
+        final SharedWaypointLocationKey location = SharedWaypointLocationKey.from(
+            value.dimensionId(), value.x(), value.y(), value.z()
+        );
+        if (store.findAt(location).isPresent()) {
+            return finish(player, request, actor, request.operationId(), Action.CREATE, null,
+                rejected(request.operationId(), MutationError.DUPLICATE_LOCATION), now);
+        }
         if (store.size() >= limits.maxPerWorld()) {
             return finish(player, request, actor, request.operationId(), Action.CREATE, null,
                 rejected(request.operationId(), MutationError.WORLD_QUOTA_EXCEEDED), now);
@@ -278,7 +288,6 @@ public final class SharedWaypointService {
             return finish(player, request, actor, request.operationId(), Action.CREATE, null,
                 rejected(request.operationId(), MutationError.ID_GENERATION_FAILED), now);
         }
-        final SharedWaypointValidator.ValidatedCreate value = validated.get();
         final long nextRevision;
         try {
             nextRevision = Math.addExact(store.snapshot().revision(), 1);

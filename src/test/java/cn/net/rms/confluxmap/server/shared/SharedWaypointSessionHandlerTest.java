@@ -323,7 +323,7 @@ class SharedWaypointSessionHandlerTest {
     void resultCodesAreExplicitlyMappedRatherThanUsingEnumOrdinals() {
         assertEquals(0, SharedWaypointSessionHandler.statusCode(SharedWaypointService.MutationStatus.APPLIED));
         assertEquals(1, SharedWaypointSessionHandler.statusCode(SharedWaypointService.MutationStatus.REJECTED));
-        final int[] expected = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+        final int[] expected = {0, 1, 2, 3, 4, 5, 6, 7, 11, 8, 9};
         final SharedWaypointService.MutationError[] errors = {
             SharedWaypointService.MutationError.NONE,
             SharedWaypointService.MutationError.INVALID_REQUEST,
@@ -333,6 +333,7 @@ class SharedWaypointSessionHandlerTest {
             SharedWaypointService.MutationError.WORLD_QUOTA_EXCEEDED,
             SharedWaypointService.MutationError.PLAYER_QUOTA_EXCEEDED,
             SharedWaypointService.MutationError.RATE_LIMITED,
+            SharedWaypointService.MutationError.DUPLICATE_LOCATION,
             SharedWaypointService.MutationError.PERSISTENCE_FAILED,
             SharedWaypointService.MutationError.ID_GENERATION_FAILED
         };

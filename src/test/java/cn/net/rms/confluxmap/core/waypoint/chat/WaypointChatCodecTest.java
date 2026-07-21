@@ -98,6 +98,56 @@ class WaypointChatCodecTest {
     }
 
     @Test
+    void parsesXaeroMessageFromScreenshotAndKeepsItsMetadata() {
+        final WaypointChatCodec.Candidate candidate = WaypointChatCodec.parse(
+            "<Hurrybiu1016> xaero-waypoint:\u5bf9\u65b9\u7684:\u5bf9:-113:84:-118:7:false:0:Internal-overworld-waypoints",
+            DimensionId.NETHER
+        ).orElseThrow(AssertionError::new);
+
+        assertEquals("\u5bf9\u65b9\u7684", candidate.name());
+        assertEquals(DimensionId.OVERWORLD, candidate.dimensionId());
+        assertEquals(-113.0, candidate.x());
+        assertEquals(84.0, candidate.y());
+        assertEquals(-118.0, candidate.z());
+        assertFalse(candidate.confluxFormat());
+    }
+
+    @Test
+    void parsesXaeroVanillaDimensionsAndFallsBackWhenWorldIdIsOmitted() {
+        assertEquals(DimensionId.NETHER, parseXaeroDimension("Internal-the-nether-waypoints", DimensionId.END));
+        assertEquals(DimensionId.END, parseXaeroDimension("Internal-the-end", DimensionId.OVERWORLD));
+        assertEquals(DimensionId.END, parseXaeroDimension(null, DimensionId.END));
+    }
+
+    @Test
+    void formatsXaeroMessageWithSafeFieldsBlockCoordinatesAndNearestColor() {
+        assertEquals(
+            "xaero-waypoint:Home_Base:H:-114:64:3:12:false:0:Internal-the-nether-waypoints",
+            WaypointChatCodec.formatXaero(
+                "Home:Base", DimensionId.NETHER, -113.1, 64.9, 3.0, 0xFFE74C3C
+            )
+        );
+    }
+
+    @Test
+    void formatsUnknownXaeroDimensionWithoutInventingAWorldId() {
+        assertEquals(
+            "xaero-waypoint:Portal:P:1:2:3:3:false:0",
+            WaypointChatCodec.formatXaero(
+                "Portal", DimensionId.of("mod", "moon"), 1.0, 2.0, 3.0, 0xFF3498DB
+            )
+        );
+    }
+
+    @Test
+    void rejectsMalformedXaeroMessagesWithoutGenericFallback() {
+        assertRejected("xaero-waypoint:Home:H:1:2:3:16:false:0:Internal-overworld-waypoints");
+        assertRejected("xaero-waypoint:Home:H:1:2:3:7:false:0:Unknown-world");
+        assertRejected("xaero-waypoint:Home:H:1:2:3:7:false:NaN:Internal-overworld-waypoints");
+        assertRejected("xaero-waypoint:Home:TOO:1:2:3:7:false:0:Internal-overworld-waypoints");
+    }
+
+    @Test
     void acceptsInclusiveCoordinateBoundaries() {
         final WaypointChatCodec.Candidate candidate = WaypointChatCodec.parse(
             "X: -30000000, Y: -2048, Z: 30000000", DimensionId.OVERWORLD
@@ -147,6 +197,17 @@ class WaypointChatCodecTest {
 
     private static void assertRejected(final String message) {
         assertFalse(WaypointChatCodec.parse(message, DimensionId.OVERWORLD).isPresent(), message);
+    }
+
+    private static DimensionId parseXaeroDimension(
+        final String dimension,
+        final DimensionId receivedDimension
+    ) {
+        final String suffix = dimension == null ? "" : ":" + dimension;
+        return WaypointChatCodec.parse(
+            "xaero-waypoint:Home:H:1:2:3:7:false:0" + suffix,
+            receivedDimension
+        ).orElseThrow(AssertionError::new).dimensionId();
     }
 
     private static String repeat(final String value, final int count) {

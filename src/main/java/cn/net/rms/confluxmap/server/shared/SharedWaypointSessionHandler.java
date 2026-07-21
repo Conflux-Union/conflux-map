@@ -381,6 +381,7 @@ public final class SharedWaypointSessionHandler {
             case WORLD_QUOTA_EXCEEDED -> SharedWaypointProto.RESULT_ERROR_WORLD_QUOTA_EXCEEDED;
             case PLAYER_QUOTA_EXCEEDED -> SharedWaypointProto.RESULT_ERROR_PLAYER_QUOTA_EXCEEDED;
             case RATE_LIMITED -> SharedWaypointProto.RESULT_ERROR_RATE_LIMITED;
+            case DUPLICATE_LOCATION -> SharedWaypointProto.RESULT_ERROR_DUPLICATE_LOCATION;
             case PERSISTENCE_FAILED -> SharedWaypointProto.RESULT_ERROR_PERSISTENCE_FAILED;
             case ID_GENERATION_FAILED -> SharedWaypointProto.RESULT_ERROR_ID_GENERATION_FAILED;
         };

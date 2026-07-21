@@ -46,7 +46,7 @@ public final class WaypointShareMenuScreen extends Screen {
                     new WaypointShareConfirmScreen(parent, waypoint, WaypointShareConfirmScreen.Target.PUBLIC)
                 )
             ));
-            publishButton.active = sharedAvailability.ready();
+            updatePublishButton();
             buttonY += 24;
         }
         addDrawableChild(new ButtonWidget(
@@ -84,7 +84,7 @@ public final class WaypointShareMenuScreen extends Screen {
         }
         sharedAvailability = availability;
         if (publishButton != null) {
-            publishButton.active = availability.ready();
+            updatePublishButton();
         }
     }
 
@@ -111,8 +111,27 @@ public final class WaypointShareMenuScreen extends Screen {
     }
 
     private String statusKey() {
+        if (sharedWaypoints.isLocationShared(waypoint)) {
+            return "confluxmap.screen.waypoint.duplicate_location";
+        }
+        if (sharedWaypoints.isCreatePending(waypoint)) {
+            return "confluxmap.screen.waypoint.publish_pending_message";
+        }
         return sharedAvailability.ready()
             ? "confluxmap.shared_waypoints.status.enabled"
             : "confluxmap.shared_waypoints.status.syncing";
+    }
+
+    private void updatePublishButton() {
+        final boolean shared = sharedWaypoints.isLocationShared(waypoint);
+        final boolean pending = sharedWaypoints.isCreatePending(waypoint);
+        publishButton.active = sharedAvailability.ready() && !shared && !pending;
+        publishButton.setMessage(new TranslatableText(
+            shared
+                ? "confluxmap.screen.waypoint.already_shared"
+                : pending
+                    ? "confluxmap.screen.waypoint.publish_pending"
+                    : "confluxmap.screen.waypoint.publish"
+        ));
     }
 }

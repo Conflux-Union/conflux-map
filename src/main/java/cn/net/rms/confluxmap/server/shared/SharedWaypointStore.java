@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.server.shared;
 
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
+import cn.net.rms.confluxmap.core.shared.SharedWaypointLocationKey;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -74,6 +75,7 @@ public final class SharedWaypointStore {
 
     private long revision;
     private final Map<UUID, SharedWaypoint> byId = new LinkedHashMap<>();
+    private final Map<SharedWaypointLocationKey, UUID> idByLocation = new LinkedHashMap<>();
 
     public SharedWaypointStore(final Snapshot initial) {
         Objects.requireNonNull(initial, "initial");
@@ -83,6 +85,9 @@ public final class SharedWaypointStore {
             if (byId.put(waypoint.id(), waypoint) != null) {
                 throw new IllegalArgumentException("duplicate shared waypoint id " + waypoint.id());
             }
+            // Historical stores may already contain duplicate locations. Keep them readable, but
+            // index one representative so every future create is rejected for that occupied block.
+            idByLocation.putIfAbsent(SharedWaypointLocationKey.from(waypoint), waypoint.id());
         }
     }
 
@@ -96,6 +101,11 @@ public final class SharedWaypointStore {
 
     public synchronized Optional<SharedWaypoint> find(final UUID id) {
         return Optional.ofNullable(byId.get(Objects.requireNonNull(id, "id")));
+    }
+
+    public synchronized Optional<SharedWaypoint> findAt(final SharedWaypointLocationKey location) {
+        final UUID id = idByLocation.get(Objects.requireNonNull(location, "location"));
+        return Optional.ofNullable(id == null ? null : byId.get(id));
     }
 
     public synchronized int size() {
@@ -116,6 +126,9 @@ public final class SharedWaypointStore {
         Objects.requireNonNull(waypoint, "waypoint");
         if (byId.containsKey(waypoint.id())) {
             throw new IllegalArgumentException("duplicate shared waypoint id " + waypoint.id());
+        }
+        if (idByLocation.containsKey(SharedWaypointLocationKey.from(waypoint))) {
+            throw new IllegalArgumentException("duplicate shared waypoint location");
         }
         final long nextRevision = Math.addExact(revision, 1);
         if (waypoint.revision() != nextRevision) {
@@ -160,8 +173,10 @@ public final class SharedWaypointStore {
         }
         revision = mutation.snapshot.revision();
         byId.clear();
+        idByLocation.clear();
         for (final SharedWaypoint waypoint : mutation.snapshot.waypoints()) {
             byId.put(waypoint.id(), waypoint);
+            idByLocation.putIfAbsent(SharedWaypointLocationKey.from(waypoint), waypoint.id());
         }
     }
 
