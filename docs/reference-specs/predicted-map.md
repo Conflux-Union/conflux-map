@@ -50,7 +50,10 @@ regions per side. `MAP_PATCH` carries a 16x16 output-cell presence bitmap (one c
 LOD0, the union of touched chunks at higher LOD) and a
 deflate-compressed two-level sparse mask: 32-byte coarse mask, one 32-byte fine mask per coarse
 cell, then six-byte absolute column records. Server patches are capped at LOD 2; higher LODs stay
-local. A missing or mismatched predictor uses absolute samples, never a false residual.
+local. Incremental residual patches use an otherwise-invalid `UNKNOWN` column as a removal marker
+when a previously corrected pixel returns to the predicted baseline. Older clients already ignore
+that marker as non-authoritative terrain. A missing or mismatched predictor uses absolute samples,
+never a false residual.
 
 Prediction is honest about its limits: the v1 companion does not verify structure existence, so
 structure markers remain candidates. No server seed is shared unless the operator enables

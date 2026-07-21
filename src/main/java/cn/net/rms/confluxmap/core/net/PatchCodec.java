@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.core.net;
 
+import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -26,7 +27,21 @@ public final class PatchCodec {
     private PatchCodec() {
     }
 
-    /** One corrected pixel. {@code pixelIndex = z * 256 + x}. */
+    /** Encodes removal of an older correction while remaining harmless to clients that ignore unknown samples. */
+    public static Sample removal(final int pixelIndex) {
+        return new Sample(pixelIndex, 0, Short.MIN_VALUE, SurfaceKind.UNKNOWN.ordinal(), Proto.MAP_COLOR_NONE, 0);
+    }
+
+    public static boolean isRemoval(final Sample sample) {
+        return sample != null
+            && sample.biomeId() == 0
+            && sample.surfaceY() == Short.MIN_VALUE
+            && sample.kind() == SurfaceKind.UNKNOWN.ordinal()
+            && sample.mapColorId() == Proto.MAP_COLOR_NONE
+            && sample.fluidDepth() == 0;
+    }
+
+    /** One corrected pixel or {@link #removal(int) removal marker}. {@code pixelIndex = z * 256 + x}. */
     public record Sample(int pixelIndex, int biomeId, int surfaceY, int kind, int mapColorId, int fluidDepth) {
         public Sample {
             if (pixelIndex < 0 || pixelIndex >= PIXELS) {
