@@ -583,7 +583,7 @@ public final class McChunkSnapshotFactory {
     }
 
     /** §1 seafloor-scan capture eligibility: not water/ice/air/bubble-column, and counts on the motion-blocking heightmap. */
-    private static boolean isSeafloorCapturable(final BlockState state) {
+    static boolean isSeafloorCapturable(final BlockState state) {
         final Block block = state.getBlock();
         if (state.isAir() || block == Blocks.WATER || block == Blocks.ICE || block == Blocks.BUBBLE_COLUMN) {
             return false;
@@ -592,15 +592,15 @@ public final class McChunkSnapshotFactory {
     }
 
     /**
-     * §1 waterlogged collapse, restricted to blocks carrying the shared {@code WATERLOGGED}
-     * property (stairs, slabs, signs, plants placed underwater - the spec's own examples)
-     * rather than every block with any non-empty fluid state. Kelp/seagrass/coral report a
-     * permanent water fluid state without ever being "waterlogged" in the placeable sense; a
-     * blanket fluid-state collapse would erase them before the seafloor scan could ever
-     * capture them as overlays, contradicting that part of the spec.
+     * §1 waterlogged/kelp collapse. Kelp is deliberately normalized to its water fluid so dense
+     * ocean kelp forests do not become green map noise; other permanently submerged vegetation
+     * keeps its block state and can still be captured by the seafloor overlay scan.
      */
-    private static BlockState collapse(final BlockState state) {
-        if (!state.contains(Properties.WATERLOGGED) || !state.get(Properties.WATERLOGGED)) {
+    static BlockState collapse(final BlockState state) {
+        final boolean kelp = state.isOf(Blocks.KELP) || state.isOf(Blocks.KELP_PLANT);
+        final boolean waterlogged = state.contains(Properties.WATERLOGGED)
+            && state.get(Properties.WATERLOGGED);
+        if (!kelp && !waterlogged) {
             return state;
         }
         final FluidState fluid = state.getFluidState();
