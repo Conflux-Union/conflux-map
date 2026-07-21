@@ -33,6 +33,10 @@ class ChunkSummarizerTest {
         assertEquals(SurfaceKind.WATER.ordinal(), column.kind());
         assertEquals(13, column.fluidDepth());
 
+        assertNoFalseCorrection(chunk);
+    }
+
+    private static void assertNoFalseCorrection(final SummaryCodec.Chunk chunk) {
         final SummaryCodec.Chunk[] chunks = new SummaryCodec.Chunk[SummaryCodec.CHUNKS];
         Arrays.fill(chunks, SummaryCodec.Chunk.empty());
         chunks[0] = chunk;
@@ -49,7 +53,36 @@ class ChunkSummarizerTest {
         assertEquals(0, result.recordCount());
     }
 
+    @Test
+    void kelpAtTheOceanSurfaceIsSummarizedAsWater() {
+        assertOceanSurface("minecraft:kelp");
+        assertOceanSurface("minecraft:kelp_plant");
+    }
+
+    @Test
+    void driedKelpBlockIsNotSummarizedAsWater() {
+        final SummaryCodec.Column column = new ChunkSummarizer()
+            .summarize(oceanChunk("minecraft:dried_kelp_block"))
+            .columns()[0];
+
+        assertEquals(SurfaceKind.LAND.ordinal(), column.kind());
+    }
+
+    private static void assertOceanSurface(final String blockName) {
+        final SummaryCodec.Chunk chunk = new ChunkSummarizer().summarize(oceanChunk(blockName));
+        final SummaryCodec.Column column = chunk.columns()[0];
+
+        assertEquals(SurfaceKind.WATER.ordinal(), column.kind());
+        assertEquals(12, column.mapColorId());
+        assertEquals(13, column.fluidDepth());
+        assertNoFalseCorrection(chunk);
+    }
+
     private static NbtCompound oceanChunk() {
+        return oceanChunk("minecraft:water");
+    }
+
+    private static NbtCompound oceanChunk(final String surfaceBlockName) {
         final NbtCompound level = new NbtCompound();
         level.putString("Status", "full");
         level.putLong("LastUpdate", 100L);
@@ -66,11 +99,15 @@ class ChunkSummarizerTest {
         palette.add(paletteEntry("minecraft:stone"));
         palette.add(paletteEntry("minecraft:water"));
         palette.add(paletteEntry("minecraft:air"));
+        palette.add(paletteEntry(surfaceBlockName));
         section.put("Palette", palette);
         section.putLongArray("BlockStates", pack(4, 4096, index -> {
             final int localY = index >>> 8;
-            if (localY >= 2 && localY <= 14) {
+            if (localY >= 2 && localY < 14) {
                 return 1;
+            }
+            if (localY == 14) {
+                return 3;
             }
             return localY == 15 ? 2 : 0;
         }));

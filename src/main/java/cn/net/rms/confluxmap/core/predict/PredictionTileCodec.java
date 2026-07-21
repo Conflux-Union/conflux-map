@@ -18,7 +18,7 @@ import java.util.Arrays;
 public final class PredictionTileCodec {
     public static final byte[] MAGIC = {'C', 'F', 'P', 'T'};
     /** Bumped whenever persisted correction semantics change; old corrections are non-authoritative. */
-    public static final int FORMAT_VERSION = 6;
+    public static final int FORMAT_VERSION = 7;
 
     private PredictionTileCodec() {
     }

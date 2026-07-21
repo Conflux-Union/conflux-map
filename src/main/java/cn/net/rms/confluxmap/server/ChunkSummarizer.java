@@ -104,8 +104,12 @@ public final class ChunkSummarizer {
     }
 
     private static boolean isUnderwaterColumnBlock(final String name) {
-        return name.contains("water") || name.contains("bubble_column") || name.contains("kelp")
+        return name.contains("water") || name.contains("bubble_column") || isKelp(name)
             || name.contains("seagrass") || name.contains("sea_pickle") || name.contains("coral_fan");
+    }
+
+    private static boolean isKelp(final String name) {
+        return "minecraft:kelp".equals(name) || "minecraft:kelp_plant".equals(name);
     }
 
     private static int biomeAt(final int[] biomes, final int x, final int z, final int top) {
@@ -121,7 +125,7 @@ public final class ChunkSummarizer {
         final String name = value == null ? "minecraft:air" : value;
         final SurfaceKind kind;
         final int color;
-        if (name.contains("water")) {
+        if (name.contains("water") || isKelp(name)) {
             kind = SurfaceKind.WATER;
             color = 12;
         } else if (name.contains("lava")) {
