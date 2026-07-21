@@ -28,7 +28,7 @@ import org.apache.logging.log4j.Logger;
  * identity change matters here. This mirrors {@link cn.net.rms.confluxmap.core.store.MapWorldService}'s
  * session-swap shape.
  */
-public final class WaypointService {
+public final class WaypointService implements WaypointDataView {
     private final Path baseDir;
     private final MapExecutors executors;
     private final Logger logger;
@@ -49,16 +49,16 @@ public final class WaypointService {
             return;
         }
         if (current != null) {
-            saveOutgoingSnapshot(current.world(), current.list());
+            saveOutgoingSnapshot(current.world(), current.state());
         }
         if (newWorld == null) {
             current = null;
             return;
         }
         final Path file = WorldStorageMigration.file(baseDir, newWorld, ".json", logger);
-        final List<Waypoint> loaded = WaypointIo.load(file, logger);
+        final WaypointStore.State loaded = WaypointIo.loadState(file, logger);
         final WaypointStore store = new WaypointStore(newWorld, loaded);
-        store.addListener(waypoints -> saveSnapshot(newWorld, waypoints));
+        store.addListener(waypoints -> saveSnapshot(newWorld, store.state()));
         current = store;
     }
 
@@ -73,12 +73,18 @@ public final class WaypointService {
         return store == null ? Collections.emptyList() : store.list();
     }
 
-    private void saveSnapshot(final WorldIdentity world, final List<Waypoint> snapshot) {
+    @Override
+    public WaypointDataView.Snapshot snapshot() {
+        final WaypointStore store = current;
+        return store == null ? WaypointDataView.Snapshot.empty() : store.dataSnapshot();
+    }
+
+    private void saveSnapshot(final WorldIdentity world, final WaypointStore.State snapshot) {
         final Path file = fileFor(world);
         executors.io().execute(() -> WaypointIo.save(file, snapshot, logger));
     }
 
-    private void saveOutgoingSnapshot(final WorldIdentity world, final List<Waypoint> snapshot) {
+    private void saveOutgoingSnapshot(final WorldIdentity world, final WaypointStore.State snapshot) {
         final Path file = fileFor(world);
         final Future<?> save = executors.io().submit(() -> WaypointIo.save(file, snapshot, logger));
         boolean interrupted = false;

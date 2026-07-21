@@ -4,17 +4,22 @@ import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointClientState;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
-import cn.net.rms.confluxmap.core.waypoint.DimensionScale;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
+import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
+import cn.net.rms.confluxmap.core.waypoint.WaypointSet;
 import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
@@ -24,20 +29,31 @@ import net.minecraft.text.Text;
 import net.minecraft.text.TranslatableText;
 import net.minecraft.util.math.MathHelper;
 
-/** Management UI with separate local, unlocked-public, and operator-locked views. */
+/** Management UI for local waypoint sets and server-enabled shared waypoints. */
 public final class WaypointListScreen extends Screen {
     public enum Tab { LOCAL, PUBLIC, LOCKED }
 
-    private static final int ROW_HEIGHT = 22;
-    private static final int LIST_TOP = 56;
+    private static final int ROW_HEIGHT = 28;
+    private static final int SHARED_LIST_TOP = 56;
+    private static final int LOCAL_LIST_TOP = 104;
+    private static final int LOCAL_NARROW_LIST_TOP = 128;
     private static final int BOTTOM_MARGIN = 34;
-    private static final int MARGIN = 8;
-    private static final int SWATCH_SIZE = 12;
+    private static final int MIN_SIDE_MARGIN = 16;
+    private static final int MAX_CONTENT_WIDTH = 880;
+    private static final int ROW_PADDING = 6;
+    private static final int MARKER_SIZE = 14;
+    private static final int CHECK_WIDTH = 20;
     private static final int DELETE_WIDTH = 52;
-    private static final int ACTION_WIDTH = 58;
+    private static final int ACTION_WIDTH = 56;
     private static final int DIM_WIDTH = 66;
     private static final int DIST_WIDTH = 58;
     private static final int GAP = 4;
+    private static final int TOOLBAR_Y = 52;
+    private static final int TOOLBAR_HEIGHT = 20;
+    private static final int NARROW_TOOLBAR_WIDTH = 248;
+    private static final int NARROW_ROW_WIDTH = 254;
+    private static final int NARROW_ACTION_WIDTH = 36;
+    private static final int NARROW_DELETE_WIDTH = 40;
 
     private record RowInfo(
         Waypoint local,
@@ -50,15 +66,30 @@ public final class WaypointListScreen extends Screen {
             return local != null ? local.id : shared.id();
         }
 
-        String label() {
-            if (local != null) {
-                return local.group.isEmpty() ? local.name : "[" + local.group + "] " + local.name;
-            }
-            return shared.name() + " - " + shared.publisherName();
+        String name() {
+            return local != null ? local.name : shared.name();
         }
 
-        int color() {
-            return local != null ? local.colorArgb : shared.colorArgb();
+        String secondaryText() {
+            if (local != null) {
+                return setDisplayName(local.group);
+            }
+            return new TranslatableText(
+                "confluxmap.screen.waypoints.shared_by", shared.publisherName()
+            ).getString();
+        }
+
+        WaypointRenderEntry renderEntry() {
+            if (local != null) {
+                return new WaypointRenderEntry(
+                    local.id, local.name, local.dimensionId, local.x, local.y, local.z,
+                    local.colorArgb, local.type, WaypointRenderEntry.Source.LOCAL, false
+                );
+            }
+            return new WaypointRenderEntry(
+                shared.id(), shared.name(), shared.dimensionId(), shared.x(), shared.y(), shared.z(),
+                shared.colorArgb(), shared.type(), WaypointRenderEntry.Source.SHARED, shared.locked()
+            );
         }
     }
 
@@ -66,15 +97,22 @@ public final class WaypointListScreen extends Screen {
     private final WaypointService waypointService;
     private final SharedWaypointClient sharedWaypoints;
     private final Screen parent;
+    private final Set<UUID> selectedWaypointIds = new LinkedHashSet<>();
     private Tab tab;
 
     private int scrollOffset;
     private UUID pendingDeleteId;
+    private String selectedSetFilter;
+    private String moveTargetSet = WaypointSet.DEFAULT_NAME;
     private List<RowInfo> rows = new ArrayList<>();
+    private List<UUID> filteredLocalIds = List.of();
     private long lastSharedRevision = Long.MIN_VALUE;
     private SharedWaypointClientState.State lastSharedState;
     private boolean lastSharedSynchronized;
     private boolean lastOperator;
+    private long lastLocalRevision = Long.MIN_VALUE;
+    private WaypointStore lastLocalStore;
+    private DimensionId lastDimension;
 
     public WaypointListScreen() {
         this(null, Tab.LOCAL);
@@ -88,6 +126,9 @@ public final class WaypointListScreen extends Screen {
         this.sharedWaypoints = app.sharedWaypoints();
         this.parent = parent;
         this.tab = initialTab == null ? Tab.LOCAL : initialTab;
+        if (this.tab != Tab.LOCAL && !sharedWaypoints.availability().enabled()) {
+            this.tab = Tab.LOCAL;
+        }
     }
 
     @Override
@@ -107,11 +148,25 @@ public final class WaypointListScreen extends Screen {
 
     @Override
     public void tick() {
-        if (tab != Tab.LOCAL
-            && (lastSharedRevision != sharedWaypoints.revision()
-                || lastSharedState != sharedWaypoints.state()
-                || lastSharedSynchronized != sharedWaypoints.isSynchronized()
-                || lastOperator != sharedWaypoints.isOperator())) {
+        final SharedWaypointAvailability availability = sharedWaypoints.availability();
+        if (!availability.enabled() && tab != Tab.LOCAL) {
+            selectTab(Tab.LOCAL);
+            return;
+        }
+        final WaypointStore store = waypointService.current();
+        if (store != lastLocalStore) {
+            resetLocalUiState();
+            rebuild();
+            return;
+        }
+        final DimensionId currentDimension = gameBridge.session().dimension();
+        final long localRevision = store == null ? 0L : store.revision();
+        if (lastSharedRevision != sharedWaypoints.revision()
+            || lastSharedState != sharedWaypoints.state()
+            || lastSharedSynchronized != sharedWaypoints.isSynchronized()
+            || lastOperator != sharedWaypoints.isOperator()
+            || lastLocalRevision != localRevision
+            || !currentDimension.equals(lastDimension)) {
             rebuild();
         }
     }
@@ -119,10 +174,8 @@ public final class WaypointListScreen extends Screen {
     private void rebuild() {
         clearChildren();
         rows.clear();
-        addTabs();
-
-        final int bottom = height - BOTTOM_MARGIN;
-        final int visibleRowCount = Math.max(1, (bottom - LIST_TOP) / ROW_HEIGHT);
+        final WaypointStore store = waypointService.current();
+        normalizeSetState(store);
         final Optional<PlayerView> playerView = gameBridge.player();
         final DimensionId currentDimension = gameBridge.session().dimension();
         final double px = playerView.map(PlayerView::x).orElse(0.0);
@@ -131,60 +184,90 @@ public final class WaypointListScreen extends Screen {
 
         final List<RowInfo> sorted = buildRows(currentDimension, px, py, pz);
         sorted.sort((a, b) -> Double.compare(a.distance(), b.distance()));
+        filteredLocalIds = tab == Tab.LOCAL
+            ? sorted.stream().map(RowInfo::id).toList()
+            : List.of();
+        if (tab == Tab.LOCAL) {
+            selectedWaypointIds.retainAll(filteredLocalIds);
+        } else {
+            selectedWaypointIds.clear();
+        }
+
+        addTabs();
+        if (tab == Tab.LOCAL) {
+            addLocalSetControls(store);
+        }
+
+        final int bottom = height - BOTTOM_MARGIN;
+        final int visibleRowCount = Math.max(1, (bottom - listTop()) / ROW_HEIGHT);
         scrollOffset = MathHelper.clamp(scrollOffset, 0, Math.max(0, sorted.size() - visibleRowCount));
 
         final int end = Math.min(sorted.size(), scrollOffset + visibleRowCount);
         for (int i = scrollOffset; i < end; i++) {
             final RowInfo source = sorted.get(i);
             final RowInfo row = new RowInfo(
-                source.local(), source.shared(), LIST_TOP + (i - scrollOffset) * ROW_HEIGHT,
+                source.local(), source.shared(), listTop() + (i - scrollOffset) * ROW_HEIGHT,
                 source.distance(), source.dimensionText()
             );
             rows.add(row);
-            addRowWidgets(row);
+            addRowWidgets(row, store);
         }
 
+        addBottomButtons(store);
+        snapshotObservedState(store);
+    }
+
+    private void addBottomButtons(final WaypointStore store) {
         if (tab != Tab.LOCKED) {
             final ButtonWidget create = addDrawableChild(new ButtonWidget(
-                MARGIN,
+                contentLeft(),
                 height - 24,
-                104,
+                116,
                 18,
                 new TranslatableText(
                     tab == Tab.LOCAL
                         ? "confluxmap.screen.waypoints.create_local"
                         : "confluxmap.screen.waypoints.create_public"
                 ),
-                button -> openCreate()
+                button -> openCreate(store)
             ));
             if (tab == Tab.PUBLIC) {
-                create.active = sharedWaypoints.state() == SharedWaypointClientState.State.ENABLED
-                    && sharedWaypoints.isSynchronized();
+                create.active = sharedWaypoints.availability().ready();
+            } else {
+                create.active = store != null && store.persistenceWritable();
             }
         }
         addDrawableChild(new ButtonWidget(
-            width - MARGIN - 80,
+            contentRight() - 80,
             height - 24,
             80,
             18,
             new TranslatableText("confluxmap.screen.waypoint.done"),
             button -> onClose()
         ));
+    }
 
+    private void snapshotObservedState(final WaypointStore store) {
         lastSharedRevision = sharedWaypoints.revision();
         lastSharedState = sharedWaypoints.state();
         lastSharedSynchronized = sharedWaypoints.isSynchronized();
         lastOperator = sharedWaypoints.isOperator();
+        lastLocalRevision = store == null ? 0L : store.revision();
+        lastLocalStore = store;
+        lastDimension = gameBridge.session().dimension();
     }
 
     private void addTabs() {
-        final int tabWidth = Math.max(64, Math.min(100, (width - MARGIN * 2 - GAP * 2) / 3));
-        final int left = width / 2 - (tabWidth * 3 + GAP * 2) / 2;
-        final Tab[] tabs = Tab.values();
-        for (int i = 0; i < tabs.length; i++) {
-            final Tab candidate = tabs[i];
+        final List<Tab> tabs = sharedWaypoints.availability().enabled()
+            ? List.of(Tab.LOCAL, Tab.PUBLIC, Tab.LOCKED)
+            : List.of(Tab.LOCAL);
+        final int availableWidth = contentWidth() - GAP * (tabs.size() - 1);
+        final int tabWidth = Math.max(80, Math.min(140, availableWidth / tabs.size()));
+        final int totalWidth = tabWidth * tabs.size() + GAP * (tabs.size() - 1);
+        int x = width / 2 - totalWidth / 2;
+        for (final Tab candidate : tabs) {
             final ButtonWidget button = addDrawableChild(new ButtonWidget(
-                left + i * (tabWidth + GAP),
+                x,
                 28,
                 tabWidth,
                 20,
@@ -192,7 +275,160 @@ public final class WaypointListScreen extends Screen {
                 ignored -> selectTab(candidate)
             ));
             button.active = candidate != tab;
+            x += tabWidth + GAP;
         }
+    }
+
+    private void addLocalSetControls(final WaypointStore store) {
+        final boolean writable = store != null && store.persistenceWritable();
+        if (narrowToolbar()) {
+            addNarrowLocalSetControls(store, writable);
+            return;
+        }
+        final int newWidth = 52;
+        final int renameWidth = 60;
+        final int deleteWidth = 80;
+        final int filterWidth = Math.max(44, contentWidth() - newWidth - renameWidth - deleteWidth - GAP * 3);
+        int x = contentLeft();
+        addDrawableChild(new ButtonWidget(
+            x, TOOLBAR_Y, filterWidth, TOOLBAR_HEIGHT,
+            fitButtonLabel(setFilterLabel(), filterWidth), button -> cycleSetFilter(store)
+        ));
+        x += filterWidth + GAP;
+        final ButtonWidget createSet = addDrawableChild(new ButtonWidget(
+            x, TOOLBAR_Y, newWidth, TOOLBAR_HEIGHT,
+            fitButtonLabel(new TranslatableText("confluxmap.screen.waypoints.set_new"), newWidth),
+            button -> openSetNameScreen(store, null)
+        ));
+        createSet.active = writable;
+        x += newWidth + GAP;
+        final ButtonWidget renameSet = addDrawableChild(new ButtonWidget(
+            x, TOOLBAR_Y, renameWidth, TOOLBAR_HEIGHT,
+            fitButtonLabel(new TranslatableText("confluxmap.screen.waypoints.set_rename"), renameWidth),
+            button -> openSetNameScreen(store, selectedSetFilter)
+        ));
+        renameSet.active = writable && isCustomSetSelected();
+        x += renameWidth + GAP;
+        final int members = store == null || !isCustomSetSelected()
+            ? 0
+            : store.waypointCount(selectedSetFilter);
+        final ButtonWidget deleteSet = addDrawableChild(new ButtonWidget(
+            x, TOOLBAR_Y, deleteWidth, TOOLBAR_HEIGHT,
+            fitButtonLabel(
+                new TranslatableText("confluxmap.screen.waypoints.set_delete", members),
+                deleteWidth
+            ),
+            button -> openDeleteSetConfirm(store, members)
+        ));
+        deleteSet.active = writable && isCustomSetSelected();
+
+        final int secondY = TOOLBAR_Y + TOOLBAR_HEIGHT + GAP;
+        final int selectWidth = 84;
+        final int moveWidth = 92;
+        final int targetWidth = Math.max(48, contentWidth() - selectWidth - moveWidth - GAP * 2);
+        final boolean allFilteredSelected = !filteredLocalIds.isEmpty()
+            && selectedWaypointIds.containsAll(filteredLocalIds);
+        final ButtonWidget selectAll = addDrawableChild(new ButtonWidget(
+            contentLeft(), secondY, selectWidth, TOOLBAR_HEIGHT,
+            fitButtonLabel(new TranslatableText(
+                allFilteredSelected
+                    ? "confluxmap.screen.waypoints.selection_clear"
+                    : "confluxmap.screen.waypoints.selection_all"
+            ), selectWidth),
+            button -> toggleSelectAll(store)
+        ));
+        selectAll.active = writable;
+        final ButtonWidget target = addDrawableChild(new ButtonWidget(
+            contentLeft() + selectWidth + GAP,
+            secondY,
+            targetWidth,
+            TOOLBAR_HEIGHT,
+            fitButtonLabel(moveTargetLabel(), targetWidth),
+            button -> cycleMoveTarget(store)
+        ));
+        target.active = store != null && store.sets().size() > 1;
+        final ButtonWidget move = addDrawableChild(new ButtonWidget(
+            contentRight() - moveWidth,
+            secondY,
+            moveWidth,
+            TOOLBAR_HEIGHT,
+            fitButtonLabel(
+                new TranslatableText("confluxmap.screen.waypoints.selection_move", selectedWaypointIds.size()),
+                moveWidth
+            ),
+            button -> moveSelection(store)
+        ));
+        move.active = writable && store.sets().size() > 1 && !selectedWaypointIds.isEmpty();
+    }
+
+    private void addNarrowLocalSetControls(final WaypointStore store, final boolean writable) {
+        addDrawableChild(new ButtonWidget(
+            contentLeft(), TOOLBAR_Y, contentWidth(), TOOLBAR_HEIGHT,
+            fitButtonLabel(setFilterLabel(), contentWidth()), button -> cycleSetFilter(store)
+        ));
+
+        final int firstColumnWidth = Math.max(1, (contentWidth() - GAP * 2) / 3);
+        final int setActionsY = TOOLBAR_Y + TOOLBAR_HEIGHT + GAP;
+        int x = contentLeft();
+        final ButtonWidget createSet = addDrawableChild(new ButtonWidget(
+            x, setActionsY, firstColumnWidth, TOOLBAR_HEIGHT,
+            fitButtonLabel(new TranslatableText("confluxmap.screen.waypoints.set_new"), firstColumnWidth),
+            button -> openSetNameScreen(store, null)
+        ));
+        createSet.active = writable;
+        x += firstColumnWidth + GAP;
+        final ButtonWidget renameSet = addDrawableChild(new ButtonWidget(
+            x, setActionsY, firstColumnWidth, TOOLBAR_HEIGHT,
+            fitButtonLabel(new TranslatableText("confluxmap.screen.waypoints.set_rename"), firstColumnWidth),
+            button -> openSetNameScreen(store, selectedSetFilter)
+        ));
+        renameSet.active = writable && isCustomSetSelected();
+        x += firstColumnWidth + GAP;
+        final int lastColumnWidth = Math.max(1, contentRight() - x);
+        final int members = store == null || !isCustomSetSelected()
+            ? 0
+            : store.waypointCount(selectedSetFilter);
+        final ButtonWidget deleteSet = addDrawableChild(new ButtonWidget(
+            x, setActionsY, lastColumnWidth, TOOLBAR_HEIGHT,
+            fitButtonLabel(
+                new TranslatableText("confluxmap.screen.waypoints.set_delete", members),
+                lastColumnWidth
+            ),
+            button -> openDeleteSetConfirm(store, members)
+        ));
+        deleteSet.active = writable && isCustomSetSelected();
+
+        final int batchActionsY = setActionsY + TOOLBAR_HEIGHT + GAP;
+        x = contentLeft();
+        final boolean allFilteredSelected = !filteredLocalIds.isEmpty()
+            && selectedWaypointIds.containsAll(filteredLocalIds);
+        final ButtonWidget selectAll = addDrawableChild(new ButtonWidget(
+            x, batchActionsY, firstColumnWidth, TOOLBAR_HEIGHT,
+            fitButtonLabel(new TranslatableText(
+                allFilteredSelected
+                    ? "confluxmap.screen.waypoints.selection_clear"
+                    : "confluxmap.screen.waypoints.selection_all"
+            ), firstColumnWidth),
+            button -> toggleSelectAll(store)
+        ));
+        selectAll.active = writable;
+        x += firstColumnWidth + GAP;
+        final ButtonWidget target = addDrawableChild(new ButtonWidget(
+            x, batchActionsY, firstColumnWidth, TOOLBAR_HEIGHT,
+            fitButtonLabel(moveTargetLabel(), firstColumnWidth),
+            button -> cycleMoveTarget(store)
+        ));
+        target.active = store != null && store.sets().size() > 1;
+        x += firstColumnWidth + GAP;
+        final ButtonWidget move = addDrawableChild(new ButtonWidget(
+            x, batchActionsY, Math.max(1, contentRight() - x), TOOLBAR_HEIGHT,
+            fitButtonLabel(
+                new TranslatableText("confluxmap.screen.waypoints.selection_move", selectedWaypointIds.size()),
+                Math.max(1, contentRight() - x)
+            ),
+            button -> moveSelection(store)
+        ));
+        move.active = writable && store.sets().size() > 1 && !selectedWaypointIds.isEmpty();
     }
 
     private List<RowInfo> buildRows(
@@ -204,6 +440,9 @@ public final class WaypointListScreen extends Screen {
         final List<RowInfo> result = new ArrayList<>();
         if (tab == Tab.LOCAL) {
             for (final Waypoint waypoint : waypointService.list()) {
+                if (selectedSetFilter != null && !selectedSetFilter.equals(waypoint.group)) {
+                    continue;
+                }
                 result.add(new RowInfo(
                     waypoint,
                     null,
@@ -233,90 +472,109 @@ public final class WaypointListScreen extends Screen {
         return result;
     }
 
-    private void addRowWidgets(final RowInfo row) {
-        final int rowRight = width - MARGIN;
-        final int deleteX = rowRight - DELETE_WIDTH;
-        final int secondaryX = deleteX - GAP - ACTION_WIDTH;
-        final int primaryX = secondaryX - GAP - ACTION_WIDTH;
-        final boolean compact = width < 520;
-        final int metadataWidth = compact ? 0 : DIST_WIDTH + DIM_WIDTH + GAP * 2;
-        final int nameX = MARGIN + SWATCH_SIZE + GAP;
-        final int nameWidth = Math.max(24, primaryX - GAP - metadataWidth - nameX);
+    private void addRowWidgets(final RowInfo row, final WaypointStore renderedStore) {
+        final int buttonY = row.y() + 4;
+        final int actionWidth = rowActionWidth();
+        final int deleteWidth = rowDeleteWidth();
+        final int deleteX = deleteX();
+        final int secondaryX = secondaryX();
+        final int primaryX = primaryX();
 
         if (row.local() != null) {
             final Waypoint waypoint = row.local();
-            addDrawableChild(new ButtonWidget(
-                nameX, row.y(), nameWidth, ROW_HEIGHT - 2, Text.of(row.label()), button -> openEdit(waypoint)
+            final ButtonWidget selected = addDrawableChild(new ButtonWidget(
+                contentLeft() + ROW_PADDING,
+                buttonY,
+                CHECK_WIDTH,
+                20,
+                Text.of(selectedWaypointIds.contains(waypoint.id) ? "\u2713" : ""),
+                button -> toggleSelected(renderedStore, waypoint.id)
             ));
-            addDrawableChild(new ButtonWidget(
+            selected.active = renderedStore != null && renderedStore.persistenceWritable();
+            final ButtonWidget visibility = addDrawableChild(new ButtonWidget(
                 primaryX,
-                row.y(),
-                ACTION_WIDTH,
-                ROW_HEIGHT - 2,
-                new TranslatableText(
+                buttonY,
+                actionWidth,
+                20,
+                fitButtonLabel(new TranslatableText(
                     waypoint.visible
                         ? "confluxmap.screen.waypoints.hide"
                         : "confluxmap.screen.waypoints.show"
-                ),
-                button -> toggleVisible(waypoint)
+                ), actionWidth),
+                button -> toggleVisible(renderedStore, waypoint)
             ));
+            visibility.active = renderedStore != null && renderedStore.persistenceWritable();
             addDrawableChild(new ButtonWidget(
                 secondaryX,
-                row.y(),
-                ACTION_WIDTH,
-                ROW_HEIGHT - 2,
-                new TranslatableText("confluxmap.screen.waypoints.share"),
-                button -> MinecraftClient.getInstance().setScreen(new WaypointShareMenuScreen(this, waypoint))
+                buttonY,
+                actionWidth,
+                20,
+                fitButtonLabel(new TranslatableText("confluxmap.screen.waypoints.share"), actionWidth),
+                button -> openShare(renderedStore, waypoint)
             ));
         } else {
             final SharedWaypoint waypoint = row.shared();
             addDrawableChild(new ButtonWidget(
                 primaryX,
-                row.y(),
-                ACTION_WIDTH,
-                ROW_HEIGHT - 2,
-                new TranslatableText("confluxmap.screen.waypoints.chat"),
+                buttonY,
+                actionWidth,
+                20,
+                fitButtonLabel(new TranslatableText("confluxmap.screen.waypoints.chat"), actionWidth),
                 button -> openSharedChat(waypoint)
             ));
             final ButtonWidget lock = addDrawableChild(new ButtonWidget(
                 secondaryX,
-                row.y(),
-                ACTION_WIDTH,
-                ROW_HEIGHT - 2,
-                new TranslatableText(
+                buttonY,
+                actionWidth,
+                20,
+                fitButtonLabel(new TranslatableText(
                     waypoint.locked()
                         ? "confluxmap.screen.waypoints.unlock"
                         : "confluxmap.screen.waypoints.lock"
-                ),
+                ), actionWidth),
                 button -> setLocked(waypoint, !waypoint.locked())
             ));
-            lock.active = sharedWaypoints.isOperator();
+            lock.active = sharedWaypoints.availability().ready() && sharedWaypoints.isOperator();
         }
 
         final boolean pendingThis = row.id().equals(pendingDeleteId);
         final ButtonWidget delete = addDrawableChild(new ButtonWidget(
             deleteX,
-            row.y(),
-            DELETE_WIDTH,
-            ROW_HEIGHT - 2,
-            new TranslatableText(
+            buttonY,
+            deleteWidth,
+            20,
+            fitButtonLabel(new TranslatableText(
                 pendingThis
                     ? "confluxmap.screen.waypoints.confirm"
                     : "confluxmap.screen.waypoints.delete"
-            ),
-            button -> delete(row)
+            ), deleteWidth),
+            button -> delete(renderedStore, row)
         ));
-        delete.active = row.shared() == null || !row.shared().locked() || sharedWaypoints.isOperator();
+        delete.active = row.shared() == null
+            ? renderedStore != null && renderedStore.persistenceWritable()
+            : sharedWaypoints.availability().ready()
+                && (!row.shared().locked() || sharedWaypoints.isOperator());
     }
 
     private void selectTab(final Tab selected) {
-        tab = selected;
+        if (selected != Tab.LOCAL && !sharedWaypoints.availability().enabled()) {
+            tab = Tab.LOCAL;
+        } else {
+            tab = selected;
+        }
         scrollOffset = 0;
         pendingDeleteId = null;
+        selectedWaypointIds.clear();
         rebuild();
     }
 
-    private void openCreate() {
+    private void openCreate(final WaypointStore renderedStore) {
+        if (tab == Tab.LOCAL
+            && (renderedStore == null
+                || renderedStore != waypointService.current()
+                || !renderedStore.persistenceWritable())) {
+            return;
+        }
         final Optional<PlayerView> playerView = gameBridge.player();
         final DimensionId dimension = gameBridge.session().dimension();
         final double x = Math.floor(playerView.map(PlayerView::x).orElse(0.0));
@@ -325,12 +583,27 @@ public final class WaypointListScreen extends Screen {
         MinecraftClient.getInstance().setScreen(
             tab == Tab.PUBLIC
                 ? WaypointEditScreen.forPublicCreate(this, dimension, x, y, z)
-                : WaypointEditScreen.forCreate(this, dimension, x, y, z)
+                : WaypointEditScreen.forCreate(
+                    this, dimension, x, y, z,
+                    selectedSetFilter == null ? WaypointSet.DEFAULT_NAME : selectedSetFilter
+                )
         );
     }
 
-    private void openEdit(final Waypoint waypoint) {
+    private void openEdit(final WaypointStore renderedStore, final Waypoint waypoint) {
+        if (renderedStore == null
+            || renderedStore != waypointService.current()
+            || !renderedStore.persistenceWritable()) {
+            return;
+        }
         MinecraftClient.getInstance().setScreen(WaypointEditScreen.forEdit(this, waypoint));
+    }
+
+    private void openShare(final WaypointStore renderedStore, final Waypoint waypoint) {
+        if (renderedStore != waypointService.current()) {
+            return;
+        }
+        MinecraftClient.getInstance().setScreen(new WaypointShareMenuScreen(this, waypoint));
     }
 
     private void openSharedChat(final SharedWaypoint waypoint) {
@@ -341,39 +614,185 @@ public final class WaypointListScreen extends Screen {
         ));
     }
 
-    private void toggleVisible(final Waypoint waypoint) {
+    private void toggleVisible(final WaypointStore renderedStore, final Waypoint waypoint) {
         final WaypointStore store = waypointService.current();
-        if (store == null) {
+        if (store == null || store != renderedStore || !store.persistenceWritable()) {
             return;
         }
         final Waypoint updated = waypoint.copy();
         updated.visible = !updated.visible;
         store.update(updated);
-        pendingDeleteId = null;
+        clearPendingActions();
         rebuild();
     }
 
     private void setLocked(final SharedWaypoint waypoint, final boolean locked) {
-        pendingDeleteId = null;
+        clearPendingActions();
         sharedWaypoints.setLocked(waypoint, locked);
     }
 
-    private void delete(final RowInfo row) {
+    private void delete(final WaypointStore renderedStore, final RowInfo row) {
+        if (row.local() != null
+            && (renderedStore == null
+                || renderedStore != waypointService.current()
+                || !renderedStore.persistenceWritable())) {
+            return;
+        }
         if (!row.id().equals(pendingDeleteId)) {
             pendingDeleteId = row.id();
             rebuild();
             return;
         }
         if (row.local() != null) {
-            final WaypointStore store = waypointService.current();
-            if (store != null) {
-                store.remove(row.local().id);
-            }
+            renderedStore.remove(row.local().id);
+            selectedWaypointIds.remove(row.local().id);
         } else {
             sharedWaypoints.delete(row.shared());
         }
         pendingDeleteId = null;
         rebuild();
+    }
+
+    private void toggleSelected(final WaypointStore renderedStore, final UUID waypointId) {
+        if (renderedStore == null
+            || renderedStore != waypointService.current()
+            || !renderedStore.persistenceWritable()) {
+            return;
+        }
+        if (!selectedWaypointIds.add(waypointId)) {
+            selectedWaypointIds.remove(waypointId);
+        }
+        clearPendingActions();
+        rebuild();
+    }
+
+    private void toggleSelectAll(final WaypointStore store) {
+        if (store == null || store != waypointService.current() || !store.persistenceWritable()) {
+            return;
+        }
+        if (!filteredLocalIds.isEmpty() && selectedWaypointIds.containsAll(filteredLocalIds)) {
+            selectedWaypointIds.removeAll(filteredLocalIds);
+        } else {
+            selectedWaypointIds.addAll(filteredLocalIds);
+        }
+        clearPendingActions();
+        rebuild();
+    }
+
+    private void moveSelection(final WaypointStore store) {
+        if (store == null
+            || store != waypointService.current()
+            || !store.persistenceWritable()
+            || selectedWaypointIds.isEmpty()) {
+            return;
+        }
+        final WaypointStore.BatchMoveResult result = store.moveToSet(selectedWaypointIds, moveTargetSet);
+        if (result.result() == WaypointStore.MutationResult.APPLIED
+            || result.result() == WaypointStore.MutationResult.NO_CHANGE) {
+            selectedWaypointIds.clear();
+        }
+        clearPendingActions();
+        rebuild();
+    }
+
+    private void cycleMoveTarget(final WaypointStore store) {
+        if (store == null || store != waypointService.current() || store.sets().isEmpty()) {
+            return;
+        }
+        final List<String> names = store.sets().stream().map(WaypointSet::name).toList();
+        final int current = names.indexOf(moveTargetSet);
+        moveTargetSet = names.get((current + 1 + names.size()) % names.size());
+        clearPendingActions();
+        rebuild();
+    }
+
+    private void cycleSetFilter(final WaypointStore store) {
+        if (store == null || store != waypointService.current()) {
+            return;
+        }
+        final List<String> filters = new ArrayList<>();
+        filters.add(null);
+        for (final WaypointSet set : store.sets()) {
+            filters.add(set.name());
+        }
+        final int current = filters.indexOf(selectedSetFilter);
+        selectedSetFilter = filters.get((current + 1 + filters.size()) % filters.size());
+        scrollOffset = 0;
+        selectedWaypointIds.clear();
+        clearPendingActions();
+        rebuild();
+    }
+
+    private void openSetNameScreen(final WaypointStore store, final String existingName) {
+        if (store == null || store != waypointService.current() || !store.persistenceWritable()) {
+            return;
+        }
+        MinecraftClient.getInstance().setScreen(new WaypointSetNameScreen(
+            this,
+            store,
+            existingName,
+            name -> {
+                selectedSetFilter = name;
+                moveTargetSet = name;
+                selectedWaypointIds.clear();
+                clearPendingActions();
+            }
+        ));
+    }
+
+    private void openDeleteSetConfirm(final WaypointStore store, final int members) {
+        if (store == null
+            || store != waypointService.current()
+            || !store.persistenceWritable()
+            || !isCustomSetSelected()) {
+            return;
+        }
+        final String setName = selectedSetFilter;
+        MinecraftClient.getInstance().setScreen(new WaypointSetDeleteConfirmScreen(
+            this,
+            store,
+            setName,
+            members,
+            () -> {
+                selectedSetFilter = null;
+                moveTargetSet = WaypointSet.DEFAULT_NAME;
+                selectedWaypointIds.clear();
+                scrollOffset = 0;
+                clearPendingActions();
+            }
+        ));
+    }
+
+    private void clearPendingActions() {
+        pendingDeleteId = null;
+    }
+
+    private void normalizeSetState(final WaypointStore store) {
+        if (store == null) {
+            selectedSetFilter = null;
+            moveTargetSet = WaypointSet.DEFAULT_NAME;
+            selectedWaypointIds.clear();
+            return;
+        }
+        final List<String> names = store.sets().stream().map(WaypointSet::name).toList();
+        if (selectedSetFilter != null && !names.contains(selectedSetFilter)) {
+            selectedSetFilter = null;
+        }
+        if (!names.contains(moveTargetSet)) {
+            moveTargetSet = WaypointSet.DEFAULT_NAME;
+        }
+    }
+
+    private boolean isCustomSetSelected() {
+        return selectedSetFilter != null && !selectedSetFilter.isEmpty();
+    }
+
+    private void resetLocalUiState() {
+        selectedSetFilter = null;
+        moveTargetSet = WaypointSet.DEFAULT_NAME;
+        selectedWaypointIds.clear();
+        pendingDeleteId = null;
+        scrollOffset = 0;
     }
 
     @Override
@@ -387,6 +806,27 @@ public final class WaypointListScreen extends Screen {
     }
 
     @Override
+    public boolean mouseClicked(final double mouseX, final double mouseY, final int button) {
+        if (super.mouseClicked(mouseX, mouseY, button)) {
+            return true;
+        }
+        if (button == 0 && tab == Tab.LOCAL) {
+            for (final RowInfo row : rows) {
+                if (row.local() != null
+                    && mouseY >= row.y() && mouseY < row.y() + ROW_HEIGHT
+                    && mouseX >= nameX() && mouseX < nameRight()) {
+                    final WaypointStore store = waypointService.current();
+                    if (store == lastLocalStore && store != null && store.persistenceWritable()) {
+                        openEdit(store, row.local());
+                    }
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    @Override
     public void render(final MatrixStack matrices, final int mouseX, final int mouseY, final float tickDelta) {
         renderBackground(matrices);
         final String title = getTitle().getString();
@@ -394,40 +834,57 @@ public final class WaypointListScreen extends Screen {
             matrices, title, width / 2f - textRenderer.getWidth(title) / 2f, 10, 0xFFFFFFFF
         );
 
-        final boolean compact = width < 520;
+        final boolean compact = compactRows();
         for (final RowInfo row : rows) {
+            final boolean hovered = mouseX >= contentLeft() && mouseX <= contentRight()
+                && mouseY >= row.y() && mouseY < row.y() + ROW_HEIGHT;
             RenderUtil.fillRect(
-                matrices, MARGIN, row.y() + 3, SWATCH_SIZE, SWATCH_SIZE, row.color() | 0xFF000000
+                matrices,
+                contentLeft(),
+                row.y() + 1,
+                contentWidth(),
+                ROW_HEIGHT - 2,
+                hovered ? 0x55333333 : 0x33202020
             );
-            if (row.shared() != null) {
-                final int nameX = MARGIN + SWATCH_SIZE + GAP;
-                final int actionsWidth = DELETE_WIDTH + ACTION_WIDTH * 2 + GAP * 3;
-                final int metadataWidth = compact ? 0 : DIST_WIDTH + DIM_WIDTH + GAP * 2;
-                final int maxNameWidth = Math.max(24, width - MARGIN - actionsWidth - metadataWidth - nameX);
-                final String label = textRenderer.trimToWidth(row.label(), maxNameWidth);
-                textRenderer.drawWithShadow(matrices, label, nameX, row.y() + 6, 0xFFFFFFFF);
-            }
+            final int markerLeft = markerX();
+            WaypointMarkerRenderer.draw(
+                matrices,
+                textRenderer,
+                row.renderEntry(),
+                markerLeft + MARKER_SIZE / 2f,
+                row.y() + ROW_HEIGHT / 2f,
+                MARKER_SIZE / 2f - 1f,
+                1f,
+                hovered
+            );
+            final int maxNameWidth = Math.max(24, nameRight() - nameX());
+            final String name = textRenderer.trimToWidth(row.name(), maxNameWidth);
+            textRenderer.drawWithShadow(matrices, name, nameX(), row.y() + 4, 0xFFFFFFFF);
+            final String secondary = textRenderer.trimToWidth(row.secondaryText(), maxNameWidth);
+            textRenderer.drawWithShadow(matrices, secondary, nameX(), row.y() + 15, 0xFFAAAAAA);
             if (!compact) {
-                final int rowRight = width - MARGIN;
-                final int deleteX = rowRight - DELETE_WIDTH;
-                final int secondaryX = deleteX - GAP - ACTION_WIDTH;
-                final int primaryX = secondaryX - GAP - ACTION_WIDTH;
-                final int dimX = primaryX - GAP - DIM_WIDTH;
-                final int distX = dimX - GAP - DIST_WIDTH;
                 final String distance = textRenderer.trimToWidth(formatDistance(row.distance()), DIST_WIDTH);
-                textRenderer.drawWithShadow(matrices, distance, distX, row.y() + 6, 0xFFCCCCCC);
+                textRenderer.drawWithShadow(matrices, distance, distanceX(), row.y() + 10, 0xFFCCCCCC);
                 final String dimension = textRenderer.trimToWidth(row.dimensionText(), DIM_WIDTH);
-                textRenderer.drawWithShadow(
-                    matrices, dimension, dimX, row.y() + 6, 0xFFCCCCCC
-                );
+                textRenderer.drawWithShadow(matrices, dimension, dimensionX(), row.y() + 10, 0xFFCCCCCC);
             }
         }
         if (rows.isEmpty()) {
             final String empty = textRenderer.trimToWidth(
-                new TranslatableText(emptyKey()).getString(), Math.max(40, width - 24)
+                new TranslatableText(emptyKey()).getString(), Math.max(40, contentWidth() - 16)
             );
             textRenderer.drawWithShadow(
-                matrices, empty, width / 2f - textRenderer.getWidth(empty) / 2f, LIST_TOP + 4, 0xFFAAAAAA
+                matrices, empty, width / 2f - textRenderer.getWidth(empty) / 2f, listTop() + 6, 0xFFAAAAAA
+            );
+        }
+        final WaypointStore store = waypointService.current();
+        if (tab == Tab.LOCAL && store != null && !store.persistenceWritable()) {
+            final String readOnly = textRenderer.trimToWidth(
+                new TranslatableText("confluxmap.screen.waypoints.read_only").getString(), contentWidth()
+            );
+            textRenderer.drawWithShadow(
+                matrices, readOnly, width / 2f - textRenderer.getWidth(readOnly) / 2f,
+                height - BOTTOM_MARGIN - 10, 0xFFFF7777
             );
         }
 
@@ -436,16 +893,114 @@ public final class WaypointListScreen extends Screen {
 
     private String emptyKey() {
         if (tab == Tab.LOCAL) {
-            return "confluxmap.screen.waypoints.empty_local";
+            return selectedSetFilter == null
+                ? "confluxmap.screen.waypoints.empty_local"
+                : "confluxmap.screen.waypoints.empty_set";
         }
-        return switch (sharedWaypoints.state()) {
-            case UNKNOWN, HANDSHAKE -> "confluxmap.shared_waypoints.status.connecting";
-            case UNSUPPORTED -> "confluxmap.shared_waypoints.status.unsupported";
-            case SUPPORTED_DISABLED -> "confluxmap.shared_waypoints.status.disabled";
-            case ENABLED -> sharedWaypoints.isSynchronized()
-                ? "confluxmap.screen.waypoints.empty_public"
-                : "confluxmap.shared_waypoints.status.syncing";
-        };
+        return sharedWaypoints.isSynchronized()
+            ? "confluxmap.screen.waypoints.empty_public"
+            : "confluxmap.shared_waypoints.status.syncing";
+    }
+
+    private Text setFilterLabel() {
+        return new TranslatableText(
+            "confluxmap.screen.waypoints.set_filter",
+            setDisplayName(selectedSetFilter),
+            filteredLocalIds.size()
+        );
+    }
+
+    private Text moveTargetLabel() {
+        return new TranslatableText(
+            "confluxmap.screen.waypoints.selection_target",
+            setDisplayName(moveTargetSet)
+        );
+    }
+
+    private Text fitButtonLabel(final Text label, final int buttonWidth) {
+        return Text.of(textRenderer.trimToWidth(label.getString(), Math.max(8, buttonWidth - 8)));
+    }
+
+    private static String setDisplayName(final String setName) {
+        if (setName == null) {
+            return new TranslatableText("confluxmap.screen.waypoints.set_all").getString();
+        }
+        if (setName.isEmpty()) {
+            return new TranslatableText("confluxmap.screen.waypoints.set_unassigned").getString();
+        }
+        return setName;
+    }
+
+    private int listTop() {
+        if (tab != Tab.LOCAL) {
+            return SHARED_LIST_TOP;
+        }
+        return narrowToolbar() ? LOCAL_NARROW_LIST_TOP : LOCAL_LIST_TOP;
+    }
+
+    private int contentLeft() {
+        return Math.max(MIN_SIDE_MARGIN, (width - MAX_CONTENT_WIDTH) / 2);
+    }
+
+    private int contentRight() {
+        return width - contentLeft();
+    }
+
+    private int contentWidth() {
+        return contentRight() - contentLeft();
+    }
+
+    private boolean compactRows() {
+        return contentWidth() < 620;
+    }
+
+    private boolean narrowToolbar() {
+        return contentWidth() < NARROW_TOOLBAR_WIDTH;
+    }
+
+    private boolean narrowRows() {
+        return contentWidth() < NARROW_ROW_WIDTH;
+    }
+
+    private int rowActionWidth() {
+        return narrowRows() ? NARROW_ACTION_WIDTH : ACTION_WIDTH;
+    }
+
+    private int rowDeleteWidth() {
+        return narrowRows() ? NARROW_DELETE_WIDTH : DELETE_WIDTH;
+    }
+
+    private int deleteX() {
+        return contentRight() - ROW_PADDING - rowDeleteWidth();
+    }
+
+    private int secondaryX() {
+        return deleteX() - GAP - rowActionWidth();
+    }
+
+    private int primaryX() {
+        return secondaryX() - GAP - rowActionWidth();
+    }
+
+    private int dimensionX() {
+        return primaryX() - GAP - DIM_WIDTH;
+    }
+
+    private int distanceX() {
+        return dimensionX() - GAP - DIST_WIDTH;
+    }
+
+    private int markerX() {
+        final int selectionWidth = tab == Tab.LOCAL ? CHECK_WIDTH + GAP : 0;
+        return contentLeft() + ROW_PADDING + selectionWidth;
+    }
+
+    private int nameX() {
+        return markerX() + MARKER_SIZE + GAP;
+    }
+
+    private int nameRight() {
+        return compactRows() ? primaryX() - GAP : distanceX() - GAP;
     }
 
     private static double distance(
@@ -458,8 +1013,11 @@ public final class WaypointListScreen extends Screen {
         final double py,
         final double pz
     ) {
-        final double dx = DimensionScale.convertHorizontal(x, waypointDimension, currentDimension) - px;
-        final double dz = DimensionScale.convertHorizontal(z, waypointDimension, currentDimension) - pz;
+        if (!waypointDimension.equals(currentDimension)) {
+            return Double.POSITIVE_INFINITY;
+        }
+        final double dx = x - px;
+        final double dz = z - pz;
         final double dy = y - py;
         return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
@@ -481,7 +1039,9 @@ public final class WaypointListScreen extends Screen {
     }
 
     private static String formatDistance(final double distance) {
-        return new TranslatableText("confluxmap.value.blocks", Math.round(distance)).getString();
+        return Double.isFinite(distance)
+            ? new TranslatableText("confluxmap.value.blocks", Math.round(distance)).getString()
+            : "-";
     }
 
     private static String dimensionLabel(final DimensionId dimension) {

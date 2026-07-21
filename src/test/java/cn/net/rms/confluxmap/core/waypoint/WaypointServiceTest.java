@@ -141,6 +141,34 @@ class WaypointServiceTest {
         }
     }
 
+    @Test
+    void emptyCustomSetPersistsAndIsAvailableThroughReadOnlyView(@TempDir final Path tempDir) {
+        final WorldIdentity world = new WorldIdentity("server", "world");
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final WaypointService service = new WaypointService(tempDir, executors, LOGGER);
+            assertEquals(WorldIdentity.NONE, service.snapshot().world());
+
+            service.onSessionChanged(new SessionGuard.Session(1L, world, DimensionId.OVERWORLD));
+            assertEquals(WaypointStore.MutationResult.APPLIED, service.current().createSet("Empty"));
+            assertEquals(
+                List.of(WaypointSet.DEFAULT, new WaypointSet("Empty")),
+                service.snapshot().sets()
+            );
+
+            service.onSessionChanged(SessionGuard.Session.NONE);
+            service.onSessionChanged(new SessionGuard.Session(2L, world, DimensionId.OVERWORLD));
+
+            assertEquals(
+                List.of(WaypointSet.DEFAULT, new WaypointSet("Empty")),
+                service.current().sets()
+            );
+            assertTrue(service.list().isEmpty());
+        } finally {
+            executors.shutdown(1000L);
+        }
+    }
+
     private static Path createSave(final Path root) throws IOException {
         Files.createDirectories(root);
         Files.writeString(root.resolve("level.dat"), "test save");
