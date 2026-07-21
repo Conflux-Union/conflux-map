@@ -117,6 +117,14 @@ tasks.register('checkCoreIsolation') {
 check.dependsOn 'checkCoreIsolation'
 check.dependsOn 'checkModMetadata'
 check.dependsOn 'runGametest'
+tasks.register('buildRelease') {
+    group = 'build'
+    description = 'Assembles release artifacts and runs non-test release checks'
+    dependsOn tasks.named('assemble')
+    dependsOn tasks.named('checkCoreIsolation')
+    dependsOn tasks.named('checkModMetadata')
+    dependsOn tasks.named('validateAccessWidener')
+}
 tasks.named('runGametest') {
     doFirst {
         final File runDirectory = project.file("${project.buildDir}/gametest")
