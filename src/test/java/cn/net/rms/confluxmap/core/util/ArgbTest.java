@@ -27,6 +27,16 @@ class ArgbTest {
     }
 
     @Test
+    void scaleAlphaScalesAlphaOnlyAndKeepsRgb() {
+        // Used by the radar to ghost spectator-mode players at half opacity: RGB must stay
+        // untouched so category colors keep their hue, only coverage drops.
+        final int halved = Argb.scaleAlpha(0xFF20A030, 0.5f);
+        assertEquals(127, Argb.alpha(halved));
+        assertEquals(0x20A030, halved & 0x00FFFFFF);
+        assertEquals(0xFF20A030, Argb.scaleAlpha(0xFF20A030, 1f));
+    }
+
+    @Test
     void average4WeightedAllOpaqueMatchesPlainAverage() {
         // With full coverage everywhere the weighted variant is identical to the plain average.
         final int a = 0xFF102030, b = 0xFF405060, c = 0xFF708090, d = 0xFFA0B0C0;

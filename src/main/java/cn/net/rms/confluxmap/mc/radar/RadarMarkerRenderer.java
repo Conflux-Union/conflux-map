@@ -32,6 +32,8 @@ public final class RadarMarkerRenderer {
     /** No elevation treatment inside this band - nearby mobs always render fully readable. */
     private static final int DEADZONE = 8;
     private static final int TEXT_COLOR = 0xFFFFFFFF;
+    /** Alpha multiplier for spectator-mode players: shown as translucent ghosts, not hidden. */
+    private static final float SPECTATOR_ALPHA = 0.5f;
 
     private RadarMarkerRenderer() {
     }
@@ -42,6 +44,9 @@ public final class RadarMarkerRenderer {
      * shaped dot otherwise - either because icons are disabled, the entity isn't currently loaded
      * (only the scan-time snapshot position survived), or its species has no entry in
      * {@link EntityIconManager}'s UV table.
+     *
+     * <p>Spectator-mode entries render every element (icon, contour, dot, name) at
+     * {@link #SPECTATOR_ALPHA} of its normal alpha, on top of any elevation fading.
      *
      * @param x screen-space marker center (already projected/rotated by the caller)
      * @param y screen-space marker center (already projected/rotated by the caller)
@@ -59,22 +64,23 @@ public final class RadarMarkerRenderer {
         final int yDelta,
         final Entity live
     ) {
+        final float alphaScale = entry.spectator() ? SPECTATOR_ALPHA : 1f;
         if (config.radarIconsEnabled && live != null) {
             final EntityIconManager.FaceIcon icon = iconManager.iconFor(live);
             if (icon != null) {
-                drawIcon(matrices, client, icon, x, y, yDelta);
+                drawIcon(matrices, client, icon, x, y, yDelta, alphaScale);
                 if (config.radarShowPlayerNames && entry.category() == RadarCategory.PLAYER && entry.name() != null) {
-                    drawCenteredLine(client, matrices, entry.name(), x, y + ICON_NAME_OFFSET);
+                    drawCenteredLine(client, matrices, entry.name(), x, y + ICON_NAME_OFFSET, alphaScale);
                 }
                 return;
             }
         }
-        final int color = elevationColor(baseColor(entry.category()), yDelta);
+        final int color = Argb.scaleAlpha(elevationColor(baseColor(entry.category()), yDelta), alphaScale);
         switch (entry.category()) {
             case PLAYER:
                 RenderUtil.fillRect(matrices, x - 2f, y - 2f, 4f, 4f, color);
                 if (config.radarShowPlayerNames && entry.name() != null) {
-                    drawCenteredLine(client, matrices, entry.name(), x, y + 3f);
+                    drawCenteredLine(client, matrices, entry.name(), x, y + 3f, alphaScale);
                 }
                 break;
             case HOSTILE:
@@ -101,9 +107,10 @@ public final class RadarMarkerRenderer {
         final EntityIconManager.FaceIcon icon,
         final float x,
         final float y,
-        final int yDelta
+        final int yDelta,
+        final float alphaScale
     ) {
-        final int tint = elevationColor(0xFFFFFFFF, yDelta);
+        final int tint = Argb.scaleAlpha(elevationColor(0xFFFFFFFF, yDelta), alphaScale);
         RenderUtil.bindTexture(client, icon.texture());
         RenderUtil.drawTintedQuad(
             matrices, x - ICON_HALF_SIZE, y - ICON_HALF_SIZE, ICON_SIZE, ICON_SIZE,
@@ -119,7 +126,7 @@ public final class RadarMarkerRenderer {
         // VoxelMap-style presentation: a clean face icon with only a thin dark contour
         // for contrast against the terrain - no faction frames (user feedback: match
         // VoxelMap; a night full of hostiles turned colored frames into visual noise).
-        final int borderColor = elevationColor(ICON_CONTOUR, yDelta);
+        final int borderColor = Argb.scaleAlpha(elevationColor(ICON_CONTOUR, yDelta), alphaScale);
         final float left = x - ICON_HALF_SIZE - 1f;
         final float top = y - ICON_HALF_SIZE - 1f;
         final float edge = ICON_SIZE + 2f;
@@ -162,9 +169,14 @@ public final class RadarMarkerRenderer {
     }
 
     private static void drawCenteredLine(
-        final MinecraftClient client, final MatrixStack matrices, final String text, final float centerX, final float y
+        final MinecraftClient client,
+        final MatrixStack matrices,
+        final String text,
+        final float centerX,
+        final float y,
+        final float alphaScale
     ) {
         final int width = client.textRenderer.getWidth(text);
-        client.textRenderer.drawWithShadow(matrices, text, centerX - width / 2f, y, TEXT_COLOR);
+        client.textRenderer.drawWithShadow(matrices, text, centerX - width / 2f, y, Argb.scaleAlpha(TEXT_COLOR, alphaScale));
     }
 }

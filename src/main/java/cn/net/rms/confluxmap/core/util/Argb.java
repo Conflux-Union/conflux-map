@@ -44,6 +44,12 @@ public final class Argb {
         return (argb & 0xFF000000) | r << 16 | g << 8 | b;
     }
 
+    /** Scale the alpha channel by {@code factor} in [0, 1], keeping RGB. */
+    public static int scaleAlpha(final int argb, final float factor) {
+        final int a = clampChannel((int) (alpha(argb) * factor));
+        return a << 24 | (argb & 0x00FFFFFF);
+    }
+
     /** Blend {@code over} onto {@code under} using {@code over}'s alpha, keeping {@code under}'s alpha. */
     public static int blendOver(final int under, final int over) {
         final int a = alpha(over);

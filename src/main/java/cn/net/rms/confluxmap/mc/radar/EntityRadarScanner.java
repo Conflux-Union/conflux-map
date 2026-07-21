@@ -134,10 +134,14 @@ public final class EntityRadarScanner {
             if (entity == self || !(entity instanceof LivingEntity)) {
                 continue;
             }
-            if (entity.isSpectator() || entity.isInvisibleTo(self)) {
+            // Spectators are kept (flagged for translucent rendering) rather than hidden, and
+            // bypass the stealth-style hides below: in spectator mode the sneak key means
+            // "fly down", and an invisibility effect has no gameplay meaning.
+            final boolean spectator = entity.isSpectator();
+            if (!spectator && entity.isInvisibleTo(self)) {
                 continue;
             }
-            if (entity instanceof PlayerEntity && entity.isSneaking()) {
+            if (!spectator && entity instanceof PlayerEntity && entity.isSneaking()) {
                 continue;
             }
 
@@ -154,7 +158,7 @@ public final class EntityRadarScanner {
 
             final RadarCategory category = classify(entity);
             final String name = category == RadarCategory.PLAYER ? entity.getName().getString() : null;
-            raw.add(new RadarEntry(entity.getX(), entity.getZ(), yDelta, category, name, entity.getId()));
+            raw.add(new RadarEntry(entity.getX(), entity.getZ(), yDelta, category, name, entity.getId(), spectator));
         }
 
         final RadarFilter filter = new RadarFilter(
