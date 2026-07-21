@@ -65,5 +65,7 @@ The report is written under
 - `index.html` is a compact browsable table;
 - the five worst samples include reference, prediction, and heatmap PNG files.
 
-The normal `check` and `build` lifecycles depend on `runGametest`. GitHub Actions uploads the report
-directory even when a threshold fails, so the failing images and metrics remain inspectable.
+The normal `check` and `build` lifecycles depend on `runGametest`. GitHub Actions publishes the
+aggregate and per-sample metrics in the workflow run summary, so the report is readable without a
+download. It also uploads the report directory even when a threshold fails, preserving the raw
+JSON, HTML report, and worst-case images for deeper inspection.
