@@ -210,6 +210,28 @@ class PredictedTileComposerTest {
     }
 
     @Test
+    void swampWaterUsesItsBiomeTint() {
+        final BaselineGrid grid = new BaselineGrid();
+        Arrays.fill(grid.biomeId, 1);
+        Arrays.fill(grid.terrainY, BaselineDeriver.WATER_LEVEL - 4);
+        grid.biomeId[BaselineGrid.index(6, 6)] = 6;
+        final DerivedGrid derived = BaselineDeriver.derive(grid);
+        final PredictionPalette palette = PredictionPalette.defaults();
+
+        assertNotEquals(palette.waterTint(1), palette.waterTint(6), "test biomes must have different water tints");
+        assertEquals(SurfaceKind.WATER.ordinal(), derived.kind[BaselineGrid.index(5, 5)]);
+        assertEquals(SurfaceKind.WATER.ordinal(), derived.kind[BaselineGrid.index(6, 6)]);
+
+        final int[] pixels = PredictedTileComposer.compose(derived, grid, palette);
+
+        assertNotEquals(
+            pixels[5 * 256 + 5],
+            pixels[6 * 256 + 6],
+            "swamp water must use the swamp biome tint instead of the unified ocean tint"
+        );
+    }
+
+    @Test
     void endLandUsesUntintedEndStoneInsteadOfTheGrassSurfaceModel() {
         final BaselineGrid grid = new BaselineGrid();
         final DerivedGrid derived = new DerivedGrid();

@@ -102,12 +102,13 @@ public final class PredictedTileComposer {
 
                 int composed;
                 if (kind == SurfaceKind.WATER) {
-                    // A single unified ocean tint instead of the per-biome waterColor: warm/cold/
-                    // lukewarm ocean each carry different hues, and cubiomes' coarse biome grid makes
-                    // adjacent predicted tiles snap to different ocean variants along a coast, fracturing
-                    // one body of water into visibly different-colored tiles. Predicted water is already
-                    // an approximation (a seafloor stand-in composited beneath), so continuity wins here.
-                    final int water = Argb.multiply(palette.waterBase, BiomeTable.DEFAULT_WATER_TINT);
+                    // Keep ocean/river water unified: cubiomes' coarse biome grid otherwise fractures
+                    // one body of water along warm/cold variant boundaries. Water formed inside a land
+                    // biome still needs that biome's tint, most visibly the murky swamp water color.
+                    final int waterTint = BiomeTable.get(biomeId).waterBiome()
+                        ? BiomeTable.DEFAULT_WATER_TINT
+                        : palette.waterTint(biomeId);
+                    final int water = Argb.multiply(palette.waterBase, waterTint);
                     final int floor = seafloorColor(fluids[idx]);
                     composed = ShadingPipeline.compositeOver(water, floor);
                 } else if (corrected[outIdx] && colors[outIdx] != 0xFF) {
