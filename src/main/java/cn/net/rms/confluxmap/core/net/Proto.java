@@ -77,7 +77,7 @@ public final class Proto {
 
     /** {@code mode} field in MAP_PATCH: server's baseline matches the client's prediction exactly. */
     public static final int PATCH_MODE_UNCHANGED = 0;
-    /** {@code mode} field in MAP_PATCH: server sends only differing pixels (residual coding). */
+    /** {@code mode} field in MAP_PATCH: server sends differing pixels and removals (residual coding). */
     public static final int PATCH_MODE_RESIDUAL = 1;
     /** {@code mode} field in MAP_PATCH: server sends every pixel (baseline mismatch or cold cache). */
     public static final int PATCH_MODE_ABSOLUTE = 2;

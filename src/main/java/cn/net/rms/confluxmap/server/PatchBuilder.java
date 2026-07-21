@@ -82,6 +82,8 @@ public final class PatchBuilder {
                 );
                 if (absolute || DiffSpec.differs(expected, observed)) {
                     records.add(toSample(x, z, column));
+                } else if (sinceRevision != 0L) {
+                    records.add(PatchCodec.removal(z * SummaryTile.PIXELS + x));
                 }
             }
         }

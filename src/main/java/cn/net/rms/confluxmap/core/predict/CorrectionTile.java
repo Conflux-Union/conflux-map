@@ -25,7 +25,12 @@ public final class CorrectionTile {
         for (final PatchCodec.Sample sample : patch.samples()) {
             final int index = sample.pixelIndex();
             if (patchRevision >= pixelRevision[index]) {
-                if (!sample.equals(samples[index])) {
+                if (PatchCodec.isRemoval(sample)) {
+                    if (samples[index] != null) {
+                        samples[index] = null;
+                        changed = true;
+                    }
+                } else if (!sample.equals(samples[index])) {
                     samples[index] = sample;
                     changed = true;
                 }

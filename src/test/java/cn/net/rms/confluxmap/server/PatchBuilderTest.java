@@ -11,6 +11,8 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PatchBuilderTest {
     @Test
@@ -52,13 +54,45 @@ class PatchBuilderTest {
         assertEquals(0, result.recordCount());
     }
 
-    private static SummaryCodec.Region region(final int rx, final int rz, final int surfaceY) {
-        final SummaryCodec.Column[] columns = new SummaryCodec.Column[SummaryCodec.COLUMNS];
-        Arrays.fill(columns, new SummaryCodec.Column(1, surfaceY, 1, 255, 0));
-        final SummaryCodec.Chunk generated = new SummaryCodec.Chunk(true, surfaceY, columns);
+    @Test
+    void changedResidualChunkRemovesCorrectionThatReturnedToBaseline() throws Exception {
         final SummaryCodec.Chunk[] chunks = new SummaryCodec.Chunk[SummaryCodec.CHUNKS];
         Arrays.fill(chunks, SummaryCodec.Chunk.empty());
-        chunks[0] = generated;
+        chunks[0] = chunk(20L, 70, 1);
+        chunks[1] = chunk(10L, 80, 11);
+        final SummaryTile summary = new SummaryTile(
+            0,
+            0,
+            0,
+            List.of(new SummaryCodec.Region(0, 0, 0L, chunks))
+        );
+        final BaselineGrid baseline = new BaselineGrid();
+        Arrays.fill(baseline.biomeId, 1);
+        Arrays.fill(baseline.terrainY, 70);
+
+        final PatchBuilder.Result result = new PatchBuilder().build(summary, 15L, baseline, false);
+
+        assertEquals(Proto.PATCH_MODE_RESIDUAL, result.mode());
+        final PatchCodec.Patch patch = PatchCodec.decode(result.body());
+        assertEquals(256, patch.size());
+        assertTrue(PatchCodec.isRemoval(patch.sampleAt(0)));
+        assertNull(patch.sampleAt(16));
+    }
+
+    private static SummaryCodec.Region region(final int rx, final int rz, final int surfaceY) {
+        final SummaryCodec.Chunk[] chunks = new SummaryCodec.Chunk[SummaryCodec.CHUNKS];
+        Arrays.fill(chunks, SummaryCodec.Chunk.empty());
+        chunks[0] = chunk(surfaceY, surfaceY);
         return new SummaryCodec.Region(rx, rz, 0L, chunks);
+    }
+
+    private static SummaryCodec.Chunk chunk(final long revision, final int surfaceY) {
+        return chunk(revision, surfaceY, Proto.MAP_COLOR_NONE);
+    }
+
+    private static SummaryCodec.Chunk chunk(final long revision, final int surfaceY, final int mapColorId) {
+        final SummaryCodec.Column[] columns = new SummaryCodec.Column[SummaryCodec.COLUMNS];
+        Arrays.fill(columns, new SummaryCodec.Column(1, surfaceY, 1, mapColorId, 0));
+        return new SummaryCodec.Chunk(true, revision, columns);
     }
 }
