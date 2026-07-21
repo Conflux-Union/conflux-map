@@ -178,14 +178,15 @@ public final class TileService {
 
     /**
      * Called (from {@code mc.world.McDaylightTracker}) whenever {@link DaylightModel}'s
-     * quantized bucket changes: marks every currently-resident SURFACE-layer LOD-0 tile
-     * (one per region already in the {@link ColumnStore}) dirty so it recomposes with the
-     * new day/night + block-light blend. Uses the existing dirty-queue prioritization/budget
-     * (see {@link #pump}), so this never stalls the queue even for a large resident set - it
-     * only fires on a slow drift (a few dozen times per full day/night cycle), not per-frame.
-     * Higher-LOD SURFACE tiles recompose from the live {@link ColumnStore} the next time they
-     * are themselves marked dirty (e.g. a chunk update, or {@link #requestTile}); they are not
-     * force-refreshed here.
+     * quantized bucket changes: marks every currently-resident SURFACE-layer tile dirty -
+     * the LOD-0 tile of each region already in the {@link ColumnStore}, plus the covering
+     * tile at every higher LOD (deduped by the {@link #dirty} map, since many regions share
+     * one coarse tile) - so all of them recompose with the new day/night + block-light blend.
+     * Without the higher LODs the zoomed-out fullscreen map would keep showing whatever
+     * daylight its tiles were last composed with while the LOD-0 minimap moved on. Uses the
+     * existing dirty-queue prioritization/budget (see {@link #pump}), so this never stalls
+     * the queue even for a large resident set - it only fires on a slow drift (a few dozen
+     * times per full day/night cycle), not per-frame.
      */
     public void markSurfaceRelit(final long token) {
         final MapWorld world = mapWorlds.ifCurrent(token);
@@ -195,10 +196,13 @@ public final class TileService {
         final SessionGuard.Session session = world.session();
         final ColumnStore store = world.store(MapLayer.SURFACE);
         for (final RegionColumns region : store.allRegions()) {
-            final TileKey key = new TileKey(
-                session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), 0, region.regionX, region.regionZ
-            );
-            markDirty(key, token);
+            for (int lod = 0; lod <= TileMath.MAX_LOD; lod++) {
+                final TileKey key = new TileKey(
+                    session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), lod,
+                    region.regionX >> lod, region.regionZ >> lod
+                );
+                markDirty(key, token);
+            }
         }
     }
 
