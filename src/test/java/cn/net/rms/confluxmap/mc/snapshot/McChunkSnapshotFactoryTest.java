@@ -19,20 +19,18 @@ class McChunkSnapshotFactoryTest {
 
     @Test
     void kelpCollapsesToWaterBeforeUnderwaterOverlaySelection() {
-        assertKelpCollapsesToWater(Blocks.KELP.getDefaultState());
-        assertKelpCollapsesToWater(Blocks.KELP_PLANT.getDefaultState());
+        assertCollapsesToWater(Blocks.KELP.getDefaultState());
+        assertCollapsesToWater(Blocks.KELP_PLANT.getDefaultState());
     }
 
     @Test
-    void otherUnderwaterPlantsRemainEligibleForTheSeafloorOverlay() {
-        final BlockState seagrass = McChunkSnapshotFactory.collapse(Blocks.SEAGRASS.getDefaultState());
-
-        assertTrue(seagrass.isOf(Blocks.SEAGRASS));
-        assertTrue(McChunkSnapshotFactory.isSeafloorCapturable(seagrass));
+    void submergedGreenVegetationDoesNotBecomeASeafloorOverlay() {
+        assertCollapsesToWater(Blocks.SEAGRASS.getDefaultState());
+        assertCollapsesToWater(Blocks.TALL_SEAGRASS.getDefaultState());
     }
 
-    private static void assertKelpCollapsesToWater(final BlockState kelp) {
-        final BlockState collapsed = McChunkSnapshotFactory.collapse(kelp);
+    private static void assertCollapsesToWater(final BlockState state) {
+        final BlockState collapsed = McChunkSnapshotFactory.collapse(state);
 
         assertTrue(collapsed.isOf(Blocks.WATER));
         assertFalse(McChunkSnapshotFactory.isSeafloorCapturable(collapsed));

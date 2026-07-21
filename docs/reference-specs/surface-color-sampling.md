@@ -31,14 +31,14 @@ non-empty collision shape or a fluid, i.e. the same category of heightmap
 Minecraft itself exposes for "where would something standing on this column
 land." This is one query for the whole column, not a per-block-type scan.
 
-**Waterlogged/kelp collapse:** before any opacity or color decision is made
-about a block, waterlogged states and both kelp states are replaced with a
-plain "just the fluid" representation for every purpose downstream (opacity
-test, color, tint, everything). This happens on the very first block fetched
-and again on every step of the descent below. Practically: a waterlogged
-stair, slab, sign, or plant renders as plain water, and kelp forests render as
-the surrounding ocean instead of dense green map noise. Other permanently
-submerged vegetation keeps its block state and remains eligible for the
+**Waterlogged/submerged-greenery collapse:** before any opacity or color
+decision is made about a block, waterlogged states plus both kelp and seagrass
+states are replaced with a plain "just the fluid" representation for every
+purpose downstream (opacity test, color, tint, everything). This happens on
+the very first block fetched and again on every step of the descent below.
+Practically: a waterlogged stair, slab, sign, or plant renders as plain water,
+and dense green underwater vegetation renders as the surrounding ocean instead
+of map noise. Coral and other submerged decoration remain eligible for the
 seafloor overlay scan.
 
 **Opacity test** applied to a candidate block: it counts as opaque if its
@@ -106,8 +106,8 @@ here.
 - Similarly, the first block (not water/ice/air/bubble-column) that differs
   from whatever just got captured as the transparent-overlay candidate is
   captured as the foliage-overlay candidate — again only if not already set.
-  This is how things like seagrass or coral end up rendered as an overlay on
-  top of the seafloor. Kelp has already collapsed to water and is excluded.
+  This is how things like coral end up rendered as an overlay on top of the
+  seafloor. Kelp and seagrass have already collapsed to water and are excluded.
 - This scan also has **no fixed depth limit** beyond the world's vertical
   bounds and the two stop conditions above.
 - If the scan reaches the very bottom of the world while the column is

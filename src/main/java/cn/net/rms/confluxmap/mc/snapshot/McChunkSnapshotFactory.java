@@ -592,15 +592,16 @@ public final class McChunkSnapshotFactory {
     }
 
     /**
-     * §1 waterlogged/kelp collapse. Kelp is deliberately normalized to its water fluid so dense
-     * ocean kelp forests do not become green map noise; other permanently submerged vegetation
-     * keeps its block state and can still be captured by the seafloor overlay scan.
+     * §1 waterlogged/submerged-greenery collapse. Kelp and seagrass are deliberately normalized
+     * to their water fluid so dense underwater vegetation does not become green map noise; coral
+     * and other submerged decoration stay eligible for the seafloor overlay scan.
      */
     static BlockState collapse(final BlockState state) {
-        final boolean kelp = state.isOf(Blocks.KELP) || state.isOf(Blocks.KELP_PLANT);
+        final boolean submergedGreenery = state.isOf(Blocks.KELP) || state.isOf(Blocks.KELP_PLANT)
+            || state.isOf(Blocks.SEAGRASS) || state.isOf(Blocks.TALL_SEAGRASS);
         final boolean waterlogged = state.contains(Properties.WATERLOGGED)
             && state.get(Properties.WATERLOGGED);
-        if (!kelp && !waterlogged) {
+        if (!submergedGreenery && !waterlogged) {
             return state;
         }
         final FluidState fluid = state.getFluidState();
