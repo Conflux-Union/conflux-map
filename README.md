@@ -19,12 +19,19 @@ line of code here is written from scratch; see
   Overworld with hysteresis so it doesn't flicker at the boundary; Nether
   current-layer / ceiling / manual-Y-slice modes; End void-background
   rendering.
-- **Waypoints and death points** — create, edit, color, group, toggle;
-  automatic death-point markers; correct 8:1 Overworld↔Nether conversion;
-  edge-of-minimap direction indicators for out-of-range waypoints.
+- **Waypoints and death points** — create, edit, color, organize into sets, and
+  toggle; automatic death-point markers; strict per-dimension rendering; and
+  edge-of-minimap direction indicators for out-of-range waypoints. On both the
+  fullscreen map and minimap, markers use the first character of the name in
+  white over the player-selected background color, differing only in size.
+- **Waypoint set management** — create, rename, and delete local sets; select
+  multiple points (or every point in the current filter) and move them to another set in one
+  operation. Deleting a set permanently deletes every waypoint it contains.
 - **Public and chat-shared coordinates** — an optional server-owned public
   waypoint catalog with operator locks, plus preview-before-send chat sharing
   and click-to-import coordinate messages on servers without the companion.
+  Public controls are hidden unless the connected server explicitly enables
+  the public waypoint feature.
 - **Entity radar** — hostile / passive / player / other classification, each
   with its own toggle, range, and entity cap.
 - **Disk cache** — explored terrain persists per world / server / dimension /
@@ -60,17 +67,28 @@ category.
 | `U` | Open the waypoint list |
 | `B` | New waypoint at your position |
 | `J` | Toggle local waypoints |
-| `K` | Toggle public waypoints |
-| `O` | Open public waypoint management |
 | `,` | Open the settings screen |
 | `P` | Cycle prediction mode (everywhere / generated-only / visited-only) |
 | `F9` | Reload prediction tiles |
+
+## Waypoint management
+
+Waypoints are rendered only in the dimension where they were created. The
+Overworld, Nether, and End never project or convert one another's waypoint
+markers. The waypoint list supports local set creation, renaming, cascading
+deletion, and multi-select or current-filter select-all batch moves between sets.
+
+A waypoint HUD overlay is not implemented yet. An immutable, read-only
+waypoint data interface is reserved for a future HUD without exposing store
+mutation operations.
 
 ## Public waypoints
 
 Public waypoints require the same jar on the server and are disabled by
 default. A level-2 operator can use `/confluxmap waypoints enable`, `disable`,
 or `status`; the setting is persisted in `config/confluxmap/server.json`.
+When the feature is disabled or unavailable, public waypoint buttons, tabs,
+sharing choices, and settings are not shown on the client.
 Public points are stored in the world directory, are visible to all connected
 mod clients, and cannot be edited after publication. Any player can delete an
 unlocked point; only operators can lock, unlock, or delete locked points.
