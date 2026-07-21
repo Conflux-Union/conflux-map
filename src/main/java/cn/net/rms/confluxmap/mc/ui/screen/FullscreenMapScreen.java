@@ -22,6 +22,8 @@ import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.core.waypoint.DimensionScale;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
+import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
+import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
@@ -39,10 +41,12 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
+import net.minecraft.text.Text;
 import net.minecraft.text.TranslatableText;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.Util;
@@ -71,6 +75,9 @@ public final class FullscreenMapScreen extends Screen {
     private static final double ZOOM_STEP = 1.26;
 
     private static final int MARGIN = 6;
+    private static final int CONTROL_WIDTH = 104;
+    private static final int CONTROL_HEIGHT = 20;
+    private static final int CONTROL_GAP = 3;
     private static final int TEXT_COLOR = 0xFFFFFFFF;
     private static final int SYNCING_TEXT_COLOR = 0xFFFFE066;
     private static final int SYNCED_TEXT_COLOR = 0xFF80E080;
@@ -107,6 +114,7 @@ public final class FullscreenMapScreen extends Screen {
     private final FullscreenMapViewState viewState;
     private final LayerSelector layerSelector;
     private final WaypointService waypointService;
+    private final WaypointRenderCatalog waypointRenderCatalog;
     private final ConfluxConfig config;
     private final EntityRadarScanner radarScanner;
     private final EntityIconManager radarIconManager;
@@ -119,11 +127,12 @@ public final class FullscreenMapScreen extends Screen {
     private double scale;
 
     /** Recomputed every frame by {@link #drawWaypoints} - the marker nearest the cursor within {@link #HOVER_RADIUS_PX}, or none. */
-    private Waypoint hoveredWaypoint;
+    private WaypointRenderEntry hoveredWaypoint;
 
     /** Cursor position at the last left-button press, so {@link #mouseReleased} can tell a click from a pan drag. */
     private double leftPressX;
     private double leftPressY;
+    private boolean mapPointerPress;
 
     public FullscreenMapScreen(final KeyBinding openMapKey) {
         super(new TranslatableText("confluxmap.screen.map.title"));
@@ -138,6 +147,7 @@ public final class FullscreenMapScreen extends Screen {
         this.viewState = app.fullscreenMapViewState();
         this.layerSelector = app.layerSelector();
         this.waypointService = app.waypointService();
+        this.waypointRenderCatalog = app.waypointRenderCatalog();
         this.config = app.config();
         this.radarScanner = app.radarScanner();
         this.radarIconManager = app.entityIconManager();
@@ -156,6 +166,41 @@ public final class FullscreenMapScreen extends Screen {
             centerZ = player.isPresent() ? player.get().z() : 0.0;
             scale = DEFAULT_SCALE;
         }
+    }
+
+    @Override
+    protected void init() {
+        final int x = width - MARGIN - CONTROL_WIDTH;
+        int y = MARGIN + textRenderer.fontHeight + 5;
+        addDrawableChild(new ButtonWidget(
+            x, y, CONTROL_WIDTH, CONTROL_HEIGHT, visibilityLabel(true), b -> {
+                config.localWaypointsVisible = !config.localWaypointsVisible;
+                ConfluxMapClient.get().configIo().save(config);
+                b.setMessage(visibilityLabel(true));
+            }
+        ));
+        y += CONTROL_HEIGHT + CONTROL_GAP;
+        addDrawableChild(new ButtonWidget(
+            x, y, CONTROL_WIDTH, CONTROL_HEIGHT, visibilityLabel(false), b -> {
+                config.sharedWaypointsVisible = !config.sharedWaypointsVisible;
+                ConfluxMapClient.get().configIo().save(config);
+                b.setMessage(visibilityLabel(false));
+            }
+        ));
+        y += CONTROL_HEIGHT + CONTROL_GAP;
+        addDrawableChild(new ButtonWidget(
+            x, y, CONTROL_WIDTH, CONTROL_HEIGHT,
+            new TranslatableText("confluxmap.screen.waypoints.manage"),
+            b -> MinecraftClient.getInstance().setScreen(new WaypointListScreen(this, WaypointListScreen.Tab.PUBLIC))
+        ));
+    }
+
+    private Text visibilityLabel(final boolean local) {
+        final boolean visible = local ? config.localWaypointsVisible : config.sharedWaypointsVisible;
+        return new TranslatableText(
+            local ? "confluxmap.map.waypoints.local" : "confluxmap.map.waypoints.shared",
+            new TranslatableText(visible ? "confluxmap.value.on" : "confluxmap.value.off").getString()
+        );
     }
 
     /** Keep the world (and this session's capture pipeline) running while the map is open. */
@@ -188,27 +233,39 @@ public final class FullscreenMapScreen extends Screen {
     }
 
     /**
-     * Right-click always creates a new waypoint prefilled with the clicked block
-     * position. Left-click on a hovered marker instead opens that waypoint's edit
-     * screen - see {@link #mouseReleased}, which fires once the click (as opposed
-     * to a pan drag) completes.
+     * Right-click opens an ownership/audience choice for the clicked block position.
+     * Left-click on a hovered marker opens the source-appropriate management flow -
+     * see {@link #mouseReleased}, which fires once the click (as opposed to a pan
+     * drag) completes.
      */
     @Override
     public boolean mouseClicked(final double mouseX, final double mouseY, final int button) {
+        if (super.mouseClicked(mouseX, mouseY, button)) {
+            mapPointerPress = false;
+            return true;
+        }
+        if (isOverWaypointControls(mouseX, mouseY)) {
+            mapPointerPress = false;
+            return true;
+        }
         if (button == 1) {
             final double worldX = Math.floor(centerX + (mouseX - width / 2.0) * scale);
             final double worldZ = Math.floor(centerZ + (mouseY - height / 2.0) * scale);
             final double worldY = gameBridge.player().map(p -> (double) p.blockY()).orElse(DEFAULT_CREATE_Y);
             MinecraftClient.getInstance().setScreen(
-                WaypointEditScreen.forCreate(this, gameBridge.session().dimension(), worldX, worldY, worldZ)
+                new WaypointCreateTargetScreen(
+                    this, gameBridge.session().dimension(), worldX, worldY, worldZ
+                )
             );
             return true;
         }
         if (button == 0) {
             leftPressX = mouseX;
             leftPressY = mouseY;
+            mapPointerPress = true;
+            return true;
         }
-        return super.mouseClicked(mouseX, mouseY, button);
+        return false;
     }
 
     /**
@@ -220,23 +277,51 @@ public final class FullscreenMapScreen extends Screen {
      */
     @Override
     public boolean mouseReleased(final double mouseX, final double mouseY, final int button) {
-        if (button == 0 && hoveredWaypoint != null
+        if (button != 0 || !mapPointerPress) {
+            return super.mouseReleased(mouseX, mouseY, button);
+        }
+        mapPointerPress = false;
+        if (hoveredWaypoint != null
+            && !isOverWaypointControls(mouseX, mouseY)
             && Math.hypot(mouseX - leftPressX, mouseY - leftPressY) < CLICK_DRAG_TOLERANCE_PX) {
-            MinecraftClient.getInstance().setScreen(WaypointEditScreen.forEdit(this, hoveredWaypoint));
+            openWaypoint(hoveredWaypoint);
             return true;
         }
-        return super.mouseReleased(mouseX, mouseY, button);
+        return true;
     }
 
     @Override
     public boolean mouseDragged(final double mouseX, final double mouseY, final int button, final double deltaX, final double deltaY) {
-        if (button == 0) {
+        if (button == 0 && mapPointerPress) {
             // Opposite the drag direction, 1:1 in world-space at the current scale (§4 pan mechanics).
             centerX -= deltaX * scale;
             centerZ -= deltaY * scale;
             return true;
         }
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+    }
+
+    private boolean isOverWaypointControls(final double mouseX, final double mouseY) {
+        final int left = width - MARGIN - CONTROL_WIDTH;
+        final int top = MARGIN + textRenderer.fontHeight + 5;
+        final int bottom = top + CONTROL_HEIGHT * 3 + CONTROL_GAP * 2;
+        return mouseX >= left && mouseX <= width - MARGIN && mouseY >= top && mouseY <= bottom;
+    }
+
+    private void openWaypoint(final WaypointRenderEntry waypoint) {
+        if (waypoint.shared()) {
+            MinecraftClient.getInstance().setScreen(new WaypointListScreen(
+                this,
+                waypoint.locked() ? WaypointListScreen.Tab.LOCKED : WaypointListScreen.Tab.PUBLIC
+            ));
+            return;
+        }
+        for (final Waypoint local : waypointService.list()) {
+            if (local.id.equals(waypoint.id())) {
+                MinecraftClient.getInstance().setScreen(WaypointEditScreen.forEdit(this, local));
+                return;
+            }
+        }
     }
 
     @Override
@@ -536,12 +621,12 @@ public final class FullscreenMapScreen extends Screen {
         final DimensionId currentDimension = gameBridge.session().dimension();
         final double pxPerBlock = 1.0 / scale;
         final List<ScreenMarker> markers = new ArrayList<>();
-        for (final Waypoint waypoint : waypointService.list()) {
-            if (!waypoint.visible || !DimensionScale.isVisibleFrom(waypoint.dimensionId, currentDimension)) {
+        for (final WaypointRenderEntry waypoint : waypointRenderCatalog.snapshot()) {
+            if (!DimensionScale.isVisibleFrom(waypoint.dimensionId(), currentDimension)) {
                 continue;
             }
-            final double worldX = DimensionScale.convertHorizontal(waypoint.x, waypoint.dimensionId, currentDimension);
-            final double worldZ = DimensionScale.convertHorizontal(waypoint.z, waypoint.dimensionId, currentDimension);
+            final double worldX = DimensionScale.convertHorizontal(waypoint.x(), waypoint.dimensionId(), currentDimension);
+            final double worldZ = DimensionScale.convertHorizontal(waypoint.z(), waypoint.dimensionId(), currentDimension);
             final float screenX = (float) (width / 2.0 + (worldX - centerX) * pxPerBlock);
             final float screenY = (float) (height / 2.0 + (worldZ - centerZ) * pxPerBlock);
             if (screenX < -MARKER_HALF_SIZE || screenX > width + MARKER_HALF_SIZE
@@ -551,7 +636,7 @@ public final class FullscreenMapScreen extends Screen {
             markers.add(new ScreenMarker(waypoint, screenX, screenY));
         }
 
-        Waypoint hovered = null;
+        WaypointRenderEntry hovered = null;
         double bestHoverDist = HOVER_RADIUS_PX;
         for (final ScreenMarker marker : markers) {
             final double hoverDist = Math.hypot(mouseX - marker.screenX(), mouseY - marker.screenY());
@@ -563,21 +648,21 @@ public final class FullscreenMapScreen extends Screen {
         hoveredWaypoint = hovered;
 
         for (final ScreenMarker marker : markers) {
-            final Waypoint waypoint = marker.waypoint();
+            final WaypointRenderEntry waypoint = marker.waypoint();
             final boolean isHovered = waypoint == hoveredWaypoint;
             WaypointMarkerRenderer.draw(
                 matrices, client.textRenderer, waypoint, marker.screenX(), marker.screenY(), MARKER_HALF_SIZE, 1f, isHovered
             );
             if (scale <= NAME_LABEL_MAX_SCALE || isHovered) {
                 textRenderer.drawWithShadow(
-                    matrices, waypoint.name, marker.screenX() + MARKER_HALF_SIZE + 2, marker.screenY() - 4, TEXT_COLOR
+                    matrices, waypoint.name(), marker.screenX() + MARKER_HALF_SIZE + 2, marker.screenY() - 4, TEXT_COLOR
                 );
             }
         }
     }
 
     /** One waypoint's already-converted, already-viewport-culled screen position for this frame's {@link #drawWaypoints} pass. */
-    private record ScreenMarker(Waypoint waypoint, float screenX, float screenY) {
+    private record ScreenMarker(WaypointRenderEntry waypoint, float screenX, float screenY) {
     }
 
     private void drawDimensionLabel(final MatrixStack matrices) {
@@ -673,9 +758,13 @@ public final class FullscreenMapScreen extends Screen {
         final String text;
         if (hoveredWaypoint != null) {
             final DimensionId currentDimension = gameBridge.session().dimension();
-            final double worldX = DimensionScale.convertHorizontal(hoveredWaypoint.x, hoveredWaypoint.dimensionId, currentDimension);
-            final double worldZ = DimensionScale.convertHorizontal(hoveredWaypoint.z, hoveredWaypoint.dimensionId, currentDimension);
-            text = (int) Math.floor(worldX) + ", " + (int) Math.floor(hoveredWaypoint.y) + ", " + (int) Math.floor(worldZ);
+            final double worldX = DimensionScale.convertHorizontal(
+                hoveredWaypoint.x(), hoveredWaypoint.dimensionId(), currentDimension
+            );
+            final double worldZ = DimensionScale.convertHorizontal(
+                hoveredWaypoint.z(), hoveredWaypoint.dimensionId(), currentDimension
+            );
+            text = (int) Math.floor(worldX) + ", " + (int) Math.floor(hoveredWaypoint.y()) + ", " + (int) Math.floor(worldZ);
         } else {
             final int blockX = (int) Math.floor(centerX + (mouseX - width / 2.0) * scale);
             final int blockZ = (int) Math.floor(centerZ + (mouseY - height / 2.0) * scale);

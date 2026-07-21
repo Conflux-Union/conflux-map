@@ -6,6 +6,7 @@ import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import java.math.BigDecimal;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import net.minecraft.client.MinecraftClient;
@@ -24,7 +25,9 @@ import net.minecraft.text.TranslatableText;
  * implementation brief.
  */
 public final class WaypointEditScreen extends Screen {
-    private static final Pattern NUMERIC = Pattern.compile("-?\\d*\\.?\\d*");
+    private enum CreateTarget { LOCAL, PUBLIC, CHAT }
+
+    private static final Pattern NUMERIC = Pattern.compile("[+-]?\\d*(?:\\.\\d*)?(?:[eE][+-]?\\d*)?");
     private static final int[] PRESET_COLORS = {
         0xFFE74C3C, 0xFFE67E22, 0xFFF1C40F, 0xFF2ECC71,
         0xFF1ABC9C, 0xFF3498DB, 0xFF9B59B6, 0xFFECF0F1
@@ -45,6 +48,7 @@ public final class WaypointEditScreen extends Screen {
     private final String initialGroup;
     private final int initialColor;
     private final boolean initialVisible;
+    private final CreateTarget createTarget;
 
     private TextFieldWidget nameField;
     private TextFieldWidget xField;
@@ -65,9 +69,10 @@ public final class WaypointEditScreen extends Screen {
         final double z,
         final int color,
         final String group,
-        final boolean visible
+        final boolean visible,
+        final CreateTarget createTarget
     ) {
-        super(new TranslatableText(editingId == null ? "confluxmap.screen.waypoint.create" : "confluxmap.screen.waypoint.edit"));
+        super(new TranslatableText(titleKey(editingId, createTarget)));
         this.parent = parent;
         this.editingId = editingId;
         this.dimensionId = dimensionId;
@@ -80,6 +85,7 @@ public final class WaypointEditScreen extends Screen {
         this.initialColor = color;
         this.initialGroup = group;
         this.initialVisible = visible;
+        this.createTarget = createTarget;
         this.selectedColor = color;
     }
 
@@ -87,17 +93,67 @@ public final class WaypointEditScreen extends Screen {
     public static WaypointEditScreen forCreate(
         final Screen parent, final DimensionId dimensionId, final double x, final double y, final double z
     ) {
+        return forCreate(parent, dimensionId, "", x, y, z);
+    }
+
+    /** Prefilled import form; saving still requires an explicit user action. */
+    public static WaypointEditScreen forCreate(
+        final Screen parent,
+        final DimensionId dimensionId,
+        final String name,
+        final double x,
+        final double y,
+        final double z
+    ) {
         return new WaypointEditScreen(
             parent, null, dimensionId, Waypoint.Type.NORMAL, System.currentTimeMillis(),
-            "", x, y, z, PRESET_COLORS[5], "", true
+            name, x, y, z, PRESET_COLORS[5], "", true, CreateTarget.LOCAL
+        );
+    }
+
+    public static WaypointEditScreen forPublicCreate(
+        final Screen parent, final DimensionId dimensionId, final double x, final double y, final double z
+    ) {
+        return forTarget(parent, dimensionId, x, y, z, CreateTarget.PUBLIC);
+    }
+
+    public static WaypointEditScreen forChatCreate(
+        final Screen parent, final DimensionId dimensionId, final double x, final double y, final double z
+    ) {
+        return forTarget(parent, dimensionId, x, y, z, CreateTarget.CHAT);
+    }
+
+    private static WaypointEditScreen forTarget(
+        final Screen parent,
+        final DimensionId dimensionId,
+        final double x,
+        final double y,
+        final double z,
+        final CreateTarget target
+    ) {
+        return new WaypointEditScreen(
+            parent, null, dimensionId, Waypoint.Type.NORMAL, System.currentTimeMillis(),
+            "", x, y, z, PRESET_COLORS[5], "", true, target
         );
     }
 
     public static WaypointEditScreen forEdit(final Screen parent, final Waypoint waypoint) {
         return new WaypointEditScreen(
             parent, waypoint.id, waypoint.dimensionId, waypoint.type, waypoint.createdAtEpochMs,
-            waypoint.name, waypoint.x, waypoint.y, waypoint.z, waypoint.colorArgb, waypoint.group, waypoint.visible
+            waypoint.name, waypoint.x, waypoint.y, waypoint.z, waypoint.colorArgb, waypoint.group,
+            waypoint.visible, CreateTarget.LOCAL
         );
+    }
+
+    private static String titleKey(final UUID editingId, final CreateTarget target) {
+        if (editingId != null) {
+            return "confluxmap.screen.waypoint.edit";
+        }
+        return switch (target) {
+            case LOCAL -> "confluxmap.screen.waypoint.create";
+            case PUBLIC -> "confluxmap.screen.waypoint.create_public";
+            case CHAT -> "confluxmap.screen.waypoint.create_chat";
+        };
     }
 
     @Override
@@ -159,14 +215,18 @@ public final class WaypointEditScreen extends Screen {
 
     private TextFieldWidget numericField(final int x, final int y, final int w, final String initial) {
         final TextFieldWidget field = new TextFieldWidget(textRenderer, x, y, w, FIELD_HEIGHT, Text.of(""));
-        field.setMaxLength(16);
+        field.setMaxLength(32);
         field.setTextPredicate(s -> NUMERIC.matcher(s).matches());
         field.setText(initial);
         return field;
     }
 
     private static String formatCoord(final double value) {
-        return String.valueOf((long) Math.floor(value));
+        if (value == 0.0) {
+            return "0";
+        }
+        final String plain = BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();
+        return plain.length() <= 24 ? plain : Double.toString(value);
     }
 
     private void onDone() {
@@ -177,11 +237,21 @@ public final class WaypointEditScreen extends Screen {
         final double x = parseOr(xField.getText(), initialX);
         final double y = parseOr(yField.getText(), initialY);
         final double z = parseOr(zField.getText(), initialZ);
+        if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) {
+            return;
+        }
         final Waypoint waypoint = new Waypoint(
             editingId == null ? UUID.randomUUID() : editingId,
             name, dimensionId, x, y, z, selectedColor, groupField.getText().trim(),
             initialVisible, type, createdAtEpochMs
         );
+        if (editingId == null && createTarget != CreateTarget.LOCAL) {
+            final WaypointShareConfirmScreen.Target target = createTarget == CreateTarget.PUBLIC
+                ? WaypointShareConfirmScreen.Target.PUBLIC
+                : WaypointShareConfirmScreen.Target.CHAT;
+            MinecraftClient.getInstance().setScreen(new WaypointShareConfirmScreen(parent, waypoint, target));
+            return;
+        }
         final WaypointService service = ConfluxMapClient.get().waypointService();
         final WaypointStore store = service.current();
         if (store != null) {

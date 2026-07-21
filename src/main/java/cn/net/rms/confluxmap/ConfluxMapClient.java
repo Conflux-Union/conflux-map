@@ -13,6 +13,7 @@ import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
+import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.mc.McGameBridge;
 import cn.net.rms.confluxmap.mc.color.BiomeTintResolver;
@@ -22,6 +23,7 @@ import cn.net.rms.confluxmap.mc.input.Keybinds;
 import cn.net.rms.confluxmap.mc.net.ClientNetworking;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.net.MapSyncClient;
+import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.predict.PredictionBootstrap;
 import cn.net.rms.confluxmap.mc.predict.PredictionPaletteBuilder;
 import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
@@ -68,6 +70,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private FullscreenMapViewState fullscreenMapViewState;
     private LayerSelector layerSelector;
     private WaypointService waypointService;
+    private WaypointRenderCatalog waypointRenderCatalog;
     private DeathWatcher deathWatcher;
     private WaypointWorldRenderer waypointWorldRenderer;
     private DaylightModel daylightModel;
@@ -79,6 +82,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private StructureMarkerService structureMarkerService;
     private CompanionSession companionSession;
     private ClientNetworking clientNetworking;
+    private SharedWaypointClient sharedWaypoints;
     private CorrectionStore correctionStore;
     private MapSyncClient mapSyncClient;
 
@@ -130,6 +134,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
         mapSyncClient = new MapSyncClient(companionSession, clientNetworking, correctionStore, predictionTileService, config);
         clientNetworking.bindMapSync(mapSyncClient);
         clientNetworking.register();
+        sharedWaypoints = new SharedWaypointClient(client);
+        sharedWaypoints.register();
 
         spriteColorSampler = new SpriteColorSampler(client);
         biomeTintResolver = new BiomeTintResolver(client);
@@ -146,12 +152,14 @@ public final class ConfluxMapClient implements ClientModInitializer {
             FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("waypoints"),
             executors, ConfluxMapMod.LOGGER
         );
+        waypointRenderCatalog = new WaypointRenderCatalog(waypointService, sharedWaypoints::list, config);
         deathWatcher = new DeathWatcher(gameBridge, config, waypointService);
         minimapHudRenderer = new MinimapHudRenderer(
-            client, config, gameBridge, tileService, tileTextureManager, radarScanner, entityIconManager, layerSelector, waypointService,
+            client, config, gameBridge, tileService, tileTextureManager, radarScanner, entityIconManager, layerSelector,
+            waypointRenderCatalog,
             radarViewRange
         );
-        waypointWorldRenderer = new WaypointWorldRenderer(client, config, gameBridge, waypointService);
+        waypointWorldRenderer = new WaypointWorldRenderer(client, config, gameBridge, waypointRenderCatalog);
         fullscreenMapViewState = new FullscreenMapViewState();
         daylightTracker = new McDaylightTracker(client, config, daylightModel, mapWorlds, tileService);
 
@@ -273,6 +281,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
         return waypointService;
     }
 
+    public WaypointRenderCatalog waypointRenderCatalog() {
+        return waypointRenderCatalog;
+    }
+
     public PredictionState predictionState() {
         return predictionState;
     }
@@ -295,5 +307,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public MapSyncClient mapSyncClient() {
         return mapSyncClient;
+    }
+
+    public SharedWaypointClient sharedWaypoints() {
+        return sharedWaypoints;
     }
 }

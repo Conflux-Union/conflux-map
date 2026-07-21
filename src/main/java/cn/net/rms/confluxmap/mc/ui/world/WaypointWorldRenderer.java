@@ -6,8 +6,8 @@ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.waypoint.DimensionScale;
-import cn.net.rms.confluxmap.core.waypoint.Waypoint;
-import cn.net.rms.confluxmap.core.waypoint.WaypointService;
+import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
+import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.Optional;
@@ -69,18 +69,18 @@ public final class WaypointWorldRenderer {
     private final MinecraftClient client;
     private final ConfluxConfig config;
     private final GameBridge gameBridge;
-    private final WaypointService waypointService;
+    private final WaypointRenderCatalog waypointRenderCatalog;
 
     public WaypointWorldRenderer(
         final MinecraftClient client,
         final ConfluxConfig config,
         final GameBridge gameBridge,
-        final WaypointService waypointService
+        final WaypointRenderCatalog waypointRenderCatalog
     ) {
         this.client = client;
         this.config = config;
         this.gameBridge = gameBridge;
-        this.waypointService = waypointService;
+        this.waypointRenderCatalog = waypointRenderCatalog;
     }
 
     public void register() {
@@ -117,14 +117,14 @@ public final class WaypointWorldRenderer {
         }
 
         VertexConsumerProvider.Immediate immediate = null;
-        for (final Waypoint waypoint : waypointService.list()) {
-            if (!waypoint.visible || !DimensionScale.isVisibleFrom(waypoint.dimensionId, currentDimension)) {
+        for (final WaypointRenderEntry waypoint : waypointRenderCatalog.snapshot()) {
+            if (!DimensionScale.isVisibleFrom(waypoint.dimensionId(), currentDimension)) {
                 continue;
             }
-            final double worldX = DimensionScale.convertHorizontal(waypoint.x, waypoint.dimensionId, currentDimension);
-            final double worldZ = DimensionScale.convertHorizontal(waypoint.z, waypoint.dimensionId, currentDimension);
+            final double worldX = DimensionScale.convertHorizontal(waypoint.x(), waypoint.dimensionId(), currentDimension);
+            final double worldZ = DimensionScale.convertHorizontal(waypoint.z(), waypoint.dimensionId(), currentDimension);
             final double dx = worldX - player.x();
-            final double dy = waypoint.y - player.y();
+            final double dy = waypoint.y() - player.y();
             final double dz = worldZ - player.z();
             final double distance3d = Math.sqrt(dx * dx + dy * dy + dz * dz);
             if (distance3d > maxDistance) {
@@ -133,13 +133,16 @@ public final class WaypointWorldRenderer {
 
             if (config.waypointBeamsEnabled) {
                 final double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
-                drawBeam(matrices, cameraPos, worldX, worldZ, bottomY, topY, waypoint.colorArgb, horizontalDistance, maxDistance);
+                drawBeam(
+                    matrices, cameraPos, worldX, worldZ, bottomY, topY,
+                    waypoint.colorArgb(), horizontalDistance, maxDistance
+                );
             }
             if (config.waypointLabelsEnabled) {
                 if (immediate == null) {
                     immediate = client.getBufferBuilders().getEntityVertexConsumers();
                 }
-                drawLabel(matrices, immediate, camera, cameraPos, worldX, waypoint.y, worldZ, waypoint, distance3d);
+                drawLabel(matrices, immediate, camera, cameraPos, worldX, waypoint.y(), worldZ, waypoint, distance3d);
             }
         }
 
@@ -219,7 +222,7 @@ public final class WaypointWorldRenderer {
         final double worldX,
         final double worldY,
         final double worldZ,
-        final Waypoint waypoint,
+        final WaypointRenderEntry waypoint,
         final double distance3d
     ) {
         final float nearFade = (float) MathHelper.clamp(distance3d / LABEL_NEAR_FADE_BLOCKS, 0.0, 1.0);
@@ -232,7 +235,7 @@ public final class WaypointWorldRenderer {
         final float scale = LABEL_BASE_SCALE * scaleMult;
 
         final TextRenderer textRenderer = client.textRenderer;
-        final String name = waypoint.name;
+        final String name = displayName(waypoint);
         final String distanceText = new TranslatableText("confluxmap.value.blocks", Math.round(distance3d)).getString();
         final int nameWidth = textRenderer.getWidth(name);
         final int distanceWidth = textRenderer.getWidth(distanceText);
@@ -252,7 +255,7 @@ public final class WaypointWorldRenderer {
         );
 
         final Matrix4f model = matrices.peek().getModel();
-        final int nameColor = withAlpha(waypoint.colorArgb | 0xFF000000, nearFade);
+        final int nameColor = withAlpha(waypoint.colorArgb() | 0xFF000000, nearFade);
         final int distanceColor = withAlpha(LABEL_DISTANCE_COLOR, nearFade);
         textRenderer.draw(name, -nameWidth / 2f, -lineHeight, nameColor, false, model, immediate, true, 0, LABEL_LIGHT);
         textRenderer.draw(distanceText, -distanceWidth / 2f, 1f, distanceColor, false, model, immediate, true, 0, LABEL_LIGHT);
@@ -262,5 +265,12 @@ public final class WaypointWorldRenderer {
     private static int withAlpha(final int argb, final float alpha) {
         final int a = Math.round(Argb.alpha(argb) * MathHelper.clamp(alpha, 0f, 1f));
         return (a << 24) | (argb & 0x00FFFFFF);
+    }
+
+    private static String displayName(final WaypointRenderEntry waypoint) {
+        if (!waypoint.shared()) {
+            return waypoint.name();
+        }
+        return (waypoint.locked() ? "[L] " : "[S] ") + waypoint.name();
     }
 }

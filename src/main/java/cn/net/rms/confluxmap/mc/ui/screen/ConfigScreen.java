@@ -211,6 +211,14 @@ public final class ConfigScreen extends Screen {
                 y = addToggleRow(y, "confluxmap.config.radar.icons_enabled", () -> config.radarIconsEnabled, v -> config.radarIconsEnabled = v);
                 break;
             case WAYPOINTS:
+                y = addToggleRow(
+                    y, "confluxmap.config.waypoints.show_local",
+                    () -> config.localWaypointsVisible, v -> config.localWaypointsVisible = v
+                );
+                y = addToggleRow(
+                    y, "confluxmap.config.waypoints.show_shared",
+                    () -> config.sharedWaypointsVisible, v -> config.sharedWaypointsVisible = v
+                );
                 y = addIntSliderRow(
                     y, "confluxmap.config.waypoints.render_distance", 0, 100_000,
                     () -> config.waypointRenderDistance, v -> config.waypointRenderDistance = v, ConfigScreen::renderDistanceText

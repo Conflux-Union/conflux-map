@@ -11,8 +11,8 @@ import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.core.waypoint.DimensionScale;
-import cn.net.rms.confluxmap.core.waypoint.Waypoint;
-import cn.net.rms.confluxmap.core.waypoint.WaypointService;
+import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
+import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
@@ -66,7 +66,7 @@ public final class MinimapHudRenderer {
     private final EntityRadarScanner radarScanner;
     private final EntityIconManager iconManager;
     private final LayerSelector layerSelector;
-    private final WaypointService waypointService;
+    private final WaypointRenderCatalog waypointRenderCatalog;
     private final RadarViewRange radarViewRange;
 
     public MinimapHudRenderer(
@@ -78,7 +78,7 @@ public final class MinimapHudRenderer {
         final EntityRadarScanner radarScanner,
         final EntityIconManager iconManager,
         final LayerSelector layerSelector,
-        final WaypointService waypointService,
+        final WaypointRenderCatalog waypointRenderCatalog,
         final RadarViewRange radarViewRange
     ) {
         this.client = client;
@@ -89,7 +89,7 @@ public final class MinimapHudRenderer {
         this.radarScanner = radarScanner;
         this.iconManager = iconManager;
         this.layerSelector = layerSelector;
-        this.waypointService = waypointService;
+        this.waypointRenderCatalog = waypointRenderCatalog;
         this.radarViewRange = radarViewRange;
     }
 
@@ -215,16 +215,16 @@ public final class MinimapHudRenderer {
         final boolean circleFrame = config.minimapShape == ConfluxConfig.Shape.CIRCLE;
         final DimensionId currentDimension = gameBridge.session().dimension();
 
-        for (final Waypoint waypoint : waypointService.list()) {
-            if (!waypoint.visible || !DimensionScale.isVisibleFrom(waypoint.dimensionId, currentDimension)) {
+        for (final WaypointRenderEntry waypoint : waypointRenderCatalog.snapshot()) {
+            if (!DimensionScale.isVisibleFrom(waypoint.dimensionId(), currentDimension)) {
                 continue;
             }
-            final double worldX = DimensionScale.convertHorizontal(waypoint.x, waypoint.dimensionId, currentDimension);
-            final double worldZ = DimensionScale.convertHorizontal(waypoint.z, waypoint.dimensionId, currentDimension);
+            final double worldX = DimensionScale.convertHorizontal(waypoint.x(), waypoint.dimensionId(), currentDimension);
+            final double worldZ = DimensionScale.convertHorizontal(waypoint.z(), waypoint.dimensionId(), currentDimension);
             final double dx = worldX - player.x();
             final double dz = worldZ - player.z();
             if (config.waypointRenderDistance > 0) {
-                final double dy = waypoint.y - player.y();
+                final double dy = waypoint.y() - player.y();
                 if (Math.sqrt(dx * dx + dy * dy + dz * dz) > config.waypointRenderDistance) {
                     continue;
                 }
@@ -251,7 +251,9 @@ public final class MinimapHudRenderer {
                 final float edgeX = screenOffX * k;
                 final float edgeY = screenOffY * k;
                 final float angle = (float) Math.toDegrees(Math.atan2(screenOffX, -screenOffY));
-                WaypointMarkerRenderer.drawEdgeArrow(matrices, centerX + edgeX, centerY + edgeY, angle, waypoint.colorArgb, 1f);
+                WaypointMarkerRenderer.drawEdgeArrow(
+                    matrices, centerX + edgeX, centerY + edgeY, angle, waypoint, 1f
+                );
             }
         }
     }
