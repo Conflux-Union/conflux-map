@@ -40,12 +40,17 @@ public final class ServerNetworking {
     private final ConfluxMapCompanion companion;
     private final ConcurrentMap<UUID, Integer> malformedStrikes = new ConcurrentHashMap<>();
     private final Set<UUID> mutedPlayers = ConcurrentHashMap.newKeySet();
+    private boolean registered;
 
     public ServerNetworking(final ConfluxMapCompanion companion) {
         this.companion = companion;
     }
 
-    public void register() {
+    public synchronized void register() {
+        if (registered) {
+            return;
+        }
+        registered = true;
         ServerPlayNetworking.registerGlobalReceiver(CHANNEL, this::onReceive);
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             final UUID uuid = handler.getPlayer().getUuid();
@@ -62,6 +67,9 @@ public final class ServerNetworking {
         final PacketByteBuf buf,
         final net.fabricmc.fabric.api.networking.v1.PacketSender responseSender
     ) {
+        if (!companion.isEnabled()) {
+            return;
+        }
         if (mutedPlayers.contains(player.getUuid())) {
             return;
         }

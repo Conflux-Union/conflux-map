@@ -66,6 +66,15 @@ public final class ConfluxConfig {
     public boolean radarIconsEnabled = true;
     /** 3-D straight-line blocks; 0 means "no cutoff" (see waypoint-ux.md S7). */
     public int waypointRenderDistance = 0;
+    /** Show private, client-owned waypoints on every map/world rendering surface. */
+    public boolean localWaypointsVisible = true;
+    /** Show server-synchronized public waypoints on every map/world rendering surface. */
+    public boolean sharedWaypointsVisible = true;
+    /**
+     * Show Overworld/Nether waypoints from the portal-linked dimension with the 8:1 coordinate
+     * conversion applied on display (waypoint-ux.md S3). Off keeps exact-dimension display.
+     */
+    public boolean waypointCrossDimensionEnabled = false;
     public boolean waypointEdgeIndicatorsEnabled = true;
     /** Death points kept per dimension, oldest auto-pruned; 0 disables creating new ones. */
     public int deathPointsKept = 5;
@@ -117,6 +126,9 @@ public final class ConfluxConfig {
         c.radarMaxEntities = radarMaxEntities;
         c.radarIconsEnabled = radarIconsEnabled;
         c.waypointRenderDistance = waypointRenderDistance;
+        c.localWaypointsVisible = localWaypointsVisible;
+        c.sharedWaypointsVisible = sharedWaypointsVisible;
+        c.waypointCrossDimensionEnabled = waypointCrossDimensionEnabled;
         c.waypointEdgeIndicatorsEnabled = waypointEdgeIndicatorsEnabled;
         c.deathPointsKept = deathPointsKept;
         c.waypointBeamsEnabled = waypointBeamsEnabled;

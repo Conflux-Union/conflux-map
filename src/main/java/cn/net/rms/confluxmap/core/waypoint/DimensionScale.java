@@ -14,10 +14,13 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
  *
  * <p>Display filtering is a separate concern from the scale math: the
  * Overworld and the Nether are portal-linked (that's the entire reason the
- * 8:1 ratio exists), so a waypoint from either one is shown while standing in
- * the other, coordinates converted. The End has no portal correlation to the
- * other two - a raw coordinate there means nothing in Overworld/Nether space
- * - so End waypoints are confined to the End and vice versa.
+ * 8:1 ratio exists), so a waypoint from either one can be shown while
+ * standing in the other, coordinates converted. The End has no portal
+ * correlation to the other two - a raw coordinate there means nothing in
+ * Overworld/Nether space - so End waypoints are confined to the End and vice
+ * versa. Whether cross-dimension display is active at all is decided by the
+ * caller ({@link WaypointRenderCatalog} reads
+ * {@code ConfluxConfig.waypointCrossDimensionEnabled}, off by default).
  */
 public final class DimensionScale {
     private static final double NETHER_SCALE = 8.0;

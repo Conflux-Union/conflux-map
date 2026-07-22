@@ -28,6 +28,7 @@ public final class Keybinds {
     private final KeyBinding cycleLayer;
     private final KeyBinding openWaypoints;
     private final KeyBinding newWaypoint;
+    private final KeyBinding toggleLocalWaypoints;
     private final KeyBinding openConfig;
     private final KeyBinding cyclePrediction;
     private final KeyBinding reloadPrediction;
@@ -46,6 +47,7 @@ public final class Keybinds {
         cycleLayer = register("cycle_layer", GLFW.GLFW_KEY_Y);
         openWaypoints = register("waypoints", GLFW.GLFW_KEY_U);
         newWaypoint = register("new_waypoint", GLFW.GLFW_KEY_B);
+        toggleLocalWaypoints = register("toggle_local_waypoints", GLFW.GLFW_KEY_J);
         openConfig = register("open_config", GLFW.GLFW_KEY_COMMA);
         cyclePrediction = register("cycle_prediction", GLFW.GLFW_KEY_P);
         reloadPrediction = register("reload_prediction", GLFW.GLFW_KEY_F9);
@@ -108,6 +110,10 @@ public final class Keybinds {
             if (client.player != null && client.currentScreen == null) {
                 openNewWaypointAtPlayer(client);
             }
+        }
+        while (toggleLocalWaypoints.wasPressed()) {
+            config.localWaypointsVisible = !config.localWaypointsVisible;
+            changed = true;
         }
         while (openConfig.wasPressed()) {
             final MinecraftClient client = MinecraftClient.getInstance();

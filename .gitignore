@@ -31,7 +31,9 @@ bin/
 # fabric
 
 run/
+versions/*/run-*/
 versions/*/logs/
+artifacts/
 
 # java
 

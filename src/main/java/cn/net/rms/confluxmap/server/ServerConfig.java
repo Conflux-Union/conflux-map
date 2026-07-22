@@ -1,5 +1,7 @@
 package cn.net.rms.confluxmap.server;
 
+import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProto;
+
 /**
  * Server-side companion settings, serialized as one JSON document at
  * {@code <configDir>/confluxmap/server.json}. Add fields with defaults only; never
@@ -26,6 +28,14 @@ public final class ServerConfig {
     public boolean shareCorrections = true;
     /** Reserved protocol setting. Forced OFF until the server emits real structure verification data. */
     public boolean shareStructureInfo = false;
+    /** Whether players may publish and receive server-owned shared waypoints. */
+    public boolean shareWaypoints = false;
+    /** Maximum shared waypoints retained for one world. */
+    public int maxSharedWaypointsPerWorld = SharedWaypointProto.MAX_SNAPSHOT_WAYPOINTS;
+    /** Maximum shared waypoints published by one player in one world. */
+    public int maxSharedWaypointsPerPlayer = 64;
+    /** Per-player shared-waypoint mutation rate; a small burst is allowed. */
+    public int sharedWaypointMutationsPerMinute = 30;
     /** Hard ceiling on which LOD the server will compute patches for; above this returns UNAVAILABLE. */
     public int maxPatchLod = 2;
     /** One MAP_VIEW_REQ carries at most this many tiles. */
@@ -48,6 +58,13 @@ public final class ServerConfig {
         maxBytesPerSecondPerPlayer = clamp(maxBytesPerSecondPerPlayer, 1024, 1 << 20);
         minRequestIntervalMs = clamp(minRequestIntervalMs, 0, 60_000);
         maxChunkSummariesPerSecond = clamp(maxChunkSummariesPerSecond, 1, 60_000);
+        maxSharedWaypointsPerWorld = clamp(
+            maxSharedWaypointsPerWorld,
+            1,
+            SharedWaypointProto.MAX_SNAPSHOT_WAYPOINTS
+        );
+        maxSharedWaypointsPerPlayer = clamp(maxSharedWaypointsPerPlayer, 1, maxSharedWaypointsPerWorld);
+        sharedWaypointMutationsPerMinute = clamp(sharedWaypointMutationsPerMinute, 1, 6_000);
     }
 
     private static int clamp(final int v, final int min, final int max) {

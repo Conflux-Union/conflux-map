@@ -52,14 +52,22 @@ public final class ServerConfigIo {
         }
     }
 
+    /** Preserves the original fire-and-log API for existing callers. */
     public void save(final ServerConfig config) {
+        saveAtomically(config);
+    }
+
+    /** Atomically saves one complete config document and reports whether it reached the target. */
+    public boolean saveAtomically(final ServerConfig config) {
         try {
             Files.createDirectories(file.getParent());
             final Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
             Files.writeString(tmp, GSON.toJson(config), StandardCharsets.UTF_8);
             move(tmp);
-        } catch (final IOException e) {
+            return true;
+        } catch (final IOException | RuntimeException e) {
             logger.error("Failed to save server config to {}", file, e);
+            return false;
         }
     }
 

@@ -19,9 +19,19 @@ line of code here is written from scratch; see
   Overworld with hysteresis so it doesn't flicker at the boundary; Nether
   current-layer / ceiling / manual-Y-slice modes; End void-background
   rendering.
-- **Waypoints and death points** — create, edit, color, group, toggle;
-  automatic death-point markers; correct 8:1 Overworld↔Nether conversion;
-  edge-of-minimap direction indicators for out-of-range waypoints.
+- **Waypoints and death points** — create, edit, color, organize into sets, and
+  toggle; automatic death-point markers; strict per-dimension rendering; and
+  edge-of-minimap direction indicators for out-of-range waypoints. On both the
+  fullscreen map and minimap, markers use the first character of the name in
+  white over the player-selected background color, differing only in size.
+- **Waypoint set management** — create, rename, and delete local sets; select
+  multiple points (or every point in the current filter) and move them to another set in one
+  operation. Deleting a set permanently deletes every waypoint it contains.
+- **Public and chat-shared coordinates** — an optional server-owned public
+  waypoint catalog with operator locks, plus preview-before-send chat sharing
+  and click-to-import coordinate messages on servers without the companion.
+  Public controls are hidden unless the connected server explicitly enables
+  the public waypoint feature.
 - **Entity radar** — hostile / passive / player / other classification, each
   with its own toggle, range, and entity cap.
 - **Disk cache** — explored terrain persists per world / server / dimension /
@@ -39,7 +49,7 @@ line of code here is written from scratch; see
   (pure captured map, no prediction).
 - **Optional server companion** — the same jar can run a server-side companion
   that returns compact per-column corrections against the real world; the seed
-  is shared only when the operator opts in.
+  and public waypoint catalog are shared only when the operator opts in.
 - **Settings screen** — everything above is exposed in-game and takes effect
   immediately, no restart. Full English and Simplified Chinese localization.
 
@@ -56,9 +66,43 @@ category.
 | `Y` | Cycle the manual layer override |
 | `U` | Open the waypoint list |
 | `B` | New waypoint at your position |
+| `J` | Toggle local waypoints |
 | `,` | Open the settings screen |
 | `P` | Cycle prediction mode (everywhere / generated-only / visited-only) |
 | `F9` | Reload prediction tiles |
+
+## Waypoint management
+
+Waypoints are rendered in the dimension where they were created. An optional
+setting (off by default) additionally shows Overworld and Nether waypoints
+from the linked dimension with the 8:1 portal coordinate conversion applied
+on display; End waypoints always stay confined to the End. The waypoint list
+supports local set creation, renaming, cascading deletion, and multi-select
+or current-filter select-all batch moves between sets.
+
+A waypoint HUD overlay is not implemented yet. An immutable, read-only
+waypoint data interface is reserved for a future HUD without exposing store
+mutation operations.
+
+## Public waypoints
+
+Public waypoints require the same jar on the server and are disabled by
+default. A level-2 operator can use `/confluxmap waypoints enable`, `disable`,
+or `status`; the setting is persisted in `config/confluxmap/server.json`.
+When the feature is disabled or unavailable, public waypoint buttons, tabs,
+sharing choices, and settings are not shown on the client.
+Public points are stored in the world directory, are visible to all connected
+mod clients, and cannot be edited after publication. An unlocked point can be
+deleted only by its publisher; operators can lock, unlock, or delete any point.
+The defaults are 512 points per world, 64 per publisher, and 30 mutations per
+player per minute. Operators can tune `maxSharedWaypointsPerWorld`,
+`maxSharedWaypointsPerPlayer`, and `sharedWaypointMutationsPerMinute` in the
+same server config.
+
+Chat sharing remains available on every server. Each send previews the exact
+outgoing messages (Conflux Map and Xaero formats) before confirmation. Recognized Conflux
+Map or labelled `X/Y/Z` messages expose a click-to-import action that opens the
+local waypoint editor before anything is saved.
 
 ## Building
 
