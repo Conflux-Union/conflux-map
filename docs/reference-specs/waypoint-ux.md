@@ -114,6 +114,16 @@ approach is a reasonable, low-effort default to carry forward.
 
 ## 3. Cross-dimension coordinate conversion
 
+> **Deviation (Conflux Map):** the reference implementation applies
+> cross-dimension display unconditionally. Conflux Map gates it behind a
+> client setting (`waypointCrossDimensionEnabled`, off by default): with
+> the setting off, a waypoint renders only in its exact stored dimension;
+> with it on, Overworld/Nether waypoints are shown from the linked
+> dimension using the conversion math below. The End is never
+> cross-projected either way. Conflux Map also stores raw local
+> coordinates plus the source dimension instead of the canonical
+> scale-1.0 space described under "Storage representation."
+
 **The ratio itself is a vanilla Minecraft fact, not something this mod
 invents:** each dimension type declares a coordinate-scale multiplier —
 1.0 for the Overworld and the End, 8.0 for the Nether — that vanilla
@@ -318,6 +328,28 @@ matters for any reason.
   (converting through the coordinate math in §3 if the waypoint is scoped
   to a single non-1.0-scale dimension), so other players can see where it
   is without needing the mod's own waypoint file.
+
+  The shared chat line uses a colon-separated wire format (observed from
+  real share messages, e.g. `xaero-waypoint:Name:N:-113:84:-118:7:false:0:Internal-overworld-waypoints`):
+
+  ```
+  xaero-waypoint:<name>:<initial>:<x>:<y>:<z>:<colorIndex>:<global>:<yaw>[:<worldId>]
+  ```
+
+  - `name` — up to 32 UTF-16 units; `:` is not representable and gets
+    replaced. `initial` is the name's first character (1-2 UTF-16 units).
+  - `x`/`y`/`z` — integer block coordinates (floored).
+  - `colorIndex` — an index into the 16-color Minecraft dye-like palette,
+    not an RGB value.
+  - `global` — `true`/`false`; `yaw` — a number.
+  - `worldId` — optional; identifies the vanilla dimension via values like
+    `Internal-overworld-waypoints` / `Internal-the-nether-waypoints` /
+    `Internal-the-end-waypoints`. **Both hyphen and underscore spellings
+    occur in the wild** (e.g. `Internal_overworld_waypoints`), and the
+    `xaero-waypoint:` marker itself appears with varying capitalization,
+    so parsing must be case-insensitive and separator-tolerant. Unknown
+    world ids must be rejected rather than guessed; an omitted world id
+    means "the receiver's current dimension."
 - **Sort** — four modes: name (alphabetical, case-insensitive), distance
   from the player (3-D straight-line, not horizontal-only), creation
   order (see §1's caveat that this is really list-insertion order), and
@@ -464,10 +496,23 @@ addition beyond the reference behavior, not a gap to "restore."
 
 **Out-of-range edge indicators.** A waypoint whose position would fall
 outside the minimap's visible circle/square is redrawn clamped to the
-frame's edge using the same upright waypoint icon as an in-range marker.
-Keeping the color, name initial, and shared/locked treatment visible at
-the edge makes the destination identifiable without switching to a
-generic direction arrow.
+frame's edge, using a *different* icon — a directional arrow-shaped
+variant of the same waypoint's icon (falling back to a plain generic
+arrow glyph if no arrow variant exists for that icon). Unlike the in-range
+marker, **this arrow is deliberately *not* counter-rotated** — it's the
+one element whose whole purpose is rotating to point toward the
+waypoint's true bearing, so the counter-rotation step is simply skipped
+for it. (The one exception: a temporary "ping"/highlight marker, drawn
+with its own distinct crosshair icon, *does* stay counter-rotated/upright
+even when clamped to the edge — upright-ness there matters more than
+directionality, since its role is "look, right here," not "somewhere off
+that way.")
+
+> **Deviation (Conflux Map):** our implementation keeps the same upright
+> waypoint icon at the edge instead of switching to a directional arrow
+> variant, so the color, name initial, and shared/locked treatment stay
+> identifiable at the edge. This is a deliberate departure from the
+> reference behavior described above, not a reading of it.
 
 **Edge-clamp geometry differs by frame shape**, consistent with the
 square-vs-round distinction already established generally:

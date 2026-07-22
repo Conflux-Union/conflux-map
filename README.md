@@ -73,10 +73,12 @@ category.
 
 ## Waypoint management
 
-Waypoints are rendered only in the dimension where they were created. The
-Overworld, Nether, and End never project or convert one another's waypoint
-markers. The waypoint list supports local set creation, renaming, cascading
-deletion, and multi-select or current-filter select-all batch moves between sets.
+Waypoints are rendered in the dimension where they were created. An optional
+setting (off by default) additionally shows Overworld and Nether waypoints
+from the linked dimension with the 8:1 portal coordinate conversion applied
+on display; End waypoints always stay confined to the End. The waypoint list
+supports local set creation, renaming, cascading deletion, and multi-select
+or current-filter select-all batch moves between sets.
 
 A waypoint HUD overlay is not implemented yet. An immutable, read-only
 waypoint data interface is reserved for a future HUD without exposing store
@@ -97,8 +99,8 @@ player per minute. Operators can tune `maxSharedWaypointsPerWorld`,
 `maxSharedWaypointsPerPlayer`, and `sharedWaypointMutationsPerMinute` in the
 same server config.
 
-Chat sharing remains available on every server. Each send shows its name,
-dimension, coordinates, and audience before confirmation. Recognized Conflux
+Chat sharing remains available on every server. Each send previews the exact
+outgoing messages (Conflux Map and Xaero formats) before confirmation. Recognized Conflux
 Map or labelled `X/Y/Z` messages expose a click-to-import action that opens the
 local waypoint editor before anything is saved.
 
