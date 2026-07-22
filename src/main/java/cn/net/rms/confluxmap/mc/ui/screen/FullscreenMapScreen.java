@@ -38,6 +38,7 @@ import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.StructureMarkerRenderer;
 import cn.net.rms.confluxmap.mc.world.ClientChunkLookup;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
+import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -46,6 +47,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
@@ -476,6 +478,12 @@ public final class FullscreenMapScreen extends Screen {
             this.selected = selected;
         }
 
+        /**
+         * Draws the vanilla button background with a four-quadrant slice instead of calling
+         * {@code super.renderButton}. The vanilla two-slice draw hardcodes the 20px-tall
+         * widgets.png strip, so a {@link #CONTROL_SIZE}(22)px-tall button samples 2px into the
+         * next state's strip and its bottom border lands 2px above the real button bounds.
+         */
         @Override
         public void renderButton(
             final MatrixStack matrices,
@@ -483,7 +491,21 @@ public final class FullscreenMapScreen extends Screen {
             final int mouseY,
             final float delta
         ) {
-            super.renderButton(matrices, mouseX, mouseY, delta);
+            RenderSystem.setShader(GameRenderer::getPositionTexShader);
+            RenderSystem.setShaderTexture(0, WIDGETS_TEXTURE);
+            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, alpha);
+            RenderSystem.enableBlend();
+            RenderSystem.defaultBlendFunc();
+            RenderSystem.enableDepthTest();
+            final int v = 46 + getYImage(isHovered()) * 20;
+            final int leftW = getWidth() / 2;
+            final int rightW = getWidth() - leftW;
+            final int topH = getHeight() / 2;
+            final int bottomH = getHeight() - topH;
+            drawTexture(matrices, x, y, 0, v, leftW, topH);
+            drawTexture(matrices, x + leftW, y, 200 - rightW, v, rightW, topH);
+            drawTexture(matrices, x, y + topH, 0, v + 20 - bottomH, leftW, bottomH);
+            drawTexture(matrices, x + leftW, y + topH, 200 - rightW, v + 20 - bottomH, rightW, bottomH);
             if (selected && selectedAccent != 0) {
                 RenderUtil.fillRect(matrices, x + 1, y + 1, getWidth() - 2, 1, selectedAccent);
                 RenderUtil.fillRect(matrices, x + 1, y + getHeight() - 2, getWidth() - 2, 1, selectedAccent);
