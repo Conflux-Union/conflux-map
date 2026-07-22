@@ -92,8 +92,8 @@ or `status`; the setting is persisted in `config/confluxmap/server.json`.
 When the feature is disabled or unavailable, public waypoint buttons, tabs,
 sharing choices, and settings are not shown on the client.
 Public points are stored in the world directory, are visible to all connected
-mod clients, and cannot be edited after publication. Any player can delete an
-unlocked point; only operators can lock, unlock, or delete locked points.
+mod clients, and cannot be edited after publication. An unlocked point can be
+deleted only by its publisher; operators can lock, unlock, or delete any point.
 The defaults are 512 points per world, 64 per publisher, and 30 mutations per
 player per minute. Operators can tune `maxSharedWaypointsPerWorld`,
 `maxSharedWaypointsPerPlayer`, and `sharedWaypointMutationsPerMinute` in the

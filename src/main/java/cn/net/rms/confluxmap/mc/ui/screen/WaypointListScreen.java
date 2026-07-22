@@ -579,8 +579,7 @@ public final class WaypointListScreen extends Screen {
         ));
         delete.active = row.shared() == null
             ? renderedStore != null && renderedStore.persistenceWritable()
-            : sharedWaypoints.availability().ready()
-                && (!row.shared().locked() || sharedWaypoints.isOperator());
+            : sharedWaypoints.availability().ready() && sharedWaypoints.canDelete(row.shared());
     }
 
     private void selectTab(final Tab selected) {

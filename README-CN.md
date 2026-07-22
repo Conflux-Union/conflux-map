@@ -74,8 +74,8 @@ Conflux Map 是一个面向 Minecraft 1.17.1 的 Fabric 客户端小地图 / 世
 `/confluxmap waypoints enable`、`disable` 或 `status`；配置会保存到
 `config/confluxmap/server.json`。功能关闭或不可用时，客户端不会显示公共路径点按钮、
 标签页、共享选项或相关设置。公共坐标点存储在世界目录中，对所有已连接的模组
-客户端可见，发布后不可编辑。任何玩家都能删除未锁定的公共点；只有 OP 能锁定、
-解锁或删除已锁定的公共点。
+客户端可见，发布后不可编辑。未锁定的公共点只能由发布者本人删除；OP 可以锁定、
+解锁或删除任意公共点。
 默认限制为每个世界 512 个、每位发布者 64 个，以及每位玩家每分钟 30 次修改。
 管理员可在同一服务端配置中调整 `maxSharedWaypointsPerWorld`、
 `maxSharedWaypointsPerPlayer` 和 `sharedWaypointMutationsPerMinute`。

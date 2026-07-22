@@ -198,8 +198,13 @@ public final class SharedWaypointClient {
         );
     }
 
+    /** Mirrors the server delete rule: operators may delete any point, others only their own unlocked points. */
+    public boolean canDelete(final SharedWaypoint waypoint) {
+        return canDelete(waypoint, isOperator(), client.player == null ? null : client.player.getUuid());
+    }
+
     public boolean delete(final SharedWaypoint waypoint) {
-        if (waypoint == null || !stateMachine.canMutate() || (waypoint.locked() && !isOperator())) {
+        if (!stateMachine.canMutate() || !canDelete(waypoint)) {
             return false;
         }
         final UUID operationId = UUID.randomUUID();
@@ -228,6 +233,20 @@ public final class SharedWaypointClient {
 
     public void removeListener(final Listener listener) {
         listeners.remove(listener);
+    }
+
+    static boolean canDelete(
+        final SharedWaypoint waypoint,
+        final boolean operator,
+        final UUID localPlayerId
+    ) {
+        if (waypoint == null) {
+            return false;
+        }
+        if (operator) {
+            return true;
+        }
+        return !waypoint.locked() && waypoint.publisherId().equals(localPlayerId);
     }
 
     static DeleteC2S deleteMessage(final UUID operationId, final SharedWaypoint waypoint) {

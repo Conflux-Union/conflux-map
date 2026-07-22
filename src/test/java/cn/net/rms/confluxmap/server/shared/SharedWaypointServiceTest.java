@@ -211,7 +211,7 @@ class SharedWaypointServiceTest {
     }
 
     @Test
-    void unlockedMayBeDeletedByAnyoneButLockedRequiresOperator() {
+    void lockRequiresOperatorAndLockedDeleteIsOperatorOnly() {
         final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
         final SharedWaypoint created = fixture.service.create(
             PLAYER, createRequest(uuid(110), 0, "Public")
@@ -234,6 +234,11 @@ class SharedWaypointServiceTest {
         );
         assertEquals(SharedWaypointService.MutationError.FORBIDDEN, forbiddenDelete.error());
 
+        final SharedWaypointService.MutationResult publisherDelete = fixture.service.delete(
+            PLAYER, new SharedWaypointService.DeleteRequest(uuid(116), 2, created.id())
+        );
+        assertEquals(SharedWaypointService.MutationError.FORBIDDEN, publisherDelete.error());
+
         final SharedWaypointService.MutationResult deleted = fixture.service.delete(
             OPERATOR, new SharedWaypointService.DeleteRequest(uuid(114), 2, created.id())
         );
@@ -244,18 +249,32 @@ class SharedWaypointServiceTest {
     }
 
     @Test
-    void anyoneCanDeleteAnUnlockedWaypoint() {
+    void unlockedDeleteIsAllowedForPublisherAndOperatorButNotOtherPlayers() {
         final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
         final SharedWaypoint created = fixture.service.create(
             PLAYER, createRequest(uuid(120), 0, "Public")
         ).delta().waypoint();
 
-        final SharedWaypointService.MutationResult deleted = fixture.service.delete(
+        final SharedWaypointService.MutationResult forbidden = fixture.service.delete(
             OTHER, new SharedWaypointService.DeleteRequest(uuid(121), 1, created.id())
         );
+        assertEquals(SharedWaypointService.MutationError.FORBIDDEN, forbidden.error());
+        assertEquals(1, fixture.service.snapshot().waypoints().size());
 
-        assertTrue(deleted.applied());
-        assertEquals(2L, deleted.snapshot().revision());
+        final SharedWaypointService.MutationResult deletedByPublisher = fixture.service.delete(
+            PLAYER, new SharedWaypointService.DeleteRequest(uuid(125), 1, created.id())
+        );
+        assertTrue(deletedByPublisher.applied());
+        assertEquals(2L, deletedByPublisher.snapshot().revision());
+
+        final SharedWaypoint republished = fixture.service.create(
+            OTHER, createRequest(uuid(126), 2, "Public again")
+        ).delta().waypoint();
+        final SharedWaypointService.MutationResult deletedByOperator = fixture.service.delete(
+            OPERATOR, new SharedWaypointService.DeleteRequest(uuid(127), 3, republished.id())
+        );
+        assertTrue(deletedByOperator.applied());
+        assertTrue(deletedByOperator.snapshot().waypoints().isEmpty());
     }
 
     @Test
@@ -269,7 +288,7 @@ class SharedWaypointServiceTest {
         ).applied());
 
         final SharedWaypointService.MutationResult deleted = fixture.service.delete(
-            OTHER, new SharedWaypointService.DeleteRequest(uuid(124), first.revision(), first.id())
+            PLAYER, new SharedWaypointService.DeleteRequest(uuid(124), first.revision(), first.id())
         );
 
         assertTrue(deleted.applied());

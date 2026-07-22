@@ -370,7 +370,9 @@ public final class SharedWaypointService {
             return finish(player, request, actor, request.operationId(), Action.DELETE, request.waypointId(),
                 rejected(request.operationId(), MutationError.REVISION_CONFLICT), now);
         }
-        if (existing.get().locked() && !actor.operator()) {
+        final SharedWaypoint target = existing.get();
+        if (!actor.operator()
+            && (target.locked() || !target.publisherId().equals(actor.playerId()))) {
             return finish(player, request, actor, request.operationId(), Action.DELETE, request.waypointId(),
                 rejected(request.operationId(), MutationError.FORBIDDEN), now);
         }
