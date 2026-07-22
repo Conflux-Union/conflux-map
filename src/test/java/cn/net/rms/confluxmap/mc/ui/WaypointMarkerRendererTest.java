@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 
 final class WaypointMarkerRendererTest {
     @Test
-    void extractsOneCompleteCodePointFromTheTrimmedName() {
+    void extractsTheFirstVisibleCompleteCodePoint() {
         assertEquals("B", WaypointMarkerRenderer.initial("Base"));
         assertEquals("\u77ff", WaypointMarkerRenderer.initial("\u77ff\u6d1e"));
         assertEquals("\uD83D\uDE80", WaypointMarkerRenderer.initial("\uD83D\uDE80 Launch"));
@@ -14,8 +14,16 @@ final class WaypointMarkerRendererTest {
     }
 
     @Test
+    void skipsUnicodeWhitespaceThatTrimWouldKeep() {
+        assertEquals("B", WaypointMarkerRenderer.initial("\u00A0Base"));
+        assertEquals("B", WaypointMarkerRenderer.initial("\u3000Base"));
+    }
+
+    @Test
     void fallsBackForAnEmptyName() {
         assertEquals("?", WaypointMarkerRenderer.initial(""));
         assertEquals("?", WaypointMarkerRenderer.initial(" \t\n"));
+        assertEquals("?", WaypointMarkerRenderer.initial("\u00A0\u3000"));
+        assertEquals("?", WaypointMarkerRenderer.initial(null));
     }
 }

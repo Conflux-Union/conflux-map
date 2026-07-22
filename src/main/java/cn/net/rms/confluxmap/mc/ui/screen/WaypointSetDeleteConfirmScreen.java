@@ -85,9 +85,7 @@ final class WaypointSetDeleteConfirmScreen extends Screen {
         if (confirmButton != null) {
             confirmButton.active = availabilityError == null;
         }
-        if (availabilityError != null) {
-            errorKey = availabilityError;
-        }
+        errorKey = availabilityError;
     }
 
     private String availabilityErrorKey() {

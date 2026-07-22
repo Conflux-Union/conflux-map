@@ -67,14 +67,24 @@ public final class WaypointMarkerRenderer {
         drawLockIndicator(matrices, waypoint, x, y, halfSize, alpha);
     }
 
-    /** First code point of the trimmed name; validation normally prevents the fallback. */
+    /**
+     * First non-blank code point of the name; validation normally prevents the fallback.
+     * Skips all Unicode whitespace and space separators (including NBSP and ideographic
+     * space, which {@code trim()}/{@code strip()} keep or miss) so the marker initial is
+     * always a visible glyph when the name has one.
+     */
     static String initial(final String name) {
-        final String trimmed = name == null ? "" : name.trim();
-        if (trimmed.isEmpty()) {
+        if (name == null) {
             return "?";
         }
-        final int[] codePoints = trimmed.codePoints().limit(1).toArray();
-        return new String(codePoints, 0, codePoints.length);
+        final int[] visible = name.codePoints()
+            .filter(cp -> !Character.isWhitespace(cp) && !Character.isSpaceChar(cp))
+            .limit(1)
+            .toArray();
+        if (visible.length == 0) {
+            return "?";
+        }
+        return new String(visible, 0, 1);
     }
 
     private static int fillColor(final int colorArgb, final float alpha, final boolean hovered) {

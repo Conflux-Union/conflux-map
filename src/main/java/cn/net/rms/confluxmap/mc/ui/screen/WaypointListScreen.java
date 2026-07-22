@@ -7,6 +7,7 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointClientState;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
+import cn.net.rms.confluxmap.core.waypoint.DimensionScale;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
@@ -460,6 +461,7 @@ public final class WaypointListScreen extends Screen {
         final double pz
     ) {
         final List<RowInfo> result = new ArrayList<>();
+        final boolean crossDimension = ConfluxMapClient.get().config().waypointCrossDimensionEnabled;
         if (tab == Tab.LOCAL) {
             for (final Waypoint waypoint : waypointService.list()) {
                 if (selectedSetFilter != null && !selectedSetFilter.equals(waypoint.group)) {
@@ -469,7 +471,10 @@ public final class WaypointListScreen extends Screen {
                     waypoint,
                     null,
                     0,
-                    distance(waypoint.dimensionId, waypoint.x, waypoint.y, waypoint.z, currentDimension, px, py, pz),
+                    distance(
+                        waypoint.dimensionId, waypoint.x, waypoint.y, waypoint.z,
+                        currentDimension, px, py, pz, crossDimension
+                    ),
                     dimensionLabel(waypoint.dimensionId)
                 ));
             }
@@ -486,7 +491,7 @@ public final class WaypointListScreen extends Screen {
                 0,
                 distance(
                     waypoint.dimensionId(), waypoint.x(), waypoint.y(), waypoint.z(),
-                    currentDimension, px, py, pz
+                    currentDimension, px, py, pz, crossDimension
                 ),
                 dimensionLabel(waypoint.dimensionId())
             ));
@@ -963,15 +968,15 @@ public final class WaypointListScreen extends Screen {
             if (dropdown.containsPopup(mouseX, mouseY)) {
                 final List<String> options = dropdownOptions(store);
                 final int optionBottom = dropdown.popupY() + dropdown.optionHeight();
-                if (mouseY >= optionBottom && dropdown.actionHeight() > 0) {
-                    activateDropdownAction(store, dropdownActionAt(mouseX, dropdown));
-                    return true;
-                }
                 if (mouseY < optionBottom
                     && options.size() > dropdown.visibleRows()
                     && mouseX >= dropdown.x() + dropdown.width() - DROPDOWN_SCROLLBAR_WIDTH) {
                     draggingDropdownScrollbar = true;
                     updateDropdownScrollFromMouse(mouseY, dropdown, options.size());
+                    return true;
+                }
+                if (mouseY >= optionBottom && dropdown.actionHeight() > 0) {
+                    activateDropdownAction(store, dropdownActionAt(mouseX, dropdown));
                     return true;
                 }
                 final int visibleIndex = (int) ((mouseY - dropdown.popupY()) / DROPDOWN_ROW_HEIGHT);
@@ -1113,8 +1118,9 @@ public final class WaypointListScreen extends Screen {
         final DropdownGeometry dropdown,
         final int optionCount
     ) {
+        // The track deliberately spans only the option rows, never the action strip below them.
         final int trackTop = dropdown.popupY() + 1;
-        final int trackHeight = Math.max(1, dropdown.popupHeight() - 2);
+        final int trackHeight = Math.max(1, dropdown.optionHeight() - 2);
         final int thumbHeight = dropdownThumbHeight(trackHeight, optionCount, dropdown.visibleRows());
         dropdownScrollOffset = DropdownScroll.fromThumbPosition(
             mouseY,
@@ -1264,7 +1270,7 @@ public final class WaypointListScreen extends Screen {
         if (hasScrollbar) {
             final int trackX = dropdown.x() + dropdown.width() - DROPDOWN_SCROLLBAR_WIDTH;
             final int trackTop = dropdown.popupY() + 1;
-            final int trackHeight = Math.max(1, dropdown.popupHeight() - 2);
+            final int trackHeight = Math.max(1, dropdown.optionHeight() - 2);
             final int thumbHeight = dropdownThumbHeight(trackHeight, options.size(), dropdown.visibleRows());
             final int maxOffset = DropdownScroll.maxOffset(options.size(), dropdown.visibleRows());
             final int thumbTravel = Math.max(0, trackHeight - thumbHeight);
@@ -1276,7 +1282,7 @@ public final class WaypointListScreen extends Screen {
                 trackX,
                 dropdown.popupY(),
                 dropdown.x() + dropdown.width(),
-                dropdown.popupY() + dropdown.popupHeight(),
+                dropdown.popupY() + dropdown.optionHeight(),
                 0xFF151515
             );
             fill(
@@ -1489,13 +1495,15 @@ public final class WaypointListScreen extends Screen {
         final DimensionId currentDimension,
         final double px,
         final double py,
-        final double pz
+        final double pz,
+        final boolean crossDimension
     ) {
-        if (!waypointDimension.equals(currentDimension)) {
+        if (!waypointDimension.equals(currentDimension)
+            && (!crossDimension || !DimensionScale.isVisibleFrom(waypointDimension, currentDimension))) {
             return Double.POSITIVE_INFINITY;
         }
-        final double dx = x - px;
-        final double dz = z - pz;
+        final double dx = DimensionScale.convertHorizontal(x, waypointDimension, currentDimension) - px;
+        final double dz = DimensionScale.convertHorizontal(z, waypointDimension, currentDimension) - pz;
         final double dy = y - py;
         return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
