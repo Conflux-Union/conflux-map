@@ -71,6 +71,41 @@ class WaypointIoTest {
     }
 
     @Test
+    void nonFiniteCoordinatesAreDroppedInsteadOfCrashingTheEditScreenLater(
+        @TempDir final Path tempDir
+    ) throws IOException {
+        final Path file = tempDir.resolve("nan.json");
+        Files.writeString(file, "{\n"
+            + "  \"schemaVersion\": 2,\n"
+            + "  \"waypoints\": [{\n"
+            + "    \"id\": \"00000000-0000-0000-0000-000000000001\",\n"
+            + "    \"name\": \"Broken\",\n"
+            + "    \"dimensionId\": \"minecraft:overworld\",\n"
+            + "    \"x\": NaN, \"y\": 70.0, \"z\": Infinity,\n"
+            + "    \"colorArgb\": -13408615,\n"
+            + "    \"visible\": true,\n"
+            + "    \"type\": \"NORMAL\",\n"
+            + "    \"createdAtEpochMs\": 1\n"
+            + "  }, {\n"
+            + "    \"id\": \"00000000-0000-0000-0000-000000000002\",\n"
+            + "    \"name\": \"Kept\",\n"
+            + "    \"dimensionId\": \"minecraft:overworld\",\n"
+            + "    \"x\": 1.0, \"y\": 70.0, \"z\": 2.0,\n"
+            + "    \"colorArgb\": -13408615,\n"
+            + "    \"visible\": true,\n"
+            + "    \"type\": \"NORMAL\",\n"
+            + "    \"createdAtEpochMs\": 2\n"
+            + "  }]\n"
+            + "}\n");
+
+        final WaypointStore.State loaded = WaypointIo.loadState(file, LOGGER);
+
+        assertEquals(1, loaded.waypoints().size());
+        assertEquals("Kept", loaded.waypoints().get(0).name);
+        assertTrue(loaded.persistenceWritable());
+    }
+
+    @Test
     void futureSchemaIsNeverOverwrittenByLaterSave(@TempDir final Path tempDir) throws IOException {
         final Path file = tempDir.resolve("future.json");
         final String futureJson = "{\n"

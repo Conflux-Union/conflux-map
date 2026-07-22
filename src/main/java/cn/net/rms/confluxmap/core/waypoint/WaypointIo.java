@@ -148,6 +148,12 @@ public final class WaypointIo {
         if (entry.id == null || entry.name == null || entry.dimensionId == null) {
             return null;
         }
+        // Gson's lenient parsing accepts NaN/Infinity literals; non-finite coordinates
+        // would crash coordinate formatting in the edit screens, so drop them here.
+        if (!Double.isFinite(entry.x) || !Double.isFinite(entry.y) || !Double.isFinite(entry.z)) {
+            logger.warn("Dropping waypoint entry {} with non-finite coordinates", entry.id);
+            return null;
+        }
         final UUID id;
         try {
             id = UUID.fromString(entry.id);

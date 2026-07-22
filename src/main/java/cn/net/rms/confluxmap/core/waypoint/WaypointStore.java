@@ -171,13 +171,24 @@ public final class WaypointStore {
         notifyListeners();
     }
 
-    /** Replaces the entry with the same {@link Waypoint#id}; a no-op if it isn't present. */
+    /**
+     * Replaces the entry with the same {@link Waypoint#id}; a no-op if it isn't present.
+     * Never creates sets: an edit-form copy holding a group that was renamed or deleted
+     * while the form was open keeps the live entry's current group instead of
+     * resurrecting the stale set.
+     */
     public void update(final Waypoint waypoint) {
-        if (!persistenceWritable || !byId.containsKey(waypoint.id)) {
+        if (!persistenceWritable) {
+            return;
+        }
+        final Waypoint existing = byId.get(waypoint.id);
+        if (existing == null) {
             return;
         }
         final Waypoint copy = waypoint.copy();
-        ensureSetForGroup(copy.group);
+        if (!copy.group.isEmpty() && !setsByName.containsKey(copy.group)) {
+            copy.group = existing.group;
+        }
         byId.put(copy.id, copy);
         notifyListeners();
     }
@@ -341,7 +352,8 @@ public final class WaypointStore {
     private void notifyListeners() {
         revision++;
         final List<Waypoint> snapshot = list();
-        for (final Consumer<List<Waypoint>> listener : listeners) {
+        // Iterate a copy so a listener registering another listener mid-notify cannot CME.
+        for (final Consumer<List<Waypoint>> listener : List.copyOf(listeners)) {
             listener.accept(snapshot);
         }
     }

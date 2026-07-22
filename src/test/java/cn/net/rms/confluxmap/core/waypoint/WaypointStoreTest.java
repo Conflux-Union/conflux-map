@@ -27,11 +27,24 @@ class WaypointStoreTest {
         edited.group = "Mining";
         store.update(edited);
 
-        assertEquals(
-            List.of(WaypointSet.DEFAULT, new WaypointSet("Bases"), new WaypointSet("Mining")),
-            store.sets()
-        );
+        // update() never creates sets; an unknown group falls back to the entry's current set.
+        assertEquals(List.of(WaypointSet.DEFAULT, new WaypointSet("Bases")), store.sets());
+        assertEquals("Bases", store.list().get(0).group);
+    }
+
+    @Test
+    void staleEditCopyCannotResurrectARenamedSet() {
+        final Waypoint home = waypoint("Home", "Bases", 1.0);
+        final WaypointStore store = new WaypointStore(WORLD, List.of(home));
+        final Waypoint staleCopy = store.list().get(0);
+
+        assertEquals(WaypointStore.MutationResult.APPLIED, store.renameSet("Bases", "Mining"));
+        staleCopy.name = "Edited";
+        store.update(staleCopy);
+
+        assertEquals(List.of(WaypointSet.DEFAULT, new WaypointSet("Mining")), store.sets());
         assertEquals("Mining", store.list().get(0).group);
+        assertEquals("Edited", store.list().get(0).name);
     }
 
     @Test
