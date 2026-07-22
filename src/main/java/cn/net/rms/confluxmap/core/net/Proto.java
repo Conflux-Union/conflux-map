@@ -20,8 +20,11 @@ public final class Proto {
     /** Channel identifier registered with Fabric's networking API on both sides. */
     public static final String CHANNEL_ID = "confluxmap:map_sync";
 
-    /** Protocol version this build speaks. Mismatched minors are tolerated; majors are not. */
-    public static final int PROTO_MAJOR = 1;
+    /**
+     * Protocol version this build speaks. Mismatched minors are tolerated; majors are not.
+     * Major 2 switched the MAP_PATCH body to field-plane layout with delta-coded heights.
+     */
+    public static final int PROTO_MAJOR = 2;
     public static final int PROTO_MINOR = 0;
 
     // ---- Message type ids (first byte of every framed payload) ----
