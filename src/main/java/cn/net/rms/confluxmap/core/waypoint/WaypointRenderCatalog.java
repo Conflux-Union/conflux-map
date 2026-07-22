@@ -36,17 +36,24 @@ public final class WaypointRenderCatalog {
     }
 
     /**
-     * Immutable render-ready snapshot containing only waypoints stored in the
-     * requested dimension. Coordinates remain raw values in that dimension.
+     * Immutable render-ready snapshot of every waypoint visible from the
+     * requested dimension. With cross-dimension display enabled
+     * ({@link ConfluxConfig#waypointCrossDimensionEnabled}, off by default)
+     * portal-linked entries are included per {@link DimensionScale#isVisibleFrom}
+     * with their horizontal coordinates converted into the requested dimension's
+     * coordinate space, so renderers can use x/z as plain world positions;
+     * {@link WaypointRenderEntry#dimensionId()} keeps the stored dimension for
+     * labels and store lookups. Otherwise only exact-dimension entries appear.
      */
     public List<WaypointRenderEntry> snapshot(final DimensionId dimension) {
-        return inDimension(snapshot(), dimension);
+        return visibleFrom(snapshot(), dimension, config.waypointCrossDimensionEnabled);
     }
 
-    /** Pure exact-dimension filter kept public for deterministic unit coverage. */
-    public static List<WaypointRenderEntry> inDimension(
+    /** Pure visibility filter and coordinate conversion kept public for deterministic unit coverage. */
+    public static List<WaypointRenderEntry> visibleFrom(
         final List<WaypointRenderEntry> entries,
-        final DimensionId dimension
+        final DimensionId dimension,
+        final boolean crossDimension
     ) {
         Objects.requireNonNull(entries, "entries");
         Objects.requireNonNull(dimension, "dimension");
@@ -54,7 +61,23 @@ public final class WaypointRenderCatalog {
         for (final WaypointRenderEntry entry : entries) {
             if (entry.dimensionId().equals(dimension)) {
                 matching.add(entry);
+                continue;
             }
+            if (!crossDimension || !DimensionScale.isVisibleFrom(entry.dimensionId(), dimension)) {
+                continue;
+            }
+            matching.add(new WaypointRenderEntry(
+                entry.id(),
+                entry.name(),
+                entry.dimensionId(),
+                DimensionScale.convertHorizontal(entry.x(), entry.dimensionId(), dimension),
+                entry.y(),
+                DimensionScale.convertHorizontal(entry.z(), entry.dimensionId(), dimension),
+                entry.colorArgb(),
+                entry.type(),
+                entry.source(),
+                entry.locked()
+            ));
         }
         return List.copyOf(matching);
     }

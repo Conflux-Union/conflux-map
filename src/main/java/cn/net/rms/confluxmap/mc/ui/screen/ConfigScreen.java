@@ -240,6 +240,10 @@ public final class ConfigScreen extends Screen {
                         sharedAvailability.ready()
                     );
                 }
+                y = addToggleRow(
+                    y, "confluxmap.config.waypoints.cross_dimension",
+                    () -> config.waypointCrossDimensionEnabled, v -> config.waypointCrossDimensionEnabled = v
+                );
                 y = addIntSliderRow(
                     y, "confluxmap.config.waypoints.render_distance", 0, 100_000,
                     () -> config.waypointRenderDistance, v -> config.waypointRenderDistance = v, ConfigScreen::renderDistanceText
