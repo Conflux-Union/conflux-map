@@ -15,8 +15,10 @@ import org.apache.logging.log4j.Logger;
 /**
  * Atomic JSON loader/saver for {@link ServerConfig}. Pattern mirrors {@code core.config.ConfigIo}:
  * tmp-file + atomic move, quarantine a corrupt file as {@code *.bad}, never wedge the mod on a
- * broken edit. Lives in {@code server/} (MC-aware side) because it runs on the dedicated server
- * where the {@code core.config.ConfigIo} (client-only) is not loaded.
+ * broken edit, and load-time upgrade of the on-disk document (missing fields persisted with
+ * defaults; a newer-schema file is left intact). Lives in {@code server/} (MC-aware side) because
+ * it runs on the dedicated server where the {@code core.config.ConfigIo} (client-only) is not
+ * loaded.
  */
 public final class ServerConfigIo {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -42,6 +44,7 @@ public final class ServerConfigIo {
                 throw new JsonParseException("empty server config");
             }
             config.normalize();
+            upgradeOnDisk(json, config);
             return config;
         } catch (final IOException | JsonParseException e) {
             logger.warn("Server config {} unreadable ({}), quarantining and using defaults", file, e.toString());
@@ -81,6 +84,26 @@ public final class ServerConfigIo {
             configDir.resolve(ConfluxMapMod.ID).resolve("server.json"),
             ConfluxMapMod.LOGGER
         );
+    }
+
+    /**
+     * Rewrites the file when its content no longer matches the current schema
+     * (missing fields, normalized values). A newer schemaVersion means the file
+     * belongs to a later mod version, so a temporary downgrade must not strip it.
+     */
+    private void upgradeOnDisk(final String onDisk, final ServerConfig config) {
+        if (config.schemaVersion > ServerConfig.SCHEMA_VERSION) {
+            logger.warn(
+                "Server config {} has schema {} newer than this build's {}; leaving the file untouched",
+                file, config.schemaVersion, ServerConfig.SCHEMA_VERSION
+            );
+            return;
+        }
+        config.schemaVersion = ServerConfig.SCHEMA_VERSION;
+        if (!GSON.toJson(config).equals(onDisk)) {
+            logger.info("Updating server config {} to the current schema (missing fields added)", file);
+            saveAtomically(config);
+        }
     }
 
     private void move(final Path tmp) throws IOException {

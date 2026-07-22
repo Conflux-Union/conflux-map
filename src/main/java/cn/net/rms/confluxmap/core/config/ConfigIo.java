@@ -14,7 +14,9 @@ import org.apache.logging.log4j.Logger;
 /**
  * Loads and saves {@link ConfluxConfig}. Writes are atomic (tmp + move);
  * a corrupt file is quarantined as {@code *.bad} and replaced with defaults
- * so a broken edit never wedges the mod.
+ * so a broken edit never wedges the mod. Loading also upgrades the on-disk
+ * document in place: fields added since the file was written are persisted
+ * with their defaults, while a file stamped by a newer schema is left intact.
  */
 public final class ConfigIo {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -40,6 +42,7 @@ public final class ConfigIo {
                 throw new JsonParseException("empty config");
             }
             config.normalize();
+            upgradeOnDisk(json, config);
             return config;
         } catch (final IOException | JsonParseException e) {
             logger.warn("Config file {} unreadable ({}), quarantining and using defaults", file, e.toString());
@@ -58,6 +61,26 @@ public final class ConfigIo {
             move(tmp);
         } catch (final IOException e) {
             logger.error("Failed to save config to {}", file, e);
+        }
+    }
+
+    /**
+     * Rewrites the file when its content no longer matches the current schema
+     * (missing fields, normalized values). A newer schemaVersion means the file
+     * belongs to a later mod version, so a temporary downgrade must not strip it.
+     */
+    private void upgradeOnDisk(final String onDisk, final ConfluxConfig config) {
+        if (config.schemaVersion > ConfluxConfig.SCHEMA_VERSION) {
+            logger.warn(
+                "Config {} has schema {} newer than this build's {}; leaving the file untouched",
+                file, config.schemaVersion, ConfluxConfig.SCHEMA_VERSION
+            );
+            return;
+        }
+        config.schemaVersion = ConfluxConfig.SCHEMA_VERSION;
+        if (!GSON.toJson(config).equals(onDisk)) {
+            logger.info("Updating config {} to the current schema (missing fields added)", file);
+            save(config);
         }
     }
 

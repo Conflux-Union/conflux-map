@@ -132,6 +132,33 @@ class ServerConfigTest {
     }
 
     @Test
+    void loadFillsMissingFieldsAndRewritesFile(@TempDir final Path tmp) throws IOException {
+        final Path file = tmp.resolve("server.json");
+        Files.writeString(file, "{\"schemaVersion\":1,\"shareSeed\":true}", StandardCharsets.UTF_8);
+
+        final ServerConfig loaded = new ServerConfigIo(file, LOGGER).load();
+
+        assertTrue(loaded.shareSeed);
+        assertEquals(new ServerConfig().maxPatchLod, loaded.maxPatchLod);
+        // The upgrade is persisted so the on-disk file now carries the full schema.
+        final String rewritten = Files.readString(file, StandardCharsets.UTF_8);
+        assertTrue(rewritten.contains("\"sharedWaypointMutationsPerMinute\""));
+        assertTrue(rewritten.contains("\"shareSeed\": true"));
+    }
+
+    @Test
+    void loadKeepsNewerSchemaFileIntact(@TempDir final Path tmp) throws IOException {
+        final Path file = tmp.resolve("server.json");
+        final String futureJson = "{\"schemaVersion\": 2, \"futureField\": true}";
+        Files.writeString(file, futureJson, StandardCharsets.UTF_8);
+
+        final ServerConfig loaded = new ServerConfigIo(file, LOGGER).load();
+
+        assertEquals(2, loaded.schemaVersion);
+        assertEquals(futureJson, Files.readString(file, StandardCharsets.UTF_8));
+    }
+
+    @Test
     void saveReportsAtomicWriteFailure(@TempDir final Path tmp) throws IOException {
         final Path blockingParent = tmp.resolve("not-a-directory");
         Files.writeString(blockingParent, "block", StandardCharsets.UTF_8);
