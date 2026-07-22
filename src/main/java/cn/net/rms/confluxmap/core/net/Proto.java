@@ -1,7 +1,7 @@
 package cn.net.rms.confluxmap.core.net;
 
 /**
- * Protocol-level constants for the {@code confluxmap:m2} companion channel.
+ * Protocol-level constants for the {@code confluxmap:map_sync} companion channel.
  *
  * <p>All multi-byte wire values are big-endian, written/read via {@link
  * java.io.DataOutput}/{@link java.io.DataInput}. Strings are length-prefixed
@@ -18,7 +18,7 @@ public final class Proto {
     }
 
     /** Channel identifier registered with Fabric's networking API on both sides. */
-    public static final String CHANNEL_ID = "confluxmap:m2";
+    public static final String CHANNEL_ID = "confluxmap:map_sync";
 
     /** Protocol version this build speaks. Mismatched minors are tolerated; majors are not. */
     public static final int PROTO_MAJOR = 1;

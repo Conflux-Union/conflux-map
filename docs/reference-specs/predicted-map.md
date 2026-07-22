@@ -44,7 +44,7 @@ remain candidate markers rather than being painted as terrain.
 
 ## Companion protocol
 
-`confluxmap:m2` v1 uses big-endian framed messages. `MAP_VIEW_REQ` carries up to eight tile
+`confluxmap:map_sync` v1 uses big-endian framed messages. `MAP_VIEW_REQ` carries up to eight tile
 coordinates and a cached revision. A tile is 256 output pixels per edge and covers `2^lod` LOD-0
 regions per side. `MAP_PATCH` carries a 16x16 output-cell presence bitmap (one chunk per cell at
 LOD0, the union of touched chunks at higher LOD) and a

@@ -10,7 +10,7 @@ import net.minecraft.util.WorldSavePath;
 /**
  * Top-level companion service, owned by {@code ConfluxMapMod}'s {@code main} entrypoint so the
  * same jar serves dedicated and integrated servers. It owns the handshake, summary service, and
- * per-player correction budgets for the {@code confluxmap:m2} channel.
+ * per-player correction budgets for the {@code confluxmap:map_sync} channel.
  *
  * <p>State is started/stopped on {@link ServerLifecycleEvents#SERVER_STARTED} / {@link
  * ServerLifecycleEvents#SERVER_STOPPING}. The companion is safe to construct on either side

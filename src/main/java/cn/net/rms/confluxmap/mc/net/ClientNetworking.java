@@ -19,7 +19,7 @@ import net.minecraft.network.PacketByteBuf;
 import net.minecraft.util.Identifier;
 
 /**
- * Client-side wiring for the {@code confluxmap:m2} companion channel. Owns one global
+ * Client-side wiring for the {@code confluxmap:map_sync} companion channel. Owns one global
  * receiver; on every S2C message it decodes the payload and dispatches to {@link CompanionSession}
  * (HELLO_POLICY), to the correction sync loop (MAP_PATCH), or logs
  * (POLICY_UPDATE / ERROR). On {@link ClientPlayConnectionEvents#JOIN} it sends a HELLO_C2S
