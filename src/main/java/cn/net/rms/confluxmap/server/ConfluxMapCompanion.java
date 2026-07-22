@@ -172,7 +172,6 @@ public final class ConfluxMapCompanion {
     private SharedWaypointService loadSharedWaypoints(final MinecraftServer server) {
         final SharedWaypointIo io = new SharedWaypointIo(server.getSavePath(WorldSavePath.ROOT), ConfluxMapMod.LOGGER);
         try {
-            final SharedWaypointStore store = new SharedWaypointStore(io.load());
             final Map<DimensionId, SharedWaypointValidator.HeightRange> dimensions = new LinkedHashMap<>();
             for (final ServerWorld world : server.getWorlds()) {
                 dimensions.put(
@@ -180,6 +179,10 @@ public final class ConfluxMapCompanion {
                     new SharedWaypointValidator.HeightRange(world.getBottomY(), world.getTopY())
                 );
             }
+            final SharedWaypointValidator validator = new SharedWaypointValidator(dimensions);
+            final SharedWaypointStore store = new SharedWaypointStore(
+                SharedWaypointService.sanitizeLoaded(io.load(), validator, ConfluxMapMod.LOGGER)
+            );
             final SharedWaypointService.Limits limits = new SharedWaypointService.Limits(
                 config.maxSharedWaypointsPerWorld,
                 config.maxSharedWaypointsPerPlayer,
@@ -188,7 +191,7 @@ public final class ConfluxMapCompanion {
             return new SharedWaypointService(
                 store,
                 io,
-                new SharedWaypointValidator(dimensions),
+                validator,
                 Clock.systemUTC(),
                 UUID::randomUUID,
                 limits,

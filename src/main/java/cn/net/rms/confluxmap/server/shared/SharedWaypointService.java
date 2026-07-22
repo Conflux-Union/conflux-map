@@ -6,7 +6,9 @@ import cn.net.rms.confluxmap.core.shared.SharedWaypointLocationKey;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import java.io.IOException;
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -19,6 +21,9 @@ import org.apache.logging.log4j.Logger;
  *
  * <p>All request data is treated as untrusted. The service owns IDs, publisher metadata,
  * timestamps, revisions, permissions, quotas, rate limiting, idempotency and durable commit.
+ *
+ * <p>Disconnects deliberately retain applied idempotency results so a reconnect retry cannot
+ * duplicate a successful mutation. The access-ordered player map bounds retained state globally.
  */
 public final class SharedWaypointService {
     public static final int IDEMPOTENCY_RESULTS_PER_PLAYER = 128;
@@ -226,13 +231,49 @@ public final class SharedWaypointService {
         this.auditSink = Objects.requireNonNull(auditSink, "auditSink");
         this.logger = Objects.requireNonNull(logger, "logger");
         for (final SharedWaypoint waypoint : store.snapshot().waypoints()) {
-            if (validator.validate(
-                waypoint.name(), waypoint.dimensionId(), waypoint.x(), waypoint.y(), waypoint.z(),
-                waypoint.colorArgb(), waypoint.type()
-            ).isEmpty() || !validPublisherName(waypoint.publisherName())) {
+            if (!validForActiveWorld(waypoint, validator)) {
                 throw new IllegalArgumentException("loaded shared waypoint is invalid for the active world");
             }
         }
+    }
+
+    /**
+     * Drops persisted waypoints that no longer validate against the active world (for example
+     * after a datapack dimension was removed) so one bad entry cannot disable the whole feature.
+     * Surviving entries keep the loaded revision; the server stays authoritative for clients.
+     */
+    public static SharedWaypointStore.Snapshot sanitizeLoaded(
+        final SharedWaypointStore.Snapshot loaded,
+        final SharedWaypointValidator validator,
+        final Logger logger
+    ) {
+        Objects.requireNonNull(loaded, "loaded");
+        Objects.requireNonNull(validator, "validator");
+        Objects.requireNonNull(logger, "logger");
+        final List<SharedWaypoint> valid = new ArrayList<>(loaded.waypoints().size());
+        for (final SharedWaypoint waypoint : loaded.waypoints()) {
+            if (validForActiveWorld(waypoint, validator)) {
+                valid.add(waypoint);
+            } else {
+                logger.warn(
+                    "Quarantining persisted shared waypoint {} in {}: invalid for the active world",
+                    waypoint.id(), waypoint.dimensionId()
+                );
+            }
+        }
+        return valid.size() == loaded.waypoints().size()
+            ? loaded
+            : new SharedWaypointStore.Snapshot(loaded.revision(), valid);
+    }
+
+    private static boolean validForActiveWorld(
+        final SharedWaypoint waypoint,
+        final SharedWaypointValidator validator
+    ) {
+        return validator.validate(
+            waypoint.name(), waypoint.dimensionId(), waypoint.x(), waypoint.y(), waypoint.z(),
+            waypoint.colorArgb(), waypoint.type()
+        ).isPresent() && validPublisherName(waypoint.publisherName());
     }
 
     public synchronized SharedWaypointStore.Snapshot snapshot() {
@@ -392,14 +433,6 @@ public final class SharedWaypointService {
             mutation, now);
     }
 
-    /**
-     * Disconnects deliberately retain idempotency results so a reconnect retry cannot duplicate a
-     * successful mutation. The access-ordered player map bounds retained state globally.
-     */
-    public synchronized void forgetPlayer(final UUID playerId) {
-        Objects.requireNonNull(playerId, "playerId");
-    }
-
     synchronized int trackedPlayerCount() {
         return players.size();
     }
@@ -446,7 +479,12 @@ public final class SharedWaypointService {
         final MutationResult result,
         final long now
     ) {
-        player.results.put(operationId, new CachedMutation(request, result));
+        // Only applied results are idempotency-cached. Rejections are re-evaluated on retry:
+        // caching them would replay transient failures (RATE_LIMITED, PERSISTENCE_FAILED)
+        // forever and retain a full snapshot copy per rejection.
+        if (result.applied()) {
+            player.results.put(operationId, new CachedMutation(request, result));
+        }
         audit(actor, operationId, action, waypointId, result, now);
         return result;
     }

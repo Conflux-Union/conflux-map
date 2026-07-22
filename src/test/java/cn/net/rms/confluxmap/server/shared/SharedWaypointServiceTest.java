@@ -360,14 +360,13 @@ class SharedWaypointServiceTest {
     }
 
     @Test
-    void disconnectRetainsReplayResultAndTrackedPlayersAreGloballyBounded() {
+    void appliedResultsSurviveForReplayAndTrackedPlayersAreGloballyBounded() {
         final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
         final UUID operationId = uuid(235);
         final SharedWaypointService.CreateRequest request = createRequest(operationId, 0, "Home");
         final SharedWaypointService.MutationResult first = fixture.service.create(
             PLAYER, request
         );
-        fixture.service.forgetPlayer(PLAYER.playerId());
 
         final SharedWaypointService.MutationResult replay = fixture.service.create(
             PLAYER, request
@@ -398,6 +397,67 @@ class SharedWaypointServiceTest {
         assertEquals(SharedWaypointService.Action.CREATE, event.action());
         assertEquals(1L, event.revision());
         assertEquals(10_000L, event.timestampEpochMs());
+    }
+
+    @Test
+    void rateLimitedRejectionIsNotCachedSoTheSameOperationSucceedsAfterRefill() {
+        final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
+        for (int i = 0; i < SharedWaypointService.MUTATION_BURST; i++) {
+            fixture.service.delete(
+                PLAYER, new SharedWaypointService.DeleteRequest(uuid(300 + i), 0, uuid(900 + i))
+            );
+        }
+        final UUID operationId = uuid(320);
+        final SharedWaypointService.CreateRequest request = createRequest(operationId, 0, "Home");
+
+        final SharedWaypointService.MutationResult limited = fixture.service.create(PLAYER, request);
+        fixture.clock.advanceMillis(2_000);
+        final SharedWaypointService.MutationResult retried = fixture.service.create(PLAYER, request);
+
+        assertEquals(SharedWaypointService.MutationError.RATE_LIMITED, limited.error());
+        assertTrue(retried.applied());
+        assertFalse(retried.replayed());
+    }
+
+    @Test
+    void persistenceFailureIsNotCachedSoTheSameOperationSucceedsOnceStorageRecovers() {
+        final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
+        final UUID operationId = uuid(330);
+        final SharedWaypointService.CreateRequest request = createRequest(operationId, 0, "Home");
+
+        fixture.persistence.fail = true;
+        final SharedWaypointService.MutationResult failed = fixture.service.create(PLAYER, request);
+        fixture.persistence.fail = false;
+        final SharedWaypointService.MutationResult retried = fixture.service.create(PLAYER, request);
+
+        assertEquals(SharedWaypointService.MutationError.PERSISTENCE_FAILED, failed.error());
+        assertTrue(retried.applied());
+        assertFalse(retried.replayed());
+        assertEquals(1L, retried.snapshot().revision());
+    }
+
+    @Test
+    void sanitizeLoadedQuarantinesInvalidPersistedEntriesInsteadOfDisablingTheFeature() {
+        final SharedWaypoint valid = new SharedWaypoint(
+            uuid(1_700), PLAYER.playerId(), PLAYER.playerName(), "Kept", DimensionId.OVERWORLD,
+            8d, 70d, -4d, 0xFF33AA66, Waypoint.Type.NORMAL, false, 1L, 1L
+        );
+        final SharedWaypoint removedDimension = new SharedWaypoint(
+            uuid(1_701), OTHER.playerId(), OTHER.playerName(), "Dropped", DimensionId.END,
+            8d, 70d, -4d, 0xFF33AA66, Waypoint.Type.NORMAL, false, 2L, 2L
+        );
+        final SharedWaypointValidator validator = new SharedWaypointValidator(Map.of(
+            DimensionId.OVERWORLD, new SharedWaypointValidator.HeightRange(0, 256)
+        ));
+
+        final SharedWaypointStore.Snapshot sanitized = SharedWaypointService.sanitizeLoaded(
+            new SharedWaypointStore.Snapshot(2L, List.of(valid, removedDimension)), validator, LOGGER
+        );
+
+        assertEquals(2L, sanitized.revision());
+        assertEquals(List.of(valid), sanitized.waypoints());
+        final Fixture fixture = fixture(sanitized, new SharedWaypointService.Limits(20, 10, 30));
+        assertEquals(1, fixture.service.snapshot().waypoints().size());
     }
 
     private static Fixture fixture(final SharedWaypointService.Limits limits) {

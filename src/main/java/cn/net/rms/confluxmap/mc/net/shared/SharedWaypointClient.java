@@ -40,8 +40,13 @@ import net.minecraft.util.Identifier;
  * Client adapter for the independent {@code confluxmap:waypoints_v1} channel.
  *
  * <p>The adapter never puts public points in the local waypoint store. It publishes immutable
- * server snapshots to consumers and owns connection capability detection, handshake timeout,
- * revision recovery, operation correlation, and disconnect cleanup.
+ * server snapshots to consumers and owns the handshake timeout, revision recovery, operation
+ * correlation, and disconnect cleanup. Like {@link cn.net.rms.confluxmap.mc.net.ClientNetworking},
+ * it sends HELLO unconditionally on JOIN: fabric-api fires JOIN at the RETURN of
+ * {@code onGameJoin}, before the server's {@code minecraft:register} payload is applied on the
+ * client thread, so {@code ClientPlayNetworking.canSend} is deterministically false there. A
+ * server without the companion simply never answers and the handshake times out into
+ * {@link SharedWaypointClientState.State#UNSUPPORTED}.
  */
 public final class SharedWaypointClient {
     public static final Identifier CHANNEL = new Identifier(SharedWaypointProto.CHANNEL_ID);
@@ -101,7 +106,7 @@ public final class SharedWaypointClient {
     public void register() {
         ClientPlayNetworking.registerGlobalReceiver(CHANNEL, this::onReceive);
         ClientPlayConnectionEvents.JOIN.register((handler, sender, currentClient) -> onJoin());
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, currentClient) -> onDisconnect());
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, currentClient) -> onDisconnect(handler));
         ClientTickEvents.END_CLIENT_TICK.register(currentClient -> onTick());
     }
 
@@ -240,32 +245,31 @@ public final class SharedWaypointClient {
     private void onJoin() {
         final SharedWaypointClientState.View before = stateMachine.view();
         pendingOperations.clear();
-        final boolean channelAvailable;
-        try {
-            channelAvailable = ClientPlayNetworking.canSend(CHANNEL);
-        } catch (final RuntimeException e) {
-            ConfluxMapMod.LOGGER.debug("shared-waypoint: channel capability check failed", e);
-            stateMachine.beginConnection(false);
-            notifyChanges(before, stateMachine.view());
-            return;
-        }
-
-        final boolean sendHello = stateMachine.beginConnection(channelAvailable);
+        stateMachine.beginConnection(true);
         notifyChanges(before, stateMachine.view());
-        if (!sendHello) {
-            ConfluxMapMod.LOGGER.info("shared-waypoint: server does not advertise {}", CHANNEL);
-            return;
-        }
         if (!send(new HelloC2S(SharedWaypointProto.PROTO_MAJOR, SharedWaypointProto.PROTO_MINOR))) {
             failTransport("HELLO send failed");
+            return;
         }
+        ConfluxMapMod.LOGGER.info(
+            "shared-waypoint: HELLO sent (proto {}.{})",
+            SharedWaypointProto.PROTO_MAJOR, SharedWaypointProto.PROTO_MINOR
+        );
     }
 
-    private void onDisconnect() {
-        final SharedWaypointClientState.View before = stateMachine.view();
-        pendingOperations.clear();
-        stateMachine.reset();
-        notifyChanges(before, stateMachine.view());
+    private void onDisconnect(final net.minecraft.client.network.ClientPlayNetworkHandler handler) {
+        // DISCONNECT fires on the Netty event loop; pendingOperations and the listener contract
+        // are client-thread-confined, so marshal the cleanup like onReceive does.
+        client.execute(() -> {
+            final net.minecraft.client.network.ClientPlayNetworkHandler current = client.getNetworkHandler();
+            if (current != null && current != handler) {
+                return;
+            }
+            final SharedWaypointClientState.View before = stateMachine.view();
+            pendingOperations.clear();
+            stateMachine.reset();
+            notifyChanges(before, stateMachine.view());
+        });
     }
 
     private void onTick() {
@@ -322,8 +326,18 @@ public final class SharedWaypointClient {
         final SharedWaypointClientState.Action action;
         if (message instanceof final StatusS2C status) {
             action = stateMachine.onStatus(status);
+            ConfluxMapMod.LOGGER.info(
+                "shared-waypoint: STATUS received (supported={} enabled={} worldId={} revision={})",
+                status.supported(), status.enabled(), status.worldId(), status.revision()
+            );
         } else if (message instanceof final SnapshotS2C snapshot) {
             action = stateMachine.onSnapshot(snapshot);
+            if (stateMachine.view().synchronizedSnapshot()) {
+                ConfluxMapMod.LOGGER.info(
+                    "shared-waypoint: SNAPSHOT applied (revision={} waypoints={})",
+                    snapshot.revision(), snapshot.list().size()
+                );
+            }
         } else if (message instanceof final UpsertS2C upsert) {
             action = stateMachine.onUpsert(upsert);
         } else if (message instanceof final RemoveS2C remove) {
