@@ -7,6 +7,7 @@ import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureHandler;
 import java.util.Optional;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
+import net.minecraft.network.MessageType;
 import net.minecraft.network.packet.s2c.play.BlockUpdateS2CPacket;
 import net.minecraft.network.packet.s2c.play.ChunkDeltaUpdateS2CPacket;
 import net.minecraft.text.ClickEvent;
@@ -20,8 +21,9 @@ import net.minecraft.util.Identifier;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyArg;
+import org.spongepowered.asm.mixin.injection.ModifyArgs;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 
 @Mixin(ClientPlayNetworkHandler.class)
 public abstract class ClientPlayNetworkHandlerMixin {
@@ -35,21 +37,26 @@ public abstract class ClientPlayNetworkHandlerMixin {
         packet.visitUpdates((pos, state) -> ChunkCaptureHandler.blockDirty(pos.getX(), pos.getZ()));
     }
 
-    @ModifyArg(
+    @ModifyArgs(
         method = "onGameMessage",
         at = @At(
             value = "INVOKE",
             target = "Lnet/minecraft/client/gui/hud/InGameHud;addChatMessage("
                 + "Lnet/minecraft/network/MessageType;Lnet/minecraft/text/Text;Ljava/util/UUID;)V"
-        ),
-        index = 1
+        )
     )
-    private Text confluxmap$addWaypointImportAction(final Text original) {
+    private void confluxmap$addWaypointImportAction(final Args args) {
+        // GAME_INFO is the action bar: it re-renders continuously and its text is not clickable,
+        // so an appended import action would only add unactionable noise there.
+        if (args.<MessageType>get(0) == MessageType.GAME_INFO) {
+            return;
+        }
         final MinecraftClient client = MinecraftClient.getInstance();
         if (client.world == null) {
-            return original;
+            return;
         }
 
+        final Text original = args.get(1);
         final Identifier dimensionIdentifier = client.world.getRegistryKey().getValue();
         final DimensionId receivedDimension = DimensionId.of(
             dimensionIdentifier.getNamespace(), dimensionIdentifier.getPath()
@@ -57,7 +64,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
         final String visibleMessage = original.getString();
         final Optional<String> payload = WaypointChatClickPayload.encode(visibleMessage, receivedDimension);
         if (!payload.isPresent() || !WaypointChatCodec.parse(visibleMessage, receivedDimension).isPresent()) {
-            return original;
+            return;
         }
 
         final MutableText importAction = new TranslatableText("confluxmap.chat.waypoint.import")
@@ -65,9 +72,9 @@ public abstract class ClientPlayNetworkHandlerMixin {
                 .withColor(Formatting.AQUA)
                 .withUnderline(true)
                 .withClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, payload.get())));
-        return new LiteralText("")
-            .append(original.copy())
+        args.set(1, new LiteralText("")
+            .append(original.shallowCopy())
             .append(new LiteralText(" "))
-            .append(importAction);
+            .append(importAction));
     }
 }

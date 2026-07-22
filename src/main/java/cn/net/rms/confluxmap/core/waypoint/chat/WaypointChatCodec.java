@@ -138,7 +138,8 @@ public final class WaypointChatCodec {
         if (safeMessage.contains(MARKER)) {
             return parseConfluxMessage(safeMessage);
         }
-        if (safeMessage.contains(XAERO_MARKER)) {
+        // The Xaero pattern is case-insensitive, so the cheap gate must be too.
+        if (safeMessage.toLowerCase(java.util.Locale.ROOT).contains(XAERO_MARKER)) {
             return parseXaeroMessage(safeMessage, receivedDimension);
         }
 
@@ -210,7 +211,9 @@ public final class WaypointChatCodec {
         if (value == null || value.isEmpty()) {
             return Optional.of(receivedDimension);
         }
-        final String normalized = value.toLowerCase(java.util.Locale.ROOT);
+        // Real-world Xaero shares carry both hyphen and underscore world-id spellings
+        // (e.g. "Internal_overworld_waypoints"), so fold them before matching.
+        final String normalized = value.toLowerCase(java.util.Locale.ROOT).replace('_', '-');
         switch (normalized) {
             case "internal-overworld":
             case "internal-overworld-waypoints":

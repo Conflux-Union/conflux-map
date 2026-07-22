@@ -10,6 +10,8 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.text.OrderedText;
+import net.minecraft.text.StringVisitable;
 import net.minecraft.text.TranslatableText;
 
 /** Explicit preview and confirmation boundary for every outward waypoint share. */
@@ -24,6 +26,8 @@ public final class WaypointShareConfirmScreen extends Screen {
     private final Waypoint waypoint;
     private final Target target;
     private final SharedWaypointClient sharedWaypoints;
+    private final String confluxPreview;
+    private final String xaeroPreview;
     private ButtonWidget confirmButton;
     private String errorKey;
 
@@ -37,6 +41,28 @@ public final class WaypointShareConfirmScreen extends Screen {
         this.waypoint = waypoint.copy();
         this.target = target;
         this.sharedWaypoints = ConfluxMapClient.get().sharedWaypoints();
+        // Chat sharing previews the exact outgoing messages, so name truncation, coordinate
+        // flooring and Xaero color snapping are visible before anything is sent.
+        String conflux = null;
+        String xaero = null;
+        if (target == Target.CHAT) {
+            try {
+                conflux = WaypointChatCodec.format(
+                    this.waypoint.name, this.waypoint.dimensionId,
+                    this.waypoint.x, this.waypoint.y, this.waypoint.z
+                );
+                xaero = WaypointChatCodec.formatXaero(
+                    this.waypoint.name, this.waypoint.dimensionId,
+                    this.waypoint.x, this.waypoint.y, this.waypoint.z, this.waypoint.colorArgb
+                );
+            } catch (final IllegalArgumentException e) {
+                conflux = null;
+                xaero = null;
+                errorKey = "confluxmap.screen.waypoint.invalid_share";
+            }
+        }
+        this.confluxPreview = conflux;
+        this.xaeroPreview = xaero;
     }
 
     @Override
@@ -62,6 +88,8 @@ public final class WaypointShareConfirmScreen extends Screen {
         ));
         if (target == Target.PUBLIC) {
             updatePublicButton(availability);
+        } else {
+            confirmButton.active = confluxPreview != null && xaeroPreview != null;
         }
         addDrawableChild(new ButtonWidget(
             centerX + 4,
@@ -136,58 +164,54 @@ public final class WaypointShareConfirmScreen extends Screen {
             errorKey = "confluxmap.screen.waypoint.chat_unavailable";
             return;
         }
-        try {
-            final String confluxMessage = WaypointChatCodec.format(
-                waypoint.name,
-                waypoint.dimensionId,
-                waypoint.x,
-                waypoint.y,
-                waypoint.z
-            );
-            final String xaeroMessage = WaypointChatCodec.formatXaero(
-                waypoint.name,
-                waypoint.dimensionId,
-                waypoint.x,
-                waypoint.y,
-                waypoint.z,
-                waypoint.colorArgb
-            );
-            client.player.sendChatMessage(confluxMessage);
-            client.player.sendChatMessage(xaeroMessage);
-            onClose();
-        } catch (final IllegalArgumentException e) {
+        if (confluxPreview == null || xaeroPreview == null) {
             errorKey = "confluxmap.screen.waypoint.invalid_share";
+            return;
         }
+        client.player.sendChatMessage(confluxPreview);
+        client.player.sendChatMessage(xaeroPreview);
+        onClose();
     }
 
     @Override
     public void render(final MatrixStack matrices, final int mouseX, final int mouseY, final float tickDelta) {
         renderBackground(matrices);
         drawCentered(matrices, getTitle().getString(), 22, TEXT_COLOR);
-        drawCentered(matrices, new TranslatableText(
-            "confluxmap.screen.waypoint.preview.name", waypoint.name
-        ).getString(), 50, TEXT_COLOR);
-        drawCentered(matrices, new TranslatableText(
-            "confluxmap.screen.waypoint.preview.dimension", waypoint.dimensionId.toString()
-        ).getString(), 66, TEXT_COLOR);
-        drawCentered(matrices, new TranslatableText(
-            "confluxmap.screen.waypoint.preview.coords",
-            formatCoordinate(waypoint.x),
-            formatCoordinate(waypoint.y),
-            formatCoordinate(waypoint.z)
-        ).getString(), 82, TEXT_COLOR);
-        drawCentered(matrices, new TranslatableText(
-            target == Target.PUBLIC
-                ? "confluxmap.screen.waypoint.preview.audience_public"
-                : "confluxmap.screen.waypoint.preview.audience_chat"
-        ).getString(), 106, MUTED_TEXT_COLOR);
-        if (target == Target.PUBLIC) {
-            drawCentered(
-                matrices,
-                new TranslatableText("confluxmap.screen.waypoint.public_immutable").getString(),
-                122,
-                MUTED_TEXT_COLOR
-            );
+        if (target == Target.CHAT && confluxPreview != null && xaeroPreview != null) {
+            int y = drawWrapped(matrices, new TranslatableText(
+                "confluxmap.screen.waypoint.preview.chat_messages"
+            ).getString(), 50, MUTED_TEXT_COLOR);
+            y = drawWrapped(matrices, confluxPreview, y + 4, TEXT_COLOR);
+            y = drawWrapped(matrices, xaeroPreview, y + 6, TEXT_COLOR);
+            drawCentered(matrices, new TranslatableText(
+                "confluxmap.screen.waypoint.preview.audience_chat"
+            ).getString(), y + 10, MUTED_TEXT_COLOR);
+        } else {
+            drawCentered(matrices, new TranslatableText(
+                "confluxmap.screen.waypoint.preview.name", waypoint.name
+            ).getString(), 50, TEXT_COLOR);
+            drawCentered(matrices, new TranslatableText(
+                "confluxmap.screen.waypoint.preview.dimension", waypoint.dimensionId.toString()
+            ).getString(), 66, TEXT_COLOR);
+            drawCentered(matrices, new TranslatableText(
+                "confluxmap.screen.waypoint.preview.coords",
+                formatCoordinate(waypoint.x),
+                formatCoordinate(waypoint.y),
+                formatCoordinate(waypoint.z)
+            ).getString(), 82, TEXT_COLOR);
+            drawCentered(matrices, new TranslatableText(
+                target == Target.PUBLIC
+                    ? "confluxmap.screen.waypoint.preview.audience_public"
+                    : "confluxmap.screen.waypoint.preview.audience_chat"
+            ).getString(), 106, MUTED_TEXT_COLOR);
+            if (target == Target.PUBLIC) {
+                drawCentered(
+                    matrices,
+                    new TranslatableText("confluxmap.screen.waypoint.public_immutable").getString(),
+                    122,
+                    MUTED_TEXT_COLOR
+                );
+            }
         }
         if (errorKey != null) {
             drawCentered(matrices, new TranslatableText(errorKey).getString(), height - 50, ERROR_TEXT_COLOR);
@@ -198,6 +222,18 @@ public final class WaypointShareConfirmScreen extends Screen {
     private void drawCentered(final MatrixStack matrices, final String value, final int y, final int color) {
         final String text = textRenderer.trimToWidth(value, Math.max(40, width - 32));
         textRenderer.drawWithShadow(matrices, text, width / 2f - textRenderer.getWidth(text) / 2f, y, color);
+    }
+
+    /** Draws every wrapped line of {@code value} and returns the y below the last line. */
+    private int drawWrapped(final MatrixStack matrices, final String value, final int y, final int color) {
+        int lineY = y;
+        for (final OrderedText line : textRenderer.wrapLines(StringVisitable.plain(value), Math.max(40, width - 32))) {
+            textRenderer.drawWithShadow(
+                matrices, line, width / 2f - textRenderer.getWidth(line) / 2f, lineY, color
+            );
+            lineY += textRenderer.fontHeight + 1;
+        }
+        return lineY;
     }
 
     private static String formatCoordinate(final double value) {

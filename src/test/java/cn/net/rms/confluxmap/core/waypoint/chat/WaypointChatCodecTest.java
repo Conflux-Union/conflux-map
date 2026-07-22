@@ -120,6 +120,23 @@ class WaypointChatCodecTest {
     }
 
     @Test
+    void parsesXaeroUnderscoreWorldIdVariant() {
+        assertEquals(DimensionId.OVERWORLD, parseXaeroDimension("Internal_overworld_waypoints", DimensionId.END));
+        assertEquals(DimensionId.NETHER, parseXaeroDimension("internal_the_nether", DimensionId.END));
+    }
+
+    @Test
+    void parsesXaeroMarkerCaseInsensitively() {
+        final WaypointChatCodec.Candidate candidate = WaypointChatCodec.parse(
+            "Xaero-Waypoint:Home:H:1:2:3:7:false:0:Internal-overworld-waypoints",
+            DimensionId.NETHER
+        ).orElseThrow(AssertionError::new);
+
+        assertEquals("Home", candidate.name());
+        assertEquals(DimensionId.OVERWORLD, candidate.dimensionId());
+    }
+
+    @Test
     void formatsXaeroMessageWithSafeFieldsBlockCoordinatesAndNearestColor() {
         assertEquals(
             "xaero-waypoint:Home_Base:H:-114:64:3:12:false:0:Internal-the-nether-waypoints",
