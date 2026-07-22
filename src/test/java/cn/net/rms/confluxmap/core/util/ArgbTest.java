@@ -42,4 +42,15 @@ class ArgbTest {
         final int a = 0xFF102030, b = 0xFF405060, c = 0xFF708090, d = 0xFFA0B0C0;
         assertEquals(Argb.average4(a, b, c, d), Argb.average4Weighted(a, b, c, d));
     }
+
+    @Test
+    void luminanceWeighsGreenHeaviestAndIgnoresAlpha() {
+        // Rec. 709: the radar contour flips on this, so green terrain must read brighter
+        // than equally-intense blue (water), and alpha must not skew the result.
+        assertEquals(0, Argb.luminance(0xFF000000));
+        assertEquals(255, Argb.luminance(0x00FFFFFF));
+        assertEquals(Argb.luminance(0xFF00FF00), Argb.luminance(0x0000FF00));
+        assertEquals(182, Argb.luminance(0xFF00FF00)); // 7152 * 255 / 10000
+        assertEquals(18, Argb.luminance(0xFF0000FF)); // 722 * 255 / 10000
+    }
 }

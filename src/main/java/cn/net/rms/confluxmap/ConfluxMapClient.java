@@ -28,6 +28,7 @@ import cn.net.rms.confluxmap.mc.predict.PredictionBootstrap;
 import cn.net.rms.confluxmap.mc.predict.PredictionPaletteBuilder;
 import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
+import cn.net.rms.confluxmap.mc.radar.EntityIconReloadListener;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureService;
@@ -187,6 +188,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
         daylightTracker.register();
         ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
             new ColorReloadListener(spriteColorSampler)
+        );
+        ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
+            new EntityIconReloadListener(entityIconManager)
         );
 
         new Keybinds(config, configIo, layerSelector);

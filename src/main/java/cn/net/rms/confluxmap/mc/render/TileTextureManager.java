@@ -110,6 +110,23 @@ public final class TileTextureManager {
         return true;
     }
 
+    /**
+     * Render thread: the CPU-side composed color (ARGB) of one cached tile pixel, or transparent
+     * if the tile isn't resident. A pure read - unlike {@link #bind} it never requests
+     * composition, so probing (radar contour contrast) doesn't queue work for absent tiles.
+     */
+    public int sampleArgb(final TileKey key, final int px, final int py) {
+        final NativeImageBackedTexture texture = textures.get(key);
+        if (texture == null) {
+            return Argb.TRANSPARENT;
+        }
+        final NativeImage image = texture.getImage();
+        if (image == null) {
+            return Argb.TRANSPARENT;
+        }
+        return Argb.toAbgr(image.getColor(px, py));
+    }
+
     /** Render thread, session end: drop every cached tile texture. */
     public void releaseAll() {
         assert RenderSystem.isOnRenderThread() : "TileTextureManager.releaseAll() must run on the render thread";
