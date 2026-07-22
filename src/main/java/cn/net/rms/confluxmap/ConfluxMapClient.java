@@ -13,6 +13,8 @@ import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
+import cn.net.rms.confluxmap.core.update.GithubReleaseFetcher;
+import cn.net.rms.confluxmap.core.update.UpdateCheckService;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.mc.McGameBridge;
@@ -34,6 +36,7 @@ import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureService;
 import cn.net.rms.confluxmap.mc.ui.hud.MinimapHudRenderer;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapViewState;
+import cn.net.rms.confluxmap.mc.update.UpdateNotifier;
 import cn.net.rms.confluxmap.mc.ui.world.WaypointWorldRenderer;
 import cn.net.rms.confluxmap.mc.world.DeathWatcher;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
@@ -86,6 +89,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private SharedWaypointClient sharedWaypoints;
     private CorrectionStore correctionStore;
     private MapSyncClient mapSyncClient;
+    private UpdateCheckService updateCheck;
+    private UpdateNotifier updateNotifier;
 
     public static ConfluxMapClient get() {
         return instance;
@@ -192,6 +197,17 @@ public final class ConfluxMapClient implements ClientModInitializer {
         ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
             new EntityIconReloadListener(entityIconManager)
         );
+
+        updateCheck = new UpdateCheckService(
+            ConfluxMapMod.getVersion(),
+            GithubReleaseFetcher.confluxMapReleases(ConfluxMapMod.getVersion()),
+            ConfluxMapMod.LOGGER
+        );
+        if (config.updateCheckEnabled) {
+            updateCheck.checkAsync();
+        }
+        updateNotifier = new UpdateNotifier(client, updateCheck);
+        updateNotifier.register();
 
         new Keybinds(config, configIo, layerSelector);
         ClientLifecycleEvents.CLIENT_STOPPING.register(client2 -> shutdown());
@@ -315,5 +331,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public SharedWaypointClient sharedWaypoints() {
         return sharedWaypoints;
+    }
+
+    public UpdateCheckService updateCheck() {
+        return updateCheck;
     }
 }

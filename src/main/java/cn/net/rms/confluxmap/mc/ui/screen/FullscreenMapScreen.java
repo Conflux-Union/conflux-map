@@ -20,6 +20,7 @@ import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
+import cn.net.rms.confluxmap.core.update.UpdateCheckService;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
@@ -95,6 +96,7 @@ public final class FullscreenMapScreen extends Screen {
     private static final int SYNCING_TEXT_COLOR = 0xFFFFE066;
     private static final int SYNCED_TEXT_COLOR = 0xFF80E080;
     private static final int SYNC_FAILED_TEXT_COLOR = 0xFFFF7777;
+    private static final int UPDATE_TEXT_COLOR = 0xFFFFE066;
     private static final int BACKGROUND_COLOR = 0xFF101018;
     private static final int GRID_COLOR = 0x22FFFFFF;
     private static final int ARROW_OUTLINE = 0xFF101010;
@@ -134,6 +136,7 @@ public final class FullscreenMapScreen extends Screen {
     private final EntityIconManager radarIconManager;
     private final RadarViewRange radarViewRange;
     private final StructureMarkerService structureMarkers;
+    private final UpdateCheckService updateCheck;
 
     /** World point currently at screen center, and blocks-per-pixel; all mutable, panned/zoomed by input. */
     private double centerX;
@@ -173,6 +176,7 @@ public final class FullscreenMapScreen extends Screen {
         this.radarIconManager = app.entityIconManager();
         this.radarViewRange = app.radarViewRange();
         this.structureMarkers = app.structureMarkerService();
+        this.updateCheck = app.updateCheck();
 
         final DimensionId dimension = gameBridge.session().dimension();
         final FullscreenMapViewState.View remembered = viewState.get(dimension);
@@ -423,6 +427,7 @@ public final class FullscreenMapScreen extends Screen {
         drawServerSyncLabel(matrices);
         drawScaleLabel(matrices);
         drawCursorCoords(matrices, mouseX, mouseY);
+        drawUpdateBadge(matrices);
 
         super.render(matrices, mouseX, mouseY, tickDelta);
         renderWaypointControlTooltip(matrices, mouseX, mouseY);
@@ -939,6 +944,17 @@ public final class FullscreenMapScreen extends Screen {
         return CubiomesBiomeIds.nameForId(predicted.getAsInt())
             .map(name -> translatedBiomeName(new Identifier("minecraft", name)))
             .orElse(null);
+    }
+
+    /** Bottom-right corner: a passive notice while a newer release is known (the chat line carries the clickable link). */
+    private void drawUpdateBadge(final MatrixStack matrices) {
+        final Optional<UpdateCheckService.UpdateInfo> info = updateCheck.available();
+        if (info.isEmpty()) {
+            return;
+        }
+        final String text = new TranslatableText("confluxmap.map.update_badge", info.get().latestVersion()).getString();
+        final int textWidth = textRenderer.getWidth(text);
+        textRenderer.drawWithShadow(matrices, text, width - MARGIN - textWidth, height - MARGIN - 10, UPDATE_TEXT_COLOR);
     }
 
     private static String translatedBiomeName(final Identifier biomeId) {

@@ -98,6 +98,9 @@ public final class ConfluxConfig {
     /** Pan-settle debounce, clamped to 100..2000 ms. */
     public int predictionDebounceMs = 300;
 
+    /** Startup GitHub release probe; drives the chat notice and the fullscreen-map badge. */
+    public boolean updateCheckEnabled = true;
+
     public ConfluxConfig copy() {
         final ConfluxConfig c = new ConfluxConfig();
         c.schemaVersion = schemaVersion;
@@ -138,6 +141,7 @@ public final class ConfluxConfig {
         c.predictionViewMode = predictionViewMode;
         c.predictionShowStructures = predictionShowStructures;
         c.predictionDebounceMs = predictionDebounceMs;
+        c.updateCheckEnabled = updateCheckEnabled;
         return c;
     }
 

@@ -2,6 +2,8 @@ package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.update.GithubReleaseFetcher;
+import cn.net.rms.confluxmap.core.update.UpdateCheckService;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointIo;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointNetworking;
@@ -34,6 +36,7 @@ public final class ConfluxMapCompanion {
     private final WorldIds worldIds;
     private final ServerNetworking networking;
     private final SharedWaypointNetworking sharedWaypointNetworking;
+    private final UpdateCheckService updateCheck;
     private volatile ServerConfig config;
     private volatile RegionSummaryService summaries;
     private volatile SharedWaypointService sharedWaypoints;
@@ -44,6 +47,11 @@ public final class ConfluxMapCompanion {
         this.config = ServerConfigIo.loadDefault();
         this.networking = new ServerNetworking(this);
         this.sharedWaypointNetworking = new SharedWaypointNetworking(this);
+        this.updateCheck = new UpdateCheckService(
+            ConfluxMapMod.getVersion(),
+            GithubReleaseFetcher.confluxMapReleases(ConfluxMapMod.getVersion()),
+            ConfluxMapMod.LOGGER
+        );
     }
 
     public void initialize() {
@@ -66,6 +74,14 @@ public final class ConfluxMapCompanion {
 
     private void onServerStarted(final MinecraftServer server) {
         config = configIo.load();
+        // Console-only notice, dedicated servers only: on an integrated server the client
+        // entrypoint already runs its own check and notifies in-game.
+        if (server.isDedicated() && config.checkForUpdates) {
+            updateCheck.checkAsync(info -> ConfluxMapMod.LOGGER.warn(
+                "Conflux Map {} is available (installed {}). Download: {}",
+                info.latestVersion(), info.currentVersion(), info.releaseUrl()
+            ));
+        }
         summaries = null;
         sharedWaypoints = null;
         if (!config.enabled) {

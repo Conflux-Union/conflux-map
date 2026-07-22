@@ -274,6 +274,10 @@ public final class ConfigScreen extends Screen {
                     y, "confluxmap.config.performance.gpu_tile_cache_limit", 16, 2048,
                     () -> config.gpuTileCacheLimit, v -> config.gpuTileCacheLimit = v, ConfigScreen::plainText
                 );
+                y = addToggleRow(
+                    y, "confluxmap.config.performance.update_check",
+                    () -> config.updateCheckEnabled, v -> config.updateCheckEnabled = v
+                );
                 break;
             case PREDICTION:
                 y = addToggleRow(y, "confluxmap.config.prediction.enabled", () -> config.predictionEnabled, v -> config.predictionEnabled = v);

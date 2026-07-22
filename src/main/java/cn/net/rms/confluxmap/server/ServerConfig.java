@@ -17,6 +17,8 @@ public final class ServerConfig {
 
     /** Master toggle for the companion. When false, no handshake replies are sent. */
     public boolean enabled = true;
+    /** Dedicated-server startup GitHub release probe; a newer version is announced on the console. */
+    public boolean checkForUpdates = true;
     /**
      * Whether to include the world seed in {@link HelloPolicyS2C}'s per-dim entries. Default OFF -
      * sending the seed reveals the world's PRNG to every unauthenticated player, which is
