@@ -97,6 +97,11 @@ public final class Argb {
         return (argb & 0xFF00FF00) | (argb & 0x00FF0000) >>> 16 | (argb & 0x000000FF) << 16;
     }
 
+    /** Rec. 709 relative luminance of the RGB channels in [0, 255]; alpha is ignored. */
+    public static int luminance(final int argb) {
+        return (2126 * red(argb) + 7152 * green(argb) + 722 * blue(argb)) / 10000;
+    }
+
     /** Average of 4 colors, used by LOD downsampling. */
     public static int average4(final int c0, final int c1, final int c2, final int c3) {
         final int a = (alpha(c0) + alpha(c1) + alpha(c2) + alpha(c3)) >> 2;

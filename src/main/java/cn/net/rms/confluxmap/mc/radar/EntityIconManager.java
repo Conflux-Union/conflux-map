@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
@@ -55,10 +56,14 @@ public final class EntityIconManager {
     /**
      * The primary-layer (and, for players only, hat-overlay-layer) sub-UV region to draw as this
      * entity's radar icon. {@code overlayTexture} is {@code null} for every non-player entity.
+     * {@code fromSheet} marks bundled-sheet icons, whose UV rect also addresses their baked
+     * silhouette outline cell in {@link EntityIconOutlineTexture} (player skins have none - the
+     * face crop is fully opaque, so a plain square frame already is its silhouette outline).
      */
     public record FaceIcon(
         Identifier texture, float u0, float v0, float u1, float v1,
-        Identifier overlayTexture, float ou0, float ov0, float ou1, float ov1
+        Identifier overlayTexture, float ou0, float ov0, float ou1, float ov1,
+        boolean fromSheet
     ) {
         public boolean hasOverlay() {
             return overlayTexture != null;
@@ -105,7 +110,19 @@ public final class EntityIconManager {
 
     private static final Map<EntityType<?>, CellIcon> SHEET_TABLE = buildSheetTable();
 
+    private final EntityIconOutlineTexture outlineTexture = new EntityIconOutlineTexture(SHEET);
+
     public EntityIconManager() {
+    }
+
+    /** Render thread. GL id of the sheet's baked silhouette outline mask, or -1 if it can't bake. */
+    public int outlineTextureGlId(final MinecraftClient client) {
+        return outlineTexture.glId(client);
+    }
+
+    /** Render thread, resource reload: re-bake the outline mask from the (possibly overridden) sheet. */
+    public void invalidateOutlineTexture() {
+        outlineTexture.invalidate();
     }
 
     /**
@@ -124,7 +141,8 @@ public final class EntityIconManager {
         final Identifier skin = player.getSkinTexture();
         return new FaceIcon(
             skin, PLAYER_FACE.u0(), PLAYER_FACE.v0(), PLAYER_FACE.u1(), PLAYER_FACE.v1(),
-            skin, PLAYER_HAT.u0(), PLAYER_HAT.v0(), PLAYER_HAT.u1(), PLAYER_HAT.v1()
+            skin, PLAYER_HAT.u0(), PLAYER_HAT.v0(), PLAYER_HAT.u1(), PLAYER_HAT.v1(),
+            false
         );
     }
 
@@ -134,7 +152,7 @@ public final class EntityIconManager {
             return null;
         }
         final FaceUv uv = icon.resolve(entity);
-        return new FaceIcon(SHEET, uv.u0(), uv.v0(), uv.u1(), uv.v1(), null, 0f, 0f, 0f, 0f);
+        return new FaceIcon(SHEET, uv.u0(), uv.v0(), uv.u1(), uv.v1(), null, 0f, 0f, 0f, 0f, true);
     }
 
     private static FaceUv px(final int x0, final int y0, final int x1, final int y1, final int texW, final int texH) {

@@ -25,6 +25,7 @@ import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
+import cn.net.rms.confluxmap.mc.radar.RadarBackdrop;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
@@ -314,10 +315,7 @@ public final class FullscreenMapScreen extends Screen {
         final SessionGuard.Session session = gameBridge.session();
         final MapLayer layer = layerSelector.current().layer();
         final String layerId = layer.cacheId();
-        final boolean predictionEligibleLayer = layer.type() == MapLayer.Type.SURFACE || layer.type() == MapLayer.Type.END_SURFACE;
-        final boolean predictionActive = config.predictionEnabled
-            && predictionEligibleLayer
-            && predictionState.predictable(session.dimension());
+        final boolean predictionActive = predictionActive(layer, session);
         tiles.setViewport(lod, firstTileX, lastTileX, firstTileZ, lastTileZ);
         if (predictionActive) {
             predictionTiles.setViewport(session.dimension(), lod, firstTileX, lastTileX, firstTileZ, lastTileZ);
@@ -329,10 +327,7 @@ public final class FullscreenMapScreen extends Screen {
         }
 
         if (predictionActive) {
-            final int predictionTint = PredictionLighting.renderTint(
-                config.dynamicLighting && layer.type() == MapLayer.Type.SURFACE,
-                daylightModel.factor()
-            );
+            final int predictionTint = predictionTint(layer);
             for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
                 for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
                     final TileKey key = new TileKey(session.world(), session.dimension(), layerId, lod, tileX, tileZ);
@@ -362,6 +357,19 @@ public final class FullscreenMapScreen extends Screen {
         }
     }
 
+    /** Only Overworld SURFACE / End END_SURFACE layers have a seed-predicted underlay (see {@link #drawTiles}). */
+    private boolean predictionActive(final MapLayer layer, final SessionGuard.Session session) {
+        final boolean eligibleLayer = layer.type() == MapLayer.Type.SURFACE || layer.type() == MapLayer.Type.END_SURFACE;
+        return config.predictionEnabled && eligibleLayer && predictionState.predictable(session.dimension());
+    }
+
+    private int predictionTint(final MapLayer layer) {
+        return PredictionLighting.renderTint(
+            config.dynamicLighting && layer.type() == MapLayer.Type.SURFACE,
+            daylightModel.factor()
+        );
+    }
+
     /**
      * Radar entries above the map tiles but below waypoint markers (see {@link #render}), reusing
      * {@link RadarMarkerRenderer} - the exact same icon/dot drawing {@code MinimapHudRenderer} uses,
@@ -380,6 +388,13 @@ public final class FullscreenMapScreen extends Screen {
         }
         final PlayerView player = playerView.get();
         final double pxPerBlock = 1.0 / scale;
+        final SessionGuard.Session session = gameBridge.session();
+        final MapLayer layer = layerSelector.current().layer();
+        final boolean predictionActive = predictionActive(layer, session);
+        final RadarBackdrop backdrop = new RadarBackdrop(
+            textures, session.world(), session.dimension(), layer.cacheId(), currentLod(),
+            predictionActive, predictionActive ? predictionTint(layer) : 0, BACKGROUND_COLOR
+        );
 
         for (final RadarEntry entry : radarScanner.snapshot()) {
             double ex = entry.x();
@@ -398,7 +413,10 @@ public final class FullscreenMapScreen extends Screen {
                 || screenY < -RADAR_CULL_MARGIN || screenY > height + RADAR_CULL_MARGIN) {
                 continue;
             }
-            RadarMarkerRenderer.draw(matrices, client, config, radarIconManager, entry, screenX, screenY, yDelta, live);
+            RadarMarkerRenderer.draw(
+                matrices, client, config, radarIconManager, backdrop, entry, screenX, screenY,
+                ex, ez, (float) scale, yDelta, live
+            );
         }
     }
 
