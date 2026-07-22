@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.color.DaylightModel;
+import cn.net.rms.confluxmap.core.color.ShadingPipeline;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
@@ -11,10 +12,12 @@ import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
+import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
+import cn.net.rms.confluxmap.core.tile.TileUpdate;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import java.nio.file.Path;
@@ -57,7 +60,8 @@ class PredictionTileServiceTest {
         final MapExecutors executors = new MapExecutors();
         final TileService uploads = new TileService(new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel());
         final PredictionState state = new PredictionState();
-        state.set(146008555L, McVersions.toCubiomes("1.17").orElseThrow());
+        state.setPresets(WorldPreset.DEFAULT, WorldPreset.DEFAULT);
+        state.setSeed(146008555L, McVersions.toCubiomes("1.17").orElseThrow());
         final PredictionTileService predictionTiles = newService(sessionGuard, state, executors, uploads);
         final CorrectionStore corrections = new CorrectionStore(tempDir);
         predictionTiles.bindCorrectionStore(corrections);
@@ -92,6 +96,47 @@ class PredictionTileServiceTest {
             );
             awaitIdle(predictionTiles, 10_000L);
             assertEquals(4, predictionTiles.predictedBiomeAt(DIM, 4, 0, 0).orElse(-1));
+        } finally {
+            executors.shutdown(2000);
+        }
+    }
+
+    /**
+     * The superflat underlay is seedless and native-free: a FLAT preset plus its uniform surface
+     * must compose a full tile (here a stone-topped flat world, map color 11) with no
+     * NativeLib assumption anywhere in this test.
+     */
+    @Test
+    void superflatComposesAUniformTileWithoutSeedOrNative(@TempDir final Path tempDir) throws InterruptedException {
+        final SessionGuard sessionGuard = new SessionGuard();
+        final MapExecutors executors = new MapExecutors();
+        final TileService uploads = new TileService(new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel());
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.FLAT, WorldPreset.DEFAULT);
+        state.setFlatBaseline(new FlatBaseline(1, 3, SurfaceKind.LAND.ordinal(), 11, 0));
+        final PredictionTileService predictionTiles = newService(sessionGuard, state, executors, uploads);
+        predictionTiles.bindCorrectionStore(new CorrectionStore(tempDir));
+        sessionGuard.begin(WORLD, DIM);
+
+        try {
+            assertTrue(state.predictable(DIM), "flat baseline alone must make the overworld predictable");
+            predictionTiles.requestTile(new TileKey(WORLD, DIM, "surface!pred", 2, 0, 0));
+            awaitIdle(predictionTiles, 10_000L);
+
+            final List<TileUpdate> updates = uploads.drainUploads(10);
+            assertEquals(1, updates.size(), "the flat compose must reach the upload queue");
+            final int[] pixels = updates.get(0).argbPixels();
+            final int expected = ShadingPipeline.applyBrightnessMultiplier(
+                ShadingPipeline.applyShade(
+                    MapColorTable.argb(11),
+                    ShadingPipeline.heightShade(3, ShadingPipeline.REFERENCE_HEIGHT, false)
+                ),
+                1.0
+            );
+            for (final int pixel : pixels) {
+                assertEquals(expected, pixel, "every flat baseline pixel must be the top block's shaded map color");
+            }
+            assertEquals(1, predictionTiles.predictedBiomeAt(DIM, 2, 0, 0).orElse(-1));
         } finally {
             executors.shutdown(2000);
         }

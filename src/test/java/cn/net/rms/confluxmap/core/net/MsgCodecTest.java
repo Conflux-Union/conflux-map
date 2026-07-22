@@ -2,11 +2,15 @@ package cn.net.rms.confluxmap.core.net;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.core.predict.FlatBaseline;
+import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
@@ -38,8 +42,8 @@ class MsgCodecTest {
             "1.17",
             new HelloPolicyS2C.Budgets(65_536, 8, 300, 2),
             List.of(
-                new HelloPolicyS2C.DimDescriptor("minecraft:overworld", "overworld", true, true, -4587293450L),
-                new HelloPolicyS2C.DimDescriptor("minecraft:the_end", "the_end", true, true, -4587293450L)
+                new HelloPolicyS2C.DimDescriptor("minecraft:overworld", "overworld", true, true, -4587293450L, WorldPreset.LARGE_BIOMES),
+                new HelloPolicyS2C.DimDescriptor("minecraft:the_end", "the_end", true, true, -4587293450L, WorldPreset.DEFAULT)
             )
         );
         final HelloPolicyS2C decoded = (HelloPolicyS2C) MsgCodec.decode(MsgCodec.encode(original));
@@ -59,7 +63,7 @@ class MsgCodecTest {
             "1.17",
             new HelloPolicyS2C.Budgets(32_768, 4, 500, 1),
             List.of(
-                new HelloPolicyS2C.DimDescriptor("minecraft:overworld", "overworld", true, false, 0L)
+                new HelloPolicyS2C.DimDescriptor("minecraft:overworld", "overworld", true, false, 0L, WorldPreset.DEFAULT)
             )
         );
         final HelloPolicyS2C decoded = (HelloPolicyS2C) MsgCodec.decode(MsgCodec.encode(original));
@@ -67,6 +71,47 @@ class MsgCodecTest {
         assertEquals(original.worldId(), decoded.worldId());
         assertEquals(1, decoded.dims().size());
         assertEquals(original.dims().get(0), decoded.dims().get(0));
+    }
+
+    @Test
+    void helloPolicyCarriesPerDimGeneratorPresets() throws ProtoException {
+        final HelloPolicyS2C original = new HelloPolicyS2C(
+            new HelloPolicyS2C.Flags(true, true, false),
+            "11111111-2222-3333-4444-555555555555",
+            "1.17",
+            new HelloPolicyS2C.Budgets(65_536, 8, 300, 2),
+            List.of(
+                // Superflat overworld: preset carried in the spare dim-flag bits, predictable off.
+                new HelloPolicyS2C.DimDescriptor("minecraft:overworld", "overworld", false, true, 42L, WorldPreset.FLAT),
+                new HelloPolicyS2C.DimDescriptor("minecraft:the_end", "the_end", true, true, 42L, WorldPreset.AMPLIFIED)
+            )
+        );
+        final HelloPolicyS2C decoded = (HelloPolicyS2C) MsgCodec.decode(MsgCodec.encode(original));
+        assertEquals(WorldPreset.FLAT, decoded.dims().get(0).preset());
+        assertFalse(decoded.dims().get(0).predictable());
+        assertEquals(WorldPreset.AMPLIFIED, decoded.dims().get(1).preset());
+        assertIterableEquals(original.dims(), decoded.dims());
+    }
+
+    @Test
+    void flatBaselineRoundTrips() throws ProtoException {
+        final FlatBaselineS2C original = new FlatBaselineS2C(List.of(
+            new FlatBaselineS2C.Entry(0, new FlatBaseline(1, 3, 1, 11, 0)),
+            new FlatBaselineS2C.Entry(2, new FlatBaseline(7, 63, 2, 12, 40))
+        ));
+        final FlatBaselineS2C decoded = (FlatBaselineS2C) MsgCodec.decode(MsgCodec.encode(original));
+        assertIterableEquals(original.entries(), decoded.entries());
+        assertEquals(Proto.MSG_FLAT_BASELINE_S2C, decoded.typeId());
+    }
+
+    @Test
+    void flatBaselineRejectsEmptyAndOversizedEntryLists() {
+        assertThrows(ProtoException.class, () -> MsgCodec.encode(new FlatBaselineS2C(List.of())));
+        final List<FlatBaselineS2C.Entry> tooMany = new ArrayList<>();
+        for (int i = 0; i <= Proto.MAX_DIM_ENTRIES; i++) {
+            tooMany.add(new FlatBaselineS2C.Entry(i, new FlatBaseline(1, 3, 1, 11, 0)));
+        }
+        assertThrows(ProtoException.class, () -> MsgCodec.encode(new FlatBaselineS2C(tooMany)));
     }
 
     @Test
@@ -215,7 +260,7 @@ class MsgCodecTest {
     @Test
     void encodeRejectsTooManyDims() {
         final HelloPolicyS2C.DimDescriptor[] dims = new HelloPolicyS2C.DimDescriptor[Proto.MAX_DIM_ENTRIES + 1];
-        Arrays.fill(dims, new HelloPolicyS2C.DimDescriptor("minecraft:overworld", "overworld", true, true, 0L));
+        Arrays.fill(dims, new HelloPolicyS2C.DimDescriptor("minecraft:overworld", "overworld", true, true, 0L, WorldPreset.DEFAULT));
         final HelloPolicyS2C msg = new HelloPolicyS2C(
             new HelloPolicyS2C.Flags(false, false, false),
             "id", "1.17",
@@ -358,8 +403,10 @@ class MsgCodecTest {
         for (int i = 0; i < n; i++) {
             final boolean predictable = rng.nextBoolean();
             final boolean hasSeed = rng.nextBoolean();
+            final WorldPreset[] presets = WorldPreset.values();
             dims[i] = new HelloPolicyS2C.DimDescriptor(
-                "minecraft:dim" + i, "dim" + i, predictable, hasSeed, rng.nextLong()
+                "minecraft:dim" + i, "dim" + i, predictable, hasSeed, rng.nextLong(),
+                presets[rng.nextInt(presets.length)]
             );
         }
         return Arrays.asList(dims);

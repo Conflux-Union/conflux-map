@@ -23,9 +23,11 @@ public final class Proto {
     /**
      * Protocol version this build speaks. Mismatched minors are tolerated; majors are not.
      * Major 2 switched the MAP_PATCH body to field-plane layout with delta-coded heights.
+     * Minor 1 added the per-dim generator preset in spare bits of HELLO_POLICY's dim flag byte.
+     * Minor 2 added FLAT_BASELINE (0x07); pre-minor-2 clients log and ignore it.
      */
     public static final int PROTO_MAJOR = 2;
-    public static final int PROTO_MINOR = 0;
+    public static final int PROTO_MINOR = 2;
 
     // ---- Message type ids (first byte of every framed payload) ----
 
@@ -41,11 +43,13 @@ public final class Proto {
     public static final int MSG_POLICY_UPDATE_S2C = 0x05;
     /** S2C: structured error from the server (rate-limit, malformed request, etc.). */
     public static final int MSG_ERROR_S2C = 0x06;
+    /** S2C: uniform surface per superflat dimension; sent just before {@link #MSG_HELLO_POLICY_S2C}. */
+    public static final int MSG_FLAT_BASELINE_S2C = 0x07;
 
     /** First valid message id; used to range-check the type byte. */
     public static final int MSG_MIN = MSG_HELLO_C2S;
     /** Last valid message id for this proto major version. */
-    public static final int MSG_MAX = MSG_ERROR_S2C;
+    public static final int MSG_MAX = MSG_FLAT_BASELINE_S2C;
 
     // ---- Hard caps (enforced everywhere untrusted bytes cross a boundary) ----
 

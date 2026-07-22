@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.mc.net;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.core.net.ErrorS2C;
+import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
 import cn.net.rms.confluxmap.core.net.HelloC2S;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.MapPatchS2C;
@@ -70,6 +71,8 @@ public final class ClientNetworking {
             final Message msg = MsgCodec.decode(payload);
             if (msg instanceof final HelloPolicyS2C p) {
                 session.onPolicy(p);
+            } else if (msg instanceof final FlatBaselineS2C f) {
+                session.onFlatBaselines(f);
             } else if (msg instanceof final PolicyUpdateS2C u) {
                 onPolicyUpdate(u);
             } else if (msg instanceof final MapPatchS2C p) {

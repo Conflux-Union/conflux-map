@@ -20,6 +20,7 @@ import cn.net.rms.confluxmap.core.predict.CorrectionStore;
 import cn.net.rms.confluxmap.core.predict.CorrectionTile;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionTileService;
+import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
@@ -165,7 +166,7 @@ class MapSyncVoidAreaZoomTest {
                     server.config.minRequestIntervalMs,
                     server.config.maxPatchLod
                 ),
-                List.of(new HelloPolicyS2C.DimDescriptor(DIM.toString(), "overworld", true, false, 0L))
+                List.of(new HelloPolicyS2C.DimDescriptor(DIM.toString(), "overworld", true, false, 0L, WorldPreset.DEFAULT))
             ));
 
             client = new MapSyncClient(

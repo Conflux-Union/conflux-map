@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.core.net;
 
+import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import java.util.List;
 
 /**
@@ -42,12 +43,15 @@ public record HelloPolicyS2C(
      *
      * @param dimId       stringified dimension identifier, e.g. {@code "minecraft:overworld"}
      * @param dimType     {@code "overworld"} / {@code "the_nether"} / {@code "the_end"} (vanilla) or a mod id
-     * @param predictable whether the server can ever produce corrections for this dim (cubiomes coverage)
+     * @param predictable whether the server can ever produce corrections for this dim (cubiomes coverage
+     *                    and a {@link WorldPreset#predictable()} generator)
      * @param hasSeed     whether the server actually has the world seed (always true when seedGranted; future
      *                    hook for per-dim-seed configs)
      * @param seed        the world seed; valid only when {@link Flags#seedGranted} && {@code hasSeed}
+     * @param preset      the generator preset the server recognized for this dim; carried in spare bits of
+     *                    the per-dim flag byte, so a pre-preset peer reads/writes {@link WorldPreset#DEFAULT}
      */
-    public record DimDescriptor(String dimId, String dimType, boolean predictable, boolean hasSeed, long seed) {
+    public record DimDescriptor(String dimId, String dimType, boolean predictable, boolean hasSeed, long seed, WorldPreset preset) {
     }
 
     @Override

@@ -7,8 +7,11 @@ import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
+import cn.net.rms.confluxmap.core.predict.FlatBaseline;
 import cn.net.rms.confluxmap.core.predict.NativeBaselineSampler;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
+import cn.net.rms.confluxmap.core.predict.WorldPreset;
+import java.util.Optional;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import java.io.IOException;
@@ -137,7 +140,22 @@ public final class RegionSummaryService {
     private PatchBuilder.Result buildPatch(
         final ServerWorld world, final SummaryTile summary, final long sinceRevision
     ) {
-        if (NativeLib.available()) {
+        // Residual patches assume the client predicts the identical baseline, so the sampler must
+        // mirror the client's preset-derived generator flags. A superflat dim diffs against its
+        // uniform surface instead; debug/custom presets have no shared baseline and ship absolute.
+        final WorldPreset preset = WorldPresetDetector.detect(world);
+        if (preset == WorldPreset.FLAT) {
+            final Optional<FlatBaseline> flat = FlatWorldBaseline.of(world);
+            if (flat.isPresent()) {
+                final PatchBuilder.Result residual = patchBuilder.buildFromUniform(
+                    summary, sinceRevision, flat.get(), false
+                );
+                if (residual.mode() != Proto.PATCH_MODE_UNAVAILABLE) {
+                    return residual;
+                }
+            }
+        }
+        if (NativeLib.available() && preset.predictable()) {
             final int nativeDim = PredictionDimensions.isEnd(
                 cn.net.rms.confluxmap.core.model.DimensionId.of(
                     world.getRegistryKey().getValue().getNamespace(), world.getRegistryKey().getValue().getPath()
@@ -147,7 +165,8 @@ public final class RegionSummaryService {
             if (version.isPresent()) {
                 final PatchBuilder.Result residual = patchBuilder.buildFromSampler(
                     summary, sinceRevision,
-                    new NativeBaselineSampler(version.getAsInt(), world.getSeed(), nativeDim), nativeDim == 1,
+                    new NativeBaselineSampler(version.getAsInt(), world.getSeed(), nativeDim, preset.cubiomesFlags()),
+                    nativeDim == 1,
                     world.getSeed(), false
                 );
                 if (residual.mode() != Proto.PATCH_MODE_UNAVAILABLE) {

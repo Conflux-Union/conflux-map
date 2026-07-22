@@ -139,7 +139,7 @@ public final class PredictionSyncGameTest implements FabricGameTest {
             correction.applyPatch(patch.tileRevision(), patch.presence(), PatchCodec.decode(patch.body()));
             final BaselineGrid baseline = LodSampling.sample(
                 new NativeBaselineSampler(
-                    McVersions.toCubiomes("1.17.1").orElseThrow(), world.getSeed(), 0
+                    McVersions.toCubiomes("1.17.1").orElseThrow(), world.getSeed(), 0, 0
                 ),
                 false,
                 0,

@@ -12,10 +12,12 @@ import cn.net.rms.confluxmap.core.net.MapSyncProgress;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.predict.CubiomesBiomeIds;
 import cn.net.rms.confluxmap.core.predict.PredictedTileKeys;
+import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.PredictionLighting;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionTileService;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
+import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
@@ -849,16 +851,42 @@ public final class FullscreenMapScreen extends Screen {
     }
 
     private void drawPredictionLabel(final MatrixStack matrices) {
-        if (!config.predictionEnabled || !predictionState.seedKnown()) {
+        if (!predictionLabelVisible()) {
             return;
         }
-        final String mode = new TranslatableText(
-            "confluxmap.config.prediction.mode." + config.predictionViewMode.name().toLowerCase(java.util.Locale.ROOT)
-        ).getString();
-        final String text = new TranslatableText("confluxmap.config.prediction.view_mode", mode).getString();
+        final DimensionId dimension = gameBridge.session().dimension();
+        final WorldPreset preset = predictionState.preset(dimension);
+        final String text;
+        if (PredictionDimensions.supported(dimension) && !predictionState.predictable(dimension)) {
+            // Seed known but this dimension can't compose an underlay (debug/custom worldgen, or
+            // superflat without surface info): say so instead of silently dropping the label.
+            text = new TranslatableText(
+                "confluxmap.map.prediction_unavailable", presetDisplayName(preset)
+            ).getString();
+        } else {
+            final String mode = new TranslatableText(
+                "confluxmap.config.prediction.mode." + config.predictionViewMode.name().toLowerCase(java.util.Locale.ROOT)
+            ).getString();
+            final String modeLine = new TranslatableText("confluxmap.config.prediction.view_mode", mode).getString();
+            text = preset.terrainApproximate()
+                ? modeLine + new TranslatableText("confluxmap.map.prediction_approx_suffix", presetDisplayName(preset)).getString()
+                : modeLine;
+        }
         textRenderer.drawWithShadow(
             matrices, text, MARGIN, MARGIN + textRenderer.fontHeight * 2 + 4, TEXT_COLOR
         );
+    }
+
+    /** A seedless superflat session still predicts, so the label keys off either signal. */
+    private boolean predictionLabelVisible() {
+        return config.predictionEnabled
+            && (predictionState.seedKnown() || predictionState.predictable(gameBridge.session().dimension()));
+    }
+
+    private static String presetDisplayName(final WorldPreset preset) {
+        return new TranslatableText(
+            "confluxmap.world_preset." + preset.name().toLowerCase(java.util.Locale.ROOT)
+        ).getString();
     }
 
     private void drawServerSyncLabel(final MatrixStack matrices) {
@@ -888,8 +916,7 @@ public final class FullscreenMapScreen extends Screen {
                 return;
             }
         }
-        final boolean predictionLabelVisible = config.predictionEnabled && predictionState.seedKnown();
-        final int row = predictionLabelVisible ? 3 : 2;
+        final int row = predictionLabelVisible() ? 3 : 2;
         textRenderer.drawWithShadow(matrices, text, MARGIN, MARGIN + row * (textRenderer.fontHeight + 2), color);
     }
 

@@ -10,6 +10,7 @@ import cn.net.rms.confluxmap.core.predict.BaselineGrid;
 import cn.net.rms.confluxmap.core.predict.BaselineSampler;
 import cn.net.rms.confluxmap.core.predict.CanopyStylizer;
 import cn.net.rms.confluxmap.core.predict.DerivedGrid;
+import cn.net.rms.confluxmap.core.predict.FlatBaseline;
 import cn.net.rms.confluxmap.core.predict.LodSampling;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,7 +32,7 @@ public final class PatchBuilder {
         if (summary == null || summary.lod() > MAX_SUPPORTED_LOD || baseline == null) {
             return unavailable();
         }
-        return buildWithDerived(summary, sinceRevision, baseline, BaselineDeriver.derive(baseline), absolute);
+        return buildWithDerived(summary, sinceRevision, baseline, BaselineDeriver.derive(baseline), Proto.MAP_COLOR_NONE, absolute);
     }
 
     /**
@@ -58,6 +59,7 @@ public final class PatchBuilder {
         final long sinceRevision,
         final BaselineGrid baseline,
         final DerivedGrid derived,
+        final int baselineMapColorId,
         final boolean absolute
     ) {
         final List<PatchCodec.Sample> records = new ArrayList<>();
@@ -70,7 +72,7 @@ public final class PatchBuilder {
                 }
                 final int baseIndex = BaselineGrid.index(x, z);
                 final DiffSpec.Sample expected = new DiffSpec.Sample(
-                    baseline.biomeId[baseIndex], derived.surfaceY[baseIndex], derived.kind[baseIndex], Proto.MAP_COLOR_NONE,
+                    baseline.biomeId[baseIndex], derived.surfaceY[baseIndex], derived.kind[baseIndex], baselineMapColorId,
                     derived.fluidDepth[baseIndex]
                 );
                 final SummaryCodec.Column column = actual.column();
@@ -115,7 +117,26 @@ public final class PatchBuilder {
         }
         final DerivedGrid derived = BaselineDeriver.derive(baseline);
         CanopyStylizer.apply(derived, baseline, sampler, seed, summary.lod(), (int) originX, (int) originZ);
-        return buildWithDerived(summary, sinceRevision, baseline, derived, absolute);
+        return buildWithDerived(summary, sinceRevision, baseline, derived, Proto.MAP_COLOR_NONE, absolute);
+    }
+
+    /**
+     * Residual patch against a superflat dimension's uniform surface: the baseline the client
+     * composes from the same {@link FlatBaseline} without cubiomes. The expected sample carries
+     * the flat top block's real map color, so an untouched flat surface produces no records.
+     */
+    public Result buildFromUniform(
+        final SummaryTile summary,
+        final long sinceRevision,
+        final FlatBaseline flat,
+        final boolean absolute
+    ) {
+        if (summary == null || summary.lod() > MAX_SUPPORTED_LOD || flat == null) {
+            return unavailable();
+        }
+        return buildWithDerived(
+            summary, sinceRevision, flat.toBaselineGrid(), flat.toDerivedGrid(), flat.mapColorId(), absolute
+        );
     }
 
     /** Compatibility overload for a single-region LOD-0 caller. */

@@ -58,7 +58,8 @@ public final class StructureMarkerService {
         final int regionX,
         final int regionZ
     ) {
-        if (!type.supports(session.dimension()) || !prediction.seedKnown() || !NativeLib.available()) {
+        // Structure lookup is always cubiomes-backed: a flat underlay has no structure model.
+        if (!type.supports(session.dimension()) || !prediction.cubiomesBacked(session.dimension())) {
             return new long[0];
         }
         final int nativeDim = PredictionDimensions.nativeDim(session.dimension());
@@ -70,7 +71,7 @@ public final class StructureMarkerService {
                 prediction.mcVersion(),
                 prediction.seed(),
                 nativeDim,
-                0
+                prediction.cubiomesFlags(session.dimension())
             );
             if (context == null) {
                 return new long[0];

@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.core.predict;
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
 import cn.net.rms.confluxmap.core.net.DiffSpec;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
+import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.TileMath;
@@ -46,6 +47,24 @@ public final class PredictedTileComposer {
         final CorrectionTile corrections,
         final PredictionViewMode viewMode,
         final int lod
+    ) {
+        return compose(derived, grid, palette, corrections, viewMode, lod, Proto.MAP_COLOR_NONE);
+    }
+
+    /**
+     * Full form: {@code baselineMapColorId} pins every non-water, non-corrected baseline pixel to
+     * one vanilla map color instead of the biome palette - a superflat underlay renders the
+     * actual top-layer block (stone, sandstone, ...) this way, matching the color corrections
+     * would use for the same block. {@link Proto#MAP_COLOR_NONE} keeps the biome-palette path.
+     */
+    public static int[] compose(
+        final DerivedGrid derived,
+        final BaselineGrid grid,
+        final PredictionPalette palette,
+        final CorrectionTile corrections,
+        final PredictionViewMode viewMode,
+        final int lod,
+        final int baselineMapColorId
     ) {
         final int size = BaselineGrid.PIXELS;
         final int[] out = new int[size * size];
@@ -113,6 +132,8 @@ public final class PredictedTileComposer {
                     composed = ShadingPipeline.compositeOver(water, floor);
                 } else if (corrected[outIdx] && colors[outIdx] != 0xFF) {
                     composed = MapColorTable.argb(colors[outIdx]);
+                } else if (!corrected[outIdx] && baselineMapColorId != Proto.MAP_COLOR_NONE) {
+                    composed = MapColorTable.argb(baselineMapColorId);
                 } else {
                     composed = colorFor(kind, biomeId, palette);
                 }

@@ -2,7 +2,9 @@ package cn.net.rms.confluxmap.mc.net;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
+import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
+import cn.net.rms.confluxmap.core.predict.FlatBaseline;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -40,12 +42,14 @@ public final class CompanionSession {
 
     private final AtomicReference<State> state = new AtomicReference<>(State.NONE);
     private volatile HelloPolicyS2C policy;
+    private volatile FlatBaselineS2C flatBaselines;
     private int ticksSinceHello;
 
     /** Called from {@link ClientNetworking#sendHello()} the moment a C2S HELLO leaves the wire. */
     public void onHelloSent() {
         state.set(State.HELLO_SENT);
         policy = null;
+        flatBaselines = null;
         ticksSinceHello = 0;
     }
 
@@ -60,10 +64,16 @@ public final class CompanionSession {
         );
     }
 
+    /** Called from {@link ClientNetworking}'s receiver: flat surfaces arrive just before the policy. */
+    public void onFlatBaselines(final FlatBaselineS2C message) {
+        this.flatBaselines = message;
+    }
+
     /** Called from {@link ClientPlayConnectionEvents#DISCONNECT}; forget everything. */
     public void reset() {
         state.set(State.NONE);
         policy = null;
+        flatBaselines = null;
         ticksSinceHello = 0;
     }
 
@@ -126,5 +136,26 @@ public final class CompanionSession {
     /** Latest received policy, or {@code null} if none yet. */
     public @Nullable HelloPolicyS2C policy() {
         return policy;
+    }
+
+    /**
+     * The server-advertised uniform surface for dimension index {@code dimIndex}, or empty when
+     * the session is not active or the dim is not superflat (including pre-minor-2 servers,
+     * which never send FLAT_BASELINE).
+     */
+    public Optional<FlatBaseline> flatBaselineFor(final int dimIndex) {
+        if (state.get() != State.ACTIVE) {
+            return Optional.empty();
+        }
+        final FlatBaselineS2C current = flatBaselines;
+        if (current == null) {
+            return Optional.empty();
+        }
+        for (final FlatBaselineS2C.Entry entry : current.entries()) {
+            if (entry.dimIndex() == dimIndex) {
+                return Optional.of(entry.baseline());
+            }
+        }
+        return Optional.empty();
     }
 }

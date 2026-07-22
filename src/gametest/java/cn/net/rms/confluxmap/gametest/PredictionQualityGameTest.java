@@ -121,7 +121,7 @@ public final class PredictionQualityGameTest implements FabricGameTest {
             );
             final int nativeDimension = PredictionDimensions.nativeDim(sample.dimension());
             final int mcVersion = McVersions.toCubiomes("1.17.1").orElseThrow();
-            final NativeBaselineSampler sampler = new NativeBaselineSampler(mcVersion, worldSeed, nativeDimension);
+            final NativeBaselineSampler sampler = new NativeBaselineSampler(mcVersion, worldSeed, nativeDimension, 0);
             final int originX = sample.tileX() * TILE_PIXELS;
             final int originZ = sample.tileZ() * TILE_PIXELS;
             final BaselineGrid baseline = LodSampling.sample(sampler, nativeDimension == PredictionDimensions.END, 0, originX, originZ);

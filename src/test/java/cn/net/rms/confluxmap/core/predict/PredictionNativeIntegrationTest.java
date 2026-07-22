@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.core.predict;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
@@ -38,7 +39,7 @@ class PredictionNativeIntegrationTest {
     }
 
     private static int[] composeTile(final int mcVersion, final int dim, final boolean end, final int lod, final int tileOriginX, final int tileOriginZ) {
-        final NativeBaselineSampler sampler = new NativeBaselineSampler(mcVersion, SEED, dim);
+        final NativeBaselineSampler sampler = new NativeBaselineSampler(mcVersion, SEED, dim, 0);
         final BaselineGrid grid = LodSampling.sample(sampler, end, lod, tileOriginX, tileOriginZ);
         assertNotNull(grid, "native sampling must succeed for a valid version/seed");
         final DerivedGrid derived = BaselineDeriver.derive(grid);
@@ -93,7 +94,7 @@ class PredictionNativeIntegrationTest {
         final int lod = 4;
         final int originX = TileMath.blockToTile(blockX, lod) * TileMath.blocksPerTile(lod);
         final int originZ = TileMath.blockToTile(blockZ, lod) * TileMath.blocksPerTile(lod);
-        final NativeBaselineSampler sampler = new NativeBaselineSampler(mc17(), reportedSeed, PredictionDimensions.OVERWORLD);
+        final NativeBaselineSampler sampler = new NativeBaselineSampler(mc17(), reportedSeed, PredictionDimensions.OVERWORLD, 0);
         final BaselineGrid grid = LodSampling.sample(sampler, false, lod, originX, originZ);
         assertNotNull(grid);
         final DerivedGrid derived = BaselineDeriver.derive(grid);
@@ -129,11 +130,30 @@ class PredictionNativeIntegrationTest {
         );
     }
 
+    @Test
+    void largeBiomesFlagChangesTheBiomeLayout() {
+        final int width = 128;
+        final int[] defaultBiomes = new int[width * width];
+        final int[] largeBiomes = new int[width * width];
+        final NativeBaselineSampler defaultSampler = new NativeBaselineSampler(mc17(), SEED, PredictionDimensions.OVERWORLD, 0);
+        final NativeBaselineSampler largeSampler = new NativeBaselineSampler(
+            mc17(), SEED, PredictionDimensions.OVERWORLD, WorldPreset.LARGE_BIOMES.cubiomesFlags()
+        );
+        assertTrue(defaultSampler.biomes(4, 0, 0, width, width, defaultBiomes));
+        assertTrue(largeSampler.biomes(4, 0, 0, width, width, largeBiomes));
+        // Same seed, same area: the LARGE_BIOMES generator flag must actually reach cubiomes,
+        // which shows up as a different (zoomed-out) biome layout over a 512x512-block window.
+        assertFalse(
+            java.util.Arrays.equals(defaultBiomes, largeBiomes),
+            "LARGE_BIOMES flag did not change the generated layout"
+        );
+    }
+
     private static int[] composeReportedTile(final int lod, final int blockX, final int blockZ) {
         final long seed = 6512112982729996127L;
         final int originX = TileMath.blockToTile(blockX, lod) * TileMath.blocksPerTile(lod);
         final int originZ = TileMath.blockToTile(blockZ, lod) * TileMath.blocksPerTile(lod);
-        final NativeBaselineSampler sampler = new NativeBaselineSampler(mc17(), seed, PredictionDimensions.OVERWORLD);
+        final NativeBaselineSampler sampler = new NativeBaselineSampler(mc17(), seed, PredictionDimensions.OVERWORLD, 0);
         final BaselineGrid grid = LodSampling.sample(sampler, false, lod, originX, originZ);
         assertNotNull(grid);
         final DerivedGrid derived = BaselineDeriver.derive(grid);

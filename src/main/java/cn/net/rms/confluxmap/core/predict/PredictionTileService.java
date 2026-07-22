@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
+import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
@@ -353,22 +354,36 @@ public final class PredictionTileService {
         final int lod = key.lod();
         final int tileOriginX = key.originBlockX();
         final int tileOriginZ = key.originBlockZ();
-        final long seed = state.seed();
 
-        final BaselineSampler sampler = new NativeBaselineSampler(state.mcVersion(), seed, nativeDim);
-        final BaselineGrid grid = LodSampling.sample(sampler, end, lod, tileOriginX, tileOriginZ);
-        if (grid == null) {
-            return null;
+        final BaselineGrid grid;
+        final DerivedGrid derived;
+        final int baselineMapColorId;
+        final FlatBaseline flat = state.flatBaseline(key.dimension());
+        if (state.preset(key.dimension()) == WorldPreset.FLAT && flat != null) {
+            // Superflat: every column is the same known surface - no seed, no native sampling.
+            grid = flat.toBaselineGrid();
+            derived = flat.toDerivedGrid();
+            baselineMapColorId = flat.mapColorId();
+        } else {
+            final long seed = state.seed();
+            final BaselineSampler sampler = new NativeBaselineSampler(
+                state.mcVersion(), seed, nativeDim, state.cubiomesFlags(key.dimension())
+            );
+            grid = LodSampling.sample(sampler, end, lod, tileOriginX, tileOriginZ);
+            if (grid == null) {
+                return null;
+            }
+            derived = BaselineDeriver.derive(grid);
+            CanopyStylizer.apply(derived, grid, sampler, seed, lod, tileOriginX, tileOriginZ);
+            baselineMapColorId = Proto.MAP_COLOR_NONE;
         }
-        final DerivedGrid derived = BaselineDeriver.derive(grid);
-        CanopyStylizer.apply(derived, grid, sampler, seed, lod, tileOriginX, tileOriginZ);
 
         final CorrectionStore store = correctionStore;
         final CorrectionTile corrections = store == null
             ? null
             : store.get(key.dimension(), lod, key.tileX(), key.tileZ());
         final int[] pixels = PredictedTileComposer.compose(
-            derived, grid, state.palette(), corrections, viewMode, lod
+            derived, grid, state.palette(), corrections, viewMode, lod, baselineMapColorId
         );
         return new Composition(TileUpdate.fullTile(key, pixels), biomeIds(grid, corrections));
     }

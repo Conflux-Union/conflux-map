@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
+import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
 import cn.net.rms.confluxmap.core.net.HelloC2S;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.ErrorS2C;
@@ -9,6 +10,7 @@ import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
+import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import io.netty.buffer.Unpooled;
 import java.util.ArrayList;
 import java.util.List;
@@ -112,6 +114,12 @@ public final class ServerNetworking {
         if (!companion.isEnabled()) {
             return;
         }
+        // FLAT_BASELINE goes out first: the client activates its session on HELLO_POLICY, so the
+        // flat surfaces must already be stored by then. Pre-minor-2 clients log and ignore it.
+        final List<FlatBaselineS2C.Entry> flatEntries = buildFlatBaselines(server);
+        if (!flatEntries.isEmpty()) {
+            send(player, new FlatBaselineS2C(flatEntries));
+        }
         final HelloPolicyS2C policy = buildPolicy(server);
         send(player, policy);
         ConfluxMapMod.LOGGER.info(
@@ -155,17 +163,36 @@ public final class ServerNetworking {
             final RegistryKey<World> key = sw.getRegistryKey();
             final String dimId = key.getValue().toString();
             final String dimType = key.getValue().getPath();
-            final boolean predictable = isPredictable(key);
+            final WorldPreset preset = WorldPresetDetector.detect(sw);
+            // predictable=false also withholds the seed on pre-preset clients (their seedFor
+            // checks it), so superflat/custom dims degrade correctly across versions.
+            final boolean predictable = isPredictable(key) && preset.predictable();
             // The server always knows the seed; we just don't always share it.
             final boolean hasSeed = shareSeed;
             final long seedToSend = shareSeed ? seed : 0L;
-            dims.add(new HelloPolicyS2C.DimDescriptor(dimId, dimType, predictable, hasSeed, seedToSend));
+            dims.add(new HelloPolicyS2C.DimDescriptor(dimId, dimType, predictable, hasSeed, seedToSend, preset));
         }
         return dims;
     }
 
     private static boolean isPredictable(final RegistryKey<World> key) {
         return World.OVERWORLD.equals(key) || World.END.equals(key);
+    }
+
+    /** One entry per superflat dimension, indexed like {@link #buildDimDescriptors}'s list. */
+    private static List<FlatBaselineS2C.Entry> buildFlatBaselines(final MinecraftServer server) {
+        final List<FlatBaselineS2C.Entry> entries = new ArrayList<>(1);
+        int dimIndex = 0;
+        for (final ServerWorld sw : server.getWorlds()) {
+            if (WorldPresetDetector.detect(sw) == WorldPreset.FLAT) {
+                final int index = dimIndex;
+                FlatWorldBaseline.of(sw).ifPresent(
+                    baseline -> entries.add(new FlatBaselineS2C.Entry(index, baseline))
+                );
+            }
+            dimIndex++;
+        }
+        return entries;
     }
 
     private static void send(final ServerPlayerEntity player, final Message msg) {

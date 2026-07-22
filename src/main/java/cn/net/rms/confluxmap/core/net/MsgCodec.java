@@ -1,5 +1,7 @@
 package cn.net.rms.confluxmap.core.net;
 
+import cn.net.rms.confluxmap.core.predict.FlatBaseline;
+import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -60,6 +62,8 @@ public final class MsgCodec {
                 encodePolicyUpdateS2C(out, m);
             } else if (msg instanceof final ErrorS2C m) {
                 encodeErrorS2C(out, m);
+            } else if (msg instanceof final FlatBaselineS2C m) {
+                encodeFlatBaselineS2C(out, m);
             } else {
                 throw new ProtoException("unknown message type: " + msg.getClass().getName());
             }
@@ -89,7 +93,8 @@ public final class MsgCodec {
         return typeId == Proto.MSG_HELLO_POLICY_S2C
             || typeId == Proto.MSG_MAP_PATCH_S2C
             || typeId == Proto.MSG_POLICY_UPDATE_S2C
-            || typeId == Proto.MSG_ERROR_S2C;
+            || typeId == Proto.MSG_ERROR_S2C
+            || typeId == Proto.MSG_FLAT_BASELINE_S2C;
     }
 
     private static void encodeHelloC2S(final DataOutputStream out, final HelloC2S m) throws IOException, ProtoException {
@@ -132,6 +137,8 @@ public final class MsgCodec {
             if (d.hasSeed()) {
                 dimBits |= 2;
             }
+            // Bits 2-4 carry the recognized generator preset; a pre-preset client masks them away.
+            dimBits |= (d.preset() == null ? WorldPreset.DEFAULT : d.preset()).wireId() << 2;
             out.writeByte(dimBits);
             out.writeLong(d.seed());
         }
@@ -206,6 +213,23 @@ public final class MsgCodec {
         writeUtf(out, m.detail());
     }
 
+    private static void encodeFlatBaselineS2C(final DataOutputStream out, final FlatBaselineS2C m) throws IOException, ProtoException {
+        final List<FlatBaselineS2C.Entry> entries = m.entries();
+        if (entries.isEmpty() || entries.size() > Proto.MAX_DIM_ENTRIES) {
+            throw new ProtoException("flat baseline entry count out of range: " + entries.size());
+        }
+        out.writeByte(entries.size());
+        for (final FlatBaselineS2C.Entry entry : entries) {
+            final FlatBaseline b = entry.baseline();
+            out.writeByte(entry.dimIndex());
+            out.writeByte(b.biomeId());
+            out.writeShort(b.surfaceY());
+            out.writeByte(b.kind());
+            out.writeByte(b.mapColorId());
+            out.writeByte(b.fluidDepth());
+        }
+    }
+
     // ---- Decode ----
 
     /** Parses exactly one {@link Message} from {@code payload}; throws on any violation. */
@@ -227,6 +251,7 @@ public final class MsgCodec {
                 case Proto.MSG_MAP_PATCH_S2C -> decodeMapPatchS2C(in);
                 case Proto.MSG_POLICY_UPDATE_S2C -> decodePolicyUpdateS2C(in);
                 case Proto.MSG_ERROR_S2C -> decodeErrorS2C(in);
+                case Proto.MSG_FLAT_BASELINE_S2C -> decodeFlatBaselineS2C(in);
                 default -> throw new ProtoException("unhandled message type id: 0x" + Integer.toHexString(typeId));
             };
             if (in.available() != 0) {
@@ -276,7 +301,8 @@ public final class MsgCodec {
                 dimId, dimType,
                 (dimBits & 1) != 0,
                 (dimBits & 2) != 0,
-                seed
+                seed,
+                WorldPreset.fromWireId((dimBits >> 2) & 0x7)
             ));
         }
         return new HelloPolicyS2C(flags, worldId, worldgenVersion, budgets, dims);
@@ -337,6 +363,26 @@ public final class MsgCodec {
         final int code = in.readUnsignedByte();
         final String detail = readUtf(in);
         return new ErrorS2C(code, detail);
+    }
+
+    private static FlatBaselineS2C decodeFlatBaselineS2C(final DataInputStream in) throws IOException, ProtoException {
+        final int count = in.readUnsignedByte();
+        if (count == 0 || count > Proto.MAX_DIM_ENTRIES) {
+            throw new ProtoException("flat baseline entry count out of range: " + count);
+        }
+        final List<FlatBaselineS2C.Entry> entries = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            final int dimIndex = in.readUnsignedByte();
+            final int biomeId = in.readUnsignedByte();
+            final int surfaceY = in.readShort();
+            final int kind = in.readUnsignedByte();
+            final int mapColorId = in.readUnsignedByte();
+            final int fluidDepth = in.readUnsignedByte();
+            entries.add(new FlatBaselineS2C.Entry(
+                dimIndex, new FlatBaseline(biomeId, surfaceY, kind, mapColorId, fluidDepth)
+            ));
+        }
+        return new FlatBaselineS2C(entries);
     }
 
     // ---- Low-level helpers (shared by encode and decode) ----

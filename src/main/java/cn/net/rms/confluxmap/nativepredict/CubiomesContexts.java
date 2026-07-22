@@ -5,7 +5,8 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Per-thread cache of {@link CubiomesContext} instances keyed by (mcVersion, seed, dim). Each
+ * Per-thread cache of {@link CubiomesContext} instances keyed by (mcVersion, seed, dim, flags).
+ * Each
  * worker thread gets its own {@link HashMap} (via {@link ThreadLocal}), which is what actually
  * satisfies {@link CubiomesContext}'s "one thread only" contract - a context handed out here
  * never leaves the thread that asked for it.
@@ -14,11 +15,11 @@ import java.util.concurrent.atomic.AtomicLong;
  * other threads' maps: it just advances a shared {@link AtomicLong}, and each thread lazily
  * notices its cached entry is stale (tagged with an older epoch) the next time that thread asks
  * for it, closing the stale context and creating a fresh one in its place. Call this whenever a
- * (mcVersion, seed, dim) key could no longer be trusted to mean the same generator state (e.g.
- * on world/session change).
+ * (mcVersion, seed, dim, flags) key could no longer be trusted to mean the same generator state
+ * (e.g. on world/session change).
  */
 public final class CubiomesContexts {
-    private record Key(int mcVersion, long seed, int dim) {
+    private record Key(int mcVersion, long seed, int dim, int flags) {
     }
 
     private record Entry(CubiomesContext context, long epoch) {
@@ -36,14 +37,14 @@ public final class CubiomesContexts {
     }
 
     /**
-     * Returns this thread's context for {@code (mcVersion, seed, dim)}, creating (or recreating,
-     * if {@link #bumpEpoch()} advanced since it was cached) one as needed. Returns {@code null}
-     * if cubiomes rejects the parameters (see {@link CubiomesNative#cfxCreate}); a rejected
-     * combination is never cached, so every call retries it.
+     * Returns this thread's context for {@code (mcVersion, seed, dim, flags)}, creating (or
+     * recreating, if {@link #bumpEpoch()} advanced since it was cached) one as needed. Returns
+     * {@code null} if cubiomes rejects the parameters (see {@link CubiomesNative#cfxCreate}); a
+     * rejected combination is never cached, so every call retries it.
      */
     public static CubiomesContext get(final int mcVersion, final long seed, final int dim, final int flags) {
         final Map<Key, Entry> cache = PER_THREAD.get();
-        final Key key = new Key(mcVersion, seed, dim);
+        final Key key = new Key(mcVersion, seed, dim, flags);
         final long currentEpoch = EPOCH.get();
 
         final Entry existing = cache.get(key);

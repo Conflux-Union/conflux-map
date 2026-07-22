@@ -73,9 +73,14 @@ public final class DiffSpec {
             return true;
         }
         final int tolerance = cover > 0.0 && forestEquivalent(expected, observed) ? 6 : 2;
+        // A baseline that declares its own map color (a superflat uniform surface) accepts an
+        // exact match on top of the per-biome tolerant set; the normal cubiomes baseline declares
+        // MAP_COLOR_NONE, which can never equal a real observed color, keeping this clause inert.
         return Math.abs(baseline.surfaceY() - actual.surfaceY()) > tolerance
             || fluidBucket(baselineFluidDepth) != fluidBucket(actual.fluidDepth())
-            || (actual.mapColorId() != MAP_COLOR_NONE && !expectedMapColors(baseline.biomeId()).contains(actual.mapColorId()));
+            || (actual.mapColorId() != MAP_COLOR_NONE
+                && actual.mapColorId() != baseline.mapColorId()
+                && !expectedMapColors(baseline.biomeId()).contains(actual.mapColorId()));
     }
 
     public static boolean keepsPredictedCanopy(

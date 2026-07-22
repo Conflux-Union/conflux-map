@@ -100,7 +100,7 @@ public final class ChunkSummarizer {
     }
 
     private BlockInfo blockAt(final List<Section> sections, final int x, final int y, final int z) {
-        return classify(blockNameAt(sections, x, y, z));
+        return classify(blockNameAt(sections, x, y, z), mapColors);
     }
 
     private static String blockNameAt(final List<Section> sections, final int x, final int y, final int z) {
@@ -143,8 +143,10 @@ public final class ChunkSummarizer {
         return index >= 0 && index < biomes.length ? biomes[index] : 1;
     }
 
-    private BlockInfo classify(final String value) {
+    /** Classifies one block id string into its surface kind and map colour; also used by {@code FlatWorldBaseline}. */
+    public static BlockInfo classify(final String value, final MapColorResolver mapColors) {
         final String name = value == null ? "minecraft:air" : value;
+        final MapColorResolver resolver = mapColors == null ? UNRESOLVED : mapColors;
         final SurfaceKind kind;
         final int color;
         if (name.contains("water") || isKelp(name)) {
@@ -155,19 +157,19 @@ public final class ChunkSummarizer {
             color = 4;
         } else if (name.contains("leaves") || name.contains("vine")) {
             kind = SurfaceKind.FOLIAGE;
-            color = resolveOr(name, 7);
+            color = resolveOr(resolver, name, 7);
         } else if (name.contains("snow") || name.contains("powder_snow")) {
             kind = SurfaceKind.SNOW;
-            color = resolveOr(name, 3);
+            color = resolveOr(resolver, name, 3);
         } else if (name.contains("ice")) {
             kind = SurfaceKind.ICE;
-            color = resolveOr(name, 12);
+            color = resolveOr(resolver, name, 12);
         } else if (name.endsWith("sand") || name.contains("sandstone")) {
             kind = SurfaceKind.SAND;
-            color = resolveOr(name, 2);
+            color = resolveOr(resolver, name, 2);
         } else if (name.contains("bedrock")) {
             kind = SurfaceKind.BEDROCK_CEILING;
-            color = resolveOr(name, 11);
+            color = resolveOr(resolver, name, 11);
         } else if (name.endsWith("air") || name.endsWith("cave_air") || name.endsWith("void_air")) {
             kind = SurfaceKind.UNKNOWN;
             color = ProtoColor.NONE;
@@ -175,7 +177,7 @@ public final class ChunkSummarizer {
             kind = SurfaceKind.LAND;
             // Heuristic fallback for when no registry resolver is wired (tests) or the name is
             // unknown to it: enough to flag non-natural block names through the same wire.
-            color = resolveOr(name, name.contains("stone") || name.contains("brick") || name.contains("concrete") ? 11 : 1);
+            color = resolveOr(resolver, name, name.contains("stone") || name.contains("brick") || name.contains("concrete") ? 11 : 1);
         }
         return new BlockInfo(kind, color);
     }
@@ -185,7 +187,7 @@ public final class ChunkSummarizer {
      * also falls back: the client renders corrected pixels straight from the map-colour table,
      * and a transparent pixel would punch a hole where a block demonstrably exists.
      */
-    private int resolveOr(final String name, final int fallback) {
+    private static int resolveOr(final MapColorResolver mapColors, final String name, final int fallback) {
         final int resolved = mapColors.mapColorId(name);
         return resolved > 0 ? resolved : fallback;
     }
@@ -211,7 +213,8 @@ public final class ChunkSummarizer {
     private record Section(int y, String[] names, long[] states, int bits) {
     }
 
-    private record BlockInfo(SurfaceKind kind, int mapColorId) {
+    /** One classified block: its map surface kind and vanilla map colour id. */
+    public record BlockInfo(SurfaceKind kind, int mapColorId) {
     }
 
     private static final class ProtoColor {
