@@ -47,11 +47,13 @@ import net.minecraft.util.math.Vec3d;
  * VertexConsumerProvider.Immediate} (the same one vanilla uses for entity nametags,
  * {@code client.getBufferBuilders().getEntityVertexConsumers()}) which works at any
  * phase and is flushed once at the end of this render pass.
+ *
+ * <p>Both the beam and the HUD label are proximity-gated: they only render for waypoints
+ * within the player's current view distance, so far-away waypoints have no in-world
+ * presence until the player travels toward them. {@code config.waypointRenderDistance}
+ * (when non-zero) can only tighten that limit, never extend it.
  */
 public final class WaypointWorldRenderer {
-    /** {@code config.waypointRenderDistance == 0} ("unlimited") caps beams at this instead, for perf - see deliverable A brief. */
-    private static final double UNLIMITED_RENDER_DISTANCE_CAP = 2048.0;
-
     private static final double BEAM_HALF_WIDTH = 0.18;
     private static final float BEAM_CORE_ALPHA = 0.55f;
     /** Same near-camera fade-in constant as the label (waypoint-ux.md S6), applied to horizontal distance from the beam column. */
@@ -62,7 +64,7 @@ public final class WaypointWorldRenderer {
     private static final double LABEL_Y_OFFSET = 1.5;
     /** waypoint-ux.md S6 "distance fade-in": alpha ramps 0 -> 1 over the nearest ~5 blocks so the label doesn't pop in right next to the camera. */
     private static final double LABEL_NEAR_FADE_BLOCKS = 5.0;
-    private static final float LABEL_BASE_SCALE = 0.025f;
+    private static final float LABEL_BASE_SCALE = 0.06f;
     private static final double LABEL_REFERENCE_DISTANCE = 12.0;
     private static final float LABEL_MIN_SCALE_MULT = 0.35f;
     private static final float LABEL_MAX_SCALE_MULT = 170.0f;
@@ -121,9 +123,7 @@ public final class WaypointWorldRenderer {
         final Camera camera = context.camera();
         final Vec3d cameraPos = camera.getPos();
         final MatrixStack matrices = context.matrixStack();
-        final double maxDistance = config.waypointRenderDistance > 0
-            ? config.waypointRenderDistance
-            : UNLIMITED_RENDER_DISTANCE_CAP;
+        final double maxDistance = maxVisibleDistance();
         final double bottomY = 0.0;
         final double topY = currentDimension.equals(DimensionId.NETHER) ? 128.0 : 256.0;
         final List<WaypointRenderEntry> waypoints = waypointRenderCatalog.snapshot(currentDimension);
@@ -172,9 +172,7 @@ public final class WaypointWorldRenderer {
         final Camera camera = context.camera();
         final Vec3d cameraPos = camera.getPos();
         final MatrixStack matrices = context.matrixStack();
-        final double maxDistance = config.waypointRenderDistance > 0
-            ? config.waypointRenderDistance
-            : UNLIMITED_RENDER_DISTANCE_CAP;
+        final double maxDistance = maxVisibleDistance();
         final List<WaypointRenderEntry> waypoints = waypointRenderCatalog.snapshot(currentDimension);
         final WaypointRenderEntry targetedWaypoint = targetedWaypoint(waypoints, camera, cameraPos, maxDistance);
         final float animationDeltaSeconds = animationDeltaSeconds();
@@ -226,6 +224,19 @@ public final class WaypointWorldRenderer {
         }
 
         labelAnimationProgress.keySet().retainAll(visibleWaypointIds);
+    }
+
+    /**
+     * Beams and labels only appear once the player is near the waypoint, where "near"
+     * means within the current view distance (chunks converted to blocks). A non-zero
+     * {@code config.waypointRenderDistance} can tighten the limit but never extend it
+     * past what the player can actually see.
+     */
+    private double maxVisibleDistance() {
+        final double viewDistanceBlocks = client.options.viewDistance * 16.0;
+        return config.waypointRenderDistance > 0
+            ? Math.min(config.waypointRenderDistance, viewDistanceBlocks)
+            : viewDistanceBlocks;
     }
 
     private WaypointRenderEntry targetedWaypoint(
