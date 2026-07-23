@@ -5,7 +5,13 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.gl.SimpleFramebuffer;
 import net.minecraft.client.util.Window;
+
+//#if MC>=12100
+//$$ import com.mojang.blaze3d.systems.VertexSorter;
+//$$ import org.joml.Matrix4f;
+//#else
 import net.minecraft.util.math.Matrix4f;
+//#endif
 
 /**
  * Off-screen RGBA render target for HUD elements that need real geometric
@@ -30,7 +36,29 @@ public final class OffscreenCanvas {
         framebuffer.setClearColor(0f, 0f, 0f, 0f);
         framebuffer.clear(MinecraftClient.IS_SYSTEM_MAC);
         framebuffer.beginWrite(true);
-        RenderSystem.setProjectionMatrix(Matrix4f.projectionMatrix(0f, sizePx, 0f, sizePx, 1000f, 3000f));
+        setProjection(ortho(0f, sizePx, 0f, sizePx));
+    }
+
+    /**
+     * Orthographic projection over the canvas' depth range. 1.19.4 swapped Minecraft's matrix
+     * type for JOML's; the argument order (left, right, bottom, top, near, far) is the same in
+     * both, so only the constructing call differs.
+     */
+    private static Matrix4f ortho(final float left, final float right, final float bottom, final float top) {
+        //#if MC>=12100
+        //$$ return new Matrix4f().setOrtho(left, right, bottom, top, 1000f, 3000f);
+        //#else
+        return Matrix4f.projectionMatrix(left, right, bottom, top, 1000f, 3000f);
+        //#endif
+    }
+
+    /** 1.20 made the projection carry an explicit vertex sort order; flat GUI geometry sorts by Z. */
+    private static void setProjection(final Matrix4f projection) {
+        //#if MC>=12100
+        //$$ RenderSystem.setProjectionMatrix(projection, VertexSorter.BY_Z);
+        //#else
+        RenderSystem.setProjectionMatrix(projection);
+        //#endif
     }
 
     /** Unbind; restores the main framebuffer and vanilla's GUI projection. */
@@ -38,10 +66,9 @@ public final class OffscreenCanvas {
         framebuffer.endWrite();
         client.getFramebuffer().beginWrite(true);
         final Window window = client.getWindow();
-        RenderSystem.setProjectionMatrix(Matrix4f.projectionMatrix(
+        setProjection(ortho(
             0f, (float) (window.getFramebufferWidth() / window.getScaleFactor()),
-            0f, (float) (window.getFramebufferHeight() / window.getScaleFactor()),
-            1000f, 3000f
+            0f, (float) (window.getFramebufferHeight() / window.getScaleFactor())
         ));
     }
 
