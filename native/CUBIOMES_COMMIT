@@ -1,15 +1,24 @@
 upstream: https://github.com/Cubitect/cubiomes
 fork:     https://github.com/Conflux-Union/cubiomes (this project's fork)
-commit:   32a72991c22ac39df3380164723f3ed6d9c17170
-commit date: 2026-07-20T13:29:04+08:00
+commit:   da00a4aa9f26a16fa6b3c1f3c6cd3a96842fc622
+commit date: 2026-07-23T09:08:21-07:00
 pinned via: native/cubiomes git submodule (converted from a vendored copy on 2026-07-17)
 license: MIT (see native/cubiomes/LICENSE)
+
+Fork contents on top of upstream master (e61f905):
+  - 32a7299 "add 1.17 terrain feature queries" (this project's own addition)
+  - da00a4a merge of upstream PR #162 (Zes-MinKey-Young), which adds the
+    MC_1_21_5 biome tree. Upstream has been dormant since 2024-11, so the
+    1.21.5+ worldgen support only exists as an open PR. Verified before
+    merging: over 20 seeds x 512x512 biome cells, the 1.21.4 and 1.21.5
+    generators differ in 0.011% of cells and every single difference is
+    dark_forest -> pale_garden, matching the 25w02a changelog.
 
 Files compiled from this commit by buildNativesHost/buildNativesAll
 (unmodified upstream sources, selected subset):
   biomenoise.c/h, biomes.c/h, generator.c/h, layers.c/h, noise.c/h,
   finders.c/h, terrain_features.c/h, rng.h, tables/btree18.h, tables/btree192.h,
-  tables/btree19.h, tables/btree20.h, tables/btree21wd.h
+  tables/btree19.h, tables/btree20.h, tables/btree21wd.h, tables/btree215.h
 
 Not compiled (upstream utilities/tests/docs present in the submodule but
 unused by this project): quadbase.c/h, util.c/h, tests.c, feature_tests.c,

@@ -9,7 +9,7 @@ package cn.net.rms.confluxmap.nativepredict;
  */
 public final class PredictorVersion {
     /** First 12 hex characters of the pinned cubiomes commit (see {@code native/CUBIOMES_COMMIT}). */
-    public static final String CUBIOMES_COMMIT_12 = "32a72991c22a";
+    public static final String CUBIOMES_COMMIT_12 = "da00a4aa9f26";
 
     /** Must match {@code CFX_ABI} in {@code native/shim/confluxnative.c}. */
     public static final int CFX_ABI = 3;
@@ -20,7 +20,7 @@ public final class PredictorVersion {
     private PredictorVersion() {
     }
 
-    /** Wire/cache format for {@code predictorVersion}, e.g. {@code "cb:32a72991c22a|shim:3|base:8"}. */
+    /** Wire/cache format for {@code predictorVersion}, e.g. {@code "cb:da00a4aa9f26|shim:3|base:8"}. */
     public static String full() {
         return "cb:" + CUBIOMES_COMMIT_12 + "|shim:" + CFX_ABI + "|base:" + BASELINE_ALGO;
     }
