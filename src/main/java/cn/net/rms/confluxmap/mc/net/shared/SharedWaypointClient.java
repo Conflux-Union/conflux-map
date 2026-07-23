@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.net.shared;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.compat.Ids;
+import cn.net.rms.confluxmap.compat.PlayNetworking;
 import cn.net.rms.confluxmap.core.net.shared.CreateC2S;
 import cn.net.rms.confluxmap.core.net.shared.DeleteC2S;
 import cn.net.rms.confluxmap.core.net.shared.HelloC2S;
@@ -22,7 +23,6 @@ import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import cn.net.rms.confluxmap.core.shared.SharedWaypointLocationKey;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.compat.Texts;
-import io.netty.buffer.Unpooled;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,9 +32,7 @@ import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.network.PacketByteBuf;
 import net.minecraft.util.Identifier;
 
 /**
@@ -105,7 +103,7 @@ public final class SharedWaypointClient {
     }
 
     public void register() {
-        ClientPlayNetworking.registerGlobalReceiver(CHANNEL, this::onReceive);
+        PlayNetworking.registerClient(CHANNEL, this::onReceive);
         ClientPlayConnectionEvents.JOIN.register((handler, sender, currentClient) -> onJoin());
         ClientPlayConnectionEvents.DISCONNECT.register((handler, currentClient) -> onDisconnect(handler));
         ClientTickEvents.END_CLIENT_TICK.register(currentClient -> onTick());
@@ -309,12 +307,10 @@ public final class SharedWaypointClient {
     private void onReceive(
         final MinecraftClient currentClient,
         final net.minecraft.client.network.ClientPlayNetworkHandler handler,
-        final PacketByteBuf buf,
-        final net.fabricmc.fabric.api.networking.v1.PacketSender responseSender
+        final byte[] payload
     ) {
-        final byte[] payload;
         try {
-            payload = readPayload(buf);
+            validatePayload(payload);
         } catch (final SharedWaypointProtocolException | RuntimeException e) {
             ConfluxMapMod.LOGGER.warn("shared-waypoint: dropping malformed S2C payload ({})", e.getMessage());
             executeForConnection(currentClient, handler, this::rejectProtocol);
@@ -460,7 +456,7 @@ public final class SharedWaypointClient {
             return false;
         }
         try {
-            ClientPlayNetworking.send(CHANNEL, new PacketByteBuf(Unpooled.wrappedBuffer(payload)));
+            PlayNetworking.sendClient(CHANNEL, payload);
             return true;
         } catch (final IllegalStateException | IllegalArgumentException e) {
             ConfluxMapMod.LOGGER.debug(
@@ -553,9 +549,9 @@ public final class SharedWaypointClient {
         };
     }
 
-    private static byte[] readPayload(final PacketByteBuf buf)
+    private static void validatePayload(final byte[] payload)
         throws SharedWaypointProtocolException {
-        final int readable = buf.readableBytes();
+        final int readable = payload.length;
         if (readable < 1) {
             throw new SharedWaypointProtocolException("empty payload");
         }
@@ -564,9 +560,6 @@ public final class SharedWaypointClient {
                 "S2C payload " + readable + " above cap " + SharedWaypointProto.MAX_S2C_PAYLOAD
             );
         }
-        final byte[] payload = new byte[readable];
-        buf.readBytes(payload);
-        return payload;
     }
 
     private static void executeForConnection(

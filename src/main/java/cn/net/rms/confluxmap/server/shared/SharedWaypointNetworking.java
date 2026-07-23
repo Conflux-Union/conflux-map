@@ -2,18 +2,17 @@ package cn.net.rms.confluxmap.server.shared;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.compat.Ids;
+import cn.net.rms.confluxmap.compat.PlayNetworking;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointCodec;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointMessage;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProto;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProtocolException;
 import cn.net.rms.confluxmap.server.ConfluxMapCompanion;
 import cn.net.rms.confluxmap.server.ServerConfig;
-import io.netty.buffer.Unpooled;
 import java.util.UUID;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.minecraft.network.PacketByteBuf;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Identifier;
@@ -36,7 +35,7 @@ public final class SharedWaypointNetworking {
             return;
         }
         registered = true;
-        ServerPlayNetworking.registerGlobalReceiver(CHANNEL, this::onReceive);
+        PlayNetworking.registerServer(CHANNEL, this::onReceive);
         ServerTickEvents.END_SERVER_TICK.register(this::onServerTick);
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             final UUID playerId = handler.getPlayer().getUuid();
@@ -48,9 +47,7 @@ public final class SharedWaypointNetworking {
     private void onReceive(
         final MinecraftServer server,
         final ServerPlayerEntity player,
-        final net.minecraft.server.network.ServerPlayNetworkHandler handler,
-        final PacketByteBuf buf,
-        final net.fabricmc.fabric.api.networking.v1.PacketSender responseSender
+        final byte[] payload
     ) {
         // Master-disabled companions never answer either protocol channel.
         if (!companion.isEnabled()) {
@@ -59,14 +56,11 @@ public final class SharedWaypointNetworking {
         if (sessions.isMuted(player.getUuid())) {
             return;
         }
-        final int readable = buf.readableBytes();
+        final int readable = payload.length;
         if (readable < 1 || readable > SharedWaypointProto.MAX_C2S_PAYLOAD) {
             recordMalformed(player, readable, "payload size outside cap");
             return;
         }
-        final byte[] payload = new byte[readable];
-        buf.readBytes(payload);
-
         final SharedWaypointMessage message;
         try {
             message = SharedWaypointCodec.decodeC2S(payload);
@@ -204,10 +198,6 @@ public final class SharedWaypointNetworking {
             );
             return;
         }
-        ServerPlayNetworking.send(
-            player,
-            CHANNEL,
-            new PacketByteBuf(Unpooled.wrappedBuffer(payload))
-        );
+        PlayNetworking.sendServer(player, CHANNEL, payload);
     }
 }
