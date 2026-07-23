@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.ui.world;
 
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.util.Argb;
@@ -24,7 +25,6 @@ import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Matrix4f;
 import net.minecraft.util.math.Vec3d;
 
 /**
@@ -114,7 +114,7 @@ public final class WaypointWorldRenderer {
         if (!gameBridge.session().active()) {
             return;
         }
-        final Optional<PlayerView> playerViewOpt = gameBridge.player(context.tickDelta());
+        final Optional<PlayerView> playerViewOpt = gameBridge.player(tickDelta(context));
         if (playerViewOpt.isEmpty()) {
             return;
         }
@@ -163,7 +163,7 @@ public final class WaypointWorldRenderer {
         if (!gameBridge.session().active()) {
             return;
         }
-        final Optional<PlayerView> playerViewOpt = gameBridge.player(context.tickDelta());
+        final Optional<PlayerView> playerViewOpt = gameBridge.player(tickDelta(context));
         if (playerViewOpt.isEmpty()) {
             return;
         }
@@ -191,10 +191,7 @@ public final class WaypointWorldRenderer {
             // LAST retains a global camera ModelView from late world passes. Reset it temporarily
             // so the context matrix below is the sole camera transform, matching the original
             // AFTER_TRANSLUCENT coordinate system without allowing clouds to draw afterward.
-            final MatrixStack modelViewStack = RenderSystem.getModelViewStack();
-            modelViewStack.push();
-            modelViewStack.loadIdentity();
-            RenderSystem.applyModelViewMatrix();
+            RenderUtil.pushIdentityModelView();
             try {
                 RenderSystem.disableDepthTest();
                 RenderSystem.depthMask(false);
@@ -218,8 +215,7 @@ public final class WaypointWorldRenderer {
             } finally {
                 RenderSystem.depthMask(true);
                 RenderSystem.enableDepthTest();
-                modelViewStack.pop();
-                RenderSystem.applyModelViewMatrix();
+                RenderUtil.popModelView();
             }
         }
 
@@ -233,7 +229,7 @@ public final class WaypointWorldRenderer {
      * past what the player can actually see.
      */
     private double maxVisibleDistance() {
-        final double viewDistanceBlocks = client.options.viewDistance * 16.0;
+        final double viewDistanceBlocks = MinecraftAccess.viewDistance(client) * 16.0;
         return config.waypointRenderDistance > 0
             ? Math.min(config.waypointRenderDistance, viewDistanceBlocks)
             : viewDistanceBlocks;
@@ -400,16 +396,15 @@ public final class WaypointWorldRenderer {
             (easedProgress - LABEL_TEXT_REVEAL_START) / (1f - LABEL_TEXT_REVEAL_START), 0f, 1f
         );
         if (textReveal > 0.01f) {
-            final Matrix4f model = matrices.peek().getModel();
             final float textX = panelX + LABEL_PANEL_PADDING + (1f - textReveal) * 4f;
             final float textAlpha = nearFade * textReveal;
-            textRenderer.draw(
-                name, textX, -9f, withAlpha(LABEL_NAME_COLOR, textAlpha), false,
-                model, immediate, true, 0, LABEL_LIGHT
+            RenderUtil.drawSeeThroughText(
+                textRenderer, name, textX, -9f, withAlpha(LABEL_NAME_COLOR, textAlpha),
+                matrices, immediate, LABEL_LIGHT
             );
-            textRenderer.draw(
-                distanceText, textX, 1f, withAlpha(LABEL_DISTANCE_COLOR, textAlpha), false,
-                model, immediate, true, 0, LABEL_LIGHT
+            RenderUtil.drawSeeThroughText(
+                textRenderer, distanceText, textX, 1f, withAlpha(LABEL_DISTANCE_COLOR, textAlpha),
+                matrices, immediate, LABEL_LIGHT
             );
         }
         matrices.pop();
@@ -439,10 +434,9 @@ public final class WaypointWorldRenderer {
         final float textScale = Math.min(1f, available / Math.max(initialWidth, textRenderer.fontHeight));
         matrices.push();
         matrices.scale(textScale, textScale, 1f);
-        textRenderer.draw(
-            initial, -initialWidth / 2f, -textRenderer.fontHeight / 2f,
-            withAlpha(LABEL_NAME_COLOR, alpha), false, matrices.peek().getModel(),
-            immediate, true, 0, LABEL_LIGHT
+        RenderUtil.drawSeeThroughText(
+            textRenderer, initial, -initialWidth / 2f, -textRenderer.fontHeight / 2f,
+            withAlpha(LABEL_NAME_COLOR, alpha), matrices, immediate, LABEL_LIGHT
         );
         matrices.pop();
     }
@@ -466,5 +460,13 @@ public final class WaypointWorldRenderer {
         }
         final int[] codePoints = trimmed.codePoints().limit(1).toArray();
         return new String(codePoints, 0, codePoints.length);
+    }
+
+    private static float tickDelta(final WorldRenderContext context) {
+        //#if MC>=12100
+        //$$ return context.tickCounter().getTickDelta(false);
+        //#else
+        return context.tickDelta();
+        //#endif
     }
 }

@@ -3,7 +3,9 @@ package cn.net.rms.confluxmap.mc.render;
 import cn.net.rms.confluxmap.core.util.Argb;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.render.GameRenderer;
+import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.VertexFormat;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.Window;
@@ -43,6 +45,51 @@ public final class RenderUtil {
         //$$ matrices.multiply(new Quaternionf().rotationZ((float) Math.toRadians(degrees)));
         //#else
         matrices.multiply(Vec3f.POSITIVE_Z.getDegreesQuaternion(degrees));
+        //#endif
+    }
+
+    /** Resets the global model-view while a LAST world-render pass uses its context matrices. */
+    public static void pushIdentityModelView() {
+        //#if MC>=12100
+        //$$ RenderSystem.getModelViewStack().pushMatrix().identity();
+        //#else
+        final MatrixStack modelViewStack = RenderSystem.getModelViewStack();
+        modelViewStack.push();
+        modelViewStack.loadIdentity();
+        //#endif
+        RenderSystem.applyModelViewMatrix();
+    }
+
+    /** Restores the global model-view saved by {@link #pushIdentityModelView()}. */
+    public static void popModelView() {
+        //#if MC>=12100
+        //$$ RenderSystem.getModelViewStack().popMatrix();
+        //#else
+        RenderSystem.getModelViewStack().pop();
+        //#endif
+        RenderSystem.applyModelViewMatrix();
+    }
+
+    /** Draws fully-lit marker text through the versioned text-layer argument. */
+    public static void drawSeeThroughText(
+        final TextRenderer textRenderer,
+        final String text,
+        final float x,
+        final float y,
+        final int color,
+        final MatrixStack matrices,
+        final VertexConsumerProvider.Immediate immediate,
+        final int light
+    ) {
+        //#if MC>=12100
+        //$$ textRenderer.draw(
+        //$$     text, x, y, color, false, matrices.peek().getPositionMatrix(), immediate,
+        //$$     TextRenderer.TextLayerType.SEE_THROUGH, 0, light
+        //$$ );
+        //#else
+        textRenderer.draw(
+            text, x, y, color, false, matrices.peek().getModel(), immediate, true, 0, light
+        );
         //#endif
     }
 
