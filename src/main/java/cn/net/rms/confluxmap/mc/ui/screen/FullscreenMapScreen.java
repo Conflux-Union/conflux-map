@@ -3,6 +3,8 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
+import cn.net.rms.confluxmap.compat.Ids;
+import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
@@ -36,6 +38,7 @@ import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
+import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.StructureMarkerRenderer;
 import cn.net.rms.confluxmap.mc.world.ClientChunkLookup;
@@ -54,13 +57,11 @@ import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
 import net.minecraft.text.Text;
-import net.minecraft.text.TranslatableText;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.Util;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3f;
-import net.minecraft.util.registry.Registry;
 import org.lwjgl.glfw.GLFW;
 
 /**
@@ -87,13 +88,13 @@ public final class FullscreenMapScreen extends Screen {
     private static final int CONTROL_GAP = 3;
     private static final int LOCAL_CONTROL_ACCENT = 0xFFFFD83D;
     private static final int SHARED_CONTROL_ACCENT = 0xFF55DDE0;
-    private static final Identifier LOCAL_WAYPOINT_ICON = new Identifier(
+    private static final Identifier LOCAL_WAYPOINT_ICON = Ids.of(
         "confluxmap", "textures/gui/waypoint_local.png"
     );
-    private static final Identifier SHARED_WAYPOINT_ICON = new Identifier(
+    private static final Identifier SHARED_WAYPOINT_ICON = Ids.of(
         "confluxmap", "textures/gui/waypoint_shared.png"
     );
-    private static final Identifier MANAGE_WAYPOINT_ICON = new Identifier(
+    private static final Identifier MANAGE_WAYPOINT_ICON = Ids.of(
         "confluxmap", "textures/gui/waypoint_manage.png"
     );
     private static final int TEXT_COLOR = 0xFFFFFFFF;
@@ -161,7 +162,7 @@ public final class FullscreenMapScreen extends Screen {
     private int waypointControlsBottom;
 
     public FullscreenMapScreen(final KeyBinding openMapKey) {
-        super(new TranslatableText("confluxmap.screen.map.title"));
+        super(Texts.translatable("confluxmap.screen.map.title"));
         this.openMapKey = openMapKey;
         final ConfluxMapClient app = ConfluxMapClient.get();
         this.gameBridge = app.gameBridge();
@@ -256,11 +257,11 @@ public final class FullscreenMapScreen extends Screen {
 
     private Text visibilityTooltip(final boolean local) {
         final boolean visible = local ? config.localWaypointsVisible : config.sharedWaypointsVisible;
-        return new TranslatableText(
+        return Texts.translatable(
             local
                 ? "confluxmap.map.waypoints.local.tooltip"
                 : "confluxmap.map.waypoints.shared.tooltip",
-            new TranslatableText(visible ? "confluxmap.value.on" : "confluxmap.value.off").getString()
+            Texts.translatable(visible ? "confluxmap.value.on" : "confluxmap.value.off").getString()
         );
     }
 
@@ -448,9 +449,9 @@ public final class FullscreenMapScreen extends Screen {
         } else if (sharedVisibilityButton != null && sharedVisibilityButton.isHovered()) {
             tooltip = sharedVisibilityButton.active
                 ? visibilityTooltip(false)
-                : new TranslatableText("confluxmap.map.waypoints.shared.unavailable");
+                : Texts.translatable("confluxmap.map.waypoints.shared.unavailable");
         } else if (manageWaypointsButton != null && manageWaypointsButton.isHovered()) {
-            tooltip = new TranslatableText("confluxmap.map.waypoints.manage.tooltip");
+            tooltip = Texts.translatable("confluxmap.map.waypoints.manage.tooltip");
         } else {
             return;
         }
@@ -844,7 +845,7 @@ public final class FullscreenMapScreen extends Screen {
 
     /** Deliverable D: the fullscreen map shows the active layer for the current dimension. */
     private void drawLayerLabel(final MatrixStack matrices) {
-        final String text = new TranslatableText(
+        final String text = Texts.translatable(
             "confluxmap.layer." + layerSelector.current().layer().type().id()
         ).getString();
         textRenderer.drawWithShadow(matrices, text, MARGIN, MARGIN + textRenderer.fontHeight + 2, TEXT_COLOR);
@@ -860,16 +861,16 @@ public final class FullscreenMapScreen extends Screen {
         if (PredictionDimensions.supported(dimension) && !predictionState.predictable(dimension)) {
             // Seed known but this dimension can't compose an underlay (debug/custom worldgen, or
             // superflat without surface info): say so instead of silently dropping the label.
-            text = new TranslatableText(
+            text = Texts.translatable(
                 "confluxmap.map.prediction_unavailable", presetDisplayName(preset)
             ).getString();
         } else {
-            final String mode = new TranslatableText(
+            final String mode = Texts.translatable(
                 "confluxmap.config.prediction.mode." + config.predictionViewMode.name().toLowerCase(java.util.Locale.ROOT)
             ).getString();
-            final String modeLine = new TranslatableText("confluxmap.config.prediction.view_mode", mode).getString();
+            final String modeLine = Texts.translatable("confluxmap.config.prediction.view_mode", mode).getString();
             text = preset.terrainApproximate()
-                ? modeLine + new TranslatableText("confluxmap.map.prediction_approx_suffix", presetDisplayName(preset)).getString()
+                ? modeLine + Texts.translatable("confluxmap.map.prediction_approx_suffix", presetDisplayName(preset)).getString()
                 : modeLine;
         }
         textRenderer.drawWithShadow(
@@ -884,7 +885,7 @@ public final class FullscreenMapScreen extends Screen {
     }
 
     private static String presetDisplayName(final WorldPreset preset) {
-        return new TranslatableText(
+        return Texts.translatable(
             "confluxmap.world_preset." + preset.name().toLowerCase(java.util.Locale.ROOT)
         ).getString();
     }
@@ -898,18 +899,18 @@ public final class FullscreenMapScreen extends Screen {
         final int color;
         switch (status.state()) {
             case SYNCING -> {
-                text = new TranslatableText("confluxmap.map.server_sync.syncing").getString();
+                text = Texts.translatable("confluxmap.map.server_sync.syncing").getString();
                 color = SYNCING_TEXT_COLOR;
             }
             case COMPLETED -> {
-                text = new TranslatableText(
+                text = Texts.translatable(
                     "confluxmap.map.server_sync.completed",
                     formatSyncDuration(status.durationNanos()), formatSyncTraffic(status.trafficBytes())
                 ).getString();
                 color = SYNCED_TEXT_COLOR;
             }
             case FAILED -> {
-                text = new TranslatableText("confluxmap.map.server_sync.failed").getString();
+                text = Texts.translatable("confluxmap.map.server_sync.failed").getString();
                 color = SYNC_FAILED_TEXT_COLOR;
             }
             default -> {
@@ -939,7 +940,7 @@ public final class FullscreenMapScreen extends Screen {
     }
 
     private void drawScaleLabel(final MatrixStack matrices) {
-        final String text = new TranslatableText("confluxmap.map.scale", String.format("%.2f", scale)).getString();
+        final String text = Texts.translatable("confluxmap.map.scale", String.format("%.2f", scale)).getString();
         final int textWidth = textRenderer.getWidth(text);
         textRenderer.drawWithShadow(matrices, text, width - MARGIN - textWidth, MARGIN, TEXT_COLOR);
     }
@@ -978,7 +979,7 @@ public final class FullscreenMapScreen extends Screen {
                 blockX, MathHelper.clamp(playerY, world.getBottomY(), world.getTopY() - 1), blockZ
             );
             if (ClientChunkLookup.isLoaded(world, blockX, blockZ)) {
-                final Identifier biomeId = world.getRegistryManager().get(Registry.BIOME_KEY).getId(world.getBiome(pos));
+                final Identifier biomeId = Regs.biomeIdAt(world, pos);
                 if (biomeId != null) {
                     return translatedBiomeName(biomeId);
                 }
@@ -991,7 +992,7 @@ public final class FullscreenMapScreen extends Screen {
             return null;
         }
         return CubiomesBiomeIds.nameForId(predicted.getAsInt())
-            .map(name -> translatedBiomeName(new Identifier("minecraft", name)))
+            .map(name -> translatedBiomeName(Ids.of("minecraft", name)))
             .orElse(null);
     }
 
@@ -1001,24 +1002,24 @@ public final class FullscreenMapScreen extends Screen {
         if (info.isEmpty()) {
             return;
         }
-        final String text = new TranslatableText("confluxmap.map.update_badge", info.get().latestVersion()).getString();
+        final String text = Texts.translatable("confluxmap.map.update_badge", info.get().latestVersion()).getString();
         final int textWidth = textRenderer.getWidth(text);
         textRenderer.drawWithShadow(matrices, text, width - MARGIN - textWidth, height - MARGIN - 10, UPDATE_TEXT_COLOR);
     }
 
     private static String translatedBiomeName(final Identifier biomeId) {
-        return new TranslatableText(Util.createTranslationKey("biome", biomeId)).getString();
+        return Texts.translatable(Util.createTranslationKey("biome", biomeId)).getString();
     }
 
     private static String dimensionDisplayName(final DimensionId dimension) {
         if (dimension.equals(DimensionId.OVERWORLD)) {
-            return new TranslatableText("confluxmap.dimension.overworld").getString();
+            return Texts.translatable("confluxmap.dimension.overworld").getString();
         }
         if (dimension.equals(DimensionId.NETHER)) {
-            return new TranslatableText("confluxmap.dimension.the_nether").getString();
+            return Texts.translatable("confluxmap.dimension.the_nether").getString();
         }
         if (dimension.equals(DimensionId.END)) {
-            return new TranslatableText("confluxmap.dimension.the_end").getString();
+            return Texts.translatable("confluxmap.dimension.the_end").getString();
         }
         return dimension.path();
     }

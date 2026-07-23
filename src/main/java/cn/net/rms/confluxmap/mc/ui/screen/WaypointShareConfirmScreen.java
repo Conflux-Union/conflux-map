@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatCodec;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.compat.Texts;
 import java.math.BigDecimal;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
@@ -12,7 +13,6 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.OrderedText;
 import net.minecraft.text.StringVisitable;
-import net.minecraft.text.TranslatableText;
 
 /** Explicit preview and confirmation boundary for every outward waypoint share. */
 public final class WaypointShareConfirmScreen extends Screen {
@@ -32,7 +32,7 @@ public final class WaypointShareConfirmScreen extends Screen {
     private String errorKey;
 
     public WaypointShareConfirmScreen(final Screen parent, final Waypoint waypoint, final Target target) {
-        super(new TranslatableText(
+        super(Texts.translatable(
             target == Target.PUBLIC
                 ? "confluxmap.screen.waypoint.confirm_public"
                 : "confluxmap.screen.waypoint.confirm_chat"
@@ -79,7 +79,7 @@ public final class WaypointShareConfirmScreen extends Screen {
             height - 32,
             100,
             20,
-            new TranslatableText(
+            Texts.translatable(
                 target == Target.PUBLIC
                     ? "confluxmap.screen.waypoint.publish"
                     : "confluxmap.screen.waypoint.send_chat"
@@ -96,7 +96,7 @@ public final class WaypointShareConfirmScreen extends Screen {
             height - 32,
             100,
             20,
-            new TranslatableText("confluxmap.screen.waypoint.cancel"),
+            Texts.translatable("confluxmap.screen.waypoint.cancel"),
             button -> onClose()
         ));
     }
@@ -131,7 +131,7 @@ public final class WaypointShareConfirmScreen extends Screen {
         final boolean shared = sharedWaypoints.isLocationShared(waypoint);
         final boolean pending = sharedWaypoints.isCreatePending(waypoint);
         confirmButton.active = availability.ready() && !shared && !pending;
-        confirmButton.setMessage(new TranslatableText(
+        confirmButton.setMessage(Texts.translatable(
             shared
                 ? "confluxmap.screen.waypoint.already_shared"
                 : pending
@@ -178,28 +178,28 @@ public final class WaypointShareConfirmScreen extends Screen {
         renderBackground(matrices);
         drawCentered(matrices, getTitle().getString(), 22, TEXT_COLOR);
         if (target == Target.CHAT && confluxPreview != null && xaeroPreview != null) {
-            int y = drawWrapped(matrices, new TranslatableText(
+            int y = drawWrapped(matrices, Texts.translatable(
                 "confluxmap.screen.waypoint.preview.chat_messages"
             ).getString(), 50, MUTED_TEXT_COLOR);
             y = drawWrapped(matrices, confluxPreview, y + 4, TEXT_COLOR);
             y = drawWrapped(matrices, xaeroPreview, y + 6, TEXT_COLOR);
-            drawCentered(matrices, new TranslatableText(
+            drawCentered(matrices, Texts.translatable(
                 "confluxmap.screen.waypoint.preview.audience_chat"
             ).getString(), y + 10, MUTED_TEXT_COLOR);
         } else {
-            drawCentered(matrices, new TranslatableText(
+            drawCentered(matrices, Texts.translatable(
                 "confluxmap.screen.waypoint.preview.name", waypoint.name
             ).getString(), 50, TEXT_COLOR);
-            drawCentered(matrices, new TranslatableText(
+            drawCentered(matrices, Texts.translatable(
                 "confluxmap.screen.waypoint.preview.dimension", waypoint.dimensionId.toString()
             ).getString(), 66, TEXT_COLOR);
-            drawCentered(matrices, new TranslatableText(
+            drawCentered(matrices, Texts.translatable(
                 "confluxmap.screen.waypoint.preview.coords",
                 formatCoordinate(waypoint.x),
                 formatCoordinate(waypoint.y),
                 formatCoordinate(waypoint.z)
             ).getString(), 82, TEXT_COLOR);
-            drawCentered(matrices, new TranslatableText(
+            drawCentered(matrices, Texts.translatable(
                 target == Target.PUBLIC
                     ? "confluxmap.screen.waypoint.preview.audience_public"
                     : "confluxmap.screen.waypoint.preview.audience_chat"
@@ -207,14 +207,14 @@ public final class WaypointShareConfirmScreen extends Screen {
             if (target == Target.PUBLIC) {
                 drawCentered(
                     matrices,
-                    new TranslatableText("confluxmap.screen.waypoint.public_immutable").getString(),
+                    Texts.translatable("confluxmap.screen.waypoint.public_immutable").getString(),
                     122,
                     MUTED_TEXT_COLOR
                 );
             }
         }
         if (errorKey != null) {
-            drawCentered(matrices, new TranslatableText(errorKey).getString(), height - 50, ERROR_TEXT_COLOR);
+            drawCentered(matrices, Texts.translatable(errorKey).getString(), height - 50, ERROR_TEXT_COLOR);
         }
         super.render(matrices, mouseX, mouseY, tickDelta);
     }

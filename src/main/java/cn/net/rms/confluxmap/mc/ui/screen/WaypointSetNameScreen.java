@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
+import cn.net.rms.confluxmap.compat.Texts;
 import java.util.Objects;
 import java.util.function.Consumer;
 import net.minecraft.client.MinecraftClient;
@@ -10,7 +11,6 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.Text;
-import net.minecraft.text.TranslatableText;
 
 /** Small create/rename form for one player-owned local waypoint set. */
 final class WaypointSetNameScreen extends Screen {
@@ -31,7 +31,7 @@ final class WaypointSetNameScreen extends Screen {
         final String existingName,
         final Consumer<String> onSuccess
     ) {
-        super(new TranslatableText(
+        super(Texts.translatable(
             existingName == null
                 ? "confluxmap.screen.waypoint_set.create"
                 : "confluxmap.screen.waypoint_set.rename"
@@ -69,7 +69,7 @@ final class WaypointSetNameScreen extends Screen {
             buttonY,
             100,
             FIELD_HEIGHT,
-            new TranslatableText("confluxmap.screen.waypoint.done"),
+            Texts.translatable("confluxmap.screen.waypoint.done"),
             button -> submit()
         ));
         addDrawableChild(new ButtonWidget(
@@ -77,7 +77,7 @@ final class WaypointSetNameScreen extends Screen {
             buttonY,
             100,
             FIELD_HEIGHT,
-            new TranslatableText("confluxmap.screen.waypoint.cancel"),
+            Texts.translatable("confluxmap.screen.waypoint.cancel"),
             button -> onClose()
         ));
         refreshDoneButton();
@@ -135,14 +135,14 @@ final class WaypointSetNameScreen extends Screen {
         drawCentered(matrices, getTitle().getString(), 24, 0xFFFFFFFF);
         drawCentered(
             matrices,
-            new TranslatableText("confluxmap.screen.waypoint_set.name").getString(),
+            Texts.translatable("confluxmap.screen.waypoint_set.name").getString(),
             nameField.y - 12,
             0xFFCCCCCC
         );
         if (errorKey != null) {
             drawCentered(
                 matrices,
-                new TranslatableText(errorKey).getString(),
+                Texts.translatable(errorKey).getString(),
                 nameField.y + 56,
                 0xFFFF7777
             );

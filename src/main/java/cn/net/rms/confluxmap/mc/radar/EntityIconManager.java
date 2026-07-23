@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.radar;
 
+import cn.net.rms.confluxmap.compat.Ids;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -94,7 +95,7 @@ public final class EntityIconManager {
     /** BipedEntityModel.getModelData: hat = uv(32,0).cuboid(w=8,h=8,d=8). */
     private static final FaceUv PLAYER_HAT = px(40, 8, 48, 16, SKIN_SIZE, SKIN_SIZE);
 
-    private static final Identifier SHEET = new Identifier("confluxmap", "textures/radar/entity_icons.png");
+    private static final Identifier SHEET = Ids.of("confluxmap", "textures/radar/entity_icons.png");
     /** entity_icons.png is a 13-col x 15-row grid of 16x16 cells (docs/reference-specs/entity-icon-cellmap.json). */
     private static final int SHEET_W = 208;
     private static final int SHEET_H = 240;

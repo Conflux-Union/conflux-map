@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.net;
 
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.ConfluxMapMod;
+import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.core.net.ErrorS2C;
 import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
 import cn.net.rms.confluxmap.core.net.HelloC2S;
@@ -29,7 +30,7 @@ import net.minecraft.util.Identifier;
  * the session.
  */
 public final class ClientNetworking {
-    public static final Identifier CHANNEL = new Identifier(Proto.CHANNEL_ID);
+    public static final Identifier CHANNEL = Ids.of(Proto.CHANNEL_ID);
 
     private final CompanionSession session;
     private volatile MapSyncClient mapSync;

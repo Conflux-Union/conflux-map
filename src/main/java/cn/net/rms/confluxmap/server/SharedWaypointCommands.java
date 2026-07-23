@@ -1,12 +1,12 @@
 package cn.net.rms.confluxmap.server;
 
+import cn.net.rms.confluxmap.compat.Texts;
 import static net.minecraft.server.command.CommandManager.literal;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointService;
 import net.fabricmc.fabric.api.command.v1.CommandRegistrationCallback;
 import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.text.LiteralText;
 
 /** Operator controls for the shared-waypoint runtime kill switch. */
 final class SharedWaypointCommands {
@@ -44,7 +44,7 @@ final class SharedWaypointCommands {
         final ServerConfig config = companion.config();
         final SharedWaypointService service = companion.sharedWaypoints();
         final long revision = service == null ? 0L : service.snapshot().revision();
-        source.sendFeedback(new LiteralText(
+        source.sendFeedback(Texts.literal(
             "Conflux Map shared waypoints: master=" + config.enabled
                 + ", configured=" + config.shareWaypoints
                 + ", enabled=" + companion.sharedWaypointsEnabled()
@@ -100,12 +100,12 @@ final class SharedWaypointCommands {
     }
 
     private static int feedback(final ServerCommandSource source, final String message) {
-        source.sendFeedback(new LiteralText(message), true);
+        source.sendFeedback(Texts.literal(message), true);
         return 1;
     }
 
     private static int error(final ServerCommandSource source, final String message) {
-        source.sendError(new LiteralText(message));
+        source.sendError(Texts.literal(message));
         return 0;
     }
 

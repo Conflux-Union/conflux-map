@@ -7,6 +7,7 @@ import cn.net.rms.confluxmap.core.waypoint.migrate.ImportedWaypoint;
 import cn.net.rms.confluxmap.core.waypoint.migrate.MigrationSource;
 import cn.net.rms.confluxmap.core.waypoint.migrate.MigrationSourceScanner;
 import cn.net.rms.confluxmap.core.waypoint.migrate.WaypointImporter;
+import cn.net.rms.confluxmap.compat.Texts;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -20,7 +21,6 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.network.ServerInfo;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.Text;
-import net.minecraft.text.TranslatableText;
 import net.minecraft.util.WorldSavePath;
 
 /**
@@ -48,7 +48,7 @@ final class WaypointImportScreen extends Screen {
     private String errorKey;
 
     WaypointImportScreen(final Screen parent, final WaypointStore boundStore) {
-        super(new TranslatableText("confluxmap.screen.waypoint_import.title"));
+        super(Texts.translatable("confluxmap.screen.waypoint_import.title"));
         this.parent = Objects.requireNonNull(parent, "parent");
         this.boundStore = Objects.requireNonNull(boundStore, "boundStore");
         this.sources = scanSources();
@@ -106,7 +106,7 @@ final class WaypointImportScreen extends Screen {
             height - 32,
             100,
             20,
-            new TranslatableText("confluxmap.screen.waypoint_import.import", selectedWaypointCount()),
+            Texts.translatable("confluxmap.screen.waypoint_import.import", selectedWaypointCount()),
             button -> runImport()
         ));
         importButton.active = result == null && selectedWaypointCount() > 0 && availabilityErrorKey() == null;
@@ -115,7 +115,7 @@ final class WaypointImportScreen extends Screen {
             height - 32,
             100,
             20,
-            new TranslatableText(
+            Texts.translatable(
                 result == null ? "confluxmap.screen.waypoint.cancel" : "confluxmap.screen.waypoint.done"
             ),
             button -> onClose()
@@ -202,23 +202,23 @@ final class WaypointImportScreen extends Screen {
         if (sources.isEmpty()) {
             drawCentered(
                 matrices,
-                new TranslatableText("confluxmap.screen.waypoint_import.empty").getString(),
+                Texts.translatable("confluxmap.screen.waypoint_import.empty").getString(),
                 LIST_TOP + 6,
                 MUTED_TEXT_COLOR
             );
         } else {
             drawCentered(
                 matrices,
-                new TranslatableText("confluxmap.screen.waypoint_import.hint").getString(),
+                Texts.translatable("confluxmap.screen.waypoint_import.hint").getString(),
                 44,
                 MUTED_TEXT_COLOR
             );
             final int rowLeft = width / 2 - rowWidth() / 2;
             for (int i = 0; i < sources.size(); i++) {
                 final MigrationSource source = sources.get(i);
-                final String label = new TranslatableText(
+                final String label = Texts.translatable(
                     "confluxmap.screen.waypoint_import.source",
-                    new TranslatableText(modKey(source.mod())).getString(),
+                    Texts.translatable(modKey(source.mod())).getString(),
                     source.displayName(),
                     source.waypoints().size()
                 ).getString();
@@ -230,11 +230,11 @@ final class WaypointImportScreen extends Screen {
             }
         }
         if (result != null) {
-            drawCentered(matrices, new TranslatableText(
+            drawCentered(matrices, Texts.translatable(
                 "confluxmap.screen.waypoint_import.result", result.imported(), result.duplicates()
             ).getString(), height - 50, SUCCESS_TEXT_COLOR);
         } else if (errorKey != null) {
-            drawCentered(matrices, new TranslatableText(errorKey).getString(), height - 50, ERROR_TEXT_COLOR);
+            drawCentered(matrices, Texts.translatable(errorKey).getString(), height - 50, ERROR_TEXT_COLOR);
         }
         super.render(matrices, mouseX, mouseY, tickDelta);
     }

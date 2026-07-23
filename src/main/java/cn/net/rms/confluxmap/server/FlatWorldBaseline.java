@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.server;
 
+import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.predict.CubiomesBiomeIds;
@@ -9,7 +10,6 @@ import java.util.Optional;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.registry.Registry;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.gen.chunk.ChunkGenerator;
 import net.minecraft.world.gen.chunk.FlatChunkGenerator;
@@ -55,7 +55,7 @@ public final class FlatWorldBaseline {
                 biomeId, top, SurfaceKind.WATER.ordinal(), 12, Math.min(255, top - floor)
             ));
         }
-        final String blockName = Registry.BLOCK.getId(layers.get(top).getBlock()).toString();
+        final String blockName = Regs.blocks().getId(layers.get(top).getBlock()).toString();
         final ChunkSummarizer.BlockInfo info = ChunkSummarizer.classify(blockName, MAP_COLORS);
         if (info.kind() == SurfaceKind.UNKNOWN) {
             return Optional.of(new FlatBaseline(
@@ -71,7 +71,7 @@ public final class FlatWorldBaseline {
      * the diff's biome equality still holds against observed chunk data.
      */
     private static int biomeId(final ServerWorld world, final Biome biome) {
-        final var registry = world.getRegistryManager().get(Registry.BIOME_KEY);
+        final var registry = Regs.biomes(world);
         final var id = registry.getId(biome);
         if (id != null) {
             final var mapped = CubiomesBiomeIds.idForName(id.getPath());

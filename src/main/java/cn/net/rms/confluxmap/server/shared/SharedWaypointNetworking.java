@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.server.shared;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
+import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointCodec;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointMessage;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProto;
@@ -19,7 +20,7 @@ import net.minecraft.util.Identifier;
 
 /** Fabric transport adapter for the independent shared-waypoint protocol channel. */
 public final class SharedWaypointNetworking {
-    public static final Identifier CHANNEL = new Identifier(SharedWaypointProto.CHANNEL_ID);
+    public static final Identifier CHANNEL = Ids.of(SharedWaypointProto.CHANNEL_ID);
 
     private final ConfluxMapCompanion companion;
     private final SharedWaypointSessionHandler sessions = new SharedWaypointSessionHandler();

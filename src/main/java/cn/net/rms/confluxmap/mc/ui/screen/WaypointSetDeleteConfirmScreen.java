@@ -2,12 +2,12 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
+import cn.net.rms.confluxmap.compat.Texts;
 import java.util.Objects;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.text.TranslatableText;
 
 /** Explicit confirmation boundary for deleting a set and every waypoint assigned to it. */
 final class WaypointSetDeleteConfirmScreen extends Screen {
@@ -31,7 +31,7 @@ final class WaypointSetDeleteConfirmScreen extends Screen {
         final int waypointCount,
         final Runnable onSuccess
     ) {
-        super(new TranslatableText("confluxmap.screen.waypoint_set.delete"));
+        super(Texts.translatable("confluxmap.screen.waypoint_set.delete"));
         this.parent = Objects.requireNonNull(parent, "parent");
         this.boundStore = Objects.requireNonNull(boundStore, "boundStore");
         this.setName = Objects.requireNonNull(setName, "setName");
@@ -50,7 +50,7 @@ final class WaypointSetDeleteConfirmScreen extends Screen {
             height - 32,
             100,
             20,
-            new TranslatableText("confluxmap.screen.waypoint_set.delete.confirm"),
+            Texts.translatable("confluxmap.screen.waypoint_set.delete.confirm"),
             button -> confirmDelete()
         ));
         addDrawableChild(new ButtonWidget(
@@ -58,7 +58,7 @@ final class WaypointSetDeleteConfirmScreen extends Screen {
             height - 32,
             100,
             20,
-            new TranslatableText("confluxmap.screen.waypoint.cancel"),
+            Texts.translatable("confluxmap.screen.waypoint.cancel"),
             button -> onClose()
         ));
         refreshAvailability();
@@ -132,20 +132,20 @@ final class WaypointSetDeleteConfirmScreen extends Screen {
     public void render(final MatrixStack matrices, final int mouseX, final int mouseY, final float tickDelta) {
         renderBackground(matrices);
         drawCentered(matrices, getTitle().getString(), 24, TEXT_COLOR);
-        drawCentered(matrices, new TranslatableText(
+        drawCentered(matrices, Texts.translatable(
             "confluxmap.screen.waypoint_set.delete.name", setName
         ).getString(), 54, TEXT_COLOR);
-        drawCentered(matrices, new TranslatableText(
+        drawCentered(matrices, Texts.translatable(
             "confluxmap.screen.waypoint_set.delete.members", waypointCount
         ).getString(), 74, MUTED_TEXT_COLOR);
         drawCentered(
             matrices,
-            new TranslatableText("confluxmap.screen.waypoint_set.delete.warning").getString(),
+            Texts.translatable("confluxmap.screen.waypoint_set.delete.warning").getString(),
             94,
             WARNING_TEXT_COLOR
         );
         if (errorKey != null) {
-            drawCentered(matrices, new TranslatableText(errorKey).getString(), height - 50, ERROR_TEXT_COLOR);
+            drawCentered(matrices, Texts.translatable(errorKey).getString(), height - 50, ERROR_TEXT_COLOR);
         }
         super.render(matrices, mouseX, mouseY, tickDelta);
     }

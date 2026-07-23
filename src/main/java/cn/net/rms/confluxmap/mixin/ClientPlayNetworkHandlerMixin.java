@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatClickPayload;
 import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatCodec;
 import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureHandler;
+import cn.net.rms.confluxmap.compat.Texts;
 import java.util.Optional;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
@@ -11,11 +12,9 @@ import net.minecraft.network.MessageType;
 import net.minecraft.network.packet.s2c.play.BlockUpdateS2CPacket;
 import net.minecraft.network.packet.s2c.play.ChunkDeltaUpdateS2CPacket;
 import net.minecraft.text.ClickEvent;
-import net.minecraft.text.LiteralText;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Style;
 import net.minecraft.text.Text;
-import net.minecraft.text.TranslatableText;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 import org.spongepowered.asm.mixin.Mixin;
@@ -67,14 +66,14 @@ public abstract class ClientPlayNetworkHandlerMixin {
             return;
         }
 
-        final MutableText importAction = new TranslatableText("confluxmap.chat.waypoint.import")
+        final MutableText importAction = Texts.translatable("confluxmap.chat.waypoint.import")
             .setStyle(Style.EMPTY
                 .withColor(Formatting.AQUA)
                 .withUnderline(true)
                 .withClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, payload.get())));
-        args.set(1, new LiteralText("")
+        args.set(1, Texts.literal("")
             .append(original.shallowCopy())
-            .append(new LiteralText(" "))
+            .append(Texts.literal(" "))
             .append(importAction));
     }
 }

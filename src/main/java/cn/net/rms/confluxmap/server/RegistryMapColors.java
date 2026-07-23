@@ -1,12 +1,12 @@
 package cn.net.rms.confluxmap.server;
 
+import cn.net.rms.confluxmap.compat.Regs;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.block.Block;
 import net.minecraft.block.MapColor;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.registry.Registry;
 
 /**
  * Registry-backed {@link ChunkSummarizer.MapColorResolver}: block id string to the block's
@@ -35,7 +35,7 @@ public final class RegistryMapColors implements ChunkSummarizer.MapColorResolver
         if (id == null) {
             return -1;
         }
-        final Optional<Block> block = Registry.BLOCK.getOrEmpty(id);
+        final Optional<Block> block = Regs.block(id);
         if (block.isEmpty()) {
             return -1;
         }

@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
+import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
 import cn.net.rms.confluxmap.core.net.HelloC2S;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
@@ -37,7 +38,7 @@ import net.minecraft.world.World;
  * implementation lands in S4 ({@code PatchBuilder}) and the request-planning client side in S5.
  */
 public final class ServerNetworking {
-    public static final Identifier CHANNEL = new Identifier(Proto.CHANNEL_ID);
+    public static final Identifier CHANNEL = Ids.of(Proto.CHANNEL_ID);
 
     private final ConfluxMapCompanion companion;
     private final ConcurrentMap<UUID, Integer> malformedStrikes = new ConcurrentHashMap<>();

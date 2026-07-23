@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.ui.hud;
 
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
+import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
@@ -19,6 +20,7 @@ import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
 import cn.net.rms.confluxmap.mc.render.OffscreenCanvas;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
+import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
@@ -28,13 +30,10 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 import net.minecraft.text.Text;
-import net.minecraft.text.TranslatableText;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3f;
-import net.minecraft.util.registry.Registry;
-import net.minecraft.world.biome.Biome;
 
 /**
  * Renders the always-on minimap HUD, showing whichever layer {@link LayerSelector}
@@ -430,7 +429,7 @@ public final class MinimapHudRenderer {
     /** cave-nether-layers.md-driven layer name, keyed off {@link MapLayer.Type#id()} (e.g. "confluxmap.layer.cave"). */
     private String layerIndicatorText() {
         final MapLayer.Type type = layerSelector.current().layer().type();
-        return new TranslatableText("confluxmap.layer." + type.id()).getString();
+        return Texts.translatable("confluxmap.layer." + type.id()).getString();
     }
 
     private void drawCenteredLine(final MatrixStack matrices, final String text, final float centerX, final float y) {
@@ -442,12 +441,13 @@ public final class MinimapHudRenderer {
         if (client.world == null) {
             return "";
         }
-        final Biome biome = client.world.getBiome(new BlockPos(player.blockX(), player.blockY(), player.blockZ()));
-        final Identifier id = client.world.getRegistryManager().get(Registry.BIOME_KEY).getId(biome);
+        final Identifier id = Regs.biomeIdAt(
+            client.world, new BlockPos(player.blockX(), player.blockY(), player.blockZ())
+        );
         if (id == null) {
             return "";
         }
-        final Text name = new TranslatableText("biome." + id.getNamespace() + "." + id.getPath());
+        final Text name = Texts.translatable("biome." + id.getNamespace() + "." + id.getPath());
         return name.getString();
     }
 

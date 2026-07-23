@@ -6,6 +6,7 @@ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.compat.Texts;
 import java.util.Arrays;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -19,7 +20,6 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.Text;
-import net.minecraft.text.TranslatableText;
 
 /**
  * Settings screen exposing every {@link ConfluxConfig} field, grouped into category
@@ -82,7 +82,7 @@ public final class ConfigScreen extends Screen {
     private SharedWaypointAvailability sharedAvailability;
 
     public ConfigScreen() {
-        super(new TranslatableText("confluxmap.screen.config.title"));
+        super(Texts.translatable("confluxmap.screen.config.title"));
         final ConfluxMapClient app = ConfluxMapClient.get();
         this.config = app.config();
         this.configIo = app.configIo();
@@ -147,7 +147,7 @@ public final class ConfigScreen extends Screen {
         addRows();
         addDrawableChild(new ButtonWidget(
             width / 2 - 50, height - BOTTOM_MARGIN + 4, 100, 20,
-            new TranslatableText("confluxmap.screen.waypoint.done"), b -> onClose()
+            Texts.translatable("confluxmap.screen.waypoint.done"), b -> onClose()
         ));
     }
 
@@ -158,7 +158,7 @@ public final class ConfigScreen extends Screen {
         int x = width / 2 - totalWidth / 2;
         for (final Category c : categories) {
             final ButtonWidget tab = new ButtonWidget(
-                x, TAB_Y, tabWidth, TAB_HEIGHT, new TranslatableText(c.labelKey), b -> selectCategory(c)
+                x, TAB_Y, tabWidth, TAB_HEIGHT, Texts.translatable(c.labelKey), b -> selectCategory(c)
             );
             // Disabling the current tab both marks it visually (dimmed, per vanilla button
             // convention) and makes re-clicking it a harmless no-op.
@@ -387,19 +387,19 @@ public final class ConfigScreen extends Screen {
     }
 
     private static Text boolLabel(final String labelKey, final boolean value) {
-        return new TranslatableText(labelKey, resolvedText(value ? "confluxmap.value.on" : "confluxmap.value.off"));
+        return Texts.translatable(labelKey, resolvedText(value ? "confluxmap.value.on" : "confluxmap.value.off"));
     }
 
     private static <T> Text enumLabel(final String labelKey, final T value, final Function<T, String> valueKeyFn) {
-        return new TranslatableText(labelKey, resolvedText(valueKeyFn.apply(value)));
+        return Texts.translatable(labelKey, resolvedText(valueKeyFn.apply(value)));
     }
 
     private static Text zoomLabel(final int zoomIndex) {
-        return new TranslatableText("confluxmap.config.minimap.zoom", resolvedText(ZOOM_VALUE_KEYS[zoomIndex]));
+        return Texts.translatable("confluxmap.config.minimap.zoom", resolvedText(ZOOM_VALUE_KEYS[zoomIndex]));
     }
 
     private static String resolvedText(final String key) {
-        return new TranslatableText(key).getString();
+        return Texts.translatable(key).getString();
     }
 
     private static String plainText(final int value) {
@@ -407,11 +407,11 @@ public final class ConfigScreen extends Screen {
     }
 
     private static String pxText(final int value) {
-        return new TranslatableText("confluxmap.value.px", value).getString();
+        return Texts.translatable("confluxmap.value.px", value).getString();
     }
 
     private static String blocksText(final int value) {
-        return new TranslatableText("confluxmap.value.blocks", value).getString();
+        return Texts.translatable("confluxmap.value.blocks", value).getString();
     }
 
     private static String renderDistanceText(final int value) {
@@ -510,7 +510,7 @@ public final class ConfigScreen extends Screen {
 
         @Override
         protected void updateMessage() {
-            setMessage(new TranslatableText(labelKey, valueText.apply(currentValue())));
+            setMessage(Texts.translatable(labelKey, valueText.apply(currentValue())));
         }
 
         @Override

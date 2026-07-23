@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.mc.net.shared;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
+import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.core.net.shared.CreateC2S;
 import cn.net.rms.confluxmap.core.net.shared.DeleteC2S;
 import cn.net.rms.confluxmap.core.net.shared.HelloC2S;
@@ -20,6 +21,7 @@ import cn.net.rms.confluxmap.core.net.shared.UpsertS2C;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import cn.net.rms.confluxmap.core.shared.SharedWaypointLocationKey;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
+import cn.net.rms.confluxmap.compat.Texts;
 import io.netty.buffer.Unpooled;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -33,7 +35,6 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.network.PacketByteBuf;
-import net.minecraft.text.TranslatableText;
 import net.minecraft.util.Identifier;
 
 /**
@@ -49,7 +50,7 @@ import net.minecraft.util.Identifier;
  * {@link SharedWaypointClientState.State#UNSUPPORTED}.
  */
 public final class SharedWaypointClient {
-    public static final Identifier CHANNEL = new Identifier(SharedWaypointProto.CHANNEL_ID);
+    public static final Identifier CHANNEL = Ids.of(SharedWaypointProto.CHANNEL_ID);
     private static final int MAX_PENDING_OPERATIONS = 128;
 
     public enum OperationKind {
@@ -514,7 +515,7 @@ public final class SharedWaypointClient {
 
     private void showMessage(final String translationKey) {
         if (client.player != null) {
-            client.player.sendMessage(new TranslatableText(translationKey), false);
+            client.player.sendMessage(Texts.translatable(translationKey), false);
         }
     }
 

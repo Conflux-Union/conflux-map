@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.predict;
 
+import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.core.predict.CubiomesBiomeIds;
 import cn.net.rms.confluxmap.core.predict.PredictionPalette;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
@@ -10,7 +11,6 @@ import java.util.OptionalInt;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.registry.Registry;
 import net.minecraft.world.biome.Biome;
 
 /**
@@ -40,7 +40,7 @@ public final class PredictionPaletteBuilder {
             return;
         }
         final Map<Integer, int[]> sampled = new HashMap<>();
-        final Registry<Biome> registry = world.getRegistryManager().get(Registry.BIOME_KEY);
+        final var registry = Regs.biomes(world);
         for (final Identifier id : registry.getIds()) {
             final OptionalInt cubiomesId = CubiomesBiomeIds.idForName(id.getPath());
             if (cubiomesId.isEmpty()) {

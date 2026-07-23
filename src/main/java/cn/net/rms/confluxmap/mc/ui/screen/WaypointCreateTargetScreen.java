@@ -4,12 +4,12 @@ import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.compat.Texts;
 import java.math.BigDecimal;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.text.TranslatableText;
 
 /** Chooses the ownership/audience for a waypoint created from the fullscreen map. */
 public final class WaypointCreateTargetScreen extends Screen {
@@ -29,7 +29,7 @@ public final class WaypointCreateTargetScreen extends Screen {
         final double y,
         final double z
     ) {
-        super(new TranslatableText("confluxmap.screen.waypoint.choose_target"));
+        super(Texts.translatable("confluxmap.screen.waypoint.choose_target"));
         this.parent = parent;
         this.dimensionId = dimensionId;
         this.x = x;
@@ -53,7 +53,7 @@ public final class WaypointCreateTargetScreen extends Screen {
         int buttonY = top;
         addDrawableChild(new ButtonWidget(
             left, buttonY, 200, 20,
-            new TranslatableText("confluxmap.screen.waypoint.create_local"),
+            Texts.translatable("confluxmap.screen.waypoint.create_local"),
             button -> MinecraftClient.getInstance().setScreen(
                 WaypointEditScreen.forCreate(parent, dimensionId, x, y, z)
             )
@@ -62,7 +62,7 @@ public final class WaypointCreateTargetScreen extends Screen {
         if (sharedAvailability.enabled()) {
             publicButton = addDrawableChild(new ButtonWidget(
                 left, buttonY, 200, 20,
-                new TranslatableText("confluxmap.screen.waypoint.create_public"),
+                Texts.translatable("confluxmap.screen.waypoint.create_public"),
                 button -> MinecraftClient.getInstance().setScreen(
                     WaypointEditScreen.forPublicCreate(parent, dimensionId, x, y, z)
                 )
@@ -72,7 +72,7 @@ public final class WaypointCreateTargetScreen extends Screen {
         }
         addDrawableChild(new ButtonWidget(
             left, buttonY, 200, 20,
-            new TranslatableText("confluxmap.screen.waypoint.create_chat"),
+            Texts.translatable("confluxmap.screen.waypoint.create_chat"),
             button -> MinecraftClient.getInstance().setScreen(
                 WaypointEditScreen.forChatCreate(parent, dimensionId, x, y, z)
             )
@@ -80,7 +80,7 @@ public final class WaypointCreateTargetScreen extends Screen {
         buttonY += 30;
         addDrawableChild(new ButtonWidget(
             left, buttonY, 200, 20,
-            new TranslatableText("confluxmap.screen.waypoint.cancel"),
+            Texts.translatable("confluxmap.screen.waypoint.cancel"),
             button -> onClose()
         ));
     }
@@ -116,7 +116,7 @@ public final class WaypointCreateTargetScreen extends Screen {
         textRenderer.drawWithShadow(
             matrices, title, width / 2f - textRenderer.getWidth(title) / 2f, 20, 0xFFFFFFFF
         );
-        final String coords = textRenderer.trimToWidth(new TranslatableText(
+        final String coords = textRenderer.trimToWidth(Texts.translatable(
             "confluxmap.screen.waypoint.preview.coords",
             formatCoordinate(x), formatCoordinate(y), formatCoordinate(z)
         ).getString(), Math.max(40, width - 24));
@@ -125,7 +125,7 @@ public final class WaypointCreateTargetScreen extends Screen {
         );
         if (sharedAvailability != null && sharedAvailability.enabled()) {
             final String status = textRenderer.trimToWidth(
-                new TranslatableText(statusKey()).getString(), Math.max(40, width - 24)
+                Texts.translatable(statusKey()).getString(), Math.max(40, width - 24)
             );
             textRenderer.drawWithShadow(
                 matrices,

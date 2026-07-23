@@ -7,6 +7,7 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
+import cn.net.rms.confluxmap.compat.Texts;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -15,7 +16,6 @@ import java.util.Optional;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.DeathScreen;
-import net.minecraft.text.TranslatableText;
 
 /**
  * Watches for the local player's death screen appearing (edge-triggered:
@@ -71,7 +71,7 @@ public final class DeathWatcher {
             return;
         }
         final PlayerView player = playerView.get();
-        final String name = new TranslatableText("confluxmap.waypoint.death.name").getString()
+        final String name = Texts.translatable("confluxmap.waypoint.death.name").getString()
             + " " + LocalTime.now().format(TIME_FORMAT);
         final Waypoint death = Waypoint.create(
             name, player.dimension(), player.blockX(), player.blockY(), player.blockZ(),

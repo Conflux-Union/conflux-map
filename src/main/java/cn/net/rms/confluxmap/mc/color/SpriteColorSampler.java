@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.color;
 
+import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.core.util.Argb;
 import java.util.ArrayList;
 import java.util.List;
@@ -38,8 +39,8 @@ public final class SpriteColorSampler {
     /** §2: the alpha floor - both a "skip this pixel" threshold while averaging and a final clamp. */
     private static final int ALPHA_FLOOR = 27;
     private static final int UNRESOLVED_ARGB = Argb.pack(ALPHA_FLOOR, 0, 0, 0);
-    private static final Identifier WATER_STILL = new Identifier("block/water_still");
-    private static final Identifier LAVA_STILL = new Identifier("block/lava_still");
+    private static final Identifier WATER_STILL = Ids.of("block/water_still");
+    private static final Identifier LAVA_STILL = Ids.of("block/lava_still");
 
     private final MinecraftClient client;
     private final Random modelRandom = new Random(42L);

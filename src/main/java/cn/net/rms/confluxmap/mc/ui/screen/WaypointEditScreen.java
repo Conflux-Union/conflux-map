@@ -8,6 +8,7 @@ import cn.net.rms.confluxmap.core.waypoint.WaypointSet;
 import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.compat.Texts;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,7 +20,6 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.Text;
-import net.minecraft.text.TranslatableText;
 
 /**
  * Create/edit form for one waypoint: name, X/Y/Z (raw local coordinates in
@@ -81,7 +81,7 @@ public final class WaypointEditScreen extends Screen {
         final boolean visible,
         final CreateTarget createTarget
     ) {
-        super(new TranslatableText(titleKey(editingId, createTarget)));
+        super(Texts.translatable(titleKey(editingId, createTarget)));
         this.parent = parent;
         this.editingId = editingId;
         this.dimensionId = dimensionId;
@@ -243,13 +243,13 @@ public final class WaypointEditScreen extends Screen {
         }
 
         doneButton = addDrawableChild(new ButtonWidget(
-            centerX - 104, height - 32, 100, FIELD_HEIGHT, new TranslatableText("confluxmap.screen.waypoint.done"), b -> onDone()
+            centerX - 104, height - 32, 100, FIELD_HEIGHT, Texts.translatable("confluxmap.screen.waypoint.done"), b -> onDone()
         ));
         if (createTarget == CreateTarget.LOCAL) {
             doneButton.active = boundLocalStore != null && boundLocalStore.persistenceWritable();
         }
         addDrawableChild(new ButtonWidget(
-            centerX + 4, height - 32, 100, FIELD_HEIGHT, new TranslatableText("confluxmap.screen.waypoint.cancel"), b -> onCancel()
+            centerX + 4, height - 32, 100, FIELD_HEIGHT, Texts.translatable("confluxmap.screen.waypoint.cancel"), b -> onCancel()
         ));
     }
 
@@ -288,7 +288,7 @@ public final class WaypointEditScreen extends Screen {
     private Text selectedSetLabel() {
         final String name = selectedSetName();
         return name.isEmpty()
-            ? new TranslatableText("confluxmap.screen.waypoint.set_default")
+            ? Texts.translatable("confluxmap.screen.waypoint.set_default")
             : Text.of(name);
     }
 
@@ -377,12 +377,12 @@ public final class WaypointEditScreen extends Screen {
     public void render(final MatrixStack matrices, final int mouseX, final int mouseY, final float tickDelta) {
         renderBackground(matrices);
         drawCenteredLabel(matrices, getTitle().getString(), 18);
-        drawCenteredLabel(matrices, new TranslatableText("confluxmap.screen.waypoint.name").getString(), 32);
-        drawCenteredLabel(matrices, new TranslatableText("confluxmap.screen.waypoint.coords").getString(), 68);
+        drawCenteredLabel(matrices, Texts.translatable("confluxmap.screen.waypoint.name").getString(), 32);
+        drawCenteredLabel(matrices, Texts.translatable("confluxmap.screen.waypoint.coords").getString(), 68);
         if (createTarget == CreateTarget.LOCAL) {
-            drawCenteredLabel(matrices, new TranslatableText("confluxmap.screen.waypoint.set").getString(), 104);
+            drawCenteredLabel(matrices, Texts.translatable("confluxmap.screen.waypoint.set").getString(), 104);
         }
-        drawCenteredLabel(matrices, new TranslatableText("confluxmap.screen.waypoint.color").getString(), 140);
+        drawCenteredLabel(matrices, Texts.translatable("confluxmap.screen.waypoint.color").getString(), 140);
         super.render(matrices, mouseX, mouseY, tickDelta);
     }
 
