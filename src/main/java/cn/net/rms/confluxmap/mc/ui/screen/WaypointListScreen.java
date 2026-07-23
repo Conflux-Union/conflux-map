@@ -272,7 +272,7 @@ public final class WaypointListScreen extends Screen {
                 contentLeft(),
                 height - 24,
                 createWidth,
-                18,
+                20,
                 fitButtonLabel(new TranslatableText(
                     tab == Tab.LOCAL
                         ? "confluxmap.screen.waypoints.create_local"
@@ -290,7 +290,7 @@ public final class WaypointListScreen extends Screen {
                     contentLeft() + createWidth + GAP,
                     height - 24,
                     createWidth,
-                    18,
+                    20,
                     fitButtonLabel(new TranslatableText("confluxmap.screen.waypoints.import_open"), createWidth),
                     button -> openImport(store)
                 ));
@@ -301,7 +301,7 @@ public final class WaypointListScreen extends Screen {
             contentRight() - 80,
             height - 24,
             80,
-            18,
+            20,
             new TranslatableText("confluxmap.screen.waypoint.done"),
             button -> onClose()
         ));
