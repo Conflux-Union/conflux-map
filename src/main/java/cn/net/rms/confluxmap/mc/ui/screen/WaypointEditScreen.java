@@ -9,6 +9,7 @@ import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.compat.Texts;
+import cn.net.rms.confluxmap.compat.Widgets;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -213,7 +214,7 @@ public final class WaypointEditScreen extends Screen {
         if (createTarget == CreateTarget.LOCAL) {
             setNames = localSetNames();
             selectedSetIndex = Math.max(0, setNames.indexOf(initialGroup));
-            setButton = addDrawableChild(new ButtonWidget(
+            setButton = addDrawableChild(Widgets.button(
                 centerX - fieldWidth / 2,
                 114,
                 fieldWidth,
@@ -242,13 +243,13 @@ public final class WaypointEditScreen extends Screen {
             });
         }
 
-        doneButton = addDrawableChild(new ButtonWidget(
+        doneButton = addDrawableChild(Widgets.button(
             centerX - 104, height - 32, 100, FIELD_HEIGHT, Texts.translatable("confluxmap.screen.waypoint.done"), b -> onDone()
         ));
         if (createTarget == CreateTarget.LOCAL) {
             doneButton.active = boundLocalStore != null && boundLocalStore.persistenceWritable();
         }
-        addDrawableChild(new ButtonWidget(
+        addDrawableChild(Widgets.button(
             centerX + 4, height - 32, 100, FIELD_HEIGHT, Texts.translatable("confluxmap.screen.waypoint.cancel"), b -> onCancel()
         ));
     }

@@ -17,6 +17,7 @@ import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
+import cn.net.rms.confluxmap.compat.Widgets;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -268,7 +269,7 @@ public final class WaypointListScreen extends Screen {
     private void addBottomButtons(final WaypointStore store) {
         if (tab != Tab.LOCKED) {
             final int createWidth = tab == Tab.LOCAL ? bottomActionWidth() : 116;
-            final ButtonWidget create = addDrawableChild(new ButtonWidget(
+            final ButtonWidget create = addDrawableChild(Widgets.button(
                 contentLeft(),
                 height - 24,
                 createWidth,
@@ -286,7 +287,7 @@ public final class WaypointListScreen extends Screen {
                 create.active = store != null && store.persistenceWritable();
             }
             if (tab == Tab.LOCAL) {
-                final ButtonWidget importButton = addDrawableChild(new ButtonWidget(
+                final ButtonWidget importButton = addDrawableChild(Widgets.button(
                     contentLeft() + createWidth + GAP,
                     height - 24,
                     createWidth,
@@ -297,7 +298,7 @@ public final class WaypointListScreen extends Screen {
                 importButton.active = store != null && store.persistenceWritable();
             }
         }
-        addDrawableChild(new ButtonWidget(
+        addDrawableChild(Widgets.button(
             contentRight() - 80,
             height - 24,
             80,
@@ -326,7 +327,7 @@ public final class WaypointListScreen extends Screen {
         final int totalWidth = tabWidth * tabs.size() + GAP * (tabs.size() - 1);
         int x = width / 2 - totalWidth / 2;
         for (final Tab candidate : tabs) {
-            final ButtonWidget button = addDrawableChild(new ButtonWidget(
+            final ButtonWidget button = addDrawableChild(Widgets.button(
                 x,
                 28,
                 tabWidth,
@@ -355,7 +356,7 @@ public final class WaypointListScreen extends Screen {
         addSetDropdownButton(SetDropdown.FILTER, x, TOOLBAR_Y, filterWidth, setFilterLabel(), store);
         final boolean allFilteredSelected = !filteredLocalIds.isEmpty()
             && selectedWaypointIds.containsAll(filteredLocalIds);
-        final ButtonWidget selectAll = addDrawableChild(new ButtonWidget(
+        final ButtonWidget selectAll = addDrawableChild(Widgets.button(
             x + filterWidth + GAP,
             TOOLBAR_Y,
             selectWidth,
@@ -382,7 +383,7 @@ public final class WaypointListScreen extends Screen {
         );
         final int secondRowWidth = clearWidth + targetWidth + moveWidth + GAP * 2;
         final int secondRowX = contentLeft() + Math.max(0, (contentWidth() - secondRowWidth) / 2);
-        final ButtonWidget clearSelection = addDrawableChild(new ButtonWidget(
+        final ButtonWidget clearSelection = addDrawableChild(Widgets.button(
             secondRowX, secondY, clearWidth, TOOLBAR_HEIGHT,
             fitButtonLabel(selectionClearLabel(), clearWidth),
             button -> clearSelection()
@@ -396,7 +397,7 @@ public final class WaypointListScreen extends Screen {
             moveTargetLabel(),
             store
         );
-        final ButtonWidget move = addDrawableChild(new ButtonWidget(
+        final ButtonWidget move = addDrawableChild(Widgets.button(
             secondRowX + clearWidth + GAP + targetWidth + GAP,
             secondY,
             moveWidth,
@@ -418,7 +419,7 @@ public final class WaypointListScreen extends Screen {
         );
         final boolean allFilteredSelected = !filteredLocalIds.isEmpty()
             && selectedWaypointIds.containsAll(filteredLocalIds);
-        final ButtonWidget selectAll = addDrawableChild(new ButtonWidget(
+        final ButtonWidget selectAll = addDrawableChild(Widgets.button(
             contentLeft() + filterWidth + GAP,
             TOOLBAR_Y,
             selectWidth,
@@ -439,7 +440,7 @@ public final class WaypointListScreen extends Screen {
         final int firstColumnWidth = Math.max(1, (contentWidth() - GAP * 2) / 3);
         final int batchActionsY = TOOLBAR_Y + TOOLBAR_HEIGHT + GAP;
         int x = contentLeft();
-        final ButtonWidget clearSelection = addDrawableChild(new ButtonWidget(
+        final ButtonWidget clearSelection = addDrawableChild(Widgets.button(
             x, batchActionsY, firstColumnWidth, TOOLBAR_HEIGHT,
             fitButtonLabel(selectionClearLabel(), firstColumnWidth),
             button -> clearSelection()
@@ -455,7 +456,7 @@ public final class WaypointListScreen extends Screen {
             store
         );
         x += firstColumnWidth + GAP;
-        final ButtonWidget move = addDrawableChild(new ButtonWidget(
+        final ButtonWidget move = addDrawableChild(Widgets.button(
             x, batchActionsY, Math.max(1, contentRight() - x), TOOLBAR_HEIGHT,
             fitButtonLabel(
                 Texts.translatable("confluxmap.screen.waypoints.selection_move", selectedWaypointIds.size()),
@@ -521,7 +522,7 @@ public final class WaypointListScreen extends Screen {
 
         if (row.local() != null) {
             final Waypoint waypoint = row.local();
-            final ButtonWidget selected = addDrawableChild(new ButtonWidget(
+            final ButtonWidget selected = addDrawableChild(Widgets.button(
                 contentLeft() + ROW_PADDING,
                 buttonY,
                 CHECK_WIDTH,
@@ -530,7 +531,7 @@ public final class WaypointListScreen extends Screen {
                 button -> toggleSelected(renderedStore, waypoint.id)
             ));
             selected.active = renderedStore != null && renderedStore.persistenceWritable();
-            final ButtonWidget visibility = addDrawableChild(new ButtonWidget(
+            final ButtonWidget visibility = addDrawableChild(Widgets.button(
                 primaryX,
                 buttonY,
                 actionWidth,
@@ -543,7 +544,7 @@ public final class WaypointListScreen extends Screen {
                 button -> toggleVisible(renderedStore, waypoint)
             ));
             visibility.active = renderedStore != null && renderedStore.persistenceWritable();
-            addDrawableChild(new ButtonWidget(
+            addDrawableChild(Widgets.button(
                 secondaryX,
                 buttonY,
                 actionWidth,
@@ -553,7 +554,7 @@ public final class WaypointListScreen extends Screen {
             ));
         } else {
             final SharedWaypoint waypoint = row.shared();
-            addDrawableChild(new ButtonWidget(
+            addDrawableChild(Widgets.button(
                 primaryX,
                 buttonY,
                 actionWidth,
@@ -561,7 +562,7 @@ public final class WaypointListScreen extends Screen {
                 fitButtonLabel(Texts.translatable("confluxmap.screen.waypoints.chat"), actionWidth),
                 button -> openSharedChat(waypoint)
             ));
-            final ButtonWidget lock = addDrawableChild(new ButtonWidget(
+            final ButtonWidget lock = addDrawableChild(Widgets.button(
                 secondaryX,
                 buttonY,
                 actionWidth,
@@ -577,7 +578,7 @@ public final class WaypointListScreen extends Screen {
         }
 
         final boolean pendingThis = row.id().equals(pendingDeleteId);
-        final ButtonWidget delete = addDrawableChild(new ButtonWidget(
+        final ButtonWidget delete = addDrawableChild(Widgets.button(
             deleteX,
             buttonY,
             deleteWidth,
@@ -758,7 +759,7 @@ public final class WaypointListScreen extends Screen {
         final Text label,
         final WaypointStore store
     ) {
-        final ButtonWidget button = addDrawableChild(new ButtonWidget(
+        final ButtonWidget button = addDrawableChild(Widgets.button(
             x,
             y,
             buttonWidth,

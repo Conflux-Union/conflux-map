@@ -6,6 +6,7 @@ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.compat.Texts;
 import java.util.Arrays;
 import java.util.function.BooleanSupplier;
@@ -145,7 +146,7 @@ public final class ConfigScreen extends Screen {
         clearChildren();
         addTabs();
         addRows();
-        addDrawableChild(new ButtonWidget(
+        addDrawableChild(Widgets.button(
             width / 2 - 50, height - BOTTOM_MARGIN + 4, 100, 20,
             Texts.translatable("confluxmap.screen.waypoint.done"), b -> onClose()
         ));
@@ -157,7 +158,7 @@ public final class ConfigScreen extends Screen {
         final int totalWidth = tabWidth * categories.length + TAB_GAP * (categories.length - 1);
         int x = width / 2 - totalWidth / 2;
         for (final Category c : categories) {
-            final ButtonWidget tab = new ButtonWidget(
+            final ButtonWidget tab = Widgets.button(
                 x, TAB_Y, tabWidth, TAB_HEIGHT, Texts.translatable(c.labelKey), b -> selectCategory(c)
             );
             // Disabling the current tab both marks it visually (dimmed, per vanilla button
@@ -318,7 +319,7 @@ public final class ConfigScreen extends Screen {
         final boolean active
     ) {
         if (rowVisible(y)) {
-            final ButtonWidget button = addDrawableChild(new ButtonWidget(
+            final ButtonWidget button = addDrawableChild(Widgets.button(
                 rowX(), y, rowWidth, ROW_HEIGHT - 2, boolLabel(labelKey, getter.getAsBoolean()),
                 b -> {
                     final boolean next = !getter.getAsBoolean();
@@ -340,7 +341,7 @@ public final class ConfigScreen extends Screen {
         final Function<T, String> valueKeyFn
     ) {
         if (rowVisible(y)) {
-            addDrawableChild(new ButtonWidget(
+            addDrawableChild(Widgets.button(
                 rowX(), y, rowWidth, ROW_HEIGHT - 2, enumLabel(labelKey, getter.get(), valueKeyFn),
                 b -> {
                     final T next = nextValue(values, getter.get());
@@ -354,7 +355,7 @@ public final class ConfigScreen extends Screen {
 
     private int addZoomRow(final int y) {
         if (rowVisible(y)) {
-            addDrawableChild(new ButtonWidget(
+            addDrawableChild(Widgets.button(
                 rowX(), y, rowWidth, ROW_HEIGHT - 2, zoomLabel(config.minimapZoomIndex),
                 b -> {
                     final int next = (config.minimapZoomIndex + 1) % ZOOM_VALUE_KEYS.length;

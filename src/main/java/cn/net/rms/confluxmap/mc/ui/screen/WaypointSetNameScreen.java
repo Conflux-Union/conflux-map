@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
+import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.compat.Texts;
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -64,7 +65,7 @@ final class WaypointSetNameScreen extends Screen {
         setInitialFocus(nameField);
 
         final int buttonY = nameField.y + 30;
-        doneButton = addDrawableChild(new ButtonWidget(
+        doneButton = addDrawableChild(Widgets.button(
             centerX - 104,
             buttonY,
             100,
@@ -72,7 +73,7 @@ final class WaypointSetNameScreen extends Screen {
             Texts.translatable("confluxmap.screen.waypoint.done"),
             button -> submit()
         ));
-        addDrawableChild(new ButtonWidget(
+        addDrawableChild(Widgets.button(
             centerX + 4,
             buttonY,
             100,

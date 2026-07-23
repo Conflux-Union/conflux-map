@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.compat.Texts;
 import java.math.BigDecimal;
 import net.minecraft.client.MinecraftClient;
@@ -51,7 +52,7 @@ public final class WaypointCreateTargetScreen extends Screen {
         final int left = width / 2 - 100;
         final int top = Math.max(48, height / 2 - (sharedAvailability.enabled() ? 54 : 42));
         int buttonY = top;
-        addDrawableChild(new ButtonWidget(
+        addDrawableChild(Widgets.button(
             left, buttonY, 200, 20,
             Texts.translatable("confluxmap.screen.waypoint.create_local"),
             button -> MinecraftClient.getInstance().setScreen(
@@ -60,7 +61,7 @@ public final class WaypointCreateTargetScreen extends Screen {
         ));
         buttonY += 24;
         if (sharedAvailability.enabled()) {
-            publicButton = addDrawableChild(new ButtonWidget(
+            publicButton = addDrawableChild(Widgets.button(
                 left, buttonY, 200, 20,
                 Texts.translatable("confluxmap.screen.waypoint.create_public"),
                 button -> MinecraftClient.getInstance().setScreen(
@@ -70,7 +71,7 @@ public final class WaypointCreateTargetScreen extends Screen {
             publicButton.active = sharedAvailability.ready();
             buttonY += 24;
         }
-        addDrawableChild(new ButtonWidget(
+        addDrawableChild(Widgets.button(
             left, buttonY, 200, 20,
             Texts.translatable("confluxmap.screen.waypoint.create_chat"),
             button -> MinecraftClient.getInstance().setScreen(
@@ -78,7 +79,7 @@ public final class WaypointCreateTargetScreen extends Screen {
             )
         ));
         buttonY += 30;
-        addDrawableChild(new ButtonWidget(
+        addDrawableChild(Widgets.button(
             left, buttonY, 200, 20,
             Texts.translatable("confluxmap.screen.waypoint.cancel"),
             button -> onClose()

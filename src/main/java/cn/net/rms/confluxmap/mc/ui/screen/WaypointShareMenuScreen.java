@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.compat.Texts;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
@@ -39,7 +40,7 @@ public final class WaypointShareMenuScreen extends Screen {
         final int top = Math.max(54, height / 2 - (sharedAvailability.enabled() ? 42 : 30));
         int buttonY = top;
         if (sharedAvailability.enabled()) {
-            publishButton = addDrawableChild(new ButtonWidget(
+            publishButton = addDrawableChild(Widgets.button(
                 left, buttonY, 200, 20,
                 Texts.translatable("confluxmap.screen.waypoint.publish"),
                 button -> MinecraftClient.getInstance().setScreen(
@@ -49,7 +50,7 @@ public final class WaypointShareMenuScreen extends Screen {
             updatePublishButton();
             buttonY += 24;
         }
-        addDrawableChild(new ButtonWidget(
+        addDrawableChild(Widgets.button(
             left, buttonY, 200, 20,
             Texts.translatable("confluxmap.screen.waypoint.send_chat"),
             button -> MinecraftClient.getInstance().setScreen(
@@ -57,7 +58,7 @@ public final class WaypointShareMenuScreen extends Screen {
             )
         ));
         buttonY += 30;
-        addDrawableChild(new ButtonWidget(
+        addDrawableChild(Widgets.button(
             left, buttonY, 200, 20,
             Texts.translatable("confluxmap.screen.waypoint.cancel"),
             button -> onClose()

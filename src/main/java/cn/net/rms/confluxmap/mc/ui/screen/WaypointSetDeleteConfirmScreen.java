@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
+import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.compat.Texts;
 import java.util.Objects;
 import net.minecraft.client.MinecraftClient;
@@ -45,7 +46,7 @@ final class WaypointSetDeleteConfirmScreen extends Screen {
     @Override
     protected void init() {
         final int centerX = width / 2;
-        confirmButton = addDrawableChild(new ButtonWidget(
+        confirmButton = addDrawableChild(Widgets.button(
             centerX - 104,
             height - 32,
             100,
@@ -53,7 +54,7 @@ final class WaypointSetDeleteConfirmScreen extends Screen {
             Texts.translatable("confluxmap.screen.waypoint_set.delete.confirm"),
             button -> confirmDelete()
         ));
-        addDrawableChild(new ButtonWidget(
+        addDrawableChild(Widgets.button(
             centerX + 4,
             height - 32,
             100,

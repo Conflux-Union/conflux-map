@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatCodec;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.compat.Texts;
 import java.math.BigDecimal;
 import net.minecraft.client.MinecraftClient;
@@ -74,7 +75,7 @@ public final class WaypointShareConfirmScreen extends Screen {
         }
 
         final int centerX = width / 2;
-        confirmButton = addDrawableChild(new ButtonWidget(
+        confirmButton = addDrawableChild(Widgets.button(
             centerX - 104,
             height - 32,
             100,
@@ -91,7 +92,7 @@ public final class WaypointShareConfirmScreen extends Screen {
         } else {
             confirmButton.active = confluxPreview != null && xaeroPreview != null;
         }
-        addDrawableChild(new ButtonWidget(
+        addDrawableChild(Widgets.button(
             centerX + 4,
             height - 32,
             100,

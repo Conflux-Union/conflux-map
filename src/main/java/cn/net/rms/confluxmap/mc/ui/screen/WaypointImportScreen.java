@@ -7,6 +7,7 @@ import cn.net.rms.confluxmap.core.waypoint.migrate.ImportedWaypoint;
 import cn.net.rms.confluxmap.core.waypoint.migrate.MigrationSource;
 import cn.net.rms.confluxmap.core.waypoint.migrate.MigrationSourceScanner;
 import cn.net.rms.confluxmap.core.waypoint.migrate.WaypointImporter;
+import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.compat.Texts;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -90,7 +91,7 @@ final class WaypointImportScreen extends Screen {
         final int rowLeft = centerX - rowWidth / 2;
         for (int i = 0; i < sources.size(); i++) {
             final int index = i;
-            final ButtonWidget toggle = addDrawableChild(new ButtonWidget(
+            final ButtonWidget toggle = addDrawableChild(Widgets.button(
                 rowLeft,
                 LIST_TOP + i * ROW_HEIGHT,
                 20,
@@ -101,7 +102,7 @@ final class WaypointImportScreen extends Screen {
             toggle.active = result == null;
         }
 
-        importButton = addDrawableChild(new ButtonWidget(
+        importButton = addDrawableChild(Widgets.button(
             centerX - 104,
             height - 32,
             100,
@@ -110,7 +111,7 @@ final class WaypointImportScreen extends Screen {
             button -> runImport()
         ));
         importButton.active = result == null && selectedWaypointCount() > 0 && availabilityErrorKey() == null;
-        addDrawableChild(new ButtonWidget(
+        addDrawableChild(Widgets.button(
             centerX + 4,
             height - 32,
             100,
