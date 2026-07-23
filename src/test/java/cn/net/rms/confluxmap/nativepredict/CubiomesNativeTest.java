@@ -47,6 +47,12 @@ class CubiomesNativeTest {
         return mc.getAsInt();
     }
 
+    private static int mc21() {
+        final OptionalInt mc = McVersions.toCubiomes("1.21.1");
+        assertTrue(mc.isPresent(), "McVersions must know \"1.21.1\"");
+        return mc.getAsInt();
+    }
+
     private static CubiomesContext open(final int dim) {
         final CubiomesContext ctx = CubiomesContext.create(mc17(), SEED, dim, 0);
         assertNotNull(ctx, "context creation must succeed for a valid version/dim");
@@ -192,6 +198,23 @@ class CubiomesNativeTest {
             final int[] ids = new int[32 * 32];
             ctx.heights(0, 0, 32, 32, y, ids);
             assertArrayEquals(y, fromThread[0], "two independent contexts (one per thread) must agree exactly");
+        }
+
+        // Seed 0, tile (4,26): Vanilla 1.21.1 generates a small island that the old
+        // NP_DEPTH-only approximation submerged. Values come directly from
+        // ChunkGenerator#getHeight(OCEAN_FLOOR_WG) at the corresponding block coordinates.
+        try (CubiomesContext ctx = CubiomesContext.create(mc21(), 0L, OVERWORLD, 0)) {
+            assertNotNull(ctx);
+            final int width = 10;
+            final int[] y = new int[width * 5];
+            final int[] ids = new int[width * 5];
+            assertEquals(0, ctx.heights(295, 1678, width, 5, y, ids));
+            assertEquals(63, y[0]); // block (1180,6712)
+            assertEquals(64, y[1 * width + 2]); // block (1188,6716)
+            assertEquals(64, y[1 * width + 4]); // block (1196,6716)
+            assertEquals(64, y[2 * width + 5]); // block (1200,6720)
+            assertEquals(63, y[3 * width + 7]); // block (1208,6724)
+            assertEquals(65, y[4 * width + 9]); // block (1216,6728)
         }
     }
 

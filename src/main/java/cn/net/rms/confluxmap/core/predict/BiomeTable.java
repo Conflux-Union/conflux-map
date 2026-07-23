@@ -16,13 +16,9 @@ import java.util.Set;
  *
  * <p>Ids and dimension/existence rules were read directly off the vendored {@code
  * native/cubiomes/biomes.c} ({@code biomeExists}/{@code isOverworld}/{@code getDimension}/{@code
- * isOceanic}) for {@code MC_1_17_1} (cubiomes version int 21) - not guessed from the changelog.
- * Every id where {@code isOverworld(21, id)} or {@code getDimension(id) == DIM_END} holds true has
- * an entry here (see {@code BiomeTableTest} for the frozen parity list); notably this EXCLUDES
- * {@code mountain_edge} (removed from 1.7+ generation), {@code deep_warm_ocean} (never actually
- * assigned by vanilla's own layers), {@code the_void} (technical/placeholder only), and {@code
- * dripstone_caves}/{@code lush_caves} (their cave-biome-reveal-at-surface layer wasn't added
- * until 1.18, even though the ids already existed in 1.17's enum).
+ * isOceanic}), not guessed from changelogs. Every id generated in the Overworld by any supported
+ * version, plus the End ids, has an entry here (see {@code BiomeTableTest} for the frozen parity
+ * list). Aliases introduced by biome renames reuse their older numeric ids.
  *
  * <p>{@code // tuning data, not behavior}: treeCover values and the exact fallback colors below
  * are approximations the plan explicitly leaves to implementer judgment ("tune later"); nothing
@@ -174,6 +170,9 @@ public final class BiomeTable {
         final int giant_spruce_taiga_hills = 161, modified_gravelly_mountains = 162, shattered_savanna = 163;
         final int shattered_savanna_plateau = 164, eroded_badlands = 165, modified_wooded_badlands_plateau = 166;
         final int modified_badlands_plateau = 167, bamboo_jungle = 168, bamboo_jungle_hills = 169;
+        final int dripstone_caves = 174, lush_caves = 175, meadow = 177, grove = 178;
+        final int snowy_slopes = 179, jagged_peaks = 180, frozen_peaks = 181, stony_peaks = 182;
+        final int deep_dark = 183, mangrove_swamp = 184, cherry_grove = 185, pale_garden = 186;
 
         final int green = DEFAULT_GRASS_TINT;
         final int foliageGreen = DEFAULT_FOLIAGE_TINT;
@@ -249,6 +248,25 @@ public final class BiomeTable {
         put(new Entry(
             SurfaceKind.LAND, false, 0.15, LAND_BASE, true, 0xFF6A7039, 0xFF6A7039, 0xFF617B64
         ), swamp, swamp_hills);
+
+        // Modern Overworld biomes. Cave biomes are retained because the 3D biome source may
+        // expose them beside cave openings; surface-oriented sampling normally selects one of
+        // the climate biomes below instead.
+        put(land(0.0, 0xFF8B8068, 0xFF708050), dripstone_caves, deep_dark);
+        put(land(0.12, 0xFF64A84A, 0xFF4FA63A), lush_caves);
+        put(land(0.02, 0xFF83B55B, 0xFF63A947), meadow);
+        put(new Entry(
+            SurfaceKind.SNOW, false, 0.22, SNOW_BASE, false, green, 0xFF3B6E3B, DEFAULT_WATER_TINT
+        ), grove);
+        put(new Entry(
+            SurfaceKind.SNOW, false, 0.0, SNOW_BASE, false, green, foliageGreen, DEFAULT_WATER_TINT
+        ), snowy_slopes, jagged_peaks, frozen_peaks);
+        put(land(0.0, NEUTRAL_TINT, foliageGreen), stony_peaks);
+        put(new Entry(
+            SurfaceKind.LAND, false, 0.45, LAND_BASE, true, 0xFF6A7039, 0xFF4C763C, 0xFF617B64
+        ), mangrove_swamp);
+        put(land(0.3, 0xFF83B55B, 0xFFFF91C8), cherry_grove);
+        put(land(0.45, 0xFF77816E, 0xFF879184), pale_garden);
 
         // The End: pale end-stone look, no vegetation, never water.
         put(new Entry(

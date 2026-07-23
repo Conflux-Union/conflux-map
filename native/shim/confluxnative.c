@@ -70,6 +70,16 @@ static int cfxValidScale(jint scale) {
     return scale == 1 || scale == 4 || scale == 16 || scale == 64 || scale == 256;
 }
 
+static int cfxGenerateBiomes(CfxContext *ctx, int *out, Range r) {
+    if (ctx->dim == DIM_OVERWORLD && ctx->mc >= MC_1_18
+        && (r.scale == 1 || r.scale == 4)) {
+        return mapOverworldSurfaceBiome(
+            out, &ctx->g.bn, ctx->g.sha, r.scale, r.x, r.z, r.sx, r.sz
+        );
+    }
+    return genBiomes(&ctx->g, out, r);
+}
+
 JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxAbi(
     JNIEnv *env, jclass clazz
 ) {
@@ -137,7 +147,7 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     if (cache == NULL) {
         return CFX_ERR_ALLOC;
     }
-    const int err = genBiomes(&ctx->g, cache, r);
+    const int err = cfxGenerateBiomes(ctx, cache, r);
     if (err != 0) {
         free(cache);
         return CFX_ERR_GENERATION;
@@ -193,7 +203,7 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
             free(sampled);
             return CFX_ERR_ALLOC;
         }
-        const int err = genBiomes(&ctx->g, dense, r);
+        const int err = cfxGenerateBiomes(ctx, dense, r);
         if (err != 0) {
             free(dense);
             free(sampled);
@@ -213,7 +223,7 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
                 free(sampled);
                 return CFX_ERR_ALLOC;
             }
-            const int err = genBiomes(&ctx->g, row, r);
+            const int err = cfxGenerateBiomes(ctx, row, r);
             if (err != 0) {
                 free(row);
                 free(sampled);

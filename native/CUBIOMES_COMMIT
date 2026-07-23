@@ -1,7 +1,7 @@
 upstream: https://github.com/Cubitect/cubiomes
 fork:     https://github.com/Conflux-Union/cubiomes (this project's fork)
-commit:   da00a4aa9f26a16fa6b3c1f3c6cd3a96842fc622
-commit date: 2026-07-23T09:08:21-07:00
+commit:   071ca3452ea2041b58a03a627904594fa3204fa4
+commit date: 2026-07-24T03:32:50+08:00
 pinned via: native/cubiomes git submodule (converted from a vendored copy on 2026-07-17)
 license: MIT (see native/cubiomes/LICENSE)
 
@@ -13,9 +13,12 @@ Fork contents on top of upstream master (e61f905):
     merging: over 20 seeds x 512x512 biome cells, the 1.21.4 and 1.21.5
     generators differ in 0.011% of cells and every single difference is
     dark_forest -> pale_garden, matching the 25w02a changelog.
+  - 071ca34 "generate modern overworld surfaces" (this project's own
+    addition), which ports the 1.18+ terrain density, cave, surface-height,
+    and surface-biome sampling needed by the built-in predictor.
 
 Files compiled from this commit by buildNativesHost/buildNativesAll
-(unmodified upstream sources, selected subset):
+(selected subset):
   biomenoise.c/h, biomes.c/h, generator.c/h, layers.c/h, noise.c/h,
   finders.c/h, terrain_features.c/h, rng.h, tables/btree18.h, tables/btree192.h,
   tables/btree19.h, tables/btree20.h, tables/btree21wd.h, tables/btree215.h
