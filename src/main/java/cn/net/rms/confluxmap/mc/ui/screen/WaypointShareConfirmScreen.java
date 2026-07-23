@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatCodec;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.compat.Texts;
 import java.math.BigDecimal;
@@ -16,7 +17,7 @@ import net.minecraft.text.OrderedText;
 import net.minecraft.text.StringVisitable;
 
 /** Explicit preview and confirmation boundary for every outward waypoint share. */
-public final class WaypointShareConfirmScreen extends Screen {
+public final class WaypointShareConfirmScreen extends ConfluxScreen {
     public enum Target { PUBLIC, CHAT }
 
     private static final int TEXT_COLOR = 0xFFFFFFFF;
@@ -175,39 +176,39 @@ public final class WaypointShareConfirmScreen extends Screen {
     }
 
     @Override
-    public void render(final MatrixStack matrices, final int mouseX, final int mouseY, final float tickDelta) {
-        renderBackground(matrices);
-        drawCentered(matrices, getTitle().getString(), 22, TEXT_COLOR);
+    protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
+        draw.renderBackground(this, mouseX, mouseY, tickDelta);
+        drawCentered(draw, getTitle().getString(), 22, TEXT_COLOR);
         if (target == Target.CHAT && confluxPreview != null && xaeroPreview != null) {
-            int y = drawWrapped(matrices, Texts.translatable(
+            int y = drawWrapped(draw, Texts.translatable(
                 "confluxmap.screen.waypoint.preview.chat_messages"
             ).getString(), 50, MUTED_TEXT_COLOR);
-            y = drawWrapped(matrices, confluxPreview, y + 4, TEXT_COLOR);
-            y = drawWrapped(matrices, xaeroPreview, y + 6, TEXT_COLOR);
-            drawCentered(matrices, Texts.translatable(
+            y = drawWrapped(draw, confluxPreview, y + 4, TEXT_COLOR);
+            y = drawWrapped(draw, xaeroPreview, y + 6, TEXT_COLOR);
+            drawCentered(draw, Texts.translatable(
                 "confluxmap.screen.waypoint.preview.audience_chat"
             ).getString(), y + 10, MUTED_TEXT_COLOR);
         } else {
-            drawCentered(matrices, Texts.translatable(
+            drawCentered(draw, Texts.translatable(
                 "confluxmap.screen.waypoint.preview.name", waypoint.name
             ).getString(), 50, TEXT_COLOR);
-            drawCentered(matrices, Texts.translatable(
+            drawCentered(draw, Texts.translatable(
                 "confluxmap.screen.waypoint.preview.dimension", waypoint.dimensionId.toString()
             ).getString(), 66, TEXT_COLOR);
-            drawCentered(matrices, Texts.translatable(
+            drawCentered(draw, Texts.translatable(
                 "confluxmap.screen.waypoint.preview.coords",
                 formatCoordinate(waypoint.x),
                 formatCoordinate(waypoint.y),
                 formatCoordinate(waypoint.z)
             ).getString(), 82, TEXT_COLOR);
-            drawCentered(matrices, Texts.translatable(
+            drawCentered(draw, Texts.translatable(
                 target == Target.PUBLIC
                     ? "confluxmap.screen.waypoint.preview.audience_public"
                     : "confluxmap.screen.waypoint.preview.audience_chat"
             ).getString(), 106, MUTED_TEXT_COLOR);
             if (target == Target.PUBLIC) {
                 drawCentered(
-                    matrices,
+                    draw,
                     Texts.translatable("confluxmap.screen.waypoint.public_immutable").getString(),
                     122,
                     MUTED_TEXT_COLOR
@@ -215,22 +216,21 @@ public final class WaypointShareConfirmScreen extends Screen {
             }
         }
         if (errorKey != null) {
-            drawCentered(matrices, Texts.translatable(errorKey).getString(), height - 50, ERROR_TEXT_COLOR);
+            drawCentered(draw, Texts.translatable(errorKey).getString(), height - 50, ERROR_TEXT_COLOR);
         }
-        super.render(matrices, mouseX, mouseY, tickDelta);
     }
 
-    private void drawCentered(final MatrixStack matrices, final String value, final int y, final int color) {
+    private void drawCentered(final GuiDraw draw, final String value, final int y, final int color) {
         final String text = textRenderer.trimToWidth(value, Math.max(40, width - 32));
-        textRenderer.drawWithShadow(matrices, text, width / 2f - textRenderer.getWidth(text) / 2f, y, color);
+        draw.drawTextWithShadow(textRenderer, text, width / 2f - textRenderer.getWidth(text) / 2f, y, color);
     }
 
     /** Draws every wrapped line of {@code value} and returns the y below the last line. */
-    private int drawWrapped(final MatrixStack matrices, final String value, final int y, final int color) {
+    private int drawWrapped(final GuiDraw draw, final String value, final int y, final int color) {
         int lineY = y;
         for (final OrderedText line : textRenderer.wrapLines(StringVisitable.plain(value), Math.max(40, width - 32))) {
-            textRenderer.drawWithShadow(
-                matrices, line, width / 2f - textRenderer.getWidth(line) / 2f, lineY, color
+            draw.drawTextWithShadow(
+                textRenderer, line, width / 2f - textRenderer.getWidth(line) / 2f, lineY, color
             );
             lineY += textRenderer.fontHeight + 1;
         }

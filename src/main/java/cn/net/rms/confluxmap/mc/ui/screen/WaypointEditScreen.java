@@ -8,6 +8,7 @@ import cn.net.rms.confluxmap.core.waypoint.WaypointSet;
 import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
 import java.math.BigDecimal;
@@ -16,6 +17,9 @@ import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import net.minecraft.client.MinecraftClient;
+//#if MC>=12000
+//$$ import net.minecraft.client.gui.DrawContext;
+//#endif
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
@@ -29,7 +33,7 @@ import net.minecraft.text.Text;
  * the normal/death type are fixed at creation and not editable here, per the
  * implementation brief.
  */
-public final class WaypointEditScreen extends Screen {
+public final class WaypointEditScreen extends ConfluxScreen {
     private enum CreateTarget { LOCAL, PUBLIC, CHAT }
 
     private static final Pattern NUMERIC = Pattern.compile("[+-]?\\d*(?:\\.\\d*)?(?:[eE][+-]?\\d*)?");
@@ -229,18 +233,29 @@ public final class WaypointEditScreen extends Screen {
         for (int i = 0; i < PRESET_COLORS.length; i++) {
             final int color = PRESET_COLORS[i];
             final int x = swatchLeft + i * (SWATCH_SIZE + SWATCH_GAP);
+            //#if MC>=11904
+            //$$ addDrawableChild(new ButtonWidget(
+            //$$     x, 150, SWATCH_SIZE, SWATCH_SIZE, Text.of(""),
+            //$$     b -> selectedColor = color, narration -> narration.get()
+            //$$ ) {
+            //$$     @Override
+            //$$     protected void renderWidget(
+            //$$         final DrawContext context,
+            //$$         final int mouseX,
+            //$$         final int mouseY,
+            //$$         final float delta
+            //$$     ) {
+            //$$         renderColorSwatch(GuiDraw.of(context), this, color);
+            //$$     }
+            //$$ });
+            //#else
             addDrawableChild(new ButtonWidget(x, 150, SWATCH_SIZE, SWATCH_SIZE, Text.of(""), b -> selectedColor = color) {
                 @Override
                 public void renderButton(final MatrixStack matrices, final int mouseX, final int mouseY, final float delta) {
-                    RenderUtil.fillRect(matrices, this.x, this.y, this.getWidth(), this.getHeight(), color | 0xFF000000);
-                    if (color == selectedColor) {
-                        RenderUtil.fillRect(matrices, this.x - 2, this.y - 2, this.getWidth() + 4, 2, 0xFFFFFFFF);
-                        RenderUtil.fillRect(matrices, this.x - 2, this.y + this.getHeight(), this.getWidth() + 4, 2, 0xFFFFFFFF);
-                        RenderUtil.fillRect(matrices, this.x - 2, this.y - 2, 2, this.getHeight() + 4, 0xFFFFFFFF);
-                        RenderUtil.fillRect(matrices, this.x + this.getWidth(), this.y - 2, 2, this.getHeight() + 4, 0xFFFFFFFF);
-                    }
+                    renderColorSwatch(GuiDraw.of(matrices), this, color);
                 }
             });
+            //#endif
         }
 
         doneButton = addDrawableChild(Widgets.button(
@@ -260,6 +275,19 @@ public final class WaypointEditScreen extends Screen {
         field.setTextPredicate(s -> NUMERIC.matcher(s).matches());
         field.setText(initial);
         return field;
+    }
+
+    private void renderColorSwatch(final GuiDraw draw, final ButtonWidget button, final int color) {
+        final MatrixStack matrices = draw.matrices();
+        final int x = Widgets.x(button);
+        final int y = Widgets.y(button);
+        RenderUtil.fillRect(matrices, x, y, button.getWidth(), button.getHeight(), color | 0xFF000000);
+        if (color == selectedColor) {
+            RenderUtil.fillRect(matrices, x - 2, y - 2, button.getWidth() + 4, 2, 0xFFFFFFFF);
+            RenderUtil.fillRect(matrices, x - 2, y + button.getHeight(), button.getWidth() + 4, 2, 0xFFFFFFFF);
+            RenderUtil.fillRect(matrices, x - 2, y - 2, 2, button.getHeight() + 4, 0xFFFFFFFF);
+            RenderUtil.fillRect(matrices, x + button.getWidth(), y - 2, 2, button.getHeight() + 4, 0xFFFFFFFF);
+        }
     }
 
     private List<String> localSetNames() {
@@ -375,20 +403,19 @@ public final class WaypointEditScreen extends Screen {
     }
 
     @Override
-    public void render(final MatrixStack matrices, final int mouseX, final int mouseY, final float tickDelta) {
-        renderBackground(matrices);
-        drawCenteredLabel(matrices, getTitle().getString(), 18);
-        drawCenteredLabel(matrices, Texts.translatable("confluxmap.screen.waypoint.name").getString(), 32);
-        drawCenteredLabel(matrices, Texts.translatable("confluxmap.screen.waypoint.coords").getString(), 68);
+    protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
+        draw.renderBackground(this, mouseX, mouseY, tickDelta);
+        drawCenteredLabel(draw, getTitle().getString(), 18);
+        drawCenteredLabel(draw, Texts.translatable("confluxmap.screen.waypoint.name").getString(), 32);
+        drawCenteredLabel(draw, Texts.translatable("confluxmap.screen.waypoint.coords").getString(), 68);
         if (createTarget == CreateTarget.LOCAL) {
-            drawCenteredLabel(matrices, Texts.translatable("confluxmap.screen.waypoint.set").getString(), 104);
+            drawCenteredLabel(draw, Texts.translatable("confluxmap.screen.waypoint.set").getString(), 104);
         }
-        drawCenteredLabel(matrices, Texts.translatable("confluxmap.screen.waypoint.color").getString(), 140);
-        super.render(matrices, mouseX, mouseY, tickDelta);
+        drawCenteredLabel(draw, Texts.translatable("confluxmap.screen.waypoint.color").getString(), 140);
     }
 
-    private void drawCenteredLabel(final MatrixStack matrices, final String text, final int y) {
+    private void drawCenteredLabel(final GuiDraw draw, final String text, final int y) {
         final int textWidth = textRenderer.getWidth(text);
-        textRenderer.drawWithShadow(matrices, text, width / 2f - textWidth / 2f, y, 0xFFFFFFFF);
+        draw.drawTextWithShadow(textRenderer, text, width / 2f - textWidth / 2f, y, 0xFFFFFFFF);
     }
 }

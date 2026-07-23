@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.compat.Texts;
 import net.minecraft.client.MinecraftClient;
@@ -12,7 +13,7 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.util.math.MatrixStack;
 
 /** Explicit choice between server publication and ordinary chat sharing. */
-public final class WaypointShareMenuScreen extends Screen {
+public final class WaypointShareMenuScreen extends ConfluxScreen {
     private final Screen parent;
     private final Waypoint waypoint;
     private final SharedWaypointClient sharedWaypoints;
@@ -90,25 +91,24 @@ public final class WaypointShareMenuScreen extends Screen {
     }
 
     @Override
-    public void render(final MatrixStack matrices, final int mouseX, final int mouseY, final float tickDelta) {
-        renderBackground(matrices);
+    protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
+        draw.renderBackground(this, mouseX, mouseY, tickDelta);
         final String title = textRenderer.trimToWidth(getTitle().getString() + ": " + waypoint.name, Math.max(40, width - 32));
-        textRenderer.drawWithShadow(
-            matrices, title, width / 2f - textRenderer.getWidth(title) / 2f, 24, 0xFFFFFFFF
+        draw.drawTextWithShadow(
+            textRenderer, title, width / 2f - textRenderer.getWidth(title) / 2f, 24, 0xFFFFFFFF
         );
         if (sharedAvailability != null && sharedAvailability.enabled()) {
             final String status = textRenderer.trimToWidth(
                 Texts.translatable(statusKey()).getString(), Math.max(40, width - 24)
             );
-            textRenderer.drawWithShadow(
-                matrices,
+            draw.drawTextWithShadow(
+                textRenderer,
                 status,
                 width / 2f - textRenderer.getWidth(status) / 2f,
                 height - 18,
                 0xFFB8B8B8
             );
         }
-        super.render(matrices, mouseX, mouseY, tickDelta);
     }
 
     private String statusKey() {

@@ -6,6 +6,7 @@ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.compat.Texts;
 import java.util.Arrays;
@@ -39,7 +40,7 @@ import net.minecraft.text.Text;
  * default, see {@code mc.input.Keybinds}) - there is no in-screen entry point, and no
  * ModMenu integration in M1.
  */
-public final class ConfigScreen extends Screen {
+public final class ConfigScreen extends ConfluxScreen {
     private enum Category {
         MINIMAP("confluxmap.screen.config.category.minimap"),
         LAYERS("confluxmap.screen.config.category.layers"),
@@ -124,7 +125,16 @@ public final class ConfigScreen extends Screen {
     }
 
     @Override
+    //#if MC>=12002
+    //$$ public boolean mouseScrolled(
+    //$$     final double mouseX,
+    //$$     final double mouseY,
+    //$$     final double horizontalAmount,
+    //$$     final double amount
+    //$$ ) {
+    //#else
     public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
+    //#endif
         final int maxScroll = Math.max(0, contentHeight - viewportHeight());
         final int next = Math.max(0, Math.min(maxScroll, scrollOffset - (int) Math.signum(amount) * ROW_HEIGHT));
         if (next != scrollOffset) {
@@ -459,11 +469,10 @@ public final class ConfigScreen extends Screen {
     }
 
     @Override
-    public void render(final MatrixStack matrices, final int mouseX, final int mouseY, final float tickDelta) {
-        renderBackground(matrices);
+    protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
+        draw.renderBackground(this, mouseX, mouseY, tickDelta);
         final String title = getTitle().getString();
-        textRenderer.drawWithShadow(matrices, title, width / 2f - textRenderer.getWidth(title) / 2f, 8, 0xFFFFFFFF);
-        super.render(matrices, mouseX, mouseY, tickDelta);
+        draw.drawTextWithShadow(textRenderer, title, width / 2f - textRenderer.getWidth(title) / 2f, 8, 0xFFFFFFFF);
     }
 
     /**

@@ -7,6 +7,7 @@ import cn.net.rms.confluxmap.core.waypoint.migrate.ImportedWaypoint;
 import cn.net.rms.confluxmap.core.waypoint.migrate.MigrationSource;
 import cn.net.rms.confluxmap.core.waypoint.migrate.MigrationSourceScanner;
 import cn.net.rms.confluxmap.core.waypoint.migrate.WaypointImporter;
+import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.compat.Texts;
 import java.nio.file.Path;
@@ -31,7 +32,7 @@ import net.minecraft.util.WorldSavePath;
  * {@link cn.net.rms.confluxmap.core.waypoint.WaypointService}); the user can
  * exclude a source before importing. Import applies once per screen visit.
  */
-final class WaypointImportScreen extends Screen {
+final class WaypointImportScreen extends ConfluxScreen {
     private static final int TEXT_COLOR = 0xFFFFFFFF;
     private static final int MUTED_TEXT_COLOR = 0xFFB8B8B8;
     private static final int SUCCESS_TEXT_COLOR = 0xFF7FFF7F;
@@ -197,19 +198,19 @@ final class WaypointImportScreen extends Screen {
     }
 
     @Override
-    public void render(final MatrixStack matrices, final int mouseX, final int mouseY, final float tickDelta) {
-        renderBackground(matrices);
-        drawCentered(matrices, getTitle().getString(), 24, TEXT_COLOR);
+    protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
+        draw.renderBackground(this, mouseX, mouseY, tickDelta);
+        drawCentered(draw, getTitle().getString(), 24, TEXT_COLOR);
         if (sources.isEmpty()) {
             drawCentered(
-                matrices,
+                draw,
                 Texts.translatable("confluxmap.screen.waypoint_import.empty").getString(),
                 LIST_TOP + 6,
                 MUTED_TEXT_COLOR
             );
         } else {
             drawCentered(
-                matrices,
+                draw,
                 Texts.translatable("confluxmap.screen.waypoint_import.hint").getString(),
                 44,
                 MUTED_TEXT_COLOR
@@ -224,20 +225,19 @@ final class WaypointImportScreen extends Screen {
                     source.waypoints().size()
                 ).getString();
                 final String fitted = textRenderer.trimToWidth(label, rowWidth() - 26);
-                textRenderer.drawWithShadow(
-                    matrices, fitted, rowLeft + 26, LIST_TOP + i * ROW_HEIGHT + 6,
+                draw.drawTextWithShadow(
+                    textRenderer, fitted, rowLeft + 26, LIST_TOP + i * ROW_HEIGHT + 6,
                     excludedSources.contains(i) ? MUTED_TEXT_COLOR : TEXT_COLOR
                 );
             }
         }
         if (result != null) {
-            drawCentered(matrices, Texts.translatable(
+            drawCentered(draw, Texts.translatable(
                 "confluxmap.screen.waypoint_import.result", result.imported(), result.duplicates()
             ).getString(), height - 50, SUCCESS_TEXT_COLOR);
         } else if (errorKey != null) {
-            drawCentered(matrices, Texts.translatable(errorKey).getString(), height - 50, ERROR_TEXT_COLOR);
+            drawCentered(draw, Texts.translatable(errorKey).getString(), height - 50, ERROR_TEXT_COLOR);
         }
-        super.render(matrices, mouseX, mouseY, tickDelta);
     }
 
     private int rowWidth() {
@@ -251,8 +251,8 @@ final class WaypointImportScreen extends Screen {
         };
     }
 
-    private void drawCentered(final MatrixStack matrices, final String value, final int y, final int color) {
+    private void drawCentered(final GuiDraw draw, final String value, final int y, final int color) {
         final String text = textRenderer.trimToWidth(value, Math.max(40, width - 32));
-        textRenderer.drawWithShadow(matrices, text, width / 2f - textRenderer.getWidth(text) / 2f, y, color);
+        draw.drawTextWithShadow(textRenderer, text, width / 2f - textRenderer.getWidth(text) / 2f, y, color);
     }
 }

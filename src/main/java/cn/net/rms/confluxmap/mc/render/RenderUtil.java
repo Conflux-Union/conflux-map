@@ -9,6 +9,11 @@ import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.Window;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
+//#if MC>=11900
+//$$ import org.joml.Quaternionf;
+//#else
+import net.minecraft.util.math.Vec3f;
+//#endif
 
 /**
  * Core-shader helpers for drawing dynamically-generated textures (map tiles) as flat GUI quads.
@@ -31,6 +36,14 @@ public final class RenderUtil {
 
     public static void bindTexture(final int glId) {
         RenderSystem.setShaderTexture(0, glId);
+    }
+
+    public static void rotateZ(final MatrixStack matrices, final float degrees) {
+        //#if MC>=11900
+        //$$ matrices.multiply(new Quaternionf().rotationZ((float) Math.toRadians(degrees)));
+        //#else
+        matrices.multiply(Vec3f.POSITIVE_Z.getDegreesQuaternion(degrees));
+        //#endif
     }
 
     /**

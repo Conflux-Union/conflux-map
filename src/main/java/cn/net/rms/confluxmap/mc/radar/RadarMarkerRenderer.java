@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.core.radar.RadarCategory;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
@@ -67,7 +68,7 @@ public final class RadarMarkerRenderer {
      * @param live the live entity if still loaded, or {@code null} to force the dot fallback
      */
     public static void draw(
-        final MatrixStack matrices,
+        final GuiDraw draw,
         final MinecraftClient client,
         final ConfluxConfig config,
         final EntityIconManager iconManager,
@@ -81,6 +82,7 @@ public final class RadarMarkerRenderer {
         final int yDelta,
         final Entity live
     ) {
+        final MatrixStack matrices = draw.matrices();
         final float alphaScale = entry.spectator() ? SPECTATOR_ALPHA : 1f;
         if (config.radarIconsEnabled && live != null) {
             final EntityIconManager.FaceIcon icon = iconManager.iconFor(live);
@@ -88,7 +90,7 @@ public final class RadarMarkerRenderer {
                 final int contourBase = contourBase(backdrop, blockX, blockZ, blocksPerPixel);
                 drawIcon(matrices, client, iconManager, icon, x, y, yDelta, alphaScale, contourBase);
                 if (config.radarShowPlayerNames && entry.category() == RadarCategory.PLAYER && entry.name() != null) {
-                    drawCenteredLine(client, matrices, entry.name(), x, y + ICON_NAME_OFFSET, alphaScale);
+                    drawCenteredLine(client, draw, entry.name(), x, y + ICON_NAME_OFFSET, alphaScale);
                 }
                 return;
             }
@@ -98,7 +100,7 @@ public final class RadarMarkerRenderer {
             case PLAYER:
                 RenderUtil.fillRect(matrices, x - 2f, y - 2f, 4f, 4f, color);
                 if (config.radarShowPlayerNames && entry.name() != null) {
-                    drawCenteredLine(client, matrices, entry.name(), x, y + 3f, alphaScale);
+                    drawCenteredLine(client, draw, entry.name(), x, y + 3f, alphaScale);
                 }
                 break;
             case HOSTILE:
@@ -217,13 +219,15 @@ public final class RadarMarkerRenderer {
 
     private static void drawCenteredLine(
         final MinecraftClient client,
-        final MatrixStack matrices,
+        final GuiDraw draw,
         final String text,
         final float centerX,
         final float y,
         final float alphaScale
     ) {
         final int width = client.textRenderer.getWidth(text);
-        client.textRenderer.drawWithShadow(matrices, text, centerX - width / 2f, y, Argb.scaleAlpha(TEXT_COLOR, alphaScale));
+        draw.drawTextWithShadow(
+            client.textRenderer, text, centerX - width / 2f, y, Argb.scaleAlpha(TEXT_COLOR, alphaScale)
+        );
     }
 }
