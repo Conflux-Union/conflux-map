@@ -267,22 +267,34 @@ public final class WaypointListScreen extends Screen {
 
     private void addBottomButtons(final WaypointStore store) {
         if (tab != Tab.LOCKED) {
+            final int createWidth = tab == Tab.LOCAL ? bottomActionWidth() : 116;
             final ButtonWidget create = addDrawableChild(new ButtonWidget(
                 contentLeft(),
                 height - 24,
-                116,
+                createWidth,
                 18,
-                new TranslatableText(
+                fitButtonLabel(new TranslatableText(
                     tab == Tab.LOCAL
                         ? "confluxmap.screen.waypoints.create_local"
                         : "confluxmap.screen.waypoints.create_public"
-                ),
+                ), createWidth),
                 button -> openCreate(store)
             ));
             if (tab == Tab.PUBLIC) {
                 create.active = sharedWaypoints.availability().ready();
             } else {
                 create.active = store != null && store.persistenceWritable();
+            }
+            if (tab == Tab.LOCAL) {
+                final ButtonWidget importButton = addDrawableChild(new ButtonWidget(
+                    contentLeft() + createWidth + GAP,
+                    height - 24,
+                    createWidth,
+                    18,
+                    fitButtonLabel(new TranslatableText("confluxmap.screen.waypoints.import_open"), createWidth),
+                    button -> openImport(store)
+                ));
+                importButton.active = store != null && store.persistenceWritable();
             }
         }
         addDrawableChild(new ButtonWidget(
@@ -624,6 +636,15 @@ public final class WaypointListScreen extends Screen {
             return;
         }
         MinecraftClient.getInstance().setScreen(WaypointEditScreen.forEdit(this, waypoint));
+    }
+
+    private void openImport(final WaypointStore renderedStore) {
+        if (renderedStore == null
+            || renderedStore != waypointService.current()
+            || !renderedStore.persistenceWritable()) {
+            return;
+        }
+        MinecraftClient.getInstance().setScreen(new WaypointImportScreen(this, renderedStore));
     }
 
     private void openShare(final WaypointStore renderedStore, final Waypoint waypoint) {
@@ -1439,6 +1460,11 @@ public final class WaypointListScreen extends Screen {
 
     private boolean narrowToolbar() {
         return contentWidth() < NARROW_TOOLBAR_WIDTH;
+    }
+
+    /** Bottom-bar action width: two actions plus the done button must fit on narrow screens. */
+    private int bottomActionWidth() {
+        return Math.min(116, Math.max(60, (contentWidth() - 80 - GAP * 2) / 2));
     }
 
     private boolean narrowRows() {

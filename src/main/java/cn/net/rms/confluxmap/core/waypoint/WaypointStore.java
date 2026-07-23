@@ -172,6 +172,30 @@ public final class WaypointStore {
     }
 
     /**
+     * Adds every waypoint with one listener notification (and therefore one
+     * persistence pass) instead of one per entry; used by bulk imports.
+     */
+    public int addAll(final Collection<Waypoint> waypoints) {
+        if (!persistenceWritable || waypoints == null || waypoints.isEmpty()) {
+            return 0;
+        }
+        int added = 0;
+        for (final Waypoint waypoint : waypoints) {
+            if (waypoint == null) {
+                continue;
+            }
+            final Waypoint copy = waypoint.copy();
+            ensureSetForGroup(copy.group);
+            byId.put(copy.id, copy);
+            added++;
+        }
+        if (added > 0) {
+            notifyListeners();
+        }
+        return added;
+    }
+
+    /**
      * Replaces the entry with the same {@link Waypoint#id}; a no-op if it isn't present.
      * Never creates sets: an edit-form copy holding a group that was renamed or deleted
      * while the form was open keeps the live entry's current group instead of
