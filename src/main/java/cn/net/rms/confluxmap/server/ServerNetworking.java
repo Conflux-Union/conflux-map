@@ -14,6 +14,7 @@ import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
+import cn.net.rms.confluxmap.compat.MinecraftVersion;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -218,5 +219,5 @@ public final class ServerNetworking {
     }
 
     /** Vanilla worldgen version this server jar speaks; the client maps it to a cubiomes {@code MCVersion}. */
-    private static final String WORLDGEN_VERSION = "1.17";
+    private static final String WORLDGEN_VERSION = MinecraftVersion.current();
 }

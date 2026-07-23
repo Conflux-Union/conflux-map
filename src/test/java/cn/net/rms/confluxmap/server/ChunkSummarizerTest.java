@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.Proto;
@@ -12,6 +13,7 @@ import java.util.List;
 import java.util.function.IntUnaryOperator;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
+import net.minecraft.nbt.NbtString;
 import org.junit.jupiter.api.Test;
 
 class ChunkSummarizerTest {
@@ -34,6 +36,18 @@ class ChunkSummarizerTest {
         assertEquals(13, column.fluidDepth());
 
         assertNoFalseCorrection(chunk);
+        assertModernRootAndPalettedContainersAreSummarized();
+    }
+
+    private static void assertModernRootAndPalettedContainersAreSummarized() {
+        final SummaryCodec.Chunk chunk = new ChunkSummarizer().summarize(modernOceanChunk());
+        final SummaryCodec.Column column = chunk.columns()[0];
+
+        assertTrue(chunk.generated());
+        assertEquals(62, column.surfaceY());
+        assertEquals(SurfaceKind.WATER.ordinal(), column.kind());
+        assertEquals(13, column.fluidDepth());
+        assertEquals(0, column.biomeId());
     }
 
     private static void assertNoFalseCorrection(final SummaryCodec.Chunk chunk) {
@@ -158,6 +172,46 @@ class ChunkSummarizerTest {
 
         final NbtCompound root = new NbtCompound();
         root.put("Level", level);
+        return root;
+    }
+
+    private static NbtCompound modernOceanChunk() {
+        final NbtCompound root = new NbtCompound();
+        root.putString("Status", "minecraft:full");
+        root.putInt("yPos", -4);
+        root.putLong("LastUpdate", 100L);
+
+        final NbtCompound heightmaps = new NbtCompound();
+        heightmaps.putLongArray("MOTION_BLOCKING", pack(9, 256, ignored -> 127));
+        heightmaps.putLongArray("OCEAN_FLOOR", pack(9, 256, ignored -> 114));
+        root.put("Heightmaps", heightmaps);
+
+        final NbtCompound section = new NbtCompound();
+        section.putByte("Y", (byte) 3);
+        final NbtCompound blockStates = new NbtCompound();
+        final NbtList blockPalette = new NbtList();
+        blockPalette.add(paletteEntry("minecraft:stone"));
+        blockPalette.add(paletteEntry("minecraft:water"));
+        blockPalette.add(paletteEntry("minecraft:air"));
+        blockStates.put("palette", blockPalette);
+        blockStates.putLongArray("data", pack(4, 4096, index -> {
+            final int localY = index >>> 8;
+            if (localY >= 2 && localY <= 14) {
+                return 1;
+            }
+            return localY == 15 ? 2 : 0;
+        }));
+        section.put("block_states", blockStates);
+
+        final NbtCompound biomes = new NbtCompound();
+        final NbtList biomePalette = new NbtList();
+        biomePalette.add(NbtString.of("minecraft:ocean"));
+        biomes.put("palette", biomePalette);
+        section.put("biomes", biomes);
+
+        final NbtList sections = new NbtList();
+        sections.add(section);
+        root.put("sections", sections);
         return root;
     }
 

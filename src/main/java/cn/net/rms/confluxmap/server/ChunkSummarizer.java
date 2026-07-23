@@ -3,12 +3,13 @@ package cn.net.rms.confluxmap.server;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.PackedBits;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
+import cn.net.rms.confluxmap.core.predict.CubiomesBiomeIds;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
 
-/** Converts a serialized 1.17.1 chunk into a cheap surface-only summary without loading a chunk. */
+/** Converts a serialized chunk into a cheap surface-only summary without loading the chunk. */
 public final class ChunkSummarizer {
     /**
      * Resolves a block id string (e.g. {@code minecraft:oak_planks}) to its vanilla map-colour
@@ -33,16 +34,19 @@ public final class ChunkSummarizer {
     }
 
     public SummaryCodec.Chunk summarize(final NbtCompound root) {
-        if (root == null || !root.contains("Level", 10)) {
+        if (root == null) {
             return SummaryCodec.Chunk.empty();
         }
-        final NbtCompound level = root.getCompound("Level");
+        final boolean legacy = root.contains("Level", 10);
+        final NbtCompound level = legacy ? root.getCompound("Level") : root;
         // Region files contain partially-generated chunks as early as structure_starts. They
         // have no usable surface heightmap yet; treating them as generated produced 0-height
         // UNKNOWN corrections which punched transparent/black holes into valid predictions.
-        if (!"full".equals(level.getString("Status"))) {
+        final String status = level.getString("Status");
+        if (!"full".equals(status) && !"minecraft:full".equals(status)) {
             return SummaryCodec.Chunk.empty();
         }
+        final int bottomY = legacy ? 0 : level.getInt("yPos") * 16;
         final NbtCompound heightmaps = level.contains("Heightmaps", 10)
             ? level.getCompound("Heightmaps") : new NbtCompound();
         final long[] heights = heightmaps.getLongArray("MOTION_BLOCKING");
@@ -51,22 +55,24 @@ public final class ChunkSummarizer {
         }
         final long[] oceanFloor = heightmaps.getLongArray("OCEAN_FLOOR");
         final int[] biomes = level.contains("Biomes", 11) ? level.getIntArray("Biomes") : new int[0];
-        final NbtList sections = level.contains("Sections", 9) ? level.getList("Sections", 10) : new NbtList();
+        final String sectionsKey = legacy ? "Sections" : "sections";
+        final NbtList sections = level.contains(sectionsKey, 9)
+            ? level.getList(sectionsKey, 10) : new NbtList();
         final List<Section> parsed = parseSections(sections);
         final SummaryCodec.Column[] columns = new SummaryCodec.Column[SummaryCodec.COLUMNS];
         for (int z = 0; z < 16; z++) {
             for (int x = 0; x < 16; x++) {
                 final int index = z * 16 + x;
-                final int top = heights.length == 0 ? 0 : PackedBits.decode(heights, 9, index);
+                final int top = bottomY + PackedBits.decode(heights, 9, index);
                 final int surfaceY = top - 1;
                 final BlockInfo block = blockAt(parsed, x, surfaceY, z);
-                final int biome = biomeAt(biomes, x, z, surfaceY);
+                final int biome = biomeAt(biomes, parsed, x, z, surfaceY);
                 final boolean fluidSurface = block.kind == SurfaceKind.WATER || block.kind == SurfaceKind.ICE;
                 final int fluidDepth;
                 if (!fluidSurface) {
                     fluidDepth = 0;
                 } else if (block.kind == SurfaceKind.WATER && oceanFloor.length != 0) {
-                    fluidDepth = clamp(top - PackedBits.decode(oceanFloor, 9, index));
+                    fluidDepth = clamp(top - (bottomY + PackedBits.decode(oceanFloor, 9, index)));
                 } else {
                     fluidDepth = scanFluidDepth(parsed, x, surfaceY, z);
                 }
@@ -84,7 +90,12 @@ public final class ChunkSummarizer {
         for (int i = 0; i < list.size(); i++) {
             final NbtCompound section = list.getCompound(i);
             final int y = section.getByte("Y");
-            final NbtList palette = section.contains("Palette", 9) ? section.getList("Palette", 10) : new NbtList();
+            final boolean modern = section.contains("block_states", 10);
+            final NbtCompound blockStates = modern ? section.getCompound("block_states") : section;
+            final String paletteKey = modern ? "palette" : "Palette";
+            final String dataKey = modern ? "data" : "BlockStates";
+            final NbtList palette = blockStates.contains(paletteKey, 9)
+                ? blockStates.getList(paletteKey, 10) : new NbtList();
             final String[] names = new String[Math.max(1, palette.size())];
             for (int p = 0; p < palette.size(); p++) {
                 names[p] = palette.getCompound(p).getString("Name");
@@ -92,9 +103,23 @@ public final class ChunkSummarizer {
             if (palette.isEmpty()) {
                 names[0] = "minecraft:air";
             }
-            final long[] states = section.contains("BlockStates", 12) ? section.getLongArray("BlockStates") : new long[0];
+            final long[] states = blockStates.contains(dataKey, 12)
+                ? blockStates.getLongArray(dataKey) : new long[0];
             final int bits = Math.max(4, bitsFor(names.length));
-            result.add(new Section(y, names, states, bits));
+            final NbtCompound biomeContainer = modern && section.contains("biomes", 10)
+                ? section.getCompound("biomes") : new NbtCompound();
+            final NbtList biomePalette = biomeContainer.contains("palette", 9)
+                ? biomeContainer.getList("palette", 8) : new NbtList();
+            final int[] biomeIds = new int[Math.max(1, biomePalette.size())];
+            for (int p = 0; p < biomePalette.size(); p++) {
+                biomeIds[p] = biomeId(biomePalette.getString(p));
+            }
+            if (biomePalette.isEmpty()) {
+                biomeIds[0] = 1;
+            }
+            final long[] biomeData = biomeContainer.contains("data", 12)
+                ? biomeContainer.getLongArray("data") : new long[0];
+            result.add(new Section(y, names, states, bits, biomeIds, biomeData, Math.max(1, bitsFor(biomeIds.length))));
         }
         return result;
     }
@@ -134,13 +159,36 @@ public final class ChunkSummarizer {
         return "minecraft:kelp".equals(name) || "minecraft:kelp_plant".equals(name);
     }
 
-    private static int biomeAt(final int[] biomes, final int x, final int z, final int top) {
-        if (biomes.length == 0) {
-            return 1;
+    private static int biomeAt(
+        final int[] legacyBiomes,
+        final List<Section> sections,
+        final int x,
+        final int z,
+        final int top
+    ) {
+        if (legacyBiomes.length != 0) {
+            final int quartY = Math.max(0, Math.min(63, Math.floorDiv(top, 4)));
+            final int index = (x >>> 2) + ((z >>> 2) * 4) + quartY * 16;
+            return index >= 0 && index < legacyBiomes.length ? legacyBiomes[index] : 1;
         }
-        final int quartY = Math.max(0, Math.min(63, Math.floorDiv(top, 4)));
-        final int index = (x >>> 2) + ((z >>> 2) * 4) + quartY * 16;
-        return index >= 0 && index < biomes.length ? biomes[index] : 1;
+        final int sectionY = Math.floorDiv(top, 16);
+        for (final Section section : sections) {
+            if (section.y != sectionY) {
+                continue;
+            }
+            final int quartY = Math.floorMod(top, 16) >>> 2;
+            final int index = (quartY * 4 + (z >>> 2)) * 4 + (x >>> 2);
+            final int paletteIndex = section.biomeData.length == 0
+                ? 0 : PackedBits.decode(section.biomeData, section.biomeBits, index);
+            return section.biomeIds[Math.min(paletteIndex, section.biomeIds.length - 1)];
+        }
+        return 1;
+    }
+
+    private static int biomeId(final String name) {
+        final int separator = name.indexOf(':');
+        final String path = separator >= 0 ? name.substring(separator + 1) : name;
+        return CubiomesBiomeIds.idForName(path).orElse(1);
     }
 
     /** Classifies one block id string into its surface kind and map colour; also used by {@code FlatWorldBaseline}. */
@@ -210,7 +258,15 @@ public final class ChunkSummarizer {
         return (short) Math.max(Short.MIN_VALUE + 1, Math.min(Short.MAX_VALUE, value));
     }
 
-    private record Section(int y, String[] names, long[] states, int bits) {
+    private record Section(
+        int y,
+        String[] names,
+        long[] states,
+        int bits,
+        int[] biomeIds,
+        long[] biomeData,
+        int biomeBits
+    ) {
     }
 
     /** One classified block: its map surface kind and vanilla map colour id. */

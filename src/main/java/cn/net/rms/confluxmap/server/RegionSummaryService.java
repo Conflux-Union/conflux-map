@@ -13,6 +13,7 @@ import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import java.util.Optional;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
+import cn.net.rms.confluxmap.compat.MinecraftVersion;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -162,7 +163,7 @@ public final class RegionSummaryService {
                     world.getRegistryKey().getValue().getNamespace(), world.getRegistryKey().getValue().getPath()
                 )
             ) ? 1 : 0;
-            final java.util.OptionalInt version = McVersions.toCubiomes("1.17.1");
+            final java.util.OptionalInt version = McVersions.toCubiomes(MinecraftVersion.current());
             if (version.isPresent()) {
                 final PatchBuilder.Result residual = patchBuilder.buildFromSampler(
                     summary, sinceRevision,
