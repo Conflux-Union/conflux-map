@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CompletionException;
 import java.util.function.Consumer;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.MinecraftServer;
@@ -213,11 +214,13 @@ public final class RegionSummaryService {
         for (int z = 0; z < 16; z++) {
             for (int x = 0; x < 16; x++) {
                 final ChunkPos pos = new ChunkPos(regionX * 16 + x, regionZ * 16 + z);
-                NbtCompound nbt = null;
+                final NbtCompound nbt;
                 try {
-                    nbt = world.getChunkManager().threadedAnvilChunkStorage.getNbt(pos);
+                    nbt = readChunkNbt(world, pos);
                 } catch (IOException ignored) {
                     // A missing/corrupt chunk is represented by generated=false.
+                    chunks[z * 16 + x] = SummaryCodec.Chunk.empty();
+                    continue;
                 }
                 chunks[z * 16 + x] = nbt == null ? SummaryCodec.Chunk.empty() : summarizer.summarize(nbt);
             }
@@ -229,6 +232,18 @@ public final class RegionSummaryService {
             // Memory results are still valid if the optional cache cannot be written.
         }
         return region;
+    }
+
+    private static NbtCompound readChunkNbt(final ServerWorld world, final ChunkPos pos) throws IOException {
+        //#if MC>=12100
+        //$$ try {
+        //$$     return world.getChunkManager().chunkLoadingManager.getNbt(pos).join().orElse(null);
+        //$$ } catch (final CompletionException e) {
+        //$$     throw new IOException("failed to read chunk " + pos, e.getCause());
+        //$$ }
+        //#else
+        return world.getChunkManager().threadedAnvilChunkStorage.getNbt(pos);
+        //#endif
     }
 
     private static ServerWorld worldAt(final MinecraftServer server, final int index) {

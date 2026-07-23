@@ -34,7 +34,11 @@ public final class FlatWorldBaseline {
             return Optional.empty();
         }
         final List<BlockState> layers = flat.getConfig().getLayerBlocks();
+        //#if MC>=12100
+        //$$ final int biomeId = biomeId(world, flat.getConfig().getBiome().value());
+        //#else
         final int biomeId = biomeId(world, flat.getConfig().getBiome());
+        //#endif
 
         int top = layers.size() - 1;
         while (top >= 0 && (layers.get(top) == null || layers.get(top).isAir())) {

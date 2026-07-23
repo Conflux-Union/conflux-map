@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.mc.radar;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.core.radar.IconOutliner;
 import cn.net.rms.confluxmap.core.util.Argb;
 import com.mojang.blaze3d.platform.GlStateManager;
@@ -68,7 +69,7 @@ public final class EntityIconOutlineTexture {
 
     private NativeImageBackedTexture build(final MinecraftClient client) throws IOException {
         final NativeImage sheet;
-        try (InputStream in = client.getResourceManager().getResource(sheetId).getInputStream()) {
+        try (InputStream in = MinecraftAccess.openResource(client, sheetId)) {
             sheet = NativeImage.read(in);
         }
         try (sheet) {

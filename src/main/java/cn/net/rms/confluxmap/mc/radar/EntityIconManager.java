@@ -139,7 +139,11 @@ public final class EntityIconManager {
     }
 
     private FaceIcon playerIcon(final AbstractClientPlayerEntity player) {
+        //#if MC>=12100
+        //$$ final Identifier skin = player.getSkinTextures().texture();
+        //#else
         final Identifier skin = player.getSkinTexture();
+        //#endif
         return new FaceIcon(
             skin, PLAYER_FACE.u0(), PLAYER_FACE.v0(), PLAYER_FACE.u1(), PLAYER_FACE.v1(),
             skin, PLAYER_HAT.u0(), PLAYER_HAT.v0(), PLAYER_HAT.u1(), PLAYER_HAT.v1(),
@@ -192,30 +196,56 @@ public final class EntityIconManager {
     }
 
     private static String mooshroomVariant(final Entity entity) {
+        //#if MC>=12100
+        //$$ return ((MooshroomEntity) entity).getVariant().asString();
+        //#else
         return ((MooshroomEntity) entity).getMooshroomType().name().toLowerCase(Locale.ROOT);
+        //#endif
     }
 
     /** See {@link #CAT_TYPE_NAMES} for the verified int-to-breed order. */
     private static String catVariant(final Entity entity) {
+        //#if MC>=12100
+        //$$ return ((CatEntity) entity).getVariant().getKey()
+        //$$     .map(key -> key.getValue().getPath())
+        //$$     .orElse(null);
+        //#else
         final int type = ((CatEntity) entity).getCatType();
         return type >= 0 && type < CAT_TYPE_NAMES.length ? CAT_TYPE_NAMES[type] : null;
+        //#endif
     }
 
     private static String foxVariant(final Entity entity) {
+        //#if MC>=12100
+        //$$ return ((FoxEntity) entity).getVariant().asString();
+        //#else
         return ((FoxEntity) entity).getFoxType().name().toLowerCase(Locale.ROOT);
+        //#endif
     }
 
     private static String parrotVariant(final Entity entity) {
+        //#if MC>=12100
+        //$$ return String.valueOf(((ParrotEntity) entity).getVariant().getId());
+        //#else
         return String.valueOf(((ParrotEntity) entity).getVariant());
+        //#endif
     }
 
     /** Shared by llama and trader_llama - TraderLlamaEntity extends LlamaEntity and inherits getVariant(). */
     private static String llamaVariant(final Entity entity) {
+        //#if MC>=12100
+        //$$ return String.valueOf(((LlamaEntity) entity).getVariant().ordinal());
+        //#else
         return String.valueOf(((LlamaEntity) entity).getVariant());
+        //#endif
     }
 
     private static String rabbitVariant(final Entity entity) {
+        //#if MC>=12100
+        //$$ return String.valueOf(((RabbitEntity) entity).getVariant().getId());
+        //#else
         return String.valueOf(((RabbitEntity) entity).getRabbitType());
+        //#endif
     }
 
     private static String axolotlVariant(final Entity entity) {
@@ -241,7 +271,11 @@ public final class EntityIconManager {
      * plain registry path ("armorer", "butcher", ...) directly - no Registry lookup needed.
      */
     private static String villagerVariant(final Entity entity) {
+        //#if MC>=12100
+        //$$ return ((VillagerEntity) entity).getVillagerData().getProfession().id();
+        //#else
         return ((VillagerEntity) entity).getVillagerData().getProfession().getId();
+        //#endif
     }
 
     /**

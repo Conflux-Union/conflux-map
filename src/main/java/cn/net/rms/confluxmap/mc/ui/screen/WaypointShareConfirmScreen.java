@@ -8,6 +8,7 @@ import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.compat.Texts;
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import java.math.BigDecimal;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
@@ -170,8 +171,8 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
             errorKey = "confluxmap.screen.waypoint.invalid_share";
             return;
         }
-        client.player.sendChatMessage(confluxPreview);
-        client.player.sendChatMessage(xaeroPreview);
+        MinecraftAccess.sendChatMessage(client, confluxPreview);
+        MinecraftAccess.sendChatMessage(client, xaeroPreview);
         onClose();
     }
 

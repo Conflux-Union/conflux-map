@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.mc.snapshot;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.core.cache.RegionCacheService;
 import cn.net.rms.confluxmap.core.cache.RegionDiskCache;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
@@ -112,7 +113,7 @@ public final class ChunkCaptureService {
 
     /** Marks every chunk in the current view-distance square dirty, so the active layer fills in from scratch. */
     private void reseedViewport(final int centerChunkX, final int centerChunkZ) {
-        final int radius = client.options.viewDistance + 1;
+        final int radius = MinecraftAccess.viewDistance(client) + 1;
         for (int dz = -radius; dz <= radius; dz++) {
             for (int dx = -radius; dx <= radius; dx++) {
                 dirtyChunks.mark(centerChunkX + dx, centerChunkZ + dz);

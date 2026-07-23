@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.compat.Ids;
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.compat.PlayNetworking;
 import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
 import cn.net.rms.confluxmap.core.net.HelloC2S;
@@ -75,7 +76,11 @@ public final class ServerNetworking {
         try {
             validatePayload(payload);
         } catch (final ProtoException e) {
-            ConfluxMapMod.LOGGER.warn("companion: dropping malformed payload from {} ({})", player.getEntityName(), e.getMessage());
+            ConfluxMapMod.LOGGER.warn(
+                "companion: dropping malformed payload from {} ({})",
+                MinecraftAccess.playerName(player),
+                e.getMessage()
+            );
             recordMalformed(player);
             return;
         }
@@ -88,12 +93,12 @@ public final class ServerNetworking {
             } else {
                 ConfluxMapMod.LOGGER.warn(
                     "companion: unexpected {} from {} (server-side handlers expect C2S only)",
-                    msg.getClass().getSimpleName(), player.getEntityName()
+                    msg.getClass().getSimpleName(), MinecraftAccess.playerName(player)
                 );
             }
         } catch (final ProtoException e) {
             ConfluxMapMod.LOGGER.warn("companion: undecodable {}-byte payload from {} ({})",
-                payload.length, player.getEntityName(), e.getMessage());
+                payload.length, MinecraftAccess.playerName(player), e.getMessage());
             recordMalformed(player);
         }
     }
@@ -120,7 +125,7 @@ public final class ServerNetworking {
         send(player, policy);
         ConfluxMapMod.LOGGER.info(
             "companion: replied HELLO_POLICY to {} (modVersion={} predictorVersion={} worldId={} seedGranted={})",
-            player.getEntityName(), hello.modVersion(), hello.predictorVersion(),
+            MinecraftAccess.playerName(player), hello.modVersion(), hello.predictorVersion(),
             policy.worldId(), policy.flags().seedGranted()
         );
     }

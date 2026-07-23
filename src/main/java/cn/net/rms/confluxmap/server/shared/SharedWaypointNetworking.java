@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.server.shared;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.compat.Ids;
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.compat.PlayNetworking;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointCodec;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointMessage;
@@ -126,7 +127,7 @@ public final class SharedWaypointNetworking {
         ConfluxMapMod.LOGGER.warn(
             "shared-waypoint: dropped malformed {}-byte payload from {} (strike {}/{}, reason={})",
             payloadBytes,
-            player.getEntityName(),
+            MinecraftAccess.playerName(player),
             outcome.strikes(),
             SharedWaypointSessionHandler.MAX_MALFORMED_STRIKES,
             reason == null ? "decode failure" : reason
@@ -134,7 +135,7 @@ public final class SharedWaypointNetworking {
         if (outcome.newlyMuted()) {
             ConfluxMapMod.LOGGER.warn(
                 "shared-waypoint: muted malformed packets from {} until disconnect",
-                player.getEntityName()
+                MinecraftAccess.playerName(player)
             );
         }
     }
@@ -173,7 +174,7 @@ public final class SharedWaypointNetworking {
     private static SharedWaypointSessionHandler.Peer peer(final ServerPlayerEntity player) {
         return new SharedWaypointSessionHandler.Peer(
             player.getUuid(),
-            player.getEntityName(),
+            MinecraftAccess.playerName(player),
             player.hasPermissionLevel(2)
         );
     }
@@ -193,7 +194,7 @@ public final class SharedWaypointNetworking {
             ConfluxMapMod.LOGGER.error(
                 "shared-waypoint: failed to encode {} for {}",
                 message.getClass().getSimpleName(),
-                player.getEntityName(),
+                MinecraftAccess.playerName(player),
                 e
             );
             return;

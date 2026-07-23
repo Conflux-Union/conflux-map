@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.compat.Texts;
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import static net.minecraft.server.command.CommandManager.literal;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
@@ -44,7 +45,7 @@ final class SharedWaypointCommands {
         final ServerConfig config = companion.config();
         final SharedWaypointService service = companion.sharedWaypoints();
         final long revision = service == null ? 0L : service.snapshot().revision();
-        source.sendFeedback(Texts.literal(
+        MinecraftAccess.sendFeedback(source, Texts.literal(
             "Conflux Map shared waypoints: master=" + config.enabled
                 + ", configured=" + config.shareWaypoints
                 + ", enabled=" + companion.sharedWaypointsEnabled()
@@ -100,7 +101,7 @@ final class SharedWaypointCommands {
     }
 
     private static int feedback(final ServerCommandSource source, final String message) {
-        source.sendFeedback(Texts.literal(message), true);
+        MinecraftAccess.sendFeedback(source, Texts.literal(message), true);
         return 1;
     }
 
