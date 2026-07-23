@@ -15,6 +15,7 @@ import cn.net.rms.confluxmap.core.quality.GeneratedTileComposer;
 import cn.net.rms.confluxmap.core.quality.PredictionQualityCorpus;
 import cn.net.rms.confluxmap.core.quality.PredictionQualityEvaluator;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
+import cn.net.rms.confluxmap.compat.MinecraftVersion;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -35,7 +36,11 @@ public final class PredictionQualityGameTest implements FabricGameTest {
     private static final int TILE_PIXELS = BaselineGrid.PIXELS;
     private static final int TICK_LIMIT = 30_000;
 
+    //#if MC>=12100
+    //$$ @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = TICK_LIMIT)
+    //#else
     @GameTest(structureName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = TICK_LIMIT)
+    //#endif
     public void generatedRegionsMeetPredictionQualityBaseline(final TestContext context) {
         final ServerWorld testWorld = context.getWorld();
         final long expectedSeed = Long.getLong("confluxmap.quality.world-seed", testWorld.getSeed());
@@ -120,7 +125,7 @@ public final class PredictionQualityGameTest implements FabricGameTest {
                 PredictionPalette.defaults()
             );
             final int nativeDimension = PredictionDimensions.nativeDim(sample.dimension());
-            final int mcVersion = McVersions.toCubiomes("1.17.1").orElseThrow();
+            final int mcVersion = McVersions.toCubiomes(MinecraftVersion.current()).orElseThrow();
             final NativeBaselineSampler sampler = new NativeBaselineSampler(mcVersion, worldSeed, nativeDimension, 0);
             final int originX = sample.tileX() * TILE_PIXELS;
             final int originZ = sample.tileZ() * TILE_PIXELS;

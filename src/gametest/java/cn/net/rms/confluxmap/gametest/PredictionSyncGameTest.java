@@ -21,6 +21,7 @@ import cn.net.rms.confluxmap.core.predict.PredictedTileComposer;
 import cn.net.rms.confluxmap.core.predict.PredictionPalette;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
+import cn.net.rms.confluxmap.compat.MinecraftVersion;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import cn.net.rms.confluxmap.server.RegionSummaryService;
 import cn.net.rms.confluxmap.server.ServerConfig;
@@ -39,20 +40,21 @@ import net.minecraft.test.GameTest;
 import net.minecraft.test.TestContext;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.Heightmap;
+//#if MC>=12100
+//$$ import net.minecraft.network.packet.c2s.common.SyncedClientOptions;
+//#endif
 
 public final class PredictionSyncGameTest implements FabricGameTest {
     private static final int FLOOR_SIZE = 64;
     private static final int BOMBARDMENT_FLOOR_SIZE = 32;
     private static final int TNT_COUNT = 4;
     private static final int TNT_FUSE_TICKS = 1;
-    private static final int FLOOR_Y = 79;
-    private static final int EXPECTED_SURFACE_Y = FLOOR_Y;
-    private static final int EXPECTED_STONE_ARGB = ShadingPipeline.applyShade(
-        MapColorTable.argb(11),
-        ShadingPipeline.heightShade(EXPECTED_SURFACE_Y, ShadingPipeline.REFERENCE_HEIGHT, false)
-    );
 
+    //#if MC>=12100
+    //$$ @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = 400)
+    //#else
     @GameTest(structureName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = 400)
+    //#endif
     public void stoneFloorRoundTripsFromServerWorldToClientPrediction(final TestContext context) {
         final ServerWorld world = context.getWorld();
         final MinecraftServer server = world.getServer();
@@ -63,24 +65,33 @@ public final class PredictionSyncGameTest implements FabricGameTest {
         final int tileOriginZ = tileZ * 256;
         final int floorMinX = tileOriginX + 96;
         final int floorMinZ = tileOriginZ + 96;
+        final int floorY = elevatedFloorY(world, floorMinX, floorMinZ, FLOOR_SIZE);
 
         for (int z = 0; z < FLOOR_SIZE; z++) {
             for (int x = 0; x < FLOOR_SIZE; x++) {
-                world.setBlockState(
-                    new BlockPos(floorMinX + x, FLOOR_Y, floorMinZ + z),
-                    Blocks.STONE.getDefaultState(),
-                    Block.NOTIFY_ALL
+                require(
+                    context,
+                    world.setBlockState(
+                        new BlockPos(floorMinX + x, floorY, floorMinZ + z),
+                        Blocks.STONE.getDefaultState(),
+                        Block.NOTIFY_ALL
+                    ),
+                    "failed to place stone floor at " + x + "," + z
                 );
             }
         }
         world.getChunkManager().save(true);
 
         context.waitAndRun(5L, () -> verifyRoundTrip(
-            context, server, world, tileX, tileZ, tileOriginX, tileOriginZ, floorMinX, floorMinZ
+            context, server, world, tileX, tileZ, tileOriginX, tileOriginZ, floorMinX, floorMinZ, floorY
         ));
     }
 
+    //#if MC>=12100
+    //$$ @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = 400)
+    //#else
     @GameTest(structureName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = 400)
+    //#endif
     public void tntBombardmentReducesSynchronizedStoneSurface(final TestContext context) {
         new BombardmentRun(context).start();
     }
@@ -102,12 +113,13 @@ public final class PredictionSyncGameTest implements FabricGameTest {
         final int tileOriginX,
         final int tileOriginZ,
         final int floorMinX,
-        final int floorMinZ
+        final int floorMinZ,
+        final int floorY
     ) {
         require(context, NativeLib.available(), "native predictor was not initialized by the companion");
 
         final RegionSummaryService summaries = new RegionSummaryService(syncTestConfig());
-        final ServerPlayerEntity player = new ServerPlayerEntity(
+        final ServerPlayerEntity player = testPlayer(
             server,
             world,
             new GameProfile(UUID.fromString("00000000-0000-0000-0000-000000000001"), "ConfluxSyncTest")
@@ -139,7 +151,7 @@ public final class PredictionSyncGameTest implements FabricGameTest {
             correction.applyPatch(patch.tileRevision(), patch.presence(), PatchCodec.decode(patch.body()));
             final BaselineGrid baseline = LodSampling.sample(
                 new NativeBaselineSampler(
-                    McVersions.toCubiomes("1.17.1").orElseThrow(), world.getSeed(), 0, 0
+                    McVersions.toCubiomes(MinecraftVersion.current()).orElseThrow(), world.getSeed(), 0, 0
                 ),
                 false,
                 0,
@@ -157,6 +169,10 @@ public final class PredictionSyncGameTest implements FabricGameTest {
                 PredictionViewMode.EVERYWHERE,
                 0
             );
+            final int expectedStoneArgb = ShadingPipeline.applyShade(
+                MapColorTable.argb(11),
+                ShadingPipeline.heightShade(floorY, ShadingPipeline.REFERENCE_HEIGHT, false)
+            );
 
             for (int z = 0; z < FLOOR_SIZE; z++) {
                 for (int x = 0; x < FLOOR_SIZE; x++) {
@@ -167,7 +183,7 @@ public final class PredictionSyncGameTest implements FabricGameTest {
                     require(context, sample != null, "server omitted stone floor pixel " + pixelX + "," + pixelZ);
                     require(
                         context,
-                        sample.surfaceY() == EXPECTED_SURFACE_Y,
+                        sample.surfaceY() == floorY,
                         "wrong stone surface height at " + pixelX + "," + pixelZ
                     );
                     require(context, sample.kind() == SurfaceKind.LAND.ordinal(), "stone floor was not classified as land");
@@ -178,7 +194,7 @@ public final class PredictionSyncGameTest implements FabricGameTest {
                     if (x > 0 && x < FLOOR_SIZE - 1 && z > 0 && z < FLOOR_SIZE - 1) {
                         require(
                             context,
-                            clientPixels[pixel] == EXPECTED_STONE_ARGB,
+                            clientPixels[pixel] == expectedStoneArgb,
                             "client did not reconstruct interior stone at " + pixelX + "," + pixelZ
                         );
                     }
@@ -219,7 +235,7 @@ public final class PredictionSyncGameTest implements FabricGameTest {
             floorMinZ = clampFloorStart(testOrigin.getZ(), tileOriginZ);
             floorY = elevatedFloorY();
             summaries = new RegionSummaryService(syncTestConfig());
-            player = new ServerPlayerEntity(
+            player = testPlayer(
                 server,
                 world,
                 new GameProfile(UUID.fromString("00000000-0000-0000-0000-000000000002"), "ConfluxTntSyncTest")
@@ -326,16 +342,9 @@ public final class PredictionSyncGameTest implements FabricGameTest {
         }
 
         private int elevatedFloorY() {
-            int result = world.getBottomY();
-            for (int z = 0; z < BOMBARDMENT_FLOOR_SIZE; z++) {
-                for (int x = 0; x < BOMBARDMENT_FLOOR_SIZE; x++) {
-                    result = Math.max(
-                        result,
-                        world.getTopY(Heightmap.Type.MOTION_BLOCKING, floorMinX + x, floorMinZ + z) + 8
-                    );
-                }
-            }
-            return Math.min(result, world.getTopY() - 2);
+            return PredictionSyncGameTest.elevatedFloorY(
+                world, floorMinX, floorMinZ, BOMBARDMENT_FLOOR_SIZE
+            );
         }
 
         private void placeStoneFloor() {
@@ -400,6 +409,43 @@ public final class PredictionSyncGameTest implements FabricGameTest {
                 Math.min(testCoordinate - BOMBARDMENT_FLOOR_SIZE / 2, tileOrigin + 255 - BOMBARDMENT_FLOOR_SIZE)
             );
         }
+    }
+
+    private static int elevatedFloorY(
+        final ServerWorld world,
+        final int floorMinX,
+        final int floorMinZ,
+        final int floorSize
+    ) {
+        final int maxX = floorMinX + floorSize - 1;
+        final int maxZ = floorMinZ + floorSize - 1;
+        for (int chunkZ = floorMinZ >> 4; chunkZ <= maxZ >> 4; chunkZ++) {
+            for (int chunkX = floorMinX >> 4; chunkX <= maxX >> 4; chunkX++) {
+                world.getChunk(chunkX, chunkZ);
+            }
+        }
+        int result = world.getBottomY();
+        for (int z = 0; z < floorSize; z++) {
+            for (int x = 0; x < floorSize; x++) {
+                result = Math.max(
+                    result,
+                    world.getTopY(Heightmap.Type.MOTION_BLOCKING, floorMinX + x, floorMinZ + z) + 8
+                );
+            }
+        }
+        return Math.min(result, world.getTopY() - 2);
+    }
+
+    private static ServerPlayerEntity testPlayer(
+        final MinecraftServer server,
+        final ServerWorld world,
+        final GameProfile profile
+    ) {
+        //#if MC>=12100
+        //$$ return new ServerPlayerEntity(server, world, profile, SyncedClientOptions.createDefault());
+        //#else
+        return new ServerPlayerEntity(server, world, profile);
+        //#endif
     }
 
     private static int dimensionIndex(final MinecraftServer server, final ServerWorld expected) {

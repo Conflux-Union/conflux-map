@@ -1,9 +1,9 @@
 package cn.net.rms.confluxmap.gametest.mixin;
 
 import java.util.Collection;
+//#if MC<12100
 import net.minecraft.resource.ResourcePackManager;
 import net.minecraft.resource.ServerResourceManager;
-import net.minecraft.test.TestServer;
 import net.minecraft.test.GameTestBatch;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.registry.DynamicRegistryManager;
@@ -16,6 +16,13 @@ import net.minecraft.world.level.storage.LevelStorage;
 import net.minecraft.world.gen.GeneratorOptions;
 import net.minecraft.world.gen.chunk.ChunkGenerator;
 import net.minecraft.world.gen.chunk.NoiseChunkGenerator;
+//#else
+//$$ import net.minecraft.registry.RegistryKey;
+//$$ import net.minecraft.world.gen.WorldPreset;
+//$$ import net.minecraft.world.gen.WorldPresets;
+//$$ import org.objectweb.asm.Opcodes;
+//#endif
+import net.minecraft.test.TestServer;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
@@ -23,6 +30,20 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 /** Keeps the normal Overworld generator in the otherwise flat Vanilla GameTest server. */
 @Mixin(TestServer.class)
 abstract class TestServerMixin {
+    //#if MC>=12100
+    //$$ @Redirect(
+    //$$     method = "method_40377",
+    //$$     at = @At(
+    //$$         value = "FIELD",
+    //$$         target = "Lnet/minecraft/world/gen/WorldPresets;FLAT:"
+    //$$             + "Lnet/minecraft/registry/RegistryKey;",
+    //$$         opcode = Opcodes.GETSTATIC
+    //$$     )
+    //$$ )
+    //$$ private static RegistryKey<WorldPreset> useNormalOverworldPreset() {
+    //$$     return WorldPresets.DEFAULT;
+    //$$ }
+    //#else
     @Redirect(
         method = "<init>(Ljava/lang/Thread;"
             + "Lnet/minecraft/world/level/storage/LevelStorage$Session;"
@@ -67,4 +88,5 @@ abstract class TestServerMixin {
             normalGenerator
         );
     }
+    //#endif
 }
