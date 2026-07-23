@@ -4,7 +4,9 @@ import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.core.util.Argb;
 import java.util.ArrayList;
 import java.util.List;
+//#if MC<11900
 import java.util.Random;
+//#endif
 import net.minecraft.block.AbstractSignBlock;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
@@ -24,12 +26,15 @@ import net.minecraft.client.texture.SpriteAtlasTexture;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
+//#if MC>=11900
+//$$ import net.minecraft.util.math.random.Random;
+//#endif
 import net.minecraft.world.BlockView;
 
 /**
  * Per-BlockState cached base color, per surface-color-sampling.md §2. Colors come
  * from sampling the live stitched block-texture atlas (via each sprite's own
- * un-stitched frame-0 source image, {@link Sprite#images}[0]) - never from
+ * un-stitched frame-0 source image) - never from
  * Minecraft's built-in map-item palette.
  *
  * <p>Main-thread only (touches {@link BakedModel}s); the returned colors are
@@ -43,7 +48,11 @@ public final class SpriteColorSampler {
     private static final Identifier LAVA_STILL = Ids.of("block/lava_still");
 
     private final MinecraftClient client;
+    //#if MC>=11900
+    //$$ private final Random modelRandom = Random.create(42L);
+    //#else
     private final Random modelRandom = new Random(42L);
+    //#endif
     private int[] cache = new int[4096];
 
     public SpriteColorSampler(final MinecraftClient client) {
@@ -153,7 +162,11 @@ public final class SpriteColorSampler {
     }
 
     private static boolean isMissing(final Sprite sprite) {
+        //#if MC>=11900
+        //$$ return sprite.getContents().getId().equals(MissingSprite.getMissingSpriteId());
+        //#else
         return sprite.getId().equals(MissingSprite.getMissingSpriteId());
+        //#endif
     }
 
     /** Equal-weighted average across every quad's resolved sprite color; null if none were usable. */
@@ -190,13 +203,22 @@ public final class SpriteColorSampler {
         if (sprite == null || isMissing(sprite)) {
             return null;
         }
+        //#if MC>=11900
+        //$$ final NativeImage[] images = sprite.getContents().mipmapLevelsImages;
+        //#else
         final NativeImage[] images = sprite.images;
+        //#endif
         if (images == null || images.length == 0 || images[0] == null) {
             return null;
         }
         final NativeImage image = images[0];
+        //#if MC>=11900
+        //$$ final int w = Math.min(sprite.getContents().getWidth(), image.getWidth());
+        //$$ final int h = Math.min(sprite.getContents().getHeight(), image.getHeight());
+        //#else
         final int w = Math.min(sprite.getWidth(), image.getWidth());
         final int h = Math.min(sprite.getHeight(), image.getHeight());
+        //#endif
         if (w <= 0 || h <= 0) {
             return null;
         }

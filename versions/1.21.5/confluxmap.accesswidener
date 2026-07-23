@@ -1,5 +1,5 @@
 accessWidener v2 named
 
-# Placeholder for the 1.21.x port: the 1.17.1 widener opens Sprite.images, which no
-# longer exists on this version. The real entry is added once the sprite sampling path
-# is ported (see mc/color/SpriteColorSampler).
+# SpriteColorSampler reads a sprite's un-stitched frame-0 source image directly
+# (rather than reading back the stitched atlas texture) to box-filter its colors.
+accessible field net/minecraft/client/texture/SpriteContents mipmapLevelsImages [Lnet/minecraft/client/texture/NativeImage;
