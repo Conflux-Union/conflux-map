@@ -57,6 +57,11 @@ loom {
 }
 JavaVersion javaCompatibility
 if (mcVersion < 11700) javaCompatibility = JavaVersion.VERSION_1_8 else if (mcVersion < 11800) javaCompatibility = JavaVersion.VERSION_16 else if (mcVersion < 12005) javaCompatibility = JavaVersion.VERSION_17 else javaCompatibility = JavaVersion.VERSION_21
+tasks.withType(JavaCompile).configureEach {
+    // One preprocessor mistake breaks a whole file for every downstream version at once, so
+    // javac's default cap of 100 errors routinely hides most of a version's actual breakage.
+    options.compilerArgs << '-Xmaxerrs' << '2000'
+}
 processResources {
     inputs.property 'modId', id
     inputs.property 'modVersion', project.version.toString()
