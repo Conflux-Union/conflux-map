@@ -1149,9 +1149,29 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         if (predicted.isEmpty()) {
             return null;
         }
-        return CubiomesBiomeIds.nameForId(predicted.getAsInt())
-            .map(name -> translatedBiomeName(Ids.of("minecraft", name)))
-            .orElse(null);
+        return predictedBiomeName(predicted.getAsInt());
+    }
+
+    /**
+     * A predicted biome only knows its cubiomes id, whose canonical vanilla name is the 1.17-era
+     * one; biomes renamed since (snowy_tundra -> snowy_plains, ...) have no translation under the
+     * old key on modern versions, which surfaced as a raw {@code biome.minecraft.snowy_tundra}
+     * footer. Try every spelling the id has carried and keep the first one the loaded language
+     * actually translates, falling back to the canonical raw key when none do.
+     */
+    private static String predictedBiomeName(final int cubiomesId) {
+        String fallback = null;
+        for (final String name : CubiomesBiomeIds.namesForId(cubiomesId)) {
+            final String key = Util.createTranslationKey("biome", Ids.of("minecraft", name));
+            final String translated = Texts.translatable(key).getString();
+            if (!translated.equals(key)) {
+                return translated;
+            }
+            if (fallback == null) {
+                fallback = translated;
+            }
+        }
+        return fallback;
     }
 
     /** Bottom-right corner: a passive notice while a newer release is known (the chat line carries the clickable link). */

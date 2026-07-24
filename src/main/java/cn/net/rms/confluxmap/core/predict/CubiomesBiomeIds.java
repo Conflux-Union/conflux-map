@@ -1,6 +1,9 @@
 package cn.net.rms.confluxmap.core.predict;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -20,6 +23,7 @@ import java.util.OptionalInt;
 public final class CubiomesBiomeIds {
     private static final Map<String, Integer> BY_NAME = new HashMap<>();
     private static final Map<Integer, String> BY_ID = new HashMap<>();
+    private static final Map<Integer, List<String>> NAMES_BY_ID = new HashMap<>();
 
     private CubiomesBiomeIds() {
     }
@@ -33,13 +37,27 @@ public final class CubiomesBiomeIds {
         return Optional.ofNullable(BY_ID.get(id));
     }
 
+    /**
+     * Every vanilla registry path this cubiomes id has carried, canonical (1.17-era) name first,
+     * later renames after. Callers that must match one concrete game version's registry or
+     * language file (e.g. the predicted-biome footer label) pick whichever spelling that version
+     * actually knows; a bare {@link #nameForId} would hand modern versions a retired key like
+     * {@code snowy_tundra}.
+     */
+    public static List<String> namesForId(final int id) {
+        final List<String> names = NAMES_BY_ID.get(id);
+        return names == null ? List.of() : Collections.unmodifiableList(names);
+    }
+
     private static void put(final int id, final String name) {
         BY_NAME.put(name, id);
         BY_ID.put(id, name);
+        NAMES_BY_ID.computeIfAbsent(id, key -> new ArrayList<>()).add(name);
     }
 
     private static void alias(final int id, final String name) {
         BY_NAME.put(name, id);
+        NAMES_BY_ID.computeIfAbsent(id, key -> new ArrayList<>()).add(name);
     }
 
     static {
