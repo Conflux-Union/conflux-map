@@ -38,6 +38,12 @@ class PredictionNativeIntegrationTest {
         return mc.getAsInt();
     }
 
+    private static int mc21() {
+        final OptionalInt mc = McVersions.toCubiomes("1.21.1");
+        assertTrue(mc.isPresent(), "McVersions must know \"1.21.1\"");
+        return mc.getAsInt();
+    }
+
     private static int[] composeTile(final int mcVersion, final int dim, final boolean end, final int lod, final int tileOriginX, final int tileOriginZ) {
         final NativeBaselineSampler sampler = new NativeBaselineSampler(mcVersion, SEED, dim, 0);
         final BaselineGrid grid = LodSampling.sample(sampler, end, lod, tileOriginX, tileOriginZ);
@@ -87,7 +93,7 @@ class PredictionNativeIntegrationTest {
     }
 
     @Test
-    void reportedOceanCoordinateStaysWaterAtLod4() {
+    void reportedOceanCoordinatesKeepTheirVanillaWaterArea() {
         final long reportedSeed = 6512112982729996127L;
         final int blockX = -2819;
         final int blockZ = -96;
@@ -104,6 +110,42 @@ class PredictionNativeIntegrationTest {
             SurfaceKind.WATER,
             SurfaceKind.byOrdinal(derived.kind[BaselineGrid.index(pixelX, pixelZ)]),
             "the reported ocean coordinate must not turn into green land at the LOD4 threshold"
+        );
+
+        final NativeBaselineSampler modernSampler = new NativeBaselineSampler(
+            mc21(),
+            0L,
+            PredictionDimensions.OVERWORLD,
+            0
+        );
+        final BaselineGrid modernGrid = LodSampling.sample(
+            modernSampler,
+            false,
+            0,
+            49 * BaselineGrid.PIXELS,
+            -52 * BaselineGrid.PIXELS
+        );
+        assertNotNull(modernGrid);
+        final DerivedGrid modernDerived = BaselineDeriver.derive(modernGrid);
+        CanopyStylizer.apply(
+            modernDerived,
+            modernGrid,
+            modernSampler,
+            0L,
+            0,
+            49 * BaselineGrid.PIXELS,
+            -52 * BaselineGrid.PIXELS
+        );
+        int waterPixels = 0;
+        for (int z = 0; z < BaselineGrid.PIXELS; z++) {
+            for (int x = 0; x < BaselineGrid.PIXELS; x++) {
+                final byte kind = modernDerived.kind[BaselineGrid.index(x, z)];
+                waterPixels += SurfaceKind.byOrdinal(kind) == SurfaceKind.WATER ? 1 : 0;
+            }
+        }
+        assertTrue(
+            Math.abs(waterPixels - 14_210) <= 1_000,
+            "seed-0 tile (49,-52) water area drifted from Vanilla: " + waterPixels
         );
     }
 

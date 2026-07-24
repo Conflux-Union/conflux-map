@@ -1,7 +1,7 @@
 upstream: https://github.com/Cubitect/cubiomes
 fork:     https://github.com/Conflux-Union/cubiomes (this project's fork)
-commit:   071ca3452ea2041b58a03a627904594fa3204fa4
-commit date: 2026-07-24T03:32:50+08:00
+commit:   e97dcf9595859cfb27b4c743c3c688e424e13c6a
+commit date: 2026-07-24T13:54:28+08:00
 pinned via: native/cubiomes git submodule (converted from a vendored copy on 2026-07-17)
 license: MIT (see native/cubiomes/LICENSE)
 
@@ -16,6 +16,9 @@ Fork contents on top of upstream master (e61f905):
   - 071ca34 "generate modern overworld surfaces" (this project's own
     addition), which ports the 1.18+ terrain density, cave, surface-height,
     and surface-biome sampling needed by the built-in predictor.
+  - e97dcf9 "resolve overworld surface columns" (this project's own addition),
+    which adds block-scale 1.17.1 density interpolation, exact 1.21+ terrain
+    interpolation, and versioned default-fluid/aquifer surface resolution.
 
 Files compiled from this commit by buildNativesHost/buildNativesAll
 (selected subset):

@@ -12,11 +12,11 @@ for what it predicts; this file is only the build/maintenance side.
 - `cubiomes/` - a git submodule pointing at this project's fork
   [`Conflux-Union/cubiomes`](https://github.com/Conflux-Union/cubiomes) (itself
   a fork of [`Cubitect/cubiomes`](https://github.com/Cubitect/cubiomes)),
-  MIT-licensed. Pinned to commit `071ca34` via the submodule gitlink; the
+  MIT-licensed. Pinned to commit `e97dcf9` via the submodule gitlink; the
   pinned commit and upstream URL are also recorded in `CUBIOMES_COMMIT` for
   readability. Only the files needed to link
   `setupGenerator`/`applySeed`/`genBiomes`/`mapApproxHeight`/
-  `mapOverworldSurfaceBiome`/
+  `mapOverworldSurfaceColumns`/`mapOverworldSurfaceBiome`/
   `mapEndSurfaceHeight`/`getChunkNaturalTreeCandidates`/`getStructurePos`/
   `isViableStructurePos` are compiled
   by `buildNativesHost`/`buildNativesAll` (`biomenoise`, `biomes`, `generator`,

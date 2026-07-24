@@ -215,6 +215,21 @@ class CubiomesNativeTest {
             assertEquals(64, y[2 * width + 5]); // block (1200,6720)
             assertEquals(63, y[3 * width + 7]); // block (1208,6724)
             assertEquals(65, y[4 * width + 9]); // block (1216,6728)
+
+            final int[] solidY = new int[2];
+            final int[] fluidY = new int[2];
+            final int[] surfaceY = new int[2];
+            final int[] surfaceFlags = new int[2];
+            assertEquals(0, ctx.surfaceColumns(
+                0, 8192, 2, 1, 4,
+                solidY, fluidY, surfaceY, surfaceFlags
+            ));
+            for (int i = 0; i < solidY.length; i++) {
+                assertTrue(solidY[i] < 62, "seed-0 tile (0,32) sample should be ocean terrain");
+                assertEquals(62, fluidY[i]);
+                assertEquals(62, surfaceY[i]);
+                assertEquals(1, surfaceFlags[i]);
+            }
         }
     }
 

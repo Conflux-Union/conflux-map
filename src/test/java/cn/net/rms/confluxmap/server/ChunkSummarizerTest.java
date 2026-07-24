@@ -60,6 +60,9 @@ class ChunkSummarizerTest {
         final BaselineGrid baseline = new BaselineGrid();
         Arrays.fill(baseline.biomeId, 0);
         Arrays.fill(baseline.terrainY, 49);
+        Arrays.fill(baseline.fluidY, 62);
+        Arrays.fill(baseline.baseSurfaceY, 62);
+        Arrays.fill(baseline.surfaceFlags, BaselineGrid.SURFACE_FLUID);
 
         final PatchBuilder.Result result = new PatchBuilder().build(summary, 0L, baseline, false);
 

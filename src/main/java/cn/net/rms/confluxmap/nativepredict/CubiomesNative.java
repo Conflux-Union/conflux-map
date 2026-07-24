@@ -61,6 +61,23 @@ final class CubiomesNative {
      */
     static native int cfxHeights(long handle, int x4, int z4, int w, int h, int[] outY, int[] outIds);
 
+    /**
+     * Overworld-only block-scale base columns. Outputs are highest solid Y, highest base-fluid Y
+     * ({@link Integer#MIN_VALUE} when absent), final visible base surface Y, and surface flags.
+     */
+    static native int cfxSurfaceColumns(
+        long handle,
+        int blockX,
+        int blockZ,
+        int w,
+        int h,
+        int stride,
+        int[] outSolidY,
+        int[] outFluidY,
+        int[] outSurfaceY,
+        int[] outFlags
+    );
+
     /** Strided 1:4 Overworld heights; adjacent output cells are {@code stride} native cells apart. */
     static native int cfxHeightsStrided(long handle, int x4, int z4, int w, int h, int stride, int[] outY, int[] outIds);
 

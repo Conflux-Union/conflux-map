@@ -6,7 +6,7 @@ overlays it; predictions never enter the `.cfr` column cache.
 ## Determinism
 
 The wire baseline is `{biomeId u8, surfaceY i16, kind u8, fluidDepth u8}`. The predictor version
-is `cb:071ca3452ea2|shim:3|base:9`; palette colours are local and never sent. Natural canopy stays
+is `cb:e97dcf959585|shim:4|base:10`; palette colours are local and never sent. Natural canopy stays
 on the predicted plane instead of becoming a generated-chunk correction, so generated frontiers
 cannot introduce foliage-colour seams. Other height differences up to 2 blocks are tolerated, and
 fluid depth compares in buckets `0`, `1-3`, `4-9`, `10+`. A real map colour outside the biome's
@@ -28,10 +28,12 @@ Rainy 1.17.1 biomes that cross vanilla's high-altitude freezing threshold render
 snow cover. Prediction uses the midpoint snow line because the baseline does not carry vanilla's
 small horizontal temperature-noise offset: Y=95 for mountain/stone-shore families, Y=125 for
 taiga/giant-spruce families, and Y=155 for giant-tree taiga.
-Frozen-ocean and frozen-river baselines keep an ice surface at sea level instead of being flattened
-through the ordinary open-water branch.
-All Overworld terrain below sea level uses Vanilla's default water fill, including low ground whose
-sampled biome is not itself oceanic; End terrain is explicitly excluded from this rule.
+Frozen-ocean surface ice uses Vanilla's fixed temperature-noise mask; deep frozen ocean keeps its
+ordinary water surface because its visible ice comes from placed iceberg features.
+Overworld surface columns are resolved by the versioned cubiomes terrain generator rather than by
+reconstructing water from a biome and height in Java. The 1.17.1 path uses its default sea-level
+fill, while 1.21+ evaluates the named aquifer noises, positional fluid centers, pressure barriers,
+and local fluid levels. End terrain is explicitly excluded from this rule.
 
 LOD0-1 canopy uses cubiomes' 1.17.1 natural tree candidates. A chunk with an unsupported vegetation
 pipeline keeps the previous deterministic canopy locally; a native failure falls back for the full

@@ -68,34 +68,34 @@ class PredictionTileServiceTest {
         sessionGuard.begin(WORLD, DIM);
 
         try {
-            predictionTiles.requestTile(new TileKey(WORLD, DIM, "surface!pred", 4, 0, 0));
+            predictionTiles.requestTile(new TileKey(WORLD, DIM, "surface!pred", 2, 0, 0));
             awaitIdle(predictionTiles, 10_000L);
 
-            assertEquals(35, predictionTiles.predictedBiomeAt(DIM, 4, 0, 0).orElse(-1));
+            assertEquals(35, predictionTiles.predictedBiomeAt(DIM, 2, 0, 0).orElse(-1));
 
             final PatchCodec.Sample correction = new PatchCodec.Sample(
                 0, 4, 80, SurfaceKind.LAND.ordinal(), Proto.MAP_COLOR_NONE, 0
             );
             assertTrue(predictionTiles.applyCorrection(
-                new CorrectionStore.Key(DIM.toString(), 4, 0, 0),
+                new CorrectionStore.Key(DIM.toString(), 2, 0, 0),
                 1L,
                 new byte[Proto.PATCH_PRESENCE_BYTES],
                 new PatchCodec.Patch(List.of(correction))
             ));
             awaitIdle(predictionTiles, 10_000L);
-            assertEquals(4, predictionTiles.predictedBiomeAt(DIM, 4, 0, 0).orElse(-1));
+            assertEquals(4, predictionTiles.predictedBiomeAt(DIM, 2, 0, 0).orElse(-1));
 
             predictionTiles.setViewMode(PredictionViewMode.VISITED_ONLY);
-            assertTrue(predictionTiles.predictedBiomeAt(DIM, 4, 0, 0).isEmpty());
+            assertTrue(predictionTiles.predictedBiomeAt(DIM, 2, 0, 0).isEmpty());
 
             predictionTiles.setViewMode(PredictionViewMode.EVERYWHERE);
             predictionTiles.clearViewport();
             assertTrue(
-                predictionTiles.predictedBiomeAt(DIM, 4, 0, 0).isEmpty(),
+                predictionTiles.predictedBiomeAt(DIM, 2, 0, 0).isEmpty(),
                 "a cleared metadata entry should be requeued instead of returning stale data"
             );
             awaitIdle(predictionTiles, 10_000L);
-            assertEquals(4, predictionTiles.predictedBiomeAt(DIM, 4, 0, 0).orElse(-1));
+            assertEquals(4, predictionTiles.predictedBiomeAt(DIM, 2, 0, 0).orElse(-1));
         } finally {
             executors.shutdown(2000);
         }

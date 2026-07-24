@@ -214,6 +214,9 @@ class PredictedTileComposerTest {
         final BaselineGrid grid = new BaselineGrid();
         Arrays.fill(grid.biomeId, 1);
         Arrays.fill(grid.terrainY, BaselineDeriver.WATER_LEVEL - 4);
+        Arrays.fill(grid.fluidY, BaselineDeriver.WATER_LEVEL);
+        Arrays.fill(grid.baseSurfaceY, BaselineDeriver.WATER_LEVEL);
+        Arrays.fill(grid.surfaceFlags, BaselineGrid.SURFACE_FLUID);
         grid.biomeId[BaselineGrid.index(6, 6)] = 6;
         final DerivedGrid derived = BaselineDeriver.derive(grid);
         final PredictionPalette palette = PredictionPalette.defaults();

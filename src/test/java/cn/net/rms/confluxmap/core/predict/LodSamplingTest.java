@@ -90,6 +90,25 @@ class LodSamplingTest {
             }
 
             @Override
+            public boolean surfaceColumns(
+                final int blockX,
+                final int blockZ,
+                final int w,
+                final int h,
+                final int stride,
+                final int[] outSolidY,
+                final int[] outFluidY,
+                final int[] outSurfaceY,
+                final int[] outFlags
+            ) {
+                java.util.Arrays.fill(outSolidY, 40);
+                java.util.Arrays.fill(outFluidY, BaselineDeriver.WATER_LEVEL);
+                java.util.Arrays.fill(outSurfaceY, BaselineDeriver.WATER_LEVEL);
+                java.util.Arrays.fill(outFlags, BaselineGrid.SURFACE_FLUID);
+                return true;
+            }
+
+            @Override
             public boolean endHeights(final int x4, final int z4, final int w, final int h, final int[] outY) {
                 return false;
             }
@@ -114,6 +133,31 @@ class LodSamplingTest {
                 for (int zz = 0; zz < h; zz++) {
                     for (int xx = 0; xx < w; xx++) {
                         outY[zz * w + xx] = x4 + xx;
+                    }
+                }
+                return true;
+            }
+
+            @Override
+            public boolean surfaceColumns(
+                final int blockX,
+                final int blockZ,
+                final int w,
+                final int h,
+                final int stride,
+                final int[] outSolidY,
+                final int[] outFluidY,
+                final int[] outSurfaceY,
+                final int[] outFlags
+            ) {
+                for (int zz = 0; zz < h; zz++) {
+                    for (int xx = 0; xx < w; xx++) {
+                        final int index = zz * w + xx;
+                        final int solid = Math.floorDiv(blockX + xx * stride, 4);
+                        outSolidY[index] = solid;
+                        outFluidY[index] = BaselineGrid.NO_FLUID;
+                        outSurfaceY[index] = solid;
+                        outFlags[index] = 0;
                     }
                 }
                 return true;
@@ -146,9 +190,9 @@ class LodSamplingTest {
 
     @ParameterizedTest
     @ValueSource(ints = {0, 1, 3, 4})
-    void aggregatedCoastHeightsDoNotRaiseOceanAboveSeaLevel(final int lod) {
+    void overworldSamplingUsesResolvedSurfaceColumnsInsteadOfReconstructingTheWaterline(final int lod) {
         final int coastBlockX = 4 << lod;
-        final int landHeightStartX4 = lod == 3 ? coastBlockX / 4 - 1 : coastBlockX / 4;
+        final boolean[] surfaceColumnsCalled = {false};
         final BaselineSampler coastSampler = new BaselineSampler() {
             @Override
             public boolean biomes(final int scale, final int x, final int z, final int w, final int h, final int[] out) {
@@ -162,9 +206,37 @@ class LodSamplingTest {
 
             @Override
             public boolean heights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+                java.util.Arrays.fill(outY, 100);
+                return true;
+            }
+
+            @Override
+            public boolean surfaceColumns(
+                final int blockX,
+                final int blockZ,
+                final int w,
+                final int h,
+                final int stride,
+                final int[] outSolidY,
+                final int[] outFluidY,
+                final int[] outSurfaceY,
+                final int[] outFlags
+            ) {
+                surfaceColumnsCalled[0] = true;
                 for (int zz = 0; zz < h; zz++) {
                     for (int xx = 0; xx < w; xx++) {
-                        outY[zz * w + xx] = x4 + xx < landHeightStartX4 ? 40 : 100;
+                        final int index = zz * w + xx;
+                        if (blockX + xx * stride < coastBlockX) {
+                            outSolidY[index] = 40;
+                            outFluidY[index] = BaselineDeriver.WATER_LEVEL;
+                            outSurfaceY[index] = BaselineDeriver.WATER_LEVEL;
+                            outFlags[index] = BaselineGrid.SURFACE_FLUID;
+                        } else {
+                            outSolidY[index] = 100;
+                            outFluidY[index] = BaselineGrid.NO_FLUID;
+                            outSurfaceY[index] = 100;
+                            outFlags[index] = 0;
+                        }
                     }
                 }
                 return true;
@@ -178,13 +250,16 @@ class LodSamplingTest {
 
         final BaselineGrid grid = LodSampling.sample(coastSampler, false, lod, 0, 0);
         assertNotNull(grid);
+        org.junit.jupiter.api.Assertions.assertTrue(
+            surfaceColumnsCalled[0],
+            "Overworld sampling must consume cubiomes-resolved base columns"
+        );
         final int oceanEdge = BaselineGrid.index(3, 0);
         assertEquals(0, grid.biomeId[oceanEdge]);
-        assertEquals(
-            BaselineDeriver.WATER_LEVEL - 1,
-            grid.terrainY[oceanEdge],
-            "land height anchors must not lift the final ocean pixel above the waterline at LOD " + lod
-        );
+        assertEquals(40, grid.terrainY[oceanEdge]);
+        assertEquals(BaselineDeriver.WATER_LEVEL, grid.fluidY[oceanEdge]);
+        assertEquals(BaselineDeriver.WATER_LEVEL, grid.baseSurfaceY[oceanEdge]);
+        assertEquals(BaselineGrid.SURFACE_FLUID, grid.surfaceFlags[oceanEdge]);
 
         final DerivedGrid derived = BaselineDeriver.derive(grid);
         assertEquals(
@@ -213,6 +288,25 @@ class LodSamplingTest {
             @Override
             public boolean heights(final int x4, final int z4, final int w, final int h, final int[] outY) {
                 java.util.Arrays.fill(outY, 70);
+                return true;
+            }
+
+            @Override
+            public boolean surfaceColumns(
+                final int blockX,
+                final int blockZ,
+                final int w,
+                final int h,
+                final int stride,
+                final int[] outSolidY,
+                final int[] outFluidY,
+                final int[] outSurfaceY,
+                final int[] outFlags
+            ) {
+                java.util.Arrays.fill(outSolidY, 70);
+                java.util.Arrays.fill(outFluidY, BaselineGrid.NO_FLUID);
+                java.util.Arrays.fill(outSurfaceY, 70);
+                java.util.Arrays.fill(outFlags, 0);
                 return true;
             }
 
