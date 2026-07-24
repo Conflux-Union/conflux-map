@@ -96,11 +96,11 @@ public final class GeneratedTileComposer {
         final int biome = grid.biomeId()[index];
         return switch (kind) {
             case WATER -> Argb.multiply(palette.waterBase, palette.waterTint(biome));
-            case FOLIAGE -> Argb.multiply(palette.foliageBase, palette.foliageTint(biome));
+            case FOLIAGE -> palette.canopyColor(biome);
             case SAND -> palette.sandBase;
             case SNOW -> palette.snowBase;
             case ICE -> palette.iceBase;
-            default -> Argb.multiply(palette.landBase, palette.grassTint(biome));
+            default -> palette.groundColor(biome);
         };
     }
 }
