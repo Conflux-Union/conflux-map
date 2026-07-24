@@ -359,13 +359,23 @@ public final class TileService {
         final byte[] lightPlane = layer.type() == MapLayer.Type.SURFACE
             ? new byte[RegionColumns.SIZE * RegionColumns.SIZE]
             : null;
-        final int[] pixels = key.lod() == 0
-            ? composeLod0(store, key.tileX(), key.tileZ(), applyDaylight, daylightFactor, lightPlane)
-            : composeLodN(store, key, applyDaylight, daylightFactor, lightPlane);
+        // Only the sub-rects actually composed from in-memory regions are claimed; the
+        // texture cache preserves its previous pixels everywhere else, so a recompose can
+        // never erase a quadrant whose backing region was evicted to disk in the meantime.
+        final List<TileUpdate.Rect> changed = new ArrayList<>();
+        final int[] pixels;
+        if (key.lod() == 0) {
+            pixels = composeLod0(store, key.tileX(), key.tileZ(), applyDaylight, daylightFactor, lightPlane);
+            if (store.region(key.tileX(), key.tileZ()) != null) {
+                changed.add(new TileUpdate.Rect(0, 0, RegionColumns.SIZE, RegionColumns.SIZE));
+            }
+        } else {
+            pixels = composeLodN(store, key, applyDaylight, daylightFactor, lightPlane, changed);
+        }
         final TileUpdate.Relight relight = lightPlane == null
             ? null
             : new TileUpdate.Relight(daylightFactor, lightPlane);
-        return TileUpdate.fullTile(key, pixels, relight);
+        return new TileUpdate(key, pixels, List.copyOf(changed), relight);
     }
 
     /**
@@ -400,11 +410,17 @@ public final class TileService {
      * box-averaged down by {@code 2^lod} (via repeated 2x2 alpha-weighted {@link Argb#average4Weighted}
      * passes, i.e. a small mipmap chain, so a region that is only partly explored downsamples to a
      * clean translucent value instead of darkening toward black) and stitched into its quadrant of
-     * the 256x256 output. Regions with no data at all are skipped, leaving their quadrant at the
-     * default fully-transparent value.
+     * the 256x256 output. Regions not in memory are skipped AND left out of {@code outChanged},
+     * so the texture cache keeps showing whatever that quadrant held before - regions evicted to
+     * disk between two composes must not be erased from an already-drawn zoomed-out tile.
      */
     private static int[] composeLodN(
-        final ColumnStore store, final TileKey key, final boolean applyDaylight, final float daylightFactor, final byte[] outLight
+        final ColumnStore store,
+        final TileKey key,
+        final boolean applyDaylight,
+        final float daylightFactor,
+        final byte[] outLight,
+        final List<TileUpdate.Rect> outChanged
     ) {
         final int lod = key.lod();
         final int size = RegionColumns.SIZE;
@@ -427,6 +443,7 @@ public final class TileService {
                 if (outLight != null) {
                     stitchLight(downsampleLight(fullLight, size, lod), subSize, outLight, dx * subSize, dz * subSize);
                 }
+                outChanged.add(new TileUpdate.Rect(dx * subSize, dz * subSize, subSize, subSize));
             }
         }
         return outPixels;

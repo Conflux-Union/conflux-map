@@ -91,7 +91,8 @@ public final class TileTextureManager {
 
     private void upload(final TileUpdate update) {
         TileTexture entry = textures.get(update.key());
-        if (entry == null) {
+        final boolean fresh = entry == null;
+        if (fresh) {
             //#if MC>=12105
             //$$ entry = new TileTexture(new NativeImageBackedTexture("Conflux Map tile", TILE_SIZE, TILE_SIZE, false));
             //#else
@@ -99,18 +100,44 @@ public final class TileTextureManager {
             //#endif
             textures.put(update.key(), entry);
         }
-        final TileUpdate.Relight relight = update.relight();
-        entry.appliedDaylight = relight == null ? Float.NaN : relight.composedDaylight();
-        entry.lightLevels = relight == null ? null : relight.lightLevels();
         final NativeImage image = entry.texture.getImage();
         if (image == null) {
             return;
         }
+        final TileUpdate.Relight relight = update.relight();
+        if (fresh) {
+            // A NativeImage's content is undefined until written; with partial coverage the
+            // unclaimed area must start transparent, not as whatever the allocation held.
+            for (int y = 0; y < TILE_SIZE; y++) {
+                for (int x = 0; x < TILE_SIZE; x++) {
+                    NativeImages.setArgb(image, x, y, Argb.TRANSPARENT);
+                }
+            }
+        } else if (relight != null && entry.lightLevels != null
+            && !DaylightModel.sameBucket(entry.appliedDaylight, relight.composedDaylight())) {
+            // Preserved pixels were darkened at an older daylight bucket than the rects about
+            // to land; re-light them first so one tile never mixes two buckets.
+            relightPixels(image, entry.lightLevels, entry.appliedDaylight, relight.composedDaylight());
+        }
+        if (relight == null) {
+            entry.appliedDaylight = Float.NaN;
+            entry.lightLevels = null;
+        } else {
+            entry.appliedDaylight = relight.composedDaylight();
+            if (entry.lightLevels == null) {
+                entry.lightLevels = new byte[TILE_SIZE * TILE_SIZE];
+            }
+        }
         final int[] pixels = update.argbPixels();
-        for (int y = update.changedY(); y < update.changedY() + update.changedHeight(); y++) {
-            final int row = y * TILE_SIZE;
-            for (int x = update.changedX(); x < update.changedX() + update.changedWidth(); x++) {
-                NativeImages.setArgb(image, x, y, pixels[row + x]);
+        for (final TileUpdate.Rect rect : update.changed()) {
+            for (int y = rect.y(); y < rect.y() + rect.height(); y++) {
+                final int row = y * TILE_SIZE;
+                for (int x = rect.x(); x < rect.x() + rect.width(); x++) {
+                    NativeImages.setArgb(image, x, y, pixels[row + x]);
+                }
+                if (relight != null) {
+                    System.arraycopy(relight.lightLevels(), row + rect.x(), entry.lightLevels, row + rect.x(), rect.width());
+                }
             }
         }
         entry.texture.upload();
@@ -139,21 +166,25 @@ public final class TileTextureManager {
             if (image == null) {
                 continue;
             }
-            final float[] ratios = ShadingPipeline.relightRatios(entry.appliedDaylight, target);
-            final byte[] light = entry.lightLevels;
-            for (int y = 0; y < TILE_SIZE; y++) {
-                final int row = y * TILE_SIZE;
-                for (int x = 0; x < TILE_SIZE; x++) {
-                    final float ratio = ratios[Math.min(15, light[row + x] & 0xFF)];
-                    if (ratio != 1f) {
-                        final int argb = NativeImages.getArgb(image, x, y);
-                        NativeImages.setArgb(image, x, y, ShadingPipeline.applyBrightnessMultiplier(argb, ratio));
-                    }
-                }
-            }
+            relightPixels(image, entry.lightLevels, entry.appliedDaylight, target);
             entry.appliedDaylight = target;
             entry.texture.upload();
             budget--;
+        }
+    }
+
+    /** Rewrites every pixel from the daylight it was darkened with to {@code to}, per its block light. */
+    private static void relightPixels(final NativeImage image, final byte[] light, final float from, final float to) {
+        final float[] ratios = ShadingPipeline.relightRatios(from, to);
+        for (int y = 0; y < TILE_SIZE; y++) {
+            final int row = y * TILE_SIZE;
+            for (int x = 0; x < TILE_SIZE; x++) {
+                final float ratio = ratios[Math.min(15, light[row + x] & 0xFF)];
+                if (ratio != 1f) {
+                    final int argb = NativeImages.getArgb(image, x, y);
+                    NativeImages.setArgb(image, x, y, ShadingPipeline.applyBrightnessMultiplier(argb, ratio));
+                }
+            }
         }
     }
 
