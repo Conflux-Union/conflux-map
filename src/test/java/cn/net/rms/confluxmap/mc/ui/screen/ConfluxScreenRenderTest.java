@@ -8,6 +8,12 @@ import java.util.List;
 //$$ import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 //$$ import net.minecraft.client.gui.DrawContext;
 //$$ import net.minecraft.text.Text;
+//#if MC>=12108
+//$$ import org.joml.Matrix3x2fStack;
+//#endif
+//#if MC>=12111
+//$$ import net.minecraft.client.MinecraftClient;
+//#endif
 //#endif
 import org.junit.jupiter.api.Test;
 
@@ -15,7 +21,7 @@ final class ConfluxScreenRenderTest {
     //#if MC>=12000
     //$$ @Test
     //$$ void implicitVanillaBackgroundDoesNotCoverCustomContents() throws Exception {
-    //$$     final ProbeScreen screen = new ProbeScreen(false);
+    //$$     final ProbeScreen screen = probeScreen(false);
     //$$
     //$$     screen.render(drawContextWithoutClient(), 0, 0, 0f);
     //$$
@@ -25,21 +31,57 @@ final class ConfluxScreenRenderTest {
     //$$
     //$$ @Test
     //$$ void explicitVanillaBackgroundRendersExactlyOnceBeforeWidgets() throws Exception {
-    //$$     final ProbeScreen screen = new ProbeScreen(true);
+    //$$     final ProbeScreen screen = probeScreen(true);
     //$$
     //$$     screen.render(drawContextWithoutClient(), 0, 0, 0f);
     //$$
+    //#if MC>=12106
+    //$$     // Screen.renderWithTooltip already ran it; a second pass would apply the blur twice.
+    //$$     assertEquals(0, screen.backgrounds);
+    //$$     assertEquals(List.of("contents", "widget", "after"), screen.events);
+    //#else
     //$$     assertEquals(1, screen.backgrounds);
     //$$     assertEquals(List.of("contents", "background", "widget", "after"), screen.events);
+    //#endif
+    //$$ }
+    //$$
+    //$$ private static ProbeScreen probeScreen(final boolean explicitBackground) throws Exception {
+    //#if MC>=12111
+    //$$     // 1.21.11's Screen constructor reads the live client's text renderer; the render path
+    //$$     // under test never touches it, so a placeholder covers construction and is dropped again.
+    //$$     final var instance = MinecraftClient.class.getDeclaredField("instance");
+    //$$     instance.setAccessible(true);
+    //$$     instance.set(null, allocate(MinecraftClient.class));
+    //$$     try {
+    //$$         return new ProbeScreen(explicitBackground);
+    //$$     } finally {
+    //$$         instance.set(null, null);
+    //$$     }
+    //#else
+    //$$     return new ProbeScreen(explicitBackground);
+    //#endif
     //$$ }
     //$$
     //$$ private static DrawContext drawContextWithoutClient() throws Exception {
     //$$     // The probe treats the context as opaque; the normal constructor requires a live client.
+    //$$     final DrawContext context = allocate(DrawContext.class);
+    //#if MC>=12108
+    //$$     // allocateInstance leaves every field null, and GuiDraw copies the 2D transform out
+    //$$     // of the context as soon as ConfluxScreen.render wraps it.
+    //$$     final var matrices = DrawContext.class.getDeclaredField("matrices");
+    //$$     matrices.setAccessible(true);
+    //$$     matrices.set(context, new Matrix3x2fStack(4));
+    //#endif
+    //$$     return context;
+    //$$ }
+    //$$
+    //$$ private static <T> T allocate(final Class<T> type) throws Exception {
     //$$     final Class<?> unsafeType = Class.forName("sun.misc.Unsafe");
-    //$$     final var field = unsafeType.getDeclaredField("theUnsafe");
-    //$$     field.setAccessible(true);
-    //$$     return (DrawContext) unsafeType.getMethod("allocateInstance", Class.class)
-    //$$         .invoke(field.get(null), DrawContext.class);
+    //$$     final var theUnsafe = unsafeType.getDeclaredField("theUnsafe");
+    //$$     theUnsafe.setAccessible(true);
+    //$$     return type.cast(
+    //$$         unsafeType.getMethod("allocateInstance", Class.class).invoke(theUnsafe.get(null), type)
+    //$$     );
     //$$ }
     //$$
     //$$ private static final class ProbeScreen extends ConfluxScreen {

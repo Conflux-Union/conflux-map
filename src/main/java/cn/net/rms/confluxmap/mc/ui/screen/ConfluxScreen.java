@@ -12,7 +12,11 @@ import net.minecraft.text.Text;
 /** Screen base that keeps the MatrixStack-to-DrawContext rewrite at one lifecycle seam. */
 public abstract class ConfluxScreen extends Screen {
     //#if MC>=12000
-    //$$ /** Screen.render owns the widget loop, but its implicit background must not cover renderContents. */
+    //$$ /**
+    //$$  * Screen.render owns the widget loop, but its implicit background must not cover
+    //$$  * renderContents. Only 1.21.5 and older reach that path: 1.21.6 moved the background
+    //$$  * call up into Screen.renderWithTooltip, which already runs before renderContents.
+    //$$  */
     //$$ private boolean renderingVanillaWidgets;
     //#endif
 
