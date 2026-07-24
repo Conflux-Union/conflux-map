@@ -35,10 +35,13 @@ reconstructing water from a biome and height in Java. The 1.17.1 path uses its d
 fill, while 1.21+ evaluates the named aquifer noises, positional fluid centers, pressure barriers,
 and local fluid levels. End terrain is explicitly excluded from this rule.
 
-LOD0-1 canopy uses cubiomes' 1.17.1 natural tree candidates. A chunk with an unsupported vegetation
-pipeline keeps the previous deterministic canopy locally; a native failure falls back for the full
-tile. Higher LODs retain the aggregate canopy texture because individual tree candidates are no
-longer distinguishable.
+LOD0-1 canopy uses cubiomes' version-specific natural vegetation candidates. The 1.21.1 path uses
+the vegetation-step Xoroshiro decorator stream, the placed-feature registry indexes, a 3x3 chunk
+surface-biome feature union, and per-candidate biome filtering. Bamboo candidates retain their visible
+stalk height without being mislabeled as leaves. A chunk with an unsupported vegetation pipeline
+keeps the previous deterministic canopy locally; a native failure falls back for the full tile.
+Higher LODs retain the aggregate canopy texture because individual candidates are no longer
+distinguishable.
 Jungle-tree candidates use a deterministic tall-canopy estimate instead of the ordinary-tree height,
 so dense jungle does not collapse into a flat surface a few blocks above the predicted ground.
 The terrain-feature cave mask is not applied to the surface plane, and approximate structure bounds

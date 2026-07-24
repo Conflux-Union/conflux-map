@@ -51,6 +51,9 @@ loom {
             vmArg "-Djava.awt.headless=true"
             vmArg "-Dconfluxmap.quality.world-seed=0"
             vmArg "-Dconfluxmap.quality.report-dir=${project.buildDir}/reports/prediction-quality"
+            if (project.hasProperty('qualitySample')) {
+                vmArg "-Dconfluxmap.quality.sample=${project.property('qualitySample')}"
+            }
             runDir "build/gametest"
         }
     }

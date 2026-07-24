@@ -109,8 +109,9 @@ public final class CubiomesContext implements AutoCloseable {
     }
 
     /**
-     * Overworld-only natural tree candidates for one 1.17.1 chunk. All field arrays must have the
-     * same capacity; {@code outCount[0]} receives the number of records on success.
+     * Overworld-only natural vegetation candidates for one supported-version chunk. All field
+     * arrays must have the same capacity; {@code outCount[0]} receives the number of records on
+     * success.
      */
     public int treeCandidates(
         final int chunkX, final int chunkZ,

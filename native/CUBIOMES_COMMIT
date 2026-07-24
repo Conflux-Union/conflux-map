@@ -1,7 +1,7 @@
 upstream: https://github.com/Cubitect/cubiomes
 fork:     https://github.com/Conflux-Union/cubiomes (this project's fork)
-commit:   e97dcf9595859cfb27b4c743c3c688e424e13c6a
-commit date: 2026-07-24T13:54:28+08:00
+commit:   75804375a34e00e10583a7097d7dc266e454d606
+commit date: 2026-07-24T15:49:52+08:00
 pinned via: native/cubiomes git submodule (converted from a vendored copy on 2026-07-17)
 license: MIT (see native/cubiomes/LICENSE)
 
@@ -19,6 +19,9 @@ Fork contents on top of upstream master (e61f905):
   - e97dcf9 "resolve overworld surface columns" (this project's own addition),
     which adds block-scale 1.17.1 density interpolation, exact 1.21+ terrain
     interpolation, and versioned default-fluid/aquifer surface resolution.
+  - 7580437 "predict modern vegetation candidates" (this project's own
+    addition), which adds the 1.21.1 vegetation-step Xoroshiro stream, placed-
+    feature profiles, surface-biome placement checks, and bamboo candidates.
 
 Files compiled from this commit by buildNativesHost/buildNativesAll
 (selected subset):

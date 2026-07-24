@@ -280,6 +280,28 @@ class CubiomesNativeTest {
                 "unsupported biome decorators must not masquerade as an exact empty chunk"
             );
         }
+
+        try (CubiomesContext ctx = CubiomesContext.create(mc21(), 0L, OVERWORLD, 0)) {
+            // Vanilla 1.21.1 rejects attempts 0 and 1 as river, then accepts this bamboo.
+            assertNotNull(ctx);
+            final int capacity = 256;
+            final int[] xs = new int[capacity];
+            final int[] ys = new int[capacity];
+            final int[] zs = new int[capacity];
+            final int[] types = new int[capacity];
+            final int[] biomes = new int[capacity];
+            final int[] flags = new int[capacity];
+            final int[] count = new int[1];
+
+            assertEquals(0, ctx.treeCandidates(448, 481, xs, ys, zs, types, biomes, flags, count));
+            assertEquals(31, count[0]);
+            assertEquals(7180, xs[0]);
+            assertEquals(7705, zs[0]);
+            assertEquals(11, types[0], "cubiomes TREE_BAMBOO");
+            assertEquals(168, biomes[0], "cubiomes bamboo_jungle");
+            assertEquals(9, (flags[0] >>> 16) & 0xFF, "Vanilla bamboo stalk height");
+            assertTrue((flags[0] & (1 << 5)) != 0, "the first accepted candidate X/Z must be exact");
+        }
     }
 
     @Test

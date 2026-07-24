@@ -108,9 +108,9 @@ public interface BaselineSampler {
     }
 
     /**
-     * Fills {@code out} with the 1.17.1 tree-like decoration candidates for one Overworld chunk.
-     * Returns the number written, {@link #TREES_UNSUPPORTED}, or {@link #TREES_FAILED}. The
-     * default keeps non-native test samplers and other implementations on the synthetic path.
+     * Fills {@code out} with version-specific natural vegetation candidates for one Overworld
+     * chunk. Returns the number written, {@link #TREES_UNSUPPORTED}, or {@link #TREES_FAILED}.
+     * The default keeps non-native test samplers and other implementations on the synthetic path.
      */
     default int treeCandidates(final int chunkX, final int chunkZ, final TreeCandidate[] out) {
         return TREES_UNSUPPORTED;

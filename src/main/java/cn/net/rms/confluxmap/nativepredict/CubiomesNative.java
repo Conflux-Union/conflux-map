@@ -93,10 +93,11 @@ final class CubiomesNative {
     static native int cfxEndHeightsStrided(long handle, int x4, int z4, int w, int h, int stride, int[] outY);
 
     /**
-     * Overworld-only 1.17.1 natural tree candidates for one chunk. Candidate fields are written
-     * in parallel to the six output arrays and {@code outCount[0]} receives the number written.
-     * Status 7 means cubiomes does not model that biome's decoration pipeline, so callers should
-     * retain their existing synthetic fallback instead of treating the empty output as exact.
+     * Overworld-only natural vegetation candidates for one supported-version chunk. Candidate
+     * fields are written in parallel to the six output arrays and {@code outCount[0]} receives the
+     * number written. Status 7 means cubiomes does not model that biome's decoration pipeline, so
+     * callers should retain their existing synthetic fallback instead of treating the empty output
+     * as exact.
      */
     static native int cfxTreeCandidates(
         long handle, int chunkX, int chunkZ,

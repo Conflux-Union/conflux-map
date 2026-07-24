@@ -65,7 +65,7 @@ public final class PredictionQualityGameTest implements FabricGameTest {
         private final MinecraftServer server;
         private final long worldSeed;
         private final Path reportDir;
-        private final List<PredictionQualityCorpus.Sample> samples = PredictionQualityCorpus.defaultSamples();
+        private final List<PredictionQualityCorpus.Sample> samples = selectedSamples();
         private final List<PredictionQualitySampleResult> results = new ArrayList<>();
         private int sampleIndex;
         private int chunkIndex;
@@ -152,7 +152,9 @@ public final class PredictionQualityGameTest implements FabricGameTest {
 
         private void finish() throws IOException {
             PredictionQualityReport.write(reportDir, worldSeed, results);
-            PredictionQualityThresholds.verify(results);
+            if (System.getProperty("confluxmap.quality.sample") == null) {
+                PredictionQualityThresholds.verify(results);
+            }
             context.complete();
         }
 
@@ -165,6 +167,21 @@ public final class PredictionQualityGameTest implements FabricGameTest {
             }
             return world;
         }
+    }
+
+    private static List<PredictionQualityCorpus.Sample> selectedSamples() {
+        final List<PredictionQualityCorpus.Sample> samples = PredictionQualityCorpus.defaultSamples();
+        final String selected = System.getProperty("confluxmap.quality.sample");
+        if (selected == null || selected.isBlank()) {
+            return samples;
+        }
+        final List<PredictionQualityCorpus.Sample> filtered = samples.stream()
+            .filter(sample -> sample.id().equals(selected))
+            .toList();
+        if (filtered.isEmpty()) {
+            throw new IllegalArgumentException("unknown prediction quality sample: " + selected);
+        }
+        return filtered;
     }
 
     private static PredictionQualityEvaluator.TileData toPredictionTile(
