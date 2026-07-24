@@ -48,10 +48,10 @@ public final class RenderUtil {
         //#endif
     }
 
-    /** Resets the global model-view while a LAST world-render pass uses its context matrices. */
-    public static void pushIdentityModelView() {
+    /** Saves the world ModelView and normalizes only the legacy LAST-event state. */
+    public static void pushWorldHudModelView() {
         //#if MC>=12100
-        //$$ RenderSystem.getModelViewStack().pushMatrix().identity();
+        //$$ RenderSystem.getModelViewStack().pushMatrix();
         //#else
         final MatrixStack modelViewStack = RenderSystem.getModelViewStack();
         modelViewStack.push();
@@ -60,7 +60,7 @@ public final class RenderUtil {
         RenderSystem.applyModelViewMatrix();
     }
 
-    /** Restores the global model-view saved by {@link #pushIdentityModelView()}. */
+    /** Restores the global model-view saved by {@link #pushWorldHudModelView()}. */
     public static void popModelView() {
         //#if MC>=12100
         //$$ RenderSystem.getModelViewStack().popMatrix();

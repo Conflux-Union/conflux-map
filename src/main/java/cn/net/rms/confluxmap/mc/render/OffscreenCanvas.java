@@ -20,9 +20,9 @@ import net.minecraft.util.math.Matrix4f;
  * unlike destination-alpha masking this works regardless of the main
  * framebuffer's alpha/depth state. Render thread only.
  *
- * <p>The global model-view stack is left untouched: during HUD rendering it
- * holds vanilla's plain {@code (0,0,-2000)} translate, which is equally valid
- * inside the canvas's 1000..3000 ortho depth range.
+ * <p>The global model-view stack is left untouched. The canvas projection uses
+ * the depth range of the active version's GUI renderer, and modern versions
+ * restore the exact projection and vertex sorter that were active on entry.
  */
 public final class OffscreenCanvas {
     private Framebuffer framebuffer;
@@ -36,7 +36,19 @@ public final class OffscreenCanvas {
         framebuffer.setClearColor(0f, 0f, 0f, 0f);
         framebuffer.clear(MinecraftClient.IS_SYSTEM_MAC);
         framebuffer.beginWrite(true);
-        setProjection(ortho(0f, sizePx, 0f, sizePx));
+        //#if MC>=12100
+        //$$ RenderSystem.backupProjectionMatrix();
+        //#endif
+        setProjection(canvasProjection(sizePx));
+    }
+
+    /** Modern GUI rendering culls the map quads unless the canvas uses the same downward Y axis. */
+    private static Matrix4f canvasProjection(final int sizePx) {
+        //#if MC>=12100
+        //$$ return ortho(0f, sizePx, sizePx, 0f);
+        //#else
+        return ortho(0f, sizePx, 0f, sizePx);
+        //#endif
     }
 
     /**
@@ -46,7 +58,7 @@ public final class OffscreenCanvas {
      */
     private static Matrix4f ortho(final float left, final float right, final float bottom, final float top) {
         //#if MC>=12100
-        //$$ return new Matrix4f().setOrtho(left, right, bottom, top, 1000f, 3000f);
+        //$$ return new Matrix4f().setOrtho(left, right, bottom, top, 1000f, 21000f);
         //#else
         return Matrix4f.projectionMatrix(left, right, bottom, top, 1000f, 3000f);
         //#endif
@@ -65,11 +77,15 @@ public final class OffscreenCanvas {
     public void end(final MinecraftClient client) {
         framebuffer.endWrite();
         client.getFramebuffer().beginWrite(true);
+        //#if MC>=12100
+        //$$ RenderSystem.restoreProjectionMatrix();
+        //#else
         final Window window = client.getWindow();
         setProjection(ortho(
             0f, (float) (window.getFramebufferWidth() / window.getScaleFactor()),
             0f, (float) (window.getFramebufferHeight() / window.getScaleFactor())
         ));
+        //#endif
     }
 
     /** GL texture id of the canvas contents; row 0 is the BOTTOM (flip V when sampling). */

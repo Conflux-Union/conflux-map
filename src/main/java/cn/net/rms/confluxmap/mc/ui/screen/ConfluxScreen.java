@@ -11,6 +11,11 @@ import net.minecraft.text.Text;
 
 /** Screen base that keeps the MatrixStack-to-DrawContext rewrite at one lifecycle seam. */
 public abstract class ConfluxScreen extends Screen {
+    //#if MC>=12000
+    //$$ /** Screen.render owns the widget loop, but its implicit background must not cover renderContents. */
+    //$$ private boolean renderingVanillaWidgets;
+    //#endif
+
     protected ConfluxScreen(final Text title) {
         super(title);
     }
@@ -25,8 +30,35 @@ public abstract class ConfluxScreen extends Screen {
     //$$ ) {
     //$$     final GuiDraw draw = GuiDraw.of(context);
     //$$     renderContents(draw, mouseX, mouseY, tickDelta);
-    //$$     super.render(context, mouseX, mouseY, tickDelta);
+    //$$     // Modern Screen.render invokes renderBackground before iterating its private widget list.
+    //$$     renderingVanillaWidgets = true;
+    //$$     try {
+    //$$         super.render(context, mouseX, mouseY, tickDelta);
+    //$$     } finally {
+    //$$         renderingVanillaWidgets = false;
+    //$$     }
     //$$     renderAfterWidgets(draw, mouseX, mouseY, tickDelta);
+    //$$ }
+    //$$
+    //$$ @Override
+    //$$ public final void renderBackground(
+    //$$     final DrawContext context,
+    //$$     final int mouseX,
+    //$$     final int mouseY,
+    //$$     final float tickDelta
+    //$$ ) {
+    //$$     if (!renderingVanillaWidgets) {
+    //$$         renderVanillaBackground(context, mouseX, mouseY, tickDelta);
+    //$$     }
+    //$$ }
+    //$$
+    //$$ protected void renderVanillaBackground(
+    //$$     final DrawContext context,
+    //$$     final int mouseX,
+    //$$     final int mouseY,
+    //$$     final float tickDelta
+    //$$ ) {
+    //$$     super.renderBackground(context, mouseX, mouseY, tickDelta);
     //$$ }
     //#else
     @Override
