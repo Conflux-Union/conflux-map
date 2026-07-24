@@ -27,6 +27,7 @@ import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.update.UpdateCheckService;
 import cn.net.rms.confluxmap.core.util.TileMath;
+import cn.net.rms.confluxmap.core.util.TileViewport;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
@@ -709,13 +710,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final int lod = currentLod();
         final double pxPerBlock = 1.0 / scale;
         final double blocksPerTile = TileMath.blocksPerTile(lod);
-        final double halfWidthBlocks = width / 2.0 * scale;
-        final double halfHeightBlocks = height / 2.0 * scale;
-
-        final int firstTileX = TileMath.blockToTile((int) Math.floor(centerX - halfWidthBlocks), lod);
-        final int lastTileX = TileMath.blockToTile((int) Math.ceil(centerX + halfWidthBlocks), lod);
-        final int firstTileZ = TileMath.blockToTile((int) Math.floor(centerZ - halfHeightBlocks), lod);
-        final int lastTileZ = TileMath.blockToTile((int) Math.ceil(centerZ + halfHeightBlocks), lod);
+        final TileViewport viewport = TileViewport.covering(centerX, centerZ, width, height, scale, lod);
+        final int firstTileX = viewport.minTileX();
+        final int lastTileX = viewport.maxTileX();
+        final int firstTileZ = viewport.minTileZ();
+        final int lastTileZ = viewport.maxTileZ();
 
         final SessionGuard.Session session = gameBridge.session();
         final MapLayer layer = layerSelector.current().layer();

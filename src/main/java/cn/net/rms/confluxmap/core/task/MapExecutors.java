@@ -7,7 +7,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Thread pools owned by the mod: a small worker pool for sampling/compositing
+ * Thread pools owned by the mod: a bounded worker pool for sampling/compositing
  * and one IO thread for disk reads/writes. All threads are daemons so a hung
  * task can never block game shutdown.
  */
@@ -17,7 +17,7 @@ public final class MapExecutors {
     private final int workerCount;
 
     public MapExecutors() {
-        workerCount = Math.max(1, Math.min(3, Runtime.getRuntime().availableProcessors() / 2 - 1));
+        workerCount = Math.max(1, Math.min(6, Runtime.getRuntime().availableProcessors() / 2 - 1));
         workers = Executors.newFixedThreadPool(workerCount, factory("ConfluxMap-Worker"));
         io = Executors.newSingleThreadExecutor(factory("ConfluxMap-IO"));
     }

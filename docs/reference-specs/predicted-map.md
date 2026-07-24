@@ -6,7 +6,7 @@ overlays it; predictions never enter the `.cfr` column cache.
 ## Determinism
 
 The wire baseline is `{biomeId u8, surfaceY i16, kind u8, fluidDepth u8}`. The predictor version
-is `cb:e97dcf959585|shim:4|base:10`; palette colours are local and never sent. Natural canopy stays
+is `cb:e97dcf959585|shim:6|base:13`; palette colours are local and never sent. Synthetic canopy stays
 on the predicted plane instead of becoming a generated-chunk correction, so generated frontiers
 cannot introduce foliage-colour seams. Other height differences up to 2 blocks are tolerated, and
 fluid depth compares in buckets `0`, `1-3`, `4-9`, `10+`. A real map colour outside the biome's
@@ -30,20 +30,29 @@ small horizontal temperature-noise offset: Y=95 for mountain/stone-shore familie
 taiga/giant-spruce families, and Y=155 for giant-tree taiga.
 Frozen-ocean surface ice uses Vanilla's fixed temperature-noise mask; deep frozen ocean keeps its
 ordinary water surface because its visible ice comes from placed iceberg features.
-Overworld surface columns are resolved by the versioned cubiomes terrain generator rather than by
-reconstructing water from a biome and height in Java. The 1.17.1 path uses its default sea-level
-fill, while 1.21+ evaluates the named aquifer noises, positional fluid centers, pressure barriers,
-and local fluid levels. End terrain is explicitly excluded from this rule.
+Every supported Overworld version uses the same overview pipeline. Cubiomes first returns a cheap
+height at every output pixel. A globally aligned exact surface grid, one anchor per 8 output pixels
+at LOD0 and per 16 at LOD1-4, then corrects the overview by bilinearly expanding only the
+exact-minus-overview residual. This keeps the high-frequency overview detail visible at LOD3-4
+instead of interpolating one raw height across a 4x4 texel square. LOD0 uses a denser 34x34 exact
+grid (including the tile margin); LOD1-4 use 18x18, so close views retain more shoreline and height
+precision without making LOD1 expensive merely because its tile covers more world. The anchor's
+world spacing naturally grows with the LOD's blocks per pixel.
 
-LOD0-1 canopy uses cubiomes' version-specific natural vegetation candidates. The 1.21.1 path uses
-the vegetation-step Xoroshiro decorator stream, the placed-feature registry indexes, a 3x3 chunk
-surface-biome feature union, and per-candidate biome filtering. Bamboo candidates retain their visible
-stalk height without being mislabeled as leaves. A chunk with an unsupported vegetation pipeline
-keeps the previous deterministic canopy locally; a native failure falls back for the full tile.
-Higher LODs retain the aggregate canopy texture because individual candidates are no longer
-distinguishable.
-Jungle-tree candidates use a deterministic tall-canopy estimate instead of the ordinary-tree height,
-so dense jungle does not collapse into a flat surface a few blocks above the predicted ground.
+The Java layout, correction density, biome pass, fluid pass, and tests are identical for 1.17.1 and
+1.21+. Only the internal cubiomes overview-height formula follows the version's own terrain generator.
+Final surface biomes use the corrected heights. Fluid is categorical and resolved independently at
+every output pixel. Exact anchors provide water confidence, which is bilinearly interpolated before
+being combined with the corrected terrain floor and final ocean/river biome. The categorical flag
+is never copied from the nearest anchor because that would quantize swamp pools and shorelines into
+rectangles whose world size changes at every LOD. End terrain keeps its separate dimension-specific
+height sampler.
+
+Canopy uses one seed-deterministic overview on every Minecraft version. At LOD0-1, jittered blob
+anchors form sparse crowns while dense jungle uses the inverse field as irregular clearings; at
+LOD2+ canopy becomes an aggregate per-pixel texture. The predicted tile path does not enumerate
+natural tree decorators per chunk: that work grows with world area rather than visible pixels and
+previously made LOD1 four times more expensive than LOD0.
 The terrain-feature cave mask is not applied to the surface plane, and approximate structure bounds
 remain candidate markers rather than being painted as terrain.
 

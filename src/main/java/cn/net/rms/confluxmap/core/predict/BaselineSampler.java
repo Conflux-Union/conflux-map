@@ -87,6 +87,47 @@ public interface BaselineSampler {
         return false;
     }
 
+    /**
+     * Produces a cheap terrain overview at every requested output position. The output layout is
+     * identical for every Minecraft version; native implementations may use the version's own
+     * terrain model internally, but must not change the sampling density or return a coarser grid.
+     * Exact sparse anchors are applied by {@link LodSampling} after this call.
+     */
+    default boolean overviewHeights(
+        final int blockX,
+        final int blockZ,
+        final int w,
+        final int h,
+        final int stride,
+        final int[] outTerrainY
+    ) {
+        final int cells = w * h;
+        final int[] fluid = new int[cells];
+        final int[] surface = new int[cells];
+        final int[] flags = new int[cells];
+        return surfaceColumns(
+            blockX, blockZ, w, h, stride,
+            outTerrainY, fluid, surface, flags
+        );
+    }
+
+    /**
+     * Resolves final Overworld surface biomes at the supplied terrain heights without generating
+     * those heights a second time. Implementations that cannot reuse the height grid return false,
+     * and {@link LodSampling} falls back to {@link #biomesStrided}.
+     */
+    default boolean surfaceBiomes(
+        final int blockX,
+        final int blockZ,
+        final int w,
+        final int h,
+        final int stride,
+        final int[] terrainY,
+        final int[] outBiomeIds
+    ) {
+        return false;
+    }
+
     /** End: floored End surface heights (0 = void) for a w*h rectangle at 1:4 scale. */
     boolean endHeights(int x4, int z4, int w, int h, int[] outY);
 

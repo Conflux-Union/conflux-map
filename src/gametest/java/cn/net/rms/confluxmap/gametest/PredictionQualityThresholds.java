@@ -13,8 +13,10 @@ final class PredictionQualityThresholds {
     private static final double MIN_SAMPLE_COMBINED = 0.60;
     private static final double MIN_MEAN_COVERAGE = 0.97;
     private static final double MIN_MEAN_KIND = 0.80;
-    private static final double MAX_MEAN_HEIGHT_MAE = 2.10;
-    private static final double MIN_MEAN_HEIGHT_WITHIN_TWO = 0.81;
+    // LOD0 uses an 8-pixel exact residual grid instead of generating all 65,536 columns. These
+    // retain a narrow regression margin around the unified overview pipeline's seed-0 corpus.
+    private static final double MAX_MEAN_HEIGHT_MAE = 2.25;
+    private static final double MIN_MEAN_HEIGHT_WITHIN_TWO = 0.78;
     private static final double MIN_MEAN_FLUID = 0.80;
     private static final double MIN_MEAN_COLOR = 0.80;
     private static final double MIN_MEAN_STRUCTURAL = 0.40;

@@ -63,6 +63,25 @@ class CanopyStylizerTest {
     }
 
     @Test
+    void denseJungleUsesClearingsInsteadOfAHalfCoveredAnchorGrid() {
+        final double treeCover = BiomeTable.get(JUNGLE).treeCover();
+        final BaselineGrid grid = uniformGrid(JUNGLE, 70);
+        final DerivedGrid derived = BaselineDeriver.derive(grid);
+        CanopyStylizer.apply(derived, grid, 2024L, 0, 40_000, -80_000);
+
+        int foliage = 0;
+        for (int z = 0; z < BaselineGrid.PIXELS; z++) {
+            for (int x = 0; x < BaselineGrid.PIXELS; x++) {
+                if (derived.kind[BaselineGrid.index(x, z)] == (byte) SurfaceKind.FOLIAGE.ordinal()) {
+                    foliage++;
+                }
+            }
+        }
+        final double fraction = foliage / (double) (BaselineGrid.PIXELS * BaselineGrid.PIXELS);
+        assertTrue(Math.abs(fraction - treeCover) <= 0.10, "dense jungle foliage fraction=" + fraction);
+    }
+
+    @Test
     void zeroTreeCoverBiomeNeverGetsFoliage() {
         final BaselineGrid grid = uniformGrid(2 /* desert */, 70);
         final DerivedGrid derived = BaselineDeriver.derive(grid);

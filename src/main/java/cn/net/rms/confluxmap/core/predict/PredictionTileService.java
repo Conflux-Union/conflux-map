@@ -40,7 +40,7 @@ public final class PredictionTileService {
      * predicted underlay trailing the real tile's transparent unexplored pixels during pans, so the
      * screen background bled through as black gaps; row-major ordering still picks the next tile.
      */
-    private static final int VISIBLE_CONCURRENCY = 3;
+    private static final int VISIBLE_CONCURRENCY = 6;
     private volatile CorrectionStore correctionStore;
     private volatile PredictionViewMode viewMode = PredictionViewMode.EVERYWHERE;
 
@@ -374,7 +374,7 @@ public final class PredictionTileService {
                 return null;
             }
             derived = BaselineDeriver.derive(grid);
-            CanopyStylizer.apply(derived, grid, sampler, seed, lod, tileOriginX, tileOriginZ);
+            CanopyStylizer.apply(derived, grid, seed, lod, tileOriginX, tileOriginZ);
             baselineMapColorId = Proto.MAP_COLOR_NONE;
         }
 

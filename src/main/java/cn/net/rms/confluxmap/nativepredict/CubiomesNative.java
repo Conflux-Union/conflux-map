@@ -78,6 +78,29 @@ final class CubiomesNative {
         int[] outFlags
     );
 
+    /** Version-owned cheap terrain overview, sampled once at every requested output position. */
+    static native int cfxOverviewHeights(
+        long handle,
+        int blockX,
+        int blockZ,
+        int w,
+        int h,
+        int stride,
+        int[] outTerrainY
+    );
+
+    /** Overworld surface biomes using caller-supplied solid terrain heights. */
+    static native int cfxSurfaceBiomes(
+        long handle,
+        int blockX,
+        int blockZ,
+        int w,
+        int h,
+        int stride,
+        int[] terrainY,
+        int[] outBiomeIds
+    );
+
     /** Strided 1:4 Overworld heights; adjacent output cells are {@code stride} native cells apart. */
     static native int cfxHeightsStrided(long handle, int x4, int z4, int w, int h, int stride, int[] outY, int[] outIds);
 

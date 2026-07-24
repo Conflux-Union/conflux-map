@@ -146,7 +146,7 @@ public final class PredictionQualityGameTest implements FabricGameTest {
                 throw new IllegalStateException("native baseline failed for " + sample.id());
             }
             final DerivedGrid derived = BaselineDeriver.derive(baseline);
-            CanopyStylizer.apply(derived, baseline, sampler, worldSeed, 0, originX, originZ);
+            CanopyStylizer.apply(derived, baseline, worldSeed, 0, originX, originZ);
             final int[] predictedPixels = PredictedTileComposer.compose(
                 derived,
                 baseline,

@@ -82,6 +82,40 @@ public final class CubiomesContext implements AutoCloseable {
         );
     }
 
+    /** Cheap terrain overview at the caller's final output positions. */
+    public int overviewHeights(
+        final int blockX,
+        final int blockZ,
+        final int w,
+        final int h,
+        final int stride,
+        final int[] outTerrainY
+    ) {
+        requireOpen();
+        requireCapacity(outTerrainY, w, h);
+        return CubiomesNative.cfxOverviewHeights(
+            handle, blockX, blockZ, w, h, stride, outTerrainY
+        );
+    }
+
+    /** Overworld surface biomes resolved from an already-sampled solid terrain grid. */
+    public int surfaceBiomes(
+        final int blockX,
+        final int blockZ,
+        final int w,
+        final int h,
+        final int stride,
+        final int[] terrainY,
+        final int[] outBiomeIds
+    ) {
+        requireOpen();
+        requireCapacity(terrainY, w, h);
+        requireCapacity(outBiomeIds, w, h);
+        return CubiomesNative.cfxSurfaceBiomes(
+            handle, blockX, blockZ, w, h, stride, terrainY, outBiomeIds
+        );
+    }
+
     /** Strided Overworld height grid at 1:4 native scale. */
     public int heightsStrided(
         final int x4, final int z4, final int w, final int h, final int stride, final int[] outY, final int[] outIds

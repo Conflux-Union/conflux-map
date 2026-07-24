@@ -49,7 +49,7 @@ class PredictionNativeIntegrationTest {
         final BaselineGrid grid = LodSampling.sample(sampler, end, lod, tileOriginX, tileOriginZ);
         assertNotNull(grid, "native sampling must succeed for a valid version/seed");
         final DerivedGrid derived = BaselineDeriver.derive(grid);
-        CanopyStylizer.apply(derived, grid, sampler, SEED, lod, tileOriginX, tileOriginZ);
+        CanopyStylizer.apply(derived, grid, SEED, lod, tileOriginX, tileOriginZ);
         return PredictedTileComposer.compose(derived, grid, PredictionPalette.defaults());
     }
 
@@ -130,7 +130,6 @@ class PredictionNativeIntegrationTest {
         CanopyStylizer.apply(
             modernDerived,
             modernGrid,
-            modernSampler,
             0L,
             0,
             49 * BaselineGrid.PIXELS,
@@ -191,6 +190,103 @@ class PredictionNativeIntegrationTest {
         );
     }
 
+    @Test
+    void modernSurfaceBiomesReuseTerrainWithoutChangingExactIds() {
+        final int width = 32;
+        final int stride = 2;
+        final int blockX = -320;
+        final int blockZ = 144;
+        final int cells = width * width;
+        final NativeBaselineSampler sampler = new NativeBaselineSampler(
+            mc21(), SEED, PredictionDimensions.OVERWORLD, 0
+        );
+        final int[] solid = new int[cells];
+        final int[] fluid = new int[cells];
+        final int[] surface = new int[cells];
+        final int[] flags = new int[cells];
+        assertTrue(sampler.surfaceColumns(
+            blockX, blockZ, width, width, stride, solid, fluid, surface, flags
+        ));
+        final int[] reused = new int[cells];
+        assertTrue(sampler.surfaceBiomes(
+            blockX, blockZ, width, width, stride, solid, reused
+        ));
+        final int[] independentlyGenerated = new int[cells];
+        assertTrue(sampler.biomesStrided(
+            1, blockX, blockZ, width, width, stride, independentlyGenerated
+        ));
+        assertArrayEquals(
+            independentlyGenerated,
+            reused,
+            "reusing exact terrain heights must preserve the previous final-surface biome ids"
+        );
+    }
+
+    @Test
+    void overviewPipelineHasTheSameQualityContractAcrossVersionsAndLods() {
+        assertOverviewQuality(mc17(), 0);
+        assertOverviewQuality(mc17(), 4);
+        assertOverviewQuality(mc21(), 0);
+        assertOverviewQuality(mc21(), 4);
+    }
+
+    private static void assertOverviewQuality(final int mcVersion, final int lod) {
+        final NativeBaselineSampler sampler = new NativeBaselineSampler(
+            mcVersion, SEED, PredictionDimensions.OVERWORLD, 0
+        );
+        final BaselineGrid overview = LodSampling.sample(sampler, false, lod, 0, 0);
+        assertNotNull(overview);
+
+        final int width = 16;
+        final int cells = width * width;
+        final int stride = 1 << lod;
+        final int[] exactY = new int[cells];
+        final int[] exactFluid = new int[cells];
+        final int[] exactSurface = new int[cells];
+        final int[] exactFlags = new int[cells];
+        final int[] exactBiomes = new int[cells];
+        assertTrue(sampler.surfaceColumns(
+            0, 0, width, width, stride,
+            exactY, exactFluid, exactSurface, exactFlags
+        ));
+        assertTrue(sampler.surfaceBiomes(
+            0, 0, width, width, stride, exactY, exactBiomes
+        ));
+
+        final DerivedGrid overviewDerived = BaselineDeriver.derive(overview);
+        final int[] errors = new int[cells];
+        long errorSum = 0L;
+        int fluidMatches = 0;
+        int biomeMatches = 0;
+        for (int z = 0; z < width; z++) {
+            for (int x = 0; x < width; x++) {
+                final int exactIndex = z * width + x;
+                final int overviewIndex = BaselineGrid.index(x, z);
+                final int error = Math.abs(overview.terrainY[overviewIndex] - exactY[exactIndex]);
+                errors[exactIndex] = error;
+                errorSum += error;
+                final SurfaceKind overviewKind = SurfaceKind.byOrdinal(overviewDerived.kind[overviewIndex]);
+                final boolean overviewFluid = overviewKind == SurfaceKind.WATER || overviewKind == SurfaceKind.ICE;
+                final boolean exactFluidSurface = (exactFlags[exactIndex] & BaselineGrid.SURFACE_FLUID) != 0;
+                fluidMatches += overviewFluid == exactFluidSurface ? 1 : 0;
+                biomeMatches += overview.biomeId[overviewIndex] == exactBiomes[exactIndex] ? 1 : 0;
+            }
+        }
+        java.util.Arrays.sort(errors);
+        final double meanError = errorSum / (double) cells;
+        final int p95Error = errors[(int) (cells * 0.95)];
+        assertTrue(meanError <= 8.0, "overview height MAE=" + meanError + " at mc=" + mcVersion + ", lod=" + lod);
+        assertTrue(p95Error <= 24, "overview height p95=" + p95Error + " at mc=" + mcVersion + ", lod=" + lod);
+        assertTrue(
+            fluidMatches >= cells * 0.85,
+            "overview fluid agreement=" + fluidMatches + "/" + cells + " at mc=" + mcVersion + ", lod=" + lod
+        );
+        assertTrue(
+            biomeMatches >= cells * 0.90,
+            "overview biome agreement=" + biomeMatches + "/" + cells + " at mc=" + mcVersion + ", lod=" + lod
+        );
+    }
+
     private static int[] composeReportedTile(final int lod, final int blockX, final int blockZ) {
         final long seed = 6512112982729996127L;
         final int originX = TileMath.blockToTile(blockX, lod) * TileMath.blocksPerTile(lod);
@@ -199,7 +295,7 @@ class PredictionNativeIntegrationTest {
         final BaselineGrid grid = LodSampling.sample(sampler, false, lod, originX, originZ);
         assertNotNull(grid);
         final DerivedGrid derived = BaselineDeriver.derive(grid);
-        CanopyStylizer.apply(derived, grid, sampler, seed, lod, originX, originZ);
+        CanopyStylizer.apply(derived, grid, seed, lod, originX, originZ);
         return PredictedTileComposer.compose(derived, grid, PredictionPalette.defaults());
     }
 

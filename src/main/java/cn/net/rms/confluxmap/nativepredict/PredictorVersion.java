@@ -12,15 +12,15 @@ public final class PredictorVersion {
     public static final String CUBIOMES_COMMIT_12 = "e97dcf959585";
 
     /** Must match {@code CFX_ABI} in {@code native/shim/confluxnative.c}. */
-    public static final int CFX_ABI = 4;
+    public static final int CFX_ABI = 6;
 
     /** Bumped whenever baseline sampling or derivation (LOD expansion, canopy, kind rules) changes. */
-    public static final int BASELINE_ALGO = 10;
+    public static final int BASELINE_ALGO = 13;
 
     private PredictorVersion() {
     }
 
-    /** Wire/cache format for {@code predictorVersion}, e.g. {@code "cb:e97dcf959585|shim:4|base:10"}. */
+    /** Wire/cache format for {@code predictorVersion}, e.g. {@code "cb:e97dcf959585|shim:6|base:13"}. */
     public static String full() {
         return "cb:" + CUBIOMES_COMMIT_12 + "|shim:" + CFX_ABI + "|base:" + BASELINE_ALGO;
     }

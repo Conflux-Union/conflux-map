@@ -213,7 +213,7 @@ public final class BiomeTable {
         ), snowy_taiga, snowy_taiga_hills, snowy_taiga_mountains);
 
         // Jungle family.
-        put(land(0.5, 0xFF59C93C, 0xFF44C430), jungle, jungle_hills, modified_jungle, bamboo_jungle, bamboo_jungle_hills);
+        put(land(0.9, 0xFF59C93C, 0xFF44C430), jungle, jungle_hills, modified_jungle, bamboo_jungle, bamboo_jungle_hills);
         put(land(0.3, 0xFF6ED04F, 0xFF44C430), jungle_edge, modified_jungle_edge);
 
         // Savanna family.
