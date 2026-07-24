@@ -175,7 +175,7 @@ public final class SharedWaypointNetworking {
         return new SharedWaypointSessionHandler.Peer(
             player.getUuid(),
             MinecraftAccess.playerName(player),
-            player.hasPermissionLevel(2)
+            MinecraftAccess.hasPermission(player, 2)
         );
     }
 

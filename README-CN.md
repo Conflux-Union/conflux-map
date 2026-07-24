@@ -2,7 +2,8 @@
 
 [English](README.md) | **简体中文**
 
-Conflux Map 是一个面向 Minecraft 1.17.1 的 Fabric 客户端小地图 / 世界地图模组。
+Conflux Map 是一个面向 Minecraft 1.17.1 及指定 1.21 版本的 Fabric 客户端小地图 /
+世界地图模组。当前支持 1.21.1、1.21.3、1.21.4、1.21.5、1.21.8 和 1.21.11。
 对任意服务端（原版或模组端）均可独立运行，不需要服务端组件。功能行为参考了主流
 小地图模组，但所有代码均从零实现；第三方组件与归属说明见
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
@@ -87,14 +88,16 @@ Conflux Map 是一个面向 Minecraft 1.17.1 的 Fabric 客户端小地图 / 世
 
 ## 构建
 
-需要与 Minecraft 1.17.1 工具链兼容的 JDK（Java 16）；Minecraft、映射表、
-Fabric API 由 Loom 自动下载。
+需要 JDK 21 或更高版本；各版本子项目会按对应 Minecraft 目标输出所需的字节码版本。
+Minecraft、映射表和 Fabric API 由 Loom 自动下载。
 
 ```sh
-./gradlew :1.17.1:build
+./gradlew :1.21.11:build
 ```
 
-构建产物输出到 `versions/1.17.1/build/libs/`。
+可将 `1.21.11` 替换为上面任一受支持版本。一次构建多个版本时请添加
+`--no-parallel`，因为 ReplayMod 预处理器需要按顺序派生各版本源码。构建产物输出到
+`versions/<minecraft-version>/build/libs/`。
 
 ## 许可证
 

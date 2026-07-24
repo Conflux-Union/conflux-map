@@ -92,7 +92,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
             .setStyle(Style.EMPTY
                 .withColor(Formatting.AQUA)
                 .withUnderline(true)
-                .withClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, payload.get())));
+                .withClickEvent(Texts.copyToClipboard(payload.get())));
         return Texts.literal("")
             .append(original.shallowCopy())
             .append(Texts.literal(" "))

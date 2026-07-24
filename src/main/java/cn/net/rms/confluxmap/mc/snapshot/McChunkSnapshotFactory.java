@@ -567,7 +567,11 @@ public final class McChunkSnapshotFactory {
 
     /** §1 opacity test: light-dampening > 0, else a full-square occlusion shape on the top or bottom face. */
     private static boolean isOpaque(final BlockState state, final ClientWorld world, final BlockPos pos) {
+        //#if MC>=12103
+        //$$ if (state.getOpacity() > 0) {
+        //#else
         if (state.getOpacity(world, pos) > 0) {
+        //#endif
             return true;
         }
         if (!state.isOpaque()) {
@@ -579,7 +583,11 @@ public final class McChunkSnapshotFactory {
 
     /** §1 seafloor-scan continuation: dampening < 5 and not leaves. */
     private static boolean seafloorContinues(final BlockState state, final ClientWorld world, final BlockPos pos) {
+        //#if MC>=12103
+        //$$ return state.getOpacity() < 5 && !(state.getBlock() instanceof LeavesBlock);
+        //#else
         return state.getOpacity(world, pos) < 5 && !(state.getBlock() instanceof LeavesBlock);
+        //#endif
     }
 
     /** §1 seafloor-scan capture eligibility: not water/ice/air/bubble-column, and counts on the motion-blocking heightmap. */

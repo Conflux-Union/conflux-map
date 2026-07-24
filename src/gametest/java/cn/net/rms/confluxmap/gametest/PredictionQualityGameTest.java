@@ -23,20 +23,32 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+//#if MC>=12105
+//$$ import net.fabricmc.fabric.api.gametest.v1.GameTest;
+//#else
 import net.fabricmc.fabric.api.gametest.v1.FabricGameTest;
+//#endif
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.world.ServerWorld;
+//#if MC<12105
 import net.minecraft.test.GameTest;
+//#endif
 import net.minecraft.test.TestContext;
 import net.minecraft.world.World;
 
 /** Generates complete Vanilla regions and compares their map render with cubiomes prediction. */
+//#if MC>=12105
+//$$ public final class PredictionQualityGameTest {
+//#else
 public final class PredictionQualityGameTest implements FabricGameTest {
+//#endif
     private static final int CHUNKS_PER_TILE = 16 * 16;
     private static final int TILE_PIXELS = BaselineGrid.PIXELS;
     private static final int TICK_LIMIT = 30_000;
 
-    //#if MC>=12100
+    //#if MC>=12105
+    //$$ @GameTest(maxTicks = TICK_LIMIT)
+    //#elseif MC>=12100
     //$$ @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = TICK_LIMIT)
     //#else
     @GameTest(structureName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = TICK_LIMIT)
@@ -107,7 +119,7 @@ public final class PredictionQualityGameTest implements FabricGameTest {
                 chunkIndex = 0;
                 context.waitAndRun(1L, this::step);
             } catch (final Throwable failure) {
-                context.throwGameTestException("prediction quality run failed: " + failure);
+                GameTestCompat.fail(context, "prediction quality run failed: " + failure);
             }
         }
 
@@ -231,7 +243,7 @@ public final class PredictionQualityGameTest implements FabricGameTest {
 
     private static void require(final TestContext context, final boolean condition, final String message) {
         if (!condition) {
-            context.throwGameTestException(message);
+            GameTestCompat.fail(context, message);
         }
     }
 }

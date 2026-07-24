@@ -233,7 +233,22 @@ public final class WaypointEditScreen extends ConfluxScreen {
         for (int i = 0; i < PRESET_COLORS.length; i++) {
             final int color = PRESET_COLORS[i];
             final int x = swatchLeft + i * (SWATCH_SIZE + SWATCH_GAP);
-            //#if MC>=11904
+            //#if MC>=12111
+            //$$ addDrawableChild(new ButtonWidget(
+            //$$     x, 150, SWATCH_SIZE, SWATCH_SIZE, Texts.literal(""),
+            //$$     b -> selectedColor = color, narration -> narration.get()
+            //$$ ) {
+            //$$     @Override
+            //$$     protected void drawIcon(
+            //$$         final DrawContext context,
+            //$$         final int mouseX,
+            //$$         final int mouseY,
+            //$$         final float delta
+            //$$     ) {
+            //$$         renderColorSwatch(GuiDraw.of(context), this, color);
+            //$$     }
+            //$$ });
+            //#elseif MC>=11904
             //$$ addDrawableChild(new ButtonWidget(
             //$$     x, 150, SWATCH_SIZE, SWATCH_SIZE, Text.of(""),
             //$$     b -> selectedColor = color, narration -> narration.get()

@@ -47,8 +47,8 @@ public final class UpdateNotifier {
         final MutableText link = Texts.translatable("confluxmap.update.chat.link")
             .formatted(Formatting.AQUA, Formatting.UNDERLINE)
             .styled(style -> style
-                .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, info.releaseUrl()))
-                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Texts.literal(info.releaseUrl()))));
+                .withClickEvent(Texts.openUrl(info.releaseUrl()))
+                .withHoverEvent(Texts.showText(Texts.literal(info.releaseUrl()))));
         return Texts.translatable("confluxmap.update.chat", info.latestVersion(), info.currentVersion())
             .formatted(Formatting.YELLOW)
             .append(Texts.literal(" "))

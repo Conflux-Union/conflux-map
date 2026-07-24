@@ -54,10 +54,19 @@ import net.minecraft.client.MinecraftClient;
 //#if MC>=12000
 //$$ import net.minecraft.client.gui.DrawContext;
 //#endif
+//#if MC>=12111
+//$$ import net.minecraft.client.gui.Click;
+//$$ import net.minecraft.client.input.KeyInput;
+//#endif
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.render.GameRenderer;
+//#if MC>=12108
+//$$ import net.minecraft.client.gl.RenderPipelines;
+//#elseif MC>=12103
+//$$ import net.minecraft.client.render.RenderLayer;
+//#endif
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
@@ -286,16 +295,29 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     @Override
+    //#if MC>=12111
+    //$$ public boolean keyPressed(final KeyInput input) {
+    //$$     final int keyCode = input.key();
+    //#else
     public boolean keyPressed(final int keyCode, final int scanCode, final int modifiers) {
+    //#endif
         if (keyCode == GLFW.GLFW_KEY_F9) {
             ConfluxMapClient.get().reloadPredictionTiles();
             return true;
         }
+        //#if MC>=12111
+        //$$ if (openMapKey.matchesKey(input)) {
+        //#else
         if (openMapKey.matchesKey(keyCode, scanCode)) {
+        //#endif
             onClose();
             return true;
         }
+        //#if MC>=12111
+        //$$ return super.keyPressed(input);
+        //#else
         return super.keyPressed(keyCode, scanCode, modifiers);
+        //#endif
     }
 
     /**
@@ -305,8 +327,19 @@ public final class FullscreenMapScreen extends ConfluxScreen {
      * drag) completes.
      */
     @Override
+    //#if MC>=12111
+    //$$ public boolean mouseClicked(final Click click, final boolean doubledClick) {
+    //$$     final double mouseX = click.x();
+    //$$     final double mouseY = click.y();
+    //$$     final int button = click.button();
+    //#else
     public boolean mouseClicked(final double mouseX, final double mouseY, final int button) {
+    //#endif
+        //#if MC>=12111
+        //$$ if (super.mouseClicked(click, doubledClick)) {
+        //#else
         if (super.mouseClicked(mouseX, mouseY, button)) {
+        //#endif
             mapPointerPress = false;
             return true;
         }
@@ -342,9 +375,20 @@ public final class FullscreenMapScreen extends ConfluxScreen {
      * uses, returning to this screen on save/cancel.
      */
     @Override
+    //#if MC>=12111
+    //$$ public boolean mouseReleased(final Click click) {
+    //$$     final double mouseX = click.x();
+    //$$     final double mouseY = click.y();
+    //$$     final int button = click.button();
+    //#else
     public boolean mouseReleased(final double mouseX, final double mouseY, final int button) {
+    //#endif
         if (button != 0 || !mapPointerPress) {
+            //#if MC>=12111
+            //$$ return super.mouseReleased(click);
+            //#else
             return super.mouseReleased(mouseX, mouseY, button);
+            //#endif
         }
         mapPointerPress = false;
         if (hoveredWaypoint != null
@@ -357,14 +401,23 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     @Override
+    //#if MC>=12111
+    //$$ public boolean mouseDragged(final Click click, final double deltaX, final double deltaY) {
+    //$$     final int button = click.button();
+    //#else
     public boolean mouseDragged(final double mouseX, final double mouseY, final int button, final double deltaX, final double deltaY) {
+    //#endif
         if (button == 0 && mapPointerPress) {
             // Opposite the drag direction, 1:1 in world-space at the current scale (§4 pan mechanics).
             centerX -= deltaX * scale;
             centerZ -= deltaY * scale;
             return true;
         }
+        //#if MC>=12111
+        //$$ return super.mouseDragged(click, deltaX, deltaY);
+        //#else
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+        //#endif
     }
 
     private boolean isOverWaypointControls(final double mouseX, final double mouseY) {
@@ -485,7 +538,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             final int selectedAccent,
             final PressAction onPress
         ) {
-            //#if MC>=11904
+            //#if MC>=12111
+            //$$ super(
+            //$$     x, y, CONTROL_SIZE, CONTROL_SIZE, Texts.literal(""),
+            //$$     onPress, DEFAULT_NARRATION_SUPPLIER
+            //$$ );
+            //#elseif MC>=11904
             //$$ super(x, y, CONTROL_SIZE, CONTROL_SIZE, Text.of(""), onPress, DEFAULT_NARRATION_SUPPLIER);
             //#else
             super(x, y, CONTROL_SIZE, CONTROL_SIZE, Text.of(""), onPress);
@@ -505,7 +563,64 @@ public final class FullscreenMapScreen extends ConfluxScreen {
          * next state's strip and its bottom border lands 2px above the real button bounds.
          */
         @Override
-        //#if MC>=12000
+        //#if MC>=12111
+        //$$ protected void drawIcon(
+        //$$     final DrawContext context,
+        //$$     final int mouseX,
+        //$$     final int mouseY,
+        //$$     final float delta
+        //$$ ) {
+        //$$     drawButton(context);
+        //$$     drawContents(GuiDraw.of(context), Widgets.x(this), Widgets.y(this));
+        //$$ }
+        //#elseif MC>=12108
+        //$$ protected void renderWidget(
+        //$$     final DrawContext context,
+        //$$     final int mouseX,
+        //$$     final int mouseY,
+        //$$     final float delta
+        //$$ ) {
+        //$$     final int x = Widgets.x(this);
+        //$$     final int y = Widgets.y(this);
+        //$$     final Identifier background = !active
+        //$$         ? Ids.of("widget/button_disabled")
+        //$$         : isHovered() ? Ids.of("widget/button_highlighted") : Ids.of("widget/button");
+        //$$     context.drawGuiTexture(
+        //$$         RenderPipelines.GUI_TEXTURED,
+        //$$         background,
+        //$$         x,
+        //$$         y,
+        //$$         getWidth(),
+        //$$         getHeight(),
+        //$$         ((int) (alpha * 255.0f) << 24) | 0x00FFFFFF
+        //$$     );
+        //$$     drawContents(GuiDraw.of(context), x, y);
+        //$$ }
+        //#elseif MC>=12103
+        //$$ protected void renderWidget(
+        //$$     final DrawContext context,
+        //$$     final int mouseX,
+        //$$     final int mouseY,
+        //$$     final float delta
+        //$$ ) {
+        //$$     final int x = Widgets.x(this);
+        //$$     final int y = Widgets.y(this);
+        //$$     final Identifier background = !active
+        //$$         ? Ids.of("widget/button_disabled")
+        //$$         : isHovered() ? Ids.of("widget/button_highlighted") : Ids.of("widget/button");
+        //$$     context.drawGuiTexture(
+        //$$         RenderLayer::getGuiTextured,
+        //$$         background,
+        //$$         x,
+        //$$         y,
+        //$$         getWidth(),
+        //$$         getHeight(),
+        //$$         ((int) (alpha * 255.0f) << 24) | 0x00FFFFFF
+        //$$     );
+        //$$     context.draw();
+        //$$     drawContents(GuiDraw.of(context), x, y);
+        //$$ }
+        //#elseif MC>=12000
         //$$ protected void renderWidget(
         //$$     final DrawContext context,
         //$$     final int mouseX,

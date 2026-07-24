@@ -7,6 +7,10 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
+//#if MC>=12111
+//$$ import net.minecraft.command.permission.Permission;
+//$$ import net.minecraft.command.permission.PermissionLevel;
+//#endif
 
 /** Small access seams for Minecraft methods whose signatures changed after 1.17.1. */
 public final class MinecraftAccess {
@@ -60,6 +64,26 @@ public final class MinecraftAccess {
         //$$ source.sendFeedback(() -> message, broadcastToOps);
         //#else
         source.sendFeedback(message, broadcastToOps);
+        //#endif
+    }
+
+    public static boolean hasPermission(final ServerCommandSource source, final int level) {
+        //#if MC>=12111
+        //$$ return source.getPermissions().hasPermission(
+        //$$     new Permission.Level(PermissionLevel.fromLevel(level))
+        //$$ );
+        //#else
+        return source.hasPermissionLevel(level);
+        //#endif
+    }
+
+    public static boolean hasPermission(final ServerPlayerEntity player, final int level) {
+        //#if MC>=12111
+        //$$ return player.getPermissions().hasPermission(
+        //$$     new Permission.Level(PermissionLevel.fromLevel(level))
+        //$$ );
+        //#else
+        return player.hasPermissionLevel(level);
         //#endif
     }
 }

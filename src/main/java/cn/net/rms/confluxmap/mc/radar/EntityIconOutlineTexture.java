@@ -2,9 +2,12 @@ package cn.net.rms.confluxmap.mc.radar;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
+import cn.net.rms.confluxmap.compat.NativeImages;
 import cn.net.rms.confluxmap.core.radar.IconOutliner;
-import cn.net.rms.confluxmap.core.util.Argb;
+import cn.net.rms.confluxmap.mc.render.RenderUtil;
+//#if MC<12105
 import com.mojang.blaze3d.platform.GlStateManager;
+//#endif
 import com.mojang.blaze3d.systems.RenderSystem;
 import java.io.IOException;
 import java.io.InputStream;
@@ -37,24 +40,30 @@ public final class EntityIconOutlineTexture {
         this.sheetId = sheetId;
     }
 
-    /** GL id of the baked mask, building it on first use; -1 if the sheet can't be read. */
-    public int glId(final MinecraftClient client) {
-        assert RenderSystem.isOnRenderThread() : "EntityIconOutlineTexture.glId() must run on the render thread";
-        if (texture != null) {
-            return texture.getGlId();
-        }
+    /** Binds the baked mask, building it on first use; returns false if the sheet can't be read. */
+    public boolean bind(final MinecraftClient client) {
+        assert RenderSystem.isOnRenderThread() : "EntityIconOutlineTexture.bind() must run on the render thread";
         if (buildFailed) {
-            return -1;
+            return false;
         }
-        try {
-            texture = build(client);
-        } catch (final IOException | RuntimeException e) {
-            // Fail once per (re)load: callers fall back to the plain square frame.
-            buildFailed = true;
-            ConfluxMapMod.LOGGER.warn("Failed to bake radar icon outline mask from {}", sheetId, e);
-            return -1;
+        if (texture == null) {
+            try {
+                texture = build(client);
+            } catch (final IOException | RuntimeException e) {
+                // Fail once per (re)load: callers fall back to the plain square frame.
+                buildFailed = true;
+                ConfluxMapMod.LOGGER.warn("Failed to bake radar icon outline mask from {}", sheetId, e);
+                return false;
+            }
         }
-        return texture.getGlId();
+        //#if MC>=12108
+        //$$ RenderUtil.bindTexture(texture.getGlTextureView());
+        //#elseif MC>=12105
+        //$$ RenderUtil.bindTexture(texture.getGlTexture());
+        //#else
+        RenderUtil.bindTexture(texture.getGlId());
+        //#endif
+        return true;
     }
 
     /** Resource reload: drop the baked mask so the next frame re-bakes from the current sheet. */
@@ -84,19 +93,32 @@ public final class EntityIconOutlineTexture {
                 for (int col = 0; col < cols; col++) {
                     for (int y = 0; y < CELL_PX; y++) {
                         for (int x = 0; x < CELL_PX; x++) {
-                            cell[y * CELL_PX + x] = Argb.toAbgr(sheet.getColor(col * CELL_PX + x, row * CELL_PX + y));
+                            cell[y * CELL_PX + x] = NativeImages.getArgb(
+                                sheet, col * CELL_PX + x, row * CELL_PX + y
+                            );
                         }
                     }
                     final int[] outline = IconOutliner.outlineMask(cell, CELL_PX, CELL_PX);
                     // OUTLINE is white and 0 is transparent in ARGB and ABGR alike, so no conversion.
                     for (int y = 0; y < PADDED_CELL_PX; y++) {
                         for (int x = 0; x < PADDED_CELL_PX; x++) {
-                            mask.setColor(col * PADDED_CELL_PX + x, row * PADDED_CELL_PX + y, outline[y * PADDED_CELL_PX + x]);
+                            NativeImages.setArgb(
+                                mask,
+                                col * PADDED_CELL_PX + x,
+                                row * PADDED_CELL_PX + y,
+                                outline[y * PADDED_CELL_PX + x]
+                            );
                         }
                     }
                 }
             }
+            //#if MC>=12105
+            //$$ final NativeImageBackedTexture built = new NativeImageBackedTexture(
+            //$$     () -> "Conflux Map radar outline", mask
+            //$$ );
+            //#else
             final NativeImageBackedTexture built = new NativeImageBackedTexture(mask);
+            //#endif
             built.upload();
             configureSampling(built);
             return built;
@@ -105,9 +127,17 @@ public final class EntityIconOutlineTexture {
 
     /** Same nearest+clamp state as tile textures: repeat state leaking in would bleed opposite cell edges. */
     private static void configureSampling(final NativeImageBackedTexture texture) {
+        //#if MC>=12111
+        // Sampling is selected explicitly when the render pass binds the texture.
+        //#else
         texture.setFilter(false, false);
+        //#if MC>=12105
+        //$$ texture.setClamp(true);
+        //#else
         GlStateManager._bindTexture(texture.getGlId());
         GlStateManager._texParameter(3553, 10242, 33071);
         GlStateManager._texParameter(3553, 10243, 33071);
+        //#endif
+        //#endif
     }
 }

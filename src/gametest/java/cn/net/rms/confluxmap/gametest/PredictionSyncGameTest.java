@@ -29,14 +29,20 @@ import com.mojang.authlib.GameProfile;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+//#if MC>=12105
+//$$ import net.fabricmc.fabric.api.gametest.v1.GameTest;
+//#else
 import net.fabricmc.fabric.api.gametest.v1.FabricGameTest;
+//#endif
 import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
 import net.minecraft.entity.TntEntity;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+//#if MC<12105
 import net.minecraft.test.GameTest;
+//#endif
 import net.minecraft.test.TestContext;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.Heightmap;
@@ -44,13 +50,19 @@ import net.minecraft.world.Heightmap;
 //$$ import net.minecraft.network.packet.c2s.common.SyncedClientOptions;
 //#endif
 
+//#if MC>=12105
+//$$ public final class PredictionSyncGameTest {
+//#else
 public final class PredictionSyncGameTest implements FabricGameTest {
+//#endif
     private static final int FLOOR_SIZE = 64;
     private static final int BOMBARDMENT_FLOOR_SIZE = 32;
     private static final int TNT_COUNT = 4;
     private static final int TNT_FUSE_TICKS = 1;
 
-    //#if MC>=12100
+    //#if MC>=12105
+    //$$ @GameTest(maxTicks = 400)
+    //#elseif MC>=12100
     //$$ @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = 400)
     //#else
     @GameTest(structureName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = 400)
@@ -87,7 +99,9 @@ public final class PredictionSyncGameTest implements FabricGameTest {
         ));
     }
 
-    //#if MC>=12100
+    //#if MC>=12105
+    //$$ @GameTest(maxTicks = 400)
+    //#elseif MC>=12100
     //$$ @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = 400)
     //#else
     @GameTest(structureName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = 400)
@@ -202,7 +216,7 @@ public final class PredictionSyncGameTest implements FabricGameTest {
             }
             context.complete();
         } catch (final ProtoException e) {
-            context.throwGameTestException("sync protocol failed: " + e.getMessage());
+            GameTestCompat.fail(context, "sync protocol failed: " + e.getMessage());
         }
     }
 
@@ -400,7 +414,7 @@ public final class PredictionSyncGameTest implements FabricGameTest {
         }
 
         private void failProtocol(final ProtoException failure) {
-            context.throwGameTestException("sync protocol failed: " + failure.getMessage());
+            GameTestCompat.fail(context, "sync protocol failed: " + failure.getMessage());
         }
 
         private static int clampFloorStart(final int testCoordinate, final int tileOrigin) {
@@ -461,7 +475,7 @@ public final class PredictionSyncGameTest implements FabricGameTest {
 
     private static void require(final TestContext context, final boolean condition, final String message) {
         if (!condition) {
-            context.throwGameTestException(message);
+            GameTestCompat.fail(context, message);
         }
     }
 }

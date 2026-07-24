@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.mc.color;
 
 import cn.net.rms.confluxmap.compat.Ids;
+import cn.net.rms.confluxmap.compat.NativeImages;
 import cn.net.rms.confluxmap.core.util.Argb;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,6 +20,9 @@ import net.minecraft.block.VineBlock;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.model.BakedModel;
 import net.minecraft.client.render.model.BakedQuad;
+//#if MC>=12105
+//$$ import net.minecraft.client.render.model.BlockModelPart;
+//#endif
 import net.minecraft.client.texture.MissingSprite;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.Sprite;
@@ -116,18 +120,33 @@ public final class SpriteColorSampler {
             return fallbackToMapColor(state, world, pos);
         }
         final List<Sprite> faceSprites = new ArrayList<>();
+        //#if MC>=12105
+        //$$ for (final BlockModelPart part : model.getParts(modelRandom)) {
+        //$$     for (final BakedQuad quad : part.getQuads(Direction.UP)) {
+        //$$         faceSprites.add(quad.sprite());
+        //$$     }
+        //$$     for (final BakedQuad quad : part.getQuads(null)) {
+        //$$         faceSprites.add(quad.sprite());
+        //$$     }
+        //$$ }
+        //#else
         for (final BakedQuad quad : model.getQuads(state, Direction.UP, modelRandom)) {
             faceSprites.add(quad.getSprite());
         }
         for (final BakedQuad quad : model.getQuads(state, null, modelRandom)) {
             faceSprites.add(quad.getSprite());
         }
+        //#endif
         final Integer primary = averageSprites(faceSprites);
         if (primary != null) {
             return clampAlphaFloor(primary);
         }
 
+        //#if MC>=12105
+        //$$ final Sprite particle = model.particleSprite();
+        //#else
         final Sprite particle = model.getParticleSprite();
+        //#endif
         final boolean isFluid = !state.getFluidState().isEmpty();
         if (particle == null || isMissing(particle)) {
             if (isFluid) {
@@ -157,7 +176,13 @@ public final class SpriteColorSampler {
 
     private Sprite fluidSprite(final BlockState state) {
         final Identifier id = state.isOf(Blocks.LAVA) ? LAVA_STILL : WATER_STILL;
+        //#if MC>=12111
+        //$$ final SpriteAtlasTexture atlas = client.getAtlasManager().getAtlasTexture(
+        //$$     SpriteAtlasTexture.BLOCK_ATLAS_TEXTURE
+        //$$ );
+        //#else
         final SpriteAtlasTexture atlas = client.getBakedModelManager().getAtlas(SpriteAtlasTexture.BLOCK_ATLAS_TEXTURE);
+        //#endif
         return atlas.getSprite(id);
     }
 
@@ -229,7 +254,7 @@ public final class SpriteColorSampler {
         int count = 0;
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                final int argb = Argb.toAbgr(image.getColor(x, y));
+                final int argb = NativeImages.getArgb(image, x, y);
                 final int a = Argb.alpha(argb);
                 if (a < ALPHA_FLOOR) {
                     continue;

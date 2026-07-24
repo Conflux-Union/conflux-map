@@ -6,8 +6,15 @@ import net.minecraft.client.gl.Framebuffer;
 import net.minecraft.client.gl.SimpleFramebuffer;
 import net.minecraft.client.util.Window;
 
-//#if MC>=12100
+//#if MC>=12103
+//$$ import com.mojang.blaze3d.systems.ProjectionType;
+//#if MC>=12108
+//$$ import net.minecraft.client.render.RawProjectionMatrix;
+//#endif
+//#elseif MC>=12100
 //$$ import com.mojang.blaze3d.systems.VertexSorter;
+//#endif
+//#if MC>=12100
 //$$ import org.joml.Matrix4f;
 //#else
 import net.minecraft.util.math.Matrix4f;
@@ -26,16 +33,42 @@ import net.minecraft.util.math.Matrix4f;
  */
 public final class OffscreenCanvas {
     private Framebuffer framebuffer;
+    //#if MC>=12108
+    //$$ private RawProjectionMatrix projectionMatrix;
+    //#endif
 
     /** Bind + clear to transparent; sets an ortho projection in canvas pixel units. */
     public void begin(final int sizePx) {
         if (framebuffer == null || framebuffer.textureWidth != sizePx) {
             close();
+            //#if MC>=12105
+            //$$ framebuffer = new SimpleFramebuffer("Conflux Map minimap", sizePx, sizePx, false);
+            //#elseif MC>=12103
+            //$$ framebuffer = new SimpleFramebuffer(sizePx, sizePx, false);
+            //#else
             framebuffer = new SimpleFramebuffer(sizePx, sizePx, false, MinecraftClient.IS_SYSTEM_MAC);
+            //#endif
         }
+        //#if MC>=12108
+        //$$ if (projectionMatrix == null) {
+        //$$     projectionMatrix = new RawProjectionMatrix("Conflux Map minimap projection");
+        //$$ }
+        //#endif
+        //#if MC>=12105
+        //$$ RenderSystem.getDevice().createCommandEncoder().clearColorTexture(
+        //$$     framebuffer.getColorAttachment(), 0
+        //$$ );
+        //$$ RenderUtil.setDrawTarget(framebuffer);
+        //#elseif MC>=12103
+        //$$ framebuffer.setClearColor(0f, 0f, 0f, 0f);
+        //$$ framebuffer.clear();
+        //#else
         framebuffer.setClearColor(0f, 0f, 0f, 0f);
         framebuffer.clear(MinecraftClient.IS_SYSTEM_MAC);
+        //#endif
+        //#if MC<12105
         framebuffer.beginWrite(true);
+        //#endif
         setProjection(ortho(0f, sizePx, 0f, sizePx));
     }
 
@@ -53,8 +86,12 @@ public final class OffscreenCanvas {
     }
 
     /** 1.20 made the projection carry an explicit vertex sort order; flat GUI geometry sorts by Z. */
-    private static void setProjection(final Matrix4f projection) {
-        //#if MC>=12100
+    private void setProjection(final Matrix4f projection) {
+        //#if MC>=12108
+        //$$ RenderSystem.setProjectionMatrix(projectionMatrix.set(projection), ProjectionType.ORTHOGRAPHIC);
+        //#elseif MC>=12103
+        //$$ RenderSystem.setProjectionMatrix(projection, ProjectionType.ORTHOGRAPHIC);
+        //#elseif MC>=12100
         //$$ RenderSystem.setProjectionMatrix(projection, VertexSorter.BY_Z);
         //#else
         RenderSystem.setProjectionMatrix(projection);
@@ -63,8 +100,12 @@ public final class OffscreenCanvas {
 
     /** Unbind; restores the main framebuffer and vanilla's GUI projection. */
     public void end(final MinecraftClient client) {
+        //#if MC>=12105
+        //$$ RenderUtil.setDrawTarget(null);
+        //#else
         framebuffer.endWrite();
         client.getFramebuffer().beginWrite(true);
+        //#endif
         final Window window = client.getWindow();
         setProjection(ortho(
             0f, (float) (window.getFramebufferWidth() / window.getScaleFactor()),
@@ -72,9 +113,15 @@ public final class OffscreenCanvas {
         ));
     }
 
-    /** GL texture id of the canvas contents; row 0 is the BOTTOM (flip V when sampling). */
-    public int textureId() {
-        return framebuffer.getColorAttachment();
+    /** Binds the canvas contents for sampling; row 0 is the BOTTOM (flip V when sampling). */
+    public void bindTexture() {
+        //#if MC>=12108
+        //$$ RenderUtil.bindTexture(framebuffer.getColorAttachmentView());
+        //#elseif MC>=12105
+        //$$ RenderUtil.bindTexture(framebuffer.getColorAttachment());
+        //#else
+        RenderUtil.bindTexture(framebuffer.getColorAttachment());
+        //#endif
     }
 
     public void close() {
@@ -82,5 +129,11 @@ public final class OffscreenCanvas {
             framebuffer.delete();
             framebuffer = null;
         }
+        //#if MC>=12108
+        //$$ if (projectionMatrix != null) {
+        //$$     projectionMatrix.close();
+        //$$     projectionMatrix = null;
+        //$$ }
+        //#endif
     }
 }

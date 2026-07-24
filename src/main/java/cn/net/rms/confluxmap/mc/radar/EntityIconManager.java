@@ -117,8 +117,8 @@ public final class EntityIconManager {
     }
 
     /** Render thread. GL id of the sheet's baked silhouette outline mask, or -1 if it can't bake. */
-    public int outlineTextureGlId(final MinecraftClient client) {
-        return outlineTexture.glId(client);
+    public boolean bindOutlineTexture(final MinecraftClient client) {
+        return outlineTexture.bind(client);
     }
 
     /** Render thread, resource reload: re-bake the outline mask from the (possibly overridden) sheet. */
@@ -139,7 +139,9 @@ public final class EntityIconManager {
     }
 
     private FaceIcon playerIcon(final AbstractClientPlayerEntity player) {
-        //#if MC>=12100
+        //#if MC>=12111
+        //$$ final Identifier skin = player.getSkin().body().texturePath();
+        //#elseif MC>=12100
         //$$ final Identifier skin = player.getSkinTextures().texture();
         //#else
         final Identifier skin = player.getSkinTexture();
@@ -271,7 +273,11 @@ public final class EntityIconManager {
      * plain registry path ("armorer", "butcher", ...) directly - no Registry lookup needed.
      */
     private static String villagerVariant(final Entity entity) {
-        //#if MC>=12100
+        //#if MC>=12105
+        //$$ return ((VillagerEntity) entity).getVillagerData().profession().getKey()
+        //$$     .map(key -> key.getValue().getPath())
+        //$$     .orElse("");
+        //#elseif MC>=12100
         //$$ return ((VillagerEntity) entity).getVillagerData().getProfession().id();
         //#else
         return ((VillagerEntity) entity).getVillagerData().getProfession().getId();

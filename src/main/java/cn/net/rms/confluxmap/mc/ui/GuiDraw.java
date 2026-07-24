@@ -1,6 +1,10 @@
 package cn.net.rms.confluxmap.mc.ui;
 
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
+//#if MC>=12108
+//$$ import net.minecraft.client.MinecraftClient;
+//$$ import net.minecraft.client.render.VertexConsumerProvider;
+//#endif
 import net.minecraft.client.font.TextRenderer;
 //#if MC>=12000
 //$$ import net.minecraft.client.gui.DrawContext;
@@ -13,15 +17,24 @@ import net.minecraft.text.Text;
 
 /** Version-neutral GUI draw state shared by screens, HUD callbacks, and marker renderers. */
 public final class GuiDraw {
+    private final MatrixStack matrices;
     //#if MC>=12000
     //$$ private final DrawContext context;
-    //#else
-    private final MatrixStack matrices;
     //#endif
 
     //#if MC>=12000
     //$$ private GuiDraw(final DrawContext context) {
     //$$     this.context = context;
+    //#if MC>=12108
+    //$$     this.matrices = new MatrixStack();
+    //$$     final var source = context.getMatrices();
+    //$$     this.matrices.peek().getPositionMatrix()
+    //$$         .m00(source.m00()).m01(source.m01())
+    //$$         .m10(source.m10()).m11(source.m11())
+    //$$         .m30(source.m20()).m31(source.m21());
+    //#else
+    //$$     this.matrices = context.getMatrices();
+    //#endif
     //$$ }
     //#else
     private GuiDraw(final MatrixStack matrices) {
@@ -40,11 +53,7 @@ public final class GuiDraw {
     //#endif
 
     public MatrixStack matrices() {
-        //#if MC>=12000
-        //$$ return context.getMatrices();
-        //#else
         return matrices;
-        //#endif
     }
 
     public void renderBackground(
@@ -53,7 +62,9 @@ public final class GuiDraw {
         final int mouseY,
         final float tickDelta
     ) {
-        //#if MC>=12000
+        //#if MC>=12111
+        // Screen.renderWithTooltip renders the background before invoking Screen.render.
+        //#elseif MC>=12000
         //$$ screen.renderBackground(context, mouseX, mouseY, tickDelta);
         //#else
         screen.renderBackground(matrices);
@@ -91,7 +102,23 @@ public final class GuiDraw {
         final float y,
         final int color
     ) {
-        //#if MC>=12000
+        //#if MC>=12108
+        //$$ final VertexConsumerProvider.Immediate immediate = MinecraftClient.getInstance()
+        //$$     .getBufferBuilders().getEntityVertexConsumers();
+        //$$ renderer.draw(
+        //$$     text, x, y, color, true, matrices.peek().getPositionMatrix(),
+        //$$     immediate, TextLayerType.NORMAL, 0, 15728880
+        //$$ );
+        //$$ immediate.draw();
+        //$$ return (int) x + renderer.getWidth(text);
+        //#elseif MC>=12103
+        //$$ final int[] result = {0};
+        //$$ context.draw(vertexConsumers -> result[0] = renderer.draw(
+        //$$     text, x, y, color, true, matrices().peek().getPositionMatrix(),
+        //$$     vertexConsumers, TextLayerType.NORMAL, 0, 15728880
+        //$$ ));
+        //$$ return result[0];
+        //#elseif MC>=12000
         //$$ final int result = renderer.draw(
         //$$     text, x, y, color, true, matrices().peek().getPositionMatrix(),
         //$$     context.getVertexConsumers(), TextLayerType.NORMAL, 0, 15728880,
@@ -111,7 +138,23 @@ public final class GuiDraw {
         final float y,
         final int color
     ) {
-        //#if MC>=12000
+        //#if MC>=12108
+        //$$ final VertexConsumerProvider.Immediate immediate = MinecraftClient.getInstance()
+        //$$     .getBufferBuilders().getEntityVertexConsumers();
+        //$$ renderer.draw(
+        //$$     text, x, y, color, true, matrices.peek().getPositionMatrix(),
+        //$$     immediate, TextLayerType.NORMAL, 0, 15728880
+        //$$ );
+        //$$ immediate.draw();
+        //$$ return (int) x + renderer.getWidth(text);
+        //#elseif MC>=12103
+        //$$ final int[] result = {0};
+        //$$ context.draw(vertexConsumers -> result[0] = renderer.draw(
+        //$$     text, x, y, color, true, matrices().peek().getPositionMatrix(),
+        //$$     vertexConsumers, TextLayerType.NORMAL, 0, 15728880
+        //$$ ));
+        //$$ return result[0];
+        //#elseif MC>=12000
         //$$ final int result = renderer.draw(
         //$$     text, x, y, color, true, matrices().peek().getPositionMatrix(),
         //$$     context.getVertexConsumers(), TextLayerType.NORMAL, 0, 15728880
@@ -130,7 +173,23 @@ public final class GuiDraw {
         final float y,
         final int color
     ) {
-        //#if MC>=12000
+        //#if MC>=12108
+        //$$ final VertexConsumerProvider.Immediate immediate = MinecraftClient.getInstance()
+        //$$     .getBufferBuilders().getEntityVertexConsumers();
+        //$$ renderer.draw(
+        //$$     text, x, y, color, true, matrices.peek().getPositionMatrix(),
+        //$$     immediate, TextLayerType.NORMAL, 0, 15728880
+        //$$ );
+        //$$ immediate.draw();
+        //$$ return (int) x + renderer.getWidth(text);
+        //#elseif MC>=12103
+        //$$ final int[] result = {0};
+        //$$ context.draw(vertexConsumers -> result[0] = renderer.draw(
+        //$$     text, x, y, color, true, matrices().peek().getPositionMatrix(),
+        //$$     vertexConsumers, TextLayerType.NORMAL, 0, 15728880
+        //$$ ));
+        //$$ return result[0];
+        //#elseif MC>=12000
         //$$ final int result = renderer.draw(
         //$$     text, x, y, color, true, matrices().peek().getPositionMatrix(),
         //$$     context.getVertexConsumers(), TextLayerType.NORMAL, 0, 15728880

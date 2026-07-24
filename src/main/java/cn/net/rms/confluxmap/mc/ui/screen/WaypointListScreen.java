@@ -26,6 +26,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import net.minecraft.client.MinecraftClient;
+//#if MC>=12111
+//$$ import net.minecraft.client.gui.Click;
+//$$ import net.minecraft.client.input.KeyInput;
+//#endif
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.util.math.MatrixStack;
@@ -996,7 +1000,14 @@ public final class WaypointListScreen extends ConfluxScreen {
     }
 
     @Override
+    //#if MC>=12111
+    //$$ public boolean mouseClicked(final Click click, final boolean doubledClick) {
+    //$$     final double mouseX = click.x();
+    //$$     final double mouseY = click.y();
+    //$$     final int button = click.button();
+    //#else
     public boolean mouseClicked(final double mouseX, final double mouseY, final int button) {
+    //#endif
         final WaypointStore store = waypointService.current();
         final DropdownGeometry dropdown = dropdownGeometry(store);
         if (button == 0 && dropdown != null) {
@@ -1027,7 +1038,11 @@ public final class WaypointListScreen extends ConfluxScreen {
                 return true;
             }
         }
+        //#if MC>=12111
+        //$$ if (super.mouseClicked(click, doubledClick)) {
+        //#else
         if (super.mouseClicked(mouseX, mouseY, button)) {
+        //#endif
             return true;
         }
         if (button == 0 && tab == Tab.LOCAL) {
@@ -1049,6 +1064,15 @@ public final class WaypointListScreen extends ConfluxScreen {
     }
 
     @Override
+    //#if MC>=12111
+    //$$ public boolean mouseDragged(
+    //$$     final Click click,
+    //$$     final double deltaX,
+    //$$     final double deltaY
+    //$$ ) {
+    //$$     final double mouseY = click.y();
+    //$$     final int button = click.button();
+    //#else
     public boolean mouseDragged(
         final double mouseX,
         final double mouseY,
@@ -1056,6 +1080,7 @@ public final class WaypointListScreen extends ConfluxScreen {
         final double deltaX,
         final double deltaY
     ) {
+    //#endif
         if (button == 0 && draggingDropdownScrollbar) {
             final WaypointStore store = waypointService.current();
             final DropdownGeometry dropdown = dropdownGeometry(store);
@@ -1065,20 +1090,38 @@ public final class WaypointListScreen extends ConfluxScreen {
             }
             draggingDropdownScrollbar = false;
         }
+        //#if MC>=12111
+        //$$ return super.mouseDragged(click, deltaX, deltaY);
+        //#else
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+        //#endif
     }
 
     @Override
+    //#if MC>=12111
+    //$$ public boolean mouseReleased(final Click click) {
+    //$$     final int button = click.button();
+    //#else
     public boolean mouseReleased(final double mouseX, final double mouseY, final int button) {
+    //#endif
         if (button == 0 && draggingDropdownScrollbar) {
             draggingDropdownScrollbar = false;
             return true;
         }
+        //#if MC>=12111
+        //$$ return super.mouseReleased(click);
+        //#else
         return super.mouseReleased(mouseX, mouseY, button);
+        //#endif
     }
 
     @Override
+    //#if MC>=12111
+    //$$ public boolean keyPressed(final KeyInput input) {
+    //$$     final int keyCode = input.key();
+    //#else
     public boolean keyPressed(final int keyCode, final int scanCode, final int modifiers) {
+    //#endif
         if (openSetDropdown != null) {
             final WaypointStore store = waypointService.current();
             final List<String> options = dropdownOptions(store);
@@ -1108,7 +1151,11 @@ public final class WaypointListScreen extends ConfluxScreen {
                 return true;
             }
         }
+        //#if MC>=12111
+        //$$ return super.keyPressed(input);
+        //#else
         return super.keyPressed(keyCode, scanCode, modifiers);
+        //#endif
     }
 
     private int dropdownActionAt(final double mouseX, final DropdownGeometry dropdown) {

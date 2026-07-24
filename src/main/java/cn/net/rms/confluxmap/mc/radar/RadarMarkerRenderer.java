@@ -152,11 +152,9 @@ public final class RadarMarkerRenderer {
         final int contourBase
     ) {
         final int contour = Argb.scaleAlpha(elevationColor(contourBase, yDelta), alphaScale);
-        final int outlineGlId = icon.fromSheet() ? iconManager.outlineTextureGlId(client) : -1;
-        if (outlineGlId != -1) {
+        if (icon.fromSheet() && iconManager.bindOutlineTexture(client)) {
             // The padded outline grid mirrors the sheet grid, so the sheet UV rect addresses
             // the matching mask cell; only the quad grows by the padding ratio.
-            RenderUtil.bindTexture(outlineGlId);
             RenderUtil.drawTintedQuad(
                 matrices, x - OUTLINE_HALF_SIZE, y - OUTLINE_HALF_SIZE, OUTLINE_SIZE, OUTLINE_SIZE,
                 icon.u0(), icon.v0(), icon.u1(), icon.v1(), contour

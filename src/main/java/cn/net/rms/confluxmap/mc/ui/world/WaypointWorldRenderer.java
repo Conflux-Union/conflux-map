@@ -17,8 +17,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+//#if MC>=12111
+//$$ import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
+//$$ import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
+//#else
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
+//#endif
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.render.Camera;
@@ -32,12 +37,10 @@ import net.minecraft.util.math.Vec3d;
  * have NO in-world presence"): a vertical translucent beam at each visible waypoint's
  * column, and a camera-facing name/distance label floating above it.
  *
- * <p>The beam registers on {@link WorldRenderEvents#AFTER_TRANSLUCENT}, which fires once
- * solid, cutout AND translucent terrain (water, glass, ...) are already in the framebuffer,
- * so it correctly participates in world occlusion. The HUD marker registers separately on
- * {@link WorldRenderEvents#LAST}, after clouds and weather have finished writing to the
- * framebuffer, and draws with depth testing disabled so world content cannot hide
- * player-facing navigation information. In fabric-rendering-v1 1.10.1 (bundled with the
+ * <p>The beam runs at the last terrain-adjacent phase offered by the active Fabric rendering
+ * API, so it participates in world occlusion. The HUD marker runs at the final main-world phase
+ * and draws with depth testing disabled so world content cannot hide player-facing navigation
+ * information. In fabric-rendering-v1 1.10.1 (bundled with the
  * installed fabric-api 0.46.1+1.17), {@link WorldRenderContext#consumers()} is {@code
  * null} at this phase and its matrix stack carries no pre-existing camera translation -
  * both are handled here: the beam is drawn with plain {@code Tessellator}/{@code
@@ -103,8 +106,13 @@ public final class WaypointWorldRenderer {
     }
 
     public void register() {
+        //#if MC>=12111
+        //$$ WorldRenderEvents.BEFORE_TRANSLUCENT.register(this::renderBeams);
+        //$$ WorldRenderEvents.END_MAIN.register(this::renderHud);
+        //#else
         WorldRenderEvents.AFTER_TRANSLUCENT.register(this::renderBeams);
         WorldRenderEvents.LAST.register(this::renderHud);
+        //#endif
     }
 
     private void renderBeams(final WorldRenderContext context) {
@@ -120,17 +128,25 @@ public final class WaypointWorldRenderer {
         }
         final PlayerView player = playerViewOpt.get();
         final DimensionId currentDimension = gameBridge.session().dimension();
+        //#if MC>=12111
+        //$$ final Camera camera = client.gameRenderer.getCamera();
+        //$$ final Vec3d cameraPos = camera.getCameraPos();
+        //$$ final MatrixStack matrices = context.matrices();
+        //#else
         final Camera camera = context.camera();
         final Vec3d cameraPos = camera.getPos();
         final MatrixStack matrices = context.matrixStack();
+        //#endif
         final double maxDistance = maxVisibleDistance();
         final double bottomY = 0.0;
         final double topY = currentDimension.equals(DimensionId.NETHER) ? 128.0 : 256.0;
         final List<WaypointRenderEntry> waypoints = waypointRenderCatalog.snapshot(currentDimension);
 
+        //#if MC<12105
         RenderSystem.enableDepthTest();
         RenderSystem.depthMask(false);
         RenderSystem.disableCull();
+        //#endif
         RenderUtil.beginAdditiveTriangles();
 
         for (final WaypointRenderEntry waypoint : waypoints) {
@@ -151,8 +167,10 @@ public final class WaypointWorldRenderer {
         }
 
         RenderUtil.restoreDefaultBlend();
+        //#if MC<12105
         RenderSystem.enableCull();
         RenderSystem.depthMask(true);
+        //#endif
     }
 
     private void renderHud(final WorldRenderContext context) {
@@ -169,9 +187,15 @@ public final class WaypointWorldRenderer {
         }
         final PlayerView player = playerViewOpt.get();
         final DimensionId currentDimension = gameBridge.session().dimension();
+        //#if MC>=12111
+        //$$ final Camera camera = client.gameRenderer.getCamera();
+        //$$ final Vec3d cameraPos = camera.getCameraPos();
+        //$$ final MatrixStack matrices = context.matrices();
+        //#else
         final Camera camera = context.camera();
         final Vec3d cameraPos = camera.getPos();
         final MatrixStack matrices = context.matrixStack();
+        //#endif
         final double maxDistance = maxVisibleDistance();
         final List<WaypointRenderEntry> waypoints = waypointRenderCatalog.snapshot(currentDimension);
         final WaypointRenderEntry targetedWaypoint = targetedWaypoint(waypoints, camera, cameraPos, maxDistance);
@@ -193,8 +217,10 @@ public final class WaypointWorldRenderer {
             // AFTER_TRANSLUCENT coordinate system without allowing clouds to draw afterward.
             RenderUtil.pushIdentityModelView();
             try {
+                //#if MC<12105
                 RenderSystem.disableDepthTest();
                 RenderSystem.depthMask(false);
+                //#endif
                 final VertexConsumerProvider.Immediate immediate = client.getBufferBuilders().getEntityVertexConsumers();
                 for (final WaypointRenderEntry waypoint : waypoints) {
                     if (!visibleWaypointIds.contains(waypoint.id())) {
@@ -213,8 +239,10 @@ public final class WaypointWorldRenderer {
                 }
                 immediate.draw();
             } finally {
+                //#if MC<12105
                 RenderSystem.depthMask(true);
                 RenderSystem.enableDepthTest();
+                //#endif
                 RenderUtil.popModelView();
             }
         }
@@ -463,7 +491,9 @@ public final class WaypointWorldRenderer {
     }
 
     private static float tickDelta(final WorldRenderContext context) {
-        //#if MC>=12100
+        //#if MC>=12111
+        //$$ return MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(false);
+        //#elseif MC>=12100
         //$$ return context.tickCounter().getTickDelta(false);
         //#else
         return context.tickDelta();

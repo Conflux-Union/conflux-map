@@ -176,7 +176,7 @@ public final class MinimapHudRenderer {
             canvas.end(client);
 
             RenderUtil.beginTexturedQuads();
-            RenderUtil.bindTexture(canvas.textureId());
+            canvas.bindTexture();
             RenderUtil.drawTexturedDisk(matrices, centerX, centerY, size / 2f);
             RenderUtil.drawRing(matrices, centerX, centerY, size / 2f, BORDER_THICKNESS, BORDER_COLOR);
         } else {

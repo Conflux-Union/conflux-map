@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.server;
 
+import cn.net.rms.confluxmap.compat.Nbts;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.PackedBits;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
@@ -37,27 +38,25 @@ public final class ChunkSummarizer {
         if (root == null) {
             return SummaryCodec.Chunk.empty();
         }
-        final boolean legacy = root.contains("Level", 10);
-        final NbtCompound level = legacy ? root.getCompound("Level") : root;
+        final boolean legacy = Nbts.hasCompound(root, "Level");
+        final NbtCompound level = legacy ? Nbts.compound(root, "Level") : root;
         // Region files contain partially-generated chunks as early as structure_starts. They
         // have no usable surface heightmap yet; treating them as generated produced 0-height
         // UNKNOWN corrections which punched transparent/black holes into valid predictions.
-        final String status = level.getString("Status");
+        final String status = Nbts.string(level, "Status");
         if (!"full".equals(status) && !"minecraft:full".equals(status)) {
             return SummaryCodec.Chunk.empty();
         }
-        final int bottomY = legacy ? 0 : level.getInt("yPos") * 16;
-        final NbtCompound heightmaps = level.contains("Heightmaps", 10)
-            ? level.getCompound("Heightmaps") : new NbtCompound();
-        final long[] heights = heightmaps.getLongArray("MOTION_BLOCKING");
+        final int bottomY = legacy ? 0 : Nbts.integer(level, "yPos") * 16;
+        final NbtCompound heightmaps = Nbts.compound(level, "Heightmaps");
+        final long[] heights = Nbts.longArray(heightmaps, "MOTION_BLOCKING");
         if (heights.length == 0) {
             return SummaryCodec.Chunk.empty();
         }
-        final long[] oceanFloor = heightmaps.getLongArray("OCEAN_FLOOR");
-        final int[] biomes = level.contains("Biomes", 11) ? level.getIntArray("Biomes") : new int[0];
+        final long[] oceanFloor = Nbts.longArray(heightmaps, "OCEAN_FLOOR");
+        final int[] biomes = Nbts.intArray(level, "Biomes");
         final String sectionsKey = legacy ? "Sections" : "sections";
-        final NbtList sections = level.contains(sectionsKey, 9)
-            ? level.getList(sectionsKey, 10) : new NbtList();
+        final NbtList sections = Nbts.list(level, sectionsKey, 10);
         final List<Section> parsed = parseSections(sections);
         final SummaryCodec.Column[] columns = new SummaryCodec.Column[SummaryCodec.COLUMNS];
         for (int z = 0; z < 16; z++) {
@@ -81,44 +80,39 @@ public final class ChunkSummarizer {
                 );
             }
         }
-        final long revision = level.contains("LastUpdate", 4) ? level.getLong("LastUpdate") : 0L;
+        final long revision = Nbts.longValue(level, "LastUpdate");
         return new SummaryCodec.Chunk(true, revision, columns);
     }
 
     private static List<Section> parseSections(final NbtList list) {
         final List<Section> result = new ArrayList<>(list.size());
         for (int i = 0; i < list.size(); i++) {
-            final NbtCompound section = list.getCompound(i);
-            final int y = section.getByte("Y");
-            final boolean modern = section.contains("block_states", 10);
-            final NbtCompound blockStates = modern ? section.getCompound("block_states") : section;
+            final NbtCompound section = Nbts.compound(list, i);
+            final int y = Nbts.byteValue(section, "Y");
+            final boolean modern = Nbts.hasCompound(section, "block_states");
+            final NbtCompound blockStates = modern ? Nbts.compound(section, "block_states") : section;
             final String paletteKey = modern ? "palette" : "Palette";
             final String dataKey = modern ? "data" : "BlockStates";
-            final NbtList palette = blockStates.contains(paletteKey, 9)
-                ? blockStates.getList(paletteKey, 10) : new NbtList();
+            final NbtList palette = Nbts.list(blockStates, paletteKey, 10);
             final String[] names = new String[Math.max(1, palette.size())];
             for (int p = 0; p < palette.size(); p++) {
-                names[p] = palette.getCompound(p).getString("Name");
+                names[p] = Nbts.string(Nbts.compound(palette, p), "Name");
             }
             if (palette.isEmpty()) {
                 names[0] = "minecraft:air";
             }
-            final long[] states = blockStates.contains(dataKey, 12)
-                ? blockStates.getLongArray(dataKey) : new long[0];
+            final long[] states = Nbts.longArray(blockStates, dataKey);
             final int bits = Math.max(4, bitsFor(names.length));
-            final NbtCompound biomeContainer = modern && section.contains("biomes", 10)
-                ? section.getCompound("biomes") : new NbtCompound();
-            final NbtList biomePalette = biomeContainer.contains("palette", 9)
-                ? biomeContainer.getList("palette", 8) : new NbtList();
+            final NbtCompound biomeContainer = modern ? Nbts.compound(section, "biomes") : new NbtCompound();
+            final NbtList biomePalette = Nbts.list(biomeContainer, "palette", 8);
             final int[] biomeIds = new int[Math.max(1, biomePalette.size())];
             for (int p = 0; p < biomePalette.size(); p++) {
-                biomeIds[p] = biomeId(biomePalette.getString(p));
+                biomeIds[p] = biomeId(Nbts.string(biomePalette, p));
             }
             if (biomePalette.isEmpty()) {
                 biomeIds[0] = 1;
             }
-            final long[] biomeData = biomeContainer.contains("data", 12)
-                ? biomeContainer.getLongArray("data") : new long[0];
+            final long[] biomeData = Nbts.longArray(biomeContainer, "data");
             result.add(new Section(y, names, states, bits, biomeIds, biomeData, Math.max(1, bitsFor(biomeIds.length))));
         }
         return result;

@@ -46,7 +46,7 @@ public final class PredictionPaletteBuilder {
             if (cubiomesId.isEmpty()) {
                 continue;
             }
-            final Biome biome = registry.get(id);
+            final Biome biome = Regs.biome(registry, id);
             if (biome == null) {
                 continue;
             }

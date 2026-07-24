@@ -52,6 +52,15 @@ public final class Regs {
         //#endif
     }
 
+    /** Looks up a biome without exposing the registry API rename at 1.21.3. */
+    public static Biome biome(final Registry<Biome> registry, final Identifier id) {
+        //#if MC>=12103
+        //$$ return registry.getOptionalValue(id).orElse(null);
+        //#else
+        return registry.get(id);
+        //#endif
+    }
+
     /**
      * Looks a block up by identifier. Deliberately not {@code blocks().get(id)}: the block
      * registry is defaulted, so an unknown id silently resolves to air instead of reporting
