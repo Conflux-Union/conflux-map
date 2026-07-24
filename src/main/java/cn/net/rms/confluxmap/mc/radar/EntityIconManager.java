@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.radar;
 
+import cn.net.rms.confluxmap.compat.Ids;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -94,7 +95,7 @@ public final class EntityIconManager {
     /** BipedEntityModel.getModelData: hat = uv(32,0).cuboid(w=8,h=8,d=8). */
     private static final FaceUv PLAYER_HAT = px(40, 8, 48, 16, SKIN_SIZE, SKIN_SIZE);
 
-    private static final Identifier SHEET = new Identifier("confluxmap", "textures/radar/entity_icons.png");
+    private static final Identifier SHEET = Ids.of("confluxmap", "textures/radar/entity_icons.png");
     /** entity_icons.png is a 13-col x 15-row grid of 16x16 cells (docs/reference-specs/entity-icon-cellmap.json). */
     private static final int SHEET_W = 208;
     private static final int SHEET_H = 240;
@@ -116,8 +117,8 @@ public final class EntityIconManager {
     }
 
     /** Render thread. GL id of the sheet's baked silhouette outline mask, or -1 if it can't bake. */
-    public int outlineTextureGlId(final MinecraftClient client) {
-        return outlineTexture.glId(client);
+    public boolean bindOutlineTexture(final MinecraftClient client) {
+        return outlineTexture.bind(client);
     }
 
     /** Render thread, resource reload: re-bake the outline mask from the (possibly overridden) sheet. */
@@ -138,7 +139,13 @@ public final class EntityIconManager {
     }
 
     private FaceIcon playerIcon(final AbstractClientPlayerEntity player) {
+        //#if MC>=12111
+        //$$ final Identifier skin = player.getSkin().body().texturePath();
+        //#elseif MC>=12100
+        //$$ final Identifier skin = player.getSkinTextures().texture();
+        //#else
         final Identifier skin = player.getSkinTexture();
+        //#endif
         return new FaceIcon(
             skin, PLAYER_FACE.u0(), PLAYER_FACE.v0(), PLAYER_FACE.u1(), PLAYER_FACE.v1(),
             skin, PLAYER_HAT.u0(), PLAYER_HAT.v0(), PLAYER_HAT.u1(), PLAYER_HAT.v1(),
@@ -191,30 +198,56 @@ public final class EntityIconManager {
     }
 
     private static String mooshroomVariant(final Entity entity) {
+        //#if MC>=12100
+        //$$ return ((MooshroomEntity) entity).getVariant().asString();
+        //#else
         return ((MooshroomEntity) entity).getMooshroomType().name().toLowerCase(Locale.ROOT);
+        //#endif
     }
 
     /** See {@link #CAT_TYPE_NAMES} for the verified int-to-breed order. */
     private static String catVariant(final Entity entity) {
+        //#if MC>=12100
+        //$$ return ((CatEntity) entity).getVariant().getKey()
+        //$$     .map(key -> key.getValue().getPath())
+        //$$     .orElse(null);
+        //#else
         final int type = ((CatEntity) entity).getCatType();
         return type >= 0 && type < CAT_TYPE_NAMES.length ? CAT_TYPE_NAMES[type] : null;
+        //#endif
     }
 
     private static String foxVariant(final Entity entity) {
+        //#if MC>=12100
+        //$$ return ((FoxEntity) entity).getVariant().asString();
+        //#else
         return ((FoxEntity) entity).getFoxType().name().toLowerCase(Locale.ROOT);
+        //#endif
     }
 
     private static String parrotVariant(final Entity entity) {
+        //#if MC>=12100
+        //$$ return String.valueOf(((ParrotEntity) entity).getVariant().getId());
+        //#else
         return String.valueOf(((ParrotEntity) entity).getVariant());
+        //#endif
     }
 
     /** Shared by llama and trader_llama - TraderLlamaEntity extends LlamaEntity and inherits getVariant(). */
     private static String llamaVariant(final Entity entity) {
+        //#if MC>=12100
+        //$$ return String.valueOf(((LlamaEntity) entity).getVariant().ordinal());
+        //#else
         return String.valueOf(((LlamaEntity) entity).getVariant());
+        //#endif
     }
 
     private static String rabbitVariant(final Entity entity) {
+        //#if MC>=12100
+        //$$ return String.valueOf(((RabbitEntity) entity).getVariant().getId());
+        //#else
         return String.valueOf(((RabbitEntity) entity).getRabbitType());
+        //#endif
     }
 
     private static String axolotlVariant(final Entity entity) {
@@ -240,7 +273,15 @@ public final class EntityIconManager {
      * plain registry path ("armorer", "butcher", ...) directly - no Registry lookup needed.
      */
     private static String villagerVariant(final Entity entity) {
+        //#if MC>=12105
+        //$$ return ((VillagerEntity) entity).getVillagerData().profession().getKey()
+        //$$     .map(key -> key.getValue().getPath())
+        //$$     .orElse("");
+        //#elseif MC>=12100
+        //$$ return ((VillagerEntity) entity).getVillagerData().getProfession().id();
+        //#else
         return ((VillagerEntity) entity).getVillagerData().getProfession().getId();
+        //#endif
     }
 
     /**

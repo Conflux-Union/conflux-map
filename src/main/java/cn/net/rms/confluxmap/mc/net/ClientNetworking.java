@@ -2,6 +2,8 @@ package cn.net.rms.confluxmap.mc.net;
 
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.ConfluxMapMod;
+import cn.net.rms.confluxmap.compat.Ids;
+import cn.net.rms.confluxmap.compat.PlayNetworking;
 import cn.net.rms.confluxmap.core.net.ErrorS2C;
 import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
 import cn.net.rms.confluxmap.core.net.HelloC2S;
@@ -13,10 +15,7 @@ import cn.net.rms.confluxmap.core.net.PolicyUpdateS2C;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
-import io.netty.buffer.Unpooled;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.network.PacketByteBuf;
 import net.minecraft.util.Identifier;
 
 /**
@@ -29,7 +28,7 @@ import net.minecraft.util.Identifier;
  * the session.
  */
 public final class ClientNetworking {
-    public static final Identifier CHANNEL = new Identifier(Proto.CHANNEL_ID);
+    public static final Identifier CHANNEL = Ids.of(Proto.CHANNEL_ID);
 
     private final CompanionSession session;
     private volatile MapSyncClient mapSync;
@@ -39,7 +38,7 @@ public final class ClientNetworking {
     }
 
     public void register() {
-        ClientPlayNetworking.registerGlobalReceiver(CHANNEL, this::onReceive);
+        PlayNetworking.registerClient(CHANNEL, this::onReceive);
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> sendHello());
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
             session.reset();
@@ -57,12 +56,10 @@ public final class ClientNetworking {
     private void onReceive(
         final net.minecraft.client.MinecraftClient client,
         final net.minecraft.client.network.ClientPlayNetworkHandler handler,
-        final PacketByteBuf buf,
-        final net.fabricmc.fabric.api.networking.v1.PacketSender responseSender
+        final byte[] payload
     ) {
-        final byte[] payload;
         try {
-            payload = readPayload(buf);
+            validatePayload(payload);
         } catch (final ProtoException e) {
             ConfluxMapMod.LOGGER.warn("companion: dropping malformed S2C payload ({})", e.getMessage());
             return;
@@ -114,9 +111,8 @@ public final class ClientNetworking {
             ConfluxMapMod.LOGGER.error("companion: failed to serialize {}: {}", msg.getClass().getSimpleName(), e.getMessage());
             return -1;
         }
-        final PacketByteBuf buf = new PacketByteBuf(Unpooled.wrappedBuffer(payload));
         try {
-            ClientPlayNetworking.send(CHANNEL, buf);
+            PlayNetworking.sendClient(CHANNEL, payload);
             return payload.length;
         } catch (final IllegalStateException e) {
             // Channel not ready (e.g. fired before JOIN completes, or after DISCONNECT). Don't
@@ -159,17 +155,14 @@ public final class ClientNetworking {
         ConfluxMapMod.LOGGER.warn("companion: server error code={} detail={}", err.code(), err.detail());
     }
 
-    private static byte[] readPayload(final PacketByteBuf buf) throws ProtoException {
-        final int readable = buf.readableBytes();
+    private static void validatePayload(final byte[] payload) throws ProtoException {
+        final int readable = payload.length;
         if (readable < 1) {
             throw new ProtoException("empty payload");
         }
         if (readable > Proto.MAX_S2C_PAYLOAD) {
             throw new ProtoException("S2C payload " + readable + " above cap " + Proto.MAX_S2C_PAYLOAD);
         }
-        final byte[] payload = new byte[readable];
-        buf.readBytes(payload);
-        return payload;
     }
 
     /** Convenience for the composition root. */

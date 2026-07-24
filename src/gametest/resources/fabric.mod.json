@@ -10,7 +10,8 @@
   "entrypoints": {
     "fabric-gametest": [
       "cn.net.rms.confluxmap.gametest.PredictionSyncGameTest",
-      "cn.net.rms.confluxmap.gametest.PredictionQualityGameTest"
+      "cn.net.rms.confluxmap.gametest.PredictionQualityGameTest",
+      "cn.net.rms.confluxmap.mc.snapshot.McChunkSnapshotFactoryGameTest"
     ]
   },
   "depends": {

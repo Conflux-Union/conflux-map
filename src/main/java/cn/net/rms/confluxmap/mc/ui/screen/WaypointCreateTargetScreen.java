@@ -4,15 +4,17 @@ import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.compat.Widgets;
+import cn.net.rms.confluxmap.compat.Texts;
 import java.math.BigDecimal;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.text.TranslatableText;
 
 /** Chooses the ownership/audience for a waypoint created from the fullscreen map. */
-public final class WaypointCreateTargetScreen extends Screen {
+public final class WaypointCreateTargetScreen extends ConfluxScreen {
     private final Screen parent;
     private final DimensionId dimensionId;
     private final double x;
@@ -29,7 +31,7 @@ public final class WaypointCreateTargetScreen extends Screen {
         final double y,
         final double z
     ) {
-        super(new TranslatableText("confluxmap.screen.waypoint.choose_target"));
+        super(Texts.translatable("confluxmap.screen.waypoint.choose_target"));
         this.parent = parent;
         this.dimensionId = dimensionId;
         this.x = x;
@@ -51,18 +53,18 @@ public final class WaypointCreateTargetScreen extends Screen {
         final int left = width / 2 - 100;
         final int top = Math.max(48, height / 2 - (sharedAvailability.enabled() ? 54 : 42));
         int buttonY = top;
-        addDrawableChild(new ButtonWidget(
+        addDrawableChild(Widgets.button(
             left, buttonY, 200, 20,
-            new TranslatableText("confluxmap.screen.waypoint.create_local"),
+            Texts.translatable("confluxmap.screen.waypoint.create_local"),
             button -> MinecraftClient.getInstance().setScreen(
                 WaypointEditScreen.forCreate(parent, dimensionId, x, y, z)
             )
         ));
         buttonY += 24;
         if (sharedAvailability.enabled()) {
-            publicButton = addDrawableChild(new ButtonWidget(
+            publicButton = addDrawableChild(Widgets.button(
                 left, buttonY, 200, 20,
-                new TranslatableText("confluxmap.screen.waypoint.create_public"),
+                Texts.translatable("confluxmap.screen.waypoint.create_public"),
                 button -> MinecraftClient.getInstance().setScreen(
                     WaypointEditScreen.forPublicCreate(parent, dimensionId, x, y, z)
                 )
@@ -70,17 +72,17 @@ public final class WaypointCreateTargetScreen extends Screen {
             publicButton.active = sharedAvailability.ready();
             buttonY += 24;
         }
-        addDrawableChild(new ButtonWidget(
+        addDrawableChild(Widgets.button(
             left, buttonY, 200, 20,
-            new TranslatableText("confluxmap.screen.waypoint.create_chat"),
+            Texts.translatable("confluxmap.screen.waypoint.create_chat"),
             button -> MinecraftClient.getInstance().setScreen(
                 WaypointEditScreen.forChatCreate(parent, dimensionId, x, y, z)
             )
         ));
         buttonY += 30;
-        addDrawableChild(new ButtonWidget(
+        addDrawableChild(Widgets.button(
             left, buttonY, 200, 20,
-            new TranslatableText("confluxmap.screen.waypoint.cancel"),
+            Texts.translatable("confluxmap.screen.waypoint.cancel"),
             button -> onClose()
         ));
     }
@@ -110,32 +112,31 @@ public final class WaypointCreateTargetScreen extends Screen {
     }
 
     @Override
-    public void render(final MatrixStack matrices, final int mouseX, final int mouseY, final float tickDelta) {
-        renderBackground(matrices);
+    protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
+        draw.renderBackground(this, mouseX, mouseY, tickDelta);
         final String title = textRenderer.trimToWidth(getTitle().getString(), Math.max(40, width - 24));
-        textRenderer.drawWithShadow(
-            matrices, title, width / 2f - textRenderer.getWidth(title) / 2f, 20, 0xFFFFFFFF
+        draw.drawTextWithShadow(
+            textRenderer, title, width / 2f - textRenderer.getWidth(title) / 2f, 20, 0xFFFFFFFF
         );
-        final String coords = textRenderer.trimToWidth(new TranslatableText(
+        final String coords = textRenderer.trimToWidth(Texts.translatable(
             "confluxmap.screen.waypoint.preview.coords",
             formatCoordinate(x), formatCoordinate(y), formatCoordinate(z)
         ).getString(), Math.max(40, width - 24));
-        textRenderer.drawWithShadow(
-            matrices, coords, width / 2f - textRenderer.getWidth(coords) / 2f, 34, 0xFFB8B8B8
+        draw.drawTextWithShadow(
+            textRenderer, coords, width / 2f - textRenderer.getWidth(coords) / 2f, 34, 0xFFB8B8B8
         );
         if (sharedAvailability != null && sharedAvailability.enabled()) {
             final String status = textRenderer.trimToWidth(
-                new TranslatableText(statusKey()).getString(), Math.max(40, width - 24)
+                Texts.translatable(statusKey()).getString(), Math.max(40, width - 24)
             );
-            textRenderer.drawWithShadow(
-                matrices,
+            draw.drawTextWithShadow(
+                textRenderer,
                 status,
                 width / 2f - textRenderer.getWidth(status) / 2f,
                 height - 18,
                 0xFFB8B8B8
             );
         }
-        super.render(matrices, mouseX, mouseY, tickDelta);
     }
 
     private String statusKey() {

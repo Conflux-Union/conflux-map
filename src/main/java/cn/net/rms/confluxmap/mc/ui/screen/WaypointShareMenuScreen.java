@@ -4,14 +4,16 @@ import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.compat.Widgets;
+import cn.net.rms.confluxmap.compat.Texts;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.text.TranslatableText;
 
 /** Explicit choice between server publication and ordinary chat sharing. */
-public final class WaypointShareMenuScreen extends Screen {
+public final class WaypointShareMenuScreen extends ConfluxScreen {
     private final Screen parent;
     private final Waypoint waypoint;
     private final SharedWaypointClient sharedWaypoints;
@@ -19,7 +21,7 @@ public final class WaypointShareMenuScreen extends Screen {
     private SharedWaypointAvailability sharedAvailability;
 
     public WaypointShareMenuScreen(final Screen parent, final Waypoint waypoint) {
-        super(new TranslatableText("confluxmap.screen.waypoint.share"));
+        super(Texts.translatable("confluxmap.screen.waypoint.share"));
         this.parent = parent;
         this.waypoint = waypoint.copy();
         this.sharedWaypoints = ConfluxMapClient.get().sharedWaypoints();
@@ -39,9 +41,9 @@ public final class WaypointShareMenuScreen extends Screen {
         final int top = Math.max(54, height / 2 - (sharedAvailability.enabled() ? 42 : 30));
         int buttonY = top;
         if (sharedAvailability.enabled()) {
-            publishButton = addDrawableChild(new ButtonWidget(
+            publishButton = addDrawableChild(Widgets.button(
                 left, buttonY, 200, 20,
-                new TranslatableText("confluxmap.screen.waypoint.publish"),
+                Texts.translatable("confluxmap.screen.waypoint.publish"),
                 button -> MinecraftClient.getInstance().setScreen(
                     new WaypointShareConfirmScreen(parent, waypoint, WaypointShareConfirmScreen.Target.PUBLIC)
                 )
@@ -49,17 +51,17 @@ public final class WaypointShareMenuScreen extends Screen {
             updatePublishButton();
             buttonY += 24;
         }
-        addDrawableChild(new ButtonWidget(
+        addDrawableChild(Widgets.button(
             left, buttonY, 200, 20,
-            new TranslatableText("confluxmap.screen.waypoint.send_chat"),
+            Texts.translatable("confluxmap.screen.waypoint.send_chat"),
             button -> MinecraftClient.getInstance().setScreen(
                 new WaypointShareConfirmScreen(parent, waypoint, WaypointShareConfirmScreen.Target.CHAT)
             )
         ));
         buttonY += 30;
-        addDrawableChild(new ButtonWidget(
+        addDrawableChild(Widgets.button(
             left, buttonY, 200, 20,
-            new TranslatableText("confluxmap.screen.waypoint.cancel"),
+            Texts.translatable("confluxmap.screen.waypoint.cancel"),
             button -> onClose()
         ));
     }
@@ -89,25 +91,24 @@ public final class WaypointShareMenuScreen extends Screen {
     }
 
     @Override
-    public void render(final MatrixStack matrices, final int mouseX, final int mouseY, final float tickDelta) {
-        renderBackground(matrices);
+    protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
+        draw.renderBackground(this, mouseX, mouseY, tickDelta);
         final String title = textRenderer.trimToWidth(getTitle().getString() + ": " + waypoint.name, Math.max(40, width - 32));
-        textRenderer.drawWithShadow(
-            matrices, title, width / 2f - textRenderer.getWidth(title) / 2f, 24, 0xFFFFFFFF
+        draw.drawTextWithShadow(
+            textRenderer, title, width / 2f - textRenderer.getWidth(title) / 2f, 24, 0xFFFFFFFF
         );
         if (sharedAvailability != null && sharedAvailability.enabled()) {
             final String status = textRenderer.trimToWidth(
-                new TranslatableText(statusKey()).getString(), Math.max(40, width - 24)
+                Texts.translatable(statusKey()).getString(), Math.max(40, width - 24)
             );
-            textRenderer.drawWithShadow(
-                matrices,
+            draw.drawTextWithShadow(
+                textRenderer,
                 status,
                 width / 2f - textRenderer.getWidth(status) / 2f,
                 height - 18,
                 0xFFB8B8B8
             );
         }
-        super.render(matrices, mouseX, mouseY, tickDelta);
     }
 
     private String statusKey() {
@@ -126,7 +127,7 @@ public final class WaypointShareMenuScreen extends Screen {
         final boolean shared = sharedWaypoints.isLocationShared(waypoint);
         final boolean pending = sharedWaypoints.isCreatePending(waypoint);
         publishButton.active = sharedAvailability.ready() && !shared && !pending;
-        publishButton.setMessage(new TranslatableText(
+        publishButton.setMessage(Texts.translatable(
             shared
                 ? "confluxmap.screen.waypoint.already_shared"
                 : pending

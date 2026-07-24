@@ -1,9 +1,13 @@
 package cn.net.rms.confluxmap.mc.color;
 
+import cn.net.rms.confluxmap.compat.Ids;
+import cn.net.rms.confluxmap.compat.NativeImages;
 import cn.net.rms.confluxmap.core.util.Argb;
 import java.util.ArrayList;
 import java.util.List;
+//#if MC<11900
 import java.util.Random;
+//#endif
 import net.minecraft.block.AbstractSignBlock;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
@@ -16,6 +20,9 @@ import net.minecraft.block.VineBlock;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.model.BakedModel;
 import net.minecraft.client.render.model.BakedQuad;
+//#if MC>=12105
+//$$ import net.minecraft.client.render.model.BlockModelPart;
+//#endif
 import net.minecraft.client.texture.MissingSprite;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.Sprite;
@@ -23,12 +30,15 @@ import net.minecraft.client.texture.SpriteAtlasTexture;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
+//#if MC>=11900
+//$$ import net.minecraft.util.math.random.Random;
+//#endif
 import net.minecraft.world.BlockView;
 
 /**
  * Per-BlockState cached base color, per surface-color-sampling.md §2. Colors come
  * from sampling the live stitched block-texture atlas (via each sprite's own
- * un-stitched frame-0 source image, {@link Sprite#images}[0]) - never from
+ * un-stitched frame-0 source image) - never from
  * Minecraft's built-in map-item palette.
  *
  * <p>Main-thread only (touches {@link BakedModel}s); the returned colors are
@@ -38,11 +48,15 @@ public final class SpriteColorSampler {
     /** §2: the alpha floor - both a "skip this pixel" threshold while averaging and a final clamp. */
     private static final int ALPHA_FLOOR = 27;
     private static final int UNRESOLVED_ARGB = Argb.pack(ALPHA_FLOOR, 0, 0, 0);
-    private static final Identifier WATER_STILL = new Identifier("block/water_still");
-    private static final Identifier LAVA_STILL = new Identifier("block/lava_still");
+    private static final Identifier WATER_STILL = Ids.of("block/water_still");
+    private static final Identifier LAVA_STILL = Ids.of("block/lava_still");
 
     private final MinecraftClient client;
+    //#if MC>=11900
+    //$$ private final Random modelRandom = Random.create(42L);
+    //#else
     private final Random modelRandom = new Random(42L);
+    //#endif
     private int[] cache = new int[4096];
 
     public SpriteColorSampler(final MinecraftClient client) {
@@ -106,18 +120,33 @@ public final class SpriteColorSampler {
             return fallbackToMapColor(state, world, pos);
         }
         final List<Sprite> faceSprites = new ArrayList<>();
+        //#if MC>=12105
+        //$$ for (final BlockModelPart part : model.getParts(modelRandom)) {
+        //$$     for (final BakedQuad quad : part.getQuads(Direction.UP)) {
+        //$$         faceSprites.add(quad.sprite());
+        //$$     }
+        //$$     for (final BakedQuad quad : part.getQuads(null)) {
+        //$$         faceSprites.add(quad.sprite());
+        //$$     }
+        //$$ }
+        //#else
         for (final BakedQuad quad : model.getQuads(state, Direction.UP, modelRandom)) {
             faceSprites.add(quad.getSprite());
         }
         for (final BakedQuad quad : model.getQuads(state, null, modelRandom)) {
             faceSprites.add(quad.getSprite());
         }
+        //#endif
         final Integer primary = averageSprites(faceSprites);
         if (primary != null) {
             return clampAlphaFloor(primary);
         }
 
+        //#if MC>=12105
+        //$$ final Sprite particle = model.particleSprite();
+        //#else
         final Sprite particle = model.getParticleSprite();
+        //#endif
         final boolean isFluid = !state.getFluidState().isEmpty();
         if (particle == null || isMissing(particle)) {
             if (isFluid) {
@@ -147,12 +176,22 @@ public final class SpriteColorSampler {
 
     private Sprite fluidSprite(final BlockState state) {
         final Identifier id = state.isOf(Blocks.LAVA) ? LAVA_STILL : WATER_STILL;
+        //#if MC>=12111
+        //$$ final SpriteAtlasTexture atlas = client.getAtlasManager().getAtlasTexture(
+        //$$     SpriteAtlasTexture.BLOCK_ATLAS_TEXTURE
+        //$$ );
+        //#else
         final SpriteAtlasTexture atlas = client.getBakedModelManager().getAtlas(SpriteAtlasTexture.BLOCK_ATLAS_TEXTURE);
+        //#endif
         return atlas.getSprite(id);
     }
 
     private static boolean isMissing(final Sprite sprite) {
+        //#if MC>=11900
+        //$$ return sprite.getContents().getId().equals(MissingSprite.getMissingSpriteId());
+        //#else
         return sprite.getId().equals(MissingSprite.getMissingSpriteId());
+        //#endif
     }
 
     /** Equal-weighted average across every quad's resolved sprite color; null if none were usable. */
@@ -189,13 +228,22 @@ public final class SpriteColorSampler {
         if (sprite == null || isMissing(sprite)) {
             return null;
         }
+        //#if MC>=11900
+        //$$ final NativeImage[] images = sprite.getContents().mipmapLevelsImages;
+        //#else
         final NativeImage[] images = sprite.images;
+        //#endif
         if (images == null || images.length == 0 || images[0] == null) {
             return null;
         }
         final NativeImage image = images[0];
+        //#if MC>=11900
+        //$$ final int w = Math.min(sprite.getContents().getWidth(), image.getWidth());
+        //$$ final int h = Math.min(sprite.getContents().getHeight(), image.getHeight());
+        //#else
         final int w = Math.min(sprite.getWidth(), image.getWidth());
         final int h = Math.min(sprite.getHeight(), image.getHeight());
+        //#endif
         if (w <= 0 || h <= 0) {
             return null;
         }
@@ -206,7 +254,7 @@ public final class SpriteColorSampler {
         int count = 0;
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                final int argb = Argb.toAbgr(image.getColor(x, y));
+                final int argb = NativeImages.getArgb(image, x, y);
                 final int a = Argb.alpha(argb);
                 if (a < ALPHA_FLOOR) {
                     continue;

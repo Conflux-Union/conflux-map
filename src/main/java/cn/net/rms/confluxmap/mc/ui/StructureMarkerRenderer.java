@@ -11,13 +11,14 @@ public final class StructureMarkerRenderer {
     }
 
     public static void draw(
-        final MatrixStack matrices,
+        final GuiDraw draw,
         final TextRenderer textRenderer,
         final StructureIndex.Marker marker,
         final float x,
         final float y,
         final boolean hovered
     ) {
+        final MatrixStack matrices = draw.matrices();
         final int alpha = marker.state() == StructureIndex.State.VERIFIED ? 0xFF : 0x8C;
         final int color = marker.state() == StructureIndex.State.VERIFIED ? 0xFF55D6A5 : 0xFF4FA3FF;
         final int outer = (alpha << 24) | 0x00101010;
@@ -29,6 +30,6 @@ public final class StructureMarkerRenderer {
         RenderUtil.fillTriangle(matrices, x, y - inner, x - inner, y, x + inner, y, fill);
         RenderUtil.fillTriangle(matrices, x, y + inner, x - inner, y, x + inner, y, fill);
         final String badge = marker.type().badge();
-        textRenderer.drawWithShadow(matrices, badge, x - textRenderer.getWidth(badge) / 2f, y - 4f, 0xFFFFFFFF);
+        draw.drawTextWithShadow(textRenderer, badge, x - textRenderer.getWidth(badge) / 2f, y - 4f, 0xFFFFFFFF);
     }
 }

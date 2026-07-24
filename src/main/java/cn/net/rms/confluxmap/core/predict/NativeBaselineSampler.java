@@ -82,6 +82,30 @@ public final class NativeBaselineSampler implements BaselineSampler {
     }
 
     @Override
+    public boolean surfaceColumns(
+        final int blockX,
+        final int blockZ,
+        final int w,
+        final int h,
+        final int stride,
+        final int[] outSolidY,
+        final int[] outFluidY,
+        final int[] outSurfaceY,
+        final int[] outFlags
+    ) {
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, flags);
+            return ctx != null && ctx.surfaceColumns(
+                blockX, blockZ, w, h, stride,
+                outSolidY, outFluidY, outSurfaceY, outFlags
+            ) == 0;
+        } catch (final Throwable fault) {
+            NativeLib.disableForSession(fault);
+            return false;
+        }
+    }
+
+    @Override
     public boolean endHeights(final int x4, final int z4, final int w, final int h, final int[] outY) {
         try {
             final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, flags);

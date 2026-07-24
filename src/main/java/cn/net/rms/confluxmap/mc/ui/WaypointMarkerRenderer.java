@@ -34,7 +34,7 @@ public final class WaypointMarkerRenderer {
      * so different surfaces can choose different sizes without changing the icon style.
      */
     public static void draw(
-        final MatrixStack matrices,
+        final GuiDraw draw,
         final TextRenderer textRenderer,
         final WaypointRenderEntry waypoint,
         final float x,
@@ -43,6 +43,7 @@ public final class WaypointMarkerRenderer {
         final float alpha,
         final boolean hovered
     ) {
+        final MatrixStack matrices = draw.matrices();
         final int fill = fillColor(waypoint.colorArgb(), alpha, hovered);
         final int outer = withAlpha(outlineColor(waypoint), alpha);
         final float plateSize = halfSize * 2f;
@@ -56,8 +57,8 @@ public final class WaypointMarkerRenderer {
         matrices.push();
         matrices.translate(x, y, 0);
         matrices.scale(textScale, textScale, 1f);
-        textRenderer.drawWithShadow(
-            matrices,
+        draw.drawTextWithShadow(
+            textRenderer,
             initial,
             -textWidth / 2f,
             -textRenderer.fontHeight / 2f,

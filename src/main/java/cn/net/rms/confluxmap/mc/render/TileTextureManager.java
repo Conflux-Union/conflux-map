@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.mc.render;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
+import cn.net.rms.confluxmap.compat.NativeImages;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.predict.PredictedTileKeys;
@@ -8,7 +9,9 @@ import cn.net.rms.confluxmap.core.predict.PredictionTileService;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.tile.TileUpdate;
 import cn.net.rms.confluxmap.core.util.Argb;
+//#if MC<12105
 import com.mojang.blaze3d.platform.GlStateManager;
+//#endif
 import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -21,7 +24,8 @@ import net.minecraft.client.texture.NativeImageBackedTexture;
  * Render-thread-only cache of {@link TileKey} to GPU texture, an LRU capped at
  * {@link ConfluxConfig#gpuTileCacheLimit}. Pulls finished compositions off
  * {@link TileService}'s upload queue and writes their pixels into a
- * {@link NativeImageBackedTexture} (which stores ABGR, hence {@link Argb#toAbgr}).
+ * {@link NativeImageBackedTexture}; {@link NativeImages} normalizes the version-specific
+ * native pixel representation to the core's ARGB colors.
  */
 public final class TileTextureManager {
     // Real and predicted tiles share one upload queue; a slow predicted underlay leaves the real
@@ -54,7 +58,11 @@ public final class TileTextureManager {
     private void upload(final TileUpdate update) {
         NativeImageBackedTexture texture = textures.get(update.key());
         if (texture == null) {
+            //#if MC>=12105
+            //$$ texture = new NativeImageBackedTexture("Conflux Map tile", TILE_SIZE, TILE_SIZE, false);
+            //#else
             texture = new NativeImageBackedTexture(TILE_SIZE, TILE_SIZE, false);
+            //#endif
             textures.put(update.key(), texture);
         }
         final NativeImage image = texture.getImage();
@@ -65,7 +73,7 @@ public final class TileTextureManager {
         for (int y = update.changedY(); y < update.changedY() + update.changedHeight(); y++) {
             final int row = y * TILE_SIZE;
             for (int x = update.changedX(); x < update.changedX() + update.changedWidth(); x++) {
-                image.setColor(x, y, Argb.toAbgr(pixels[row + x]));
+                NativeImages.setArgb(image, x, y, pixels[row + x]);
             }
         }
         texture.upload();
@@ -74,10 +82,18 @@ public final class TileTextureManager {
 
     /** Keep tile edges independent: repeat/linear state can leak from another texture or shader. */
     private static void configureSampling(final NativeImageBackedTexture texture) {
+        //#if MC>=12111
+        // Sampling is selected explicitly when the render pass binds the texture.
+        //#else
         texture.setFilter(false, false);
+        //#if MC>=12105
+        //$$ texture.setClamp(true);
+        //#else
         GlStateManager._bindTexture(texture.getGlId());
         GlStateManager._texParameter(3553, 10242, 33071);
         GlStateManager._texParameter(3553, 10243, 33071);
+        //#endif
+        //#endif
     }
 
     private void evictOverLimit() {
@@ -106,7 +122,13 @@ public final class TileTextureManager {
             }
             return false;
         }
+        //#if MC>=12108
+        //$$ RenderUtil.bindTexture(texture.getGlTextureView());
+        //#elseif MC>=12105
+        //$$ RenderUtil.bindTexture(texture.getGlTexture());
+        //#else
         RenderUtil.bindTexture(texture.getGlId());
+        //#endif
         return true;
     }
 
@@ -124,7 +146,7 @@ public final class TileTextureManager {
         if (image == null) {
             return Argb.TRANSPARENT;
         }
-        return Argb.toAbgr(image.getColor(px, py));
+        return NativeImages.getArgb(image, px, py);
     }
 
     /** Render thread, session end: drop every cached tile texture. */

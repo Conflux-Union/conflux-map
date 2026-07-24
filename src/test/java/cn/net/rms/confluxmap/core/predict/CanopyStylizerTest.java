@@ -15,6 +15,7 @@ class CanopyStylizerTest {
     /** cubiomes id for {@code forest}: {@link BiomeTable#get}'s treeCover is 0.35. */
     private static final int FOREST = 4;
     private static final int JUNGLE = 21;
+    private static final int BAMBOO_JUNGLE = 168;
 
     private static BaselineGrid uniformGrid(final int biomeId, final int terrainY) {
         final BaselineGrid grid = new BaselineGrid();
@@ -91,6 +92,22 @@ class CanopyStylizerTest {
         assertEquals((byte) SurfaceKind.FOLIAGE.ordinal(), derived.kind[BaselineGrid.index(8, 8)]);
         assertEquals(73, derived.surfaceY[BaselineGrid.index(8, 8)]);
         assertEquals((byte) SurfaceKind.LAND.ordinal(), derived.kind[BaselineGrid.index(100, 100)]);
+
+        final BaselineGrid bambooGrid = uniformGrid(BAMBOO_JUNGLE, 70);
+        final DerivedGrid bambooDerived = BaselineDeriver.derive(bambooGrid);
+        final BaselineSampler bambooSampler = treeSampler((chunkX, chunkZ, out) -> {
+            if (chunkX == 0 && chunkZ == 0) {
+                out[0] = new TreeCandidate(8, 70, 8, 11, BAMBOO_JUNGLE, 14 << 16);
+                return 1;
+            }
+            return 0;
+        });
+
+        CanopyStylizer.apply(bambooDerived, bambooGrid, bambooSampler, 99L, 0, 0, 0);
+
+        assertEquals((byte) SurfaceKind.LAND.ordinal(), bambooDerived.kind[BaselineGrid.index(8, 8)]);
+        assertEquals(85, bambooDerived.surfaceY[BaselineGrid.index(8, 8)]);
+        assertEquals(70, bambooDerived.surfaceY[BaselineGrid.index(9, 8)]);
     }
 
     @Test

@@ -22,8 +22,13 @@ import net.minecraft.util.math.BlockPos;
  */
 public final class BiomeTintResolver {
     /** §3: fixed reference colors, not biome-sampled at all (matches the base game's own special-casing). */
+    //#if MC>=12104
+    //$$ private static final int SPRUCE_LEAVES_ARGB = 0xFF000000 | FoliageColors.SPRUCE;
+    //$$ private static final int BIRCH_LEAVES_ARGB = 0xFF000000 | FoliageColors.BIRCH;
+    //#else
     private static final int SPRUCE_LEAVES_ARGB = 0xFF000000 | FoliageColors.getSpruceColor();
     private static final int BIRCH_LEAVES_ARGB = 0xFF000000 | FoliageColors.getBirchColor();
+    //#endif
     private static final int NO_TINT = 0xFFFFFFFF;
 
     private final MinecraftClient client;

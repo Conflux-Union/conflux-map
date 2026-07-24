@@ -8,11 +8,12 @@ import java.util.Set;
 
 /**
  * Stylizes tree canopy in place onto an already-{@link BaselineDeriver#derive derived} grid.
- * LOD0-1 uses cubiomes' 1.17.1 natural tree candidates where the sampler supports the biome
+ * LOD0-1 uses cubiomes' versioned natural tree candidates where the sampler supports the biome
  * decorator. Unsupported chunks retain the deterministic seed-hashed fallback based on
  * {@link BiomeTable#get}'s {@code treeCover}. Candidates are still honest
- * estimates: the first candidate in a chunk has exact X/Z and type, while later candidates can
- * drift after terrain-dependent random consumption, and vanilla may reject any candidate.
+ * estimates: the first accepted candidate for each supported placed feature has exact X/Z and
+ * type, while later candidates can drift after terrain-dependent random consumption, and vanilla
+ * may reject any candidate.
  *
  * <p>The deterministic fallback has two regimes, both driven by a splitmix64-mixed hash of
  * {@code (seed, blockX, blockZ)}:
@@ -33,13 +34,18 @@ import java.util.Set;
  */
 public final class CanopyStylizer {
     private static final int MAX_NATURAL_LOD = 1;
-    private static final int MAX_CANDIDATES_PER_CHUNK = 64;
+    private static final int MAX_CANDIDATES_PER_CHUNK = 256;
     // cubiomes terrain_features.h enum NaturalTreeType ordinals.
     private static final int TREE_JUNGLE = 3;
     private static final int TREE_DARK_OAK = 5;
     private static final int TREE_JUNGLE_BUSH = 6;
     private static final int TREE_HUGE_BROWN_MUSHROOM = 7;
     private static final int TREE_HUGE_RED_MUSHROOM = 8;
+    private static final int TREE_MANGROVE = 9;
+    private static final int TREE_CHERRY = 10;
+    private static final int TREE_BAMBOO = 11;
+    private static final int FEATURE_CANDIDATE_HEIGHT_SHIFT = 16;
+    private static final int FEATURE_CANDIDATE_HEIGHT_MASK = 0xFF;
 
     /** Fixed salt distinguishing this hash from any other seed-derived synthetic feature. */
     private static final long SALT = 0x27220A5FA9A9A797L;
@@ -192,7 +198,8 @@ public final class CanopyStylizer {
             Math.floorDiv(candidate.z() + radius - tileOriginZ, blocksPerPixel)
         );
         final int centerOffset = blocksPerPixel / 2;
-        final int bump = canopyHeight(candidate.type());
+        final int bump = candidateHeight(candidate);
+        final boolean foliage = candidate.type() != TREE_BAMBOO;
 
         for (int pixelZ = minPixelZ; pixelZ <= maxPixelZ; pixelZ++) {
             final int dz = tileOriginZ + pixelZ * blocksPerPixel + centerOffset - candidate.z();
@@ -206,7 +213,9 @@ public final class CanopyStylizer {
                 if (kind == SurfaceKind.WATER || kind == SurfaceKind.ICE || kind == SurfaceKind.VOID) {
                     continue;
                 }
-                derived.kind[index] = (byte) SurfaceKind.FOLIAGE.ordinal();
+                if (foliage) {
+                    derived.kind[index] = (byte) SurfaceKind.FOLIAGE.ordinal();
+                }
                 derived.surfaceY[index] = Math.max(derived.surfaceY[index], baseSurfaceY[index] + bump);
             }
         }
@@ -214,14 +223,28 @@ public final class CanopyStylizer {
 
     private static int canopyRadius(final int type) {
         return switch (type) {
+            case TREE_BAMBOO -> 0;
+            case TREE_MANGROVE -> 3;
+            case TREE_CHERRY -> 4;
             case TREE_JUNGLE, TREE_DARK_OAK, TREE_HUGE_BROWN_MUSHROOM, TREE_HUGE_RED_MUSHROOM -> 2;
             default -> 1;
         };
     }
 
+    private static int candidateHeight(final TreeCandidate candidate) {
+        if (candidate.type() == TREE_BAMBOO) {
+            final int stalkHeight = (candidate.flags() >>> FEATURE_CANDIDATE_HEIGHT_SHIFT)
+                & FEATURE_CANDIDATE_HEIGHT_MASK;
+            return stalkHeight + 1;
+        }
+        return canopyHeight(candidate.type());
+    }
+
     private static int canopyHeight(final int type) {
         return switch (type) {
             case TREE_JUNGLE -> 10;
+            case TREE_MANGROVE -> 8;
+            case TREE_CHERRY -> 10;
             case TREE_DARK_OAK, TREE_HUGE_BROWN_MUSHROOM, TREE_HUGE_RED_MUSHROOM -> 4;
             case TREE_JUNGLE_BUSH -> 2;
             default -> 3;

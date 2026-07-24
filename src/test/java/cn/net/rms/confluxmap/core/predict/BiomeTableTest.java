@@ -8,11 +8,9 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
- * Parity check between {@link BiomeTable}'s known ids and the exact set of 1.17.1
- * overworld/End biome ids, transcribed by hand from {@code native/cubiomes/biomes.c}'s {@code
- * isOverworld(MC_1_17_1, id)}/{@code getDimension(id) == DIM_END} logic (see {@link
- * BiomeTable}'s own javadoc for the reasoning behind each exclusion: {@code mountain_edge},
- * {@code deep_warm_ocean}, {@code the_void}, {@code dripstone_caves}/{@code lush_caves}).
+ * Parity check between {@link BiomeTable}'s known ids and the union of supported-version
+ * Overworld biome ids plus the End ids, transcribed from {@code native/cubiomes/biomes.c}'s
+ * {@code biomeExists}/{@code isOverworld}/{@code getDimension} rules.
  */
 class BiomeTableTest {
     /** Every id where {@code isOverworld(21, id)} or {@code getDimension(id) == DIM_END} holds, per biomes.c. */
@@ -43,6 +41,8 @@ class BiomeTableTest {
         25,
         // Swamp.
         6, 134,
+        // Modern Overworld biomes with distinct numeric ids.
+        174, 175, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186,
         // The End.
         9, 40, 41, 42, 43
     );
@@ -72,8 +72,8 @@ class BiomeTableTest {
 
     @Test
     void expectedIdCountMatchesTheDocumentedTotal() {
-        // 66 overworld + 5 End, see BiomeTable's javadoc derivation.
-        assertEquals(71, EXPECTED_IDS.size());
+        // 78 distinct Overworld ids across supported versions + 5 End ids.
+        assertEquals(83, EXPECTED_IDS.size());
     }
 
     @Test

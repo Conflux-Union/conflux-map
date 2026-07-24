@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.input;
 
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.bridge.PlayerView;
+import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
@@ -19,7 +20,13 @@ import net.minecraft.client.util.InputUtil;
 import org.lwjgl.glfw.GLFW;
 
 public final class Keybinds {
+    //#if MC>=12111
+    //$$ public static final KeyBinding.Category CATEGORY = KeyBinding.Category.create(
+    //$$     Ids.of("confluxmap", "controls")
+    //$$ );
+    //#else
     public static final String CATEGORY = "key.categories.confluxmap";
+    //#endif
 
     private final KeyBinding toggleMinimap;
     private final KeyBinding zoomIn;

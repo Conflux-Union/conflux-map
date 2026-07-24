@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.gametest;
 
+import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.quality.GeneratedTileComposer;
@@ -13,7 +14,6 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.state.property.Properties;
 import net.minecraft.tag.FluidTags;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.registry.Registry;
 import net.minecraft.world.Heightmap;
 import net.minecraft.world.chunk.WorldChunk;
 
@@ -98,9 +98,11 @@ final class GeneratedWorldTileReader {
                 tile.kind()[index] = (byte) surfaceKind.ordinal();
                 tile.fluidDepth()[index] = (byte) fluidDepth(chunk, position, y, surfaceKind);
                 tile.mapColorId()[index] = (byte) visibleMapColorId(chunk, world, position, y, state);
-                tile.biomeId()[index] = world.getRegistryManager()
-                    .get(Registry.BIOME_KEY)
-                    .getRawId(world.getBiome(position));
+                //#if MC>=12100
+                //$$ tile.biomeId()[index] = Regs.biomes(world).getRawId(world.getBiome(position).value());
+                //#else
+                tile.biomeId()[index] = Regs.biomes(world).getRawId(world.getBiome(position));
+                //#endif
             }
         }
     }

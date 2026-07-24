@@ -15,5 +15,8 @@ class CubiomesBiomeIdsTest {
             assertTrue(CubiomesBiomeIds.idForName(name).isPresent());
             assertEquals(id, CubiomesBiomeIds.idForName(name).getAsInt());
         }
+        assertEquals(3, CubiomesBiomeIds.idForName("windswept_hills").orElseThrow());
+        assertEquals(155, CubiomesBiomeIds.idForName("old_growth_birch_forest").orElseThrow());
+        assertEquals(186, CubiomesBiomeIds.idForName("pale_garden").orElseThrow());
     }
 }

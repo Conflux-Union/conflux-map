@@ -5,6 +5,10 @@ import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatCodec;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.compat.Widgets;
+import cn.net.rms.confluxmap.compat.Texts;
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import java.math.BigDecimal;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
@@ -12,10 +16,9 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.OrderedText;
 import net.minecraft.text.StringVisitable;
-import net.minecraft.text.TranslatableText;
 
 /** Explicit preview and confirmation boundary for every outward waypoint share. */
-public final class WaypointShareConfirmScreen extends Screen {
+public final class WaypointShareConfirmScreen extends ConfluxScreen {
     public enum Target { PUBLIC, CHAT }
 
     private static final int TEXT_COLOR = 0xFFFFFFFF;
@@ -32,7 +35,7 @@ public final class WaypointShareConfirmScreen extends Screen {
     private String errorKey;
 
     public WaypointShareConfirmScreen(final Screen parent, final Waypoint waypoint, final Target target) {
-        super(new TranslatableText(
+        super(Texts.translatable(
             target == Target.PUBLIC
                 ? "confluxmap.screen.waypoint.confirm_public"
                 : "confluxmap.screen.waypoint.confirm_chat"
@@ -74,12 +77,12 @@ public final class WaypointShareConfirmScreen extends Screen {
         }
 
         final int centerX = width / 2;
-        confirmButton = addDrawableChild(new ButtonWidget(
+        confirmButton = addDrawableChild(Widgets.button(
             centerX - 104,
             height - 32,
             100,
             20,
-            new TranslatableText(
+            Texts.translatable(
                 target == Target.PUBLIC
                     ? "confluxmap.screen.waypoint.publish"
                     : "confluxmap.screen.waypoint.send_chat"
@@ -91,12 +94,12 @@ public final class WaypointShareConfirmScreen extends Screen {
         } else {
             confirmButton.active = confluxPreview != null && xaeroPreview != null;
         }
-        addDrawableChild(new ButtonWidget(
+        addDrawableChild(Widgets.button(
             centerX + 4,
             height - 32,
             100,
             20,
-            new TranslatableText("confluxmap.screen.waypoint.cancel"),
+            Texts.translatable("confluxmap.screen.waypoint.cancel"),
             button -> onClose()
         ));
     }
@@ -131,7 +134,7 @@ public final class WaypointShareConfirmScreen extends Screen {
         final boolean shared = sharedWaypoints.isLocationShared(waypoint);
         final boolean pending = sharedWaypoints.isCreatePending(waypoint);
         confirmButton.active = availability.ready() && !shared && !pending;
-        confirmButton.setMessage(new TranslatableText(
+        confirmButton.setMessage(Texts.translatable(
             shared
                 ? "confluxmap.screen.waypoint.already_shared"
                 : pending
@@ -168,68 +171,67 @@ public final class WaypointShareConfirmScreen extends Screen {
             errorKey = "confluxmap.screen.waypoint.invalid_share";
             return;
         }
-        client.player.sendChatMessage(confluxPreview);
-        client.player.sendChatMessage(xaeroPreview);
+        MinecraftAccess.sendChatMessage(client, confluxPreview);
+        MinecraftAccess.sendChatMessage(client, xaeroPreview);
         onClose();
     }
 
     @Override
-    public void render(final MatrixStack matrices, final int mouseX, final int mouseY, final float tickDelta) {
-        renderBackground(matrices);
-        drawCentered(matrices, getTitle().getString(), 22, TEXT_COLOR);
+    protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
+        draw.renderBackground(this, mouseX, mouseY, tickDelta);
+        drawCentered(draw, getTitle().getString(), 22, TEXT_COLOR);
         if (target == Target.CHAT && confluxPreview != null && xaeroPreview != null) {
-            int y = drawWrapped(matrices, new TranslatableText(
+            int y = drawWrapped(draw, Texts.translatable(
                 "confluxmap.screen.waypoint.preview.chat_messages"
             ).getString(), 50, MUTED_TEXT_COLOR);
-            y = drawWrapped(matrices, confluxPreview, y + 4, TEXT_COLOR);
-            y = drawWrapped(matrices, xaeroPreview, y + 6, TEXT_COLOR);
-            drawCentered(matrices, new TranslatableText(
+            y = drawWrapped(draw, confluxPreview, y + 4, TEXT_COLOR);
+            y = drawWrapped(draw, xaeroPreview, y + 6, TEXT_COLOR);
+            drawCentered(draw, Texts.translatable(
                 "confluxmap.screen.waypoint.preview.audience_chat"
             ).getString(), y + 10, MUTED_TEXT_COLOR);
         } else {
-            drawCentered(matrices, new TranslatableText(
+            drawCentered(draw, Texts.translatable(
                 "confluxmap.screen.waypoint.preview.name", waypoint.name
             ).getString(), 50, TEXT_COLOR);
-            drawCentered(matrices, new TranslatableText(
+            drawCentered(draw, Texts.translatable(
                 "confluxmap.screen.waypoint.preview.dimension", waypoint.dimensionId.toString()
             ).getString(), 66, TEXT_COLOR);
-            drawCentered(matrices, new TranslatableText(
+            drawCentered(draw, Texts.translatable(
                 "confluxmap.screen.waypoint.preview.coords",
                 formatCoordinate(waypoint.x),
                 formatCoordinate(waypoint.y),
                 formatCoordinate(waypoint.z)
             ).getString(), 82, TEXT_COLOR);
-            drawCentered(matrices, new TranslatableText(
+            drawCentered(draw, Texts.translatable(
                 target == Target.PUBLIC
                     ? "confluxmap.screen.waypoint.preview.audience_public"
                     : "confluxmap.screen.waypoint.preview.audience_chat"
             ).getString(), 106, MUTED_TEXT_COLOR);
             if (target == Target.PUBLIC) {
                 drawCentered(
-                    matrices,
-                    new TranslatableText("confluxmap.screen.waypoint.public_immutable").getString(),
+                    draw,
+                    Texts.translatable("confluxmap.screen.waypoint.public_immutable").getString(),
                     122,
                     MUTED_TEXT_COLOR
                 );
             }
         }
         if (errorKey != null) {
-            drawCentered(matrices, new TranslatableText(errorKey).getString(), height - 50, ERROR_TEXT_COLOR);
+            drawCentered(draw, Texts.translatable(errorKey).getString(), height - 50, ERROR_TEXT_COLOR);
         }
-        super.render(matrices, mouseX, mouseY, tickDelta);
     }
 
-    private void drawCentered(final MatrixStack matrices, final String value, final int y, final int color) {
+    private void drawCentered(final GuiDraw draw, final String value, final int y, final int color) {
         final String text = textRenderer.trimToWidth(value, Math.max(40, width - 32));
-        textRenderer.drawWithShadow(matrices, text, width / 2f - textRenderer.getWidth(text) / 2f, y, color);
+        draw.drawTextWithShadow(textRenderer, text, width / 2f - textRenderer.getWidth(text) / 2f, y, color);
     }
 
     /** Draws every wrapped line of {@code value} and returns the y below the last line. */
-    private int drawWrapped(final MatrixStack matrices, final String value, final int y, final int color) {
+    private int drawWrapped(final GuiDraw draw, final String value, final int y, final int color) {
         int lineY = y;
         for (final OrderedText line : textRenderer.wrapLines(StringVisitable.plain(value), Math.max(40, width - 32))) {
-            textRenderer.drawWithShadow(
-                matrices, line, width / 2f - textRenderer.getWidth(line) / 2f, lineY, color
+            draw.drawTextWithShadow(
+                textRenderer, line, width / 2f - textRenderer.getWidth(line) / 2f, lineY, color
             );
             lineY += textRenderer.fontHeight + 1;
         }

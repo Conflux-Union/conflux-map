@@ -15,6 +15,7 @@ import cn.net.rms.confluxmap.core.quality.GeneratedTileComposer;
 import cn.net.rms.confluxmap.core.quality.PredictionQualityCorpus;
 import cn.net.rms.confluxmap.core.quality.PredictionQualityEvaluator;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
+import cn.net.rms.confluxmap.compat.MinecraftVersion;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -22,20 +23,36 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+//#if MC>=12105
+//$$ import net.fabricmc.fabric.api.gametest.v1.GameTest;
+//#else
 import net.fabricmc.fabric.api.gametest.v1.FabricGameTest;
+//#endif
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.world.ServerWorld;
+//#if MC<12105
 import net.minecraft.test.GameTest;
+//#endif
 import net.minecraft.test.TestContext;
 import net.minecraft.world.World;
 
 /** Generates complete Vanilla regions and compares their map render with cubiomes prediction. */
+//#if MC>=12105
+//$$ public final class PredictionQualityGameTest {
+//#else
 public final class PredictionQualityGameTest implements FabricGameTest {
+//#endif
     private static final int CHUNKS_PER_TILE = 16 * 16;
     private static final int TILE_PIXELS = BaselineGrid.PIXELS;
     private static final int TICK_LIMIT = 30_000;
 
+    //#if MC>=12105
+    //$$ @GameTest(maxTicks = TICK_LIMIT)
+    //#elseif MC>=12100
+    //$$ @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = TICK_LIMIT)
+    //#else
     @GameTest(structureName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = TICK_LIMIT)
+    //#endif
     public void generatedRegionsMeetPredictionQualityBaseline(final TestContext context) {
         final ServerWorld testWorld = context.getWorld();
         final long expectedSeed = Long.getLong("confluxmap.quality.world-seed", testWorld.getSeed());
@@ -60,7 +77,7 @@ public final class PredictionQualityGameTest implements FabricGameTest {
         private final MinecraftServer server;
         private final long worldSeed;
         private final Path reportDir;
-        private final List<PredictionQualityCorpus.Sample> samples = PredictionQualityCorpus.defaultSamples();
+        private final List<PredictionQualityCorpus.Sample> samples = selectedSamples();
         private final List<PredictionQualitySampleResult> results = new ArrayList<>();
         private int sampleIndex;
         private int chunkIndex;
@@ -102,7 +119,7 @@ public final class PredictionQualityGameTest implements FabricGameTest {
                 chunkIndex = 0;
                 context.waitAndRun(1L, this::step);
             } catch (final Throwable failure) {
-                context.throwGameTestException("prediction quality run failed: " + failure);
+                GameTestCompat.fail(context, "prediction quality run failed: " + failure);
             }
         }
 
@@ -120,7 +137,7 @@ public final class PredictionQualityGameTest implements FabricGameTest {
                 PredictionPalette.defaults()
             );
             final int nativeDimension = PredictionDimensions.nativeDim(sample.dimension());
-            final int mcVersion = McVersions.toCubiomes("1.17.1").orElseThrow();
+            final int mcVersion = McVersions.toCubiomes(MinecraftVersion.current()).orElseThrow();
             final NativeBaselineSampler sampler = new NativeBaselineSampler(mcVersion, worldSeed, nativeDimension, 0);
             final int originX = sample.tileX() * TILE_PIXELS;
             final int originZ = sample.tileZ() * TILE_PIXELS;
@@ -147,7 +164,9 @@ public final class PredictionQualityGameTest implements FabricGameTest {
 
         private void finish() throws IOException {
             PredictionQualityReport.write(reportDir, worldSeed, results);
-            PredictionQualityThresholds.verify(results);
+            if (System.getProperty("confluxmap.quality.sample") == null) {
+                PredictionQualityThresholds.verify(results);
+            }
             context.complete();
         }
 
@@ -160,6 +179,21 @@ public final class PredictionQualityGameTest implements FabricGameTest {
             }
             return world;
         }
+    }
+
+    private static List<PredictionQualityCorpus.Sample> selectedSamples() {
+        final List<PredictionQualityCorpus.Sample> samples = PredictionQualityCorpus.defaultSamples();
+        final String selected = System.getProperty("confluxmap.quality.sample");
+        if (selected == null || selected.isBlank()) {
+            return samples;
+        }
+        final List<PredictionQualityCorpus.Sample> filtered = samples.stream()
+            .filter(sample -> sample.id().equals(selected))
+            .toList();
+        if (filtered.isEmpty()) {
+            throw new IllegalArgumentException("unknown prediction quality sample: " + selected);
+        }
+        return filtered;
     }
 
     private static PredictionQualityEvaluator.TileData toPredictionTile(
@@ -209,7 +243,7 @@ public final class PredictionQualityGameTest implements FabricGameTest {
 
     private static void require(final TestContext context, final boolean condition, final String message) {
         if (!condition) {
-            context.throwGameTestException(message);
+            GameTestCompat.fail(context, message);
         }
     }
 }

@@ -59,6 +59,29 @@ public final class CubiomesContext implements AutoCloseable {
         return CubiomesNative.cfxHeights(handle, x4, z4, w, h, outY, outIds);
     }
 
+    /** Overworld-only block-scale solid/fluid/final base-surface columns. */
+    public int surfaceColumns(
+        final int blockX,
+        final int blockZ,
+        final int w,
+        final int h,
+        final int stride,
+        final int[] outSolidY,
+        final int[] outFluidY,
+        final int[] outSurfaceY,
+        final int[] outFlags
+    ) {
+        requireOpen();
+        requireCapacity(outSolidY, w, h);
+        requireCapacity(outFluidY, w, h);
+        requireCapacity(outSurfaceY, w, h);
+        requireCapacity(outFlags, w, h);
+        return CubiomesNative.cfxSurfaceColumns(
+            handle, blockX, blockZ, w, h, stride,
+            outSolidY, outFluidY, outSurfaceY, outFlags
+        );
+    }
+
     /** Strided Overworld height grid at 1:4 native scale. */
     public int heightsStrided(
         final int x4, final int z4, final int w, final int h, final int stride, final int[] outY, final int[] outIds
@@ -86,8 +109,9 @@ public final class CubiomesContext implements AutoCloseable {
     }
 
     /**
-     * Overworld-only natural tree candidates for one 1.17.1 chunk. All field arrays must have the
-     * same capacity; {@code outCount[0]} receives the number of records on success.
+     * Overworld-only natural vegetation candidates for one supported-version chunk. All field
+     * arrays must have the same capacity; {@code outCount[0]} receives the number of records on
+     * success.
      */
     public int treeCandidates(
         final int chunkX, final int chunkZ,

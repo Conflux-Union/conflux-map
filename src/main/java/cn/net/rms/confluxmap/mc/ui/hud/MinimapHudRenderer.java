@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.ui.hud;
 
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
+import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
@@ -19,22 +20,24 @@ import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
 import cn.net.rms.confluxmap.mc.render.OffscreenCanvas;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
+import cn.net.rms.confluxmap.compat.Texts;
+import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import java.util.Optional;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
+//#if MC>=12100
+//$$ import net.minecraft.client.gui.DrawContext;
+//$$ import net.minecraft.client.render.RenderTickCounter;
+//#endif
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 import net.minecraft.text.Text;
-import net.minecraft.text.TranslatableText;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3f;
-import net.minecraft.util.registry.Registry;
-import net.minecraft.world.biome.Biome;
 
 /**
  * Renders the always-on minimap HUD, showing whichever layer {@link LayerSelector}
@@ -107,7 +110,15 @@ public final class MinimapHudRenderer {
      * {@link FullscreenMapScreen} relies on it having already run this frame and never
      * calls it itself, so it's never invoked twice in one frame.
      */
+    //#if MC>=12100
+    //$$ private void render(final DrawContext context, final RenderTickCounter tickCounter) {
+    //$$     final GuiDraw draw = GuiDraw.of(context);
+    //$$     final MatrixStack matrices = draw.matrices();
+    //$$     final float tickDelta = tickCounter.getTickDelta(false);
+    //#else
     private void render(final MatrixStack matrices, final float tickDelta) {
+        final GuiDraw draw = GuiDraw.of(matrices);
+    //#endif
         textures.beginFrame();
         final boolean fullscreenOpen = client.currentScreen instanceof FullscreenMapScreen;
         if (!config.minimapEnabled || !gameBridge.session().active() || fullscreenOpen) {
@@ -157,7 +168,7 @@ public final class MinimapHudRenderer {
             fbo.push();
             fbo.translate(size / 2f, size / 2f, 0);
             if (rotate) {
-                fbo.multiply(Vec3f.POSITIVE_Z.getDegreesQuaternion(mapAngle));
+                RenderUtil.rotateZ(fbo, mapAngle);
             }
             RenderUtil.beginTexturedQuads();
             drawTiles(fbo, size, rotate, player);
@@ -165,7 +176,7 @@ public final class MinimapHudRenderer {
             canvas.end(client);
 
             RenderUtil.beginTexturedQuads();
-            RenderUtil.bindTexture(canvas.textureId());
+            canvas.bindTexture();
             RenderUtil.drawTexturedDisk(matrices, centerX, centerY, size / 2f);
             RenderUtil.drawRing(matrices, centerX, centerY, size / 2f, BORDER_THICKNESS, BORDER_COLOR);
         } else {
@@ -175,7 +186,7 @@ public final class MinimapHudRenderer {
             matrices.push();
             matrices.translate(centerX, centerY, 0);
             if (rotate) {
-                matrices.multiply(Vec3f.POSITIVE_Z.getDegreesQuaternion(mapAngle));
+                RenderUtil.rotateZ(matrices, mapAngle);
             }
             drawTiles(matrices, size, rotate, player);
             matrices.pop();
@@ -183,11 +194,11 @@ public final class MinimapHudRenderer {
             drawBorder(matrices, x0, y0, size);
         }
 
-        drawRadar(matrices, centerX, centerY, size, mapAngle, player, tickDelta);
-        drawCardinals(matrices, centerX, centerY, size, mapAngle);
-        drawWaypointMarkers(matrices, centerX, centerY, size, mapAngle, player);
+        drawRadar(draw, centerX, centerY, size, mapAngle, player, tickDelta);
+        drawCardinals(draw, centerX, centerY, size, mapAngle);
+        drawWaypointMarkers(draw, centerX, centerY, size, mapAngle, player);
         drawPlayerArrow(matrices, centerX, centerY, rotate ? 0f : player.yawDegrees() + 180f);
-        drawInfoText(matrices, player, x0, y0, size);
+        drawInfoText(draw, player, x0, y0, size);
     }
 
     /**
@@ -201,7 +212,7 @@ public final class MinimapHudRenderer {
      * visible instead of changing into a generic direction arrow.
      */
     private void drawWaypointMarkers(
-        final MatrixStack matrices,
+        final GuiDraw draw,
         final float centerX,
         final float centerY,
         final int size,
@@ -239,7 +250,7 @@ public final class MinimapHudRenderer {
 
             if (inRange) {
                 WaypointMarkerRenderer.draw(
-                    matrices, client.textRenderer, waypoint, centerX + screenOffX, centerY + screenOffY,
+                    draw, client.textRenderer, waypoint, centerX + screenOffX, centerY + screenOffY,
                     WAYPOINT_MARKER_HALF_SIZE, 1f, false
                 );
             } else if (config.waypointEdgeIndicatorsEnabled) {
@@ -249,7 +260,7 @@ public final class MinimapHudRenderer {
                 final float edgeX = screenOffX * k;
                 final float edgeY = screenOffY * k;
                 WaypointMarkerRenderer.draw(
-                    matrices,
+                    draw,
                     client.textRenderer,
                     waypoint,
                     centerX + edgeX,
@@ -304,7 +315,7 @@ public final class MinimapHudRenderer {
      * regardless of the minimap's current rotation.
      */
     private void drawRadar(
-        final MatrixStack matrices,
+        final GuiDraw draw,
         final float centerX,
         final float centerY,
         final int size,
@@ -348,7 +359,7 @@ public final class MinimapHudRenderer {
             final float x = centerX + dirX * cos - dirY * sin;
             final float y = centerY + dirX * sin + dirY * cos;
             RadarMarkerRenderer.draw(
-                matrices, client, config, iconManager, backdrop, entry, x, y, ex, ez, blocksPerPixel, yDelta, live
+                draw, client, config, iconManager, backdrop, entry, x, y, ex, ez, blocksPerPixel, yDelta, live
             );
         }
     }
@@ -356,26 +367,26 @@ public final class MinimapHudRenderer {
     private void drawPlayerArrow(final MatrixStack matrices, final float centerX, final float centerY, final float angle) {
         matrices.push();
         matrices.translate(centerX, centerY, 0);
-        matrices.multiply(Vec3f.POSITIVE_Z.getDegreesQuaternion(angle));
+        RenderUtil.rotateZ(matrices, angle);
         RenderUtil.fillTriangle(matrices, 0f, -6.5f, -5f, 5.5f, 5f, 5.5f, ARROW_OUTLINE);
         RenderUtil.fillTriangle(matrices, 0f, -5f, -3.5f, 4f, 3.5f, 4f, ARROW_FILL);
         matrices.pop();
     }
 
     /** Cardinal letters sit on the (possibly rotated) compass ring but are always drawn upright. */
-    private void drawCardinals(final MatrixStack matrices, final float centerX, final float centerY, final int size, final float mapAngle) {
+    private void drawCardinals(final GuiDraw draw, final float centerX, final float centerY, final int size, final float mapAngle) {
         final float radius = size / 2f - 7f;
         final double rad = Math.toRadians(mapAngle);
         final float cos = (float) Math.cos(rad);
         final float sin = (float) Math.sin(rad);
-        drawCardinal(matrices, "N", centerX, centerY, 0f, -radius, cos, sin);
-        drawCardinal(matrices, "E", centerX, centerY, radius, 0f, cos, sin);
-        drawCardinal(matrices, "S", centerX, centerY, 0f, radius, cos, sin);
-        drawCardinal(matrices, "W", centerX, centerY, -radius, 0f, cos, sin);
+        drawCardinal(draw, "N", centerX, centerY, 0f, -radius, cos, sin);
+        drawCardinal(draw, "E", centerX, centerY, radius, 0f, cos, sin);
+        drawCardinal(draw, "S", centerX, centerY, 0f, radius, cos, sin);
+        drawCardinal(draw, "W", centerX, centerY, -radius, 0f, cos, sin);
     }
 
     private void drawCardinal(
-        final MatrixStack matrices,
+        final GuiDraw draw,
         final String letter,
         final float centerX,
         final float centerY,
@@ -387,10 +398,10 @@ public final class MinimapHudRenderer {
         final float x = centerX + dirX * cos - dirY * sin;
         final float y = centerY + dirX * sin + dirY * cos;
         final int width = client.textRenderer.getWidth(letter);
-        client.textRenderer.drawWithShadow(matrices, letter, x - width / 2f, y - 4f, TEXT_COLOR);
+        draw.drawTextWithShadow(client.textRenderer, letter, x - width / 2f, y - 4f, TEXT_COLOR);
     }
 
-    private void drawInfoText(final MatrixStack matrices, final PlayerView player, final int x0, final int y0, final int size) {
+    private void drawInfoText(final GuiDraw draw, final PlayerView player, final int x0, final int y0, final int size) {
         if (!config.showCoordinates && !config.showBiome && !config.showLayerIndicator) {
             return;
         }
@@ -412,42 +423,43 @@ public final class MinimapHudRenderer {
 
         if (config.showCoordinates) {
             final String coords = player.blockX() + ", " + player.blockY() + ", " + player.blockZ();
-            drawCenteredLine(matrices, coords, centerX, y);
+            drawCenteredLine(draw, coords, centerX, y);
             y += lineHeight;
         }
         if (config.showBiome) {
             final String biome = biomeName(player);
             if (!biome.isEmpty()) {
-                drawCenteredLine(matrices, biome, centerX, y);
+                drawCenteredLine(draw, biome, centerX, y);
             }
             y += lineHeight;
         }
         if (config.showLayerIndicator) {
-            drawCenteredLine(matrices, layerIndicatorText(), centerX, y);
+            drawCenteredLine(draw, layerIndicatorText(), centerX, y);
         }
     }
 
     /** cave-nether-layers.md-driven layer name, keyed off {@link MapLayer.Type#id()} (e.g. "confluxmap.layer.cave"). */
     private String layerIndicatorText() {
         final MapLayer.Type type = layerSelector.current().layer().type();
-        return new TranslatableText("confluxmap.layer." + type.id()).getString();
+        return Texts.translatable("confluxmap.layer." + type.id()).getString();
     }
 
-    private void drawCenteredLine(final MatrixStack matrices, final String text, final float centerX, final float y) {
+    private void drawCenteredLine(final GuiDraw draw, final String text, final float centerX, final float y) {
         final int width = client.textRenderer.getWidth(text);
-        client.textRenderer.drawWithShadow(matrices, text, centerX - width / 2f, y, TEXT_COLOR);
+        draw.drawTextWithShadow(client.textRenderer, text, centerX - width / 2f, y, TEXT_COLOR);
     }
 
     private String biomeName(final PlayerView player) {
         if (client.world == null) {
             return "";
         }
-        final Biome biome = client.world.getBiome(new BlockPos(player.blockX(), player.blockY(), player.blockZ()));
-        final Identifier id = client.world.getRegistryManager().get(Registry.BIOME_KEY).getId(biome);
+        final Identifier id = Regs.biomeIdAt(
+            client.world, new BlockPos(player.blockX(), player.blockY(), player.blockZ())
+        );
         if (id == null) {
             return "";
         }
-        final Text name = new TranslatableText("biome." + id.getNamespace() + "." + id.getPath());
+        final Text name = Texts.translatable("biome." + id.getNamespace() + "." + id.getPath());
         return name.getString();
     }
 

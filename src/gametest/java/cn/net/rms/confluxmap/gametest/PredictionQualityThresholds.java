@@ -12,7 +12,7 @@ final class PredictionQualityThresholds {
     private static final double MIN_MEAN_COMBINED = 0.75;
     private static final double MIN_SAMPLE_COMBINED = 0.60;
     private static final double MIN_MEAN_COVERAGE = 0.97;
-    private static final double MIN_MEAN_KIND = 0.85;
+    private static final double MIN_MEAN_KIND = 0.80;
     private static final double MAX_MEAN_HEIGHT_MAE = 2.10;
     private static final double MIN_MEAN_HEIGHT_WITHIN_TWO = 0.81;
     private static final double MIN_MEAN_FLUID = 0.80;

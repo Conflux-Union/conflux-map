@@ -6,7 +6,7 @@ not a fast unit test.
 
 ## Reference and prediction paths
 
-Fabric's 1.17.1 GameTest server normally replaces the Overworld generator with a flat generator.
+Fabric's GameTest server normally replaces the Overworld generator with a flat generator.
 The test-only `TestServerMixin` keeps the default Vanilla noise generator so both the Overworld and
 the End contain real terrain. This mixin is packaged only in the `gametest` source set and cannot be
 loaded from the release mod.
@@ -15,7 +15,7 @@ The GameTest server keeps Vanilla structure generation disabled, so this benchma
 biomes, decoration features, and End islands rather than villages or other structures that the
 predictor does not attempt to reconstruct.
 
-The benchmark uses world seed `0` because that is fixed by the 1.17.1 GameTest server. A separate,
+The benchmark uses world seed `0`, fixed explicitly by the GameTest launch configuration. A separate,
 fixed corpus seed selects eight Overworld tiles and four End tiles. Each sample is a complete LOD 0
 tile: 16 by 16 chunks and 256 by 256 output pixels. Samples are kept away from the spawn area so an
 existing world cannot accidentally satisfy the benchmark from spawn generation alone.
@@ -57,6 +57,8 @@ Run the same path used by CI:
 ```sh
 ./gradlew :1.17.1:runGametest
 ```
+
+Replace `1.17.1` with any supported target to verify its mapped Minecraft and Fabric runtime.
 
 The report is written under
 `versions/1.17.1/build/reports/prediction-quality/`:

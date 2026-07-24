@@ -34,7 +34,7 @@
 #include "finders.h"
 #include "terrain_features.h"
 
-#define CFX_ABI 3
+#define CFX_ABI 4
 
 #define CFX_OK              0
 #define CFX_ERR_BAD_HANDLE  1
@@ -50,7 +50,7 @@
 
 typedef struct {
     Generator g;
-    SurfaceNoise sn; /* Overworld: feeds mapApproxHeight. End: feeds mapEndSurfaceHeight. */
+    SurfaceNoise sn; /* Overworld terrain columns and End surface heights. */
     int mc;
     int dim;
 } CfxContext;
@@ -68,6 +68,16 @@ static int cfxValidCells(jint w, jint h) {
 
 static int cfxValidScale(jint scale) {
     return scale == 1 || scale == 4 || scale == 16 || scale == 64 || scale == 256;
+}
+
+static int cfxGenerateBiomes(CfxContext *ctx, int *out, Range r) {
+    if (ctx->dim == DIM_OVERWORLD && ctx->mc >= MC_1_18
+        && (r.scale == 1 || r.scale == 4)) {
+        return mapOverworldSurfaceBiome(
+            out, &ctx->g.bn, ctx->g.sha, r.scale, r.x, r.z, r.sx, r.sz
+        );
+    }
+    return genBiomes(&ctx->g, out, r);
 }
 
 JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxAbi(
@@ -137,7 +147,7 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     if (cache == NULL) {
         return CFX_ERR_ALLOC;
     }
-    const int err = genBiomes(&ctx->g, cache, r);
+    const int err = cfxGenerateBiomes(ctx, cache, r);
     if (err != 0) {
         free(cache);
         return CFX_ERR_GENERATION;
@@ -193,7 +203,7 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
             free(sampled);
             return CFX_ERR_ALLOC;
         }
-        const int err = genBiomes(&ctx->g, dense, r);
+        const int err = cfxGenerateBiomes(ctx, dense, r);
         if (err != 0) {
             free(dense);
             free(sampled);
@@ -213,7 +223,7 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
                 free(sampled);
                 return CFX_ERR_ALLOC;
             }
-            const int err = genBiomes(&ctx->g, row, r);
+            const int err = cfxGenerateBiomes(ctx, row, r);
             if (err != 0) {
                 free(row);
                 free(sampled);
@@ -281,6 +291,70 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     free(y);
     free(ids);
     free(iy);
+    return CFX_OK;
+}
+
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxSurfaceColumns(
+    JNIEnv *env, jclass clazz, jlong handle,
+    jint blockX, jint blockZ, jint w, jint h, jint stride,
+    jintArray outSolidY, jintArray outFluidY, jintArray outSurfaceY, jintArray outFlags
+) {
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL) {
+        return CFX_ERR_BAD_HANDLE;
+    }
+    if (ctx->dim != DIM_OVERWORLD) {
+        return CFX_ERR_WRONG_DIM;
+    }
+    if (!cfxValidCells(w, h) || stride <= 0) {
+        return CFX_ERR_BAD_SIZE;
+    }
+    const int64_t lastX = (int64_t) blockX + (int64_t) (w - 1) * stride;
+    const int64_t lastZ = (int64_t) blockZ + (int64_t) (h - 1) * stride;
+    if (lastX < INT32_MIN || lastX > INT32_MAX || lastZ < INT32_MIN || lastZ > INT32_MAX) {
+        return CFX_ERR_BAD_ARGS;
+    }
+    const int cells = w * h;
+    if ((*env)->GetArrayLength(env, outSolidY) < cells
+        || (*env)->GetArrayLength(env, outFluidY) < cells
+        || (*env)->GetArrayLength(env, outSurfaceY) < cells
+        || (*env)->GetArrayLength(env, outFlags) < cells) {
+        return CFX_ERR_BAD_SIZE;
+    }
+
+    int *solidY = malloc(sizeof(int) * (size_t) cells);
+    int *fluidY = malloc(sizeof(int) * (size_t) cells);
+    int *surfaceY = malloc(sizeof(int) * (size_t) cells);
+    int *flags = malloc(sizeof(int) * (size_t) cells);
+    if (solidY == NULL || fluidY == NULL || surfaceY == NULL || flags == NULL) {
+        free(solidY);
+        free(fluidY);
+        free(surfaceY);
+        free(flags);
+        return CFX_ERR_ALLOC;
+    }
+
+    const int err = mapOverworldSurfaceColumns(
+        solidY, fluidY, surfaceY, flags, &ctx->g, &ctx->sn,
+        blockX, blockZ, w, h, stride
+    );
+    if (err != 0) {
+        free(solidY);
+        free(fluidY);
+        free(surfaceY);
+        free(flags);
+        return CFX_ERR_GENERATION;
+    }
+
+    (*env)->SetIntArrayRegion(env, outSolidY, 0, cells, solidY);
+    (*env)->SetIntArrayRegion(env, outFluidY, 0, cells, fluidY);
+    (*env)->SetIntArrayRegion(env, outSurfaceY, 0, cells, surfaceY);
+    (*env)->SetIntArrayRegion(env, outFlags, 0, cells, flags);
+    free(solidY);
+    free(fluidY);
+    free(surfaceY);
+    free(flags);
     return CFX_OK;
 }
 

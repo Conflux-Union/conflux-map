@@ -47,6 +47,12 @@ class CubiomesNativeTest {
         return mc.getAsInt();
     }
 
+    private static int mc21() {
+        final OptionalInt mc = McVersions.toCubiomes("1.21.1");
+        assertTrue(mc.isPresent(), "McVersions must know \"1.21.1\"");
+        return mc.getAsInt();
+    }
+
     private static CubiomesContext open(final int dim) {
         final CubiomesContext ctx = CubiomesContext.create(mc17(), SEED, dim, 0);
         assertNotNull(ctx, "context creation must succeed for a valid version/dim");
@@ -193,6 +199,38 @@ class CubiomesNativeTest {
             ctx.heights(0, 0, 32, 32, y, ids);
             assertArrayEquals(y, fromThread[0], "two independent contexts (one per thread) must agree exactly");
         }
+
+        // Seed 0, tile (4,26): Vanilla 1.21.1 generates a small island that the old
+        // NP_DEPTH-only approximation submerged. Values come directly from
+        // ChunkGenerator#getHeight(OCEAN_FLOOR_WG) at the corresponding block coordinates.
+        try (CubiomesContext ctx = CubiomesContext.create(mc21(), 0L, OVERWORLD, 0)) {
+            assertNotNull(ctx);
+            final int width = 10;
+            final int[] y = new int[width * 5];
+            final int[] ids = new int[width * 5];
+            assertEquals(0, ctx.heights(295, 1678, width, 5, y, ids));
+            assertEquals(63, y[0]); // block (1180,6712)
+            assertEquals(64, y[1 * width + 2]); // block (1188,6716)
+            assertEquals(64, y[1 * width + 4]); // block (1196,6716)
+            assertEquals(64, y[2 * width + 5]); // block (1200,6720)
+            assertEquals(63, y[3 * width + 7]); // block (1208,6724)
+            assertEquals(65, y[4 * width + 9]); // block (1216,6728)
+
+            final int[] solidY = new int[2];
+            final int[] fluidY = new int[2];
+            final int[] surfaceY = new int[2];
+            final int[] surfaceFlags = new int[2];
+            assertEquals(0, ctx.surfaceColumns(
+                0, 8192, 2, 1, 4,
+                solidY, fluidY, surfaceY, surfaceFlags
+            ));
+            for (int i = 0; i < solidY.length; i++) {
+                assertTrue(solidY[i] < 62, "seed-0 tile (0,32) sample should be ocean terrain");
+                assertEquals(62, fluidY[i]);
+                assertEquals(62, surfaceY[i]);
+                assertEquals(1, surfaceFlags[i]);
+            }
+        }
     }
 
     @Test
@@ -241,6 +279,28 @@ class CubiomesNativeTest {
                 ctx.treeCandidates(59, -316, xs, ys, zs, types, biomes, flags, count),
                 "unsupported biome decorators must not masquerade as an exact empty chunk"
             );
+        }
+
+        try (CubiomesContext ctx = CubiomesContext.create(mc21(), 0L, OVERWORLD, 0)) {
+            // Vanilla 1.21.1 rejects attempts 0 and 1 as river, then accepts this bamboo.
+            assertNotNull(ctx);
+            final int capacity = 256;
+            final int[] xs = new int[capacity];
+            final int[] ys = new int[capacity];
+            final int[] zs = new int[capacity];
+            final int[] types = new int[capacity];
+            final int[] biomes = new int[capacity];
+            final int[] flags = new int[capacity];
+            final int[] count = new int[1];
+
+            assertEquals(0, ctx.treeCandidates(448, 481, xs, ys, zs, types, biomes, flags, count));
+            assertEquals(31, count[0]);
+            assertEquals(7180, xs[0]);
+            assertEquals(7705, zs[0]);
+            assertEquals(11, types[0], "cubiomes TREE_BAMBOO");
+            assertEquals(168, biomes[0], "cubiomes bamboo_jungle");
+            assertEquals(9, (flags[0] >>> 16) & 0xFF, "Vanilla bamboo stalk height");
+            assertTrue((flags[0] & (1 << 5)) != 0, "the first accepted candidate X/Z must be exact");
         }
     }
 

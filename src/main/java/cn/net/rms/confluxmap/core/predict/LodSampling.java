@@ -1,35 +1,19 @@
 package cn.net.rms.confluxmap.core.predict;
 
 /**
- * Fills a {@link BaselineGrid} for one predicted tile (dimension/LOD/tile origin), matching the
- * plan's per-LOD table: biome scale/expansion is shared between Overworld and End (the same
- * cubiomes {@code Range} scales apply regardless of dimension), while terrain height source and
- * expansion mode differ per LOD. The margin this fills lets prediction estimate a centered
- * diagonal slope from (x-1,z+1) and (x+1,z-1) at every output pixel, including tile edges.
+ * Fills a {@link BaselineGrid} for one predicted tile. Biomes retain the per-LOD cubiomes sampling
+ * layout, while each Overworld pixel asks the native generator for the solid terrain, fluid, and
+ * final base surface at that pixel's exact block coordinate. Keeping fluid resolution inside the
+ * versioned terrain generator avoids reconstructing modern aquifers from a height and biome in
+ * Java. End heights retain their dimension-specific interpolation and pooling path.
  * <ul>
- *   <li>LOD0: biomes at native scale 1 (1:1 with pixels); heights at native 1:4 scale, expanded
- *       x4 by fixed-point integer bilinear (per-axis lerp, composed - {@link Math#floorDiv} only,
- *       no float/double anywhere in this class).
- *   <li>LOD1: biomes at final scale 1, sampled every 2 blocks (one distinct biome lookup per
- *       output pixel); heights at native 1:4 scale, fixed-point
- *       bilinear interpolated to per-pixel resolution (matching the real LOD1 tile, which is a
- *       downsample of full-resolution LOD0 data, far better than the old nearest x2 expand).
- *   <li>LOD2: biomes/heights both at native scale 4, exactly 1:1 with this LOD's 4-block pixels -
- *       no expansion at all.
- *   <li>LOD3: biomes at final scale 4, sampled every 2 native cells; heights still queried at
- *       native 1:4 scale (finer than this LOD's 8-block pixels by exactly 2x per axis), then
- *       2x2-integer-mean pooled down to pixel resolution.
- *   <li>LOD4: biomes use final scale 4 with a 4-cell stride, preserving one distinct sample per
- *       16-block output pixel without falling back to cubiomes' visibly coarser scale-16
- *       pre-zoom layer. Heights are sampled on a 64-block grid and bilinearly interpolated to
- *       16-block pixels, spanning the correct world area without making each tile prohibitively slow.
+ *   <li>LOD0-1: final biomes are sampled at block scale, one lookup per output pixel.
+ *   <li>LOD2: final biomes are sampled at native scale 4, one lookup per output pixel.
+ *   <li>LOD3-4: scale-4 biomes use a 2-cell or 4-cell stride so every output pixel still maps to
+ *       its own world position instead of falling back to a coarser pre-zoom layer.
  * </ul>
- * Height aggregation preserves the waterline for final-layer water biomes when the contributing
- * height anchors straddle it. This prevents neighboring land anchors from lifting a shoreline
- * ocean pixel above sea level while retaining genuinely elevated ocean-biome terrain when every
- * contributing anchor is already above the waterline.
  *
- * <p>Every grid (both biomes and heights) is sampled over the full margin range {@code
+ * <p>Every grid is sampled over the full margin range {@code
  * [-BaselineGrid.MARGIN, BaselineGrid.PIXELS-1+BaselineGrid.MARGIN]} on both axes so both slope
  * samples remain local to the tile.
  */
@@ -58,12 +42,17 @@ public final class LodSampling {
         final int tileOriginX,
         final int tileOriginZ
     ) {
-        final BaselineGrid grid = new BaselineGrid();
+        final BaselineGrid grid = new BaselineGrid(lod, tileOriginX, tileOriginZ);
         if (!sampleBiomes(sampler, lod, tileOriginX, tileOriginZ, grid)) {
             return null;
         }
         if (!sampleHeights(sampler, end, lod, tileOriginX, tileOriginZ, grid)) {
             return null;
+        }
+        if (end) {
+            for (int i = 0; i < grid.terrainY.length; i++) {
+                grid.baseSurfaceY[i] = grid.terrainY[i];
+            }
         }
         return grid;
     }
@@ -87,25 +76,34 @@ public final class LodSampling {
         final BaselineSampler sampler, final boolean end, final int lod, final int tileOriginX, final int tileOriginZ,
         final BaselineGrid grid
     ) {
+        if (!end) {
+            final int blocksPerPixel = 1 << lod;
+            return sampler.surfaceColumns(
+                tileOriginX + P_MIN * blocksPerPixel,
+                tileOriginZ + P_MIN * blocksPerPixel,
+                BaselineGrid.SIZE,
+                BaselineGrid.SIZE,
+                blocksPerPixel,
+                grid.terrainY,
+                grid.fluidY,
+                grid.baseSurfaceY,
+                grid.surfaceFlags
+            );
+        }
         switch (lod) {
             case 0:
                 return sampleHeightsBilinear(sampler, end, tileOriginX, tileOriginZ, grid, 1);
             case 1:
-                // Heights at 1:4 native, bilinear-interpolated to this LOD's 2-block pixels: matches
-                // the real LOD1 tile (a downsample of full-res LOD0 data) far closer than the nearest
-                // x2 expand did, and smooths the height-gated water rule so ocean samples stop flipping
-                // to land at coast transitions.
+                // End heights are sampled at the native 1:4 grid and interpolated to this LOD's
+                // 2-block pixels.
                 return sampleHeightsBilinear(sampler, end, tileOriginX, tileOriginZ, grid, 2);
             case 2:
                 return sampleHeightsNearest(sampler, end, tileOriginX, tileOriginZ, grid, 1);
             case 3:
                 return sampleHeightsMeanPool(sampler, end, tileOriginX, tileOriginZ, grid);
             case 4:
-                // A flat reference height makes every ocean biome look like land because the
-                // water rule is height-gated. Sample the whole tile on a coarser 64-block grid,
-                // then interpolate to its 16-block pixels. This keeps world coordinates correct
-                // (the old stride-1 query only covered one quarter per axis) while avoiding the
-                // multi-second cost of calculating 258 full height rows per tile.
+                // The End path uses a 64-block grid and interpolates to 16-block pixels to avoid
+                // calculating full-resolution heights for a heavily downsampled tile.
                 return sampleHeightsBilinearCoarse(sampler, end, tileOriginX, tileOriginZ, grid, 4);
             default:
                 return false;
@@ -155,7 +153,7 @@ public final class LodSampling {
                     final int top = h00 + Math.floorDiv((h10 - h00) * fx, 4);
                     final int bottom = h01 + Math.floorDiv((h11 - h01) * fx, 4);
                     final int interpolated = top + Math.floorDiv((bottom - top) * fz, 4);
-                    value = preserveWaterline(grid, px, pz, interpolated, h00, h10, h01, h11);
+                    value = interpolated;
                 }
                 grid.terrainY[BaselineGrid.index(px, pz)] = value;
             }
@@ -206,7 +204,7 @@ public final class LodSampling {
                     final int top = h00 + Math.floorDiv((h10 - h00) * fx, pixelsPerSample);
                     final int bottom = h01 + Math.floorDiv((h11 - h01) * fx, pixelsPerSample);
                     final int interpolated = top + Math.floorDiv((bottom - top) * fz, pixelsPerSample);
-                    value = preserveWaterline(grid, px, pz, interpolated, h00, h10, h01, h11);
+                    value = interpolated;
                 }
                 grid.terrainY[BaselineGrid.index(px, pz)] = value;
             }
@@ -267,7 +265,7 @@ public final class LodSampling {
                     value = BaselineGrid.NO_SURFACE;
                 } else {
                     final int mean = Math.floorDiv(a + b + c + d, 4);
-                    value = preserveWaterline(grid, px, pz, mean, a, b, c, d);
+                    value = mean;
                 }
                 grid.terrainY[BaselineGrid.index(px, pz)] = value;
             }
@@ -281,24 +279,4 @@ public final class LodSampling {
         return end ? sampler.endHeights(x4, z4, w, h, out) : sampler.heights(x4, z4, w, h, out);
     }
 
-    private static int preserveWaterline(
-        final BaselineGrid grid,
-        final int pixelX,
-        final int pixelZ,
-        final int aggregated,
-        final int a,
-        final int b,
-        final int c,
-        final int d
-    ) {
-        if (aggregated < BaselineDeriver.WATER_LEVEL
-            || !BiomeTable.get(grid.biomeId[BaselineGrid.index(pixelX, pixelZ)]).waterBiome()) {
-            return aggregated;
-        }
-        if (a < BaselineDeriver.WATER_LEVEL || b < BaselineDeriver.WATER_LEVEL
-            || c < BaselineDeriver.WATER_LEVEL || d < BaselineDeriver.WATER_LEVEL) {
-            return BaselineDeriver.WATER_LEVEL - 1;
-        }
-        return aggregated;
-    }
 }

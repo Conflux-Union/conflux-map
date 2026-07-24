@@ -3,6 +3,9 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
+import cn.net.rms.confluxmap.compat.Ids;
+import cn.net.rms.confluxmap.compat.Regs;
+import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
@@ -36,6 +39,8 @@ import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
+import cn.net.rms.confluxmap.compat.Texts;
+import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.StructureMarkerRenderer;
 import cn.net.rms.confluxmap.mc.world.ClientChunkLookup;
@@ -46,21 +51,30 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
 import net.minecraft.client.MinecraftClient;
+//#if MC>=12000
+//$$ import net.minecraft.client.gui.DrawContext;
+//#endif
+//#if MC>=12111
+//$$ import net.minecraft.client.gui.Click;
+//$$ import net.minecraft.client.input.KeyInput;
+//#endif
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.render.GameRenderer;
+//#if MC>=12108
+//$$ import net.minecraft.client.gl.RenderPipelines;
+//#elseif MC>=12103
+//$$ import net.minecraft.client.render.RenderLayer;
+//#endif
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
 import net.minecraft.text.Text;
-import net.minecraft.text.TranslatableText;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.Util;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3f;
-import net.minecraft.util.registry.Registry;
 import org.lwjgl.glfw.GLFW;
 
 /**
@@ -75,7 +89,7 @@ import org.lwjgl.glfw.GLFW;
  * <p>Does not call {@link TileTextureManager#beginFrame()} itself - see the
  * javadoc on {@code MinimapHudRenderer.render} for why that would double it up.
  */
-public final class FullscreenMapScreen extends Screen {
+public final class FullscreenMapScreen extends ConfluxScreen {
     private static final double MIN_SCALE = 0.25;
     private static final double MAX_SCALE = 16.0;
     private static final double DEFAULT_SCALE = 2.0;
@@ -87,13 +101,13 @@ public final class FullscreenMapScreen extends Screen {
     private static final int CONTROL_GAP = 3;
     private static final int LOCAL_CONTROL_ACCENT = 0xFFFFD83D;
     private static final int SHARED_CONTROL_ACCENT = 0xFF55DDE0;
-    private static final Identifier LOCAL_WAYPOINT_ICON = new Identifier(
+    private static final Identifier LOCAL_WAYPOINT_ICON = Ids.of(
         "confluxmap", "textures/gui/waypoint_local.png"
     );
-    private static final Identifier SHARED_WAYPOINT_ICON = new Identifier(
+    private static final Identifier SHARED_WAYPOINT_ICON = Ids.of(
         "confluxmap", "textures/gui/waypoint_shared.png"
     );
-    private static final Identifier MANAGE_WAYPOINT_ICON = new Identifier(
+    private static final Identifier MANAGE_WAYPOINT_ICON = Ids.of(
         "confluxmap", "textures/gui/waypoint_manage.png"
     );
     private static final int TEXT_COLOR = 0xFFFFFFFF;
@@ -161,7 +175,7 @@ public final class FullscreenMapScreen extends Screen {
     private int waypointControlsBottom;
 
     public FullscreenMapScreen(final KeyBinding openMapKey) {
-        super(new TranslatableText("confluxmap.screen.map.title"));
+        super(Texts.translatable("confluxmap.screen.map.title"));
         this.openMapKey = openMapKey;
         final ConfluxMapClient app = ConfluxMapClient.get();
         this.gameBridge = app.gameBridge();
@@ -256,11 +270,11 @@ public final class FullscreenMapScreen extends Screen {
 
     private Text visibilityTooltip(final boolean local) {
         final boolean visible = local ? config.localWaypointsVisible : config.sharedWaypointsVisible;
-        return new TranslatableText(
+        return Texts.translatable(
             local
                 ? "confluxmap.map.waypoints.local.tooltip"
                 : "confluxmap.map.waypoints.shared.tooltip",
-            new TranslatableText(visible ? "confluxmap.value.on" : "confluxmap.value.off").getString()
+            Texts.translatable(visible ? "confluxmap.value.on" : "confluxmap.value.off").getString()
         );
     }
 
@@ -281,16 +295,29 @@ public final class FullscreenMapScreen extends Screen {
     }
 
     @Override
+    //#if MC>=12111
+    //$$ public boolean keyPressed(final KeyInput input) {
+    //$$     final int keyCode = input.key();
+    //#else
     public boolean keyPressed(final int keyCode, final int scanCode, final int modifiers) {
+    //#endif
         if (keyCode == GLFW.GLFW_KEY_F9) {
             ConfluxMapClient.get().reloadPredictionTiles();
             return true;
         }
+        //#if MC>=12111
+        //$$ if (openMapKey.matchesKey(input)) {
+        //#else
         if (openMapKey.matchesKey(keyCode, scanCode)) {
+        //#endif
             onClose();
             return true;
         }
+        //#if MC>=12111
+        //$$ return super.keyPressed(input);
+        //#else
         return super.keyPressed(keyCode, scanCode, modifiers);
+        //#endif
     }
 
     /**
@@ -300,8 +327,19 @@ public final class FullscreenMapScreen extends Screen {
      * drag) completes.
      */
     @Override
+    //#if MC>=12111
+    //$$ public boolean mouseClicked(final Click click, final boolean doubledClick) {
+    //$$     final double mouseX = click.x();
+    //$$     final double mouseY = click.y();
+    //$$     final int button = click.button();
+    //#else
     public boolean mouseClicked(final double mouseX, final double mouseY, final int button) {
+    //#endif
+        //#if MC>=12111
+        //$$ if (super.mouseClicked(click, doubledClick)) {
+        //#else
         if (super.mouseClicked(mouseX, mouseY, button)) {
+        //#endif
             mapPointerPress = false;
             return true;
         }
@@ -337,9 +375,20 @@ public final class FullscreenMapScreen extends Screen {
      * uses, returning to this screen on save/cancel.
      */
     @Override
+    //#if MC>=12111
+    //$$ public boolean mouseReleased(final Click click) {
+    //$$     final double mouseX = click.x();
+    //$$     final double mouseY = click.y();
+    //$$     final int button = click.button();
+    //#else
     public boolean mouseReleased(final double mouseX, final double mouseY, final int button) {
+    //#endif
         if (button != 0 || !mapPointerPress) {
+            //#if MC>=12111
+            //$$ return super.mouseReleased(click);
+            //#else
             return super.mouseReleased(mouseX, mouseY, button);
+            //#endif
         }
         mapPointerPress = false;
         if (hoveredWaypoint != null
@@ -352,14 +401,23 @@ public final class FullscreenMapScreen extends Screen {
     }
 
     @Override
+    //#if MC>=12111
+    //$$ public boolean mouseDragged(final Click click, final double deltaX, final double deltaY) {
+    //$$     final int button = click.button();
+    //#else
     public boolean mouseDragged(final double mouseX, final double mouseY, final int button, final double deltaX, final double deltaY) {
+    //#endif
         if (button == 0 && mapPointerPress) {
             // Opposite the drag direction, 1:1 in world-space at the current scale (§4 pan mechanics).
             centerX -= deltaX * scale;
             centerZ -= deltaY * scale;
             return true;
         }
+        //#if MC>=12111
+        //$$ return super.mouseDragged(click, deltaX, deltaY);
+        //#else
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+        //#endif
     }
 
     private boolean isOverWaypointControls(final double mouseX, final double mouseY) {
@@ -389,7 +447,16 @@ public final class FullscreenMapScreen extends Screen {
     }
 
     @Override
+    //#if MC>=12002
+    //$$ public boolean mouseScrolled(
+    //$$     final double mouseX,
+    //$$     final double mouseY,
+    //$$     final double horizontalAmount,
+    //$$     final double amount
+    //$$ ) {
+    //#else
     public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
+    //#endif
         if (amount == 0) {
             return false;
         }
@@ -407,7 +474,8 @@ public final class FullscreenMapScreen extends Screen {
     }
 
     @Override
-    public void render(final MatrixStack matrices, final int mouseX, final int mouseY, final float tickDelta) {
+    protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
+        final MatrixStack matrices = draw.matrices();
         tiles.setViewpoint((int) Math.floor(centerX), (int) Math.floor(centerZ));
         predictionTiles.setViewpoint((int) Math.floor(centerX), (int) Math.floor(centerZ));
         // This screen owns radarViewRange while it's open (MinimapHudRenderer stops writing it -
@@ -420,27 +488,26 @@ public final class FullscreenMapScreen extends Screen {
         drawTiles(matrices);
 
         drawChunkGrid(matrices, mouseX, mouseY);
-        drawStructures(matrices, mouseX, mouseY);
-        drawRadar(matrices, tickDelta);
+        drawStructures(draw, mouseX, mouseY);
+        drawRadar(draw, tickDelta);
 
-        drawWaypoints(matrices, mouseX, mouseY);
+        drawWaypoints(draw, mouseX, mouseY);
         drawPlayerMarker(matrices, tickDelta);
-        drawDimensionLabel(matrices);
-        drawLayerLabel(matrices);
-        drawPredictionLabel(matrices);
-        drawServerSyncLabel(matrices);
-        drawScaleLabel(matrices);
-        drawCursorCoords(matrices, mouseX, mouseY);
-        drawUpdateBadge(matrices);
-
-        super.render(matrices, mouseX, mouseY, tickDelta);
-        renderWaypointControlTooltip(matrices, mouseX, mouseY);
+        drawDimensionLabel(draw);
+        drawLayerLabel(draw);
+        drawPredictionLabel(draw);
+        drawServerSyncLabel(draw);
+        drawScaleLabel(draw);
+        drawCursorCoords(draw, mouseX, mouseY);
+        drawUpdateBadge(draw);
     }
 
-    private void renderWaypointControlTooltip(
-        final MatrixStack matrices,
+    @Override
+    protected void renderAfterWidgets(
+        final GuiDraw draw,
         final int mouseX,
-        final int mouseY
+        final int mouseY,
+        final float tickDelta
     ) {
         final Text tooltip;
         if (localVisibilityButton != null && localVisibilityButton.isHovered()) {
@@ -448,13 +515,13 @@ public final class FullscreenMapScreen extends Screen {
         } else if (sharedVisibilityButton != null && sharedVisibilityButton.isHovered()) {
             tooltip = sharedVisibilityButton.active
                 ? visibilityTooltip(false)
-                : new TranslatableText("confluxmap.map.waypoints.shared.unavailable");
+                : Texts.translatable("confluxmap.map.waypoints.shared.unavailable");
         } else if (manageWaypointsButton != null && manageWaypointsButton.isHovered()) {
-            tooltip = new TranslatableText("confluxmap.map.waypoints.manage.tooltip");
+            tooltip = Texts.translatable("confluxmap.map.waypoints.manage.tooltip");
         } else {
             return;
         }
-        renderTooltip(matrices, tooltip, mouseX, mouseY);
+        draw.drawTooltip(this, textRenderer, tooltip, mouseX, mouseY);
     }
 
     private static final class MapIconButton extends ButtonWidget {
@@ -471,7 +538,16 @@ public final class FullscreenMapScreen extends Screen {
             final int selectedAccent,
             final PressAction onPress
         ) {
+            //#if MC>=12111
+            //$$ super(
+            //$$     x, y, CONTROL_SIZE, CONTROL_SIZE, Texts.literal(""),
+            //$$     onPress, DEFAULT_NARRATION_SUPPLIER
+            //$$ );
+            //#elseif MC>=11904
+            //$$ super(x, y, CONTROL_SIZE, CONTROL_SIZE, Text.of(""), onPress, DEFAULT_NARRATION_SUPPLIER);
+            //#else
             super(x, y, CONTROL_SIZE, CONTROL_SIZE, Text.of(""), onPress);
+            //#endif
             this.icon = icon;
             this.selectedAccent = selectedAccent;
         }
@@ -487,6 +563,82 @@ public final class FullscreenMapScreen extends Screen {
          * next state's strip and its bottom border lands 2px above the real button bounds.
          */
         @Override
+        //#if MC>=12111
+        //$$ protected void drawIcon(
+        //$$     final DrawContext context,
+        //$$     final int mouseX,
+        //$$     final int mouseY,
+        //$$     final float delta
+        //$$ ) {
+        //$$     drawButton(context);
+        //$$     drawContents(GuiDraw.of(context), Widgets.x(this), Widgets.y(this));
+        //$$ }
+        //#elseif MC>=12108
+        //$$ protected void renderWidget(
+        //$$     final DrawContext context,
+        //$$     final int mouseX,
+        //$$     final int mouseY,
+        //$$     final float delta
+        //$$ ) {
+        //$$     final int x = Widgets.x(this);
+        //$$     final int y = Widgets.y(this);
+        //$$     final Identifier background = !active
+        //$$         ? Ids.of("widget/button_disabled")
+        //$$         : isHovered() ? Ids.of("widget/button_highlighted") : Ids.of("widget/button");
+        //$$     context.drawGuiTexture(
+        //$$         RenderPipelines.GUI_TEXTURED,
+        //$$         background,
+        //$$         x,
+        //$$         y,
+        //$$         getWidth(),
+        //$$         getHeight(),
+        //$$         ((int) (alpha * 255.0f) << 24) | 0x00FFFFFF
+        //$$     );
+        //$$     drawContents(GuiDraw.of(context), x, y);
+        //$$ }
+        //#elseif MC>=12103
+        //$$ protected void renderWidget(
+        //$$     final DrawContext context,
+        //$$     final int mouseX,
+        //$$     final int mouseY,
+        //$$     final float delta
+        //$$ ) {
+        //$$     final int x = Widgets.x(this);
+        //$$     final int y = Widgets.y(this);
+        //$$     final Identifier background = !active
+        //$$         ? Ids.of("widget/button_disabled")
+        //$$         : isHovered() ? Ids.of("widget/button_highlighted") : Ids.of("widget/button");
+        //$$     context.drawGuiTexture(
+        //$$         RenderLayer::getGuiTextured,
+        //$$         background,
+        //$$         x,
+        //$$         y,
+        //$$         getWidth(),
+        //$$         getHeight(),
+        //$$         ((int) (alpha * 255.0f) << 24) | 0x00FFFFFF
+        //$$     );
+        //$$     context.draw();
+        //$$     drawContents(GuiDraw.of(context), x, y);
+        //$$ }
+        //#elseif MC>=12000
+        //$$ protected void renderWidget(
+        //$$     final DrawContext context,
+        //$$     final int mouseX,
+        //$$     final int mouseY,
+        //$$     final float delta
+        //$$ ) {
+        //$$     final int x = Widgets.x(this);
+        //$$     final int y = Widgets.y(this);
+        //$$     final Identifier background = !active
+        //$$         ? Ids.of("widget/button_disabled")
+        //$$         : isHovered() ? Ids.of("widget/button_highlighted") : Ids.of("widget/button");
+        //$$     context.setShaderColor(1.0f, 1.0f, 1.0f, alpha);
+        //$$     context.drawGuiTexture(background, x, y, getWidth(), getHeight());
+        //$$     context.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+        //$$     context.draw();
+        //$$     drawContents(GuiDraw.of(context), x, y);
+        //$$ }
+        //#else
         public void renderButton(
             final MatrixStack matrices,
             final int mouseX,
@@ -500,6 +652,8 @@ public final class FullscreenMapScreen extends Screen {
             RenderSystem.defaultBlendFunc();
             RenderSystem.enableDepthTest();
             final int v = 46 + getYImage(isHovered()) * 20;
+            final int x = Widgets.x(this);
+            final int y = Widgets.y(this);
             final int leftW = getWidth() / 2;
             final int rightW = getWidth() - leftW;
             final int topH = getHeight() / 2;
@@ -508,6 +662,12 @@ public final class FullscreenMapScreen extends Screen {
             drawTexture(matrices, x + leftW, y, 200 - rightW, v, rightW, topH);
             drawTexture(matrices, x, y + topH, 0, v + 20 - bottomH, leftW, bottomH);
             drawTexture(matrices, x + leftW, y + topH, 200 - rightW, v + 20 - bottomH, rightW, bottomH);
+            drawContents(GuiDraw.of(matrices), x, y);
+        }
+        //#endif
+
+        private void drawContents(final GuiDraw draw, final int x, final int y) {
+            final MatrixStack matrices = draw.matrices();
             if (selected && selectedAccent != 0) {
                 RenderUtil.fillRect(matrices, x + 1, y + 1, getWidth() - 2, 1, selectedAccent);
                 RenderUtil.fillRect(matrices, x + 1, y + getHeight() - 2, getWidth() - 2, 1, selectedAccent);
@@ -623,7 +783,7 @@ public final class FullscreenMapScreen extends Screen {
      * {@code MinimapHudRenderer#drawRadar}'s javadoc). Category toggles and {@code radarEnabled}
      * already apply upstream in the scanner, so no extra filtering happens here beyond viewport culling.
      */
-    private void drawRadar(final MatrixStack matrices, final float tickDelta) {
+    private void drawRadar(final GuiDraw draw, final float tickDelta) {
         if (client.world == null) {
             return;
         }
@@ -659,13 +819,13 @@ public final class FullscreenMapScreen extends Screen {
                 continue;
             }
             RadarMarkerRenderer.draw(
-                matrices, client, config, radarIconManager, backdrop, entry, screenX, screenY,
+                draw, client, config, radarIconManager, backdrop, entry, screenX, screenY,
                 ex, ez, (float) scale, yDelta, live
             );
         }
     }
 
-    private void drawStructures(final MatrixStack matrices, final int mouseX, final int mouseY) {
+    private void drawStructures(final GuiDraw draw, final int mouseX, final int mouseY) {
         if (!config.predictionShowStructures || currentLod() > 2 || !predictionState.seedKnown()) {
             return;
         }
@@ -690,7 +850,7 @@ public final class FullscreenMapScreen extends Screen {
                 continue;
             }
             final boolean hovered = Math.hypot(mouseX - screenX, mouseY - screenY) <= 8;
-            StructureMarkerRenderer.draw(matrices, textRenderer, marker, screenX, screenY, hovered);
+            StructureMarkerRenderer.draw(draw, textRenderer, marker, screenX, screenY, hovered);
         }
     }
 
@@ -779,7 +939,7 @@ public final class FullscreenMapScreen extends Screen {
         final float screenY = (float) (height / 2.0 + (player.z() - centerZ) * pxPerBlock);
         matrices.push();
         matrices.translate(screenX, screenY, 0);
-        matrices.multiply(Vec3f.POSITIVE_Z.getDegreesQuaternion(player.yawDegrees() + 180f));
+        RenderUtil.rotateZ(matrices, player.yawDegrees() + 180f);
         RenderUtil.fillTriangle(matrices, 0f, -7f, -5.5f, 6f, 5.5f, 6f, ARROW_OUTLINE);
         RenderUtil.fillTriangle(matrices, 0f, -5.5f, -4f, 4.5f, 4f, 4.5f, ARROW_FILL);
         matrices.pop();
@@ -794,7 +954,7 @@ public final class FullscreenMapScreen extends Screen {
      * brightened (see {@link WaypointMarkerRenderer}) and has its coordinates shown in the
      * footer by {@link #drawCursorCoords}.
      */
-    private void drawWaypoints(final MatrixStack matrices, final int mouseX, final int mouseY) {
+    private void drawWaypoints(final GuiDraw draw, final int mouseX, final int mouseY) {
         final DimensionId currentDimension = gameBridge.session().dimension();
         final double pxPerBlock = 1.0 / scale;
         final List<ScreenMarker> markers = new ArrayList<>();
@@ -823,11 +983,11 @@ public final class FullscreenMapScreen extends Screen {
             final WaypointRenderEntry waypoint = marker.waypoint();
             final boolean isHovered = waypoint == hoveredWaypoint;
             WaypointMarkerRenderer.draw(
-                matrices, client.textRenderer, waypoint, marker.screenX(), marker.screenY(), MARKER_HALF_SIZE, 1f, isHovered
+                draw, client.textRenderer, waypoint, marker.screenX(), marker.screenY(), MARKER_HALF_SIZE, 1f, isHovered
             );
             if (scale <= NAME_LABEL_MAX_SCALE || isHovered) {
-                textRenderer.drawWithShadow(
-                    matrices, waypoint.name(), marker.screenX() + MARKER_HALF_SIZE + 2, marker.screenY() - 4, TEXT_COLOR
+                draw.drawTextWithShadow(
+                    textRenderer, waypoint.name(), marker.screenX() + MARKER_HALF_SIZE + 2, marker.screenY() - 4, TEXT_COLOR
                 );
             }
         }
@@ -837,20 +997,20 @@ public final class FullscreenMapScreen extends Screen {
     private record ScreenMarker(WaypointRenderEntry waypoint, float screenX, float screenY) {
     }
 
-    private void drawDimensionLabel(final MatrixStack matrices) {
+    private void drawDimensionLabel(final GuiDraw draw) {
         final String text = dimensionDisplayName(gameBridge.session().dimension());
-        textRenderer.drawWithShadow(matrices, text, MARGIN, MARGIN, TEXT_COLOR);
+        draw.drawTextWithShadow(textRenderer, text, MARGIN, MARGIN, TEXT_COLOR);
     }
 
     /** Deliverable D: the fullscreen map shows the active layer for the current dimension. */
-    private void drawLayerLabel(final MatrixStack matrices) {
-        final String text = new TranslatableText(
+    private void drawLayerLabel(final GuiDraw draw) {
+        final String text = Texts.translatable(
             "confluxmap.layer." + layerSelector.current().layer().type().id()
         ).getString();
-        textRenderer.drawWithShadow(matrices, text, MARGIN, MARGIN + textRenderer.fontHeight + 2, TEXT_COLOR);
+        draw.drawTextWithShadow(textRenderer, text, MARGIN, MARGIN + textRenderer.fontHeight + 2, TEXT_COLOR);
     }
 
-    private void drawPredictionLabel(final MatrixStack matrices) {
+    private void drawPredictionLabel(final GuiDraw draw) {
         if (!predictionLabelVisible()) {
             return;
         }
@@ -860,20 +1020,20 @@ public final class FullscreenMapScreen extends Screen {
         if (PredictionDimensions.supported(dimension) && !predictionState.predictable(dimension)) {
             // Seed known but this dimension can't compose an underlay (debug/custom worldgen, or
             // superflat without surface info): say so instead of silently dropping the label.
-            text = new TranslatableText(
+            text = Texts.translatable(
                 "confluxmap.map.prediction_unavailable", presetDisplayName(preset)
             ).getString();
         } else {
-            final String mode = new TranslatableText(
+            final String mode = Texts.translatable(
                 "confluxmap.config.prediction.mode." + config.predictionViewMode.name().toLowerCase(java.util.Locale.ROOT)
             ).getString();
-            final String modeLine = new TranslatableText("confluxmap.config.prediction.view_mode", mode).getString();
+            final String modeLine = Texts.translatable("confluxmap.config.prediction.view_mode", mode).getString();
             text = preset.terrainApproximate()
-                ? modeLine + new TranslatableText("confluxmap.map.prediction_approx_suffix", presetDisplayName(preset)).getString()
+                ? modeLine + Texts.translatable("confluxmap.map.prediction_approx_suffix", presetDisplayName(preset)).getString()
                 : modeLine;
         }
-        textRenderer.drawWithShadow(
-            matrices, text, MARGIN, MARGIN + textRenderer.fontHeight * 2 + 4, TEXT_COLOR
+        draw.drawTextWithShadow(
+            textRenderer, text, MARGIN, MARGIN + textRenderer.fontHeight * 2 + 4, TEXT_COLOR
         );
     }
 
@@ -884,12 +1044,12 @@ public final class FullscreenMapScreen extends Screen {
     }
 
     private static String presetDisplayName(final WorldPreset preset) {
-        return new TranslatableText(
+        return Texts.translatable(
             "confluxmap.world_preset." + preset.name().toLowerCase(java.util.Locale.ROOT)
         ).getString();
     }
 
-    private void drawServerSyncLabel(final MatrixStack matrices) {
+    private void drawServerSyncLabel(final GuiDraw draw) {
         final MapSyncProgress.Snapshot status = ConfluxMapClient.get().mapSyncClient().status();
         if (status.state() == MapSyncProgress.State.IDLE) {
             return;
@@ -898,18 +1058,18 @@ public final class FullscreenMapScreen extends Screen {
         final int color;
         switch (status.state()) {
             case SYNCING -> {
-                text = new TranslatableText("confluxmap.map.server_sync.syncing").getString();
+                text = Texts.translatable("confluxmap.map.server_sync.syncing").getString();
                 color = SYNCING_TEXT_COLOR;
             }
             case COMPLETED -> {
-                text = new TranslatableText(
+                text = Texts.translatable(
                     "confluxmap.map.server_sync.completed",
                     formatSyncDuration(status.durationNanos()), formatSyncTraffic(status.trafficBytes())
                 ).getString();
                 color = SYNCED_TEXT_COLOR;
             }
             case FAILED -> {
-                text = new TranslatableText("confluxmap.map.server_sync.failed").getString();
+                text = Texts.translatable("confluxmap.map.server_sync.failed").getString();
                 color = SYNC_FAILED_TEXT_COLOR;
             }
             default -> {
@@ -917,7 +1077,7 @@ public final class FullscreenMapScreen extends Screen {
             }
         }
         final int row = predictionLabelVisible() ? 3 : 2;
-        textRenderer.drawWithShadow(matrices, text, MARGIN, MARGIN + row * (textRenderer.fontHeight + 2), color);
+        draw.drawTextWithShadow(textRenderer, text, MARGIN, MARGIN + row * (textRenderer.fontHeight + 2), color);
     }
 
     private static String formatSyncDuration(final long durationNanos) {
@@ -938,10 +1098,10 @@ public final class FullscreenMapScreen extends Screen {
         return String.format(java.util.Locale.ROOT, "%.2f MiB", trafficBytes / 1_048_576.0);
     }
 
-    private void drawScaleLabel(final MatrixStack matrices) {
-        final String text = new TranslatableText("confluxmap.map.scale", String.format("%.2f", scale)).getString();
+    private void drawScaleLabel(final GuiDraw draw) {
+        final String text = Texts.translatable("confluxmap.map.scale", String.format("%.2f", scale)).getString();
         final int textWidth = textRenderer.getWidth(text);
-        textRenderer.drawWithShadow(matrices, text, width - MARGIN - textWidth, MARGIN, TEXT_COLOR);
+        draw.drawTextWithShadow(textRenderer, text, width - MARGIN - textWidth, MARGIN, TEXT_COLOR);
     }
 
     /**
@@ -949,7 +1109,7 @@ public final class FullscreenMapScreen extends Screen {
      * (deliverable C) - that waypoint's own stored X/Y/Z instead. When not hovering a marker, the cursor's biome name
      * (see {@link #cursorBiomeName}) is appended if it can be resolved.
      */
-    private void drawCursorCoords(final MatrixStack matrices, final int mouseX, final int mouseY) {
+    private void drawCursorCoords(final GuiDraw draw, final int mouseX, final int mouseY) {
         final String text;
         if (hoveredWaypoint != null) {
             text = (int) Math.floor(hoveredWaypoint.x()) + ", "
@@ -962,7 +1122,7 @@ public final class FullscreenMapScreen extends Screen {
             text = blockX + ", " + blockZ + (biomeName == null ? "" : " · " + biomeName);
         }
         final int textWidth = textRenderer.getWidth(text);
-        textRenderer.drawWithShadow(matrices, text, width / 2f - textWidth / 2f, height - MARGIN - 10, TEXT_COLOR);
+        draw.drawTextWithShadow(textRenderer, text, width / 2f - textWidth / 2f, height - MARGIN - 10, TEXT_COLOR);
     }
 
     /**
@@ -978,7 +1138,7 @@ public final class FullscreenMapScreen extends Screen {
                 blockX, MathHelper.clamp(playerY, world.getBottomY(), world.getTopY() - 1), blockZ
             );
             if (ClientChunkLookup.isLoaded(world, blockX, blockZ)) {
-                final Identifier biomeId = world.getRegistryManager().get(Registry.BIOME_KEY).getId(world.getBiome(pos));
+                final Identifier biomeId = Regs.biomeIdAt(world, pos);
                 if (biomeId != null) {
                     return translatedBiomeName(biomeId);
                 }
@@ -991,34 +1151,34 @@ public final class FullscreenMapScreen extends Screen {
             return null;
         }
         return CubiomesBiomeIds.nameForId(predicted.getAsInt())
-            .map(name -> translatedBiomeName(new Identifier("minecraft", name)))
+            .map(name -> translatedBiomeName(Ids.of("minecraft", name)))
             .orElse(null);
     }
 
     /** Bottom-right corner: a passive notice while a newer release is known (the chat line carries the clickable link). */
-    private void drawUpdateBadge(final MatrixStack matrices) {
+    private void drawUpdateBadge(final GuiDraw draw) {
         final Optional<UpdateCheckService.UpdateInfo> info = updateCheck.available();
         if (info.isEmpty()) {
             return;
         }
-        final String text = new TranslatableText("confluxmap.map.update_badge", info.get().latestVersion()).getString();
+        final String text = Texts.translatable("confluxmap.map.update_badge", info.get().latestVersion()).getString();
         final int textWidth = textRenderer.getWidth(text);
-        textRenderer.drawWithShadow(matrices, text, width - MARGIN - textWidth, height - MARGIN - 10, UPDATE_TEXT_COLOR);
+        draw.drawTextWithShadow(textRenderer, text, width - MARGIN - textWidth, height - MARGIN - 10, UPDATE_TEXT_COLOR);
     }
 
     private static String translatedBiomeName(final Identifier biomeId) {
-        return new TranslatableText(Util.createTranslationKey("biome", biomeId)).getString();
+        return Texts.translatable(Util.createTranslationKey("biome", biomeId)).getString();
     }
 
     private static String dimensionDisplayName(final DimensionId dimension) {
         if (dimension.equals(DimensionId.OVERWORLD)) {
-            return new TranslatableText("confluxmap.dimension.overworld").getString();
+            return Texts.translatable("confluxmap.dimension.overworld").getString();
         }
         if (dimension.equals(DimensionId.NETHER)) {
-            return new TranslatableText("confluxmap.dimension.the_nether").getString();
+            return Texts.translatable("confluxmap.dimension.the_nether").getString();
         }
         if (dimension.equals(DimensionId.END)) {
-            return new TranslatableText("confluxmap.dimension.the_end").getString();
+            return Texts.translatable("confluxmap.dimension.the_end").getString();
         }
         return dimension.path();
     }

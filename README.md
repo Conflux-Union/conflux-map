@@ -2,7 +2,9 @@
 
 **English** | [简体中文](README-CN.md)
 
-Conflux Map is a Fabric client-side minimap and world map for Minecraft 1.17.1.
+Conflux Map is a Fabric client-side minimap and world map for Minecraft 1.17.1
+and the supported 1.21 releases: 1.21.1, 1.21.3, 1.21.4, 1.21.5, 1.21.8,
+and 1.21.11.
 It runs standalone against any server — vanilla or modded, no server-side
 component required. Behavior is inspired by established minimap mods, but every
 line of code here is written from scratch; see
@@ -106,14 +108,16 @@ local waypoint editor before anything is saved.
 
 ## Building
 
-Requires a Java 16-compatible JDK (Minecraft 1.17.1's toolchain); Loom fetches
-Minecraft, mappings, and Fabric API automatically.
+Requires JDK 21 or newer; each version subproject emits the bytecode level required by its
+Minecraft target. Loom fetches Minecraft, mappings, and Fabric API automatically.
 
 ```sh
-./gradlew :1.17.1:build
+./gradlew :1.21.11:build
 ```
 
-The jar is written to `versions/1.17.1/build/libs/`.
+Replace `1.21.11` with any supported version above. When building multiple versions in one
+invocation, pass `--no-parallel` because the ReplayMod preprocessor derives each version in order.
+The jar is written to `versions/<minecraft-version>/build/libs/`.
 
 ## License
 
