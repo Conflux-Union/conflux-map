@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.core.predict;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import cn.net.rms.confluxmap.core.util.Argb;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -42,5 +43,37 @@ class PredictionPaletteTest {
         // An id absent from the sample map still falls back, even on a non-default palette.
         final int desertId = 2;
         assertEquals(BiomeTable.get(desertId).grassTint(), palette.grassTint(desertId));
+    }
+
+    @Test
+    void sampledGrassNeverRepaintsAFixedGround() {
+        // Vanilla pins eroded badlands' grass to a dull olive; the terracotta ground must ignore it.
+        final int erodedBadlands = 165;
+        final PredictionPalette palette = PredictionPalette.fromSamples(
+            Map.of(erodedBadlands, new int[] {0xFF90814D, 0xFF9E814D, 0xFF3F76E4})
+        );
+        assertEquals(BiomeTable.get(erodedBadlands).groundBase(), palette.groundColor(erodedBadlands));
+    }
+
+    @Test
+    void sampledFoliageNeverRepaintsAFixedCanopy() {
+        // Vanilla's cherry grove foliage color is green; the predicted canopy must stay pink.
+        final int cherryGrove = 185;
+        final PredictionPalette palette = PredictionPalette.fromSamples(
+            Map.of(cherryGrove, new int[] {0xFFB6DB61, 0xFFB6DB61, 0xFF5DB7EF})
+        );
+        assertEquals(BiomeTable.get(cherryGrove).canopyBase(), palette.canopyColor(cherryGrove));
+    }
+
+    @Test
+    void sampledFoliageStillTintsANormalCanopy() {
+        final int forest = 4;
+        final PredictionPalette palette = PredictionPalette.fromSamples(
+            Map.of(forest, new int[] {0xFF11AA22, 0xFF33BB44, 0xFF3F76E4})
+        );
+        assertEquals(
+            Argb.multiply(BiomeTable.FOLIAGE_BASE, 0xFF33BB44),
+            palette.canopyColor(forest)
+        );
     }
 }

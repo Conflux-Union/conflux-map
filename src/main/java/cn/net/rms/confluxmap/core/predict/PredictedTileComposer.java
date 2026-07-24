@@ -208,7 +208,7 @@ public final class PredictedTileComposer {
             case ICE:
                 return palette.iceBase;
             case FOLIAGE:
-                return Argb.multiply(palette.foliageBase, palette.foliageTint(biomeId));
+                return palette.canopyColor(biomeId);
             case LAND:
             default:
                 return palette.groundColor(biomeId);

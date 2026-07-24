@@ -89,4 +89,25 @@ class BiomeTableTest {
 
         assertFalse(BiomeTable.hasAltitudeSnow(4, 255), "warm forest must not gain a false snow line");
     }
+
+    @Test
+    void nonGrassGroundsAreImmuneToGrassSampling() {
+        // Badlands family, mushroom fields, stone shore, stony peaks, cave floors: their real
+        // ground is terracotta/mycelium/stone, so the live-sampled grass tint must not apply.
+        for (final int id : new int[] {37, 38, 39, 165, 166, 167, 14, 15, 25, 182, 174, 183}) {
+            assertFalse(BiomeTable.get(id).grassTinted(), "biome " + id + " must keep a fixed ground color");
+        }
+        assertTrue(BiomeTable.get(1).grassTinted(), "plains ground must stay grass-tinted");
+    }
+
+    @Test
+    void onlyCherryGroveHasAFixedCanopyColor() {
+        for (final int id : BiomeTable.knownIds()) {
+            if (id == 185) {
+                assertFalse(BiomeTable.get(id).foliageTinted(), "cherry canopy must stay pink");
+            } else {
+                assertTrue(BiomeTable.get(id).foliageTinted(), "biome " + id + " canopy must follow foliage samples");
+            }
+        }
+    }
 }
