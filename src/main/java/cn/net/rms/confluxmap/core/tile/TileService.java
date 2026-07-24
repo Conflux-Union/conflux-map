@@ -353,15 +353,33 @@ public final class TileService {
         // drift, not a per-frame value, so a tile composing mid-bucket-change is harmless.
         final boolean applyDaylight = layer.type() == MapLayer.Type.SURFACE && config.dynamicLighting;
         final float daylightFactor = applyDaylight ? daylightModel.factor() : 1f;
+        // SURFACE tiles always carry their re-light inputs, even with dynamic lighting off
+        // (compose then leaves pixels undarkened, which is exactly "composed at factor 1.0"),
+        // so toggling the setting on relights already-uploaded tiles instead of stranding them.
+        final byte[] lightPlane = layer.type() == MapLayer.Type.SURFACE
+            ? new byte[RegionColumns.SIZE * RegionColumns.SIZE]
+            : null;
         final int[] pixels = key.lod() == 0
-            ? composeLod0(store, key.tileX(), key.tileZ(), applyDaylight, daylightFactor)
-            : composeLodN(store, key, applyDaylight, daylightFactor);
-        return TileUpdate.fullTile(key, pixels);
+            ? composeLod0(store, key.tileX(), key.tileZ(), applyDaylight, daylightFactor, lightPlane)
+            : composeLodN(store, key, applyDaylight, daylightFactor, lightPlane);
+        final TileUpdate.Relight relight = lightPlane == null
+            ? null
+            : new TileUpdate.Relight(daylightFactor, lightPlane);
+        return TileUpdate.fullTile(key, pixels, relight);
     }
 
-    /** One LOD-0 region (256x256 blocks, 1 pixel/block), fully transparent where untouched. */
+    /**
+     * One LOD-0 region (256x256 blocks, 1 pixel/block), fully transparent where untouched.
+     * {@code outLight}, when non-null, receives the region's per-pixel block-light plane
+     * (zeros where untouched) for the tile's {@link TileUpdate.Relight}.
+     */
     private static int[] composeLod0(
-        final ColumnStore store, final int regionX, final int regionZ, final boolean applyDaylight, final float daylightFactor
+        final ColumnStore store,
+        final int regionX,
+        final int regionZ,
+        final boolean applyDaylight,
+        final float daylightFactor,
+        final byte[] outLight
     ) {
         final int[] pixels = new int[RegionColumns.SIZE * RegionColumns.SIZE];
         final RegionColumns region = store.region(regionX, regionZ);
@@ -369,7 +387,7 @@ public final class TileService {
             final RegionColumns west = store.region(regionX - 1, regionZ);
             final RegionColumns south = store.region(regionX, regionZ + 1);
             final RegionColumns southWest = store.region(regionX - 1, regionZ + 1);
-            composeRegion(region, west, south, southWest, pixels, applyDaylight, daylightFactor);
+            composeRegion(region, west, south, southWest, pixels, applyDaylight, daylightFactor, outLight);
         }
         return pixels;
     }
@@ -386,7 +404,7 @@ public final class TileService {
      * default fully-transparent value.
      */
     private static int[] composeLodN(
-        final ColumnStore store, final TileKey key, final boolean applyDaylight, final float daylightFactor
+        final ColumnStore store, final TileKey key, final boolean applyDaylight, final float daylightFactor, final byte[] outLight
     ) {
         final int lod = key.lod();
         final int size = RegionColumns.SIZE;
@@ -402,9 +420,13 @@ public final class TileService {
                 if (store.region(regionX, regionZ) == null) {
                     continue;
                 }
-                final int[] full = composeLod0(store, regionX, regionZ, applyDaylight, daylightFactor);
+                final byte[] fullLight = outLight == null ? null : new byte[size * size];
+                final int[] full = composeLod0(store, regionX, regionZ, applyDaylight, daylightFactor, fullLight);
                 final int[] downsampled = downsample(full, size, lod);
                 stitch(downsampled, subSize, outPixels, dx * subSize, dz * subSize);
+                if (outLight != null) {
+                    stitchLight(downsampleLight(fullLight, size, lod), subSize, outLight, dx * subSize, dz * subSize);
+                }
             }
         }
         return outPixels;
@@ -443,6 +465,42 @@ public final class TileService {
         }
     }
 
+    /**
+     * Block-light counterpart of {@link #downsample}: repeated rounded 2x2 averaging of the
+     * 0-15 levels. A plain average (no alpha weighting) is enough here - the levels only
+     * steer how strongly a re-light darkens each pixel, and at coarse LODs a torch is a
+     * sub-pixel detail either way.
+     */
+    private static byte[] downsampleLight(final byte[] src, final int size, final int steps) {
+        byte[] current = src;
+        int currentSize = size;
+        for (int step = 0; step < steps; step++) {
+            final int nextSize = currentSize / 2;
+            final byte[] next = new byte[nextSize * nextSize];
+            for (int z = 0; z < nextSize; z++) {
+                final int z0 = z * 2;
+                final int z1 = z0 + 1;
+                for (int x = 0; x < nextSize; x++) {
+                    final int x0 = x * 2;
+                    final int x1 = x0 + 1;
+                    final int sum = current[z0 * currentSize + x0] + current[z0 * currentSize + x1]
+                        + current[z1 * currentSize + x0] + current[z1 * currentSize + x1];
+                    next[z * nextSize + x] = (byte) ((sum + 2) >> 2);
+                }
+            }
+            current = next;
+            currentSize = nextSize;
+        }
+        return current;
+    }
+
+    private static void stitchLight(final byte[] block, final int blockSize, final byte[] out, final int offsetX, final int offsetZ) {
+        final int outSize = RegionColumns.SIZE;
+        for (int z = 0; z < blockSize; z++) {
+            System.arraycopy(block, z * blockSize, out, (offsetZ + z) * outSize + offsetX, blockSize);
+        }
+    }
+
     private static void composeRegion(
         final RegionColumns region,
         final RegionColumns west,
@@ -450,7 +508,8 @@ public final class TileService {
         final RegionColumns southWest,
         final int[] outPixels,
         final boolean applyDaylight,
-        final float daylightFactor
+        final float daylightFactor,
+        final byte[] outLight
     ) {
         final int size = RegionColumns.SIZE;
         final short[] surfaceY = new short[size * size];
@@ -461,6 +520,9 @@ public final class TileService {
         final byte[] kind = new byte[size * size];
         final byte[] light = new byte[size * size];
         region.copyChunkRows(0, size, surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light);
+        if (outLight != null) {
+            System.arraycopy(light, 0, outLight, 0, size * size);
+        }
 
         for (int z = 0; z < size; z++) {
             for (int x = 0; x < size; x++) {

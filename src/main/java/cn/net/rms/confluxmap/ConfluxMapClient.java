@@ -145,7 +145,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
         spriteColorSampler = new SpriteColorSampler(client);
         biomeTintResolver = new BiomeTintResolver(client);
-        tileTextureManager = new TileTextureManager(config, tileService, predictionTileService);
+        tileTextureManager = new TileTextureManager(config, tileService, predictionTileService, daylightModel);
         layerSelector = new LayerSelector(client, config);
 
         chunkCapture = new ChunkCaptureService(
