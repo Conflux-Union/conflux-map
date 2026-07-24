@@ -212,10 +212,9 @@ public final class WaypointWorldRenderer {
         }
 
         if (!visibleWaypointIds.isEmpty()) {
-            // LAST retains a global camera ModelView from late world passes. Reset it temporarily
-            // so the context matrix below is the sole camera transform, matching the original
-            // AFTER_TRANSLUCENT coordinate system without allowing clouds to draw afterward.
-            RenderUtil.pushIdentityModelView();
+            // Modern LAST keeps the camera view rotation in ModelView while its context stack is
+            // local identity. Legacy LAST needs that stale global transform cleared instead.
+            RenderUtil.pushWorldHudModelView();
             try {
                 //#if MC<12105
                 RenderSystem.disableDepthTest();
@@ -410,7 +409,11 @@ public final class WaypointWorldRenderer {
         matrices.push();
         matrices.translate(worldX - cameraPos.x, worldY + LABEL_Y_OFFSET - cameraPos.y, worldZ - cameraPos.z);
         matrices.multiply(camera.getRotation());
+        //#if MC>=12100
+        //$$ matrices.scale(scale, -scale, scale);
+        //#else
         matrices.scale(-scale, -scale, scale);
+        //#endif
 
         if (panelWidth > 0.5f) {
             RenderUtil.fillRect(
