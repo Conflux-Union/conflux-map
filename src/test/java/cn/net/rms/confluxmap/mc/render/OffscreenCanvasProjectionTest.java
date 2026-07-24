@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 
 final class OffscreenCanvasProjectionTest {
     //#if MC>=12100
-    //#if MC<12103
+    //$$ /** Every 1.21 GUI renderer draws through a model-view that translates z by this much. */
     //$$ private static final float MODERN_GUI_MODEL_VIEW_Z = -11_000f;
     //$$
     //$$ @Test
@@ -102,7 +102,6 @@ final class OffscreenCanvasProjectionTest {
     //$$     final int nextMethod = source.indexOf("\n    public ", start + signature.length());
     //$$     return source.substring(start, nextMethod < 0 ? source.length() : nextMethod);
     //$$ }
-    //#endif
     //#else
     @Test
     void legacyCanvasProjectionUsesTheLegacyGuiDepthRange() {

@@ -28,8 +28,8 @@ import net.minecraft.util.math.Matrix4f;
  * framebuffer's alpha/depth state. Render thread only.
  *
  * <p>The global model-view stack is left untouched. The canvas projection uses
- * the depth range of the active version's GUI renderer; 1.21.1 also restores
- * the exact projection and vertex sorter that were active on entry.
+ * the depth range of the active version's GUI renderer, and modern versions
+ * restore the exact projection and vertex sorter that were active on entry.
  */
 public final class OffscreenCanvas {
     private Framebuffer framebuffer;
@@ -70,21 +70,15 @@ public final class OffscreenCanvas {
         framebuffer.beginWrite(true);
         //#endif
         //#if MC>=12100
-        //#if MC<12103
         //$$ RenderSystem.backupProjectionMatrix();
-        //#endif
         //#endif
         setProjection(canvasProjection(sizePx));
     }
 
-    /** 1.21.1 GUI rendering culls map quads unless the canvas uses the same downward Y axis. */
+    /** Modern GUI rendering culls map quads unless the canvas uses the same downward Y axis. */
     private static Matrix4f canvasProjection(final int sizePx) {
         //#if MC>=12100
-        //#if MC<12103
         //$$ return ortho(0f, sizePx, sizePx, 0f);
-        //#else
-        //$$ return ortho(0f, sizePx, 0f, sizePx);
-        //#endif
         //#else
         return ortho(0f, sizePx, 0f, sizePx);
         //#endif
@@ -93,15 +87,12 @@ public final class OffscreenCanvas {
     /**
      * Orthographic projection over the canvas' depth range. 1.19.4 swapped Minecraft's matrix
      * type for JOML's; the argument order (left, right, bottom, top, near, far) is the same in
-     * both, so only the constructing call differs.
+     * both, so only the constructing call differs. Modern GUI rendering puts its draw plane at
+     * z=-11000, so the far plane has to reach past it or every canvas quad is depth-clipped.
      */
     private static Matrix4f ortho(final float left, final float right, final float bottom, final float top) {
         //#if MC>=12100
-        //#if MC<12103
         //$$ return new Matrix4f().setOrtho(left, right, bottom, top, 1000f, 21000f);
-        //#else
-        //$$ return new Matrix4f().setOrtho(left, right, bottom, top, 1000f, 3000f);
-        //#endif
         //#else
         return Matrix4f.projectionMatrix(left, right, bottom, top, 1000f, 3000f);
         //#endif
@@ -128,13 +119,7 @@ public final class OffscreenCanvas {
         framebuffer.endWrite();
         client.getFramebuffer().beginWrite(true);
         //#endif
-        //#if MC>=12103
-        //$$ final Window window = client.getWindow();
-        //$$ setProjection(ortho(
-        //$$     0f, (float) (window.getFramebufferWidth() / window.getScaleFactor()),
-        //$$     0f, (float) (window.getFramebufferHeight() / window.getScaleFactor())
-        //$$ ));
-        //#elseif MC>=12100
+        //#if MC>=12100
         //$$ RenderSystem.restoreProjectionMatrix();
         //#else
         final Window window = client.getWindow();
