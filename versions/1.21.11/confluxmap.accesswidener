@@ -3,3 +3,8 @@ accessWidener v2 named
 # SpriteColorSampler reads a sprite's un-stitched frame-0 source image directly
 # (rather than reading back the stitched atlas texture) to box-filter its colors.
 accessible field net/minecraft/client/texture/SpriteContents mipmapLevelsImages [Lnet/minecraft/client/texture/NativeImage;
+
+# 1.21.6 made GUI rendering retained-mode: a screen or HUD callback only records elements, and
+# the renderer replays them once collection ends. This mod's map geometry has to reach that list
+# too, and DrawContext keeps the list to itself.
+accessible field net/minecraft/client/gui/DrawContext state Lnet/minecraft/client/gui/render/state/GuiRenderState;

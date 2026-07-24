@@ -2,8 +2,8 @@ package cn.net.rms.confluxmap.mc.ui;
 
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 //#if MC>=12108
-//$$ import net.minecraft.client.MinecraftClient;
-//$$ import net.minecraft.client.render.VertexConsumerProvider;
+//$$ import org.joml.Matrix3x2fStack;
+//$$ import org.joml.Matrix4f;
 //#endif
 import net.minecraft.client.font.TextRenderer;
 //#if MC>=12000
@@ -26,6 +26,7 @@ public final class GuiDraw {
     //$$ private GuiDraw(final DrawContext context) {
     //$$     this.context = context;
     //#if MC>=12108
+    //$$     RenderUtil.setGuiState(context.state);
     //$$     this.matrices = new MatrixStack();
     //$$     final var source = context.getMatrices();
     //$$     this.matrices.peek().getPositionMatrix()
@@ -96,6 +97,31 @@ public final class GuiDraw {
     //$$ }
     //#endif
 
+    //#if MC>=12108
+    //$$ /**
+    //$$  * Runs {@code draw} with this mod's accumulated transform installed as the context's own 2D
+    //$$  * pose, the glyph origin folded into it.
+    //$$  *
+    //$$  * <p>From 1.21.6 text is recorded rather than drawn, so it has to go through the context to
+    //$$  * be layered against the rest of the GUI at all - and the context carries a 2D pose instead
+    //$$  * of a MatrixStack, so a rotated or scaled caller (minimap markers, waypoint labels) would
+    //$$  * otherwise lose its transform. Folding the origin into the pose also keeps the sub-pixel
+    //$$  * placement that the context's integer coordinates drop.
+    //$$  */
+    //$$ private void withTextPose(final float x, final float y, final Runnable draw) {
+    //$$     final Matrix3x2fStack pose = context.getMatrices();
+    //$$     pose.pushMatrix();
+    //$$     try {
+    //$$         final Matrix4f model = matrices.peek().getPositionMatrix();
+    //$$         pose.set(model.m00(), model.m01(), model.m10(), model.m11(), model.m30(), model.m31());
+    //$$         pose.translate(x, y);
+    //$$         draw.run();
+    //$$     } finally {
+    //$$         pose.popMatrix();
+    //$$     }
+    //$$ }
+    //#endif
+
     public int drawTextWithShadow(
         final TextRenderer renderer,
         final String text,
@@ -104,13 +130,7 @@ public final class GuiDraw {
         final int color
     ) {
         //#if MC>=12108
-        //$$ final VertexConsumerProvider.Immediate immediate = MinecraftClient.getInstance()
-        //$$     .getBufferBuilders().getEntityVertexConsumers();
-        //$$ renderer.draw(
-        //$$     text, x, y, color, true, matrices.peek().getPositionMatrix(),
-        //$$     immediate, TextLayerType.NORMAL, 0, 15728880
-        //$$ );
-        //$$ immediate.draw();
+        //$$ withTextPose(x, y, () -> context.drawTextWithShadow(renderer, text, 0, 0, color));
         //$$ return (int) x + renderer.getWidth(text);
         //#elseif MC>=12103
         //$$ final int[] result = {0};
@@ -140,13 +160,7 @@ public final class GuiDraw {
         final int color
     ) {
         //#if MC>=12108
-        //$$ final VertexConsumerProvider.Immediate immediate = MinecraftClient.getInstance()
-        //$$     .getBufferBuilders().getEntityVertexConsumers();
-        //$$ renderer.draw(
-        //$$     text, x, y, color, true, matrices.peek().getPositionMatrix(),
-        //$$     immediate, TextLayerType.NORMAL, 0, 15728880
-        //$$ );
-        //$$ immediate.draw();
+        //$$ withTextPose(x, y, () -> context.drawTextWithShadow(renderer, text, 0, 0, color));
         //$$ return (int) x + renderer.getWidth(text);
         //#elseif MC>=12103
         //$$ final int[] result = {0};
@@ -175,13 +189,7 @@ public final class GuiDraw {
         final int color
     ) {
         //#if MC>=12108
-        //$$ final VertexConsumerProvider.Immediate immediate = MinecraftClient.getInstance()
-        //$$     .getBufferBuilders().getEntityVertexConsumers();
-        //$$ renderer.draw(
-        //$$     text, x, y, color, true, matrices.peek().getPositionMatrix(),
-        //$$     immediate, TextLayerType.NORMAL, 0, 15728880
-        //$$ );
-        //$$ immediate.draw();
+        //$$ withTextPose(x, y, () -> context.drawTextWithShadow(renderer, text, 0, 0, color));
         //$$ return (int) x + renderer.getWidth(text);
         //#elseif MC>=12103
         //$$ final int[] result = {0};

@@ -10,6 +10,9 @@ import net.minecraft.client.render.GameRenderer;
 //$$ import com.mojang.blaze3d.vertex.VertexFormat;
 //$$ import net.minecraft.client.gl.Framebuffer;
 //$$ import net.minecraft.client.gl.RenderPipelines;
+//$$ import net.minecraft.client.gui.ScreenRect;
+//$$ import net.minecraft.client.gui.render.state.GuiRenderState;
+//$$ import net.minecraft.client.texture.TextureSetup;
 //#if MC>=12111
 //$$ import com.mojang.blaze3d.textures.AddressMode;
 //$$ import com.mojang.blaze3d.textures.FilterMode;
@@ -56,8 +59,16 @@ public final class RenderUtil {
     //$$ private static int scissorY;
     //$$ private static int scissorWidth;
     //$$ private static int scissorHeight;
-    //#if MC>=12111
+    //#if MC>=12108
+    //$$ private static GuiRenderState guiState;
     //$$ private static GpuTextureView boundTexture;
+    //$$ // The GUI renderer clips in scaled GUI units, the render pass in framebuffer pixels.
+    //$$ private static int guiScissorX;
+    //$$ private static int guiScissorY;
+    //$$ private static int guiScissorWidth;
+    //$$ private static int guiScissorHeight;
+    //#endif
+    //#if MC>=12111
     //$$ private static GpuSampler boundSampler;
     //#endif
     //#endif
@@ -108,6 +119,9 @@ public final class RenderUtil {
     //$$ }
     //#elseif MC>=12108
     //$$ public static void bindTexture(final GpuTextureView texture) {
+    //$$     // Immediate canvas batches read the bind back off RenderSystem; recorded GUI elements
+    //$$     // carry their own TextureSetup, so the view has to survive until the batch is finished.
+    //$$     boundTexture = texture;
     //$$     RenderSystem.setShaderTexture(0, texture);
     //$$ }
     //#elseif MC>=12105
@@ -129,6 +143,38 @@ public final class RenderUtil {
     //$$     if (scissorEnabled) {
     //$$         pass.enableScissor(scissorX, scissorY, scissorWidth, scissorHeight);
     //$$     }
+    //$$ }
+    //#endif
+
+    //#if MC>=12108
+    //$$ /**
+    //$$  * Points GUI-space batches at the element list the game is currently collecting. Set once
+    //$$  * per {@code GuiDraw}, which is the only way into this mod's screen and HUD drawing.
+    //$$  */
+    //$$ public static void setGuiState(final GuiRenderState state) {
+    //$$     guiState = state;
+    //$$ }
+
+    //$$ /** Null while an {@link OffscreenCanvas} owns the draws - those target its own framebuffer. */
+    //$$ static GuiRenderState guiState() {
+    //$$     return drawTarget == null ? guiState : null;
+    //$$ }
+
+    //$$ static ScreenRect guiScissor() {
+    //$$     return scissorEnabled
+    //$$         ? new ScreenRect(guiScissorX, guiScissorY, guiScissorWidth, guiScissorHeight)
+    //$$         : null;
+    //$$ }
+
+    //$$ static TextureSetup guiTextureSetup(final boolean textured) {
+    //$$     if (!textured || boundTexture == null) {
+    //$$         return TextureSetup.empty();
+    //$$     }
+    //#if MC>=12111
+    //$$     return TextureSetup.of(boundTexture, boundSampler);
+    //#else
+    //$$     return TextureSetup.of(boundTexture);
+    //#endif
     //$$ }
     //#endif
 
@@ -201,7 +247,7 @@ public final class RenderUtil {
         //$$ final var texture = client.getTextureManager().getTexture(id);
         //$$ bindTexture(texture.getGlTextureView(), texture.getSampler());
         //#elseif MC>=12108
-        //$$ RenderSystem.setShaderTexture(0, client.getTextureManager().getTexture(id).getGlTextureView());
+        //$$ bindTexture(client.getTextureManager().getTexture(id).getGlTextureView());
         //#elseif MC>=12105
         //$$ RenderSystem.setShaderTexture(0, client.getTextureManager().getTexture(id).getGlTexture());
         //#else
@@ -226,12 +272,12 @@ public final class RenderUtil {
     ) {
         final var model = matrices.peek().getModel();
         //#if MC>=12105
-        //$$ final Mesh mesh = Mesh.begin(VertexFormat.DrawMode.QUADS, Mesh.tintedTextureFormat());
+        //$$ final Mesh mesh = Mesh.beginGui(VertexFormat.DrawMode.QUADS, Mesh.tintedTextureFormat());
         //$$ mesh.tintedVertex(model, x, y + height, 0, u0, v1, 1f, 1f, 1f, 1f);
         //$$ mesh.tintedVertex(model, x + width, y + height, 0, u1, v1, 1f, 1f, 1f, 1f);
         //$$ mesh.tintedVertex(model, x + width, y, 0, u1, v0, 1f, 1f, 1f, 1f);
         //$$ mesh.tintedVertex(model, x, y, 0, u0, v0, 1f, 1f, 1f, 1f);
-        //$$ mesh.draw(RenderPipelines.GUI_TEXTURED);
+        //$$ mesh.drawGui(RenderPipelines.GUI_TEXTURED);
         //#else
         final Mesh mesh = Mesh.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE);
         mesh.vertex(model, x, y + height, 0).texture(u0, v1).next();
@@ -272,13 +318,13 @@ public final class RenderUtil {
         final float g = Argb.green(argbColor) / 255f;
         final float b = Argb.blue(argbColor) / 255f;
         final var model = matrices.peek().getModel();
-        final Mesh mesh = Mesh.begin(VertexFormat.DrawMode.QUADS, Mesh.tintedTextureFormat());
+        final Mesh mesh = Mesh.beginGui(VertexFormat.DrawMode.QUADS, Mesh.tintedTextureFormat());
         mesh.tintedVertex(model, x, y + height, 0, u0, v1, r, g, b, a);
         mesh.tintedVertex(model, x + width, y + height, 0, u1, v1, r, g, b, a);
         mesh.tintedVertex(model, x + width, y, 0, u1, v0, r, g, b, a);
         mesh.tintedVertex(model, x, y, 0, u0, v0, r, g, b, a);
         //#if MC>=12105
-        //$$ mesh.draw(RenderPipelines.GUI_TEXTURED);
+        //$$ mesh.drawGui(RenderPipelines.GUI_TEXTURED);
         //#else
         mesh.draw();
         //#endif
@@ -308,6 +354,12 @@ public final class RenderUtil {
         //$$ scissorY = y;
         //$$ scissorWidth = w;
         //$$ scissorHeight = h;
+        //#if MC>=12108
+        //$$ guiScissorX = guiX;
+        //$$ guiScissorY = guiY;
+        //$$ guiScissorWidth = guiWidth;
+        //$$ guiScissorHeight = guiHeight;
+        //#endif
         //#else
         RenderSystem.enableScissor(x, y, w, h);
         //#endif
@@ -340,7 +392,7 @@ public final class RenderUtil {
         final float b = Argb.blue(argbColor) / 255f;
         final var model = matrices.peek().getModel();
         //#if MC>=12105
-        //$$ final Mesh mesh = Mesh.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+        //$$ final Mesh mesh = Mesh.beginGui(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         //#else
         final Mesh mesh = Mesh.begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
         //#endif
@@ -356,7 +408,7 @@ public final class RenderUtil {
         //$$ mesh.vertex(model, x1, y1, 0).color(r, g, b, a).next();
         //$$ mesh.vertex(model, x0, y0, 0).color(r, g, b, a).next();
         //$$ mesh.vertex(model, x0, y0, 0).color(r, g, b, a).next();
-        //$$ mesh.draw(RenderPipelines.GUI);
+        //$$ mesh.drawGui(RenderPipelines.GUI);
         //#else
         mesh.draw();
         //#endif
@@ -376,7 +428,7 @@ public final class RenderUtil {
     ) {
         final var model = matrices.peek().getModel();
         //#if MC>=12105
-        //$$ final Mesh mesh = Mesh.begin(VertexFormat.DrawMode.QUADS, Mesh.tintedTextureFormat());
+        //$$ final Mesh mesh = Mesh.beginGui(VertexFormat.DrawMode.QUADS, Mesh.tintedTextureFormat());
         //$$ final int segments = 48;
         //$$ for (int i = 0; i < segments; i++) {
         //$$     final double angle0 = 2.0 * Math.PI * i / segments;
@@ -398,7 +450,7 @@ public final class RenderUtil {
         //$$     );
         //$$     mesh.tintedVertex(model, centerX, centerY, 0, 0.5f, 0.5f, 1f, 1f, 1f, 1f);
         //$$ }
-        //$$ mesh.draw(RenderPipelines.GUI_TEXTURED);
+        //$$ mesh.drawGui(RenderPipelines.GUI_TEXTURED);
         //#else
         RenderSystem.disableCull();
         final Mesh mesh = Mesh.begin(VertexFormat.DrawMode.TRIANGLE_FAN, VertexFormats.POSITION_TEXTURE);
@@ -436,7 +488,7 @@ public final class RenderUtil {
         final float b = Argb.blue(argbColor) / 255f;
         final var model = matrices.peek().getModel();
         //#if MC>=12105
-        //$$ final Mesh mesh = Mesh.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+        //$$ final Mesh mesh = Mesh.beginGui(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         //#else
         final Mesh mesh = Mesh.begin(VertexFormat.DrawMode.TRIANGLE_STRIP, VertexFormats.POSITION_COLOR);
         //#endif
@@ -457,7 +509,7 @@ public final class RenderUtil {
         //$$     mesh.vertex(model, centerX + cos1 * outerRadius, centerY + sin1 * outerRadius, 0).color(r, g, b, a).next();
         //$$     mesh.vertex(model, centerX + cos0 * outerRadius, centerY + sin0 * outerRadius, 0).color(r, g, b, a).next();
         //$$ }
-        //$$ mesh.draw(RenderPipelines.GUI);
+        //$$ mesh.drawGui(RenderPipelines.GUI);
         //#else
         for (int i = 0; i <= segments; i++) {
             final double angle = 2.0 * Math.PI * i / segments;
@@ -533,6 +585,28 @@ public final class RenderUtil {
 
     /** Flat-colored axis-aligned quad (background/border), independent of any bound texture. */
     public static void fillRect(final MatrixStack matrices, final float x, final float y, final float width, final float height, final int argbColor) {
+        fillRect(matrices, x, y, width, height, argbColor, true);
+    }
+
+    /**
+     * The same quad as {@link #fillRect}, drawn as world geometry from a {@code WorldRenderEvents}
+     * callback (waypoint label plates) rather than as part of the GUI. The distinction only
+     * matters from 1.21.6, where GUI drawing is recorded for a later pass and world drawing is not
+     * - see {@link Mesh#beginGui}.
+     */
+    public static void fillRect3D(final MatrixStack matrices, final float x, final float y, final float width, final float height, final int argbColor) {
+        fillRect(matrices, x, y, width, height, argbColor, false);
+    }
+
+    private static void fillRect(
+        final MatrixStack matrices,
+        final float x,
+        final float y,
+        final float width,
+        final float height,
+        final int argbColor,
+        final boolean gui
+    ) {
         //#if MC<12105
         useColorShader();
         RenderSystem.enableBlend();
@@ -543,13 +617,19 @@ public final class RenderUtil {
         final float g = Argb.green(argbColor) / 255f;
         final float b = Argb.blue(argbColor) / 255f;
         final var model = matrices.peek().getModel();
-        final Mesh mesh = Mesh.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+        final Mesh mesh = gui
+            ? Mesh.beginGui(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR)
+            : Mesh.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
         mesh.vertex(model, x, y + height, 0).color(r, g, b, a).next();
         mesh.vertex(model, x + width, y + height, 0).color(r, g, b, a).next();
         mesh.vertex(model, x + width, y, 0).color(r, g, b, a).next();
         mesh.vertex(model, x, y, 0).color(r, g, b, a).next();
         //#if MC>=12105
-        //$$ mesh.draw(RenderPipelines.GUI);
+        //$$ if (gui) {
+        //$$     mesh.drawGui(RenderPipelines.GUI);
+        //$$ } else {
+        //$$     mesh.draw(RenderPipelines.GUI);
+        //$$ }
         //#else
         mesh.draw();
         //#endif

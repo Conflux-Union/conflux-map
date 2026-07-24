@@ -13,20 +13,25 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 final class OffscreenCanvasProjectionTest {
+    //#if MC>=12108
+    //$$ /** From 1.21.6 the canvas installs its own identity model-view, so its quads sit on z=0. */
+    //$$ private static final float CANVAS_DRAW_PLANE_Z = 0f;
+    //#elseif MC>=12100
+    //$$ /** Older 1.21 GUI renderers draw through a model-view that translates z by this much. */
+    //$$ private static final float CANVAS_DRAW_PLANE_Z = -11_000f;
+    //#endif
     //#if MC>=12100
-    //$$ /** Every 1.21 GUI renderer draws through a model-view that translates z by this much. */
-    //$$ private static final float MODERN_GUI_MODEL_VIEW_Z = -11_000f;
     //$$
     //$$ @Test
-    //$$ void canvasProjectionContainsTheModernGuiDrawPlane() throws Exception {
+    //$$ void canvasProjectionContainsTheCanvasDrawPlane() throws Exception {
     //$$     final Matrix4f projection = canvasProjection();
     //$$     final Vector4f clip = projection.transform(
-    //$$         new Vector4f(64f, 64f, MODERN_GUI_MODEL_VIEW_Z, 1f)
+    //$$         new Vector4f(64f, 64f, CANVAS_DRAW_PLANE_Z, 1f)
     //$$     );
     //$$
     //$$     assertTrue(
     //$$         Math.abs(clip.z) <= Math.abs(clip.w),
-    //$$         () -> "modern GUI draw plane is clipped: z=" + clip.z + ", w=" + clip.w
+    //$$         () -> "canvas draw plane is clipped: z=" + clip.z + ", w=" + clip.w
     //$$     );
     //$$ }
     //$$
@@ -62,6 +67,16 @@ final class OffscreenCanvasProjectionTest {
     //$$         end.contains("RenderSystem.restoreProjectionMatrix()"),
     //$$         "end must restore the exact projection and vertex sorter active before begin"
     //$$     );
+    //#if MC>=12108
+    //$$     assertTrue(
+    //$$         begin.contains("RenderSystem.getModelViewStack().pushMatrix().identity()"),
+    //$$         "begin must clear the model-view the world pass left behind"
+    //$$     );
+    //$$     assertTrue(
+    //$$         end.contains("RenderSystem.getModelViewStack().popMatrix()"),
+    //$$         "end must give the caller back its model-view"
+    //$$     );
+    //#endif
     //$$ }
     //$$
     //$$ private static Matrix4f canvasProjection() throws Exception {
@@ -74,7 +89,7 @@ final class OffscreenCanvasProjectionTest {
     //$$
     //$$ private static Vector4f project(final Matrix4f projection, final float x, final float y) {
     //$$     final Vector4f clip = projection.transform(
-    //$$         new Vector4f(x, y, MODERN_GUI_MODEL_VIEW_Z, 1f)
+    //$$         new Vector4f(x, y, CANVAS_DRAW_PLANE_Z, 1f)
     //$$     );
     //$$     return clip.div(clip.w);
     //$$ }

@@ -27,9 +27,9 @@ import net.minecraft.util.math.Matrix4f;
  * unlike destination-alpha masking this works regardless of the main
  * framebuffer's alpha/depth state. Render thread only.
  *
- * <p>The global model-view stack is left untouched. The canvas projection uses
- * the depth range of the active version's GUI renderer, and modern versions
- * restore the exact projection and vertex sorter that were active on entry.
+ * <p>The canvas projection matches whatever the active version's GUI renderer
+ * expects to see around the drawn plane, and modern versions restore the exact
+ * projection and vertex sorter that were active on entry.
  */
 public final class OffscreenCanvas {
     private Framebuffer framebuffer;
@@ -72,6 +72,12 @@ public final class OffscreenCanvas {
         //#if MC>=12100
         //$$ RenderSystem.backupProjectionMatrix();
         //#endif
+        //#if MC>=12108
+        //$$ // From 1.21.6 the canvas is filled while the GUI is only being collected, so the global
+        //$$ // model-view still holds whatever the world pass left in it. Canvas geometry is already
+        //$$ // in canvas pixels and needs none of it.
+        //$$ RenderSystem.getModelViewStack().pushMatrix().identity();
+        //#endif
         setProjection(canvasProjection(sizePx));
     }
 
@@ -91,7 +97,11 @@ public final class OffscreenCanvas {
      * z=-11000, so the far plane has to reach past it or every canvas quad is depth-clipped.
      */
     private static Matrix4f ortho(final float left, final float right, final float bottom, final float top) {
-        //#if MC>=12100
+        //#if MC>=12108
+        //$$ // The canvas installs its own identity model-view, so the depth range only has to cover
+        //$$ // the z=0 plane every canvas quad sits on.
+        //$$ return new Matrix4f().setOrtho(left, right, bottom, top, -1000f, 1000f);
+        //#elseif MC>=12100
         //$$ return new Matrix4f().setOrtho(left, right, bottom, top, 1000f, 21000f);
         //#else
         return Matrix4f.projectionMatrix(left, right, bottom, top, 1000f, 3000f);
@@ -118,6 +128,9 @@ public final class OffscreenCanvas {
         //#else
         framebuffer.endWrite();
         client.getFramebuffer().beginWrite(true);
+        //#endif
+        //#if MC>=12108
+        //$$ RenderSystem.getModelViewStack().popMatrix();
         //#endif
         //#if MC>=12100
         //$$ RenderSystem.restoreProjectionMatrix();

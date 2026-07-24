@@ -416,7 +416,7 @@ public final class WaypointWorldRenderer {
         //#endif
 
         if (panelWidth > 0.5f) {
-            RenderUtil.fillRect(
+            RenderUtil.fillRect3D(
                 matrices, panelX, -LABEL_PANEL_HEIGHT / 2f,
                 panelWidth, LABEL_PANEL_HEIGHT, withAlpha(LABEL_BACKGROUND_COLOR, nearFade)
             );
@@ -450,11 +450,11 @@ public final class WaypointWorldRenderer {
         final float alpha
     ) {
         final float size = halfSize * 2f;
-        RenderUtil.fillRect(
+        RenderUtil.fillRect3D(
             matrices, -halfSize - 1f, -halfSize - 1f, size + 2f, size + 2f,
             withAlpha(outlineColor(waypoint), alpha)
         );
-        RenderUtil.fillRect(
+        RenderUtil.fillRect3D(
             matrices, -halfSize, -halfSize, size, size,
             withAlpha(waypoint.colorArgb() | 0xFF000000, alpha)
         );
