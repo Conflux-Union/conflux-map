@@ -43,7 +43,8 @@ public final class DiffSpec {
         if (baselineBiomeId != actual.biomeId()) {
             return true;
         }
-        if (!kindEquivalent(expectedKind, actualKind, treeCover)) {
+        if (!kindEquivalent(expectedKind, actualKind, treeCover)
+            && !frostEquivalent(baselineBiomeId, expectedKind, actualKind)) {
             return true;
         }
         final int heightTolerance = treeCover > 0.0 && forestEquivalent(expectedKind, actualKind) ? 6 : 2;
@@ -69,7 +70,8 @@ public final class DiffSpec {
             return true;
         }
         final double cover = BiomeTable.get(baseline.biomeId()).treeCover();
-        if (!kindEquivalent(expected, observed, cover)) {
+        if (!kindEquivalent(expected, observed, cover)
+            && !frostEquivalent(baseline.biomeId(), expected, observed)) {
             return true;
         }
         final int tolerance = cover > 0.0 && forestEquivalent(expected, observed) ? 6 : 2;
@@ -121,6 +123,24 @@ public final class DiffSpec {
             || (expected == SurfaceKind.FOLIAGE && actual == SurfaceKind.LAND);
     }
 
+    /**
+     * Within a cold biome, snow settles on natural ice and packed-ice spikes rise from
+     * snowfields, so ICE and SNOW are one visual family rather than a correction-worthy
+     * difference. Gated on the biome's own kind so player-placed ice on a warm surface
+     * (an ice road on plains, packed ice on a beach) still corrects.
+     */
+    private static boolean frostEquivalent(final int biomeId, final SurfaceKind expected, final SurfaceKind actual) {
+        final SurfaceKind biomeKind = BiomeTable.get(biomeId).kind();
+        if (biomeKind != SurfaceKind.ICE && biomeKind != SurfaceKind.SNOW) {
+            return false;
+        }
+        return isFrozen(expected) && isFrozen(actual);
+    }
+
+    private static boolean isFrozen(final SurfaceKind kind) {
+        return kind == SurfaceKind.ICE || kind == SurfaceKind.SNOW;
+    }
+
     /** Vanilla map-colour ids expected for a generated biome. The set is intentionally tolerant. */
     public static Set<Integer> expectedMapColors(final int biomeId) {
         final BiomeTable.Entry entry = BiomeTable.get(biomeId);
@@ -128,6 +148,13 @@ public final class DiffSpec {
         if (entry.waterBiome()) {
             result.add(12);
             result.add(13);
+            if (entry.kind() == SurfaceKind.ICE || entry.kind() == SurfaceKind.SNOW) {
+                // A frozen water biome's natural surface is ice, often under a snow layer;
+                // without these the registry ice colour (5) flagged every frozen-ocean pixel.
+                result.add(3);
+                result.add(5);
+                result.add(8);
+            }
             return Collections.unmodifiableSet(result);
         }
         switch (entry.kind()) {

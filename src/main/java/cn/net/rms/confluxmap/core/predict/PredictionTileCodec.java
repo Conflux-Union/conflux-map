@@ -17,8 +17,12 @@ import java.util.Arrays;
 /** Atomic on-disk codec for one client's absolute prediction correction tile. */
 public final class PredictionTileCodec {
     public static final byte[] MAGIC = {'C', 'F', 'P', 'T'};
-    /** Bumped whenever persisted correction semantics change; old corrections are non-authoritative. */
-    public static final int FORMAT_VERSION = 10;
+    /**
+     * Bumped whenever persisted correction semantics change; old corrections are non-authoritative.
+     * Version 11 drops corrections built before the summarizer's snow-cover promotion, which
+     * painted snow-covered terrain with the green land colour of the block beneath it.
+     */
+    public static final int FORMAT_VERSION = 11;
 
     private PredictionTileCodec() {
     }

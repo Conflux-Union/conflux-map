@@ -16,8 +16,13 @@ import java.util.zip.InflaterInputStream;
 /** Disk codec for server-side region summaries ({@code .cfs}). */
 public final class SummaryCodec {
     public static final byte[] MAGIC = {'C', 'F', 'S', 'M'};
-    /** Version 5 carries real registry map colours instead of the natural/artificial heuristic ids. */
-    public static final int FORMAT_VERSION = 5;
+    /**
+     * Version 5 carries real registry map colours instead of the natural/artificial heuristic ids.
+     * Version 6 promotes collision-less snow cover to the surface (snowy columns no longer
+     * summarize as the green land beneath) and reports ice fluid depth from the ground under the
+     * cover, with land-borne ice carrying no fluid column.
+     */
+    public static final int FORMAT_VERSION = 6;
     public static final int CHUNKS = 256;
     public static final int COLUMNS = 256;
     public static final int RECORD_BYTES = 6;

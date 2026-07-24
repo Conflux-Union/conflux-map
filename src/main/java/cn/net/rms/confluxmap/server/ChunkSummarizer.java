@@ -63,17 +63,34 @@ public final class ChunkSummarizer {
             for (int x = 0; x < 16; x++) {
                 final int index = z * 16 + x;
                 final int top = bottomY + PackedBits.decode(heights, 9, index);
-                final int surfaceY = top - 1;
-                final BlockInfo block = blockAt(parsed, x, surfaceY, z);
+                final int groundY = top - 1;
+                final BlockInfo ground = blockAt(parsed, x, groundY, z);
+                int surfaceY = groundY;
+                BlockInfo block = ground;
+                // MOTION_BLOCKING excludes collision-less snow layers, so a snow-covered column
+                // would otherwise summarize as the grass beneath it and correct predicted snowy
+                // terrain to plain green. Promote the cover to the surface, mirroring the client
+                // capture's snow-layer promotion.
+                final String cover = blockNameAt(parsed, x, groundY + 1, z);
+                if (isSnowCover(cover)) {
+                    surfaceY = groundY + 1;
+                    block = classify(cover, mapColors);
+                }
                 final int biome = biomeAt(biomes, parsed, x, z, surfaceY);
-                final boolean fluidSurface = block.kind == SurfaceKind.WATER || block.kind == SurfaceKind.ICE;
+                // Fluid depth follows the ground under any snow cover: snow settled on ocean ice
+                // must keep its water column so it stays bucket-equivalent to the fluid baseline.
+                final boolean fluidSurface = ground.kind == SurfaceKind.WATER || ground.kind == SurfaceKind.ICE;
                 final int fluidDepth;
                 if (!fluidSurface) {
                     fluidDepth = 0;
-                } else if (block.kind == SurfaceKind.WATER && oceanFloor.length != 0) {
+                } else if (ground.kind == SurfaceKind.WATER && oceanFloor.length != 0) {
                     fluidDepth = clamp(top - (bottomY + PackedBits.decode(oceanFloor, 9, index)));
                 } else {
-                    fluidDepth = scanFluidDepth(parsed, x, surfaceY, z);
+                    final int scanned = scanFluidDepth(parsed, x, groundY, z);
+                    // Ice resting directly on solid ground (spikes, glaciers) has no fluid column;
+                    // the scan's minimum depth of 1 would bucket-mismatch land baselines and
+                    // fabricate corrections there.
+                    fluidDepth = ground.kind == SurfaceKind.ICE && scanned <= 1 ? 0 : scanned;
                 }
                 columns[index] = new SummaryCodec.Column(
                     biome & 255, clampShort(surfaceY), block.kind.ordinal(), block.mapColorId, fluidDepth
@@ -151,6 +168,11 @@ public final class ChunkSummarizer {
 
     private static boolean isKelp(final String name) {
         return "minecraft:kelp".equals(name) || "minecraft:kelp_plant".equals(name);
+    }
+
+    /** Non-motion-blocking snow cover that visually replaces the block it rests on. */
+    private static boolean isSnowCover(final String name) {
+        return "minecraft:snow".equals(name) || "minecraft:powder_snow".equals(name);
     }
 
     private static int biomeAt(
