@@ -349,6 +349,13 @@ public final class RenderUtil {
         mesh.vertex(model, x2, y2, 0).color(r, g, b, a).next();
         //#if MC>=12105
         //$$ mesh.vertex(model, x2, y2, 0).color(r, g, b, a).next();
+        //$$ // Callers pass either winding (compare the two halves of a StructureMarkerRenderer
+        //$$ // diamond), and 1.21.5 pipelines cull back faces. Emitting both windings of a flat
+        //$$ // triangle costs nothing at raster time: exactly one of them survives the cull.
+        //$$ mesh.vertex(model, x2, y2, 0).color(r, g, b, a).next();
+        //$$ mesh.vertex(model, x1, y1, 0).color(r, g, b, a).next();
+        //$$ mesh.vertex(model, x0, y0, 0).color(r, g, b, a).next();
+        //$$ mesh.vertex(model, x0, y0, 0).color(r, g, b, a).next();
         //$$ mesh.draw(RenderPipelines.GUI);
         //#else
         mesh.draw();
@@ -378,14 +385,16 @@ public final class RenderUtil {
         //$$     final float sin0 = (float) Math.sin(angle0);
         //$$     final float cos1 = (float) Math.cos(angle1);
         //$$     final float sin1 = (float) Math.sin(angle1);
+        //$$     // Wound backwards through the segment so the fan matches the front-facing
+        //$$     // order of fillRect; the legacy path called disableCull here instead.
         //$$     mesh.tintedVertex(model, centerX, centerY, 0, 0.5f, 0.5f, 1f, 1f, 1f, 1f);
-        //$$     mesh.tintedVertex(
-        //$$         model, centerX + cos0 * radius, centerY + sin0 * radius, 0,
-        //$$         0.5f + 0.5f * cos0, 0.5f - 0.5f * sin0, 1f, 1f, 1f, 1f
-        //$$     );
         //$$     mesh.tintedVertex(
         //$$         model, centerX + cos1 * radius, centerY + sin1 * radius, 0,
         //$$         0.5f + 0.5f * cos1, 0.5f - 0.5f * sin1, 1f, 1f, 1f, 1f
+        //$$     );
+        //$$     mesh.tintedVertex(
+        //$$         model, centerX + cos0 * radius, centerY + sin0 * radius, 0,
+        //$$         0.5f + 0.5f * cos0, 0.5f - 0.5f * sin0, 1f, 1f, 1f, 1f
         //$$     );
         //$$     mesh.tintedVertex(model, centerX, centerY, 0, 0.5f, 0.5f, 1f, 1f, 1f, 1f);
         //$$ }
@@ -407,7 +416,7 @@ public final class RenderUtil {
         //#endif
     }
 
-    /** Anti-clockwise ring outline (circle border), drawn as a triangle strip. */
+    /** Ring outline (circle border), as a triangle strip pre-1.21.5 and segment quads after. */
     public static void drawRing(
         final MatrixStack matrices,
         final float centerX,
@@ -441,10 +450,12 @@ public final class RenderUtil {
         //$$     final float sin0 = (float) Math.sin(angle0);
         //$$     final float cos1 = (float) Math.cos(angle1);
         //$$     final float sin1 = (float) Math.sin(angle1);
-        //$$     mesh.vertex(model, centerX + cos0 * outerRadius, centerY + sin0 * outerRadius, 0).color(r, g, b, a).next();
-        //$$     mesh.vertex(model, centerX + cos1 * outerRadius, centerY + sin1 * outerRadius, 0).color(r, g, b, a).next();
-        //$$     mesh.vertex(model, centerX + cos1 * inner, centerY + sin1 * inner, 0).color(r, g, b, a).next();
+        //$$     // Inner edge first, so each segment quad winds like fillRect and survives the
+        //$$     // back-face cull that 1.21.5 pipelines apply to GUI geometry.
         //$$     mesh.vertex(model, centerX + cos0 * inner, centerY + sin0 * inner, 0).color(r, g, b, a).next();
+        //$$     mesh.vertex(model, centerX + cos1 * inner, centerY + sin1 * inner, 0).color(r, g, b, a).next();
+        //$$     mesh.vertex(model, centerX + cos1 * outerRadius, centerY + sin1 * outerRadius, 0).color(r, g, b, a).next();
+        //$$     mesh.vertex(model, centerX + cos0 * outerRadius, centerY + sin0 * outerRadius, 0).color(r, g, b, a).next();
         //$$ }
         //$$ mesh.draw(RenderPipelines.GUI);
         //#else
