@@ -142,6 +142,9 @@ public final class RegionSummaryService {
     private PatchBuilder.Result buildPatch(
         final ServerWorld world, final SummaryTile summary, final long sinceRevision
     ) {
+        if (config.forceAbsolutePatches) {
+            return patchBuilder.buildAbsolute(summary, sinceRevision);
+        }
         // Residual patches assume the client predicts the identical baseline, so the sampler must
         // mirror the client's preset-derived generator flags. A superflat dim diffs against its
         // uniform surface instead; debug/custom presets have no shared baseline and ship absolute.

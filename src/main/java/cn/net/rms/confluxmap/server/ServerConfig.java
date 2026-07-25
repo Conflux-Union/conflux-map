@@ -28,6 +28,15 @@ public final class ServerConfig {
     public boolean shareSeed = false;
     /** Whether the server will serve map corrections (MAP_PATCH). S3 frames the channel; S4 fills it. */
     public boolean shareCorrections = true;
+    /**
+     * Ship every generated pixel instead of only the ones that differ from the shared cubiomes
+     * baseline. Residual patches are far smaller, but what lands in them depends on the predicted
+     * terrain shape, so a client/server prediction mismatch surfaces as silently missing pixels
+     * rather than a visible error. Turning this on takes prediction out of the loop, at the cost
+     * of bandwidth - useful when diagnosing a correction problem, or in a test whose assertions
+     * must not depend on that shape.
+     */
+    public boolean forceAbsolutePatches = false;
     /** Reserved protocol setting. Forced OFF until the server emits real structure verification data. */
     public boolean shareStructureInfo = false;
     /** Whether players may publish and receive server-owned shared waypoints. */
