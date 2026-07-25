@@ -49,6 +49,12 @@ public abstract class ClientPlayNetworkHandlerMixin {
     //$$             + "Lnet/minecraft/network/chat/Component;Z)V"
     //$$     )
     //$$ )
+    //$$ private void confluxmap$addWaypointImportActionModern(final Args args) {
+    //$$     if (args.<Boolean>get(1)) {
+    //$$         return;
+    //$$     }
+    //$$     args.set(0, confluxmap$appendWaypointImportAction(args.get(0)));
+    //$$ }
     //#elseif MC>=12100
     //$$ @ModifyArgs(
     //$$     method = "onGameMessage",
