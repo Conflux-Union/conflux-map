@@ -59,6 +59,24 @@ abstract class TestServerMixin {
     //$$     return FIXED_TEST_POS_XZ;
     //$$ }
     //$$
+    //$$ // The dimensions of the test world are built inside a synthetic lambda, which no mapping
+    //$$ // names: yarn leaves the intermediary name in place, while an unobfuscated build ships
+    //$$ // javac's own. The preprocessor can translate the descriptor but not the name, so each
+    //$$ // side has to spell its own - in official names on 26.1, which carries no refMap.
+    //#if MC>=260100
+    //$$ @Redirect(
+    //$$     method = "lambda$create$1("
+    //$$         + "Lnet/minecraft/world/level/LevelSettings;"
+    //$$         + "Lnet/minecraft/server/WorldLoader$DataLoadContext;"
+    //$$         + ")Lnet/minecraft/server/WorldLoader$DataLoadOutput;",
+    //$$     at = @At(
+    //$$         value = "FIELD",
+    //$$         target = "Lnet/minecraft/world/level/levelgen/presets/WorldPresets;FLAT:"
+    //$$             + "Lnet/minecraft/resources/ResourceKey;",
+    //$$         opcode = Opcodes.GETSTATIC
+    //$$     )
+    //$$ )
+    //#else
     //$$ @Redirect(
     //$$     method = "method_40377",
     //$$     at = @At(
@@ -68,6 +86,7 @@ abstract class TestServerMixin {
     //$$         opcode = Opcodes.GETSTATIC
     //$$     )
     //$$ )
+    //#endif
     //$$ private static RegistryKey<WorldPreset> useNormalOverworldPreset() {
     //$$     return WorldPresets.DEFAULT;
     //$$ }
