@@ -24,7 +24,48 @@ public abstract class ConfluxScreen extends Screen {
         super(title);
     }
 
-    //#if MC>=12000
+    //#if MC>=260100
+    //$$ @Override
+    //$$ public final void extractRenderState(
+    //$$     final GuiGraphicsExtractor context,
+    //$$     final int mouseX,
+    //$$     final int mouseY,
+    //$$     final float tickDelta
+    //$$ ) {
+    //$$     final GuiDraw draw = GuiDraw.of(context);
+    //$$     renderContents(draw, mouseX, mouseY, tickDelta);
+    //$$     // 26.1 renamed the retained-mode entry points but kept the ordering: the background is
+    //$$     // extracted before the widget list is walked.
+    //$$     renderingVanillaWidgets = true;
+    //$$     try {
+    //$$         super.extractRenderState(context, mouseX, mouseY, tickDelta);
+    //$$     } finally {
+    //$$         renderingVanillaWidgets = false;
+    //$$     }
+    //$$     renderAfterWidgets(draw, mouseX, mouseY, tickDelta);
+    //$$ }
+    //$$
+    //$$ @Override
+    //$$ public final void extractBackground(
+    //$$     final GuiGraphicsExtractor context,
+    //$$     final int mouseX,
+    //$$     final int mouseY,
+    //$$     final float tickDelta
+    //$$ ) {
+    //$$     if (!renderingVanillaWidgets) {
+    //$$         renderVanillaBackground(context, mouseX, mouseY, tickDelta);
+    //$$     }
+    //$$ }
+    //$$
+    //$$ protected void renderVanillaBackground(
+    //$$     final GuiGraphicsExtractor context,
+    //$$     final int mouseX,
+    //$$     final int mouseY,
+    //$$     final float tickDelta
+    //$$ ) {
+    //$$     super.extractBackground(context, mouseX, mouseY, tickDelta);
+    //$$ }
+    //#elseif MC>=12000
     //$$ @Override
     //$$ public final void render(
     //$$     final DrawContext context,

@@ -472,7 +472,7 @@ public final class ConfigScreen extends ConfluxScreen {
     protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
         draw.renderBackground(this, mouseX, mouseY, tickDelta);
         final String title = getTitle().getString();
-        draw.drawTextWithShadow(textRenderer, title, width / 2f - textRenderer.getWidth(title) / 2f, 8, 0xFFFFFFFF);
+        draw.drawTextWithShadow(this.textRenderer, title, width / 2f - this.textRenderer.getWidth(title) / 2f, 8, 0xFFFFFFFF);
     }
 
     /**

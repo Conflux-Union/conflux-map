@@ -13,7 +13,11 @@ import cn.net.rms.confluxmap.mc.ui.screen.WaypointEditScreen;
 import cn.net.rms.confluxmap.mc.ui.screen.WaypointListScreen;
 import java.util.Optional;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+//#if MC>=260100
+//$$ import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+//#else
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+//#endif
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
@@ -62,9 +66,15 @@ public final class Keybinds {
     }
 
     private static KeyBinding register(final String name, final int key) {
+        //#if MC>=260100
+        //$$ return KeyMappingHelper.registerKeyMapping(
+        //$$     new KeyMapping("key.confluxmap." + name, InputConstants.Type.KEYSYM, key, CATEGORY)
+        //$$ );
+        //#else
         return KeyBindingHelper.registerKeyBinding(
             new KeyBinding("key.confluxmap." + name, InputUtil.Type.KEYSYM, key, CATEGORY)
         );
+        //#endif
     }
 
     private void poll() {

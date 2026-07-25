@@ -53,7 +53,7 @@ final class WaypointSetNameScreen extends ConfluxScreen {
     protected void init() {
         final int centerX = width / 2;
         nameField = new TextFieldWidget(
-            textRenderer,
+            this.textRenderer,
             centerX - FIELD_WIDTH / 2,
             Math.max(58, height / 2 - 28),
             FIELD_WIDTH,
@@ -152,7 +152,7 @@ final class WaypointSetNameScreen extends ConfluxScreen {
     }
 
     private void drawCentered(final GuiDraw draw, final String value, final int y, final int color) {
-        final String text = textRenderer.trimToWidth(value, Math.max(40, width - 32));
-        draw.drawTextWithShadow(textRenderer, text, width / 2f - textRenderer.getWidth(text) / 2f, y, color);
+        final String text = this.textRenderer.trimToWidth(value, Math.max(40, width - 32));
+        draw.drawTextWithShadow(this.textRenderer, text, width / 2f - this.textRenderer.getWidth(text) / 2f, y, color);
     }
 }

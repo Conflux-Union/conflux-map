@@ -40,7 +40,11 @@ public final class UpdateNotifier {
             return;
         }
         chatShown = true;
+        //#if MC>=260100
+        //$$ client.player.sendSystemMessage(buildMessage(info.get()));
+        //#else
         client.player.sendMessage(buildMessage(info.get()), false);
+        //#endif
     }
 
     private static Text buildMessage(final UpdateCheckService.UpdateInfo info) {

@@ -114,25 +114,25 @@ public final class WaypointCreateTargetScreen extends ConfluxScreen {
     @Override
     protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
         draw.renderBackground(this, mouseX, mouseY, tickDelta);
-        final String title = textRenderer.trimToWidth(getTitle().getString(), Math.max(40, width - 24));
+        final String title = this.textRenderer.trimToWidth(getTitle().getString(), Math.max(40, width - 24));
         draw.drawTextWithShadow(
-            textRenderer, title, width / 2f - textRenderer.getWidth(title) / 2f, 20, 0xFFFFFFFF
+            this.textRenderer, title, width / 2f - this.textRenderer.getWidth(title) / 2f, 20, 0xFFFFFFFF
         );
-        final String coords = textRenderer.trimToWidth(Texts.translatable(
+        final String coords = this.textRenderer.trimToWidth(Texts.translatable(
             "confluxmap.screen.waypoint.preview.coords",
             formatCoordinate(x), formatCoordinate(y), formatCoordinate(z)
         ).getString(), Math.max(40, width - 24));
         draw.drawTextWithShadow(
-            textRenderer, coords, width / 2f - textRenderer.getWidth(coords) / 2f, 34, 0xFFB8B8B8
+            this.textRenderer, coords, width / 2f - this.textRenderer.getWidth(coords) / 2f, 34, 0xFFB8B8B8
         );
         if (sharedAvailability != null && sharedAvailability.enabled()) {
-            final String status = textRenderer.trimToWidth(
+            final String status = this.textRenderer.trimToWidth(
                 Texts.translatable(statusKey()).getString(), Math.max(40, width - 24)
             );
             draw.drawTextWithShadow(
-                textRenderer,
+                this.textRenderer,
                 status,
-                width / 2f - textRenderer.getWidth(status) / 2f,
+                width / 2f - this.textRenderer.getWidth(status) / 2f,
                 height - 18,
                 0xFFB8B8B8
             );

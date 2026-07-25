@@ -1,4 +1,11 @@
-apply plugin: 'fabric-loom'
+// Minecraft 26.1 ships unobfuscated, which changes the build shape rather than just the names:
+// loom applies without a remapping step, no mappings are resolved, mod dependencies need no
+// remapping, and the compile output is already the shippable jar. Both plugin ids resolve to the
+// same fabric-loom artifact (settings.gradle). Derived from the project name rather than the
+// preprocessor's injected mcVersion because the plugin choice has to happen before it applies.
+final int mcVersion = rootProject.mcVersionOf(project.name)
+final boolean unobfuscated = mcVersion >= 260100
+apply plugin: unobfuscated ? 'net.fabricmc.fabric-loom' : 'net.fabricmc.fabric-loom-remap'
 apply plugin: 'com.replaymod.preprocess'
 base { archivesName = "$id-$name" }
 repositories {
@@ -15,10 +22,15 @@ sourceSets {
     }
 }
 dependencies {
+    // On an unobfuscated version there is nothing to remap into, so loom's mod* configurations
+    // would only add a no-op remap step over dependencies that are already in final names.
+    final Closure<?> autoImpl = { final Object... args -> unobfuscated ? implementation(*args) : modImplementation(*args) }
     minecraft "com.mojang:minecraft:$name"
-    mappings "net.fabricmc:yarn:$name+build.$yarn_mappings:v2"
-    modImplementation "net.fabricmc:fabric-loader:$loader_version"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:$fabric_api_version"
+    if (!unobfuscated) {
+        mappings "net.fabricmc:yarn:$name+build.$yarn_mappings:v2"
+    }
+    autoImpl "net.fabricmc:fabric-loader:$loader_version"
+    autoImpl "net.fabricmc.fabric-api:fabric-api:$fabric_api_version"
     testImplementation "org.junit.jupiter:junit-jupiter:5.10.2"
     testRuntimeOnly "org.junit.platform:junit-platform-launcher"
     gametestImplementation sourceSets.main.output
@@ -28,6 +40,11 @@ test {
 }
 loom {
     accessWidenerPath = file "${id}.accesswidener"
+    // A refmap maps mixin targets from source names to the names the game actually ships. On an
+    // unobfuscated version those are the same, so an empty name suppresses generation entirely.
+    if (unobfuscated) {
+        mixin.defaultRefmapName = ''
+    }
     runs {
         server {
             property("mixin.debug.export", "true")
@@ -59,7 +76,7 @@ loom {
     }
 }
 JavaVersion javaCompatibility
-if (mcVersion < 11700) javaCompatibility = JavaVersion.VERSION_1_8 else if (mcVersion < 11800) javaCompatibility = JavaVersion.VERSION_16 else if (mcVersion < 12005) javaCompatibility = JavaVersion.VERSION_17 else javaCompatibility = JavaVersion.VERSION_21
+if (mcVersion < 11700) javaCompatibility = JavaVersion.VERSION_1_8 else if (mcVersion < 11800) javaCompatibility = JavaVersion.VERSION_16 else if (mcVersion < 12005) javaCompatibility = JavaVersion.VERSION_17 else if (mcVersion < 260100) javaCompatibility = JavaVersion.VERSION_21 else javaCompatibility = JavaVersion.VERSION_25
 tasks.withType(JavaCompile).configureEach {
     // One preprocessor mistake breaks a whole file for every downstream version at once, so
     // javac's default cap of 100 errors routinely hides most of a version's actual breakage.
@@ -80,6 +97,10 @@ if (!supportedMinecraftVersions.contains(project.name)) {
 }
 final String oldestMinecraftVersion = supportedMinecraftVersions.min(mcSortKey)
 final String newestMinecraftVersion = supportedMinecraftVersions.max(mcSortKey)
+// Fabric API's mod id was `fabric` when 1.17 shipped and `fabric-api` afterwards. The 1.21 line
+// still declares `provides: [fabric]` so either id resolves there, but 26.1 dropped that alias, and
+// 1.17's build predates the rename - so only the ends of the matrix are actually constrained.
+final String fabricApiId = mcVersion >= 260100 ? 'fabric-api' : 'fabric'
 final String minecraftDependency = oldestMinecraftVersion == newestMinecraftVersion
         ? oldestMinecraftVersion
         : ">=$oldestMinecraftVersion <=$newestMinecraftVersion"
@@ -88,9 +109,10 @@ processResources {
     inputs.property 'modVersion', project.version.toString()
     inputs.property 'minecraftDependency', minecraftDependency
     inputs.property 'loaderVersion', loader_version
+    inputs.property 'fabricApiId', fabricApiId
     inputs.property 'javaVersion', javaCompatibility.getMajorVersion()
     from "${id}.accesswidener"
-    filesMatching('fabric.mod.json') { expand id: id, version: version, minecraft_dependency: minecraftDependency, loader_version: loader_version }
+    filesMatching('fabric.mod.json') { expand id: id, version: version, minecraft_dependency: minecraftDependency, loader_version: loader_version, fabric_api_id: fabricApiId }
     filesMatching("${id}.mixins.json") { expand java_version: javaCompatibility.getMajorVersion() }
     // Bundles the committed native/prebuilt/<target>/ binaries into the jar (and dev classpath)
     // as natives/<target>/<libname>, so NativeLib can find them without any extra toolchain.
@@ -117,6 +139,12 @@ tasks.register('checkModMetadata') {
 java {
     sourceCompatibility = javaCompatibility
     targetCompatibility = javaCompatibility
+    // Only the unobfuscated line pins a toolchain: it targets Java 25, which the JDK that builds
+    // every other version cannot emit. Leaving the rest unpinned keeps them compiling on whatever
+    // JDK the developer or CI already has, exactly as before.
+    if (unobfuscated) {
+        toolchain { languageVersion = JavaLanguageVersion.of(25) }
+    }
 }
 jar { from '../../LICENSE' }
 tasks.register('checkCoreIsolation') {

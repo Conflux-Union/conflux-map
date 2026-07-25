@@ -16,7 +16,14 @@ import net.minecraft.client.render.VertexFormat;
 //#endif
 import net.minecraft.client.render.VertexFormats;
 
-//#if MC>=12108
+//#if MC>=260100
+//$$ import net.minecraft.client.gui.navigation.ScreenRectangle;
+//$$ import net.minecraft.client.renderer.state.gui.GuiRenderState;
+//$$ import net.minecraft.client.renderer.state.gui.GuiElementRenderState;
+//$$ import com.mojang.blaze3d.vertex.VertexConsumer;
+//$$ import net.minecraft.client.gui.render.TextureSetup;
+//$$ import java.util.Arrays;
+//#elseif MC>=12108
 //$$ import net.minecraft.client.gui.ScreenRect;
 //$$ import net.minecraft.client.gui.render.state.GuiRenderState;
 //$$ import net.minecraft.client.gui.render.state.SimpleGuiElementRenderState;
@@ -223,7 +230,19 @@ public final class Mesh {
     //#if MC>=12105
     //$$ /** Finishes a {@link #beginGui} batch: recorded for the GUI renderer, or drawn on the spot. */
     //$$ public void drawGui(final RenderPipeline pipeline) {
-    //#if MC>=12108
+    //#if MC>=260100
+    //$$     if (buffer == null) {
+    //$$         guiState.addGuiElement(new CapturedGuiElement(
+    //$$             pipeline,
+    //$$             RenderUtil.guiTextureSetup(textured),
+    //$$             RenderUtil.guiScissor(),
+    //$$             vertices,
+    //$$             vertexCount,
+    //$$             textured
+    //$$         ));
+    //$$         return;
+    //$$     }
+    //#elseif MC>=12108
     //$$     if (buffer == null) {
     //$$         guiState.addSimpleElement(new CapturedGuiElement(
     //$$             pipeline,
@@ -342,6 +361,102 @@ public final class Mesh {
     //$$  * already recorded, which is the only thing standing between the map and the markers on top
     //$$  * of it once elements get sorted into texture batches.
     //$$  */
+    //#if MC>=260100
+    //$$ private static final class CapturedGuiElement implements GuiElementRenderState {
+    //$$     private final RenderPipeline pipeline;
+    //$$     private final TextureSetup textureSetup;
+    //$$     private final ScreenRectangle scissorArea;
+    //$$     private final ScreenRectangle bounds;
+    //$$     private final float[] vertices;
+    //$$     private final int vertexCount;
+    //$$     private final boolean textured;
+    //$$
+    //$$     CapturedGuiElement(
+    //$$         final RenderPipeline pipeline,
+    //$$         final TextureSetup textureSetup,
+    //$$         final ScreenRectangle scissorArea,
+    //$$         final float[] vertices,
+    //$$         final int vertexCount,
+    //$$         final boolean textured
+    //$$     ) {
+    //$$         this.pipeline = pipeline;
+    //$$         this.textureSetup = textureSetup;
+    //$$         this.scissorArea = scissorArea;
+    //$$         this.vertices = vertices;
+    //$$         this.vertexCount = vertexCount;
+    //$$         this.textured = textured;
+    //$$         this.bounds = boundsOf(vertices, vertexCount, scissorArea);
+    //$$     }
+    //$$
+    //$$     @Override
+    //$$     public RenderPipeline pipeline() {
+    //$$         return pipeline;
+    //$$     }
+    //$$
+    //$$     @Override
+    //$$     public TextureSetup textureSetup() {
+    //$$         return textureSetup;
+    //$$     }
+    //$$
+    //$$     @Override
+    //$$     public ScreenRectangle scissorArea() {
+    //$$         return scissorArea;
+    //$$     }
+    //$$
+    //$$     @Override
+    //$$     public ScreenRectangle bounds() {
+    //$$         return bounds;
+    //$$     }
+    //$$
+    //$$     @Override
+    //$$     public void buildVertices(final VertexConsumer consumer) {
+    //$$         // 1.21.11 drops the depth argument and offsets the whole batch itself.
+    //$$         emit(consumer, 0f);
+    //$$     }
+    //$$
+    //$$     private void emit(final VertexConsumer consumer, final float depth) {
+    //$$         for (int i = 0; i < vertexCount; i++) {
+    //$$             final int offset = i * STRIDE;
+    //$$             consumer.addVertex(vertices[offset], vertices[offset + 1], depth);
+    //$$             if (textured) {
+    //$$                 consumer.setUv(vertices[offset + 3], vertices[offset + 4]);
+    //$$             }
+    //$$             consumer.setColor(
+    //$$                 vertices[offset + 5], vertices[offset + 6],
+    //$$                 vertices[offset + 7], vertices[offset + 8]
+    //$$             );
+    //$$         }
+    //$$     }
+    //$$
+    //$$     private static ScreenRectangle boundsOf(
+    //$$         final float[] vertices,
+    //$$         final int vertexCount,
+    //$$         final ScreenRectangle scissorArea
+    //$$     ) {
+    //$$         if (vertexCount == 0) {
+    //$$             return ScreenRectangle.empty();
+    //$$         }
+    //$$         float minX = Float.POSITIVE_INFINITY;
+    //$$         float minY = Float.POSITIVE_INFINITY;
+    //$$         float maxX = Float.NEGATIVE_INFINITY;
+    //$$         float maxY = Float.NEGATIVE_INFINITY;
+    //$$         for (int i = 0; i < vertexCount; i++) {
+    //$$             final float x = vertices[i * STRIDE];
+    //$$             final float y = vertices[i * STRIDE + 1];
+    //$$             minX = Math.min(minX, x);
+    //$$             minY = Math.min(minY, y);
+    //$$             maxX = Math.max(maxX, x);
+    //$$             maxY = Math.max(maxY, y);
+    //$$         }
+    //$$         final int left = (int) Math.floor(minX);
+    //$$         final int top = (int) Math.floor(minY);
+    //$$         final ScreenRectangle rect = new ScreenRectangle(
+    //$$             left, top, (int) Math.ceil(maxX) - left, (int) Math.ceil(maxY) - top
+    //$$         );
+    //$$         return scissorArea == null ? rect : rect.intersection(scissorArea);
+    //$$     }
+    //$$ }
+    //#else
     //$$ private static final class CapturedGuiElement implements SimpleGuiElementRenderState {
     //$$     private final RenderPipeline pipeline;
     //$$     private final TextureSetup textureSetup;
@@ -443,5 +558,6 @@ public final class Mesh {
     //$$         return scissorArea == null ? rect : rect.intersection(scissorArea);
     //$$     }
     //$$ }
+    //#endif
     //#endif
 }

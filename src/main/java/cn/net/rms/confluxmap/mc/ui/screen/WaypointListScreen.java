@@ -1220,7 +1220,7 @@ public final class WaypointListScreen extends ConfluxScreen {
         draw.renderBackground(this, mouseX, mouseY, tickDelta);
         final String title = getTitle().getString();
         draw.drawTextWithShadow(
-            textRenderer, title, width / 2f - textRenderer.getWidth(title) / 2f, 10, 0xFFFFFFFF
+            this.textRenderer, title, width / 2f - this.textRenderer.getWidth(title) / 2f, 10, 0xFFFFFFFF
         );
 
         final boolean compact = compactRows();
@@ -1238,7 +1238,7 @@ public final class WaypointListScreen extends ConfluxScreen {
             final int markerLeft = markerX();
             WaypointMarkerRenderer.draw(
                 draw,
-                textRenderer,
+                this.textRenderer,
                 row.renderEntry(),
                 markerLeft + MARKER_SIZE / 2f,
                 row.y() + ROW_HEIGHT / 2f,
@@ -1247,32 +1247,36 @@ public final class WaypointListScreen extends ConfluxScreen {
                 hovered
             );
             final int maxNameWidth = Math.max(24, nameRight() - nameX());
-            final String name = textRenderer.trimToWidth(row.name(), maxNameWidth);
-            draw.drawTextWithShadow(textRenderer, name, nameX(), row.y() + 4, 0xFFFFFFFF);
-            final String secondary = textRenderer.trimToWidth(row.secondaryText(), maxNameWidth);
-            draw.drawTextWithShadow(textRenderer, secondary, nameX(), row.y() + 15, 0xFFAAAAAA);
+            final String name = this.textRenderer.trimToWidth(row.name(), maxNameWidth);
+            draw.drawTextWithShadow(this.textRenderer, name, nameX(), row.y() + 4, 0xFFFFFFFF);
+            final String secondary = this.textRenderer.trimToWidth(row.secondaryText(), maxNameWidth);
+            draw.drawTextWithShadow(this.textRenderer, secondary, nameX(), row.y() + 15, 0xFFAAAAAA);
             if (!compact) {
-                final String distance = textRenderer.trimToWidth(formatDistance(row.distance()), DIST_WIDTH);
-                draw.drawTextWithShadow(textRenderer, distance, distanceX(), row.y() + 10, 0xFFCCCCCC);
-                final String dimension = textRenderer.trimToWidth(row.dimensionText(), DIM_WIDTH);
-                draw.drawTextWithShadow(textRenderer, dimension, dimensionX(), row.y() + 10, 0xFFCCCCCC);
+                final String distance = this.textRenderer.trimToWidth(formatDistance(row.distance()), DIST_WIDTH);
+                draw.drawTextWithShadow(this.textRenderer, distance, distanceX(), row.y() + 10, 0xFFCCCCCC);
+                //#if MC>=260100
+                //$$ final String dimension = this.font.plainSubstrByWidth(row.dimensionText(), DIM_WIDTH);
+                //#else
+                final String dimension = this.textRenderer.trimToWidth(row.dimensionText(), DIM_WIDTH);
+                //#endif
+                draw.drawTextWithShadow(this.textRenderer, dimension, dimensionX(), row.y() + 10, 0xFFCCCCCC);
             }
         }
         if (rows.isEmpty()) {
-            final String empty = textRenderer.trimToWidth(
+            final String empty = this.textRenderer.trimToWidth(
                 Texts.translatable(emptyKey()).getString(), Math.max(40, contentWidth() - 16)
             );
             draw.drawTextWithShadow(
-                textRenderer, empty, width / 2f - textRenderer.getWidth(empty) / 2f, listTop() + 6, 0xFFAAAAAA
+                this.textRenderer, empty, width / 2f - this.textRenderer.getWidth(empty) / 2f, listTop() + 6, 0xFFAAAAAA
             );
         }
         final WaypointStore store = waypointService.current();
         if (tab == Tab.LOCAL && store != null && !store.persistenceWritable()) {
-            final String readOnly = textRenderer.trimToWidth(
+            final String readOnly = this.textRenderer.trimToWidth(
                 Texts.translatable("confluxmap.screen.waypoints.read_only").getString(), contentWidth()
             );
             draw.drawTextWithShadow(
-                textRenderer, readOnly, width / 2f - textRenderer.getWidth(readOnly) / 2f,
+                this.textRenderer, readOnly, width / 2f - this.textRenderer.getWidth(readOnly) / 2f,
                 height - BOTTOM_MARGIN - 10, 0xFFFF7777
             );
         }
@@ -1336,22 +1340,28 @@ public final class WaypointListScreen extends ConfluxScreen {
             }
             final String count = Integer.toString(dropdownOptionCount(store, option));
             final int textRight = dropdown.x() + dropdown.width() - textRightPadding;
-            final int countWidth = textRenderer.getWidth(count);
-            final String label = textRenderer.trimToWidth(
+            final int countWidth = this.textRenderer.getWidth(count);
+            //#if MC>=260100
+            //$$ final String label = this.font.plainSubstrByWidth(
+            //$$     setDisplayName(option), Math.max(8, textRight - countWidth - GAP - dropdown.x() - 5)
+            //$$ );
+            //#else
+            final String label = this.textRenderer.trimToWidth(
                 setDisplayName(option), Math.max(8, textRight - countWidth - GAP - dropdown.x() - 5)
             );
+            //#endif
             draw.drawTextWithShadow(
-                textRenderer,
+                this.textRenderer,
                 label,
                 dropdown.x() + 5,
-                rowY + (DROPDOWN_ROW_HEIGHT - textRenderer.fontHeight) / 2f,
+                rowY + (DROPDOWN_ROW_HEIGHT - this.textRenderer.fontHeight) / 2f,
                 selected ? 0xFFFFFFFF : 0xFFE0E0E0
             );
             draw.drawTextWithShadow(
-                textRenderer,
+                this.textRenderer,
                 count,
                 textRight - countWidth,
-                rowY + (DROPDOWN_ROW_HEIGHT - textRenderer.fontHeight) / 2f,
+                rowY + (DROPDOWN_ROW_HEIGHT - this.textRenderer.fontHeight) / 2f,
                 0xFFAAAAAA
             );
         }
@@ -1429,14 +1439,14 @@ public final class WaypointListScreen extends ConfluxScreen {
             if (actionIndex > 0) {
                 draw.fill(actionLeft, actionY + 3, actionLeft + 1, actionY + dropdown.actionHeight() - 3, 0xFF101010);
             }
-            final String label = textRenderer.trimToWidth(
+            final String label = this.textRenderer.trimToWidth(
                 dropdownActionLabel(store, actionIndex).getString(), Math.max(8, actionRight - actionLeft - 6)
             );
             draw.drawTextWithShadow(
-                textRenderer,
+                this.textRenderer,
                 label,
-                (actionLeft + actionRight - textRenderer.getWidth(label)) / 2f,
-                actionY + (dropdown.actionHeight() - textRenderer.fontHeight) / 2f,
+                (actionLeft + actionRight - this.textRenderer.getWidth(label)) / 2f,
+                actionY + (dropdown.actionHeight() - this.textRenderer.fontHeight) / 2f,
                 active ? 0xFFFFFFFF : 0xFF777777
             );
         }
@@ -1487,7 +1497,7 @@ public final class WaypointListScreen extends ConfluxScreen {
     }
 
     private Text fitButtonLabel(final Text label, final int buttonWidth) {
-        return Text.of(textRenderer.trimToWidth(label.getString(), Math.max(8, buttonWidth - 8)));
+        return Text.of(this.textRenderer.trimToWidth(label.getString(), Math.max(8, buttonWidth - 8)));
     }
 
     private static String setDisplayName(final String setName) {

@@ -17,7 +17,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-//#if MC>=12111
+//#if MC>=260100
+//$$ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
+//$$ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
+//#elseif MC>=12111
 //$$ import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 //$$ import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 //#elseif MC>=12109
@@ -130,7 +133,12 @@ public final class WaypointWorldRenderer {
     //#endif
 
     public void register() {
-        //#if MC>=12111
+        //#if MC>=260100
+        //$$ // 26.1 moved these into the level package and spelled out that the translucent hook is
+        //$$ // the terrain one.
+        //$$ LevelRenderEvents.BEFORE_TRANSLUCENT_TERRAIN.register(this::renderBeams);
+        //$$ LevelRenderEvents.END_MAIN.register(this::renderHud);
+        //#elseif MC>=12111
         //$$ WorldRenderEvents.BEFORE_TRANSLUCENT.register(this::renderBeams);
         //$$ WorldRenderEvents.END_MAIN.register(this::renderHud);
         //#elseif MC>=12109
@@ -144,7 +152,11 @@ public final class WaypointWorldRenderer {
     //#if MC>=12109 && MC<12111
     //$$ private void renderBeams(final MatrixStack matrices) {
     //#else
+    //#if MC>=260100
+    //$$ private void renderBeams(final LevelRenderContext context) {
+    //#else
     private void renderBeams(final WorldRenderContext context) {
+    //#endif
     //#endif
         if (!config.waypointBeamsEnabled) {
             return;
@@ -165,7 +177,11 @@ public final class WaypointWorldRenderer {
         //#if MC>=12111
         //$$ final Camera camera = client.gameRenderer.getCamera();
         //$$ final Vec3d cameraPos = camera.getCameraPos();
+        //#if MC>=260100
+        //$$ final PoseStack matrices = context.poseStack();
+        //#else
         //$$ final MatrixStack matrices = context.matrices();
+        //#endif
         //#elseif MC>=12109
         //$$ final Camera camera = client.gameRenderer.getCamera();
         //$$ final Vec3d cameraPos = camera.getCameraPos();
@@ -213,7 +229,11 @@ public final class WaypointWorldRenderer {
     //#if MC>=12109 && MC<12111
     //$$ private void renderHud(final MatrixStack matrices) {
     //#else
+    //#if MC>=260100
+    //$$ private void renderHud(final LevelRenderContext context) {
+    //#else
     private void renderHud(final WorldRenderContext context) {
+    //#endif
     //#endif
         if (!config.waypointLabelsEnabled) {
             labelAnimationProgress.clear();
@@ -235,7 +255,11 @@ public final class WaypointWorldRenderer {
         //#if MC>=12111
         //$$ final Camera camera = client.gameRenderer.getCamera();
         //$$ final Vec3d cameraPos = camera.getCameraPos();
+        //#if MC>=260100
+        //$$ final PoseStack matrices = context.poseStack();
+        //#else
         //$$ final MatrixStack matrices = context.matrices();
+        //#endif
         //#elseif MC>=12109
         //$$ final Camera camera = client.gameRenderer.getCamera();
         //$$ final Vec3d cameraPos = camera.getCameraPos();
@@ -544,7 +568,11 @@ public final class WaypointWorldRenderer {
     //#if MC>=12109 && MC<12111
     //$$ private static float tickDelta() {
     //#else
+    //#if MC>=260100
+    //$$ private static float tickDelta(final LevelRenderContext context) {
+    //#else
     private static float tickDelta(final WorldRenderContext context) {
+    //#endif
     //#endif
         //#if MC>=12109
         //$$ return MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(false);

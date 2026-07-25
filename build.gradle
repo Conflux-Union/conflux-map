@@ -1,13 +1,28 @@
 import com.replaymod.gradle.preprocess.Node
 
 plugins {
-    id 'fabric-loom' version '1.15-SNAPSHOT' apply false
-    id 'com.replaymod.preprocess' version 'd452ef7612'
+    id 'net.fabricmc.fabric-loom' version '1.17-SNAPSHOT' apply false
+    id 'net.fabricmc.fabric-loom-remap' version '1.17-SNAPSHOT' apply false
+    id 'com.replaymod.preprocess' version '221276c7d4'
+}
+// Minecraft switched from three-segment (1.21.11) to two-segment (26.1) versions with the 26.x
+// line. Padding a missing patch to 00 keeps both shapes comparable as one integer, so 1.21.11
+// stays 12111 and 26.1 becomes 260100. common.gradle reads this off rootProject rather than
+// carrying a second copy.
+ext.mcVersionOf = { final String version ->
+    final List<String> parts = version.tokenize('.')
+    (parts[0] + parts[1].padLeft(2, '0') + (parts.size() > 2 ? parts[2] : '0').padLeft(2, '0')).toInteger()
 }
 preprocess {
     strictExtraMappings = false
     final ArrayList<Node> versions = []
-    file('versions').eachDir { versions << createNode(it.name, it.name.split(/\./).with { final String[] string -> (string[0] + string[1].padLeft(2, '0') + string[2].padLeft(2, '0')).toInteger() }, '') }
+    file('versions').eachDir { final File dir ->
+        final int mcVersion = mcVersionOf(dir.name)
+        // An unobfuscated version has no intermediary namespace to resolve names through, so its
+        // node carries a null mappings namespace: the link into it applies only the explicit
+        // rename file, and everything else has to come from //#if branches.
+        versions << createNode(dir.name, mcVersion, mcVersion >= 260100 ? null : '')
+    }
     versions.sort { it.mcVersion }
     for (int i = 0; i < versions.size() - 1; ++i) {
         versions[i].link versions[i + 1], file("versions/mapping-${versions[i].project}-${versions[i + 1].project}.txt")
