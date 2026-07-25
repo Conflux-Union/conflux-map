@@ -23,7 +23,13 @@ final class ConfluxScreenRenderTest {
     //$$ void implicitVanillaBackgroundDoesNotCoverCustomContents() throws Exception {
     //$$     final ProbeScreen screen = probeScreen(false);
     //$$
+    //$$     // Spelled per version rather than mapped, same as ConfluxScreen's own override: a rename
+    //$$     // in versions/mapping-*.txt only reaches members resolved on the renamed class itself.
+    //#if MC>=260100
+    //$$     screen.extractRenderState(drawContextWithoutClient(), 0, 0, 0f);
+    //#else
     //$$     screen.render(drawContextWithoutClient(), 0, 0, 0f);
+    //#endif
     //$$
     //$$     assertEquals(0, screen.backgrounds);
     //$$     assertEquals(List.of("contents", "widget", "after"), screen.events);
@@ -33,7 +39,11 @@ final class ConfluxScreenRenderTest {
     //$$ void explicitVanillaBackgroundRendersExactlyOnceBeforeWidgets() throws Exception {
     //$$     final ProbeScreen screen = probeScreen(true);
     //$$
+    //#if MC>=260100
+    //$$     screen.extractRenderState(drawContextWithoutClient(), 0, 0, 0f);
+    //#else
     //$$     screen.render(drawContextWithoutClient(), 0, 0, 0f);
+    //#endif
     //$$
     //#if MC>=12106
     //$$     // Screen.renderWithTooltip already ran it; a second pass would apply the blur twice.

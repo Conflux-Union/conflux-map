@@ -27,6 +27,10 @@ net.minecraft.client.gl.SimpleFramebuffer com.mojang.blaze3d.pipeline.TextureTar
 net.minecraft.client.gui.DrawContext net.minecraft.client.gui.GuiGraphicsExtractor
 net.minecraft.client.gui.ScreenRect net.minecraft.client.gui.navigation.ScreenRectangle
 net.minecraft.client.gui.render.state.GuiRenderState net.minecraft.client.renderer.state.gui.GuiRenderState
+# Yarn splits this interface one level lower than Mojang does: yarn's GuiElementRenderState only
+# carries bounds() (Mojang calls that ScreenArea), and everything a drawable element actually needs
+# lives on SimpleGuiElementRenderState - which is the interface Mojang names GuiElementRenderState.
+net.minecraft.client.gui.render.state.SimpleGuiElementRenderState net.minecraft.client.renderer.state.gui.GuiElementRenderState
 net.minecraft.client.gui.screen.DeathScreen net.minecraft.client.gui.screens.DeathScreen
 net.minecraft.client.gui.screen.Screen net.minecraft.client.gui.screens.Screen
 net.minecraft.client.gui.widget.ButtonWidget net.minecraft.client.gui.components.Button
@@ -149,6 +153,7 @@ net.minecraft.client.gui.screen.Screen render extractRenderState
 net.minecraft.client.gui.screen.Screen renderBackground extractBackground
 net.minecraft.client.gui.widget.ButtonWidget renderWidget extractContents
 net.minecraft.client.gui.widget.ClickableWidget renderWidget extractContents
+net.minecraft.client.gui.render.state.SimpleGuiElementRenderState setupVertices buildVertices
 net.minecraft.fluid.FluidState isIn is
 net.minecraft.block.BlockState getOpacity getLightDampening
 net.minecraft.client.world.ClientWorld getLightLevel getBrightness

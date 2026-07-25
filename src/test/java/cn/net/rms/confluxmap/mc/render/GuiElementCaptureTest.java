@@ -26,6 +26,13 @@ import org.junit.jupiter.api.Test;
  */
 final class GuiElementCaptureTest {
     //#if MC>=12108
+    //$$ /** The one name a mapping file cannot reach: it is read reflectively, not called. */
+    //#if MC>=260100
+    //$$ private static final String VERTEX_METHOD = "addVertex";
+    //#else
+    //$$ private static final String VERTEX_METHOD = "vertex";
+    //#endif
+    //$$
     //$$ @AfterEach
     //$$ void clearGuiState() {
     //$$     RenderUtil.setGuiState(null);
@@ -66,7 +73,7 @@ final class GuiElementCaptureTest {
     //$$ private static List<String> replay(final SimpleGuiElementRenderState element) {
     //$$     final List<String> positions = new ArrayList<>();
     //$$     final InvocationHandler handler = (proxy, method, args) -> {
-    //$$         if ("vertex".equals(method.getName()) && args.length == 3) {
+    //$$         if (VERTEX_METHOD.equals(method.getName()) && args.length == 3) {
     //$$             positions.add(args[0] + "," + args[1]);
     //$$         }
     //$$         return proxy;
@@ -86,8 +93,17 @@ final class GuiElementCaptureTest {
     //$$ private static final class RecordingState extends GuiRenderState {
     //$$     private final List<SimpleGuiElementRenderState> elements = new ArrayList<>();
     //$$
+    //$$     // Spelled per version rather than mapped: a rename in versions/mapping-*.txt only reaches
+    //$$     // members resolved on the renamed class itself, never one overridden in a class of ours.
+    //$$     // The parameter type is the same interface either way - 26.1 is where it is called
+    //$$     // GuiElementRenderState, which is also what the mapped import above resolves to.
+    //#if MC>=260100
+    //$$     @Override
+    //$$     public void addGuiElement(final GuiElementRenderState element) {
+    //#else
     //$$     @Override
     //$$     public void addSimpleElement(final SimpleGuiElementRenderState element) {
+    //#endif
     //$$         assertNotNull(element.bounds(), "an element without bounds is dropped by the game");
     //$$         elements.add(element);
     //$$     }
