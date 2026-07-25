@@ -53,35 +53,110 @@ class LodSamplingTest {
     }
 
     @org.junit.jupiter.api.Test
-    void exactCorrectionDensityDropsWithDisplayedDetail() {
-        final int lod0Cells = sampledSurfaceCells(0);
-        final int lod1Cells = sampledSurfaceCells(1);
-        final int lod2Cells = sampledSurfaceCells(2);
-        final int lod3Cells = sampledSurfaceCells(3);
-        final int lod4Cells = sampledSurfaceCells(4);
-
-        assertEquals(34 * 34, lod0Cells, "LOD0 keeps the densest sparse residual grid");
-        assertEquals(18 * 18, lod1Cells, "LOD1 uses the bounded overview correction budget");
-        assertEquals(18 * 18, lod2Cells, "LOD2 needs only the overview correction budget");
-        assertEquals(lod1Cells, lod2Cells, "LOD2 must use the same screen-space correction budget");
-        assertEquals(lod2Cells, lod3Cells, "LOD3 must use the same screen-space correction budget");
-        assertEquals(lod3Cells, lod4Cells, "LOD4 must use the same screen-space correction budget");
+    void exactCorrectionRunsOnlyWhereItStillBuysTerrainDetail() {
+        assertEquals(34 * 34, sampledSurfaceCells(0), "LOD0 keeps the densest sparse residual grid");
+        assertEquals(18 * 18, sampledSurfaceCells(1), "LOD1 uses the bounded overview correction budget");
+        // From LOD2 up the anchors would sit 64+ blocks apart, where measurement put their
+        // contribution to terrain gradient correlation at +0.001 for roughly a third of a second
+        // per tile. The overview terrain model covers that range on its own now.
+        for (final int lod : new int[] {2, 3, 4}) {
+            assertEquals(
+                0, sampledSurfaceCells(lod),
+                "LOD" + lod + " must not pay for an exact residual grid it cannot use"
+            );
+        }
     }
 
     @org.junit.jupiter.api.Test
-    void fluidBoundaryWorldSpacingGetsCoarserOnlyAsLodIncreases() {
-        int previousStride = 0;
-        for (int lod = 0; lod <= 4; lod++) {
-            final int stride = sampledSurfaceStride(lod);
-            assertTrue(
-                stride > previousStride,
-                "LOD" + lod + " fluid anchors must cover more world blocks than the previous LOD"
+    void onlyLod0ClassifiesFluidFromTheExactAnchorLattice() {
+        assertEquals(8, sampledSurfaceStride(0), "LOD0 keeps the generator's own aquifer answer");
+        // A binary fluid flag sampled every 16 output pixels, interpolated and thresholded, put
+        // scattered inland water on the lattice instead of where it is (measured IoU 0.060 at
+        // LOD4 over swamp). Coarser LODs decide per pixel from the terrain height instead.
+        for (final int lod : new int[] {2, 3, 4}) {
+            assertEquals(
+                0, sampledSurfaceCells(lod),
+                "LOD" + lod + " must not depend on anchor fluid flags"
             );
-            previousStride = stride;
         }
-        assertEquals(8, sampledSurfaceStride(0));
-        assertEquals(32, sampledSurfaceStride(1));
-        assertEquals(256, sampledSurfaceStride(4));
+    }
+
+    /**
+     * Terrain a single block under sea level is land unless its biome says otherwise, so the
+     * threshold cannot simply be "below {@link BaselineDeriver#WATER_LEVEL}" - that over-detects,
+     * flooding dry ground wherever the overview height estimate runs low.
+     */
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2, 3, 4})
+    void coarseLodWaterNeedsTerrainStrictlyUnderTheFluidCeiling(final int lod) {
+        final BaselineGrid justUnderSeaLevel = LodSampling.sample(
+            flatTerrainSampler(BaselineDeriver.WATER_LEVEL - 1), false, lod, 0, 0
+        );
+        assertNotNull(justUnderSeaLevel);
+        assertEquals(
+            0, justUnderSeaLevel.surfaceFlags[BaselineGrid.index(0, 0)],
+            "one block under sea level must stay land on a non-water biome"
+        );
+
+        final BaselineGrid clearlyUnder = LodSampling.sample(
+            flatTerrainSampler(BaselineDeriver.WATER_LEVEL - 2), false, lod, 0, 0
+        );
+        assertNotNull(clearlyUnder);
+        assertEquals(
+            BaselineGrid.SURFACE_FLUID, clearlyUnder.surfaceFlags[BaselineGrid.index(0, 0)],
+            "terrain below the fluid ceiling must resolve to water without any anchor telling it so"
+        );
+    }
+
+    /** Flat terrain at one height, a non-water biome, and no fluid flags of its own. */
+    private static BaselineSampler flatTerrainSampler(final int terrainY) {
+        return new BaselineSampler() {
+            @Override
+            public boolean biomes(final int scale, final int x, final int z, final int w, final int h, final int[] out) {
+                java.util.Arrays.fill(out, RiverStripeFakeSampler.PLAINS);
+                return true;
+            }
+
+            @Override
+            public boolean heights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+                return false;
+            }
+
+            @Override
+            public boolean overviewHeights(
+                final int blockX, final int blockZ, final int w, final int h, final int stride,
+                final int[] outTerrainY
+            ) {
+                java.util.Arrays.fill(outTerrainY, 0, w * h, terrainY);
+                return true;
+            }
+
+            @Override
+            public boolean surfaceColumns(
+                final int blockX, final int blockZ, final int w, final int h, final int stride,
+                final int[] outSolidY, final int[] outFluidY, final int[] outSurfaceY, final int[] outFlags
+            ) {
+                java.util.Arrays.fill(outSolidY, 0, w * h, terrainY);
+                java.util.Arrays.fill(outFluidY, 0, w * h, BaselineGrid.NO_FLUID);
+                java.util.Arrays.fill(outSurfaceY, 0, w * h, terrainY);
+                java.util.Arrays.fill(outFlags, 0, w * h, 0);
+                return true;
+            }
+
+            @Override
+            public boolean surfaceBiomes(
+                final int blockX, final int blockZ, final int w, final int h, final int stride,
+                final int[] terrain, final int[] outBiomeIds
+            ) {
+                java.util.Arrays.fill(outBiomeIds, 0, w * h, RiverStripeFakeSampler.PLAINS);
+                return true;
+            }
+
+            @Override
+            public boolean endHeights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+                return false;
+            }
+        };
     }
 
     @ParameterizedTest
@@ -117,7 +192,13 @@ class LodSamplingTest {
                 final int stride,
                 final int[] outTerrainY
             ) {
-                java.util.Arrays.fill(outTerrainY, 60);
+                for (int zz = 0; zz < h; zz++) {
+                    for (int xx = 0; xx < w; xx++) {
+                        outTerrainY[zz * w + xx] = terrainAt(
+                            blockX + xx * stride, blockZ + zz * stride
+                        );
+                    }
+                }
                 return true;
             }
 
@@ -133,17 +214,23 @@ class LodSamplingTest {
                 final int[] outSurfaceY,
                 final int[] outFlags
             ) {
-                java.util.Arrays.fill(outSolidY, 60);
                 for (int zz = 0; zz < h; zz++) {
                     for (int xx = 0; xx < w; xx++) {
                         final int index = zz * w + xx;
-                        final boolean water = blockX + xx * stride + blockZ + zz * stride <= waterBoundary;
+                        final int solid = terrainAt(blockX + xx * stride, blockZ + zz * stride);
+                        final boolean water = solid < BaselineDeriver.WATER_LEVEL;
+                        outSolidY[index] = solid;
                         outFluidY[index] = water ? BaselineDeriver.WATER_LEVEL : BaselineGrid.NO_FLUID;
-                        outSurfaceY[index] = water ? BaselineDeriver.WATER_LEVEL : outSolidY[index];
+                        outSurfaceY[index] = water ? BaselineDeriver.WATER_LEVEL : solid;
                         outFlags[index] = water ? BaselineGrid.SURFACE_FLUID : 0;
                     }
                 }
                 return true;
+            }
+
+            /** Sub-sea-level basin on one side of a diagonal, dry ground on the other. */
+            private int terrainAt(final int bx, final int bz) {
+                return bx + bz <= waterBoundary ? 55 : 70;
             }
 
             @Override
@@ -738,5 +825,66 @@ class LodSamplingTest {
         assertNotNull(lod4);
         assertEquals(4, lastScale[0], "LOD4 must keep the final 1:4 biome layer instead of cubiomes' coarse scale-16 layer");
         assertNotEquals(lod4.biomeId[BaselineGrid.index(0, 0)], lod4.biomeId[BaselineGrid.index(1, 0)]);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1, 2})
+    void fineLodsSampleOneBiomePerPixelBecauseTheyAlreadyReachTheNativeGrid(final int lod) {
+        final BaselineGrid grid = LodSampling.sample(SAMPLER, false, lod, 0, 0);
+        assertNotNull(grid);
+        assertEquals(BaselineGrid.NO_SUPERSAMPLING, grid.subPerAxis);
+        org.junit.jupiter.api.Assertions.assertFalse(grid.supersampled());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {3, 4})
+    void coarseLodsSupersampleBiomesSoThinFeaturesSurviveBetweenPixelCentres(final int lod) {
+        final BaselineGrid grid = LodSampling.sample(new RiverStripeFakeSampler(1 << lod), false, lod, 0, 0);
+        assertNotNull(grid);
+        assertEquals(2, grid.subPerAxis);
+        assertEquals(4, grid.subCount());
+
+        final int idx = BaselineGrid.index(0, 0);
+        assertEquals(RiverStripeFakeSampler.PLAINS, grid.biomeId[idx], "the pixel centre must still miss the river");
+        assertEquals(0, grid.surfaceFlags[idx], "so the per-pixel classification stays dry land");
+
+        // The sub-sample half a pixel east lands on the stripe and reclassifies as water.
+        assertEquals(RiverStripeFakeSampler.RIVER, grid.subBiomeId[grid.subIndex(idx, 1, 0)]);
+        assertEquals(
+            BaselineGrid.SURFACE_FLUID, grid.subSurfaceFlags[grid.subIndex(idx, 1, 0)],
+            "a river sub-sample below sea level must resolve to fluid even though its pixel did not"
+        );
+        assertEquals(RiverStripeFakeSampler.PLAINS, grid.subBiomeId[grid.subIndex(idx, 0, 0)]);
+        assertEquals(0, grid.subSurfaceFlags[grid.subIndex(idx, 0, 0)]);
+    }
+
+    @org.junit.jupiter.api.Test
+    void endTilesAreNeverSupersampledBecauseTheirBiomesDoNotVaryWithinAPixel() {
+        final BaselineGrid grid = LodSampling.sample(SAMPLER, true, 4, 0, 0);
+        assertNotNull(grid);
+        assertEquals(BaselineGrid.NO_SUPERSAMPLING, grid.subPerAxis);
+    }
+
+    @org.junit.jupiter.api.Test
+    void samplersWithoutSurfaceBiomeSupportFallBackToThePixelBiomeInEverySubSample() {
+        // PositionBasedFakeSampler leaves BaselineSampler#surfaceBiomes at its false default, so
+        // the supersampled fetch cannot run and must degrade to the pre-supersampling behaviour
+        // rather than failing the tile.
+        final BaselineGrid grid = LodSampling.sample(SAMPLER, false, 4, 0, 0);
+        assertNotNull(grid);
+        assertTrue(grid.supersampled());
+        for (int z = 0; z < 4; z++) {
+            for (int x = 0; x < 4; x++) {
+                final int idx = BaselineGrid.index(x, z);
+                for (int sz = 0; sz < 2; sz++) {
+                    for (int sx = 0; sx < 2; sx++) {
+                        assertEquals(
+                            grid.biomeId[idx], grid.subBiomeId[grid.subIndex(idx, sx, sz)],
+                            "sub-sample (" + sx + "," + sz + ") of pixel (" + x + "," + z + ")"
+                        );
+                    }
+                }
+            }
+        }
     }
 }

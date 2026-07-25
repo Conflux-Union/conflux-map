@@ -324,4 +324,113 @@ class PredictionNativeIntegrationTest {
                 + Math.abs(Argb.blue(a) - Argb.blue(b))
         ) / 3;
     }
+
+    /**
+     * Real-generation guard for biome supersampling. At LOD4 one output pixel spans 16 blocks -
+     * wider than a river - so a single lookup per pixel misses most thin features. The
+     * sub-samples must surface biomes the per-pixel grid never sees; if they ever stop doing so,
+     * meandering rivers and shorelines are back to breaking into straight, gappy lines.
+     */
+    @Test
+    void coarseLodSubSamplesFindThinBiomesThePixelCentresMiss() {
+        final NativeBaselineSampler sampler = new NativeBaselineSampler(mc21(), SEED, 0, 0);
+        final BaselineGrid grid = LodSampling.sample(sampler, false, 4, 0, 0);
+        assertNotNull(grid);
+        assertTrue(grid.supersampled(), "LOD4 must supersample biomes");
+
+        int pixelsWhoseSubSamplesDisagree = 0;
+        int subSamplesUnseenAtTheCentre = 0;
+        for (int z = 0; z < BaselineGrid.PIXELS; z++) {
+            for (int x = 0; x < BaselineGrid.PIXELS; x++) {
+                final int idx = BaselineGrid.index(x, z);
+                boolean disagrees = false;
+                for (int sz = 0; sz < grid.subPerAxis; sz++) {
+                    for (int sx = 0; sx < grid.subPerAxis; sx++) {
+                        if (grid.subBiomeId[grid.subIndex(idx, sx, sz)] != grid.biomeId[idx]) {
+                            disagrees = true;
+                            subSamplesUnseenAtTheCentre++;
+                        }
+                    }
+                }
+                if (disagrees) {
+                    pixelsWhoseSubSamplesDisagree++;
+                }
+            }
+        }
+
+        assertTrue(
+            pixelsWhoseSubSamplesDisagree > BaselineGrid.PIXELS * BaselineGrid.PIXELS / 100,
+            "expected a real share of LOD4 pixels to contain a biome their centre misses, got "
+                + pixelsWhoseSubSamplesDisagree + " of " + (BaselineGrid.PIXELS * BaselineGrid.PIXELS)
+        );
+        assertTrue(subSamplesUnseenAtTheCentre > 0);
+    }
+
+    /** Fine LODs already sample at or below the native biome grid, so they must not pay for 4x. */
+    @Test
+    void fineLodsDoNotPayForBiomeSupersampling() {
+        final NativeBaselineSampler sampler = new NativeBaselineSampler(mc21(), SEED, 0, 0);
+        for (final int lod : new int[] {0, 1, 2}) {
+            final BaselineGrid grid = LodSampling.sample(sampler, false, lod, 0, 0);
+            assertNotNull(grid);
+            assertEquals(
+                BaselineGrid.NO_SUPERSAMPLING, grid.subPerAxis,
+                "LOD" + lod + " already reaches the native biome grid"
+            );
+        }
+    }
+
+    /**
+     * Pins the overview terrain estimator against cubiomes' own exact column generation.
+     *
+     * <p>The estimator lives in {@code native/shim/confluxnative.c} and re-derives four helpers
+     * that are {@code static} inside cubiomes' {@code biomenoise.c}. Nothing in the build stops
+     * those from drifting apart when the submodule pin moves, so this measures the estimate
+     * against {@code surfaceColumns}' real generated heights and fails if it stops tracking them.
+     *
+     * <p>Bounds come from measurement: mean absolute error across these spots is ~1.4 blocks (worst
+     * single spot 2.6, in swamp). The noise-free estimator this replaced averaged ~3.2, so the
+     * 2.5-block aggregate bound also catches a silent revert to it, while the per-spot bound of 8
+     * catches outright divergence without being flaky on rough terrain.
+     */
+    @Test
+    void overviewHeightsTrackExactGeneration() {
+        final NativeBaselineSampler sampler = new NativeBaselineSampler(mc21(), SEED, 0, 0);
+        final int[][] spots = {{0, 0}, {5000, -12000}, {-154944, -95552}, {250000, -300000}};
+        final int side = 48;
+        final int cells = side * side;
+        double totalError = 0;
+        int samples = 0;
+        for (final int[] spot : spots) {
+            for (final int stride : new int[] {4, 16}) {
+                final int[] estimated = new int[cells];
+                final int[] solidY = new int[cells];
+                final int[] fluidY = new int[cells];
+                final int[] surfaceY = new int[cells];
+                final int[] flags = new int[cells];
+                assertTrue(sampler.overviewHeights(spot[0], spot[1], side, side, stride, estimated));
+                assertTrue(sampler.surfaceColumns(
+                    spot[0], spot[1], side, side, stride, solidY, fluidY, surfaceY, flags
+                ));
+                double spotError = 0;
+                for (int i = 0; i < cells; i++) {
+                    spotError += Math.abs(estimated[i] - solidY[i]);
+                }
+                final double spotMean = spotError / cells;
+                assertTrue(
+                    spotMean < 8.0,
+                    "overview height diverged from real generation at (" + spot[0] + "," + spot[1]
+                        + ") stride " + stride + ": mean absolute error " + spotMean + " blocks"
+                );
+                totalError += spotError;
+                samples += cells;
+            }
+        }
+        final double mean = totalError / samples;
+        assertTrue(
+            mean < 2.5,
+            "overview height must solve for the 3D terrain noise, not just the offset spline;"
+                + " mean absolute error was " + mean + " blocks"
+        );
+    }
 }

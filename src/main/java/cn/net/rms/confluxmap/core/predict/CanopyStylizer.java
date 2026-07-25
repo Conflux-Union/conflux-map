@@ -96,6 +96,10 @@ public final class CanopyStylizer {
         for (int pz = min; pz <= max; pz++) {
             for (int px = min; px <= max; px++) {
                 final int idx = BaselineGrid.index(px, pz);
+                // Sub-samples run their own biome/kind checks: a forest sub-sample inside a
+                // treeless centre pixel still needs canopy, so this cannot sit behind the
+                // centre pixel's guards below.
+                stylizeSubSamples(derived, grid, seed, idx, px, pz);
                 final SurfaceKind kind = SurfaceKind.byOrdinal(derived.kind[idx]);
                 if (kind == SurfaceKind.WATER || kind == SurfaceKind.ICE || kind == SurfaceKind.VOID) {
                     continue;
@@ -113,6 +117,42 @@ public final class CanopyStylizer {
                 if (bump > 0) {
                     derived.kind[idx] = (byte) SurfaceKind.FOLIAGE.ordinal();
                     derived.surfaceY[idx] += bump;
+                }
+            }
+        }
+    }
+
+    /**
+     * Runs the same per-pixel canopy test on each biome sub-sample. Only reachable at LOD &ge; 2,
+     * where {@link #canopyPoint} is already an independent per-position Bernoulli draw, so a
+     * sub-sample needs nothing but its own world position. Without this the colour average would
+     * blend stylized canopy against unstylized sub-samples of the same forest.
+     */
+    private static void stylizeSubSamples(
+        final DerivedGrid derived, final BaselineGrid grid, final long seed,
+        final int idx, final int px, final int pz
+    ) {
+        if (!grid.supersampled()) {
+            return;
+        }
+        for (int sz = 0; sz < grid.subPerAxis; sz++) {
+            for (int sx = 0; sx < grid.subPerAxis; sx++) {
+                final int s = grid.subIndex(idx, sx, sz);
+                final SurfaceKind subKind = SurfaceKind.byOrdinal(derived.subKind[s]);
+                if (subKind == SurfaceKind.WATER || subKind == SurfaceKind.ICE
+                    || subKind == SurfaceKind.VOID) {
+                    continue;
+                }
+                final double subCover = BiomeTable.get(grid.subBiomeId[s]).treeCover();
+                if (subCover <= 0.0) {
+                    continue;
+                }
+                final int subBump = canopyPoint(
+                    seed, grid.subBlockX(px, sx), grid.subBlockZ(pz, sz), subCover
+                );
+                if (subBump > 0) {
+                    derived.subKind[s] = (byte) SurfaceKind.FOLIAGE.ordinal();
+                    derived.subSurfaceY[s] += subBump;
                 }
             }
         }

@@ -16,46 +16,80 @@ public final class BaselineDeriver {
     }
 
     public static DerivedGrid derive(final BaselineGrid grid) {
-        final DerivedGrid out = new DerivedGrid();
+        final DerivedGrid out = new DerivedGrid(grid.subPerAxis);
         final int n = grid.terrainY.length;
         for (int i = 0; i < n; i++) {
-            final int terrainY = grid.terrainY[i];
-            if (terrainY == BaselineGrid.NO_SURFACE) {
-                out.kind[i] = (byte) SurfaceKind.VOID.ordinal();
-                out.surfaceY[i] = terrainY;
-                out.fluidDepth[i] = 0;
+            final int localX = i % BaselineGrid.SIZE - BaselineGrid.MARGIN;
+            final int localZ = i / BaselineGrid.SIZE - BaselineGrid.MARGIN;
+            deriveColumn(
+                grid.terrainY[i], grid.biomeId[i], grid.baseSurfaceY[i], grid.surfaceFlags[i],
+                grid.blockX(localX), grid.blockZ(localZ),
+                out.kind, out.surfaceY, out.fluidDepth, i
+            );
+            if (!grid.supersampled()) {
                 continue;
             }
-            final BiomeTable.Entry entry = BiomeTable.get(grid.biomeId[i]);
-            final int biomeId = grid.biomeId[i];
-            final boolean resolvedSurface = grid.baseSurfaceY[i] != BaselineGrid.NO_SURFACE;
-            final boolean compatibilityFluid = !resolvedSurface
-                && terrainY < WATER_LEVEL
-                && !BiomeTable.isEnd(biomeId);
-            final int baseSurfaceY = resolvedSurface
-                ? grid.baseSurfaceY[i]
-                : compatibilityFluid ? WATER_LEVEL : terrainY;
-            if ((grid.surfaceFlags[i] & BaselineGrid.SURFACE_FLUID) != 0 || compatibilityFluid) {
-                final boolean coldSurface = entry.kind() == SurfaceKind.ICE || entry.kind() == SurfaceKind.SNOW;
-                final int localX = i % BaselineGrid.SIZE - BaselineGrid.MARGIN;
-                final int localZ = i / BaselineGrid.SIZE - BaselineGrid.MARGIN;
-                final SurfaceKind surface = coldSurface
-                    && FrozenOceanTemperature.freezesAtSeaLevel(biomeId, grid.blockX(localX), grid.blockZ(localZ))
-                    ? SurfaceKind.ICE
-                    : SurfaceKind.WATER;
-                out.kind[i] = (byte) surface.ordinal();
-                out.surfaceY[i] = baseSurfaceY;
-                out.fluidDepth[i] = Math.max(0, Math.min(baseSurfaceY - terrainY, 255));
-            } else {
-                final SurfaceKind kind = entry.kind() == SurfaceKind.LAND
-                    && BiomeTable.hasAltitudeSnow(grid.biomeId[i], baseSurfaceY)
-                    ? SurfaceKind.SNOW
-                    : entry.kind();
-                out.kind[i] = (byte) kind.ordinal();
-                out.surfaceY[i] = baseSurfaceY;
-                out.fluidDepth[i] = 0;
+            for (int sz = 0; sz < grid.subPerAxis; sz++) {
+                for (int sx = 0; sx < grid.subPerAxis; sx++) {
+                    final int s = grid.subIndex(i, sx, sz);
+                    // Terrain height is shared with the pixel centre by design; only the biome and
+                    // the fluid classification that follows from it vary per sub-sample.
+                    deriveColumn(
+                        grid.terrainY[i], grid.subBiomeId[s], grid.subBaseSurfaceY[s],
+                        grid.subSurfaceFlags[s],
+                        grid.subBlockX(localX, sx), grid.subBlockZ(localZ, sz),
+                        out.subKind, out.subSurfaceY, out.subFluidDepth, s
+                    );
+                }
             }
         }
         return out;
+    }
+
+    /** One column's water/land classification, shared by the per-pixel and per-sub-sample passes. */
+    private static void deriveColumn(
+        final int terrainY,
+        final int biomeId,
+        final int rawBaseSurfaceY,
+        final int surfaceFlags,
+        final int blockX,
+        final int blockZ,
+        final byte[] outKind,
+        final int[] outSurfaceY,
+        final int[] outFluidDepth,
+        final int outIndex
+    ) {
+        if (terrainY == BaselineGrid.NO_SURFACE) {
+            outKind[outIndex] = (byte) SurfaceKind.VOID.ordinal();
+            outSurfaceY[outIndex] = terrainY;
+            outFluidDepth[outIndex] = 0;
+            return;
+        }
+        final BiomeTable.Entry entry = BiomeTable.get(biomeId);
+        final boolean resolvedSurface = rawBaseSurfaceY != BaselineGrid.NO_SURFACE;
+        final boolean compatibilityFluid = !resolvedSurface
+            && terrainY < WATER_LEVEL
+            && !BiomeTable.isEnd(biomeId);
+        final int baseSurfaceY = resolvedSurface
+            ? rawBaseSurfaceY
+            : compatibilityFluid ? WATER_LEVEL : terrainY;
+        if ((surfaceFlags & BaselineGrid.SURFACE_FLUID) != 0 || compatibilityFluid) {
+            final boolean coldSurface = entry.kind() == SurfaceKind.ICE || entry.kind() == SurfaceKind.SNOW;
+            final SurfaceKind surface = coldSurface
+                && FrozenOceanTemperature.freezesAtSeaLevel(biomeId, blockX, blockZ)
+                ? SurfaceKind.ICE
+                : SurfaceKind.WATER;
+            outKind[outIndex] = (byte) surface.ordinal();
+            outSurfaceY[outIndex] = baseSurfaceY;
+            outFluidDepth[outIndex] = Math.max(0, Math.min(baseSurfaceY - terrainY, 255));
+        } else {
+            final SurfaceKind kind = entry.kind() == SurfaceKind.LAND
+                && BiomeTable.hasAltitudeSnow(biomeId, baseSurfaceY)
+                ? SurfaceKind.SNOW
+                : entry.kind();
+            outKind[outIndex] = (byte) kind.ordinal();
+            outSurfaceY[outIndex] = baseSurfaceY;
+            outFluidDepth[outIndex] = 0;
+        }
     }
 }

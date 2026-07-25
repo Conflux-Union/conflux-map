@@ -417,16 +417,152 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     return CFX_OK;
 }
 
+/* --- 1.18+ overview terrain height ---------------------------------------
+ *
+ * cubiomes builds a surface by sampling a full density column and searching it
+ * downwards, which costs ~49 3D noise evaluations per 4-block cell - far too
+ * much for a whole tile (measured 37s for one LOD4 tile). The overview instead
+ * inverts the density function analytically.
+ *
+ * Vanilla's pre-cave density along a column is
+ *     depth(y)        = 1 - y/128 + offset + jagged
+ *     initialDensity  = depth*factor, quadrupled where depth > 0
+ *     slopedCheese    = initialDensity + terrainNoise3D(x,y,z)
+ * so the surface (slopedCheese = 0) satisfies
+ *     y = 128 * (1 + offset + jagged + N/factor)
+ * with N the 3D noise and the 4x branch applying below the crossing. N depends
+ * on y, so this iterates to a fixed point; two rounds converge (a third changed
+ * nothing measurably) and the whole thing costs 1-2 noise samples per cell.
+ *
+ * The previous implementation returned the offset spline's zero-crossing alone
+ * (NP_DEPTH at quart Y=0), i.e. the surface you would get if the 3D noise were
+ * identically zero. That reproduces the macro shape but none of the relief, and
+ * left the sparse exact anchors to correct residuals they were far too coarse
+ * to reach: measured against real generation, terrain gradient correlation was
+ * 0.80 at LOD4 and as low as 0.39 in places, and mean height error 3.1 blocks.
+ * Restoring the noise term takes those to 0.86 and 1.4 blocks.
+ *
+ * sampleTerrainParameters, sampleModernTerrainNoise, peaksAndValleys and
+ * maintainPrecisionModern are static inside cubiomes' biomenoise.c, so the
+ * three helpers below re-derive them from public primitives (samplePerlin,
+ * sampleDoublePerlin, getSpline) and the public BiomeNoise/SurfaceNoise
+ * layout - the same approach cfxLegacyOverviewHeight already takes for the
+ * pre-1.18 terrain model. overviewHeightsTrackExactGeneration in
+ * PredictionNativeIntegrationTest pins the result against cubiomes' own exact
+ * column generation, so a submodule bump that changes the noise definitions
+ * fails loudly instead of drifting.
+ */
+static double cfxMaintainPrecision(double value)
+{
+    return value - floor(value / 33554432.0 + 0.5) * 33554432.0;
+}
+
+static float cfxPeaksAndValleys(float weirdness)
+{
+    return -(fabsf(fabsf(weirdness) - 0.6666667F) - 0.33333334F) * 3.0F;
+}
+
+static void cfxTerrainParameters(const BiomeNoise *bn, int cellX, int cellZ, float values[4])
+{
+    double px = cellX;
+    double pz = cellZ;
+    px += sampleDoublePerlin(&bn->climate[NP_SHIFT], cellX, 0, cellZ) * 4.0;
+    pz += sampleDoublePerlin(&bn->climate[NP_SHIFT], cellZ, cellX, 0) * 4.0;
+    const float weirdness = sampleDoublePerlin(&bn->climate[NP_WEIRDNESS], px, 0, pz);
+    values[SP_CONTINENTALNESS] = sampleDoublePerlin(&bn->climate[NP_CONTINENTALNESS], px, 0, pz);
+    values[SP_EROSION] = sampleDoublePerlin(&bn->climate[NP_EROSION], px, 0, pz);
+    values[SP_RIDGES] = cfxPeaksAndValleys(weirdness);
+    values[SP_WEIRDNESS] = weirdness;
+}
+
+static double cfxModernTerrainNoise(const SurfaceNoise *sn, int x, int y, int z)
+{
+    const double scaledXz = 684.412 * sn->xzScale;
+    const double scaledY = 684.412 * sn->yScale;
+    const double dx = x * scaledXz;
+    const double dy = y * scaledY;
+    const double dz = z * scaledXz;
+    const double mainX = dx / sn->xzFactor;
+    const double mainY = dy / sn->yFactor;
+    const double mainZ = dz / sn->xzFactor;
+    const double smearY = scaledY * 8.0;
+    const double mainSmearY = smearY / sn->yFactor;
+    double interpolation = 0.0;
+    double frequency = 1.0;
+    int i;
+
+    for (i = 0; i < 8; i++)
+    {
+        interpolation += samplePerlin(&sn->octmain.octaves[i],
+            cfxMaintainPrecision(mainX * frequency),
+            cfxMaintainPrecision(mainY * frequency),
+            cfxMaintainPrecision(mainZ * frequency),
+            mainSmearY * frequency,
+            mainY * frequency) / frequency;
+        frequency *= 0.5;
+    }
+
+    const double blend = (interpolation / 10.0 + 1.0) * 0.5;
+    double lower = 0.0;
+    double upper = 0.0;
+    frequency = 1.0;
+    for (i = 0; i < 16; i++)
+    {
+        const double sx = cfxMaintainPrecision(dx * frequency);
+        const double sy = cfxMaintainPrecision(dy * frequency);
+        const double sz = cfxMaintainPrecision(dz * frequency);
+        const double yScale = smearY * frequency;
+        if (blend < 1.0)
+            lower += samplePerlin(&sn->octmin.octaves[i],
+                sx, sy, sz, yScale, dy * frequency) / frequency;
+        if (blend > 0.0)
+            upper += samplePerlin(&sn->octmax.octaves[i],
+                sx, sy, sz, yScale, dy * frequency) / frequency;
+        frequency *= 0.5;
+    }
+    return clampedLerp(blend, lower / 512.0, upper / 512.0) / 128.0;
+}
+
+/** Fixed-point rounds solving slopedCheese(y) = 0; 2 converges, 3 adds nothing. */
+#define CFX_OVERVIEW_ITERATIONS 2
+
 static int cfxModernOverviewHeight(const CfxContext *ctx, int x4, int z4)
 {
-    int64_t np[NP_MAX];
-    sampleBiomeNoise(
-        &ctx->g.bn, np, x4, 0, z4, NULL,
-        SAMPLE_NO_BIOME
-    );
-    /* At quart Y=0, NP_DEPTH is the macro terrain zero-crossing in units of
-     * 1/128 block height. Exact sparse columns later correct local residuals. */
-    return (int) floor(128.0 * np[NP_DEPTH] / 10000.0);
+    const BiomeNoise *bn = &ctx->g.bn;
+    float values[4];
+    cfxTerrainParameters(bn, x4, z4, values);
+    const double offset = -0.50375F + getSpline(bn->sp, values);
+    const double factor = getSpline(bn->factorSp, values);
+    const double jaggedness = getSpline(bn->jaggedSp, values);
+    double jagged = sampleDoublePerlin(&bn->jagged, x4 * 4 * 1500.0, 0.0, z4 * 4 * 1500.0);
+    if (jagged < 0.0)
+        jagged *= 0.5;
+    jagged *= jaggedness;
+
+    /* Zero-crossing of the initial density, i.e. the old NP_DEPTH answer. */
+    const double base = 1.0 + offset + jagged;
+    double y = 128.0 * base;
+    if (factor <= 1e-9)
+        return (int) floor(y);
+
+    int i;
+    for (i = 0; i < CFX_OVERVIEW_ITERATIONS; i++)
+    {
+        const double noise = cfxModernTerrainNoise(
+            &bn->terrain, x4 * 4, (int) floor(y), z4 * 4
+        );
+        /* Above the crossing the density slope is factor; below it, 4*factor. */
+        const double above = 128.0 * (base + noise / factor);
+        const double below = 128.0 * (base + noise / (4.0 * factor));
+        const double next = above >= 128.0 * base ? above : below;
+        if (fabs(next - y) < 0.5)
+        {
+            y = next;
+            break;
+        }
+        y = next;
+    }
+    return (int) floor(y);
 }
 
 static int cfxLegacyOverviewHeight(

@@ -11,7 +11,10 @@ package cn.net.rms.confluxmap.core.predict;
  *   <li>LOD0-1: final biomes are sampled at block scale, one lookup per output pixel.
  *   <li>LOD2: final biomes are sampled at native scale 4, one lookup per output pixel.
  *   <li>LOD3-4: scale-4 biomes use a 2-cell or 4-cell stride so every output pixel still maps to
- *       its own world position instead of falling back to a coarser pre-zoom layer.
+ *       its own world position instead of falling back to a coarser pre-zoom layer. Because a
+ *       pixel there spans 8 or 16 blocks - wider than a river - biomes are additionally sampled
+ *       2x2 per pixel and box-filtered by the composer, mirroring how the captured map averages
+ *       finer pixels into a coarse tile. See {@link #BIOME_SUB_PER_AXIS}.
  *   <li>Overworld exact corrections use an 8-pixel stride at LOD0 and 16 at LOD1-4. Nearby
  *       views retain more terrain and shoreline precision while distant views do
  *       not pay for details smaller than an output pixel.
@@ -32,10 +35,52 @@ public final class LodSampling {
     private static final int FLUID_CONFIDENCE_MAX = 256;
     private static final int FLUID_CONFIDENCE_THRESHOLD = FLUID_CONFIDENCE_MAX / 2;
 
+    /**
+     * Highest LOD that still runs the sparse exact residual pass. At LOD0 its 8-block anchor
+     * spacing carries most of the tile's relief (measured terrain gradient correlation 0.25 ->
+     * 0.53) and at LOD1 it still helps a little. From LOD2 up the anchors are 64 blocks apart or
+     * worse and contribute essentially nothing to height - measured correlation gain +0.001 at
+     * LOD2 and +0.001 at LOD4, for ~330ms per tile - so they are simply not run there. The
+     * overview terrain model absorbed that job when it started solving for the 3D noise term.
+     */
+    private static final int MAX_EXACT_RESIDUAL_LOD = 1;
+
+    /**
+     * Highest LOD that classifies fluid from the exact anchors' own aquifer answer. Above it the
+     * anchor lattice is too sparse to place scattered inland water: the flag is binary, sampled
+     * every 16 output pixels (64 blocks at LOD2, 256 at LOD4), bilinearly interpolated and then
+     * thresholded, so a pond lands on the lattice rather than where it actually is. Measured
+     * against real generation over swamp, that mask reached IoU 0.060 at LOD4 and 0.082 at LOD3.
+     * Deciding per pixel from the terrain height instead reaches 0.56-0.88, beating even a
+     * 2-pixel anchor lattice that costs 21x more.
+     *
+     * <p>LOD0 keeps the anchors: at 8-block spacing they are dense, and they answer with the
+     * generator's real aquifer resolution rather than a height threshold.
+     */
+    private static final int MAX_ANCHOR_FLUID_LOD = 0;
+
+    /**
+     * A predicted column with solid terrain below this Y carries water. One block under
+     * {@link BaselineDeriver#WATER_LEVEL}: sweeping the threshold against real generation put the
+     * best intersection-over-union here (0.618 at LOD4 versus 0.556 at sea level itself), because
+     * the overview height is an estimate and sea level is the point where over-detection starts
+     * flooding dry ground.
+     */
+    private static final int PREDICTED_FLUID_CEILING = BaselineDeriver.WATER_LEVEL - 1;
+
     /** Final biome layer used per LOD (cubiomes {@code Range} scale: 1 or 4). */
     private static final int[] BIOME_SCALE = {1, 1, 4, 4, 4};
     /** Native coordinates advanced per output pixel at each LOD. */
     private static final int[] BIOME_STRIDE = {1, 2, 1, 2, 4};
+    /**
+     * Biome sub-samples per axis per output pixel. LOD0-2 already sample at or below the native
+     * 4-block biome grid, so one lookup per pixel loses nothing. LOD3-4 span 8 and 16 blocks, where
+     * a single lookup misses most of a river or shoreline: measured against full 1-block
+     * generation, one sample per pixel retains 69% of thin-feature pixels at LOD3 and 58% at LOD4,
+     * which is what turns a meandering river into a broken, straightened line. 2x2 lifts those to
+     * 88% and 80% for 4x the biome sampling cost; 4x4 would reach 96%/92% at 16x the cost.
+     */
+    private static final int[] BIOME_SUB_PER_AXIS = {1, 1, 1, 2, 2};
 
     private LodSampling() {
     }
@@ -52,7 +97,9 @@ public final class LodSampling {
         final int tileOriginX,
         final int tileOriginZ
     ) {
-        final BaselineGrid grid = new BaselineGrid(lod, tileOriginX, tileOriginZ);
+        final BaselineGrid grid = new BaselineGrid(
+            lod, tileOriginX, tileOriginZ, end ? BaselineGrid.NO_SUPERSAMPLING : BIOME_SUB_PER_AXIS[lod]
+        );
         if (!end) {
             return sampleOverworld(sampler, lod, tileOriginX, tileOriginZ, grid)
                 ? grid
@@ -87,7 +134,10 @@ public final class LodSampling {
             BaselineGrid.SIZE,
             blocksPerPixel,
             grid.terrainY
-        ) || !applyExactResiduals(
+        )) {
+            return false;
+        }
+        if (lod <= MAX_EXACT_RESIDUAL_LOD && !applyExactResiduals(
             sampler, lod, tileOriginX, tileOriginZ, blocksPerPixel, grid,
             fluidConfidence
         )) {
@@ -97,8 +147,59 @@ public final class LodSampling {
             && !sampleBiomes(sampler, lod, tileOriginX, tileOriginZ, grid)) {
             return false;
         }
-        resolveOverviewFluids(grid, fluidConfidence);
+        sampleSubBiomes(sampler, lod, tileOriginX, tileOriginZ, grid);
+        resolveOverviewFluids(grid, lod, fluidConfidence);
         return true;
+    }
+
+    /**
+     * Fills the grid's biome sub-samples. Reuses the same height-aware {@code surfaceBiomes} entry
+     * point as the per-pixel pass, with each sub-sample handed its pixel's centre height, so the
+     * two agree on how a column's biome is chosen and only the sampled position differs.
+     *
+     * <p>Best-effort: a sampler that cannot resolve surface biomes (the interface's default, used
+     * by tests and by non-native samplers) leaves every sub-sample equal to its pixel, which is
+     * exactly the pre-supersampling behaviour.
+     */
+    private static void sampleSubBiomes(
+        final BaselineSampler sampler,
+        final int lod,
+        final int tileOriginX,
+        final int tileOriginZ,
+        final BaselineGrid grid
+    ) {
+        if (!grid.supersampled()) {
+            return;
+        }
+        final int sub = grid.subPerAxis;
+        final int blocksPerPixel = 1 << lod;
+        final int width = BaselineGrid.SIZE * sub;
+        final int cells = width * width;
+        final int[] heights = new int[cells];
+        for (int j = 0; j < width; j++) {
+            final int pixelRow = (j / sub) * BaselineGrid.SIZE;
+            for (int i = 0; i < width; i++) {
+                heights[j * width + i] = grid.terrainY[pixelRow + i / sub];
+            }
+        }
+        final int[] raw = new int[cells];
+        final boolean sampled = sampler.surfaceBiomes(
+            tileOriginX + P_MIN * blocksPerPixel,
+            tileOriginZ + P_MIN * blocksPerPixel,
+            width,
+            width,
+            blocksPerPixel / sub,
+            heights,
+            raw
+        );
+        for (int j = 0; j < width; j++) {
+            for (int i = 0; i < width; i++) {
+                final int pixelIndex = (j / sub) * BaselineGrid.SIZE + i / sub;
+                grid.subBiomeId[grid.subIndex(pixelIndex, i % sub, j % sub)] = sampled
+                    ? raw[j * width + i]
+                    : grid.biomeId[pixelIndex];
+            }
+        }
     }
 
     private static boolean applyExactResiduals(
@@ -221,12 +322,25 @@ public final class LodSampling {
         return (surfaceFlags & BaselineGrid.SURFACE_FLUID) != 0 ? FLUID_CONFIDENCE_MAX : 0;
     }
 
-    private static void resolveOverviewFluids(final BaselineGrid grid, final int[] fluidConfidence) {
+    /**
+     * Classifies each column as water or land. Below {@link #MAX_ANCHOR_FLUID_LOD} that means the
+     * exact anchors' aquifer answer; above it, the column's own terrain height, which is what puts
+     * scattered inland water (swamp ponds most visibly) where it actually is instead of on the
+     * anchor lattice. Either way a water biome below sea level still counts, so rivers narrower
+     * than the terrain estimate can resolve stay visible.
+     */
+    private static void resolveOverviewFluids(
+        final BaselineGrid grid, final int lod, final int[] fluidConfidence
+    ) {
+        final boolean anchorFluid = lod <= MAX_ANCHOR_FLUID_LOD;
         for (int i = 0; i < grid.terrainY.length; i++) {
             final int solidY = grid.terrainY[i];
-            if (solidY < BaselineDeriver.WATER_LEVEL
-                && (fluidConfidence[i] >= FLUID_CONFIDENCE_THRESHOLD
-                    || BiomeTable.get(grid.biomeId[i]).waterBiome())) {
+            final boolean belowSeaLevel = solidY < BaselineDeriver.WATER_LEVEL;
+            final boolean confidentFluid = anchorFluid
+                ? fluidConfidence[i] >= FLUID_CONFIDENCE_THRESHOLD
+                : solidY < PREDICTED_FLUID_CEILING;
+            if (belowSeaLevel
+                && (confidentFluid || BiomeTable.get(grid.biomeId[i]).waterBiome())) {
                 grid.fluidY[i] = BaselineDeriver.WATER_LEVEL;
                 grid.baseSurfaceY[i] = BaselineDeriver.WATER_LEVEL;
                 grid.surfaceFlags[i] = BaselineGrid.SURFACE_FLUID;
@@ -234,6 +348,25 @@ public final class LodSampling {
                 grid.fluidY[i] = BaselineGrid.NO_FLUID;
                 grid.baseSurfaceY[i] = solidY;
                 grid.surfaceFlags[i] = 0;
+            }
+            if (!grid.supersampled()) {
+                continue;
+            }
+            // The height terms are shared with the pixel, so a sub-sample only changes the
+            // outcome through its own biome - which is precisely how a river narrower than the
+            // pixel makes itself visible again.
+            for (int sz = 0; sz < grid.subPerAxis; sz++) {
+                for (int sx = 0; sx < grid.subPerAxis; sx++) {
+                    final int s = grid.subIndex(i, sx, sz);
+                    if (belowSeaLevel
+                        && (confidentFluid || BiomeTable.get(grid.subBiomeId[s]).waterBiome())) {
+                        grid.subBaseSurfaceY[s] = BaselineDeriver.WATER_LEVEL;
+                        grid.subSurfaceFlags[s] = BaselineGrid.SURFACE_FLUID;
+                    } else {
+                        grid.subBaseSurfaceY[s] = solidY;
+                        grid.subSurfaceFlags[s] = 0;
+                    }
+                }
             }
         }
     }
