@@ -74,7 +74,7 @@ final class GuiElementCaptureTest {
     //$$     final VertexConsumer consumer = (VertexConsumer) Proxy.newProxyInstance(
     //$$         VertexConsumer.class.getClassLoader(), new Class<?>[] {VertexConsumer.class}, handler
     //$$     );
-    //#if MC>=12111
+    //#if MC>=12109
     //$$     element.setupVertices(consumer);
     //#else
     //$$     element.setupVertices(consumer, 0f);

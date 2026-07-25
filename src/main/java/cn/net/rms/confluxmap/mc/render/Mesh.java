@@ -391,7 +391,7 @@ public final class Mesh {
     //#if MC>=12109
     //$$     @Override
     //$$     public void setupVertices(final VertexConsumer consumer) {
-    //$$         // 1.21.11 drops the depth argument and offsets the whole batch itself.
+    //$$         // 1.21.9 drops the depth argument and offsets the whole batch itself.
     //$$         emit(consumer, 0f);
     //$$     }
     //#else
