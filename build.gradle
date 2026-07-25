@@ -27,9 +27,17 @@ final List<String> nativeSources = [
     'native/cubiomes/noise.c',
     'native/cubiomes/finders.c',
     'native/cubiomes/terrain_features.c',
+    // finders.c calls struct2str (util.c) on a loot-table error path and
+    // getStrongholdLoot (features/stronghold.c) from getStructureLoot. The shim
+    // never reaches either, but an ELF shared object resolves lazily, so leaving
+    // them undefined turns a stray call into a process-level symbol failure
+    // instead of a C-level error. -Wl,--no-undefined below keeps it that way.
+    'native/cubiomes/util.c',
+    'native/cubiomes/features/stronghold.c',
 ]
 final List<String> nativeCflags = [
     '-shared', '-fPIC', '-O2', '-g0', '-fno-fast-math', '-ffp-contract=off', '-fvisibility=hidden', '-Wall',
+    '-Wl,--no-undefined',
     '-Inative/jni', '-Inative/cubiomes',
 ]
 
