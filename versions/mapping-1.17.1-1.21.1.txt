@@ -1,0 +1,23 @@
+# Extra mappings applied when deriving the 1.21.x sources from the 1.17.1 core project.
+#
+# Only put *pure relocations* here - a class or member that moved or was renamed but kept the
+# same shape. Anything whose signature or semantics changed needs a real `//#if` branch (or a
+# shim in cn.net.rms.confluxmap.compat) instead, because this file cannot express that.
+#
+# Format:
+#   <src.Class> <dst.Class>                       class relocation/rename
+#   <src.Class> <srcMember> <dstMember>           member rename within the same class
+#   <src.Class> <srcMember> <dst.Class> <dstMember>
+
+# 1.19.3 moved the registry classes out of net.minecraft.util.registry.
+net.minecraft.util.registry.RegistryKey net.minecraft.registry.RegistryKey
+
+# 1.19.3 moved the tag classes under net.minecraft.registry.tag.
+net.minecraft.tag.FluidTags net.minecraft.registry.tag.FluidTags
+
+# Note: renames that kept their descriptor (MatrixStack.Entry.getModel -> getPositionMatrix,
+# for one) need no entry here - the preprocessor already matches those automatically through
+# intermediary. Only descriptor-changing or genuinely unrelated names need listing, and a
+# changed descriptor usually means the shape changed too, which belongs in a `//#if` instead.
+# The GameRenderer shader accessors are exactly that case: 1.20 changed both their names and
+# their return type (Shader -> ShaderProgram), so RenderUtil forks them rather than mapping them.

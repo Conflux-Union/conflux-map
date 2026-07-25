@@ -34,7 +34,7 @@
 #include "finders.h"
 #include "terrain_features.h"
 
-#define CFX_ABI 3
+#define CFX_ABI 6
 
 #define CFX_OK              0
 #define CFX_ERR_BAD_HANDLE  1
@@ -50,7 +50,7 @@
 
 typedef struct {
     Generator g;
-    SurfaceNoise sn; /* Overworld: feeds mapApproxHeight. End: feeds mapEndSurfaceHeight. */
+    SurfaceNoise sn; /* Overworld terrain columns and End surface heights. */
     int mc;
     int dim;
 } CfxContext;
@@ -68,6 +68,87 @@ static int cfxValidCells(jint w, jint h) {
 
 static int cfxValidScale(jint scale) {
     return scale == 1 || scale == 4 || scale == 16 || scale == 64 || scale == 256;
+}
+
+static int cfxGenerateBiomes(CfxContext *ctx, int *out, Range r) {
+    if (ctx->dim == DIM_OVERWORLD && ctx->mc >= MC_1_18
+        && (r.scale == 1 || r.scale == 4)) {
+        return mapOverworldSurfaceBiome(
+            out, &ctx->g.bn, ctx->g.sha, r.scale, r.x, r.z, r.sx, r.sz
+        );
+    }
+    return genBiomes(&ctx->g, out, r);
+}
+
+static int cfxGenerateBiomesStrided(
+    CfxContext *ctx, int scale, int x, int z, int w, int h, int stride, int *sampled
+) {
+    const int64_t rawWidth64 = (int64_t) (w - 1) * stride + 1;
+    const int64_t rawHeight64 = (int64_t) (h - 1) * stride + 1;
+    if (rawWidth64 <= 0 || rawWidth64 > CFX_MAX_CELLS
+        || rawHeight64 <= 0 || rawHeight64 > CFX_MAX_CELLS)
+        return CFX_ERR_BAD_SIZE;
+    const int rawWidth = (int) rawWidth64;
+
+    if (scale == 1)
+    {
+        /* The final Voronoi layer is not query-shape invariant for one-row
+         * rectangles, so scale-one sampling must retain the full 2D source. */
+        if (rawWidth64 * rawHeight64 > CFX_MAX_CELLS)
+            return CFX_ERR_BAD_SIZE;
+        const int rawHeight = (int) rawHeight64;
+        const Range r = { scale, x, z, rawWidth, rawHeight, 0, 1 };
+        int *dense = allocCache(&ctx->g, r);
+        if (dense == NULL)
+            return CFX_ERR_ALLOC;
+        const int err = cfxGenerateBiomes(ctx, dense, r);
+        if (err != 0)
+        {
+            free(dense);
+            return CFX_ERR_GENERATION;
+        }
+        int j, i;
+        for (j = 0; j < h; j++)
+            for (i = 0; i < w; i++)
+                sampled[j*w+i] = dense[(j*stride)*rawWidth + i*stride];
+        free(dense);
+        return CFX_OK;
+    }
+
+    int j;
+    for (j = 0; j < h; j++)
+    {
+        const Range r = { scale, x, z + j*stride, rawWidth, 1, 0, 1 };
+        int *row = allocCache(&ctx->g, r);
+        if (row == NULL)
+            return CFX_ERR_ALLOC;
+        const int err = cfxGenerateBiomes(ctx, row, r);
+        if (err != 0)
+        {
+            free(row);
+            return CFX_ERR_GENERATION;
+        }
+        int i;
+        for (i = 0; i < w; i++)
+            sampled[j*w+i] = row[i*stride];
+        free(row);
+    }
+    return CFX_OK;
+}
+
+static int cfxGenerateOverviewBiomes(
+    CfxContext *ctx, int blockX, int blockZ, int w, int h, int blockStride, int *out
+) {
+    if (blockStride < 4)
+        return cfxGenerateBiomesStrided(
+            ctx, 1, blockX, blockZ, w, h, blockStride, out
+        );
+    if (blockStride % 4 != 0)
+        return CFX_ERR_BAD_ARGS;
+    return cfxGenerateBiomesStrided(
+        ctx, 4, floordiv(blockX, 4), floordiv(blockZ, 4),
+        w, h, blockStride / 4, out
+    );
 }
 
 JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxAbi(
@@ -137,7 +218,7 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     if (cache == NULL) {
         return CFX_ERR_ALLOC;
     }
-    const int err = genBiomes(&ctx->g, cache, r);
+    const int err = cfxGenerateBiomes(ctx, cache, r);
     if (err != 0) {
         free(cache);
         return CFX_ERR_GENERATION;
@@ -169,61 +250,16 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
         || (*env)->GetArrayLength(env, out) < w * h) {
         return CFX_ERR_BAD_SIZE;
     }
-    const int rawWidth = (int) rawWidth64;
     int *sampled = malloc(sizeof(int) * (size_t) w * (size_t) h);
     if (sampled == NULL) {
         return CFX_ERR_ALLOC;
     }
-
-    if (scale == 1) {
-        /* The final Voronoi layer is not query-shape invariant for one-row
-         * rectangles: splitting a 2D area into h independent rows can choose
-         * different parent cells and produces horizontal biome stripes. Both
-         * production scale-1 requests fit under the batch cap (258x258 for
-         * LOD0, 515x515 before selecting stride 2 for LOD1), so generate their
-         * full 2D source rectangle before taking the strided cells. */
-        if (rawWidth64 * rawHeight64 > CFX_MAX_CELLS) {
-            free(sampled);
-            return CFX_ERR_BAD_SIZE;
-        }
-        const int rawHeight = (int) rawHeight64;
-        const Range r = { scale, x, z, rawWidth, rawHeight, 0, 1 };
-        int *dense = allocCache(&ctx->g, r);
-        if (dense == NULL) {
-            free(sampled);
-            return CFX_ERR_ALLOC;
-        }
-        const int err = genBiomes(&ctx->g, dense, r);
-        if (err != 0) {
-            free(dense);
-            free(sampled);
-            return CFX_ERR_GENERATION;
-        }
-        for (int j = 0; j < h; j++) {
-            for (int i = 0; i < w; i++) {
-                sampled[j * w + i] = dense[(j * stride) * rawWidth + i * stride];
-            }
-        }
-        free(dense);
-    } else {
-        for (int j = 0; j < h; j++) {
-            const Range r = { scale, x, z + j * stride, rawWidth, 1, 0, 1 };
-            int *row = allocCache(&ctx->g, r);
-            if (row == NULL) {
-                free(sampled);
-                return CFX_ERR_ALLOC;
-            }
-            const int err = genBiomes(&ctx->g, row, r);
-            if (err != 0) {
-                free(row);
-                free(sampled);
-                return CFX_ERR_GENERATION;
-            }
-            for (int i = 0; i < w; i++) {
-                sampled[j * w + i] = row[i * stride];
-            }
-            free(row);
-        }
+    const int err = cfxGenerateBiomesStrided(
+        ctx, scale, x, z, w, h, stride, sampled
+    );
+    if (err != CFX_OK) {
+        free(sampled);
+        return err;
     }
 
     (*env)->SetIntArrayRegion(env, out, 0, w * h, sampled);
@@ -281,6 +317,335 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     free(y);
     free(ids);
     free(iy);
+    return CFX_OK;
+}
+
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxSurfaceColumns(
+    JNIEnv *env, jclass clazz, jlong handle,
+    jint blockX, jint blockZ, jint w, jint h, jint stride,
+    jintArray outSolidY, jintArray outFluidY, jintArray outSurfaceY, jintArray outFlags
+) {
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL) {
+        return CFX_ERR_BAD_HANDLE;
+    }
+    if (ctx->dim != DIM_OVERWORLD) {
+        return CFX_ERR_WRONG_DIM;
+    }
+    if (!cfxValidCells(w, h) || stride <= 0) {
+        return CFX_ERR_BAD_SIZE;
+    }
+    const int64_t lastX = (int64_t) blockX + (int64_t) (w - 1) * stride;
+    const int64_t lastZ = (int64_t) blockZ + (int64_t) (h - 1) * stride;
+    if (lastX < INT32_MIN || lastX > INT32_MAX || lastZ < INT32_MIN || lastZ > INT32_MAX) {
+        return CFX_ERR_BAD_ARGS;
+    }
+    const int cells = w * h;
+    if ((*env)->GetArrayLength(env, outSolidY) < cells
+        || (*env)->GetArrayLength(env, outFluidY) < cells
+        || (*env)->GetArrayLength(env, outSurfaceY) < cells
+        || (*env)->GetArrayLength(env, outFlags) < cells) {
+        return CFX_ERR_BAD_SIZE;
+    }
+
+    int *solidY = malloc(sizeof(int) * (size_t) cells);
+    int *fluidY = malloc(sizeof(int) * (size_t) cells);
+    int *surfaceY = malloc(sizeof(int) * (size_t) cells);
+    int *flags = malloc(sizeof(int) * (size_t) cells);
+    if (solidY == NULL || fluidY == NULL || surfaceY == NULL || flags == NULL) {
+        free(solidY);
+        free(fluidY);
+        free(surfaceY);
+        free(flags);
+        return CFX_ERR_ALLOC;
+    }
+
+    const int minCellX = floordiv(blockX, 4);
+    const int minCellZ = floordiv(blockZ, 4);
+    const int maxCellX = floordiv((int) lastX, 4) + 1;
+    const int maxCellZ = floordiv((int) lastZ, 4) + 1;
+    const int64_t denseColumns = (int64_t) (maxCellX - minCellX + 1)
+        * (int64_t) (maxCellZ - minCellZ + 1);
+    const int64_t sparseColumns = (int64_t) cells * 4;
+    int err = 0;
+    if (denseColumns > sparseColumns)
+    {
+        /* Coarse LOD anchors are deliberately sparse across a large world span. Letting
+         * cubiomes materialize every intervening quart column defeats that sampling budget;
+         * independent 1x1 queries need only the four columns surrounding each visible anchor. */
+        int j, i;
+        for (j = 0; j < h && err == 0; j++)
+        {
+            const int sampleZ = (int) ((int64_t) blockZ + (int64_t) j * stride);
+            for (i = 0; i < w; i++)
+            {
+                const int sampleX = (int) ((int64_t) blockX + (int64_t) i * stride);
+                const int index = j * w + i;
+                err = mapOverworldSurfaceColumns(
+                    solidY + index, fluidY + index, surfaceY + index, flags + index,
+                    &ctx->g, &ctx->sn, sampleX, sampleZ, 1, 1, 1
+                );
+                if (err != 0)
+                    break;
+            }
+        }
+    }
+    else
+    {
+        err = mapOverworldSurfaceColumns(
+            solidY, fluidY, surfaceY, flags, &ctx->g, &ctx->sn,
+            blockX, blockZ, w, h, stride
+        );
+    }
+    if (err != 0) {
+        free(solidY);
+        free(fluidY);
+        free(surfaceY);
+        free(flags);
+        return CFX_ERR_GENERATION;
+    }
+
+    (*env)->SetIntArrayRegion(env, outSolidY, 0, cells, solidY);
+    (*env)->SetIntArrayRegion(env, outFluidY, 0, cells, fluidY);
+    (*env)->SetIntArrayRegion(env, outSurfaceY, 0, cells, surfaceY);
+    (*env)->SetIntArrayRegion(env, outFlags, 0, cells, flags);
+    free(solidY);
+    free(fluidY);
+    free(surfaceY);
+    free(flags);
+    return CFX_OK;
+}
+
+static int cfxModernOverviewHeight(const CfxContext *ctx, int x4, int z4)
+{
+    int64_t np[NP_MAX];
+    sampleBiomeNoise(
+        &ctx->g.bn, np, x4, 0, z4, NULL,
+        SAMPLE_NO_BIOME
+    );
+    /* At quart Y=0, NP_DEPTH is the macro terrain zero-crossing in units of
+     * 1/128 block height. Exact sparse columns later correct local residuals. */
+    return (int) floor(128.0 * np[NP_DEPTH] / 10000.0);
+}
+
+static int cfxLegacyOverviewHeight(
+    const CfxContext *ctx, int biome, int blockX, int blockZ
+) {
+    double biomeDepth, biomeScale;
+    getBiomeDepthAndScale(biome, &biomeDepth, &biomeScale, NULL);
+    (void) biomeScale;
+    const double blendedDepth = ((biomeDepth * 4.0 - 1.0) / 8.0)
+        * (17.0 / 64.0);
+    const double quartX = blockX / 4.0;
+    const double quartZ = blockZ / 4.0;
+    double offset = sampleOctaveAmp(
+        &ctx->sn.octdepth, quartX * 200.0, 10.0, quartZ * 200.0,
+        1.0, 0.0, 1.0
+    );
+    offset *= 65535.0 / 8000.0;
+    if (offset < 0.0)
+        offset *= -0.3;
+    offset = offset * 3.0 - 2.0;
+    if (offset > 1.0)
+        offset = 1.0;
+    offset *= 17.0 / 64.0;
+    const double densityOffset = offset < 0.0
+        ? offset / 28.0
+        : offset / 40.0;
+    return (int) floor(128.0 * (0.53125 + densityOffset + blendedDepth));
+}
+
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxOverviewHeights(
+    JNIEnv *env, jclass clazz, jlong handle,
+    jint blockX, jint blockZ, jint w, jint h, jint stride,
+    jintArray outTerrainY
+) {
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL)
+        return CFX_ERR_BAD_HANDLE;
+    if (ctx->dim != DIM_OVERWORLD)
+        return CFX_ERR_WRONG_DIM;
+    if (!cfxValidCells(w, h) || stride <= 0)
+        return CFX_ERR_BAD_SIZE;
+    const int64_t lastX = (int64_t)blockX + (int64_t)(w-1)*stride;
+    const int64_t lastZ = (int64_t)blockZ + (int64_t)(h-1)*stride;
+    if (lastX < INT32_MIN || lastX > INT32_MAX
+        || lastZ < INT32_MIN || lastZ > INT32_MAX)
+        return CFX_ERR_BAD_ARGS;
+    const int cells = w*h;
+    if ((*env)->GetArrayLength(env, outTerrainY) < cells)
+        return CFX_ERR_BAD_SIZE;
+
+    int *heights = malloc(sizeof(int) * (size_t)cells);
+    if (heights == NULL)
+        return CFX_ERR_ALLOC;
+
+    if (ctx->mc >= MC_1_18)
+    {
+        if (stride < 4)
+        {
+            const int minX4 = floordiv(blockX, 4);
+            const int minZ4 = floordiv(blockZ, 4);
+            const int maxX4 = floordiv((int)lastX, 4) + 1;
+            const int maxZ4 = floordiv((int)lastZ, 4) + 1;
+            const int gridW = maxX4 - minX4 + 1;
+            const int gridH = maxZ4 - minZ4 + 1;
+            int *macro = malloc(sizeof(int) * (size_t)gridW * gridH);
+            if (macro == NULL)
+            {
+                free(heights);
+                return CFX_ERR_ALLOC;
+            }
+            int j, i;
+            for (j = 0; j < gridH; j++)
+                for (i = 0; i < gridW; i++)
+                    macro[j*gridW+i] = cfxModernOverviewHeight(
+                        ctx, minX4+i, minZ4+j
+                    );
+            for (j = 0; j < h; j++)
+            {
+                const int sampleZ = (int)((int64_t)blockZ + (int64_t)j*stride);
+                const int z4 = floordiv(sampleZ, 4);
+                const int fz = sampleZ - z4*4;
+                const int iz = z4 - minZ4;
+                for (i = 0; i < w; i++)
+                {
+                    const int sampleX = (int)((int64_t)blockX + (int64_t)i*stride);
+                    const int x4 = floordiv(sampleX, 4);
+                    const int fx = sampleX - x4*4;
+                    const int ix = x4 - minX4;
+                    const int top = macro[iz*gridW+ix]
+                        + floordiv((macro[iz*gridW+ix+1] - macro[iz*gridW+ix])*fx, 4);
+                    const int bottom = macro[(iz+1)*gridW+ix]
+                        + floordiv((macro[(iz+1)*gridW+ix+1] - macro[(iz+1)*gridW+ix])*fx, 4);
+                    heights[j*w+i] = top + floordiv((bottom-top)*fz, 4);
+                }
+            }
+            free(macro);
+        }
+        else
+        {
+            int j, i;
+            for (j = 0; j < h; j++)
+            {
+                const int sampleZ = (int)((int64_t)blockZ + (int64_t)j*stride);
+                for (i = 0; i < w; i++)
+                {
+                    const int sampleX = (int)((int64_t)blockX + (int64_t)i*stride);
+                    heights[j*w+i] = cfxModernOverviewHeight(
+                        ctx, floordiv(sampleX, 4), floordiv(sampleZ, 4)
+                    );
+                }
+            }
+        }
+    }
+    else
+    {
+        int *biomes = malloc(sizeof(int) * (size_t)cells);
+        if (biomes == NULL)
+        {
+            free(heights);
+            return CFX_ERR_ALLOC;
+        }
+        const int err = cfxGenerateOverviewBiomes(
+            ctx, blockX, blockZ, w, h, stride, biomes
+        );
+        if (err != CFX_OK)
+        {
+            free(biomes);
+            free(heights);
+            return err;
+        }
+        int j, i;
+        for (j = 0; j < h; j++)
+        {
+            const int sampleZ = (int)((int64_t)blockZ + (int64_t)j*stride);
+            for (i = 0; i < w; i++)
+            {
+                const int sampleX = (int)((int64_t)blockX + (int64_t)i*stride);
+                heights[j*w+i] = cfxLegacyOverviewHeight(
+                    ctx, biomes[j*w+i], sampleX, sampleZ
+                );
+            }
+        }
+        free(biomes);
+    }
+
+    (*env)->SetIntArrayRegion(env, outTerrainY, 0, cells, heights);
+    free(heights);
+    return CFX_OK;
+}
+
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxSurfaceBiomes(
+    JNIEnv *env, jclass clazz, jlong handle,
+    jint blockX, jint blockZ, jint w, jint h, jint stride,
+    jintArray terrainYArray, jintArray outBiomeIds
+) {
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL)
+        return CFX_ERR_BAD_HANDLE;
+    if (ctx->dim != DIM_OVERWORLD)
+        return CFX_ERR_WRONG_DIM;
+    if (!cfxValidCells(w, h) || stride <= 0)
+        return CFX_ERR_BAD_SIZE;
+    const int64_t lastX = (int64_t) blockX + (int64_t) (w - 1) * stride;
+    const int64_t lastZ = (int64_t) blockZ + (int64_t) (h - 1) * stride;
+    if (lastX < INT32_MIN || lastX > INT32_MAX || lastZ < INT32_MIN || lastZ > INT32_MAX)
+        return CFX_ERR_BAD_ARGS;
+    const int cells = w * h;
+    if ((*env)->GetArrayLength(env, terrainYArray) < cells
+        || (*env)->GetArrayLength(env, outBiomeIds) < cells)
+        return CFX_ERR_BAD_SIZE;
+
+    int *terrainY = malloc(sizeof(int) * (size_t) cells);
+    int *biomes = malloc(sizeof(int) * (size_t) cells);
+    if (terrainY == NULL || biomes == NULL)
+    {
+        free(terrainY);
+        free(biomes);
+        return CFX_ERR_ALLOC;
+    }
+    if (ctx->mc < MC_1_18)
+    {
+        const int err = cfxGenerateOverviewBiomes(
+            ctx, blockX, blockZ, w, h, stride, biomes
+        );
+        if (err == CFX_OK)
+            (*env)->SetIntArrayRegion(env, outBiomeIds, 0, cells, biomes);
+        free(terrainY);
+        free(biomes);
+        return err;
+    }
+
+    (*env)->GetIntArrayRegion(env, terrainYArray, 0, cells, terrainY);
+    if ((*env)->ExceptionCheck(env))
+    {
+        free(terrainY);
+        free(biomes);
+        return CFX_ERR_BAD_SIZE;
+    }
+
+    int j, i;
+    for (j = 0; j < h; j++)
+    {
+        const int sampleZ = (int) ((int64_t) blockZ + (int64_t) j * stride);
+        for (i = 0; i < w; i++)
+        {
+            const int index = j * w + i;
+            const int sampleX = (int) ((int64_t) blockX + (int64_t) i * stride);
+            const int surface = terrainY[index] < 62 ? 62 : terrainY[index];
+            int x4, y4, z4;
+            voronoiAccess3D(ctx->g.sha, sampleX, surface, sampleZ, &x4, &y4, &z4);
+            biomes[index] = sampleBiomeNoise(&ctx->g.bn, NULL, x4, y4, z4, NULL, 0);
+        }
+    }
+
+    (*env)->SetIntArrayRegion(env, outBiomeIds, 0, cells, biomes);
+    free(terrainY);
+    free(biomes);
     return CFX_OK;
 }
 

@@ -61,6 +61,14 @@ public final class PredictionPalette {
         return sampled != null ? sampled[1] : BiomeTable.get(biomeId).foliageTint();
     }
 
+    /** Canopy color for a FOLIAGE prediction, mirroring {@link #groundColor}'s tinted-or-fixed rule. */
+    public int canopyColor(final int biomeId) {
+        final BiomeTable.Entry entry = BiomeTable.get(biomeId);
+        return entry.foliageTinted()
+            ? Argb.multiply(entry.canopyBase(), foliageTint(biomeId))
+            : entry.canopyBase();
+    }
+
     public int waterTint(final int biomeId) {
         final int[] sampled = tints.get(biomeId);
         return sampled != null ? sampled[2] : BiomeTable.get(biomeId).waterTint();

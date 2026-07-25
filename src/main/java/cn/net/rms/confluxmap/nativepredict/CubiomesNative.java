@@ -61,6 +61,46 @@ final class CubiomesNative {
      */
     static native int cfxHeights(long handle, int x4, int z4, int w, int h, int[] outY, int[] outIds);
 
+    /**
+     * Overworld-only block-scale base columns. Outputs are highest solid Y, highest base-fluid Y
+     * ({@link Integer#MIN_VALUE} when absent), final visible base surface Y, and surface flags.
+     */
+    static native int cfxSurfaceColumns(
+        long handle,
+        int blockX,
+        int blockZ,
+        int w,
+        int h,
+        int stride,
+        int[] outSolidY,
+        int[] outFluidY,
+        int[] outSurfaceY,
+        int[] outFlags
+    );
+
+    /** Version-owned cheap terrain overview, sampled once at every requested output position. */
+    static native int cfxOverviewHeights(
+        long handle,
+        int blockX,
+        int blockZ,
+        int w,
+        int h,
+        int stride,
+        int[] outTerrainY
+    );
+
+    /** Overworld surface biomes using caller-supplied solid terrain heights. */
+    static native int cfxSurfaceBiomes(
+        long handle,
+        int blockX,
+        int blockZ,
+        int w,
+        int h,
+        int stride,
+        int[] terrainY,
+        int[] outBiomeIds
+    );
+
     /** Strided 1:4 Overworld heights; adjacent output cells are {@code stride} native cells apart. */
     static native int cfxHeightsStrided(long handle, int x4, int z4, int w, int h, int stride, int[] outY, int[] outIds);
 
@@ -76,10 +116,11 @@ final class CubiomesNative {
     static native int cfxEndHeightsStrided(long handle, int x4, int z4, int w, int h, int stride, int[] outY);
 
     /**
-     * Overworld-only 1.17.1 natural tree candidates for one chunk. Candidate fields are written
-     * in parallel to the six output arrays and {@code outCount[0]} receives the number written.
-     * Status 7 means cubiomes does not model that biome's decoration pipeline, so callers should
-     * retain their existing synthetic fallback instead of treating the empty output as exact.
+     * Overworld-only natural vegetation candidates for one supported-version chunk. Candidate
+     * fields are written in parallel to the six output arrays and {@code outCount[0]} receives the
+     * number written. Status 7 means cubiomes does not model that biome's decoration pipeline, so
+     * callers should retain their existing synthetic fallback instead of treating the empty output
+     * as exact.
      */
     static native int cfxTreeCandidates(
         long handle, int chunkX, int chunkZ,

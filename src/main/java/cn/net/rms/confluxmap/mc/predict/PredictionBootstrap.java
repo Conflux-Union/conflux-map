@@ -10,6 +10,7 @@ import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
+import cn.net.rms.confluxmap.compat.MinecraftVersion;
 import cn.net.rms.confluxmap.server.FlatWorldBaseline;
 import cn.net.rms.confluxmap.server.WorldPresetDetector;
 import java.util.Optional;
@@ -40,7 +41,7 @@ import net.minecraft.world.World;
  */
 public final class PredictionBootstrap {
     /** This subproject compiles for exactly one Minecraft version; see {@code McVersions} for the worldgen-version string table. */
-    private static final String MC_VERSION_STRING = "1.17.1";
+    private static final String MC_VERSION_STRING = MinecraftVersion.current();
 
     private final MinecraftClient client;
     private final PredictionState state;
@@ -65,7 +66,12 @@ public final class PredictionBootstrap {
         final WorldPreset endPreset;
         final Optional<FlatBaseline> flatBaseline;
         if (singleplayer) {
+            //#if MC>=260100
+            //$$ // 26.1 dropped WorldData.getGeneratorOptions; the seed now hangs off the level itself.
+            //$$ seedOpt = OptionalLong.of(client.getSingleplayerServer().overworld().getSeed());
+            //#else
             seedOpt = OptionalLong.of(client.getServer().getSaveProperties().getGeneratorOptions().getSeed());
+            //#endif
             // The client jar's own worldgen is the only worldgen an integrated server can run.
             worldgenVersion = MC_VERSION_STRING;
             overworldPreset = detectLocal(World.OVERWORLD);

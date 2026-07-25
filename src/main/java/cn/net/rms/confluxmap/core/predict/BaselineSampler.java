@@ -67,6 +67,67 @@ public interface BaselineSampler {
         return true;
     }
 
+    /**
+     * Resolves Overworld base columns at block coordinates. Adjacent output cells are {@code
+     * stride} blocks apart; the four arrays receive the highest solid block, highest base-fluid
+     * block, final visible base surface, and surface flags respectively. Native-backed samplers
+     * override this so fluid ownership stays inside the terrain generator.
+     */
+    default boolean surfaceColumns(
+        final int blockX,
+        final int blockZ,
+        final int w,
+        final int h,
+        final int stride,
+        final int[] outSolidY,
+        final int[] outFluidY,
+        final int[] outSurfaceY,
+        final int[] outFlags
+    ) {
+        return false;
+    }
+
+    /**
+     * Produces a cheap terrain overview at every requested output position. The output layout is
+     * identical for every Minecraft version; native implementations may use the version's own
+     * terrain model internally, but must not change the sampling density or return a coarser grid.
+     * Exact sparse anchors are applied by {@link LodSampling} after this call.
+     */
+    default boolean overviewHeights(
+        final int blockX,
+        final int blockZ,
+        final int w,
+        final int h,
+        final int stride,
+        final int[] outTerrainY
+    ) {
+        final int cells = w * h;
+        final int[] fluid = new int[cells];
+        final int[] surface = new int[cells];
+        final int[] flags = new int[cells];
+        return surfaceColumns(
+            blockX, blockZ, w, h, stride,
+            outTerrainY, fluid, surface, flags
+        );
+    }
+
+    /**
+     * Resolves final Overworld surface biomes at the supplied terrain heights without generating
+     * those heights a second time. Implementations that cannot reuse the height grid return false,
+     * and {@link LodSampling} falls back to {@link #biomesStrided}.
+     */
+    default boolean surfaceBiomes(
+        final int blockX,
+        final int blockZ,
+        final int w,
+        final int h,
+        final int stride,
+        final int[] terrainY,
+        final int[] outBiomeIds
+    ) {
+        return false;
+    }
+
     /** End: floored End surface heights (0 = void) for a w*h rectangle at 1:4 scale. */
     boolean endHeights(int x4, int z4, int w, int h, int[] outY);
 
@@ -88,9 +149,9 @@ public interface BaselineSampler {
     }
 
     /**
-     * Fills {@code out} with the 1.17.1 tree-like decoration candidates for one Overworld chunk.
-     * Returns the number written, {@link #TREES_UNSUPPORTED}, or {@link #TREES_FAILED}. The
-     * default keeps non-native test samplers and other implementations on the synthetic path.
+     * Fills {@code out} with version-specific natural vegetation candidates for one Overworld
+     * chunk. Returns the number written, {@link #TREES_UNSUPPORTED}, or {@link #TREES_FAILED}.
+     * The default keeps non-native test samplers and other implementations on the synthetic path.
      */
     default int treeCandidates(final int chunkX, final int chunkZ, final TreeCandidate[] out) {
         return TREES_UNSUPPORTED;

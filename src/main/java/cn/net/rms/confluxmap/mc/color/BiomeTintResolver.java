@@ -4,6 +4,9 @@ import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.client.MinecraftClient;
+//#if MC>=260100
+//$$ import net.minecraft.client.color.block.BlockTintSource;
+//#endif
 import net.minecraft.client.color.world.BiomeColors;
 import net.minecraft.client.color.world.FoliageColors;
 import net.minecraft.client.world.ClientWorld;
@@ -22,8 +25,13 @@ import net.minecraft.util.math.BlockPos;
  */
 public final class BiomeTintResolver {
     /** §3: fixed reference colors, not biome-sampled at all (matches the base game's own special-casing). */
+    //#if MC>=12104
+    //$$ private static final int SPRUCE_LEAVES_ARGB = 0xFF000000 | FoliageColors.SPRUCE;
+    //$$ private static final int BIRCH_LEAVES_ARGB = 0xFF000000 | FoliageColors.BIRCH;
+    //#else
     private static final int SPRUCE_LEAVES_ARGB = 0xFF000000 | FoliageColors.getSpruceColor();
     private static final int BIRCH_LEAVES_ARGB = 0xFF000000 | FoliageColors.getBirchColor();
+    //#endif
     private static final int NO_TINT = 0xFFFFFFFF;
 
     private final MinecraftClient client;
@@ -52,12 +60,25 @@ public final class BiomeTintResolver {
         }
         // §3/§6: anything outside the fixed set (including modded blocks) still gets probed
         // through the game's own tint provider registry; unregistered blocks report NO_COLOR.
+        //#if MC>=260100
+        //$$ // 26.1 split BlockColors.getColor into a per-tint-index source object, and a block with
+        //$$ // no registered provider has no source at all rather than a blank one - the lookup
+        //$$ // returns null. Vanilla's own ClientLevel probe answers -1 there, which is the same
+        //$$ // NO_COLOR sentinel getColor used to return, so the check below still covers it.
+        //$$ final BlockTintSource tintSource = client.getBlockColors().getTintSource(state, 0);
+        //$$ final int color = tintSource == null ? -1 : tintSource.colorInWorld(state, world, pos);
+        //#else
         final int color = client.getBlockColors().getColor(state, world, pos, 0);
+        //#endif
         return color == -1 ? NO_TINT : (0xFF000000 | color);
     }
 
     private static boolean isWater(final BlockState state) {
+        //#if MC>=260100
+        //$$ return !state.getFluidState().isEmpty() && state.getFluidState().is(FluidTags.WATER);
+        //#else
         return !state.getFluidState().isEmpty() && state.getFluidState().isIn(FluidTags.WATER);
+        //#endif
     }
 
     /** §3: oak/jungle/acacia/dark oak leaves plus vines use the generic foliage function. */

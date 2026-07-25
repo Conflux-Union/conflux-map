@@ -36,6 +36,37 @@ final class PositionBasedFakeSampler implements BaselineSampler {
     }
 
     @Override
+    public boolean surfaceColumns(
+        final int blockX,
+        final int blockZ,
+        final int w,
+        final int h,
+        final int stride,
+        final int[] outSolidY,
+        final int[] outFluidY,
+        final int[] outSurfaceY,
+        final int[] outFlags
+    ) {
+        for (int zz = 0; zz < h; zz++) {
+            for (int xx = 0; xx < w; xx++) {
+                final int index = zz * w + xx;
+                final int solid = heightAt(blockX + xx * stride, blockZ + zz * stride);
+                outSolidY[index] = solid;
+                if (solid < BaselineDeriver.WATER_LEVEL) {
+                    outFluidY[index] = BaselineDeriver.WATER_LEVEL;
+                    outSurfaceY[index] = BaselineDeriver.WATER_LEVEL;
+                    outFlags[index] = BaselineGrid.SURFACE_FLUID;
+                } else {
+                    outFluidY[index] = BaselineGrid.NO_FLUID;
+                    outSurfaceY[index] = solid;
+                    outFlags[index] = 0;
+                }
+            }
+        }
+        return true;
+    }
+
+    @Override
     public boolean endHeights(final int x4, final int z4, final int w, final int h, final int[] outY) {
         fill(x4, z4, w, h, outY);
         return true;

@@ -39,6 +39,17 @@ public final class DaylightModel {
         return changed;
     }
 
+    /**
+     * Whether two factors fall in the same quantization bucket, i.e. whether the
+     * difference between them is below what {@link #update} considers a meaningful
+     * daylight change. Used by the render-side tile re-light (see {@code
+     * mc.render.TileTextureManager}) so an already-uploaded tile is only rewritten
+     * on the same cadence at which resident tiles recompose.
+     */
+    public static boolean sameBucket(final float a, final float b) {
+        return bucketOf(clamp01(a)) == bucketOf(clamp01(b));
+    }
+
     private static int bucketOf(final float f) {
         return Math.round(f * (BUCKETS - 1));
     }

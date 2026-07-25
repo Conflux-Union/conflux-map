@@ -1,11 +1,18 @@
 package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
+//#if MC<11800
 import cn.net.rms.confluxmap.mixin.VanillaLayeredBiomeSourceAccessor;
+//#endif
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.world.biome.source.BiomeSource;
 import net.minecraft.world.biome.source.TheEndBiomeSource;
+//#if MC>=11800
+//$$ import net.minecraft.world.biome.source.MultiNoiseBiomeSource;
+//$$ import net.minecraft.world.biome.source.MultiNoiseBiomeSourceParameterLists;
+//#else
 import net.minecraft.world.biome.source.VanillaLayeredBiomeSource;
+//#endif
 import net.minecraft.world.gen.chunk.ChunkGenerator;
 import net.minecraft.world.gen.chunk.ChunkGeneratorSettings;
 import net.minecraft.world.gen.chunk.DebugChunkGenerator;
@@ -42,6 +49,17 @@ public final class WorldPresetDetector {
             return WorldPreset.CUSTOM;
         }
         final BiomeSource source = generator.getBiomeSource();
+        //#if MC>=11800
+        //$$ if (source instanceof final MultiNoiseBiomeSource multiNoise
+        //$$     && multiNoise.matchesInstance(MultiNoiseBiomeSourceParameterLists.OVERWORLD)) {
+        //$$     if (noise.matchesSettings(ChunkGeneratorSettings.AMPLIFIED)) {
+        //$$         return WorldPreset.AMPLIFIED;
+        //$$     }
+        //$$     return noise.matchesSettings(ChunkGeneratorSettings.LARGE_BIOMES)
+        //$$         ? WorldPreset.LARGE_BIOMES
+        //$$         : WorldPreset.DEFAULT;
+        //$$ }
+        //#else
         if (source instanceof VanillaLayeredBiomeSource) {
             final boolean largeBiomes =
                 ((VanillaLayeredBiomeSourceAccessor) (Object) source).confluxmap$isLargeBiomes();
@@ -51,6 +69,7 @@ public final class WorldPresetDetector {
             }
             return largeBiomes ? WorldPreset.LARGE_BIOMES : WorldPreset.DEFAULT;
         }
+        //#endif
         if (source instanceof TheEndBiomeSource) {
             return WorldPreset.DEFAULT;
         }

@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.gametest;
 
+import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.quality.GeneratedTileComposer;
@@ -13,7 +14,6 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.state.property.Properties;
 import net.minecraft.tag.FluidTags;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.registry.Registry;
 import net.minecraft.world.Heightmap;
 import net.minecraft.world.chunk.WorldChunk;
 
@@ -66,8 +66,13 @@ final class GeneratedWorldTileReader {
         final TileArrays tile
     ) {
         final Heightmap heightmap = chunk.getHeightmap(Heightmap.Type.MOTION_BLOCKING);
+        //#if MC>=260100
+        //$$ final int chunkPixelX = Math.floorMod(chunk.getPos().x(), 16) * 16;
+        //$$ final int chunkPixelZ = Math.floorMod(chunk.getPos().z(), 16) * 16;
+        //#else
         final int chunkPixelX = Math.floorMod(chunk.getPos().x, 16) * 16;
         final int chunkPixelZ = Math.floorMod(chunk.getPos().z, 16) * 16;
+        //#endif
         for (int localZ = 0; localZ < 16; localZ++) {
             for (int localX = 0; localX < 16; localX++) {
                 final int pixelX = chunkPixelX + localX;
@@ -98,9 +103,11 @@ final class GeneratedWorldTileReader {
                 tile.kind()[index] = (byte) surfaceKind.ordinal();
                 tile.fluidDepth()[index] = (byte) fluidDepth(chunk, position, y, surfaceKind);
                 tile.mapColorId()[index] = (byte) visibleMapColorId(chunk, world, position, y, state);
-                tile.biomeId()[index] = world.getRegistryManager()
-                    .get(Registry.BIOME_KEY)
-                    .getRawId(world.getBiome(position));
+                //#if MC>=12100
+                //$$ tile.biomeId()[index] = Regs.biomes(world).getRawId(world.getBiome(position).value());
+                //#else
+                tile.biomeId()[index] = Regs.biomes(world).getRawId(world.getBiome(position));
+                //#endif
             }
         }
     }
@@ -147,7 +154,11 @@ final class GeneratedWorldTileReader {
     }
 
     private static boolean isWaterColumn(final BlockState state) {
+        //#if MC>=260100
+        //$$ return state.getBlock() == Blocks.ICE || state.getFluidState().is(FluidTags.WATER);
+        //#else
         return state.getBlock() == Blocks.ICE || state.getFluidState().isIn(FluidTags.WATER);
+        //#endif
     }
 
     private static SurfaceKind classify(final Block block) {

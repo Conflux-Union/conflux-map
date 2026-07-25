@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.Proto;
@@ -12,6 +13,7 @@ import java.util.List;
 import java.util.function.IntUnaryOperator;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
+import net.minecraft.nbt.NbtString;
 import org.junit.jupiter.api.Test;
 
 class ChunkSummarizerTest {
@@ -34,6 +36,18 @@ class ChunkSummarizerTest {
         assertEquals(13, column.fluidDepth());
 
         assertNoFalseCorrection(chunk);
+        assertModernRootAndPalettedContainersAreSummarized();
+    }
+
+    private static void assertModernRootAndPalettedContainersAreSummarized() {
+        final SummaryCodec.Chunk chunk = new ChunkSummarizer().summarize(modernOceanChunk());
+        final SummaryCodec.Column column = chunk.columns()[0];
+
+        assertTrue(chunk.generated());
+        assertEquals(62, column.surfaceY());
+        assertEquals(SurfaceKind.WATER.ordinal(), column.kind());
+        assertEquals(13, column.fluidDepth());
+        assertEquals(0, column.biomeId());
     }
 
     private static void assertNoFalseCorrection(final SummaryCodec.Chunk chunk) {
@@ -46,11 +60,79 @@ class ChunkSummarizerTest {
         final BaselineGrid baseline = new BaselineGrid();
         Arrays.fill(baseline.biomeId, 0);
         Arrays.fill(baseline.terrainY, 49);
+        Arrays.fill(baseline.fluidY, 62);
+        Arrays.fill(baseline.baseSurfaceY, 62);
+        Arrays.fill(baseline.surfaceFlags, BaselineGrid.SURFACE_FLUID);
 
         final PatchBuilder.Result result = new PatchBuilder().build(summary, 0L, baseline, false);
 
         assertEquals(Proto.PATCH_MODE_UNCHANGED, result.mode());
         assertEquals(0, result.recordCount());
+    }
+
+    @Test
+    void snowLayerAboveTheMotionBlockingSurfaceBecomesTheSnowSurface() {
+        final SummaryCodec.Column column = new ChunkSummarizer()
+            .summarize(snowCoveredChunk("minecraft:snow"))
+            .columns()[0];
+
+        assertEquals(SurfaceKind.SNOW.ordinal(), column.kind());
+        assertEquals(62, column.surfaceY());
+        assertEquals(0, column.fluidDepth());
+    }
+
+    @Test
+    void snowCoverUsesTheResolvedSnowMapColor() {
+        final ChunkSummarizer.MapColorResolver resolver =
+            name -> "minecraft:snow".equals(name) ? 8 : -1;
+        final SummaryCodec.Column column = new ChunkSummarizer(resolver)
+            .summarize(snowCoveredChunk("minecraft:snow"))
+            .columns()[0];
+
+        assertEquals(SurfaceKind.SNOW.ordinal(), column.kind());
+        assertEquals(8, column.mapColorId());
+    }
+
+    @Test
+    void nonSnowCoverAboveTheSurfaceDoesNotReplaceIt() {
+        final SummaryCodec.Column column = new ChunkSummarizer()
+            .summarize(snowCoveredChunk("minecraft:short_grass"))
+            .columns()[0];
+
+        assertEquals(SurfaceKind.LAND.ordinal(), column.kind());
+        assertEquals(61, column.surfaceY());
+    }
+
+    @Test
+    void oceanIceKeepsItsWaterColumnDepth() {
+        final SummaryCodec.Column column = new ChunkSummarizer()
+            .summarize(frozenOceanChunk("minecraft:air"))
+            .columns()[0];
+
+        assertEquals(SurfaceKind.ICE.ordinal(), column.kind());
+        assertEquals(62, column.surfaceY());
+        assertEquals(13, column.fluidDepth());
+    }
+
+    @Test
+    void snowSettledOnOceanIceBecomesSnowButKeepsTheWaterColumn() {
+        final SummaryCodec.Column column = new ChunkSummarizer()
+            .summarize(frozenOceanChunk("minecraft:snow"))
+            .columns()[0];
+
+        assertEquals(SurfaceKind.SNOW.ordinal(), column.kind());
+        assertEquals(63, column.surfaceY());
+        assertEquals(13, column.fluidDepth());
+    }
+
+    @Test
+    void iceOnSolidGroundHasNoFluidColumn() {
+        final SummaryCodec.Column column = new ChunkSummarizer()
+            .summarize(coveredChunk("minecraft:packed_ice", "minecraft:air"))
+            .columns()[0];
+
+        assertEquals(SurfaceKind.ICE.ordinal(), column.kind());
+        assertEquals(0, column.fluidDepth());
     }
 
     @Test
@@ -158,6 +240,133 @@ class ChunkSummarizerTest {
 
         final NbtCompound root = new NbtCompound();
         root.put("Level", level);
+        return root;
+    }
+
+    private static NbtCompound snowCoveredChunk(final String coverBlockName) {
+        return coveredChunk("minecraft:grass_block", coverBlockName);
+    }
+
+    /**
+     * A land column whose surface block (y 61) carries one extra block at y 62 that MOTION_BLOCKING
+     * ignores, exactly like vanilla's collision-less single snow layers.
+     */
+    private static NbtCompound coveredChunk(final String groundBlockName, final String coverBlockName) {
+        final NbtCompound level = new NbtCompound();
+        level.putString("Status", "full");
+        level.putLong("LastUpdate", 100L);
+
+        final NbtCompound heightmaps = new NbtCompound();
+        heightmaps.putLongArray("MOTION_BLOCKING", pack(9, 256, ignored -> 62));
+        level.put("Heightmaps", heightmaps);
+        level.putIntArray("Biomes", new int[1024]);
+
+        final NbtCompound section = new NbtCompound();
+        section.putByte("Y", (byte) 3);
+        final NbtList palette = new NbtList();
+        palette.add(paletteEntry("minecraft:stone"));
+        palette.add(paletteEntry(groundBlockName));
+        palette.add(paletteEntry(coverBlockName));
+        palette.add(paletteEntry("minecraft:air"));
+        section.put("Palette", palette);
+        section.putLongArray("BlockStates", pack(4, 4096, index -> {
+            final int localY = index >>> 8;
+            if (localY < 13) {
+                return 0;
+            }
+            if (localY == 13) {
+                return 1;
+            }
+            return localY == 14 ? 2 : 3;
+        }));
+        final NbtList sections = new NbtList();
+        sections.add(section);
+        level.put("Sections", sections);
+
+        final NbtCompound root = new NbtCompound();
+        root.put("Level", level);
+        return root;
+    }
+
+    /**
+     * A frozen-ocean column: water from y 50 to 61, ice at y 62 (the MOTION_BLOCKING surface),
+     * and an optional cover block at y 63 the heightmap ignores.
+     */
+    private static NbtCompound frozenOceanChunk(final String coverBlockName) {
+        final NbtCompound level = new NbtCompound();
+        level.putString("Status", "full");
+        level.putLong("LastUpdate", 100L);
+
+        final NbtCompound heightmaps = new NbtCompound();
+        heightmaps.putLongArray("MOTION_BLOCKING", pack(9, 256, ignored -> 63));
+        level.put("Heightmaps", heightmaps);
+        level.putIntArray("Biomes", new int[1024]);
+
+        final NbtCompound section = new NbtCompound();
+        section.putByte("Y", (byte) 3);
+        final NbtList palette = new NbtList();
+        palette.add(paletteEntry("minecraft:stone"));
+        palette.add(paletteEntry("minecraft:water"));
+        palette.add(paletteEntry("minecraft:ice"));
+        palette.add(paletteEntry(coverBlockName));
+        palette.add(paletteEntry("minecraft:air"));
+        section.put("Palette", palette);
+        section.putLongArray("BlockStates", pack(4, 4096, index -> {
+            final int localY = index >>> 8;
+            if (localY < 2) {
+                return 0;
+            }
+            if (localY < 14) {
+                return 1;
+            }
+            return localY == 14 ? 2 : 3;
+        }));
+        final NbtList sections = new NbtList();
+        sections.add(section);
+        level.put("Sections", sections);
+
+        final NbtCompound root = new NbtCompound();
+        root.put("Level", level);
+        return root;
+    }
+
+    private static NbtCompound modernOceanChunk() {
+        final NbtCompound root = new NbtCompound();
+        root.putString("Status", "minecraft:full");
+        root.putInt("yPos", -4);
+        root.putLong("LastUpdate", 100L);
+
+        final NbtCompound heightmaps = new NbtCompound();
+        heightmaps.putLongArray("MOTION_BLOCKING", pack(9, 256, ignored -> 127));
+        heightmaps.putLongArray("OCEAN_FLOOR", pack(9, 256, ignored -> 114));
+        root.put("Heightmaps", heightmaps);
+
+        final NbtCompound section = new NbtCompound();
+        section.putByte("Y", (byte) 3);
+        final NbtCompound blockStates = new NbtCompound();
+        final NbtList blockPalette = new NbtList();
+        blockPalette.add(paletteEntry("minecraft:stone"));
+        blockPalette.add(paletteEntry("minecraft:water"));
+        blockPalette.add(paletteEntry("minecraft:air"));
+        blockStates.put("palette", blockPalette);
+        blockStates.putLongArray("data", pack(4, 4096, index -> {
+            final int localY = index >>> 8;
+            if (localY >= 2 && localY <= 14) {
+                return 1;
+            }
+            return localY == 15 ? 2 : 0;
+        }));
+        section.put("block_states", blockStates);
+
+        final NbtCompound biomes = new NbtCompound();
+        final NbtList biomePalette = new NbtList();
+        biomePalette.add(NbtString.of("minecraft:ocean"));
+        biomes.put("palette", biomePalette);
+        section.put("biomes", biomes);
+
+        final NbtList sections = new NbtList();
+        sections.add(section);
+        root.put("sections", sections);
         return root;
     }
 

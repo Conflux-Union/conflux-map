@@ -3,8 +3,11 @@ package cn.net.rms.confluxmap.core.predict;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
+import cn.net.rms.confluxmap.core.util.TileMath;
+import cn.net.rms.confluxmap.core.util.TileViewport;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -18,6 +21,408 @@ import org.junit.jupiter.params.provider.ValueSource;
  */
 class LodSamplingTest {
     private static final PositionBasedFakeSampler SAMPLER = new PositionBasedFakeSampler();
+
+    @org.junit.jupiter.api.Test
+    void reportedFullscreenZoomsPutTheMostExactWorkIntoTheClosestView() {
+        final int screenWidth = 1920;
+        final int screenHeight = 1080;
+        long closestWork = 0L;
+        long scaleTwoWork = 0L;
+        long mostWork = 0L;
+        double mostExpensiveScale = Double.NaN;
+        for (final double scale : new double[] {16.0, 6.0, 3.0, 2.0, 1.0}) {
+            final int lod = TileMath.lodForScale(scale);
+            final TileViewport viewport = TileViewport.covering(
+                0.0, 0.0, screenWidth, screenHeight, scale, lod
+            );
+            final long work = (long) viewport.tileCount() * sampledSurfaceCells(lod);
+            if (work > mostWork) {
+                mostWork = work;
+                mostExpensiveScale = scale;
+            }
+            if (scale == 2.0) {
+                scaleTwoWork = work;
+            } else if (scale == 1.0) {
+                closestWork = work;
+            }
+        }
+
+        assertEquals(1.0, mostExpensiveScale, "the closest view should receive the highest precision budget");
+        assertTrue(scaleTwoWork < closestWork, "scale 2 must not recreate the reported work cliff");
+        assertTrue(mostWork < 100_000L, "sparse exact work must stay bounded across a full HD viewport");
+    }
+
+    @org.junit.jupiter.api.Test
+    void exactCorrectionDensityDropsWithDisplayedDetail() {
+        final int lod0Cells = sampledSurfaceCells(0);
+        final int lod1Cells = sampledSurfaceCells(1);
+        final int lod2Cells = sampledSurfaceCells(2);
+        final int lod3Cells = sampledSurfaceCells(3);
+        final int lod4Cells = sampledSurfaceCells(4);
+
+        assertEquals(34 * 34, lod0Cells, "LOD0 keeps the densest sparse residual grid");
+        assertEquals(18 * 18, lod1Cells, "LOD1 uses the bounded overview correction budget");
+        assertEquals(18 * 18, lod2Cells, "LOD2 needs only the overview correction budget");
+        assertEquals(lod1Cells, lod2Cells, "LOD2 must use the same screen-space correction budget");
+        assertEquals(lod2Cells, lod3Cells, "LOD3 must use the same screen-space correction budget");
+        assertEquals(lod3Cells, lod4Cells, "LOD4 must use the same screen-space correction budget");
+    }
+
+    @org.junit.jupiter.api.Test
+    void fluidBoundaryWorldSpacingGetsCoarserOnlyAsLodIncreases() {
+        int previousStride = 0;
+        for (int lod = 0; lod <= 4; lod++) {
+            final int stride = sampledSurfaceStride(lod);
+            assertTrue(
+                stride > previousStride,
+                "LOD" + lod + " fluid anchors must cover more world blocks than the previous LOD"
+            );
+            previousStride = stride;
+        }
+        assertEquals(8, sampledSurfaceStride(0));
+        assertEquals(32, sampledSurfaceStride(1));
+        assertEquals(256, sampledSurfaceStride(4));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1, 2, 3, 4})
+    void diagonalSwampShoreDoesNotBecomeNearestAnchorRectangles(final int lod) {
+        final int blocksPerPixel = 1 << lod;
+        final int waterBoundary = (BaselineGrid.PIXELS - 1) * blocksPerPixel;
+        final BaselineSampler sampler = new BaselineSampler() {
+            @Override
+            public boolean biomes(
+                final int scale,
+                final int x,
+                final int z,
+                final int w,
+                final int h,
+                final int[] out
+            ) {
+                java.util.Arrays.fill(out, 6);
+                return true;
+            }
+
+            @Override
+            public boolean heights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+                return false;
+            }
+
+            @Override
+            public boolean overviewHeights(
+                final int blockX,
+                final int blockZ,
+                final int w,
+                final int h,
+                final int stride,
+                final int[] outTerrainY
+            ) {
+                java.util.Arrays.fill(outTerrainY, 60);
+                return true;
+            }
+
+            @Override
+            public boolean surfaceColumns(
+                final int blockX,
+                final int blockZ,
+                final int w,
+                final int h,
+                final int stride,
+                final int[] outSolidY,
+                final int[] outFluidY,
+                final int[] outSurfaceY,
+                final int[] outFlags
+            ) {
+                java.util.Arrays.fill(outSolidY, 60);
+                for (int zz = 0; zz < h; zz++) {
+                    for (int xx = 0; xx < w; xx++) {
+                        final int index = zz * w + xx;
+                        final boolean water = blockX + xx * stride + blockZ + zz * stride <= waterBoundary;
+                        outFluidY[index] = water ? BaselineDeriver.WATER_LEVEL : BaselineGrid.NO_FLUID;
+                        outSurfaceY[index] = water ? BaselineDeriver.WATER_LEVEL : outSolidY[index];
+                        outFlags[index] = water ? BaselineGrid.SURFACE_FLUID : 0;
+                    }
+                }
+                return true;
+            }
+
+            @Override
+            public boolean surfaceBiomes(
+                final int blockX,
+                final int blockZ,
+                final int w,
+                final int h,
+                final int stride,
+                final int[] terrainY,
+                final int[] outBiomeIds
+            ) {
+                java.util.Arrays.fill(outBiomeIds, 6);
+                return true;
+            }
+
+            @Override
+            public boolean endHeights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+                return false;
+            }
+        };
+
+        final BaselineGrid grid = LodSampling.sample(sampler, false, lod, 0, 0);
+        assertNotNull(grid);
+        final DerivedGrid derived = BaselineDeriver.derive(grid);
+        int movingRows = 0;
+        int previousBoundary = Integer.MIN_VALUE;
+        for (int z = 0; z < BaselineGrid.PIXELS; z++) {
+            int lastWaterX = -1;
+            for (int x = 0; x < BaselineGrid.PIXELS; x++) {
+                final boolean actualWater = derived.kind[BaselineGrid.index(x, z)] == SurfaceKind.WATER.ordinal();
+                if (actualWater) {
+                    lastWaterX = x;
+                }
+            }
+            movingRows += z > 0 && lastWaterX != previousBoundary ? 1 : 0;
+            previousBoundary = lastWaterX;
+        }
+        assertTrue(
+            movingRows >= 190,
+            "LOD" + lod + " diagonal water boundary moved on only " + movingRows
+                + " rows; nearest-anchor rectangles move at most once per correction cell"
+        );
+    }
+
+    private static int sampledSurfaceCells(final int lod) {
+        return sampledSurface(lod).cells();
+    }
+
+    private static int sampledSurfaceStride(final int lod) {
+        return sampledSurface(lod).stride();
+    }
+
+    private static SampledSurface sampledSurface(final int lod) {
+        final int[] cells = {0};
+        final int[] sampledStride = {0};
+        final BaselineSampler sampler = new BaselineSampler() {
+            @Override
+            public boolean biomes(final int scale, final int x, final int z, final int w, final int h, final int[] out) {
+                java.util.Arrays.fill(out, 1);
+                return true;
+            }
+
+            @Override
+            public boolean heights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+                return false;
+            }
+
+            @Override
+            public boolean surfaceColumns(
+                final int blockX,
+                final int blockZ,
+                final int w,
+                final int h,
+                final int stride,
+                final int[] outSolidY,
+                final int[] outFluidY,
+                final int[] outSurfaceY,
+                final int[] outFlags
+            ) {
+                cells[0] += w * h;
+                sampledStride[0] = stride;
+                java.util.Arrays.fill(outSolidY, 70);
+                java.util.Arrays.fill(outFluidY, BaselineGrid.NO_FLUID);
+                java.util.Arrays.fill(outSurfaceY, 70);
+                java.util.Arrays.fill(outFlags, 0);
+                return true;
+            }
+
+            @Override
+            public boolean overviewHeights(
+                final int blockX,
+                final int blockZ,
+                final int w,
+                final int h,
+                final int stride,
+                final int[] outTerrainY
+            ) {
+                java.util.Arrays.fill(outTerrainY, 70);
+                return true;
+            }
+
+            @Override
+            public boolean endHeights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+                return false;
+            }
+        };
+        assertNotNull(LodSampling.sample(sampler, false, lod, 0, 0));
+        return new SampledSurface(cells[0], sampledStride[0]);
+    }
+
+    private record SampledSurface(int cells, int stride) {
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {3, 4})
+    void coarseLodsKeepOverviewDetailAtEveryOutputPixel(final int lod) {
+        final int outputStride = 1 << lod;
+        final boolean[] sampledFullOverview = {false};
+        final BaselineSampler sampler = new BaselineSampler() {
+            @Override
+            public boolean biomes(final int scale, final int x, final int z, final int w, final int h, final int[] out) {
+                java.util.Arrays.fill(out, 1);
+                return true;
+            }
+
+            @Override
+            public boolean heights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+                return false;
+            }
+
+            @Override
+            public boolean overviewHeights(
+                final int blockX,
+                final int blockZ,
+                final int w,
+                final int h,
+                final int stride,
+                final int[] outTerrainY
+            ) {
+                sampledFullOverview[0] |= w == BaselineGrid.SIZE
+                    && h == BaselineGrid.SIZE
+                    && stride == outputStride;
+                fillAlternatingHeights(blockX, blockZ, w, h, stride, outputStride, outTerrainY);
+                return true;
+            }
+
+            @Override
+            public boolean surfaceColumns(
+                final int blockX,
+                final int blockZ,
+                final int w,
+                final int h,
+                final int stride,
+                final int[] outSolidY,
+                final int[] outFluidY,
+                final int[] outSurfaceY,
+                final int[] outFlags
+            ) {
+                fillAlternatingHeights(blockX, blockZ, w, h, stride, outputStride, outSolidY);
+                System.arraycopy(outSolidY, 0, outSurfaceY, 0, w * h);
+                java.util.Arrays.fill(outFluidY, BaselineGrid.NO_FLUID);
+                java.util.Arrays.fill(outFlags, 0);
+                return true;
+            }
+
+            @Override
+            public boolean surfaceBiomes(
+                final int blockX,
+                final int blockZ,
+                final int w,
+                final int h,
+                final int stride,
+                final int[] terrainY,
+                final int[] outBiomeIds
+            ) {
+                java.util.Arrays.fill(outBiomeIds, 1);
+                return true;
+            }
+
+            @Override
+            public boolean endHeights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+                return false;
+            }
+        };
+
+        final BaselineGrid grid = LodSampling.sample(sampler, false, lod, 0, 0);
+        assertNotNull(grid);
+        assertTrue(sampledFullOverview[0], "the overview must be sampled at every output position");
+        int transitions = 0;
+        for (int x = 1; x < BaselineGrid.PIXELS; x++) {
+            transitions += grid.terrainY[BaselineGrid.index(x, 100)]
+                != grid.terrainY[BaselineGrid.index(x - 1, 100)] ? 1 : 0;
+        }
+        assertEquals(255, transitions, "LOD" + lod + " must not smear overview detail across multiple texels");
+    }
+
+    private static void fillAlternatingHeights(
+        final int blockX,
+        final int blockZ,
+        final int w,
+        final int h,
+        final int stride,
+        final int outputStride,
+        final int[] out
+    ) {
+        for (int z = 0; z < h; z++) {
+            for (int x = 0; x < w; x++) {
+                final int sampleX = blockX + x * stride;
+                final int sampleZ = blockZ + z * stride;
+                out[z * w + x] = 80
+                    + (Math.floorDiv(sampleX, outputStride) & 1)
+                    + (Math.floorDiv(sampleZ, outputStride) & 1);
+            }
+        }
+    }
+
+    @org.junit.jupiter.api.Test
+    void reusableSurfaceBiomesSkipTheDuplicateBiomeGenerationPath() {
+        final boolean[] fallbackBiomesCalled = {false};
+        final boolean[] surfaceBiomesCalled = {false};
+        final BaselineSampler sampler = new BaselineSampler() {
+            @Override
+            public boolean biomes(final int scale, final int x, final int z, final int w, final int h, final int[] out) {
+                fallbackBiomesCalled[0] = true;
+                return false;
+            }
+
+            @Override
+            public boolean heights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+                return false;
+            }
+
+            @Override
+            public boolean surfaceColumns(
+                final int blockX,
+                final int blockZ,
+                final int w,
+                final int h,
+                final int stride,
+                final int[] outSolidY,
+                final int[] outFluidY,
+                final int[] outSurfaceY,
+                final int[] outFlags
+            ) {
+                java.util.Arrays.fill(outSolidY, 80);
+                java.util.Arrays.fill(outFluidY, BaselineGrid.NO_FLUID);
+                java.util.Arrays.fill(outSurfaceY, 80);
+                java.util.Arrays.fill(outFlags, 0);
+                return true;
+            }
+
+            @Override
+            public boolean surfaceBiomes(
+                final int blockX,
+                final int blockZ,
+                final int w,
+                final int h,
+                final int stride,
+                final int[] terrainY,
+                final int[] outBiomeIds
+            ) {
+                surfaceBiomesCalled[0] = true;
+                java.util.Arrays.fill(outBiomeIds, 35);
+                return true;
+            }
+
+            @Override
+            public boolean endHeights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+                return false;
+            }
+        };
+
+        final BaselineGrid grid = LodSampling.sample(sampler, false, 0, 0, 0);
+        assertNotNull(grid);
+        assertTrue(surfaceBiomesCalled[0]);
+        org.junit.jupiter.api.Assertions.assertFalse(fallbackBiomesCalled[0]);
+        assertEquals(35, grid.biomeId[BaselineGrid.index(0, 0)]);
+    }
 
     @ParameterizedTest
     @ValueSource(ints = {0, 1, 2, 3, 4})
@@ -90,6 +495,25 @@ class LodSamplingTest {
             }
 
             @Override
+            public boolean surfaceColumns(
+                final int blockX,
+                final int blockZ,
+                final int w,
+                final int h,
+                final int stride,
+                final int[] outSolidY,
+                final int[] outFluidY,
+                final int[] outSurfaceY,
+                final int[] outFlags
+            ) {
+                java.util.Arrays.fill(outSolidY, 40);
+                java.util.Arrays.fill(outFluidY, BaselineDeriver.WATER_LEVEL);
+                java.util.Arrays.fill(outSurfaceY, BaselineDeriver.WATER_LEVEL);
+                java.util.Arrays.fill(outFlags, BaselineGrid.SURFACE_FLUID);
+                return true;
+            }
+
+            @Override
             public boolean endHeights(final int x4, final int z4, final int w, final int h, final int[] outY) {
                 return false;
             }
@@ -114,6 +538,31 @@ class LodSamplingTest {
                 for (int zz = 0; zz < h; zz++) {
                     for (int xx = 0; xx < w; xx++) {
                         outY[zz * w + xx] = x4 + xx;
+                    }
+                }
+                return true;
+            }
+
+            @Override
+            public boolean surfaceColumns(
+                final int blockX,
+                final int blockZ,
+                final int w,
+                final int h,
+                final int stride,
+                final int[] outSolidY,
+                final int[] outFluidY,
+                final int[] outSurfaceY,
+                final int[] outFlags
+            ) {
+                for (int zz = 0; zz < h; zz++) {
+                    for (int xx = 0; xx < w; xx++) {
+                        final int index = zz * w + xx;
+                        final int solid = Math.floorDiv(blockX + xx * stride, 4);
+                        outSolidY[index] = solid;
+                        outFluidY[index] = BaselineGrid.NO_FLUID;
+                        outSurfaceY[index] = solid;
+                        outFlags[index] = 0;
                     }
                 }
                 return true;
@@ -146,9 +595,9 @@ class LodSamplingTest {
 
     @ParameterizedTest
     @ValueSource(ints = {0, 1, 3, 4})
-    void aggregatedCoastHeightsDoNotRaiseOceanAboveSeaLevel(final int lod) {
+    void overworldSamplingUsesResolvedSurfaceColumnsInsteadOfReconstructingTheWaterline(final int lod) {
         final int coastBlockX = 4 << lod;
-        final int landHeightStartX4 = lod == 3 ? coastBlockX / 4 - 1 : coastBlockX / 4;
+        final boolean[] surfaceColumnsCalled = {false};
         final BaselineSampler coastSampler = new BaselineSampler() {
             @Override
             public boolean biomes(final int scale, final int x, final int z, final int w, final int h, final int[] out) {
@@ -162,9 +611,37 @@ class LodSamplingTest {
 
             @Override
             public boolean heights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+                java.util.Arrays.fill(outY, 100);
+                return true;
+            }
+
+            @Override
+            public boolean surfaceColumns(
+                final int blockX,
+                final int blockZ,
+                final int w,
+                final int h,
+                final int stride,
+                final int[] outSolidY,
+                final int[] outFluidY,
+                final int[] outSurfaceY,
+                final int[] outFlags
+            ) {
+                surfaceColumnsCalled[0] = true;
                 for (int zz = 0; zz < h; zz++) {
                     for (int xx = 0; xx < w; xx++) {
-                        outY[zz * w + xx] = x4 + xx < landHeightStartX4 ? 40 : 100;
+                        final int index = zz * w + xx;
+                        if (blockX + xx * stride < coastBlockX) {
+                            outSolidY[index] = 40;
+                            outFluidY[index] = BaselineDeriver.WATER_LEVEL;
+                            outSurfaceY[index] = BaselineDeriver.WATER_LEVEL;
+                            outFlags[index] = BaselineGrid.SURFACE_FLUID;
+                        } else {
+                            outSolidY[index] = 100;
+                            outFluidY[index] = BaselineGrid.NO_FLUID;
+                            outSurfaceY[index] = 100;
+                            outFlags[index] = 0;
+                        }
                     }
                 }
                 return true;
@@ -178,13 +655,19 @@ class LodSamplingTest {
 
         final BaselineGrid grid = LodSampling.sample(coastSampler, false, lod, 0, 0);
         assertNotNull(grid);
+        org.junit.jupiter.api.Assertions.assertTrue(
+            surfaceColumnsCalled[0],
+            "Overworld sampling must consume cubiomes-resolved base columns"
+        );
         final int oceanEdge = BaselineGrid.index(3, 0);
         assertEquals(0, grid.biomeId[oceanEdge]);
-        assertEquals(
-            BaselineDeriver.WATER_LEVEL - 1,
-            grid.terrainY[oceanEdge],
-            "land height anchors must not lift the final ocean pixel above the waterline at LOD " + lod
+        assertTrue(
+            grid.terrainY[oceanEdge] < BaselineDeriver.WATER_LEVEL,
+            "sparse exact floor interpolation must keep the ocean column below its water surface"
         );
+        assertEquals(BaselineDeriver.WATER_LEVEL, grid.fluidY[oceanEdge]);
+        assertEquals(BaselineDeriver.WATER_LEVEL, grid.baseSurfaceY[oceanEdge]);
+        assertEquals(BaselineGrid.SURFACE_FLUID, grid.surfaceFlags[oceanEdge]);
 
         final DerivedGrid derived = BaselineDeriver.derive(grid);
         assertEquals(
@@ -213,6 +696,25 @@ class LodSamplingTest {
             @Override
             public boolean heights(final int x4, final int z4, final int w, final int h, final int[] outY) {
                 java.util.Arrays.fill(outY, 70);
+                return true;
+            }
+
+            @Override
+            public boolean surfaceColumns(
+                final int blockX,
+                final int blockZ,
+                final int w,
+                final int h,
+                final int stride,
+                final int[] outSolidY,
+                final int[] outFluidY,
+                final int[] outSurfaceY,
+                final int[] outFlags
+            ) {
+                java.util.Arrays.fill(outSolidY, 70);
+                java.util.Arrays.fill(outFluidY, BaselineGrid.NO_FLUID);
+                java.util.Arrays.fill(outSurfaceY, 70);
+                java.util.Arrays.fill(outFlags, 0);
                 return true;
             }
 

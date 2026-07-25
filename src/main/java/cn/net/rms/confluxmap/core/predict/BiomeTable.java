@@ -9,20 +9,20 @@ import java.util.Set;
  * Static per-cubiomes-biome-id data used to turn a raw (biomeId, terrainY) baseline sample
  * into a renderable pixel: which {@link SurfaceKind} the biome renders as when the water rule
  * (see {@link BaselineDeriver}) doesn't apply, whether it counts as oceanic/river, how dense its
- * tree canopy is (see {@link CanopyStylizer}), whether its ground accepts a grass tint, and fallback tint/base
- * colors used until {@code mc.predict.PredictionPaletteBuilder} overwrites the tint fields with
- * real client biome-registry samples (or forever, for a biome id the running client doesn't
- * know about at all).
+ * tree canopy is (see {@link CanopyStylizer}), whether its ground/canopy accept a biome tint, and fallback
+ * tint/base colors used until {@code mc.predict.PredictionPaletteBuilder} overwrites the tint
+ * fields with real client biome-registry samples (or forever, for a biome id the running client
+ * doesn't know about at all). Ground and canopy follow the same shape: a per-biome base color
+ * plus a tinted flag; when the flag is off the base IS the final color, immune to sampling -
+ * that is how surfaces vanilla does not actually paint with the biome's grass/foliage color
+ * (terracotta, mycelium, bare stone, pink cherry leaves) keep their look, since vanilla pins
+ * e.g. badlands grass to a dull olive that would otherwise repaint the whole biome.
  *
  * <p>Ids and dimension/existence rules were read directly off the vendored {@code
  * native/cubiomes/biomes.c} ({@code biomeExists}/{@code isOverworld}/{@code getDimension}/{@code
- * isOceanic}) for {@code MC_1_17_1} (cubiomes version int 21) - not guessed from the changelog.
- * Every id where {@code isOverworld(21, id)} or {@code getDimension(id) == DIM_END} holds true has
- * an entry here (see {@code BiomeTableTest} for the frozen parity list); notably this EXCLUDES
- * {@code mountain_edge} (removed from 1.7+ generation), {@code deep_warm_ocean} (never actually
- * assigned by vanilla's own layers), {@code the_void} (technical/placeholder only), and {@code
- * dripstone_caves}/{@code lush_caves} (their cave-biome-reveal-at-surface layer wasn't added
- * until 1.18, even though the ids already existed in 1.17's enum).
+ * isOceanic}), not guessed from changelogs. Every id generated in the Overworld by any supported
+ * version, plus the End ids, has an entry here (see {@code BiomeTableTest} for the frozen parity
+ * list). Aliases introduced by biome renames reuse their older numeric ids.
  *
  * <p>{@code // tuning data, not behavior}: treeCover values and the exact fallback colors below
  * are approximations the plan explicitly leaves to implementer judgment ("tune later"); nothing
@@ -54,6 +54,8 @@ public final class BiomeTable {
         int groundBase,
         boolean grassTinted,
         int grassTint,
+        int canopyBase,
+        boolean foliageTinted,
         int foliageTint,
         int waterTint
     ) {
@@ -99,6 +101,8 @@ public final class BiomeTable {
             LAND_BASE,
             true,
             DEFAULT_GRASS_TINT,
+            FOLIAGE_BASE,
+            true,
             DEFAULT_FOLIAGE_TINT,
             DEFAULT_WATER_TINT
         );
@@ -123,7 +127,29 @@ public final class BiomeTable {
             LAND_BASE,
             true,
             grassTint,
+            FOLIAGE_BASE,
+            true,
             foliageTint,
+            DEFAULT_WATER_TINT
+        );
+    }
+
+    /**
+     * Land whose real ground is not grass (terracotta, mycelium, bare stone): the given color is
+     * final, never multiplied by the live-sampled grass tint - vanilla's sampled grass color for
+     * these biomes has nothing to do with what their terrain looks like from above.
+     */
+    private static Entry fixedGround(final double treeCover, final int groundColor) {
+        return new Entry(
+            SurfaceKind.LAND,
+            false,
+            treeCover,
+            groundColor,
+            false,
+            NEUTRAL_TINT,
+            FOLIAGE_BASE,
+            true,
+            DEFAULT_FOLIAGE_TINT,
             DEFAULT_WATER_TINT
         );
     }
@@ -136,6 +162,8 @@ public final class BiomeTable {
             LAND_BASE,
             true,
             DEFAULT_GRASS_TINT,
+            FOLIAGE_BASE,
+            true,
             DEFAULT_FOLIAGE_TINT,
             waterTint
         );
@@ -149,6 +177,8 @@ public final class BiomeTable {
             ICE_BASE,
             false,
             DEFAULT_GRASS_TINT,
+            FOLIAGE_BASE,
+            true,
             DEFAULT_FOLIAGE_TINT,
             waterTint
         );
@@ -174,6 +204,9 @@ public final class BiomeTable {
         final int giant_spruce_taiga_hills = 161, modified_gravelly_mountains = 162, shattered_savanna = 163;
         final int shattered_savanna_plateau = 164, eroded_badlands = 165, modified_wooded_badlands_plateau = 166;
         final int modified_badlands_plateau = 167, bamboo_jungle = 168, bamboo_jungle_hills = 169;
+        final int dripstone_caves = 174, lush_caves = 175, meadow = 177, grove = 178;
+        final int snowy_slopes = 179, jagged_peaks = 180, frozen_peaks = 181, stony_peaks = 182;
+        final int deep_dark = 183, mangrove_swamp = 184, cherry_grove = 185, pale_garden = 186;
 
         final int green = DEFAULT_GRASS_TINT;
         final int foliageGreen = DEFAULT_FOLIAGE_TINT;
@@ -192,7 +225,8 @@ public final class BiomeTable {
 
         // Desert (SAND kind, no vegetation).
         put(new Entry(
-            SurfaceKind.SAND, false, 0.0, SAND_BASE, false, NEUTRAL_TINT, foliageGreen, DEFAULT_WATER_TINT
+            SurfaceKind.SAND, false, 0.0, SAND_BASE, false, NEUTRAL_TINT,
+            FOLIAGE_BASE, true, foliageGreen, DEFAULT_WATER_TINT
         ), desert, desert_hills, desert_lakes);
 
         // Mountains: bare rock is sparse, "wooded" variants have real forest cover.
@@ -210,45 +244,92 @@ public final class BiomeTable {
         put(land(0.2, 0xFF6C8E56, 0xFF3B6E3B), taiga, taiga_hills, taiga_mountains);
         put(land(0.4, 0xFF5E8250, 0xFF335F33), giant_tree_taiga, giant_tree_taiga_hills, giant_spruce_taiga, giant_spruce_taiga_hills);
         put(new Entry(
-            SurfaceKind.SNOW, false, 0.2, SNOW_BASE, false, green, 0xFF3B6E3B, DEFAULT_WATER_TINT
+            SurfaceKind.SNOW, false, 0.2, SNOW_BASE, false, green,
+            FOLIAGE_BASE, true, 0xFF3B6E3B, DEFAULT_WATER_TINT
         ), snowy_taiga, snowy_taiga_hills, snowy_taiga_mountains);
 
         // Jungle family.
-        put(land(0.5, 0xFF59C93C, 0xFF44C430), jungle, jungle_hills, modified_jungle, bamboo_jungle, bamboo_jungle_hills);
+        put(land(0.9, 0xFF59C93C, 0xFF44C430), jungle, jungle_hills, modified_jungle, bamboo_jungle, bamboo_jungle_hills);
         put(land(0.3, 0xFF6ED04F, 0xFF44C430), jungle_edge, modified_jungle_edge);
 
         // Savanna family.
         put(land(0.05, 0xFFBFB755, 0xFFAEA53E), savanna, savanna_plateau, shattered_savanna, shattered_savanna_plateau);
 
-        // Badlands/mesa: terracotta look achieved via a warm grassTint over the neutral LAND base
-        // (see this class's javadoc - deliberately not a distinct SurfaceKind).
-        put(land(0.0, 0xFFD8956B, foliageGreen), badlands, badlands_plateau, eroded_badlands, modified_badlands_plateau);
-        put(land(0.15, 0xFFD8956B, foliageGreen), wooded_badlands_plateau, modified_wooded_badlands_plateau);
+        // Badlands/mesa: the ground is red sand/terracotta, whose shared vanilla map color is
+        // ORANGE #D87F33; darkened ~10% like the other kind bases. Fixed, because vanilla pins
+        // badlands grass to a dull olive (#90814D, every supported version) that must not
+        // repaint the terrain (deliberately not a distinct SurfaceKind).
+        final int badlandsGround = 0xFFC2722D;
+        put(fixedGround(0.0, badlandsGround), badlands, badlands_plateau, eroded_badlands, modified_badlands_plateau);
+        put(fixedGround(0.15, badlandsGround), wooded_badlands_plateau, modified_wooded_badlands_plateau);
 
         // Snowy tundra family (SNOW kind, no trees).
         put(new Entry(
-            SurfaceKind.SNOW, false, 0.0, SNOW_BASE, false, green, foliageGreen, DEFAULT_WATER_TINT
+            SurfaceKind.SNOW, false, 0.0, SNOW_BASE, false, green,
+            FOLIAGE_BASE, true, foliageGreen, DEFAULT_WATER_TINT
         ), snowy_tundra, snowy_mountains, ice_spikes);
 
-        // Mushroom fields: mycelium look via grassTint override, same trick as badlands.
-        put(land(0.0, 0xFFAD9EBD, foliageGreen), mushroom_fields, mushroom_field_shore);
+        // Mushroom fields: mycelium ground, vanilla map color PURPLE #7F3FB2 darkened ~10%.
+        put(fixedGround(0.0, 0xFF7238A0), mushroom_fields, mushroom_field_shore);
 
         // Beaches.
         put(new Entry(
-            SurfaceKind.SAND, false, 0.0, SAND_BASE, false, NEUTRAL_TINT, foliageGreen, DEFAULT_WATER_TINT
+            SurfaceKind.SAND, false, 0.0, SAND_BASE, false, NEUTRAL_TINT,
+            FOLIAGE_BASE, true, foliageGreen, DEFAULT_WATER_TINT
         ), beach);
         put(new Entry(
-            SurfaceKind.SNOW, false, 0.0, SNOW_BASE, false, NEUTRAL_TINT, foliageGreen, DEFAULT_WATER_TINT
+            SurfaceKind.SNOW, false, 0.0, SNOW_BASE, false, NEUTRAL_TINT,
+            FOLIAGE_BASE, true, foliageGreen, DEFAULT_WATER_TINT
         ), snowy_beach);
 
-        // Stone shore: bare rock, no grass tint.
-        put(land(0.0, NEUTRAL_TINT, foliageGreen), stone_shore);
+        // Bare rock: stone/gravel map color #707070 darkened ~10%.
+        final int stoneGround = 0xFF656565;
+        put(fixedGround(0.0, stoneGround), stone_shore);
 
         // Swamp: murky tints (including its own water color), sparse trees. Its ponds are not
         // modeled as water since cubiomes' isOceanic/river doesn't cover swamp - see this class's javadoc.
         put(new Entry(
-            SurfaceKind.LAND, false, 0.15, LAND_BASE, true, 0xFF6A7039, 0xFF6A7039, 0xFF617B64
+            SurfaceKind.LAND, false, 0.15, LAND_BASE, true, 0xFF6A7039,
+            FOLIAGE_BASE, true, 0xFF6A7039, 0xFF617B64
         ), swamp, swamp_hills);
+
+        // Modern Overworld biomes. Cave biomes are retained because the 3D biome source may
+        // expose them beside cave openings; surface-oriented sampling normally selects one of
+        // the climate biomes below instead. Their floors are bare stone, not grass.
+        put(fixedGround(0.0, stoneGround), dripstone_caves, deep_dark);
+        put(land(0.12, 0xFF64A84A, 0xFF4FA63A), lush_caves);
+        put(land(0.02, 0xFF83B55B, 0xFF63A947), meadow);
+        put(new Entry(
+            SurfaceKind.SNOW, false, 0.22, SNOW_BASE, false, green,
+            FOLIAGE_BASE, true, 0xFF3B6E3B, DEFAULT_WATER_TINT
+        ), grove);
+        put(new Entry(
+            SurfaceKind.SNOW, false, 0.0, SNOW_BASE, false, green,
+            FOLIAGE_BASE, true, foliageGreen, DEFAULT_WATER_TINT
+        ), snowy_slopes, jagged_peaks, frozen_peaks);
+        put(fixedGround(0.0, stoneGround), stony_peaks);
+        put(new Entry(
+            SurfaceKind.LAND, false, 0.45, LAND_BASE, true, 0xFF6A7039,
+            FOLIAGE_BASE, true, 0xFF4C763C, 0xFF617B64
+        ), mangrove_swamp);
+        // Cherry grove: vanilla does not biome-tint cherry leaves (their pink is baked into the
+        // block, map color PINK #F27FA5 darkened ~10%), so the canopy ignores the sampled
+        // foliage color - which vanilla defines as a plain green for this biome.
+        put(new Entry(
+            SurfaceKind.LAND, false, 0.3, LAND_BASE, true, 0xFF83B55B,
+            0xFFD97294, false, 0xFFD97294, DEFAULT_WATER_TINT
+        ), cherry_grove);
+        // Pale garden: vanilla registers no tint provider for pale oak leaves, so their washed-out
+        // grey is baked into the block exactly like cherry blossom, and the biome's own foliage
+        // colour (#878D76) is only ever applied to the *other* plants growing there. Multiplying it
+        // into FOLIAGE_BASE painted the canopy a dark forest green - the one colour a pale garden
+        // never is. The fixed canopy is the pale-oak-leaves texture average, which is what the
+        // captured map draws for the same block. The ground really is grass block under the litter,
+        // so it keeps the biome's (equally desaturated) grass tint.
+        put(new Entry(
+            SurfaceKind.LAND, false, 0.45, LAND_BASE, true, 0xFF77816E,
+            0xFF747972, false, 0xFF747972, DEFAULT_WATER_TINT
+        ), pale_garden);
 
         // The End: pale end-stone look, no vegetation, never water.
         put(new Entry(
@@ -258,6 +339,8 @@ public final class BiomeTable {
             MapColorTable.argb(2),
             false,
             NEUTRAL_TINT,
+            FOLIAGE_BASE,
+            true,
             foliageGreen,
             DEFAULT_WATER_TINT
         ),

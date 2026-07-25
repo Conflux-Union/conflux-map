@@ -17,6 +17,9 @@ import org.junit.jupiter.api.Test;
 
 /** {@link PredictedTileComposer} determinism, using the pure-Java {@link PositionBasedFakeSampler}. */
 class PredictedTileComposerTest {
+    /** Vanilla map colour GRASS - the id a grass block reports in every biome. */
+    private static final int GRASS_MAP_COLOR = 1;
+
     private static int[] composeTile(final long seed, final int lod, final int tileOriginX, final int tileOriginZ) {
         final PositionBasedFakeSampler sampler = new PositionBasedFakeSampler();
         final BaselineGrid grid = LodSampling.sample(sampler, false, lod, tileOriginX, tileOriginZ);
@@ -63,14 +66,14 @@ class PredictedTileComposerTest {
         assertEquals(
             ShadingPipeline.applyShade(
                 paletteColor,
-                ShadingPipeline.heightShade(48, ShadingPipeline.REFERENCE_HEIGHT, false)
+                ShadingPipeline.heightShade(48, ShadingPipeline.REFERENCE_HEIGHT, true)
             ),
             lowPlateau
         );
         assertEquals(
             ShadingPipeline.applyShade(
                 paletteColor,
-                ShadingPipeline.heightShade(160, ShadingPipeline.REFERENCE_HEIGHT, false)
+                ShadingPipeline.heightShade(160, ShadingPipeline.REFERENCE_HEIGHT, true)
             ),
             highPlateau
         );
@@ -214,6 +217,9 @@ class PredictedTileComposerTest {
         final BaselineGrid grid = new BaselineGrid();
         Arrays.fill(grid.biomeId, 1);
         Arrays.fill(grid.terrainY, BaselineDeriver.WATER_LEVEL - 4);
+        Arrays.fill(grid.fluidY, BaselineDeriver.WATER_LEVEL);
+        Arrays.fill(grid.baseSurfaceY, BaselineDeriver.WATER_LEVEL);
+        Arrays.fill(grid.surfaceFlags, BaselineGrid.SURFACE_FLUID);
         grid.biomeId[BaselineGrid.index(6, 6)] = 6;
         final DerivedGrid derived = BaselineDeriver.derive(grid);
         final PredictionPalette palette = PredictionPalette.defaults();
@@ -313,10 +319,91 @@ class PredictedTileComposerTest {
         assertEquals(
             ShadingPipeline.applyShade(
                 MapColorTable.argb(11),
-                ShadingPipeline.heightShade(79, ShadingPipeline.REFERENCE_HEIGHT, false)
+                ShadingPipeline.heightShade(79, ShadingPipeline.REFERENCE_HEIGHT, true)
             ),
             corrected[pixel],
             "player-built stone must remain visible through predicted canopy"
+        );
+    }
+
+    @Test
+    void superflatGrassUsesTheBiomePaletteInsteadOfTheFlatMapColor() {
+        // A classic-flat overworld declares map color GRASS for every pixel. Painting that
+        // literally put vanilla's one fixed green (#7FB238) next to the captured map's
+        // biome-tinted grass, so the underlay and the explored map never lined up.
+        final int plains = 1;
+        final PredictionPalette palette = PredictionPalette.fromSamples(Map.of(
+            plains, new int[] {0xFF91BD59, 0xFF77AB2F, 0xFF3F76E4}
+        ));
+        final int surfaceY = -61;
+        final int[] pixels = composeUniformFlat(plains, surfaceY, GRASS_MAP_COLOR, palette);
+
+        assertEquals(
+            ShadingPipeline.applyShade(
+                palette.groundColor(plains),
+                ShadingPipeline.heightShade(surfaceY, ShadingPipeline.REFERENCE_HEIGHT, true)
+            ),
+            pixels[10 * 256 + 10]
+        );
+    }
+
+    @Test
+    void superflatStoneStillPaintsItsLiteralMapColor() {
+        final int plains = 1;
+        final int surfaceY = -61;
+        final int stoneMapColor = 11;
+        final int[] pixels = composeUniformFlat(plains, surfaceY, stoneMapColor, PredictionPalette.defaults());
+
+        assertEquals(
+            ShadingPipeline.applyShade(
+                MapColorTable.argb(stoneMapColor),
+                ShadingPipeline.heightShade(surfaceY, ShadingPipeline.REFERENCE_HEIGHT, true)
+            ),
+            pixels[10 * 256 + 10],
+            "a non-tinted block's map color remains the best stand-in for it"
+        );
+    }
+
+    @Test
+    void aGrassCorrectionMatchesThePredictedGroundAroundIt() {
+        final int plains = 1;
+        final BaselineGrid grid = new BaselineGrid();
+        final DerivedGrid derived = new DerivedGrid();
+        Arrays.fill(grid.biomeId, plains);
+        Arrays.fill(derived.kind, (byte) SurfaceKind.LAND.ordinal());
+        Arrays.fill(derived.surfaceY, 70);
+        final int pixel = 24 * 256 + 12;
+        final PredictionPalette palette = PredictionPalette.fromSamples(Map.of(
+            plains, new int[] {0xFF91BD59, 0xFF77AB2F, 0xFF3F76E4}
+        ));
+        final int[] baseline = PredictedTileComposer.compose(derived, grid, palette);
+
+        final CorrectionTile corrections = new CorrectionTile();
+        corrections.applyPatch(1L, new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(java.util.List.of(
+            new PatchCodec.Sample(pixel, plains, 70, SurfaceKind.LAND.ordinal(), GRASS_MAP_COLOR, 0)
+        )));
+        final int[] corrected = PredictedTileComposer.compose(
+            derived, grid, palette, corrections, PredictionViewMode.EVERYWHERE, 0
+        );
+
+        assertEquals(baseline[pixel], corrected[pixel], "a grass correction must not become a flat vanilla-green speck");
+    }
+
+    /** One uniform superflat tile: every column the same biome, height, kind and declared map color. */
+    private static int[] composeUniformFlat(
+        final int biomeId,
+        final int surfaceY,
+        final int mapColorId,
+        final PredictionPalette palette
+    ) {
+        final BaselineGrid grid = new BaselineGrid();
+        final DerivedGrid derived = new DerivedGrid();
+        Arrays.fill(grid.biomeId, biomeId);
+        Arrays.fill(grid.terrainY, surfaceY);
+        Arrays.fill(derived.kind, (byte) SurfaceKind.LAND.ordinal());
+        Arrays.fill(derived.surfaceY, surfaceY);
+        return PredictedTileComposer.compose(
+            derived, grid, palette, null, PredictionViewMode.EVERYWHERE, 0, mapColorId
         );
     }
 

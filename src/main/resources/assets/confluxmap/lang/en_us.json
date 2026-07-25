@@ -1,5 +1,6 @@
 {
   "key.categories.confluxmap": "Conflux Map",
+  "key.category.confluxmap.controls": "Conflux Map",
   "key.confluxmap.toggle_minimap": "Toggle Minimap",
   "key.confluxmap.zoom_in": "Minimap Zoom In",
   "key.confluxmap.zoom_out": "Minimap Zoom Out",

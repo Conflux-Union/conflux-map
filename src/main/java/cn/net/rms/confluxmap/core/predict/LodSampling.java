@@ -1,35 +1,25 @@
 package cn.net.rms.confluxmap.core.predict;
 
 /**
- * Fills a {@link BaselineGrid} for one predicted tile (dimension/LOD/tile origin), matching the
- * plan's per-LOD table: biome scale/expansion is shared between Overworld and End (the same
- * cubiomes {@code Range} scales apply regardless of dimension), while terrain height source and
- * expansion mode differ per LOD. The margin this fills lets prediction estimate a centered
- * diagonal slope from (x-1,z+1) and (x+1,z-1) at every output pixel, including tile edges.
+ * Fills a {@link BaselineGrid} for one predicted tile. Every Overworld version follows the same
+ * two-level layout: a cheap terrain overview at every output pixel, corrected by a globally
+ * aligned sparse grid of exact cubiomes columns. The overview keeps LOD3-4 spatially detailed;
+ * the exact residual grid removes broad height drift without making a fullscreen viewport pay for
+ * a complete world-generation column at every texel. End heights retain their
+ * dimension-specific interpolation and pooling path.
  * <ul>
- *   <li>LOD0: biomes at native scale 1 (1:1 with pixels); heights at native 1:4 scale, expanded
- *       x4 by fixed-point integer bilinear (per-axis lerp, composed - {@link Math#floorDiv} only,
- *       no float/double anywhere in this class).
- *   <li>LOD1: biomes at final scale 1, sampled every 2 blocks (one distinct biome lookup per
- *       output pixel); heights at native 1:4 scale, fixed-point
- *       bilinear interpolated to per-pixel resolution (matching the real LOD1 tile, which is a
- *       downsample of full-resolution LOD0 data, far better than the old nearest x2 expand).
- *   <li>LOD2: biomes/heights both at native scale 4, exactly 1:1 with this LOD's 4-block pixels -
- *       no expansion at all.
- *   <li>LOD3: biomes at final scale 4, sampled every 2 native cells; heights still queried at
- *       native 1:4 scale (finer than this LOD's 8-block pixels by exactly 2x per axis), then
- *       2x2-integer-mean pooled down to pixel resolution.
- *   <li>LOD4: biomes use final scale 4 with a 4-cell stride, preserving one distinct sample per
- *       16-block output pixel without falling back to cubiomes' visibly coarser scale-16
- *       pre-zoom layer. Heights are sampled on a 64-block grid and bilinearly interpolated to
- *       16-block pixels, spanning the correct world area without making each tile prohibitively slow.
+ *   <li>LOD0-1: final biomes are sampled at block scale, one lookup per output pixel.
+ *   <li>LOD2: final biomes are sampled at native scale 4, one lookup per output pixel.
+ *   <li>LOD3-4: scale-4 biomes use a 2-cell or 4-cell stride so every output pixel still maps to
+ *       its own world position instead of falling back to a coarser pre-zoom layer.
+ *   <li>Overworld exact corrections use an 8-pixel stride at LOD0 and 16 at LOD1-4. Nearby
+ *       views retain more terrain and shoreline precision while distant views do
+ *       not pay for details smaller than an output pixel.
+ *   <li>Overworld biomes reuse the corrected terrain height instead of generating terrain a
+ *       second time solely to choose the surface biome.
  * </ul>
- * Height aggregation preserves the waterline for final-layer water biomes when the contributing
- * height anchors straddle it. This prevents neighboring land anchors from lifting a shoreline
- * ocean pixel above sea level while retaining genuinely elevated ocean-biome terrain when every
- * contributing anchor is already above the waterline.
  *
- * <p>Every grid (both biomes and heights) is sampled over the full margin range {@code
+ * <p>Every grid is sampled over the full margin range {@code
  * [-BaselineGrid.MARGIN, BaselineGrid.PIXELS-1+BaselineGrid.MARGIN]} on both axes so both slope
  * samples remain local to the tile.
  */
@@ -37,6 +27,10 @@ public final class LodSampling {
     private static final int PIXELS = BaselineGrid.PIXELS;
     private static final int P_MIN = -BaselineGrid.MARGIN;
     private static final int P_MAX = PIXELS - 1 + BaselineGrid.MARGIN;
+    /** Screen-space exact correction stride per LOD; independent of the Minecraft version. */
+    private static final int[] EXACT_CORRECTION_PIXEL_STRIDE = {8, 16, 16, 16, 16};
+    private static final int FLUID_CONFIDENCE_MAX = 256;
+    private static final int FLUID_CONFIDENCE_THRESHOLD = FLUID_CONFIDENCE_MAX / 2;
 
     /** Final biome layer used per LOD (cubiomes {@code Range} scale: 1 or 4). */
     private static final int[] BIOME_SCALE = {1, 1, 4, 4, 4};
@@ -58,14 +52,209 @@ public final class LodSampling {
         final int tileOriginX,
         final int tileOriginZ
     ) {
-        final BaselineGrid grid = new BaselineGrid();
-        if (!sampleBiomes(sampler, lod, tileOriginX, tileOriginZ, grid)) {
+        final BaselineGrid grid = new BaselineGrid(lod, tileOriginX, tileOriginZ);
+        if (!end) {
+            return sampleOverworld(sampler, lod, tileOriginX, tileOriginZ, grid)
+                ? grid
+                : null;
+        }
+
+        if (!sampleEndHeights(sampler, lod, tileOriginX, tileOriginZ, grid)
+            || !sampleBiomes(sampler, lod, tileOriginX, tileOriginZ, grid)) {
             return null;
         }
-        if (!sampleHeights(sampler, end, lod, tileOriginX, tileOriginZ, grid)) {
-            return null;
+        for (int i = 0; i < grid.terrainY.length; i++) {
+            grid.baseSurfaceY[i] = grid.terrainY[i];
         }
         return grid;
+    }
+
+    private static boolean sampleOverworld(
+        final BaselineSampler sampler,
+        final int lod,
+        final int tileOriginX,
+        final int tileOriginZ,
+        final BaselineGrid grid
+    ) {
+        final int blocksPerPixel = 1 << lod;
+        final int blockX = tileOriginX + P_MIN * blocksPerPixel;
+        final int blockZ = tileOriginZ + P_MIN * blocksPerPixel;
+        final int[] fluidConfidence = new int[grid.terrainY.length];
+        if (!sampler.overviewHeights(
+            blockX,
+            blockZ,
+            BaselineGrid.SIZE,
+            BaselineGrid.SIZE,
+            blocksPerPixel,
+            grid.terrainY
+        ) || !applyExactResiduals(
+            sampler, lod, tileOriginX, tileOriginZ, blocksPerPixel, grid,
+            fluidConfidence
+        )) {
+            return false;
+        }
+        if (!sampleSurfaceBiomes(sampler, lod, tileOriginX, tileOriginZ, grid)
+            && !sampleBiomes(sampler, lod, tileOriginX, tileOriginZ, grid)) {
+            return false;
+        }
+        resolveOverviewFluids(grid, fluidConfidence);
+        return true;
+    }
+
+    private static boolean applyExactResiduals(
+        final BaselineSampler sampler,
+        final int lod,
+        final int tileOriginX,
+        final int tileOriginZ,
+        final int blocksPerPixel,
+        final BaselineGrid grid,
+        final int[] fluidConfidence
+    ) {
+        final int correctionStride = EXACT_CORRECTION_PIXEL_STRIDE[lod];
+        final int pixelSpan = P_MAX - P_MIN;
+        final int intervals = Math.floorDiv(
+            pixelSpan + correctionStride - 1,
+            correctionStride
+        );
+        final int anchorSize = intervals + 1;
+        final int cells = anchorSize * anchorSize;
+        final int anchorBlockX = tileOriginX + P_MIN * blocksPerPixel;
+        final int anchorBlockZ = tileOriginZ + P_MIN * blocksPerPixel;
+        final int anchorBlockStride = correctionStride * blocksPerPixel;
+        final int[] overview = new int[cells];
+        final int[] exact = new int[cells];
+        final int[] fluid = new int[cells];
+        final int[] surface = new int[cells];
+        final int[] flags = new int[cells];
+        if (!sampler.overviewHeights(
+            anchorBlockX,
+            anchorBlockZ,
+            anchorSize,
+            anchorSize,
+            anchorBlockStride,
+            overview
+        ) || !sampler.surfaceColumns(
+            anchorBlockX,
+            anchorBlockZ,
+            anchorSize,
+            anchorSize,
+            anchorBlockStride,
+            exact,
+            fluid,
+            surface,
+            flags
+        )) {
+            return false;
+        }
+
+        final int[] residuals = new int[cells];
+        for (int i = 0; i < cells; i++) {
+            residuals[i] = exact[i] - overview[i];
+        }
+        for (int pz = P_MIN; pz <= P_MAX; pz++) {
+            final int offsetZ = pz - P_MIN;
+            final int az0 = offsetZ / correctionStride;
+            final int az1 = az0 + 1;
+            final int fz = offsetZ % correctionStride;
+            for (int px = P_MIN; px <= P_MAX; px++) {
+                final int offsetX = px - P_MIN;
+                final int ax0 = offsetX / correctionStride;
+                final int ax1 = ax0 + 1;
+                final int fx = offsetX % correctionStride;
+                final int top = lerp(
+                    residuals[az0 * anchorSize + ax0],
+                    residuals[az0 * anchorSize + ax1],
+                    fx,
+                    correctionStride
+                );
+                final int bottom = lerp(
+                    residuals[az1 * anchorSize + ax0],
+                    residuals[az1 * anchorSize + ax1],
+                    fx,
+                    correctionStride
+                );
+                final int residualHeight = grid.terrainY[BaselineGrid.index(px, pz)] + lerp(
+                    top, bottom, fz, correctionStride
+                );
+                final int fluidTop = lerp(
+                    anchorFluidConfidence(flags[az0 * anchorSize + ax0]),
+                    anchorFluidConfidence(flags[az0 * anchorSize + ax1]),
+                    fx,
+                    correctionStride
+                );
+                final int fluidBottom = lerp(
+                    anchorFluidConfidence(flags[az1 * anchorSize + ax0]),
+                    anchorFluidConfidence(flags[az1 * anchorSize + ax1]),
+                    fx,
+                    correctionStride
+                );
+                final int interpolatedFluidConfidence = lerp(
+                    fluidTop, fluidBottom, fz, correctionStride
+                );
+                final int outputIndex = BaselineGrid.index(px, pz);
+                fluidConfidence[outputIndex] = interpolatedFluidConfidence;
+                if (lod == 0 && interpolatedFluidConfidence > FLUID_CONFIDENCE_THRESHOLD) {
+                    final int exactTop = lerp(
+                        exact[az0 * anchorSize + ax0],
+                        exact[az0 * anchorSize + ax1],
+                        fx,
+                        correctionStride
+                    );
+                    final int exactBottom = lerp(
+                        exact[az1 * anchorSize + ax0],
+                        exact[az1 * anchorSize + ax1],
+                        fx,
+                        correctionStride
+                    );
+                    grid.terrainY[outputIndex] = lerp(
+                        exactTop, exactBottom, fz, correctionStride
+                    );
+                } else {
+                    grid.terrainY[outputIndex] = residualHeight;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static int anchorFluidConfidence(final int surfaceFlags) {
+        return (surfaceFlags & BaselineGrid.SURFACE_FLUID) != 0 ? FLUID_CONFIDENCE_MAX : 0;
+    }
+
+    private static void resolveOverviewFluids(final BaselineGrid grid, final int[] fluidConfidence) {
+        for (int i = 0; i < grid.terrainY.length; i++) {
+            final int solidY = grid.terrainY[i];
+            if (solidY < BaselineDeriver.WATER_LEVEL
+                && (fluidConfidence[i] >= FLUID_CONFIDENCE_THRESHOLD
+                    || BiomeTable.get(grid.biomeId[i]).waterBiome())) {
+                grid.fluidY[i] = BaselineDeriver.WATER_LEVEL;
+                grid.baseSurfaceY[i] = BaselineDeriver.WATER_LEVEL;
+                grid.surfaceFlags[i] = BaselineGrid.SURFACE_FLUID;
+            } else {
+                grid.fluidY[i] = BaselineGrid.NO_FLUID;
+                grid.baseSurfaceY[i] = solidY;
+                grid.surfaceFlags[i] = 0;
+            }
+        }
+    }
+
+    private static boolean sampleSurfaceBiomes(
+        final BaselineSampler sampler,
+        final int lod,
+        final int tileOriginX,
+        final int tileOriginZ,
+        final BaselineGrid grid
+    ) {
+        final int blocksPerPixel = 1 << lod;
+        return sampler.surfaceBiomes(
+            tileOriginX + P_MIN * blocksPerPixel,
+            tileOriginZ + P_MIN * blocksPerPixel,
+            BaselineGrid.SIZE,
+            BaselineGrid.SIZE,
+            blocksPerPixel,
+            grid.terrainY,
+            grid.biomeId
+        );
     }
 
     private static boolean sampleBiomes(
@@ -83,33 +272,32 @@ public final class LodSampling {
         return true;
     }
 
-    private static boolean sampleHeights(
-        final BaselineSampler sampler, final boolean end, final int lod, final int tileOriginX, final int tileOriginZ,
+    private static boolean sampleEndHeights(
+        final BaselineSampler sampler, final int lod, final int tileOriginX, final int tileOriginZ,
         final BaselineGrid grid
     ) {
         switch (lod) {
             case 0:
-                return sampleHeightsBilinear(sampler, end, tileOriginX, tileOriginZ, grid, 1);
+                return sampleEndHeightsBilinear(sampler, tileOriginX, tileOriginZ, grid, 1);
             case 1:
-                // Heights at 1:4 native, bilinear-interpolated to this LOD's 2-block pixels: matches
-                // the real LOD1 tile (a downsample of full-res LOD0 data) far closer than the nearest
-                // x2 expand did, and smooths the height-gated water rule so ocean samples stop flipping
-                // to land at coast transitions.
-                return sampleHeightsBilinear(sampler, end, tileOriginX, tileOriginZ, grid, 2);
+                // End heights are sampled at the native 1:4 grid and interpolated to this LOD's
+                // 2-block pixels.
+                return sampleEndHeightsBilinear(sampler, tileOriginX, tileOriginZ, grid, 2);
             case 2:
-                return sampleHeightsNearest(sampler, end, tileOriginX, tileOriginZ, grid, 1);
+                return sampleEndHeightsNearest(sampler, tileOriginX, tileOriginZ, grid, 1);
             case 3:
-                return sampleHeightsMeanPool(sampler, end, tileOriginX, tileOriginZ, grid);
+                return sampleEndHeightsMeanPool(sampler, tileOriginX, tileOriginZ, grid);
             case 4:
-                // A flat reference height makes every ocean biome look like land because the
-                // water rule is height-gated. Sample the whole tile on a coarser 64-block grid,
-                // then interpolate to its 16-block pixels. This keeps world coordinates correct
-                // (the old stride-1 query only covered one quarter per axis) while avoiding the
-                // multi-second cost of calculating 258 full height rows per tile.
-                return sampleHeightsBilinearCoarse(sampler, end, tileOriginX, tileOriginZ, grid, 4);
+                // The End path uses a 64-block grid and interpolates to 16-block pixels to avoid
+                // calculating full-resolution heights for a heavily downsampled tile.
+                return sampleEndHeightsBilinearCoarse(sampler, tileOriginX, tileOriginZ, grid, 4);
             default:
                 return false;
         }
+    }
+
+    private static int lerp(final int from, final int to, final int offset, final int extent) {
+        return from + Math.floorDiv((to - from) * offset, extent);
     }
 
     /**
@@ -118,8 +306,8 @@ public final class LodSampling {
      * pixel's block offset lands inside its 4-block native cell, so LOD1 stays as sharp as the 1:4
      * native data allows instead of two pixels snapping to one nearest sample.
      */
-    private static boolean sampleHeightsBilinear(
-        final BaselineSampler sampler, final boolean end, final int tileOriginX, final int tileOriginZ,
+    private static boolean sampleEndHeightsBilinear(
+        final BaselineSampler sampler, final int tileOriginX, final int tileOriginZ,
         final BaselineGrid grid, final int blocksPerPixel
     ) {
         final int sMin = Math.floorDiv(P_MIN * blocksPerPixel, 4);
@@ -129,7 +317,7 @@ public final class LodSampling {
         final int z4Origin = Math.floorDiv(tileOriginZ, 4) + sMin;
 
         final int[] raw = new int[sw * sw];
-        if (!fetchHeights(sampler, end, x4Origin, z4Origin, sw, sw, raw)) {
+        if (!sampler.endHeights(x4Origin, z4Origin, sw, sw, raw)) {
             return false;
         }
         for (int pz = P_MIN; pz <= P_MAX; pz++) {
@@ -149,13 +337,13 @@ public final class LodSampling {
                 final int h01 = raw[sz1 * sw + sx0];
                 final int h11 = raw[sz1 * sw + sx1];
                 final int value;
-                if (end && h00 == 0 && h10 == 0 && h01 == 0 && h11 == 0) {
+                if (h00 == 0 && h10 == 0 && h01 == 0 && h11 == 0) {
                     value = BaselineGrid.NO_SURFACE;
                 } else {
                     final int top = h00 + Math.floorDiv((h10 - h00) * fx, 4);
                     final int bottom = h01 + Math.floorDiv((h11 - h01) * fx, 4);
                     final int interpolated = top + Math.floorDiv((bottom - top) * fz, 4);
-                    value = preserveWaterline(grid, px, pz, interpolated, h00, h10, h01, h11);
+                    value = interpolated;
                 }
                 grid.terrainY[BaselineGrid.index(px, pz)] = value;
             }
@@ -168,8 +356,8 @@ public final class LodSampling {
      * interpolates between those anchors. Used by LOD4, where one output pixel is 16 blocks and
      * a four-pixel anchor interval is therefore a 64-block terrain grid.
      */
-    private static boolean sampleHeightsBilinearCoarse(
-        final BaselineSampler sampler, final boolean end, final int tileOriginX, final int tileOriginZ,
+    private static boolean sampleEndHeightsBilinearCoarse(
+        final BaselineSampler sampler, final int tileOriginX, final int tileOriginZ,
         final BaselineGrid grid, final int pixelsPerSample
     ) {
         final int nativeStride = pixelsPerSample * 4; // 16 blocks/pixel divided by native 4-block cells
@@ -179,9 +367,9 @@ public final class LodSampling {
         final int x4Origin = Math.floorDiv(tileOriginX, 4) + sMin * nativeStride;
         final int z4Origin = Math.floorDiv(tileOriginZ, 4) + sMin * nativeStride;
         final int[] raw = new int[sw * sw];
-        final boolean sampled = end
-            ? sampler.endHeightsStrided(x4Origin, z4Origin, sw, sw, nativeStride, raw)
-            : sampler.heightsStrided(x4Origin, z4Origin, sw, sw, nativeStride, raw);
+        final boolean sampled = sampler.endHeightsStrided(
+            x4Origin, z4Origin, sw, sw, nativeStride, raw
+        );
         if (!sampled) {
             return false;
         }
@@ -200,13 +388,13 @@ public final class LodSampling {
                 final int h01 = raw[sz1 * sw + sx0];
                 final int h11 = raw[sz1 * sw + sx1];
                 final int value;
-                if (end && h00 == 0 && h10 == 0 && h01 == 0 && h11 == 0) {
+                if (h00 == 0 && h10 == 0 && h01 == 0 && h11 == 0) {
                     value = BaselineGrid.NO_SURFACE;
                 } else {
                     final int top = h00 + Math.floorDiv((h10 - h00) * fx, pixelsPerSample);
                     final int bottom = h01 + Math.floorDiv((h11 - h01) * fx, pixelsPerSample);
                     final int interpolated = top + Math.floorDiv((bottom - top) * fz, pixelsPerSample);
-                    value = preserveWaterline(grid, px, pz, interpolated, h00, h10, h01, h11);
+                    value = interpolated;
                 }
                 grid.terrainY[BaselineGrid.index(px, pz)] = value;
             }
@@ -215,16 +403,16 @@ public final class LodSampling {
     }
 
     /** 4-block native samples selected at {@code nativeStride} cells per output pixel. */
-    private static boolean sampleHeightsNearest(
-        final BaselineSampler sampler, final boolean end, final int tileOriginX, final int tileOriginZ,
+    private static boolean sampleEndHeightsNearest(
+        final BaselineSampler sampler, final int tileOriginX, final int tileOriginZ,
         final BaselineGrid grid, final int nativeStride
     ) {
         final int[] raw = new int[BaselineGrid.SIZE * BaselineGrid.SIZE];
         final int x4 = Math.floorDiv(tileOriginX, 4) + P_MIN * nativeStride;
         final int z4 = Math.floorDiv(tileOriginZ, 4) + P_MIN * nativeStride;
-        final boolean sampled = end
-            ? sampler.endHeightsStrided(x4, z4, BaselineGrid.SIZE, BaselineGrid.SIZE, nativeStride, raw)
-            : sampler.heightsStrided(x4, z4, BaselineGrid.SIZE, BaselineGrid.SIZE, nativeStride, raw);
+        final boolean sampled = sampler.endHeightsStrided(
+            x4, z4, BaselineGrid.SIZE, BaselineGrid.SIZE, nativeStride, raw
+        );
         if (!sampled) {
             return false;
         }
@@ -232,15 +420,15 @@ public final class LodSampling {
             for (int px = P_MIN; px <= P_MAX; px++) {
                 final int index = BaselineGrid.index(px, pz);
                 final int raw0 = raw[index];
-                grid.terrainY[index] = end && raw0 == 0 ? BaselineGrid.NO_SURFACE : raw0;
+                grid.terrainY[index] = raw0 == 0 ? BaselineGrid.NO_SURFACE : raw0;
             }
         }
         return true;
     }
 
     /** LOD3: 4-block native samples at 2x this LOD's pixel resolution, 2x2-integer-mean pooled down. */
-    private static boolean sampleHeightsMeanPool(
-        final BaselineSampler sampler, final boolean end, final int tileOriginX, final int tileOriginZ, final BaselineGrid grid
+    private static boolean sampleEndHeightsMeanPool(
+        final BaselineSampler sampler, final int tileOriginX, final int tileOriginZ, final BaselineGrid grid
     ) {
         final int subMin = 2 * P_MIN;
         final int subMax = 2 * P_MAX + 1;
@@ -249,7 +437,7 @@ public final class LodSampling {
         final int z4Origin = Math.floorDiv(tileOriginZ, 4) + subMin;
 
         final int[] raw = new int[sw * sw];
-        if (!fetchHeights(sampler, end, x4Origin, z4Origin, sw, sw, raw)) {
+        if (!sampler.endHeights(x4Origin, z4Origin, sw, sw, raw)) {
             return false;
         }
         for (int pz = P_MIN; pz <= P_MAX; pz++) {
@@ -263,11 +451,11 @@ public final class LodSampling {
                 final int c = raw[j1 * sw + i0];
                 final int d = raw[j1 * sw + i1];
                 final int value;
-                if (end && a == 0 && b == 0 && c == 0 && d == 0) {
+                if (a == 0 && b == 0 && c == 0 && d == 0) {
                     value = BaselineGrid.NO_SURFACE;
                 } else {
                     final int mean = Math.floorDiv(a + b + c + d, 4);
-                    value = preserveWaterline(grid, px, pz, mean, a, b, c, d);
+                    value = mean;
                 }
                 grid.terrainY[BaselineGrid.index(px, pz)] = value;
             }
@@ -275,30 +463,4 @@ public final class LodSampling {
         return true;
     }
 
-    private static boolean fetchHeights(
-        final BaselineSampler sampler, final boolean end, final int x4, final int z4, final int w, final int h, final int[] out
-    ) {
-        return end ? sampler.endHeights(x4, z4, w, h, out) : sampler.heights(x4, z4, w, h, out);
-    }
-
-    private static int preserveWaterline(
-        final BaselineGrid grid,
-        final int pixelX,
-        final int pixelZ,
-        final int aggregated,
-        final int a,
-        final int b,
-        final int c,
-        final int d
-    ) {
-        if (aggregated < BaselineDeriver.WATER_LEVEL
-            || !BiomeTable.get(grid.biomeId[BaselineGrid.index(pixelX, pixelZ)]).waterBiome()) {
-            return aggregated;
-        }
-        if (a < BaselineDeriver.WATER_LEVEL || b < BaselineDeriver.WATER_LEVEL
-            || c < BaselineDeriver.WATER_LEVEL || d < BaselineDeriver.WATER_LEVEL) {
-            return BaselineDeriver.WATER_LEVEL - 1;
-        }
-        return aggregated;
-    }
 }

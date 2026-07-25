@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.input;
 
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.bridge.PlayerView;
+import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
@@ -12,14 +13,24 @@ import cn.net.rms.confluxmap.mc.ui.screen.WaypointEditScreen;
 import cn.net.rms.confluxmap.mc.ui.screen.WaypointListScreen;
 import java.util.Optional;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+//#if MC>=260100
+//$$ import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+//#else
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+//#endif
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import org.lwjgl.glfw.GLFW;
 
 public final class Keybinds {
+    //#if MC>=12109
+    //$$ public static final KeyBinding.Category CATEGORY = KeyBinding.Category.create(
+    //$$     Ids.of("confluxmap", "controls")
+    //$$ );
+    //#else
     public static final String CATEGORY = "key.categories.confluxmap";
+    //#endif
 
     private final KeyBinding toggleMinimap;
     private final KeyBinding zoomIn;
@@ -55,9 +66,15 @@ public final class Keybinds {
     }
 
     private static KeyBinding register(final String name, final int key) {
+        //#if MC>=260100
+        //$$ return KeyMappingHelper.registerKeyMapping(
+        //$$     new KeyMapping("key.confluxmap." + name, InputConstants.Type.KEYSYM, key, CATEGORY)
+        //$$ );
+        //#else
         return KeyBindingHelper.registerKeyBinding(
             new KeyBinding("key.confluxmap." + name, InputUtil.Type.KEYSYM, key, CATEGORY)
         );
+        //#endif
     }
 
     private void poll() {

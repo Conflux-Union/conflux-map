@@ -14,7 +14,11 @@ public abstract class ClientChunkManagerMixin {
     private void confluxmap$onChunkLoaded(final CallbackInfoReturnable<WorldChunk> cir) {
         final WorldChunk chunk = cir.getReturnValue();
         if (chunk != null) {
+            //#if MC>=260100
+            //$$ ChunkCaptureHandler.chunkDirty(chunk.getPos().x(), chunk.getPos().z());
+            //#else
             ChunkCaptureHandler.chunkDirty(chunk.getPos().x, chunk.getPos().z);
+            //#endif
         }
     }
 }

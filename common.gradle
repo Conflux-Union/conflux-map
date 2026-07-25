@@ -1,4 +1,11 @@
-apply plugin: 'fabric-loom'
+// Minecraft 26.1 ships unobfuscated, which changes the build shape rather than just the names:
+// loom applies without a remapping step, no mappings are resolved, mod dependencies need no
+// remapping, and the compile output is already the shippable jar. Both plugin ids resolve to the
+// same fabric-loom artifact (settings.gradle). Derived from the project name rather than the
+// preprocessor's injected mcVersion because the plugin choice has to happen before it applies.
+final int mcVersion = rootProject.mcVersionOf(project.name)
+final boolean unobfuscated = mcVersion >= 260100
+apply plugin: unobfuscated ? 'net.fabricmc.fabric-loom' : 'net.fabricmc.fabric-loom-remap'
 apply plugin: 'com.replaymod.preprocess'
 base { archivesName = "$id-$name" }
 repositories {
@@ -9,18 +16,41 @@ repositories {
     // for more information about repositories.
 }
 sourceSets {
-    gametest {
-        compileClasspath += main.compileClasspath
-        runtimeClasspath += main.runtimeClasspath
-    }
+    gametest
+}
+// Loom wires Minecraft into main's and test's classpath configurations but not into a source set
+// the build declares itself, so gametest has to inherit them explicitly. It has to happen through
+// extendsFrom rather than the usual `compileClasspath += main.compileClasspath`: the preprocessor
+// captures SourceSet.getCompileClasspath() from its sourceSets.configureEach hook, which Gradle
+// fires before this script's configuration closure, and `+=` rebinds the property to a new
+// collection the preprocessor never sees. It would then remap gametest against a classpath with no
+// Minecraft on it, silently leaving every net.minecraft name in core-version spelling - which does
+// not compile once a name actually moved between versions.
+configurations {
+    gametestCompileClasspath.extendsFrom compileClasspath
+    gametestRuntimeClasspath.extendsFrom runtimeClasspath
 }
 dependencies {
+    // On an unobfuscated version there is nothing to remap into, so loom's mod* configurations
+    // would only add a no-op remap step over dependencies that are already in final names.
+    final Closure<?> autoImpl = { final Object... args -> unobfuscated ? implementation(*args) : modImplementation(*args) }
     minecraft "com.mojang:minecraft:$name"
-    mappings "net.fabricmc:yarn:$name+build.$yarn_mappings:v2"
-    modImplementation "net.fabricmc:fabric-loader:$loader_version"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:$fabric_api_version"
+    if (!unobfuscated) {
+        mappings "net.fabricmc:yarn:$name+build.$yarn_mappings:v2"
+    }
+    autoImpl "net.fabricmc:fabric-loader:$loader_version"
+    autoImpl "net.fabricmc.fabric-api:fabric-api:$fabric_api_version"
     testImplementation "org.junit.jupiter:junit-jupiter:5.10.2"
     testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+    // The preprocessor builds both remap classpaths out of the <sourceSet>CompileClasspath
+    // *configuration* alone, and the java plugin puts main's output on the test source set's
+    // classpath property instead of that configuration - so remap sees no confluxmap classes when
+    // it maps test sources. Main gets away with it because all of its files are parsed together and
+    // resolve from source; test sources are parsed on their own, so every project type comes back
+    // unresolved. remap then hard-crashes on any signature holding an array of one (bombe ArrayType
+    // gets a null component type) and silently skips remapping anything reached through a project
+    // type. Restating main's output as a dependency puts it in the configuration both sides read.
+    testImplementation sourceSets.main.output
     gametestImplementation sourceSets.main.output
 }
 test {
@@ -28,6 +58,11 @@ test {
 }
 loom {
     accessWidenerPath = file "${id}.accesswidener"
+    // A refmap maps mixin targets from source names to the names the game actually ships. On an
+    // unobfuscated version those are the same, so an empty name suppresses generation entirely.
+    if (unobfuscated) {
+        mixin.defaultRefmapName = ''
+    }
     runs {
         server {
             property("mixin.debug.export", "true")
@@ -51,20 +86,51 @@ loom {
             vmArg "-Djava.awt.headless=true"
             vmArg "-Dconfluxmap.quality.world-seed=0"
             vmArg "-Dconfluxmap.quality.report-dir=${project.buildDir}/reports/prediction-quality"
+            if (project.hasProperty('qualitySample')) {
+                vmArg "-Dconfluxmap.quality.sample=${project.property('qualitySample')}"
+            }
             runDir "build/gametest"
         }
     }
 }
 JavaVersion javaCompatibility
-if (mcVersion < 11700) javaCompatibility = JavaVersion.VERSION_1_8 else if (mcVersion < 11800) javaCompatibility = JavaVersion.VERSION_16 else if (mcVersion < 12005) javaCompatibility = JavaVersion.VERSION_17 else javaCompatibility = JavaVersion.VERSION_21
+if (mcVersion < 11700) javaCompatibility = JavaVersion.VERSION_1_8 else if (mcVersion < 11800) javaCompatibility = JavaVersion.VERSION_16 else if (mcVersion < 12005) javaCompatibility = JavaVersion.VERSION_17 else if (mcVersion < 260100) javaCompatibility = JavaVersion.VERSION_21 else javaCompatibility = JavaVersion.VERSION_25
+tasks.withType(JavaCompile).configureEach {
+    // One preprocessor mistake breaks a whole file for every downstream version at once, so
+    // javac's default cap of 100 errors routinely hides most of a version's actual breakage.
+    options.compilerArgs << '-Xmaxerrs' << '2000'
+}
+// The subproject name is the Minecraft version this jar is compiled against; minecraft_versions is
+// the set of versions it can run on, which is usually wider because most patch releases keep the
+// client API intact. The jar advertises that set as a closed range, so a patch with no subproject
+// of its own still gets a jar. Order in the property does not matter; checkVersionCoverage proves
+// the claim against each version's mappings.
+final Closure<Integer> mcSortKey = { final String candidate ->
+    final List<String> parts = candidate.tokenize('.')
+    (parts[0] + parts[1].padLeft(2, '0') + (parts.size() > 2 ? parts[2] : '0').padLeft(2, '0')).toInteger()
+}
+ext.supportedMinecraftVersions = minecraft_versions.trim().split(/\s+/).toList()
+if (!supportedMinecraftVersions.contains(project.name)) {
+    throw new GradleException("versions/${project.name}/gradle.properties: minecraft_versions must list ${project.name}")
+}
+final String oldestMinecraftVersion = supportedMinecraftVersions.min(mcSortKey)
+final String newestMinecraftVersion = supportedMinecraftVersions.max(mcSortKey)
+// Fabric API's mod id was `fabric` when 1.17 shipped and `fabric-api` afterwards. The 1.21 line
+// still declares `provides: [fabric]` so either id resolves there, but 26.1 dropped that alias, and
+// 1.17's build predates the rename - so only the ends of the matrix are actually constrained.
+final String fabricApiId = mcVersion >= 260100 ? 'fabric-api' : 'fabric'
+final String minecraftDependency = oldestMinecraftVersion == newestMinecraftVersion
+        ? oldestMinecraftVersion
+        : ">=$oldestMinecraftVersion <=$newestMinecraftVersion"
 processResources {
     inputs.property 'modId', id
     inputs.property 'modVersion', project.version.toString()
-    inputs.property 'minecraftVersion', project.name
+    inputs.property 'minecraftDependency', minecraftDependency
     inputs.property 'loaderVersion', loader_version
+    inputs.property 'fabricApiId', fabricApiId
     inputs.property 'javaVersion', javaCompatibility.getMajorVersion()
     from "${id}.accesswidener"
-    filesMatching('fabric.mod.json') { expand id: id, version: version, minecraft_version: project.name, loader_version: loader_version }
+    filesMatching('fabric.mod.json') { expand id: id, version: version, minecraft_dependency: minecraftDependency, loader_version: loader_version, fabric_api_id: fabricApiId }
     filesMatching("${id}.mixins.json") { expand java_version: javaCompatibility.getMajorVersion() }
     // Bundles the committed native/prebuilt/<target>/ binaries into the jar (and dev classpath)
     // as natives/<target>/<libname>, so NativeLib can find them without any extra toolchain.
@@ -76,17 +142,27 @@ tasks.register('checkModMetadata') {
     dependsOn tasks.named('processResources')
     inputs.file layout.buildDirectory.file('resources/main/fabric.mod.json')
     inputs.property 'expectedVersion', project.version.toString()
+    inputs.property 'expectedMinecraftDependency', minecraftDependency
     doLast {
         final File metadataFile = layout.buildDirectory.file('resources/main/fabric.mod.json').get().asFile
         final Map<String, ?> metadata = new groovy.json.JsonSlurper().parse(metadataFile) as Map<String, ?>
         if (metadata.version != project.version.toString()) {
             throw new GradleException("Expanded fabric.mod.json version ${metadata.version} does not match project version ${project.version}")
         }
+        if (metadata.depends.minecraft != minecraftDependency) {
+            throw new GradleException("Expanded fabric.mod.json Minecraft dependency ${metadata.depends.minecraft} does not match ${minecraftDependency}")
+        }
     }
 }
 java {
     sourceCompatibility = javaCompatibility
     targetCompatibility = javaCompatibility
+    // Only the unobfuscated line pins a toolchain: it targets Java 25, which the JDK that builds
+    // every other version cannot emit. Leaving the rest unpinned keeps them compiling on whatever
+    // JDK the developer or CI already has, exactly as before.
+    if (unobfuscated) {
+        toolchain { languageVersion = JavaLanguageVersion.of(25) }
+    }
 }
 jar { from '../../LICENSE' }
 tasks.register('checkCoreIsolation') {
@@ -114,8 +190,10 @@ tasks.register('checkCoreIsolation') {
         }
     }
 }
+apply from: rootProject.file('gradle/version-coverage.gradle')
 check.dependsOn 'checkCoreIsolation'
 check.dependsOn 'checkModMetadata'
+check.dependsOn 'checkVersionCoverage'
 check.dependsOn 'runGametest'
 tasks.register('buildRelease') {
     group = 'build'
@@ -123,6 +201,7 @@ tasks.register('buildRelease') {
     dependsOn tasks.named('assemble')
     dependsOn tasks.named('checkCoreIsolation')
     dependsOn tasks.named('checkModMetadata')
+    dependsOn tasks.named('checkVersionCoverage')
     dependsOn tasks.named('validateAccessWidener')
 }
 tasks.named('runGametest') {

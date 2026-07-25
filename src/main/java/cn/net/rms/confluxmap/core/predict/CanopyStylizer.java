@@ -7,23 +7,18 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Stylizes tree canopy in place onto an already-{@link BaselineDeriver#derive derived} grid.
- * LOD0-1 uses cubiomes' 1.17.1 natural tree candidates where the sampler supports the biome
- * decorator. Unsupported chunks retain the deterministic seed-hashed fallback based on
- * {@link BiomeTable#get}'s {@code treeCover}. Candidates are still honest
- * estimates: the first candidate in a chunk has exact X/Z and type, while later candidates can
- * drift after terrain-dependent random consumption, and vanilla may reject any candidate.
+ * Stylizes tree canopy in place onto an already-{@link BaselineDeriver#derive derived} grid. The
+ * production predicted-map path uses the deterministic seed-hashed overview on every Minecraft
+ * version, keeping canopy cost tied to the 256x256 output rather than the number of world chunks a
+ * tile covers. The native-candidate overload remains available for focused feature evaluation but
+ * is not part of the wire baseline.
  *
  * <p>The deterministic fallback has two regimes, both driven by a splitmix64-mixed hash of
  * {@code (seed, blockX, blockZ)}:
  * <ul>
- *   <li>LOD 0-1: "grid-cell anchors" - the world is partitioned into 4-block cells; each cell
- *       independently rolls (via its own origin's hash) whether it's a tree-blob anchor at
- *       probability {@code treeCover}, and if so covers a small radius-1-or-2 disc around its
- *       center. A pixel is foliage if it falls inside any of the 9 candidate cells' (its own
- *       plus the 8 neighbors, since a radius-2 blob can spill across a cell boundary) discs.
- *       This clumps canopy into small blobs instead of single-pixel noise, which would look
- *       wrong at 1-2 blocks/pixel.
+ *   <li>LOD 0-1: jittered blob anchors clump sparse canopy into small crowns. Dense biomes invert
+ *       the same field into irregular clearings, allowing jungle canopy to approach full cover
+ *       without exposing the anchor grid.
  *   <li>LOD &ge; 2: a direct per-pixel Bernoulli test - at 4+ blocks/pixel individual trees
  *       aren't distinguishable anyway, so per-pixel noise reads as an aggregate canopy texture.
  * </ul>
@@ -33,16 +28,23 @@ import java.util.Set;
  */
 public final class CanopyStylizer {
     private static final int MAX_NATURAL_LOD = 1;
-    private static final int MAX_CANDIDATES_PER_CHUNK = 64;
+    private static final int MAX_CANDIDATES_PER_CHUNK = 256;
     // cubiomes terrain_features.h enum NaturalTreeType ordinals.
     private static final int TREE_JUNGLE = 3;
     private static final int TREE_DARK_OAK = 5;
     private static final int TREE_JUNGLE_BUSH = 6;
     private static final int TREE_HUGE_BROWN_MUSHROOM = 7;
     private static final int TREE_HUGE_RED_MUSHROOM = 8;
+    private static final int TREE_MANGROVE = 9;
+    private static final int TREE_CHERRY = 10;
+    private static final int TREE_BAMBOO = 11;
+    private static final int FEATURE_CANDIDATE_HEIGHT_SHIFT = 16;
+    private static final int FEATURE_CANDIDATE_HEIGHT_MASK = 0xFF;
 
     /** Fixed salt distinguishing this hash from any other seed-derived synthetic feature. */
     private static final long SALT = 0x27220A5FA9A9A797L;
+    private static final long CLEARING_SALT = 0x6A09E667F3BCC909L;
+    private static final long HEIGHT_SALT = 0xBB67AE8584CAA73BL;
     private static final long MIX_X = 0x9E3779B185EBCA87L;
     private static final long MIX_Z = 0xC2B2AE3D27D4EB4FL;
     /** {@code treeCover} (a [0,1] double) is tested against this many low bits of the hash. */
@@ -192,7 +194,8 @@ public final class CanopyStylizer {
             Math.floorDiv(candidate.z() + radius - tileOriginZ, blocksPerPixel)
         );
         final int centerOffset = blocksPerPixel / 2;
-        final int bump = canopyHeight(candidate.type());
+        final int bump = candidateHeight(candidate);
+        final boolean foliage = candidate.type() != TREE_BAMBOO;
 
         for (int pixelZ = minPixelZ; pixelZ <= maxPixelZ; pixelZ++) {
             final int dz = tileOriginZ + pixelZ * blocksPerPixel + centerOffset - candidate.z();
@@ -206,7 +209,9 @@ public final class CanopyStylizer {
                 if (kind == SurfaceKind.WATER || kind == SurfaceKind.ICE || kind == SurfaceKind.VOID) {
                     continue;
                 }
-                derived.kind[index] = (byte) SurfaceKind.FOLIAGE.ordinal();
+                if (foliage) {
+                    derived.kind[index] = (byte) SurfaceKind.FOLIAGE.ordinal();
+                }
                 derived.surfaceY[index] = Math.max(derived.surfaceY[index], baseSurfaceY[index] + bump);
             }
         }
@@ -214,14 +219,28 @@ public final class CanopyStylizer {
 
     private static int canopyRadius(final int type) {
         return switch (type) {
+            case TREE_BAMBOO -> 0;
+            case TREE_MANGROVE -> 3;
+            case TREE_CHERRY -> 4;
             case TREE_JUNGLE, TREE_DARK_OAK, TREE_HUGE_BROWN_MUSHROOM, TREE_HUGE_RED_MUSHROOM -> 2;
             default -> 1;
         };
     }
 
+    private static int candidateHeight(final TreeCandidate candidate) {
+        if (candidate.type() == TREE_BAMBOO) {
+            final int stalkHeight = (candidate.flags() >>> FEATURE_CANDIDATE_HEIGHT_SHIFT)
+                & FEATURE_CANDIDATE_HEIGHT_MASK;
+            return stalkHeight + 1;
+        }
+        return canopyHeight(candidate.type());
+    }
+
     private static int canopyHeight(final int type) {
         return switch (type) {
             case TREE_JUNGLE -> 10;
+            case TREE_MANGROVE -> 8;
+            case TREE_CHERRY -> 10;
             case TREE_DARK_OAK, TREE_HUGE_BROWN_MUSHROOM, TREE_HUGE_RED_MUSHROOM -> 4;
             case TREE_JUNGLE_BUSH -> 2;
             default -> 3;
@@ -236,9 +255,29 @@ public final class CanopyStylizer {
      * the blob/cell area ratio, leaving canopy looking far sparser than the table implies.
      */
     private static int canopyBlob(final long seed, final int bx, final int bz, final double treeCover) {
+        final boolean dense = treeCover >= 0.5;
+        final boolean foliage = dense
+            ? !insideBlob(seed ^ CLEARING_SALT, bx, bz, 1.0 - treeCover)
+            : insideBlob(seed, bx, bz, treeCover);
+        if (!foliage) {
+            return 0;
+        }
+        final int baseHeight = treeCover >= 0.75 ? 7 : 3;
+        return baseHeight + smoothHeight(seed, bx, bz);
+    }
+
+    private static boolean insideBlob(
+        final long seed,
+        final int bx,
+        final int bz,
+        final double coverage
+    ) {
+        if (coverage <= 0.0) {
+            return false;
+        }
         final int myCellX = Math.floorDiv(bx, 4);
         final int myCellZ = Math.floorDiv(bz, 4);
-        final double anchorProb = Math.min(1.0, treeCover * CELL_AREA / AVG_BLOB_AREA);
+        final double anchorProb = Math.min(1.0, coverage * CELL_AREA / AVG_BLOB_AREA);
         for (int dz = -1; dz <= 1; dz++) {
             for (int dx = -1; dx <= 1; dx++) {
                 final int originX = (myCellX + dx) * 4;
@@ -248,14 +287,42 @@ public final class CanopyStylizer {
                     continue;
                 }
                 final int radius = 1 + (int) ((hash >>> 40) & 1L);
-                final int ddx = bx - (originX + 2);
-                final int ddz = bz - (originZ + 2);
+                final int centerX = originX + (int) ((hash >>> 41) & 3L);
+                final int centerZ = originZ + (int) ((hash >>> 43) & 3L);
+                final int ddx = bx - centerX;
+                final int ddz = bz - centerZ;
                 if (ddx * ddx + ddz * ddz <= radius * radius) {
-                    return 3 + (int) ((hash >>> 41) & 3L);
+                    return true;
                 }
             }
         }
-        return 0;
+        return false;
+    }
+
+    private static int smoothHeight(final long seed, final int bx, final int bz) {
+        final int cellX = Math.floorDiv(bx, 4);
+        final int cellZ = Math.floorDiv(bz, 4);
+        final int fx = bx - cellX * 4;
+        final int fz = bz - cellZ * 4;
+        final int top = lerpHeight(
+            heightValue(seed, cellX, cellZ),
+            heightValue(seed, cellX + 1, cellZ),
+            fx
+        );
+        final int bottom = lerpHeight(
+            heightValue(seed, cellX, cellZ + 1),
+            heightValue(seed, cellX + 1, cellZ + 1),
+            fx
+        );
+        return lerpHeight(top, bottom, fz);
+    }
+
+    private static int heightValue(final long seed, final int cellX, final int cellZ) {
+        return (int) ((hash(seed ^ HEIGHT_SALT, cellX, cellZ) >>> 40) & 3L);
+    }
+
+    private static int lerpHeight(final int from, final int to, final int offset) {
+        return from + Math.floorDiv((to - from) * offset, 4);
     }
 
     private static int canopyPoint(final long seed, final int bx, final int bz, final double treeCover) {

@@ -20,6 +20,46 @@ class DiffSpecTest {
     }
 
     @Test
+    void naturalFrozenOceanIceDoesNotBecomeACorrection() {
+        final DiffSpec.Sample baseline = new DiffSpec.Sample(
+            10, 62, SurfaceKind.ICE.ordinal(), Proto.MAP_COLOR_NONE, 12
+        );
+        final DiffSpec.Sample ice = new DiffSpec.Sample(10, 62, SurfaceKind.ICE.ordinal(), 5, 12);
+
+        assertFalse(DiffSpec.differs(baseline, ice), "registry ice colour is natural on a frozen ocean");
+    }
+
+    @Test
+    void snowSettledOnFrozenOceanIceDoesNotBecomeACorrection() {
+        final DiffSpec.Sample baseline = new DiffSpec.Sample(
+            10, 62, SurfaceKind.ICE.ordinal(), Proto.MAP_COLOR_NONE, 12
+        );
+        final DiffSpec.Sample snow = new DiffSpec.Sample(10, 63, SurfaceKind.SNOW.ordinal(), 8, 12);
+
+        assertFalse(DiffSpec.differs(baseline, snow), "snow cover on ocean ice is natural");
+    }
+
+    @Test
+    void packedIceSpikesOnASnowyBaselineDoNotBecomeACorrection() {
+        final DiffSpec.Sample baseline = new DiffSpec.Sample(
+            140, 65, SurfaceKind.SNOW.ordinal(), Proto.MAP_COLOR_NONE, 0
+        );
+        final DiffSpec.Sample spikes = new DiffSpec.Sample(140, 66, SurfaceKind.ICE.ordinal(), 5, 0);
+
+        assertFalse(DiffSpec.differs(baseline, spikes), "packed ice is natural in ice spikes");
+    }
+
+    @Test
+    void playerIceOnAWarmOceanStillCorrects() {
+        final DiffSpec.Sample baseline = new DiffSpec.Sample(
+            0, 62, SurfaceKind.WATER.ordinal(), Proto.MAP_COLOR_NONE, 12
+        );
+        final DiffSpec.Sample ice = new DiffSpec.Sample(0, 62, SurfaceKind.ICE.ordinal(), 5, 12);
+
+        assertTrue(DiffSpec.differs(baseline, ice), "ice on a non-frozen ocean is player-made");
+    }
+
+    @Test
     void naturalFoliageDoesNotBecomeAChunkScopedCorrection() {
         final DiffSpec.Sample baseline = new DiffSpec.Sample(
             7, 64, SurfaceKind.LAND.ordinal(), Proto.MAP_COLOR_NONE, 0

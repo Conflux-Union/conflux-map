@@ -294,6 +294,31 @@ jobs:
           echo "mod_id=$MOD_ID" >> $GITHUB_OUTPUT
           echo "mod_name=$MOD_NAME" >> $GITHUB_OUTPUT
           echo "version_type=$VERSION_TYPE" >> $GITHUB_OUTPUT
+      - name: Resolve supported game versions
+        id: Game_Versions
+        run: |
+          set -euo pipefail
+
+          PROPERTIES="versions/${{ matrix.minecraft_version }}/gradle.properties"
+          GAME_VERSIONS=$(sed -n 's/^minecraft_versions=//p' "$PROPERTIES" | tr -s ' ' '\n' | sed '/^$/d' | sort -V)
+          if [[ -z "$GAME_VERSIONS" ]]; then
+            echo "$PROPERTIES does not define minecraft_versions" >&2
+            exit 1
+          fi
+
+          OLDEST=$(echo "$GAME_VERSIONS" | head -n 1)
+          NEWEST=$(echo "$GAME_VERSIONS" | tail -n 1)
+          if [[ "$OLDEST" == "$NEWEST" ]]; then
+            echo "label=$OLDEST" >> $GITHUB_OUTPUT
+          else
+            echo "label=$OLDEST-$NEWEST" >> $GITHUB_OUTPUT
+          fi
+
+          {
+            echo 'game_versions<<EOF'
+            echo "$GAME_VERSIONS"
+            echo 'EOF'
+          } >> $GITHUB_OUTPUT
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
@@ -315,7 +340,7 @@ jobs:
           name: ${{ format('{0} v{1} for MC {2}',
             steps.Version_Info.outputs.mod_name,
             steps.Version_Info.outputs.mod_version,
-            matrix.minecraft_version) }}
+            steps.Game_Versions.outputs.label) }}
           version: ${{ format('v{0}-mc{1}',
             steps.Version_Info.outputs.mod_version,
             matrix.minecraft_version) }}
@@ -323,7 +348,7 @@ jobs:
           changelog-file: release-notes/changelog.md
           loaders: fabric
           game-versions: |
-            ${{ matrix.minecraft_version }}
+            ${{ steps.Game_Versions.outputs.game_versions }}
           dependencies: |-
           # Dependencies here
   Github-Release:

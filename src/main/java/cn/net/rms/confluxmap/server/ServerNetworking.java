@@ -1,6 +1,9 @@
 package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
+import cn.net.rms.confluxmap.compat.Ids;
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
+import cn.net.rms.confluxmap.compat.PlayNetworking;
 import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
 import cn.net.rms.confluxmap.core.net.HelloC2S;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
@@ -11,16 +14,14 @@ import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
-import io.netty.buffer.Unpooled;
+import cn.net.rms.confluxmap.compat.MinecraftVersion;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
-import net.minecraft.network.PacketByteBuf;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
@@ -37,7 +38,7 @@ import net.minecraft.world.World;
  * implementation lands in S4 ({@code PatchBuilder}) and the request-planning client side in S5.
  */
 public final class ServerNetworking {
-    public static final Identifier CHANNEL = new Identifier(Proto.CHANNEL_ID);
+    public static final Identifier CHANNEL = Ids.of(Proto.CHANNEL_ID);
 
     private final ConfluxMapCompanion companion;
     private final ConcurrentMap<UUID, Integer> malformedStrikes = new ConcurrentHashMap<>();
@@ -53,7 +54,7 @@ public final class ServerNetworking {
             return;
         }
         registered = true;
-        ServerPlayNetworking.registerGlobalReceiver(CHANNEL, this::onReceive);
+        PlayNetworking.registerServer(CHANNEL, this::onReceive);
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             final UUID uuid = handler.getPlayer().getUuid();
             malformedStrikes.remove(uuid);
@@ -65,9 +66,7 @@ public final class ServerNetworking {
     private void onReceive(
         final MinecraftServer server,
         final ServerPlayerEntity player,
-        final net.minecraft.server.network.ServerPlayNetworkHandler handler,
-        final PacketByteBuf buf,
-        final net.fabricmc.fabric.api.networking.v1.PacketSender responseSender
+        final byte[] payload
     ) {
         if (!companion.isEnabled()) {
             return;
@@ -75,11 +74,14 @@ public final class ServerNetworking {
         if (mutedPlayers.contains(player.getUuid())) {
             return;
         }
-        final byte[] payload;
         try {
-            payload = readPayload(buf);
+            validatePayload(payload);
         } catch (final ProtoException e) {
-            ConfluxMapMod.LOGGER.warn("companion: dropping malformed payload from {} ({})", player.getEntityName(), e.getMessage());
+            ConfluxMapMod.LOGGER.warn(
+                "companion: dropping malformed payload from {} ({})",
+                MinecraftAccess.playerName(player),
+                e.getMessage()
+            );
             recordMalformed(player);
             return;
         }
@@ -92,12 +94,12 @@ public final class ServerNetworking {
             } else {
                 ConfluxMapMod.LOGGER.warn(
                     "companion: unexpected {} from {} (server-side handlers expect C2S only)",
-                    msg.getClass().getSimpleName(), player.getEntityName()
+                    msg.getClass().getSimpleName(), MinecraftAccess.playerName(player)
                 );
             }
         } catch (final ProtoException e) {
             ConfluxMapMod.LOGGER.warn("companion: undecodable {}-byte payload from {} ({})",
-                payload.length, player.getEntityName(), e.getMessage());
+                payload.length, MinecraftAccess.playerName(player), e.getMessage());
             recordMalformed(player);
         }
     }
@@ -124,7 +126,7 @@ public final class ServerNetworking {
         send(player, policy);
         ConfluxMapMod.LOGGER.info(
             "companion: replied HELLO_POLICY to {} (modVersion={} predictorVersion={} worldId={} seedGranted={})",
-            player.getEntityName(), hello.modVersion(), hello.predictorVersion(),
+            MinecraftAccess.playerName(player), hello.modVersion(), hello.predictorVersion(),
             policy.worldId(), policy.flags().seedGranted()
         );
     }
@@ -203,23 +205,19 @@ public final class ServerNetworking {
             ConfluxMapMod.LOGGER.error("companion: failed to serialize {}: {}", msg.getClass().getSimpleName(), e.getMessage());
             return;
         }
-        final PacketByteBuf buf = new PacketByteBuf(Unpooled.wrappedBuffer(payload));
-        ServerPlayNetworking.send(player, CHANNEL, buf);
+        PlayNetworking.sendServer(player, CHANNEL, payload);
     }
 
-    private static byte[] readPayload(final PacketByteBuf buf) throws ProtoException {
-        final int readable = buf.readableBytes();
+    private static void validatePayload(final byte[] payload) throws ProtoException {
+        final int readable = payload.length;
         if (readable < 1) {
             throw new ProtoException("empty payload");
         }
         if (readable > Proto.MAX_C2S_PAYLOAD) {
             throw new ProtoException("C2S payload " + readable + " above cap " + Proto.MAX_C2S_PAYLOAD);
         }
-        final byte[] payload = new byte[readable];
-        buf.readBytes(payload);
-        return payload;
     }
 
     /** Vanilla worldgen version this server jar speaks; the client maps it to a cubiomes {@code MCVersion}. */
-    private static final String WORLDGEN_VERSION = "1.17";
+    private static final String WORLDGEN_VERSION = MinecraftVersion.current();
 }

@@ -1,19 +1,19 @@
 package cn.net.rms.confluxmap.core.predict;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 
 /**
  * Maps a vanilla biome registry identifier's path (e.g. {@code "plains"} out of {@code
- * minecraft:plains}) to the cubiomes biome id it corresponds to for 1.17.1, per the plan's R4
+ * minecraft:plains}) to the cubiomes biome id it corresponds to, per the plan's R4
  * note: raw registry ids must never be assumed to equal cubiomes ids, so this table is built by
- * hand from {@code native/cubiomes/biomes.h}'s enum, using each biome's <em>primary</em> (first,
- * pre-{@code =alias}) name - which is also the actual 1.17.1 vanilla identifier, since the
- * 1.18 "Caves & Cliffs: Part II" update is what later renamed/removed most of these (windswept_
- * hills, old_growth_pine_taiga, sparse_jungle, and the wholesale removal of every "_hills"/
- * modified-biome variant all postdate 1.17.1).
+ * hand from {@code native/cubiomes/biomes.h}'s enum. Renamed modern biomes are aliases of their
+ * older numeric ids, while biomes added since 1.17 have their own entries.
  *
  * <p>Deliberately a separate table from {@link BiomeTable} (whose keys are already the cubiomes
  * ids) rather than a derived reverse-index, since this one only exists for {@code
@@ -23,6 +23,7 @@ import java.util.OptionalInt;
 public final class CubiomesBiomeIds {
     private static final Map<String, Integer> BY_NAME = new HashMap<>();
     private static final Map<Integer, String> BY_ID = new HashMap<>();
+    private static final Map<Integer, List<String>> NAMES_BY_ID = new HashMap<>();
 
     private CubiomesBiomeIds() {
     }
@@ -36,9 +37,27 @@ public final class CubiomesBiomeIds {
         return Optional.ofNullable(BY_ID.get(id));
     }
 
+    /**
+     * Every vanilla registry path this cubiomes id has carried, canonical (1.17-era) name first,
+     * later renames after. Callers that must match one concrete game version's registry or
+     * language file (e.g. the predicted-biome footer label) pick whichever spelling that version
+     * actually knows; a bare {@link #nameForId} would hand modern versions a retired key like
+     * {@code snowy_tundra}.
+     */
+    public static List<String> namesForId(final int id) {
+        final List<String> names = NAMES_BY_ID.get(id);
+        return names == null ? List.of() : Collections.unmodifiableList(names);
+    }
+
     private static void put(final int id, final String name) {
         BY_NAME.put(name, id);
         BY_ID.put(id, name);
+        NAMES_BY_ID.computeIfAbsent(id, key -> new ArrayList<>()).add(name);
+    }
+
+    private static void alias(final int id, final String name) {
+        BY_NAME.put(name, id);
+        NAMES_BY_ID.computeIfAbsent(id, key -> new ArrayList<>()).add(name);
     }
 
     static {
@@ -113,5 +132,29 @@ public final class CubiomesBiomeIds {
         put(167, "modified_badlands_plateau");
         put(168, "bamboo_jungle");
         put(169, "bamboo_jungle_hills");
+        put(174, "dripstone_caves");
+        put(175, "lush_caves");
+        put(177, "meadow");
+        put(178, "grove");
+        put(179, "snowy_slopes");
+        put(180, "jagged_peaks");
+        put(181, "frozen_peaks");
+        put(182, "stony_peaks");
+        put(183, "deep_dark");
+        put(184, "mangrove_swamp");
+        put(185, "cherry_grove");
+        put(186, "pale_garden");
+
+        alias(12, "snowy_plains");
+        alias(155, "old_growth_birch_forest");
+        alias(32, "old_growth_pine_taiga");
+        alias(160, "old_growth_spruce_taiga");
+        alias(23, "sparse_jungle");
+        alias(25, "stony_shore");
+        alias(3, "windswept_hills");
+        alias(34, "windswept_forest");
+        alias(131, "windswept_gravelly_hills");
+        alias(163, "windswept_savanna");
+        alias(38, "wooded_badlands");
     }
 }

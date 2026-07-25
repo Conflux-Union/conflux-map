@@ -9,12 +9,14 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.math.MathHelper;
+//#if MC>=12111
+//$$ import net.minecraft.world.attribute.EnvironmentAttributes;
+//#endif
 
 /**
  * Drives {@link DaylightModel} once per client tick from the live world's sky angle, using
  * vanilla's own sky-brightness cosine curve (the same one {@code BackgroundRenderer} uses for
- * fog/sky color): {@code f = clamp(2*cos(skyAngle * 2*pi) + 0.5, 0, 1)}, read here via {@link
- * ClientWorld#getSkyAngleRadians} which already returns {@code skyAngle * 2*pi}.
+ * fog/sky color): {@code f = clamp(2*cos(skyAngle * 2*pi) + 0.5, 0, 1)}.
  *
  * <p>{@link ConfluxConfig#dynamicLighting} off, no world loaded, or a dimension with no sky
  * light (Nether/End - fixed brightness, and neither ever displays the SURFACE layer this
@@ -65,7 +67,30 @@ public final class McDaylightTracker {
         if (!config.dynamicLighting || world == null || !world.getDimension().hasSkyLight()) {
             return 1f;
         }
-        final float raw = MathHelper.cos(world.getSkyAngleRadians(1.0f)) * 2.0f + 0.5f;
+        //#if MC>=12111
+        //$$ return daylightFactor(world.getEnvironmentAttributes().getAttributeValue(
+        //$$     EnvironmentAttributes.SUN_ANGLE_VISUAL
+        //$$ ));
+        //#else
+        return daylightFactor(world.getSkyAngleRadians(1.0f));
+        //#endif
+    }
+
+    /**
+     * Vanilla's sky-brightness cosine curve, taking the sun angle in whatever unit the running
+     * version reports it: radians from {@code World#getSkyAngleRadians} before 1.21.11, degrees
+     * from {@code EnvironmentAttributes#SUN_ANGLE_VISUAL} on 1.21.11 and later. Vanilla's own
+     * {@code DaylightDetectorBlock} applies the same degree-to-radian conversion to that
+     * attribute; feeding the raw degrees to {@code cos} instead runs ~57 brightness cycles per
+     * Minecraft day, which reads as the map flickering between bright and dark.
+     */
+    static float daylightFactor(final float sunAngle) {
+        //#if MC>=12111
+        //$$ final float skyAngle = sunAngle * MathHelper.RADIANS_PER_DEGREE;
+        //#else
+        final float skyAngle = sunAngle;
+        //#endif
+        final float raw = MathHelper.cos(skyAngle) * 2.0f + 0.5f;
         return MathHelper.clamp(raw, 0f, 1f);
     }
 }

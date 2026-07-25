@@ -8,7 +8,8 @@
   "client": [
     "ClientChunkManagerMixin",
     "ClientPlayNetworkHandlerMixin",
-    "ScreenMixin"
+    "ScreenMixin",
+    "WorldRendererMixin"
   ],
   "injectors": {
     "defaultRequire": 1

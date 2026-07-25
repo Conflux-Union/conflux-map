@@ -175,8 +175,31 @@ public final class ShadingPipeline {
      * bit-identical no-op - today's undarkened rendering.
      */
     public static int applyDaylight(final int argb, final float daylightFactor, final int blockLevel) {
+        return Argb.scale(argb, daylightScale(daylightFactor, blockLevel));
+    }
+
+    /** The RGB scale {@link #applyDaylight} multiplies a column's composed color by. */
+    public static float daylightScale(final float daylightFactor, final int blockLevel) {
         final float b = Math.max(daylightFactor, blockLevel / 15f);
-        final float scale = DAYLIGHT_FLOOR + (1f - DAYLIGHT_FLOOR) * b;
-        return Argb.scale(argb, scale);
+        return DAYLIGHT_FLOOR + (1f - DAYLIGHT_FLOOR) * b;
+    }
+
+    /**
+     * Per-block-light-level multipliers that move pixels darkened with {@code fromFactor}
+     * to what {@link #applyDaylight} would have produced at {@code toFactor}, indexed by
+     * the pixel's 0-15 block-light reading: {@code ratios[L] = scale(to, L) / scale(from, L)}.
+     * This is how an already-uploaded tile is re-lit in place when its backing region data
+     * is no longer in memory to recompose from (see {@link
+     * cn.net.rms.confluxmap.core.tile.TileUpdate.Relight}); a fully torch-lit pixel gets
+     * ratio 1 at any factor pair, exactly like a real recompose would leave it. Exact up
+     * to the one-round-per-hop channel quantization; {@code scale} never goes below {@link
+     * #DAYLIGHT_FLOOR}, so the division is always safe.
+     */
+    public static float[] relightRatios(final float fromFactor, final float toFactor) {
+        final float[] ratios = new float[16];
+        for (int level = 0; level < ratios.length; level++) {
+            ratios[level] = daylightScale(toFactor, level) / daylightScale(fromFactor, level);
+        }
+        return ratios;
     }
 }
