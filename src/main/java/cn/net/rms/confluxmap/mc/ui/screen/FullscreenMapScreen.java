@@ -198,17 +198,16 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         this.updateCheck = app.updateCheck();
 
         final DimensionId dimension = gameBridge.session().dimension();
-        final FullscreenMapViewState.View remembered = viewState.get(dimension);
-        if (remembered != null) {
-            centerX = remembered.centerX();
-            centerZ = remembered.centerZ();
-            scale = remembered.scale();
-        } else {
-            final Optional<PlayerView> player = gameBridge.player();
-            centerX = player.isPresent() ? player.get().x() : 0.0;
-            centerZ = player.isPresent() ? player.get().z() : 0.0;
-            scale = DEFAULT_SCALE;
-        }
+        final Optional<PlayerView> player = gameBridge.player();
+        final FullscreenMapViewState.View initialView = viewState.viewForOpening(
+            dimension,
+            player.isPresent() ? player.get().x() : 0.0,
+            player.isPresent() ? player.get().z() : 0.0,
+            DEFAULT_SCALE
+        );
+        centerX = initialView.centerX();
+        centerZ = initialView.centerZ();
+        scale = initialView.scale();
     }
 
     @Override
@@ -285,10 +284,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         return false;
     }
 
-    /** Funnel point for every close path (ESC via the default {@code keyPressed}, or M below) so the view is always remembered. */
+    /** Funnel point for every close path (ESC via the default {@code keyPressed}, or M below). */
     @Override
     public void onClose() {
-        viewState.put(gameBridge.session().dimension(), new FullscreenMapViewState.View(centerX, centerZ, scale));
+        viewState.rememberScale(gameBridge.session().dimension(), scale);
         tiles.clearViewport();
         predictionTiles.clearViewport();
         structureMarkers.flush();
