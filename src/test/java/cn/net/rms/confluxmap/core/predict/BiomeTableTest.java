@@ -101,10 +101,14 @@ class BiomeTableTest {
     }
 
     @Test
-    void onlyCherryGroveHasAFixedCanopyColor() {
+    void onlyUntintedVanillaLeavesHaveAFixedCanopyColor() {
+        // Cherry blossom and pale oak are the two leaf blocks vanilla registers no tint provider
+        // for, so their canopy colour is baked into the block and the biome's own foliage colour
+        // (green in both cases) must never reach it.
+        final Set<Integer> fixedCanopies = Set.of(185, 186);
         for (final int id : BiomeTable.knownIds()) {
-            if (id == 185) {
-                assertFalse(BiomeTable.get(id).foliageTinted(), "cherry canopy must stay pink");
+            if (fixedCanopies.contains(id)) {
+                assertFalse(BiomeTable.get(id).foliageTinted(), "biome " + id + " canopy must keep its block colour");
             } else {
                 assertTrue(BiomeTable.get(id).foliageTinted(), "biome " + id + " canopy must follow foliage samples");
             }

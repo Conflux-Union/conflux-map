@@ -319,7 +319,17 @@ public final class BiomeTable {
             SurfaceKind.LAND, false, 0.3, LAND_BASE, true, 0xFF83B55B,
             0xFFD97294, false, 0xFFD97294, DEFAULT_WATER_TINT
         ), cherry_grove);
-        put(land(0.45, 0xFF77816E, 0xFF879184), pale_garden);
+        // Pale garden: vanilla registers no tint provider for pale oak leaves, so their washed-out
+        // grey is baked into the block exactly like cherry blossom, and the biome's own foliage
+        // colour (#878D76) is only ever applied to the *other* plants growing there. Multiplying it
+        // into FOLIAGE_BASE painted the canopy a dark forest green - the one colour a pale garden
+        // never is. The fixed canopy is the pale-oak-leaves texture average, which is what the
+        // captured map draws for the same block. The ground really is grass block under the litter,
+        // so it keeps the biome's (equally desaturated) grass tint.
+        put(new Entry(
+            SurfaceKind.LAND, false, 0.45, LAND_BASE, true, 0xFF77816E,
+            0xFF747972, false, 0xFF747972, DEFAULT_WATER_TINT
+        ), pale_garden);
 
         // The End: pale end-stone look, no vegetation, never water.
         put(new Entry(

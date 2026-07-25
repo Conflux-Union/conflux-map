@@ -1,7 +1,7 @@
 upstream: https://github.com/Cubitect/cubiomes
 fork:     https://github.com/Conflux-Union/cubiomes (this project's fork)
-commit:   75804375a34e00e10583a7097d7dc266e454d606
-commit date: 2026-07-24T15:49:52+08:00
+commit:   408c4199c019e4f433a490836e3dae24b9f78d57
+commit date: 2026-07-24T23:32:52-07:00
 pinned via: native/cubiomes git submodule (converted from a vendored copy on 2026-07-17)
 license: MIT (see native/cubiomes/LICENSE)
 
@@ -22,13 +22,22 @@ Fork contents on top of upstream master (e61f905):
   - 7580437 "predict modern vegetation candidates" (this project's own
     addition), which adds the 1.21.1 vegetation-step Xoroshiro stream, placed-
     feature profiles, surface-biome placement checks, and bamboo candidates.
+  - 408c419 merge of https://github.com/xpple/cubiomes (MIT), the community
+    fork that carries post-1.21.3 worldgen now that upstream is dormant. It
+    adds MC_1_21_6/9/11, MC_26_1 and MC_26_2. 26.1 is a pure passthrough of
+    1.21.11 worldgen; 26.2 adds tables/btree262.h and the sulfur_caves biome.
+    Verified before merging: output-identical to the pre-merge tree across
+    MC 1.17.1-1.21.5 x 5 seeds for biomes (scale 1 and 4, all three
+    dimensions), mapApproxHeight, structure positions and viability,
+    mapOverworldSurfaceColumns, and the natural tree/structure queries.
 
 Files compiled from this commit by buildNativesHost/buildNativesAll
 (selected subset):
   biomenoise.c/h, biomes.c/h, generator.c/h, layers.c/h, noise.c/h,
   finders.c/h, terrain_features.c/h, rng.h, tables/btree18.h, tables/btree192.h,
-  tables/btree19.h, tables/btree20.h, tables/btree21wd.h, tables/btree215.h
+  tables/btree19.h, tables/btree20.h, tables/btree21wd.h, tables/btree215.h,
+  tables/btree262.h
 
-Not compiled (upstream utilities/tests/docs present in the submodule but
-unused by this project): quadbase.c/h, util.c/h, tests.c, feature_tests.c,
-docs/, CMakeLists.txt, makefile.
+Not compiled (utilities/tests/docs present in the submodule but unused by
+this project): quadbase.c/h, util.c/h, tests.c, feature_tests.c, terrainnoise.c/h,
+xradv.c, xrms.h, features/, loot/, docs/, CMakeLists.txt.
