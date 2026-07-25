@@ -71,7 +71,7 @@ public final class RegionSummaryService {
             )
         ));
         channel.sender = sender;
-        if (request.lod() > config.maxPatchLod || request.tiles().size() > config.maxTilesPerRequest
+        if (request.lod() > lodCeiling() || request.tiles().size() > config.maxTilesPerRequest
             || request.dimIndex() < 0 || !channel.dispatcher.budget().beginRequest(now)) {
             sender.accept(new ErrorS2C(ErrorS2C.ERR_RATE_LIMITED, "map correction request is rate limited"));
             return;
@@ -115,11 +115,22 @@ public final class RegionSummaryService {
         channel.dispatcher.drain(nowNanos, job -> buildJob(server, disk, job), sender);
     }
 
+    /**
+     * Highest LOD a request may name. Tiles above {@link ServerConfig#maxPatchLod} cannot carry
+     * corrections but are still answerable with presence alone, so the two ceilings are separate.
+     */
+    private int lodCeiling() {
+        return Math.max(config.maxPatchLod, config.maxPresenceLod);
+    }
+
     private MapPatchS2C buildJob(final MinecraftServer server, final SummaryDiskCache disk, final PatchDispatcher.TileJob job) {
         try {
             final ServerWorld world = worldAt(server, job.dimIndex());
-            if (world == null || !config.shareCorrections || job.lod() > PatchBuilder.MAX_SUPPORTED_LOD) {
+            if (world == null || !config.shareCorrections) {
                 return unavailable(job);
+            }
+            if (job.lod() > PatchBuilder.MAX_SUPPORTED_LOD || job.lod() > config.maxPatchLod) {
+                return presenceOnly(world, job, disk);
             }
             final SummaryTile summary = readTile(world, job.tileX(), job.tileZ(), job.lod(), disk);
             final PatchBuilder.Result result = buildPatch(world, summary, job.sinceRevision());
@@ -132,6 +143,35 @@ public final class RegionSummaryService {
             );
             return unavailable(job);
         }
+    }
+
+    /**
+     * Answers a tile the correction builder will not serve with its generated-chunk bitmap alone,
+     * which is all the client's generated-only view mode needs.
+     *
+     * <p>The revision stays 0 deliberately. It is the watermark the client echoes back as
+     * {@code sinceRevision}, and recording a real one here would make a later full request skip
+     * every unchanged chunk of a tile whose columns the client never actually received.
+     *
+     * <p>Only the summary cache is consulted - never a region-file scan, which at LOD 4 would mean
+     * reading 256 regions worth of chunk NBT for 32 bytes. Ignoring staleness is safe for presence
+     * in a way it is not for columns: chunk generation is monotonic, so an outdated summary can
+     * only miss a newly generated chunk, never claim one that does not exist. Regions with no
+     * cached summary read as "not generated" and fill in as players visit them at a correctable LOD.
+     */
+    private MapPatchS2C presenceOnly(
+        final ServerWorld world, final PatchDispatcher.TileJob job, final SummaryDiskCache disk
+    ) {
+        if (job.lod() > config.maxPresenceLod) {
+            return unavailable(job);
+        }
+        final String dimension = world.getRegistryKey().getValue().toString();
+        final byte[] presence = TilePresence.build(job.lod(), job.tileX(), job.tileZ(), (regionX, regionZ) -> {
+            final SummaryCodec.Generated cached = disk.loadGenerated(dimension, regionX, regionZ);
+            return cached == null ? null : cached.flags();
+        });
+        return new MapPatchS2C(job.reqId(), job.dimIndex(), job.lod(), job.tileX(), job.tileZ(),
+            Proto.PATCH_MODE_UNCHANGED, 0L, presence, new byte[0]);
     }
 
     private static MapPatchS2C unavailable(final PatchDispatcher.TileJob job) {

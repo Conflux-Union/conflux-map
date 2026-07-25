@@ -82,7 +82,12 @@ public final class Proto {
     /** Length of the {@code presence} bitmap carried in every MAP_PATCH (one bit per 16x16 output-pixel cell). */
     public static final int PATCH_PRESENCE_BYTES = 32;
 
-    /** {@code mode} field in MAP_PATCH: server's baseline matches the client's prediction exactly. */
+    /**
+     * {@code mode} field in MAP_PATCH: no column data follows, so the receiver keeps the samples
+     * it already has and takes only the presence bitmap. Sent both when the server's baseline
+     * matches the client's prediction exactly, and for tiles coarser than the server's correction
+     * ceiling, where presence is the only thing cheap enough to compute.
+     */
     public static final int PATCH_MODE_UNCHANGED = 0;
     /** {@code mode} field in MAP_PATCH: server sends differing pixels and removals (residual coding). */
     public static final int PATCH_MODE_RESIDUAL = 1;

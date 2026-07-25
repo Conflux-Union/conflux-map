@@ -12,6 +12,7 @@ import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.predict.CorrectionStore;
 import cn.net.rms.confluxmap.core.predict.PredictionTileService;
 import cn.net.rms.confluxmap.core.predict.ViewRequestPlanner;
+import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -108,11 +109,19 @@ public final class MapSyncClient {
         this.millisClock = millisClock;
     }
 
+    /**
+     * Requests are not capped at {@code maxPatchLod}. Coarser tiles cannot carry corrections, but
+     * the server can still answer them with the generated-chunk bitmap, which is the only thing
+     * {@link cn.net.rms.confluxmap.core.predict.PredictionViewMode#GENERATED_ONLY} reads - and
+     * without it that mode blanked the underlay entirely past LOD 2, exactly where it is most
+     * useful. A server that will not serve the LOD replies UNAVAILABLE, or ERROR on builds
+     * predating presence-only patches; both cost one small round trip per planner cooldown.
+     */
     public synchronized void reportViewport(
         final DimensionId dimension, final int lod, final int minX, final int maxX, final int minZ, final int maxZ
     ) {
         if (!config.predictionNetworkSync || !companion.isActive() || !companion.policy().flags().correctionsEnabled()
-            || lod > companion.policy().budgets().maxPatchLod()) {
+            || lod < 0 || lod > TileMath.MAX_LOD) {
             return;
         }
         final long now = millisClock.getAsLong();
