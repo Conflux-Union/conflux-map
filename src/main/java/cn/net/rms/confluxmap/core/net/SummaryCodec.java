@@ -62,6 +62,24 @@ public final class SummaryCodec {
         }
     }
 
+    /**
+     * One region's chunk-generation flags, read without inflating the column body.
+     *
+     * @param maxRevision highest revision among generated chunks, 0 when the region has none
+     */
+    public record Generated(int rx, int rz, long sourceMcaMtimeMs, boolean[] flags, long maxRevision) {
+        public Generated {
+            if (flags == null || flags.length != CHUNKS) {
+                throw new IllegalArgumentException("summary region must contain 256 chunk flags");
+            }
+            flags = flags.clone();
+        }
+    }
+
+    /** Fixed-size prefix every {@code .cfs} file starts with, ahead of the deflated columns. */
+    private record Header(int rx, int rz, long mtime, boolean[] generated, long[] revisions) {
+    }
+
     public static byte[] encode(final Region region) {
         try {
             final ByteArrayOutputStream out = new ByteArrayOutputStream(64 * 1024);
@@ -121,30 +139,15 @@ public final class SummaryCodec {
     }
 
     public static Region decode(final InputStream source) throws IOException, ProtoException {
-        final DataInputStream in = new DataInputStream(source);
-        final byte[] magic = new byte[MAGIC.length];
-        in.readFully(magic);
-        if (!Arrays.equals(MAGIC, magic)) {
-            throw new ProtoException("bad summary magic");
-        }
-        final int version = in.readUnsignedByte();
-        if (version != FORMAT_VERSION) {
-            throw new ProtoException("unsupported summary version " + version);
-        }
-        final int rx = in.readInt();
-        final int rz = in.readInt();
-        final long mtime = in.readLong();
-        final boolean[] generated = new boolean[CHUNKS];
-        final long[] revisions = new long[CHUNKS];
+        final Header header = readHeader(new DataInputStream(source));
+        final int rx = header.rx();
+        final int rz = header.rz();
+        final long mtime = header.mtime();
+        final boolean[] generated = header.generated();
+        final long[] revisions = header.revisions();
         int generatedCount = 0;
-        for (int i = 0; i < CHUNKS; i++) {
-            final int flags = in.readUnsignedByte();
-            if ((flags & ~1) != 0) {
-                throw new ProtoException("unknown summary flags " + flags);
-            }
-            generated[i] = (flags & 1) != 0;
-            generatedCount += generated[i] ? 1 : 0;
-            revisions[i] = in.readLong();
+        for (final boolean flag : generated) {
+            generatedCount += flag ? 1 : 0;
         }
         final byte[] raw = inflate(source, generatedCount * COLUMNS * RECORD_BYTES);
         final DataInputStream columns = new DataInputStream(new ByteArrayInputStream(raw));
@@ -163,6 +166,49 @@ public final class SummaryCodec {
             throw new ProtoException("trailing summary body bytes: " + columns.available());
         }
         return new Region(rx, rz, mtime, chunks);
+    }
+
+    /**
+     * Reads only the chunk-generation flags, leaving the deflated column body untouched.
+     *
+     * <p>A coarse presence bitmap needs nothing else, and one LOD-4 prediction tile spans 256
+     * regions: decoding their columns would allocate ~16 million records to produce 32 bytes.
+     */
+    public static Generated decodeGenerated(final InputStream source) throws IOException, ProtoException {
+        final Header header = readHeader(new DataInputStream(source));
+        long maxRevision = 0L;
+        for (int i = 0; i < CHUNKS; i++) {
+            if (header.generated()[i]) {
+                maxRevision = Math.max(maxRevision, header.revisions()[i]);
+            }
+        }
+        return new Generated(header.rx(), header.rz(), header.mtime(), header.generated(), maxRevision);
+    }
+
+    private static Header readHeader(final DataInputStream in) throws IOException, ProtoException {
+        final byte[] magic = new byte[MAGIC.length];
+        in.readFully(magic);
+        if (!Arrays.equals(MAGIC, magic)) {
+            throw new ProtoException("bad summary magic");
+        }
+        final int version = in.readUnsignedByte();
+        if (version != FORMAT_VERSION) {
+            throw new ProtoException("unsupported summary version " + version);
+        }
+        final int rx = in.readInt();
+        final int rz = in.readInt();
+        final long mtime = in.readLong();
+        final boolean[] generated = new boolean[CHUNKS];
+        final long[] revisions = new long[CHUNKS];
+        for (int i = 0; i < CHUNKS; i++) {
+            final int flags = in.readUnsignedByte();
+            if ((flags & ~1) != 0) {
+                throw new ProtoException("unknown summary flags " + flags);
+            }
+            generated[i] = (flags & 1) != 0;
+            revisions[i] = in.readLong();
+        }
+        return new Header(rx, rz, mtime, generated, revisions);
     }
 
     private static byte[] inflate(final InputStream source, final int expectedMax) throws IOException, ProtoException {

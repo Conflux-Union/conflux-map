@@ -2,7 +2,9 @@ package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
+import java.io.BufferedInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -26,6 +28,28 @@ public final class SummaryDiskCache {
                 throw new ProtoException("summary coordinates do not match file name");
             }
             return region;
+        } catch (IOException | ProtoException e) {
+            quarantine(path);
+            return null;
+        }
+    }
+
+    /**
+     * Loads only a region's chunk-generation flags, reading the fixed-size header and stopping
+     * before the deflated column body. Used by coarse presence answers, which span far too many
+     * regions to decode in full.
+     */
+    public SummaryCodec.Generated loadGenerated(final String dimension, final int regionX, final int regionZ) {
+        final Path path = pathFor(dimension, regionX, regionZ);
+        if (!Files.isRegularFile(path)) {
+            return null;
+        }
+        try (InputStream in = new BufferedInputStream(Files.newInputStream(path))) {
+            final SummaryCodec.Generated generated = SummaryCodec.decodeGenerated(in);
+            if (generated.rx() != regionX || generated.rz() != regionZ) {
+                throw new ProtoException("summary coordinates do not match file name");
+            }
+            return generated;
         } catch (IOException | ProtoException e) {
             quarantine(path);
             return null;

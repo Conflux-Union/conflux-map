@@ -96,9 +96,9 @@ public final class ConfluxMapCompanion {
             sharedWaypoints = loadSharedWaypoints(server);
         }
         ConfluxMapMod.LOGGER.info(
-            "companion ready (shareSeed={} shareCorrections={} shareWaypoints={} maxPatchLod={} maxTilesPerRequest={})",
+            "companion ready (shareSeed={} shareCorrections={} shareWaypoints={} maxPatchLod={} maxPresenceLod={} maxTilesPerRequest={})",
             config.shareSeed, config.shareCorrections, sharedWaypoints != null,
-            config.maxPatchLod, config.maxTilesPerRequest
+            config.maxPatchLod, config.maxPresenceLod, config.maxTilesPerRequest
         );
     }
 
