@@ -66,8 +66,13 @@ final class GeneratedWorldTileReader {
         final TileArrays tile
     ) {
         final Heightmap heightmap = chunk.getHeightmap(Heightmap.Type.MOTION_BLOCKING);
+        //#if MC>=260100
+        //$$ final int chunkPixelX = Math.floorMod(chunk.getPos().x(), 16) * 16;
+        //$$ final int chunkPixelZ = Math.floorMod(chunk.getPos().z(), 16) * 16;
+        //#else
         final int chunkPixelX = Math.floorMod(chunk.getPos().x, 16) * 16;
         final int chunkPixelZ = Math.floorMod(chunk.getPos().z, 16) * 16;
+        //#endif
         for (int localZ = 0; localZ < 16; localZ++) {
             for (int localX = 0; localX < 16; localX++) {
                 final int pixelX = chunkPixelX + localX;
@@ -149,7 +154,11 @@ final class GeneratedWorldTileReader {
     }
 
     private static boolean isWaterColumn(final BlockState state) {
+        //#if MC>=260100
+        //$$ return state.getBlock() == Blocks.ICE || state.getFluidState().is(FluidTags.WATER);
+        //#else
         return state.getBlock() == Blocks.ICE || state.getFluidState().isIn(FluidTags.WATER);
+        //#endif
     }
 
     private static SurfaceKind classify(final Block block) {
