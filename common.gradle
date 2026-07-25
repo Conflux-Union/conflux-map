@@ -65,14 +65,32 @@ tasks.withType(JavaCompile).configureEach {
     // javac's default cap of 100 errors routinely hides most of a version's actual breakage.
     options.compilerArgs << '-Xmaxerrs' << '2000'
 }
+// The subproject name is the Minecraft version this jar is compiled against; minecraft_versions is
+// the set of versions it can run on, which is usually wider because most patch releases keep the
+// client API intact. The jar advertises that set as a closed range, so a patch with no subproject
+// of its own still gets a jar. Order in the property does not matter; checkVersionCoverage proves
+// the claim against each version's mappings.
+final Closure<Integer> mcSortKey = { final String candidate ->
+    final List<String> parts = candidate.tokenize('.')
+    (parts[0] + parts[1].padLeft(2, '0') + (parts.size() > 2 ? parts[2] : '0').padLeft(2, '0')).toInteger()
+}
+ext.supportedMinecraftVersions = minecraft_versions.trim().split(/\s+/).toList()
+if (!supportedMinecraftVersions.contains(project.name)) {
+    throw new GradleException("versions/${project.name}/gradle.properties: minecraft_versions must list ${project.name}")
+}
+final String oldestMinecraftVersion = supportedMinecraftVersions.min(mcSortKey)
+final String newestMinecraftVersion = supportedMinecraftVersions.max(mcSortKey)
+final String minecraftDependency = oldestMinecraftVersion == newestMinecraftVersion
+        ? oldestMinecraftVersion
+        : ">=$oldestMinecraftVersion <=$newestMinecraftVersion"
 processResources {
     inputs.property 'modId', id
     inputs.property 'modVersion', project.version.toString()
-    inputs.property 'minecraftVersion', project.name
+    inputs.property 'minecraftDependency', minecraftDependency
     inputs.property 'loaderVersion', loader_version
     inputs.property 'javaVersion', javaCompatibility.getMajorVersion()
     from "${id}.accesswidener"
-    filesMatching('fabric.mod.json') { expand id: id, version: version, minecraft_version: project.name, loader_version: loader_version }
+    filesMatching('fabric.mod.json') { expand id: id, version: version, minecraft_dependency: minecraftDependency, loader_version: loader_version }
     filesMatching("${id}.mixins.json") { expand java_version: javaCompatibility.getMajorVersion() }
     // Bundles the committed native/prebuilt/<target>/ binaries into the jar (and dev classpath)
     // as natives/<target>/<libname>, so NativeLib can find them without any extra toolchain.
@@ -84,11 +102,15 @@ tasks.register('checkModMetadata') {
     dependsOn tasks.named('processResources')
     inputs.file layout.buildDirectory.file('resources/main/fabric.mod.json')
     inputs.property 'expectedVersion', project.version.toString()
+    inputs.property 'expectedMinecraftDependency', minecraftDependency
     doLast {
         final File metadataFile = layout.buildDirectory.file('resources/main/fabric.mod.json').get().asFile
         final Map<String, ?> metadata = new groovy.json.JsonSlurper().parse(metadataFile) as Map<String, ?>
         if (metadata.version != project.version.toString()) {
             throw new GradleException("Expanded fabric.mod.json version ${metadata.version} does not match project version ${project.version}")
+        }
+        if (metadata.depends.minecraft != minecraftDependency) {
+            throw new GradleException("Expanded fabric.mod.json Minecraft dependency ${metadata.depends.minecraft} does not match ${minecraftDependency}")
         }
     }
 }
@@ -122,8 +144,10 @@ tasks.register('checkCoreIsolation') {
         }
     }
 }
+apply from: rootProject.file('gradle/version-coverage.gradle')
 check.dependsOn 'checkCoreIsolation'
 check.dependsOn 'checkModMetadata'
+check.dependsOn 'checkVersionCoverage'
 check.dependsOn 'runGametest'
 tasks.register('buildRelease') {
     group = 'build'
@@ -131,6 +155,7 @@ tasks.register('buildRelease') {
     dependsOn tasks.named('assemble')
     dependsOn tasks.named('checkCoreIsolation')
     dependsOn tasks.named('checkModMetadata')
+    dependsOn tasks.named('checkVersionCoverage')
     dependsOn tasks.named('validateAccessWidener')
 }
 tasks.named('runGametest') {

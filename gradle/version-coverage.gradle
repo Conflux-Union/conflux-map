@@ -1,0 +1,214 @@
+// checkVersionCoverage asserts that the remapped jar can actually link against every Minecraft
+// version listed in minecraft_versions, not just the one it was compiled against.
+//
+// How: pull every net/minecraft member the jar references out of its constant pool, then look each
+// one up in the target version's Fabric intermediary mappings. Intermediary names are unique per
+// member and are reassigned when a descriptor changes, so a removal or a signature change both
+// surface as a miss. Mixin @At targets and access widener entries name their targets as strings
+// rather than as constant pool references, so those are collected and checked as well.
+//
+// Not covered: a mixin injection point inside a method body (@At("INVOKE") needs the target
+// version's bytecode to confirm, not its mappings) and behavior changes that keep every signature.
+// Widening minecraft_versions still deserves one real launch on the version being added.
+
+final def MEMBER_REF = ~'//\\s+(net/minecraft/[\\w$/]+)\\.([\\w$<>]+):(\\S+)'
+final def CLASS_REF = ~'=\\s+Class\\s+#\\d+\\s+//\\s+(net/minecraft/[\\w$/]+)\\s*$'
+// Annotation values are stored as raw Utf8 constants rather than as String constants, so mixin
+// targets only ever show up here. Two shapes matter: the bare member name an @Inject/@ModifyArgs
+// `method` uses, and the fully qualified form an @At `target` uses.
+final def TEXT_CONSTANT = ~'=\\s+Utf8\\s+(.*)$'
+final def BARE_TARGET = ~'^(method_\\d+|field_\\d+)(\\(.*)?$'
+final def QUALIFIED_TARGET = ~'^L(net/minecraft/[\\w$/]+);([\\w$<>]+)[(:](.*)$'
+
+/** Reads one intermediary tiny v2 file into lookup sets keyed by intermediary name. */
+final Closure<Map<String, ?>> loadIntermediary = { final File tinyFile ->
+    final Map<String, String> classes = [:]
+    final List<List<String>> methods = []
+    final List<List<String>> fields = []
+    tinyFile.eachLine('UTF-8') { final String line ->
+        final String[] parts = line.split('\t', -1)
+        if (parts[0] == 'c' && parts.length >= 3) {
+            classes[parts[1]] = parts[2]
+        } else if (parts.length >= 5 && parts[1] == 'm') {
+            methods << [parts[4], parts[2]]
+        } else if (parts.length >= 5 && parts[1] == 'f') {
+            fields << [parts[4], parts[2]]
+        }
+    }
+    // Tiny v2 writes descriptors in the source (obfuscated) namespace; the jar references them in
+    // intermediary, so the class names inside each descriptor have to be translated first.
+    final Closure<String> toIntermediary = { final String descriptor ->
+        descriptor.replaceAll('L([^;]+);') { final List<String> match ->
+            'L' + (classes[match[1]] ?: match[1]) + ';'
+        }
+    }
+    final Set<List<String>> methodSet = methods.collect { [it[0], toIntermediary(it[1])] } as Set
+    final Set<List<String>> fieldSet = fields.collect { [it[0], toIntermediary(it[1])] } as Set
+    return [
+        classes: classes.values() as Set,
+        methods: methodSet,
+        fields  : fieldSet,
+        names   : (methods*.get(0) + fields*.get(0)) as Set,
+    ]
+}
+
+/** Collects every Minecraft reference the mod's own classes make, from the jar's constant pools. */
+final Closure<Map<String, ?>> readReferences = { final File jarFile ->
+    final List<String> classNames = []
+    final List<String> accessWidener = []
+    new java.util.zip.ZipFile(jarFile).withCloseable { final zip ->
+        Collections.list(zip.entries()).each { final entry ->
+            if (entry.name.endsWith('.class') && entry.name.startsWith('cn/net/rms/')) {
+                classNames << entry.name[0..-7].replace('/', '.')
+            } else if (entry.name.endsWith('.accesswidener')) {
+                accessWidener.addAll(zip.getInputStream(entry).text.readLines())
+            }
+        }
+    }
+    final Set<List<String>> members = []
+    final Set<String> referencedClasses = []
+    final Set<String> referencedNames = []
+    final String javap = "${System.getProperty('java.home')}/bin/javap"
+    // javap takes the class list on the command line, so feed it in batches rather than risking
+    // an over-long argument list on a jar with a few hundred classes.
+    classNames.collate(100).each { final List<String> batch ->
+        final Process process = ([javap, '-v', '-p', '-classpath', jarFile.absolutePath] + batch).execute()
+        final StringWriter output = new StringWriter()
+        final StringWriter errors = new StringWriter()
+        process.waitForProcessOutput(output, errors)
+        if (process.exitValue() != 0) {
+            throw new GradleException("javap failed while reading ${jarFile.name}:\n${errors}")
+        }
+        output.toString().eachLine { final String line ->
+            final def member = MEMBER_REF.matcher(line)
+            if (member.find()) {
+                members << [member.group(1), member.group(2), member.group(3)]
+                return
+            }
+            final def type = CLASS_REF.matcher(line)
+            if (type.find()) {
+                referencedClasses << type.group(1)
+                return
+            }
+            // Mixin targets (@Inject(method = ...), @At(target = ...)) survive remapping as
+            // annotation text, so they never appear as constant pool member references.
+            final def text = TEXT_CONSTANT.matcher(line)
+            if (!text.find()) {
+                return
+            }
+            final String value = text.group(1).trim()
+            final def qualified = QUALIFIED_TARGET.matcher(value)
+            if (qualified.matches()) {
+                final String descriptor = value.substring(value.indexOf(qualified.group(2)) + qualified.group(2).length())
+                members << [qualified.group(1), qualified.group(2), descriptor.startsWith(':') ? descriptor.substring(1) : descriptor]
+                return
+            }
+            final def bare = BARE_TARGET.matcher(value)
+            if (bare.matches()) {
+                if (bare.group(2) != null) {
+                    members << ['mixin target', bare.group(1), bare.group(2)]
+                } else {
+                    referencedNames << bare.group(1)
+                }
+            }
+        }
+    }
+    return [members: members, classes: referencedClasses, names: referencedNames, accessWidener: accessWidener]
+}
+
+/** Returns human-readable descriptions of everything the target version is missing. */
+final Closure<List<String>> findMissing = { final Map<String, ?> refs, final Map<String, ?> target ->
+    final List<String> missing = []
+    refs.classes.sort().each { final String owner ->
+        if (owner ==~ '.*/class_\\d+' && !target.classes.contains(owner)) {
+            missing << "class  $owner"
+        }
+    }
+    refs.members.sort().each { final List<String> member ->
+        final String name = member[1]
+        final String descriptor = member[2]
+        // Constructors and members Minecraft never obfuscated are absent from intermediary, so
+        // there is nothing to look them up against.
+        if (!(name ==~ '(method|field)_\\d+')) {
+            return
+        }
+        final boolean isMethod = descriptor.startsWith('(')
+        final Set<List<String>> table = isMethod ? target.methods : target.fields
+        if (!table.contains([name, descriptor])) {
+            missing << "${isMethod ? 'method' : 'field '} ${member[0]}.$name$descriptor"
+        }
+    }
+    refs.names.sort().each { final String name ->
+        if (name.startsWith('class_')) {
+            if (!target.classes.contains("net/minecraft/$name".toString())) {
+                missing << "mixin target class  $name"
+            }
+        } else if (!target.names.contains(name)) {
+            missing << "mixin target member $name"
+        }
+    }
+    refs.accessWidener.each { final String line ->
+        final String[] parts = line.split('\t', -1)
+        if (parts.length < 4 || parts[0].startsWith('#') || parts[0] == 'accessWidener') {
+            return
+        }
+        if (parts[1] == 'class') {
+            if (!target.classes.contains(parts[2])) {
+                missing << "access widener class ${parts[2]}"
+            }
+        } else if (parts.length >= 5) {
+            final Set<List<String>> table = parts[1] == 'method' ? target.methods : target.fields
+            if (!table.contains([parts[3], parts[4]])) {
+                missing << "access widener ${parts[1]} ${parts[2]}.${parts[3]}${parts[4]}"
+            }
+        }
+    }
+    return missing
+}
+
+tasks.register('checkVersionCoverage') {
+    group = 'verification'
+    description = 'Fails if the remapped jar references Minecraft members absent from any version in minecraft_versions'
+    final def remapped = tasks.named('remapJar').flatMap { it.archiveFile }
+    inputs.file remapped
+    inputs.property 'minecraftVersions', supportedMinecraftVersions
+    outputs.file layout.buildDirectory.file('reports/version-coverage.txt')
+    doLast {
+        final Map<String, ?> refs = readReferences(remapped.get().asFile)
+        // Bare names are a superset of the mixin `method` targets: any member name reachable as a
+        // plain Utf8 constant lands here and gets a weaker, descriptor-free check on top of the
+        // descriptor check the same member already gets as a constant pool reference.
+        final List<String> report = ["${remapped.get().asFile.name}: ${refs.members.size()} member refs, " +
+            "${refs.classes.size()} class refs, ${refs.names.size()} bare name refs"]
+        final List<String> failures = []
+        supportedMinecraftVersions.each { final String target ->
+            final File tinyJar = configurations
+                .detachedConfiguration(dependencies.create("net.fabricmc:intermediary:$target:v2@jar"))
+                .singleFile
+            final File extracted = layout.buildDirectory.file("tmp/intermediary-${target}.tiny").get().asFile
+            extracted.parentFile.mkdirs()
+            new java.util.zip.ZipFile(tinyJar).withCloseable { final zip ->
+                extracted.withOutputStream { final stream ->
+                    stream << zip.getInputStream(zip.getEntry('mappings/mappings.tiny'))
+                }
+            }
+            final List<String> missing = findMissing(refs, loadIntermediary(extracted))
+            report << ''
+            report << "target $target: ${missing.empty ? 'OK' : missing.size() + ' MISSING'}"
+            missing.each { report << "  $it" }
+            if (!missing.empty) {
+                failures << target
+            }
+        }
+        final File reportFile = layout.buildDirectory.file('reports/version-coverage.txt').get().asFile
+        reportFile.parentFile.mkdirs()
+        reportFile.text = report.join('\n') + '\n'
+        logger.lifecycle(report.join('\n'))
+        if (!failures.empty) {
+            throw new GradleException(
+                "${project.name} advertises Minecraft ${failures.join(', ')} but its jar references members " +
+                "that do not exist there; see ${reportFile}"
+            )
+        }
+    }
+}
