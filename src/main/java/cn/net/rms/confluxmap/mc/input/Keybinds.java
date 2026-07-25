@@ -20,7 +20,7 @@ import net.minecraft.client.util.InputUtil;
 import org.lwjgl.glfw.GLFW;
 
 public final class Keybinds {
-    //#if MC>=12111
+    //#if MC>=12109
     //$$ public static final KeyBinding.Category CATEGORY = KeyBinding.Category.create(
     //$$     Ids.of("confluxmap", "controls")
     //$$ );

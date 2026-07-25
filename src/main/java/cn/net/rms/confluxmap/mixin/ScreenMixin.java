@@ -12,7 +12,7 @@ import net.minecraft.text.Style;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-//#if MC>=12111
+//#if MC>=12109
 //$$ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 //#else
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
@@ -20,8 +20,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(Screen.class)
 public abstract class ScreenMixin {
-    //#if MC>=12111
-    //$$ @Inject(method = "handleClickEvent", at = @At("HEAD"), cancellable = true)
+    //#if MC>=12109
+    //$$ // 1.21.9 still carries an instance handleClickEvent(MinecraftClient, ClickEvent) overload
+    //$$ // alongside the static one, so the target needs its descriptor to stay unambiguous.
+    //$$ @Inject(
+    //$$     method = "handleClickEvent(Lnet/minecraft/text/ClickEvent;"
+    //$$         + "Lnet/minecraft/client/MinecraftClient;"
+    //$$         + "Lnet/minecraft/client/gui/screen/Screen;)V",
+    //$$     at = @At("HEAD"),
+    //$$     cancellable = true
+    //$$ )
     //$$ private static void confluxmap$handleWaypointImport(
     //$$     final ClickEvent clickEvent,
     //$$     final MinecraftClient client,

@@ -3,8 +3,21 @@
 **English** | [简体中文](README-CN.md)
 
 Conflux Map is a Fabric client-side minimap and world map for Minecraft 1.17.1
-and the supported 1.21 releases: 1.21.1, 1.21.3, 1.21.4, 1.21.5, 1.21.8,
-and 1.21.11.
+and the whole 1.21 line. There is one build per Minecraft version that broke an
+API this mod uses, and each build loads on every patch release that shares that
+API:
+
+| Build      | Loads on               |
+|------------|------------------------|
+| `1.17.1`   | 1.17.1                 |
+| `1.21.1`   | 1.21, 1.21.1           |
+| `1.21.3`   | 1.21.2, 1.21.3         |
+| `1.21.4`   | 1.21.4                 |
+| `1.21.5`   | 1.21.5                 |
+| `1.21.8`   | 1.21.6, 1.21.7, 1.21.8 |
+| `1.21.9`   | 1.21.9, 1.21.10        |
+| `1.21.11`  | 1.21.11                |
+
 It runs standalone against any server — vanilla or modded, no server-side
 component required. Behavior is inspired by established minimap mods, but every
 line of code here is written from scratch; see

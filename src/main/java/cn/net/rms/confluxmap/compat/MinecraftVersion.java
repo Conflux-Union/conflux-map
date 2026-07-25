@@ -8,6 +8,8 @@ public final class MinecraftVersion {
     public static String current() {
         //#if MC>=12111
         //$$ return "1.21.11";
+        //#elseif MC>=12109
+        //$$ return "1.21.9";
         //#elseif MC>=12108
         //$$ return "1.21.8";
         //#elseif MC>=12105

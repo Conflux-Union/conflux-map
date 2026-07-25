@@ -265,6 +265,16 @@ public final class Mesh {
     //$$             new Vector3f(),
     //$$             new Matrix4f()
     //$$         );
+    //#elseif MC>=12109
+    //$$         // 1.21.9 dropped RenderSystem's model offset but kept the line-width argument that
+    //$$         // 1.21.11 went on to drop as well.
+    //$$         final var dynamicTransforms = RenderSystem.getDynamicUniforms().write(
+    //$$             RenderSystem.getModelViewMatrix(),
+    //$$             new Vector4f(1f, 1f, 1f, 1f),
+    //$$             new Vector3f(),
+    //$$             new Matrix4f(),
+    //$$             RenderSystem.getShaderLineWidth()
+    //$$         );
     //#elseif MC>=12108
     //$$         final var dynamicTransforms = RenderSystem.getDynamicUniforms().write(
     //$$             RenderSystem.getModelViewMatrix(),
@@ -378,7 +388,7 @@ public final class Mesh {
     //$$         return bounds;
     //$$     }
     //$$
-    //#if MC>=12111
+    //#if MC>=12109
     //$$     @Override
     //$$     public void setupVertices(final VertexConsumer consumer) {
     //$$         // 1.21.11 drops the depth argument and offsets the whole batch itself.

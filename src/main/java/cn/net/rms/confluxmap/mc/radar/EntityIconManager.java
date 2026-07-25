@@ -139,7 +139,7 @@ public final class EntityIconManager {
     }
 
     private FaceIcon playerIcon(final AbstractClientPlayerEntity player) {
-        //#if MC>=12111
+        //#if MC>=12109
         //$$ final Identifier skin = player.getSkin().body().texturePath();
         //#elseif MC>=12100
         //$$ final Identifier skin = player.getSkinTextures().texture();

@@ -55,7 +55,7 @@ import net.minecraft.client.MinecraftClient;
 //#if MC>=12000
 //$$ import net.minecraft.client.gui.DrawContext;
 //#endif
-//#if MC>=12111
+//#if MC>=12109
 //$$ import net.minecraft.client.gui.Click;
 //$$ import net.minecraft.client.input.KeyInput;
 //#endif
@@ -296,7 +296,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     @Override
-    //#if MC>=12111
+    //#if MC>=12109
     //$$ public boolean keyPressed(final KeyInput input) {
     //$$     final int keyCode = input.key();
     //#else
@@ -306,7 +306,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             ConfluxMapClient.get().reloadPredictionTiles();
             return true;
         }
-        //#if MC>=12111
+        //#if MC>=12109
         //$$ if (openMapKey.matchesKey(input)) {
         //#else
         if (openMapKey.matchesKey(keyCode, scanCode)) {
@@ -314,7 +314,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             onClose();
             return true;
         }
-        //#if MC>=12111
+        //#if MC>=12109
         //$$ return super.keyPressed(input);
         //#else
         return super.keyPressed(keyCode, scanCode, modifiers);
@@ -328,7 +328,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
      * drag) completes.
      */
     @Override
-    //#if MC>=12111
+    //#if MC>=12109
     //$$ public boolean mouseClicked(final Click click, final boolean doubledClick) {
     //$$     final double mouseX = click.x();
     //$$     final double mouseY = click.y();
@@ -336,7 +336,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     //#else
     public boolean mouseClicked(final double mouseX, final double mouseY, final int button) {
     //#endif
-        //#if MC>=12111
+        //#if MC>=12109
         //$$ if (super.mouseClicked(click, doubledClick)) {
         //#else
         if (super.mouseClicked(mouseX, mouseY, button)) {
@@ -376,7 +376,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
      * uses, returning to this screen on save/cancel.
      */
     @Override
-    //#if MC>=12111
+    //#if MC>=12109
     //$$ public boolean mouseReleased(final Click click) {
     //$$     final double mouseX = click.x();
     //$$     final double mouseY = click.y();
@@ -385,7 +385,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     public boolean mouseReleased(final double mouseX, final double mouseY, final int button) {
     //#endif
         if (button != 0 || !mapPointerPress) {
-            //#if MC>=12111
+            //#if MC>=12109
             //$$ return super.mouseReleased(click);
             //#else
             return super.mouseReleased(mouseX, mouseY, button);
@@ -402,7 +402,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     @Override
-    //#if MC>=12111
+    //#if MC>=12109
     //$$ public boolean mouseDragged(final Click click, final double deltaX, final double deltaY) {
     //$$     final int button = click.button();
     //#else
@@ -414,7 +414,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             centerZ -= deltaY * scale;
             return true;
         }
-        //#if MC>=12111
+        //#if MC>=12109
         //$$ return super.mouseDragged(click, deltaX, deltaY);
         //#else
         return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);

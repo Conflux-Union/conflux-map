@@ -176,7 +176,7 @@ public final class SpriteColorSampler {
 
     private Sprite fluidSprite(final BlockState state) {
         final Identifier id = state.isOf(Blocks.LAVA) ? LAVA_STILL : WATER_STILL;
-        //#if MC>=12111
+        //#if MC>=12109
         //$$ final SpriteAtlasTexture atlas = client.getAtlasManager().getAtlasTexture(
         //$$     SpriteAtlasTexture.BLOCK_ATLAS_TEXTURE
         //$$ );
