@@ -68,11 +68,27 @@ public final class McDaylightTracker {
             return 1f;
         }
         //#if MC>=12111
-        //$$ final float skyAngle = world.getEnvironmentAttributes().getAttributeValue(
+        //$$ return daylightFactor(world.getEnvironmentAttributes().getAttributeValue(
         //$$     EnvironmentAttributes.SUN_ANGLE_VISUAL
-        //$$ );
+        //$$ ));
         //#else
-        final float skyAngle = world.getSkyAngleRadians(1.0f);
+        return daylightFactor(world.getSkyAngleRadians(1.0f));
+        //#endif
+    }
+
+    /**
+     * Vanilla's sky-brightness cosine curve, taking the sun angle in whatever unit the running
+     * version reports it: radians from {@code World#getSkyAngleRadians} before 1.21.11, degrees
+     * from {@code EnvironmentAttributes#SUN_ANGLE_VISUAL} on 1.21.11 and later. Vanilla's own
+     * {@code DaylightDetectorBlock} applies the same degree-to-radian conversion to that
+     * attribute; feeding the raw degrees to {@code cos} instead runs ~57 brightness cycles per
+     * Minecraft day, which reads as the map flickering between bright and dark.
+     */
+    static float daylightFactor(final float sunAngle) {
+        //#if MC>=12111
+        //$$ final float skyAngle = sunAngle * MathHelper.RADIANS_PER_DEGREE;
+        //#else
+        final float skyAngle = sunAngle;
         //#endif
         final float raw = MathHelper.cos(skyAngle) * 2.0f + 0.5f;
         return MathHelper.clamp(raw, 0f, 1f);
