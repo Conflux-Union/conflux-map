@@ -18,6 +18,7 @@ import net.minecraft.world.gen.chunk.ChunkGenerator;
 import net.minecraft.world.gen.chunk.NoiseChunkGenerator;
 //#else
 //$$ import net.minecraft.registry.RegistryKey;
+//$$ import net.minecraft.util.math.random.Random;
 //$$ import net.minecraft.world.gen.WorldPreset;
 //$$ import net.minecraft.world.gen.WorldPresets;
 //$$ import org.objectweb.asm.Opcodes;
@@ -31,6 +32,33 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 @Mixin(TestServer.class)
 abstract class TestServerMixin {
     //#if MC>=12100
+    //$$ /**
+    //$$  * Where the batch is placed, replacing the random draw below. Any tile the tests derive
+    //$$  * from this must stay clear of {@code PredictionQualityCorpus}'s +-64 tile radius, whose
+    //$$  * generated terrain the quality test reads and these tests would otherwise build on top of.
+    //$$  */
+    //$$ private static final int FIXED_TEST_POS_XZ = 1_048_576;
+    //$$
+    //$$ /**
+    //$$  * Pins the batch position. Vanilla draws a random x/z from {@code world.random} across
+    //$$  * {@code TEST_POS_XZ_RANGE} (+-14999992), so every run faced different generated terrain and
+    //$$  * anything asserted about a predicted or generated surface was a lottery - the same code
+    //$$  * passed one CI run and failed the next. The seed is already fixed; this fixes the place.
+    //$$  *
+    //$$  * <p>The redirect carries no {@code ordinal}, so it covers both the x and the z draw.
+    //$$  * 1.17.1 needs no counterpart: its {@code runTestBatches} uses a constant {@code (0, 4, 0)}.
+    //$$  */
+    //$$ @Redirect(
+    //$$     method = "runTestBatches",
+    //$$     at = @At(
+    //$$         value = "INVOKE",
+    //$$         target = "Lnet/minecraft/util/math/random/Random;nextBetween(II)I"
+    //$$     )
+    //$$ )
+    //$$ private int useFixedTestPosition(final Random random, final int min, final int max) {
+    //$$     return FIXED_TEST_POS_XZ;
+    //$$ }
+    //$$
     //$$ @Redirect(
     //$$     method = "method_40377",
     //$$     at = @At(

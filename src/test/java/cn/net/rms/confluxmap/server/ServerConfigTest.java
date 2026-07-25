@@ -29,8 +29,6 @@ class ServerConfigTest {
         assertTrue(c.shareCorrections);
         assertFalse(c.shareStructureInfo);
         assertFalse(c.shareWaypoints);
-        // Absolute patches cost far more bandwidth than residual ones; opt-in only.
-        assertFalse(c.forceAbsolutePatches);
         assertEquals(SharedWaypointProto.MAX_SNAPSHOT_WAYPOINTS, c.maxSharedWaypointsPerWorld);
         assertEquals(64, c.maxSharedWaypointsPerPlayer);
         assertEquals(30, c.sharedWaypointMutationsPerMinute);
@@ -86,7 +84,6 @@ class ServerConfigTest {
         original.maxBytesPerSecondPerPlayer = 131_072;
         original.minRequestIntervalMs = 500;
         original.shareWaypoints = true;
-        original.forceAbsolutePatches = true;
         original.maxSharedWaypointsPerWorld = 500;
         original.maxSharedWaypointsPerPlayer = 70;
         original.sharedWaypointMutationsPerMinute = 45;
@@ -98,7 +95,6 @@ class ServerConfigTest {
         assertEquals(original.enabled, loaded.enabled);
         assertEquals(original.shareSeed, loaded.shareSeed);
         assertEquals(original.shareCorrections, loaded.shareCorrections);
-        assertEquals(original.forceAbsolutePatches, loaded.forceAbsolutePatches);
         assertEquals(original.shareStructureInfo, loaded.shareStructureInfo);
         assertEquals(original.maxPatchLod, loaded.maxPatchLod);
         assertEquals(original.maxTilesPerRequest, loaded.maxTilesPerRequest);
