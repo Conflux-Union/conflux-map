@@ -128,31 +128,82 @@ public final class PredictedTileComposer {
                 final double heightShade = ShadingPipeline.heightShade(
                     surface[idx], ShadingPipeline.REFERENCE_HEIGHT, true
                 );
-                final int biomeId = biomes[idx];
-
-                int composed;
-                if (kind == SurfaceKind.WATER) {
-                    // Keep ocean/river water unified: cubiomes' coarse biome grid otherwise fractures
-                    // one body of water along warm/cold variant boundaries. Water formed inside a land
-                    // biome still needs that biome's tint, most visibly the murky swamp water color.
-                    final int waterTint = BiomeTable.get(biomeId).waterBiome()
-                        ? BiomeTable.DEFAULT_WATER_TINT
-                        : palette.waterTint(biomeId);
-                    final int water = Argb.multiply(palette.waterBase, waterTint);
-                    final int floor = seafloorColor(fluids[idx]);
-                    composed = ShadingPipeline.compositeOver(water, floor);
-                } else if (corrected[outIdx] && paintsFromMapColor(colors[outIdx])) {
-                    composed = MapColorTable.argb(colors[outIdx]);
-                } else if (!corrected[outIdx] && paintsFromMapColor(baselineMapColorId)) {
-                    composed = MapColorTable.argb(baselineMapColorId);
-                } else {
-                    composed = colorFor(kind, biomeId, palette);
-                }
+                final int composed = corrected[outIdx] || !grid.supersampled()
+                    ? baseColor(kind, biomes[idx], fluids[idx], palette,
+                        corrected[outIdx], colors[outIdx], baselineMapColorId)
+                    : averagedSubColor(derived, grid, palette, idx, baselineMapColorId);
                 final int heightShaded = ShadingPipeline.applyShade(composed, heightShade);
                 out[outIdx] = ShadingPipeline.applyBrightnessMultiplier(heightShaded, reliefMultiplier);
             }
         }
         return out;
+    }
+
+    /** One column's colour before height shading and relief. */
+    private static int baseColor(
+        final SurfaceKind kind,
+        final int biomeId,
+        final int fluidDepth,
+        final PredictionPalette palette,
+        final boolean corrected,
+        final int correctedMapColorId,
+        final int baselineMapColorId
+    ) {
+        if (kind == SurfaceKind.WATER) {
+            // Keep ocean/river water unified: cubiomes' coarse biome grid otherwise fractures
+            // one body of water along warm/cold variant boundaries. Water formed inside a land
+            // biome still needs that biome's tint, most visibly the murky swamp water color.
+            final int waterTint = BiomeTable.get(biomeId).waterBiome()
+                ? BiomeTable.DEFAULT_WATER_TINT
+                : palette.waterTint(biomeId);
+            final int water = Argb.multiply(palette.waterBase, waterTint);
+            return ShadingPipeline.compositeOver(water, seafloorColor(fluidDepth));
+        }
+        if (corrected && paintsFromMapColor(correctedMapColorId)) {
+            return MapColorTable.argb(correctedMapColorId);
+        }
+        if (!corrected && paintsFromMapColor(baselineMapColorId)) {
+            return MapColorTable.argb(baselineMapColorId);
+        }
+        return colorFor(kind, biomeId, palette);
+    }
+
+    /**
+     * Box-filters one pixel's biome sub-samples into a single colour, the same operator the
+     * captured map's {@code TileService.downsample} applies when it averages finer pixels into a
+     * coarse tile. This is what keeps a river narrower than one output pixel visible: it survives
+     * as a fraction of the blend instead of being hit or missed by a single point sample.
+     *
+     * <p>Sub-samples never carry corrections - a correction is authoritative for its exact pixel,
+     * so the caller routes corrected pixels through {@link #baseColor} instead.
+     */
+    private static int averagedSubColor(
+        final DerivedGrid derived,
+        final BaselineGrid grid,
+        final PredictionPalette palette,
+        final int idx,
+        final int baselineMapColorId
+    ) {
+        int a = 0;
+        int r = 0;
+        int g = 0;
+        int b = 0;
+        final int count = grid.subCount();
+        for (int sz = 0; sz < grid.subPerAxis; sz++) {
+            for (int sx = 0; sx < grid.subPerAxis; sx++) {
+                final int s = grid.subIndex(idx, sx, sz);
+                final int color = baseColor(
+                    SurfaceKind.byOrdinal(derived.subKind[s]), grid.subBiomeId[s],
+                    derived.subFluidDepth[s], palette, false, Proto.MAP_COLOR_NONE,
+                    baselineMapColorId
+                );
+                a += Argb.alpha(color);
+                r += Argb.red(color);
+                g += Argb.green(color);
+                b += Argb.blue(color);
+            }
+        }
+        return Argb.pack(a / count, r / count, g / count, b / count);
     }
 
     /**

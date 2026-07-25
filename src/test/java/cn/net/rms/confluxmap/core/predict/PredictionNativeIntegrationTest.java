@@ -324,4 +324,60 @@ class PredictionNativeIntegrationTest {
                 + Math.abs(Argb.blue(a) - Argb.blue(b))
         ) / 3;
     }
+
+    /**
+     * Real-generation guard for biome supersampling. At LOD4 one output pixel spans 16 blocks -
+     * wider than a river - so a single lookup per pixel misses most thin features. The
+     * sub-samples must surface biomes the per-pixel grid never sees; if they ever stop doing so,
+     * meandering rivers and shorelines are back to breaking into straight, gappy lines.
+     */
+    @Test
+    void coarseLodSubSamplesFindThinBiomesThePixelCentresMiss() {
+        final NativeBaselineSampler sampler = new NativeBaselineSampler(mc21(), SEED, 0, 0);
+        final BaselineGrid grid = LodSampling.sample(sampler, false, 4, 0, 0);
+        assertNotNull(grid);
+        assertTrue(grid.supersampled(), "LOD4 must supersample biomes");
+
+        int pixelsWhoseSubSamplesDisagree = 0;
+        int subSamplesUnseenAtTheCentre = 0;
+        for (int z = 0; z < BaselineGrid.PIXELS; z++) {
+            for (int x = 0; x < BaselineGrid.PIXELS; x++) {
+                final int idx = BaselineGrid.index(x, z);
+                boolean disagrees = false;
+                for (int sz = 0; sz < grid.subPerAxis; sz++) {
+                    for (int sx = 0; sx < grid.subPerAxis; sx++) {
+                        if (grid.subBiomeId[grid.subIndex(idx, sx, sz)] != grid.biomeId[idx]) {
+                            disagrees = true;
+                            subSamplesUnseenAtTheCentre++;
+                        }
+                    }
+                }
+                if (disagrees) {
+                    pixelsWhoseSubSamplesDisagree++;
+                }
+            }
+        }
+
+        assertTrue(
+            pixelsWhoseSubSamplesDisagree > BaselineGrid.PIXELS * BaselineGrid.PIXELS / 100,
+            "expected a real share of LOD4 pixels to contain a biome their centre misses, got "
+                + pixelsWhoseSubSamplesDisagree + " of " + (BaselineGrid.PIXELS * BaselineGrid.PIXELS)
+        );
+        assertTrue(subSamplesUnseenAtTheCentre > 0);
+    }
+
+    /** Fine LODs already sample at or below the native biome grid, so they must not pay for 4x. */
+    @Test
+    void fineLodsDoNotPayForBiomeSupersampling() {
+        final NativeBaselineSampler sampler = new NativeBaselineSampler(mc21(), SEED, 0, 0);
+        for (final int lod : new int[] {0, 1, 2}) {
+            final BaselineGrid grid = LodSampling.sample(sampler, false, lod, 0, 0);
+            assertNotNull(grid);
+            assertEquals(
+                BaselineGrid.NO_SUPERSAMPLING, grid.subPerAxis,
+                "LOD" + lod + " already reaches the native biome grid"
+            );
+        }
+    }
+
 }

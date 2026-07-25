@@ -739,4 +739,65 @@ class LodSamplingTest {
         assertEquals(4, lastScale[0], "LOD4 must keep the final 1:4 biome layer instead of cubiomes' coarse scale-16 layer");
         assertNotEquals(lod4.biomeId[BaselineGrid.index(0, 0)], lod4.biomeId[BaselineGrid.index(1, 0)]);
     }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1, 2})
+    void fineLodsSampleOneBiomePerPixelBecauseTheyAlreadyReachTheNativeGrid(final int lod) {
+        final BaselineGrid grid = LodSampling.sample(SAMPLER, false, lod, 0, 0);
+        assertNotNull(grid);
+        assertEquals(BaselineGrid.NO_SUPERSAMPLING, grid.subPerAxis);
+        org.junit.jupiter.api.Assertions.assertFalse(grid.supersampled());
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {3, 4})
+    void coarseLodsSupersampleBiomesSoThinFeaturesSurviveBetweenPixelCentres(final int lod) {
+        final BaselineGrid grid = LodSampling.sample(new RiverStripeFakeSampler(1 << lod), false, lod, 0, 0);
+        assertNotNull(grid);
+        assertEquals(2, grid.subPerAxis);
+        assertEquals(4, grid.subCount());
+
+        final int idx = BaselineGrid.index(0, 0);
+        assertEquals(RiverStripeFakeSampler.PLAINS, grid.biomeId[idx], "the pixel centre must still miss the river");
+        assertEquals(0, grid.surfaceFlags[idx], "so the per-pixel classification stays dry land");
+
+        // The sub-sample half a pixel east lands on the stripe and reclassifies as water.
+        assertEquals(RiverStripeFakeSampler.RIVER, grid.subBiomeId[grid.subIndex(idx, 1, 0)]);
+        assertEquals(
+            BaselineGrid.SURFACE_FLUID, grid.subSurfaceFlags[grid.subIndex(idx, 1, 0)],
+            "a river sub-sample below sea level must resolve to fluid even though its pixel did not"
+        );
+        assertEquals(RiverStripeFakeSampler.PLAINS, grid.subBiomeId[grid.subIndex(idx, 0, 0)]);
+        assertEquals(0, grid.subSurfaceFlags[grid.subIndex(idx, 0, 0)]);
+    }
+
+    @org.junit.jupiter.api.Test
+    void endTilesAreNeverSupersampledBecauseTheirBiomesDoNotVaryWithinAPixel() {
+        final BaselineGrid grid = LodSampling.sample(SAMPLER, true, 4, 0, 0);
+        assertNotNull(grid);
+        assertEquals(BaselineGrid.NO_SUPERSAMPLING, grid.subPerAxis);
+    }
+
+    @org.junit.jupiter.api.Test
+    void samplersWithoutSurfaceBiomeSupportFallBackToThePixelBiomeInEverySubSample() {
+        // PositionBasedFakeSampler leaves BaselineSampler#surfaceBiomes at its false default, so
+        // the supersampled fetch cannot run and must degrade to the pre-supersampling behaviour
+        // rather than failing the tile.
+        final BaselineGrid grid = LodSampling.sample(SAMPLER, false, 4, 0, 0);
+        assertNotNull(grid);
+        assertTrue(grid.supersampled());
+        for (int z = 0; z < 4; z++) {
+            for (int x = 0; x < 4; x++) {
+                final int idx = BaselineGrid.index(x, z);
+                for (int sz = 0; sz < 2; sz++) {
+                    for (int sx = 0; sx < 2; sx++) {
+                        assertEquals(
+                            grid.biomeId[idx], grid.subBiomeId[grid.subIndex(idx, sx, sz)],
+                            "sub-sample (" + sx + "," + sz + ") of pixel (" + x + "," + z + ")"
+                        );
+                    }
+                }
+            }
+        }
+    }
 }

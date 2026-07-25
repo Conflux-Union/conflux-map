@@ -427,4 +427,90 @@ class PredictedTileComposerTest {
 
         assertEquals(baseline[pixel], corrected[pixel], "an incomplete server summary must not erase a valid predicted pixel");
     }
+
+    private static int[] composeRiverStripeTile(final int lod) {
+        final RiverStripeFakeSampler sampler = new RiverStripeFakeSampler(1 << lod);
+        final BaselineGrid grid = LodSampling.sample(sampler, false, lod, 0, 0);
+        final DerivedGrid derived = BaselineDeriver.derive(grid);
+        CanopyStylizer.apply(derived, grid, 7L, lod, 0, 0);
+        return PredictedTileComposer.compose(derived, grid, PredictionPalette.defaults());
+    }
+
+    /**
+     * The whole point of biome supersampling: a river that every pixel centre misses must still
+     * tint the output. Before supersampling this tile came out uniformly dry, which is what made
+     * a meandering river collapse into a broken straight line when zoomed out.
+     */
+    @Test
+    void aRiverBetweenPixelCentresStillTintsCoarseLodPixels() {
+        for (final int lod : new int[] {3, 4}) {
+            final int[] withRiver = composeRiverStripeTile(lod);
+            final int[] dryReference = composeDryPlainsTile(lod);
+            assertNotEquals(
+                dryReference[0], withRiver[0],
+                "LOD" + lod + " must not render a river-crossed pixel identically to dry plains"
+            );
+            // The stripe is half of each pixel's sub-samples, so the blend has to sit strictly
+            // between dry land and open water rather than snapping to either.
+            final int blended = withRiver[0];
+            assertTrue(
+                Argb.blue(blended) > Argb.blue(dryReference[0]),
+                "a river sub-sample must pull the pixel toward water, got "
+                    + Integer.toHexString(blended) + " vs dry " + Integer.toHexString(dryReference[0])
+            );
+        }
+    }
+
+    /** Same fixture with the river moved onto the pixel centres, so every sub-sample is plains. */
+    private static int[] composeDryPlainsTile(final int lod) {
+        final BaselineSampler plainsOnly = new BaselineSampler() {
+            private final RiverStripeFakeSampler delegate = new RiverStripeFakeSampler(1 << lod);
+
+            @Override
+            public boolean biomes(final int scale, final int x, final int z, final int w, final int h, final int[] out) {
+                return false;
+            }
+
+            @Override
+            public boolean heights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+                return false;
+            }
+
+            @Override
+            public boolean overviewHeights(
+                final int blockX, final int blockZ, final int w, final int h, final int stride,
+                final int[] outTerrainY
+            ) {
+                return delegate.overviewHeights(blockX, blockZ, w, h, stride, outTerrainY);
+            }
+
+            @Override
+            public boolean surfaceColumns(
+                final int blockX, final int blockZ, final int w, final int h, final int stride,
+                final int[] outSolidY, final int[] outFluidY, final int[] outSurfaceY, final int[] outFlags
+            ) {
+                return delegate.surfaceColumns(
+                    blockX, blockZ, w, h, stride, outSolidY, outFluidY, outSurfaceY, outFlags
+                );
+            }
+
+            @Override
+            public boolean surfaceBiomes(
+                final int blockX, final int blockZ, final int w, final int h, final int stride,
+                final int[] terrainY, final int[] outBiomeIds
+            ) {
+                Arrays.fill(outBiomeIds, 0, w * h, RiverStripeFakeSampler.PLAINS);
+                return true;
+            }
+
+            @Override
+            public boolean endHeights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+                return false;
+            }
+        };
+        final BaselineGrid grid = LodSampling.sample(plainsOnly, false, lod, 0, 0);
+        final DerivedGrid derived = BaselineDeriver.derive(grid);
+        CanopyStylizer.apply(derived, grid, 7L, lod, 0, 0);
+        return PredictedTileComposer.compose(derived, grid, PredictionPalette.defaults());
+    }
 }
