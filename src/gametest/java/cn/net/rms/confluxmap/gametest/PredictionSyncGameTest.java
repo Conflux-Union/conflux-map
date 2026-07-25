@@ -185,7 +185,7 @@ public final class PredictionSyncGameTest implements FabricGameTest {
             );
             final int expectedStoneArgb = ShadingPipeline.applyShade(
                 MapColorTable.argb(11),
-                ShadingPipeline.heightShade(floorY, ShadingPipeline.REFERENCE_HEIGHT, false)
+                ShadingPipeline.heightShade(floorY, ShadingPipeline.REFERENCE_HEIGHT, true)
             );
 
             for (int z = 0; z < FLOOR_SIZE; z++) {

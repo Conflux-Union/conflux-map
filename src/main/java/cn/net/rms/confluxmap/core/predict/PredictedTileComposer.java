@@ -27,6 +27,10 @@ public final class PredictedTileComposer {
     private static final float SEAFLOOR_DARKEN_RANGE_BLOCKS = 48f;
     private static final float SEAFLOOR_MIN_BRIGHTNESS = 0.25f;
     private static final double RELIEF_CONTRAST = 0.36;
+    /** Vanilla map colour GRASS: what a grass block reports regardless of the biome tinting it. */
+    private static final int GRASS_MAP_COLOR = 1;
+    /** Vanilla map colour PLANT: leaves and ground plants, likewise biome-tinted in the world. */
+    private static final int PLANT_MAP_COLOR = 7;
 
     private PredictedTileComposer() {
     }
@@ -55,7 +59,8 @@ public final class PredictedTileComposer {
      * Full form: {@code baselineMapColorId} pins every non-water, non-corrected baseline pixel to
      * one vanilla map color instead of the biome palette - a superflat underlay renders the
      * actual top-layer block (stone, sandstone, ...) this way, matching the color corrections
-     * would use for the same block. {@link Proto#MAP_COLOR_NONE} keeps the biome-palette path.
+     * would use for the same block. {@link Proto#MAP_COLOR_NONE} keeps the biome-palette path, as
+     * do the biome-tinted map colors {@link #paintsFromMapColor} excludes.
      */
     public static int[] compose(
         final DerivedGrid derived,
@@ -114,8 +119,14 @@ public final class PredictedTileComposer {
                 final double reliefMultiplier = directionalReliefMultiplier(
                     surface, kinds, x, z, TileMath.blocksPerPixel(lod)
                 );
+                // slopeAlsoActive: the directional relief above is this plane's slope term, so the
+                // height curve takes the spec's gentler combined K - the same one the captured map
+                // uses, since it always runs height and slope together. Predating the relief term,
+                // this used to pass false, which left the underlay on the steeper height-only curve:
+                // invisible near the Y=80 reference, but at a superflat's Y=-61 it darkened the
+                // predicted plane to roughly half the brightness of the captured map beside it.
                 final double heightShade = ShadingPipeline.heightShade(
-                    surface[idx], ShadingPipeline.REFERENCE_HEIGHT, false
+                    surface[idx], ShadingPipeline.REFERENCE_HEIGHT, true
                 );
                 final int biomeId = biomes[idx];
 
@@ -130,9 +141,9 @@ public final class PredictedTileComposer {
                     final int water = Argb.multiply(palette.waterBase, waterTint);
                     final int floor = seafloorColor(fluids[idx]);
                     composed = ShadingPipeline.compositeOver(water, floor);
-                } else if (corrected[outIdx] && colors[outIdx] != 0xFF) {
+                } else if (corrected[outIdx] && paintsFromMapColor(colors[outIdx])) {
                     composed = MapColorTable.argb(colors[outIdx]);
-                } else if (!corrected[outIdx] && baselineMapColorId != Proto.MAP_COLOR_NONE) {
+                } else if (!corrected[outIdx] && paintsFromMapColor(baselineMapColorId)) {
                     composed = MapColorTable.argb(baselineMapColorId);
                 } else {
                     composed = colorFor(kind, biomeId, palette);
@@ -197,6 +208,25 @@ public final class PredictedTileComposer {
         final double risePerBlock = (litDiagonal - center) / 2.0;
         final double normalized = Math.max(-1.0, Math.min(1.0, risePerBlock));
         return 1.0 + RELIEF_CONTRAST * normalized;
+    }
+
+    /**
+     * Whether a declared vanilla map colour should be painted literally from {@link MapColorTable}
+     * rather than through the biome palette.
+     *
+     * <p>Most map colours are a fair stand-in for the block they belong to, so a correction (or a
+     * superflat top layer) of stone, sandstone or terracotta paints straight from the table. Grass
+     * and plant blocks are the exception: their textures are greyscale and the game tints them per
+     * biome, while the map colour is one fixed saturated green for every biome on earth. Painting
+     * those literally put a bright green plate next to the captured map's biome-tinted greens -
+     * most visibly across a whole superflat overworld, where the flat baseline covers every
+     * unexplored pixel. Routing them back through {@link #colorFor} reuses the same live
+     * grass/foliage sample {@code mc.color.BiomeTintResolver} feeds the captured map.
+     */
+    private static boolean paintsFromMapColor(final int mapColorId) {
+        return mapColorId != Proto.MAP_COLOR_NONE
+            && mapColorId != GRASS_MAP_COLOR
+            && mapColorId != PLANT_MAP_COLOR;
     }
 
     private static int colorFor(final SurfaceKind kind, final int biomeId, final PredictionPalette palette) {
