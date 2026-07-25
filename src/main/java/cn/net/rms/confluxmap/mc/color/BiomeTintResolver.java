@@ -4,6 +4,9 @@ import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.client.MinecraftClient;
+//#if MC>=260100
+//$$ import net.minecraft.client.color.block.BlockTintSource;
+//#endif
 import net.minecraft.client.color.world.BiomeColors;
 import net.minecraft.client.color.world.FoliageColors;
 import net.minecraft.client.world.ClientWorld;
@@ -58,8 +61,12 @@ public final class BiomeTintResolver {
         // §3/§6: anything outside the fixed set (including modded blocks) still gets probed
         // through the game's own tint provider registry; unregistered blocks report NO_COLOR.
         //#if MC>=260100
-        //$$ // 26.1 split BlockColors.getColor into a per-tint-index source object.
-        //$$ final int color = client.getBlockColors().getTintSource(state, 0).colorInWorld(state, world, pos);
+        //$$ // 26.1 split BlockColors.getColor into a per-tint-index source object, and a block with
+        //$$ // no registered provider has no source at all rather than a blank one - the lookup
+        //$$ // returns null. Vanilla's own ClientLevel probe answers -1 there, which is the same
+        //$$ // NO_COLOR sentinel getColor used to return, so the check below still covers it.
+        //$$ final BlockTintSource tintSource = client.getBlockColors().getTintSource(state, 0);
+        //$$ final int color = tintSource == null ? -1 : tintSource.colorInWorld(state, world, pos);
         //#else
         final int color = client.getBlockColors().getColor(state, world, pos, 0);
         //#endif
