@@ -35,6 +35,38 @@ public final class LodSampling {
     private static final int FLUID_CONFIDENCE_MAX = 256;
     private static final int FLUID_CONFIDENCE_THRESHOLD = FLUID_CONFIDENCE_MAX / 2;
 
+    /**
+     * Highest LOD that still runs the sparse exact residual pass. At LOD0 its 8-block anchor
+     * spacing carries most of the tile's relief (measured terrain gradient correlation 0.25 ->
+     * 0.53) and at LOD1 it still helps a little. From LOD2 up the anchors are 64 blocks apart or
+     * worse and contribute essentially nothing to height - measured correlation gain +0.001 at
+     * LOD2 and +0.001 at LOD4, for ~330ms per tile - so they are simply not run there. The
+     * overview terrain model absorbed that job when it started solving for the 3D noise term.
+     */
+    private static final int MAX_EXACT_RESIDUAL_LOD = 1;
+
+    /**
+     * Highest LOD that classifies fluid from the exact anchors' own aquifer answer. Above it the
+     * anchor lattice is too sparse to place scattered inland water: the flag is binary, sampled
+     * every 16 output pixels (64 blocks at LOD2, 256 at LOD4), bilinearly interpolated and then
+     * thresholded, so a pond lands on the lattice rather than where it actually is. Measured
+     * against real generation over swamp, that mask reached IoU 0.060 at LOD4 and 0.082 at LOD3.
+     * Deciding per pixel from the terrain height instead reaches 0.56-0.88, beating even a
+     * 2-pixel anchor lattice that costs 21x more.
+     *
+     * <p>LOD0 keeps the anchors: at 8-block spacing they are dense, and they answer with the
+     * generator's real aquifer resolution rather than a height threshold.
+     */
+    private static final int MAX_ANCHOR_FLUID_LOD = 0;
+
+    /**
+     * A predicted column with solid terrain below this Y carries water. One block under
+     * {@link BaselineDeriver#WATER_LEVEL}: sweeping the threshold against real generation put the
+     * best intersection-over-union here (0.618 at LOD4 versus 0.556 at sea level itself), because
+     * the overview height is an estimate and sea level is the point where over-detection starts
+     * flooding dry ground.
+     */
+    private static final int PREDICTED_FLUID_CEILING = BaselineDeriver.WATER_LEVEL - 1;
 
     /** Final biome layer used per LOD (cubiomes {@code Range} scale: 1 or 4). */
     private static final int[] BIOME_SCALE = {1, 1, 4, 4, 4};
@@ -102,7 +134,10 @@ public final class LodSampling {
             BaselineGrid.SIZE,
             blocksPerPixel,
             grid.terrainY
-        ) || !applyExactResiduals(
+        )) {
+            return false;
+        }
+        if (lod <= MAX_EXACT_RESIDUAL_LOD && !applyExactResiduals(
             sampler, lod, tileOriginX, tileOriginZ, blocksPerPixel, grid,
             fluidConfidence
         )) {
@@ -113,7 +148,7 @@ public final class LodSampling {
             return false;
         }
         sampleSubBiomes(sampler, lod, tileOriginX, tileOriginZ, grid);
-        resolveOverviewFluids(grid, fluidConfidence);
+        resolveOverviewFluids(grid, lod, fluidConfidence);
         return true;
     }
 
@@ -287,11 +322,23 @@ public final class LodSampling {
         return (surfaceFlags & BaselineGrid.SURFACE_FLUID) != 0 ? FLUID_CONFIDENCE_MAX : 0;
     }
 
-    private static void resolveOverviewFluids(final BaselineGrid grid, final int[] fluidConfidence) {
+    /**
+     * Classifies each column as water or land. Below {@link #MAX_ANCHOR_FLUID_LOD} that means the
+     * exact anchors' aquifer answer; above it, the column's own terrain height, which is what puts
+     * scattered inland water (swamp ponds most visibly) where it actually is instead of on the
+     * anchor lattice. Either way a water biome below sea level still counts, so rivers narrower
+     * than the terrain estimate can resolve stay visible.
+     */
+    private static void resolveOverviewFluids(
+        final BaselineGrid grid, final int lod, final int[] fluidConfidence
+    ) {
+        final boolean anchorFluid = lod <= MAX_ANCHOR_FLUID_LOD;
         for (int i = 0; i < grid.terrainY.length; i++) {
             final int solidY = grid.terrainY[i];
             final boolean belowSeaLevel = solidY < BaselineDeriver.WATER_LEVEL;
-            final boolean confidentFluid = fluidConfidence[i] >= FLUID_CONFIDENCE_THRESHOLD;
+            final boolean confidentFluid = anchorFluid
+                ? fluidConfidence[i] >= FLUID_CONFIDENCE_THRESHOLD
+                : solidY < PREDICTED_FLUID_CEILING;
             if (belowSeaLevel
                 && (confidentFluid || BiomeTable.get(grid.biomeId[i]).waterBiome())) {
                 grid.fluidY[i] = BaselineDeriver.WATER_LEVEL;

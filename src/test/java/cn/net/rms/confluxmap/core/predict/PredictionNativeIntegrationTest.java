@@ -380,4 +380,57 @@ class PredictionNativeIntegrationTest {
         }
     }
 
+    /**
+     * Pins the overview terrain estimator against cubiomes' own exact column generation.
+     *
+     * <p>The estimator lives in {@code native/shim/confluxnative.c} and re-derives four helpers
+     * that are {@code static} inside cubiomes' {@code biomenoise.c}. Nothing in the build stops
+     * those from drifting apart when the submodule pin moves, so this measures the estimate
+     * against {@code surfaceColumns}' real generated heights and fails if it stops tracking them.
+     *
+     * <p>Bounds come from measurement: mean absolute error across these spots is ~1.4 blocks (worst
+     * single spot 2.6, in swamp). The noise-free estimator this replaced averaged ~3.2, so the
+     * 2.5-block aggregate bound also catches a silent revert to it, while the per-spot bound of 8
+     * catches outright divergence without being flaky on rough terrain.
+     */
+    @Test
+    void overviewHeightsTrackExactGeneration() {
+        final NativeBaselineSampler sampler = new NativeBaselineSampler(mc21(), SEED, 0, 0);
+        final int[][] spots = {{0, 0}, {5000, -12000}, {-154944, -95552}, {250000, -300000}};
+        final int side = 48;
+        final int cells = side * side;
+        double totalError = 0;
+        int samples = 0;
+        for (final int[] spot : spots) {
+            for (final int stride : new int[] {4, 16}) {
+                final int[] estimated = new int[cells];
+                final int[] solidY = new int[cells];
+                final int[] fluidY = new int[cells];
+                final int[] surfaceY = new int[cells];
+                final int[] flags = new int[cells];
+                assertTrue(sampler.overviewHeights(spot[0], spot[1], side, side, stride, estimated));
+                assertTrue(sampler.surfaceColumns(
+                    spot[0], spot[1], side, side, stride, solidY, fluidY, surfaceY, flags
+                ));
+                double spotError = 0;
+                for (int i = 0; i < cells; i++) {
+                    spotError += Math.abs(estimated[i] - solidY[i]);
+                }
+                final double spotMean = spotError / cells;
+                assertTrue(
+                    spotMean < 8.0,
+                    "overview height diverged from real generation at (" + spot[0] + "," + spot[1]
+                        + ") stride " + stride + ": mean absolute error " + spotMean + " blocks"
+                );
+                totalError += spotError;
+                samples += cells;
+            }
+        }
+        final double mean = totalError / samples;
+        assertTrue(
+            mean < 2.5,
+            "overview height must solve for the 3D terrain noise, not just the offset spline;"
+                + " mean absolute error was " + mean + " blocks"
+        );
+    }
 }

@@ -11,15 +11,17 @@ import java.util.Arrays;
  * without biome supersampling a river narrower than an output pixel is hit or missed by chance,
  * which is what broke meandering rivers into straight, gappy lines at LOD3-4.
  *
- * <p>Terrain is a flat Y=50 - below {@link BaselineDeriver#WATER_LEVEL}, with no fluid flags of its
- * own - so the water/land split is decided purely by each sample's biome.
+ * <p>Terrain is a flat Y=61: one block under {@link BaselineDeriver#WATER_LEVEL}, which is exactly
+ * the band where the terrain height alone does not declare water but a water biome does. That
+ * isolates the biome's contribution, and mirrors real river pixels - the smooth overview height
+ * dips across a whole valley, so a river column's neighbours sit just below sea level too.
  */
 final class RiverStripeFakeSampler implements BaselineSampler {
     /** cubiomes ids, matching {@code BiomeTable}'s registration. */
     static final int PLAINS = 1;
     static final int RIVER = 7;
-    /** Flat terrain height, deliberately below sea level so a river biome can classify as fluid. */
-    static final int TERRAIN_Y = 50;
+    /** Just below sea level: not deep enough to be water on height alone, but a river biome is. */
+    static final int TERRAIN_Y = BaselineDeriver.WATER_LEVEL - 1;
 
     private final int blocksPerPixel;
 
