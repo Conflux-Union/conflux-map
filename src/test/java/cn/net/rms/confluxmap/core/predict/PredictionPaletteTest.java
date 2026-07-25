@@ -66,6 +66,24 @@ class PredictionPaletteTest {
     }
 
     @Test
+    void paleGardenCanopyIgnoresItsBiomeFoliageColor() {
+        // Vanilla registers no tint provider for pale oak leaves, so pale_garden's foliage_color
+        // (#878D76) never reaches them. Multiplying it into FOLIAGE_BASE turned the canopy dark
+        // green; the predicted canopy must stay the leaves' own washed-out grey.
+        final int paleGarden = 186;
+        final PredictionPalette palette = PredictionPalette.fromSamples(
+            Map.of(paleGarden, new int[] {0xFF778272, 0xFF878D76, 0xFF76889D})
+        );
+
+        assertEquals(BiomeTable.get(paleGarden).canopyBase(), palette.canopyColor(paleGarden));
+        assertEquals(
+            Argb.multiply(BiomeTable.LAND_BASE, 0xFF778272),
+            palette.groundColor(paleGarden),
+            "the ground really is grass block, so it keeps the biome's desaturated grass tint"
+        );
+    }
+
+    @Test
     void sampledFoliageStillTintsANormalCanopy() {
         final int forest = 4;
         final PredictionPalette palette = PredictionPalette.fromSamples(
