@@ -56,7 +56,7 @@ public final class ServerConfig {
     public int maxBytesPerSecondPerPlayer = 65_536;
     /** Per-player minimum spacing between MAP_VIEW_REQ packets, milliseconds. */
     public int minRequestIntervalMs = 300;
-    /** Cold-cache budget: across all players, chunk-NBT-parses/sec (S4's summarizer uses this). */
+    /** Global live-summary refresh budget in chunks/sec. */
     public int maxChunkSummariesPerSecond = 4_000;
 
     /** Clamp out-of-range values loaded from a hand-edited file. */

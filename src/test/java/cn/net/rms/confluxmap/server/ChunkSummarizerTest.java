@@ -18,6 +18,56 @@ import org.junit.jupiter.api.Test;
 
 class ChunkSummarizerTest {
     @Test
+    void columnSourceCanBeSummarizedWithoutAWorldChunkOrSerializedNbt() {
+        final ChunkColumnSource source = new ChunkColumnSource() {
+            @Override
+            public boolean generated() {
+                return true;
+            }
+
+            @Override
+            public long revision() {
+                return 77L;
+            }
+
+            @Override
+            public int bottomY() {
+                return -64;
+            }
+
+            @Override
+            public int motionBlockingHeight(final int x, final int z) {
+                return 63;
+            }
+
+            @Override
+            public int oceanFloorHeight(final int x, final int z) {
+                return 50;
+            }
+
+            @Override
+            public String blockNameAt(final int x, final int y, final int z) {
+                return y >= 50 && y <= 62 ? "minecraft:water" : "minecraft:air";
+            }
+
+            @Override
+            public int biomeIdAt(final int x, final int y, final int z) {
+                return 4;
+            }
+        };
+
+        final SummaryCodec.Chunk chunk = new ChunkSummarizer().summarize(source);
+        final SummaryCodec.Column column = chunk.columns()[0];
+
+        assertTrue(chunk.generated());
+        assertEquals(77L, chunk.revision());
+        assertEquals(4, column.biomeId());
+        assertEquals(62, column.surfaceY());
+        assertEquals(SurfaceKind.WATER.ordinal(), column.kind());
+        assertEquals(13, column.fluidDepth());
+    }
+
+    @Test
     void structureStartsChunkIsNotTreatedAsGeneratedSurfaceData() {
         final NbtCompound level = new NbtCompound();
         level.putString("Status", "structure_starts");

@@ -11,14 +11,15 @@ import cn.net.rms.confluxmap.core.predict.FlatBaseline;
 import cn.net.rms.confluxmap.core.predict.NativeBaselineSampler;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
-import java.util.Optional;
-import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.compat.MinecraftVersion;
+import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletionException;
@@ -27,8 +28,9 @@ import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.ChunkPos;
 import net.minecraft.util.WorldSavePath;
+import net.minecraft.util.math.ChunkPos;
+import net.minecraft.world.chunk.WorldChunk;
 
 /**
  * Serves summary-backed corrections without asking the world chunk manager to generate chunks.
@@ -43,6 +45,9 @@ public final class RegionSummaryService {
     private final ChunkSummarizer summarizer = new ChunkSummarizer(new RegistryMapColors());
     private final PatchBuilder patchBuilder = new PatchBuilder();
     private final Map<UUID, PlayerChannel> channels = new ConcurrentHashMap<>();
+    private final LiveChunkSummaryTracker liveChunks;
+    private Path diskRoot;
+    private SummaryDiskCache diskCache;
 
     private static final class PlayerChannel {
         final PatchDispatcher dispatcher;
@@ -55,6 +60,17 @@ public final class RegionSummaryService {
 
     public RegionSummaryService(final ServerConfig config) {
         this.config = config;
+        this.liveChunks = new LiveChunkSummaryTracker(config, summarizer);
+    }
+
+    /** Starts serving a loaded chunk from memory and enrolls it in bounded live refreshes. */
+    public void onChunkLoad(final ServerWorld world, final WorldChunk chunk) {
+        liveChunks.onChunkLoad(world, chunk);
+    }
+
+    /** Captures the final in-memory state and queues one batched level-0 cache write. */
+    public void onChunkUnload(final ServerWorld world, final WorldChunk chunk) {
+        liveChunks.onChunkUnload(world, chunk);
     }
 
     public void request(
@@ -86,11 +102,13 @@ public final class RegionSummaryService {
         if (overflow > 0) {
             sender.accept(new ErrorS2C(ErrorS2C.ERR_RATE_LIMITED, "map correction queue is full"));
         }
+        liveChunks.nominate(request, now);
         drain(server, channel, now);
     }
 
     /** Server tick: keep draining queued patches as each player's byte budget refills. */
     public void tick(final MinecraftServer server) {
+        liveChunks.tick(server, diskFor(server));
         final long now = System.nanoTime();
         for (final PlayerChannel channel : channels.values()) {
             if (channel.dispatcher.queued() > 0 && channel.sender != null) {
@@ -106,13 +124,33 @@ public final class RegionSummaryService {
         }
     }
 
+    /** Captures chunks still loaded when vanilla begins its final save/unload sequence. */
+    public void prepareStop() {
+        liveChunks.prepareStop();
+    }
+
+    /** Flushes captured unloads after vanilla has saved every dimension, then drops session state. */
+    public void close(final MinecraftServer server) {
+        liveChunks.close(server, diskFor(server));
+        channels.clear();
+    }
+
     private void drain(final MinecraftServer server, final PlayerChannel channel, final long nowNanos) {
         final Consumer<Message> sender = channel.sender;
         if (sender == null) {
             return;
         }
-        final SummaryDiskCache disk = new SummaryDiskCache(server.getSavePath(WorldSavePath.ROOT));
+        final SummaryDiskCache disk = diskFor(server);
         channel.dispatcher.drain(nowNanos, job -> buildJob(server, disk, job), sender);
+    }
+
+    private synchronized SummaryDiskCache diskFor(final MinecraftServer server) {
+        final Path root = server.getSavePath(WorldSavePath.ROOT);
+        if (diskCache == null || !root.equals(diskRoot)) {
+            diskRoot = root;
+            diskCache = new SummaryDiskCache(root);
+        }
+        return diskCache;
     }
 
     /**
@@ -123,7 +161,11 @@ public final class RegionSummaryService {
         return Math.max(config.maxPatchLod, config.maxPresenceLod);
     }
 
-    private MapPatchS2C buildJob(final MinecraftServer server, final SummaryDiskCache disk, final PatchDispatcher.TileJob job) {
+    private MapPatchS2C buildJob(
+        final MinecraftServer server,
+        final SummaryDiskCache disk,
+        final PatchDispatcher.TileJob job
+    ) {
         try {
             final ServerWorld world = worldAt(server, job.dimIndex());
             if (world == null || !config.shareCorrections) {
@@ -245,34 +287,48 @@ public final class RegionSummaryService {
     private SummaryCodec.Region readRegion(
         final ServerWorld world, final String dimension, final int regionX, final int regionZ, final SummaryDiskCache disk
     ) {
-        final SummaryCodec.Region cached = disk.load(dimension, regionX, regionZ);
-        // A zero source mtime is the conservative marker used by the live reader: without a
-        // reliable region-file timestamp, never serve an older summary over a newly written chunk.
+        final Path worldRoot = world.getServer().getSavePath(WorldSavePath.ROOT);
+        final long mtimeBefore = RegionStoragePaths.mcaMtimeMs(worldRoot, dimension, regionX, regionZ);
+        final SummaryCodec.Region cached = disk.loadCurrent(dimension, regionX, regionZ, mtimeBefore);
         if (cached != null && cached.sourceMcaMtimeMs() > 0L) {
-            return cached;
+            return liveChunks.overlay(dimension, cached);
         }
         final SummaryCodec.Chunk[] chunks = new SummaryCodec.Chunk[SummaryCodec.CHUNKS];
         for (int z = 0; z < 16; z++) {
             for (int x = 0; x < 16; x++) {
                 final ChunkPos pos = new ChunkPos(regionX * 16 + x, regionZ * 16 + z);
+                final int index = z * 16 + x;
+                final SummaryCodec.Chunk live = liveChunks.get(dimension, chunkX(pos), chunkZ(pos));
+                if (live != null) {
+                    chunks[index] = live;
+                    continue;
+                }
+                if (cached != null && cached.chunks()[index].generated()) {
+                    chunks[index] = cached.chunks()[index];
+                    continue;
+                }
                 final NbtCompound nbt;
                 try {
                     nbt = readChunkNbt(world, pos);
                 } catch (IOException ignored) {
                     // A missing/corrupt chunk is represented by generated=false.
-                    chunks[z * 16 + x] = SummaryCodec.Chunk.empty();
+                    chunks[index] = SummaryCodec.Chunk.empty();
                     continue;
                 }
-                chunks[z * 16 + x] = nbt == null ? SummaryCodec.Chunk.empty() : summarizer.summarize(nbt);
+                chunks[index] = nbt == null ? SummaryCodec.Chunk.empty() : summarizer.summarize(nbt);
             }
         }
-        final SummaryCodec.Region region = new SummaryCodec.Region(regionX, regionZ, 0L, chunks);
-        try {
-            disk.save(dimension, region);
-        } catch (IOException ignored) {
-            // Memory results are still valid if the optional cache cannot be written.
+        final long mtimeAfter = RegionStoragePaths.mcaMtimeMs(worldRoot, dimension, regionX, regionZ);
+        final long sourceMtime = mtimeBefore > 0L && mtimeBefore == mtimeAfter ? mtimeAfter : 0L;
+        final SummaryCodec.Region region = new SummaryCodec.Region(regionX, regionZ, sourceMtime, chunks);
+        if (sourceMtime > 0L) {
+            try {
+                disk.save(dimension, region);
+            } catch (IOException ignored) {
+                // Memory results are still valid if the optional cache cannot be written.
+            }
         }
-        return region;
+        return liveChunks.overlay(dimension, region);
     }
 
     private static NbtCompound readChunkNbt(final ServerWorld world, final ChunkPos pos) throws IOException {
@@ -296,4 +352,21 @@ public final class RegionSummaryService {
         }
         return null;
     }
+
+    private static int chunkX(final ChunkPos pos) {
+        //#if MC>=260100
+        //$$ return pos.x();
+        //#else
+        return pos.x;
+        //#endif
+    }
+
+    private static int chunkZ(final ChunkPos pos) {
+        //#if MC>=260100
+        //$$ return pos.z();
+        //#else
+        return pos.z;
+        //#endif
+    }
+
 }

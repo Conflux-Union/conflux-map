@@ -16,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.world.ServerWorld;
@@ -59,9 +60,27 @@ public final class ConfluxMapCompanion {
         networking.register();
         sharedWaypointNetworking.register();
         SharedWaypointCommands.register(this);
+        ServerLifecycleEvents.SERVER_STARTING.register(this::onServerStarting);
         ServerLifecycleEvents.SERVER_STARTED.register(this::onServerStarted);
         ServerLifecycleEvents.SERVER_STOPPING.register(this::onServerStopping);
+        ServerLifecycleEvents.SERVER_STOPPED.register(this::onServerStopped);
         ServerTickEvents.END_SERVER_TICK.register(this::onServerTick);
+        //#if MC>=260100
+        //$$ ServerChunkEvents.CHUNK_LOAD.register((world, chunk, generated) -> {
+        //#else
+        ServerChunkEvents.CHUNK_LOAD.register((world, chunk) -> {
+        //#endif
+            final RegionSummaryService current = summaries;
+            if (current != null && config.enabled) {
+                current.onChunkLoad(world, chunk);
+            }
+        });
+        ServerChunkEvents.CHUNK_UNLOAD.register((world, chunk) -> {
+            final RegionSummaryService current = summaries;
+            if (current != null && config.enabled) {
+                current.onChunkUnload(world, chunk);
+            }
+        });
         ConfluxMapMod.LOGGER.info("companion initialized");
     }
 
@@ -72,8 +91,13 @@ public final class ConfluxMapCompanion {
         }
     }
 
-    private void onServerStarted(final MinecraftServer server) {
+    private void onServerStarting(final MinecraftServer server) {
         config = configIo.load();
+        summaries = config.enabled ? new RegionSummaryService(config) : null;
+        sharedWaypoints = null;
+    }
+
+    private void onServerStarted(final MinecraftServer server) {
         // Console-only notice, dedicated servers only: on an integrated server the client
         // entrypoint already runs its own check and notifies in-game.
         if (server.isDedicated() && config.checkForUpdates) {
@@ -82,13 +106,10 @@ public final class ConfluxMapCompanion {
                 info.latestVersion(), info.currentVersion(), info.releaseUrl()
             ));
         }
-        summaries = null;
-        sharedWaypoints = null;
         if (!config.enabled) {
             ConfluxMapMod.LOGGER.info("companion disabled by server.json (enabled=false); no HELLO replies");
             return;
         }
-        summaries = new RegionSummaryService(config);
         // Corrections can use the same predictor as the client when a bundled native exists;
         // failure is non-fatal and RegionSummaryService falls back to absolute samples.
         NativeLib.init(server.getSavePath(WorldSavePath.ROOT).resolve("confluxmap"));
@@ -104,7 +125,19 @@ public final class ConfluxMapCompanion {
 
     private void onServerStopping(final MinecraftServer server) {
         sharedWaypointNetworking.onServerStopping();
+        final RegionSummaryService current = summaries;
+        if (current != null) {
+            current.prepareStop();
+        }
         sharedWaypoints = null;
+        ConfluxMapMod.LOGGER.info("companion stopping");
+    }
+
+    private void onServerStopped(final MinecraftServer server) {
+        final RegionSummaryService current = summaries;
+        if (current != null) {
+            current.close(server);
+        }
         summaries = null;
         worldIds.forget(server);
         ConfluxMapMod.LOGGER.info("companion stopped");

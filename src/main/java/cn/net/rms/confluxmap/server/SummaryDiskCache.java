@@ -8,6 +8,8 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.Arrays;
+import java.util.Map;
 
 /** Persistent region-summary cache; corrupt entries are quarantined and treated as cold. */
 public final class SummaryDiskCache {
@@ -17,7 +19,7 @@ public final class SummaryDiskCache {
         this.root = worldFolder.resolve("confluxmap").resolve("summary");
     }
 
-    public SummaryCodec.Region load(final String dimension, final int regionX, final int regionZ) {
+    public synchronized SummaryCodec.Region load(final String dimension, final int regionX, final int regionZ) {
         final Path path = pathFor(dimension, regionX, regionZ);
         if (!Files.isRegularFile(path)) {
             return null;
@@ -34,12 +36,32 @@ public final class SummaryDiskCache {
         }
     }
 
+    /** Loads a full or partial summary only when it describes the current region file version. */
+    public synchronized SummaryCodec.Region loadCurrent(
+        final String dimension,
+        final int regionX,
+        final int regionZ,
+        final long sourceMcaMtimeMs
+    ) {
+        if (sourceMcaMtimeMs <= 0L) {
+            return null;
+        }
+        final SummaryCodec.Region region = load(dimension, regionX, regionZ);
+        return region != null && absoluteMtime(region.sourceMcaMtimeMs()) == sourceMcaMtimeMs
+            ? region
+            : null;
+    }
+
     /**
      * Loads only a region's chunk-generation flags, reading the fixed-size header and stopping
      * before the deflated column body. Used by coarse presence answers, which span far too many
      * regions to decode in full.
+     *
+     * <p>A partial summary written by {@link #saveLiveChunks} answers here too, and reports only
+     * the slots captured so far. Under-reporting presence is the same tolerance the coarse path
+     * already accepts for a stale summary; over-reporting is what it must never do.
      */
-    public SummaryCodec.Generated loadGenerated(final String dimension, final int regionX, final int regionZ) {
+    public synchronized SummaryCodec.Generated loadGenerated(final String dimension, final int regionX, final int regionZ) {
         final Path path = pathFor(dimension, regionX, regionZ);
         if (!Files.isRegularFile(path)) {
             return null;
@@ -56,7 +78,7 @@ public final class SummaryDiskCache {
         }
     }
 
-    public void save(final String dimension, final SummaryCodec.Region region) throws IOException {
+    public synchronized void save(final String dimension, final SummaryCodec.Region region) throws IOException {
         final Path path = pathFor(dimension, region.rx(), region.rz());
         Files.createDirectories(path.getParent());
         final Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
@@ -68,9 +90,74 @@ public final class SummaryDiskCache {
         }
     }
 
+    /**
+     * Persists one live chunk without pretending the other 255 slots were checked.
+     *
+     * <p>A negative source mtime marks a partial region. Slots from a previous snapshot are kept
+     * only while they describe the same underlying {@code .mca} file version; a changed mtime
+     * conservatively drops them. {@link RegionSummaryService} fills empty partial slots from NBT.
+     */
+    public synchronized void saveLiveChunk(
+        final String dimension,
+        final int chunkX,
+        final int chunkZ,
+        final long sourceMcaMtimeMs,
+        final SummaryCodec.Chunk chunk
+    ) throws IOException {
+        if (chunk == null) {
+            return;
+        }
+        final int regionX = Math.floorDiv(chunkX, 16);
+        final int regionZ = Math.floorDiv(chunkZ, 16);
+        final int localX = Math.floorMod(chunkX, 16);
+        final int localZ = Math.floorMod(chunkZ, 16);
+        saveLiveChunks(
+            dimension,
+            regionX,
+            regionZ,
+            sourceMcaMtimeMs,
+            Map.of(localZ * 16 + localX, chunk)
+        );
+    }
+
+    /** Atomically merges several live chunk slots belonging to one level-0 region. */
+    public synchronized void saveLiveChunks(
+        final String dimension,
+        final int regionX,
+        final int regionZ,
+        final long sourceMcaMtimeMs,
+        final Map<Integer, SummaryCodec.Chunk> updates
+    ) throws IOException {
+        if (sourceMcaMtimeMs <= 0L || updates == null || updates.isEmpty()) {
+            return;
+        }
+        final SummaryCodec.Region existing = load(dimension, regionX, regionZ);
+        final SummaryCodec.Chunk[] chunks = new SummaryCodec.Chunk[SummaryCodec.CHUNKS];
+        final long existingMtime = existing == null ? 0L : absoluteMtime(existing.sourceMcaMtimeMs());
+        if (existing != null && existingMtime == sourceMcaMtimeMs) {
+            System.arraycopy(existing.chunks(), 0, chunks, 0, chunks.length);
+        } else {
+            Arrays.fill(chunks, SummaryCodec.Chunk.empty());
+        }
+        for (final Map.Entry<Integer, SummaryCodec.Chunk> update : updates.entrySet()) {
+            final int index = update.getKey();
+            final SummaryCodec.Chunk chunk = update.getValue();
+            if (index >= 0 && index < chunks.length && chunk != null && chunk.generated()) {
+                chunks[index] = chunk;
+            }
+        }
+        save(dimension, new SummaryCodec.Region(regionX, regionZ, -sourceMcaMtimeMs, chunks));
+    }
+
     public boolean isStale(final String dimension, final int regionX, final int regionZ, final long sourceMcaMtimeMs) {
         final SummaryCodec.Region region = load(dimension, regionX, regionZ);
-        return region == null || sourceMcaMtimeMs > region.sourceMcaMtimeMs();
+        return sourceMcaMtimeMs <= 0L || region == null
+            || region.sourceMcaMtimeMs() <= 0L
+            || sourceMcaMtimeMs != region.sourceMcaMtimeMs();
+    }
+
+    private static long absoluteMtime(final long value) {
+        return value == Long.MIN_VALUE ? Long.MAX_VALUE : Math.abs(value);
     }
 
     private Path pathFor(final String dimension, final int x, final int z) {

@@ -74,6 +74,15 @@ public final class Regs {
         //#endif
     }
 
+    /** The registry identifier of {@code block}. */
+    public static Identifier blockId(final Block block) {
+        //#if MC>=260100
+        //$$ return blocks().getKey(block);
+        //#else
+        return blocks().getId(block);
+        //#endif
+    }
+
     /** The registry identifier of the biome at {@code pos}, or null when it has none. */
     public static Identifier biomeIdAt(final World world, final BlockPos pos) {
         //#if MC>=12100
