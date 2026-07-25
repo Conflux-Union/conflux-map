@@ -8,7 +8,9 @@ import net.minecraft.client.util.Window;
 
 //#if MC>=12103
 //$$ import com.mojang.blaze3d.systems.ProjectionType;
-//#if MC>=12108
+//#if MC>=260100
+//$$ import net.minecraft.client.renderer.ProjectionMatrixBuffer;
+//#elseif MC>=12108
 //$$ import net.minecraft.client.render.RawProjectionMatrix;
 //#endif
 //#elseif MC>=12100
@@ -33,7 +35,9 @@ import net.minecraft.util.math.Matrix4f;
  */
 public final class OffscreenCanvas {
     private Framebuffer framebuffer;
-    //#if MC>=12108
+    //#if MC>=260100
+    //$$ private ProjectionMatrixBuffer projectionMatrix;
+    //#elseif MC>=12108
     //$$ private RawProjectionMatrix projectionMatrix;
     //#endif
 
@@ -49,7 +53,11 @@ public final class OffscreenCanvas {
             framebuffer = new SimpleFramebuffer(sizePx, sizePx, false, MinecraftClient.IS_SYSTEM_MAC);
             //#endif
         }
-        //#if MC>=12108
+        //#if MC>=260100
+        //$$ if (projectionMatrix == null) {
+        //$$     projectionMatrix = new ProjectionMatrixBuffer("Conflux Map minimap projection");
+        //$$ }
+        //#elseif MC>=12108
         //$$ if (projectionMatrix == null) {
         //$$     projectionMatrix = new RawProjectionMatrix("Conflux Map minimap projection");
         //$$ }
@@ -110,7 +118,9 @@ public final class OffscreenCanvas {
 
     /** 1.20 made the projection carry an explicit vertex sort order; flat GUI geometry sorts by Z. */
     private void setProjection(final Matrix4f projection) {
-        //#if MC>=12108
+        //#if MC>=260100
+        //$$ RenderSystem.setProjectionMatrix(projectionMatrix.getBuffer(projection), ProjectionType.ORTHOGRAPHIC);
+        //#elseif MC>=12108
         //$$ RenderSystem.setProjectionMatrix(projectionMatrix.set(projection), ProjectionType.ORTHOGRAPHIC);
         //#elseif MC>=12103
         //$$ RenderSystem.setProjectionMatrix(projection, ProjectionType.ORTHOGRAPHIC);

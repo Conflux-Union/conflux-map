@@ -222,18 +222,18 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
     }
 
     private void drawCentered(final GuiDraw draw, final String value, final int y, final int color) {
-        final String text = textRenderer.trimToWidth(value, Math.max(40, width - 32));
-        draw.drawTextWithShadow(textRenderer, text, width / 2f - textRenderer.getWidth(text) / 2f, y, color);
+        final String text = this.textRenderer.trimToWidth(value, Math.max(40, width - 32));
+        draw.drawTextWithShadow(this.textRenderer, text, width / 2f - this.textRenderer.getWidth(text) / 2f, y, color);
     }
 
     /** Draws every wrapped line of {@code value} and returns the y below the last line. */
     private int drawWrapped(final GuiDraw draw, final String value, final int y, final int color) {
         int lineY = y;
-        for (final OrderedText line : textRenderer.wrapLines(StringVisitable.plain(value), Math.max(40, width - 32))) {
+        for (final OrderedText line : this.textRenderer.wrapLines(StringVisitable.plain(value), Math.max(40, width - 32))) {
             draw.drawTextWithShadow(
-                textRenderer, line, width / 2f - textRenderer.getWidth(line) / 2f, lineY, color
+                this.textRenderer, line, width / 2f - this.textRenderer.getWidth(line) / 2f, lineY, color
             );
-            lineY += textRenderer.fontHeight + 1;
+            lineY += this.textRenderer.fontHeight + 1;
         }
         return lineY;
     }

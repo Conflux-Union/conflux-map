@@ -503,10 +503,17 @@ public final class McChunkSnapshotFactory {
         final Block block,
         final boolean netherAmbient
     ) {
+        //#if MC>=260100
+        //$$ final int skyLevel = world.getBrightness(LightLayer.SKY, pos);
+        //$$ final int blockLevel = block == Blocks.LAVA || block == Blocks.MAGMA_BLOCK
+        //$$     ? 14
+        //$$     : world.getBrightness(LightLayer.BLOCK, pos);
+        //#else
         final int skyLevel = world.getLightLevel(LightType.SKY, pos);
         final int blockLevel = block == Blocks.LAVA || block == Blocks.MAGMA_BLOCK
             ? 14
             : world.getLightLevel(LightType.BLOCK, pos);
+        //#endif
         if (blockLevel == 0 && skyLevel == 0) {
             return argb & 0x00FFFFFF;
         }
@@ -532,7 +539,11 @@ public final class McChunkSnapshotFactory {
         final int topY
     ) {
         pos.set(worldX, Math.min(y + 1, topY - 1), worldZ);
+        //#if MC>=260100
+        //$$ return (byte) Mth.clamp(world.getBrightness(LightLayer.BLOCK, pos), 0, 15);
+        //#else
         return (byte) MathHelper.clamp(world.getLightLevel(LightType.BLOCK, pos), 0, 15);
+        //#endif
     }
 
     private void writeVoid(
@@ -567,7 +578,9 @@ public final class McChunkSnapshotFactory {
 
     /** §1 opacity test: light-dampening > 0, else a full-square occlusion shape on the top or bottom face. */
     private static boolean isOpaque(final BlockState state, final ClientWorld world, final BlockPos pos) {
-        //#if MC>=12103
+        //#if MC>=260100
+        //$$ if (state.getLightDampening() > 0) {
+        //#elseif MC>=12103
         //$$ if (state.getOpacity() > 0) {
         //#else
         if (state.getOpacity(world, pos) > 0) {
@@ -583,7 +596,9 @@ public final class McChunkSnapshotFactory {
 
     /** §1 seafloor-scan continuation: dampening < 5 and not leaves. */
     private static boolean seafloorContinues(final BlockState state, final ClientWorld world, final BlockPos pos) {
-        //#if MC>=12103
+        //#if MC>=260100
+        //$$ return state.getLightDampening() < 5 && !(state.getBlock() instanceof LeavesBlock);
+        //#elseif MC>=12103
         //$$ return state.getOpacity() < 5 && !(state.getBlock() instanceof LeavesBlock);
         //#else
         return state.getOpacity(world, pos) < 5 && !(state.getBlock() instanceof LeavesBlock);

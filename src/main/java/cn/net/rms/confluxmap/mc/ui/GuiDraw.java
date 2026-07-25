@@ -129,7 +129,10 @@ public final class GuiDraw {
         final float y,
         final int color
     ) {
-        //#if MC>=12108
+        //#if MC>=260100
+        //$$ withTextPose(x, y, () -> context.text(renderer, text, 0, 0, color));
+        //$$ return (int) x + renderer.width(text);
+        //#elseif MC>=12108
         //$$ withTextPose(x, y, () -> context.drawTextWithShadow(renderer, text, 0, 0, color));
         //$$ return (int) x + renderer.getWidth(text);
         //#elseif MC>=12103
@@ -159,7 +162,10 @@ public final class GuiDraw {
         final float y,
         final int color
     ) {
-        //#if MC>=12108
+        //#if MC>=260100
+        //$$ withTextPose(x, y, () -> context.text(renderer, text, 0, 0, color));
+        //$$ return (int) x + renderer.width(text);
+        //#elseif MC>=12108
         //$$ withTextPose(x, y, () -> context.drawTextWithShadow(renderer, text, 0, 0, color));
         //$$ return (int) x + renderer.getWidth(text);
         //#elseif MC>=12103
@@ -188,7 +194,10 @@ public final class GuiDraw {
         final float y,
         final int color
     ) {
-        //#if MC>=12108
+        //#if MC>=260100
+        //$$ withTextPose(x, y, () -> context.text(renderer, text, 0, 0, color));
+        //$$ return (int) x + renderer.width(text);
+        //#elseif MC>=12108
         //$$ withTextPose(x, y, () -> context.drawTextWithShadow(renderer, text, 0, 0, color));
         //$$ return (int) x + renderer.getWidth(text);
         //#elseif MC>=12103

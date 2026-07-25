@@ -224,9 +224,9 @@ final class WaypointImportScreen extends ConfluxScreen {
                     source.displayName(),
                     source.waypoints().size()
                 ).getString();
-                final String fitted = textRenderer.trimToWidth(label, rowWidth() - 26);
+                final String fitted = this.textRenderer.trimToWidth(label, rowWidth() - 26);
                 draw.drawTextWithShadow(
-                    textRenderer, fitted, rowLeft + 26, LIST_TOP + i * ROW_HEIGHT + 6,
+                    this.textRenderer, fitted, rowLeft + 26, LIST_TOP + i * ROW_HEIGHT + 6,
                     excludedSources.contains(i) ? MUTED_TEXT_COLOR : TEXT_COLOR
                 );
             }
@@ -252,7 +252,7 @@ final class WaypointImportScreen extends ConfluxScreen {
     }
 
     private void drawCentered(final GuiDraw draw, final String value, final int y, final int color) {
-        final String text = textRenderer.trimToWidth(value, Math.max(40, width - 32));
-        draw.drawTextWithShadow(textRenderer, text, width / 2f - textRenderer.getWidth(text) / 2f, y, color);
+        final String text = this.textRenderer.trimToWidth(value, Math.max(40, width - 32));
+        draw.drawTextWithShadow(this.textRenderer, text, width / 2f - this.textRenderer.getWidth(text) / 2f, y, color);
     }
 }

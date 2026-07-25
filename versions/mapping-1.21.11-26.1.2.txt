@@ -1,0 +1,157 @@
+# Mapping file for version 1.21.11 to 26.1.2
+# Format: old_version_class new_version_class
+#
+# This link crosses namespaces rather than versions: 26.1 ships unobfuscated, so there is no
+# intermediary to resolve names through and every relocation has to be spelled out. Only pure
+# class relocations belong here - anything whose shape changed needs a //#if branch instead.
+com.mojang.blaze3d.systems.ProjectionType com.mojang.blaze3d.ProjectionType
+net.minecraft.block.AbstractSignBlock net.minecraft.world.level.block.SignBlock
+net.minecraft.block.Block net.minecraft.world.level.block.Block
+net.minecraft.block.BlockState net.minecraft.world.level.block.state.BlockState
+net.minecraft.block.Blocks net.minecraft.world.level.block.Blocks
+net.minecraft.block.CobwebBlock net.minecraft.world.level.block.WebBlock
+net.minecraft.block.DoorBlock net.minecraft.world.level.block.DoorBlock
+net.minecraft.block.LadderBlock net.minecraft.world.level.block.LadderBlock
+net.minecraft.block.LeavesBlock net.minecraft.world.level.block.LeavesBlock
+net.minecraft.block.MapColor net.minecraft.world.level.material.MapColor
+net.minecraft.block.RedstoneWireBlock net.minecraft.world.level.block.RedStoneWireBlock
+net.minecraft.block.SnowBlock net.minecraft.world.level.block.SnowLayerBlock
+net.minecraft.block.VineBlock net.minecraft.world.level.block.VineBlock
+net.minecraft.client.MinecraftClient net.minecraft.client.Minecraft
+net.minecraft.client.color.world.BiomeColors net.minecraft.client.renderer.BiomeColors
+net.minecraft.client.font.TextRenderer net.minecraft.client.gui.Font
+net.minecraft.client.gl.Framebuffer com.mojang.blaze3d.pipeline.RenderTarget
+net.minecraft.client.gl.GpuSampler com.mojang.blaze3d.textures.GpuSampler
+net.minecraft.client.gl.RenderPipelines net.minecraft.client.renderer.RenderPipelines
+net.minecraft.client.gl.SimpleFramebuffer com.mojang.blaze3d.pipeline.TextureTarget
+net.minecraft.client.gui.DrawContext net.minecraft.client.gui.GuiGraphicsExtractor
+net.minecraft.client.gui.ScreenRect net.minecraft.client.gui.navigation.ScreenRectangle
+net.minecraft.client.gui.render.state.GuiRenderState net.minecraft.client.renderer.state.gui.GuiRenderState
+net.minecraft.client.gui.screen.DeathScreen net.minecraft.client.gui.screens.DeathScreen
+net.minecraft.client.gui.screen.Screen net.minecraft.client.gui.screens.Screen
+net.minecraft.client.gui.widget.ButtonWidget net.minecraft.client.gui.components.Button
+net.minecraft.client.gui.widget.ClickableWidget net.minecraft.client.gui.components.AbstractWidget
+net.minecraft.client.gui.widget.SliderWidget net.minecraft.client.gui.components.AbstractSliderButton
+net.minecraft.client.gui.widget.TextFieldWidget net.minecraft.client.gui.components.EditBox
+net.minecraft.client.network.AbstractClientPlayerEntity net.minecraft.client.player.AbstractClientPlayer
+net.minecraft.client.network.ClientPlayNetworkHandler net.minecraft.client.multiplayer.ClientPacketListener
+net.minecraft.client.network.ClientPlayerEntity net.minecraft.client.player.LocalPlayer
+net.minecraft.client.network.ServerInfo net.minecraft.client.multiplayer.ServerData
+net.minecraft.client.option.KeyBinding net.minecraft.client.KeyMapping
+net.minecraft.client.render.BufferBuilder com.mojang.blaze3d.vertex.BufferBuilder
+net.minecraft.client.render.BuiltBuffer com.mojang.blaze3d.vertex.MeshData
+net.minecraft.client.render.Camera net.minecraft.client.Camera
+net.minecraft.client.render.GameRenderer net.minecraft.client.renderer.GameRenderer
+net.minecraft.client.render.RenderTickCounter net.minecraft.client.DeltaTracker
+net.minecraft.client.render.Tessellator com.mojang.blaze3d.vertex.Tesselator
+net.minecraft.client.render.VertexConsumer com.mojang.blaze3d.vertex.VertexConsumer
+net.minecraft.client.render.VertexConsumerProvider net.minecraft.client.renderer.MultiBufferSource
+net.minecraft.client.render.VertexFormats com.mojang.blaze3d.vertex.DefaultVertexFormat
+net.minecraft.client.render.WorldRenderer net.minecraft.client.renderer.LevelRenderer
+net.minecraft.client.render.model.BakedQuad net.minecraft.client.resources.model.geometry.BakedQuad
+net.minecraft.client.render.model.BlockStateModel net.minecraft.client.renderer.block.dispatch.BlockStateModel
+net.minecraft.client.texture.MissingSprite net.minecraft.client.renderer.texture.MissingTextureAtlasSprite
+net.minecraft.client.texture.NativeImage com.mojang.blaze3d.platform.NativeImage
+net.minecraft.client.texture.NativeImageBackedTexture net.minecraft.client.renderer.texture.DynamicTexture
+net.minecraft.client.texture.Sprite net.minecraft.client.renderer.texture.TextureAtlasSprite
+net.minecraft.client.texture.SpriteAtlasTexture net.minecraft.client.renderer.texture.TextureAtlas
+net.minecraft.client.texture.TextureSetup net.minecraft.client.gui.render.TextureSetup
+net.minecraft.client.util.InputUtil com.mojang.blaze3d.platform.InputConstants
+net.minecraft.client.util.Window com.mojang.blaze3d.platform.Window
+net.minecraft.client.util.math.MatrixStack com.mojang.blaze3d.vertex.PoseStack
+net.minecraft.client.world.ClientChunkManager net.minecraft.client.multiplayer.ClientChunkCache
+net.minecraft.client.world.ClientWorld net.minecraft.client.multiplayer.ClientLevel
+net.minecraft.command.permission.Permission net.minecraft.server.permissions.Permission
+net.minecraft.command.permission.PermissionLevel net.minecraft.server.permissions.PermissionLevel
+net.minecraft.entity.Entity net.minecraft.world.entity.Entity
+net.minecraft.entity.EntityType net.minecraft.world.entity.EntityType
+net.minecraft.entity.LivingEntity net.minecraft.world.entity.LivingEntity
+net.minecraft.entity.SpawnGroup net.minecraft.world.entity.MobCategory
+net.minecraft.entity.mob.PhantomEntity net.minecraft.world.entity.monster.Phantom
+net.minecraft.entity.passive.AxolotlEntity net.minecraft.world.entity.animal.axolotl.Axolotl
+net.minecraft.entity.passive.CatEntity net.minecraft.world.entity.animal.feline.Cat
+net.minecraft.entity.passive.FoxEntity net.minecraft.world.entity.animal.fox.Fox
+net.minecraft.entity.passive.LlamaEntity net.minecraft.world.entity.animal.equine.Llama
+net.minecraft.entity.passive.MooshroomEntity net.minecraft.world.entity.animal.cow.MushroomCow
+net.minecraft.entity.passive.PandaEntity net.minecraft.world.entity.animal.panda.Panda
+net.minecraft.entity.passive.ParrotEntity net.minecraft.world.entity.animal.parrot.Parrot
+net.minecraft.entity.passive.RabbitEntity net.minecraft.world.entity.animal.rabbit.Rabbit
+net.minecraft.entity.passive.SheepEntity net.minecraft.world.entity.animal.sheep.Sheep
+net.minecraft.entity.passive.StriderEntity net.minecraft.world.entity.monster.Strider
+net.minecraft.entity.passive.VillagerEntity net.minecraft.world.entity.npc.villager.Villager
+net.minecraft.entity.passive.WolfEntity net.minecraft.world.entity.animal.wolf.Wolf
+net.minecraft.entity.player.PlayerEntity net.minecraft.world.entity.player.Player
+net.minecraft.fluid.FluidState net.minecraft.world.level.material.FluidState
+net.minecraft.nbt.NbtCompound net.minecraft.nbt.CompoundTag
+net.minecraft.nbt.NbtList net.minecraft.nbt.ListTag
+net.minecraft.network.PacketByteBuf net.minecraft.network.FriendlyByteBuf
+net.minecraft.network.RegistryByteBuf net.minecraft.network.RegistryFriendlyByteBuf
+net.minecraft.network.codec.PacketCodec net.minecraft.network.codec.StreamCodec
+net.minecraft.network.packet.CustomPayload net.minecraft.network.protocol.common.custom.CustomPacketPayload
+net.minecraft.network.packet.s2c.play.BlockUpdateS2CPacket net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket
+net.minecraft.network.packet.s2c.play.ChunkDeltaUpdateS2CPacket net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket
+net.minecraft.registry.Registries net.minecraft.core.registries.BuiltInRegistries
+net.minecraft.registry.Registry net.minecraft.core.Registry
+net.minecraft.registry.RegistryKey net.minecraft.resources.ResourceKey
+net.minecraft.registry.RegistryKeys net.minecraft.core.registries.Registries
+net.minecraft.registry.tag.FluidTags net.minecraft.tags.FluidTags
+net.minecraft.resource.ResourceManager net.minecraft.server.packs.resources.ResourceManager
+net.minecraft.resource.ResourceType net.minecraft.server.packs.PackType
+net.minecraft.server.command.CommandManager net.minecraft.commands.Commands
+net.minecraft.server.command.ServerCommandSource net.minecraft.commands.CommandSourceStack
+net.minecraft.server.network.ServerPlayerEntity net.minecraft.server.level.ServerPlayer
+net.minecraft.server.world.ServerWorld net.minecraft.server.level.ServerLevel
+net.minecraft.state.property.Properties net.minecraft.world.level.block.state.properties.BlockStateProperties
+net.minecraft.text.ClickEvent net.minecraft.network.chat.ClickEvent
+net.minecraft.text.HoverEvent net.minecraft.network.chat.HoverEvent
+net.minecraft.text.MutableText net.minecraft.network.chat.MutableComponent
+net.minecraft.text.OrderedText net.minecraft.util.FormattedCharSequence
+net.minecraft.text.StringVisitable net.minecraft.network.chat.FormattedText
+net.minecraft.text.Style net.minecraft.network.chat.Style
+net.minecraft.text.Text net.minecraft.network.chat.Component
+net.minecraft.util.Formatting net.minecraft.ChatFormatting
+net.minecraft.util.Identifier net.minecraft.resources.Identifier
+net.minecraft.util.WorldSavePath net.minecraft.world.level.storage.LevelResource
+net.minecraft.util.math.BlockPos net.minecraft.core.BlockPos
+net.minecraft.util.math.ChunkPos net.minecraft.world.level.ChunkPos
+net.minecraft.util.math.Direction net.minecraft.core.Direction
+net.minecraft.util.math.MathHelper net.minecraft.util.Mth
+net.minecraft.util.math.Vec3d net.minecraft.world.phys.Vec3
+net.minecraft.util.math.random.Random net.minecraft.util.RandomSource
+net.minecraft.world.BlockView net.minecraft.world.level.BlockGetter
+net.minecraft.world.Heightmap net.minecraft.world.level.levelgen.Heightmap
+net.minecraft.world.LightType net.minecraft.world.level.LightLayer
+net.minecraft.world.World net.minecraft.world.level.Level
+net.minecraft.world.biome.Biome net.minecraft.world.level.biome.Biome
+net.minecraft.world.biome.FoliageColors net.minecraft.world.level.FoliageColor
+net.minecraft.world.biome.source.BiomeSource net.minecraft.world.level.biome.BiomeSource
+net.minecraft.world.biome.source.MultiNoiseBiomeSource net.minecraft.world.level.biome.MultiNoiseBiomeSource
+net.minecraft.world.biome.source.MultiNoiseBiomeSourceParameterLists net.minecraft.world.level.biome.MultiNoiseBiomeSourceParameterLists
+net.minecraft.world.biome.source.TheEndBiomeSource net.minecraft.world.level.biome.TheEndBiomeSource
+net.minecraft.world.chunk.ChunkStatus net.minecraft.world.level.chunk.status.ChunkStatus
+net.minecraft.world.chunk.WorldChunk net.minecraft.world.level.chunk.LevelChunk
+net.minecraft.world.dimension.DimensionType net.minecraft.world.level.dimension.DimensionType
+net.minecraft.world.gen.chunk.ChunkGenerator net.minecraft.world.level.chunk.ChunkGenerator
+net.minecraft.world.gen.chunk.ChunkGeneratorSettings net.minecraft.world.level.levelgen.NoiseGeneratorSettings
+net.minecraft.world.gen.chunk.DebugChunkGenerator net.minecraft.world.level.levelgen.DebugLevelSource
+net.minecraft.world.gen.chunk.FlatChunkGenerator net.minecraft.world.level.levelgen.FlatLevelSource
+net.minecraft.world.gen.chunk.NoiseChunkGenerator net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator
+
+# Member renames that kept their descriptor. Without an intermediary namespace these cannot be
+# resolved automatically, but they are still pure renames, so they belong here rather than in a
+# //#if branch at every call site (getWidth alone has 41).
+net.minecraft.client.font.TextRenderer getWidth width
+net.minecraft.client.font.TextRenderer trimToWidth plainSubstrByWidth
+net.minecraft.client.font.TextRenderer fontHeight lineHeight
+net.minecraft.client.gui.DrawContext drawTextWithShadow text
+net.minecraft.client.MinecraftClient getBlockRenderManager getBlockRenderer
+net.minecraft.client.gui.screen.Screen render extractRenderState
+net.minecraft.client.gui.screen.Screen renderBackground extractBackground
+net.minecraft.client.gui.widget.ButtonWidget renderWidget extractContents
+net.minecraft.client.gui.widget.ClickableWidget renderWidget extractContents
+net.minecraft.fluid.FluidState isIn is
+net.minecraft.block.BlockState getOpacity getLightDampening
+net.minecraft.client.world.ClientWorld getLightLevel getBrightness
+net.minecraft.client.render.model.BlockModelPart net.minecraft.client.renderer.block.dispatch.BlockStateModelPart
+net.minecraft.client.texture.SpriteAtlasTexture BLOCK_ATLAS_TEXTURE LOCATION_BLOCKS
+net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext

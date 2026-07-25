@@ -11,6 +11,17 @@
 // version's bytecode to confirm, not its mappings) and behavior changes that keep every signature.
 // Widening minecraft_versions still deserves one real launch on the version being added.
 
+// Unobfuscated versions have neither side of this check: no intermediary mappings to look names up
+// in, and no remapJar whose output to read. Register the task as a no-op so the check and
+// buildRelease wiring in common.gradle stays uniform across the whole version matrix.
+if (rootProject.mcVersionOf(project.name) >= 260100) {
+    tasks.register('checkVersionCoverage') {
+        group = 'verification'
+        description = 'No-op on unobfuscated versions: no intermediary mappings exist to verify against'
+    }
+    return
+}
+
 final def MEMBER_REF = ~'//\\s+(net/minecraft/[\\w$/]+)\\.([\\w$<>]+):(\\S+)'
 final def CLASS_REF = ~'=\\s+Class\\s+#\\d+\\s+//\\s+(net/minecraft/[\\w$/]+)\\s*$'
 // Annotation values are stored as raw Utf8 constants rather than as String constants, so mixin

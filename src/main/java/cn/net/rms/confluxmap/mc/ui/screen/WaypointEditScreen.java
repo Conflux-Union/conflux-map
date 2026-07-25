@@ -199,7 +199,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         final int centerX = width / 2;
         final int fieldWidth = 200;
 
-        nameField = new TextFieldWidget(textRenderer, centerX - fieldWidth / 2, 42, fieldWidth, FIELD_HEIGHT, Text.of(""));
+        nameField = new TextFieldWidget(this.textRenderer, centerX - fieldWidth / 2, 42, fieldWidth, FIELD_HEIGHT, Text.of(""));
         nameField.setMaxLength(64);
         nameField.setText(initialName);
         addDrawableChild(nameField);
@@ -233,7 +233,22 @@ public final class WaypointEditScreen extends ConfluxScreen {
         for (int i = 0; i < PRESET_COLORS.length; i++) {
             final int color = PRESET_COLORS[i];
             final int x = swatchLeft + i * (SWATCH_SIZE + SWATCH_GAP);
-            //#if MC>=12111
+            //#if MC>=260100
+            //$$ addRenderableWidget(new Button(
+            //$$     x, 150, SWATCH_SIZE, SWATCH_SIZE, Texts.literal(""),
+            //$$     b -> selectedColor = color, narration -> narration.get()
+            //$$ ) {
+            //$$     @Override
+            //$$     protected void extractContents(
+            //$$         final GuiGraphicsExtractor context,
+            //$$         final int mouseX,
+            //$$         final int mouseY,
+            //$$         final float delta
+            //$$     ) {
+            //$$         renderColorSwatch(GuiDraw.of(context), this, color);
+            //$$     }
+            //$$ });
+            //#elseif MC>=12111
             //$$ addDrawableChild(new ButtonWidget(
             //$$     x, 150, SWATCH_SIZE, SWATCH_SIZE, Texts.literal(""),
             //$$     b -> selectedColor = color, narration -> narration.get()
@@ -285,9 +300,23 @@ public final class WaypointEditScreen extends ConfluxScreen {
     }
 
     private TextFieldWidget numericField(final int x, final int y, final int w, final String initial) {
-        final TextFieldWidget field = new TextFieldWidget(textRenderer, x, y, w, FIELD_HEIGHT, Text.of(""));
+        final TextFieldWidget field = new TextFieldWidget(this.textRenderer, x, y, w, FIELD_HEIGHT, Text.of(""));
         field.setMaxLength(32);
+        //#if MC>=260100
+        //$$ // 26.1 removed EditBox's text predicate. The responder plus a last-good value gives the
+        //$$ // same "reject the keystroke" behaviour: setValue re-enters once with a valid string,
+        //$$ // which takes the accepting branch and stops there.
+        //$$ final String[] lastValid = {initial};
+        //$$ field.setResponder(s -> {
+        //$$     if (NUMERIC.matcher(s).matches()) {
+        //$$         lastValid[0] = s;
+        //$$     } else {
+        //$$         field.setValue(lastValid[0]);
+        //$$     }
+        //$$ });
+        //#else
         field.setTextPredicate(s -> NUMERIC.matcher(s).matches());
+        //#endif
         field.setText(initial);
         return field;
     }
@@ -430,7 +459,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
     }
 
     private void drawCenteredLabel(final GuiDraw draw, final String text, final int y) {
-        final int textWidth = textRenderer.getWidth(text);
-        draw.drawTextWithShadow(textRenderer, text, width / 2f - textWidth / 2f, y, 0xFFFFFFFF);
+        final int textWidth = this.textRenderer.getWidth(text);
+        draw.drawTextWithShadow(this.textRenderer, text, width / 2f - textWidth / 2f, y, 0xFFFFFFFF);
     }
 }

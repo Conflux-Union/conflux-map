@@ -26,7 +26,11 @@ import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import java.util.Optional;
+//#if MC>=260100
+//$$ import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+//#else
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+//#endif
 import net.minecraft.client.MinecraftClient;
 //#if MC>=12100
 //$$ import net.minecraft.client.gui.DrawContext;
@@ -99,7 +103,13 @@ public final class MinimapHudRenderer {
     }
 
     public void register() {
+        //#if MC>=260100
+        //$$ // 26.1 replaced the single HUD callback with an ordered element list; appending last
+        //$$ // keeps this drawing over the vanilla HUD exactly as the callback did.
+        //$$ HudElementRegistry.addLast(cn.net.rms.confluxmap.compat.Ids.of("confluxmap", "minimap"), this::render);
+        //#else
         HudRenderCallback.EVENT.register(this::render);
+        //#endif
     }
 
     /**
@@ -110,7 +120,12 @@ public final class MinimapHudRenderer {
      * {@link FullscreenMapScreen} relies on it having already run this frame and never
      * calls it itself, so it's never invoked twice in one frame.
      */
-    //#if MC>=12100
+    //#if MC>=260100
+    //$$ private void render(final GuiGraphicsExtractor context, final DeltaTracker tickCounter) {
+    //$$     final GuiDraw draw = GuiDraw.of(context);
+    //$$     final PoseStack matrices = draw.matrices();
+    //$$     final float tickDelta = tickCounter.getGameTimeDeltaPartialTick(false);
+    //#elseif MC>=12000
     //$$ private void render(final DrawContext context, final RenderTickCounter tickCounter) {
     //$$     final GuiDraw draw = GuiDraw.of(context);
     //$$     final MatrixStack matrices = draw.matrices();

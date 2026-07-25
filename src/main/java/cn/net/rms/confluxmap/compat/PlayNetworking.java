@@ -106,8 +106,13 @@ public final class PlayNetworking {
     //$$                 return new RawPayload(this, bytes);
     //$$             }
     //$$         );
+    //#if MC>=260100
+    //$$         PayloadTypeRegistry.serverboundPlay().register(type, codec);
+    //$$         PayloadTypeRegistry.clientboundPlay().register(type, codec);
+    //#else
     //$$         PayloadTypeRegistry.playC2S().register(type, codec);
     //$$         PayloadTypeRegistry.playS2C().register(type, codec);
+    //#endif
     //$$     }
     //$$ }
     //$$

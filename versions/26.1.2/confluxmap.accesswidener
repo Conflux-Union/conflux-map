@@ -1,0 +1,15 @@
+accessWidener v2 official
+
+# Unobfuscated versions have no named namespace: the shipped names are the official ones, so this
+# file declares official where every yarn-mapped version declares named.
+
+# SpriteColorSampler reads a sprite's un-stitched frame-0 source image directly
+# (rather than reading back the stitched atlas texture) to box-filter its colors.
+# Mojang names the mip pyramid byMipLevel and keeps NativeImage under blaze3d.
+accessible field net/minecraft/client/renderer/texture/SpriteContents byMipLevel [Lcom/mojang/blaze3d/platform/NativeImage;
+
+# 1.21.6 made GUI rendering retained-mode: a screen or HUD callback only records elements, and
+# the renderer replays them once collection ends. This mod's map geometry has to reach that list
+# too, and the context keeps the list to itself. Yarn's DrawContext.state is
+# GuiGraphicsExtractor.guiRenderState here.
+accessible field net/minecraft/client/gui/GuiGraphicsExtractor guiRenderState Lnet/minecraft/client/renderer/state/gui/GuiRenderState;

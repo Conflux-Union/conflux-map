@@ -511,7 +511,11 @@ public final class SharedWaypointClient {
 
     private void showMessage(final String translationKey) {
         if (client.player != null) {
+            //#if MC>=260100
+            //$$ client.player.sendSystemMessage(Texts.translatable(translationKey));
+            //#else
             client.player.sendMessage(Texts.translatable(translationKey), false);
+            //#endif
         }
     }
 

@@ -20,7 +20,9 @@ import net.minecraft.block.VineBlock;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.model.BakedModel;
 import net.minecraft.client.render.model.BakedQuad;
-//#if MC>=12105
+//#if MC>=260100
+//$$ import net.minecraft.client.renderer.block.dispatch.BlockStateModelPart;
+//#elseif MC>=12105
 //$$ import net.minecraft.client.render.model.BlockModelPart;
 //#endif
 import net.minecraft.client.texture.MissingSprite;
@@ -112,7 +114,12 @@ public final class SpriteColorSampler {
     }
 
     private int sampleModel(final BlockState state, final BlockView world, final BlockPos pos) {
+        //#if MC>=260100
+        //$$ // 26.1 moved block-state models off the render dispatcher onto the model manager.
+        //$$ final BlockStateModel model = client.getModelManager().getBlockStateModelSet().get(state);
+        //#else
         final BakedModel model = client.getBlockRenderManager().getModel(state);
+        //#endif
         if (model == null) {
             // §2 tier 1 (model sprite average) is unavailable for this state - fall straight
             // through to tier 3 (MapColor) rather than crash. Seen for some states very early
@@ -120,7 +127,20 @@ public final class SpriteColorSampler {
             return fallbackToMapColor(state, world, pos);
         }
         final List<Sprite> faceSprites = new ArrayList<>();
-        //#if MC>=12105
+        //#if MC>=260100
+        //$$ // 26.1 turned the part list into an out-parameter and moved a quad's sprite behind
+        //$$ // its material record.
+        //$$ final List<BlockStateModelPart> parts = new ArrayList<>();
+        //$$ model.collectParts(modelRandom, parts);
+        //$$ for (final BlockStateModelPart part : parts) {
+        //$$     for (final BakedQuad quad : part.getQuads(Direction.UP)) {
+        //$$         faceSprites.add(quad.materialInfo().sprite());
+        //$$     }
+        //$$     for (final BakedQuad quad : part.getQuads(null)) {
+        //$$         faceSprites.add(quad.materialInfo().sprite());
+        //$$     }
+        //$$ }
+        //#elseif MC>=12105
         //$$ for (final BlockModelPart part : model.getParts(modelRandom)) {
         //$$     for (final BakedQuad quad : part.getQuads(Direction.UP)) {
         //$$         faceSprites.add(quad.sprite());
@@ -142,7 +162,9 @@ public final class SpriteColorSampler {
             return clampAlphaFloor(primary);
         }
 
-        //#if MC>=12105
+        //#if MC>=260100
+        //$$ final TextureAtlasSprite particle = model.particleMaterial().sprite();
+        //#elseif MC>=12105
         //$$ final Sprite particle = model.particleSprite();
         //#else
         final Sprite particle = model.getParticleSprite();
@@ -176,7 +198,11 @@ public final class SpriteColorSampler {
 
     private Sprite fluidSprite(final BlockState state) {
         final Identifier id = state.isOf(Blocks.LAVA) ? LAVA_STILL : WATER_STILL;
-        //#if MC>=12109
+        //#if MC>=260100
+        //$$ final TextureAtlas atlas = client.getAtlasManager().getAtlasOrThrow(
+        //$$     TextureAtlas.LOCATION_BLOCKS
+        //$$ );
+        //#elseif MC>=12109
         //$$ final SpriteAtlasTexture atlas = client.getAtlasManager().getAtlasTexture(
         //$$     SpriteAtlasTexture.BLOCK_ATLAS_TEXTURE
         //$$ );

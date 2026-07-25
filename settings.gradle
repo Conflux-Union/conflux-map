@@ -8,19 +8,38 @@ pluginManagement {
             name = 'Jitpack'
             url = 'https://maven.fallenbreath.me/jitpack'
         }
+        maven {
+            name = 'JitpackOrigin'
+            url = 'https://jitpack.io'
+        }
         mavenCentral()
         gradlePluginPortal()
     }
     resolutionStrategy {
         eachPlugin {
             switch (requested.id.id) {
+                // Upstream rather than the Fallen-Breath fork: the fork stopped at 2025-07 and
+                // types its createNode mappings parameter as non-null, which rejects the null
+                // namespace an unobfuscated version node needs.
                 case 'com.replaymod.preprocess': {
-                    useModule "com.github.Fallen-Breath:preprocessor:$requested.version"
+                    useModule "com.github.ReplayMod:preprocessor:$requested.version"
+                    break
+                }
+                // 26.1 is unobfuscated: fabric-loom applies to it without remapping, while every
+                // obfuscated version keeps the remapping variant. Both ids resolve to one artifact.
+                case 'net.fabricmc.fabric-loom':
+                case 'net.fabricmc.fabric-loom-remap': {
+                    useModule "net.fabricmc:fabric-loom:${requested.version}"
                     break
                 }
             }
         }
     }
+}
+// 26.1 targets Java 25 while every earlier version builds on the JDK already in PATH. This lets
+// Gradle provision the missing toolchain itself instead of requiring a manual JDK 25 install.
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
 }
 file('versions').eachDir { final File dir ->
     final String version = ":$dir.name"

@@ -57,12 +57,21 @@ public final class BiomeTintResolver {
         }
         // §3/§6: anything outside the fixed set (including modded blocks) still gets probed
         // through the game's own tint provider registry; unregistered blocks report NO_COLOR.
+        //#if MC>=260100
+        //$$ // 26.1 split BlockColors.getColor into a per-tint-index source object.
+        //$$ final int color = client.getBlockColors().getTintSource(state, 0).colorInWorld(state, world, pos);
+        //#else
         final int color = client.getBlockColors().getColor(state, world, pos, 0);
+        //#endif
         return color == -1 ? NO_TINT : (0xFF000000 | color);
     }
 
     private static boolean isWater(final BlockState state) {
+        //#if MC>=260100
+        //$$ return !state.getFluidState().isEmpty() && state.getFluidState().is(FluidTags.WATER);
+        //#else
         return !state.getFluidState().isEmpty() && state.getFluidState().isIn(FluidTags.WATER);
+        //#endif
     }
 
     /** §3: oak/jungle/acacia/dark oak leaves plus vines use the generic foliage function. */

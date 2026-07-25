@@ -134,7 +134,11 @@ public final class LayerSelector {
             return MapLayer.CAVE_AUTO;
         }
         final BlockPos pos = new BlockPos(player.getBlockPos().getX(), eyeY, player.getBlockPos().getZ());
+        //#if MC>=260100
+        //$$ return world.getBrightness(LightLayer.SKY, pos) <= 0 ? MapLayer.CAVE_AUTO : MapLayer.SURFACE;
+        //#else
         return world.getLightLevel(LightType.SKY, pos) <= 0 ? MapLayer.CAVE_AUTO : MapLayer.SURFACE;
+        //#endif
     }
 
     /**

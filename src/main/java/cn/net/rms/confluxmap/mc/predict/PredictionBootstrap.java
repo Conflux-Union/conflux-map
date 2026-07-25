@@ -66,7 +66,12 @@ public final class PredictionBootstrap {
         final WorldPreset endPreset;
         final Optional<FlatBaseline> flatBaseline;
         if (singleplayer) {
+            //#if MC>=260100
+            //$$ // 26.1 dropped WorldData.getGeneratorOptions; the seed now hangs off the level itself.
+            //$$ seedOpt = OptionalLong.of(client.getSingleplayerServer().overworld().getSeed());
+            //#else
             seedOpt = OptionalLong.of(client.getServer().getSaveProperties().getGeneratorOptions().getSeed());
+            //#endif
             // The client jar's own worldgen is the only worldgen an integrated server can run.
             worldgenVersion = MC_VERSION_STRING;
             overworldPreset = detectLocal(World.OVERWORLD);
