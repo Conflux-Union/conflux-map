@@ -97,6 +97,10 @@ if (!supportedMinecraftVersions.contains(project.name)) {
 }
 final String oldestMinecraftVersion = supportedMinecraftVersions.min(mcSortKey)
 final String newestMinecraftVersion = supportedMinecraftVersions.max(mcSortKey)
+// Fabric API's mod id was `fabric` when 1.17 shipped and `fabric-api` afterwards. The 1.21 line
+// still declares `provides: [fabric]` so either id resolves there, but 26.1 dropped that alias, and
+// 1.17's build predates the rename - so only the ends of the matrix are actually constrained.
+final String fabricApiId = mcVersion >= 260100 ? 'fabric-api' : 'fabric'
 final String minecraftDependency = oldestMinecraftVersion == newestMinecraftVersion
         ? oldestMinecraftVersion
         : ">=$oldestMinecraftVersion <=$newestMinecraftVersion"
@@ -105,9 +109,10 @@ processResources {
     inputs.property 'modVersion', project.version.toString()
     inputs.property 'minecraftDependency', minecraftDependency
     inputs.property 'loaderVersion', loader_version
+    inputs.property 'fabricApiId', fabricApiId
     inputs.property 'javaVersion', javaCompatibility.getMajorVersion()
     from "${id}.accesswidener"
-    filesMatching('fabric.mod.json') { expand id: id, version: version, minecraft_dependency: minecraftDependency, loader_version: loader_version }
+    filesMatching('fabric.mod.json') { expand id: id, version: version, minecraft_dependency: minecraftDependency, loader_version: loader_version, fabric_api_id: fabricApiId }
     filesMatching("${id}.mixins.json") { expand java_version: javaCompatibility.getMajorVersion() }
     // Bundles the committed native/prebuilt/<target>/ binaries into the jar (and dev classpath)
     // as natives/<target>/<libname>, so NativeLib can find them without any extra toolchain.
