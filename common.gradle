@@ -16,10 +16,19 @@ repositories {
     // for more information about repositories.
 }
 sourceSets {
-    gametest {
-        compileClasspath += main.compileClasspath
-        runtimeClasspath += main.runtimeClasspath
-    }
+    gametest
+}
+// Loom wires Minecraft into main's and test's classpath configurations but not into a source set
+// the build declares itself, so gametest has to inherit them explicitly. It has to happen through
+// extendsFrom rather than the usual `compileClasspath += main.compileClasspath`: the preprocessor
+// captures SourceSet.getCompileClasspath() from its sourceSets.configureEach hook, which Gradle
+// fires before this script's configuration closure, and `+=` rebinds the property to a new
+// collection the preprocessor never sees. It would then remap gametest against a classpath with no
+// Minecraft on it, silently leaving every net.minecraft name in core-version spelling - which does
+// not compile once a name actually moved between versions.
+configurations {
+    gametestCompileClasspath.extendsFrom compileClasspath
+    gametestRuntimeClasspath.extendsFrom runtimeClasspath
 }
 dependencies {
     // On an unobfuscated version there is nothing to remap into, so loom's mod* configurations
