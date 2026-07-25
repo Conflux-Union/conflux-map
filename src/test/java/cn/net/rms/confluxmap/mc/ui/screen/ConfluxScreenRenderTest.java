@@ -77,8 +77,14 @@ final class ConfluxScreenRenderTest {
     //$$     final DrawContext context = allocate(DrawContext.class);
     //#if MC>=12108
     //$$     // allocateInstance leaves every field null, and GuiDraw copies the 2D transform out
-    //$$     // of the context as soon as ConfluxScreen.render wraps it.
-    //$$     final var matrices = DrawContext.class.getDeclaredField("matrices");
+    //$$     // of the context as soon as ConfluxScreen.render wraps it. The field is named in a
+    //$$     // string, which no mapping reaches, and 26.1 ships it as pose.
+    //#if MC>=260100
+    //$$     final String transformField = "pose";
+    //#else
+    //$$     final String transformField = "matrices";
+    //#endif
+    //$$     final var matrices = DrawContext.class.getDeclaredField(transformField);
     //$$     matrices.setAccessible(true);
     //$$     matrices.set(context, new Matrix3x2fStack(4));
     //#endif

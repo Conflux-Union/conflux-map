@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 //$$ import java.net.URISyntaxException;
 //$$ import java.nio.file.Files;
 //$$ import java.nio.file.Path;
+//$$ import net.minecraft.client.MinecraftClient;
 //$$ import org.joml.Matrix4f;
 //$$ import org.joml.Vector4f;
 //#endif
@@ -55,7 +56,12 @@ final class OffscreenCanvasProjectionTest {
     //$$ void canvasRestoresTheProjectionItReplaced() throws IOException, URISyntaxException {
     //$$     final String source = Files.readString(preprocessedSource());
     //$$     final String begin = methodBody(source, "public void begin(final int sizePx)");
-    //$$     final String end = methodBody(source, "public void end(final MinecraftClient client)");
+    //$$     // The signature is matched as text against source this build just wrote, so the class
+    //$$     // has to be spelled the way that source spells it. Reading the name off the class
+    //$$     // itself gets remapped along with everything else instead of pinning one version's.
+    //$$     final String end = methodBody(
+    //$$         source, "public void end(final " + MinecraftClient.class.getSimpleName() + " client)"
+    //$$     );
     //$$     final int backup = begin.indexOf("RenderSystem.backupProjectionMatrix()");
     //$$     final int install = begin.indexOf("setProjection(canvasProjection(");
     //$$
