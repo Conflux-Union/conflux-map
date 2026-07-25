@@ -42,6 +42,15 @@ dependencies {
     autoImpl "net.fabricmc.fabric-api:fabric-api:$fabric_api_version"
     testImplementation "org.junit.jupiter:junit-jupiter:5.10.2"
     testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+    // The preprocessor builds both remap classpaths out of the <sourceSet>CompileClasspath
+    // *configuration* alone, and the java plugin puts main's output on the test source set's
+    // classpath property instead of that configuration - so remap sees no confluxmap classes when
+    // it maps test sources. Main gets away with it because all of its files are parsed together and
+    // resolve from source; test sources are parsed on their own, so every project type comes back
+    // unresolved. remap then hard-crashes on any signature holding an array of one (bombe ArrayType
+    // gets a null component type) and silently skips remapping anything reached through a project
+    // type. Restating main's output as a dependency puts it in the configuration both sides read.
+    testImplementation sourceSets.main.output
     gametestImplementation sourceSets.main.output
 }
 test {
