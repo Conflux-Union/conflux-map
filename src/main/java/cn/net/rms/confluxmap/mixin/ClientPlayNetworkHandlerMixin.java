@@ -38,7 +38,18 @@ public abstract class ClientPlayNetworkHandlerMixin {
         packet.visitUpdates((pos, state) -> ChunkCaptureHandler.blockDirty(pos.getX(), pos.getZ()));
     }
 
-    //#if MC>=12100
+    //#if MC>=260100
+    //$$ // Official names throughout: an unobfuscated build ships no refMap, and the preprocessor
+    //$$ // leaves annotation string constants alone once they are concatenated like this.
+    //$$ @ModifyArgs(
+    //$$     method = "handleSystemChat",
+    //$$     at = @At(
+    //$$         value = "INVOKE",
+    //$$         target = "Lnet/minecraft/client/multiplayer/chat/ChatListener;handleSystemMessage("
+    //$$             + "Lnet/minecraft/network/chat/Component;Z)V"
+    //$$     )
+    //$$ )
+    //#elseif MC>=12100
     //$$ @ModifyArgs(
     //$$     method = "onGameMessage",
     //$$     at = @At(

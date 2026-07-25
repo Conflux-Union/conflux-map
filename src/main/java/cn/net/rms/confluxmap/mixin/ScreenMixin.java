@@ -20,7 +20,30 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(Screen.class)
 public abstract class ScreenMixin {
-    //#if MC>=12109
+    //#if MC>=260100
+    //$$ // 26.1 split the static handler in two: client-local actions (clipboard, url, file,
+    //$$ // suggest) stay in defaultHandleClickEvent while command/dialog/custom moved to the Game
+    //$$ // variant. The reserved payload arrives as COPY_TO_CLIPBOARD, so this is the one to take.
+    //$$ // The descriptor is spelled in official names because an unobfuscated build has no refMap
+    //$$ // to translate it, and the preprocessor never rewrites annotation string constants.
+    //$$ @Inject(
+    //$$     method = "defaultHandleClickEvent(Lnet/minecraft/network/chat/ClickEvent;"
+    //$$         + "Lnet/minecraft/client/Minecraft;"
+    //$$         + "Lnet/minecraft/client/gui/screens/Screen;)V",
+    //$$     at = @At("HEAD"),
+    //$$     cancellable = true
+    //$$ )
+    //$$ private static void confluxmap$handleWaypointImport(
+    //$$     final ClickEvent clickEvent,
+    //$$     final Minecraft client,
+    //$$     final Screen screen,
+    //$$     final CallbackInfo ci
+    //$$ ) {
+    //$$     if (confluxmap$handleWaypointImport(clickEvent, client, screen)) {
+    //$$         ci.cancel();
+    //$$     }
+    //$$ }
+    //#elseif MC>=12109
     //$$ // 1.21.9 still carries an instance handleClickEvent(MinecraftClient, ClickEvent) overload
     //$$ // alongside the static one, so the target needs its descriptor to stay unambiguous.
     //$$ @Inject(
