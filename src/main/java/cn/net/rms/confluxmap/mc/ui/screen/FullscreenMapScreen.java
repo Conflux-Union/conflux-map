@@ -102,8 +102,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final int CONTROL_SIZE = 22;
     private static final int CONTROL_ICON_SIZE = 16;
     private static final int CONTROL_GAP = 3;
-    private static final int STRUCTURE_SEARCH_WIDTH = 120;
-    private static final int STRUCTURE_SEARCH_HEIGHT = 20;
     private static final int LOCAL_CONTROL_ACCENT = 0xFFFFD83D;
     private static final int SHARED_CONTROL_ACCENT = 0xFF55DDE0;
     private static final Identifier LOCAL_WAYPOINT_ICON = Ids.of(
@@ -179,7 +177,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private MapIconButton localVisibilityButton;
     private MapIconButton sharedVisibilityButton;
     private MapIconButton manageWaypointsButton;
-    private ButtonWidget structureSearchButton;
+    private MapIconButton structureSearchButton;
     private int waypointControlsBottom;
 
     public FullscreenMapScreen(final KeyBinding openMapKey) {
@@ -260,16 +258,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             )
         ));
         y += CONTROL_SIZE + CONTROL_GAP;
-        structureSearchButton = addDrawableChild(Widgets.button(
-            width - MARGIN - STRUCTURE_SEARCH_WIDTH,
-            y,
-            STRUCTURE_SEARCH_WIDTH,
-            STRUCTURE_SEARCH_HEIGHT,
+        structureSearchButton = addDrawableChild(new MapIconButton(
+            x, y,
             Texts.translatable("confluxmap.map.structure_search"),
             ignored -> openStructureSearch()
         ));
         refreshStructureSearchButton();
-        waypointControlsBottom = y + STRUCTURE_SEARCH_HEIGHT;
+        waypointControlsBottom = y + CONTROL_SIZE;
     }
 
     @Override
@@ -442,15 +437,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private boolean isOverMapControls(final double mouseX, final double mouseY) {
         final int left = width - MARGIN - CONTROL_SIZE;
         final int top = MARGIN + this.textRenderer.fontHeight + 5;
-        final boolean overWaypointColumn = mouseX >= left && mouseX <= width - MARGIN
+        return mouseX >= left && mouseX <= width - MARGIN
             && mouseY >= top && mouseY <= waypointControlsBottom;
-        if (overWaypointColumn || structureSearchButton == null) {
-            return overWaypointColumn;
-        }
-        final int searchX = Widgets.x(structureSearchButton);
-        final int searchY = Widgets.y(structureSearchButton);
-        return mouseX >= searchX && mouseX <= searchX + STRUCTURE_SEARCH_WIDTH
-            && mouseY >= searchY && mouseY <= searchY + STRUCTURE_SEARCH_HEIGHT;
     }
 
     private void openWaypoint(final WaypointRenderEntry waypoint) {
@@ -569,6 +557,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         private static final int ENABLED_ICON_TINT = 0xFFFFFFFF;
         private static final int DISABLED_ICON_TINT = 0xFF777777;
         private final Identifier icon;
+        private final boolean searchGlyph;
         private final int selectedAccent;
         private boolean selected;
 
@@ -579,17 +568,39 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             final int selectedAccent,
             final PressAction onPress
         ) {
+            this(x, y, icon, Texts.literal(""), false, selectedAccent, onPress);
+        }
+
+        MapIconButton(
+            final int x,
+            final int y,
+            final net.minecraft.text.Text message,
+            final PressAction onPress
+        ) {
+            this(x, y, null, message, true, 0, onPress);
+        }
+
+        private MapIconButton(
+            final int x,
+            final int y,
+            final Identifier icon,
+            final net.minecraft.text.Text message,
+            final boolean searchGlyph,
+            final int selectedAccent,
+            final PressAction onPress
+        ) {
             //#if MC>=12111
             //$$ super(
-            //$$     x, y, CONTROL_SIZE, CONTROL_SIZE, Texts.literal(""),
+            //$$     x, y, CONTROL_SIZE, CONTROL_SIZE, message,
             //$$     onPress, ButtonWidget.DEFAULT_NARRATION_SUPPLIER
             //$$ );
             //#elseif MC>=11904
-            //$$ super(x, y, CONTROL_SIZE, CONTROL_SIZE, Text.of(""), onPress, ButtonWidget.DEFAULT_NARRATION_SUPPLIER);
+            //$$ super(x, y, CONTROL_SIZE, CONTROL_SIZE, message, onPress, ButtonWidget.DEFAULT_NARRATION_SUPPLIER);
             //#else
-            super(x, y, CONTROL_SIZE, CONTROL_SIZE, Text.of(""), onPress);
+            super(x, y, CONTROL_SIZE, CONTROL_SIZE, message, onPress);
             //#endif
             this.icon = icon;
+            this.searchGlyph = searchGlyph;
             this.selectedAccent = selectedAccent;
         }
 
@@ -727,6 +738,15 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             }
             final int iconX = x + (getWidth() - CONTROL_ICON_SIZE) / 2;
             final int iconY = y + (getHeight() - CONTROL_ICON_SIZE) / 2;
+            if (searchGlyph) {
+                drawSearchIcon(
+                    matrices,
+                    iconX,
+                    iconY,
+                    active ? LOCAL_CONTROL_ACCENT : DISABLED_ICON_TINT
+                );
+                return;
+            }
             RenderUtil.bindTexture(MinecraftClient.getInstance(), icon);
             RenderUtil.drawTintedQuad(
                 matrices,
@@ -740,6 +760,21 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 1f,
                 active && (selected || selectedAccent == 0) ? ENABLED_ICON_TINT : DISABLED_ICON_TINT
             );
+        }
+
+        private static void drawSearchIcon(
+            final MatrixStack matrices,
+            final int x,
+            final int y,
+            final int color
+        ) {
+            RenderUtil.fillRect(matrices, x + 4, y + 2, 4, 2, color);
+            RenderUtil.fillRect(matrices, x + 2, y + 4, 2, 4, color);
+            RenderUtil.fillRect(matrices, x + 8, y + 4, 2, 4, color);
+            RenderUtil.fillRect(matrices, x + 4, y + 8, 4, 2, color);
+            RenderUtil.fillRect(matrices, x + 9, y + 9, 2, 2, color);
+            RenderUtil.fillRect(matrices, x + 10, y + 10, 2, 2, color);
+            RenderUtil.fillRect(matrices, x + 11, y + 11, 3, 3, color);
         }
     }
 
