@@ -118,6 +118,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final Identifier MANAGE_WAYPOINT_ICON = Ids.of(
         "confluxmap", "textures/gui/waypoint_manage.png"
     );
+    private static final Identifier STRUCTURE_SEARCH_ICON = Ids.of(
+        "confluxmap", "textures/gui/structure_search.png"
+    );
     private static final int TEXT_COLOR = 0xFFFFFFFF;
     private static final int SYNCING_TEXT_COLOR = 0xFFFFE066;
     private static final int SYNCED_TEXT_COLOR = 0xFF80E080;
@@ -284,7 +287,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         y += CONTROL_SIZE + CONTROL_GAP;
         structureSearchButton = addDrawableChild(new MapIconButton(
             x, y,
+            STRUCTURE_SEARCH_ICON,
             Texts.translatable("confluxmap.map.structure_search"),
+            0,
             ignored -> openStructureSearch()
         ));
         refreshStructureSearchButton();
@@ -772,7 +777,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         private static final int ENABLED_ICON_TINT = 0xFFFFFFFF;
         private static final int DISABLED_ICON_TINT = 0xFF777777;
         private final Identifier icon;
-        private final boolean searchGlyph;
         private final int selectedAccent;
         private boolean selected;
 
@@ -783,24 +787,14 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             final int selectedAccent,
             final PressAction onPress
         ) {
-            this(x, y, icon, Texts.literal(""), false, selectedAccent, onPress);
+            this(x, y, icon, Texts.literal(""), selectedAccent, onPress);
         }
 
         MapIconButton(
             final int x,
             final int y,
-            final net.minecraft.text.Text message,
-            final PressAction onPress
-        ) {
-            this(x, y, null, message, true, 0, onPress);
-        }
-
-        private MapIconButton(
-            final int x,
-            final int y,
             final Identifier icon,
             final net.minecraft.text.Text message,
-            final boolean searchGlyph,
             final int selectedAccent,
             final PressAction onPress
         ) {
@@ -815,7 +809,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             super(x, y, CONTROL_SIZE, CONTROL_SIZE, message, onPress);
             //#endif
             this.icon = icon;
-            this.searchGlyph = searchGlyph;
             this.selectedAccent = selectedAccent;
         }
 
@@ -953,15 +946,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             }
             final int iconX = x + (getWidth() - CONTROL_ICON_SIZE) / 2;
             final int iconY = y + (getHeight() - CONTROL_ICON_SIZE) / 2;
-            if (searchGlyph) {
-                drawSearchIcon(
-                    matrices,
-                    iconX,
-                    iconY,
-                    active ? LOCAL_CONTROL_ACCENT : DISABLED_ICON_TINT
-                );
-                return;
-            }
             RenderUtil.bindTexture(MinecraftClient.getInstance(), icon);
             RenderUtil.drawTintedQuad(
                 matrices,
@@ -975,21 +959,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 1f,
                 active && (selected || selectedAccent == 0) ? ENABLED_ICON_TINT : DISABLED_ICON_TINT
             );
-        }
-
-        private static void drawSearchIcon(
-            final MatrixStack matrices,
-            final int x,
-            final int y,
-            final int color
-        ) {
-            RenderUtil.fillRect(matrices, x + 4, y + 2, 4, 2, color);
-            RenderUtil.fillRect(matrices, x + 2, y + 4, 2, 4, color);
-            RenderUtil.fillRect(matrices, x + 8, y + 4, 2, 4, color);
-            RenderUtil.fillRect(matrices, x + 4, y + 8, 4, 2, color);
-            RenderUtil.fillRect(matrices, x + 9, y + 9, 2, 2, color);
-            RenderUtil.fillRect(matrices, x + 10, y + 10, 2, 2, color);
-            RenderUtil.fillRect(matrices, x + 11, y + 11, 3, 3, color);
         }
     }
 
