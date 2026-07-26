@@ -8,6 +8,16 @@ import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
+import cn.net.rms.confluxmap.core.annotation.Annotation;
+import cn.net.rms.confluxmap.core.annotation.AnnotationDraft;
+import cn.net.rms.confluxmap.core.annotation.AnnotationGeometry;
+import cn.net.rms.confluxmap.core.annotation.AnnotationPersistence;
+import cn.net.rms.confluxmap.core.annotation.AnnotationPoint;
+import cn.net.rms.confluxmap.core.annotation.AnnotationProjection;
+import cn.net.rms.confluxmap.core.annotation.AnnotationService;
+import cn.net.rms.confluxmap.core.annotation.AnnotationStore;
+import cn.net.rms.confluxmap.core.annotation.AnnotationStyle;
+import cn.net.rms.confluxmap.core.annotation.AnnotationTool;
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
@@ -47,6 +57,7 @@ import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.StructureMarkerRenderer;
 import cn.net.rms.confluxmap.mc.world.ClientChunkLookup;
@@ -54,10 +65,14 @@ import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.Set;
+import java.util.UUID;
 import net.minecraft.client.MinecraftClient;
 //#if MC>=12000
 //$$ import net.minecraft.client.gui.DrawContext;
@@ -121,6 +136,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final Identifier STRUCTURE_SEARCH_ICON = Ids.of(
         "confluxmap", "textures/gui/structure_search.png"
     );
+    private static final Identifier ANNOTATION_PERSISTENCE_ICON = Ids.of(
+        "confluxmap", "textures/gui/annotation_persistence.png"
+    );
+    private static final Identifier ANNOTATION_ERASER_ICON = Ids.of(
+        "confluxmap", "textures/gui/annotation_eraser.png"
+    );
     private static final int TEXT_COLOR = 0xFFFFFFFF;
     private static final int SYNCING_TEXT_COLOR = 0xFFFFE066;
     private static final int SYNCED_TEXT_COLOR = 0xFF80E080;
@@ -149,6 +170,17 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final double DEFAULT_CREATE_Y = 64.0;
     /** Cursor travel between left-press and left-release below which a hovered marker click edits it, not pans (see {@link #mouseReleased}). */
     private static final double CLICK_DRAG_TOLERANCE_PX = 4.0;
+    private static final double ANNOTATION_HIT_TOLERANCE_PX = 5.0;
+    private static final int ANNOTATION_CONTROL_SIZE = 20;
+    private static final int ANNOTATION_CONTROL_GAP = 3;
+    private static final int ANNOTATION_MAX_ROWS = 4;
+    private static final int ANNOTATION_COLOR_MENU_COLUMNS = 4;
+    private static final long DOUBLE_CLICK_INTERVAL_MS = 350L;
+    private static final UUID ANNOTATION_DRAFT_ID = new UUID(0L, 0L);
+    private static final int[] ANNOTATION_COLORS = {
+        0xFFE74C3C, 0xFFE67E22, 0xFFF1C40F, 0xFF2ECC71,
+        0xFF1ABC9C, 0xFF3498DB, 0xFF9B59B6, 0xFFECF0F1
+    };
     /** Radar markers are ~12px across including their contour (see RadarMarkerRenderer); cull with that margin so one straddling the edge doesn't pop. */
     private static final float RADAR_CULL_MARGIN = 8f;
 
@@ -163,6 +195,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private final FullscreenMapViewState viewState;
     private final LayerSelector layerSelector;
     private final WaypointService waypointService;
+    private final AnnotationService annotationService;
     private final WaypointRenderCatalog waypointRenderCatalog;
     private final ConfluxConfig config;
     private final SharedWaypointClient sharedWaypoints;
@@ -198,6 +231,27 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private ButtonWidget setWaypointLocationButton;
     private ButtonWidget shareLocationButton;
     private ButtonWidget teleportLocationButton;
+    private final Map<ButtonWidget, String> annotationTooltips = new LinkedHashMap<>();
+    private final Map<AnnotationTool, ButtonWidget> annotationToolButtons = new EnumMap<>(AnnotationTool.class);
+    private AnnotationToolbarBounds annotationToolbarBounds;
+    private AnnotationToolbarBounds annotationColorMenuBounds;
+    private MapIconButton annotationPersistenceButton;
+    private MapIconButton annotationEraserButton;
+    private ButtonWidget annotationLabelButton;
+    private ButtonWidget annotationUndoButton;
+    private ButtonWidget annotationRedoButton;
+    private boolean annotationColorMenuOpen;
+    private AnnotationTool annotationTool = AnnotationTool.SELECT;
+    private AnnotationPersistence newAnnotationPersistence = AnnotationPersistence.PERSISTENT;
+    private int newAnnotationColor = ANNOTATION_COLORS[5];
+    private UUID selectedAnnotationId;
+    private AnnotationDraft annotationDraft;
+    private Annotation movingAnnotation;
+    private boolean annotationPointerPress;
+    private double annotationMoveDx;
+    private double annotationMoveDz;
+    private final Set<UUID> erasingAnnotationIds = new LinkedHashSet<>();
+    private long lastEraserButtonClickMs = Long.MIN_VALUE;
 
     public FullscreenMapScreen(final KeyBinding openMapKey) {
         super(Texts.translatable("confluxmap.screen.map.title"));
@@ -213,6 +267,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         this.viewState = app.fullscreenMapViewState();
         this.layerSelector = app.layerSelector();
         this.waypointService = app.waypointService();
+        this.annotationService = app.annotationService();
         this.waypointRenderCatalog = app.waypointRenderCatalog();
         this.config = app.config();
         this.sharedWaypoints = app.sharedWaypoints();
@@ -254,6 +309,15 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         shareLocationButton = null;
         teleportLocationButton = null;
         structureSearchButton = null;
+        annotationTooltips.clear();
+        annotationToolButtons.clear();
+        annotationPersistenceButton = null;
+        annotationEraserButton = null;
+        annotationLabelButton = null;
+        annotationUndoButton = null;
+        annotationRedoButton = null;
+        annotationToolbarBounds = null;
+        annotationColorMenuBounds = null;
 
         final int x = width - MARGIN - CONTROL_SIZE;
         int y = MARGIN + this.textRenderer.fontHeight + 5;
@@ -294,9 +358,398 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         ));
         refreshStructureSearchButton();
         waypointControlsBottom = y + CONTROL_SIZE;
+        rebuildAnnotationControls();
         if (locationMenuBounds != null && locationMenuTarget != null) {
             addLocationMenuButtons();
         }
+    }
+
+    private void rebuildAnnotationControls() {
+        final int controlCount = AnnotationTool.values().length + 5;
+        final int stride = ANNOTATION_CONTROL_SIZE + ANNOTATION_CONTROL_GAP;
+        final int desiredTop = waypointControlsBottom + CONTROL_GAP;
+        final int maxColumns = Math.max(1, (width - MARGIN * 2 + ANNOTATION_CONTROL_GAP) / stride);
+        final int minimumRows = (controlCount + maxColumns - 1) / maxColumns;
+        final int availableRows = Math.max(
+            1, (height - MARGIN - desiredTop + ANNOTATION_CONTROL_GAP) / stride
+        );
+        final int rows = Math.min(
+            ANNOTATION_MAX_ROWS, Math.max(minimumRows, Math.min(ANNOTATION_MAX_ROWS, availableRows))
+        );
+        final int columns = (controlCount + rows - 1) / rows;
+        final int toolbarWidth = columns * stride - ANNOTATION_CONTROL_GAP;
+        final int toolbarHeight = Math.min(rows, controlCount) * stride - ANNOTATION_CONTROL_GAP;
+        final boolean fitsBelowWaypoints = desiredTop + toolbarHeight <= height - MARGIN;
+        final int top = fitsBelowWaypoints
+            ? desiredTop
+            : Math.max(MARGIN, height - MARGIN - toolbarHeight);
+        final int left = fitsBelowWaypoints
+            ? Math.max(MARGIN, width - MARGIN - toolbarWidth)
+            : MARGIN;
+        annotationToolbarBounds = new AnnotationToolbarBounds(left, top, toolbarWidth, toolbarHeight);
+
+        int index = 0;
+        for (final AnnotationTool tool : AnnotationTool.values()) {
+            final int buttonX = controlX(left, stride, rows, index);
+            final int buttonY = controlY(top, stride, rows, index);
+            final ButtonWidget button;
+            if (tool == AnnotationTool.ERASER) {
+                annotationEraserButton = addDrawableChild(new MapIconButton(
+                    buttonX,
+                    buttonY,
+                    ANNOTATION_CONTROL_SIZE,
+                    ANNOTATION_ERASER_ICON,
+                    Texts.literal(""),
+                    LOCAL_CONTROL_ACCENT,
+                    ignored -> selectAnnotationTool(tool)
+                ));
+                annotationTooltips.put(annotationEraserButton, toolTooltip(tool));
+                button = annotationEraserButton;
+            } else {
+                button = addAnnotationButton(
+                    buttonX,
+                    buttonY,
+                    toolGlyph(tool),
+                    toolTooltip(tool),
+                    ignored -> selectAnnotationTool(tool)
+                );
+            }
+            annotationToolButtons.put(tool, button);
+            index++;
+        }
+        addColorButton(
+            controlX(left, stride, rows, index),
+            controlY(top, stride, rows, index),
+            selectedAnnotationColor(),
+            true
+        );
+        index++;
+        annotationPersistenceButton = addDrawableChild(new MapIconButton(
+            controlX(left, stride, rows, index),
+            controlY(top, stride, rows, index),
+            ANNOTATION_CONTROL_SIZE,
+            ANNOTATION_PERSISTENCE_ICON,
+            Texts.literal(""),
+            LOCAL_CONTROL_ACCENT,
+            ignored -> toggleAnnotationPersistence()
+        ));
+        annotationTooltips.put(
+            annotationPersistenceButton, "confluxmap.map.annotation.persistence.tooltip"
+        );
+        index++;
+        annotationLabelButton = addAnnotationButton(
+            controlX(left, stride, rows, index),
+            controlY(top, stride, rows, index),
+            Texts.literal("T"),
+            "confluxmap.map.annotation.label.tooltip",
+            ignored -> editSelectedAnnotationLabel()
+        );
+        index++;
+        annotationUndoButton = addAnnotationButton(
+            controlX(left, stride, rows, index),
+            controlY(top, stride, rows, index),
+            Texts.literal("↶"),
+            "confluxmap.map.annotation.undo.tooltip",
+            ignored -> undoAnnotationChange()
+        );
+        index++;
+        annotationRedoButton = addAnnotationButton(
+            controlX(left, stride, rows, index),
+            controlY(top, stride, rows, index),
+            Texts.literal("↷"),
+            "confluxmap.map.annotation.redo.tooltip",
+            ignored -> redoAnnotationChange()
+        );
+        if (annotationColorMenuOpen) {
+            rebuildAnnotationColorMenu();
+        }
+        refreshAnnotationControls();
+    }
+
+    private void rebuildAnnotationColorMenu() {
+        final int stride = ANNOTATION_CONTROL_SIZE + ANNOTATION_CONTROL_GAP;
+        final int rows = (ANNOTATION_COLORS.length + ANNOTATION_COLOR_MENU_COLUMNS - 1)
+            / ANNOTATION_COLOR_MENU_COLUMNS;
+        final int menuWidth = ANNOTATION_COLOR_MENU_COLUMNS * stride - ANNOTATION_CONTROL_GAP;
+        final int menuHeight = rows * stride - ANNOTATION_CONTROL_GAP;
+        final int leftCandidate = annotationToolbarBounds.x() - ANNOTATION_CONTROL_GAP - menuWidth;
+        final int rightCandidate = annotationToolbarBounds.x()
+            + annotationToolbarBounds.width() + ANNOTATION_CONTROL_GAP;
+        final int left = leftCandidate >= MARGIN
+            ? leftCandidate
+            : rightCandidate + menuWidth <= width - MARGIN ? rightCandidate : MARGIN;
+        final int top = Math.max(
+            MARGIN, Math.min(annotationToolbarBounds.y(), height - MARGIN - menuHeight)
+        );
+        annotationColorMenuBounds = new AnnotationToolbarBounds(left, top, menuWidth, menuHeight);
+        for (int index = 0; index < ANNOTATION_COLORS.length; index++) {
+            addColorButton(
+                left + index % ANNOTATION_COLOR_MENU_COLUMNS * stride,
+                top + index / ANNOTATION_COLOR_MENU_COLUMNS * stride,
+                ANNOTATION_COLORS[index],
+                false
+            );
+        }
+    }
+
+    private static int controlX(final int left, final int stride, final int rows, final int index) {
+        return left + index / rows * stride;
+    }
+
+    private static int controlY(final int top, final int stride, final int rows, final int index) {
+        return top + index % rows * stride;
+    }
+
+    private ButtonWidget addAnnotationButton(
+        final int x,
+        final int y,
+        final Text label,
+        final String tooltipKey,
+        final ButtonWidget.PressAction action
+    ) {
+        final ButtonWidget button = addDrawableChild(Widgets.button(
+            x, y, ANNOTATION_CONTROL_SIZE, ANNOTATION_CONTROL_SIZE, label, action
+        ));
+        annotationTooltips.put(button, tooltipKey);
+        return button;
+    }
+
+    private void addColorButton(
+        final int x,
+        final int y,
+        final int color,
+        final boolean opensMenu
+    ) {
+        //#if MC>=260100
+        //$$ final var button = addRenderableWidget(new Button(
+        //$$     x, y, ANNOTATION_CONTROL_SIZE, ANNOTATION_CONTROL_SIZE, Texts.literal(""),
+        //$$     ignored -> activateAnnotationColorButton(color, opensMenu), narration -> narration.get()
+        //$$ ) {
+        //$$     @Override
+        //$$     protected void extractContents(
+        //$$         final GuiGraphicsExtractor context,
+        //$$         final int mouseX,
+        //$$         final int mouseY,
+        //$$         final float delta
+        //$$     ) {
+        //$$         renderAnnotationColorButton(GuiDraw.of(context), this, color, opensMenu);
+        //$$     }
+        //$$ });
+        //#elseif MC>=12111
+        //$$ final ButtonWidget button = addDrawableChild(new ButtonWidget(
+        //$$     x, y, ANNOTATION_CONTROL_SIZE, ANNOTATION_CONTROL_SIZE, Texts.literal(""),
+        //$$     ignored -> activateAnnotationColorButton(color, opensMenu), narration -> narration.get()
+        //$$ ) {
+        //$$     @Override
+        //$$     protected void drawIcon(
+        //$$         final DrawContext context,
+        //$$         final int mouseX,
+        //$$         final int mouseY,
+        //$$         final float delta
+        //$$     ) {
+        //$$         renderAnnotationColorButton(GuiDraw.of(context), this, color, opensMenu);
+        //$$     }
+        //$$ });
+        //#elseif MC>=11904
+        //$$ final ButtonWidget button = addDrawableChild(new ButtonWidget(
+        //$$     x, y, ANNOTATION_CONTROL_SIZE, ANNOTATION_CONTROL_SIZE, Texts.literal(""),
+        //$$     ignored -> activateAnnotationColorButton(color, opensMenu), narration -> narration.get()
+        //$$ ) {
+        //$$     @Override
+        //$$     protected void renderWidget(
+        //$$         final DrawContext context,
+        //$$         final int mouseX,
+        //$$         final int mouseY,
+        //$$         final float delta
+        //$$     ) {
+        //$$         renderAnnotationColorButton(GuiDraw.of(context), this, color, opensMenu);
+        //$$     }
+        //$$ });
+        //#else
+        final ButtonWidget button = addDrawableChild(new ButtonWidget(
+            x, y, ANNOTATION_CONTROL_SIZE, ANNOTATION_CONTROL_SIZE, Texts.literal(""),
+            ignored -> activateAnnotationColorButton(color, opensMenu)
+        ) {
+            @Override
+            public void renderButton(
+                final MatrixStack matrices,
+                final int mouseX,
+                final int mouseY,
+                final float delta
+            ) {
+                renderAnnotationColorButton(GuiDraw.of(matrices), this, color, opensMenu);
+            }
+        });
+        //#endif
+        annotationTooltips.put(button, "confluxmap.map.annotation.color.tooltip");
+    }
+
+    private void renderAnnotationColorButton(
+        final GuiDraw draw,
+        final ButtonWidget button,
+        final int color,
+        final boolean opensMenu
+    ) {
+        final int x = Widgets.x(button);
+        final int y = Widgets.y(button);
+        final int displayedColor = opensMenu ? selectedAnnotationColor() : color;
+        RenderUtil.fillRect(
+            draw.matrices(), x, y, button.getWidth(), button.getHeight(), displayedColor | 0xFF000000
+        );
+        if (opensMenu ? annotationColorMenuOpen : color == selectedAnnotationColor()) {
+            RenderUtil.fillRect(draw.matrices(), x, y, button.getWidth(), 2, 0xFFFFFFFF);
+            RenderUtil.fillRect(draw.matrices(), x, y + button.getHeight() - 2, button.getWidth(), 2, 0xFFFFFFFF);
+            RenderUtil.fillRect(draw.matrices(), x, y, 2, button.getHeight(), 0xFFFFFFFF);
+            RenderUtil.fillRect(draw.matrices(), x + button.getWidth() - 2, y, 2, button.getHeight(), 0xFFFFFFFF);
+        }
+    }
+
+    private void refreshAnnotationControls() {
+        for (final Map.Entry<AnnotationTool, ButtonWidget> entry : annotationToolButtons.entrySet()) {
+            entry.getValue().active = entry.getKey() == AnnotationTool.ERASER
+                || entry.getKey() != annotationTool;
+        }
+        final boolean selected = selectedAnnotation().isPresent();
+        if (annotationLabelButton != null) {
+            annotationLabelButton.active = selected;
+        }
+        if (annotationEraserButton != null) {
+            annotationEraserButton.setSelected(annotationTool == AnnotationTool.ERASER);
+        }
+        if (annotationPersistenceButton != null) {
+            annotationPersistenceButton.setSelected(
+                selectedAnnotationPersistence() == AnnotationPersistence.PERSISTENT
+            );
+        }
+        final AnnotationStore store = annotationService.current();
+        if (annotationUndoButton != null) {
+            annotationUndoButton.active = store != null && store.canUndo();
+        }
+        if (annotationRedoButton != null) {
+            annotationRedoButton.active = store != null && store.canRedo();
+        }
+    }
+
+    private static Text toolGlyph(final AnnotationTool tool) {
+        return Texts.literal(switch (tool) {
+            case SELECT -> "↖";
+            case LINE -> "/";
+            case CIRCLE -> "○";
+            case RECTANGLE -> "□";
+            case FREEHAND -> "~";
+            case ERASER -> "⌫";
+        });
+    }
+
+    private static String toolTooltip(final AnnotationTool tool) {
+        return switch (tool) {
+            case SELECT -> "confluxmap.map.annotation.select.tooltip";
+            case LINE -> "confluxmap.map.annotation.line.tooltip";
+            case CIRCLE -> "confluxmap.map.annotation.circle.tooltip";
+            case RECTANGLE -> "confluxmap.map.annotation.rectangle.tooltip";
+            case FREEHAND -> "confluxmap.map.annotation.freehand.tooltip";
+            case ERASER -> "confluxmap.map.annotation.eraser.tooltip";
+        };
+    }
+
+    private Optional<Annotation> selectedAnnotation() {
+        final AnnotationStore store = annotationService.current();
+        return store == null || selectedAnnotationId == null
+            ? Optional.empty()
+            : store.get(selectedAnnotationId);
+    }
+
+    private AnnotationPersistence selectedAnnotationPersistence() {
+        return selectedAnnotation().map(Annotation::persistence).orElse(newAnnotationPersistence);
+    }
+
+    private int selectedAnnotationColor() {
+        return selectedAnnotation().map(annotation -> annotation.style().colorArgb()).orElse(newAnnotationColor);
+    }
+
+    private void selectAnnotationTool(final AnnotationTool tool) {
+        final long now = Util.getMeasuringTimeMs();
+        final boolean openEraserSettings = tool == AnnotationTool.ERASER
+            && lastEraserButtonClickMs != Long.MIN_VALUE
+            && now - lastEraserButtonClickMs <= DOUBLE_CLICK_INTERVAL_MS;
+        lastEraserButtonClickMs = tool == AnnotationTool.ERASER ? now : Long.MIN_VALUE;
+        annotationTool = tool;
+        annotationDraft = null;
+        movingAnnotation = null;
+        annotationPointerPress = false;
+        erasingAnnotationIds.clear();
+        annotationColorMenuOpen = false;
+        rebuildWaypointControls();
+        if (openEraserSettings) {
+            lastEraserButtonClickMs = Long.MIN_VALUE;
+            MinecraftClient.getInstance().setScreen(new AnnotationEraserSettingsScreen(this, config));
+        }
+    }
+
+    private void activateAnnotationColorButton(final int color, final boolean opensMenu) {
+        if (opensMenu) {
+            annotationColorMenuOpen = !annotationColorMenuOpen;
+        } else {
+            selectAnnotationColor(color);
+            annotationColorMenuOpen = false;
+        }
+        rebuildWaypointControls();
+    }
+
+    private void selectAnnotationColor(final int color) {
+        newAnnotationColor = color;
+        final AnnotationStore store = annotationService.current();
+        if (store != null) {
+            selectedAnnotation().ifPresent(annotation -> store.update(
+                annotation.withStyle(new AnnotationStyle(color))
+            ));
+        }
+    }
+
+    private void undoAnnotationChange() {
+        final AnnotationStore store = annotationService.current();
+        if (store != null && store.undo()) {
+            clearMissingSelection(store);
+            refreshAnnotationControls();
+        }
+    }
+
+    private void redoAnnotationChange() {
+        final AnnotationStore store = annotationService.current();
+        if (store != null && store.redo()) {
+            clearMissingSelection(store);
+            refreshAnnotationControls();
+        }
+    }
+
+    private void clearMissingSelection(final AnnotationStore store) {
+        if (selectedAnnotationId != null && store.get(selectedAnnotationId).isEmpty()) {
+            selectedAnnotationId = null;
+        }
+    }
+
+    private void toggleAnnotationPersistence() {
+        final AnnotationPersistence next = selectedAnnotationPersistence() == AnnotationPersistence.PERSISTENT
+            ? AnnotationPersistence.TRANSIENT
+            : AnnotationPersistence.PERSISTENT;
+        final AnnotationStore store = annotationService.current();
+        final Optional<Annotation> selected = selectedAnnotation();
+        if (store != null && selected.isPresent()) {
+            store.update(selected.get().withPersistence(next));
+        } else {
+            newAnnotationPersistence = next;
+        }
+        refreshAnnotationControls();
+    }
+
+    private void editSelectedAnnotationLabel() {
+        final AnnotationStore store = annotationService.current();
+        if (store == null) {
+            return;
+        }
+        selectedAnnotation().ifPresent(annotation -> MinecraftClient.getInstance().setScreen(
+            new AnnotationLabelScreen(this, store, annotation)
+        ));
     }
 
     private void addLocationMenuButtons() {
@@ -381,11 +834,31 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     //#if MC>=12109
     //$$ public boolean keyPressed(final KeyInput input) {
     //$$     final int keyCode = input.key();
+    //$$     final int modifiers = input.modifiers();
     //#else
     public boolean keyPressed(final int keyCode, final int scanCode, final int modifiers) {
     //#endif
+        final boolean controlDown = (modifiers & (GLFW.GLFW_MOD_CONTROL | GLFW.GLFW_MOD_SUPER)) != 0;
+        final boolean shiftDown = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0;
+        if (controlDown && keyCode == GLFW.GLFW_KEY_Z) {
+            if (shiftDown) {
+                redoAnnotationChange();
+            } else {
+                undoAnnotationChange();
+            }
+            return true;
+        }
+        if (controlDown && keyCode == GLFW.GLFW_KEY_Y) {
+            redoAnnotationChange();
+            return true;
+        }
         if (keyCode == GLFW.GLFW_KEY_F9) {
             ConfluxMapClient.get().reloadPredictionTiles();
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE && annotationColorMenuOpen) {
+            annotationColorMenuOpen = false;
+            rebuildWaypointControls();
             return true;
         }
         if (keyCode == GLFW.GLFW_KEY_ESCAPE && locationMenuBounds != null) {
@@ -449,8 +922,17 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             mapPointerPress = false;
             return true;
         }
+        if (annotationColorMenuOpen) {
+            annotationColorMenuOpen = false;
+            rebuildWaypointControls();
+            mapPointerPress = false;
+            return true;
+        }
         if (isOverMapControls(mouseX, mouseY)) {
             mapPointerPress = false;
+            return true;
+        }
+        if (button == 0 && beginAnnotationPointer(mouseX, mouseY)) {
             return true;
         }
         if (button == 1) {
@@ -466,7 +948,90 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         return false;
     }
 
+    private boolean beginAnnotationPointer(final double mouseX, final double mouseY) {
+        final AnnotationStore store = annotationService.current();
+        if (store == null) {
+            return false;
+        }
+        final AnnotationPoint worldPoint = annotationWorldPoint(mouseX, mouseY);
+        if (annotationTool == AnnotationTool.SELECT) {
+            final Optional<Annotation> hit = store.hit(
+                gameBridge.session().dimension(), worldPoint, ANNOTATION_HIT_TOLERANCE_PX * scale
+            );
+            if (hit.isEmpty()) {
+                selectedAnnotationId = null;
+                refreshAnnotationControls();
+                return false;
+            }
+            selectedAnnotationId = hit.get().id();
+            movingAnnotation = hit.get();
+            annotationMoveDx = 0.0;
+            annotationMoveDz = 0.0;
+            annotationPointerPress = true;
+            leftPressX = mouseX;
+            leftPressY = mouseY;
+            mapPointerPress = false;
+            refreshAnnotationControls();
+            return true;
+        }
+        if (annotationTool == AnnotationTool.ERASER) {
+            annotationPointerPress = true;
+            annotationDraft = null;
+            movingAnnotation = null;
+            erasingAnnotationIds.clear();
+            collectEraserHits(store, worldPoint);
+            mapPointerPress = false;
+            return true;
+        }
+        annotationDraft = new AnnotationDraft(annotationTool, worldPoint);
+        annotationPointerPress = true;
+        movingAnnotation = null;
+        leftPressX = mouseX;
+        leftPressY = mouseY;
+        mapPointerPress = false;
+        return true;
+    }
+
+    private void collectEraserHits(
+        final AnnotationStore store,
+        final AnnotationPoint worldPoint
+    ) {
+        final double radius = config.annotationEraserSize / 2.0 * scale;
+        for (final Annotation annotation : store.hits(
+            gameBridge.session().dimension(), worldPoint, radius
+        )) {
+            erasingAnnotationIds.add(annotation.id());
+        }
+    }
+
+    private void collectEraserStroke(
+        final AnnotationStore store,
+        final double mouseX,
+        final double mouseY,
+        final double deltaX,
+        final double deltaY
+    ) {
+        final double distance = Math.hypot(deltaX, deltaY);
+        final double sampleSpacing = Math.max(1.0, config.annotationEraserSize / 4.0);
+        final int samples = Math.max(1, (int) Math.ceil(distance / sampleSpacing));
+        for (int index = 0; index <= samples; index++) {
+            final double progress = index / (double) samples;
+            collectEraserHits(store, annotationWorldPoint(
+                mouseX - deltaX + deltaX * progress,
+                mouseY - deltaY + deltaY * progress
+            ));
+        }
+    }
+
+    private AnnotationPoint annotationWorldPoint(final double mouseX, final double mouseY) {
+        return new AnnotationPoint(
+            centerX + (mouseX - width / 2.0) * scale,
+            centerZ + (mouseY - height / 2.0) * scale
+        );
+    }
+
     private void openLocationMenu(final double mouseX, final double mouseY) {
+        annotationColorMenuOpen = false;
         final double worldX = centerX + (mouseX - width / 2.0) * scale;
         final double worldZ = centerZ + (mouseY - height / 2.0) * scale;
         final int blockX = (int) Math.floor(worldX);
@@ -583,6 +1148,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     //#else
     public boolean mouseReleased(final double mouseX, final double mouseY, final int button) {
     //#endif
+        if (button == 0 && annotationPointerPress) {
+            commitAnnotationPointer(mouseX, mouseY);
+            return true;
+        }
         if (button != 0 || !mapPointerPress) {
             //#if MC>=12109
             //$$ return super.mouseReleased(click);
@@ -600,13 +1169,82 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         return true;
     }
 
+    private void commitAnnotationPointer(final double mouseX, final double mouseY) {
+        annotationPointerPress = false;
+        final AnnotationStore store = annotationService.current();
+        if (store == null) {
+            movingAnnotation = null;
+            annotationDraft = null;
+            erasingAnnotationIds.clear();
+            return;
+        }
+        if (annotationTool == AnnotationTool.ERASER) {
+            collectEraserHits(store, annotationWorldPoint(mouseX, mouseY));
+            if (store.removeAll(erasingAnnotationIds) > 0) {
+                if (selectedAnnotationId != null && erasingAnnotationIds.contains(selectedAnnotationId)) {
+                    selectedAnnotationId = null;
+                }
+                refreshAnnotationControls();
+            }
+            erasingAnnotationIds.clear();
+            return;
+        }
+        if (movingAnnotation != null) {
+            if (annotationMoveDx != 0.0 || annotationMoveDz != 0.0) {
+                store.update(movingAnnotation.withGeometry(
+                    movingAnnotation.geometry().translate(annotationMoveDx, annotationMoveDz)
+                ));
+            }
+            movingAnnotation = null;
+            annotationMoveDx = 0.0;
+            annotationMoveDz = 0.0;
+            return;
+        }
+        if (annotationDraft != null) {
+            annotationDraft.dragTo(annotationWorldPoint(mouseX, mouseY), scale);
+            final Optional<AnnotationGeometry> geometry = annotationDraft.geometry(scale, true);
+            annotationDraft = null;
+            if (geometry.isPresent()) {
+                final Annotation created = new Annotation(
+                    UUID.randomUUID(),
+                    gameBridge.session().dimension(),
+                    geometry.get(),
+                    new AnnotationStyle(newAnnotationColor),
+                    "",
+                    newAnnotationPersistence,
+                    System.currentTimeMillis()
+                );
+                if (store.add(created)) {
+                    selectedAnnotationId = created.id();
+                    refreshAnnotationControls();
+                }
+            }
+        }
+    }
+
     @Override
     //#if MC>=12109
     //$$ public boolean mouseDragged(final Click click, final double deltaX, final double deltaY) {
+    //$$     final double mouseX = click.x();
+    //$$     final double mouseY = click.y();
     //$$     final int button = click.button();
     //#else
     public boolean mouseDragged(final double mouseX, final double mouseY, final int button, final double deltaX, final double deltaY) {
     //#endif
+        if (button == 0 && annotationPointerPress) {
+            if (annotationTool == AnnotationTool.ERASER) {
+                final AnnotationStore store = annotationService.current();
+                if (store != null) {
+                    collectEraserStroke(store, mouseX, mouseY, deltaX, deltaY);
+                }
+            } else if (movingAnnotation != null) {
+                annotationMoveDx = (mouseX - leftPressX) * scale;
+                annotationMoveDz = (mouseY - leftPressY) * scale;
+            } else if (annotationDraft != null) {
+                annotationDraft.dragTo(annotationWorldPoint(mouseX, mouseY), scale);
+            }
+            return true;
+        }
         if (button == 0 && mapPointerPress) {
             // Opposite the drag direction, 1:1 in world-space at the current scale (§4 pan mechanics).
             centerX -= deltaX * scale;
@@ -623,8 +1261,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private boolean isOverMapControls(final double mouseX, final double mouseY) {
         final int left = width - MARGIN - CONTROL_SIZE;
         final int top = MARGIN + this.textRenderer.fontHeight + 5;
-        return mouseX >= left && mouseX <= width - MARGIN
+        final boolean waypointControls = mouseX >= left && mouseX <= width - MARGIN
             && mouseY >= top && mouseY <= waypointControlsBottom;
+        return waypointControls
+            || annotationToolbarBounds != null && annotationToolbarBounds.contains(mouseX, mouseY)
+            || annotationColorMenuBounds != null && annotationColorMenuBounds.contains(mouseX, mouseY);
     }
 
     private void openWaypoint(final WaypointRenderEntry waypoint) {
@@ -692,6 +1333,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         drawTiles(matrices);
 
         drawChunkGrid(matrices, mouseX, mouseY);
+        drawAnnotations(draw, mouseX, mouseY);
         drawStructures(draw, mouseX, mouseY);
         drawRadar(draw, tickDelta);
 
@@ -705,6 +1347,75 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         drawCursorCoords(draw, mouseX, mouseY);
         drawUpdateBadge(draw);
         drawLocationMenu(draw);
+    }
+
+    private void drawAnnotations(final GuiDraw draw, final int mouseX, final int mouseY) {
+        final AnnotationStore store = annotationService.current();
+        if (store == null) {
+            return;
+        }
+        final List<Annotation> visible = new ArrayList<>(store.list(gameBridge.session().dimension()));
+        visible.removeIf(annotation -> erasingAnnotationIds.contains(annotation.id()));
+        if (movingAnnotation != null) {
+            for (int index = 0; index < visible.size(); index++) {
+                if (visible.get(index).id().equals(movingAnnotation.id())) {
+                    visible.set(index, movingAnnotation.withGeometry(
+                        movingAnnotation.geometry().translate(annotationMoveDx, annotationMoveDz)
+                    ));
+                    break;
+                }
+            }
+        }
+        if (annotationDraft != null) {
+            annotationDraft.geometry(scale, false).ifPresent(geometry -> visible.add(new Annotation(
+                ANNOTATION_DRAFT_ID,
+                gameBridge.session().dimension(),
+                geometry,
+                new AnnotationStyle(newAnnotationColor),
+                "",
+                newAnnotationPersistence,
+                System.currentTimeMillis()
+            )));
+        }
+        final AnnotationProjection projection = new AnnotationProjection(
+            centerX,
+            centerZ,
+            width / 2.0,
+            height / 2.0,
+            scale,
+            0.0,
+            width,
+            height
+        );
+        AnnotationRenderer.drawGeometry(
+            draw.matrices(),
+            visible,
+            projection,
+            annotationDraft == null ? selectedAnnotationId : ANNOTATION_DRAFT_ID
+        );
+        AnnotationRenderer.drawLabels(
+            draw,
+            this.textRenderer,
+            visible,
+            projection,
+            0,
+            0,
+            width,
+            height,
+            AnnotationRenderer.ClipShape.RECTANGLE
+        );
+        if (annotationTool == AnnotationTool.ERASER
+            && locationMenuBounds == null
+            && !isOverMapControls(mouseX, mouseY)) {
+            RenderUtil.drawRing(
+                draw.matrices(),
+                mouseX,
+                mouseY,
+                config.annotationEraserSize / 2.0f,
+                1.5f,
+                0xE6FFFFFF
+            );
+        }
     }
 
     private void drawLocationMenu(final GuiDraw draw) {
@@ -729,6 +1440,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final int mouseY,
         final float tickDelta
     ) {
+        final Text annotationTooltip = hoveredAnnotationTooltip();
         final Text tooltip;
         if (localVisibilityButton != null && localVisibilityButton.isHovered()) {
             tooltip = visibilityTooltip(true);
@@ -750,6 +1462,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                     ? "confluxmap.map.structure_search.tooltip"
                     : "confluxmap.map.structure_search.unavailable"
             );
+        } else if (annotationTooltip != null) {
+            tooltip = annotationTooltip;
         } else if (hoveredStructure != null) {
             tooltip = Texts.translatable(
                 hoveredStructure.state() == StructureIndex.State.VERIFIED
@@ -765,12 +1479,41 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         draw.drawTooltip(this, this.textRenderer, tooltip, mouseX, mouseY);
     }
 
+    private Text hoveredAnnotationTooltip() {
+        for (final Map.Entry<ButtonWidget, String> entry : annotationTooltips.entrySet()) {
+            if (!entry.getKey().isHovered()) {
+                continue;
+            }
+            if (entry.getKey() == annotationPersistenceButton) {
+                return Texts.translatable(
+                    entry.getValue(),
+                    Texts.translatable(
+                        selectedAnnotationPersistence() == AnnotationPersistence.PERSISTENT
+                            ? "confluxmap.map.annotation.persistent"
+                            : "confluxmap.map.annotation.transient"
+                    ).getString()
+                );
+            }
+            if (entry.getKey() == annotationEraserButton) {
+                return Texts.translatable(entry.getValue(), config.annotationEraserSize);
+            }
+            return Texts.translatable(entry.getValue());
+        }
+        return null;
+    }
+
     private boolean locationActionHeightUnavailable() {
         if (locationMenuTarget == null || locationMenuTarget.blockY().isPresent()) {
             return false;
         }
         return (setWaypointLocationButton != null && setWaypointLocationButton.isHovered())
             || (shareLocationButton != null && shareLocationButton.isHovered());
+    }
+
+    private record AnnotationToolbarBounds(int x, int y, int width, int height) {
+        boolean contains(final double mouseX, final double mouseY) {
+            return mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + height;
+        }
     }
 
     private static final class MapIconButton extends ButtonWidget {
@@ -787,7 +1530,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             final int selectedAccent,
             final PressAction onPress
         ) {
-            this(x, y, icon, Texts.literal(""), selectedAccent, onPress);
+            this(x, y, CONTROL_SIZE, icon, Texts.literal(""), selectedAccent, onPress);
         }
 
         MapIconButton(
@@ -798,15 +1541,27 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             final int selectedAccent,
             final PressAction onPress
         ) {
+            this(x, y, CONTROL_SIZE, icon, message, selectedAccent, onPress);
+        }
+
+        MapIconButton(
+            final int x,
+            final int y,
+            final int size,
+            final Identifier icon,
+            final net.minecraft.text.Text message,
+            final int selectedAccent,
+            final PressAction onPress
+        ) {
             //#if MC>=12111
             //$$ super(
-            //$$     x, y, CONTROL_SIZE, CONTROL_SIZE, message,
+            //$$     x, y, size, size, message,
             //$$     onPress, ButtonWidget.DEFAULT_NARRATION_SUPPLIER
             //$$ );
             //#elseif MC>=11904
-            //$$ super(x, y, CONTROL_SIZE, CONTROL_SIZE, message, onPress, ButtonWidget.DEFAULT_NARRATION_SUPPLIER);
+            //$$ super(x, y, size, size, message, onPress, ButtonWidget.DEFAULT_NARRATION_SUPPLIER);
             //#else
-            super(x, y, CONTROL_SIZE, CONTROL_SIZE, message, onPress);
+            super(x, y, size, size, message, onPress);
             //#endif
             this.icon = icon;
             this.selectedAccent = selectedAccent;
@@ -819,8 +1574,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         /**
          * Draws the vanilla button background with a four-quadrant slice instead of calling
          * {@code super.renderButton}. The vanilla two-slice draw hardcodes the 20px-tall
-         * widgets.png strip, so a {@link #CONTROL_SIZE}(22)px-tall button samples 2px into the
-         * next state's strip and its bottom border lands 2px above the real button bounds.
+         * widgets.png strip, so the 22px waypoint variant samples 2px into the next state's strip
+         * and its bottom border lands 2px above the real button bounds. The annotation variant
+         * reuses this path at the vanilla 20px size so both icon-button groups stay consistent.
          */
         @Override
         //#if MC>=260100

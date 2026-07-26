@@ -3,6 +3,9 @@ package cn.net.rms.confluxmap.mc.ui.hud;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.compat.Regs;
+import cn.net.rms.confluxmap.core.annotation.Annotation;
+import cn.net.rms.confluxmap.core.annotation.AnnotationProjection;
+import cn.net.rms.confluxmap.core.annotation.AnnotationService;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
@@ -20,11 +23,13 @@ import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
 import cn.net.rms.confluxmap.mc.render.OffscreenCanvas;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
+import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
+import java.util.List;
 import java.util.Optional;
 //#if MC>=260100
 //$$ import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
@@ -74,6 +79,7 @@ public final class MinimapHudRenderer {
     private final OffscreenCanvas canvas = new OffscreenCanvas();
     private final EntityRadarScanner radarScanner;
     private final EntityIconManager iconManager;
+    private final AnnotationService annotations;
     private final LayerSelector layerSelector;
     private final WaypointRenderCatalog waypointRenderCatalog;
     private final RadarViewRange radarViewRange;
@@ -86,6 +92,7 @@ public final class MinimapHudRenderer {
         final TileTextureManager textures,
         final EntityRadarScanner radarScanner,
         final EntityIconManager iconManager,
+        final AnnotationService annotations,
         final LayerSelector layerSelector,
         final WaypointRenderCatalog waypointRenderCatalog,
         final RadarViewRange radarViewRange
@@ -97,6 +104,7 @@ public final class MinimapHudRenderer {
         this.textures = textures;
         this.radarScanner = radarScanner;
         this.iconManager = iconManager;
+        this.annotations = annotations;
         this.layerSelector = layerSelector;
         this.waypointRenderCatalog = waypointRenderCatalog;
         this.radarViewRange = radarViewRange;
@@ -163,6 +171,9 @@ public final class MinimapHudRenderer {
         final boolean circle = config.minimapShape == ConfluxConfig.Shape.CIRCLE;
         final boolean rotate = config.minimapRotate;
         final float mapAngle = rotate ? 180f - player.yawDegrees() : 0f;
+        final List<Annotation> visibleAnnotations = config.annotationsOnHud && annotations.current() != null
+            ? annotations.current().list(gameBridge.session().dimension())
+            : List.of();
 
         // Radar scans exactly what this frame's minimap will show: the circle's radius, or
         // the square's half-diagonal (so a corner-cropped mob is still caught by the scan).
@@ -188,12 +199,31 @@ public final class MinimapHudRenderer {
             RenderUtil.beginTexturedQuads();
             drawTiles(fbo, size, rotate, player);
             fbo.pop();
+            if (!visibleAnnotations.isEmpty()) {
+                AnnotationRenderer.drawGeometry(
+                    fbo,
+                    visibleAnnotations,
+                    annotationProjection(player, size / 2f, size / 2f, size, mapAngle),
+                    null
+                );
+            }
             canvas.end(client);
 
             RenderUtil.beginTexturedQuads();
             canvas.bindTexture();
             RenderUtil.drawTexturedDisk(matrices, centerX, centerY, size / 2f);
             RenderUtil.drawRing(matrices, centerX, centerY, size / 2f, BORDER_THICKNESS, BORDER_COLOR);
+            AnnotationRenderer.drawLabels(
+                draw,
+                client.textRenderer,
+                visibleAnnotations,
+                annotationProjection(player, centerX, centerY, size, mapAngle),
+                x0,
+                y0,
+                size,
+                size,
+                AnnotationRenderer.ClipShape.CIRCLE
+            );
         } else {
             RenderUtil.fillRect(matrices, x0, y0, size, size, BACKGROUND_COLOR);
             RenderUtil.enableScissor(client, x0, y0, size, size);
@@ -205,6 +235,23 @@ public final class MinimapHudRenderer {
             }
             drawTiles(matrices, size, rotate, player);
             matrices.pop();
+            if (!visibleAnnotations.isEmpty()) {
+                final AnnotationProjection annotationProjection = annotationProjection(
+                    player, centerX, centerY, size, mapAngle
+                );
+                AnnotationRenderer.drawGeometry(matrices, visibleAnnotations, annotationProjection, null);
+                AnnotationRenderer.drawLabels(
+                    draw,
+                    client.textRenderer,
+                    visibleAnnotations,
+                    annotationProjection,
+                    x0,
+                    y0,
+                    size,
+                    size,
+                    AnnotationRenderer.ClipShape.RECTANGLE
+                );
+            }
             RenderUtil.disableScissor();
             drawBorder(matrices, x0, y0, size);
         }
@@ -214,6 +261,25 @@ public final class MinimapHudRenderer {
         drawWaypointMarkers(draw, centerX, centerY, size, mapAngle, player);
         drawPlayerArrow(matrices, centerX, centerY, rotate ? 0f : player.yawDegrees() + 180f);
         drawInfoText(draw, player, x0, y0, size);
+    }
+
+    private AnnotationProjection annotationProjection(
+        final PlayerView player,
+        final float centerX,
+        final float centerY,
+        final int size,
+        final float mapAngle
+    ) {
+        return new AnnotationProjection(
+            player.x(),
+            player.z(),
+            centerX,
+            centerY,
+            BLOCKS_PER_PIXEL[config.minimapZoomIndex],
+            mapAngle,
+            size,
+            size
+        );
     }
 
     /**
