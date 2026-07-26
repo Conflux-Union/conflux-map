@@ -34,6 +34,7 @@ import cn.net.rms.confluxmap.mc.radar.EntityIconReloadListener;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureService;
+import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
 import cn.net.rms.confluxmap.mc.ui.hud.MinimapHudRenderer;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapViewState;
 import cn.net.rms.confluxmap.mc.update.UpdateNotifier;
@@ -91,6 +92,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private MapSyncClient mapSyncClient;
     private UpdateCheckService updateCheck;
     private UpdateNotifier updateNotifier;
+    private ClientGroundTeleportService groundTeleportService;
 
     public static ConfluxMapClient get() {
         return instance;
@@ -142,6 +144,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         clientNetworking.register();
         sharedWaypoints = new SharedWaypointClient(client);
         sharedWaypoints.register();
+        groundTeleportService = new ClientGroundTeleportService(client);
 
         spriteColorSampler = new SpriteColorSampler(client);
         biomeTintResolver = new BiomeTintResolver(client);
@@ -182,6 +185,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(predictionPaletteBuilder::onSessionChanged);
         sessionTracker.addListener(predictionTileService::onSessionChanged);
         sessionTracker.addListener(structureMarkerService::onSessionChanged);
+        sessionTracker.addListener(session -> groundTeleportService.reset());
         sessionTracker.addListener(session -> gameBridge.runOnRenderThread(tileTextureManager::releaseAll));
         sessionTracker.register();
 
@@ -191,6 +195,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         waypointWorldRenderer.register();
         deathWatcher.register();
         daylightTracker.register();
+        groundTeleportService.register();
         ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
             new ColorReloadListener(spriteColorSampler)
         );
@@ -335,5 +340,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public UpdateCheckService updateCheck() {
         return updateCheck;
+    }
+
+    public ClientGroundTeleportService groundTeleportService() {
+        return groundTeleportService;
     }
 }

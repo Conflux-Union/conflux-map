@@ -4,7 +4,9 @@ import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.compat.Ids;
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.compat.Regs;
+import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
@@ -23,6 +25,8 @@ import cn.net.rms.confluxmap.core.predict.StructureIndex;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
+import cn.net.rms.confluxmap.core.store.MapWorld;
+import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.update.UpdateCheckService;
@@ -32,6 +36,7 @@ import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
+import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatCodec;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
@@ -40,7 +45,7 @@ import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
-import cn.net.rms.confluxmap.compat.Texts;
+import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.StructureMarkerRenderer;
@@ -117,6 +122,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final int SYNC_FAILED_TEXT_COLOR = 0xFFFF7777;
     private static final int UPDATE_TEXT_COLOR = 0xFFFFE066;
     private static final int BACKGROUND_COLOR = 0xFF101018;
+    private static final int LOCATION_MENU_BACKGROUND = 0xF0181822;
+    private static final int LOCATION_MENU_BORDER = 0xFF9A9AA8;
+    private static final int TEMPORARY_LOCATION_COLOR = 0xFF3498DB;
     private static final int GRID_COLOR = 0x22FFFFFF;
     private static final int ARROW_OUTLINE = 0xFF101010;
     private static final int ARROW_FILL = 0xFFFFE066;
@@ -132,7 +140,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     /** Blocks-per-pixel threshold below which every marker's name shows continuously, not just on hover (deliverable C). */
     private static final double NAME_LABEL_MAX_SCALE = 2.0;
     private static final double HOVER_RADIUS_PX = 6.0;
-    private static final double DEFAULT_CREATE_Y = 64.0;
     /** Cursor travel between left-press and left-release below which a hovered marker click edits it, not pans (see {@link #mouseReleased}). */
     private static final double CLICK_DRAG_TOLERANCE_PX = 4.0;
     /** Radar markers are ~12px across including their contour (see RadarMarkerRenderer); cull with that margin so one straddling the edge doesn't pop. */
@@ -140,6 +147,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     private final KeyBinding openMapKey;
     private final GameBridge gameBridge;
+    private final MapWorldService mapWorlds;
     private final TileService tiles;
     private final TileTextureManager textures;
     private final DaylightModel daylightModel;
@@ -156,6 +164,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private final RadarViewRange radarViewRange;
     private final StructureMarkerService structureMarkers;
     private final UpdateCheckService updateCheck;
+    private final ClientGroundTeleportService groundTeleport;
 
     /** World point currently at screen center, and blocks-per-pixel; all mutable, panned/zoomed by input. */
     private double centerX;
@@ -174,12 +183,19 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private MapIconButton sharedVisibilityButton;
     private MapIconButton manageWaypointsButton;
     private int waypointControlsBottom;
+    private FullscreenMapLocationMenu.Bounds locationMenuBounds;
+    private FullscreenMapLocationMenu.Target locationMenuTarget;
+    private FullscreenMapLocationMenu.Action pendingLocationAction;
+    private ButtonWidget setWaypointLocationButton;
+    private ButtonWidget shareLocationButton;
+    private ButtonWidget teleportLocationButton;
 
     public FullscreenMapScreen(final KeyBinding openMapKey) {
         super(Texts.translatable("confluxmap.screen.map.title"));
         this.openMapKey = openMapKey;
         final ConfluxMapClient app = ConfluxMapClient.get();
         this.gameBridge = app.gameBridge();
+        this.mapWorlds = app.mapWorlds();
         this.tiles = app.tileService();
         this.textures = app.tileTextureManager();
         this.daylightModel = app.daylightModel();
@@ -196,6 +212,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         this.radarViewRange = app.radarViewRange();
         this.structureMarkers = app.structureMarkerService();
         this.updateCheck = app.updateCheck();
+        this.groundTeleport = app.groundTeleportService();
 
         final DimensionId dimension = gameBridge.session().dimension();
         final Optional<PlayerView> player = gameBridge.player();
@@ -212,6 +229,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     @Override
     protected void init() {
+        locationMenuBounds = null;
+        locationMenuTarget = null;
+        pendingLocationAction = null;
         rebuildWaypointControls();
     }
 
@@ -221,6 +241,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         localVisibilityButton = null;
         sharedVisibilityButton = null;
         manageWaypointsButton = null;
+        setWaypointLocationButton = null;
+        shareLocationButton = null;
+        teleportLocationButton = null;
 
         final int x = width - MARGIN - CONTROL_SIZE;
         int y = MARGIN + this.textRenderer.fontHeight + 5;
@@ -252,6 +275,35 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             )
         ));
         waypointControlsBottom = y + CONTROL_SIZE;
+        if (locationMenuBounds != null && locationMenuTarget != null) {
+            addLocationMenuButtons();
+        }
+    }
+
+    private void addLocationMenuButtons() {
+        final boolean heightKnown = locationMenuTarget.blockY().isPresent();
+        final MinecraftClient client = MinecraftClient.getInstance();
+        final boolean playerPresent = client.player != null;
+        final boolean teleportCommandAvailable = MinecraftAccess.canSendCommand(client, "teleport", "tp");
+        for (int index = 0; index < FullscreenMapLocationMenu.actions().size(); index++) {
+            final FullscreenMapLocationMenu.Action action = FullscreenMapLocationMenu.actions().get(index);
+            final ButtonWidget button = addDrawableChild(Widgets.button(
+                locationMenuBounds.buttonX(),
+                locationMenuBounds.buttonY(index),
+                locationMenuBounds.buttonWidth(),
+                FullscreenMapLocationMenu.BUTTON_HEIGHT,
+                Texts.translatable(action.translationKey()),
+                ignored -> pendingLocationAction = action
+            ));
+            button.active = FullscreenMapLocationMenu.actionEnabled(
+                action, playerPresent, heightKnown, teleportCommandAvailable
+            );
+            switch (action) {
+                case SET_WAYPOINT -> setWaypointLocationButton = button;
+                case SHARE_LOCATION -> shareLocationButton = button;
+                case TELEPORT -> teleportLocationButton = button;
+            }
+        }
     }
 
     @Override
@@ -265,6 +317,17 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         sharedAvailability = availability;
         if (sharedVisibilityButton != null) {
             sharedVisibilityButton.active = availability.ready();
+        }
+        if (locationMenuTarget != null && locationMenuTarget.blockY().isEmpty()) {
+            final OptionalInt surfaceY = surfaceYAt(
+                locationMenuTarget.blockX(), locationMenuTarget.blockZ()
+            );
+            if (surfaceY.isPresent()) {
+                locationMenuTarget = FullscreenMapLocationMenu.targetAt(
+                    locationMenuTarget.blockX(), surfaceY, locationMenuTarget.blockZ()
+                );
+                rebuildWaypointControls();
+            }
         }
     }
 
@@ -305,6 +368,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             ConfluxMapClient.get().reloadPredictionTiles();
             return true;
         }
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE && locationMenuBounds != null) {
+            dismissLocationMenu();
+            return true;
+        }
         //#if MC>=12109
         //$$ if (openMapKey.matchesKey(input)) {
         //#else
@@ -321,7 +388,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     /**
-     * Right-click opens an ownership/audience choice for the clicked block position.
+     * Right-click opens a location-action menu for the clicked block position.
      * Left-click on a hovered marker opens the source-appropriate management flow -
      * see {@link #mouseReleased}, which fires once the click (as opposed to a pan
      * drag) completes.
@@ -335,6 +402,25 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     //#else
     public boolean mouseClicked(final double mouseX, final double mouseY, final int button) {
     //#endif
+        if (locationMenuBounds != null) {
+            if (locationMenuBounds.contains(mouseX, mouseY)) {
+                //#if MC>=12109
+                //$$ super.mouseClicked(click, doubledClick);
+                //#else
+                super.mouseClicked(mouseX, mouseY, button);
+                //#endif
+                mapPointerPress = false;
+                performPendingLocationAction();
+                return true;
+            }
+            if (button == 1 && !isOverWaypointControls(mouseX, mouseY)) {
+                openLocationMenu(mouseX, mouseY);
+                return true;
+            }
+            dismissLocationMenu();
+            mapPointerPress = false;
+            return true;
+        }
         //#if MC>=12109
         //$$ if (super.mouseClicked(click, doubledClick)) {
         //#else
@@ -348,14 +434,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             return true;
         }
         if (button == 1) {
-            final double worldX = Math.floor(centerX + (mouseX - width / 2.0) * scale);
-            final double worldZ = Math.floor(centerZ + (mouseY - height / 2.0) * scale);
-            final double worldY = gameBridge.player().map(p -> (double) p.blockY()).orElse(DEFAULT_CREATE_Y);
-            MinecraftClient.getInstance().setScreen(
-                new WaypointCreateTargetScreen(
-                    this, gameBridge.session().dimension(), worldX, worldY, worldZ
-                )
-            );
+            openLocationMenu(mouseX, mouseY);
             return true;
         }
         if (button == 0) {
@@ -365,6 +444,107 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             return true;
         }
         return false;
+    }
+
+    private void openLocationMenu(final double mouseX, final double mouseY) {
+        final double worldX = centerX + (mouseX - width / 2.0) * scale;
+        final double worldZ = centerZ + (mouseY - height / 2.0) * scale;
+        final int blockX = (int) Math.floor(worldX);
+        final int blockZ = (int) Math.floor(worldZ);
+        final int menuViewportWidth = width - MARGIN - CONTROL_SIZE - CONTROL_GAP;
+        locationMenuBounds = FullscreenMapLocationMenu.place(
+            (int) Math.floor(mouseX),
+            (int) Math.floor(mouseY),
+            menuViewportWidth,
+            height
+        );
+        locationMenuTarget = FullscreenMapLocationMenu.targetAt(
+            worldX, surfaceYAt(blockX, blockZ), worldZ
+        );
+        pendingLocationAction = null;
+        mapPointerPress = false;
+        rebuildWaypointControls();
+    }
+
+    private OptionalInt surfaceYAt(final int blockX, final int blockZ) {
+        final MapLayer visibleLayer = layerSelector.current().layer();
+        final ClientWorld world = this.client.world;
+        final MapLayer surfaceLayer = world == null
+            ? visibleLayer
+            : FullscreenMapLocationMenu.topSurfaceLayer(LayerSelector.classify(world.getDimension()));
+        final MapWorld mapWorld = mapWorlds.current();
+        if (mapWorld != null) {
+            final OptionalInt captured = mapWorld.store(surfaceLayer).surfaceYAt(blockX, blockZ);
+            if (captured.isPresent()) {
+                return captured;
+            }
+        }
+        final SessionGuard.Session session = gameBridge.session();
+        return surfaceLayer.equals(visibleLayer) && predictionActive(surfaceLayer, session)
+            ? predictionTiles.predictedSurfaceYAt(session.dimension(), currentLod(), blockX, blockZ)
+            : OptionalInt.empty();
+    }
+
+    private void performPendingLocationAction() {
+        final FullscreenMapLocationMenu.Action action = pendingLocationAction;
+        final FullscreenMapLocationMenu.Target target = locationMenuTarget;
+        if (action == null || target == null) {
+            return;
+        }
+        dismissLocationMenu();
+        switch (action) {
+            case SET_WAYPOINT -> target.blockY().ifPresent(y -> MinecraftClient.getInstance().setScreen(
+                WaypointEditScreen.forCreate(
+                    this, gameBridge.session().dimension(), target.blockX(), y, target.blockZ()
+                )
+            ));
+            case SHARE_LOCATION -> {
+                if (target.blockY().isPresent()) {
+                    shareTemporaryLocation(target);
+                }
+            }
+            case TELEPORT -> groundTeleport.teleport(target.blockX(), target.blockZ(), target.blockY());
+        }
+    }
+
+    private void shareTemporaryLocation(final FullscreenMapLocationMenu.Target target) {
+        final MinecraftClient client = MinecraftClient.getInstance();
+        if (client.player == null || target.blockY().isEmpty()) {
+            return;
+        }
+        final String name = Texts.translatable("confluxmap.map.location_menu.temporary_name").getString();
+        try {
+            final String confluxMessage = WaypointChatCodec.format(
+                name,
+                gameBridge.session().dimension(),
+                target.blockX(),
+                target.blockY().getAsInt(),
+                target.blockZ()
+            );
+            final String xaeroMessage = WaypointChatCodec.formatXaero(
+                name,
+                gameBridge.session().dimension(),
+                target.blockX(),
+                target.blockY().getAsInt(),
+                target.blockZ(),
+                TEMPORARY_LOCATION_COLOR
+            );
+            MinecraftAccess.sendChatMessage(client, confluxMessage);
+            MinecraftAccess.sendChatMessage(client, xaeroMessage);
+        } catch (final IllegalArgumentException e) {
+            //#if MC>=260100
+            //$$ client.player.sendSystemMessage(Texts.translatable("confluxmap.screen.waypoint.invalid_share"));
+            //#else
+            client.player.sendMessage(Texts.translatable("confluxmap.screen.waypoint.invalid_share"), false);
+            //#endif
+        }
+    }
+
+    private void dismissLocationMenu() {
+        locationMenuBounds = null;
+        locationMenuTarget = null;
+        pendingLocationAction = null;
+        rebuildWaypointControls();
     }
 
     /**
@@ -457,6 +637,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     //#else
     public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
     //#endif
+        if (locationMenuBounds != null) {
+            dismissLocationMenu();
+            return true;
+        }
         if (amount == 0) {
             return false;
         }
@@ -500,6 +684,22 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         drawScaleLabel(draw);
         drawCursorCoords(draw, mouseX, mouseY);
         drawUpdateBadge(draw);
+        drawLocationMenu(draw);
+    }
+
+    private void drawLocationMenu(final GuiDraw draw) {
+        if (locationMenuBounds == null) {
+            return;
+        }
+        final int x = locationMenuBounds.x();
+        final int y = locationMenuBounds.y();
+        final int right = x + locationMenuBounds.width();
+        final int bottom = y + locationMenuBounds.height();
+        draw.fill(x, y, right, bottom, LOCATION_MENU_BACKGROUND);
+        draw.fill(x, y, right, y + 1, LOCATION_MENU_BORDER);
+        draw.fill(x, bottom - 1, right, bottom, LOCATION_MENU_BORDER);
+        draw.fill(x, y, x + 1, bottom, LOCATION_MENU_BORDER);
+        draw.fill(right - 1, y, right, bottom, LOCATION_MENU_BORDER);
     }
 
     @Override
@@ -518,10 +718,24 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 : Texts.translatable("confluxmap.map.waypoints.shared.unavailable");
         } else if (manageWaypointsButton != null && manageWaypointsButton.isHovered()) {
             tooltip = Texts.translatable("confluxmap.map.waypoints.manage.tooltip");
+        } else if (locationActionHeightUnavailable()) {
+            tooltip = Texts.translatable("confluxmap.map.location_menu.height_unavailable");
+        } else if (teleportLocationButton != null
+            && teleportLocationButton.isHovered()
+            && !teleportLocationButton.active) {
+            tooltip = Texts.translatable("confluxmap.map.location_menu.teleport_unavailable");
         } else {
             return;
         }
         draw.drawTooltip(this, this.textRenderer, tooltip, mouseX, mouseY);
+    }
+
+    private boolean locationActionHeightUnavailable() {
+        if (locationMenuTarget == null || locationMenuTarget.blockY().isPresent()) {
+            return false;
+        }
+        return (setWaypointLocationButton != null && setWaypointLocationButton.isHovered())
+            || (shareLocationButton != null && shareLocationButton.isHovered());
     }
 
     private static final class MapIconButton extends ButtonWidget {

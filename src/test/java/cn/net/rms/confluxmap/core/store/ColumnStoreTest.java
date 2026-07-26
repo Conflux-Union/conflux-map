@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.core.store;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -33,12 +34,29 @@ class ColumnStoreTest {
         assertNull(store.region(0, 0));
     }
 
+    @Test
+    void surfaceHeightLookupUsesFloorCoordinatesAcrossNegativeRegions() {
+        final ColumnStore store = new ColumnStore();
+        final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
+        java.util.Arrays.fill(surfaceY, ChunkSnapshot.NO_SURFACE);
+        surfaceY[15 * 16 + 15] = 86;
+        store.put(snapshot(-1, -2, surfaceY), SampleSource.REAL_LIVE);
+
+        assertEquals(86, store.surfaceYAt(-1, -17).orElseThrow());
+        assertTrue(store.surfaceYAt(-2, -17).isEmpty());
+        assertTrue(store.surfaceYAt(256, 256).isEmpty());
+    }
+
     private static ChunkSnapshot snapshot(final int chunkX, final int chunkZ) {
+        return snapshot(chunkX, chunkZ, new short[ChunkSnapshot.COLUMNS]);
+    }
+
+    private static ChunkSnapshot snapshot(final int chunkX, final int chunkZ, final short[] surfaceY) {
         return new ChunkSnapshot(
             chunkX,
             chunkZ,
             1L,
-            new short[ChunkSnapshot.COLUMNS],
+            surfaceY,
             new byte[ChunkSnapshot.COLUMNS],
             new int[ChunkSnapshot.COLUMNS],
             new int[ChunkSnapshot.COLUMNS],
