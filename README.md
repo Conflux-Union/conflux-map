@@ -55,9 +55,11 @@ components and attribution.
   the real map draws over as you explore it. Superflat worlds are recognized and
   predicted too. Backed by a bundled
   [cubiomes](https://github.com/Cubitect/cubiomes) native build.
-- **Structure candidates** — villages, ocean monuments, woodland mansions,
-  outposts, ruined portals, and end cities show as semi-transparent markers
-  until real data confirms or rules them out.
+- **Structure candidates and search** — every vanilla structure set available
+  in the running game version is covered across the Overworld, Nether, and End.
+  The fullscreen map shows localized candidate markers and can jump to the
+  nearest candidate for a selected structure. Variants that share one placement
+  set, such as village styles and warm/cold ocean ruins, are grouped together.
 - **Prediction modes** — cycle with `P`: *everywhere* (default), *generated-
   only* (underlay masked to chunks the server generated), or *visited-only*
   (pure captured map, no prediction).

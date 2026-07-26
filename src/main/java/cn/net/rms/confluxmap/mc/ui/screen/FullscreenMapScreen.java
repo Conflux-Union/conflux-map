@@ -53,7 +53,9 @@ import cn.net.rms.confluxmap.mc.world.ClientChunkLookup;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import net.minecraft.client.MinecraftClient;
@@ -140,6 +142,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     /** Blocks-per-pixel threshold below which every marker's name shows continuously, not just on hover (deliverable C). */
     private static final double NAME_LABEL_MAX_SCALE = 2.0;
     private static final double HOVER_RADIUS_PX = 6.0;
+    private static final int MAX_VISIBLE_MARKERS_PER_STRUCTURE = 8;
+    private static final double DEFAULT_CREATE_Y = 64.0;
     /** Cursor travel between left-press and left-release below which a hovered marker click edits it, not pans (see {@link #mouseReleased}). */
     private static final double CLICK_DRAG_TOLERANCE_PX = 4.0;
     /** Radar markers are ~12px across including their contour (see RadarMarkerRenderer); cull with that margin so one straddling the edge doesn't pop. */
@@ -173,6 +177,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     /** Recomputed every frame by {@link #drawWaypoints} - the marker nearest the cursor within {@link #HOVER_RADIUS_PX}, or none. */
     private WaypointRenderEntry hoveredWaypoint;
+    private StructureIndex.Marker hoveredStructure;
 
     /** Cursor position at the last left-button press, so {@link #mouseReleased} can tell a click from a pan drag. */
     private double leftPressX;
@@ -182,6 +187,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private MapIconButton localVisibilityButton;
     private MapIconButton sharedVisibilityButton;
     private MapIconButton manageWaypointsButton;
+    private MapIconButton structureSearchButton;
     private int waypointControlsBottom;
     private FullscreenMapLocationMenu.Bounds locationMenuBounds;
     private FullscreenMapLocationMenu.Target locationMenuTarget;
@@ -244,6 +250,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         setWaypointLocationButton = null;
         shareLocationButton = null;
         teleportLocationButton = null;
+        structureSearchButton = null;
 
         final int x = width - MARGIN - CONTROL_SIZE;
         int y = MARGIN + this.textRenderer.fontHeight + 5;
@@ -274,6 +281,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 new WaypointListScreen(this, WaypointListScreen.Tab.LOCAL)
             )
         ));
+        y += CONTROL_SIZE + CONTROL_GAP;
+        structureSearchButton = addDrawableChild(new MapIconButton(
+            x, y,
+            Texts.translatable("confluxmap.map.structure_search"),
+            ignored -> openStructureSearch()
+        ));
+        refreshStructureSearchButton();
         waypointControlsBottom = y + CONTROL_SIZE;
         if (locationMenuBounds != null && locationMenuTarget != null) {
             addLocationMenuButtons();
@@ -329,6 +343,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 rebuildWaypointControls();
             }
         }
+        refreshStructureSearchButton();
     }
 
     private Text visibilityTooltip(final boolean local) {
@@ -413,7 +428,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 performPendingLocationAction();
                 return true;
             }
-            if (button == 1 && !isOverWaypointControls(mouseX, mouseY)) {
+            if (button == 1 && !isOverMapControls(mouseX, mouseY)) {
                 openLocationMenu(mouseX, mouseY);
                 return true;
             }
@@ -429,7 +444,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             mapPointerPress = false;
             return true;
         }
-        if (isOverWaypointControls(mouseX, mouseY)) {
+        if (isOverMapControls(mouseX, mouseY)) {
             mapPointerPress = false;
             return true;
         }
@@ -572,7 +587,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
         mapPointerPress = false;
         if (hoveredWaypoint != null
-            && !isOverWaypointControls(mouseX, mouseY)
+            && !isOverMapControls(mouseX, mouseY)
             && Math.hypot(mouseX - leftPressX, mouseY - leftPressY) < CLICK_DRAG_TOLERANCE_PX) {
             openWaypoint(hoveredWaypoint);
             return true;
@@ -600,7 +615,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         //#endif
     }
 
-    private boolean isOverWaypointControls(final double mouseX, final double mouseY) {
+    private boolean isOverMapControls(final double mouseX, final double mouseY) {
         final int left = width - MARGIN - CONTROL_SIZE;
         final int top = MARGIN + this.textRenderer.fontHeight + 5;
         return mouseX >= left && mouseX <= width - MARGIN
@@ -724,6 +739,21 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             && teleportLocationButton.isHovered()
             && !teleportLocationButton.active) {
             tooltip = Texts.translatable("confluxmap.map.location_menu.teleport_unavailable");
+        } else if (structureSearchButton != null && structureSearchButton.isHovered()) {
+            tooltip = Texts.translatable(
+                structureSearchButton.active
+                    ? "confluxmap.map.structure_search.tooltip"
+                    : "confluxmap.map.structure_search.unavailable"
+            );
+        } else if (hoveredStructure != null) {
+            tooltip = Texts.translatable(
+                hoveredStructure.state() == StructureIndex.State.VERIFIED
+                    ? "confluxmap.map.structure.verified_tooltip"
+                    : "confluxmap.map.structure.candidate_tooltip",
+                Texts.translatable(hoveredStructure.type().translationKey()).getString(),
+                hoveredStructure.blockX(),
+                hoveredStructure.blockZ()
+            );
         } else {
             return;
         }
@@ -742,6 +772,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         private static final int ENABLED_ICON_TINT = 0xFFFFFFFF;
         private static final int DISABLED_ICON_TINT = 0xFF777777;
         private final Identifier icon;
+        private final boolean searchGlyph;
         private final int selectedAccent;
         private boolean selected;
 
@@ -752,17 +783,39 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             final int selectedAccent,
             final PressAction onPress
         ) {
+            this(x, y, icon, Texts.literal(""), false, selectedAccent, onPress);
+        }
+
+        MapIconButton(
+            final int x,
+            final int y,
+            final net.minecraft.text.Text message,
+            final PressAction onPress
+        ) {
+            this(x, y, null, message, true, 0, onPress);
+        }
+
+        private MapIconButton(
+            final int x,
+            final int y,
+            final Identifier icon,
+            final net.minecraft.text.Text message,
+            final boolean searchGlyph,
+            final int selectedAccent,
+            final PressAction onPress
+        ) {
             //#if MC>=12111
             //$$ super(
-            //$$     x, y, CONTROL_SIZE, CONTROL_SIZE, Texts.literal(""),
+            //$$     x, y, CONTROL_SIZE, CONTROL_SIZE, message,
             //$$     onPress, ButtonWidget.DEFAULT_NARRATION_SUPPLIER
             //$$ );
             //#elseif MC>=11904
-            //$$ super(x, y, CONTROL_SIZE, CONTROL_SIZE, Text.of(""), onPress, ButtonWidget.DEFAULT_NARRATION_SUPPLIER);
+            //$$ super(x, y, CONTROL_SIZE, CONTROL_SIZE, message, onPress, ButtonWidget.DEFAULT_NARRATION_SUPPLIER);
             //#else
-            super(x, y, CONTROL_SIZE, CONTROL_SIZE, Text.of(""), onPress);
+            super(x, y, CONTROL_SIZE, CONTROL_SIZE, message, onPress);
             //#endif
             this.icon = icon;
+            this.searchGlyph = searchGlyph;
             this.selectedAccent = selectedAccent;
         }
 
@@ -900,6 +953,15 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             }
             final int iconX = x + (getWidth() - CONTROL_ICON_SIZE) / 2;
             final int iconY = y + (getHeight() - CONTROL_ICON_SIZE) / 2;
+            if (searchGlyph) {
+                drawSearchIcon(
+                    matrices,
+                    iconX,
+                    iconY,
+                    active ? LOCAL_CONTROL_ACCENT : DISABLED_ICON_TINT
+                );
+                return;
+            }
             RenderUtil.bindTexture(MinecraftClient.getInstance(), icon);
             RenderUtil.drawTintedQuad(
                 matrices,
@@ -913,6 +975,21 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 1f,
                 active && (selected || selectedAccent == 0) ? ENABLED_ICON_TINT : DISABLED_ICON_TINT
             );
+        }
+
+        private static void drawSearchIcon(
+            final MatrixStack matrices,
+            final int x,
+            final int y,
+            final int color
+        ) {
+            RenderUtil.fillRect(matrices, x + 4, y + 2, 4, 2, color);
+            RenderUtil.fillRect(matrices, x + 2, y + 4, 2, 4, color);
+            RenderUtil.fillRect(matrices, x + 8, y + 4, 2, 4, color);
+            RenderUtil.fillRect(matrices, x + 4, y + 8, 4, 2, color);
+            RenderUtil.fillRect(matrices, x + 9, y + 9, 2, 2, color);
+            RenderUtil.fillRect(matrices, x + 10, y + 10, 2, 2, color);
+            RenderUtil.fillRect(matrices, x + 11, y + 11, 3, 3, color);
         }
     }
 
@@ -1048,32 +1125,67 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     private void drawStructures(final GuiDraw draw, final int mouseX, final int mouseY) {
+        hoveredStructure = null;
         if (!config.predictionShowStructures || currentLod() > 2 || !predictionState.seedKnown()) {
             return;
         }
-        final int lod = currentLod();
         final int minX = (int) Math.floor(centerX - width / 2.0 * scale);
         final int maxX = (int) Math.ceil(centerX + width / 2.0 * scale);
         final int minZ = (int) Math.floor(centerZ - height / 2.0 * scale);
         final int maxZ = (int) Math.ceil(centerZ + height / 2.0 * scale);
         final double pxPerBlock = 1.0 / scale;
-        final List<StructureIndex.Marker> markers = structureMarkers.query(minX, maxX, minZ, maxZ);
+        final List<StructureIndex.Marker> markers = structureMarkers.query(minX, maxX, minZ, maxZ, scale);
         markers.sort(java.util.Comparator.comparingLong(marker -> {
             final long dx = marker.blockX() - (long) centerX;
             final long dz = marker.blockZ() - (long) centerZ;
             return dx * dx + dz * dz;
         }));
-        final int limit = Math.min(64, markers.size());
-        for (int i = 0; i < limit; i++) {
-            final StructureIndex.Marker marker = markers.get(i);
+        final List<StructureIndex.Marker> visibleMarkers = limitStructureMarkers(markers);
+        double bestHoverDistance = 8.0;
+        for (final StructureIndex.Marker marker : visibleMarkers) {
+            final float screenX = (float) (width / 2.0 + (marker.blockX() - centerX) * pxPerBlock);
+            final float screenY = (float) (height / 2.0 + (marker.blockZ() - centerZ) * pxPerBlock);
+            final double hoverDistance = Math.hypot(mouseX - screenX, mouseY - screenY);
+            if (hoverDistance <= bestHoverDistance) {
+                bestHoverDistance = hoverDistance;
+                hoveredStructure = marker;
+            }
+        }
+        for (final StructureIndex.Marker marker : visibleMarkers) {
             final float screenX = (float) (width / 2.0 + (marker.blockX() - centerX) * pxPerBlock);
             final float screenY = (float) (height / 2.0 + (marker.blockZ() - centerZ) * pxPerBlock);
             if (screenX < -8 || screenX > width + 8 || screenY < -8 || screenY > height + 8) {
                 continue;
             }
-            final boolean hovered = Math.hypot(mouseX - screenX, mouseY - screenY) <= 8;
+            final boolean hovered = marker.equals(hoveredStructure);
             StructureMarkerRenderer.draw(draw, this.textRenderer, marker, screenX, screenY, hovered);
+            if (hovered) {
+                draw.drawTextWithShadow(
+                    this.textRenderer,
+                    Texts.translatable(marker.type().translationKey()),
+                    screenX + 10f,
+                    screenY - 4f,
+                    TEXT_COLOR
+                );
+            }
         }
+    }
+
+    private static List<StructureIndex.Marker> limitStructureMarkers(
+        final List<StructureIndex.Marker> nearestFirst
+    ) {
+        final Map<StructureIndex.StructureType, Integer> counts =
+            new EnumMap<>(StructureIndex.StructureType.class);
+        final List<StructureIndex.Marker> visible = new ArrayList<>();
+        for (final StructureIndex.Marker marker : nearestFirst) {
+            final int count = counts.getOrDefault(marker.type(), 0);
+            if (count >= MAX_VISIBLE_MARKERS_PER_STRUCTURE) {
+                continue;
+            }
+            counts.put(marker.type(), count + 1);
+            visible.add(marker);
+        }
+        return visible;
     }
 
     /** Faint lines on LOD-0 tile boundaries (256-block spacing), skipped once they'd be denser than {@link #MIN_GRID_SPACING_PX}. */
@@ -1337,6 +1449,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             text = (int) Math.floor(hoveredWaypoint.x()) + ", "
                 + (int) Math.floor(hoveredWaypoint.y()) + ", "
                 + (int) Math.floor(hoveredWaypoint.z());
+        } else if (hoveredStructure != null) {
+            text = Texts.translatable(hoveredStructure.type().translationKey()).getString()
+                + " · " + hoveredStructure.blockX() + ", " + hoveredStructure.blockZ();
         } else {
             final int blockX = (int) Math.floor(centerX + (mouseX - width / 2.0) * scale);
             final int blockZ = (int) Math.floor(centerZ + (mouseY - height / 2.0) * scale);
@@ -1423,5 +1538,37 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             return Texts.translatable("confluxmap.dimension.the_end").getString();
         }
         return dimension.path();
+    }
+
+    private void refreshStructureSearchButton() {
+        if (structureSearchButton == null) {
+            return;
+        }
+        final DimensionId dimension = gameBridge.session().dimension();
+        structureSearchButton.active = predictionState.structuresCubiomesBacked(dimension)
+            && !structureMarkers.availableTypes(dimension).isEmpty();
+    }
+
+    private void openStructureSearch() {
+        final DimensionId dimension = gameBridge.session().dimension();
+        MinecraftClient.getInstance().setScreen(new StructureSearchScreen(
+            this,
+            structureMarkers,
+            new ArrayList<>(structureMarkers.availableTypes(dimension))
+        ));
+    }
+
+    int centerBlockX() {
+        return (int) Math.floor(centerX);
+    }
+
+    int centerBlockZ() {
+        return (int) Math.floor(centerZ);
+    }
+
+    void focusStructure(final StructureIndex.Marker marker) {
+        centerX = marker.blockX();
+        centerZ = marker.blockZ();
+        scale = Math.min(scale, DEFAULT_SCALE);
     }
 }

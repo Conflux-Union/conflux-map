@@ -41,6 +41,14 @@ public final class Widgets {
         //#endif
     }
 
+    public static void setY(final ClickableWidget widget, final int y) {
+        //#if MC>=11904
+        //$$ widget.setY(y);
+        //#else
+        widget.y = y;
+        //#endif
+    }
+
     public static void tick(final TextFieldWidget field) {
         //#if MC<11904
         field.tick();

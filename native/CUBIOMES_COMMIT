@@ -1,7 +1,7 @@
 upstream: https://github.com/Cubitect/cubiomes
 fork:     https://github.com/Conflux-Union/cubiomes (this project's fork)
-commit:   408c4199c019e4f433a490836e3dae24b9f78d57
-commit date: 2026-07-24T23:32:52-07:00
+commit:   9afc1038ea5a7b1fd22c8e7ce18dae46b4ca5891
+commit date: 2026-07-26T13:13:48+08:00
 pinned via: native/cubiomes git submodule (converted from a vendored copy on 2026-07-17)
 license: MIT (see native/cubiomes/LICENSE)
 
@@ -30,6 +30,9 @@ Fork contents on top of upstream master (e61f905):
     MC 1.17.1-1.21.5 x 5 seeds for biomes (scale 1 and 4, all three
     dimensions), mapApproxHeight, structure positions and viability,
     mapOverworldSurfaceColumns, and the natural tree/structure queries.
+  - 9afc103 "locate nether fossils" (this project's own addition), which adds
+    the Vanilla 1.16+ Nether-fossil structure-set placement and soul-sand-valley
+    viability rule used by the complete structure catalog.
 
 Files compiled from this commit by buildNativesHost/buildNativesAll
 (selected subset):

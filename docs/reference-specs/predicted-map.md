@@ -6,7 +6,7 @@ overlays it; predictions never enter the `.cfr` column cache.
 ## Determinism
 
 The wire baseline is `{biomeId u8, surfaceY i16, kind u8, fluidDepth u8}`. The predictor version
-is `cb:e97dcf959585|shim:6|base:13`; palette colours are local and never sent. Synthetic canopy stays
+is `cb:9afc1038ea5a|shim:7|base:13`; palette colours are local and never sent. Synthetic canopy stays
 on the predicted plane instead of becoming a generated-chunk correction, so generated frontiers
 cannot introduce foliage-colour seams. Other height differences up to 2 blocks are tolerated, and
 fluid depth compares in buckets `0`, `1-3`, `4-9`, `10+`. A real map colour outside the biome's
@@ -55,6 +55,24 @@ natural tree decorators per chunk: that work grows with world area rather than v
 previously made LOD1 four times more expensive than LOD0.
 The terrain-feature cave mask is not applied to the surface plane, and approximate structure bounds
 remain candidate markers rather than being painted as terrain.
+
+## Structure candidates
+
+The structure catalog follows the vanilla structure sets present in the selected cubiomes game
+version. It covers Overworld, Nether, and End structures, including the ring-based stronghold
+placement and the Nether-fossil placement/biome rule. Configured variants that share a placement
+set are one search category: village styles, mineshaft styles, shipwreck styles, warm/cold ocean
+ruins, and dimension-appropriate ruined-portal variants do not create duplicate markers.
+
+Visible-region lookup batches placement regions and applies cubiomes' generation-viability check
+before a marker is cached. Strongholds use the vanilla ring iterator instead of pretending to use
+a random-spread grid. The fullscreen search asks the native locator for the nearest viable candidate
+of one localized structure type within 100,000 blocks and recenters the existing map view when one
+is found. Dense one-chunk placement sets are hidden at distant zoom levels but remain searchable.
+
+The cache filename carries structure format v2 and the cubiomes game-version number because the
+earlier six-entry catalog used incorrect cubiomes ordinals and structure placements can change when
+a world is upgraded. Old or cross-version candidate positions are intentionally not reused.
 
 ## Companion protocol
 

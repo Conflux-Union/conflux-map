@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.nativepredict;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -31,10 +32,21 @@ import org.junit.jupiter.api.Test;
 class CubiomesNativeTest {
     /** Arbitrary fixed seed used by every test in this class - chosen once, then frozen. */
     private static final long SEED = 146008555L;
+    private static final int NETHER = -1;
     private static final int OVERWORLD = 0;
     private static final int END = 1;
     /** cubiomes {@code enum StructureType} ordinal for Village at this pinned commit. */
     private static final int VILLAGE = 5;
+    private static final int END_CITY = 20;
+    private static final int STRONGHOLD = 25;
+    private static final int NETHER_FOSSIL = 26;
+    private static final int[] LEGACY_OVERWORLD_STRUCTURES = {
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 14, 15, STRONGHOLD
+    };
+    private static final int[] MODERN_OVERWORLD_STRUCTURES = {
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 23, 24, STRONGHOLD
+    };
+    private static final int[] MODERN_NETHER_STRUCTURES = {12, 18, 19, NETHER_FOSSIL};
 
     @BeforeEach
     void requireNative() {
@@ -50,6 +62,12 @@ class CubiomesNativeTest {
     private static int mc21() {
         final OptionalInt mc = McVersions.toCubiomes("1.21.1");
         assertTrue(mc.isPresent(), "McVersions must know \"1.21.1\"");
+        return mc.getAsInt();
+    }
+
+    private static int mc261() {
+        final OptionalInt mc = McVersions.toCubiomes("26.1.2");
+        assertTrue(mc.isPresent(), "McVersions must know \"26.1.2\"");
         return mc.getAsInt();
     }
 
@@ -329,9 +347,140 @@ class CubiomesNativeTest {
             assertEquals(count, ctx.structures(VILLAGE, -2, -2, 1, 1, again));
             assertArrayEquals(out, again, "structure search must be deterministic");
 
+            final long[] viablePositions = new long[32];
+            final int viableCount = ctx.viableStructures(VILLAGE, -2, -2, 1, 1, viablePositions);
+            assertTrue(viableCount >= 0 && viableCount <= count);
+            for (int i = 0; i < viableCount; i++) {
+                assertTrue(ctx.structureViable(
+                    VILLAGE, (int) (viablePositions[i] >> 32), (int) viablePositions[i]
+                ));
+            }
+
             final boolean viable = ctx.structureViable(VILLAGE, firstX, firstZ);
             assertEquals(viable, ctx.structureViable(VILLAGE, firstX, firstZ), "viability check must be deterministic");
         }
+    }
+
+    @Test
+    void strongholdsAndNetherFossilsUseDedicatedVanillaPlacementRules() {
+        try (CubiomesContext overworld = open(OVERWORLD)) {
+            final long[] strongholds = new long[128];
+            assertEquals(128, overworld.strongholds(strongholds));
+
+            final long[] nearest = new long[1];
+            assertTrue(overworld.nearestStructure(STRONGHOLD, 0, 0, 100_000, nearest));
+            final long expected = java.util.Arrays.stream(strongholds)
+                .boxed()
+                .min(java.util.Comparator.comparingLong(CubiomesNativeTest::distanceSquared))
+                .orElseThrow();
+            assertEquals(expected, nearest[0]);
+        }
+
+        try (CubiomesContext nether = CubiomesContext.create(mc17(), SEED, NETHER, 0)) {
+            assertNotNull(nether);
+            final long[] nearest = new long[1];
+            assertTrue(nether.nearestStructure(NETHER_FOSSIL, 0, 0, 100_000, nearest));
+            assertTrue(nether.structureViable(
+                NETHER_FOSSIL,
+                (int) (nearest[0] >> 32),
+                (int) nearest[0]
+            ));
+        }
+    }
+
+    @Test
+    void endCityViabilityIncludesTheDedicatedTerrainCheckAcrossWorldgenFamilies() {
+        assertEndCityTerrainRejected(mc17());
+        assertEndCityTerrainRejected(mc21());
+        assertEndCityTerrainRejected(mc261());
+    }
+
+    @Test
+    void nearestEndCityMatchesAnExhaustiveViableCandidateSearchAcrossWorldgenFamilies() {
+        assertNearestEndCityMatchesExhaustiveSearch(mc17());
+        assertNearestEndCityMatchesExhaustiveSearch(mc21());
+        assertNearestEndCityMatchesExhaustiveSearch(mc261());
+    }
+
+    private static void assertEndCityTerrainRejected(final int mc) {
+        // Vanilla's placement selects this seed=1 attempt and its biome is allowed, but the
+        // dedicated End City terrain-height check rejects it. It must never reach map markers or
+        // nearest-structure search as a generated structure.
+        final long seed = 1L;
+        final int blockX = -7_328;
+        final int blockZ = -7_600;
+        try (CubiomesContext end = CubiomesContext.create(mc, seed, END, 0)) {
+            assertNotNull(end);
+            assertFalse(end.structureViable(END_CITY, blockX, blockZ));
+
+            final long[] viable = new long[1];
+            assertEquals(0, end.viableStructures(END_CITY, -23, -24, -23, -24, viable));
+
+            final long[] nearest = new long[1];
+            assertFalse(end.nearestStructure(END_CITY, blockX, blockZ, 1, nearest));
+        }
+    }
+
+    private static void assertNearestEndCityMatchesExhaustiveSearch(final int mc) {
+        final int maxRadius = 10_000;
+        final int minRegion = Math.floorDiv(-maxRadius, 20 * 16);
+        final int maxRegion = Math.floorDiv(maxRadius, 20 * 16);
+        final int cells = (maxRegion - minRegion + 1) * (maxRegion - minRegion + 1);
+        try (CubiomesContext end = CubiomesContext.create(mc, 1L, END, 0)) {
+            assertNotNull(end);
+            final long[] viable = new long[cells];
+            final int count = end.viableStructures(
+                END_CITY, minRegion, minRegion, maxRegion, maxRegion, viable
+            );
+            long expected = 0L;
+            long expectedDistanceSquared = Long.MAX_VALUE;
+            for (int i = 0; i < count; i++) {
+                final long distanceSquared = distanceSquared(viable[i]);
+                if (distanceSquared <= (long) maxRadius * maxRadius
+                    && distanceSquared < expectedDistanceSquared) {
+                    expected = viable[i];
+                    expectedDistanceSquared = distanceSquared;
+                }
+            }
+            assertTrue(expectedDistanceSquared < Long.MAX_VALUE);
+
+            final long[] nearest = new long[1];
+            assertTrue(end.nearestStructure(END_CITY, 0, 0, maxRadius, nearest));
+            assertEquals(expected, nearest[0]);
+        }
+    }
+
+    @Test
+    void nearestSearchCoversEverySupportedVanillaStructureFamily() {
+        assertEveryStructureCanBeLocated(mc17(), OVERWORLD, LEGACY_OVERWORLD_STRUCTURES);
+        assertEveryStructureCanBeLocated(mc17(), NETHER, MODERN_NETHER_STRUCTURES);
+        assertEveryStructureCanBeLocated(mc17(), END, new int[] {20});
+        assertEveryStructureCanBeLocated(mc261(), OVERWORLD, MODERN_OVERWORLD_STRUCTURES);
+        assertEveryStructureCanBeLocated(mc261(), NETHER, MODERN_NETHER_STRUCTURES);
+        assertEveryStructureCanBeLocated(mc261(), END, new int[] {20});
+    }
+
+    private static void assertEveryStructureCanBeLocated(
+        final int mc,
+        final int dimension,
+        final int[] structureTypes
+    ) {
+        try (CubiomesContext context = CubiomesContext.create(mc, SEED, dimension, 0)) {
+            assertNotNull(context);
+            for (final int structureType : structureTypes) {
+                final long[] nearest = new long[1];
+                assertTrue(
+                    context.nearestStructure(structureType, 0, 0, 100_000, nearest),
+                    "expected a viable structure candidate for native type " + structureType
+                );
+            }
+        }
+    }
+
+    private static long distanceSquared(final long packed) {
+        final long x = (int) (packed >> 32);
+        final long z = (int) packed;
+        return x * x + z * z;
     }
 
     @Test

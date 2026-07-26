@@ -33,7 +33,7 @@ final class CubiomesNative {
 
     /**
      * Creates a context for the given cubiomes {@code MCVersion} int, world seed and dimension
-     * ({@code 0} = Overworld, {@code 1} = End - Nether is out of scope this milestone). Returns
+     * ({@code -1} = Nether, {@code 0} = Overworld, {@code 1} = End). Returns
      * {@code 0} for any invalid input (unknown version, unsupported dimension, allocation
      * failure) instead of throwing; callers must check for that.
      */
@@ -139,10 +139,23 @@ final class CubiomesNative {
      */
     static native int cfxStructures(long handle, int structType, int regX0, int regZ0, int regX1, int regZ1, long[] out, int cap);
 
+    /** Structure attempts from the region rectangle that also pass cubiomes' viability checks. */
+    static native int cfxViableStructures(
+        long handle, int structType, int regX0, int regZ0, int regX1, int regZ1, long[] out, int cap
+    );
+
+    /** All strongholds for this seed, ordered by Vanilla's ring iterator. */
+    static native int cfxStrongholds(long handle, long[] out, int cap);
+
+    /** Nearest viable structure of {@code structType} within {@code maxRadius}; writes one packed position. */
+    static native int cfxNearestStructure(
+        long handle, int structType, int blockX, int blockZ, int maxRadius, long[] out
+    );
+
     /**
-     * Biome-only viability check for a structure-generation attempt at {@code (blockX, blockZ)}
-     * (as returned by {@link #cfxStructures}). Returns 0 or 1; never throws for a bad handle or
-     * unknown structure type (returns 0 instead).
+     * Generation viability check for a structure attempt at {@code (blockX, blockZ)} (as returned
+     * by {@link #cfxStructures}), including the dedicated End City terrain check. Returns 0 or 1;
+     * never throws for a bad handle or unknown structure type (returns 0 instead).
      */
     static native int cfxStructureViable(long handle, int structType, int blockX, int blockZ);
 }

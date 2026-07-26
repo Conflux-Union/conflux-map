@@ -27,7 +27,8 @@ public final class CubiomesContext implements AutoCloseable {
 
     /**
      * Creates a context for {@code mcVersion} (a cubiomes {@code MCVersion} int, see {@link
-     * McVersions}), {@code seed}, and {@code dim} ({@code 0} = Overworld, {@code 1} = End).
+     * McVersions}), {@code seed}, and {@code dim} ({@code -1} = Nether, {@code 0} = Overworld,
+     * {@code 1} = End).
      * Returns {@code null} for any invalid input instead of throwing - callers must check.
      */
     static CubiomesContext create(final int mcVersion, final long seed, final int dim, final int flags) {
@@ -176,7 +177,41 @@ public final class CubiomesContext implements AutoCloseable {
         return CubiomesNative.cfxStructures(handle, structType, regX0, regZ0, regX1, regZ1, out, out.length);
     }
 
-    /** Biome-only viability check for a structure attempt position (see {@link CubiomesNative#cfxStructureViable}). */
+    /** Structure attempts from a region rectangle after cubiomes' generation-viability checks. */
+    public int viableStructures(
+        final int structType,
+        final int regX0,
+        final int regZ0,
+        final int regX1,
+        final int regZ1,
+        final long[] out
+    ) {
+        requireOpen();
+        return CubiomesNative.cfxViableStructures(
+            handle, structType, regX0, regZ0, regX1, regZ1, out, out.length
+        );
+    }
+
+    /** All strongholds for the current seed, ordered by Vanilla's ring iterator. */
+    public int strongholds(final long[] out) {
+        requireOpen();
+        return CubiomesNative.cfxStrongholds(handle, out, out.length);
+    }
+
+    /** Writes the nearest viable structure within {@code maxRadius} to {@code out[0]}. */
+    public boolean nearestStructure(
+        final int structType,
+        final int blockX,
+        final int blockZ,
+        final int maxRadius,
+        final long[] out
+    ) {
+        requireOpen();
+        requireCapacity(out, 1);
+        return CubiomesNative.cfxNearestStructure(handle, structType, blockX, blockZ, maxRadius, out) == 1;
+    }
+
+    /** Generation viability check, including dedicated terrain checks where cubiomes provides one. */
     public boolean structureViable(final int structType, final int blockX, final int blockZ) {
         requireOpen();
         return CubiomesNative.cfxStructureViable(handle, structType, blockX, blockZ) != 0;
@@ -203,6 +238,12 @@ public final class CubiomesContext implements AutoCloseable {
     }
 
     private static void requireCapacity(final int[] array, final int needed) {
+        if (array.length < needed) {
+            throw new IllegalArgumentException("array too small: need " + needed + ", got " + array.length);
+        }
+    }
+
+    private static void requireCapacity(final long[] array, final int needed) {
         if (array.length < needed) {
             throw new IllegalArgumentException("array too small: need " + needed + ", got " + array.length);
         }

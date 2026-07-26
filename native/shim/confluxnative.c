@@ -34,7 +34,7 @@
 #include "finders.h"
 #include "terrain_features.h"
 
-#define CFX_ABI 6
+#define CFX_ABI 8
 
 #define CFX_OK              0
 #define CFX_ERR_BAD_HANDLE  1
@@ -167,8 +167,7 @@ JNIEXPORT jlong JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_
     if (mcVersion <= MC_UNDEF || mcVersion > MC_NEWEST) {
         return 0;
     }
-    if (dim != DIM_OVERWORLD && dim != DIM_END) {
-        /* Nether is out of scope for this milestone (no nether 3D density support here). */
+    if (dim != DIM_OVERWORLD && dim != DIM_NETHER && dim != DIM_END) {
         return 0;
     }
 
@@ -1087,6 +1086,229 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     return found;
 }
 
+static int cfxIsViableStructure(
+    CfxContext *ctx,
+    int structType,
+    int blockX,
+    int blockZ
+) {
+    if (!isViableStructurePos(structType, &ctx->g, blockX, blockZ, 0)) {
+        return 0;
+    }
+    if (structType == End_City) {
+        return isViableEndCityTerrain(&ctx->g, &ctx->sn, blockX, blockZ);
+    }
+    return 1;
+}
+
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxViableStructures(
+    JNIEnv *env, jclass clazz, jlong handle, jint structType, jint regX0, jint regZ0, jint regX1, jint regZ1,
+    jlongArray out, jint cap
+) {
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL) {
+        return CFX_ERR_BAD_HANDLE;
+    }
+    if (structType < 0 || structType >= FEATURE_NUM || structType == Stronghold) {
+        return CFX_ERR_BAD_ARGS;
+    }
+    if (regX1 < regX0 || regZ1 < regZ0 || cap < 0) {
+        return CFX_ERR_BAD_SIZE;
+    }
+    const int64_t regionsX = (int64_t) regX1 - (int64_t) regX0 + 1;
+    const int64_t regionsZ = (int64_t) regZ1 - (int64_t) regZ0 + 1;
+    if (regionsX * regionsZ > CFX_MAX_CELLS) {
+        return CFX_ERR_BAD_SIZE;
+    }
+
+    jint effectiveCap = cap;
+    const jsize outLen = (*env)->GetArrayLength(env, out);
+    if (effectiveCap > outLen) {
+        effectiveCap = outLen;
+    }
+    if (effectiveCap <= 0) {
+        return 0;
+    }
+
+    jlong *packed = malloc(sizeof(jlong) * (size_t) effectiveCap);
+    if (packed == NULL) {
+        return CFX_ERR_ALLOC;
+    }
+
+    int found = 0;
+    for (int regZ = regZ0; regZ <= regZ1 && found < effectiveCap; regZ++) {
+        for (int regX = regX0; regX <= regX1 && found < effectiveCap; regX++) {
+            Pos pos;
+            if (getStructurePos(structType, ctx->mc, ctx->g.seed, regX, regZ, &pos)
+                && cfxIsViableStructure(ctx, structType, pos.x, pos.z)) {
+                packed[found] = ((jlong) pos.x << 32) | ((jlong) pos.z & 0xffffffffL);
+                found++;
+            }
+        }
+    }
+
+    (*env)->SetLongArrayRegion(env, out, 0, found, packed);
+    free(packed);
+    return found;
+}
+
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxStrongholds(
+    JNIEnv *env, jclass clazz, jlong handle, jlongArray out, jint cap
+) {
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL) {
+        return CFX_ERR_BAD_HANDLE;
+    }
+    if (ctx->dim != DIM_OVERWORLD || cap < 0) {
+        return CFX_ERR_BAD_ARGS;
+    }
+    jint effectiveCap = cap;
+    const jsize outLen = (*env)->GetArrayLength(env, out);
+    if (effectiveCap > outLen) {
+        effectiveCap = outLen;
+    }
+    if (effectiveCap <= 0) {
+        return 0;
+    }
+
+    jlong *packed = malloc(sizeof(jlong) * (size_t) effectiveCap);
+    if (packed == NULL) {
+        return CFX_ERR_ALLOC;
+    }
+    StrongholdIter iterator;
+    initFirstStronghold(&iterator, ctx->mc, ctx->g.seed);
+    int found = 0;
+    int remaining;
+    do {
+        remaining = nextStronghold(&iterator, &ctx->g);
+        packed[found++] = ((jlong) iterator.pos.x << 32) | ((jlong) iterator.pos.z & 0xffffffffL);
+    } while (remaining > 0 && found < effectiveCap);
+
+    (*env)->SetLongArrayRegion(env, out, 0, found, packed);
+    free(packed);
+    return found;
+}
+
+static void cfxTryNearestStructure(
+    CfxContext *ctx,
+    int structType,
+    int regX,
+    int regZ,
+    int blockX,
+    int blockZ,
+    int64_t maxDistanceSquared,
+    int64_t *bestDistanceSquared,
+    Pos *best,
+    int *found
+) {
+    Pos pos;
+    if (!getStructurePos(structType, ctx->mc, ctx->g.seed, regX, regZ, &pos)
+        || !cfxIsViableStructure(ctx, structType, pos.x, pos.z)) {
+        return;
+    }
+    const int64_t dx = (int64_t) pos.x - blockX;
+    const int64_t dz = (int64_t) pos.z - blockZ;
+    const int64_t distanceSquared = dx * dx + dz * dz;
+    if (distanceSquared <= maxDistanceSquared
+        && (!*found || distanceSquared < *bestDistanceSquared)) {
+        *bestDistanceSquared = distanceSquared;
+        *best = pos;
+        *found = 1;
+    }
+}
+
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxNearestStructure(
+    JNIEnv *env, jclass clazz, jlong handle, jint structType, jint blockX, jint blockZ,
+    jint maxRadius, jlongArray out
+) {
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL) {
+        return CFX_ERR_BAD_HANDLE;
+    }
+    if (structType < 0 || structType >= FEATURE_NUM || maxRadius <= 0
+        || (*env)->GetArrayLength(env, out) < 1) {
+        return CFX_ERR_BAD_ARGS;
+    }
+
+    const int64_t maxDistanceSquared = (int64_t) maxRadius * maxRadius;
+    int64_t bestDistanceSquared = 0;
+    Pos best = {0, 0};
+    int found = 0;
+
+    if (structType == Stronghold) {
+        if (ctx->dim != DIM_OVERWORLD) {
+            return 0;
+        }
+        StrongholdIter iterator;
+        initFirstStronghold(&iterator, ctx->mc, ctx->g.seed);
+        int remaining;
+        do {
+            remaining = nextStronghold(&iterator, &ctx->g);
+            const int64_t dx = (int64_t) iterator.pos.x - blockX;
+            const int64_t dz = (int64_t) iterator.pos.z - blockZ;
+            const int64_t distanceSquared = dx * dx + dz * dz;
+            if (distanceSquared <= maxDistanceSquared
+                && (!found || distanceSquared < bestDistanceSquared)) {
+                bestDistanceSquared = distanceSquared;
+                best = iterator.pos;
+                found = 1;
+            }
+        } while (remaining > 0);
+    } else {
+        StructureConfig config;
+        if (!getStructureConfig(structType, ctx->mc, &config) || config.regionSize <= 0) {
+            return 0;
+        }
+        const int regionBlocks = config.regionSize << 4;
+        const int centerRegX = floordiv(blockX, regionBlocks);
+        const int centerRegZ = floordiv(blockZ, regionBlocks);
+        const int maxRing = maxRadius / regionBlocks + 2;
+        for (int ring = 0; ring <= maxRing; ring++) {
+            if (ring == 0) {
+                cfxTryNearestStructure(
+                    ctx, structType, centerRegX, centerRegZ, blockX, blockZ,
+                    maxDistanceSquared, &bestDistanceSquared, &best, &found
+                );
+            } else {
+                for (int offset = -ring; offset <= ring; offset++) {
+                    cfxTryNearestStructure(
+                        ctx, structType, centerRegX + offset, centerRegZ - ring, blockX, blockZ,
+                        maxDistanceSquared, &bestDistanceSquared, &best, &found
+                    );
+                    cfxTryNearestStructure(
+                        ctx, structType, centerRegX + offset, centerRegZ + ring, blockX, blockZ,
+                        maxDistanceSquared, &bestDistanceSquared, &best, &found
+                    );
+                }
+                for (int offset = -ring + 1; offset < ring; offset++) {
+                    cfxTryNearestStructure(
+                        ctx, structType, centerRegX - ring, centerRegZ + offset, blockX, blockZ,
+                        maxDistanceSquared, &bestDistanceSquared, &best, &found
+                    );
+                    cfxTryNearestStructure(
+                        ctx, structType, centerRegX + ring, centerRegZ + offset, blockX, blockZ,
+                        maxDistanceSquared, &bestDistanceSquared, &best, &found
+                    );
+                }
+            }
+            const int64_t unscannedDistance = (int64_t) ring * regionBlocks;
+            if (found && unscannedDistance * unscannedDistance > bestDistanceSquared) {
+                break;
+            }
+        }
+    }
+
+    if (!found) {
+        return 0;
+    }
+    const jlong packed = ((jlong) best.x << 32) | ((jlong) best.z & 0xffffffffL);
+    (*env)->SetLongArrayRegion(env, out, 0, 1, &packed);
+    return 1;
+}
+
 JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxStructureViable(
     JNIEnv *env, jclass clazz, jlong handle, jint structType, jint blockX, jint blockZ
 ) {
@@ -1099,5 +1321,5 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     if (structType < 0 || structType >= FEATURE_NUM) {
         return 0;
     }
-    return isViableStructurePos(structType, &ctx->g, blockX, blockZ, 0) != 0 ? 1 : 0;
+    return cfxIsViableStructure(ctx, structType, blockX, blockZ) != 0 ? 1 : 0;
 }
