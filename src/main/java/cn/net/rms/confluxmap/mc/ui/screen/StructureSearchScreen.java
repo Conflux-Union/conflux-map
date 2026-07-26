@@ -1,10 +1,14 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
+import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
+import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
 import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.mc.ui.StructureIconCatalog;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
@@ -21,31 +25,46 @@ import net.minecraft.text.Text;
 final class StructureSearchScreen extends ConfluxScreen {
     private static final int FIELD_WIDTH = 240;
     private static final int FIELD_HEIGHT = 20;
-    private static final int LIST_TOP = 72;
-    private static final int ROW_HEIGHT = 22;
+    private static final int MASTER_TOP = 62;
+    private static final int LIST_TOP = 100;
+    private static final int ROW_HEIGHT = 24;
+    private static final int ICON_SIZE = 16;
+    private static final int TOGGLE_WIDTH = 58;
+    private static final int LOCATE_WIDTH = 62;
+    private static final int BUTTON_GAP = 3;
     private static final int SEARCH_RADIUS = 100_000;
 
     private final FullscreenMapScreen parent;
     private final StructureMarkerService structures;
+    private final DimensionId dimension;
+    private final ConfluxConfig config;
     private final List<StructureIndex.StructureType> available;
-    private final Map<StructureIndex.StructureType, ButtonWidget> typeButtons =
+    private final Map<StructureIndex.StructureType, ButtonWidget> visibilityButtons =
+        new EnumMap<>(StructureIndex.StructureType.class);
+    private final Map<StructureIndex.StructureType, ButtonWidget> locateButtons =
         new EnumMap<>(StructureIndex.StructureType.class);
 
     private TextFieldWidget searchField;
+    private ButtonWidget masterButton;
     private String observedQuery = "";
     private int scrollOffset;
     private int filteredCount;
+    private int rowX;
+    private int rowWidth;
     private String statusKey;
     private Object[] statusArgs = new Object[0];
 
     StructureSearchScreen(
         final FullscreenMapScreen parent,
         final StructureMarkerService structures,
+        final DimensionId dimension,
         final List<StructureIndex.StructureType> available
     ) {
         super(Texts.translatable("confluxmap.screen.structure_search.title"));
         this.parent = parent;
         this.structures = structures;
+        this.dimension = dimension;
+        this.config = ConfluxMapClient.get().config();
         this.available = new ArrayList<>(available);
         this.available.sort(Comparator.comparing(StructureSearchScreen::localizedName));
     }
@@ -57,7 +76,8 @@ final class StructureSearchScreen extends ConfluxScreen {
 
     @Override
     protected void init() {
-        typeButtons.clear();
+        visibilityButtons.clear();
+        locateButtons.clear();
         final int fieldWidth = Math.min(FIELD_WIDTH, Math.max(100, width - 32));
         searchField = new TextFieldWidget(
             this.textRenderer,
@@ -72,17 +92,37 @@ final class StructureSearchScreen extends ConfluxScreen {
         addDrawableChild(searchField);
         setInitialFocus(searchField);
 
-        final int buttonWidth = Math.min(280, Math.max(120, width - 32));
+        final int masterWidth = Math.min(240, Math.max(140, width - 32));
+        masterButton = addDrawableChild(Widgets.button(
+            width / 2 - masterWidth / 2,
+            MASTER_TOP,
+            masterWidth,
+            20,
+            masterLabel(),
+            ignored -> toggleMasterVisibility()
+        ));
+
+        rowWidth = Math.min(420, Math.max(180, width - 24));
+        rowX = width / 2 - rowWidth / 2;
         for (final StructureIndex.StructureType type : available) {
-            final ButtonWidget button = addDrawableChild(Widgets.button(
-                width / 2 - buttonWidth / 2,
+            final ButtonWidget visibility = addDrawableChild(Widgets.button(
+                rowX + rowWidth - LOCATE_WIDTH - BUTTON_GAP - TOGGLE_WIDTH,
                 LIST_TOP,
-                buttonWidth,
+                TOGGLE_WIDTH,
                 20,
-                Texts.translatable(type.translationKey()),
+                visibilityLabel(type),
+                ignored -> toggleTypeVisibility(type)
+            ));
+            visibilityButtons.put(type, visibility);
+            final ButtonWidget locate = addDrawableChild(Widgets.button(
+                rowX + rowWidth - LOCATE_WIDTH,
+                LIST_TOP,
+                LOCATE_WIDTH,
+                20,
+                Texts.translatable("confluxmap.screen.structure_search.locate"),
                 ignored -> locate(type)
             ));
-            typeButtons.put(type, button);
+            locateButtons.put(type, locate);
         }
         addDrawableChild(Widgets.button(
             width / 2 - 50,
@@ -127,8 +167,45 @@ final class StructureSearchScreen extends ConfluxScreen {
         }
     }
 
+    private void toggleMasterVisibility() {
+        config.predictionShowStructures = !config.predictionShowStructures;
+        masterButton.setMessage(masterLabel());
+        saveConfig();
+    }
+
+    private void toggleTypeVisibility(final StructureIndex.StructureType type) {
+        final boolean visible = isVisible(type);
+        config.predictionStructureVisibility.setVisible(
+            structures.mcVersion(), dimension, type, !visible
+        );
+        visibilityButtons.get(type).setMessage(visibilityLabel(type));
+        saveConfig();
+    }
+
+    private boolean isVisible(final StructureIndex.StructureType type) {
+        return config.predictionStructureVisibility.isVisible(
+            structures.mcVersion(), dimension, type
+        );
+    }
+
+    private Text masterLabel() {
+        return Texts.translatable(
+            "confluxmap.screen.structure_search.master",
+            Texts.translatable(config.predictionShowStructures ? "confluxmap.value.on" : "confluxmap.value.off")
+                .getString()
+        );
+    }
+
+    private Text visibilityLabel(final StructureIndex.StructureType type) {
+        return Texts.translatable(isVisible(type) ? "confluxmap.value.on" : "confluxmap.value.off");
+    }
+
+    private void saveConfig() {
+        ConfluxMapClient.get().configIo().save(config);
+    }
+
     private void updateRows() {
-        if (typeButtons.isEmpty()) {
+        if (visibilityButtons.isEmpty()) {
             filteredCount = 0;
             return;
         }
@@ -136,14 +213,22 @@ final class StructureSearchScreen extends ConfluxScreen {
         filteredCount = filtered.size();
         final int visibleRows = visibleRows();
         scrollOffset = Math.max(0, Math.min(scrollOffset, Math.max(0, filtered.size() - visibleRows)));
-        for (final ButtonWidget button : typeButtons.values()) {
+        for (final ButtonWidget button : visibilityButtons.values()) {
+            button.visible = false;
+        }
+        for (final ButtonWidget button : locateButtons.values()) {
             button.visible = false;
         }
         final int end = Math.min(filtered.size(), scrollOffset + visibleRows);
         for (int index = scrollOffset; index < end; index++) {
-            final ButtonWidget button = typeButtons.get(filtered.get(index));
-            Widgets.setY(button, LIST_TOP + (index - scrollOffset) * ROW_HEIGHT);
-            button.visible = true;
+            final StructureIndex.StructureType type = filtered.get(index);
+            final int y = LIST_TOP + (index - scrollOffset) * ROW_HEIGHT;
+            final ButtonWidget visibility = visibilityButtons.get(type);
+            final ButtonWidget locate = locateButtons.get(type);
+            Widgets.setY(visibility, y);
+            Widgets.setY(locate, y);
+            visibility.visible = true;
+            locate.visible = true;
         }
     }
 
@@ -206,9 +291,28 @@ final class StructureSearchScreen extends ConfluxScreen {
             this.textRenderer,
             prompt,
             width / 2f - this.textRenderer.getWidth(prompt) / 2f,
-            61,
+            87,
             0xFFBBBBBB
         );
+        final List<StructureIndex.StructureType> filtered = filteredTypes();
+        final int end = Math.min(filtered.size(), scrollOffset + visibleRows());
+        for (int index = scrollOffset; index < end; index++) {
+            final StructureIndex.StructureType type = filtered.get(index);
+            final int rowY = LIST_TOP + (index - scrollOffset) * ROW_HEIGHT;
+            StructureIconCatalog.draw(draw, type, rowX, rowY + 2, ICON_SIZE, 0xFFFFFFFF);
+            final int labelWidth = Math.max(
+                8,
+                rowWidth - ICON_SIZE - TOGGLE_WIDTH - LOCATE_WIDTH - BUTTON_GAP * 3
+            );
+            final String name = this.textRenderer.trimToWidth(localizedName(type), labelWidth);
+            draw.drawTextWithShadow(
+                this.textRenderer,
+                name,
+                rowX + ICON_SIZE + BUTTON_GAP,
+                rowY + 6,
+                isVisible(type) ? 0xFFFFFFFF : 0xFF888888
+            );
+        }
         if (filteredCount == 0) {
             final String empty = Texts.translatable("confluxmap.screen.structure_search.empty").getString();
             draw.drawTextWithShadow(

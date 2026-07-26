@@ -1103,7 +1103,16 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final int minZ = (int) Math.floor(centerZ - height / 2.0 * scale);
         final int maxZ = (int) Math.ceil(centerZ + height / 2.0 * scale);
         final double pxPerBlock = 1.0 / scale;
-        final List<StructureIndex.Marker> markers = structureMarkers.query(minX, maxX, minZ, maxZ, scale);
+        final DimensionId dimension = gameBridge.session().dimension();
+        final java.util.EnumSet<StructureIndex.StructureType> visibleTypes =
+            config.predictionStructureVisibility.visibleTypes(
+                predictionState.mcVersion(),
+                dimension,
+                structureMarkers.availableTypes(dimension)
+            );
+        final List<StructureIndex.Marker> markers = structureMarkers.query(
+            minX, maxX, minZ, maxZ, scale, visibleTypes
+        );
         markers.sort(java.util.Comparator.comparingLong(marker -> {
             final long dx = marker.blockX() - (long) centerX;
             final long dz = marker.blockZ() - (long) centerZ;
@@ -1127,7 +1136,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 continue;
             }
             final boolean hovered = marker.equals(hoveredStructure);
-            StructureMarkerRenderer.draw(draw, this.textRenderer, marker, screenX, screenY, hovered);
+            StructureMarkerRenderer.draw(draw, marker, screenX, screenY, hovered);
             if (hovered) {
                 draw.drawTextWithShadow(
                     this.textRenderer,
@@ -1523,6 +1532,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         MinecraftClient.getInstance().setScreen(new StructureSearchScreen(
             this,
             structureMarkers,
+            dimension,
             new ArrayList<>(structureMarkers.availableTypes(dimension))
         ));
     }

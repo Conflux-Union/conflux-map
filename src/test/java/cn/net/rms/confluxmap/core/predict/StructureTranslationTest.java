@@ -36,6 +36,8 @@ class StructureTranslationTest {
             "confluxmap.screen.structure_search.title",
             "confluxmap.screen.structure_search.field",
             "confluxmap.screen.structure_search.prompt",
+            "confluxmap.screen.structure_search.master",
+            "confluxmap.screen.structure_search.locate",
             "confluxmap.screen.structure_search.back",
             "confluxmap.screen.structure_search.empty",
             "confluxmap.screen.structure_search.not_found"

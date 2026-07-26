@@ -1,41 +1,41 @@
 package cn.net.rms.confluxmap.mc.ui;
 
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.util.math.MatrixStack;
 
-/** Compact diamond + badge renderer for seed structure candidates. */
+/** Vanilla-texture structure icon with state-specific framing. */
 public final class StructureMarkerRenderer {
+    static final int CANDIDATE_BORDER = 0xB34FA3FF;
+    static final int VERIFIED_BORDER = 0xFF55D6A5;
+
     private StructureMarkerRenderer() {
     }
 
     public static void draw(
         final GuiDraw draw,
-        final TextRenderer textRenderer,
         final StructureIndex.Marker marker,
         final float x,
         final float y,
         final boolean hovered
     ) {
-        final MatrixStack matrices = draw.matrices();
-        final int alpha = marker.state() == StructureIndex.State.VERIFIED ? 0xFF : 0x8C;
-        final int color = marker.state() == StructureIndex.State.VERIFIED ? 0xFF55D6A5 : 0xFF4FA3FF;
-        final int outer = (alpha << 24) | 0x00101010;
-        final int fill = (alpha << 24) | (color & 0x00FFFFFF);
-        final float size = hovered ? 8f : 7f;
-        RenderUtil.fillTriangle(matrices, x, y - size, x - size, y, x + size, y, outer);
-        RenderUtil.fillTriangle(matrices, x, y + size, x - size, y, x + size, y, outer);
-        final float inner = size - 1.5f;
-        RenderUtil.fillTriangle(matrices, x, y - inner, x - inner, y, x + inner, y, fill);
-        RenderUtil.fillTriangle(matrices, x, y + inner, x - inner, y, x + inner, y, fill);
-        final String badge = marker.type().badge();
-        draw.drawTextWithShadow(
-            textRenderer,
-            badge,
-            x - textRenderer.getWidth(badge) / 2f,
-            y - textRenderer.fontHeight / 2f,
-            0xFFFFFFFF
+        final int size = hovered ? 20 : 18;
+        final int left = Math.round(x - size / 2f);
+        final int top = Math.round(y - size / 2f);
+        final int border = borderColor(marker.state());
+        draw.fill(left, top, left + size, top + size, 0xE0101010);
+        draw.fill(left + 1, top + 1, left + size - 1, top + size - 1, border);
+        draw.fill(left + 3, top + 3, left + size - 3, top + size - 3, 0xE0101010);
+        final int iconSize = size - 6;
+        StructureIconCatalog.draw(
+            draw,
+            marker.type(),
+            left + 3,
+            top + 3,
+            iconSize,
+            marker.state() == StructureIndex.State.VERIFIED ? 0xFFFFFFFF : 0xD9FFFFFF
         );
+    }
+
+    static int borderColor(final StructureIndex.State state) {
+        return state == StructureIndex.State.VERIFIED ? VERIFIED_BORDER : CANDIDATE_BORDER;
     }
 }

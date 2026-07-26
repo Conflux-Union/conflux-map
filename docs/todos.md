@@ -134,23 +134,20 @@ Replace the in-tree modifier-key proposal with optional MaliLib integration.
 - Both backends must invoke the same action handlers so installing MaliLib does
   not change map behavior.
 
-### 8. Structure icon layer and per-type filters
+### 8. Structure icon layer and per-type filters — completed
 
-Complete the existing structure-marker foundation as a seed-calculator-style
-map layer.
+Completed on 2026-07-27 as a seed-calculator-style map layer built on the
+existing structure-marker foundation.
 
-The current implementation already has built-in cubiomes candidate lookup,
-persistent candidate state, a global `predictionShowStructures` toggle, and
-diamond markers with text badges. The remaining work is:
+The completed implementation has built-in cubiomes candidate lookup,
+persistent candidate state, a master `predictionShowStructures` toggle, and:
 
-- Replace or supplement generic badges with recognizable icons for each vanilla
-  structure type.
-- Add per-structure-type or clearly defined category toggles while retaining a
-  master visibility switch.
-- Make filter choices persistent and dimension/version aware so unavailable
-  structure types are not offered.
-- Preserve the distinction between predicted candidates and server-verified
-  structures in both icon styling and tooltips.
+- Recognizable per-type icons backed by Minecraft's runtime item and block
+  textures, without copied assets or an external icon dependency.
+- Per-structure-type visibility controls alongside the master switch.
+- Persistent filter profiles scoped by Minecraft version and dimension; the UI
+  only offers structures available in the active profile.
+- Distinct candidate and server-verified icon frames and tooltips.
 
 Use the mod's existing internal cubiomes/companion data path. Seed-calculator
 software is only a visual reference, not a runtime dependency or external data

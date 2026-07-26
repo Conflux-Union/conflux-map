@@ -95,6 +95,8 @@ public final class ConfluxConfig {
     /** View filter for the predicted plane; EVERYWHERE is the honest default. */
     public PredictionViewMode predictionViewMode = PredictionViewMode.EVERYWHERE;
     public boolean predictionShowStructures = true;
+    /** Per-version and per-dimension structure-type visibility profiles. */
+    public StructureVisibilityConfig predictionStructureVisibility = new StructureVisibilityConfig();
     /** Pan-settle debounce, clamped to 100..2000 ms. */
     public int predictionDebounceMs = 300;
 
@@ -140,6 +142,9 @@ public final class ConfluxConfig {
         c.predictionNetworkSync = predictionNetworkSync;
         c.predictionViewMode = predictionViewMode;
         c.predictionShowStructures = predictionShowStructures;
+        c.predictionStructureVisibility = predictionStructureVisibility == null
+            ? new StructureVisibilityConfig()
+            : predictionStructureVisibility.copy();
         c.predictionDebounceMs = predictionDebounceMs;
         c.updateCheckEnabled = updateCheckEnabled;
         return c;
@@ -167,6 +172,11 @@ public final class ConfluxConfig {
         deathPointsKept = clamp(deathPointsKept, 0, 50);
         if (predictionViewMode == null) {
             predictionViewMode = PredictionViewMode.EVERYWHERE;
+        }
+        if (predictionStructureVisibility == null) {
+            predictionStructureVisibility = new StructureVisibilityConfig();
+        } else {
+            predictionStructureVisibility.normalize();
         }
         predictionDebounceMs = clamp(predictionDebounceMs, 100, 2000);
     }

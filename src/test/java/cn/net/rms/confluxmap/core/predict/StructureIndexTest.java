@@ -131,6 +131,38 @@ class StructureIndexTest {
     }
 
     @Test
+    void queryDoesNotLoadOrReturnHiddenStructureTypes() {
+        final List<StructureIndex.StructureType> requests = new ArrayList<>();
+        final StructureIndex index = new StructureIndex(
+            tempDir.resolve("cache"),
+            WorldIdentity.singleplayer("filtered-world"),
+            DimensionId.OVERWORLD,
+            (type, regionX, regionZ) -> {
+                requests.add(type);
+                if (type == StructureIndex.StructureType.VILLAGE) {
+                    return new long[] {pack(32, 48)};
+                }
+                if (type == StructureIndex.StructureType.STRONGHOLD) {
+                    return new long[] {pack(96, 112)};
+                }
+                return new long[0];
+            }
+        );
+
+        final List<StructureIndex.Marker> markers = index.query(
+            0,
+            128,
+            0,
+            128,
+            EnumSet.of(StructureIndex.StructureType.VILLAGE)
+        );
+
+        assertEquals(List.of(StructureIndex.StructureType.VILLAGE), requests);
+        assertEquals(1, markers.size());
+        assertEquals(StructureIndex.StructureType.VILLAGE, markers.get(0).type());
+    }
+
+    @Test
     void persistentIdentityMigratesDirectoryBasedStructureIndex() throws IOException {
         final Path saveRoot = tempDir.resolve("saves").resolve("New World");
         Files.createDirectories(saveRoot);

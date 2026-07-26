@@ -14,6 +14,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.Set;
 
 /**
  * Owns structure-marker session state, native candidate lookup, and persistence. UI code only
@@ -96,19 +97,43 @@ public final class StructureMarkerService {
         final int maxBlockZ,
         final double blocksPerPixel
     ) {
-        if (current == null) {
+        return currentDimension == null
+            ? List.of()
+            : query(
+                minBlockX,
+                maxBlockX,
+                minBlockZ,
+                maxBlockZ,
+                blocksPerPixel,
+                availableTypes(currentDimension)
+            );
+    }
+
+    public synchronized List<StructureIndex.Marker> query(
+        final int minBlockX,
+        final int maxBlockX,
+        final int minBlockZ,
+        final int maxBlockZ,
+        final double blocksPerPixel,
+        final Set<StructureIndex.StructureType> includedTypes
+    ) {
+        if (current == null || currentDimension == null || includedTypes.isEmpty()) {
             return List.of();
         }
-        if (currentDimension == null) {
-            return List.of();
-        }
-        final EnumSet<StructureIndex.StructureType> visible = availableTypes(currentDimension);
+        final EnumSet<StructureIndex.StructureType> visible =
+            EnumSet.noneOf(StructureIndex.StructureType.class);
+        visible.addAll(includedTypes);
+        visible.retainAll(availableTypes(currentDimension));
         visible.removeIf(type -> !type.displaysAt(blocksPerPixel));
         return current.query(minBlockX, maxBlockX, minBlockZ, maxBlockZ, visible);
     }
 
     public synchronized EnumSet<StructureIndex.StructureType> availableTypes(final DimensionId dimension) {
         return StructureIndex.StructureType.availableIn(prediction.mcVersion(), dimension);
+    }
+
+    public int mcVersion() {
+        return prediction.mcVersion();
     }
 
     public synchronized Optional<StructureIndex.Marker> findNearest(
