@@ -6,7 +6,7 @@ tracking on 2026-07-27.
 
 ## Feature proposals
 
-### 1. Server chunk-load-state overlay
+### 1. Server chunk-load-state overlay - completed
 
 Add a fullscreen-map display mode that shows which chunks the server currently
 keeps loaded. This combines the multiplayer loading-range, chunk-ticket-level,
@@ -33,7 +33,7 @@ The existing companion handshake and hostile-input-safe protocol are the
 boundary for this feature. Updates must be bounded and incremental rather than
 re-sending an unbounded server-wide chunk set every frame.
 
-### 2. Drawing and annotation tools
+### 2. Drawing and annotation tools - completed
 
 Add a purely client-side annotation layer edited from the fullscreen map.
 
