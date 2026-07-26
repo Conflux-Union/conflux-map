@@ -34,7 +34,7 @@
 #include "finders.h"
 #include "terrain_features.h"
 
-#define CFX_ABI 7
+#define CFX_ABI 8
 
 #define CFX_OK              0
 #define CFX_ERR_BAD_HANDLE  1
@@ -1086,6 +1086,21 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     return found;
 }
 
+static int cfxIsViableStructure(
+    CfxContext *ctx,
+    int structType,
+    int blockX,
+    int blockZ
+) {
+    if (!isViableStructurePos(structType, &ctx->g, blockX, blockZ, 0)) {
+        return 0;
+    }
+    if (structType == End_City) {
+        return isViableEndCityTerrain(&ctx->g, &ctx->sn, blockX, blockZ);
+    }
+    return 1;
+}
+
 JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxViableStructures(
     JNIEnv *env, jclass clazz, jlong handle, jint structType, jint regX0, jint regZ0, jint regX1, jint regZ1,
     jlongArray out, jint cap
@@ -1126,7 +1141,7 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
         for (int regX = regX0; regX <= regX1 && found < effectiveCap; regX++) {
             Pos pos;
             if (getStructurePos(structType, ctx->mc, ctx->g.seed, regX, regZ, &pos)
-                && isViableStructurePos(structType, &ctx->g, pos.x, pos.z, 0)) {
+                && cfxIsViableStructure(ctx, structType, pos.x, pos.z)) {
                 packed[found] = ((jlong) pos.x << 32) | ((jlong) pos.z & 0xffffffffL);
                 found++;
             }
@@ -1190,7 +1205,7 @@ static void cfxTryNearestStructure(
 ) {
     Pos pos;
     if (!getStructurePos(structType, ctx->mc, ctx->g.seed, regX, regZ, &pos)
-        || !isViableStructurePos(structType, &ctx->g, pos.x, pos.z, 0)) {
+        || !cfxIsViableStructure(ctx, structType, pos.x, pos.z)) {
         return;
     }
     const int64_t dx = (int64_t) pos.x - blockX;
@@ -1306,5 +1321,5 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     if (structType < 0 || structType >= FEATURE_NUM) {
         return 0;
     }
-    return isViableStructurePos(structType, &ctx->g, blockX, blockZ, 0) != 0 ? 1 : 0;
+    return cfxIsViableStructure(ctx, structType, blockX, blockZ) != 0 ? 1 : 0;
 }

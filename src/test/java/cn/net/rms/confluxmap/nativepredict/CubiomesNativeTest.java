@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.nativepredict;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -36,6 +37,7 @@ class CubiomesNativeTest {
     private static final int END = 1;
     /** cubiomes {@code enum StructureType} ordinal for Village at this pinned commit. */
     private static final int VILLAGE = 5;
+    private static final int END_CITY = 20;
     private static final int STRONGHOLD = 25;
     private static final int NETHER_FOSSIL = 26;
     private static final int[] LEGACY_OVERWORLD_STRUCTURES = {
@@ -383,6 +385,68 @@ class CubiomesNativeTest {
                 (int) (nearest[0] >> 32),
                 (int) nearest[0]
             ));
+        }
+    }
+
+    @Test
+    void endCityViabilityIncludesTheDedicatedTerrainCheckAcrossWorldgenFamilies() {
+        assertEndCityTerrainRejected(mc17());
+        assertEndCityTerrainRejected(mc21());
+        assertEndCityTerrainRejected(mc261());
+    }
+
+    @Test
+    void nearestEndCityMatchesAnExhaustiveViableCandidateSearchAcrossWorldgenFamilies() {
+        assertNearestEndCityMatchesExhaustiveSearch(mc17());
+        assertNearestEndCityMatchesExhaustiveSearch(mc21());
+        assertNearestEndCityMatchesExhaustiveSearch(mc261());
+    }
+
+    private static void assertEndCityTerrainRejected(final int mc) {
+        // Vanilla's placement selects this seed=1 attempt and its biome is allowed, but the
+        // dedicated End City terrain-height check rejects it. It must never reach map markers or
+        // nearest-structure search as a generated structure.
+        final long seed = 1L;
+        final int blockX = -7_328;
+        final int blockZ = -7_600;
+        try (CubiomesContext end = CubiomesContext.create(mc, seed, END, 0)) {
+            assertNotNull(end);
+            assertFalse(end.structureViable(END_CITY, blockX, blockZ));
+
+            final long[] viable = new long[1];
+            assertEquals(0, end.viableStructures(END_CITY, -23, -24, -23, -24, viable));
+
+            final long[] nearest = new long[1];
+            assertFalse(end.nearestStructure(END_CITY, blockX, blockZ, 1, nearest));
+        }
+    }
+
+    private static void assertNearestEndCityMatchesExhaustiveSearch(final int mc) {
+        final int maxRadius = 10_000;
+        final int minRegion = Math.floorDiv(-maxRadius, 20 * 16);
+        final int maxRegion = Math.floorDiv(maxRadius, 20 * 16);
+        final int cells = (maxRegion - minRegion + 1) * (maxRegion - minRegion + 1);
+        try (CubiomesContext end = CubiomesContext.create(mc, 1L, END, 0)) {
+            assertNotNull(end);
+            final long[] viable = new long[cells];
+            final int count = end.viableStructures(
+                END_CITY, minRegion, minRegion, maxRegion, maxRegion, viable
+            );
+            long expected = 0L;
+            long expectedDistanceSquared = Long.MAX_VALUE;
+            for (int i = 0; i < count; i++) {
+                final long distanceSquared = distanceSquared(viable[i]);
+                if (distanceSquared <= (long) maxRadius * maxRadius
+                    && distanceSquared < expectedDistanceSquared) {
+                    expected = viable[i];
+                    expectedDistanceSquared = distanceSquared;
+                }
+            }
+            assertTrue(expectedDistanceSquared < Long.MAX_VALUE);
+
+            final long[] nearest = new long[1];
+            assertTrue(end.nearestStructure(END_CITY, 0, 0, maxRadius, nearest));
+            assertEquals(expected, nearest[0]);
         }
     }
 

@@ -18,7 +18,7 @@ for what it predicts; this file is only the build/maintenance side.
   `setupGenerator`/`applySeed`/`genBiomes`/`mapApproxHeight`/
   `mapOverworldSurfaceColumns`/`mapOverworldSurfaceBiome`/
   `mapEndSurfaceHeight`/`getChunkNaturalTreeCandidates`/`getStructurePos`/
-  `isViableStructurePos`/stronghold iteration are compiled
+  `isViableStructurePos`/`isViableEndCityTerrain`/stronghold iteration are compiled
   by `buildNativesHost`/`buildNativesAll` (`biomenoise`, `biomes`, `generator`,
   `layers`, `noise`, `finders`, `terrain_features`, `features/stronghold`,
   `util`, `rng.h`, `tables/`) - other upstream utilities this project never

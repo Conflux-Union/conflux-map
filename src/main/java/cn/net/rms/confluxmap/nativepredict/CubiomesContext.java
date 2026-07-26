@@ -211,7 +211,7 @@ public final class CubiomesContext implements AutoCloseable {
         return CubiomesNative.cfxNearestStructure(handle, structType, blockX, blockZ, maxRadius, out) == 1;
     }
 
-    /** Biome-only viability check for a structure attempt position (see {@link CubiomesNative#cfxStructureViable}). */
+    /** Generation viability check, including dedicated terrain checks where cubiomes provides one. */
     public boolean structureViable(final int structType, final int blockX, final int blockZ) {
         requireOpen();
         return CubiomesNative.cfxStructureViable(handle, structType, blockX, blockZ) != 0;

@@ -31,7 +31,7 @@ import org.apache.logging.log4j.Logger;
 public final class StructureIndex {
     private static final Logger LOGGER = LogManager.getLogger("ConfluxMap/StructureIndex");
     private static final int MC_1_17_1 = 21;
-    private static final String CACHE_PREFIX = "structures_v2_mc";
+    private static final String CACHE_PREFIX = "structures_v3_mc";
 
     public enum StructureType {
         DESERT_PYRAMID(1, "desert_pyramid", "DP", 32, 32, DimensionId.OVERWORLD, MC_1_17_1, 4.0),

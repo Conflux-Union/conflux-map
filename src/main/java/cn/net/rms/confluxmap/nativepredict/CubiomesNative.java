@@ -153,9 +153,9 @@ final class CubiomesNative {
     );
 
     /**
-     * Biome-only viability check for a structure-generation attempt at {@code (blockX, blockZ)}
-     * (as returned by {@link #cfxStructures}). Returns 0 or 1; never throws for a bad handle or
-     * unknown structure type (returns 0 instead).
+     * Generation viability check for a structure attempt at {@code (blockX, blockZ)} (as returned
+     * by {@link #cfxStructures}), including the dedicated End City terrain check. Returns 0 or 1;
+     * never throws for a bad handle or unknown structure type (returns 0 instead).
      */
     static native int cfxStructureViable(long handle, int structType, int blockX, int blockZ);
 }
