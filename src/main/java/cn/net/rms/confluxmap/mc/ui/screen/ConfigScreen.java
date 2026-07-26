@@ -207,6 +207,10 @@ public final class ConfigScreen extends ConfluxScreen {
                 y = addToggleRow(y, "confluxmap.config.minimap.show_coordinates", () -> config.showCoordinates, v -> config.showCoordinates = v);
                 y = addToggleRow(y, "confluxmap.config.minimap.show_biome", () -> config.showBiome, v -> config.showBiome = v);
                 y = addToggleRow(y, "confluxmap.config.fullmap.chunk_grid", () -> config.fullmapChunkGrid, v -> config.fullmapChunkGrid = v);
+                y = addToggleRow(
+                    y, "confluxmap.config.minimap.annotations",
+                    () -> config.annotationsOnHud, v -> config.annotationsOnHud = v
+                );
                 break;
             case LAYERS:
                 y = addEnumRow(

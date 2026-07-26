@@ -9,6 +9,9 @@ import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
  */
 public final class ConfluxConfig {
     public static final int SCHEMA_VERSION = 1;
+    public static final int MIN_ANNOTATION_ERASER_SIZE = 4;
+    public static final int MAX_ANNOTATION_ERASER_SIZE = 64;
+    public static final int DEFAULT_ANNOTATION_ERASER_SIZE = 16;
 
     public int schemaVersion = SCHEMA_VERSION;
 
@@ -34,6 +37,10 @@ public final class ConfluxConfig {
     public boolean showBiome = true;
     /** Fullscreen map only: subtle chunk-border grid with a highlight on the hovered chunk. */
     public boolean fullmapChunkGrid = true;
+    /** Copy the private annotation layer onto the minimap HUD. Fullscreen annotations remain visible. */
+    public boolean annotationsOnHud = true;
+    /** Fullscreen annotation eraser diameter in screen pixels. */
+    public int annotationEraserSize = DEFAULT_ANNOTATION_ERASER_SIZE;
 
     /** cave-nether-layers.md §1/§6: manual pin, or AUTO for the per-dimension automatic detection. */
     public LayerOverride layerOverride = LayerOverride.AUTO;
@@ -115,6 +122,8 @@ public final class ConfluxConfig {
         c.showCoordinates = showCoordinates;
         c.showBiome = showBiome;
         c.fullmapChunkGrid = fullmapChunkGrid;
+        c.annotationsOnHud = annotationsOnHud;
+        c.annotationEraserSize = annotationEraserSize;
         c.layerOverride = layerOverride;
         c.showLayerIndicator = showLayerIndicator;
         c.caveSliceY = caveSliceY;
@@ -163,6 +172,9 @@ public final class ConfluxConfig {
         }
         minimapSize = clamp(minimapSize, 64, 256);
         minimapZoomIndex = clamp(minimapZoomIndex, 0, 3);
+        annotationEraserSize = clamp(
+            annotationEraserSize, MIN_ANNOTATION_ERASER_SIZE, MAX_ANNOTATION_ERASER_SIZE
+        );
         caveSliceY = clamp(caveSliceY, 0, 255);
         netherSliceY = clamp(netherSliceY, 0, 127);
         snapshotBudgetPerTick = clamp(snapshotBudgetPerTick, 1, 64);

@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap;
 
 import cn.net.rms.confluxmap.bridge.GameBridge;
+import cn.net.rms.confluxmap.core.annotation.AnnotationService;
 import cn.net.rms.confluxmap.core.cache.RegionCacheService;
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
@@ -75,6 +76,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private FullscreenMapViewState fullscreenMapViewState;
     private LayerSelector layerSelector;
     private WaypointService waypointService;
+    private AnnotationService annotationService;
     private WaypointRenderCatalog waypointRenderCatalog;
     private DeathWatcher deathWatcher;
     private WaypointWorldRenderer waypointWorldRenderer;
@@ -161,11 +163,15 @@ public final class ConfluxMapClient implements ClientModInitializer {
             FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("waypoints"),
             executors, ConfluxMapMod.LOGGER
         );
+        annotationService = new AnnotationService(
+            FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("annotations"),
+            executors, ConfluxMapMod.LOGGER
+        );
         waypointRenderCatalog = new WaypointRenderCatalog(waypointService, sharedWaypoints::list, config);
         deathWatcher = new DeathWatcher(gameBridge, config, waypointService);
         minimapHudRenderer = new MinimapHudRenderer(
-            client, config, gameBridge, tileService, tileTextureManager, radarScanner, entityIconManager, layerSelector,
-            waypointRenderCatalog,
+            client, config, gameBridge, tileService, tileTextureManager, radarScanner, entityIconManager,
+            annotationService, layerSelector, waypointRenderCatalog,
             radarViewRange
         );
         waypointWorldRenderer = new WaypointWorldRenderer(client, config, gameBridge, waypointRenderCatalog);
@@ -179,6 +185,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(radarScanner::onSessionChanged);
         sessionTracker.addListener(fullscreenMapViewState::onSessionChanged);
         sessionTracker.addListener(waypointService::onSessionChanged);
+        sessionTracker.addListener(annotationService::onSessionChanged);
         sessionTracker.addListener(correctionStore::onSessionChanged);
         sessionTracker.addListener(session -> mapSyncClient.reset());
         sessionTracker.addListener(predictionBootstrap::onSessionChanged);
@@ -304,6 +311,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public WaypointService waypointService() {
         return waypointService;
+    }
+
+    public AnnotationService annotationService() {
+        return annotationService;
     }
 
     public WaypointRenderCatalog waypointRenderCatalog() {
