@@ -161,6 +161,21 @@ public final class WaypointChatCodec {
             + dimensionLabel + ")";
     }
 
+    /** Replaces the Conflux wire representation while retaining any visible sender prefix. */
+    public static String formatCompactMessage(
+        final String originalMessage,
+        final Candidate candidate,
+        final String dimensionLabel
+    ) {
+        Objects.requireNonNull(originalMessage, "originalMessage");
+        final String safeMessage = sanitizeText(originalMessage);
+        final int markerOffset = safeMessage.indexOf(MARKER);
+        if (markerOffset < 0 || !candidate.confluxFormat()) {
+            throw new IllegalArgumentException("Candidate is not from this Conflux Map message");
+        }
+        return safeMessage.substring(0, markerOffset) + formatCompactLabel(candidate, dimensionLabel);
+    }
+
     private static Optional<Candidate> parseConfluxMessage(final String message) {
         final Matcher messageMatcher = CONFLUX_MESSAGE_PATTERN.matcher(message);
         if (!messageMatcher.matches()) {

@@ -26,7 +26,7 @@ final class WaypointChatMessageRewriterTest {
         // Unit tests run before the mod language resources are installed, so translatable
         // components expose their keys here. The resource assertions below lock their real text.
         assertEquals(
-            "Home(-12.25,70,45.5,confluxmap.dimension.the_nether) "
+            "<Alice> Home(-12.25,70,45.5,confluxmap.dimension.the_nether) "
                 + "confluxmap.chat.waypoint.import",
             rewritten.getString()
         );

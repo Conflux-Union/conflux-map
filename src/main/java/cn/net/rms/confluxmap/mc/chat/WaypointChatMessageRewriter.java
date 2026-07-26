@@ -29,8 +29,8 @@ public final class WaypointChatMessageRewriter {
 
         final WaypointChatCodec.Candidate candidate = parsed.get();
         final MutableText visible = candidate.confluxFormat()
-            ? Texts.literal(WaypointChatCodec.formatCompactLabel(
-                candidate, dimensionLabel(candidate.dimensionId())
+            ? Texts.literal(WaypointChatCodec.formatCompactMessage(
+                visibleMessage, candidate, dimensionLabel(candidate.dimensionId())
             ))
             : Texts.literal("").append(original.shallowCopy());
         final MutableText importAction = Texts.translatable("confluxmap.chat.waypoint.import")
