@@ -72,6 +72,7 @@ class PredictionTileServiceTest {
             awaitIdle(predictionTiles, 10_000L);
 
             assertEquals(35, predictionTiles.predictedBiomeAt(DIM, 2, 0, 0).orElse(-1));
+            assertTrue(predictionTiles.predictedSurfaceYAt(DIM, 2, 0, 0).isPresent());
 
             final PatchCodec.Sample correction = new PatchCodec.Sample(
                 0, 4, 80, SurfaceKind.LAND.ordinal(), Proto.MAP_COLOR_NONE, 0
@@ -84,9 +85,11 @@ class PredictionTileServiceTest {
             ));
             awaitIdle(predictionTiles, 10_000L);
             assertEquals(4, predictionTiles.predictedBiomeAt(DIM, 2, 0, 0).orElse(-1));
+            assertEquals(80, predictionTiles.predictedSurfaceYAt(DIM, 2, 0, 0).orElseThrow());
 
             predictionTiles.setViewMode(PredictionViewMode.VISITED_ONLY);
             assertTrue(predictionTiles.predictedBiomeAt(DIM, 2, 0, 0).isEmpty());
+            assertTrue(predictionTiles.predictedSurfaceYAt(DIM, 2, 0, 0).isEmpty());
 
             predictionTiles.setViewMode(PredictionViewMode.EVERYWHERE);
             predictionTiles.clearViewport();
@@ -94,8 +97,10 @@ class PredictionTileServiceTest {
                 predictionTiles.predictedBiomeAt(DIM, 2, 0, 0).isEmpty(),
                 "a cleared metadata entry should be requeued instead of returning stale data"
             );
+            assertTrue(predictionTiles.predictedSurfaceYAt(DIM, 2, 0, 0).isEmpty());
             awaitIdle(predictionTiles, 10_000L);
             assertEquals(4, predictionTiles.predictedBiomeAt(DIM, 2, 0, 0).orElse(-1));
+            assertEquals(80, predictionTiles.predictedSurfaceYAt(DIM, 2, 0, 0).orElseThrow());
         } finally {
             executors.shutdown(2000);
         }
@@ -137,6 +142,7 @@ class PredictionTileServiceTest {
                 assertEquals(expected, pixel, "every flat baseline pixel must be the top block's shaded map color");
             }
             assertEquals(1, predictionTiles.predictedBiomeAt(DIM, 2, 0, 0).orElse(-1));
+            assertEquals(3, predictionTiles.predictedSurfaceYAt(DIM, 2, 0, 0).orElseThrow());
         } finally {
             executors.shutdown(2000);
         }

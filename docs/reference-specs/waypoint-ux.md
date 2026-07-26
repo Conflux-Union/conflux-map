@@ -585,6 +585,18 @@ never actually visited but that the persisted map has previously scanned
 produces a sensible ground-level Y, not just "the player's own current
 Y" or a hardcoded sea-level guess.
 
+**Ground teleporting is client-only and does not trust that display Y as
+the final collision height.** If the target chunk is already loaded, use
+its motion-blocking height directly. Otherwise, first teleport to the
+target X/Z above the cached or cubiomes-estimated terrain (or to the
+dimension top when no estimate exists), wait for the server to deliver
+that chunk to the normal client, then immediately issue the final
+teleport at the loaded chunk's motion-blocking height. A void column
+returns the player to the pre-teleport position. This keeps every map
+coordinate available without requiring a companion server, while player
+builds, trees, structures, transparent overlays, and prediction error are
+all accounted for by the final landing height.
+
 **Marker rendering at world-map zoom.** Icons render at a **fixed pixel
 size on screen regardless of the map's current zoom level** — zooming the
 fullscreen map in/out changes how much world-space each marker's position

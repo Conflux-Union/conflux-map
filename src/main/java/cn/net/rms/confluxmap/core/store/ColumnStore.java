@@ -2,7 +2,9 @@ package cn.net.rms.confluxmap.core.store;
 
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
 import cn.net.rms.confluxmap.core.model.SampleSource;
+import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.Collection;
+import java.util.OptionalInt;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -46,6 +48,18 @@ public final class ColumnStore {
 
     public int regionCount() {
         return regions.size();
+    }
+
+    /** Highest sampled surface block at one world column, or empty when that column is unknown. */
+    public OptionalInt surfaceYAt(final int blockX, final int blockZ) {
+        final RegionColumns region = region(TileMath.blockToTile(blockX), TileMath.blockToTile(blockZ));
+        if (region == null) {
+            return OptionalInt.empty();
+        }
+        final short surfaceY = region.surfaceYAt(
+            TileMath.blockInTile(blockX), TileMath.blockInTile(blockZ)
+        );
+        return surfaceY == ChunkSnapshot.NO_SURFACE ? OptionalInt.empty() : OptionalInt.of(surfaceY);
     }
 
     /**

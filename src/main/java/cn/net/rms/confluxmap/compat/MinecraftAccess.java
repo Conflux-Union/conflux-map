@@ -37,6 +37,32 @@ public final class MinecraftAccess {
         //#endif
     }
 
+    /** Whether the server exposed at least one named command to this player's command tree. */
+    public static boolean canSendCommand(final MinecraftClient client, final String... commandNames) {
+        if (client.player == null || client.getNetworkHandler() == null) {
+            return false;
+        }
+        for (final String commandName : commandNames) {
+            if (client.getNetworkHandler().getCommandDispatcher().getRoot().getChild(commandName) != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Sends one command without the leading slash through the version-appropriate chat path. */
+    public static void sendCommand(final MinecraftClient client, final String command) {
+        //#if MC>=12100
+        //$$ if (client.getNetworkHandler() != null) {
+        //$$     client.getNetworkHandler().sendChatCommand(command);
+        //$$ }
+        //#else
+        if (client.player != null) {
+            client.player.sendChatMessage("/" + command);
+        }
+        //#endif
+    }
+
     public static String playerName(final ServerPlayerEntity player) {
         //#if MC>=12100
         //$$ return player.getName().getString();
