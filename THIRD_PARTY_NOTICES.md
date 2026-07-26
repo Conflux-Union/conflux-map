@@ -15,7 +15,7 @@ Fetched by Gradle during the build; neither is bundled inside the output jar.
 | Component | License | Role |
 |---|---|---|
 | [Fabric API](https://github.com/FabricMC/fabric-api) | Apache-2.0 | A separate Fabric Loader mod this project depends on (`modImplementation`), for render / tick / keybind / resource-reload hooks. End users must install it alongside this mod; it ships as its own jar. |
-| [preprocessor](https://github.com/Fallen-Breath/preprocessor) (Fallen_Breath's fork of [ReplayMod/preprocessor](https://github.com/ReplayMod/preprocessor)) | GPL-3.0 | Gradle plugin (`com.replaymod.preprocess`) that manages the multi-version source layout under `versions/`. Contributes no runtime classes; this repo started from its example-mod template, since fully replaced. |
+| [preprocessor](https://github.com/ReplayMod/preprocessor) | GPL-3.0 | Gradle plugin (`com.replaymod.preprocess`) that manages the multi-version source layout under `versions/`. Contributes no runtime classes; this repo started from the example-mod template of [Fallen_Breath's fork](https://github.com/Fallen-Breath/preprocessor), since fully replaced, and `settings.gradle` now resolves the plugin from upstream because the fork rejects the unobfuscated 26.1 version node. |
 
 ## Native code
 
@@ -26,7 +26,7 @@ at `native/jni/`. Both build the optional seed-prediction library under
 
 | Component | License | Role |
 |---|---|---|
-| [cubiomes](https://github.com/Cubitect/cubiomes) by Cubitect | MIT | Git submodule at `native/cubiomes/` pointing to this project's fork [`Conflux-Union/cubiomes`](https://github.com/Conflux-Union/cubiomes), pinned to commit `32a7299`. Compiled with this project's own `native/shim/confluxnative.c` into `native/prebuilt/<target>/`, which **is committed and bundled inside the jar** so the mod ships a working predictor without requiring a C toolchain. Loaded at runtime by `cn.net.rms.confluxmap.nativepredict.NativeLib`. |
+| [cubiomes](https://github.com/Cubitect/cubiomes) by Cubitect | MIT | Git submodule at `native/cubiomes/` pointing to this project's fork [`Conflux-Union/cubiomes`](https://github.com/Conflux-Union/cubiomes), pinned to commit `408c419`. Compiled with this project's own `native/shim/confluxnative.c` into `native/prebuilt/<target>/`, which **is committed and bundled inside the jar** so the mod ships a working predictor without requiring a C toolchain. Loaded at runtime by `cn.net.rms.confluxmap.nativepredict.NativeLib`. |
 | OpenJDK JNI headers (`jni.h`, `jni_md.h`) from a local Eclipse Temurin 21 JDK | GPL-2.0 WITH Classpath-exception-2.0 | Vendored at `native/jni/` so the shim can compile against the JNI ABI. Build-time only; not bundled in the jar. |
 
 ## Bundled assets
