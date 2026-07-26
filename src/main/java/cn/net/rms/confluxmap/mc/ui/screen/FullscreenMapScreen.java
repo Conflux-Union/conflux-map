@@ -12,6 +12,7 @@ import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.loadstate.ChunkLoadDetailMode;
 import cn.net.rms.confluxmap.core.loadstate.ChunkLoadOverlayStyle;
+import cn.net.rms.confluxmap.core.loadstate.ChunkScreenRect;
 import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
@@ -133,11 +134,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final int SYNC_FAILED_TEXT_COLOR = 0xFFFF7777;
     private static final int UPDATE_TEXT_COLOR = 0xFFFFE066;
     private static final int BACKGROUND_COLOR = 0xFF101018;
-    private static final int LOAD_STATE_ENTITY_COLOR = 0xCC48B85E;
-    private static final int LOAD_STATE_BLOCK_COLOR = 0xCCD8A83E;
-    private static final int LOAD_STATE_BORDER_COLOR = 0xCC4E78C4;
-    private static final int LOAD_STATE_UNLOADED_COLOR = BACKGROUND_COLOR;
-    private static final int LOAD_STATE_OUTLINE_COLOR = 0xCC101018;
+    private static final int LOAD_STATE_ENTITY_COLOR = 0x7048B85E;
+    private static final int LOAD_STATE_BLOCK_COLOR = 0x70D8A83E;
+    private static final int LOAD_STATE_BORDER_COLOR = 0x704E78C4;
+    private static final int LOAD_STATE_UNLOADED_COLOR = 0x00000000;
+    private static final int LOAD_STATE_OUTLINE_COLOR = 0xA0101018;
     private static final int LOAD_STATE_LEGEND_BACKGROUND = 0xD0181822;
     private static final int LOCATION_MENU_BACKGROUND = 0xF0181822;
     private static final int LOCATION_MENU_BORDER = 0xFF9A9AA8;
@@ -337,9 +338,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                     : FullscreenDisplayMode.CHUNK_LOAD_STATE;
                 if (!loadStateMode()) {
                     chunkLoadStates.deactivate();
-                } else {
-                    tiles.clearViewport();
-                    predictionTiles.clearViewport();
                 }
                 ConfluxMapClient.get().configIo().save(config);
                 rebuildWaypointControls();
@@ -770,28 +768,23 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         radarViewRange.set(Math.hypot(width, height) / 2.0 * scale);
 
         RenderUtil.fillRect(matrices, 0, 0, width, height, BACKGROUND_COLOR);
+        drawGrid(matrices);
+        drawTiles(matrices);
         if (loadStateMode()) {
-            hoveredStructure = null;
-            tiles.clearViewport();
-            predictionTiles.clearViewport();
-            drawChunkLoadStates(draw);
-        } else {
-            drawGrid(matrices);
-            drawTiles(matrices);
-            drawChunkGrid(matrices, mouseX, mouseY);
-            drawStructures(draw, mouseX, mouseY);
-            drawRadar(draw, tickDelta);
+            drawChunkLoadStateOverlay(draw);
         }
+        drawChunkGrid(matrices, mouseX, mouseY);
+        drawStructures(draw, mouseX, mouseY);
+        drawRadar(draw, tickDelta);
 
         drawWaypoints(draw, mouseX, mouseY);
         drawPlayerMarker(matrices, tickDelta);
         drawDimensionLabel(draw);
+        drawLayerLabel(draw);
+        drawPredictionLabel(draw);
+        drawServerSyncLabel(draw);
         if (loadStateMode()) {
             drawChunkLoadStateLegend(draw);
-        } else {
-            drawLayerLabel(draw);
-            drawPredictionLabel(draw);
-            drawServerSyncLabel(draw);
         }
         drawScaleLabel(draw);
         drawCursorCoords(draw, mouseX, mouseY);
@@ -824,7 +817,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         );
     }
 
-    private void drawChunkLoadStates(final GuiDraw draw) {
+    private void drawChunkLoadStateOverlay(final GuiDraw draw) {
         final MatrixStack matrices = draw.matrices();
         final int minChunkX = TileMath.blockToChunk(
             (int) Math.floor(centerX - width / 2.0 * scale)
@@ -842,8 +835,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             gameBridge.session().dimension(), minChunkX, maxChunkX, minChunkZ, maxChunkZ
         );
 
-        final double pxPerBlock = 1.0 / scale;
-        final float chunkSize = (float) (16.0 * pxPerBlock);
+        final float chunkSize = (float) ChunkScreenRect.chunkSize(scale);
         final ChunkLoadOverlayStyle style = ChunkLoadOverlayStyle.forChunkWidth(
             chunkSize, config.chunkLoadDetailMode
         );
@@ -852,12 +844,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 || entry.chunkZ() < minChunkZ || entry.chunkZ() > maxChunkZ) {
                 continue;
             }
-            final float screenX = (float) (
-                width / 2.0 + (entry.chunkX() * 16.0 - centerX) * pxPerBlock
+            final ChunkScreenRect rect = ChunkScreenRect.forChunk(
+                entry.chunkX(), entry.chunkZ(), centerX, centerZ, width, height, scale
             );
-            final float screenY = (float) (
-                height / 2.0 + (entry.chunkZ() * 16.0 - centerZ) * pxPerBlock
-            );
+            final float screenX = (float) rect.x();
+            final float screenY = (float) rect.y();
             RenderUtil.fillRect(
                 matrices, screenX, screenY, chunkSize, chunkSize, loadStateColor(entry.band())
             );
