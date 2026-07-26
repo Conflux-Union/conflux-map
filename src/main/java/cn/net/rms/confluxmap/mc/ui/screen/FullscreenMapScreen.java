@@ -48,7 +48,9 @@ import cn.net.rms.confluxmap.mc.world.ClientChunkLookup;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import net.minecraft.client.MinecraftClient;
@@ -100,6 +102,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final int CONTROL_SIZE = 22;
     private static final int CONTROL_ICON_SIZE = 16;
     private static final int CONTROL_GAP = 3;
+    private static final int STRUCTURE_SEARCH_WIDTH = 120;
+    private static final int STRUCTURE_SEARCH_HEIGHT = 20;
     private static final int LOCAL_CONTROL_ACCENT = 0xFFFFD83D;
     private static final int SHARED_CONTROL_ACCENT = 0xFF55DDE0;
     private static final Identifier LOCAL_WAYPOINT_ICON = Ids.of(
@@ -132,6 +136,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     /** Blocks-per-pixel threshold below which every marker's name shows continuously, not just on hover (deliverable C). */
     private static final double NAME_LABEL_MAX_SCALE = 2.0;
     private static final double HOVER_RADIUS_PX = 6.0;
+    private static final int MAX_VISIBLE_MARKERS_PER_STRUCTURE = 8;
     private static final double DEFAULT_CREATE_Y = 64.0;
     /** Cursor travel between left-press and left-release below which a hovered marker click edits it, not pans (see {@link #mouseReleased}). */
     private static final double CLICK_DRAG_TOLERANCE_PX = 4.0;
@@ -164,6 +169,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     /** Recomputed every frame by {@link #drawWaypoints} - the marker nearest the cursor within {@link #HOVER_RADIUS_PX}, or none. */
     private WaypointRenderEntry hoveredWaypoint;
+    private StructureIndex.Marker hoveredStructure;
 
     /** Cursor position at the last left-button press, so {@link #mouseReleased} can tell a click from a pan drag. */
     private double leftPressX;
@@ -173,6 +179,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private MapIconButton localVisibilityButton;
     private MapIconButton sharedVisibilityButton;
     private MapIconButton manageWaypointsButton;
+    private ButtonWidget structureSearchButton;
     private int waypointControlsBottom;
 
     public FullscreenMapScreen(final KeyBinding openMapKey) {
@@ -221,6 +228,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         localVisibilityButton = null;
         sharedVisibilityButton = null;
         manageWaypointsButton = null;
+        structureSearchButton = null;
 
         final int x = width - MARGIN - CONTROL_SIZE;
         int y = MARGIN + this.textRenderer.fontHeight + 5;
@@ -251,7 +259,17 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 new WaypointListScreen(this, WaypointListScreen.Tab.LOCAL)
             )
         ));
-        waypointControlsBottom = y + CONTROL_SIZE;
+        y += CONTROL_SIZE + CONTROL_GAP;
+        structureSearchButton = addDrawableChild(Widgets.button(
+            width - MARGIN - STRUCTURE_SEARCH_WIDTH,
+            y,
+            STRUCTURE_SEARCH_WIDTH,
+            STRUCTURE_SEARCH_HEIGHT,
+            Texts.translatable("confluxmap.map.structure_search"),
+            ignored -> openStructureSearch()
+        ));
+        refreshStructureSearchButton();
+        waypointControlsBottom = y + STRUCTURE_SEARCH_HEIGHT;
     }
 
     @Override
@@ -266,6 +284,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         if (sharedVisibilityButton != null) {
             sharedVisibilityButton.active = availability.ready();
         }
+        refreshStructureSearchButton();
     }
 
     private Text visibilityTooltip(final boolean local) {
@@ -343,7 +362,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             mapPointerPress = false;
             return true;
         }
-        if (isOverWaypointControls(mouseX, mouseY)) {
+        if (isOverMapControls(mouseX, mouseY)) {
             mapPointerPress = false;
             return true;
         }
@@ -392,7 +411,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
         mapPointerPress = false;
         if (hoveredWaypoint != null
-            && !isOverWaypointControls(mouseX, mouseY)
+            && !isOverMapControls(mouseX, mouseY)
             && Math.hypot(mouseX - leftPressX, mouseY - leftPressY) < CLICK_DRAG_TOLERANCE_PX) {
             openWaypoint(hoveredWaypoint);
             return true;
@@ -420,11 +439,18 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         //#endif
     }
 
-    private boolean isOverWaypointControls(final double mouseX, final double mouseY) {
+    private boolean isOverMapControls(final double mouseX, final double mouseY) {
         final int left = width - MARGIN - CONTROL_SIZE;
         final int top = MARGIN + this.textRenderer.fontHeight + 5;
-        return mouseX >= left && mouseX <= width - MARGIN
+        final boolean overWaypointColumn = mouseX >= left && mouseX <= width - MARGIN
             && mouseY >= top && mouseY <= waypointControlsBottom;
+        if (overWaypointColumn || structureSearchButton == null) {
+            return overWaypointColumn;
+        }
+        final int searchX = Widgets.x(structureSearchButton);
+        final int searchY = Widgets.y(structureSearchButton);
+        return mouseX >= searchX && mouseX <= searchX + STRUCTURE_SEARCH_WIDTH
+            && mouseY >= searchY && mouseY <= searchY + STRUCTURE_SEARCH_HEIGHT;
     }
 
     private void openWaypoint(final WaypointRenderEntry waypoint) {
@@ -518,6 +544,21 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 : Texts.translatable("confluxmap.map.waypoints.shared.unavailable");
         } else if (manageWaypointsButton != null && manageWaypointsButton.isHovered()) {
             tooltip = Texts.translatable("confluxmap.map.waypoints.manage.tooltip");
+        } else if (structureSearchButton != null && structureSearchButton.isHovered()) {
+            tooltip = Texts.translatable(
+                structureSearchButton.active
+                    ? "confluxmap.map.structure_search.tooltip"
+                    : "confluxmap.map.structure_search.unavailable"
+            );
+        } else if (hoveredStructure != null) {
+            tooltip = Texts.translatable(
+                hoveredStructure.state() == StructureIndex.State.VERIFIED
+                    ? "confluxmap.map.structure.verified_tooltip"
+                    : "confluxmap.map.structure.candidate_tooltip",
+                Texts.translatable(hoveredStructure.type().translationKey()).getString(),
+                hoveredStructure.blockX(),
+                hoveredStructure.blockZ()
+            );
         } else {
             return;
         }
@@ -834,32 +875,67 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     private void drawStructures(final GuiDraw draw, final int mouseX, final int mouseY) {
+        hoveredStructure = null;
         if (!config.predictionShowStructures || currentLod() > 2 || !predictionState.seedKnown()) {
             return;
         }
-        final int lod = currentLod();
         final int minX = (int) Math.floor(centerX - width / 2.0 * scale);
         final int maxX = (int) Math.ceil(centerX + width / 2.0 * scale);
         final int minZ = (int) Math.floor(centerZ - height / 2.0 * scale);
         final int maxZ = (int) Math.ceil(centerZ + height / 2.0 * scale);
         final double pxPerBlock = 1.0 / scale;
-        final List<StructureIndex.Marker> markers = structureMarkers.query(minX, maxX, minZ, maxZ);
+        final List<StructureIndex.Marker> markers = structureMarkers.query(minX, maxX, minZ, maxZ, scale);
         markers.sort(java.util.Comparator.comparingLong(marker -> {
             final long dx = marker.blockX() - (long) centerX;
             final long dz = marker.blockZ() - (long) centerZ;
             return dx * dx + dz * dz;
         }));
-        final int limit = Math.min(64, markers.size());
-        for (int i = 0; i < limit; i++) {
-            final StructureIndex.Marker marker = markers.get(i);
+        final List<StructureIndex.Marker> visibleMarkers = limitStructureMarkers(markers);
+        double bestHoverDistance = 8.0;
+        for (final StructureIndex.Marker marker : visibleMarkers) {
+            final float screenX = (float) (width / 2.0 + (marker.blockX() - centerX) * pxPerBlock);
+            final float screenY = (float) (height / 2.0 + (marker.blockZ() - centerZ) * pxPerBlock);
+            final double hoverDistance = Math.hypot(mouseX - screenX, mouseY - screenY);
+            if (hoverDistance <= bestHoverDistance) {
+                bestHoverDistance = hoverDistance;
+                hoveredStructure = marker;
+            }
+        }
+        for (final StructureIndex.Marker marker : visibleMarkers) {
             final float screenX = (float) (width / 2.0 + (marker.blockX() - centerX) * pxPerBlock);
             final float screenY = (float) (height / 2.0 + (marker.blockZ() - centerZ) * pxPerBlock);
             if (screenX < -8 || screenX > width + 8 || screenY < -8 || screenY > height + 8) {
                 continue;
             }
-            final boolean hovered = Math.hypot(mouseX - screenX, mouseY - screenY) <= 8;
+            final boolean hovered = marker.equals(hoveredStructure);
             StructureMarkerRenderer.draw(draw, this.textRenderer, marker, screenX, screenY, hovered);
+            if (hovered) {
+                draw.drawTextWithShadow(
+                    this.textRenderer,
+                    Texts.translatable(marker.type().translationKey()),
+                    screenX + 10f,
+                    screenY - 4f,
+                    TEXT_COLOR
+                );
+            }
         }
+    }
+
+    private static List<StructureIndex.Marker> limitStructureMarkers(
+        final List<StructureIndex.Marker> nearestFirst
+    ) {
+        final Map<StructureIndex.StructureType, Integer> counts =
+            new EnumMap<>(StructureIndex.StructureType.class);
+        final List<StructureIndex.Marker> visible = new ArrayList<>();
+        for (final StructureIndex.Marker marker : nearestFirst) {
+            final int count = counts.getOrDefault(marker.type(), 0);
+            if (count >= MAX_VISIBLE_MARKERS_PER_STRUCTURE) {
+                continue;
+            }
+            counts.put(marker.type(), count + 1);
+            visible.add(marker);
+        }
+        return visible;
     }
 
     /** Faint lines on LOD-0 tile boundaries (256-block spacing), skipped once they'd be denser than {@link #MIN_GRID_SPACING_PX}. */
@@ -1123,6 +1199,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             text = (int) Math.floor(hoveredWaypoint.x()) + ", "
                 + (int) Math.floor(hoveredWaypoint.y()) + ", "
                 + (int) Math.floor(hoveredWaypoint.z());
+        } else if (hoveredStructure != null) {
+            text = Texts.translatable(hoveredStructure.type().translationKey()).getString()
+                + " · " + hoveredStructure.blockX() + ", " + hoveredStructure.blockZ();
         } else {
             final int blockX = (int) Math.floor(centerX + (mouseX - width / 2.0) * scale);
             final int blockZ = (int) Math.floor(centerZ + (mouseY - height / 2.0) * scale);
@@ -1209,5 +1288,37 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             return Texts.translatable("confluxmap.dimension.the_end").getString();
         }
         return dimension.path();
+    }
+
+    private void refreshStructureSearchButton() {
+        if (structureSearchButton == null) {
+            return;
+        }
+        final DimensionId dimension = gameBridge.session().dimension();
+        structureSearchButton.active = predictionState.structuresCubiomesBacked(dimension)
+            && !structureMarkers.availableTypes(dimension).isEmpty();
+    }
+
+    private void openStructureSearch() {
+        final DimensionId dimension = gameBridge.session().dimension();
+        MinecraftClient.getInstance().setScreen(new StructureSearchScreen(
+            this,
+            structureMarkers,
+            new ArrayList<>(structureMarkers.availableTypes(dimension))
+        ));
+    }
+
+    int centerBlockX() {
+        return (int) Math.floor(centerX);
+    }
+
+    int centerBlockZ() {
+        return (int) Math.floor(centerZ);
+    }
+
+    void focusStructure(final StructureIndex.Marker marker) {
+        centerX = marker.blockX();
+        centerZ = marker.blockZ();
+        scale = Math.min(scale, DEFAULT_SCALE);
     }
 }

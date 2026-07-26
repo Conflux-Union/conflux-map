@@ -73,7 +73,10 @@ public final class PredictionState {
 
     /** The recognized generator preset for {@code dimension} ({@link WorldPreset#DEFAULT} when unset/unsupported). */
     public WorldPreset preset(final DimensionId dimension) {
-        return PredictionDimensions.isEnd(dimension) ? endPreset : overworldPreset;
+        if (dimension.equals(DimensionId.OVERWORLD)) {
+            return overworldPreset;
+        }
+        return PredictionDimensions.isEnd(dimension) ? endPreset : WorldPreset.DEFAULT;
     }
 
     /** cubiomes {@code setupGenerator} flags for contexts predicting {@code dimension}. */
@@ -95,6 +98,14 @@ public final class PredictionState {
         return seedKnown
             && NativeLib.available()
             && PredictionDimensions.supported(dimension)
+            && preset(dimension).predictable();
+    }
+
+    /** Whether cubiomes can locate vanilla structures in this dimension for the current seed. */
+    public boolean structuresCubiomesBacked(final DimensionId dimension) {
+        return seedKnown
+            && NativeLib.available()
+            && PredictionDimensions.structuresSupported(dimension)
             && preset(dimension).predictable();
     }
 

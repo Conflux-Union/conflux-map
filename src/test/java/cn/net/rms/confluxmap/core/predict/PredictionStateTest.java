@@ -96,5 +96,16 @@ class PredictionStateTest {
         Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
         final PredictionState state = seeded(WorldPreset.DEFAULT, WorldPreset.DEFAULT);
         assertFalse(state.predictable(DimensionId.NETHER));
+        assertTrue(state.structuresCubiomesBacked(DimensionId.NETHER));
+        assertEquals(PredictionDimensions.NETHER, PredictionDimensions.nativeStructureDim(DimensionId.NETHER));
+    }
+
+    @Test
+    void superflatOverworldDoesNotDisableVanillaNetherStructureLookup() {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final PredictionState state = seeded(WorldPreset.FLAT, WorldPreset.DEFAULT);
+
+        assertEquals(WorldPreset.DEFAULT, state.preset(DimensionId.NETHER));
+        assertTrue(state.structuresCubiomesBacked(DimensionId.NETHER));
     }
 }

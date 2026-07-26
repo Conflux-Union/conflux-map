@@ -1,0 +1,237 @@
+package cn.net.rms.confluxmap.mc.ui.screen;
+
+import cn.net.rms.confluxmap.compat.Texts;
+import cn.net.rms.confluxmap.compat.Widgets;
+import cn.net.rms.confluxmap.core.predict.StructureIndex;
+import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
+import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.text.Text;
+
+/** Localized structure-type picker that centers the fullscreen map on the nearest candidate. */
+final class StructureSearchScreen extends ConfluxScreen {
+    private static final int FIELD_WIDTH = 240;
+    private static final int FIELD_HEIGHT = 20;
+    private static final int LIST_TOP = 72;
+    private static final int ROW_HEIGHT = 22;
+    private static final int SEARCH_RADIUS = 100_000;
+
+    private final FullscreenMapScreen parent;
+    private final StructureMarkerService structures;
+    private final List<StructureIndex.StructureType> available;
+    private final Map<StructureIndex.StructureType, ButtonWidget> typeButtons =
+        new EnumMap<>(StructureIndex.StructureType.class);
+
+    private TextFieldWidget searchField;
+    private String observedQuery = "";
+    private int scrollOffset;
+    private int filteredCount;
+    private String statusKey;
+    private Object[] statusArgs = new Object[0];
+
+    StructureSearchScreen(
+        final FullscreenMapScreen parent,
+        final StructureMarkerService structures,
+        final List<StructureIndex.StructureType> available
+    ) {
+        super(Texts.translatable("confluxmap.screen.structure_search.title"));
+        this.parent = parent;
+        this.structures = structures;
+        this.available = new ArrayList<>(available);
+        this.available.sort(Comparator.comparing(StructureSearchScreen::localizedName));
+    }
+
+    @Override
+    public boolean isPauseScreen() {
+        return false;
+    }
+
+    @Override
+    protected void init() {
+        typeButtons.clear();
+        final int fieldWidth = Math.min(FIELD_WIDTH, Math.max(100, width - 32));
+        searchField = new TextFieldWidget(
+            this.textRenderer,
+            width / 2 - fieldWidth / 2,
+            38,
+            fieldWidth,
+            FIELD_HEIGHT,
+            Texts.translatable("confluxmap.screen.structure_search.field")
+        );
+        searchField.setMaxLength(64);
+        searchField.setText(observedQuery);
+        addDrawableChild(searchField);
+        setInitialFocus(searchField);
+
+        final int buttonWidth = Math.min(280, Math.max(120, width - 32));
+        for (final StructureIndex.StructureType type : available) {
+            final ButtonWidget button = addDrawableChild(Widgets.button(
+                width / 2 - buttonWidth / 2,
+                LIST_TOP,
+                buttonWidth,
+                20,
+                Texts.translatable(type.translationKey()),
+                ignored -> locate(type)
+            ));
+            typeButtons.put(type, button);
+        }
+        addDrawableChild(Widgets.button(
+            width / 2 - 50,
+            height - 28,
+            100,
+            20,
+            Texts.translatable("confluxmap.screen.structure_search.back"),
+            ignored -> onClose()
+        ));
+        updateRows();
+    }
+
+    @Override
+    public void tick() {
+        Widgets.tick(searchField);
+        final String query = searchField == null ? "" : searchField.getText();
+        if (!query.equals(observedQuery)) {
+            observedQuery = query;
+            scrollOffset = 0;
+            statusKey = null;
+            updateRows();
+        }
+    }
+
+    @Override
+    public void onClose() {
+        MinecraftClient.getInstance().setScreen(parent);
+    }
+
+    private void locate(final StructureIndex.StructureType type) {
+        statusKey = "confluxmap.screen.structure_search.not_found";
+        statusArgs = new Object[] {localizedName(type), SEARCH_RADIUS};
+        final Optional<StructureIndex.Marker> marker = structures.findNearest(
+            type,
+            parent.centerBlockX(),
+            parent.centerBlockZ(),
+            SEARCH_RADIUS
+        );
+        if (marker.isPresent()) {
+            parent.focusStructure(marker.get());
+            MinecraftClient.getInstance().setScreen(parent);
+        }
+    }
+
+    private void updateRows() {
+        if (typeButtons.isEmpty()) {
+            filteredCount = 0;
+            return;
+        }
+        final List<StructureIndex.StructureType> filtered = filteredTypes();
+        filteredCount = filtered.size();
+        final int visibleRows = visibleRows();
+        scrollOffset = Math.max(0, Math.min(scrollOffset, Math.max(0, filtered.size() - visibleRows)));
+        for (final ButtonWidget button : typeButtons.values()) {
+            button.visible = false;
+        }
+        final int end = Math.min(filtered.size(), scrollOffset + visibleRows);
+        for (int index = scrollOffset; index < end; index++) {
+            final ButtonWidget button = typeButtons.get(filtered.get(index));
+            Widgets.setY(button, LIST_TOP + (index - scrollOffset) * ROW_HEIGHT);
+            button.visible = true;
+        }
+    }
+
+    private List<StructureIndex.StructureType> filteredTypes() {
+        final String query = observedQuery.trim().toLowerCase(Locale.ROOT);
+        if (query.isEmpty()) {
+            return List.copyOf(available);
+        }
+        final List<StructureIndex.StructureType> filtered = new ArrayList<>();
+        for (final StructureIndex.StructureType type : available) {
+            final String name = localizedName(type).toLowerCase(Locale.ROOT);
+            final String id = type.id().replace('_', ' ').toLowerCase(Locale.ROOT);
+            if (name.contains(query) || id.contains(query)) {
+                filtered.add(type);
+            }
+        }
+        return filtered;
+    }
+
+    private int visibleRows() {
+        return Math.max(1, (height - LIST_TOP - 38) / ROW_HEIGHT);
+    }
+
+    @Override
+    //#if MC>=12002
+    //$$ public boolean mouseScrolled(
+    //$$     final double mouseX,
+    //$$     final double mouseY,
+    //$$     final double horizontalAmount,
+    //$$     final double amount
+    //$$ ) {
+    //#else
+    public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
+    //#endif
+        if (amount != 0 && filteredCount > visibleRows()) {
+            scrollOffset -= (int) Math.signum(amount);
+            updateRows();
+            return true;
+        }
+        //#if MC>=12002
+        //$$ return super.mouseScrolled(mouseX, mouseY, horizontalAmount, amount);
+        //#else
+        return super.mouseScrolled(mouseX, mouseY, amount);
+        //#endif
+    }
+
+    @Override
+    protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
+        draw.renderBackground(this, mouseX, mouseY, tickDelta);
+        final String title = getTitle().getString();
+        draw.drawTextWithShadow(
+            this.textRenderer,
+            title,
+            width / 2f - this.textRenderer.getWidth(title) / 2f,
+            12,
+            0xFFFFFFFF
+        );
+        final String prompt = Texts.translatable("confluxmap.screen.structure_search.prompt").getString();
+        draw.drawTextWithShadow(
+            this.textRenderer,
+            prompt,
+            width / 2f - this.textRenderer.getWidth(prompt) / 2f,
+            61,
+            0xFFBBBBBB
+        );
+        if (filteredCount == 0) {
+            final String empty = Texts.translatable("confluxmap.screen.structure_search.empty").getString();
+            draw.drawTextWithShadow(
+                this.textRenderer,
+                empty,
+                width / 2f - this.textRenderer.getWidth(empty) / 2f,
+                LIST_TOP + 6,
+                0xFFAAAAAA
+            );
+        }
+        if (statusKey != null) {
+            final String status = Texts.translatable(statusKey, statusArgs).getString();
+            draw.drawTextWithShadow(
+                this.textRenderer,
+                status,
+                width / 2f - this.textRenderer.getWidth(status) / 2f,
+                height - 42,
+                0xFFFF7777
+            );
+        }
+    }
+
+    private static String localizedName(final StructureIndex.StructureType type) {
+        return Texts.translatable(type.translationKey()).getString();
+    }
+}

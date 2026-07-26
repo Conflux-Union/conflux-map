@@ -16,10 +16,13 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -27,40 +30,86 @@ import org.apache.logging.log4j.Logger;
 /** Lazy, persistent structure candidates with tri-state server verification. */
 public final class StructureIndex {
     private static final Logger LOGGER = LogManager.getLogger("ConfluxMap/StructureIndex");
+    private static final int MC_1_17_1 = 21;
+    private static final String CACHE_PREFIX = "structures_v2_mc";
 
     public enum StructureType {
-        VILLAGE(6, "village", "V", 32, DimensionId.OVERWORLD),
-        OCEAN_MONUMENT(9, "ocean_monument", "M", 32, DimensionId.OVERWORLD),
-        WOODLAND_MANSION(10, "woodland_mansion", "W", 80, DimensionId.OVERWORLD),
-        PILLAGER_OUTPOST(11, "pillager_outpost", "P", 32, DimensionId.OVERWORLD),
-        RUINED_PORTAL(12, "ruined_portal", "R", 40, DimensionId.OVERWORLD),
-        END_CITY(21, "end_city", "E", 20, DimensionId.END);
+        DESERT_PYRAMID(1, "desert_pyramid", "DP", 32, 32, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
+        JUNGLE_TEMPLE(2, "jungle_temple", "JT", 32, 32, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
+        SWAMP_HUT(3, "swamp_hut", "SH", 32, 32, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
+        IGLOO(4, "igloo", "IG", 32, 32, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
+        VILLAGE(5, "village", "VI", 32, 34, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
+        OCEAN_RUIN(6, "ocean_ruin", "OR", 20, 20, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
+        SHIPWRECK(7, "shipwreck", "SW", 24, 24, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
+        OCEAN_MONUMENT(8, "ocean_monument", "OM", 32, 32, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
+        WOODLAND_MANSION(9, "woodland_mansion", "WM", 80, 80, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
+        PILLAGER_OUTPOST(10, "pillager_outpost", "PO", 32, 32, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
+        RUINED_PORTAL(11, "ruined_portal", "RP", 40, 40, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
+        RUINED_PORTAL_NETHER(12, "ruined_portal_nether", "RP", 25, 40, DimensionId.NETHER, MC_1_17_1, 4.0),
+        ANCIENT_CITY(13, "ancient_city", "AC", 24, 24, DimensionId.OVERWORLD, 23, 4.0),
+        BURIED_TREASURE(14, "buried_treasure", "BT", 1, 1, DimensionId.OVERWORLD, MC_1_17_1, 1.0),
+        MINESHAFT(15, "mineshaft", "MS", 1, 1, DimensionId.OVERWORLD, MC_1_17_1, 1.0),
+        FORTRESS(18, "fortress", "FO", 27, 27, DimensionId.NETHER, MC_1_17_1, 4.0),
+        BASTION_REMNANT(19, "bastion_remnant", "BA", 27, 27, DimensionId.NETHER, MC_1_17_1, 4.0),
+        END_CITY(20, "end_city", "EC", 20, 20, DimensionId.END, MC_1_17_1, 4.0),
+        TRAIL_RUINS(23, "trail_ruins", "TR", 34, 34, DimensionId.OVERWORLD, 25, 4.0),
+        TRIAL_CHAMBERS(24, "trial_chambers", "TC", 34, 34, DimensionId.OVERWORLD, 26, 4.0),
+        STRONGHOLD(25, "stronghold", "ST", 0, 0, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
+        NETHER_FOSSIL(26, "nether_fossil", "NF", 2, 2, DimensionId.NETHER, MC_1_17_1, 2.0);
 
         private final int nativeId;
         private final String id;
         private final String badge;
-        private final int regionSizeBlocks;
+        private final int legacySpacingChunks;
+        private final int modernSpacingChunks;
         private final DimensionId dimension;
+        private final int minMcVersion;
+        private final double maxDisplayScale;
 
         StructureType(
             final int nativeId,
             final String id,
             final String badge,
-            final int spacingChunks,
-            final DimensionId dimension
+            final int legacySpacingChunks,
+            final int modernSpacingChunks,
+            final DimensionId dimension,
+            final int minMcVersion,
+            final double maxDisplayScale
         ) {
             this.nativeId = nativeId;
             this.id = id;
             this.badge = badge;
-            this.regionSizeBlocks = spacingChunks * 16;
+            this.legacySpacingChunks = legacySpacingChunks;
+            this.modernSpacingChunks = modernSpacingChunks;
             this.dimension = dimension;
+            this.minMcVersion = minMcVersion;
+            this.maxDisplayScale = maxDisplayScale;
         }
 
         public int nativeId() { return nativeId; }
         public String id() { return id; }
         public String badge() { return badge; }
-        public int regionSizeBlocks() { return regionSizeBlocks; }
+        public String translationKey() { return "confluxmap.structure." + id; }
+        public boolean globalPlacement() { return legacySpacingChunks == 0; }
+        public int regionSizeBlocks(final int mcVersion) {
+            final int spacing = mcVersion <= MC_1_17_1 ? legacySpacingChunks : modernSpacingChunks;
+            return spacing * 16;
+        }
         public boolean supports(final DimensionId candidate) { return dimension.equals(candidate); }
+        public boolean supports(final int mcVersion, final DimensionId candidate) {
+            return mcVersion >= minMcVersion && supports(candidate);
+        }
+        public boolean displaysAt(final double blocksPerPixel) { return blocksPerPixel <= maxDisplayScale; }
+
+        public static EnumSet<StructureType> availableIn(final int mcVersion, final DimensionId dimension) {
+            final EnumSet<StructureType> result = EnumSet.noneOf(StructureType.class);
+            for (final StructureType type : values()) {
+                if (type.supports(mcVersion, dimension)) {
+                    result.add(type);
+                }
+            }
+            return result;
+        }
     }
 
     public enum State { CANDIDATE, VERIFIED, NONEXISTENT }
@@ -71,10 +120,42 @@ public final class StructureIndex {
     @FunctionalInterface
     public interface CandidateProvider {
         long[] candidates(StructureType type, int regionX, int regionZ);
+
+        default long[] candidates(
+            final StructureType type,
+            final int minRegionX,
+            final int minRegionZ,
+            final int maxRegionX,
+            final int maxRegionZ
+        ) {
+            final List<Long> combined = new ArrayList<>();
+            for (int regionZ = minRegionZ; regionZ <= maxRegionZ; regionZ++) {
+                for (int regionX = minRegionX; regionX <= maxRegionX; regionX++) {
+                    for (final long position : candidates(type, regionX, regionZ)) {
+                        combined.add(position);
+                    }
+                }
+            }
+            final long[] result = new long[combined.size()];
+            for (int i = 0; i < combined.size(); i++) {
+                result[i] = combined.get(i);
+            }
+            return result;
+        }
+
+        default OptionalLong nearest(
+            final StructureType type,
+            final int blockX,
+            final int blockZ,
+            final int maxRadius
+        ) {
+            return OptionalLong.empty();
+        }
     }
 
     private final Path file;
     private final DimensionId dimension;
+    private final int mcVersion;
     private final CandidateProvider provider;
     private final Map<String, Marker> markers = new HashMap<>();
     private final Map<StructureType, Set<Long>> queriedRegions = new EnumMap<>(StructureType.class);
@@ -87,7 +168,12 @@ public final class StructureIndex {
      */
     @Deprecated
     public StructureIndex(final Path cacheRoot, final String dimension, final CandidateProvider provider) {
-        this(cacheRoot.resolve("structures_" + sanitize(dimension) + ".json"), DimensionId.parse(dimension), provider);
+        this(
+            cacheRoot.resolve(cacheFileName(MC_1_17_1, sanitize(dimension))),
+            DimensionId.parse(dimension),
+            MC_1_17_1,
+            provider
+        );
     }
 
     @Deprecated
@@ -97,7 +183,7 @@ public final class StructureIndex {
         final String dimension,
         final CandidateProvider provider
     ) {
-        this(cacheRoot, world, DimensionId.parse(dimension), provider);
+        this(cacheRoot, world, DimensionId.parse(dimension), MC_1_17_1, provider);
     }
 
     public StructureIndex(
@@ -106,17 +192,34 @@ public final class StructureIndex {
         final DimensionId dimension,
         final CandidateProvider provider
     ) {
+        this(cacheRoot, world, dimension, MC_1_17_1, provider);
+    }
+
+    public StructureIndex(
+        final Path cacheRoot,
+        final WorldIdentity world,
+        final DimensionId dimension,
+        final int mcVersion,
+        final CandidateProvider provider
+    ) {
         this(
             WorldStorageMigration.directory(cacheRoot.resolve("structures"), world, LOGGER)
-                .resolve("structures_" + sanitize(dimension.fileName()) + ".json"),
+                .resolve(cacheFileName(mcVersion, sanitize(dimension.fileName()))),
             dimension,
+            mcVersion,
             provider
         );
     }
 
-    private StructureIndex(final Path file, final DimensionId dimension, final CandidateProvider provider) {
+    private StructureIndex(
+        final Path file,
+        final DimensionId dimension,
+        final int mcVersion,
+        final CandidateProvider provider
+    ) {
         this.file = file;
         this.dimension = dimension;
+        this.mcVersion = mcVersion;
         this.provider = provider;
         for (final StructureType type : StructureType.values()) {
             queriedRegions.put(type, new HashSet<>());
@@ -125,17 +228,41 @@ public final class StructureIndex {
     }
 
     public synchronized List<Marker> query(final int minBlockX, final int maxBlockX, final int minBlockZ, final int maxBlockZ) {
+        return query(minBlockX, maxBlockX, minBlockZ, maxBlockZ, StructureType.availableIn(mcVersion, dimension));
+    }
+
+    public synchronized List<Marker> query(
+        final int minBlockX,
+        final int maxBlockX,
+        final int minBlockZ,
+        final int maxBlockZ,
+        final Set<StructureType> includedTypes
+    ) {
         if (provider != null) {
             for (final StructureType type : StructureType.values()) {
-                if (!type.supports(dimension)) {
+                if (!includedTypes.contains(type) || !type.supports(mcVersion, dimension)) {
                     continue;
                 }
-                final int regionSize = type.regionSizeBlocks();
+                if (type.globalPlacement()) {
+                    final Set<Long> covered = queriedRegions.get(type);
+                    if (covered.add(0L)) {
+                        addCandidates(type, provider.candidates(type, 0, 0));
+                    }
+                    continue;
+                }
+                final int regionSize = type.regionSizeBlocks(mcVersion);
                 final int minRegionX = Math.floorDiv(minBlockX, regionSize);
                 final int maxRegionX = Math.floorDiv(maxBlockX, regionSize);
                 final int minRegionZ = Math.floorDiv(minBlockZ, regionSize);
                 final int maxRegionZ = Math.floorDiv(maxBlockZ, regionSize);
                 final Set<Long> covered = queriedRegions.get(type);
+                if (covered.isEmpty()) {
+                    addCandidates(type, provider.candidates(
+                        type, minRegionX, minRegionZ, maxRegionX, maxRegionZ
+                    ));
+                    markCovered(covered, minRegionX, minRegionZ, maxRegionX, maxRegionZ);
+                    continue;
+                }
                 for (int rz = minRegionZ; rz <= maxRegionZ; rz++) {
                     for (int rx = minRegionX; rx <= maxRegionX; rx++) {
                         final long region = packRegion(rx, rz);
@@ -150,7 +277,8 @@ public final class StructureIndex {
         }
         final List<Marker> visible = new ArrayList<>();
         for (final Marker marker : markers.values()) {
-            if (marker.type().supports(dimension)
+            if (includedTypes.contains(marker.type())
+                && marker.type().supports(mcVersion, dimension)
                 && marker.blockX() >= minBlockX && marker.blockX() <= maxBlockX
                 && marker.blockZ() >= minBlockZ && marker.blockZ() <= maxBlockZ
                 && marker.state() != State.NONEXISTENT) {
@@ -159,6 +287,37 @@ public final class StructureIndex {
         }
         visible.sort(Comparator.comparingInt(Marker::blockX).thenComparingInt(Marker::blockZ));
         return visible;
+    }
+
+    public synchronized Optional<Marker> findNearest(
+        final StructureType type,
+        final int blockX,
+        final int blockZ,
+        final int maxRadius
+    ) {
+        if (provider == null || !type.supports(mcVersion, dimension) || maxRadius <= 0) {
+            return Optional.empty();
+        }
+        final OptionalLong located = provider.nearest(type, blockX, blockZ, maxRadius);
+        if (located.isPresent()) {
+            addCandidates(type, new long[] {located.getAsLong()});
+        }
+        final long maxDistanceSquared = (long) maxRadius * maxRadius;
+        Marker nearest = null;
+        long nearestDistanceSquared = Long.MAX_VALUE;
+        for (final Marker marker : markers.values()) {
+            if (marker.type() != type || marker.state() == State.NONEXISTENT) {
+                continue;
+            }
+            final long dx = marker.blockX() - (long) blockX;
+            final long dz = marker.blockZ() - (long) blockZ;
+            final long distanceSquared = dx * dx + dz * dz;
+            if (distanceSquared <= maxDistanceSquared && distanceSquared < nearestDistanceSquared) {
+                nearest = marker;
+                nearestDistanceSquared = distanceSquared;
+            }
+        }
+        return Optional.ofNullable(nearest);
     }
 
     public synchronized void verify(final StructureType type, final int blockX, final int blockZ, final boolean exists) {
@@ -246,6 +405,20 @@ public final class StructureIndex {
         return ((long) x << 32) | (z & 0xFFFF_FFFFL);
     }
 
+    private static void markCovered(
+        final Set<Long> covered,
+        final int minRegionX,
+        final int minRegionZ,
+        final int maxRegionX,
+        final int maxRegionZ
+    ) {
+        for (int regionZ = minRegionZ; regionZ <= maxRegionZ; regionZ++) {
+            for (int regionX = minRegionX; regionX <= maxRegionX; regionX++) {
+                covered.add(packRegion(regionX, regionZ));
+            }
+        }
+    }
+
     private static StructureType typeById(final String id) {
         for (final StructureType type : StructureType.values()) {
             if (type.id().equals(id)) {
@@ -258,5 +431,9 @@ public final class StructureIndex {
     private static String sanitize(final String value) {
         final String safe = value == null ? "unknown" : value.replaceAll("[^A-Za-z0-9._-]", "_");
         return safe.startsWith(".") ? "_" + safe.replaceFirst("^\\.+", "") : safe;
+    }
+
+    private static String cacheFileName(final int mcVersion, final String dimension) {
+        return CACHE_PREFIX + mcVersion + "_" + dimension + ".json";
     }
 }

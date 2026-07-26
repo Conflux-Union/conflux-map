@@ -12,17 +12,18 @@ for what it predicts; this file is only the build/maintenance side.
 - `cubiomes/` - a git submodule pointing at this project's fork
   [`Conflux-Union/cubiomes`](https://github.com/Conflux-Union/cubiomes) (itself
   a fork of [`Cubitect/cubiomes`](https://github.com/Cubitect/cubiomes)),
-  MIT-licensed. Pinned to commit `7580437` via the submodule gitlink; the
+  MIT-licensed. Pinned to commit `9afc103` via the submodule gitlink; the
   pinned commit and upstream URL are also recorded in `CUBIOMES_COMMIT` for
   readability. Only the files needed to link
   `setupGenerator`/`applySeed`/`genBiomes`/`mapApproxHeight`/
   `mapOverworldSurfaceColumns`/`mapOverworldSurfaceBiome`/
   `mapEndSurfaceHeight`/`getChunkNaturalTreeCandidates`/`getStructurePos`/
-  `isViableStructurePos` are compiled
+  `isViableStructurePos`/stronghold iteration are compiled
   by `buildNativesHost`/`buildNativesAll` (`biomenoise`, `biomes`, `generator`,
-  `layers`, `noise`, `finders`, `terrain_features`, `rng.h`, `tables/`) - upstream utilities this
-  project never calls (`quadbase.c/h`, `util.c/h`) ship in the submodule but
-  are not compiled. To change cubiomes, commit on the fork and bump the
+  `layers`, `noise`, `finders`, `terrain_features`, `features/stronghold`,
+  `util`, `rng.h`, `tables/`) - other upstream utilities this project never
+  calls (`quadbase.c/h`) ship in the submodule but are not compiled. To change
+  cubiomes, commit on the fork and bump the
   submodule pin (`git -C native/cubiomes checkout <commit> && git add native/cubiomes`);
   do not keep a divergent local copy.
 - `jni/` - `jni.h` + `jni_md.h` copied from a local OpenJDK 21 (Temurin)
