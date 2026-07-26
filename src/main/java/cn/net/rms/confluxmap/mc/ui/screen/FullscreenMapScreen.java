@@ -116,6 +116,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final int CONTROL_GAP = 3;
     private static final int LOCAL_CONTROL_ACCENT = 0xFFFFD83D;
     private static final int SHARED_CONTROL_ACCENT = 0xFF55DDE0;
+    private static final int LOAD_STATE_CONTROL_ACCENT = SHARED_CONTROL_ACCENT;
+    private static final Identifier LOAD_STATE_ICON = Ids.of(
+        "confluxmap", "textures/gui/chunk_load_state.png"
+    );
     private static final Identifier LOCAL_WAYPOINT_ICON = Ids.of(
         "confluxmap", "textures/gui/waypoint_local.png"
     );
@@ -205,6 +209,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private MapIconButton sharedVisibilityButton;
     private MapIconButton manageWaypointsButton;
     private MapIconButton structureSearchButton;
+    private MapIconButton loadStateToggleButton;
     private int waypointControlsBottom;
     private FullscreenMapLocationMenu.Bounds locationMenuBounds;
     private FullscreenMapLocationMenu.Target locationMenuTarget;
@@ -212,7 +217,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private ButtonWidget setWaypointLocationButton;
     private ButtonWidget shareLocationButton;
     private ButtonWidget teleportLocationButton;
-    private ButtonWidget displayModeButton;
     private ButtonWidget loadStateDetailButton;
 
     public FullscreenMapScreen(final KeyBinding openMapKey) {
@@ -271,13 +275,23 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         shareLocationButton = null;
         teleportLocationButton = null;
         structureSearchButton = null;
-        displayModeButton = null;
+        loadStateToggleButton = null;
         loadStateDetailButton = null;
-
-        addDisplayModeControls();
 
         final int x = width - MARGIN - CONTROL_SIZE;
         int y = MARGIN + this.textRenderer.fontHeight + 5;
+        if (chunkLoadStates.available()) {
+            loadStateToggleButton = addDrawableChild(new MapIconButton(
+                x,
+                y,
+                LOAD_STATE_ICON,
+                loadStateToggleTooltip(),
+                LOAD_STATE_CONTROL_ACCENT,
+                ignored -> toggleLoadStateOverlay()
+            ));
+            loadStateToggleButton.setSelected(loadStateMode());
+            y += CONTROL_SIZE + CONTROL_GAP;
+        }
         localVisibilityButton = addDrawableChild(new MapIconButton(
             x, y, LOCAL_WAYPOINT_ICON, LOCAL_CONTROL_ACCENT, b -> {
                 config.localWaypointsVisible = !config.localWaypointsVisible;
@@ -315,51 +329,47 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         ));
         refreshStructureSearchButton();
         waypointControlsBottom = y + CONTROL_SIZE;
+        addLoadStateDetailControl();
         if (locationMenuBounds != null && locationMenuTarget != null) {
             addLocationMenuButtons();
         }
     }
 
-    private void addDisplayModeControls() {
+    private void addLoadStateDetailControl() {
+        if (!loadStateMode()) {
+            return;
+        }
         final int buttonWidth = Math.min(180, Math.max(90, width - 2 * (MARGIN + 80)));
         final int x = (width - buttonWidth) / 2;
-        displayModeButton = addDrawableChild(Widgets.button(
+        loadStateDetailButton = addDrawableChild(Widgets.button(
             x,
             MARGIN,
             buttonWidth,
             20,
-            displayModeLabel(),
+            loadStateDetailLabel(),
             ignored -> {
-                if (!chunkLoadStates.available()) {
-                    return;
-                }
-                config.fullscreenDisplayMode = loadStateMode()
-                    ? FullscreenDisplayMode.TERRAIN
-                    : FullscreenDisplayMode.CHUNK_LOAD_STATE;
-                if (!loadStateMode()) {
-                    chunkLoadStates.deactivate();
-                }
+                config.chunkLoadDetailMode = config.chunkLoadDetailMode == ChunkLoadDetailMode.BANDS
+                    ? ChunkLoadDetailMode.EXACT
+                    : ChunkLoadDetailMode.BANDS;
                 ConfluxMapClient.get().configIo().save(config);
-                rebuildWaypointControls();
+                loadStateDetailButton.setMessage(loadStateDetailLabel());
             }
         ));
-        displayModeButton.active = chunkLoadStates.available();
-        if (loadStateMode()) {
-            loadStateDetailButton = addDrawableChild(Widgets.button(
-                x,
-                MARGIN + 23,
-                buttonWidth,
-                20,
-                loadStateDetailLabel(),
-                ignored -> {
-                    config.chunkLoadDetailMode = config.chunkLoadDetailMode == ChunkLoadDetailMode.BANDS
-                        ? ChunkLoadDetailMode.EXACT
-                        : ChunkLoadDetailMode.BANDS;
-                    ConfluxMapClient.get().configIo().save(config);
-                    loadStateDetailButton.setMessage(loadStateDetailLabel());
-                }
-            ));
+    }
+
+    private void toggleLoadStateOverlay() {
+        if (!chunkLoadStates.available()) {
+            rebuildWaypointControls();
+            return;
         }
+        config.fullscreenDisplayMode = loadStateMode()
+            ? FullscreenDisplayMode.TERRAIN
+            : FullscreenDisplayMode.CHUNK_LOAD_STATE;
+        if (!loadStateMode()) {
+            chunkLoadStates.deactivate();
+        }
+        ConfluxMapClient.get().configIo().save(config);
+        rebuildWaypointControls();
     }
 
     private void addLocationMenuButtons() {
@@ -394,13 +404,15 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         if (!chunkLoadStates.available() && chunkLoadStates.snapshot().active()) {
             chunkLoadStates.reset();
         }
-        if (displayModeButton != null) {
-            final boolean available = chunkLoadStates.available();
-            if (displayModeButton.active != available || (loadStateMode() != (loadStateDetailButton != null))) {
-                rebuildWaypointControls();
-                return;
-            }
-            displayModeButton.setMessage(displayModeLabel());
+        final boolean loadStateAvailable = chunkLoadStates.available();
+        if ((loadStateToggleButton != null) != loadStateAvailable
+            || (loadStateMode() != (loadStateDetailButton != null))) {
+            rebuildWaypointControls();
+            return;
+        }
+        if (loadStateToggleButton != null) {
+            loadStateToggleButton.setSelected(loadStateMode());
+            loadStateToggleButton.setMessage(loadStateToggleTooltip());
         }
         final SharedWaypointAvailability availability = sharedWaypoints.availability();
         if (sharedAvailability == null || availability.enabled() != sharedAvailability.enabled()) {
@@ -797,13 +809,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             && chunkLoadStates.available();
     }
 
-    private Text displayModeLabel() {
-        final String valueKey = loadStateMode()
-            ? "confluxmap.map.display_mode.chunk_load_state"
-            : "confluxmap.map.display_mode.terrain";
+    private Text loadStateToggleTooltip() {
         return Texts.translatable(
-            "confluxmap.map.display_mode",
-            Texts.translatable(valueKey).getString()
+            loadStateMode()
+                ? "confluxmap.map.load_state.toggle.hide"
+                : "confluxmap.map.load_state.toggle.show"
         );
     }
 
@@ -955,7 +965,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final float tickDelta
     ) {
         final Text tooltip;
-        if (localVisibilityButton != null && localVisibilityButton.isHovered()) {
+        if (loadStateToggleButton != null && loadStateToggleButton.isHovered()) {
+            tooltip = loadStateToggleTooltip();
+        } else if (localVisibilityButton != null && localVisibilityButton.isHovered()) {
             tooltip = visibilityTooltip(true);
         } else if (sharedVisibilityButton != null && sharedVisibilityButton.isHovered()) {
             tooltip = sharedVisibilityButton.active
@@ -1171,6 +1183,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             }
             final int iconX = x + (getWidth() - CONTROL_ICON_SIZE) / 2;
             final int iconY = y + (getHeight() - CONTROL_ICON_SIZE) / 2;
+            final boolean enabled = active && (selected || selectedAccent == 0);
             RenderUtil.bindTexture(MinecraftClient.getInstance(), icon);
             RenderUtil.drawTintedQuad(
                 matrices,
@@ -1182,7 +1195,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 0f,
                 1f,
                 1f,
-                active && (selected || selectedAccent == 0) ? ENABLED_ICON_TINT : DISABLED_ICON_TINT
+                enabled ? ENABLED_ICON_TINT : DISABLED_ICON_TINT
             );
         }
     }
