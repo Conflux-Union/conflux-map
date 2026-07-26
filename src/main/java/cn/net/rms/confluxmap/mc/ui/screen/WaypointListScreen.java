@@ -9,6 +9,7 @@ import cn.net.rms.confluxmap.core.net.shared.SharedWaypointClientState;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import cn.net.rms.confluxmap.core.waypoint.DimensionScale;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
+import cn.net.rms.confluxmap.core.waypoint.WaypointListFilter;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.core.waypoint.WaypointSet;
@@ -481,7 +482,9 @@ public final class WaypointListScreen extends ConfluxScreen {
         final List<RowInfo> result = new ArrayList<>();
         final boolean crossDimension = ConfluxMapClient.get().config().waypointCrossDimensionEnabled;
         if (tab == Tab.LOCAL) {
-            for (final Waypoint waypoint : waypointService.list()) {
+            for (final Waypoint waypoint : WaypointListFilter.local(
+                waypointService.list(), currentDimension, crossDimension
+            )) {
                 if (selectedSetFilter != null && !selectedSetFilter.equals(waypoint.group)) {
                     continue;
                 }
@@ -499,7 +502,9 @@ public final class WaypointListScreen extends ConfluxScreen {
             return result;
         }
         final boolean locked = tab == Tab.LOCKED;
-        for (final SharedWaypoint waypoint : sharedWaypoints.list()) {
+        for (final SharedWaypoint waypoint : WaypointListFilter.shared(
+            sharedWaypoints.list(), currentDimension, crossDimension
+        )) {
             if (waypoint.locked() != locked) {
                 continue;
             }

@@ -373,6 +373,13 @@ minimap. Waypoints scoped to a different dimension are invisible from this
 screen entirely, with no way to reach them except by physically changing
 dimension first.
 
+> **Deviation (Conflux Map):** list dimension scoping follows the same
+> `waypointCrossDimensionEnabled` client setting as waypoint rendering. With
+> the setting off, the management list contains only the current dimension;
+> with it on, the list contains every dimension so those waypoints can be
+> managed without travelling first. This only widens list membership: map and
+> in-world rendering still use the portal-linked conversion rules in §3.
+
 **Edit form fields:**
 
 - Name (free text, required non-empty to submit).
