@@ -11,10 +11,10 @@ package cn.net.rms.confluxmap.core.net;
  * server summary and client correction codecs.
  *
  * <p>Not {@code sealed} because this subproject targets Java 16 (sealed interfaces are a
- * Java 17 preview). The codec's encode/decode dispatch is exhaustive over the six known
+ * Java 17 preview). The codec's encode/decode dispatch is exhaustive over the known
  * subtypes via explicit {@code instanceof} chains; a new message type adds one branch on each side.
  */
 public interface Message {
-    /** Type id from {@link Proto} ({@code MSG_HELLO_C2S}..{@code MSG_ERROR_S2C}); used by {@link MsgCodec}. */
+    /** Type id from {@link Proto} ({@code MSG_MIN}..{@code MSG_MAX}); used by {@link MsgCodec}. */
     int typeId();
 }

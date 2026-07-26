@@ -58,9 +58,10 @@ public final class CompanionSession {
         this.policy = policy;
         state.set(State.ACTIVE);
         ConfluxMapMod.LOGGER.info(
-            "companion active (worldId={} worldgen={} seedGranted={} corrections={} structures={})",
+            "companion active (worldId={} worldgen={} seedGranted={} corrections={} structures={} chunkLoadState={})",
             policy.worldId(), policy.worldgenVersion(),
-            policy.flags().seedGranted(), policy.flags().correctionsEnabled(), policy.flags().structureInfoEnabled()
+            policy.flags().seedGranted(), policy.flags().correctionsEnabled(), policy.flags().structureInfoEnabled(),
+            policy.flags().chunkLoadStateEnabled()
         );
     }
 

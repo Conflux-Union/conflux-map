@@ -32,6 +32,8 @@ class ConfigIoTest {
         assertEquals(new ConfluxConfig().predictionDebounceMs, loaded.predictionDebounceMs);
         assertTrue(loaded.annotationsOnHud);
         assertEquals(ConfluxConfig.DEFAULT_ANNOTATION_ERASER_SIZE, loaded.annotationEraserSize);
+        assertEquals(new ConfluxConfig().fullscreenDisplayMode, loaded.fullscreenDisplayMode);
+        assertEquals(new ConfluxConfig().chunkLoadDetailMode, loaded.chunkLoadDetailMode);
         assertEquals(256, loaded.minimapSize);
         // The upgrade is persisted so the on-disk file now carries the full schema.
         final String rewritten = Files.readString(file, StandardCharsets.UTF_8);
@@ -39,6 +41,8 @@ class ConfigIoTest {
         assertTrue(rewritten.contains("\"predictionStructureVisibility\""));
         assertTrue(rewritten.contains("\"annotationsOnHud\""));
         assertTrue(rewritten.contains("\"annotationEraserSize\""));
+        assertTrue(rewritten.contains("\"fullscreenDisplayMode\""));
+        assertTrue(rewritten.contains("\"chunkLoadDetailMode\""));
         assertTrue(rewritten.contains("\"minimapSize\": 256"));
     }
 

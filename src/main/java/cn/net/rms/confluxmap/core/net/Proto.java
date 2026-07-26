@@ -5,8 +5,9 @@ package cn.net.rms.confluxmap.core.net;
  *
  * <p>All multi-byte wire values are big-endian, written/read via {@link
  * java.io.DataOutput}/{@link java.io.DataInput}. Strings are length-prefixed
- * UTF-8 with a hard cap (see {@link #MAX_UTF8_BYTES}); arrays are a {@code u8}
- * count with a hard cap (see {@link #MAX_DIM_ENTRIES}, {@link #MAX_TILES_PER_REQ});
+ * UTF-8 with a hard cap (see {@link #MAX_UTF8_BYTES}); arrays have a {@code u8} or {@code u16}
+ * count with a per-message hard cap (see {@link #MAX_DIM_ENTRIES}, {@link #MAX_TILES_PER_REQ},
+ * and {@link #MAX_LOAD_STATE_ENTRIES});
  * byte blobs are a {@code u32} length with the relevant per-message cap.
  *
  * <p>Caps are enforced in {@link MsgCodec} on both encode and decode. Anything
@@ -25,13 +26,14 @@ public final class Proto {
      * Major 2 switched the MAP_PATCH body to field-plane layout with delta-coded heights.
      * Minor 1 added the per-dim generator preset in spare bits of HELLO_POLICY's dim flag byte.
      * Minor 2 added FLAT_BASELINE (0x07); pre-minor-2 clients log and ignore it.
+     * Minor 3 added server-authoritative chunk load-state subscriptions (0x08/0x09).
      */
     public static final int PROTO_MAJOR = 2;
-    public static final int PROTO_MINOR = 2;
+    public static final int PROTO_MINOR = 3;
 
     // ---- Message type ids (first byte of every framed payload) ----
 
-    /** C2S: client announces its versions; server replies with {@link #S2C_HELLO_POLICY}. */
+    /** C2S: client announces its versions; server replies with {@link #MSG_HELLO_POLICY_S2C}. */
     public static final int MSG_HELLO_C2S = 0x01;
     /** S2C: server's policy + per-dim metadata (possibly including seed). */
     public static final int MSG_HELLO_POLICY_S2C = 0x02;
@@ -45,11 +47,15 @@ public final class Proto {
     public static final int MSG_ERROR_S2C = 0x06;
     /** S2C: uniform surface per superflat dimension; sent just before {@link #MSG_HELLO_POLICY_S2C}. */
     public static final int MSG_FLAT_BASELINE_S2C = 0x07;
+    /** C2S: subscribe to or cancel the current fullscreen load-state viewport. */
+    public static final int MSG_LOAD_STATE_SUBSCRIBE_C2S = 0x08;
+    /** S2C: one bounded initial-snapshot or incremental load-state batch. */
+    public static final int MSG_LOAD_STATE_DELTA_S2C = 0x09;
 
     /** First valid message id; used to range-check the type byte. */
     public static final int MSG_MIN = MSG_HELLO_C2S;
     /** Last valid message id for this proto major version. */
-    public static final int MSG_MAX = MSG_FLAT_BASELINE_S2C;
+    public static final int MSG_MAX = MSG_LOAD_STATE_DELTA_S2C;
 
     // ---- Hard caps (enforced everywhere untrusted bytes cross a boundary) ----
 
@@ -75,6 +81,13 @@ public final class Proto {
 
     /** Maximum number of tiles one MAP_VIEW_REQ may carry; same cap used by the server's budget. */
     public static final int MAX_TILES_PER_REQ = 8;
+
+    /** Maximum entries in one load-state payload; each entry is ten bytes on the wire. */
+    public static final int MAX_LOAD_STATE_ENTRIES = 512;
+    /** Maximum requested viewport width or height, in chunks. */
+    public static final int MAX_LOAD_STATE_SPAN = 4_096;
+    /** Wire sentinel for a chunk that left the server's loaded set. */
+    public static final int LOAD_STATE_UNLOADED_LEVEL = 0xFF;
 
     /** Sentinel written/read as the {@code mapColorId} when no vanilla map color applies. */
     public static final int MAP_COLOR_NONE = 0xFF;

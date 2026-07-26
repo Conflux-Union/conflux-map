@@ -64,6 +64,10 @@ public final class MsgCodec {
                 encodeErrorS2C(out, m);
             } else if (msg instanceof final FlatBaselineS2C m) {
                 encodeFlatBaselineS2C(out, m);
+            } else if (msg instanceof final LoadStateSubscribeC2S m) {
+                encodeLoadStateSubscribeC2S(out, m);
+            } else if (msg instanceof final LoadStateDeltaS2C m) {
+                encodeLoadStateDeltaS2C(out, m);
             } else {
                 throw new ProtoException("unknown message type: " + msg.getClass().getName());
             }
@@ -94,7 +98,8 @@ public final class MsgCodec {
             || typeId == Proto.MSG_MAP_PATCH_S2C
             || typeId == Proto.MSG_POLICY_UPDATE_S2C
             || typeId == Proto.MSG_ERROR_S2C
-            || typeId == Proto.MSG_FLAT_BASELINE_S2C;
+            || typeId == Proto.MSG_FLAT_BASELINE_S2C
+            || typeId == Proto.MSG_LOAD_STATE_DELTA_S2C;
     }
 
     private static void encodeHelloC2S(final DataOutputStream out, final HelloC2S m) throws IOException, ProtoException {
@@ -113,6 +118,9 @@ public final class MsgCodec {
         }
         if (f.structureInfoEnabled()) {
             flagBits |= 4;
+        }
+        if (f.chunkLoadStateEnabled()) {
+            flagBits |= 8;
         }
         out.writeByte(flagBits);
         writeUtf(out, m.worldId());
@@ -200,6 +208,9 @@ public final class MsgCodec {
         if (f.structureInfoEnabled()) {
             flagBits |= 4;
         }
+        if (f.chunkLoadStateEnabled()) {
+            flagBits |= 8;
+        }
         out.writeByte(flagBits);
         final HelloPolicyS2C.Budgets b = m.budgets();
         out.writeInt(b.maxBytesPerSec());
@@ -230,6 +241,49 @@ public final class MsgCodec {
         }
     }
 
+    private static void encodeLoadStateSubscribeC2S(
+        final DataOutputStream out,
+        final LoadStateSubscribeC2S m
+    ) throws IOException, ProtoException {
+        if (m.dimIndex() < 0 || m.dimIndex() > 0xFF) {
+            throw new ProtoException("load-state dim index out of range: " + m.dimIndex());
+        }
+        validateLoadStateBounds(m);
+        out.writeInt(m.subscriptionId());
+        out.writeByte(m.dimIndex());
+        out.writeByte(m.active() ? 1 : 0);
+        out.writeInt(m.minChunkX());
+        out.writeInt(m.minChunkZ());
+        out.writeInt(m.maxChunkX());
+        out.writeInt(m.maxChunkZ());
+    }
+
+    private static void encodeLoadStateDeltaS2C(
+        final DataOutputStream out,
+        final LoadStateDeltaS2C m
+    ) throws IOException, ProtoException {
+        if (m.entries().size() > Proto.MAX_LOAD_STATE_ENTRIES) {
+            throw new ProtoException("too many load-state entries: " + m.entries().size());
+        }
+        out.writeInt(m.subscriptionId());
+        int flags = 0;
+        if (m.reset()) {
+            flags |= 1;
+        }
+        if (m.complete()) {
+            flags |= 2;
+        }
+        out.writeByte(flags);
+        out.writeShort(m.entries().size());
+        for (final LoadStateDeltaS2C.Entry entry : m.entries()) {
+            validateLoadStateEntry(entry);
+            out.writeInt(entry.chunkX());
+            out.writeInt(entry.chunkZ());
+            out.writeByte(entry.level());
+            out.writeByte(entry.band().wireId());
+        }
+    }
+
     // ---- Decode ----
 
     /** Parses exactly one {@link Message} from {@code payload}; throws on any violation. */
@@ -252,6 +306,8 @@ public final class MsgCodec {
                 case Proto.MSG_POLICY_UPDATE_S2C -> decodePolicyUpdateS2C(in);
                 case Proto.MSG_ERROR_S2C -> decodeErrorS2C(in);
                 case Proto.MSG_FLAT_BASELINE_S2C -> decodeFlatBaselineS2C(in);
+                case Proto.MSG_LOAD_STATE_SUBSCRIBE_C2S -> decodeLoadStateSubscribeC2S(in);
+                case Proto.MSG_LOAD_STATE_DELTA_S2C -> decodeLoadStateDeltaS2C(in);
                 default -> throw new ProtoException("unhandled message type id: 0x" + Integer.toHexString(typeId));
             };
             if (in.available() != 0) {
@@ -278,7 +334,8 @@ public final class MsgCodec {
         final HelloPolicyS2C.Flags flags = new HelloPolicyS2C.Flags(
             (flagBits & 1) != 0,
             (flagBits & 2) != 0,
-            (flagBits & 4) != 0
+            (flagBits & 4) != 0,
+            (flagBits & 8) != 0
         );
         final String worldId = readUtf(in);
         final String worldgenVersion = readUtf(in);
@@ -350,7 +407,8 @@ public final class MsgCodec {
         final HelloPolicyS2C.Flags flags = new HelloPolicyS2C.Flags(
             (flagBits & 1) != 0,
             (flagBits & 2) != 0,
-            (flagBits & 4) != 0
+            (flagBits & 4) != 0,
+            (flagBits & 8) != 0
         );
         final int maxBytesPerSec = in.readInt();
         final int maxTilesPerReq = in.readUnsignedShort();
@@ -383,6 +441,89 @@ public final class MsgCodec {
             ));
         }
         return new FlatBaselineS2C(entries);
+    }
+
+    private static LoadStateSubscribeC2S decodeLoadStateSubscribeC2S(
+        final DataInputStream in
+    ) throws IOException, ProtoException {
+        final int subscriptionId = in.readInt();
+        final int dimIndex = in.readUnsignedByte();
+        final int activeByte = in.readUnsignedByte();
+        if (activeByte > 1) {
+            throw new ProtoException("invalid load-state active flag: " + activeByte);
+        }
+        final LoadStateSubscribeC2S message = new LoadStateSubscribeC2S(
+            subscriptionId,
+            dimIndex,
+            activeByte == 1,
+            in.readInt(),
+            in.readInt(),
+            in.readInt(),
+            in.readInt()
+        );
+        validateLoadStateBounds(message);
+        return message;
+    }
+
+    private static LoadStateDeltaS2C decodeLoadStateDeltaS2C(
+        final DataInputStream in
+    ) throws IOException, ProtoException {
+        final int subscriptionId = in.readInt();
+        final int flags = in.readUnsignedByte();
+        if ((flags & ~3) != 0) {
+            throw new ProtoException("unknown load-state delta flags: " + flags);
+        }
+        final int count = in.readUnsignedShort();
+        if (count > Proto.MAX_LOAD_STATE_ENTRIES) {
+            throw new ProtoException("load-state entry count " + count + " above cap " + Proto.MAX_LOAD_STATE_ENTRIES);
+        }
+        final List<LoadStateDeltaS2C.Entry> entries = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            final LoadStateDeltaS2C.Entry entry = new LoadStateDeltaS2C.Entry(
+                in.readInt(),
+                in.readInt(),
+                in.readUnsignedByte(),
+                ChunkLoadBand.fromWireId(in.readUnsignedByte())
+            );
+            validateLoadStateEntry(entry);
+            entries.add(entry);
+        }
+        return new LoadStateDeltaS2C(
+            subscriptionId,
+            (flags & 1) != 0,
+            (flags & 2) != 0,
+            entries
+        );
+    }
+
+    private static void validateLoadStateBounds(final LoadStateSubscribeC2S m) throws ProtoException {
+        if (!m.active()) {
+            return;
+        }
+        if (m.minChunkX() > m.maxChunkX() || m.minChunkZ() > m.maxChunkZ()) {
+            throw new ProtoException("load-state viewport bounds are inverted");
+        }
+        final long width = (long) m.maxChunkX() - m.minChunkX() + 1L;
+        final long height = (long) m.maxChunkZ() - m.minChunkZ() + 1L;
+        if (width > Proto.MAX_LOAD_STATE_SPAN || height > Proto.MAX_LOAD_STATE_SPAN) {
+            throw new ProtoException("load-state viewport exceeds " + Proto.MAX_LOAD_STATE_SPAN + " chunks per axis");
+        }
+    }
+
+    private static void validateLoadStateEntry(final LoadStateDeltaS2C.Entry entry) throws ProtoException {
+        if (entry.band() == null) {
+            throw new ProtoException("null chunk load band");
+        }
+        if (entry.level() < 0 || entry.level() > 0xFF) {
+            throw new ProtoException("chunk ticket level out of range: " + entry.level());
+        }
+        final boolean unloaded = entry.band() == ChunkLoadBand.UNLOADED;
+        if (unloaded != (entry.level() == Proto.LOAD_STATE_UNLOADED_LEVEL)) {
+            throw new ProtoException("unloaded band and level sentinel disagree");
+        }
+        if (!unloaded && ChunkLoadBand.fromTicketLevel(entry.level()) != entry.band()) {
+            throw new ProtoException("chunk ticket level and load band disagree");
+        }
     }
 
     // ---- Low-level helpers (shared by encode and decode) ----

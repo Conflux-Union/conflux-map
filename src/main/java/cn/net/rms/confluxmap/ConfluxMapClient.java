@@ -25,6 +25,7 @@ import cn.net.rms.confluxmap.mc.color.SpriteColorSampler;
 import cn.net.rms.confluxmap.mc.input.Keybinds;
 import cn.net.rms.confluxmap.mc.net.ClientNetworking;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
+import cn.net.rms.confluxmap.mc.net.ChunkLoadStateClient;
 import cn.net.rms.confluxmap.mc.net.MapSyncClient;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.predict.PredictionBootstrap;
@@ -92,6 +93,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private SharedWaypointClient sharedWaypoints;
     private CorrectionStore correctionStore;
     private MapSyncClient mapSyncClient;
+    private ChunkLoadStateClient chunkLoadStateClient;
     private UpdateCheckService updateCheck;
     private UpdateNotifier updateNotifier;
     private ClientGroundTeleportService groundTeleportService;
@@ -142,7 +144,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
         predictionPaletteBuilder = new PredictionPaletteBuilder(client, predictionState);
         clientNetworking = new ClientNetworking(companionSession);
         mapSyncClient = new MapSyncClient(companionSession, clientNetworking, correctionStore, predictionTileService, config);
+        chunkLoadStateClient = new ChunkLoadStateClient(companionSession, clientNetworking);
         clientNetworking.bindMapSync(mapSyncClient);
+        clientNetworking.bindChunkLoadStates(chunkLoadStateClient);
         clientNetworking.register();
         sharedWaypoints = new SharedWaypointClient(client);
         sharedWaypoints.register();
@@ -188,6 +192,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(annotationService::onSessionChanged);
         sessionTracker.addListener(correctionStore::onSessionChanged);
         sessionTracker.addListener(session -> mapSyncClient.reset());
+        sessionTracker.addListener(session -> chunkLoadStateClient.reset());
         sessionTracker.addListener(predictionBootstrap::onSessionChanged);
         sessionTracker.addListener(predictionPaletteBuilder::onSessionChanged);
         sessionTracker.addListener(predictionTileService::onSessionChanged);
@@ -343,6 +348,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public MapSyncClient mapSyncClient() {
         return mapSyncClient;
+    }
+
+    public ChunkLoadStateClient chunkLoadStateClient() {
+        return chunkLoadStateClient;
     }
 
     public SharedWaypointClient sharedWaypoints() {

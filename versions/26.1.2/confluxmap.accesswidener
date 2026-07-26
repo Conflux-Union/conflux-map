@@ -8,6 +8,9 @@ accessWidener v2 official
 # Mojang names the mip pyramid byMipLevel and keeps NativeImage under blaze3d.
 accessible field net/minecraft/client/renderer/texture/SpriteContents byMipLevel [Lcom/mojang/blaze3d/platform/NativeImage;
 
+# ChunkLoadStateAccess reads the authoritative effective level without loading a missing chunk.
+accessible method net/minecraft/server/level/ChunkMap getVisibleChunkIfPresent (J)Lnet/minecraft/server/level/ChunkHolder;
+
 # 1.21.6 made GUI rendering retained-mode: a screen or HUD callback only records elements, and
 # the renderer replays them once collection ends. This mod's map geometry has to reach that list
 # too, and the context keeps the list to itself. Yarn's DrawContext.state is

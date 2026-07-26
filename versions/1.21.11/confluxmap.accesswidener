@@ -4,6 +4,9 @@ accessWidener v2 named
 # (rather than reading back the stitched atlas texture) to box-filter its colors.
 accessible field net/minecraft/client/texture/SpriteContents mipmapLevelsImages [Lnet/minecraft/client/texture/NativeImage;
 
+# ChunkLoadStateAccess reads the authoritative effective level without loading a missing chunk.
+accessible method net/minecraft/server/world/ServerChunkLoadingManager getChunkHolder (J)Lnet/minecraft/server/world/ChunkHolder;
+
 # 1.21.6 made GUI rendering retained-mode: a screen or HUD callback only records elements, and
 # the renderer replays them once collection ends. This mod's map geometry has to reach that list
 # too, and DrawContext keeps the list to itself.

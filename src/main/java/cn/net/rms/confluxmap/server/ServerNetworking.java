@@ -9,6 +9,7 @@ import cn.net.rms.confluxmap.core.net.HelloC2S;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.ErrorS2C;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
+import cn.net.rms.confluxmap.core.net.LoadStateSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
@@ -60,6 +61,10 @@ public final class ServerNetworking {
             malformedStrikes.remove(uuid);
             mutedPlayers.remove(uuid);
             companion.summaries().remove(uuid);
+            final ChunkLoadStateService loadStates = companion.chunkLoadStates();
+            if (loadStates != null) {
+                loadStates.remove(uuid);
+            }
         });
     }
 
@@ -91,6 +96,8 @@ public final class ServerNetworking {
                 handleHello(server, player, hello);
             } else if (msg instanceof final MapViewReqC2S req) {
                 handleMapViewReq(server, player, req);
+            } else if (msg instanceof final LoadStateSubscribeC2S req) {
+                handleLoadStateSubscribe(server, player, req);
             } else {
                 ConfluxMapMod.LOGGER.warn(
                     "companion: unexpected {} from {} (server-side handlers expect C2S only)",
@@ -139,13 +146,24 @@ public final class ServerNetworking {
         companion.summaries().request(server, player, req, msg -> send(player, msg));
     }
 
+    private void handleLoadStateSubscribe(
+        final MinecraftServer server,
+        final ServerPlayerEntity player,
+        final LoadStateSubscribeC2S request
+    ) {
+        final ChunkLoadStateService service = companion.chunkLoadStates();
+        if (!companion.chunkLoadStatesEnabled() || service == null) {
+            send(player, new ErrorS2C(ErrorS2C.ERR_COMPANION_DISABLED, "chunk load state is disabled"));
+            return;
+        }
+        if (!service.subscribe(server, player.getUuid(), request, delta -> send(player, delta))) {
+            send(player, new ErrorS2C(ErrorS2C.ERR_MALFORMED_REQUEST, "invalid load-state dimension"));
+        }
+    }
+
     private HelloPolicyS2C buildPolicy(final MinecraftServer server) {
         final ServerConfig cfg = companion.config();
-        final boolean shareSeed = cfg.enabled && cfg.shareSeed;
-        final boolean shareCorrections = cfg.enabled && cfg.shareCorrections;
-        // The v1 frame reserves structure entries, but RegionSummaryService does not emit them yet.
-        final boolean shareStructures = false;
-        final HelloPolicyS2C.Flags flags = new HelloPolicyS2C.Flags(shareSeed, shareCorrections, shareStructures);
+        final HelloPolicyS2C.Flags flags = policyFlags(cfg);
         final UUID worldId = companion.worldIds().get(server);
         final HelloPolicyS2C.Budgets budgets = new HelloPolicyS2C.Budgets(
             cfg.maxBytesPerSecondPerPlayer,
@@ -153,8 +171,18 @@ public final class ServerNetworking {
             cfg.minRequestIntervalMs,
             cfg.maxPatchLod
         );
-        final List<HelloPolicyS2C.DimDescriptor> dims = buildDimDescriptors(server, shareSeed);
+        final List<HelloPolicyS2C.DimDescriptor> dims = buildDimDescriptors(server, flags.seedGranted());
         return new HelloPolicyS2C(flags, worldId.toString(), WORLDGEN_VERSION, budgets, dims);
+    }
+
+    static HelloPolicyS2C.Flags policyFlags(final ServerConfig cfg) {
+        // The v1 frame reserves structure entries, but RegionSummaryService does not emit them yet.
+        return new HelloPolicyS2C.Flags(
+            cfg.enabled && cfg.shareSeed,
+            cfg.enabled && cfg.shareCorrections,
+            false,
+            cfg.enabled && cfg.shareChunkLoadState
+        );
     }
 
     private static List<HelloPolicyS2C.DimDescriptor> buildDimDescriptors(final MinecraftServer server, final boolean shareSeed) {

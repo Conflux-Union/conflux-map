@@ -28,12 +28,25 @@ class ServerConfigTest {
         assertTrue(c.enabled);
         assertTrue(c.shareCorrections);
         assertFalse(c.shareStructureInfo);
+        assertFalse(c.shareChunkLoadState);
         assertFalse(c.shareWaypoints);
         assertEquals(SharedWaypointProto.MAX_SNAPSHOT_WAYPOINTS, c.maxSharedWaypointsPerWorld);
         assertEquals(64, c.maxSharedWaypointsPerPlayer);
         assertEquals(30, c.sharedWaypointMutationsPerMinute);
         assertEquals(2, c.maxPatchLod);
         assertEquals(8, c.maxTilesPerRequest);
+    }
+
+    @Test
+    void loadStateCapabilityIsAdvertisedOnlyWhenExplicitlyEnabled() {
+        final ServerConfig config = new ServerConfig();
+        assertFalse(ServerNetworking.policyFlags(config).chunkLoadStateEnabled());
+
+        config.shareChunkLoadState = true;
+        assertTrue(ServerNetworking.policyFlags(config).chunkLoadStateEnabled());
+
+        config.enabled = false;
+        assertFalse(ServerNetworking.policyFlags(config).chunkLoadStateEnabled());
     }
 
     @Test
@@ -79,6 +92,7 @@ class ServerConfigTest {
         final ServerConfigIo io = new ServerConfigIo(tmp.resolve("server.json"), LOGGER);
         final ServerConfig original = new ServerConfig();
         original.shareSeed = true;
+        original.shareChunkLoadState = true;
         original.maxPatchLod = 3;
         original.maxTilesPerRequest = 5;
         original.maxBytesPerSecondPerPlayer = 131_072;
@@ -96,6 +110,7 @@ class ServerConfigTest {
         assertEquals(original.shareSeed, loaded.shareSeed);
         assertEquals(original.shareCorrections, loaded.shareCorrections);
         assertEquals(original.shareStructureInfo, loaded.shareStructureInfo);
+        assertEquals(original.shareChunkLoadState, loaded.shareChunkLoadState);
         assertEquals(original.maxPatchLod, loaded.maxPatchLod);
         assertEquals(original.maxTilesPerRequest, loaded.maxTilesPerRequest);
         assertEquals(original.maxPendingTilesPerPlayer, loaded.maxPendingTilesPerPlayer);

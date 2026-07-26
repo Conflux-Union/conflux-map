@@ -37,7 +37,7 @@ class MsgCodecTest {
     @Test
     void helloPolicyRoundTripsWithSeed() throws ProtoException {
         final HelloPolicyS2C original = new HelloPolicyS2C(
-            new HelloPolicyS2C.Flags(true, true, false),
+            new HelloPolicyS2C.Flags(true, true, false, true),
             "11111111-2222-3333-4444-555555555555",
             "1.17",
             new HelloPolicyS2C.Budgets(65_536, 8, 300, 2),
@@ -53,12 +53,13 @@ class MsgCodecTest {
         assertEquals(original.budgets(), decoded.budgets());
         assertIterableEquals(original.dims(), decoded.dims());
         assertEquals(Proto.MSG_HELLO_POLICY_S2C, decoded.typeId());
+        assertTrue(decoded.flags().chunkLoadStateEnabled());
     }
 
     @Test
     void helloPolicyRoundTripsWithoutSeed() throws ProtoException {
         final HelloPolicyS2C original = new HelloPolicyS2C(
-            new HelloPolicyS2C.Flags(false, true, true),
+            new HelloPolicyS2C.Flags(false, true, true, false),
             "deadbeef-0000-0000-0000-000000000000",
             "1.17",
             new HelloPolicyS2C.Budgets(32_768, 4, 500, 1),
@@ -76,7 +77,7 @@ class MsgCodecTest {
     @Test
     void helloPolicyCarriesPerDimGeneratorPresets() throws ProtoException {
         final HelloPolicyS2C original = new HelloPolicyS2C(
-            new HelloPolicyS2C.Flags(true, true, false),
+            new HelloPolicyS2C.Flags(true, true, false, false),
             "11111111-2222-3333-4444-555555555555",
             "1.17",
             new HelloPolicyS2C.Budgets(65_536, 8, 300, 2),
@@ -102,6 +103,69 @@ class MsgCodecTest {
         final FlatBaselineS2C decoded = (FlatBaselineS2C) MsgCodec.decode(MsgCodec.encode(original));
         assertIterableEquals(original.entries(), decoded.entries());
         assertEquals(Proto.MSG_FLAT_BASELINE_S2C, decoded.typeId());
+    }
+
+    @Test
+    void loadStateSubscriptionRoundTrips() throws ProtoException {
+        final LoadStateSubscribeC2S original = new LoadStateSubscribeC2S(
+            42, 1, true, -100, -75, 200, 125
+        );
+
+        final LoadStateSubscribeC2S decoded = (LoadStateSubscribeC2S) MsgCodec.decode(
+            MsgCodec.encode(original)
+        );
+
+        assertEquals(original, decoded);
+        assertEquals(Proto.MSG_LOAD_STATE_SUBSCRIBE_C2S, decoded.typeId());
+    }
+
+    @Test
+    void loadStateDeltaRoundTrips() throws ProtoException {
+        final LoadStateDeltaS2C original = new LoadStateDeltaS2C(
+            42,
+            true,
+            false,
+            List.of(
+                new LoadStateDeltaS2C.Entry(-7, 9, 31, ChunkLoadBand.ENTITY_TICKING),
+                new LoadStateDeltaS2C.Entry(10, -11, 32, ChunkLoadBand.BLOCK_TICKING),
+                new LoadStateDeltaS2C.Entry(12, 13, 33, ChunkLoadBand.BORDER),
+                new LoadStateDeltaS2C.Entry(14, 15, Proto.LOAD_STATE_UNLOADED_LEVEL, ChunkLoadBand.UNLOADED)
+            )
+        );
+
+        final LoadStateDeltaS2C decoded = (LoadStateDeltaS2C) MsgCodec.decode(
+            MsgCodec.encode(original)
+        );
+
+        assertEquals(original, decoded);
+        assertEquals(Proto.MSG_LOAD_STATE_DELTA_S2C, decoded.typeId());
+    }
+
+    @Test
+    void loadStateMessagesEnforceViewportEntryAndSentinelBounds() {
+        assertThrows(ProtoException.class, () -> MsgCodec.encode(new LoadStateSubscribeC2S(
+            1, 0, true, 0, 0, Proto.MAX_LOAD_STATE_SPAN, 0
+        )));
+
+        final List<LoadStateDeltaS2C.Entry> tooMany = new ArrayList<>();
+        for (int i = 0; i <= Proto.MAX_LOAD_STATE_ENTRIES; i++) {
+            tooMany.add(new LoadStateDeltaS2C.Entry(i, 0, 33, ChunkLoadBand.BORDER));
+        }
+        assertThrows(ProtoException.class, () -> MsgCodec.encode(
+            new LoadStateDeltaS2C(1, true, false, tooMany)
+        ));
+        assertThrows(ProtoException.class, () -> MsgCodec.encode(new LoadStateDeltaS2C(
+            1,
+            false,
+            false,
+            List.of(new LoadStateDeltaS2C.Entry(0, 0, 31, ChunkLoadBand.UNLOADED))
+        )));
+        assertThrows(ProtoException.class, () -> MsgCodec.encode(new LoadStateDeltaS2C(
+            1,
+            false,
+            false,
+            List.of(new LoadStateDeltaS2C.Entry(0, 0, 32, ChunkLoadBand.ENTITY_TICKING))
+        )));
     }
 
     @Test
@@ -170,7 +234,7 @@ class MsgCodecTest {
     @Test
     void policyUpdateRoundTrips() throws ProtoException {
         final PolicyUpdateS2C original = new PolicyUpdateS2C(
-            new HelloPolicyS2C.Flags(false, true, false),
+            new HelloPolicyS2C.Flags(false, true, false, false),
             new HelloPolicyS2C.Budgets(8_192, 2, 1_000, 0)
         );
         final PolicyUpdateS2C decoded = (PolicyUpdateS2C) MsgCodec.decode(MsgCodec.encode(original));
@@ -262,7 +326,7 @@ class MsgCodecTest {
         final HelloPolicyS2C.DimDescriptor[] dims = new HelloPolicyS2C.DimDescriptor[Proto.MAX_DIM_ENTRIES + 1];
         Arrays.fill(dims, new HelloPolicyS2C.DimDescriptor("minecraft:overworld", "overworld", true, true, 0L, WorldPreset.DEFAULT));
         final HelloPolicyS2C msg = new HelloPolicyS2C(
-            new HelloPolicyS2C.Flags(false, false, false),
+            new HelloPolicyS2C.Flags(false, false, false, false),
             "id", "1.17",
             new HelloPolicyS2C.Budgets(1, 1, 1, 1),
             Arrays.asList(dims)
@@ -360,7 +424,9 @@ class MsgCodecTest {
                 return new HelloC2S(randomUtf8(rng, 8), randomUtf8(rng, 12));
             case 1:
                 return new HelloPolicyS2C(
-                    new HelloPolicyS2C.Flags(rng.nextBoolean(), rng.nextBoolean(), rng.nextBoolean()),
+                    new HelloPolicyS2C.Flags(
+                        rng.nextBoolean(), rng.nextBoolean(), rng.nextBoolean(), rng.nextBoolean()
+                    ),
                     randomUuidString(rng), "1.17",
                     new HelloPolicyS2C.Budgets(rng.nextInt(1 << 16), rng.nextInt(16) + 1, rng.nextInt(5_000), rng.nextInt(5)),
                     randomDims(rng)
@@ -380,7 +446,9 @@ class MsgCodecTest {
             }
             case 4:
                 return new PolicyUpdateS2C(
-                    new HelloPolicyS2C.Flags(rng.nextBoolean(), rng.nextBoolean(), rng.nextBoolean()),
+                    new HelloPolicyS2C.Flags(
+                        rng.nextBoolean(), rng.nextBoolean(), rng.nextBoolean(), rng.nextBoolean()
+                    ),
                     new HelloPolicyS2C.Budgets(rng.nextInt(1 << 16), rng.nextInt(16) + 1, rng.nextInt(5_000), rng.nextInt(5))
                 );
             default:
