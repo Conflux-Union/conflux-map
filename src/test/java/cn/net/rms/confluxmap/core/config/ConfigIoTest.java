@@ -27,10 +27,14 @@ class ConfigIoTest {
 
         // Absent fields keep their defaults; out-of-range values are clamped.
         assertEquals(new ConfluxConfig().predictionDebounceMs, loaded.predictionDebounceMs);
+        assertEquals(new ConfluxConfig().fullscreenDisplayMode, loaded.fullscreenDisplayMode);
+        assertEquals(new ConfluxConfig().chunkLoadDetailMode, loaded.chunkLoadDetailMode);
         assertEquals(256, loaded.minimapSize);
         // The upgrade is persisted so the on-disk file now carries the full schema.
         final String rewritten = Files.readString(file, StandardCharsets.UTF_8);
         assertTrue(rewritten.contains("\"predictionDebounceMs\""));
+        assertTrue(rewritten.contains("\"fullscreenDisplayMode\""));
+        assertTrue(rewritten.contains("\"chunkLoadDetailMode\""));
         assertTrue(rewritten.contains("\"minimapSize\": 256"));
     }
 

@@ -9,6 +9,7 @@ import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
 import cn.net.rms.confluxmap.core.net.HelloC2S;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.MapPatchS2C;
+import cn.net.rms.confluxmap.core.net.LoadStateDeltaS2C;
 import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.PolicyUpdateS2C;
@@ -32,6 +33,7 @@ public final class ClientNetworking {
 
     private final CompanionSession session;
     private volatile MapSyncClient mapSync;
+    private volatile ChunkLoadStateClient chunkLoadStates;
 
     public ClientNetworking(final CompanionSession session) {
         this.session = session;
@@ -46,11 +48,19 @@ public final class ClientNetworking {
             if (sync != null) {
                 sync.reset();
             }
+            final ChunkLoadStateClient loadStates = chunkLoadStates;
+            if (loadStates != null) {
+                loadStates.reset();
+            }
         });
     }
 
     public void bindMapSync(final MapSyncClient mapSync) {
         this.mapSync = mapSync;
+    }
+
+    public void bindChunkLoadStates(final ChunkLoadStateClient chunkLoadStates) {
+        this.chunkLoadStates = chunkLoadStates;
     }
 
     private void onReceive(
@@ -74,6 +84,11 @@ public final class ClientNetworking {
                 onPolicyUpdate(u);
             } else if (msg instanceof final MapPatchS2C p) {
                 onMapPatch(p, payload.length);
+            } else if (msg instanceof final LoadStateDeltaS2C delta) {
+                final ChunkLoadStateClient loadStates = chunkLoadStates;
+                if (loadStates != null) {
+                    loadStates.onDelta(delta);
+                }
             } else if (msg instanceof final ErrorS2C e) {
                 onError(e, payload.length);
             } else {
@@ -134,6 +149,10 @@ public final class ClientNetworking {
             u.flags(), current.worldId(), current.worldgenVersion(), u.budgets(), current.dims()
         );
         session.onPolicy(updated);
+        final ChunkLoadStateClient loadStates = chunkLoadStates;
+        if (loadStates != null && !updated.flags().chunkLoadStateEnabled()) {
+            loadStates.reset();
+        }
     }
 
     private void onMapPatch(final MapPatchS2C patch, final int payloadBytes) {

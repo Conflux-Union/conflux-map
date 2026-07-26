@@ -7,7 +7,8 @@ import java.util.List;
  * {@code 0x02 S2C HELLO_POLICY}: server's handshake reply. Carries everything the client needs
  * to decide (a) whether it can show the predicted underlay in multiplayer ({@link #seedGranted}
  * + per-dim seed), (b) which namespace to use for its caches ({@link #worldId}), and (c) the
- * rate/batch limits it must respect when issuing {@link MapViewReqC2S}.
+ * rate/batch limits it must respect when issuing {@link MapViewReqC2S}. The flags also advertise
+ * optional server-authoritative data planes such as the chunk load-state overlay.
  *
  * <p>{@link PolicyUpdateS2C} reuses the {@link Flags} and {@link Budgets} records; the only fields
  * a mid-session update can change are those two (worldId and dim list are stable for the connection).
@@ -23,8 +24,21 @@ public record HelloPolicyS2C(
     /**
      * Top-level booleans the server advertises. {@code seedGranted} means a per-dim {@code seed}
      * is included in {@link DimDescriptor} - off by default (server config {@code shareSeed=false}).
+     * {@code chunkLoadStateEnabled} is also opt-in because the loaded set can reveal activity.
      */
-    public record Flags(boolean seedGranted, boolean correctionsEnabled, boolean structureInfoEnabled) {
+    public record Flags(
+        boolean seedGranted,
+        boolean correctionsEnabled,
+        boolean structureInfoEnabled,
+        boolean chunkLoadStateEnabled
+    ) {
+        public Flags(
+            final boolean seedGranted,
+            final boolean correctionsEnabled,
+            final boolean structureInfoEnabled
+        ) {
+            this(seedGranted, correctionsEnabled, structureInfoEnabled, false);
+        }
     }
 
     /** Rate/batch limits. The client treats these as upper bounds, not guarantees. */
@@ -38,8 +52,9 @@ public record HelloPolicyS2C(
 
     /**
      * One entry per dimension the server is willing to serve. Index in the list is the
-     * {@code dimIndex} used in {@link MapViewReqC2S} / {@link MapPatchS2C} so the per-message
-     * wire form is small. {@code seed} is meaningful only when {@link Flags#seedGranted} is true.
+     * {@code dimIndex} used in {@link MapViewReqC2S}, {@link MapPatchS2C}, and
+     * {@link LoadStateSubscribeC2S} so the per-message wire form is small. {@code seed} is
+     * meaningful only when {@link Flags#seedGranted} is true.
      *
      * @param dimId       stringified dimension identifier, e.g. {@code "minecraft:overworld"}
      * @param dimType     {@code "overworld"} / {@code "the_nether"} / {@code "the_end"} (vanilla) or a mod id

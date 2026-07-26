@@ -30,6 +30,8 @@ public final class ServerConfig {
     public boolean shareCorrections = true;
     /** Reserved protocol setting. Forced OFF until the server emits real structure verification data. */
     public boolean shareStructureInfo = false;
+    /** Whether clients may see the server's currently loaded chunks and effective ticket levels. */
+    public boolean shareChunkLoadState = false;
     /** Whether players may publish and receive server-owned shared waypoints. */
     public boolean shareWaypoints = false;
     /** Maximum shared waypoints retained for one world. */

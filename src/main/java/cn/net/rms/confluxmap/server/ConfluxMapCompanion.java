@@ -40,6 +40,7 @@ public final class ConfluxMapCompanion {
     private final UpdateCheckService updateCheck;
     private volatile ServerConfig config;
     private volatile RegionSummaryService summaries;
+    private volatile ChunkLoadStateService chunkLoadStates;
     private volatile SharedWaypointService sharedWaypoints;
 
     public ConfluxMapCompanion(final ServerConfigIo configIo) {
@@ -74,11 +75,19 @@ public final class ConfluxMapCompanion {
             if (current != null && config.enabled) {
                 current.onChunkLoad(world, chunk);
             }
+            final ChunkLoadStateService loadStates = chunkLoadStates;
+            if (loadStates != null) {
+                loadStates.onChunkLoad(world, chunk);
+            }
         });
         ServerChunkEvents.CHUNK_UNLOAD.register((world, chunk) -> {
             final RegionSummaryService current = summaries;
             if (current != null && config.enabled) {
                 current.onChunkUnload(world, chunk);
+            }
+            final ChunkLoadStateService loadStates = chunkLoadStates;
+            if (loadStates != null) {
+                loadStates.onChunkUnload(world, chunk);
             }
         });
         ConfluxMapMod.LOGGER.info("companion initialized");
@@ -89,11 +98,18 @@ public final class ConfluxMapCompanion {
         if (current != null && config.enabled) {
             current.tick(server);
         }
+        final ChunkLoadStateService loadStates = chunkLoadStates;
+        if (loadStates != null) {
+            loadStates.tick(server);
+        }
     }
 
     private void onServerStarting(final MinecraftServer server) {
         config = configIo.load();
         summaries = config.enabled ? new RegionSummaryService(config) : null;
+        chunkLoadStates = config.enabled && config.shareChunkLoadState
+            ? new ChunkLoadStateService()
+            : null;
         sharedWaypoints = null;
     }
 
@@ -117,8 +133,8 @@ public final class ConfluxMapCompanion {
             sharedWaypoints = loadSharedWaypoints(server);
         }
         ConfluxMapMod.LOGGER.info(
-            "companion ready (shareSeed={} shareCorrections={} shareWaypoints={} maxPatchLod={} maxPresenceLod={} maxTilesPerRequest={})",
-            config.shareSeed, config.shareCorrections, sharedWaypoints != null,
+            "companion ready (shareSeed={} shareCorrections={} shareChunkLoadState={} shareWaypoints={} maxPatchLod={} maxPresenceLod={} maxTilesPerRequest={})",
+            config.shareSeed, config.shareCorrections, chunkLoadStates != null, sharedWaypoints != null,
             config.maxPatchLod, config.maxPresenceLod, config.maxTilesPerRequest
         );
     }
@@ -128,6 +144,10 @@ public final class ConfluxMapCompanion {
         final RegionSummaryService current = summaries;
         if (current != null) {
             current.prepareStop();
+        }
+        final ChunkLoadStateService loadStates = chunkLoadStates;
+        if (loadStates != null) {
+            loadStates.clear();
         }
         sharedWaypoints = null;
         ConfluxMapMod.LOGGER.info("companion stopping");
@@ -139,6 +159,7 @@ public final class ConfluxMapCompanion {
             current.close(server);
         }
         summaries = null;
+        chunkLoadStates = null;
         worldIds.forget(server);
         ConfluxMapMod.LOGGER.info("companion stopped");
     }
@@ -162,6 +183,14 @@ public final class ConfluxMapCompanion {
             summaries = current;
         }
         return current;
+    }
+
+    public ChunkLoadStateService chunkLoadStates() {
+        return chunkLoadStates;
+    }
+
+    public boolean chunkLoadStatesEnabled() {
+        return config.enabled && config.shareChunkLoadState && chunkLoadStates != null;
     }
 
     /** Returns loaded world state, retained across runtime disable/enable for idempotent retries. */

@@ -1,6 +1,8 @@
 package cn.net.rms.confluxmap.core.config;
 
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
+import cn.net.rms.confluxmap.core.loadstate.ChunkLoadDetailMode;
+import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
 
 /**
  * All client settings, serialized as one JSON document.
@@ -34,6 +36,10 @@ public final class ConfluxConfig {
     public boolean showBiome = true;
     /** Fullscreen map only: subtle chunk-border grid with a highlight on the hovered chunk. */
     public boolean fullmapChunkGrid = true;
+    /** Last requested fullscreen base plane; unavailable server-authoritative modes fall back safely. */
+    public FullscreenDisplayMode fullscreenDisplayMode = FullscreenDisplayMode.TERRAIN;
+    /** Local presentation choice for server chunk levels. */
+    public ChunkLoadDetailMode chunkLoadDetailMode = ChunkLoadDetailMode.BANDS;
 
     /** cave-nether-layers.md §1/§6: manual pin, or AUTO for the per-dimension automatic detection. */
     public LayerOverride layerOverride = LayerOverride.AUTO;
@@ -113,6 +119,8 @@ public final class ConfluxConfig {
         c.showCoordinates = showCoordinates;
         c.showBiome = showBiome;
         c.fullmapChunkGrid = fullmapChunkGrid;
+        c.fullscreenDisplayMode = fullscreenDisplayMode;
+        c.chunkLoadDetailMode = chunkLoadDetailMode;
         c.layerOverride = layerOverride;
         c.showLayerIndicator = showLayerIndicator;
         c.caveSliceY = caveSliceY;
@@ -155,6 +163,12 @@ public final class ConfluxConfig {
         }
         if (layerOverride == null) {
             layerOverride = LayerOverride.AUTO;
+        }
+        if (fullscreenDisplayMode == null) {
+            fullscreenDisplayMode = FullscreenDisplayMode.TERRAIN;
+        }
+        if (chunkLoadDetailMode == null) {
+            chunkLoadDetailMode = ChunkLoadDetailMode.BANDS;
         }
         minimapSize = clamp(minimapSize, 64, 256);
         minimapZoomIndex = clamp(minimapZoomIndex, 0, 3);

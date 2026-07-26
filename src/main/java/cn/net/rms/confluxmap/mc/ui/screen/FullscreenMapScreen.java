@@ -10,10 +10,15 @@ import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.loadstate.ChunkLoadDetailMode;
+import cn.net.rms.confluxmap.core.loadstate.ChunkLoadOverlayStyle;
+import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.net.MapSyncProgress;
+import cn.net.rms.confluxmap.core.net.ChunkLoadBand;
+import cn.net.rms.confluxmap.core.net.LoadStateDeltaS2C;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.predict.CubiomesBiomeIds;
 import cn.net.rms.confluxmap.core.predict.PredictedTileKeys;
@@ -38,6 +43,7 @@ import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatCodec;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.mc.net.ChunkLoadStateClient;
 import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
 import cn.net.rms.confluxmap.mc.radar.RadarBackdrop;
@@ -127,6 +133,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final int SYNC_FAILED_TEXT_COLOR = 0xFFFF7777;
     private static final int UPDATE_TEXT_COLOR = 0xFFFFE066;
     private static final int BACKGROUND_COLOR = 0xFF101018;
+    private static final int LOAD_STATE_ENTITY_COLOR = 0xCC48B85E;
+    private static final int LOAD_STATE_BLOCK_COLOR = 0xCCD8A83E;
+    private static final int LOAD_STATE_BORDER_COLOR = 0xCC4E78C4;
+    private static final int LOAD_STATE_UNLOADED_COLOR = BACKGROUND_COLOR;
+    private static final int LOAD_STATE_OUTLINE_COLOR = 0xCC101018;
+    private static final int LOAD_STATE_LEGEND_BACKGROUND = 0xD0181822;
     private static final int LOCATION_MENU_BACKGROUND = 0xF0181822;
     private static final int LOCATION_MENU_BORDER = 0xFF9A9AA8;
     private static final int TEMPORARY_LOCATION_COLOR = 0xFF3498DB;
@@ -166,6 +178,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private final WaypointRenderCatalog waypointRenderCatalog;
     private final ConfluxConfig config;
     private final SharedWaypointClient sharedWaypoints;
+    private final ChunkLoadStateClient chunkLoadStates;
     private final EntityRadarScanner radarScanner;
     private final EntityIconManager radarIconManager;
     private final RadarViewRange radarViewRange;
@@ -198,6 +211,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private ButtonWidget setWaypointLocationButton;
     private ButtonWidget shareLocationButton;
     private ButtonWidget teleportLocationButton;
+    private ButtonWidget displayModeButton;
+    private ButtonWidget loadStateDetailButton;
 
     public FullscreenMapScreen(final KeyBinding openMapKey) {
         super(Texts.translatable("confluxmap.screen.map.title"));
@@ -216,6 +231,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         this.waypointRenderCatalog = app.waypointRenderCatalog();
         this.config = app.config();
         this.sharedWaypoints = app.sharedWaypoints();
+        this.chunkLoadStates = app.chunkLoadStateClient();
         this.radarScanner = app.radarScanner();
         this.radarIconManager = app.entityIconManager();
         this.radarViewRange = app.radarViewRange();
@@ -254,6 +270,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         shareLocationButton = null;
         teleportLocationButton = null;
         structureSearchButton = null;
+        displayModeButton = null;
+        loadStateDetailButton = null;
+
+        addDisplayModeControls();
 
         final int x = width - MARGIN - CONTROL_SIZE;
         int y = MARGIN + this.textRenderer.fontHeight + 5;
@@ -299,6 +319,51 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
     }
 
+    private void addDisplayModeControls() {
+        final int buttonWidth = Math.min(180, Math.max(90, width - 2 * (MARGIN + 80)));
+        final int x = (width - buttonWidth) / 2;
+        displayModeButton = addDrawableChild(Widgets.button(
+            x,
+            MARGIN,
+            buttonWidth,
+            20,
+            displayModeLabel(),
+            ignored -> {
+                if (!chunkLoadStates.available()) {
+                    return;
+                }
+                config.fullscreenDisplayMode = loadStateMode()
+                    ? FullscreenDisplayMode.TERRAIN
+                    : FullscreenDisplayMode.CHUNK_LOAD_STATE;
+                if (!loadStateMode()) {
+                    chunkLoadStates.deactivate();
+                } else {
+                    tiles.clearViewport();
+                    predictionTiles.clearViewport();
+                }
+                ConfluxMapClient.get().configIo().save(config);
+                rebuildWaypointControls();
+            }
+        ));
+        displayModeButton.active = chunkLoadStates.available();
+        if (loadStateMode()) {
+            loadStateDetailButton = addDrawableChild(Widgets.button(
+                x,
+                MARGIN + 23,
+                buttonWidth,
+                20,
+                loadStateDetailLabel(),
+                ignored -> {
+                    config.chunkLoadDetailMode = config.chunkLoadDetailMode == ChunkLoadDetailMode.BANDS
+                        ? ChunkLoadDetailMode.EXACT
+                        : ChunkLoadDetailMode.BANDS;
+                    ConfluxMapClient.get().configIo().save(config);
+                    loadStateDetailButton.setMessage(loadStateDetailLabel());
+                }
+            ));
+        }
+    }
+
     private void addLocationMenuButtons() {
         final boolean heightKnown = locationMenuTarget.blockY().isPresent();
         final MinecraftClient client = MinecraftClient.getInstance();
@@ -328,6 +393,17 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     @Override
     public void tick() {
         super.tick();
+        if (!chunkLoadStates.available() && chunkLoadStates.snapshot().active()) {
+            chunkLoadStates.reset();
+        }
+        if (displayModeButton != null) {
+            final boolean available = chunkLoadStates.available();
+            if (displayModeButton.active != available || (loadStateMode() != (loadStateDetailButton != null))) {
+                rebuildWaypointControls();
+                return;
+            }
+            displayModeButton.setMessage(displayModeLabel());
+        }
         final SharedWaypointAvailability availability = sharedWaypoints.availability();
         if (sharedAvailability == null || availability.enabled() != sharedAvailability.enabled()) {
             rebuildWaypointControls();
@@ -371,10 +447,17 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     @Override
     public void onClose() {
         viewState.rememberScale(gameBridge.session().dimension(), scale);
+        chunkLoadStates.deactivate();
         tiles.clearViewport();
         predictionTiles.clearViewport();
         structureMarkers.flush();
         super.onClose();
+    }
+
+    @Override
+    public void removed() {
+        chunkLoadStates.deactivate();
+        super.removed();
     }
 
     @Override
@@ -687,24 +770,175 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         radarViewRange.set(Math.hypot(width, height) / 2.0 * scale);
 
         RenderUtil.fillRect(matrices, 0, 0, width, height, BACKGROUND_COLOR);
-        drawGrid(matrices);
-
-        drawTiles(matrices);
-
-        drawChunkGrid(matrices, mouseX, mouseY);
-        drawStructures(draw, mouseX, mouseY);
-        drawRadar(draw, tickDelta);
+        if (loadStateMode()) {
+            hoveredStructure = null;
+            tiles.clearViewport();
+            predictionTiles.clearViewport();
+            drawChunkLoadStates(draw);
+        } else {
+            drawGrid(matrices);
+            drawTiles(matrices);
+            drawChunkGrid(matrices, mouseX, mouseY);
+            drawStructures(draw, mouseX, mouseY);
+            drawRadar(draw, tickDelta);
+        }
 
         drawWaypoints(draw, mouseX, mouseY);
         drawPlayerMarker(matrices, tickDelta);
         drawDimensionLabel(draw);
-        drawLayerLabel(draw);
-        drawPredictionLabel(draw);
-        drawServerSyncLabel(draw);
+        if (loadStateMode()) {
+            drawChunkLoadStateLegend(draw);
+        } else {
+            drawLayerLabel(draw);
+            drawPredictionLabel(draw);
+            drawServerSyncLabel(draw);
+        }
         drawScaleLabel(draw);
         drawCursorCoords(draw, mouseX, mouseY);
         drawUpdateBadge(draw);
         drawLocationMenu(draw);
+    }
+
+    private boolean loadStateMode() {
+        return config.fullscreenDisplayMode == FullscreenDisplayMode.CHUNK_LOAD_STATE
+            && chunkLoadStates.available();
+    }
+
+    private Text displayModeLabel() {
+        final String valueKey = loadStateMode()
+            ? "confluxmap.map.display_mode.chunk_load_state"
+            : "confluxmap.map.display_mode.terrain";
+        return Texts.translatable(
+            "confluxmap.map.display_mode",
+            Texts.translatable(valueKey).getString()
+        );
+    }
+
+    private Text loadStateDetailLabel() {
+        final String valueKey = config.chunkLoadDetailMode == ChunkLoadDetailMode.EXACT
+            ? "confluxmap.map.load_state.detail.exact"
+            : "confluxmap.map.load_state.detail.bands";
+        return Texts.translatable(
+            "confluxmap.map.load_state.detail",
+            Texts.translatable(valueKey).getString()
+        );
+    }
+
+    private void drawChunkLoadStates(final GuiDraw draw) {
+        final MatrixStack matrices = draw.matrices();
+        final int minChunkX = TileMath.blockToChunk(
+            (int) Math.floor(centerX - width / 2.0 * scale)
+        );
+        final int maxChunkX = TileMath.blockToChunk(
+            (int) Math.ceil(centerX + width / 2.0 * scale)
+        );
+        final int minChunkZ = TileMath.blockToChunk(
+            (int) Math.floor(centerZ - height / 2.0 * scale)
+        );
+        final int maxChunkZ = TileMath.blockToChunk(
+            (int) Math.ceil(centerZ + height / 2.0 * scale)
+        );
+        chunkLoadStates.reportViewport(
+            gameBridge.session().dimension(), minChunkX, maxChunkX, minChunkZ, maxChunkZ
+        );
+
+        final double pxPerBlock = 1.0 / scale;
+        final float chunkSize = (float) (16.0 * pxPerBlock);
+        final ChunkLoadOverlayStyle style = ChunkLoadOverlayStyle.forChunkWidth(
+            chunkSize, config.chunkLoadDetailMode
+        );
+        for (final LoadStateDeltaS2C.Entry entry : chunkLoadStates.snapshot().entries()) {
+            if (entry.chunkX() < minChunkX || entry.chunkX() > maxChunkX
+                || entry.chunkZ() < minChunkZ || entry.chunkZ() > maxChunkZ) {
+                continue;
+            }
+            final float screenX = (float) (
+                width / 2.0 + (entry.chunkX() * 16.0 - centerX) * pxPerBlock
+            );
+            final float screenY = (float) (
+                height / 2.0 + (entry.chunkZ() * 16.0 - centerZ) * pxPerBlock
+            );
+            RenderUtil.fillRect(
+                matrices, screenX, screenY, chunkSize, chunkSize, loadStateColor(entry.band())
+            );
+            if (style.drawOutline()) {
+                drawChunkLoadOutline(matrices, screenX, screenY, chunkSize);
+            }
+            if (style.drawLevelLabel()) {
+                final String level = "L" + entry.level();
+                final int textWidth = this.textRenderer.getWidth(level);
+                draw.drawTextWithShadow(
+                    this.textRenderer,
+                    level,
+                    screenX + (chunkSize - textWidth) / 2f,
+                    screenY + (chunkSize - this.textRenderer.fontHeight) / 2f,
+                    TEXT_COLOR
+                );
+            }
+        }
+    }
+
+    private static int loadStateColor(final ChunkLoadBand band) {
+        return switch (band) {
+            case ENTITY_TICKING -> LOAD_STATE_ENTITY_COLOR;
+            case BLOCK_TICKING -> LOAD_STATE_BLOCK_COLOR;
+            case BORDER -> LOAD_STATE_BORDER_COLOR;
+            case UNLOADED -> LOAD_STATE_UNLOADED_COLOR;
+        };
+    }
+
+    private static void drawChunkLoadOutline(
+        final MatrixStack matrices,
+        final float x,
+        final float y,
+        final float size
+    ) {
+        RenderUtil.fillRect(matrices, x, y, size, 1f, LOAD_STATE_OUTLINE_COLOR);
+        RenderUtil.fillRect(matrices, x, y + size - 1f, size, 1f, LOAD_STATE_OUTLINE_COLOR);
+        RenderUtil.fillRect(matrices, x, y, 1f, size, LOAD_STATE_OUTLINE_COLOR);
+        RenderUtil.fillRect(matrices, x + size - 1f, y, 1f, size, LOAD_STATE_OUTLINE_COLOR);
+    }
+
+    private void drawChunkLoadStateLegend(final GuiDraw draw) {
+        final int rowHeight = this.textRenderer.fontHeight + 3;
+        final int legendWidth = Math.min(180, Math.max(130, width / 3));
+        final int legendHeight = rowHeight * 5 + 8;
+        final int x = MARGIN;
+        final int y = height - MARGIN - legendHeight;
+        draw.fill(x, y, x + legendWidth, y + legendHeight, LOAD_STATE_LEGEND_BACKGROUND);
+        final String status = Texts.translatable(
+            chunkLoadStates.snapshot().complete()
+                ? "confluxmap.map.load_state.ready"
+                : "confluxmap.map.load_state.loading"
+        ).getString();
+        draw.drawTextWithShadow(this.textRenderer, status, x + 5, y + 4, TEXT_COLOR);
+        drawLegendRow(draw, x, y + 4 + rowHeight, ChunkLoadBand.ENTITY_TICKING);
+        drawLegendRow(draw, x, y + 4 + rowHeight * 2, ChunkLoadBand.BLOCK_TICKING);
+        drawLegendRow(draw, x, y + 4 + rowHeight * 3, ChunkLoadBand.BORDER);
+        drawLegendRow(draw, x, y + 4 + rowHeight * 4, ChunkLoadBand.UNLOADED);
+    }
+
+    private void drawLegendRow(
+        final GuiDraw draw,
+        final int x,
+        final int y,
+        final ChunkLoadBand band
+    ) {
+        draw.fill(x + 5, y + 1, x + 13, y + 9, LOAD_STATE_OUTLINE_COLOR);
+        draw.fill(x + 6, y + 2, x + 12, y + 8, loadStateColor(band));
+        draw.drawTextWithShadow(
+            this.textRenderer,
+            loadStateBandName(band),
+            x + 17,
+            y,
+            TEXT_COLOR
+        );
+    }
+
+    private static String loadStateBandName(final ChunkLoadBand band) {
+        return Texts.translatable(
+            "confluxmap.map.load_state.band." + band.name().toLowerCase(java.util.Locale.ROOT)
+        ).getString();
     }
 
     private void drawLocationMenu(final GuiDraw draw) {
@@ -1421,6 +1655,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         } else if (hoveredStructure != null) {
             text = Texts.translatable(hoveredStructure.type().translationKey()).getString()
                 + " · " + hoveredStructure.blockX() + ", " + hoveredStructure.blockZ();
+        } else if (loadStateMode()) {
+            text = chunkLoadStateCursorText(mouseX, mouseY);
         } else {
             final int blockX = (int) Math.floor(centerX + (mouseX - width / 2.0) * scale);
             final int blockZ = (int) Math.floor(centerZ + (mouseY - height / 2.0) * scale);
@@ -1429,6 +1665,30 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
         final int textWidth = this.textRenderer.getWidth(text);
         draw.drawTextWithShadow(this.textRenderer, text, width / 2f - textWidth / 2f, height - MARGIN - 10, TEXT_COLOR);
+    }
+
+    private String chunkLoadStateCursorText(final int mouseX, final int mouseY) {
+        final int blockX = (int) Math.floor(centerX + (mouseX - width / 2.0) * scale);
+        final int blockZ = (int) Math.floor(centerZ + (mouseY - height / 2.0) * scale);
+        final int chunkX = TileMath.blockToChunk(blockX);
+        final int chunkZ = TileMath.blockToChunk(blockZ);
+        final Optional<LoadStateDeltaS2C.Entry> state = chunkLoadStates.snapshot().get(chunkX, chunkZ);
+        final String stateText;
+        if (state.isPresent()) {
+            final LoadStateDeltaS2C.Entry entry = state.get();
+            stateText = config.chunkLoadDetailMode == ChunkLoadDetailMode.EXACT
+                ? loadStateBandName(entry.band()) + " · L" + entry.level()
+                : loadStateBandName(entry.band());
+        } else {
+            stateText = Texts.translatable(
+                chunkLoadStates.snapshot().complete()
+                    ? "confluxmap.map.load_state.unloaded"
+                    : "confluxmap.map.load_state.unknown"
+            ).getString();
+        }
+        return blockX + ", " + blockZ + " · "
+            + Texts.translatable("confluxmap.map.load_state.chunk", chunkX, chunkZ).getString()
+            + " · " + stateText;
     }
 
     /**
