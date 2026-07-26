@@ -2,10 +2,8 @@
 
 **English** | [简体中文](README-CN.md)
 
-Conflux Map is a Fabric client-side minimap and world map for Minecraft 1.17.1
-and the whole 1.21 line. There is one build per Minecraft version that broke an
-API this mod uses, and each build loads on every patch release that shares that
-API:
+Conflux Map is a Fabric client-side minimap and world map for Minecraft 1.17.1,
+the whole 1.21 line, and 26.1.
 
 | Build      | Loads on               |
 |------------|------------------------|
@@ -17,11 +15,10 @@ API:
 | `1.21.8`   | 1.21.6, 1.21.7, 1.21.8 |
 | `1.21.9`   | 1.21.9, 1.21.10        |
 | `1.21.11`  | 1.21.11                |
+| `26.1.2`   | 26.1, 26.1.1, 26.1.2   |
 
-It runs standalone against any server — vanilla or modded, no server-side
-component required. Behavior is inspired by established minimap mods, but every
-line of code here is written from scratch; see
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for attribution.
+See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for third-party
+components and attribution.
 
 ## Features
 
@@ -31,31 +28,33 @@ line of code here is written from scratch; see
 - **Fullscreen world map** — pan/zoom map with multi-resolution tiles,
   cursor-anchored zoom, right-click to drop a waypoint.
 - **Cave / Nether / End layers** — automatic underground detection in the
-  Overworld with hysteresis so it doesn't flicker at the boundary; Nether
-  current-layer / ceiling / manual-Y-slice modes; End void-background
-  rendering.
+  Overworld; Nether current-layer / ceiling / manual-Y-slice modes; End
+  void-background rendering.
 - **Waypoints and death points** — create, edit, color, organize into sets, and
   toggle; automatic death-point markers; strict per-dimension rendering; and
-  edge-of-minimap direction indicators for out-of-range waypoints. On both the
-  fullscreen map and minimap, markers use the first character of the name in
-  white over the player-selected background color, differing only in size.
+  edge-of-minimap direction indicators for out-of-range waypoints.
+- **In-world waypoint markers** — an optional light beam at each waypoint and a
+  floating name and distance above it. Each can be turned off on its own, and
+  you can set how far away they still show.
 - **Waypoint set management** — create, rename, and delete local sets; select
   multiple points (or every point in the current filter) and move them to another set in one
   operation. Deleting a set permanently deletes every waypoint it contains.
+- **Import from other mods** — bring your existing Xaero's Minimap and VoxelMap
+  waypoints for the current world over in one click. Locations you already have
+  are skipped, and your original files are left untouched.
 - **Public and chat-shared coordinates** — an optional server-owned public
-  waypoint catalog with operator locks, plus preview-before-send chat sharing
-  and click-to-import coordinate messages on servers without the companion.
-  Public controls are hidden unless the connected server explicitly enables
-  the public waypoint feature.
+  waypoint catalog; on servers without the companion, coordinates shared in
+  chat can still be imported with a click.
 - **Entity radar** — hostile / passive / player / other classification, each
   with its own toggle, range, and entity cap.
 - **Disk cache** — explored terrain persists per world / server / dimension /
   layer, so revisiting a world shows the map you already drew instead of a
   blank.
-- **Seed-predicted underlay** — panning into unexplored Overworld or End
-  terrain shows an instant seed-based guess (biomes, terrain height, 1.17
-  tree candidates) that real captured tiles draw over as they load. Backed
-  by a bundled [cubiomes](https://github.com/Cubitect/cubiomes) native build.
+- **Seed prediction** — panning into unexplored Overworld or End terrain shows
+  an instant seed-based guess at the biomes, terrain height, and trees, which
+  the real map draws over as you explore it. Superflat worlds are recognized and
+  predicted too. Backed by a bundled
+  [cubiomes](https://github.com/Cubitect/cubiomes) native build.
 - **Structure candidates** — villages, ocean monuments, woodland mansions,
   outposts, ruined portals, and end cities show as semi-transparent markers
   until real data confirms or rules them out.
@@ -65,6 +64,8 @@ line of code here is written from scratch; see
 - **Optional server companion** — the same jar can run a server-side companion
   that returns compact per-column corrections against the real world; the seed
   and public waypoint catalog are shared only when the operator opts in.
+- **Update check** — an optional check on startup that tells you in chat when a
+  newer version is out, with a download link, plus a badge on the map screen.
 - **Settings screen** — everything above is exposed in-game and takes effect
   immediately, no restart. Full English and Simplified Chinese localization.
 
@@ -95,9 +96,10 @@ on display; End waypoints always stay confined to the End. The waypoint list
 supports local set creation, renaming, cascading deletion, and multi-select
 or current-filter select-all batch moves between sets.
 
-A waypoint HUD overlay is not implemented yet. An immutable, read-only
-waypoint data interface is reserved for a future HUD without exposing store
-mutation operations.
+Waypoints can also show in the world itself, as a light beam with the name and
+distance floating above it. Each part can be turned off on its own, and you can
+set how far away they still show. An on-screen waypoint list overlay is not
+implemented yet.
 
 ## Public waypoints
 
@@ -121,16 +123,15 @@ local waypoint editor before anything is saved.
 
 ## Building
 
-Requires JDK 21 or newer; each version subproject emits the bytecode level required by its
-Minecraft target. Loom fetches Minecraft, mappings, and Fabric API automatically.
+Requires JDK 21 or newer. Everything else — Minecraft, mappings, Fabric API, and the JDK 25 the
+`26.1.2` build needs — is downloaded by Gradle on demand.
 
 ```sh
 ./gradlew :1.21.11:build
 ```
 
-Replace `1.21.11` with any supported version above. When building multiple versions in one
-invocation, pass `--no-parallel` because the ReplayMod preprocessor derives each version in order.
-The jar is written to `versions/<minecraft-version>/build/libs/`.
+Replace `1.21.11` with any supported version above. The jar is written to
+`versions/<minecraft-version>/build/libs/`.
 
 ## License
 
