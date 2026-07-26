@@ -6,6 +6,7 @@
     "VanillaLayeredBiomeSourceAccessor"
   ],
   "client": [
+    "ChatHudMixin",
     "ClientChunkManagerMixin",
     "ClientPlayNetworkHandlerMixin",
     "ScreenMixin",

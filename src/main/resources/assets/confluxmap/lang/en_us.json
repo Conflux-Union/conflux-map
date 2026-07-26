@@ -152,7 +152,7 @@
   "confluxmap.shared_waypoints.result.persistence_failed": "The server could not save the public waypoint change.",
   "confluxmap.shared_waypoints.result.disabled": "Public waypoints were disabled by the server.",
   "confluxmap.shared_waypoints.result.failed": "The public waypoint change failed.",
-  "confluxmap.chat.waypoint.import": "[Import waypoint]",
+  "confluxmap.chat.waypoint.import": "[Click to import]",
   "confluxmap.waypoint.death.name": "Death",
   "confluxmap.screen.config.title": "Conflux Map Settings",
   "confluxmap.screen.config.category.minimap": "Minimap",

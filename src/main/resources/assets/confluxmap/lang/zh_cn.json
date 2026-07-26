@@ -152,7 +152,7 @@
   "confluxmap.shared_waypoints.result.persistence_failed": "服务器无法保存公共坐标点修改。",
   "confluxmap.shared_waypoints.result.disabled": "服务器已禁用公共坐标点。",
   "confluxmap.shared_waypoints.result.failed": "公共坐标点修改失败。",
-  "confluxmap.chat.waypoint.import": "[导入坐标点]",
+  "confluxmap.chat.waypoint.import": "[点击导入]",
   "confluxmap.waypoint.death.name": "死亡点",
   "confluxmap.screen.config.title": "Conflux 地图设置",
   "confluxmap.screen.config.category.minimap": "小地图",

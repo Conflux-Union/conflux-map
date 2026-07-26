@@ -83,6 +83,20 @@ class WaypointChatCodecTest {
     }
 
     @Test
+    void formatsConfluxCandidateAsCompactChatLabel() {
+        final WaypointChatCodec.Candidate candidate = WaypointChatCodec.parse(
+            "<Alice> [Conflux Map] \u4e3b\u57ce | \u5317\u95e8 | minecraft:the_nether | "
+                + "X: -12.25, Y: 70, Z: 45.5",
+            DimensionId.OVERWORLD
+        ).orElseThrow(AssertionError::new);
+
+        assertEquals(
+            "\u4e3b\u57ce | \u5317\u95e8(-12.25,70,45.5,\u4e0b\u754c)",
+            WaypointChatCodec.formatCompactLabel(candidate, "\u4e0b\u754c")
+        );
+    }
+
+    @Test
     void parsesStrictGenericLabelsUsingReceiveTimeDimensionAndEmptyName() {
         final Optional<WaypointChatCodec.Candidate> parsed = WaypointChatCodec.parse(
             "Alice: x=-12.5 Y: 64, z=+3.25", DimensionId.END

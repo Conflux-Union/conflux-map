@@ -152,6 +152,15 @@ public final class WaypointChatCodec {
         ));
     }
 
+    /** Produces the compact label shown after a Conflux Map chat share is recognized. */
+    public static String formatCompactLabel(final Candidate candidate, final String dimensionLabel) {
+        Objects.requireNonNull(candidate, "candidate");
+        Objects.requireNonNull(dimensionLabel, "dimensionLabel");
+        return candidate.name + "(" + formatCoordinate(candidate.x) + ","
+            + formatCoordinate(candidate.y) + "," + formatCoordinate(candidate.z) + ","
+            + dimensionLabel + ")";
+    }
+
     private static Optional<Candidate> parseConfluxMessage(final String message) {
         final Matcher messageMatcher = CONFLUX_MESSAGE_PATTERN.matcher(message);
         if (!messageMatcher.matches()) {
