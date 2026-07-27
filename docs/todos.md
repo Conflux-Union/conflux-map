@@ -171,40 +171,6 @@ The result should behave like traditional map-image scaling for explored
 terrain while retaining the current sparse/coarse path as a fallback for data
 that was never captured in detail.
 
-## Existing confirmed backlog
-
-### Nether bedrock-ceiling layer split
-
-This merges three requests: automatically ignore the Nether bedrock ceiling,
-record the spaces above and below it independently, and toggle the view with a
-keybind.
-
-The Nether has `height=256` but `logical_height=128`, so generated terrain ends
-at y=127 and the bedrock ceiling caps it around y=124-127. Both current Nether
-scan paths stop on the top face of that cap, producing a flat grey map while the
-player is on the roof.
-
-#### Required behavior
-
-- Add a bedrock-skipping scan mode so terrain below the cap remains visible from
-  the roof.
-- Keep roof-surface and below-cap views as independently persisted layers.
-- Use the existing `cycle_layer` keybind to cycle the two states.
-- Give both layers distinct cache IDs and confirm they cannot share a region
-  file.
-
-Primary seams: `McChunkSnapshotFactory#sampleFloorColumn`, `MapLayer`,
-`LayerSelector`, `RegionCacheService`, and `RegionDiskCache`.
-
-### Map image export
-
-Export the current world-map view as a PNG. Tile pixel data and
-`compat/NativeImages` already exist, so write the image in bounded chunks rather
-than materializing an unbounded explored world in one heap buffer.
-
-Implementation choices still to settle are export at the on-screen LOD versus
-always LOD 0, and viewport export versus a user-selected rectangle.
-
 ## Confirmed bugs
 
 ### Bug 1. Fullscreen zoom label shows the inverse meaning
