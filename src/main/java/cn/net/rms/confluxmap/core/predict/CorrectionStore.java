@@ -66,6 +66,13 @@ public final class CorrectionStore {
         return changed;
     }
 
+    /** Applies an ephemeral progressive scan overlay; it is intentionally not persisted. */
+    public synchronized boolean applyPartial(
+        final Key key, final byte[] presence, final PatchCodec.Patch patch
+    ) {
+        return get(key).applyPartial(presence, patch);
+    }
+
     public synchronized void flush() {
         for (final Key key : dirty.keySet().toArray(new Key[0])) {
             final CorrectionTile tile = tiles.get(key);

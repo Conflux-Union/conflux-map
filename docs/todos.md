@@ -152,7 +152,7 @@ Use the mod's existing internal cubiomes/companion data path. Seed-calculator
 software is only a visual reference, not a runtime dependency or external data
 source.
 
-### 9. Preserve high-resolution captured data while zooming
+### 9. Preserve high-resolution captured data while zooming — completed
 
 For chunks that have already been captured at a fine LOD, render from the
 finest available real map data and scale it down at wider zoom levels instead of
@@ -171,6 +171,13 @@ The result should behave like traditional map-image scaling for explored
 terrain while retaining the current sparse/coarse path as a fallback for data
 that was never captured in detail.
 
+Completed on 2026-07-27. Coarse real tiles are composed by alpha-weighted
+downsampling of the finest resident LOD-0 regions. A coarse viewport now pulls
+its covered persistent LOD-0 cache regions through a bounded 64-read queue, and
+one region merge invalidates the affected LOD parents as a batch. Missing fine
+regions remain unclaimed and transparent, so the existing prediction/correction
+underlay remains the fallback without adding per-region draw calls.
+
 ## Confirmed bugs
 
 ### Bug 1. Fullscreen zoom label shows the inverse meaning
@@ -186,7 +193,7 @@ sequence should read `1.00x -> 0.25x -> 0.0625x`, not `1 -> 4 -> 16`. Keep the
 internal blocks-per-pixel value and all viewport/LOD math unchanged; only the
 presentation and its regression test should change.
 
-### Bug 2. Large player-built structures do not sync at low zoom
+### Bug 2. Large player-built structures do not sync at low zoom — completed
 
 Affected release: `0.1.0-beta.5`.
 
@@ -194,18 +201,25 @@ At `scale=16` blocks per pixel (the corrected label is `0.0625x`, LOD 4), a
 large artificial structure can cover enough area to be visible but still fail
 to appear correctly through companion synchronization.
 
-The first investigation target is the current LOD gate: `MapSyncClient` does
-request coarse viewports, but `PatchBuilder.MAX_SUPPORTED_LOD` and the default
-`ServerConfig#maxPatchLod` stop full correction patches at LOD 2. Higher LODs
-receive presence-only data, which cannot describe player-built surface changes.
-Verify this with a focused LOD-4 server/client regression before choosing the
-fix; do not treat generated-chunk presence as equivalent to synchronized column
-data.
+The cause was the LOD gate: coarse requests above LOD 2 received generated
+presence but no column corrections. The operator-configurable correction and
+presence ceilings have been removed; every supported map LOD now carries full
+correction data.
 
 The fix must make captured/synchronized construction visible at the widest
 supported zoom, refresh an already visible coarse view after source chunks
 change, and preserve bounded server work. Test both a large contiguous footprint
 and a footprint crossing coarse tile boundaries.
+
+LOD 3-4 use a shared progressive scan capped at 2,048 chunks and 4 ms per server
+tick. Baseline sampling and patch encoding run on a daemon worker, while clients
+apply replaceable revision-0 progress overlays until a final revision arrives.
+Completed coarse tiles remain on a five-second visible polling interval so a
+source edit is observed without waiting for the ordinary map-cache cooldown.
+Reusable `.cfs` summaries require the current `.mca` mtime, live summaries take
+priority, and every source mtime/live epoch is revalidated before a final result
+is reused. Regression coverage includes a contiguous 128x128-chunk LOD-4 build
+and a build crossing an LOD-4 tile boundary.
 
 ## Deferred
 

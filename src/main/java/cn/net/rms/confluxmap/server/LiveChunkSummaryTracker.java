@@ -135,6 +135,10 @@ final class LiveChunkSummaryTracker {
         return summaries.overlay(dimension, region);
     }
 
+    long regionEpoch(final String dimension, final int regionX, final int regionZ) {
+        return summaries.regionEpoch(dimension, regionX, regionZ);
+    }
+
     void prepareStop() {
         final List<Map.Entry<LoadedKey, WorldChunk>> remaining = new ArrayList<>(loadedChunks.entrySet());
         for (final Map.Entry<LoadedKey, WorldChunk> entry : remaining) {

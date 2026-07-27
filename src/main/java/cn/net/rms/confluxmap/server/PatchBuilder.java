@@ -12,24 +12,34 @@ import cn.net.rms.confluxmap.core.predict.CanopyStylizer;
 import cn.net.rms.confluxmap.core.predict.DerivedGrid;
 import cn.net.rms.confluxmap.core.predict.FlatBaseline;
 import cn.net.rms.confluxmap.core.predict.LodSampling;
+import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.ArrayList;
 import java.util.List;
 
 /** Builds one correction patch from summaries and the same deterministic client baseline. */
 public final class PatchBuilder {
-    public static final int MAX_SUPPORTED_LOD = 2;
+    public record PreparedBaseline(
+        BaselineGrid baseline,
+        DerivedGrid derived,
+        int mapColorId,
+        boolean absolute
+    ) {
+        public static PreparedBaseline absoluteOnly() {
+            return new PreparedBaseline(null, null, Proto.MAP_COLOR_NONE, true);
+        }
+    }
 
     public record Result(int mode, long revision, byte[] presence, byte[] body, int recordCount) {
     }
 
     /** Builds a residual or absolute patch from a tile-wide summary grid. */
     public Result build(
-        final SummaryTile summary,
+        final SummaryView summary,
         final long sinceRevision,
         final BaselineGrid baseline,
         final boolean absolute
     ) {
-        if (summary == null || summary.lod() > MAX_SUPPORTED_LOD || baseline == null) {
+        if (!supported(summary) || baseline == null) {
             return unavailable();
         }
         return buildWithDerived(summary, sinceRevision, baseline, BaselineDeriver.derive(baseline), Proto.MAP_COLOR_NONE, absolute);
@@ -55,7 +65,7 @@ public final class PatchBuilder {
     }
 
     private Result buildWithDerived(
-        final SummaryTile summary,
+        final SummaryView summary,
         final long sinceRevision,
         final BaselineGrid baseline,
         final DerivedGrid derived,
@@ -65,9 +75,9 @@ public final class PatchBuilder {
         final List<PatchCodec.Sample> records = new ArrayList<>();
         for (int z = 0; z < SummaryTile.PIXELS; z++) {
             for (int x = 0; x < SummaryTile.PIXELS; x++) {
-                final SummaryTile.Pixel actual = summary.pixel(x, z);
-                if (actual == null || !actual.chunk().generated() || actual.column() == null
-                    || actual.chunk().revision() <= sinceRevision) {
+                final SummaryView.Pixel actual = summary.pixel(x, z);
+                if (actual == null || !actual.generated() || actual.column() == null
+                    || actual.revision() <= sinceRevision) {
                     continue;
                 }
                 final int baseIndex = BaselineGrid.index(x, z);
@@ -93,31 +103,42 @@ public final class PatchBuilder {
     }
 
     public Result buildFromSampler(
-        final SummaryTile summary,
+        final SummaryView summary,
         final long sinceRevision,
         final BaselineSampler sampler,
         final boolean end,
         final long seed,
         final boolean absolute
     ) {
-        if (summary == null || summary.lod() > MAX_SUPPORTED_LOD || sampler == null) {
-            return unavailable();
+        final PreparedBaseline prepared = prepareFromSampler(summary, sampler, end, seed, absolute);
+        return prepared == null ? unavailable() : buildPrepared(summary, sinceRevision, prepared);
+    }
+
+    public PreparedBaseline prepareFromSampler(
+        final SummaryView summary,
+        final BaselineSampler sampler,
+        final boolean end,
+        final long seed,
+        final boolean absolute
+    ) {
+        if (!supported(summary) || sampler == null) {
+            return null;
         }
         final long originX = summary.originBlockX();
         final long originZ = summary.originBlockZ();
         if (originX < Integer.MIN_VALUE || originX > Integer.MAX_VALUE
             || originZ < Integer.MIN_VALUE || originZ > Integer.MAX_VALUE) {
-            return unavailable();
+            return null;
         }
         final BaselineGrid baseline = LodSampling.sample(
             sampler, end, summary.lod(), (int) originX, (int) originZ
         );
         if (baseline == null) {
-            return unavailable();
+            return null;
         }
         final DerivedGrid derived = BaselineDeriver.derive(baseline);
         CanopyStylizer.apply(derived, baseline, seed, summary.lod(), (int) originX, (int) originZ);
-        return buildWithDerived(summary, sinceRevision, baseline, derived, Proto.MAP_COLOR_NONE, absolute);
+        return new PreparedBaseline(baseline, derived, Proto.MAP_COLOR_NONE, absolute);
     }
 
     /**
@@ -126,16 +147,46 @@ public final class PatchBuilder {
      * the flat top block's real map color, so an untouched flat surface produces no records.
      */
     public Result buildFromUniform(
-        final SummaryTile summary,
+        final SummaryView summary,
         final long sinceRevision,
         final FlatBaseline flat,
         final boolean absolute
     ) {
-        if (summary == null || summary.lod() > MAX_SUPPORTED_LOD || flat == null) {
+        final PreparedBaseline prepared = prepareFromUniform(summary, flat, absolute);
+        return prepared == null ? unavailable() : buildPrepared(summary, sinceRevision, prepared);
+    }
+
+    public PreparedBaseline prepareFromUniform(
+        final SummaryView summary,
+        final FlatBaseline flat,
+        final boolean absolute
+    ) {
+        if (!supported(summary) || flat == null) {
+            return null;
+        }
+        return new PreparedBaseline(
+            flat.toBaselineGrid(), flat.toDerivedGrid(), flat.mapColorId(), absolute
+        );
+    }
+
+    public Result buildPrepared(
+        final SummaryView summary,
+        final long sinceRevision,
+        final PreparedBaseline prepared
+    ) {
+        if (!supported(summary) || prepared == null) {
             return unavailable();
         }
+        if (prepared.baseline() == null || prepared.derived() == null) {
+            return buildAbsolute(summary, sinceRevision);
+        }
         return buildWithDerived(
-            summary, sinceRevision, flat.toBaselineGrid(), flat.toDerivedGrid(), flat.mapColorId(), absolute
+            summary,
+            sinceRevision,
+            prepared.baseline(),
+            prepared.derived(),
+            prepared.mapColorId(),
+            prepared.absolute()
         );
     }
 
@@ -160,16 +211,16 @@ public final class PatchBuilder {
     }
 
     /** Absolute fallback used when the server cannot load the matching native predictor. */
-    public Result buildAbsolute(final SummaryTile summary, final long sinceRevision) {
-        if (summary == null || summary.lod() > MAX_SUPPORTED_LOD) {
+    public Result buildAbsolute(final SummaryView summary, final long sinceRevision) {
+        if (!supported(summary)) {
             return unavailable();
         }
         final List<PatchCodec.Sample> records = new ArrayList<>();
         for (int z = 0; z < SummaryTile.PIXELS; z++) {
             for (int x = 0; x < SummaryTile.PIXELS; x++) {
-                final SummaryTile.Pixel actual = summary.pixel(x, z);
-                if (actual == null || !actual.chunk().generated() || actual.column() == null
-                    || actual.chunk().revision() <= sinceRevision) {
+                final SummaryView.Pixel actual = summary.pixel(x, z);
+                if (actual == null || !actual.generated() || actual.column() == null
+                    || actual.revision() <= sinceRevision) {
                     continue;
                 }
                 if (actual.column().kind() == SurfaceKind.UNKNOWN.ordinal()) {
@@ -197,7 +248,7 @@ public final class PatchBuilder {
     }
 
     private static Result result(
-        final SummaryTile summary, final List<PatchCodec.Sample> records, final int nonEmptyMode
+        final SummaryView summary, final List<PatchCodec.Sample> records, final int nonEmptyMode
     ) {
         if (records.isEmpty()) {
             return new Result(Proto.PATCH_MODE_UNCHANGED, summary.revision(), summary.presence(), new byte[0], 0);
@@ -207,5 +258,9 @@ public final class PatchBuilder {
 
     public static Result unavailable() {
         return new Result(Proto.PATCH_MODE_UNAVAILABLE, 0L, new byte[Proto.PATCH_PRESENCE_BYTES], new byte[0], 0);
+    }
+
+    private static boolean supported(final SummaryView summary) {
+        return summary != null && summary.lod() >= 0 && summary.lod() <= TileMath.MAX_LOD;
     }
 }

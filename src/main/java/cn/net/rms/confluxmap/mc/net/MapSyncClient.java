@@ -33,6 +33,8 @@ public final class MapSyncClient {
     private static final long ERROR_BACKOFF_MS = 1_000L;
     /** A request silent for this long is considered dropped; its unanswered tiles become plannable again. */
     private static final long REQUEST_TIMEOUT_MS = 10_000L;
+    /** Completed coarse tiles are polled so an already-visible build refreshes after source edits. */
+    private static final long COARSE_REFRESH_NANOS = 5_000_000_000L;
     /**
      * Outstanding-request window. Two full requests match the server's default 16-tile delivery
      * queue ({@code maxPendingTilesPerPlayer}), so the client never overflows it while still
@@ -109,14 +111,7 @@ public final class MapSyncClient {
         this.millisClock = millisClock;
     }
 
-    /**
-     * Requests are not capped at {@code maxPatchLod}. Coarser tiles cannot carry corrections, but
-     * the server can still answer them with the generated-chunk bitmap, which is the only thing
-     * {@link cn.net.rms.confluxmap.core.predict.PredictionViewMode#GENERATED_ONLY} reads - and
-     * without it that mode blanked the underlay entirely past LOD 2, exactly where it is most
-     * useful. A server that will not serve the LOD replies UNAVAILABLE, or ERROR on builds
-     * predating presence-only patches; both cost one small round trip per planner cooldown.
-     */
+    /** Requests every map LOD; high LOD corrections arrive as bounded progressive patches. */
     public synchronized void reportViewport(
         final DimensionId dimension, final int lod, final int minX, final int maxX, final int minZ, final int maxZ
     ) {
@@ -163,7 +158,8 @@ public final class MapSyncClient {
         final List<MapViewReqC2S.TileReq> planned = ViewRequestPlanner.plan(
             new ViewRequestPlanner.Viewport(minX, maxX, minZ, maxZ, centerX, centerZ), tiles,
             Math.min(Proto.MAX_TILES_PER_REQ, companion.policy().budgets().maxTilesPerReq()), now * 1_000_000L,
-            60_000_000_000L, 600_000_000_000L
+            lod >= 3 ? COARSE_REFRESH_NANOS : 60_000_000_000L,
+            lod >= 3 ? COARSE_REFRESH_NANOS : 600_000_000_000L
         );
         if (planned.isEmpty()) {
             return;
@@ -192,27 +188,48 @@ public final class MapSyncClient {
         completeTile(patch.reqId(), patch.tileX(), patch.tileZ());
         try {
             applyPatch(patch);
+            if (patch.mode() == Proto.PATCH_MODE_PARTIAL) {
+                allowPartialRetry(patch);
+            }
         } finally {
             progress.patchReceived(patch, payloadBytes, System.nanoTime());
         }
     }
 
     private void applyPatch(final MapPatchS2C patch) {
-        if (patch.mode() == Proto.PATCH_MODE_UNAVAILABLE || patch.mode() == Proto.PATCH_MODE_UNCHANGED) {
+        if (patch.mode() == Proto.PATCH_MODE_UNAVAILABLE) {
+            return;
+        }
+        if (patch.mode() == Proto.PATCH_MODE_UNCHANGED) {
             final CorrectionStore.Key key = keyFor(patch);
-            if (key != null) {
-                corrections.apply(key, patch.tileRevision(), patch.presence(), new PatchCodec.Patch(List.of()));
+            if (key != null && predictionTiles.applyCorrection(
+                key, patch.tileRevision(), patch.presence(), new PatchCodec.Patch(List.of())
+            )) {
+                corrections.flush();
             }
             return;
         }
         try {
             final PatchCodec.Patch decoded = PatchCodec.decode(patch.body());
             final CorrectionStore.Key key = keyFor(patch);
-            if (key != null && predictionTiles.applyCorrection(key, patch.tileRevision(), patch.presence(), decoded)) {
+            if (key == null) {
+                return;
+            }
+            if (patch.mode() == Proto.PATCH_MODE_PARTIAL) {
+                predictionTiles.applyPartialCorrection(key, patch.presence(), decoded);
+            } else if (predictionTiles.applyCorrection(key, patch.tileRevision(), patch.presence(), decoded)) {
                 corrections.flush();
             }
         } catch (final ProtoException e) {
             ConfluxMapMod.LOGGER.warn("companion: malformed MAP_PATCH body ({})", e.getMessage());
+        }
+    }
+
+    /** Progressive revision-0 patches must remain plannable on the next normal request interval. */
+    private void allowPartialRetry(final MapPatchS2C patch) {
+        final CorrectionStore.Key key = keyFor(patch);
+        if (key != null) {
+            lastRequestNanos.remove(new TileStamp(key.dimension(), key.lod(), key.tileX(), key.tileZ()));
         }
     }
 

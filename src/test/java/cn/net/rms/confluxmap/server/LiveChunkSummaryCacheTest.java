@@ -34,6 +34,26 @@ class LiveChunkSummaryCacheTest {
         assertEquals(10L, merged.chunks()[0].revision());
     }
 
+    @Test
+    void regionEpochChangesOnlyWhenReusableLiveDataChanges() {
+        final LiveChunkSummaryCache cache = new LiveChunkSummaryCache();
+        assertEquals(0L, cache.regionEpoch("minecraft:overworld", 2, -3));
+
+        cache.put("minecraft:overworld", 35, -46, chunk(10L, 60));
+        final long first = cache.regionEpoch("minecraft:overworld", 2, -3);
+        cache.put("minecraft:overworld", 35, -46, chunk(20L, 60));
+        assertEquals(first, cache.regionEpoch("minecraft:overworld", 2, -3));
+
+        cache.put("minecraft:overworld", 35, -46, chunk(5L, 61));
+        final long changed = cache.regionEpoch("minecraft:overworld", 2, -3);
+        org.junit.jupiter.api.Assertions.assertTrue(changed > first);
+
+        cache.remove("minecraft:overworld", 35, -46);
+        org.junit.jupiter.api.Assertions.assertTrue(
+            cache.regionEpoch("minecraft:overworld", 2, -3) > changed
+        );
+    }
+
     private static SummaryCodec.Region region(
         final int regionX,
         final int regionZ,

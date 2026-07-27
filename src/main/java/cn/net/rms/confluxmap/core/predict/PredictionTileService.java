@@ -92,6 +92,25 @@ public final class PredictionTileService {
         if (store == null || !store.apply(key, revision, presence, patch)) {
             return false;
         }
+        markCorrectionDirty(key);
+        return true;
+    }
+
+    /** Applies an uncommitted progressive scan and queues the same visible recomposition path. */
+    public boolean applyPartialCorrection(
+        final CorrectionStore.Key key,
+        final byte[] presence,
+        final cn.net.rms.confluxmap.core.net.PatchCodec.Patch patch
+    ) {
+        final CorrectionStore store = correctionStore;
+        if (store == null || !store.applyPartial(key, presence, patch)) {
+            return false;
+        }
+        markCorrectionDirty(key);
+        return true;
+    }
+
+    private void markCorrectionDirty(final CorrectionStore.Key key) {
         final SessionGuard.Session session = sessionGuard.current();
         final DimensionId patchDimension = DimensionId.parse(key.dimension());
         final String realLayer = PredictionDimensions.isEnd(patchDimension)
@@ -103,7 +122,6 @@ public final class PredictionTileService {
             metadataTiles.remove(tile);
         }
         markDirty(tile, session.token());
-        return true;
     }
 
     /** Main thread, from the session tracker: forget every queued/in-flight predicted tile, and invalidate cached native contexts. */

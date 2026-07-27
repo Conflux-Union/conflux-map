@@ -17,12 +17,17 @@ import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.MinecraftServer;
@@ -41,13 +46,31 @@ import net.minecraft.world.chunk.WorldChunk;
  * {@code ERR_RATE_LIMITED}; a temporarily exhausted byte budget never drops tiles.
  */
 public final class RegionSummaryService {
+    private static final int PROGRESSIVE_MIN_LOD = 3;
+    private static final int PROGRESSIVE_MAX_ACTIVE_TILES = 24;
+    private static final int PROGRESSIVE_MAX_CHUNKS_OR_REGIONS_PER_TICK = 2_048;
+    private static final long PROGRESSIVE_MAX_NANOS_PER_TICK = 4_000_000L;
+    private static final long PROGRESSIVE_IDLE_TTL_NANOS = 30_000_000_000L;
+
     private final ServerConfig config;
     private final ChunkSummarizer summarizer = new ChunkSummarizer(new RegistryMapColors());
     private final PatchBuilder patchBuilder = new PatchBuilder();
     private final Map<UUID, PlayerChannel> channels = new ConcurrentHashMap<>();
     private final LiveChunkSummaryTracker liveChunks;
+    private final ExecutorService progressiveWorker = Executors.newSingleThreadExecutor(runnable -> {
+        final Thread thread = new Thread(runnable, "ConfluxMap-progressive-patches");
+        thread.setDaemon(true);
+        return thread;
+    });
+    /** Access-ordered global task cache; identical player requests reuse the same validated scan. */
+    private final LinkedHashMap<ProgressiveKey, ProgressiveRegionPatch> progressiveTasks =
+        new LinkedHashMap<>(16, 0.75f, true);
+    private int progressiveCursor;
     private Path diskRoot;
     private SummaryDiskCache diskCache;
+
+    private record ProgressiveKey(ServerWorld world, int lod, int tileX, int tileZ) {
+    }
 
     private static final class PlayerChannel {
         final PatchDispatcher dispatcher;
@@ -108,8 +131,10 @@ public final class RegionSummaryService {
 
     /** Server tick: keep draining queued patches as each player's byte budget refills. */
     public void tick(final MinecraftServer server) {
-        liveChunks.tick(server, diskFor(server));
+        final SummaryDiskCache disk = diskFor(server);
+        liveChunks.tick(server, disk);
         final long now = System.nanoTime();
+        tickProgressive(now);
         for (final PlayerChannel channel : channels.values()) {
             if (channel.dispatcher.queued() > 0 && channel.sender != null) {
                 drain(server, channel, now);
@@ -133,6 +158,18 @@ public final class RegionSummaryService {
     public void close(final MinecraftServer server) {
         liveChunks.close(server, diskFor(server));
         channels.clear();
+        synchronized (progressiveTasks) {
+            for (final ProgressiveRegionPatch task : progressiveTasks.values()) {
+                task.close();
+            }
+            progressiveTasks.clear();
+        }
+        progressiveWorker.shutdownNow();
+        try {
+            progressiveWorker.awaitTermination(2L, TimeUnit.SECONDS);
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private void drain(final MinecraftServer server, final PlayerChannel channel, final long nowNanos) {
@@ -153,12 +190,8 @@ public final class RegionSummaryService {
         return diskCache;
     }
 
-    /**
-     * Highest LOD a request may name. Tiles above {@link ServerConfig#maxPatchLod} cannot carry
-     * corrections but are still answerable with presence alone, so the two ceilings are separate.
-     */
     private int lodCeiling() {
-        return Math.max(config.maxPatchLod, config.maxPresenceLod);
+        return cn.net.rms.confluxmap.core.util.TileMath.MAX_LOD;
     }
 
     private MapPatchS2C buildJob(
@@ -171,8 +204,8 @@ public final class RegionSummaryService {
             if (world == null || !config.shareCorrections) {
                 return unavailable(job);
             }
-            if (job.lod() > PatchBuilder.MAX_SUPPORTED_LOD || job.lod() > config.maxPatchLod) {
-                return presenceOnly(world, job, disk);
+            if (job.lod() >= PROGRESSIVE_MIN_LOD) {
+                return progressiveJob(world, disk, job);
             }
             final SummaryTile summary = readTile(world, job.tileX(), job.tileZ(), job.lod(), disk);
             final PatchBuilder.Result result = buildPatch(world, summary, job.sinceRevision());
@@ -187,33 +220,123 @@ public final class RegionSummaryService {
         }
     }
 
-    /**
-     * Answers a tile the correction builder will not serve with its generated-chunk bitmap alone,
-     * which is all the client's generated-only view mode needs.
-     *
-     * <p>The revision stays 0 deliberately. It is the watermark the client echoes back as
-     * {@code sinceRevision}, and recording a real one here would make a later full request skip
-     * every unchanged chunk of a tile whose columns the client never actually received.
-     *
-     * <p>Only the summary cache is consulted - never a region-file scan, which at LOD 4 would mean
-     * reading 256 regions worth of chunk NBT for 32 bytes. Ignoring staleness is safe for presence
-     * in a way it is not for columns: chunk generation is monotonic, so an outdated summary can
-     * only miss a newly generated chunk, never claim one that does not exist. Regions with no
-     * cached summary read as "not generated" and fill in as players visit them at a correctable LOD.
-     */
-    private MapPatchS2C presenceOnly(
-        final ServerWorld world, final PatchDispatcher.TileJob job, final SummaryDiskCache disk
+    private MapPatchS2C progressiveJob(
+        final ServerWorld world,
+        final SummaryDiskCache disk,
+        final PatchDispatcher.TileJob job
     ) {
-        if (job.lod() > config.maxPresenceLod) {
-            return unavailable(job);
+        final long now = System.nanoTime();
+        final ProgressiveKey key = new ProgressiveKey(world, job.lod(), job.tileX(), job.tileZ());
+        final ProgressiveRegionPatch task;
+        synchronized (progressiveTasks) {
+            ProgressiveRegionPatch existing = progressiveTasks.get(key);
+            if (existing == null) {
+                evictProgressiveTasks(now, true);
+                if (progressiveTasks.size() >= PROGRESSIVE_MAX_ACTIVE_TILES) {
+                    return new MapPatchS2C(
+                        job.reqId(), job.dimIndex(), job.lod(), job.tileX(), job.tileZ(),
+                        Proto.PATCH_MODE_PARTIAL, 0L, new byte[Proto.PATCH_PRESENCE_BYTES],
+                        ProgressiveRegionPatch.emptyPatchBody()
+                    );
+                }
+                final String dimension = world.getRegistryKey().getValue().toString();
+                final Path worldRoot = world.getServer().getSavePath(WorldSavePath.ROOT);
+                existing = new ProgressiveRegionPatch(
+                    dimension,
+                    worldRoot,
+                    disk,
+                    liveChunks,
+                    summarizer,
+                    patchBuilder,
+                    progressiveWorker,
+                    job.lod(),
+                    job.tileX(),
+                    job.tileZ(),
+                    baselineFactory(world),
+                    pos -> readChunkNbt(world, pos),
+                    now
+                );
+                progressiveTasks.put(key, existing);
+            }
+            task = existing;
         }
-        final String dimension = world.getRegistryKey().getValue().toString();
-        final byte[] presence = TilePresence.build(job.lod(), job.tileX(), job.tileZ(), (regionX, regionZ) -> {
-            final SummaryCodec.Generated cached = disk.loadGenerated(dimension, regionX, regionZ);
-            return cached == null ? null : cached.flags();
-        });
-        return new MapPatchS2C(job.reqId(), job.dimIndex(), job.lod(), job.tileX(), job.tileZ(),
-            Proto.PATCH_MODE_UNCHANGED, 0L, presence, new byte[0]);
+        final ProgressiveRegionPatch.Response response = task.response(job.sinceRevision(), now);
+        return new MapPatchS2C(
+            job.reqId(), job.dimIndex(), job.lod(), job.tileX(), job.tileZ(),
+            response.mode(), response.revision(), response.presence(), response.body()
+        );
+    }
+
+    private ProgressiveRegionPatch.BaselineFactory baselineFactory(final ServerWorld world) {
+        final WorldPreset preset = WorldPresetDetector.detect(world);
+        if (preset == WorldPreset.FLAT) {
+            final Optional<FlatBaseline> flat = FlatWorldBaseline.of(world);
+            if (flat.isPresent()) {
+                return summary -> patchBuilder.prepareFromUniform(summary, flat.get(), false);
+            }
+        }
+        if (NativeLib.available() && preset.predictable()) {
+            final int nativeDim = PredictionDimensions.isEnd(
+                cn.net.rms.confluxmap.core.model.DimensionId.of(
+                    world.getRegistryKey().getValue().getNamespace(),
+                    world.getRegistryKey().getValue().getPath()
+                )
+            ) ? 1 : 0;
+            final java.util.OptionalInt version = McVersions.toCubiomes(MinecraftVersion.current());
+            if (version.isPresent()) {
+                final long seed = world.getSeed();
+                final NativeBaselineSampler sampler = new NativeBaselineSampler(
+                    version.getAsInt(), seed, nativeDim, preset.cubiomesFlags()
+                );
+                return summary -> patchBuilder.prepareFromSampler(
+                    summary, sampler, nativeDim == 1, seed, false
+                );
+            }
+        }
+        return ignored -> PatchBuilder.PreparedBaseline.absoluteOnly();
+    }
+
+    /** Gives one active coarse tile a bounded main-thread slice, rotating fairly across players. */
+    private void tickProgressive(final long nowNanos) {
+        final ProgressiveRegionPatch next;
+        synchronized (progressiveTasks) {
+            evictProgressiveTasks(nowNanos, false);
+            if (progressiveTasks.isEmpty()) {
+                return;
+            }
+            final List<ProgressiveRegionPatch> tasks = new ArrayList<>(progressiveTasks.values());
+            progressiveCursor = Math.floorMod(progressiveCursor, tasks.size());
+            next = tasks.get(progressiveCursor);
+            progressiveCursor = (progressiveCursor + 1) % tasks.size();
+        }
+        // The task retains the world/disk it was created for. A server-session change constructs a
+        // new RegionSummaryService, and close() invalidates every old task before those are reused.
+        next.tick(
+            PROGRESSIVE_MAX_CHUNKS_OR_REGIONS_PER_TICK,
+            PROGRESSIVE_MAX_NANOS_PER_TICK,
+            nowNanos,
+            System::nanoTime
+        );
+    }
+
+    /** Removes idle tasks; under capacity pressure, completed entries are safe to recreate. */
+    private void evictProgressiveTasks(final long nowNanos, final boolean forCapacity) {
+        final Iterator<Map.Entry<ProgressiveKey, ProgressiveRegionPatch>> iterator =
+            progressiveTasks.entrySet().iterator();
+        while (iterator.hasNext()) {
+            final ProgressiveRegionPatch task = iterator.next().getValue();
+            final boolean expired = nowNanos - task.lastRequestedAtNanos() > PROGRESSIVE_IDLE_TTL_NANOS;
+            final boolean capacityVictim = forCapacity
+                && progressiveTasks.size() >= PROGRESSIVE_MAX_ACTIVE_TILES
+                && task.complete();
+            if (expired || capacityVictim) {
+                task.close();
+                iterator.remove();
+            }
+            if (forCapacity && progressiveTasks.size() < PROGRESSIVE_MAX_ACTIVE_TILES) {
+                return;
+            }
+        }
     }
 
     private static MapPatchS2C unavailable(final PatchDispatcher.TileJob job) {
@@ -331,7 +454,7 @@ public final class RegionSummaryService {
         return liveChunks.overlay(dimension, region);
     }
 
-    private static NbtCompound readChunkNbt(final ServerWorld world, final ChunkPos pos) throws IOException {
+    static NbtCompound readChunkNbt(final ServerWorld world, final ChunkPos pos) throws IOException {
         //#if MC>=12100
         //$$ try {
         //$$     return world.getChunkManager().chunkLoadingManager.getNbt(pos).join().orElse(null);

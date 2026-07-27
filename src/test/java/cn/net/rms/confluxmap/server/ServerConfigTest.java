@@ -34,7 +34,6 @@ class ServerConfigTest {
         assertEquals(SharedWaypointProto.MAX_SNAPSHOT_WAYPOINTS, c.maxSharedWaypointsPerWorld);
         assertEquals(64, c.maxSharedWaypointsPerPlayer);
         assertEquals(30, c.sharedWaypointMutationsPerMinute);
-        assertEquals(2, c.maxPatchLod);
         assertEquals(8, c.maxTilesPerRequest);
     }
 
@@ -65,7 +64,6 @@ class ServerConfigTest {
     @Test
     void normalizeClampsOutliers() {
         final ServerConfig c = new ServerConfig();
-        c.maxPatchLod = 99;
         c.maxTilesPerRequest = -5;
         c.maxPendingTilesPerPlayer = 1_000_000;
         c.maxBytesPerSecondPerPlayer = 1;
@@ -76,7 +74,6 @@ class ServerConfigTest {
         c.maxSharedWaypointsPerPlayer = 50_000;
         c.sharedWaypointMutationsPerMinute = 50_000;
         c.normalize();
-        assertEquals(4, c.maxPatchLod);
         assertEquals(1, c.maxTilesPerRequest);
         assertEquals(1024, c.maxPendingTilesPerPlayer);
         assertEquals(1024, c.maxBytesPerSecondPerPlayer);
@@ -107,7 +104,6 @@ class ServerConfigTest {
         original.shareSeed = true;
         original.shareChunkLoadState = true;
         original.allowEntityRadar = false;
-        original.maxPatchLod = 3;
         original.maxTilesPerRequest = 5;
         original.maxBytesPerSecondPerPlayer = 131_072;
         original.minRequestIntervalMs = 500;
@@ -126,7 +122,6 @@ class ServerConfigTest {
         assertEquals(original.shareStructureInfo, loaded.shareStructureInfo);
         assertEquals(original.shareChunkLoadState, loaded.shareChunkLoadState);
         assertEquals(original.allowEntityRadar, loaded.allowEntityRadar);
-        assertEquals(original.maxPatchLod, loaded.maxPatchLod);
         assertEquals(original.maxTilesPerRequest, loaded.maxTilesPerRequest);
         assertEquals(original.maxPendingTilesPerPlayer, loaded.maxPendingTilesPerPlayer);
         assertEquals(original.maxBytesPerSecondPerPlayer, loaded.maxBytesPerSecondPerPlayer);
@@ -164,29 +159,34 @@ class ServerConfigTest {
     @Test
     void loadFillsMissingFieldsAndRewritesFile(@TempDir final Path tmp) throws IOException {
         final Path file = tmp.resolve("server.json");
-        Files.writeString(file, "{\"schemaVersion\":1,\"shareSeed\":true}", StandardCharsets.UTF_8);
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":1,\"shareSeed\":true,\"maxPatchLod\":2,\"maxPresenceLod\":4}",
+            StandardCharsets.UTF_8
+        );
 
         final ServerConfig loaded = new ServerConfigIo(file, LOGGER).load();
 
         assertTrue(loaded.shareSeed);
         assertTrue(loaded.allowEntityRadar);
-        assertEquals(new ServerConfig().maxPatchLod, loaded.maxPatchLod);
         // The upgrade is persisted so the on-disk file now carries the full schema.
         final String rewritten = Files.readString(file, StandardCharsets.UTF_8);
         assertTrue(rewritten.contains("\"sharedWaypointMutationsPerMinute\""));
         assertTrue(rewritten.contains("\"allowEntityRadar\": true"));
         assertTrue(rewritten.contains("\"shareSeed\": true"));
+        assertFalse(rewritten.contains("maxPatchLod"), "LOD sync is no longer operator-capped");
+        assertFalse(rewritten.contains("maxPresenceLod"));
     }
 
     @Test
     void loadKeepsNewerSchemaFileIntact(@TempDir final Path tmp) throws IOException {
         final Path file = tmp.resolve("server.json");
-        final String futureJson = "{\"schemaVersion\": 2, \"futureField\": true}";
+        final String futureJson = "{\"schemaVersion\": 3, \"futureField\": true}";
         Files.writeString(file, futureJson, StandardCharsets.UTF_8);
 
         final ServerConfig loaded = new ServerConfigIo(file, LOGGER).load();
 
-        assertEquals(2, loaded.schemaVersion);
+        assertEquals(3, loaded.schemaVersion);
         assertEquals(futureJson, Files.readString(file, StandardCharsets.UTF_8));
     }
 

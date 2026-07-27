@@ -169,7 +169,7 @@ public final class ServerNetworking {
             cfg.maxBytesPerSecondPerPlayer,
             cfg.maxTilesPerRequest,
             cfg.minRequestIntervalMs,
-            cfg.maxPatchLod
+            Proto.DEFAULT_MAX_PATCH_LOD
         );
         final List<HelloPolicyS2C.DimDescriptor> dims = buildDimDescriptors(server, flags.seedGranted());
         return new HelloPolicyS2C(flags, worldId.toString(), WORLDGEN_VERSION, budgets, dims);

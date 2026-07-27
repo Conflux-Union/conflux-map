@@ -13,6 +13,7 @@ import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.MapPatchS2C;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import cn.net.rms.confluxmap.core.net.MsgCodec;
+import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
@@ -38,12 +39,11 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * Zooming out past the correction ceiling used to blank the generated-only underlay: the client
- * stopped issuing requests above {@code maxPatchLod}, so no presence bitmap ever arrived and every
- * pixel of the predicted plane was suppressed - exactly where the mode is most useful.
+ * A progressive coarse scan must expose its growing presence bitmap without advancing the
+ * committed correction watermark, and the client must keep retrying at the normal request pace.
  *
  * <p>The client here is the real {@link MapSyncClient} browsing at LOD 3, served by a server that
- * mirrors {@code RegionSummaryService}'s admission control and coarse-tile answer over the real
+ * mirrors {@code RegionSummaryService}'s admission control and progressive answer over the real
  * {@link PatchDispatcher} and {@link TilePresence}.
  */
 class MapSyncCoarseLodPresenceTest {
@@ -52,7 +52,7 @@ class MapSyncCoarseLodPresenceTest {
     private static final long FRAME_MS = 50L;
     private static final long SIM_START_MS = 1_000_000L;
 
-    /** The coarse LOD under test: above the default {@code maxPatchLod} of 2. */
+    /** First LOD served by the progressive path. */
     private static final int COARSE_LOD = 3;
     /** Regions 0..3 on both axes are generated, i.e. blocks 0..1023 of tile 0,0. */
     private static final int GENERATED_REGIONS = 4;
@@ -121,6 +121,7 @@ class MapSyncCoarseLodPresenceTest {
             fixture.browse(COARSE_LOD, 30_000L);
 
             assertFalse(fixture.server.sinceRevisions.isEmpty(), "the coarse LOD must actually have been requested");
+            assertTrue(fixture.server.sinceRevisions.size() > 3, "partial patches must stay immediately retryable");
             assertEquals(0L, fixture.corrections.get(DIM, COARSE_LOD, 0, 0).revision());
             assertTrue(fixture.server.sinceRevisions.stream().allMatch(r -> r == 0L),
                 "the client must keep asking from revision 0: " + fixture.server.sinceRevisions);
@@ -130,16 +131,33 @@ class MapSyncCoarseLodPresenceTest {
     }
 
     @Test
-    void aServerThatDisablesPresenceStillRejectsCoarseTiles() throws Exception {
+    void coarseLodIsAcceptedWithoutAnOperatorCeiling() throws Exception {
         final ServerConfig config = new ServerConfig();
-        config.maxPresenceLod = 0;
-        config.normalize();
         final Fixture fixture = new Fixture(config);
         try {
             fixture.browse(COARSE_LOD, 10_000L);
 
-            assertTrue(fixture.server.errorCount > 0, "a presence-disabled server rejects the coarse LOD");
-            assertEquals(0, setCells(fixture.corrections.get(DIM, COARSE_LOD, 0, 0).presence()));
+            assertEquals(0, fixture.server.errorCount);
+            assertTrue(setCells(fixture.corrections.get(DIM, COARSE_LOD, 0, 0).presence()) > 0);
+        } finally {
+            fixture.shutdown();
+        }
+    }
+
+    @Test
+    void completedCoarseTileIsPolledAgainForVisibleSourceChanges() throws Exception {
+        final Fixture fixture = new Fixture(new ServerConfig(), false);
+        try {
+            fixture.browse(COARSE_LOD, 12_000L);
+
+            assertTrue(
+                fixture.server.sinceRevisions.size() >= 2,
+                "a completed visible coarse tile must not retain the ordinary ten-minute cooldown"
+            );
+            assertTrue(
+                fixture.server.sinceRevisions.stream().skip(1).anyMatch(revision -> revision == 1L),
+                "follow-up request must carry the committed revision"
+            );
         } finally {
             fixture.shutdown();
         }
@@ -167,7 +185,11 @@ class MapSyncCoarseLodPresenceTest {
         final long nanoOrigin = System.nanoTime();
 
         Fixture(final ServerConfig config) {
-            server = new FakeCompanionServer(config);
+            this(config, true);
+        }
+
+        Fixture(final ServerConfig config, final boolean progressive) {
+            server = new FakeCompanionServer(config, progressive);
 
             final SessionGuard sessionGuard = new SessionGuard();
             sessionGuard.begin(WORLD, DIM);
@@ -189,7 +211,7 @@ class MapSyncCoarseLodPresenceTest {
                     config.maxBytesPerSecondPerPlayer,
                     config.maxTilesPerRequest,
                     config.minRequestIntervalMs,
-                    config.maxPatchLod
+                    Proto.DEFAULT_MAX_PATCH_LOD
                 ),
                 List.of(new HelloPolicyS2C.DimDescriptor(DIM.toString(), "overworld", true, false, 0L, WorldPreset.DEFAULT))
             ));
@@ -244,18 +266,19 @@ class MapSyncCoarseLodPresenceTest {
     }
 
     /**
-     * Mirrors {@code RegionSummaryService}'s admission control and its coarse-tile answer: LODs the
-     * patch builder cannot serve fall through to a presence-only patch built by the real
-     * {@link TilePresence} over whatever region summaries are cached.
+     * Mirrors {@code RegionSummaryService}'s admission control and a revision-0 progressive answer
+     * built by the real {@link TilePresence} over the currently scanned region summaries.
      */
     private static final class FakeCompanionServer {
         final ServerConfig config;
         final PatchDispatcher dispatcher;
         final List<Long> sinceRevisions = new ArrayList<>();
+        final boolean progressive;
         int errorCount;
 
-        FakeCompanionServer(final ServerConfig config) {
+        FakeCompanionServer(final ServerConfig config, final boolean progressive) {
             this.config = config;
+            this.progressive = progressive;
             this.dispatcher = new PatchDispatcher(
                 new PlayerBudget(config.maxBytesPerSecondPerPlayer, config.minRequestIntervalMs),
                 config.maxPendingTilesPerPlayer
@@ -263,7 +286,7 @@ class MapSyncCoarseLodPresenceTest {
         }
 
         void handle(final MapViewReqC2S request, final long nowNanos, final MapSyncClient client) throws ProtoException {
-            if (request.lod() > Math.max(config.maxPatchLod, config.maxPresenceLod)
+            if (request.lod() > 4
                 || request.tiles().size() > config.maxTilesPerRequest
                 || request.dimIndex() < 0 || !dispatcher.budget().beginRequest(nowNanos)) {
                 deliverError(client);
@@ -306,7 +329,11 @@ class MapSyncCoarseLodPresenceTest {
                 job.lod(), job.tileX(), job.tileZ(), FakeCompanionServer::cachedRegionFlags
             );
             return new MapPatchS2C(job.reqId(), job.dimIndex(), job.lod(), job.tileX(), job.tileZ(),
-                Proto.PATCH_MODE_UNCHANGED, 0L, presence, new byte[0]);
+                progressive ? Proto.PATCH_MODE_PARTIAL : Proto.PATCH_MODE_UNCHANGED,
+                progressive ? 0L : 1L,
+                presence,
+                progressive ? PatchCodec.encode(List.of()) : new byte[0]
+            );
         }
 
         /** World model: every chunk of regions 0..3 on both axes is generated; nothing else exists. */

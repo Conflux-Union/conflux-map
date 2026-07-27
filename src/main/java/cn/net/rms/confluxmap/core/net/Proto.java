@@ -27,7 +27,7 @@ public final class Proto {
      * Minor 1 added the per-dim generator preset in spare bits of HELLO_POLICY's dim flag byte.
      * Minor 2 added FLAT_BASELINE (0x07); pre-minor-2 clients log and ignore it.
      * Minor 3 added server-authoritative chunk load-state subscriptions (0x08/0x09).
-     * Minor 4 added the server entity-radar policy in HELLO_POLICY's flag byte.
+     * Minor 4 added the server entity-radar policy and progressive coarse correction patches.
      */
     public static final int PROTO_MAJOR = 2;
     public static final int PROTO_MINOR = 4;
@@ -109,6 +109,8 @@ public final class Proto {
     public static final int PATCH_MODE_ABSOLUTE = 2;
     /** {@code mode} field in MAP_PATCH: server has no data for this tile (prediction only). */
     public static final int PATCH_MODE_UNAVAILABLE = 3;
+    /** Sparse correction progress with revision 0; the client retries until a final patch arrives. */
+    public static final int PATCH_MODE_PARTIAL = 4;
 
     /** Budget defaults advertised in HELLO_POLICY when the server config is at its defaults. */
     public static final int DEFAULT_MAX_BYTES_PER_SEC = 65_536;
@@ -117,5 +119,5 @@ public final class Proto {
     /** Budget defaults advertised in HELLO_POLICY when the server config is at its defaults. */
     public static final int DEFAULT_MIN_REQ_INTERVAL_MS = 300;
     /** Budget defaults advertised in HELLO_POLICY when the server config is at its defaults. */
-    public static final int DEFAULT_MAX_PATCH_LOD = 2;
+    public static final int DEFAULT_MAX_PATCH_LOD = 4;
 }

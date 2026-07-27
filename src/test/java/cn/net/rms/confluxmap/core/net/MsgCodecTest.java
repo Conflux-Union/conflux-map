@@ -233,6 +233,21 @@ class MsgCodecTest {
     }
 
     @Test
+    void progressiveMapPatchRoundTripsAValidEmptyPatchBody() throws ProtoException {
+        final byte[] body = PatchCodec.encode(List.of());
+        final MapPatchS2C original = new MapPatchS2C(
+            9, 0, 4, -2, 3, Proto.PATCH_MODE_PARTIAL, 0L,
+            new byte[Proto.PATCH_PRESENCE_BYTES], body
+        );
+
+        final MapPatchS2C decoded = (MapPatchS2C) MsgCodec.decode(MsgCodec.encode(original));
+
+        assertEquals(Proto.PATCH_MODE_PARTIAL, decoded.mode());
+        assertEquals(0L, decoded.tileRevision());
+        assertEquals(0, PatchCodec.decode(decoded.body()).size());
+    }
+
+    @Test
     void policyUpdateRoundTrips() throws ProtoException {
         final PolicyUpdateS2C original = new PolicyUpdateS2C(
             new HelloPolicyS2C.Flags(false, true, false, false, true),

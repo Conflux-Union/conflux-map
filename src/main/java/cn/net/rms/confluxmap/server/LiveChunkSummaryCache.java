@@ -4,10 +4,13 @@ import cn.net.rms.confluxmap.core.net.SummaryCodec;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** In-memory summaries for chunks whose authoritative state is the live {@code WorldChunk}. */
 public final class LiveChunkSummaryCache {
     private final Map<Key, SummaryCodec.Chunk> chunks = new ConcurrentHashMap<>();
+    private final Map<RegionKey, Long> regionEpochs = new ConcurrentHashMap<>();
+    private final AtomicLong nextEpoch = new AtomicLong();
 
     public void put(
         final String dimension,
@@ -18,7 +21,14 @@ public final class LiveChunkSummaryCache {
         if (summary == null) {
             return;
         }
-        chunks.compute(new Key(dimension, chunkX, chunkZ), (ignored, previous) -> revised(previous, summary));
+        final Key key = new Key(dimension, chunkX, chunkZ);
+        chunks.compute(key, (ignored, previous) -> {
+            final SummaryCodec.Chunk next = revised(previous, summary);
+            if (next != previous) {
+                touchRegion(key.dimension(), chunkX, chunkZ);
+            }
+            return next;
+        });
     }
 
     public SummaryCodec.Chunk get(final String dimension, final int chunkX, final int chunkZ) {
@@ -26,11 +36,19 @@ public final class LiveChunkSummaryCache {
     }
 
     public void remove(final String dimension, final int chunkX, final int chunkZ) {
-        chunks.remove(new Key(dimension, chunkX, chunkZ));
+        if (chunks.remove(new Key(dimension, chunkX, chunkZ)) != null) {
+            touchRegion(dimension, chunkX, chunkZ);
+        }
     }
 
     public void clear() {
         chunks.clear();
+        regionEpochs.clear();
+    }
+
+    /** Monotonic live-summary version for one region; unchanged regions keep the same value. */
+    public long regionEpoch(final String dimension, final int regionX, final int regionZ) {
+        return regionEpochs.getOrDefault(new RegionKey(dimension, regionX, regionZ), 0L);
     }
 
     /** Returns {@code region} with every currently-live chunk slot replaced by its live summary. */
@@ -79,6 +97,19 @@ public final class LiveChunkSummaryCache {
 
     private record Key(String dimension, int chunkX, int chunkZ) {
         private Key {
+            dimension = dimension == null ? "unknown" : dimension;
+        }
+    }
+
+    private void touchRegion(final String dimension, final int chunkX, final int chunkZ) {
+        regionEpochs.put(
+            new RegionKey(dimension, Math.floorDiv(chunkX, 16), Math.floorDiv(chunkZ, 16)),
+            nextEpoch.incrementAndGet()
+        );
+    }
+
+    private record RegionKey(String dimension, int regionX, int regionZ) {
+        private RegionKey {
             dimension = dimension == null ? "unknown" : dimension;
         }
     }

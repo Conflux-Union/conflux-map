@@ -145,7 +145,7 @@ class MapSyncLargeViewportTest {
                     serverConfig.maxBytesPerSecondPerPlayer,
                     serverConfig.maxTilesPerRequest,
                     serverConfig.minRequestIntervalMs,
-                    serverConfig.maxPatchLod
+                    Proto.DEFAULT_MAX_PATCH_LOD
                 ),
                 List.of(new HelloPolicyS2C.DimDescriptor(DIM.toString(), "overworld", true, false, 0L, WorldPreset.DEFAULT))
             ));
@@ -213,7 +213,7 @@ class MapSyncLargeViewportTest {
 
         void handle(final MapViewReqC2S request, final long nowNanos, final MapSyncClient client) throws ProtoException {
             requestCount++;
-            if (request.lod() > config.maxPatchLod || request.tiles().size() > config.maxTilesPerRequest
+            if (request.lod() > Proto.DEFAULT_MAX_PATCH_LOD || request.tiles().size() > config.maxTilesPerRequest
                 || request.dimIndex() < 0 || !dispatcher.budget().beginRequest(nowNanos)) {
                 deliverError(client);
                 return;

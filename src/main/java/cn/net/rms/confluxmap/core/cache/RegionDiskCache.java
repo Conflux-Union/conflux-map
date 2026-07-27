@@ -24,6 +24,9 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.logging.log4j.Logger;
 
 /**
@@ -45,6 +48,7 @@ import org.apache.logging.log4j.Logger;
 public final class RegionDiskCache {
     private static final long FLUSH_INTERVAL_MS = 30_000L;
     private static final int EVICT_DISTANCE_REGIONS = 6;
+    static final int MAX_PENDING_REGION_LOADS = 64;
 
     private static final MapLayer.Type[] PERSISTENT_LAYER_TYPES = Arrays.stream(MapLayer.Type.values())
         .filter(MapLayer.Type::persistent)
@@ -60,12 +64,14 @@ public final class RegionDiskCache {
     private final long token;
     private final DimensionId dimension;
     private final MapWorldService mapWorlds;
-    private final MapExecutors executors;
+    private final Executor io;
     private final TileService tiles;
     private final Logger logger;
 
     /** Regions {@link #ensureRegionLoaded} has already claimed, per (layer, region), this session. */
     private final Set<RegionSlot> regionLoadTouched = ConcurrentHashMap.newKeySet();
+    /** Bounds queued disk reads when a wide coarse viewport covers hundreds of LOD-0 regions. */
+    private final AtomicInteger pendingRegionLoads = new AtomicInteger();
     /** Last {@link RegionColumns#version()} successfully written to disk, per (layer, region). */
     private final Map<RegionSlot, Integer> flushedVersion = new ConcurrentHashMap<>();
     private volatile long lastSweepAtMs = System.currentTimeMillis();
@@ -78,11 +84,22 @@ public final class RegionDiskCache {
         final TileService tiles,
         final Logger logger
     ) {
+        this(root, session, mapWorlds, executors.io(), tiles, logger);
+    }
+
+    RegionDiskCache(
+        final Path root,
+        final SessionGuard.Session session,
+        final MapWorldService mapWorlds,
+        final Executor io,
+        final TileService tiles,
+        final Logger logger
+    ) {
         this.baseDir = WorldStorageMigration.directory(root, session.world(), logger).resolve(session.dimension().fileName());
         this.token = session.token();
         this.dimension = session.dimension();
         this.mapWorlds = mapWorlds;
-        this.executors = executors;
+        this.io = io;
         this.tiles = tiles;
         this.logger = logger;
     }
@@ -96,14 +113,35 @@ public final class RegionDiskCache {
      * SampleSource#REAL_CACHED}. Cheap and safe to call repeatedly for the same region - only the
      * first caller wins the race and actually schedules work.
      */
-    public void ensureRegionLoaded(final MapLayer.Type layerType, final int regionX, final int regionZ) {
+    public synchronized boolean ensureRegionLoaded(
+        final MapLayer.Type layerType, final int regionX, final int regionZ
+    ) {
         if (!layerType.persistent()) {
-            return;
+            return true;
         }
-        if (!regionLoadTouched.add(new RegionSlot(layerType, regionX, regionZ))) {
-            return;
+        final RegionSlot slot = new RegionSlot(layerType, regionX, regionZ);
+        if (regionLoadTouched.contains(slot)) {
+            return true;
         }
-        executors.io().execute(() -> loadRegion(layerType, regionX, regionZ));
+        if (pendingRegionLoads.get() >= MAX_PENDING_REGION_LOADS) {
+            return false;
+        }
+        regionLoadTouched.add(slot);
+        pendingRegionLoads.incrementAndGet();
+        try {
+            io.execute(() -> {
+                try {
+                    loadRegion(layerType, regionX, regionZ);
+                } finally {
+                    pendingRegionLoads.decrementAndGet();
+                }
+            });
+            return true;
+        } catch (final RejectedExecutionException e) {
+            pendingRegionLoads.decrementAndGet();
+            regionLoadTouched.remove(slot);
+            return false;
+        }
     }
 
     private void loadRegion(final MapLayer.Type layerType, final int regionX, final int regionZ) {
@@ -135,11 +173,11 @@ public final class RegionDiskCache {
                 final ChunkSnapshot snapshot = extractChunkSnapshot(data, chunkLocalX, chunkLocalZ, token);
                 if (world.put(layer, snapshot, SampleSource.REAL_CACHED)) {
                     merged++;
-                    tiles.markChunkStored(token, dimension, layer, snapshot.chunkX, snapshot.chunkZ);
                 }
             }
         }
         if (merged > 0) {
+            tiles.markRegionStored(token, dimension, layer, regionX, regionZ);
             logger.info("cache: loaded region r.{}.{} layer={} ({} chunks) as REAL_CACHED", regionX, regionZ, layerType.id(), merged);
         }
     }
@@ -186,7 +224,7 @@ public final class RegionDiskCache {
             return;
         }
         lastSweepAtMs = now;
-        executors.io().execute(() -> sweep(playerRegionX, playerRegionZ));
+        io.execute(() -> sweep(playerRegionX, playerRegionZ));
     }
 
     private void sweep(final int playerRegionX, final int playerRegionZ) {
@@ -240,7 +278,7 @@ public final class RegionDiskCache {
      * that check and instead trusts the world it was handed.
      */
     void flushAllOnSessionEnd(final MapWorld world) {
-        executors.io().execute(() -> {
+        io.execute(() -> {
             int flushed = 0;
             for (final MapLayer.Type type : PERSISTENT_LAYER_TYPES) {
                 final ColumnStore store = world.store(new MapLayer(type, 0));

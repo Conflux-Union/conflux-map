@@ -1983,7 +1983,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final MapLayer layer = layerSelector.current().layer();
         final String layerId = layer.cacheId();
         final boolean predictionActive = predictionActive(layer, session);
-        tiles.setViewport(lod, firstTileX, lastTileX, firstTileZ, lastTileZ);
+        tiles.setViewport(layer, lod, firstTileX, lastTileX, firstTileZ, lastTileZ);
         if (predictionActive) {
             predictionTiles.setViewport(session.dimension(), lod, firstTileX, lastTileX, firstTileZ, lastTileZ);
             ConfluxMapClient.get().mapSyncClient().reportViewport(
