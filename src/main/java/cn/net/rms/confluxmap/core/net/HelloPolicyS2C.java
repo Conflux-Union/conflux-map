@@ -25,19 +25,31 @@ public record HelloPolicyS2C(
      * Top-level booleans the server advertises. {@code seedGranted} means a per-dim {@code seed}
      * is included in {@link DimDescriptor} - off by default (server config {@code shareSeed=false}).
      * {@code chunkLoadStateEnabled} is also opt-in because the loaded set can reveal activity.
+     * {@code entityRadarForbidden} is intentionally negative: peers predating this flag decode
+     * its absent bit as "not forbidden" and preserve the historical radar behavior.
      */
     public record Flags(
         boolean seedGranted,
         boolean correctionsEnabled,
         boolean structureInfoEnabled,
-        boolean chunkLoadStateEnabled
+        boolean chunkLoadStateEnabled,
+        boolean entityRadarForbidden
     ) {
         public Flags(
             final boolean seedGranted,
             final boolean correctionsEnabled,
             final boolean structureInfoEnabled
         ) {
-            this(seedGranted, correctionsEnabled, structureInfoEnabled, false);
+            this(seedGranted, correctionsEnabled, structureInfoEnabled, false, false);
+        }
+
+        public Flags(
+            final boolean seedGranted,
+            final boolean correctionsEnabled,
+            final boolean structureInfoEnabled,
+            final boolean chunkLoadStateEnabled
+        ) {
+            this(seedGranted, correctionsEnabled, structureInfoEnabled, chunkLoadStateEnabled, false);
         }
     }
 

@@ -216,6 +216,7 @@
   "confluxmap.config.radar.show_player_names": "Show Player Names: %s",
   "confluxmap.config.radar.max_entities": "Radar Target Limit: %s",
   "confluxmap.config.radar.icons_enabled": "Mob and Player Icons: %s",
+  "confluxmap.screen.config.radar.disabled_by_server": "Entity radar is disabled by this server",
   "confluxmap.config.waypoints.render_distance": "Waypoint Visibility Distance: %s",
   "confluxmap.config.waypoints.show_local": "Show Local Waypoints: %s",
   "confluxmap.config.waypoints.show_shared": "Show Shared Waypoints: %s",

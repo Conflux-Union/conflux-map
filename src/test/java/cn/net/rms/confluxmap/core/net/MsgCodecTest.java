@@ -37,7 +37,7 @@ class MsgCodecTest {
     @Test
     void helloPolicyRoundTripsWithSeed() throws ProtoException {
         final HelloPolicyS2C original = new HelloPolicyS2C(
-            new HelloPolicyS2C.Flags(true, true, false, true),
+            new HelloPolicyS2C.Flags(true, true, false, true, true),
             "11111111-2222-3333-4444-555555555555",
             "1.17",
             new HelloPolicyS2C.Budgets(65_536, 8, 300, 2),
@@ -54,6 +54,7 @@ class MsgCodecTest {
         assertIterableEquals(original.dims(), decoded.dims());
         assertEquals(Proto.MSG_HELLO_POLICY_S2C, decoded.typeId());
         assertTrue(decoded.flags().chunkLoadStateEnabled());
+        assertTrue(decoded.flags().entityRadarForbidden());
     }
 
     @Test
@@ -234,13 +235,29 @@ class MsgCodecTest {
     @Test
     void policyUpdateRoundTrips() throws ProtoException {
         final PolicyUpdateS2C original = new PolicyUpdateS2C(
-            new HelloPolicyS2C.Flags(false, true, false, false),
+            new HelloPolicyS2C.Flags(false, true, false, false, true),
             new HelloPolicyS2C.Budgets(8_192, 2, 1_000, 0)
         );
         final PolicyUpdateS2C decoded = (PolicyUpdateS2C) MsgCodec.decode(MsgCodec.encode(original));
         assertEquals(original.flags(), decoded.flags());
         assertEquals(original.budgets(), decoded.budgets());
         assertEquals(Proto.MSG_POLICY_UPDATE_S2C, decoded.typeId());
+        assertTrue(decoded.flags().entityRadarForbidden());
+    }
+
+    @Test
+    void absentRadarPolicyBitPreservesHistoricalAllowedBehavior() throws ProtoException {
+        final HelloPolicyS2C original = new HelloPolicyS2C(
+            new HelloPolicyS2C.Flags(false, true, false, false),
+            "deadbeef-0000-0000-0000-000000000000",
+            "1.17",
+            new HelloPolicyS2C.Budgets(32_768, 4, 500, 1),
+            List.of()
+        );
+
+        final HelloPolicyS2C decoded = (HelloPolicyS2C) MsgCodec.decode(MsgCodec.encode(original));
+
+        assertFalse(decoded.flags().entityRadarForbidden());
     }
 
     @Test

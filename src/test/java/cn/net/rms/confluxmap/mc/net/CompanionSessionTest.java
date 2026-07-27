@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.mc.net;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
@@ -35,9 +36,28 @@ class CompanionSessionTest {
         assertEquals(WorldIdentity.multiplayer("example.net"), session.resolveWorldIdentity("example.net").orElseThrow());
     }
 
+    @Test
+    void onlyAnActiveCompanionPolicyCanForbidEntityRadar() {
+        final CompanionSession session = new CompanionSession();
+        assertTrue(session.entityRadarAllowed());
+
+        session.onPolicy(policy("11111111-2222-3333-4444-555555555555"));
+        assertTrue(session.entityRadarAllowed());
+
+        session.onPolicy(policy("11111111-2222-3333-4444-555555555555", true));
+        assertFalse(session.entityRadarAllowed());
+
+        session.reset();
+        assertTrue(session.entityRadarAllowed());
+    }
+
     private static HelloPolicyS2C policy(final String worldId) {
+        return policy(worldId, false);
+    }
+
+    private static HelloPolicyS2C policy(final String worldId, final boolean entityRadarForbidden) {
         return new HelloPolicyS2C(
-            new HelloPolicyS2C.Flags(false, true, true),
+            new HelloPolicyS2C.Flags(false, true, true, false, entityRadarForbidden),
             worldId,
             "1.17.1",
             new HelloPolicyS2C.Budgets(65_536, 8, 300, 2),

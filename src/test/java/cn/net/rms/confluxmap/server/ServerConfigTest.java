@@ -29,6 +29,7 @@ class ServerConfigTest {
         assertTrue(c.shareCorrections);
         assertFalse(c.shareStructureInfo);
         assertFalse(c.shareChunkLoadState);
+        assertTrue(c.allowEntityRadar);
         assertFalse(c.shareWaypoints);
         assertEquals(SharedWaypointProto.MAX_SNAPSHOT_WAYPOINTS, c.maxSharedWaypointsPerWorld);
         assertEquals(64, c.maxSharedWaypointsPerPlayer);
@@ -47,6 +48,18 @@ class ServerConfigTest {
 
         config.enabled = false;
         assertFalse(ServerNetworking.policyFlags(config).chunkLoadStateEnabled());
+    }
+
+    @Test
+    void radarIsAllowedUnlessAnEnabledCompanionForbidsIt() {
+        final ServerConfig config = new ServerConfig();
+        assertFalse(ServerNetworking.policyFlags(config).entityRadarForbidden());
+
+        config.allowEntityRadar = false;
+        assertTrue(ServerNetworking.policyFlags(config).entityRadarForbidden());
+
+        config.enabled = false;
+        assertFalse(ServerNetworking.policyFlags(config).entityRadarForbidden());
     }
 
     @Test
@@ -93,6 +106,7 @@ class ServerConfigTest {
         final ServerConfig original = new ServerConfig();
         original.shareSeed = true;
         original.shareChunkLoadState = true;
+        original.allowEntityRadar = false;
         original.maxPatchLod = 3;
         original.maxTilesPerRequest = 5;
         original.maxBytesPerSecondPerPlayer = 131_072;
@@ -111,6 +125,7 @@ class ServerConfigTest {
         assertEquals(original.shareCorrections, loaded.shareCorrections);
         assertEquals(original.shareStructureInfo, loaded.shareStructureInfo);
         assertEquals(original.shareChunkLoadState, loaded.shareChunkLoadState);
+        assertEquals(original.allowEntityRadar, loaded.allowEntityRadar);
         assertEquals(original.maxPatchLod, loaded.maxPatchLod);
         assertEquals(original.maxTilesPerRequest, loaded.maxTilesPerRequest);
         assertEquals(original.maxPendingTilesPerPlayer, loaded.maxPendingTilesPerPlayer);
@@ -154,10 +169,12 @@ class ServerConfigTest {
         final ServerConfig loaded = new ServerConfigIo(file, LOGGER).load();
 
         assertTrue(loaded.shareSeed);
+        assertTrue(loaded.allowEntityRadar);
         assertEquals(new ServerConfig().maxPatchLod, loaded.maxPatchLod);
         // The upgrade is persisted so the on-disk file now carries the full schema.
         final String rewritten = Files.readString(file, StandardCharsets.UTF_8);
         assertTrue(rewritten.contains("\"sharedWaypointMutationsPerMinute\""));
+        assertTrue(rewritten.contains("\"allowEntityRadar\": true"));
         assertTrue(rewritten.contains("\"shareSeed\": true"));
     }
 

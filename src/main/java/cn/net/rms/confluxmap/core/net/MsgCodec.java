@@ -122,6 +122,9 @@ public final class MsgCodec {
         if (f.chunkLoadStateEnabled()) {
             flagBits |= 8;
         }
+        if (f.entityRadarForbidden()) {
+            flagBits |= 16;
+        }
         out.writeByte(flagBits);
         writeUtf(out, m.worldId());
         writeUtf(out, m.worldgenVersion());
@@ -210,6 +213,9 @@ public final class MsgCodec {
         }
         if (f.chunkLoadStateEnabled()) {
             flagBits |= 8;
+        }
+        if (f.entityRadarForbidden()) {
+            flagBits |= 16;
         }
         out.writeByte(flagBits);
         final HelloPolicyS2C.Budgets b = m.budgets();
@@ -335,7 +341,8 @@ public final class MsgCodec {
             (flagBits & 1) != 0,
             (flagBits & 2) != 0,
             (flagBits & 4) != 0,
-            (flagBits & 8) != 0
+            (flagBits & 8) != 0,
+            (flagBits & 16) != 0
         );
         final String worldId = readUtf(in);
         final String worldgenVersion = readUtf(in);
@@ -408,7 +415,8 @@ public final class MsgCodec {
             (flagBits & 1) != 0,
             (flagBits & 2) != 0,
             (flagBits & 4) != 0,
-            (flagBits & 8) != 0
+            (flagBits & 8) != 0,
+            (flagBits & 16) != 0
         );
         final int maxBytesPerSec = in.readInt();
         final int maxTilesPerReq = in.readUnsignedShort();

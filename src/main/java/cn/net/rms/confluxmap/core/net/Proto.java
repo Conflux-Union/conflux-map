@@ -27,9 +27,10 @@ public final class Proto {
      * Minor 1 added the per-dim generator preset in spare bits of HELLO_POLICY's dim flag byte.
      * Minor 2 added FLAT_BASELINE (0x07); pre-minor-2 clients log and ignore it.
      * Minor 3 added server-authoritative chunk load-state subscriptions (0x08/0x09).
+     * Minor 4 added the server entity-radar policy in HELLO_POLICY's flag byte.
      */
     public static final int PROTO_MAJOR = 2;
-    public static final int PROTO_MINOR = 3;
+    public static final int PROTO_MINOR = 4;
 
     // ---- Message type ids (first byte of every framed payload) ----
 

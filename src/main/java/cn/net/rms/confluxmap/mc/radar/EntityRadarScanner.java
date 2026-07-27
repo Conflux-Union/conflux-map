@@ -8,6 +8,7 @@ import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
@@ -66,6 +67,7 @@ public final class EntityRadarScanner {
     private final MinecraftClient client;
     private final ConfluxConfig config;
     private final RadarViewRange viewRange;
+    private final BooleanSupplier serverPolicyAllowsRadar;
 
     private volatile List<RadarEntry> snapshot = List.of();
     private int tickCounter;
@@ -73,9 +75,19 @@ public final class EntityRadarScanner {
     private double lastScannedRadius;
 
     public EntityRadarScanner(final MinecraftClient client, final ConfluxConfig config, final RadarViewRange viewRange) {
+        this(client, config, viewRange, () -> true);
+    }
+
+    public EntityRadarScanner(
+        final MinecraftClient client,
+        final ConfluxConfig config,
+        final RadarViewRange viewRange,
+        final BooleanSupplier serverPolicyAllowsRadar
+    ) {
         this.client = client;
         this.config = config;
         this.viewRange = viewRange;
+        this.serverPolicyAllowsRadar = serverPolicyAllowsRadar;
     }
 
     public void register() {
@@ -91,11 +103,11 @@ public final class EntityRadarScanner {
 
     /** Render thread (== client thread here); immutable, safe to iterate without copying. */
     public List<RadarEntry> snapshot() {
-        return snapshot;
+        return visibleSnapshot(serverPolicyAllowsRadar.getAsBoolean(), snapshot);
     }
 
     private void tick() {
-        if (!config.radarEnabled) {
+        if (!scanningAllowed(config.radarEnabled, serverPolicyAllowsRadar.getAsBoolean())) {
             if (!snapshot.isEmpty()) {
                 snapshot = List.of();
             }
@@ -116,6 +128,14 @@ public final class EntityRadarScanner {
         tickCounter = 0;
         lastScannedRadius = radius;
         snapshot = scan(radius);
+    }
+
+    static boolean scanningAllowed(final boolean clientEnabled, final boolean serverAllowed) {
+        return clientEnabled && serverAllowed;
+    }
+
+    static List<RadarEntry> visibleSnapshot(final boolean serverAllowed, final List<RadarEntry> current) {
+        return serverAllowed ? current : List.of();
     }
 
     private List<RadarEntry> scan(final double radius) {

@@ -161,7 +161,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
             client, config, mapWorlds, executors, tileService, regionCache, spriteColorSampler, biomeTintResolver, layerSelector
         );
         radarViewRange = new RadarViewRange();
-        radarScanner = new EntityRadarScanner(client, config, radarViewRange);
+        radarScanner = new EntityRadarScanner(
+            client, config, radarViewRange, companionSession::entityRadarAllowed
+        );
         entityIconManager = new EntityIconManager();
         waypointService = new WaypointService(
             FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("waypoints"),

@@ -72,18 +72,18 @@ per-biome palette therefore needs a stable biome-identity plane in captured and
 cached map data; it must not guess the biome from tint color. Version the disk
 format and migrate or safely invalidate older entries when that plane is added.
 
-### 4. Server policy for entity radar
+### 4. Server policy for entity radar - completed
 
-Add a server companion config option allowing an operator to disable entity
-radar for connected Conflux Map clients.
+Completed with the default-on `allowEntityRadar` server companion setting. The
+handshake carries a backward-compatible negative policy flag, so older servers
+preserve the existing radar behavior while cooperating clients connected to a
+server that forbids radar suppress both scanning and rendering. The radar
+settings page keeps the player's saved choices visible, disables every radar
+control, and explains that the server operator must enable the feature.
 
-- Preserve the current behavior when the operator allows radar.
-- Advertise the policy in the companion handshake and apply policy changes on a
-  new session.
-- When forbidden, suppress radar scanning and rendering regardless of the
-  client's local category toggles.
-- This is a server policy for this mod's cooperating clients, not an anti-cheat
-  claim against modified clients.
+This remains a policy for this mod's cooperating clients, not an anti-cheat
+claim against modified clients. Changes to `server.json` take effect when the
+server starts and are advertised to each new connection.
 
 ### 5. Modernize settings and waypoint management
 

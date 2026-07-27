@@ -216,6 +216,7 @@
   "confluxmap.config.radar.show_player_names": "显示玩家名称：%s",
   "confluxmap.config.radar.max_entities": "雷达显示数量上限：%s",
   "confluxmap.config.radar.icons_enabled": "生物与玩家图标：%s",
+  "confluxmap.screen.config.radar.disabled_by_server": "此服务器已禁用实体雷达",
   "confluxmap.config.waypoints.render_distance": "路径点显示距离：%s",
   "confluxmap.config.waypoints.show_local": "显示本地路径点：%s",
   "confluxmap.config.waypoints.show_shared": "显示共享路径点：%s",

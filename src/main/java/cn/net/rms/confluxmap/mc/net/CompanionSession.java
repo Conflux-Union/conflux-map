@@ -58,10 +58,10 @@ public final class CompanionSession {
         this.policy = policy;
         state.set(State.ACTIVE);
         ConfluxMapMod.LOGGER.info(
-            "companion active (worldId={} worldgen={} seedGranted={} corrections={} structures={} chunkLoadState={})",
+            "companion active (worldId={} worldgen={} seedGranted={} corrections={} structures={} chunkLoadState={} entityRadarAllowed={})",
             policy.worldId(), policy.worldgenVersion(),
             policy.flags().seedGranted(), policy.flags().correctionsEnabled(), policy.flags().structureInfoEnabled(),
-            policy.flags().chunkLoadStateEnabled()
+            policy.flags().chunkLoadStateEnabled(), !policy.flags().entityRadarForbidden()
         );
     }
 
@@ -137,6 +137,16 @@ public final class CompanionSession {
     /** Latest received policy, or {@code null} if none yet. */
     public @Nullable HelloPolicyS2C policy() {
         return policy;
+    }
+
+    /**
+     * Whether entity radar is permitted for the current connection. No companion, a silent
+     * server, and an older companion with no policy bit all preserve the historical allowed
+     * behavior. Only an active policy can forbid radar.
+     */
+    public boolean entityRadarAllowed() {
+        final HelloPolicyS2C current = policy;
+        return state.get() != State.ACTIVE || current == null || !current.flags().entityRadarForbidden();
     }
 
     /**

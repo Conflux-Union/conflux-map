@@ -181,7 +181,8 @@ public final class ServerNetworking {
             cfg.enabled && cfg.shareSeed,
             cfg.enabled && cfg.shareCorrections,
             false,
-            cfg.enabled && cfg.shareChunkLoadState
+            cfg.enabled && cfg.shareChunkLoadState,
+            cfg.enabled && !cfg.allowEntityRadar
         );
     }
 

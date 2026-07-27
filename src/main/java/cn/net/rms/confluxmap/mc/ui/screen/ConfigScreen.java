@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
+import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.compat.Widgets;
@@ -21,6 +22,8 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.text.OrderedText;
+import net.minecraft.text.StringVisitable;
 import net.minecraft.text.Text;
 
 /**
@@ -56,6 +59,31 @@ public final class ConfigScreen extends ConfluxScreen {
         }
     }
 
+    enum RadarSettingsAccess {
+        ALLOWED(true, null),
+        FORBIDDEN_BY_SERVER(false, "confluxmap.screen.config.radar.disabled_by_server");
+
+        private final boolean controlsActive;
+        private final String noticeKey;
+
+        RadarSettingsAccess(final boolean controlsActive, final String noticeKey) {
+            this.controlsActive = controlsActive;
+            this.noticeKey = noticeKey;
+        }
+
+        static RadarSettingsAccess from(final boolean serverAllowsRadar) {
+            return serverAllowsRadar ? ALLOWED : FORBIDDEN_BY_SERVER;
+        }
+
+        boolean controlsActive() {
+            return controlsActive;
+        }
+
+        String noticeKey() {
+            return noticeKey;
+        }
+    }
+
     private static final int MARGIN = 8;
     private static final int TAB_Y = 24;
     private static final int TAB_HEIGHT = 20;
@@ -64,6 +92,8 @@ public final class ConfigScreen extends ConfluxScreen {
     private static final int ROW_HEIGHT = 22;
     private static final int MAX_ROW_WIDTH = 280;
     private static final int BOTTOM_MARGIN = 30;
+    private static final int RADAR_NOTICE_PADDING = 4;
+    private static final int NOTICE_TEXT_COLOR = 0xFFFFAA00;
 
     private static final String[] ZOOM_VALUE_KEYS = {
         "confluxmap.value.zoom_0_5",
@@ -74,6 +104,7 @@ public final class ConfigScreen extends ConfluxScreen {
 
     private final ConfluxConfig config;
     private final ConfigIo configIo;
+    private final CompanionSession companionSession;
     private final SharedWaypointClient sharedWaypoints;
 
     private Category category = Category.MINIMAP;
@@ -82,12 +113,14 @@ public final class ConfigScreen extends ConfluxScreen {
     private int scrollOffset;
     private int contentHeight;
     private SharedWaypointAvailability sharedAvailability;
+    private RadarSettingsAccess radarAccess = RadarSettingsAccess.ALLOWED;
 
     public ConfigScreen() {
         super(Texts.translatable("confluxmap.screen.config.title"));
         final ConfluxMapClient app = ConfluxMapClient.get();
         this.config = app.config();
         this.configIo = app.configIo();
+        this.companionSession = app.companionSession();
         this.sharedWaypoints = app.sharedWaypoints();
     }
 
@@ -114,14 +147,37 @@ public final class ConfigScreen extends ConfluxScreen {
                 rebuild();
             }
         }
+        final RadarSettingsAccess currentRadarAccess = RadarSettingsAccess.from(
+            companionSession.entityRadarAllowed()
+        );
+        if (currentRadarAccess != radarAccess) {
+            radarAccess = currentRadarAccess;
+            if (category == Category.RADAR) {
+                rebuild();
+            }
+        }
     }
 
     private int viewportHeight() {
-        return Math.max(ROW_HEIGHT, height - BOTTOM_MARGIN - ROW_TOP);
+        return Math.max(ROW_HEIGHT, height - BOTTOM_MARGIN - rowsTop());
     }
 
     private boolean rowVisible(final int y) {
-        return y >= ROW_TOP && y + ROW_HEIGHT - 2 <= height - BOTTOM_MARGIN;
+        return y >= rowsTop() && y + ROW_HEIGHT - 2 <= height - BOTTOM_MARGIN;
+    }
+
+    private int rowsTop() {
+        return category == Category.RADAR && radarAccess.noticeKey() != null
+            ? ROW_TOP + radarNoticeHeight()
+            : ROW_TOP;
+    }
+
+    private int radarNoticeHeight() {
+        final String notice = Texts.translatable(radarAccess.noticeKey()).getString();
+        final int lines = this.textRenderer.wrapLines(
+            StringVisitable.plain(notice), Math.max(40, rowWidth)
+        ).size();
+        return lines * (this.textRenderer.fontHeight + 1) + RADAR_NOTICE_PADDING;
     }
 
     @Override
@@ -153,6 +209,7 @@ public final class ConfigScreen extends ConfluxScreen {
 
     private void rebuild() {
         sharedAvailability = sharedWaypoints.availability();
+        radarAccess = RadarSettingsAccess.from(companionSession.entityRadarAllowed());
         clearChildren();
         addTabs();
         addRows();
@@ -186,7 +243,8 @@ public final class ConfigScreen extends ConfluxScreen {
     }
 
     private void addRows() {
-        int y = ROW_TOP - scrollOffset;
+        final int rowsTop = rowsTop();
+        int y = rowsTop - scrollOffset;
         switch (category) {
             case MINIMAP:
                 y = addToggleRow(y, "confluxmap.config.minimap.enabled", () -> config.minimapEnabled, v -> config.minimapEnabled = v);
@@ -231,17 +289,40 @@ public final class ConfigScreen extends ConfluxScreen {
                 );
                 break;
             case RADAR:
-                y = addToggleRow(y, "confluxmap.config.radar.enabled", () -> config.radarEnabled, v -> config.radarEnabled = v);
-                y = addToggleRow(y, "confluxmap.config.radar.show_players", () -> config.radarShowPlayers, v -> config.radarShowPlayers = v);
-                y = addToggleRow(y, "confluxmap.config.radar.show_hostile", () -> config.radarShowHostile, v -> config.radarShowHostile = v);
-                y = addToggleRow(y, "confluxmap.config.radar.show_passive", () -> config.radarShowPassive, v -> config.radarShowPassive = v);
-                y = addToggleRow(y, "confluxmap.config.radar.show_other", () -> config.radarShowOther, v -> config.radarShowOther = v);
-                y = addToggleRow(y, "confluxmap.config.radar.show_player_names", () -> config.radarShowPlayerNames, v -> config.radarShowPlayerNames = v);
+                final boolean radarControlsActive = radarAccess.controlsActive();
+                y = addToggleRow(
+                    y, "confluxmap.config.radar.enabled",
+                    () -> config.radarEnabled, v -> config.radarEnabled = v, radarControlsActive
+                );
+                y = addToggleRow(
+                    y, "confluxmap.config.radar.show_players",
+                    () -> config.radarShowPlayers, v -> config.radarShowPlayers = v, radarControlsActive
+                );
+                y = addToggleRow(
+                    y, "confluxmap.config.radar.show_hostile",
+                    () -> config.radarShowHostile, v -> config.radarShowHostile = v, radarControlsActive
+                );
+                y = addToggleRow(
+                    y, "confluxmap.config.radar.show_passive",
+                    () -> config.radarShowPassive, v -> config.radarShowPassive = v, radarControlsActive
+                );
+                y = addToggleRow(
+                    y, "confluxmap.config.radar.show_other",
+                    () -> config.radarShowOther, v -> config.radarShowOther = v, radarControlsActive
+                );
+                y = addToggleRow(
+                    y, "confluxmap.config.radar.show_player_names",
+                    () -> config.radarShowPlayerNames, v -> config.radarShowPlayerNames = v, radarControlsActive
+                );
                 y = addIntSliderRow(
                     y, "confluxmap.config.radar.max_entities", 1, 500,
-                    () -> config.radarMaxEntities, v -> config.radarMaxEntities = v, ConfigScreen::plainText
+                    () -> config.radarMaxEntities, v -> config.radarMaxEntities = v,
+                    ConfigScreen::plainText, radarControlsActive
                 );
-                y = addToggleRow(y, "confluxmap.config.radar.icons_enabled", () -> config.radarIconsEnabled, v -> config.radarIconsEnabled = v);
+                y = addToggleRow(
+                    y, "confluxmap.config.radar.icons_enabled",
+                    () -> config.radarIconsEnabled, v -> config.radarIconsEnabled = v, radarControlsActive
+                );
                 break;
             case WAYPOINTS:
                 y = addToggleRow(
@@ -314,7 +395,7 @@ public final class ConfigScreen extends ConfluxScreen {
             default:
                 break;
         }
-        contentHeight = y + scrollOffset - ROW_TOP;
+        contentHeight = y + scrollOffset - rowsTop;
     }
 
     private int rowX() {
@@ -390,8 +471,24 @@ public final class ConfigScreen extends ConfluxScreen {
         final IntConsumer setter,
         final IntFunction<String> valueText
     ) {
+        return addIntSliderRow(y, labelKey, min, max, getter, setter, valueText, true);
+    }
+
+    private int addIntSliderRow(
+        final int y,
+        final String labelKey,
+        final int min,
+        final int max,
+        final IntSupplier getter,
+        final IntConsumer setter,
+        final IntFunction<String> valueText,
+        final boolean active
+    ) {
         if (rowVisible(y)) {
-            addDrawableChild(new IntSliderWidget(rowX(), y, rowWidth, ROW_HEIGHT - 2, min, max, labelKey, getter, setter, valueText));
+            final IntSliderWidget slider = addDrawableChild(
+                new IntSliderWidget(rowX(), y, rowWidth, ROW_HEIGHT - 2, min, max, labelKey, getter, setter, valueText)
+            );
+            slider.active = active;
         }
         return y + ROW_HEIGHT;
     }
@@ -477,6 +574,23 @@ public final class ConfigScreen extends ConfluxScreen {
         draw.renderBackground(this, mouseX, mouseY, tickDelta);
         final String title = getTitle().getString();
         draw.drawTextWithShadow(this.textRenderer, title, width / 2f - this.textRenderer.getWidth(title) / 2f, 8, 0xFFFFFFFF);
+        if (category == Category.RADAR && radarAccess.noticeKey() != null) {
+            drawRadarPolicyNotice(draw);
+        }
+    }
+
+    private void drawRadarPolicyNotice(final GuiDraw draw) {
+        final String notice = Texts.translatable(radarAccess.noticeKey()).getString();
+        int y = ROW_TOP + 2;
+        for (final OrderedText line : this.textRenderer.wrapLines(
+            StringVisitable.plain(notice), Math.max(40, rowWidth)
+        )) {
+            draw.drawTextWithShadow(
+                this.textRenderer, line, width / 2f - this.textRenderer.getWidth(line) / 2f,
+                y, NOTICE_TEXT_COLOR
+            );
+            y += this.textRenderer.fontHeight + 1;
+        }
     }
 
     /**
