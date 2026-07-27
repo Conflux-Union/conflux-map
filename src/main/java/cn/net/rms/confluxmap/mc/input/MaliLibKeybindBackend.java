@@ -12,9 +12,11 @@ import fi.dy.masa.malilib.config.gui.ConfigPanelAllHotkeys;
 import fi.dy.masa.malilib.config.options.ConfigHotkey;
 import fi.dy.masa.malilib.event.InputEventHandler;
 import fi.dy.masa.malilib.gui.GuiBase;
+import fi.dy.masa.malilib.hotkeys.IKeybind;
 import fi.dy.masa.malilib.hotkeys.IKeybindManager;
 import fi.dy.masa.malilib.hotkeys.IKeybindProvider;
 import fi.dy.masa.malilib.hotkeys.KeyAction;
+import fi.dy.masa.malilib.hotkeys.KeybindMulti;
 import fi.dy.masa.malilib.hotkeys.KeybindSettings;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -26,6 +28,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.option.KeyBinding;
 
 /** Loaded only after Fabric Loader confirms that MaliLib is present. */
 final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
@@ -33,7 +36,9 @@ final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
     private static final String HOTKEYS_KEY = "hotkeys";
 
     private final Path configFile;
+    private final IKeybind configScreenKeybind;
     private final List<ConfigHotkey> hotkeys;
+    private String configScreenStorageKey = "";
 
     static MaliLibKeybindBackend register(final KeybindActionHandler actionHandler) {
         final MaliLibKeybindBackend backend = new MaliLibKeybindBackend(actionHandler);
@@ -47,6 +52,11 @@ final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
         configFile = FabricLoader.getInstance().getConfigDir()
             .resolve(ConfluxMapMod.ID)
             .resolve("malilib-hotkeys.json");
+        configScreenKeybind = KeybindMulti.fromStorageString("", KeybindSettings.DEFAULT);
+        configScreenKeybind.setCallback((keyAction, keybind) -> {
+            openHotkeyScreen();
+            return true;
+        });
         final ArrayList<ConfigHotkey> orderedHotkeys = new ArrayList<>();
         for (final KeybindAction action : KeybindAction.values()) {
             final ConfigHotkey hotkey = createHotkey(action);
@@ -80,8 +90,24 @@ final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
         GuiBase.openGui(new ConfigPanelAllHotkeys());
     }
 
+    void syncConfigScreenKey(final KeyBinding vanillaHint) {
+        final String storageKey = MaliLibShortcutKey.storageKey(
+            KeybindMulti.getKeyCode(vanillaHint),
+            KeybindMulti::getStorageStringForKeyCode
+        );
+        if (storageKey.equals(configScreenStorageKey)) {
+            return;
+        }
+        configScreenStorageKey = storageKey;
+        configScreenKeybind.setValueFromString(storageKey);
+        InputEventHandler.getKeybindManager().updateUsedKeys();
+    }
+
     @Override
     public void addKeysToMap(final IKeybindManager manager) {
+        // This must precede gameplay hotkeys so a shared key opens configuration
+        // before the INGAME action bindings see the same input.
+        manager.addKeybindToMap(configScreenKeybind);
         for (final ConfigHotkey hotkey : hotkeys) {
             manager.addKeybindToMap(hotkey.getKeybind());
         }

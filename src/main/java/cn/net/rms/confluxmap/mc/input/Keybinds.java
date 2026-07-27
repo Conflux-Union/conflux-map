@@ -54,6 +54,7 @@ public final class Keybinds {
         if (maliLibBackend != null) {
             actionHandler = detectedHandler;
             maliLibHint = register("configure_hotkeys", GLFW.GLFW_KEY_UNKNOWN);
+            maliLibBackend.syncConfigScreenKey(maliLibHint);
             ConfluxMapMod.LOGGER.info("MaliLib detected; Conflux Map hotkeys are registered with MaliLib");
         } else {
             for (final KeybindAction action : KeybindAction.values()) {
@@ -88,6 +89,7 @@ public final class Keybinds {
 
     private void poll() {
         if (maliLibBackend != null) {
+            maliLibBackend.syncConfigScreenKey(maliLibHint);
             while (maliLibHint.wasPressed()) {
                 final MinecraftClient client = MinecraftClient.getInstance();
                 if (client.currentScreen == null) {
