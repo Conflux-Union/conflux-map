@@ -73,8 +73,10 @@ components and attribution.
 
 ## Keybinds
 
-All rebindable under Minecraft's Controls screen, in the "Conflux Map"
-category.
+Without MaliLib, all bindings remain configurable under Minecraft's Controls
+screen in the "Conflux Map" category. When MaliLib is installed, the gameplay
+bindings move to MaliLib's hotkey interface (including multi-key combinations),
+and vanilla Controls keeps one optional shortcut for opening that interface.
 
 | Default key | Action |
 |---|---|

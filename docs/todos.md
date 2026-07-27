@@ -119,7 +119,7 @@ during the schema-v1 migration, clamps invalid or off-screen positions, and
 temporarily reduces the rendered size when the scaled window is too small to
 keep the configured minimap fully visible.
 
-### 7. Optional MaliLib keybind configuration
+### 7. Optional MaliLib keybind configuration - completed
 
 Replace the in-tree modifier-key proposal with optional MaliLib integration.
 
@@ -132,6 +132,13 @@ Replace the in-tree modifier-key proposal with optional MaliLib integration.
   configurable when it is absent.
 - Both backends must invoke the same action handlers so installing MaliLib does
   not change map behavior.
+
+Completed on 2026-07-27. All eleven gameplay actions now come from one action
+registry and one handler. Without MaliLib they retain their existing vanilla
+bindings and defaults. With MaliLib they are registered in its global hotkey UI,
+stored in a separate Conflux Map hotkey file, and may use multi-key combinations;
+vanilla Controls contains only an unbound shortcut to that UI. MaliLib is a
+compile-only suggested dependency and is not bundled or required at runtime.
 
 ### 8. Structure icon layer and per-type filters — completed
 

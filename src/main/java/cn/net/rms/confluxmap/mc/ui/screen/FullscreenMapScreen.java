@@ -201,6 +201,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     /** Radar markers are ~12px across including their contour (see RadarMarkerRenderer); cull with that margin so one straddling the edge doesn't pop. */
     private static final float RADAR_CULL_MARGIN = 8f;
 
+    /** Null when MaliLib owns the binding and closes this screen through the shared action handler. */
     private final KeyBinding openMapKey;
     private final GameBridge gameBridge;
     private final MapWorldService mapWorlds;
@@ -959,9 +960,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             return true;
         }
         //#if MC>=12109
-        //$$ if (openMapKey.matchesKey(input)) {
+        //$$ if (openMapKey != null && openMapKey.matchesKey(input)) {
         //#else
-        if (openMapKey.matchesKey(keyCode, scanCode)) {
+        if (openMapKey != null && openMapKey.matchesKey(keyCode, scanCode)) {
         //#endif
             onClose();
             return true;
