@@ -186,18 +186,15 @@ that was never captured in detail.
 
 ## Confirmed bugs
 
-### Bug 1. Fullscreen zoom label shows the inverse meaning
+### Bug 1. Fullscreen zoom label shows the inverse meaning — completed
 
 Affected release: `0.1.0-beta.5`.
 
-`FullscreenMapScreen#drawScaleLabel` currently prints the internal `scale`
-field directly. That field is blocks per screen pixel, so it increases as the
-player zooms out even though users read the label as a zoom multiplier.
-
-Display `1.0 / scale` as the user-facing multiplier instead. The zoom-out
-sequence should read `1.00x -> 0.25x -> 0.0625x`, not `1 -> 4 -> 16`. Keep the
-internal blocks-per-pixel value and all viewport/LOD math unchanged; only the
-presentation and its regression test should change.
+Fixed on 2026-07-27. The fullscreen label now displays `1.0 / scale` as a
+user-facing multiplier with stable precision, so the zoom-out sequence reads
+`1.00x -> 0.25x -> 0.0625x`. The internal blocks-per-pixel value and all
+viewport/LOD math remain unchanged, and focused regression coverage locks down
+the presentation boundary.
 
 ### Bug 2. Large player-built structures do not sync at low zoom
 

@@ -2422,7 +2422,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     private void drawScaleLabel(final GuiDraw draw) {
-        final String text = Texts.translatable("confluxmap.map.scale", String.format("%.2f", scale)).getString();
+        final String text = Texts.translatable(
+            "confluxmap.map.scale", FullscreenZoomLabel.format(scale)
+        ).getString();
         final int textWidth = this.textRenderer.getWidth(text);
         draw.drawTextWithShadow(this.textRenderer, text, width - MARGIN - textWidth, MARGIN, TEXT_COLOR);
     }
