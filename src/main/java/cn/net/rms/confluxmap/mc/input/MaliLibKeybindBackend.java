@@ -8,7 +8,6 @@ import com.google.gson.JsonObject;
 import fi.dy.masa.malilib.config.ConfigManager;
 import fi.dy.masa.malilib.config.ConfigUtils;
 import fi.dy.masa.malilib.config.IConfigHandler;
-import fi.dy.masa.malilib.config.gui.ConfigPanelAllHotkeys;
 import fi.dy.masa.malilib.config.options.ConfigHotkey;
 import fi.dy.masa.malilib.event.InputEventHandler;
 import fi.dy.masa.malilib.gui.GuiBase;
@@ -77,17 +76,18 @@ final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
                 true
             )
             : KeybindSettings.DEFAULT;
-        return new ConfigHotkey(
+        final String displayName = Texts.translatable(action.translationKey()).getString();
+        return new LocalizedMaliLibHotkey(
             action.configName(),
             action.maliLibDefaultKeys(),
             settings,
-            Texts.translatable("key.confluxmap.malilib.comment").getString(),
-            Texts.translatable(action.translationKey()).getString()
+            Texts.translatable(action.translationKey() + ".comment").getString(),
+            displayName
         );
     }
 
     void openHotkeyScreen() {
-        GuiBase.openGui(new ConfigPanelAllHotkeys());
+        GuiBase.openGui(new MaliLibHotkeyScreen());
     }
 
     void syncConfigScreenKey(final KeyBinding vanillaHint) {
