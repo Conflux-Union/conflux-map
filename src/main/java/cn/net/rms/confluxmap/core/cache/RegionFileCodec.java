@@ -7,6 +7,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
 import java.util.zip.Inflater;
@@ -23,18 +25,12 @@ import java.util.zip.InflaterInputStream;
  * [HEADER_SIZE + CHUNK_TABLE_SIZE, EOF)                Deflate stream of 65536 column records
  * </pre>
  *
- * <p>Column record layout is {@code i16 surfaceY, u8 fluidDepth, u8 kind, i32 baseArgb,
- * i32 biomeTint, i32 overlayArgb, u8 light} - 17 bytes/column, matching {@link RegionColumns}'
- * seven per-column arrays one-for-one ({@code biomeTint} here is {@code RegionColumns.tintArgb} /
- * {@code ChunkSnapshot.tintArgb} under the format's own name). Note: the implementation plan
- * originally described this record as "17B/col" back when it only listed 6 fields (summing
- * those alone gives 16); {@code light} is the field that makes the count actually match.
- *
- * <p>{@code light} was added in {@link #SCHEMA_VERSION} 2 (day/night dynamic lighting for the
- * SURFACE layer). {@link #decode} still accepts {@link #SCHEMA_VERSION_NO_LIGHT} files written
- * before that - their column records are one byte shorter (no trailing {@code light} byte) and
- * every column is filled with {@link #DEFAULT_LIGHT_FULL_BRIGHT} instead, so previously-cached
- * terrain doesn't render pitch-black at night until it's recaptured.
+ * <p>The compressed body starts with a UTF biome-identifier dictionary, followed by fixed-width
+ * column records: {@code i16 surfaceY, u8 fluidDepth, u8 kind, u16 biomeIndex, i32 baseArgb,
+ * i32 biomeTint, i32 overlayArgb, u8 light}. Biome index 0 means unknown; other values are
+ * one-based dictionary indexes. Schema 3 introduced this stable identity plane. Older schemas
+ * are rejected so {@link RegionDiskCache} quarantines and safely recaptures them rather than
+ * guessing biome identity from a tint colour.
  *
  * <p>All multi-byte integers are big-endian (plain {@link DataOutputStream}/
  * {@link DataInputStream} semantics). This class only encodes/decodes streams; file
@@ -43,11 +39,7 @@ import java.util.zip.InflaterInputStream;
 public final class RegionFileCodec {
     public static final byte[] MAGIC = {'C', 'F', 'R', 'M'};
     public static final int FORMAT_VERSION = 1;
-    public static final int SCHEMA_VERSION = 2;
-    /** The pre-{@code light}-plane schema; still readable, see this class's javadoc. */
-    public static final int SCHEMA_VERSION_NO_LIGHT = 1;
-    /** Backfilled {@code light} value for {@link #SCHEMA_VERSION_NO_LIGHT} files: full bright, never darkens at night. */
-    public static final byte DEFAULT_LIGHT_FULL_BRIGHT = 15;
+    public static final int SCHEMA_VERSION = 3;
     /** Discriminates the on-disk record family; 0 = the fixed-width column layout described above. */
     public static final int SOURCE_CLASS = 0;
 
@@ -60,7 +52,8 @@ public final class RegionFileCodec {
     public static final int CHUNK_TABLE_SIZE = CHUNK_TABLE_ENTRIES * CHUNK_TABLE_ENTRY_SIZE;
 
     public static final int COLUMN_COUNT = RegionColumns.SIZE * RegionColumns.SIZE;
-    public static final int COLUMN_RECORD_SIZE = 2 + 1 + 1 + 4 + 4 + 4 + 1;
+    public static final int COLUMN_RECORD_SIZE = 2 + 1 + 1 + 2 + 4 + 4 + 4 + 1;
+    private static final int MAX_BIOME_PALETTE_SIZE = 0xFFFF;
 
     private RegionFileCodec() {
     }
@@ -86,6 +79,7 @@ public final class RegionFileCodec {
         short[] surfaceY,
         byte[] fluidDepth,
         byte[] kind,
+        String[] biomeId,
         int[] baseArgb,
         int[] biomeTint,
         int[] overlayArgb,
@@ -97,6 +91,7 @@ public final class RegionFileCodec {
             requireLength("surfaceY", surfaceY.length, COLUMN_COUNT);
             requireLength("fluidDepth", fluidDepth.length, COLUMN_COUNT);
             requireLength("kind", kind.length, COLUMN_COUNT);
+            requireLength("biomeId", biomeId.length, COLUMN_COUNT);
             requireLength("baseArgb", baseArgb.length, COLUMN_COUNT);
             requireLength("biomeTint", biomeTint.length, COLUMN_COUNT);
             requireLength("overlayArgb", overlayArgb.length, COLUMN_COUNT);
@@ -139,10 +134,16 @@ public final class RegionFileCodec {
             // still fsync/close it afterward as part of the atomic-write sequence.
             final DeflaterOutputStream compressed = new DeflaterOutputStream(rawOut, deflater, 8192);
             final DataOutputStream columns = new DataOutputStream(compressed);
+            final Map<String, Integer> biomePalette = biomePalette(data.biomeId());
+            columns.writeInt(biomePalette.size());
+            for (final String biomeId : biomePalette.keySet()) {
+                columns.writeUTF(biomeId);
+            }
             for (int i = 0; i < COLUMN_COUNT; i++) {
                 columns.writeShort(data.surfaceY()[i]);
                 columns.writeByte(data.fluidDepth()[i]);
                 columns.writeByte(data.kind()[i]);
+                columns.writeShort(data.biomeId()[i] == null ? 0 : biomePalette.get(data.biomeId()[i]));
                 columns.writeInt(data.baseArgb()[i]);
                 columns.writeInt(data.biomeTint()[i]);
                 columns.writeInt(data.overlayArgb()[i]);
@@ -153,6 +154,25 @@ public final class RegionFileCodec {
         } finally {
             deflater.end();
         }
+    }
+
+    private static Map<String, Integer> biomePalette(final String[] biomeIds) throws IOException {
+        final Map<String, Integer> palette = new LinkedHashMap<>();
+        for (final String biomeId : biomeIds) {
+            if (biomeId == null) {
+                continue;
+            }
+            if (biomeId.isEmpty()) {
+                throw new IOException("empty biome identifier");
+            }
+            if (!palette.containsKey(biomeId)) {
+                if (palette.size() == MAX_BIOME_PALETTE_SIZE) {
+                    throw new IOException("biome palette exceeds " + MAX_BIOME_PALETTE_SIZE + " entries");
+                }
+                palette.put(biomeId, palette.size() + 1);
+            }
+        }
+        return palette;
     }
 
     /**
@@ -179,7 +199,7 @@ public final class RegionFileCodec {
             throw new RegionFileException("unsupported format version " + formatVersion);
         }
         final int schemaVersion = header.readUnsignedByte();
-        if (schemaVersion != SCHEMA_VERSION && schemaVersion != SCHEMA_VERSION_NO_LIGHT) {
+        if (schemaVersion != SCHEMA_VERSION) {
             throw new RegionFileException("unsupported schema version " + schemaVersion);
         }
         final int sourceClass = header.readUnsignedByte();
@@ -210,25 +230,43 @@ public final class RegionFileCodec {
         final short[] surfaceY = new short[COLUMN_COUNT];
         final byte[] fluidDepth = new byte[COLUMN_COUNT];
         final byte[] kind = new byte[COLUMN_COUNT];
+        final String[] biomeId = new String[COLUMN_COUNT];
         final int[] baseArgb = new int[COLUMN_COUNT];
         final int[] biomeTint = new int[COLUMN_COUNT];
         final int[] overlayArgb = new int[COLUMN_COUNT];
         final byte[] light = new byte[COLUMN_COUNT];
-        final boolean hasLight = schemaVersion == SCHEMA_VERSION;
         final DataInputStream columns = new DataInputStream(new InflaterInputStream(rawIn, new Inflater(), 8192));
+        final int biomePaletteSize = columns.readInt();
+        if (biomePaletteSize < 0 || biomePaletteSize > MAX_BIOME_PALETTE_SIZE) {
+            throw new RegionFileException("invalid biome palette size " + biomePaletteSize);
+        }
+        final String[] biomePalette = new String[biomePaletteSize + 1];
+        for (int i = 1; i <= biomePaletteSize; i++) {
+            biomePalette[i] = columns.readUTF();
+            if (biomePalette[i].isEmpty()) {
+                throw new RegionFileException("empty biome identifier at palette index " + i);
+            }
+        }
         for (int i = 0; i < COLUMN_COUNT; i++) {
             surfaceY[i] = columns.readShort();
             fluidDepth[i] = columns.readByte();
             kind[i] = columns.readByte();
+            final int biomeIndex = columns.readUnsignedShort();
+            if (biomeIndex > biomePaletteSize) {
+                throw new RegionFileException(
+                    "biome index " + biomeIndex + " exceeds palette size " + biomePaletteSize
+                );
+            }
+            biomeId[i] = biomePalette[biomeIndex];
             baseArgb[i] = columns.readInt();
             biomeTint[i] = columns.readInt();
             overlayArgb[i] = columns.readInt();
-            light[i] = hasLight ? columns.readByte() : DEFAULT_LIGHT_FULL_BRIGHT;
+            light[i] = columns.readByte();
         }
 
         return new RegionData(
             rx, rz, lastWriteEpochMs, chunkSourceOrdinal, chunkUpdateEpochSeconds,
-            surfaceY, fluidDepth, kind, baseArgb, biomeTint, overlayArgb, light
+            surfaceY, fluidDepth, kind, biomeId, baseArgb, biomeTint, overlayArgb, light
         );
     }
 }

@@ -14,6 +14,8 @@ public final class ChunkSnapshot {
     public final int chunkZ;
     public final long sessionToken;
     public final short[] surfaceY;
+    /** Stable registry identifier per captured column, for example {@code minecraft:plains}. */
+    public final String[] biomeId;
     public final byte[] fluidDepth;
     public final int[] baseArgb;
     public final int[] tintArgb;
@@ -34,6 +36,7 @@ public final class ChunkSnapshot {
         final int chunkZ,
         final long sessionToken,
         final short[] surfaceY,
+        final String[] biomeId,
         final byte[] fluidDepth,
         final int[] baseArgb,
         final int[] tintArgb,
@@ -41,7 +44,7 @@ public final class ChunkSnapshot {
         final byte[] kind,
         final byte[] light
     ) {
-        if (surfaceY.length != COLUMNS || fluidDepth.length != COLUMNS
+        if (surfaceY.length != COLUMNS || biomeId.length != COLUMNS || fluidDepth.length != COLUMNS
             || baseArgb.length != COLUMNS || tintArgb.length != COLUMNS
             || overlayArgb.length != COLUMNS || kind.length != COLUMNS || light.length != COLUMNS) {
             throw new IllegalArgumentException("snapshot arrays must have 256 entries");
@@ -50,6 +53,7 @@ public final class ChunkSnapshot {
         this.chunkZ = chunkZ;
         this.sessionToken = sessionToken;
         this.surfaceY = surfaceY;
+        this.biomeId = biomeId;
         this.fluidDepth = fluidDepth;
         this.baseArgb = baseArgb;
         this.tintArgb = tintArgb;

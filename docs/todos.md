@@ -54,11 +54,12 @@ Model the annotation, geometry, style, label, and persistence choice separately
 from screen widgets so editing, storage, fullscreen rendering, and HUD rendering
 share one deterministic data model.
 
-### 3. Biome rendering mode
+### 3. Biome rendering mode - completed
 
-Add a client-selectable rendering mode where every biome is filled with one
-solid color instead of the normal block/surface terrain colors. Switching modes
-must take effect without leaving the world or rebuilding unrelated map state.
+Completed on 2026-07-27 with a client-selectable rendering mode where every
+biome is filled with one stable solid color instead of the normal block/surface
+terrain colors. Switching modes takes effect immediately without leaving the
+world or rebuilding unrelated map state.
 
 The fullscreen map will expose three display modes:
 
@@ -67,10 +68,11 @@ The fullscreen map will expose three display modes:
    companion.
 3. Biome colors.
 
-Current captured columns persist biome tint ARGB but not biome identity. A solid
-per-biome palette therefore needs a stable biome-identity plane in captured and
-cached map data; it must not guess the biome from tint color. Version the disk
-format and migrate or safely invalidate older entries when that plane is added.
+Captured columns now carry the biome resource identifier through the in-memory
+store and a dictionary-encoded disk plane. Cache schema 3 safely quarantines
+older entries that lack biome identity instead of guessing from tint color.
+Captured and cubiomes-predicted tiles use separate biome texture keys, so the
+fullscreen mode does not change the minimap's terrain rendering.
 
 ### 4. Server policy for entity radar - completed
 

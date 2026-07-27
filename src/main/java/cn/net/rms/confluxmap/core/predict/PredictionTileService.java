@@ -8,6 +8,7 @@ import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
+import cn.net.rms.confluxmap.core.tile.BiomeTileKeys;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.tile.TileUpdate;
 import cn.net.rms.confluxmap.core.util.TileMath;
@@ -48,6 +49,8 @@ public final class PredictionTileService {
     private final Map<TileKey, Long> dirty = new HashMap<>();
     /** Guarded by {@code this}: tiles currently being composed on a worker. */
     private final Set<TileKey> inFlight = new HashSet<>();
+    /** Biome variants requested at least once this session, for correction-driven refreshes. */
+    private final Set<TileKey> requestedBiomeTiles = new HashSet<>();
     /** Guarded by {@code this}: output-pixel metadata retained for fullscreen cursor/actions. */
     private final Map<TileKey, TileMetadata> metadataTiles = new HashMap<>();
     /** Guarded by {@code this}: invalidates compositions started before a manual/session reload. */
@@ -101,8 +104,10 @@ public final class PredictionTileService {
         );
         synchronized (this) {
             metadataTiles.remove(tile);
+            metadataTiles.remove(BiomeTileKeys.toBiome(tile));
         }
         markDirty(tile, session.token());
+        markBiomeDirtyIfRequested(BiomeTileKeys.toBiome(tile), session.token());
         return true;
     }
 
@@ -111,6 +116,7 @@ public final class PredictionTileService {
         synchronized (this) {
             reloadGeneration++;
             dirty.clear();
+            requestedBiomeTiles.clear();
             metadataTiles.clear();
         }
         CubiomesContexts.bumpEpoch();
@@ -240,6 +246,9 @@ public final class PredictionTileService {
             return;
         }
         synchronized (this) {
+            if (BiomeTileKeys.isBiome(key)) {
+                requestedBiomeTiles.add(key);
+            }
             // The renderer retries a missing texture every frame. Keep that retry idempotent so
             // one slow native composition cannot continuously requeue itself.
             if (dirty.containsKey(key) || inFlight.contains(key)) {
@@ -248,6 +257,15 @@ public final class PredictionTileService {
             dirty.put(key, session.token());
         }
         pump();
+    }
+
+    private void markBiomeDirtyIfRequested(final TileKey key, final long token) {
+        synchronized (this) {
+            if (!requestedBiomeTiles.contains(key)) {
+                return;
+            }
+        }
+        markDirty(key, token);
     }
 
     private void markDirty(final TileKey key, final long token) {
@@ -352,7 +370,9 @@ public final class PredictionTileService {
             return null;
         }
         try {
-            MapLayer.parse(PredictedTileKeys.realLayerId(key.layerId()));
+            MapLayer.parse(BiomeTileKeys.realLayerId(
+                PredictedTileKeys.realLayerId(key.layerId())
+            ));
         } catch (final IllegalArgumentException e) {
             return null;
         }
@@ -389,9 +409,11 @@ public final class PredictionTileService {
         final CorrectionTile corrections = store == null
             ? null
             : store.get(key.dimension(), lod, key.tileX(), key.tileZ());
-        final int[] pixels = PredictedTileComposer.compose(
-            derived, grid, state.palette(), corrections, viewMode, lod, baselineMapColorId
-        );
+        final int[] pixels = BiomeTileKeys.isBiome(key)
+            ? PredictedBiomeComposer.compose(derived, grid, corrections, viewMode, lod)
+            : PredictedTileComposer.compose(
+                derived, grid, state.palette(), corrections, viewMode, lod, baselineMapColorId
+            );
         return new Composition(
             TileUpdate.fullTile(key, pixels),
             new TileMetadata(biomeIds(grid, corrections), surfaceYs(derived, corrections))

@@ -44,6 +44,7 @@ import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.store.MapWorld;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
+import cn.net.rms.confluxmap.core.tile.BiomeTileKeys;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.update.UpdateCheckService;
 import cn.net.rms.confluxmap.core.util.TileMath;
@@ -65,6 +66,7 @@ import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
+import cn.net.rms.confluxmap.mc.ui.DisplayModeIconCatalog;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.StructureMarkerRenderer;
 import cn.net.rms.confluxmap.mc.world.ClientChunkLookup;
@@ -131,10 +133,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final int CONTROL_GAP = 3;
     private static final int LOCAL_CONTROL_ACCENT = 0xFFFFD83D;
     private static final int SHARED_CONTROL_ACCENT = 0xFF55DDE0;
-    private static final int LOAD_STATE_CONTROL_ACCENT = SHARED_CONTROL_ACCENT;
-    private static final Identifier LOAD_STATE_ICON = Ids.of(
-        "confluxmap", "textures/gui/chunk_load_state.png"
-    );
     private static final Identifier LOCAL_WAYPOINT_ICON = Ids.of(
         "confluxmap", "textures/gui/waypoint_local.png"
     );
@@ -242,7 +240,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private MapIconButton sharedVisibilityButton;
     private MapIconButton manageWaypointsButton;
     private MapIconButton structureSearchButton;
-    private MapIconButton loadStateToggleButton;
+    private MapIconButton displayModeButton;
     private int waypointControlsBottom;
     private FullscreenMapLocationMenu.Bounds locationMenuBounds;
     private FullscreenMapLocationMenu.Target locationMenuTarget;
@@ -339,23 +337,20 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         annotationRedoButton = null;
         annotationToolbarBounds = null;
         annotationColorMenuBounds = null;
-        loadStateToggleButton = null;
+        displayModeButton = null;
         loadStateDetailButton = null;
 
         final int x = width - MARGIN - CONTROL_SIZE;
         int y = MARGIN + this.textRenderer.fontHeight + 5;
-        if (chunkLoadStates.available()) {
-            loadStateToggleButton = addDrawableChild(new MapIconButton(
-                x,
-                y,
-                LOAD_STATE_ICON,
-                loadStateToggleTooltip(),
-                LOAD_STATE_CONTROL_ACCENT,
-                ignored -> toggleLoadStateOverlay()
-            ));
-            loadStateToggleButton.setSelected(loadStateMode());
-            y += CONTROL_SIZE + CONTROL_GAP;
-        }
+        displayModeButton = addDrawableChild(new MapIconButton(
+            x,
+            y,
+            DisplayModeIconCatalog.icon(displayMode()),
+            displayModeTooltip(),
+            0,
+            ignored -> cycleDisplayMode()
+        ));
+        y += CONTROL_SIZE + CONTROL_GAP;
         localVisibilityButton = addDrawableChild(new MapIconButton(
             x, y, LOCAL_WAYPOINT_ICON, LOCAL_CONTROL_ACCENT, b -> {
                 config.localWaypointsVisible = !config.localWaypointsVisible;
@@ -810,15 +805,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         ));
     }
 
-    private void toggleLoadStateOverlay() {
-        if (!chunkLoadStates.available()) {
-            rebuildWaypointControls();
-            return;
-        }
-        config.fullscreenDisplayMode = loadStateMode()
-            ? FullscreenDisplayMode.TERRAIN
-            : FullscreenDisplayMode.CHUNK_LOAD_STATE;
-        if (!loadStateMode()) {
+    private void cycleDisplayMode() {
+        final FullscreenDisplayMode current = displayMode();
+        config.fullscreenDisplayMode = current.next(chunkLoadStates.available());
+        if (current == FullscreenDisplayMode.CHUNK_LOAD_STATE
+            && config.fullscreenDisplayMode != FullscreenDisplayMode.CHUNK_LOAD_STATE) {
             chunkLoadStates.deactivate();
         }
         ConfluxMapClient.get().configIo().save(config);
@@ -857,15 +848,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         if (!chunkLoadStates.available() && chunkLoadStates.snapshot().active()) {
             chunkLoadStates.reset();
         }
-        final boolean loadStateAvailable = chunkLoadStates.available();
-        if ((loadStateToggleButton != null) != loadStateAvailable
-            || (loadStateMode() != (loadStateDetailButton != null))) {
+        if (loadStateMode() != (loadStateDetailButton != null)) {
             rebuildWaypointControls();
             return;
         }
-        if (loadStateToggleButton != null) {
-            loadStateToggleButton.setSelected(loadStateMode());
-            loadStateToggleButton.setMessage(loadStateToggleTooltip());
+        if (displayModeButton != null) {
+            displayModeButton.setMessage(displayModeTooltip());
         }
         final SharedWaypointAvailability availability = sharedWaypoints.availability();
         if (sharedAvailability == null || availability.enabled() != sharedAvailability.enabled()) {
@@ -1515,16 +1503,31 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
     }
 
-    private boolean loadStateMode() {
-        return config.fullscreenDisplayMode == FullscreenDisplayMode.CHUNK_LOAD_STATE
-            && chunkLoadStates.available();
+    private FullscreenDisplayMode displayMode() {
+        if (config.fullscreenDisplayMode == FullscreenDisplayMode.CHUNK_LOAD_STATE
+            && !chunkLoadStates.available()) {
+            return FullscreenDisplayMode.TERRAIN;
+        }
+        return config.fullscreenDisplayMode;
     }
 
-    private Text loadStateToggleTooltip() {
+    private boolean loadStateMode() {
+        return displayMode() == FullscreenDisplayMode.CHUNK_LOAD_STATE;
+    }
+
+    private boolean biomeMode() {
+        return displayMode() == FullscreenDisplayMode.BIOME;
+    }
+
+    private Text displayModeTooltip() {
+        final String valueKey = switch (displayMode()) {
+            case TERRAIN -> "confluxmap.map.display_mode.terrain";
+            case CHUNK_LOAD_STATE -> "confluxmap.map.display_mode.chunk_load_state";
+            case BIOME -> "confluxmap.map.display_mode.biome";
+        };
         return Texts.translatable(
-            loadStateMode()
-                ? "confluxmap.map.load_state.toggle.hide"
-                : "confluxmap.map.load_state.toggle.show"
+            "confluxmap.map.display_mode",
+            Texts.translatable(valueKey).getString()
         );
     }
 
@@ -1677,8 +1680,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     ) {
         final Text annotationTooltip = hoveredAnnotationTooltip();
         final Text tooltip;
-        if (loadStateToggleButton != null && loadStateToggleButton.isHovered()) {
-            tooltip = loadStateToggleTooltip();
+        if (displayModeButton != null && displayModeButton.isHovered()) {
+            tooltip = displayModeTooltip();
         } else if (localVisibilityButton != null && localVisibilityButton.isHovered()) {
             tooltip = visibilityTooltip(true);
         } else if (sharedVisibilityButton != null && sharedVisibilityButton.isHovered()) {
@@ -1982,6 +1985,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final SessionGuard.Session session = gameBridge.session();
         final MapLayer layer = layerSelector.current().layer();
         final String layerId = layer.cacheId();
+        final boolean biomeMode = biomeMode();
         final boolean predictionActive = predictionActive(layer, session);
         tiles.setViewport(lod, firstTileX, lastTileX, firstTileZ, lastTileZ);
         if (predictionActive) {
@@ -1994,10 +1998,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
 
         if (predictionActive) {
-            final int predictionTint = predictionTint(layer);
+            final int predictionTint = biomeMode ? 0xFFFFFFFF : predictionTint(layer);
             for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
                 for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
-                    final TileKey key = new TileKey(session.world(), session.dimension(), layerId, lod, tileX, tileZ);
+                    final TileKey terrainKey = new TileKey(
+                        session.world(), session.dimension(), layerId, lod, tileX, tileZ
+                    );
+                    final TileKey key = biomeMode ? BiomeTileKeys.toBiome(terrainKey) : terrainKey;
                     if (textures.bind(PredictedTileKeys.toPredicted(key))) {
                         final float screenX = (float) (width / 2.0 + (key.originBlockX() - centerX) * pxPerBlock);
                         final float screenY = (float) (height / 2.0 + (key.originBlockZ() - centerZ) * pxPerBlock);
@@ -2013,7 +2020,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         RenderUtil.beginTexturedQuads();
         for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
             for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
-                final TileKey key = new TileKey(session.world(), session.dimension(), layerId, lod, tileX, tileZ);
+                final TileKey terrainKey = new TileKey(
+                    session.world(), session.dimension(), layerId, lod, tileX, tileZ
+                );
+                final TileKey key = biomeMode ? BiomeTileKeys.toBiome(terrainKey) : terrainKey;
                 if (textures.bind(key)) {
                     final float screenX = (float) (width / 2.0 + (key.originBlockX() - centerX) * pxPerBlock);
                     final float screenY = (float) (height / 2.0 + (key.originBlockZ() - centerZ) * pxPerBlock);
@@ -2058,9 +2068,15 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final SessionGuard.Session session = gameBridge.session();
         final MapLayer layer = layerSelector.current().layer();
         final boolean predictionActive = predictionActive(layer, session);
+        final boolean biomeMode = biomeMode();
+        final String layerId = biomeMode
+            ? layer.cacheId() + BiomeTileKeys.SUFFIX
+            : layer.cacheId();
         final RadarBackdrop backdrop = new RadarBackdrop(
-            textures, session.world(), session.dimension(), layer.cacheId(), currentLod(),
-            predictionActive, predictionActive ? predictionTint(layer) : 0, BACKGROUND_COLOR
+            textures, session.world(), session.dimension(), layerId, currentLod(),
+            predictionActive,
+            predictionActive ? (biomeMode ? 0xFFFFFFFF : predictionTint(layer)) : 0,
+            BACKGROUND_COLOR
         );
 
         for (final RadarEntry entry : radarScanner.snapshot()) {

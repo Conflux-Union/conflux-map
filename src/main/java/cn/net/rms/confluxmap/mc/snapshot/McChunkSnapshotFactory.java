@@ -70,6 +70,7 @@ public final class McChunkSnapshotFactory {
         }
 
         final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
+        final String[] biomeId = new String[ChunkSnapshot.COLUMNS];
         final byte[] fluidDepth = new byte[ChunkSnapshot.COLUMNS];
         final int[] baseArgb = new int[ChunkSnapshot.COLUMNS];
         final int[] tintArgb = new int[ChunkSnapshot.COLUMNS];
@@ -108,7 +109,11 @@ public final class McChunkSnapshotFactory {
                 }
             }
         }
-        return new ChunkSnapshot(chunkX, chunkZ, sessionToken, surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light);
+        BiomeIdentityCapture.capture(world, pos, baseX, baseZ, surfaceY, biomeId);
+        return new ChunkSnapshot(
+            chunkX, chunkZ, sessionToken, surfaceY, biomeId, fluidDepth,
+            baseArgb, tintArgb, overlayArgb, kind, light
+        );
     }
 
     private void sampleColumn(

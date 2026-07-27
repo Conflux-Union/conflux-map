@@ -151,6 +151,7 @@ public final class RegionDiskCache {
         final long token
     ) {
         final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
+        final String[] biomeId = new String[ChunkSnapshot.COLUMNS];
         final byte[] fluidDepth = new byte[ChunkSnapshot.COLUMNS];
         final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
         final int[] baseArgb = new int[ChunkSnapshot.COLUMNS];
@@ -163,6 +164,7 @@ public final class RegionDiskCache {
             final int srcRow = (baseZ + z) * RegionColumns.SIZE + baseX;
             final int dstRow = z * 16;
             System.arraycopy(data.surfaceY(), srcRow, surfaceY, dstRow, 16);
+            System.arraycopy(data.biomeId(), srcRow, biomeId, dstRow, 16);
             System.arraycopy(data.fluidDepth(), srcRow, fluidDepth, dstRow, 16);
             System.arraycopy(data.kind(), srcRow, kind, dstRow, 16);
             System.arraycopy(data.baseArgb(), srcRow, baseArgb, dstRow, 16);
@@ -172,7 +174,10 @@ public final class RegionDiskCache {
         }
         final int chunkX = (data.rx() << 4) + chunkLocalX;
         final int chunkZ = (data.rz() << 4) + chunkLocalZ;
-        return new ChunkSnapshot(chunkX, chunkZ, token, surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light);
+        return new ChunkSnapshot(
+            chunkX, chunkZ, token, surfaceY, biomeId, fluidDepth,
+            baseArgb, tintArgb, overlayArgb, kind, light
+        );
     }
 
     /**
@@ -259,6 +264,7 @@ public final class RegionDiskCache {
     private int writeRegion(final RegionColumns region, final MapLayer.Type type) {
         final int size = RegionColumns.SIZE;
         final short[] surfaceY = new short[size * size];
+        final String[] biomeId = new String[size * size];
         final byte[] fluidDepth = new byte[size * size];
         final int[] baseArgb = new int[size * size];
         final int[] tintArgb = new int[size * size];
@@ -269,6 +275,7 @@ public final class RegionDiskCache {
         final int[] chunkUpdateSeconds = new int[RegionFileCodec.CHUNK_TABLE_ENTRIES];
         final int copiedVersion = region.copyForFlush(
             surfaceY,
+            biomeId,
             fluidDepth,
             baseArgb,
             tintArgb,
@@ -281,7 +288,8 @@ public final class RegionDiskCache {
 
         final RegionFileCodec.RegionData data = new RegionFileCodec.RegionData(
             region.regionX, region.regionZ, System.currentTimeMillis(),
-            chunkSource, chunkUpdateSeconds, surfaceY, fluidDepth, kind, baseArgb, tintArgb, overlayArgb, light
+            chunkSource, chunkUpdateSeconds, surfaceY, fluidDepth, kind, biomeId,
+            baseArgb, tintArgb, overlayArgb, light
         );
         return writeAtomic(regionFile(type, region.regionX, region.regionZ), data, type.ordinal()) ? copiedVersion : -1;
     }

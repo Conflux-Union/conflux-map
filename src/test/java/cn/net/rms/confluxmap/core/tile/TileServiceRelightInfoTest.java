@@ -100,6 +100,7 @@ class TileServiceRelightInfoTest {
             0,
             1L,
             new short[ChunkSnapshot.COLUMNS],
+            new String[ChunkSnapshot.COLUMNS],
             new byte[ChunkSnapshot.COLUMNS],
             new int[ChunkSnapshot.COLUMNS],
             new int[ChunkSnapshot.COLUMNS],

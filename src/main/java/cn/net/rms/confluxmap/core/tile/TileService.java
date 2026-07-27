@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.core.tile;
 
 import cn.net.rms.confluxmap.core.cache.RegionCacheService;
 import cn.net.rms.confluxmap.core.cache.RegionDiskCache;
+import cn.net.rms.confluxmap.core.color.BiomeColorPalette;
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
@@ -51,6 +52,8 @@ public final class TileService {
     private final Map<TileKey, Long> dirty = new HashMap<>();
     /** Guarded by {@code this}: tiles currently being composed on a worker. */
     private final Set<TileKey> inFlight = new HashSet<>();
+    /** Biome variants requested at least once this session; avoids composing unused twins eagerly. */
+    private final Set<TileKey> requestedBiomeTiles = new HashSet<>();
 
     /** Guarded by {@code this}: bounded, key-deduped upload queue (newest composition wins). */
     private final LinkedHashMap<TileKey, TileUpdate> uploads = new LinkedHashMap<>();
@@ -91,6 +94,7 @@ public final class TileService {
         synchronized (this) {
             dirty.clear();
             inFlight.clear();
+            requestedBiomeTiles.clear();
             uploads.clear();
         }
     }
@@ -145,14 +149,20 @@ public final class TileService {
         }
         final TileKey key = TileKey.ofChunk(world.session().world(), dimensionId, layer, chunkX, chunkZ);
         markDirty(key, token);
+        markBiomeDirtyIfRequested(BiomeTileKeys.toBiome(key), token);
         final TileKey edge = edgeNeighbor(key, chunkX, chunkZ);
         if (edge != null) {
             markDirty(edge, token);
+            markBiomeDirtyIfRequested(BiomeTileKeys.toBiome(edge), token);
         }
         final int blockX = chunkX << 4;
         final int blockZ = chunkZ << 4;
         for (int lod = 1; lod <= TileMath.MAX_LOD; lod++) {
-            markDirty(TileKey.ofBlock(world.session().world(), dimensionId, layer, lod, blockX, blockZ), token);
+            final TileKey coarse = TileKey.ofBlock(
+                world.session().world(), dimensionId, layer, lod, blockX, blockZ
+            );
+            markDirty(coarse, token);
+            markBiomeDirtyIfRequested(BiomeTileKeys.toBiome(coarse), token);
         }
     }
 
@@ -217,6 +227,9 @@ public final class TileService {
             return;
         }
         synchronized (this) {
+            if (BiomeTileKeys.isBiome(key)) {
+                requestedBiomeTiles.add(key);
+            }
             // A missing texture is checked once per rendered frame. Do not turn that repeated
             // check into an invalidation loop while the same tile is already queued or composing.
             if (dirty.containsKey(key) || inFlight.contains(key)) {
@@ -231,11 +244,22 @@ public final class TileService {
         // Only MapLayer.Type.persistent() layers ever touch the disk cache at all (dynamic layers
         // like CAVE_AUTO/NETHER_CURRENT are memory-only per cave-nether-layers.md's live-map model).
         if (key.lod() == 0) {
-            final MapLayer.Type layerType = MapLayer.parse(key.layerId()).type();
+            final MapLayer.Type layerType = MapLayer.parse(
+                BiomeTileKeys.realLayerId(key.layerId())
+            ).type();
             if (layerType.persistent()) {
                 requestRegionLoad(layerType, key.tileX(), key.tileZ());
             }
         }
+    }
+
+    private void markBiomeDirtyIfRequested(final TileKey key, final long token) {
+        synchronized (this) {
+            if (!requestedBiomeTiles.contains(key)) {
+                return;
+            }
+        }
+        markDirty(key, token);
     }
 
     private void requestRegionLoad(final MapLayer.Type layerType, final int regionX, final int regionZ) {
@@ -345,18 +369,21 @@ public final class TileService {
         if (world == null) {
             return null;
         }
-        final MapLayer layer = MapLayer.parse(key.layerId());
+        final boolean biomeMode = BiomeTileKeys.isBiome(key);
+        final MapLayer layer = MapLayer.parse(BiomeTileKeys.realLayerId(key.layerId()));
         final ColumnStore store = world.store(layer);
         // Dynamic lighting only ever touches the live SURFACE layer (never CAVE/NETHER/END, which
         // already bake their light at snapshot time - see ChunkSnapshot#light's javadoc). Reading
         // the model's factor once per tile compose (rather than per-column) is fine: it's a slow
         // drift, not a per-frame value, so a tile composing mid-bucket-change is harmless.
-        final boolean applyDaylight = layer.type() == MapLayer.Type.SURFACE && config.dynamicLighting;
+        final boolean applyDaylight = !biomeMode
+            && layer.type() == MapLayer.Type.SURFACE
+            && config.dynamicLighting;
         final float daylightFactor = applyDaylight ? daylightModel.factor() : 1f;
         // SURFACE tiles always carry their re-light inputs, even with dynamic lighting off
         // (compose then leaves pixels undarkened, which is exactly "composed at factor 1.0"),
         // so toggling the setting on relights already-uploaded tiles instead of stranding them.
-        final byte[] lightPlane = layer.type() == MapLayer.Type.SURFACE
+        final byte[] lightPlane = !biomeMode && layer.type() == MapLayer.Type.SURFACE
             ? new byte[RegionColumns.SIZE * RegionColumns.SIZE]
             : null;
         // Only the sub-rects actually composed from in-memory regions are claimed; the
@@ -365,12 +392,17 @@ public final class TileService {
         final List<TileUpdate.Rect> changed = new ArrayList<>();
         final int[] pixels;
         if (key.lod() == 0) {
-            pixels = composeLod0(store, key.tileX(), key.tileZ(), applyDaylight, daylightFactor, lightPlane);
+            pixels = composeLod0(
+                store, key.tileX(), key.tileZ(), biomeMode,
+                applyDaylight, daylightFactor, lightPlane
+            );
             if (store.region(key.tileX(), key.tileZ()) != null) {
                 changed.add(new TileUpdate.Rect(0, 0, RegionColumns.SIZE, RegionColumns.SIZE));
             }
         } else {
-            pixels = composeLodN(store, key, applyDaylight, daylightFactor, lightPlane, changed);
+            pixels = composeLodN(
+                store, key, biomeMode, applyDaylight, daylightFactor, lightPlane, changed
+            );
         }
         final TileUpdate.Relight relight = lightPlane == null
             ? null
@@ -387,6 +419,7 @@ public final class TileService {
         final ColumnStore store,
         final int regionX,
         final int regionZ,
+        final boolean biomeMode,
         final boolean applyDaylight,
         final float daylightFactor,
         final byte[] outLight
@@ -397,7 +430,10 @@ public final class TileService {
             final RegionColumns west = store.region(regionX - 1, regionZ);
             final RegionColumns south = store.region(regionX, regionZ + 1);
             final RegionColumns southWest = store.region(regionX - 1, regionZ + 1);
-            composeRegion(region, west, south, southWest, pixels, applyDaylight, daylightFactor, outLight);
+            composeRegion(
+                region, west, south, southWest, pixels,
+                biomeMode, applyDaylight, daylightFactor, outLight
+            );
         }
         return pixels;
     }
@@ -417,6 +453,7 @@ public final class TileService {
     private static int[] composeLodN(
         final ColumnStore store,
         final TileKey key,
+        final boolean biomeMode,
         final boolean applyDaylight,
         final float daylightFactor,
         final byte[] outLight,
@@ -437,7 +474,10 @@ public final class TileService {
                     continue;
                 }
                 final byte[] fullLight = outLight == null ? null : new byte[size * size];
-                final int[] full = composeLod0(store, regionX, regionZ, applyDaylight, daylightFactor, fullLight);
+                final int[] full = composeLod0(
+                    store, regionX, regionZ, biomeMode,
+                    applyDaylight, daylightFactor, fullLight
+                );
                 final int[] downsampled = downsample(full, size, lod);
                 stitch(downsampled, subSize, outPixels, dx * subSize, dz * subSize);
                 if (outLight != null) {
@@ -524,19 +564,24 @@ public final class TileService {
         final RegionColumns south,
         final RegionColumns southWest,
         final int[] outPixels,
+        final boolean biomeMode,
         final boolean applyDaylight,
         final float daylightFactor,
         final byte[] outLight
     ) {
         final int size = RegionColumns.SIZE;
         final short[] surfaceY = new short[size * size];
+        final String[] biomeId = new String[size * size];
         final byte[] fluidDepth = new byte[size * size];
         final int[] baseArgb = new int[size * size];
         final int[] tintArgb = new int[size * size];
         final int[] overlayArgb = new int[size * size];
         final byte[] kind = new byte[size * size];
         final byte[] light = new byte[size * size];
-        region.copyChunkRows(0, size, surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light);
+        region.copyChunkRows(
+            0, size, surfaceY, biomeId, fluidDepth,
+            baseArgb, tintArgb, overlayArgb, kind, light
+        );
         if (outLight != null) {
             System.arraycopy(light, 0, outLight, 0, size * size);
         }
@@ -547,6 +592,10 @@ public final class TileService {
                 final byte k = kind[idx];
                 if (k == SurfaceKind.UNKNOWN.ordinal() || k == SurfaceKind.VOID.ordinal()) {
                     outPixels[idx] = Argb.TRANSPARENT;
+                    continue;
+                }
+                if (biomeMode) {
+                    outPixels[idx] = BiomeColorPalette.color(biomeId[idx]);
                     continue;
                 }
                 final Integer neighborHeight = neighborHeight(x, z, surfaceY, region, west, south, southWest);
