@@ -14,7 +14,7 @@
   "key.confluxmap.reload_prediction": "刷新种子预览",
   "confluxmap.screen.map.title": "世界地图",
   "confluxmap.map.scale": "缩放：%s",
-  "confluxmap.map.server_sync.syncing": "正在更新地图",
+  "confluxmap.map.server_sync.syncing": "正在更新地图(%s/%s)",
   "confluxmap.map.server_sync.completed": "地图更新完成（用时 %s，下载 %s）",
   "confluxmap.map.server_sync.failed": "地图更新失败",
   "confluxmap.map.update_badge": "有新版本：%s",

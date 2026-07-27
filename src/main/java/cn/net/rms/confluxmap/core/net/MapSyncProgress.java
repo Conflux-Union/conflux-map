@@ -2,75 +2,180 @@ package cn.net.rms.confluxmap.core.net;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Tracks one user-visible server correction sync across one or more in-flight requests. */
+/** Tracks one user-visible server correction batch across one or more network requests. */
 public final class MapSyncProgress {
     public enum State { IDLE, SYNCING, COMPLETED, FAILED }
 
-    public record Snapshot(State state, long durationNanos, long trafficBytes) {
-        public static final Snapshot IDLE = new Snapshot(State.IDLE, 0L, 0L);
+    public record BatchTile(int tileX, int tileZ) {
+    }
+
+    public record Snapshot(
+        State state,
+        int completedTiles,
+        int totalTiles,
+        long durationNanos,
+        long trafficBytes
+    ) {
+        public static final Snapshot IDLE = new Snapshot(State.IDLE, 0, 0, 0L, 0L);
     }
 
     private final Map<Integer, RequestProgress> inFlight = new HashMap<>();
+    private final Set<Long> pendingBatchTiles = new HashSet<>();
     private Snapshot snapshot = Snapshot.IDLE;
+    private int batchDimIndex = -1;
+    private int batchLod = -1;
+    private int totalTiles;
     private long startedNanos;
     private long trafficBytes;
+    private boolean started;
+
+    /** Starts a viewport batch. Individual request boundaries do not reset its counters. */
+    public synchronized void beginBatch(
+        final int dimIndex, final int lod, final List<BatchTile> tiles
+    ) {
+        reset();
+        batchDimIndex = dimIndex;
+        batchLod = lod;
+        for (final BatchTile tile : tiles) {
+            pendingBatchTiles.add(tileKey(tile.tileX(), tile.tileZ()));
+        }
+        totalTiles = pendingBatchTiles.size();
+    }
 
     public synchronized void requestStarted(
         final MapViewReqC2S request, final int payloadBytes, final long nowNanos
     ) {
-        final RequestProgress requestProgress = RequestProgress.from(request);
+        if (!matchesBatch(request.dimIndex(), request.lod()) || pendingBatchTiles.isEmpty()) {
+            return;
+        }
+        final RequestProgress requestProgress = RequestProgress.from(request, pendingBatchTiles);
         if (requestProgress.pendingTiles.isEmpty()) {
             return;
         }
-        if (inFlight.isEmpty()) {
+        if (!started) {
+            started = true;
             startedNanos = nowNanos;
-            trafficBytes = 0L;
         }
         inFlight.put(request.reqId(), requestProgress);
         trafficBytes += Math.max(0, payloadBytes);
-        snapshot = new Snapshot(State.SYNCING, 0L, trafficBytes);
+        updateSyncing(nowNanos);
     }
 
     public synchronized void patchReceived(
         final MapPatchS2C patch, final int payloadBytes, final long nowNanos
     ) {
+        final long tileKey = tileKey(patch.tileX(), patch.tileZ());
+        if (!matchesBatch(patch.dimIndex(), patch.lod()) || !pendingBatchTiles.contains(tileKey)) {
+            return;
+        }
         final RequestProgress request = inFlight.get(patch.reqId());
         if (request == null || request.dimIndex != patch.dimIndex() || request.lod != patch.lod()
-            || !request.pendingTiles.remove(tileKey(patch.tileX(), patch.tileZ()))) {
+            || !request.pendingTiles.remove(tileKey)) {
             return;
         }
         trafficBytes += Math.max(0, payloadBytes);
         if (request.pendingTiles.isEmpty()) {
             inFlight.remove(patch.reqId());
         }
-        if (inFlight.isEmpty()) {
-            snapshot = new Snapshot(State.COMPLETED, Math.max(0L, nowNanos - startedNanos), trafficBytes);
-        } else {
-            snapshot = new Snapshot(State.SYNCING, 0L, trafficBytes);
+        if (patch.mode() != Proto.PATCH_MODE_PARTIAL) {
+            pendingBatchTiles.remove(tileKey);
         }
+        updateAfterProgress(nowNanos);
+    }
+
+    /** Marks a batch tile complete when equivalent fresh local coverage made a request unnecessary. */
+    public synchronized void tileSettled(
+        final int dimIndex, final int lod, final int tileX, final int tileZ, final long nowNanos
+    ) {
+        if (!matchesBatch(dimIndex, lod) || !pendingBatchTiles.remove(tileKey(tileX, tileZ))) {
+            return;
+        }
+        updateAfterProgress(nowNanos);
     }
 
     public synchronized Snapshot snapshot() {
         return snapshot;
     }
 
+    public synchronized Snapshot snapshot(final long nowNanos) {
+        if (snapshot.state() != State.SYNCING) {
+            return snapshot;
+        }
+        return new Snapshot(
+            State.SYNCING,
+            completedTiles(),
+            totalTiles,
+            elapsedNanos(nowNanos),
+            trafficBytes
+        );
+    }
+
     public synchronized void requestFailed(final int payloadBytes, final long nowNanos) {
-        if (inFlight.isEmpty()) {
+        if (!started || snapshot.state() != State.SYNCING) {
             return;
         }
         inFlight.clear();
         trafficBytes += Math.max(0, payloadBytes);
-        snapshot = new Snapshot(State.FAILED, Math.max(0L, nowNanos - startedNanos), trafficBytes);
+        snapshot = new Snapshot(
+            State.FAILED,
+            completedTiles(),
+            totalTiles,
+            elapsedNanos(nowNanos),
+            trafficBytes
+        );
     }
 
     public synchronized void reset() {
         inFlight.clear();
+        pendingBatchTiles.clear();
         snapshot = Snapshot.IDLE;
+        batchDimIndex = -1;
+        batchLod = -1;
+        totalTiles = 0;
         startedNanos = 0L;
         trafficBytes = 0L;
+        started = false;
+    }
+
+    private void updateAfterProgress(final long nowNanos) {
+        if (pendingBatchTiles.isEmpty()) {
+            inFlight.clear();
+            snapshot = new Snapshot(
+                State.COMPLETED,
+                totalTiles,
+                totalTiles,
+                elapsedNanos(nowNanos),
+                trafficBytes
+            );
+        } else {
+            updateSyncing(nowNanos);
+        }
+    }
+
+    private void updateSyncing(final long nowNanos) {
+        snapshot = new Snapshot(
+            State.SYNCING,
+            completedTiles(),
+            totalTiles,
+            elapsedNanos(nowNanos),
+            trafficBytes
+        );
+    }
+
+    private boolean matchesBatch(final int dimIndex, final int lod) {
+        return dimIndex == batchDimIndex && lod == batchLod;
+    }
+
+    private int completedTiles() {
+        return totalTiles - pendingBatchTiles.size();
+    }
+
+    private long elapsedNanos(final long nowNanos) {
+        return started ? Math.max(0L, nowNanos - startedNanos) : 0L;
     }
 
     private static long tileKey(final int tileX, final int tileZ) {
@@ -88,10 +193,15 @@ public final class MapSyncProgress {
             this.pendingTiles = pendingTiles;
         }
 
-        private static RequestProgress from(final MapViewReqC2S request) {
+        private static RequestProgress from(
+            final MapViewReqC2S request, final Set<Long> pendingBatchTiles
+        ) {
             final Set<Long> pendingTiles = new HashSet<>();
             for (final MapViewReqC2S.TileReq tile : request.tiles()) {
-                pendingTiles.add(tileKey(tile.tileX(), tile.tileZ()));
+                final long key = tileKey(tile.tileX(), tile.tileZ());
+                if (pendingBatchTiles.contains(key)) {
+                    pendingTiles.add(key);
+                }
             }
             return new RequestProgress(request.dimIndex(), request.lod(), pendingTiles);
         }

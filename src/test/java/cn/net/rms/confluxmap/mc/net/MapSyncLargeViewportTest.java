@@ -11,6 +11,7 @@ import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.net.ErrorS2C;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.MapPatchS2C;
+import cn.net.rms.confluxmap.core.net.MapSyncProgress;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
@@ -77,6 +78,16 @@ class MapSyncLargeViewportTest {
                 0, fixture.server.errorCount,
                 "queued delivery must absorb budget pressure without rate-limit errors"
             );
+            final MapSyncProgress.Snapshot status = fixture.client.status();
+            assertEquals(MapSyncProgress.State.COMPLETED, status.state());
+            assertEquals(VIEW_TILES, status.completedTiles());
+            assertEquals(VIEW_TILES, status.totalTiles());
+            assertEquals(
+                fixture.requestBytes + fixture.server.patchBytes,
+                status.trafficBytes(),
+                "the visible batch must retain traffic from every subrequest"
+            );
+            assertTrue(status.durationNanos() > 0L);
         } finally {
             fixture.shutdown();
         }
@@ -119,6 +130,7 @@ class MapSyncLargeViewportTest {
         final MapExecutors executors;
         final Deque<byte[]> wire = new ArrayDeque<>();
         long nowMs = SIM_START_MS;
+        long requestBytes;
         final long nanoOrigin = System.nanoTime();
 
         Fixture(final Path tempDir, final int samplesPerAbsolutePatch) {
@@ -155,6 +167,7 @@ class MapSyncLargeViewportTest {
                 message -> {
                     try {
                         final byte[] payload = MsgCodec.encode(message);
+                        requestBytes += payload.length;
                         wire.add(payload);
                         return payload.length;
                     } catch (final ProtoException e) {
@@ -201,6 +214,7 @@ class MapSyncLargeViewportTest {
         int requestCount;
         int errorCount;
         int minAbsolutePatchBytes = Integer.MAX_VALUE;
+        long patchBytes;
 
         FakeCompanionServer(final ServerConfig config, final int samplesPerAbsolutePatch) {
             this.config = config;
@@ -240,6 +254,7 @@ class MapSyncLargeViewportTest {
                 if (patch.mode() == Proto.PATCH_MODE_ABSOLUTE) {
                     minAbsolutePatchBytes = Math.min(minAbsolutePatchBytes, encoded.length);
                 }
+                patchBytes += encoded.length;
                 served.add(tileKey(patch.tileX(), patch.tileZ()));
                 client.onPatch((MapPatchS2C) MsgCodec.decode(encoded), encoded.length);
             } catch (final ProtoException e) {

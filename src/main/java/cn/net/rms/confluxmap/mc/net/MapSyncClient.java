@@ -54,6 +54,7 @@ public final class MapSyncClient {
     private final MapSyncProgress progress = new MapSyncProgress();
     private int nextReqId;
     private long stableSince = Long.MIN_VALUE;
+    private boolean batchPrepared;
     private long lastSent;
     private long suppressedUntil;
     private int lastLod = -1;
@@ -135,6 +136,8 @@ public final class MapSyncClient {
         final boolean changed = !dimensionId.equals(lastDimension)
             || lod != lastLod || minX != lastMinX || maxX != lastMaxX || minZ != lastMinZ || maxZ != lastMaxZ;
         if (changed) {
+            batchPrepared = false;
+            progress.reset();
             prepareNewlyVisibleTiles(dimension, dimensionId, lod, minX, maxX, minZ, maxZ, now);
             retainViewportState(dimensionId, lod, minX, maxX, minZ, maxZ);
             stableSince = now;
@@ -154,6 +157,10 @@ public final class MapSyncClient {
             || now < suppressedUntil || inFlightRequests.size() >= MAX_INFLIGHT_REQUESTS) {
             return;
         }
+        final int dimIndex = dimensionIndex(dimension);
+        if (dimIndex < 0) {
+            return;
+        }
         final List<ViewRequestPlanner.Tile> tiles = new ArrayList<>();
         for (int z = minZ; z <= maxZ; z++) {
             for (int x = minX; x <= maxX; x++) {
@@ -164,6 +171,7 @@ public final class MapSyncClient {
                 if (!invalidatedTiles.contains(stamp)
                     && predictionTiles.hasFreshLowerCoverage(dimension, lod, x, z, now)) {
                     settledTiles.add(stamp);
+                    progress.tileSettled(dimIndex, lod, x, z, System.nanoTime());
                     continue;
                 }
                 final CorrectionStore.Key key = new CorrectionStore.Key(dimensionId, lod, x, z);
@@ -177,6 +185,14 @@ public final class MapSyncClient {
                 tiles.add(new ViewRequestPlanner.Tile(x, z, tile.revision(), previous == null ? Long.MIN_VALUE : previous, empty));
             }
         }
+        if (!batchPrepared) {
+            final List<MapSyncProgress.BatchTile> batchTiles = new ArrayList<>(tiles.size());
+            for (final ViewRequestPlanner.Tile tile : tiles) {
+                batchTiles.add(new MapSyncProgress.BatchTile(tile.tileX(), tile.tileZ()));
+            }
+            progress.beginBatch(dimIndex, lod, batchTiles);
+            batchPrepared = true;
+        }
         final int centerX = (minX + maxX) / 2;
         final int centerZ = (minZ + maxZ) / 2;
         final List<MapViewReqC2S.TileReq> planned = ViewRequestPlanner.plan(
@@ -186,10 +202,6 @@ public final class MapSyncClient {
             600_000_000_000L
         );
         if (planned.isEmpty()) {
-            return;
-        }
-        final int dimIndex = dimensionIndex(dimension);
-        if (dimIndex < 0) {
             return;
         }
         final MapViewReqC2S request = new MapViewReqC2S(nextReqId++ & 0x7FFF, dimIndex, lod, planned);
@@ -210,15 +222,20 @@ public final class MapSyncClient {
 
     public synchronized void onPatch(final MapPatchS2C patch, final int payloadBytes) {
         completeTile(patch.reqId(), patch.tileX(), patch.tileZ());
+        boolean accepted = false;
         try {
-            final boolean accepted = applyPatch(patch);
+            accepted = applyPatch(patch);
             if (patch.mode() == Proto.PATCH_MODE_PARTIAL) {
                 allowPartialRetry(patch);
             } else if (accepted) {
                 settle(patch);
             }
         } finally {
-            progress.patchReceived(patch, payloadBytes, System.nanoTime());
+            final long nowNanos = System.nanoTime();
+            progress.patchReceived(patch, payloadBytes, nowNanos);
+            if (accepted && patch.mode() != Proto.PATCH_MODE_PARTIAL) {
+                progress.tileSettled(patch.dimIndex(), patch.lod(), patch.tileX(), patch.tileZ(), nowNanos);
+            }
         }
     }
 
@@ -273,7 +290,7 @@ public final class MapSyncClient {
         }
     }
 
-    /** Marks only currently subscribed tiles stale; the next frame requests them once. */
+    /** Marks subscribed tiles stale for refresh without restarting the visible viewport batch. */
     public synchronized void onInvalidation(final MapInvalidateS2C invalidation) {
         final HelloPolicyS2C policy = companion.policy();
         if (!companion.isActive() || policy == null
@@ -305,6 +322,8 @@ public final class MapSyncClient {
             sender.send(new MapSyncSubscribeC2S(lastDimIndex, lastLod, false, 0, 0, 0, 0));
         }
         stableSince = Long.MIN_VALUE;
+        batchPrepared = false;
+        progress.reset();
         settledTiles.clear();
         invalidatedTiles.clear();
         lastDimension = null;
@@ -375,6 +394,7 @@ public final class MapSyncClient {
         invalidatedTiles.clear();
         inFlightRequests.clear();
         stableSince = Long.MIN_VALUE;
+        batchPrepared = false;
         lastSent = 0L;
         suppressedUntil = 0L;
         lastLod = -1;
@@ -384,7 +404,7 @@ public final class MapSyncClient {
     }
 
     public MapSyncProgress.Snapshot status() {
-        return progress.snapshot();
+        return progress.snapshot(System.nanoTime());
     }
 
     /**

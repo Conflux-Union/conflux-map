@@ -2367,7 +2367,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final int color;
         switch (status.state()) {
             case SYNCING -> {
-                text = Texts.translatable("confluxmap.map.server_sync.syncing").getString();
+                text = Texts.translatable(
+                    "confluxmap.map.server_sync.syncing",
+                    status.completedTiles(), status.totalTiles()
+                ).getString();
                 color = SYNCING_TEXT_COLOR;
             }
             case COMPLETED -> {
