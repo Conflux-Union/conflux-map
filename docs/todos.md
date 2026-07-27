@@ -158,8 +158,8 @@ For chunks that have already been captured at a fine LOD, render from the
 finest available real map data and scale it down at wider zoom levels instead of
 switching those chunks to a separately composed coarse-LOD tile.
 
-- Apply this preference to captured/actual map data; prediction may retain its
-  own LOD-aware sampling path.
+- Apply this preference to captured/actual map data and to prediction results
+  whose lower-LOD cache is complete and current.
 - Fall back to the best available coarser data where fine data is missing, so
   partially explored areas still render.
 - Avoid seams where fine and coarse sources meet and preserve unknown-pixel
@@ -177,6 +177,14 @@ its covered persistent LOD-0 cache regions through a bounded 64-read queue, and
 one region merge invalidates the affected LOD parents as a batch. Missing fine
 regions remain unclaimed and transparent, so the existing prediction/correction
 underlay remains the fallback without adding per-region draw calls.
+
+Prediction now keeps a bounded CPU LRU of recent composed tiles. A coarser tile
+is reconstructed recursively from four complete lower-LOD children with the
+same alpha-weighted 2x2 filter, including their committed correction pixels and
+cursor metadata. A child update invalidates every cached ancestor. Network sync
+skips a coarse tile only when every contributing child has a final server
+validation no older than five seconds; missing, expired, future-dated, or
+progressive entries use the normal coarse request path.
 
 ## Confirmed bugs
 
@@ -220,6 +228,11 @@ Reusable `.cfs` summaries require the current `.mca` mtime, live summaries take
 priority, and every source mtime/live epoch is revalidated before a final result
 is reused. Regression coverage includes a contiguous 128x128-chunk LOD-4 build
 and a build crossing an LOD-4 tile boundary.
+
+When a coarse prediction is fully reconstructible from fresh lower-LOD client
+tiles, the client omits that tile from `MAP_VIEW_REQ`; the server performs no
+summary scan, baseline sampling, patch encoding, or response for it. The oldest
+contributing final validation controls the five-second expiry.
 
 ## Deferred
 

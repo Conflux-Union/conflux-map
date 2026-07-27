@@ -6,7 +6,7 @@ overlays it; predictions never enter the `.cfr` column cache.
 ## Determinism
 
 The wire baseline is `{biomeId u8, surfaceY i16, kind u8, fluidDepth u8}`. The predictor version
-is `cb:9afc1038ea5a|shim:7|base:13`; palette colours are local and never sent. Synthetic canopy stays
+is `cb:9afc1038ea5a|shim:8|base:14`; palette colours are local and never sent. Synthetic canopy stays
 on the predicted plane instead of becoming a generated-chunk correction, so generated frontiers
 cannot introduce foliage-colour seams. Other height differences up to 2 blocks are tolerated, and
 fluid depth compares in buckets `0`, `1-3`, `4-9`, `10+`. A real map colour outside the biome's
@@ -15,6 +15,14 @@ expected set is retained as a correction so player builds are visible.
 Predicted tile textures contain time-independent terrain colours. Dynamic day/night brightness is
 applied as one render-time tint across the whole predicted plane, so composition order cannot leave
 adjacent tiles at different brightness levels.
+
+Recent composed prediction tiles also form a bounded CPU mip cache. One coarse tile is rebuilt
+recursively from four complete lower-LOD children with the captured map's alpha-weighted 2x2 box
+filter. The cached result includes committed correction colours plus biome/surface cursor metadata;
+changing any child invalidates every cached ancestor. Local deterministic prediction has no
+wall-clock expiry inside a world session. Skipping companion work is stricter: every contributing
+child must carry a final server validation no older than five seconds. Progressive, missing,
+future-dated, or expired entries cannot suppress a request.
 
 Predicted terrain layers a fixed southwest directional relief over the captured-map absolute-height
 curve. At LOD0, where one texel represents one block, relief uses the same one-sided southwest
@@ -76,13 +84,15 @@ a world is upgraded. Old or cross-version candidate positions are intentionally 
 
 ## Companion protocol
 
-`confluxmap:map_sync` v1 uses big-endian framed messages. `MAP_VIEW_REQ` carries up to eight tile
+`confluxmap:map_sync` v2 uses big-endian framed messages. `MAP_VIEW_REQ` carries up to eight tile
 coordinates and a cached revision. A tile is 256 output pixels per edge and covers `2^lod` LOD-0
 regions per side. `MAP_PATCH` carries a 16x16 output-cell presence bitmap (one chunk per cell at
 LOD0, the union of touched chunks at higher LOD) and a
 deflate-compressed two-level sparse mask: 32-byte coarse mask, one 32-byte fine mask per coarse
-cell, then six-byte absolute column records. Server patches are capped at LOD 2; higher LODs stay
-local. Incremental residual patches use an otherwise-invalid `UNKNOWN` column as a removal marker
+cell, then six-byte absolute column records. Every supported map LOD can carry corrections; LOD3-4
+are scanned progressively under one bounded server-tick budget. A coarse tile fully covered by
+fresh lower-LOD client results is omitted from `MAP_VIEW_REQ`, so it consumes no server scan or
+response work. Incremental residual patches use an otherwise-invalid `UNKNOWN` column as a removal marker
 when a previously corrected pixel returns to the predicted baseline. Older clients already ignore
 that marker as non-authoritative terrain. A missing or mismatched predictor uses absolute samples,
 never a false residual.

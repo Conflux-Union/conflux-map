@@ -76,4 +76,26 @@ class CorrectionTileTest {
         assertEquals(committed, tile.sampleAt(8));
         assertEquals(30L, tile.revision());
     }
+
+    @Test
+    void committedValidationExpiresAndProgressIsNeverReusable() {
+        final CorrectionTile tile = new CorrectionTile();
+        tile.applyPatch(
+            1L,
+            new byte[Proto.PATCH_PRESENCE_BYTES],
+            new PatchCodec.Patch(java.util.List.of()),
+            10_000L
+        );
+
+        assertEquals(10_000L, tile.validatedAtMillis());
+        assertTrue(tile.isFreshAt(14_999L, 5_000L));
+        assertFalse(tile.isFreshAt(15_001L, 5_000L));
+        assertFalse(tile.isFreshAt(9_999L, 5_000L), "a future wall-clock stamp must not be trusted");
+
+        tile.applyPartial(
+            new byte[Proto.PATCH_PRESENCE_BYTES],
+            new PatchCodec.Patch(java.util.List.of())
+        );
+        assertFalse(tile.isFreshAt(11_000L, 5_000L), "progressive state is not a committed cache entry");
+    }
 }

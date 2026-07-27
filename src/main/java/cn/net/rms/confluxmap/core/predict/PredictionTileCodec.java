@@ -19,15 +19,23 @@ public final class PredictionTileCodec {
     public static final byte[] MAGIC = {'C', 'F', 'P', 'T'};
     /**
      * Bumped whenever persisted correction semantics change; old corrections are non-authoritative.
-     * Version 11 drops corrections built before the summarizer's snow-cover promotion, which
-     * painted snow-covered terrain with the green land colour of the block beneath it.
+     * Version 12 persists the client's last final server-validation time. Older files cannot
+     * prove freshness and are discarded instead of being used to suppress cross-LOD requests.
      */
-    public static final int FORMAT_VERSION = 11;
+    public static final int FORMAT_VERSION = 12;
 
     private PredictionTileCodec() {
     }
 
-    public record FileData(int lod, int tileX, int tileZ, long revision, byte[] presence, PatchCodec.Patch patch) {
+    public record FileData(
+        int lod,
+        int tileX,
+        int tileZ,
+        long revision,
+        long validatedAtMillis,
+        byte[] presence,
+        PatchCodec.Patch patch
+    ) {
         public FileData {
             if (presence == null || presence.length != Proto.PATCH_PRESENCE_BYTES) {
                 throw new IllegalArgumentException("presence must be 32 bytes");
@@ -46,6 +54,7 @@ public final class PredictionTileCodec {
             header.writeInt(data.tileX());
             header.writeInt(data.tileZ());
             header.writeLong(data.revision());
+            header.writeLong(data.validatedAtMillis());
             header.write(data.presence());
             final byte[] body = PatchCodec.encode(data.patch());
             header.writeInt(body.length);
@@ -69,6 +78,7 @@ public final class PredictionTileCodec {
             final int tileX = in.readInt();
             final int tileZ = in.readInt();
             final long revision = in.readLong();
+            final long validatedAtMillis = in.readLong();
             final byte[] presence = new byte[Proto.PATCH_PRESENCE_BYTES];
             in.readFully(presence);
             final int bodyLength = in.readInt();
@@ -80,7 +90,9 @@ public final class PredictionTileCodec {
             if (in.available() != 0) {
                 throw new ProtoException("trailing correction bytes");
             }
-            return new FileData(lod, tileX, tileZ, revision, presence, PatchCodec.decode(body));
+            return new FileData(
+                lod, tileX, tileZ, revision, validatedAtMillis, presence, PatchCodec.decode(body)
+            );
         } catch (final ProtoException e) {
             throw e;
         } catch (final IOException | IllegalArgumentException e) {

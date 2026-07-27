@@ -142,6 +142,9 @@ public final class MapSyncClient {
         final List<ViewRequestPlanner.Tile> tiles = new ArrayList<>();
         for (int z = minZ; z <= maxZ; z++) {
             for (int x = minX; x <= maxX; x++) {
+                if (predictionTiles.hasFreshLowerCoverage(dimension, lod, x, z, now)) {
+                    continue;
+                }
                 final CorrectionStore.Key key = new CorrectionStore.Key(dimensionId, lod, x, z);
                 final cn.net.rms.confluxmap.core.predict.CorrectionTile tile = corrections.get(key);
                 final byte[] presence = tile.presence();
@@ -203,7 +206,8 @@ public final class MapSyncClient {
         if (patch.mode() == Proto.PATCH_MODE_UNCHANGED) {
             final CorrectionStore.Key key = keyFor(patch);
             if (key != null && predictionTiles.applyCorrection(
-                key, patch.tileRevision(), patch.presence(), new PatchCodec.Patch(List.of())
+                key, patch.tileRevision(), patch.presence(), new PatchCodec.Patch(List.of()),
+                millisClock.getAsLong()
             )) {
                 corrections.flush();
             }
@@ -217,7 +221,9 @@ public final class MapSyncClient {
             }
             if (patch.mode() == Proto.PATCH_MODE_PARTIAL) {
                 predictionTiles.applyPartialCorrection(key, patch.presence(), decoded);
-            } else if (predictionTiles.applyCorrection(key, patch.tileRevision(), patch.presence(), decoded)) {
+            } else if (predictionTiles.applyCorrection(
+                key, patch.tileRevision(), patch.presence(), decoded, millisClock.getAsLong()
+            )) {
                 corrections.flush();
             }
         } catch (final ProtoException e) {

@@ -46,7 +46,9 @@ public final class CorrectionStore {
         if (Files.isRegularFile(path)) {
             try {
                 final PredictionTileCodec.FileData data = PredictionTileCodec.read(path);
-                tile.applyPatch(data.revision(), data.presence(), data.patch());
+                tile.applyPatch(
+                    data.revision(), data.presence(), data.patch(), data.validatedAtMillis()
+                );
             } catch (final IOException | cn.net.rms.confluxmap.core.net.ProtoException e) {
                 quarantine(path);
             }
@@ -58,8 +60,18 @@ public final class CorrectionStore {
     public synchronized boolean apply(
         final Key key, final long revision, final byte[] presence, final PatchCodec.Patch patch
     ) {
+        return apply(key, revision, presence, patch, 0L);
+    }
+
+    public synchronized boolean apply(
+        final Key key,
+        final long revision,
+        final byte[] presence,
+        final PatchCodec.Patch patch,
+        final long validatedAtMillis
+    ) {
         final CorrectionTile tile = get(key);
-        final boolean changed = tile.applyPatch(revision, presence, patch);
+        final boolean changed = tile.applyPatch(revision, presence, patch, validatedAtMillis);
         if (changed) {
             dirty.put(key, Boolean.TRUE);
         }
@@ -78,7 +90,8 @@ public final class CorrectionStore {
             final CorrectionTile tile = tiles.get(key);
             try {
                 PredictionTileCodec.writeAtomic(pathFor(key), new PredictionTileCodec.FileData(
-                    key.lod(), key.tileX(), key.tileZ(), tile.revision(), tile.presence(), tile.copyPatch()
+                    key.lod(), key.tileX(), key.tileZ(), tile.revision(), tile.validatedAtMillis(),
+                    tile.presence(), tile.copyPatch()
                 ));
                 dirty.remove(key);
             } catch (final IOException e) {

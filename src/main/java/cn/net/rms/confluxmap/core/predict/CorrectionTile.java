@@ -15,8 +15,19 @@ public final class CorrectionTile {
     private final byte[] progressPresence = new byte[Proto.PATCH_PRESENCE_BYTES];
     private boolean progressActive;
     private long revision = Long.MIN_VALUE;
+    /** Client wall-clock time of the newest committed server validation; zero means unvalidated. */
+    private long validatedAtMillis;
 
     public synchronized boolean applyPatch(final long patchRevision, final byte[] newPresence, final PatchCodec.Patch patch) {
+        return applyPatch(patchRevision, newPresence, patch, 0L);
+    }
+
+    public synchronized boolean applyPatch(
+        final long patchRevision,
+        final byte[] newPresence,
+        final PatchCodec.Patch patch,
+        final long patchValidatedAtMillis
+    ) {
         if (newPresence == null || newPresence.length != Proto.PATCH_PRESENCE_BYTES || patch == null) {
             throw new IllegalArgumentException("invalid correction patch");
         }
@@ -25,6 +36,9 @@ public final class CorrectionTile {
             changed = clearProgress();
             System.arraycopy(newPresence, 0, presence, 0, presence.length);
             revision = patchRevision;
+            if (patchValidatedAtMillis > 0L && patchValidatedAtMillis != validatedAtMillis) {
+                validatedAtMillis = patchValidatedAtMillis;
+            }
             changed = true;
         }
         for (final PatchCodec.Sample sample : patch.samples()) {
@@ -68,6 +82,28 @@ public final class CorrectionTile {
 
     public synchronized long revision() {
         return revision == Long.MIN_VALUE ? 0L : revision;
+    }
+
+    public synchronized long validatedAtMillis() {
+        return validatedAtMillis;
+    }
+
+    /** Whether this tile contains a committed server answer, including an empty revision-0 answer. */
+    public synchronized boolean hasCommittedState() {
+        return revision != Long.MIN_VALUE;
+    }
+
+    /** A progressive overlay makes the older validation unusable for cross-LOD composition. */
+    public synchronized long reusableValidatedAtMillis() {
+        return progressActive ? 0L : validatedAtMillis;
+    }
+
+    /** A progressive overlay or a future/old wall-clock stamp is never reusable. */
+    public synchronized boolean isFreshAt(final long nowMillis, final long ttlMillis) {
+        if (progressActive || validatedAtMillis <= 0L || ttlMillis < 0L || nowMillis < validatedAtMillis) {
+            return false;
+        }
+        return nowMillis - validatedAtMillis <= ttlMillis;
     }
 
     public synchronized byte[] presence() {
@@ -126,6 +162,7 @@ public final class CorrectionTile {
         Arrays.fill(presence, (byte) 0);
         clearProgress();
         revision = Long.MIN_VALUE;
+        validatedAtMillis = 0L;
     }
 
     private boolean clearProgress() {

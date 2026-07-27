@@ -27,12 +27,18 @@ class CorrectionStoreTest {
         store.onSessionChanged(new SessionGuard.Session(1L, world, DimensionId.OVERWORLD));
 
         final CorrectionStore.Key key = new CorrectionStore.Key("minecraft:overworld", 0, 3, -2);
-        store.apply(key, 1L, new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(List.of()));
+        store.apply(
+            key, 1L, new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(List.of()), 12_345L
+        );
         store.flush();
 
         final Path file = tempDir.resolve(world.serverId()).resolve(world.worldId())
             .resolve("minecraft_overworld").resolve("pred").resolve("0").resolve("t.3.-2.cfp");
         assertTrue(Files.isRegularFile(file));
+
+        final CorrectionStore reopened = new CorrectionStore(tempDir);
+        reopened.setNamespace(world);
+        assertEquals(12_345L, reopened.get(key).validatedAtMillis());
     }
 
     @Test

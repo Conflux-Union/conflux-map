@@ -14,7 +14,8 @@ class PredictionTileCodecTest {
     @Test
     void olderCorrectionsAreRejectedWhenBaselineSemanticsChange() throws Exception {
         final PredictionTileCodec.FileData data = new PredictionTileCodec.FileData(
-            2, -1, -1, 10L, new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(List.of())
+            2, -1, -1, 10L, 1_700_000_123_456L,
+            new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(List.of())
         );
         final byte[] encoded = PredictionTileCodec.encode(data);
         final PredictionTileCodec.FileData decoded = PredictionTileCodec.decode(encoded);
@@ -22,6 +23,7 @@ class PredictionTileCodecTest {
         assertEquals(data.tileX(), decoded.tileX());
         assertEquals(data.tileZ(), decoded.tileZ());
         assertEquals(data.revision(), decoded.revision());
+        assertEquals(data.validatedAtMillis(), decoded.validatedAtMillis());
         assertArrayEquals(data.presence(), decoded.presence());
         assertEquals(0, decoded.patch().size());
         encoded[4] = (byte) (PredictionTileCodec.FORMAT_VERSION - 1);
