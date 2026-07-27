@@ -18,6 +18,7 @@ import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.SliderWidget;
@@ -36,8 +37,8 @@ import net.minecraft.text.Text;
  * <p>Every change mutates the shared {@link ConfluxConfig} instance immediately, so
  * every other system (they all hold the same reference) observes it on its very next
  * read - there is no separate "apply" step. Disk persistence is batched instead: this
- * screen only calls {@link ConfigIo#save} once, in {@link #onClose()}, so dragging a
- * slider doesn't hammer disk I/O once per pixel of movement.
+ * screen calls {@link ConfigIo#save} in {@link #onClose()}, and its minimap-placement
+ * child saves when returning here, so dragging controls never writes once per pixel.
  *
  * <p>Opened only via the {@code key.confluxmap.open_config} keybind (comma by
  * default, see {@code mc.input.Keybinds}) - there is no in-screen entry point, and no
@@ -248,9 +249,10 @@ public final class ConfigScreen extends ConfluxScreen {
         switch (category) {
             case MINIMAP:
                 y = addToggleRow(y, "confluxmap.config.minimap.enabled", () -> config.minimapEnabled, v -> config.minimapEnabled = v);
-                y = addEnumRow(
-                    y, "confluxmap.config.minimap.corner", ConfluxConfig.Corner.values(),
-                    () -> config.minimapCorner, v -> config.minimapCorner = v, ConfigScreen::cornerKey
+                y = addActionRow(
+                    y,
+                    "confluxmap.config.minimap.position",
+                    () -> MinecraftClient.getInstance().setScreen(new MinimapPositionScreen(this, config, configIo))
                 );
                 y = addEnumRow(
                     y, "confluxmap.config.minimap.shape", ConfluxConfig.Shape.values(),
@@ -462,6 +464,15 @@ public final class ConfigScreen extends ConfluxScreen {
         return y + ROW_HEIGHT;
     }
 
+    private int addActionRow(final int y, final String labelKey, final Runnable action) {
+        if (rowVisible(y)) {
+            addDrawableChild(Widgets.button(
+                rowX(), y, rowWidth, ROW_HEIGHT - 2, Texts.translatable(labelKey), button -> action.run()
+            ));
+        }
+        return y + ROW_HEIGHT;
+    }
+
     private int addIntSliderRow(
         final int y,
         final String labelKey,
@@ -528,19 +539,6 @@ public final class ConfigScreen extends ConfluxScreen {
 
     private static String renderDistanceText(final int value) {
         return value == 0 ? resolvedText("confluxmap.value.unlimited") : blocksText(value);
-    }
-
-    private static String cornerKey(final ConfluxConfig.Corner corner) {
-        switch (corner) {
-            case TOP_LEFT:
-                return "confluxmap.config.corner.top_left";
-            case BOTTOM_LEFT:
-                return "confluxmap.config.corner.bottom_left";
-            case BOTTOM_RIGHT:
-                return "confluxmap.config.corner.bottom_right";
-            default:
-                return "confluxmap.config.corner.top_right";
-        }
     }
 
     private static String shapeKey(final ConfluxConfig.Shape shape) {

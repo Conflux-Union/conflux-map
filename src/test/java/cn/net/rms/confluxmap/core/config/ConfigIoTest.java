@@ -34,6 +34,9 @@ class ConfigIoTest {
         assertEquals(ConfluxConfig.DEFAULT_ANNOTATION_ERASER_SIZE, loaded.annotationEraserSize);
         assertEquals(new ConfluxConfig().fullscreenDisplayMode, loaded.fullscreenDisplayMode);
         assertEquals(new ConfluxConfig().chunkLoadDetailMode, loaded.chunkLoadDetailMode);
+        assertEquals(1.0, loaded.minimapPositionX);
+        assertEquals(0.0, loaded.minimapPositionY);
+        assertEquals(ConfluxConfig.SCHEMA_VERSION, loaded.schemaVersion);
         assertEquals(256, loaded.minimapSize);
         // The upgrade is persisted so the on-disk file now carries the full schema.
         final String rewritten = Files.readString(file, StandardCharsets.UTF_8);
@@ -43,7 +46,43 @@ class ConfigIoTest {
         assertTrue(rewritten.contains("\"annotationEraserSize\""));
         assertTrue(rewritten.contains("\"fullscreenDisplayMode\""));
         assertTrue(rewritten.contains("\"chunkLoadDetailMode\""));
+        assertTrue(rewritten.contains("\"minimapPositionX\": 1.0"));
+        assertTrue(rewritten.contains("\"minimapPositionY\": 0.0"));
         assertTrue(rewritten.contains("\"minimapSize\": 256"));
+    }
+
+    @Test
+    void loadMigratesEveryLegacyCornerToTheEquivalentFreePosition(@TempDir final Path tmp) throws IOException {
+        final Path file = tmp.resolve("config.json");
+
+        assertLegacyCornerMigration(file, "TOP_LEFT", 0.0, 0.0);
+        assertLegacyCornerMigration(file, "TOP_RIGHT", 1.0, 0.0);
+        assertLegacyCornerMigration(file, "BOTTOM_LEFT", 0.0, 1.0);
+        assertLegacyCornerMigration(file, "BOTTOM_RIGHT", 1.0, 1.0);
+    }
+
+    @Test
+    void freePositionRoundTripsAndNormalizesInvalidValues(@TempDir final Path tmp) throws IOException {
+        final Path file = tmp.resolve("config.json");
+        final ConfigIo io = new ConfigIo(file, LOGGER);
+        final ConfluxConfig config = new ConfluxConfig();
+        config.minimapPositionX = 0.375;
+        config.minimapPositionY = 0.625;
+
+        io.save(config);
+        final ConfluxConfig loaded = io.load();
+
+        assertEquals(0.375, loaded.minimapPositionX);
+        assertEquals(0.625, loaded.minimapPositionY);
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":2,\"minimapPositionX\":-3,\"minimapPositionY\":4}",
+            StandardCharsets.UTF_8
+        );
+        final ConfluxConfig clamped = io.load();
+        assertEquals(0.0, clamped.minimapPositionX);
+        assertEquals(1.0, clamped.minimapPositionY);
     }
 
     @Test
@@ -82,12 +121,33 @@ class ConfigIoTest {
     @Test
     void loadKeepsNewerSchemaFileIntact(@TempDir final Path tmp) throws IOException {
         final Path file = tmp.resolve("config.json");
-        final String futureJson = "{\"schemaVersion\": 2, \"futureField\": true}";
+        final int futureSchema = ConfluxConfig.SCHEMA_VERSION + 1;
+        final String futureJson = "{\"schemaVersion\": " + futureSchema + ", \"futureField\": true}";
         Files.writeString(file, futureJson, StandardCharsets.UTF_8);
 
         final ConfluxConfig loaded = new ConfigIo(file, LOGGER).load();
 
-        assertEquals(2, loaded.schemaVersion);
+        assertEquals(futureSchema, loaded.schemaVersion);
         assertEquals(futureJson, Files.readString(file, StandardCharsets.UTF_8));
+    }
+
+    private static void assertLegacyCornerMigration(
+        final Path file,
+        final String corner,
+        final double expectedX,
+        final double expectedY
+    ) throws IOException {
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":1,\"minimapCorner\":\"" + corner + "\"}",
+            StandardCharsets.UTF_8
+        );
+
+        final ConfluxConfig loaded = new ConfigIo(file, LOGGER).load();
+
+        assertEquals(expectedX, loaded.minimapPositionX);
+        assertEquals(expectedY, loaded.minimapPositionY);
+        assertEquals(ConfluxConfig.SCHEMA_VERSION, loaded.schemaVersion);
+        assertTrue(Files.readString(file, StandardCharsets.UTF_8).contains("\"minimapPositionX\": " + expectedX));
     }
 }

@@ -107,18 +107,17 @@ Whichever direction is selected must cover both screens, retain keyboard and
 mouse operation, and remain usable at small window sizes and non-default GUI
 scales.
 
-### 6. Free minimap positioning
+### 6. Free minimap positioning - completed
 
-Replace the four-corner-only minimap placement with drag positioning anywhere
-on screen.
+Completed on 2026-07-27 with an explicit placement screen opened from the
+minimap settings. Positions are stored as normalized screen coordinates and
+resolved against the current scaled window, so dragging remains stable across
+window resizing and GUI-scale changes.
 
-- Provide an explicit placement/edit interaction so normal gameplay clicks do
-  not move the minimap.
-- Persist the chosen position in client config.
-- Keep the minimap reachable after window resizing or GUI-scale changes; clamp
-  or migrate an off-screen saved position back into the visible area.
-- Preserve the existing corner choices during config migration by translating
-  each one to the equivalent initial free position.
+The completed implementation also preserves the four legacy corner choices
+during the schema-v1 migration, clamps invalid or off-screen positions, and
+temporarily reduces the rendered size when the scaled window is too small to
+keep the configured minimap fully visible.
 
 ### 7. Optional MaliLib keybind configuration
 

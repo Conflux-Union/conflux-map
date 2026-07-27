@@ -10,13 +10,15 @@ import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
  * {@link #SCHEMA_VERSION} and adding a migration in {@link ConfigIo}.
  */
 public final class ConfluxConfig {
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
     public static final int MIN_ANNOTATION_ERASER_SIZE = 4;
     public static final int MAX_ANNOTATION_ERASER_SIZE = 64;
     public static final int DEFAULT_ANNOTATION_ERASER_SIZE = 16;
 
     public int schemaVersion = SCHEMA_VERSION;
 
+    /** Serialized only by schema v1; retained so old files can be migrated. */
+    @Deprecated
     public enum Corner { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT }
 
     public enum Shape { SQUARE, CIRCLE }
@@ -30,7 +32,13 @@ public final class ConfluxConfig {
     public enum LayerOverride { AUTO, FORCE_SURFACE, FORCE_UNDERGROUND }
 
     public boolean minimapEnabled = true;
-    public Corner minimapCorner = Corner.TOP_RIGHT;
+    /** Legacy schema-v1 field. Null after migration and omitted from newly written JSON. */
+    @Deprecated
+    public Corner minimapCorner;
+    /** Top-left origin as a fraction of the available horizontal HUD travel. */
+    public double minimapPositionX = 1.0;
+    /** Top-left origin as a fraction of the available vertical HUD travel. */
+    public double minimapPositionY = 0.0;
     public Shape minimapShape = Shape.SQUARE;
     public int minimapSize = 128;
     public boolean minimapRotate = true;
@@ -121,6 +129,8 @@ public final class ConfluxConfig {
         c.schemaVersion = schemaVersion;
         c.minimapEnabled = minimapEnabled;
         c.minimapCorner = minimapCorner;
+        c.minimapPositionX = minimapPositionX;
+        c.minimapPositionY = minimapPositionY;
         c.minimapShape = minimapShape;
         c.minimapSize = minimapSize;
         c.minimapRotate = minimapRotate;
@@ -169,9 +179,15 @@ public final class ConfluxConfig {
 
     /** Clamp out-of-range values loaded from a hand-edited file. */
     public void normalize() {
-        if (minimapCorner == null) {
-            minimapCorner = Corner.TOP_RIGHT;
+        if (schemaVersion < 2) {
+            final MinimapPlacement.Position migrated = MinimapPlacement.fromLegacyCorner(minimapCorner);
+            minimapPositionX = migrated.x();
+            minimapPositionY = migrated.y();
         }
+        minimapCorner = null;
+        final MinimapPlacement.Position position = MinimapPlacement.normalize(minimapPositionX, minimapPositionY);
+        minimapPositionX = position.x();
+        minimapPositionY = position.y();
         if (minimapShape == null) {
             minimapShape = Shape.SQUARE;
         }
