@@ -7,6 +7,7 @@ import cn.net.rms.confluxmap.core.annotation.Annotation;
 import cn.net.rms.confluxmap.core.annotation.AnnotationProjection;
 import cn.net.rms.confluxmap.core.annotation.AnnotationService;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.config.MinimapPlacement;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
@@ -58,7 +59,6 @@ import net.minecraft.util.math.MathHelper;
  * Render thread only (it's an {@link HudRenderCallback}).
  */
 public final class MinimapHudRenderer {
-    private static final int MARGIN = 4;
     private static final int BORDER_THICKNESS = 1;
     private static final int BORDER_COLOR = 0xB0FFFFFF;
     private static final int BACKGROUND_COLOR = 0x80101018;
@@ -163,9 +163,16 @@ public final class MinimapHudRenderer {
 
         tiles.setViewpoint(player.blockX(), player.blockZ());
 
-        final int size = config.minimapSize;
-        final int x0 = originX(client.getWindow().getScaledWidth(), size);
-        final int y0 = originY(client.getWindow().getScaledHeight(), size);
+        final MinimapPlacement.Layout placement = MinimapPlacement.resolve(
+            client.getWindow().getScaledWidth(),
+            client.getWindow().getScaledHeight(),
+            config.minimapSize,
+            config.minimapPositionX,
+            config.minimapPositionY
+        );
+        final int size = placement.size();
+        final int x0 = placement.x();
+        final int y0 = placement.y();
         final float centerX = x0 + size / 2f;
         final float centerY = y0 + size / 2f;
         final boolean circle = config.minimapShape == ConfluxConfig.Shape.CIRCLE;
@@ -486,8 +493,6 @@ public final class MinimapHudRenderer {
         if (!config.showCoordinates && !config.showBiome && !config.showLayerIndicator) {
             return;
         }
-        final boolean topCorner = config.minimapCorner == ConfluxConfig.Corner.TOP_LEFT
-            || config.minimapCorner == ConfluxConfig.Corner.TOP_RIGHT;
         final int lineHeight = 10;
         int lines = 0;
         if (config.showCoordinates) {
@@ -499,7 +504,11 @@ public final class MinimapHudRenderer {
         if (config.showLayerIndicator) {
             lines++;
         }
-        float y = topCorner ? y0 + size + 3 : y0 - lines * lineHeight - 3;
+        final float belowY = y0 + size + 3;
+        final float yAfterBelowLines = belowY + lines * lineHeight;
+        float y = yAfterBelowLines <= client.getWindow().getScaledHeight()
+            ? belowY
+            : Math.max(0, y0 - lines * lineHeight - 3);
         final float centerX = x0 + size / 2f;
 
         if (config.showCoordinates) {
@@ -527,7 +536,11 @@ public final class MinimapHudRenderer {
 
     private void drawCenteredLine(final GuiDraw draw, final String text, final float centerX, final float y) {
         final int width = client.textRenderer.getWidth(text);
-        draw.drawTextWithShadow(client.textRenderer, text, centerX - width / 2f, y, TEXT_COLOR);
+        final float x = Math.max(
+            0,
+            Math.min(client.getWindow().getScaledWidth() - width, centerX - width / 2f)
+        );
+        draw.drawTextWithShadow(client.textRenderer, text, x, y, TEXT_COLOR);
     }
 
     private String biomeName(final PlayerView player) {
@@ -551,23 +564,4 @@ public final class MinimapHudRenderer {
         RenderUtil.fillRect(matrices, x0 + size - BORDER_THICKNESS, y0, BORDER_THICKNESS, size, BORDER_COLOR);
     }
 
-    private int originX(final int screenWidth, final int size) {
-        switch (config.minimapCorner) {
-            case TOP_LEFT:
-            case BOTTOM_LEFT:
-                return MARGIN;
-            default:
-                return screenWidth - size - MARGIN;
-        }
-    }
-
-    private int originY(final int screenHeight, final int size) {
-        switch (config.minimapCorner) {
-            case TOP_LEFT:
-            case TOP_RIGHT:
-                return MARGIN;
-            default:
-                return screenHeight - size - MARGIN;
-        }
-    }
 }
