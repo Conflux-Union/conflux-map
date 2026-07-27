@@ -14,6 +14,7 @@
   "key.confluxmap.reload_prediction": "刷新种子预览",
   "key.confluxmap.configure_hotkeys": "在 MaliLib 中配置快捷键",
   "key.confluxmap.malilib.category": "操作",
+  "gui.confluxmap.malilib_hotkeys": "Conflux Map 快捷键",
   "key.confluxmap.toggle_minimap.comment": "显示或隐藏 HUD 上的小地图。",
   "key.confluxmap.zoom_in.comment": "放大小地图，集中查看附近较小的区域。",
   "key.confluxmap.zoom_out.comment": "缩小小地图，查看更大的区域。",

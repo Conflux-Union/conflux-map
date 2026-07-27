@@ -17,6 +17,10 @@ import fi.dy.masa.malilib.hotkeys.IKeybindProvider;
 import fi.dy.masa.malilib.hotkeys.KeyAction;
 import fi.dy.masa.malilib.hotkeys.KeybindMulti;
 import fi.dy.masa.malilib.hotkeys.KeybindSettings;
+//#if MC>=12101
+//$$ import fi.dy.masa.malilib.registry.Registry;
+//$$ import fi.dy.masa.malilib.util.data.ModInfo;
+//#endif
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -44,6 +48,11 @@ final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
         ConfigManager.getInstance().registerConfigHandler(ConfluxMapMod.ID, backend);
         backend.load();
         InputEventHandler.getKeybindManager().registerKeybindProvider(backend);
+        //#if MC>=12101
+        //$$ Registry.CONFIG_SCREEN.registerConfigScreenFactory(
+        //$$     new ModInfo(ConfluxMapMod.ID, "Conflux Map", backend::createHotkeyScreen)
+        //$$ );
+        //#endif
         return backend;
     }
 
@@ -87,10 +96,25 @@ final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
     }
 
     void openHotkeyScreen() {
-        GuiBase.openGui(new MaliLibHotkeyScreen());
+        GuiBase.openGui(createHotkeyScreen());
+    }
+
+    private MaliLibHotkeyScreen createHotkeyScreen() {
+        return new MaliLibHotkeyScreen(hotkeys);
+    }
+
+    boolean requiresVanillaConfigShortcut() {
+        //#if MC>=12101
+        //$$ return false;
+        //#else
+        return true;
+        //#endif
     }
 
     void syncConfigScreenKey(final KeyBinding vanillaHint) {
+        if (!requiresVanillaConfigShortcut()) {
+            return;
+        }
         final String storageKey = MaliLibShortcutKey.storageKey(
             KeybindMulti.getKeyCode(vanillaHint),
             KeybindMulti::getStorageStringForKeyCode
@@ -105,9 +129,11 @@ final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
 
     @Override
     public void addKeysToMap(final IKeybindManager manager) {
-        // This must precede gameplay hotkeys so a shared key opens configuration
-        // before the INGAME action bindings see the same input.
-        manager.addKeybindToMap(configScreenKeybind);
+        if (requiresVanillaConfigShortcut()) {
+            // Old MaliLib versions have no config-screen registry, so this compatibility key
+            // must precede gameplay hotkeys when both use the same input.
+            manager.addKeybindToMap(configScreenKeybind);
+        }
         for (final ConfigHotkey hotkey : hotkeys) {
             manager.addKeybindToMap(hotkey.getKeybind());
         }

@@ -58,6 +58,9 @@ final class KeybindActionTest {
         final Map<String, String> english = translations("en_us");
         final Map<String, String> chinese = translations("zh_cn");
 
+        assertTrue(english.containsKey("gui.confluxmap.malilib_hotkeys"));
+        assertTrue(chinese.containsKey("gui.confluxmap.malilib_hotkeys"));
+
         for (final KeybindAction action : KeybindAction.values()) {
             for (final String key : new String[] {action.translationKey(), action.translationKey() + ".comment"}) {
                 assertTrue(english.containsKey(key), "missing English translation for " + key);

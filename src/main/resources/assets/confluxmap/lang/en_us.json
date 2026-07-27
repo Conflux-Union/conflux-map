@@ -14,6 +14,7 @@
   "key.confluxmap.reload_prediction": "Refresh Seed Preview",
   "key.confluxmap.configure_hotkeys": "Configure Hotkeys in MaliLib",
   "key.confluxmap.malilib.category": "Actions",
+  "gui.confluxmap.malilib_hotkeys": "Conflux Map Hotkeys",
   "key.confluxmap.toggle_minimap.comment": "Show or hide the minimap on the HUD.",
   "key.confluxmap.zoom_in.comment": "Zoom the minimap in to focus on a smaller nearby area.",
   "key.confluxmap.zoom_out.comment": "Zoom the minimap out to cover a larger area.",

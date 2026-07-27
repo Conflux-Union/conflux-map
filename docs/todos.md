@@ -125,9 +125,10 @@ Replace the in-tree modifier-key proposal with optional MaliLib integration.
 
 - Without MaliLib, keep every Conflux Map keybind in vanilla's controls screen,
   preserving the current behavior and defaults.
-- With MaliLib installed, leave only one Conflux Map entry/hint in vanilla's
-  controls screen and manage the remaining bindings through MaliLib's hotkey
-  UI.
+- With MaliLib installed, register Conflux Map in MaliLib's config switcher and
+  manage its bindings through a dedicated MaliLib hotkey screen. Keep one
+  vanilla compatibility shortcut only on versions whose MaliLib predates the
+  config-screen registry API.
 - MaliLib must remain optional: the mod must load and all actions must remain
   configurable when it is absent.
 - Both backends must invoke the same action handlers so installing MaliLib does
@@ -135,10 +136,13 @@ Replace the in-tree modifier-key proposal with optional MaliLib integration.
 
 Completed on 2026-07-27. All eleven gameplay actions now come from one action
 registry and one handler. Without MaliLib they retain their existing vanilla
-bindings and defaults. With MaliLib they are registered in its global hotkey UI,
-stored in a separate Conflux Map hotkey file, and may use multi-key combinations;
-vanilla Controls contains only an unbound shortcut to that UI. MaliLib is a
-compile-only suggested dependency and is not bundled or required at runtime.
+bindings and defaults. With MaliLib they are registered as a dedicated Conflux
+Map config screen, stored in a separate Conflux Map hotkey file, and may use
+multi-key combinations. Minecraft 1.21.1 and newer expose that screen through
+MaliLib's A+C config switcher without adding a vanilla keybind; 1.17.1 retains
+an unbound compatibility shortcut because its MaliLib API has no config-screen
+registry. MaliLib remains a compile-only suggested dependency and is not bundled
+or required at runtime.
 
 ### 8. Structure icon layer and per-type filters — completed
 
