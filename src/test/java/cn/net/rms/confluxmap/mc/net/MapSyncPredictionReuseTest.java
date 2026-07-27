@@ -32,7 +32,7 @@ class MapSyncPredictionReuseTest {
     private static final WorldIdentity WORLD = WorldIdentity.singleplayer("map-sync-prediction-reuse-test");
 
     @Test
-    void freshLodZeroCoverageSkipsLodOneServerWorkUntilItExpires(
+    void freshLodZeroCoverageIsRecheckedOnlyAfterAnExpiredViewportReentry(
         @TempDir final Path tempDir
     ) throws InterruptedException {
         final long[] nowMillis = {10_000L};
@@ -95,6 +95,12 @@ class MapSyncPredictionReuseTest {
             assertTrue(sent.isEmpty(), "fresh lower-LOD coverage must avoid a server request");
 
             nowMillis[0] += PredictionTileService.CORRECTION_REUSE_TTL_MS + 1L;
+            client.reportViewport(DIM, 1, 0, 0, 0, 0);
+            assertTrue(sent.isEmpty(), "expiry must not start polling an unchanged viewport");
+
+            client.clearViewport();
+            client.reportViewport(DIM, 1, 0, 0, 0, 0);
+            nowMillis[0] += 400L;
             client.reportViewport(DIM, 1, 0, 0, 0, 0);
             assertEquals(1, sent.size(), "expired lower-LOD validation must make the parent plannable again");
             assertEquals(1, sent.get(0).lod());

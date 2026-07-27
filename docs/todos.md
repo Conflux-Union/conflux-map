@@ -181,10 +181,12 @@ underlay remains the fallback without adding per-region draw calls.
 Prediction now keeps a bounded CPU LRU of recent composed tiles. A coarser tile
 is reconstructed recursively from four complete lower-LOD children with the
 same alpha-weighted 2x2 filter, including their committed correction pixels and
-cursor metadata. A child update invalidates every cached ancestor. Network sync
-skips a coarse tile only when every contributing child has a final server
-validation no older than five seconds; missing, expired, future-dated, or
-progressive entries use the normal coarse request path.
+cursor metadata. A child update invalidates every cached ancestor. On viewport
+entry, network sync skips a coarse tile only when every contributing child has
+a final server validation no older than five seconds. Expiry is checked lazily
+on a later viewport entry and never starts background polling. Missing, expired,
+future-dated, progressive, or server-invalidated entries use the normal coarse
+request path.
 
 ## Confirmed bugs
 
@@ -222,17 +224,19 @@ and a footprint crossing coarse tile boundaries.
 LOD 3-4 use a shared progressive scan capped at 2,048 chunks and 4 ms per server
 tick. Baseline sampling and patch encoding run on a daemon worker, while clients
 apply replaceable revision-0 progress overlays until a final revision arrives.
-Completed coarse tiles remain on a five-second visible polling interval so a
-source edit is observed without waiting for the ordinary map-cache cooldown.
-Reusable `.cfs` summaries require the current `.mca` mtime, live summaries take
-priority, and every source mtime/live epoch is revalidated before a final result
-is reused. Regression coverage includes a contiguous 128x128-chunk LOD-4 build
-and a build crossing an LOD-4 tile boundary.
+Completed tiles remain silent. A capability-negotiated viewport subscription
+lets the server push a bounded tile-invalidation batch only after a watched
+source region changes; the client then requests that tile once with its
+committed revision. Reusable `.cfs` summaries require the current `.mca` mtime,
+live summaries take priority, and every coarse source mtime/live epoch is
+revalidated before a final result is reused. Regression coverage includes a
+contiguous 128x128-chunk LOD-4 build and a build crossing an LOD-4 tile boundary.
 
 When a coarse prediction is fully reconstructible from fresh lower-LOD client
 tiles, the client omits that tile from `MAP_VIEW_REQ`; the server performs no
 summary scan, baseline sampling, patch encoding, or response for it. The oldest
-contributing final validation controls the five-second expiry.
+contributing final validation controls the five-second viewport-entry freshness
+check, while server invalidations expire every overlapping loaded LOD cache.
 
 ## Deferred
 

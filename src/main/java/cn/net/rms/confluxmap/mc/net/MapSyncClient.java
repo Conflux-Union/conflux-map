@@ -3,8 +3,11 @@ package cn.net.rms.confluxmap.mc.net;
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.MapPatchS2C;
+import cn.net.rms.confluxmap.core.net.MapInvalidateS2C;
 import cn.net.rms.confluxmap.core.net.MapSyncProgress;
+import cn.net.rms.confluxmap.core.net.MapSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
@@ -15,8 +18,10 @@ import cn.net.rms.confluxmap.core.predict.ViewRequestPlanner;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.LongSupplier;
 
 /** Client-side viewport debounce, request planning, and correction application. */
@@ -33,8 +38,6 @@ public final class MapSyncClient {
     private static final long ERROR_BACKOFF_MS = 1_000L;
     /** A request silent for this long is considered dropped; its unanswered tiles become plannable again. */
     private static final long REQUEST_TIMEOUT_MS = 10_000L;
-    /** Completed coarse tiles are polled so an already-visible build refreshes after source edits. */
-    private static final long COARSE_REFRESH_NANOS = 5_000_000_000L;
     /**
      * Outstanding-request window. Two full requests match the server's default 16-tile delivery
      * queue ({@code maxPendingTilesPerPlayer}), so the client never overflows it while still
@@ -58,6 +61,8 @@ public final class MapSyncClient {
     private int lastMaxX;
     private int lastMinZ;
     private int lastMaxZ;
+    private String lastDimension;
+    private int lastDimIndex = -1;
     /**
      * Request cooldown stamps, keyed by the same identity as the correction tiles they guard.
      * Tile coordinates alone are not unique across LODs (or dimensions): LOD-2 tile (1,1) and
@@ -66,6 +71,10 @@ public final class MapSyncClient {
      * predicted-only for minutes.
      */
     private final Map<TileStamp, Long> lastRequestNanos = new HashMap<>();
+    /** Final answers stay reusable until the viewport re-enters stale data or the server invalidates them. */
+    private final Set<TileStamp> settledTiles = new HashSet<>();
+    /** Server-invalidated tiles bypass cross-LOD reuse until their replacement patch is final. */
+    private final Set<TileStamp> invalidatedTiles = new HashSet<>();
     /** Requests awaiting patches, keyed by reqId; tracks each tile's request stamp for rollback. */
     private final Map<Integer, InFlightRequest> inFlightRequests = new HashMap<>();
 
@@ -122,14 +131,21 @@ public final class MapSyncClient {
         final long now = millisClock.getAsLong();
         corrections.flushIfDue(now);
         expireStalledRequests(now);
-        final boolean changed = lod != lastLod || minX != lastMinX || maxX != lastMaxX || minZ != lastMinZ || maxZ != lastMaxZ;
+        final String dimensionId = dimension.toString();
+        final boolean changed = !dimensionId.equals(lastDimension)
+            || lod != lastLod || minX != lastMinX || maxX != lastMaxX || minZ != lastMinZ || maxZ != lastMaxZ;
         if (changed) {
+            prepareNewlyVisibleTiles(dimension, dimensionId, lod, minX, maxX, minZ, maxZ, now);
+            retainViewportState(dimensionId, lod, minX, maxX, minZ, maxZ);
             stableSince = now;
+            lastDimIndex = dimensionIndex(dimension);
+            lastDimension = dimensionId;
             lastLod = lod;
             lastMinX = minX;
             lastMaxX = maxX;
             lastMinZ = minZ;
             lastMaxZ = maxZ;
+            subscribeViewport(lod, minX, maxX, minZ, maxZ);
             return;
         }
         final long debounce = Math.max(100L, Math.min(2000L, config.predictionDebounceMs));
@@ -138,11 +154,16 @@ public final class MapSyncClient {
             || now < suppressedUntil || inFlightRequests.size() >= MAX_INFLIGHT_REQUESTS) {
             return;
         }
-        final String dimensionId = dimension.toString();
         final List<ViewRequestPlanner.Tile> tiles = new ArrayList<>();
         for (int z = minZ; z <= maxZ; z++) {
             for (int x = minX; x <= maxX; x++) {
-                if (predictionTiles.hasFreshLowerCoverage(dimension, lod, x, z, now)) {
+                final TileStamp stamp = new TileStamp(dimensionId, lod, x, z);
+                if (settledTiles.contains(stamp)) {
+                    continue;
+                }
+                if (!invalidatedTiles.contains(stamp)
+                    && predictionTiles.hasFreshLowerCoverage(dimension, lod, x, z, now)) {
+                    settledTiles.add(stamp);
                     continue;
                 }
                 final CorrectionStore.Key key = new CorrectionStore.Key(dimensionId, lod, x, z);
@@ -152,7 +173,7 @@ public final class MapSyncClient {
                 for (final byte value : presence) {
                     empty &= value == 0;
                 }
-                final Long previous = lastRequestNanos.get(new TileStamp(dimensionId, lod, x, z));
+                final Long previous = lastRequestNanos.get(stamp);
                 tiles.add(new ViewRequestPlanner.Tile(x, z, tile.revision(), previous == null ? Long.MIN_VALUE : previous, empty));
             }
         }
@@ -161,8 +182,8 @@ public final class MapSyncClient {
         final List<MapViewReqC2S.TileReq> planned = ViewRequestPlanner.plan(
             new ViewRequestPlanner.Viewport(minX, maxX, minZ, maxZ, centerX, centerZ), tiles,
             Math.min(Proto.MAX_TILES_PER_REQ, companion.policy().budgets().maxTilesPerReq()), now * 1_000_000L,
-            lod >= 3 ? COARSE_REFRESH_NANOS : 60_000_000_000L,
-            lod >= 3 ? COARSE_REFRESH_NANOS : 600_000_000_000L
+            60_000_000_000L,
+            600_000_000_000L
         );
         if (planned.isEmpty()) {
             return;
@@ -190,18 +211,20 @@ public final class MapSyncClient {
     public synchronized void onPatch(final MapPatchS2C patch, final int payloadBytes) {
         completeTile(patch.reqId(), patch.tileX(), patch.tileZ());
         try {
-            applyPatch(patch);
+            final boolean accepted = applyPatch(patch);
             if (patch.mode() == Proto.PATCH_MODE_PARTIAL) {
                 allowPartialRetry(patch);
+            } else if (accepted) {
+                settle(patch);
             }
         } finally {
             progress.patchReceived(patch, payloadBytes, System.nanoTime());
         }
     }
 
-    private void applyPatch(final MapPatchS2C patch) {
+    private boolean applyPatch(final MapPatchS2C patch) {
         if (patch.mode() == Proto.PATCH_MODE_UNAVAILABLE) {
-            return;
+            return keyFor(patch) != null;
         }
         if (patch.mode() == Proto.PATCH_MODE_UNCHANGED) {
             final CorrectionStore.Key key = keyFor(patch);
@@ -211,13 +234,13 @@ public final class MapSyncClient {
             )) {
                 corrections.flush();
             }
-            return;
+            return key != null;
         }
         try {
             final PatchCodec.Patch decoded = PatchCodec.decode(patch.body());
             final CorrectionStore.Key key = keyFor(patch);
             if (key == null) {
-                return;
+                return false;
             }
             if (patch.mode() == Proto.PATCH_MODE_PARTIAL) {
                 predictionTiles.applyPartialCorrection(key, patch.presence(), decoded);
@@ -226,8 +249,10 @@ public final class MapSyncClient {
             )) {
                 corrections.flush();
             }
+            return true;
         } catch (final ProtoException e) {
             ConfluxMapMod.LOGGER.warn("companion: malformed MAP_PATCH body ({})", e.getMessage());
+            return false;
         }
     }
 
@@ -239,13 +264,122 @@ public final class MapSyncClient {
         }
     }
 
+    private void settle(final MapPatchS2C patch) {
+        final CorrectionStore.Key key = keyFor(patch);
+        if (key != null) {
+            final TileStamp stamp = new TileStamp(key.dimension(), key.lod(), key.tileX(), key.tileZ());
+            invalidatedTiles.remove(stamp);
+            settledTiles.add(stamp);
+        }
+    }
+
+    /** Marks only currently subscribed tiles stale; the next frame requests them once. */
+    public synchronized void onInvalidation(final MapInvalidateS2C invalidation) {
+        final HelloPolicyS2C policy = companion.policy();
+        if (!companion.isActive() || policy == null
+            || invalidation.dimIndex() < 0 || invalidation.dimIndex() >= policy.dims().size()
+            || invalidation.dimIndex() != lastDimIndex || invalidation.lod() != lastLod) {
+            return;
+        }
+        final String dimension = policy.dims().get(invalidation.dimIndex()).dimId();
+        for (final MapInvalidateS2C.Tile tile : invalidation.tiles()) {
+            if (tile.tileX() < lastMinX || tile.tileX() > lastMaxX
+                || tile.tileZ() < lastMinZ || tile.tileZ() > lastMaxZ) {
+                continue;
+            }
+            final TileStamp stamp = new TileStamp(dimension, invalidation.lod(), tile.tileX(), tile.tileZ());
+            predictionTiles.invalidateCorrectionValidation(new CorrectionStore.Key(
+                dimension, invalidation.lod(), tile.tileX(), tile.tileZ()
+            ));
+            settledTiles.remove(stamp);
+            lastRequestNanos.remove(stamp);
+            invalidatedTiles.add(stamp);
+        }
+    }
+
+    /** Stops server-side source watching when the predicted map viewport is no longer active. */
+    public synchronized void clearViewport() {
+        final HelloPolicyS2C policy = companion.policy();
+        if (lastDimIndex >= 0 && lastLod >= 0 && companion.isActive() && policy != null
+            && policy.flags().correctionInvalidationEnabled()) {
+            sender.send(new MapSyncSubscribeC2S(lastDimIndex, lastLod, false, 0, 0, 0, 0));
+        }
+        stableSince = Long.MIN_VALUE;
+        settledTiles.clear();
+        invalidatedTiles.clear();
+        lastDimension = null;
+        lastDimIndex = -1;
+        lastLod = -1;
+    }
+
+    private void subscribeViewport(
+        final int lod, final int minX, final int maxX, final int minZ, final int maxZ
+    ) {
+        final HelloPolicyS2C policy = companion.policy();
+        if (lastDimIndex >= 0 && policy != null && policy.flags().correctionInvalidationEnabled()) {
+            sender.send(new MapSyncSubscribeC2S(lastDimIndex, lod, true, minX, maxX, minZ, maxZ));
+        }
+    }
+
+    private void prepareNewlyVisibleTiles(
+        final DimensionId dimension,
+        final String dimensionId,
+        final int lod,
+        final int minX,
+        final int maxX,
+        final int minZ,
+        final int maxZ,
+        final long now
+    ) {
+        for (int z = minZ; z <= maxZ; z++) {
+            for (int x = minX; x <= maxX; x++) {
+                if (dimensionId.equals(lastDimension) && lod == lastLod
+                    && x >= lastMinX && x <= lastMaxX && z >= lastMinZ && z <= lastMaxZ) {
+                    continue;
+                }
+                final TileStamp stamp = new TileStamp(dimensionId, lod, x, z);
+                final cn.net.rms.confluxmap.core.predict.CorrectionTile tile = corrections.get(
+                    new CorrectionStore.Key(dimensionId, lod, x, z)
+                );
+                if (!invalidatedTiles.contains(stamp)
+                    && (tile.isFreshAt(now, PredictionTileService.CORRECTION_REUSE_TTL_MS)
+                    || predictionTiles.hasFreshLowerCoverage(dimension, lod, x, z, now))) {
+                    settledTiles.add(stamp);
+                } else {
+                    settledTiles.remove(stamp);
+                    lastRequestNanos.remove(stamp);
+                }
+            }
+        }
+    }
+
+    private void retainViewportState(
+        final String dimension,
+        final int lod,
+        final int minX,
+        final int maxX,
+        final int minZ,
+        final int maxZ
+    ) {
+        settledTiles.removeIf(stamp -> !stamp.dimension().equals(dimension) || stamp.lod() != lod
+            || stamp.tileX() < minX || stamp.tileX() > maxX
+            || stamp.tileZ() < minZ || stamp.tileZ() > maxZ);
+        invalidatedTiles.removeIf(stamp -> !stamp.dimension().equals(dimension) || stamp.lod() != lod
+            || stamp.tileX() < minX || stamp.tileX() > maxX
+            || stamp.tileZ() < minZ || stamp.tileZ() > maxZ);
+    }
+
     public synchronized void reset() {
         lastRequestNanos.clear();
+        settledTiles.clear();
+        invalidatedTiles.clear();
         inFlightRequests.clear();
         stableSince = Long.MIN_VALUE;
         lastSent = 0L;
         suppressedUntil = 0L;
         lastLod = -1;
+        lastDimension = null;
+        lastDimIndex = -1;
         progress.reset();
     }
 

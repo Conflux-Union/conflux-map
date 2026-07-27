@@ -80,10 +80,12 @@ class CorrectionTileTest {
     @Test
     void committedValidationExpiresAndProgressIsNeverReusable() {
         final CorrectionTile tile = new CorrectionTile();
+        final PatchCodec.Sample sample = new PatchCodec.Sample(7, 1, 90, 1, 11, 0);
+        final PatchCodec.Patch patch = new PatchCodec.Patch(java.util.List.of(sample));
         tile.applyPatch(
             1L,
             new byte[Proto.PATCH_PRESENCE_BYTES],
-            new PatchCodec.Patch(java.util.List.of()),
+            patch,
             10_000L
         );
 
@@ -91,6 +93,11 @@ class CorrectionTileTest {
         assertTrue(tile.isFreshAt(14_999L, 5_000L));
         assertFalse(tile.isFreshAt(15_001L, 5_000L));
         assertFalse(tile.isFreshAt(9_999L, 5_000L), "a future wall-clock stamp must not be trusted");
+
+        assertTrue(tile.invalidateValidation());
+        assertEquals(0L, tile.validatedAtMillis());
+        assertFalse(tile.isFreshAt(10_001L, 5_000L));
+        assertEquals(sample, tile.sampleAt(sample.pixelIndex()));
 
         tile.applyPartial(
             new byte[Proto.PATCH_PRESENCE_BYTES],

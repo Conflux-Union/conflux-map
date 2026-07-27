@@ -31,7 +31,7 @@ import java.util.function.LongSupplier;
  * no-op rather than an error anywhere in this class.
  */
 public final class PredictionTileService {
-    /** Matches the visible coarse-sync refresh interval: older corrections must be revalidated. */
+    /** Re-entry freshness window for cross-LOD reuse; expiry never schedules background polling. */
     public static final long CORRECTION_REUSE_TTL_MS = 5_000L;
     /** About 38 MiB worst case; enough for one ordinary fullscreen viewport plus its next mip. */
     private static final int REUSABLE_TILE_LIMIT = 64;
@@ -137,6 +137,28 @@ public final class PredictionTileService {
         }
         markCorrectionDirty(key);
         return true;
+    }
+
+    /** Invalidates correction freshness and every derived mip while keeping the uploaded tile visible. */
+    public boolean invalidateCorrectionValidation(final CorrectionStore.Key key) {
+        final CorrectionStore store = correctionStore;
+        if (store == null) {
+            return false;
+        }
+        final boolean changed = store.invalidateCoverage(key);
+        final SessionGuard.Session session = sessionGuard.current();
+        final DimensionId patchDimension = DimensionId.parse(key.dimension());
+        final String realLayer = PredictionDimensions.isEnd(patchDimension)
+            ? MapLayer.END_SURFACE.cacheId() : MapLayer.SURFACE.cacheId();
+        final TileKey tile = new TileKey(
+            session.world(), session.dimension(), realLayer + PredictedTileKeys.SUFFIX,
+            key.lod(), key.tileX(), key.tileZ()
+        );
+        synchronized (this) {
+            mipCache.removeCoverage(tile);
+            metadataTiles.remove(tile);
+        }
+        return changed;
     }
 
     private void markCorrectionDirty(final CorrectionStore.Key key) {

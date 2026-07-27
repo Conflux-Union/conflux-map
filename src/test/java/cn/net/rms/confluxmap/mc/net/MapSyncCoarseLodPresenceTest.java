@@ -11,7 +11,10 @@ import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.net.ErrorS2C;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.MapPatchS2C;
+import cn.net.rms.confluxmap.core.net.MapInvalidateS2C;
+import cn.net.rms.confluxmap.core.net.MapSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
+import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
@@ -145,19 +148,67 @@ class MapSyncCoarseLodPresenceTest {
     }
 
     @Test
-    void completedCoarseTileIsPolledAgainForVisibleSourceChanges() throws Exception {
+    void completedCoarseTileStaysQuietWithoutAnInvalidation() throws Exception {
         final Fixture fixture = new Fixture(new ServerConfig(), false);
         try {
             fixture.browse(COARSE_LOD, 12_000L);
 
-            assertTrue(
-                fixture.server.sinceRevisions.size() >= 2,
-                "a completed visible coarse tile must not retain the ordinary ten-minute cooldown"
+            assertEquals(
+                List.of(0L), fixture.server.sinceRevisions,
+                "a completed visible coarse tile must stay silent until the server invalidates it"
             );
-            assertTrue(
-                fixture.server.sinceRevisions.stream().skip(1).anyMatch(revision -> revision == 1L),
-                "follow-up request must carry the committed revision"
+        } finally {
+            fixture.shutdown();
+        }
+    }
+
+    @Test
+    void completedFineTileStaysQuietPastTheFormerRefreshCooldown() throws Exception {
+        final Fixture fixture = new Fixture(new ServerConfig(), false);
+        try {
+            fixture.browse(0, 70_000L);
+
+            assertEquals(
+                List.of(0L), fixture.server.sinceRevisions,
+                "a final low-LOD answer must not turn into a one-minute polling loop"
             );
+        } finally {
+            fixture.shutdown();
+        }
+    }
+
+    @Test
+    void serverInvalidationRefreshesACompletedCoarseTileExactlyOnce() throws Exception {
+        final Fixture fixture = new Fixture(new ServerConfig(), false);
+        try {
+            fixture.browse(COARSE_LOD, 12_000L);
+            fixture.client.onInvalidation(new MapInvalidateS2C(
+                0, COARSE_LOD, List.of(new MapInvalidateS2C.Tile(0, 0))
+            ));
+            fixture.browse(COARSE_LOD, 2_000L);
+
+            assertEquals(
+                List.of(0L, 1L), fixture.server.sinceRevisions,
+                "one server invalidation must produce one revision-aware refresh"
+            );
+        } finally {
+            fixture.shutdown();
+        }
+    }
+
+    @Test
+    void viewportSubscriptionIsSentOnceAndCancelledWhenTheMapCloses() throws Exception {
+        final Fixture fixture = new Fixture(new ServerConfig(), false);
+        try {
+            fixture.browse(COARSE_LOD, 2_000L);
+            assertEquals(1, fixture.server.subscriptions.size());
+            assertTrue(fixture.server.subscriptions.get(0).active());
+
+            fixture.client.clearViewport();
+            fixture.drainWire();
+
+            assertEquals(2, fixture.server.subscriptions.size());
+            assertFalse(fixture.server.subscriptions.get(1).active());
         } finally {
             fixture.shutdown();
         }
@@ -204,7 +255,7 @@ class MapSyncCoarseLodPresenceTest {
 
             final CompanionSession session = new CompanionSession();
             session.onPolicy(new HelloPolicyS2C(
-                new HelloPolicyS2C.Flags(false, true, false),
+                new HelloPolicyS2C.Flags(false, true, false, false, false, true),
                 "11111111-2222-3333-4444-555555555555",
                 "1.17",
                 new HelloPolicyS2C.Budgets(
@@ -249,9 +300,17 @@ class MapSyncCoarseLodPresenceTest {
                 nowMs = SIM_START_MS + t;
                 server.tickDrain(nanos(), client);
                 client.reportViewport(DIM, lod, 0, 0, 0, 0);
-                while (!wire.isEmpty()) {
-                    final MapViewReqC2S request = (MapViewReqC2S) MsgCodec.decode(wire.poll());
+                drainWire();
+            }
+        }
+
+        void drainWire() throws ProtoException {
+            while (!wire.isEmpty()) {
+                final Message message = MsgCodec.decode(wire.poll());
+                if (message instanceof final MapViewReqC2S request) {
                     server.handle(request, nanos(), client);
+                } else if (message instanceof final MapSyncSubscribeC2S subscription) {
+                    server.subscriptions.add(subscription);
                 }
             }
         }
@@ -273,6 +332,7 @@ class MapSyncCoarseLodPresenceTest {
         final ServerConfig config;
         final PatchDispatcher dispatcher;
         final List<Long> sinceRevisions = new ArrayList<>();
+        final List<MapSyncSubscribeC2S> subscriptions = new ArrayList<>();
         final boolean progressive;
         int errorCount;
 

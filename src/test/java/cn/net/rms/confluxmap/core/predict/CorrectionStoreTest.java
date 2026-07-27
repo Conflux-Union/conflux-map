@@ -81,6 +81,25 @@ class CorrectionStoreTest {
         assertTrue(Files.isRegularFile(correctionFile(tempDir.resolve("corrections"), currentWorld, 3, -2)));
     }
 
+    @Test
+    void coarseInvalidationExpiresLoadedChildrenButNotNeighbors(@TempDir final Path tempDir) {
+        final CorrectionStore store = new CorrectionStore(tempDir);
+        final byte[] presence = new byte[Proto.PATCH_PRESENCE_BYTES];
+        final PatchCodec.Patch patch = new PatchCodec.Patch(List.of());
+        final CorrectionStore.Key child = new CorrectionStore.Key("minecraft:overworld", 0, 2, 3);
+        final CorrectionStore.Key sibling = new CorrectionStore.Key("minecraft:overworld", 0, 3, 3);
+        final CorrectionStore.Key neighbor = new CorrectionStore.Key("minecraft:overworld", 0, 4, 3);
+        store.apply(child, 1L, presence, patch, 10_000L);
+        store.apply(sibling, 1L, presence, patch, 10_000L);
+        store.apply(neighbor, 1L, presence, patch, 10_000L);
+
+        assertTrue(store.invalidateCoverage(new CorrectionStore.Key("minecraft:overworld", 1, 1, 1)));
+
+        assertEquals(0L, store.get(child).validatedAtMillis());
+        assertEquals(0L, store.get(sibling).validatedAtMillis());
+        assertEquals(10_000L, store.get(neighbor).validatedAtMillis());
+    }
+
     private static Path correctionFile(
         final Path root,
         final WorldIdentity world,

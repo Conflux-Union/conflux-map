@@ -12,33 +12,38 @@ public final class LiveChunkSummaryCache {
     private final Map<RegionKey, Long> regionEpochs = new ConcurrentHashMap<>();
     private final AtomicLong nextEpoch = new AtomicLong();
 
-    public void put(
+    public boolean put(
         final String dimension,
         final int chunkX,
         final int chunkZ,
         final SummaryCodec.Chunk summary
     ) {
         if (summary == null) {
-            return;
+            return false;
         }
         final Key key = new Key(dimension, chunkX, chunkZ);
+        final boolean[] changed = {false};
         chunks.compute(key, (ignored, previous) -> {
             final SummaryCodec.Chunk next = revised(previous, summary);
             if (next != previous) {
                 touchRegion(key.dimension(), chunkX, chunkZ);
+                changed[0] = true;
             }
             return next;
         });
+        return changed[0];
     }
 
     public SummaryCodec.Chunk get(final String dimension, final int chunkX, final int chunkZ) {
         return chunks.get(new Key(dimension, chunkX, chunkZ));
     }
 
-    public void remove(final String dimension, final int chunkX, final int chunkZ) {
+    public boolean remove(final String dimension, final int chunkX, final int chunkZ) {
         if (chunks.remove(new Key(dimension, chunkX, chunkZ)) != null) {
             touchRegion(dimension, chunkX, chunkZ);
+            return true;
         }
+        return false;
     }
 
     public void clear() {

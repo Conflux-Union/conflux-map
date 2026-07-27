@@ -50,6 +50,19 @@ class ServerConfigTest {
     }
 
     @Test
+    void correctionInvalidationsFollowTheCorrectionCapability() {
+        final ServerConfig config = new ServerConfig();
+        assertTrue(ServerNetworking.policyFlags(config).correctionInvalidationEnabled());
+
+        config.shareCorrections = false;
+        assertFalse(ServerNetworking.policyFlags(config).correctionInvalidationEnabled());
+
+        config.shareCorrections = true;
+        config.enabled = false;
+        assertFalse(ServerNetworking.policyFlags(config).correctionInvalidationEnabled());
+    }
+
+    @Test
     void radarIsAllowedUnlessAnEnabledCompanionForbidsIt() {
         final ServerConfig config = new ServerConfig();
         assertFalse(ServerNetworking.policyFlags(config).entityRadarForbidden());

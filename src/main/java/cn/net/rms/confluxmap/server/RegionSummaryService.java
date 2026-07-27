@@ -3,6 +3,9 @@ package cn.net.rms.confluxmap.server;
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.core.net.ErrorS2C;
 import cn.net.rms.confluxmap.core.net.MapPatchS2C;
+import cn.net.rms.confluxmap.core.net.MapInvalidationPublisher;
+import cn.net.rms.confluxmap.core.net.MapInvalidateS2C;
+import cn.net.rms.confluxmap.core.net.MapSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.Proto;
@@ -25,6 +28,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -56,6 +60,8 @@ public final class RegionSummaryService {
     private final ChunkSummarizer summarizer = new ChunkSummarizer(new RegistryMapColors());
     private final PatchBuilder patchBuilder = new PatchBuilder();
     private final Map<UUID, PlayerChannel> channels = new ConcurrentHashMap<>();
+    private final MapInvalidationPublisher invalidations = new MapInvalidationPublisher();
+    private final ConcurrentLinkedQueue<ChangedRegion> changedRegions = new ConcurrentLinkedQueue<>();
     private final LiveChunkSummaryTracker liveChunks;
     private final ExecutorService progressiveWorker = Executors.newSingleThreadExecutor(runnable -> {
         final Thread thread = new Thread(runnable, "ConfluxMap-progressive-patches");
@@ -72,6 +78,9 @@ public final class RegionSummaryService {
     private record ProgressiveKey(ServerWorld world, int lod, int tileX, int tileZ) {
     }
 
+    private record ChangedRegion(String dimension, int regionX, int regionZ) {
+    }
+
     private static final class PlayerChannel {
         final PatchDispatcher dispatcher;
         volatile Consumer<Message> sender;
@@ -83,7 +92,7 @@ public final class RegionSummaryService {
 
     public RegionSummaryService(final ServerConfig config) {
         this.config = config;
-        this.liveChunks = new LiveChunkSummaryTracker(config, summarizer);
+        this.liveChunks = new LiveChunkSummaryTracker(config, summarizer, this::onRegionChanged);
     }
 
     /** Starts serving a loaded chunk from memory and enrolls it in bounded live refreshes. */
@@ -125,8 +134,36 @@ public final class RegionSummaryService {
         if (overflow > 0) {
             sender.accept(new ErrorS2C(ErrorS2C.ERR_RATE_LIMITED, "map correction queue is full"));
         }
+        invalidations.acknowledge(player.getUuid(), request);
         liveChunks.nominate(request, now);
         drain(server, channel, now);
+    }
+
+    public boolean subscribe(
+        final MinecraftServer server,
+        final UUID player,
+        final MapSyncSubscribeC2S request,
+        final Consumer<Message> sender
+    ) {
+        if (request.active() && (request.lod() > lodCeiling() || worldAt(server, request.dimIndex()) == null)) {
+            return false;
+        }
+        final PlayerChannel channel = channels.computeIfAbsent(player, ignored -> new PlayerChannel(
+            new PatchDispatcher(
+                new PlayerBudget(config.maxBytesPerSecondPerPlayer, config.minRequestIntervalMs),
+                config.maxPendingTilesPerPlayer
+            )
+        ));
+        channel.sender = sender;
+        if (!invalidations.subscribe(player, request)) {
+            return false;
+        }
+        if (!liveChunks.watch(player, request)) {
+            invalidations.remove(player);
+            liveChunks.unwatch(player);
+            return false;
+        }
+        return true;
     }
 
     /** Server tick: keep draining queued patches as each player's byte budget refills. */
@@ -134,8 +171,14 @@ public final class RegionSummaryService {
         final SummaryDiskCache disk = diskFor(server);
         liveChunks.tick(server, disk);
         final long now = System.nanoTime();
-        tickProgressive(now);
-        for (final PlayerChannel channel : channels.values()) {
+        drainChangedRegions(server);
+        tickProgressive(server, now);
+        for (final Map.Entry<UUID, PlayerChannel> entry : channels.entrySet()) {
+            final PlayerChannel channel = entry.getValue();
+            final MapInvalidateS2C invalidation = invalidations.poll(entry.getKey());
+            if (invalidation != null && channel.sender != null) {
+                channel.sender.accept(invalidation);
+            }
             if (channel.dispatcher.queued() > 0 && channel.sender != null) {
                 drain(server, channel, now);
             }
@@ -143,6 +186,8 @@ public final class RegionSummaryService {
     }
 
     public void remove(final UUID player) {
+        invalidations.remove(player);
+        liveChunks.unwatch(player);
         final PlayerChannel channel = channels.remove(player);
         if (channel != null) {
             channel.dispatcher.clear();
@@ -157,6 +202,8 @@ public final class RegionSummaryService {
     /** Flushes captured unloads after vanilla has saved every dimension, then drops session state. */
     public void close(final MinecraftServer server) {
         liveChunks.close(server, diskFor(server));
+        invalidations.clear();
+        changedRegions.clear();
         channels.clear();
         synchronized (progressiveTasks) {
             for (final ProgressiveRegionPatch task : progressiveTasks.values()) {
@@ -297,16 +344,18 @@ public final class RegionSummaryService {
     }
 
     /** Gives one active coarse tile a bounded main-thread slice, rotating fairly across players. */
-    private void tickProgressive(final long nowNanos) {
+    private void tickProgressive(final MinecraftServer server, final long nowNanos) {
         final ProgressiveRegionPatch next;
         synchronized (progressiveTasks) {
             evictProgressiveTasks(nowNanos, false);
             if (progressiveTasks.isEmpty()) {
                 return;
             }
-            final List<ProgressiveRegionPatch> tasks = new ArrayList<>(progressiveTasks.values());
+            final List<Map.Entry<ProgressiveKey, ProgressiveRegionPatch>> tasks =
+                new ArrayList<>(progressiveTasks.entrySet());
             progressiveCursor = Math.floorMod(progressiveCursor, tasks.size());
-            next = tasks.get(progressiveCursor);
+            final Map.Entry<ProgressiveKey, ProgressiveRegionPatch> entry = tasks.get(progressiveCursor);
+            next = entry.getValue();
             progressiveCursor = (progressiveCursor + 1) % tasks.size();
         }
         // The task retains the world/disk it was created for. A server-session change constructs a
@@ -314,7 +363,6 @@ public final class RegionSummaryService {
         next.tick(
             PROGRESSIVE_MAX_CHUNKS_OR_REGIONS_PER_TICK,
             PROGRESSIVE_MAX_NANOS_PER_TICK,
-            nowNanos,
             System::nanoTime
         );
     }
@@ -324,11 +372,17 @@ public final class RegionSummaryService {
         final Iterator<Map.Entry<ProgressiveKey, ProgressiveRegionPatch>> iterator =
             progressiveTasks.entrySet().iterator();
         while (iterator.hasNext()) {
-            final ProgressiveRegionPatch task = iterator.next().getValue();
-            final boolean expired = nowNanos - task.lastRequestedAtNanos() > PROGRESSIVE_IDLE_TTL_NANOS;
+            final Map.Entry<ProgressiveKey, ProgressiveRegionPatch> entry = iterator.next();
+            final ProgressiveKey key = entry.getKey();
+            final ProgressiveRegionPatch task = entry.getValue();
+            final int dimIndex = worldIndex(key.world().getServer(), key.world());
+            final boolean watched = dimIndex >= 0
+                && invalidations.watches(dimIndex, key.lod(), key.tileX(), key.tileZ());
+            final boolean expired = !watched
+                && nowNanos - task.lastRequestedAtNanos() > PROGRESSIVE_IDLE_TTL_NANOS;
             final boolean capacityVictim = forCapacity
                 && progressiveTasks.size() >= PROGRESSIVE_MAX_ACTIVE_TILES
-                && task.complete();
+                && task.complete() && !watched;
             if (expired || capacityVictim) {
                 task.close();
                 iterator.remove();
@@ -474,6 +528,50 @@ public final class RegionSummaryService {
             }
         }
         return null;
+    }
+
+    private void onRegionChanged(final String dimension, final int regionX, final int regionZ) {
+        changedRegions.add(new ChangedRegion(dimension, regionX, regionZ));
+    }
+
+    private void drainChangedRegions(final MinecraftServer server) {
+        ChangedRegion changed;
+        while ((changed = changedRegions.poll()) != null) {
+            final int dimIndex = worldIndex(server, changed.dimension());
+            if (dimIndex >= 0) {
+                invalidations.invalidateRegion(dimIndex, changed.regionX(), changed.regionZ());
+                synchronized (progressiveTasks) {
+                    for (final Map.Entry<ProgressiveKey, ProgressiveRegionPatch> entry
+                        : progressiveTasks.entrySet()) {
+                        if (worldIndex(server, entry.getKey().world()) == dimIndex) {
+                            entry.getValue().invalidateRegion(changed.regionX(), changed.regionZ());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static int worldIndex(final MinecraftServer server, final ServerWorld target) {
+        int index = 0;
+        for (final ServerWorld world : server.getWorlds()) {
+            if (world == target) {
+                return index;
+            }
+            index++;
+        }
+        return -1;
+    }
+
+    private static int worldIndex(final MinecraftServer server, final String dimension) {
+        int index = 0;
+        for (final ServerWorld world : server.getWorlds()) {
+            if (world.getRegistryKey().getValue().toString().equals(dimension)) {
+                return index;
+            }
+            index++;
+        }
+        return -1;
     }
 
     private static int chunkX(final ChunkPos pos) {

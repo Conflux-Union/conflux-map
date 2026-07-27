@@ -1,6 +1,8 @@
 package cn.net.rms.confluxmap.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
 import java.util.Arrays;
@@ -10,12 +12,12 @@ class LiveChunkSummaryCacheTest {
     @Test
     void revisionAdvancesOnlyWhenTheLiveSurfaceChanges() {
         final LiveChunkSummaryCache cache = new LiveChunkSummaryCache();
-        cache.put("minecraft:overworld", 1, 2, chunk(10L, 60));
+        assertTrue(cache.put("minecraft:overworld", 1, 2, chunk(10L, 60)));
 
-        cache.put("minecraft:overworld", 1, 2, chunk(20L, 60));
+        assertFalse(cache.put("minecraft:overworld", 1, 2, chunk(20L, 60)));
         assertEquals(10L, cache.get("minecraft:overworld", 1, 2).revision());
 
-        cache.put("minecraft:overworld", 1, 2, chunk(5L, 61));
+        assertTrue(cache.put("minecraft:overworld", 1, 2, chunk(5L, 61)));
         assertEquals(11L, cache.get("minecraft:overworld", 1, 2).revision());
         assertEquals(61, cache.get("minecraft:overworld", 1, 2).columns()[0].surfaceY());
     }
@@ -46,10 +48,10 @@ class LiveChunkSummaryCacheTest {
 
         cache.put("minecraft:overworld", 35, -46, chunk(5L, 61));
         final long changed = cache.regionEpoch("minecraft:overworld", 2, -3);
-        org.junit.jupiter.api.Assertions.assertTrue(changed > first);
+        assertTrue(changed > first);
 
         cache.remove("minecraft:overworld", 35, -46);
-        org.junit.jupiter.api.Assertions.assertTrue(
+        assertTrue(
             cache.regionEpoch("minecraft:overworld", 2, -3) > changed
         );
     }

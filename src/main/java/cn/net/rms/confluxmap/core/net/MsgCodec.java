@@ -68,6 +68,10 @@ public final class MsgCodec {
                 encodeLoadStateSubscribeC2S(out, m);
             } else if (msg instanceof final LoadStateDeltaS2C m) {
                 encodeLoadStateDeltaS2C(out, m);
+            } else if (msg instanceof final MapSyncSubscribeC2S m) {
+                encodeMapSyncSubscribeC2S(out, m);
+            } else if (msg instanceof final MapInvalidateS2C m) {
+                encodeMapInvalidateS2C(out, m);
             } else {
                 throw new ProtoException("unknown message type: " + msg.getClass().getName());
             }
@@ -99,7 +103,8 @@ public final class MsgCodec {
             || typeId == Proto.MSG_POLICY_UPDATE_S2C
             || typeId == Proto.MSG_ERROR_S2C
             || typeId == Proto.MSG_FLAT_BASELINE_S2C
-            || typeId == Proto.MSG_LOAD_STATE_DELTA_S2C;
+            || typeId == Proto.MSG_LOAD_STATE_DELTA_S2C
+            || typeId == Proto.MSG_MAP_INVALIDATE_S2C;
     }
 
     private static void encodeHelloC2S(final DataOutputStream out, final HelloC2S m) throws IOException, ProtoException {
@@ -124,6 +129,9 @@ public final class MsgCodec {
         }
         if (f.entityRadarForbidden()) {
             flagBits |= 16;
+        }
+        if (f.correctionInvalidationEnabled()) {
+            flagBits |= 32;
         }
         out.writeByte(flagBits);
         writeUtf(out, m.worldId());
@@ -217,6 +225,9 @@ public final class MsgCodec {
         if (f.entityRadarForbidden()) {
             flagBits |= 16;
         }
+        if (f.correctionInvalidationEnabled()) {
+            flagBits |= 32;
+        }
         out.writeByte(flagBits);
         final HelloPolicyS2C.Budgets b = m.budgets();
         out.writeInt(b.maxBytesPerSec());
@@ -290,6 +301,43 @@ public final class MsgCodec {
         }
     }
 
+    private static void encodeMapSyncSubscribeC2S(
+        final DataOutputStream out, final MapSyncSubscribeC2S m
+    ) throws IOException, ProtoException {
+        validateMapSyncSubscription(m);
+        out.writeByte(m.dimIndex());
+        out.writeByte(m.lod());
+        out.writeByte(m.active() ? 1 : 0);
+        out.writeInt(m.minTileX());
+        out.writeInt(m.maxTileX());
+        out.writeInt(m.minTileZ());
+        out.writeInt(m.maxTileZ());
+    }
+
+    private static void encodeMapInvalidateS2C(
+        final DataOutputStream out, final MapInvalidateS2C m
+    ) throws IOException, ProtoException {
+        if (m.dimIndex() < 0 || m.dimIndex() >= Proto.MAX_DIM_ENTRIES) {
+            throw new ProtoException("map invalidation dimension out of range: " + m.dimIndex());
+        }
+        if (m.lod() < 0 || m.lod() > cn.net.rms.confluxmap.core.util.TileMath.MAX_LOD) {
+            throw new ProtoException("map invalidation LOD out of range: " + m.lod());
+        }
+        if (m.tiles().isEmpty() || m.tiles().size() > Proto.MAX_MAP_INVALIDATION_TILES) {
+            throw new ProtoException("map invalidation tile count out of range: " + m.tiles().size());
+        }
+        out.writeByte(m.dimIndex());
+        out.writeByte(m.lod());
+        out.writeShort(m.tiles().size());
+        for (final MapInvalidateS2C.Tile tile : m.tiles()) {
+            if (tile == null) {
+                throw new ProtoException("null map invalidation tile");
+            }
+            out.writeInt(tile.tileX());
+            out.writeInt(tile.tileZ());
+        }
+    }
+
     // ---- Decode ----
 
     /** Parses exactly one {@link Message} from {@code payload}; throws on any violation. */
@@ -314,6 +362,8 @@ public final class MsgCodec {
                 case Proto.MSG_FLAT_BASELINE_S2C -> decodeFlatBaselineS2C(in);
                 case Proto.MSG_LOAD_STATE_SUBSCRIBE_C2S -> decodeLoadStateSubscribeC2S(in);
                 case Proto.MSG_LOAD_STATE_DELTA_S2C -> decodeLoadStateDeltaS2C(in);
+                case Proto.MSG_MAP_SYNC_SUBSCRIBE_C2S -> decodeMapSyncSubscribeC2S(in);
+                case Proto.MSG_MAP_INVALIDATE_S2C -> decodeMapInvalidateS2C(in);
                 default -> throw new ProtoException("unhandled message type id: 0x" + Integer.toHexString(typeId));
             };
             if (in.available() != 0) {
@@ -342,7 +392,8 @@ public final class MsgCodec {
             (flagBits & 2) != 0,
             (flagBits & 4) != 0,
             (flagBits & 8) != 0,
-            (flagBits & 16) != 0
+            (flagBits & 16) != 0,
+            (flagBits & 32) != 0
         );
         final String worldId = readUtf(in);
         final String worldgenVersion = readUtf(in);
@@ -416,7 +467,8 @@ public final class MsgCodec {
             (flagBits & 2) != 0,
             (flagBits & 4) != 0,
             (flagBits & 8) != 0,
-            (flagBits & 16) != 0
+            (flagBits & 16) != 0,
+            (flagBits & 32) != 0
         );
         final int maxBytesPerSec = in.readInt();
         final int maxTilesPerReq = in.readUnsignedShort();
@@ -504,6 +556,45 @@ public final class MsgCodec {
         );
     }
 
+    private static MapSyncSubscribeC2S decodeMapSyncSubscribeC2S(
+        final DataInputStream in
+    ) throws IOException, ProtoException {
+        final int dimIndex = in.readUnsignedByte();
+        final int lod = in.readUnsignedByte();
+        final int activeByte = in.readUnsignedByte();
+        if (activeByte > 1) {
+            throw new ProtoException("invalid map-sync active flag: " + activeByte);
+        }
+        final MapSyncSubscribeC2S message = new MapSyncSubscribeC2S(
+            dimIndex, lod, activeByte == 1,
+            in.readInt(), in.readInt(), in.readInt(), in.readInt()
+        );
+        validateMapSyncSubscription(message);
+        return message;
+    }
+
+    private static MapInvalidateS2C decodeMapInvalidateS2C(
+        final DataInputStream in
+    ) throws IOException, ProtoException {
+        final int dimIndex = in.readUnsignedByte();
+        final int lod = in.readUnsignedByte();
+        if (dimIndex >= Proto.MAX_DIM_ENTRIES) {
+            throw new ProtoException("map invalidation dimension out of range: " + dimIndex);
+        }
+        if (lod > cn.net.rms.confluxmap.core.util.TileMath.MAX_LOD) {
+            throw new ProtoException("map invalidation LOD out of range: " + lod);
+        }
+        final int count = in.readUnsignedShort();
+        if (count == 0 || count > Proto.MAX_MAP_INVALIDATION_TILES) {
+            throw new ProtoException("map invalidation tile count out of range: " + count);
+        }
+        final List<MapInvalidateS2C.Tile> tiles = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            tiles.add(new MapInvalidateS2C.Tile(in.readInt(), in.readInt()));
+        }
+        return new MapInvalidateS2C(dimIndex, lod, tiles);
+    }
+
     private static void validateLoadStateBounds(final LoadStateSubscribeC2S m) throws ProtoException {
         if (!m.active()) {
             return;
@@ -531,6 +622,28 @@ public final class MsgCodec {
         }
         if (!unloaded && ChunkLoadBand.fromTicketLevel(entry.level()) != entry.band()) {
             throw new ProtoException("chunk ticket level and load band disagree");
+        }
+    }
+
+    private static void validateMapSyncSubscription(final MapSyncSubscribeC2S m) throws ProtoException {
+        if (m.dimIndex() < 0 || m.dimIndex() >= Proto.MAX_DIM_ENTRIES) {
+            throw new ProtoException("map-sync subscription dimension out of range: " + m.dimIndex());
+        }
+        if (m.lod() < 0 || m.lod() > cn.net.rms.confluxmap.core.util.TileMath.MAX_LOD) {
+            throw new ProtoException("map-sync subscription LOD out of range: " + m.lod());
+        }
+        if (!m.active()) {
+            return;
+        }
+        if (m.minTileX() > m.maxTileX() || m.minTileZ() > m.maxTileZ()) {
+            throw new ProtoException("map-sync viewport bounds are inverted");
+        }
+        final long width = (long) m.maxTileX() - m.minTileX() + 1L;
+        final long height = (long) m.maxTileZ() - m.minTileZ() + 1L;
+        if (width > Proto.MAX_MAP_SYNC_VIEW_TILES
+            || height > Proto.MAX_MAP_SYNC_VIEW_TILES
+            || width * height > Proto.MAX_MAP_SYNC_VIEW_TILES) {
+            throw new ProtoException("map-sync viewport exceeds " + Proto.MAX_MAP_SYNC_VIEW_TILES + " tiles");
         }
     }
 

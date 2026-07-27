@@ -913,6 +913,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         chunkLoadStates.deactivate();
         tiles.clearViewport();
         predictionTiles.clearViewport();
+        ConfluxMapClient.get().mapSyncClient().clearViewport();
         structureMarkers.flush();
         super.onClose();
     }
@@ -920,6 +921,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     @Override
     public void removed() {
         chunkLoadStates.deactivate();
+        ConfluxMapClient.get().mapSyncClient().clearViewport();
         super.removed();
     }
 
@@ -1991,6 +1993,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             );
         } else {
             predictionTiles.clearViewport();
+            ConfluxMapClient.get().mapSyncClient().clearViewport();
         }
 
         if (predictionActive) {

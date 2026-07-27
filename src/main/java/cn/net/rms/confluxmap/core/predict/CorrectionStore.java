@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.store.WorldStorageMigration;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
+import cn.net.rms.confluxmap.core.util.TileMath;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -85,6 +86,19 @@ public final class CorrectionStore {
         return get(key).applyPartial(presence, patch);
     }
 
+    /** Invalidates every loaded correction overlapping an invalidated tile at any LOD. */
+    public synchronized boolean invalidateCoverage(final Key area) {
+        boolean changed = false;
+        get(area);
+        for (final Map.Entry<Key, CorrectionTile> entry : tiles.entrySet()) {
+            if (overlaps(area, entry.getKey()) && entry.getValue().invalidateValidation()) {
+                dirty.put(entry.getKey(), Boolean.TRUE);
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
     public synchronized void flush() {
         for (final Key key : dirty.keySet().toArray(new Key[0])) {
             final CorrectionTile tile = tiles.get(key);
@@ -135,6 +149,13 @@ public final class CorrectionStore {
     private Path pathFor(final Key key) {
         return worldRoot.resolve(sanitize(key.dimension())).resolve("pred").resolve(Integer.toString(key.lod()))
             .resolve("t." + key.tileX() + "." + key.tileZ() + ".cfp");
+    }
+
+    private static boolean overlaps(final Key first, final Key second) {
+        return first.dimension().equals(second.dimension()) && TileMath.overlaps(
+            first.lod(), first.tileX(), first.tileZ(),
+            second.lod(), second.tileX(), second.tileZ()
+        );
     }
 
     private static String sanitize(final String value) {

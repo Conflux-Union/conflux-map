@@ -69,4 +69,23 @@ public final class TileMath {
     public static int blockToPixelInTile(final int block, final int lod) {
         return (block >> lod) & (TILE_SIZE - 1);
     }
+
+    /** Whether two aligned LOD tiles overlap when expressed in LOD-0 tile coordinates. */
+    public static boolean overlaps(
+        final int firstLod,
+        final int firstTileX,
+        final int firstTileZ,
+        final int secondLod,
+        final int secondTileX,
+        final int secondTileZ
+    ) {
+        final long firstScale = 1L << firstLod;
+        final long secondScale = 1L << secondLod;
+        final long firstX = (long) firstTileX * firstScale;
+        final long firstZ = (long) firstTileZ * firstScale;
+        final long secondX = (long) secondTileX * secondScale;
+        final long secondZ = (long) secondTileZ * secondScale;
+        return firstX < secondX + secondScale && secondX < firstX + firstScale
+            && firstZ < secondZ + secondScale && secondZ < firstZ + firstScale;
+    }
 }

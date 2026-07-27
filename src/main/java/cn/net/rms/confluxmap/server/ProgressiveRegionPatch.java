@@ -18,7 +18,6 @@ import net.minecraft.util.math.ChunkPos;
 /** One reusable, freshness-checked progressive correction scan for an LOD-3/4 tile. */
 final class ProgressiveRegionPatch {
     static final int PUBLISH_CHUNK_INTERVAL = 2_048;
-    static final long FINAL_FRESHNESS_NANOS = 2_000_000_000L;
     private static final int MAX_REVISION_VARIANTS = 8;
     private static final byte[] EMPTY_PATCH_BODY = PatchCodec.encode(java.util.List.of());
 
@@ -34,6 +33,15 @@ final class ProgressiveRegionPatch {
     @FunctionalInterface
     interface ChunkNbtReader {
         NbtCompound read(ChunkPos pos) throws IOException;
+    }
+
+    @FunctionalInterface
+    interface PreparedPatchEncoder {
+        PatchBuilder.Result encode(
+            SummaryView summary,
+            long sinceRevision,
+            PatchBuilder.PreparedBaseline baseline
+        );
     }
 
     record Response(int mode, long revision, byte[] presence, byte[] body) {
@@ -56,7 +64,7 @@ final class ProgressiveRegionPatch {
     private final SummaryDiskCache disk;
     private final LiveChunkSummaryTracker liveChunks;
     private final ChunkSummarizer summarizer;
-    private final PatchBuilder patchBuilder;
+    private final PreparedPatchEncoder patchEncoder;
     private final Executor worker;
     private final BaselineFactory baselineFactory;
     private final ChunkNbtReader nbtReader;
@@ -75,7 +83,6 @@ final class ProgressiveRegionPatch {
     private SummaryView published;
     private long generation;
     private int lastPublishedChunks;
-    private long lastValidatedAtNanos;
     private long lastRequestedAtNanos;
     private PatchBuilder.PreparedBaseline baseline;
     private boolean baselineReady;
@@ -96,12 +103,44 @@ final class ProgressiveRegionPatch {
         final ChunkNbtReader nbtReader,
         final long nowNanos
     ) {
+        this(
+            dimension,
+            worldRoot,
+            disk,
+            liveChunks,
+            summarizer,
+            worker,
+            lod,
+            tileX,
+            tileZ,
+            baselineFactory,
+            nbtReader,
+            nowNanos,
+            patchBuilder::buildPrepared
+        );
+    }
+
+    ProgressiveRegionPatch(
+        final String dimension,
+        final Path worldRoot,
+        final SummaryDiskCache disk,
+        final LiveChunkSummaryTracker liveChunks,
+        final ChunkSummarizer summarizer,
+        final Executor worker,
+        final int lod,
+        final int tileX,
+        final int tileZ,
+        final BaselineFactory baselineFactory,
+        final ChunkNbtReader nbtReader,
+        final long nowNanos,
+        final PreparedPatchEncoder patchEncoder
+    ) {
         this.dimension = dimension;
         this.worldRoot = worldRoot;
         this.disk = disk;
         this.liveChunks = liveChunks;
         this.summarizer = summarizer;
-        this.patchBuilder = patchBuilder;
+        this.patchEncoder = patchEncoder;
         this.worker = worker;
         this.baselineFactory = baselineFactory;
         this.nbtReader = nbtReader;
@@ -132,14 +171,16 @@ final class ProgressiveRegionPatch {
         return state == State.COMPLETE;
     }
 
-    /** Main server thread: advances either chunk reads or source-version validation. */
+    /** Main server thread: advances initial chunk reads and the one pre-commit validation pass. */
     synchronized void tick(
         final int maxChunksOrRegions,
         final long maxNanos,
-        final long nowNanos,
         final LongSupplier nanoClock
     ) {
         if (closed || maxChunksOrRegions <= 0 || maxNanos <= 0L) {
+            return;
+        }
+        if (state == State.COMPLETE) {
             return;
         }
         if (state == State.SCANNING) {
@@ -170,12 +211,22 @@ final class ProgressiveRegionPatch {
         if (validation == ProgressiveSourceStamps.Validation.STALE) {
             restartScan();
         } else if (validation == ProgressiveSourceStamps.Validation.FRESH) {
-            lastValidatedAtNanos = nowNanos;
             if (state != State.COMPLETE) {
                 state = State.COMPLETE;
                 publish();
             }
         }
+    }
+
+    /** Event-driven invalidation for one changed source region covered by this completed tile. */
+    synchronized boolean invalidateRegion(final int regionX, final int regionZ) {
+        if (closed || state != State.COMPLETE
+            || regionX < baseRegionX || (long) regionX >= (long) baseRegionX + regionsPerSide
+            || regionZ < baseRegionZ || (long) regionZ >= (long) baseRegionZ + regionsPerSide) {
+            return false;
+        }
+        restartScan();
+        return true;
     }
 
     /** Any request thread: returns the newest immutable build and schedules a fresher one if needed. */
@@ -193,8 +244,7 @@ final class ProgressiveRegionPatch {
         if (baselineReady && slot.generation != generation && !slot.building) {
             scheduleBuild(sinceRevision, slot, generation, published, baseline);
         }
-        final boolean finalFresh = state == State.COMPLETE
-            && nowNanos - lastValidatedAtNanos <= FINAL_FRESHNESS_NANOS;
+        final boolean finalFresh = state == State.COMPLETE;
         if (slot.generation == generation && slot.result != null) {
             final PatchBuilder.Result result = slot.result;
             if (finalFresh) {
@@ -268,12 +318,13 @@ final class ProgressiveRegionPatch {
                 }
                 PatchBuilder.Result result = null;
                 try {
-                    result = patchBuilder.buildPrepared(snapshot, sinceRevision, prepared);
+                    result = patchEncoder.encode(snapshot, sinceRevision, prepared);
                 } catch (final IllegalArgumentException e) {
                     ConfluxMapMod.LOGGER.warn(
                         "companion: progressive patch too large for tile {},{} lod {} ({})",
                         tileX, tileZ, lod, e.getMessage()
                     );
+                    result = PatchBuilder.unavailable();
                 }
                 synchronized (ProgressiveRegionPatch.this) {
                     slot.building = false;
@@ -301,7 +352,6 @@ final class ProgressiveRegionPatch {
         stamps = new ProgressiveSourceStamps(regionsPerSide * regionsPerSide);
         source = new RegionSource();
         state = State.SCANNING;
-        lastValidatedAtNanos = 0L;
         published = scanner.snapshot();
         generation++;
         lastPublishedChunks = 0;

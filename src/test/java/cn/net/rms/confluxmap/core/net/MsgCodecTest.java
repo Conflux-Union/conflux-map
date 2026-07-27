@@ -37,7 +37,7 @@ class MsgCodecTest {
     @Test
     void helloPolicyRoundTripsWithSeed() throws ProtoException {
         final HelloPolicyS2C original = new HelloPolicyS2C(
-            new HelloPolicyS2C.Flags(true, true, false, true, true),
+            new HelloPolicyS2C.Flags(true, true, false, true, true, true),
             "11111111-2222-3333-4444-555555555555",
             "1.17",
             new HelloPolicyS2C.Budgets(65_536, 8, 300, 2),
@@ -55,6 +55,7 @@ class MsgCodecTest {
         assertEquals(Proto.MSG_HELLO_POLICY_S2C, decoded.typeId());
         assertTrue(decoded.flags().chunkLoadStateEnabled());
         assertTrue(decoded.flags().entityRadarForbidden());
+        assertTrue(decoded.flags().correctionInvalidationEnabled());
     }
 
     @Test
@@ -140,6 +141,35 @@ class MsgCodecTest {
 
         assertEquals(original, decoded);
         assertEquals(Proto.MSG_LOAD_STATE_DELTA_S2C, decoded.typeId());
+    }
+
+    @Test
+    void mapInvalidationMessagesRoundTrip() throws ProtoException {
+        final MapSyncSubscribeC2S subscription = new MapSyncSubscribeC2S(
+            1, 3, true, -4, 5, -6, 7
+        );
+        assertEquals(subscription, MsgCodec.decode(MsgCodec.encode(subscription)));
+
+        final MapInvalidateS2C invalidation = new MapInvalidateS2C(
+            1, 3, List.of(
+                new MapInvalidateS2C.Tile(-4, 6),
+                new MapInvalidateS2C.Tile(5, -6)
+            )
+        );
+        assertEquals(invalidation, MsgCodec.decode(MsgCodec.encode(invalidation)));
+    }
+
+    @Test
+    void mapInvalidationMessagesEnforceBounds() {
+        assertThrows(ProtoException.class, () -> MsgCodec.encode(new MapSyncSubscribeC2S(
+            0, 0, true, 0, Proto.MAX_MAP_SYNC_VIEW_TILES, 0, 0
+        )));
+        assertThrows(ProtoException.class, () -> MsgCodec.encode(new MapSyncSubscribeC2S(
+            0, 0, true, Integer.MIN_VALUE, Integer.MAX_VALUE, Integer.MIN_VALUE, Integer.MAX_VALUE
+        )));
+        assertThrows(ProtoException.class, () -> MsgCodec.encode(new MapInvalidateS2C(
+            0, 0, List.of()
+        )));
     }
 
     @Test
@@ -451,13 +481,14 @@ class MsgCodecTest {
     }
 
     private static Message randomMessage(final Random rng) {
-        switch (rng.nextInt(6)) {
+        switch (rng.nextInt(8)) {
             case 0:
                 return new HelloC2S(randomUtf8(rng, 8), randomUtf8(rng, 12));
             case 1:
                 return new HelloPolicyS2C(
                     new HelloPolicyS2C.Flags(
-                        rng.nextBoolean(), rng.nextBoolean(), rng.nextBoolean(), rng.nextBoolean()
+                        rng.nextBoolean(), rng.nextBoolean(), rng.nextBoolean(), rng.nextBoolean(),
+                        rng.nextBoolean(), rng.nextBoolean()
                     ),
                     randomUuidString(rng), "1.17",
                     new HelloPolicyS2C.Budgets(rng.nextInt(1 << 16), rng.nextInt(16) + 1, rng.nextInt(5_000), rng.nextInt(5)),
@@ -479,12 +510,26 @@ class MsgCodecTest {
             case 4:
                 return new PolicyUpdateS2C(
                     new HelloPolicyS2C.Flags(
-                        rng.nextBoolean(), rng.nextBoolean(), rng.nextBoolean(), rng.nextBoolean()
+                        rng.nextBoolean(), rng.nextBoolean(), rng.nextBoolean(), rng.nextBoolean(),
+                        rng.nextBoolean(), rng.nextBoolean()
                     ),
                     new HelloPolicyS2C.Budgets(rng.nextInt(1 << 16), rng.nextInt(16) + 1, rng.nextInt(5_000), rng.nextInt(5))
                 );
-            default:
+            case 5:
                 return new ErrorS2C(rng.nextInt(5), randomUtf8(rng, 16));
+            case 6: {
+                final int minX = rng.nextInt(2_000_001) - 1_000_000;
+                final int minZ = rng.nextInt(2_000_001) - 1_000_000;
+                return new MapSyncSubscribeC2S(
+                    rng.nextInt(Proto.MAX_DIM_ENTRIES), rng.nextInt(5), true,
+                    minX, minX + rng.nextInt(4), minZ, minZ + rng.nextInt(4)
+                );
+            }
+            default:
+                return new MapInvalidateS2C(
+                    rng.nextInt(Proto.MAX_DIM_ENTRIES), rng.nextInt(5),
+                    List.of(new MapInvalidateS2C.Tile(rng.nextInt(), rng.nextInt()))
+                );
         }
     }
 

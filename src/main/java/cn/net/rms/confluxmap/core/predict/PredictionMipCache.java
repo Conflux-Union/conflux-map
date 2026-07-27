@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.core.predict;
 
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.util.Argb;
+import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 
@@ -64,6 +65,10 @@ final class PredictionMipCache {
 
     synchronized void remove(final TileKey key) {
         tiles.remove(key);
+    }
+
+    synchronized void removeCoverage(final TileKey area) {
+        tiles.keySet().removeIf(key -> overlaps(area, key));
     }
 
     synchronized Tile lowerTile(final TileKey parent, final PredictionViewMode mode) {
@@ -138,6 +143,18 @@ final class PredictionMipCache {
         return new TileKey(
             parent.world(), parent.dimension(), parent.layerId(), parent.lod() - 1,
             parent.tileX() * 2 + childX, parent.tileZ() * 2 + childZ
+        );
+    }
+
+    private static boolean overlaps(final TileKey first, final TileKey second) {
+        if (!first.world().equals(second.world())
+            || !first.dimension().equals(second.dimension())
+            || !first.layerId().equals(second.layerId())) {
+            return false;
+        }
+        return TileMath.overlaps(
+            first.lod(), first.tileX(), first.tileZ(),
+            second.lod(), second.tileX(), second.tileZ()
         );
     }
 

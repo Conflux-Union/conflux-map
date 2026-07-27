@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.util;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -33,5 +34,13 @@ class TileMathTest {
                 "LOD " + lod + " drops below half-pixel detail at " + screenPixelsPerTexel
             );
         }
+    }
+
+    @Test
+    void overlapUsesFloorAlignedLodCoverageAtNegativeCoordinates() {
+        assertTrue(TileMath.overlaps(1, -1, -1, 0, -2, -2));
+        assertTrue(TileMath.overlaps(1, -1, -1, 0, -1, -1));
+        assertFalse(TileMath.overlaps(1, -1, -1, 0, 0, -1));
+        assertFalse(TileMath.overlaps(0, -3, -2, 0, -2, -2));
     }
 }

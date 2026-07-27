@@ -28,9 +28,10 @@ public final class Proto {
      * Minor 2 added FLAT_BASELINE (0x07); pre-minor-2 clients log and ignore it.
      * Minor 3 added server-authoritative chunk load-state subscriptions (0x08/0x09).
      * Minor 4 added the server entity-radar policy and progressive coarse correction patches.
+     * Minor 5 added event-driven correction invalidation subscriptions (0x0A/0x0B).
      */
     public static final int PROTO_MAJOR = 2;
-    public static final int PROTO_MINOR = 4;
+    public static final int PROTO_MINOR = 5;
 
     // ---- Message type ids (first byte of every framed payload) ----
 
@@ -52,11 +53,15 @@ public final class Proto {
     public static final int MSG_LOAD_STATE_SUBSCRIBE_C2S = 0x08;
     /** S2C: one bounded initial-snapshot or incremental load-state batch. */
     public static final int MSG_LOAD_STATE_DELTA_S2C = 0x09;
+    /** C2S: subscribe to or cancel correction invalidations for the current map viewport. */
+    public static final int MSG_MAP_SYNC_SUBSCRIBE_C2S = 0x0A;
+    /** S2C: correction tiles whose backing server regions changed. */
+    public static final int MSG_MAP_INVALIDATE_S2C = 0x0B;
 
     /** First valid message id; used to range-check the type byte. */
     public static final int MSG_MIN = MSG_HELLO_C2S;
     /** Last valid message id for this proto major version. */
-    public static final int MSG_MAX = MSG_LOAD_STATE_DELTA_S2C;
+    public static final int MSG_MAX = MSG_MAP_INVALIDATE_S2C;
 
     // ---- Hard caps (enforced everywhere untrusted bytes cross a boundary) ----
 
@@ -85,6 +90,10 @@ public final class Proto {
 
     /** Maximum entries in one load-state payload; each entry is ten bytes on the wire. */
     public static final int MAX_LOAD_STATE_ENTRIES = 512;
+    /** Maximum number of predicted tiles covered by one active correction subscription. */
+    public static final int MAX_MAP_SYNC_VIEW_TILES = 256;
+    /** Maximum invalidated tiles carried in one server notification. */
+    public static final int MAX_MAP_INVALIDATION_TILES = 256;
     /** Maximum requested viewport width or height, in chunks. */
     public static final int MAX_LOAD_STATE_SPAN = 4_096;
     /** Wire sentinel for a chunk that left the server's loaded set. */

@@ -106,6 +106,15 @@ public final class CorrectionTile {
         return nowMillis - validatedAtMillis <= ttlMillis;
     }
 
+    /** Keeps the last drawable correction while forcing the next viewport use to revalidate it. */
+    public synchronized boolean invalidateValidation() {
+        if (validatedAtMillis == 0L) {
+            return false;
+        }
+        validatedAtMillis = 0L;
+        return true;
+    }
+
     public synchronized byte[] presence() {
         final byte[] visible = presence.clone();
         if (progressActive) {
