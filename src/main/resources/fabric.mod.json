@@ -30,5 +30,8 @@
     "fabricloader": ">=$loader_version",
     "$fabric_api_id": "*",
     "minecraft": "$minecraft_dependency"
+  },
+  "suggests": {
+    "malilib": "*"
   }
 }

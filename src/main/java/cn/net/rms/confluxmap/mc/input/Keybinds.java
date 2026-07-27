@@ -1,28 +1,25 @@
 package cn.net.rms.confluxmap.mc.input;
 
-import cn.net.rms.confluxmap.ConfluxMapClient;
-import cn.net.rms.confluxmap.bridge.PlayerView;
+import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
-import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
-import cn.net.rms.confluxmap.mc.ui.screen.ConfigScreen;
-import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
-import cn.net.rms.confluxmap.mc.ui.screen.WaypointEditScreen;
-import cn.net.rms.confluxmap.mc.ui.screen.WaypointListScreen;
-import java.util.Optional;
+import java.util.EnumMap;
+import java.util.Map;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 //#if MC>=260100
 //$$ import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 //#else
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 //#endif
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import org.lwjgl.glfw.GLFW;
 
+/** Selects one input backend while routing every gameplay action through one handler. */
 public final class Keybinds {
     //#if MC>=12109
     //$$ public static final KeyBinding.Category CATEGORY = KeyBinding.Category.create(
@@ -32,123 +29,86 @@ public final class Keybinds {
     public static final String CATEGORY = "key.categories.confluxmap";
     //#endif
 
-    private final KeyBinding toggleMinimap;
-    private final KeyBinding zoomIn;
-    private final KeyBinding zoomOut;
-    private final KeyBinding openMap;
-    private final KeyBinding cycleLayer;
-    private final KeyBinding openWaypoints;
-    private final KeyBinding newWaypoint;
-    private final KeyBinding toggleLocalWaypoints;
-    private final KeyBinding openConfig;
-    private final KeyBinding cyclePrediction;
-    private final KeyBinding reloadPrediction;
-    private final ConfluxConfig config;
-    private final ConfigIo configIo;
-    private final LayerSelector layerSelector;
+    private final Map<KeybindAction, KeyBinding> vanillaBindings = new EnumMap<>(KeybindAction.class);
+    private final KeybindActionHandler actionHandler;
+    private final MaliLibKeybindBackend maliLibBackend;
+    private final KeyBinding maliLibHint;
 
     public Keybinds(final ConfluxConfig config, final ConfigIo configIo, final LayerSelector layerSelector) {
-        this.config = config;
-        this.configIo = configIo;
-        this.layerSelector = layerSelector;
-        toggleMinimap = register("toggle_minimap", GLFW.GLFW_KEY_H);
-        zoomIn = register("zoom_in", GLFW.GLFW_KEY_RIGHT_BRACKET);
-        zoomOut = register("zoom_out", GLFW.GLFW_KEY_LEFT_BRACKET);
-        openMap = register("open_map", GLFW.GLFW_KEY_M);
-        cycleLayer = register("cycle_layer", GLFW.GLFW_KEY_Y);
-        openWaypoints = register("waypoints", GLFW.GLFW_KEY_U);
-        newWaypoint = register("new_waypoint", GLFW.GLFW_KEY_B);
-        toggleLocalWaypoints = register("toggle_local_waypoints", GLFW.GLFW_KEY_J);
-        openConfig = register("open_config", GLFW.GLFW_KEY_COMMA);
-        cyclePrediction = register("cycle_prediction", GLFW.GLFW_KEY_P);
-        reloadPrediction = register("reload_prediction", GLFW.GLFW_KEY_F9);
+        MaliLibKeybindBackend detectedBackend = null;
+        KeybindActionHandler detectedHandler = null;
+        if (FabricLoader.getInstance().isModLoaded("malilib")) {
+            detectedHandler = new KeybindActionHandler(config, configIo, layerSelector, null);
+            try {
+                detectedBackend = MaliLibKeybindBackend.register(detectedHandler);
+            } catch (final LinkageError | RuntimeException e) {
+                detectedHandler = null;
+                ConfluxMapMod.LOGGER.error(
+                    "MaliLib is installed but its keybind integration could not start; using vanilla keybinds",
+                    e
+                );
+            }
+        }
+
+        maliLibBackend = detectedBackend;
+        if (maliLibBackend != null) {
+            actionHandler = detectedHandler;
+            if (maliLibBackend.requiresVanillaConfigShortcut()) {
+                maliLibHint = register("configure_hotkeys", GLFW.GLFW_KEY_UNKNOWN);
+                maliLibBackend.syncConfigScreenKey(maliLibHint);
+            } else {
+                maliLibHint = null;
+            }
+            ConfluxMapMod.LOGGER.info("MaliLib detected; Conflux Map hotkeys are registered with MaliLib");
+        } else {
+            for (final KeybindAction action : KeybindAction.values()) {
+                vanillaBindings.put(action, registerTranslation(action.translationKey(), action.vanillaDefaultKey()));
+            }
+            actionHandler = new KeybindActionHandler(
+                config,
+                configIo,
+                layerSelector,
+                vanillaBindings.get(KeybindAction.OPEN_MAP)
+            );
+            maliLibHint = null;
+        }
         ClientTickEvents.END_CLIENT_TICK.register(client -> poll());
     }
 
     private static KeyBinding register(final String name, final int key) {
+        return registerTranslation("key.confluxmap." + name, key);
+    }
+
+    private static KeyBinding registerTranslation(final String translationKey, final int key) {
         //#if MC>=260100
         //$$ return KeyMappingHelper.registerKeyMapping(
-        //$$     new KeyMapping("key.confluxmap." + name, InputConstants.Type.KEYSYM, key, CATEGORY)
+        //$$     new KeyMapping(translationKey, InputConstants.Type.KEYSYM, key, CATEGORY)
         //$$ );
         //#else
         return KeyBindingHelper.registerKeyBinding(
-            new KeyBinding("key.confluxmap." + name, InputUtil.Type.KEYSYM, key, CATEGORY)
+            new KeyBinding(translationKey, InputUtil.Type.KEYSYM, key, CATEGORY)
         );
         //#endif
     }
 
     private void poll() {
-        boolean changed = false;
-        while (toggleMinimap.wasPressed()) {
-            config.minimapEnabled = !config.minimapEnabled;
-            changed = true;
-        }
-        while (zoomIn.wasPressed()) {
-            if (config.minimapZoomIndex > 0) {
-                config.minimapZoomIndex--;
-                changed = true;
+        if (maliLibBackend != null) {
+            if (maliLibHint != null) {
+                maliLibBackend.syncConfigScreenKey(maliLibHint);
+                while (maliLibHint.wasPressed()) {
+                    final MinecraftClient client = MinecraftClient.getInstance();
+                    if (client.currentScreen == null) {
+                        maliLibBackend.openHotkeyScreen();
+                    }
+                }
             }
-        }
-        while (zoomOut.wasPressed()) {
-            if (config.minimapZoomIndex < 3) {
-                config.minimapZoomIndex++;
-                changed = true;
-            }
-        }
-        while (cycleLayer.wasPressed()) {
-            layerSelector.cycleOverride();
-            changed = true;
-        }
-        while (cyclePrediction.wasPressed()) {
-            config.predictionViewMode = config.predictionViewMode.next();
-            ConfluxMapClient.get().predictionTileService().setViewMode(config.predictionViewMode);
-            changed = true;
-        }
-        while (reloadPrediction.wasPressed()) {
-            ConfluxMapClient.get().reloadPredictionTiles();
-        }
-        // KeyBinding state stops updating while any screen with passEvents=false is open (vanilla
-        // Keyboard#onKey behavior), so this never re-fires while FullscreenMapScreen is showing;
-        // closing on a second M press is handled directly in the screen's own keyPressed instead.
-        while (openMap.wasPressed()) {
-            final MinecraftClient client = MinecraftClient.getInstance();
-            if (client.player != null && client.currentScreen == null) {
-                client.setScreen(new FullscreenMapScreen(openMap));
-            }
-        }
-        while (openWaypoints.wasPressed()) {
-            final MinecraftClient client = MinecraftClient.getInstance();
-            if (client.player != null && client.currentScreen == null) {
-                client.setScreen(new WaypointListScreen());
-            }
-        }
-        while (newWaypoint.wasPressed()) {
-            final MinecraftClient client = MinecraftClient.getInstance();
-            if (client.player != null && client.currentScreen == null) {
-                openNewWaypointAtPlayer(client);
-            }
-        }
-        while (toggleLocalWaypoints.wasPressed()) {
-            config.localWaypointsVisible = !config.localWaypointsVisible;
-            changed = true;
-        }
-        while (openConfig.wasPressed()) {
-            final MinecraftClient client = MinecraftClient.getInstance();
-            if (client.player != null && client.currentScreen == null) {
-                client.setScreen(new ConfigScreen());
-            }
-        }
-        if (changed) {
-            configIo.save(config);
-        }
-    }
-
-    private static void openNewWaypointAtPlayer(final MinecraftClient client) {
-        final Optional<PlayerView> playerView = ConfluxMapClient.get().gameBridge().player();
-        if (playerView.isEmpty()) {
             return;
         }
-        final PlayerView player = playerView.get();
-        client.setScreen(WaypointEditScreen.forCreate(null, player.dimension(), player.blockX(), player.blockY(), player.blockZ()));
+        for (final KeybindAction action : KeybindAction.values()) {
+            final KeyBinding binding = vanillaBindings.get(action);
+            while (binding.wasPressed()) {
+                actionHandler.trigger(action);
+            }
+        }
     }
 }
