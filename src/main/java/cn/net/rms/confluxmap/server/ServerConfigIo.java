@@ -22,6 +22,9 @@ import org.apache.logging.log4j.Logger;
  */
 public final class ServerConfigIo {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final int LEGACY_MAX_PENDING_TILES = 16;
+    private static final int LEGACY_MAX_BYTES_PER_SECOND = 65_536;
+    private static final int LEGACY_MIN_REQUEST_INTERVAL_MS = 300;
 
     private final Path file;
     private final Logger logger;
@@ -43,6 +46,7 @@ public final class ServerConfigIo {
             if (config == null) {
                 throw new JsonParseException("empty server config");
             }
+            migrateLegacyDefaults(config);
             config.normalize();
             upgradeOnDisk(json, config);
             return config;
@@ -84,6 +88,23 @@ public final class ServerConfigIo {
             configDir.resolve(ConfluxMapMod.ID).resolve("server.json"),
             ConfluxMapMod.LOGGER
         );
+    }
+
+    /** Upgrades only untouched legacy defaults; operator-tuned limits remain authoritative. */
+    private static void migrateLegacyDefaults(final ServerConfig config) {
+        if (config.schemaVersion >= 3) {
+            return;
+        }
+        final ServerConfig defaults = new ServerConfig();
+        if (config.maxPendingTilesPerPlayer == LEGACY_MAX_PENDING_TILES) {
+            config.maxPendingTilesPerPlayer = defaults.maxPendingTilesPerPlayer;
+        }
+        if (config.maxBytesPerSecondPerPlayer == LEGACY_MAX_BYTES_PER_SECOND) {
+            config.maxBytesPerSecondPerPlayer = defaults.maxBytesPerSecondPerPlayer;
+        }
+        if (config.minRequestIntervalMs == LEGACY_MIN_REQUEST_INTERVAL_MS) {
+            config.minRequestIntervalMs = defaults.minRequestIntervalMs;
+        }
     }
 
     /**

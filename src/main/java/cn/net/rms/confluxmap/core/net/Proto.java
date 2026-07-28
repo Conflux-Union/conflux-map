@@ -122,11 +122,11 @@ public final class Proto {
     public static final int PATCH_MODE_PARTIAL = 4;
 
     /** Budget defaults advertised in HELLO_POLICY when the server config is at its defaults. */
-    public static final int DEFAULT_MAX_BYTES_PER_SEC = 65_536;
+    public static final int DEFAULT_MAX_BYTES_PER_SEC = 256 * 1024;
     /** Budget defaults advertised in HELLO_POLICY when the server config is at its defaults. */
     public static final int DEFAULT_MAX_TILES_PER_REQ = 8;
     /** Budget defaults advertised in HELLO_POLICY when the server config is at its defaults. */
-    public static final int DEFAULT_MIN_REQ_INTERVAL_MS = 300;
+    public static final int DEFAULT_MIN_REQ_INTERVAL_MS = 100;
     /** Budget defaults advertised in HELLO_POLICY when the server config is at its defaults. */
     public static final int DEFAULT_MAX_PATCH_LOD = 4;
 }

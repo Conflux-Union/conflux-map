@@ -88,6 +88,22 @@ class PatchDispatcherTest {
     }
 
     @Test
+    void defaultQueueAcceptsOneNormalSubscribedViewport() {
+        final ServerConfig config = new ServerConfig();
+        final PatchDispatcher dispatcher = new PatchDispatcher(
+            new PlayerBudget(config.maxBytesPerSecondPerPlayer, config.minRequestIntervalMs),
+            config.maxPendingTilesPerPlayer
+        );
+        final List<PatchDispatcher.TileJob> viewport = new ArrayList<>(Proto.MAX_MAP_SYNC_VIEW_TILES);
+        for (int tile = 0; tile < Proto.MAX_MAP_SYNC_VIEW_TILES; tile++) {
+            viewport.add(job(tile, 0));
+        }
+
+        assertEquals(0, dispatcher.submit(viewport));
+        assertEquals(Proto.MAX_MAP_SYNC_VIEW_TILES, dispatcher.queued());
+    }
+
+    @Test
     void unencodablePatchIsDroppedInsteadOfWedgingTheQueue() {
         final PatchDispatcher dispatcher = new PatchDispatcher(new PlayerBudget(1 << 20, 0), 16);
         dispatcher.submit(List.of(job(0, 0), job(1, 0)));

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProto;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -35,6 +36,13 @@ class ServerConfigTest {
         assertEquals(64, c.maxSharedWaypointsPerPlayer);
         assertEquals(30, c.sharedWaypointMutationsPerMinute);
         assertEquals(8, c.maxTilesPerRequest);
+        assertEquals(
+            Proto.MAX_MAP_SYNC_VIEW_TILES,
+            c.maxPendingTilesPerPlayer,
+            "one normal subscribed viewport must fit without queue rate limiting"
+        );
+        assertEquals(256 * 1024, c.maxBytesPerSecondPerPlayer);
+        assertEquals(100, c.minRequestIntervalMs);
     }
 
     @Test
@@ -192,14 +200,52 @@ class ServerConfigTest {
     }
 
     @Test
+    void legacyDefaultSyncLimitsUpgradeToUsableDefaults(@TempDir final Path tmp) throws IOException {
+        final Path file = tmp.resolve("server.json");
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":2,\"maxPendingTilesPerPlayer\":16,"
+                + "\"maxBytesPerSecondPerPlayer\":65536,\"minRequestIntervalMs\":300}",
+            StandardCharsets.UTF_8
+        );
+
+        final ServerConfig loaded = new ServerConfigIo(file, LOGGER).load();
+
+        assertEquals(ServerConfig.SCHEMA_VERSION, loaded.schemaVersion);
+        assertEquals(Proto.MAX_MAP_SYNC_VIEW_TILES, loaded.maxPendingTilesPerPlayer);
+        assertEquals(256 * 1024, loaded.maxBytesPerSecondPerPlayer);
+        assertEquals(100, loaded.minRequestIntervalMs);
+        final String rewritten = Files.readString(file, StandardCharsets.UTF_8);
+        assertTrue(rewritten.contains("\"schemaVersion\": 3"));
+        assertTrue(rewritten.contains("\"maxPendingTilesPerPlayer\": 256"));
+    }
+
+    @Test
+    void legacyOperatorSyncLimitsArePreserved(@TempDir final Path tmp) throws IOException {
+        final Path file = tmp.resolve("server.json");
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":2,\"maxPendingTilesPerPlayer\":48,"
+                + "\"maxBytesPerSecondPerPlayer\":131072,\"minRequestIntervalMs\":500}",
+            StandardCharsets.UTF_8
+        );
+
+        final ServerConfig loaded = new ServerConfigIo(file, LOGGER).load();
+
+        assertEquals(48, loaded.maxPendingTilesPerPlayer);
+        assertEquals(131_072, loaded.maxBytesPerSecondPerPlayer);
+        assertEquals(500, loaded.minRequestIntervalMs);
+    }
+
+    @Test
     void loadKeepsNewerSchemaFileIntact(@TempDir final Path tmp) throws IOException {
         final Path file = tmp.resolve("server.json");
-        final String futureJson = "{\"schemaVersion\": 3, \"futureField\": true}";
+        final String futureJson = "{\"schemaVersion\": 4, \"futureField\": true}";
         Files.writeString(file, futureJson, StandardCharsets.UTF_8);
 
         final ServerConfig loaded = new ServerConfigIo(file, LOGGER).load();
 
-        assertEquals(3, loaded.schemaVersion);
+        assertEquals(4, loaded.schemaVersion);
         assertEquals(futureJson, Files.readString(file, StandardCharsets.UTF_8));
     }
 
