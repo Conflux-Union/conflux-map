@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
+import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
@@ -24,6 +25,22 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.io.TempDir;
 
 class AnvilMcaScannerTest {
+    @Test
+    void croppedScanDoesNotParseAnAdjacentChunk(@TempDir final Path tempDir) throws IOException {
+        final Path file = tempDir.resolve("r.0.0.mca");
+        writeRegion(file, generatedStoneChunk(), 0, 0, 1, 0);
+        final long mtime = Files.getLastModifiedTime(file).toMillis();
+
+        final SummaryCodec.SampledRegion region = new AnvilMcaScanner(false).scanRegion(
+            file, 0, 0, mtime, 4,
+            new ChunkRegionSlice(0, 0, 0, 0, 0, 0),
+            new ChunkSummarizer()
+        );
+
+        assertTrue(region.chunks()[0].generated());
+        assertFalse(region.chunks()[1].generated());
+    }
+
     @Test
     void scansAllFourSummaryRegionsFromOneAnvilOpen(@TempDir final Path tempDir) throws IOException {
         final Path file = tempDir.resolve("r.0.0.mca");

@@ -6,9 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
+import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
+import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,6 +19,52 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class CorrectionStoreTest {
+    @Test
+    void regionSliceRevisionAndFreshnessSurviveReload(@TempDir final Path tempDir) {
+        final String dimension = "minecraft:overworld";
+        final ChunkRegionSlice slice = new ChunkRegionSlice(0, 0, 15, 3, 15, 4);
+        final byte[] generated = new byte[ChunkPatchCodec.maskBytes(2)];
+        final byte[] evaluated = new byte[ChunkPatchCodec.maskBytes(2)];
+        ChunkPatchCodec.setBit(generated, 0);
+        ChunkPatchCodec.setBit(evaluated, 0);
+        ChunkPatchCodec.setBit(evaluated, 1);
+        final ChunkPatchCodec.Patch patch = new ChunkPatchCodec.Patch(
+            1, 2, 1, generated, evaluated,
+            List.of(new PatchCodec.Sample(0, 1, 70, 1, 1, 0))
+        );
+        final CorrectionStore writer = new CorrectionStore(tempDir);
+        writer.applyRegionSlice(dimension, 4, slice, patch, 10_000L);
+        final long revision = writer.regionSliceRevision(dimension, 4, slice);
+        writer.flush();
+
+        final CorrectionStore reopened = new CorrectionStore(tempDir);
+
+        assertEquals(revision, reopened.regionSliceRevision(dimension, 4, slice));
+        assertTrue(reopened.regionSliceFreshAt(dimension, 4, slice, 10_500L, 1_000L));
+        assertEquals(70, reopened.get(new CorrectionStore.Key(dimension, 4, 0, 0))
+            .sampleAt(3 * 256 + 15).surfaceY());
+    }
+
+    @Test
+    void persistedTileInvalidationExpiresUnloadedRegionMetadata(@TempDir final Path tempDir) {
+        final String dimension = "minecraft:overworld";
+        final ChunkRegionSlice slice = new ChunkRegionSlice(0, 0, 0, 0, 0, 0);
+        final byte[] generated = {1};
+        final byte[] evaluated = {1};
+        final ChunkPatchCodec.Patch patch = new ChunkPatchCodec.Patch(
+            1, 1, 1, generated, evaluated, List.of()
+        );
+        final CorrectionStore writer = new CorrectionStore(tempDir);
+        writer.applyRegionSlice(dimension, 4, slice, patch, 10_000L);
+        writer.flush();
+
+        final CorrectionStore invalidator = new CorrectionStore(tempDir);
+        invalidator.invalidateCoverage(new CorrectionStore.Key(dimension, 4, 0, 0));
+
+        final CorrectionStore reopened = new CorrectionStore(tempDir);
+        assertFalse(reopened.regionSliceFreshAt(dimension, 4, slice, 10_001L, 1_000L));
+    }
+
     @Test
     void singleplayerCorrectionsUseTheCurrentSaveIdentity(@TempDir final Path tempDir) throws IOException {
         final Path saveRoot = tempDir.resolve("saves").resolve("New World");

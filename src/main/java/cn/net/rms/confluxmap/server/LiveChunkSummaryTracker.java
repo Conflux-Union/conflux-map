@@ -2,8 +2,11 @@ package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
+import cn.net.rms.confluxmap.core.net.MapRegionViewReqC2S;
+import cn.net.rms.confluxmap.core.net.MapRegionSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
+import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
@@ -137,6 +140,20 @@ final class LiveChunkSummaryTracker {
         }
     }
 
+    void nominate(final MapRegionViewReqC2S request, final long nowNanos) {
+        final long expiresAt = nowNanos + LIVE_DEMAND_TTL_NANOS;
+        for (final MapRegionViewReqC2S.RegionReq region : request.regions()) {
+            final cn.net.rms.confluxmap.core.util.ChunkRegionSlice slice = region.slice();
+            incomingDemands.add(new LiveDemand(
+                request.dimIndex(),
+                slice.minChunkX(), slice.minChunkZ(),
+                slice.minChunkX() + slice.width() - 1,
+                slice.minChunkZ() + slice.height() - 1,
+                expiresAt
+            ));
+        }
+    }
+
     boolean watch(final UUID player, final MapSyncSubscribeC2S request) {
         if (!request.active()) {
             watchedDemands.remove(player);
@@ -157,6 +174,20 @@ final class LiveChunkSummaryTracker {
         return true;
     }
 
+    boolean watch(final UUID player, final MapRegionSyncSubscribeC2S request) {
+        if (!request.active()) {
+            watchedDemands.remove(player);
+            return true;
+        }
+        watchedDemands.put(player, new LiveDemand(
+            request.dimIndex(),
+            request.minChunkX(), request.minChunkZ(),
+            request.maxChunkX(), request.maxChunkZ(),
+            Long.MAX_VALUE
+        ));
+        return true;
+    }
+
     void unwatch(final UUID player) {
         watchedDemands.remove(player);
     }
@@ -172,6 +203,20 @@ final class LiveChunkSummaryTracker {
 
     SummaryCodec.Region overlay(final String dimension, final SummaryCodec.Region region) {
         return summaries.overlay(dimension, region);
+    }
+
+    SummaryCodec.SampledRegion overlay(
+        final String dimension, final SummaryCodec.SampledRegion region
+    ) {
+        return summaries.overlay(dimension, region);
+    }
+
+    SummaryCodec.SampledRegion overlay(
+        final String dimension,
+        final SummaryCodec.SampledRegion region,
+        final ChunkRegionSlice slice
+    ) {
+        return summaries.overlay(dimension, region, slice);
     }
 
     long regionEpoch(final String dimension, final int regionX, final int regionZ) {

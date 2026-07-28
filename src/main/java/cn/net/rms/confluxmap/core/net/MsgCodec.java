@@ -72,6 +72,14 @@ public final class MsgCodec {
                 encodeMapSyncSubscribeC2S(out, m);
             } else if (msg instanceof final MapInvalidateS2C m) {
                 encodeMapInvalidateS2C(out, m);
+            } else if (msg instanceof final MapRegionViewReqC2S m) {
+                encodeMapRegionViewReqC2S(out, m);
+            } else if (msg instanceof final MapRegionPatchS2C m) {
+                encodeMapRegionPatchS2C(out, m);
+            } else if (msg instanceof final MapRegionSyncSubscribeC2S m) {
+                encodeMapRegionSyncSubscribeC2S(out, m);
+            } else if (msg instanceof final MapRegionInvalidateS2C m) {
+                encodeMapRegionInvalidateS2C(out, m);
             } else {
                 throw new ProtoException("unknown message type: " + msg.getClass().getName());
             }
@@ -104,7 +112,9 @@ public final class MsgCodec {
             || typeId == Proto.MSG_ERROR_S2C
             || typeId == Proto.MSG_FLAT_BASELINE_S2C
             || typeId == Proto.MSG_LOAD_STATE_DELTA_S2C
-            || typeId == Proto.MSG_MAP_INVALIDATE_S2C;
+            || typeId == Proto.MSG_MAP_INVALIDATE_S2C
+            || typeId == Proto.MSG_MAP_REGION_PATCH_S2C
+            || typeId == Proto.MSG_MAP_REGION_INVALIDATE_S2C;
     }
 
     private static void encodeHelloC2S(final DataOutputStream out, final HelloC2S m) throws IOException, ProtoException {
@@ -132,6 +142,9 @@ public final class MsgCodec {
         }
         if (f.correctionInvalidationEnabled()) {
             flagBits |= 32;
+        }
+        if (f.chunkRangeCorrectionEnabled()) {
+            flagBits |= 64;
         }
         out.writeByte(flagBits);
         writeUtf(out, m.worldId());
@@ -227,6 +240,9 @@ public final class MsgCodec {
         }
         if (f.correctionInvalidationEnabled()) {
             flagBits |= 32;
+        }
+        if (f.chunkRangeCorrectionEnabled()) {
+            flagBits |= 64;
         }
         out.writeByte(flagBits);
         final HelloPolicyS2C.Budgets b = m.budgets();
@@ -338,6 +354,84 @@ public final class MsgCodec {
         }
     }
 
+    private static void encodeMapRegionViewReqC2S(
+        final DataOutputStream out, final MapRegionViewReqC2S m
+    ) throws IOException, ProtoException {
+        validateRegionHeader(m.dimIndex(), m.lod(), "region page request");
+        out.writeInt(m.reqId());
+        out.writeByte(m.dimIndex());
+        out.writeByte(m.lod());
+        if (m.regions().isEmpty() || m.regions().size() > Proto.MAX_REGION_PAGES_PER_REQ) {
+            throw new ProtoException("region page request count out of range: " + m.regions().size());
+        }
+        out.writeByte(m.regions().size());
+        for (final MapRegionViewReqC2S.RegionReq region : m.regions()) {
+            if (region == null) {
+                throw new ProtoException("null region page request");
+            }
+            region.slice();
+            out.writeInt(region.regionX());
+            out.writeInt(region.regionZ());
+            out.writeByte(region.minLocalChunkX());
+            out.writeByte(region.minLocalChunkZ());
+            out.writeByte(region.maxLocalChunkX());
+            out.writeByte(region.maxLocalChunkZ());
+            out.writeLong(region.sinceRevision());
+        }
+    }
+
+    private static void encodeMapRegionPatchS2C(
+        final DataOutputStream out, final MapRegionPatchS2C m
+    ) throws IOException, ProtoException {
+        m.slice();
+        validateRegionHeader(m.dimIndex(), m.lod(), "region patch");
+        validateRegionPatchBody(m.mode(), m.body());
+        out.writeInt(m.reqId());
+        out.writeByte(m.dimIndex());
+        out.writeByte(m.lod());
+        out.writeInt(m.regionX());
+        out.writeInt(m.regionZ());
+        out.writeByte(m.minLocalChunkX());
+        out.writeByte(m.minLocalChunkZ());
+        out.writeByte(m.maxLocalChunkX());
+        out.writeByte(m.maxLocalChunkZ());
+        out.writeByte(m.mode());
+        out.writeLong(m.regionRevision());
+        writeBoundedBytes(out, m.body(), ChunkPatchCodec.MAX_COMPRESSED_BYTES);
+    }
+
+    private static void encodeMapRegionSyncSubscribeC2S(
+        final DataOutputStream out, final MapRegionSyncSubscribeC2S m
+    ) throws IOException, ProtoException {
+        validateRegionSyncBounds(m);
+        out.writeByte(m.dimIndex());
+        out.writeByte(m.lod());
+        out.writeByte(m.active() ? 1 : 0);
+        out.writeInt(m.minChunkX());
+        out.writeInt(m.maxChunkX());
+        out.writeInt(m.minChunkZ());
+        out.writeInt(m.maxChunkZ());
+    }
+
+    private static void encodeMapRegionInvalidateS2C(
+        final DataOutputStream out, final MapRegionInvalidateS2C m
+    ) throws IOException, ProtoException {
+        validateRegionHeader(m.dimIndex(), m.lod(), "region invalidation");
+        if (m.regions().isEmpty() || m.regions().size() > Proto.MAX_REGION_INVALIDATIONS) {
+            throw new ProtoException("region invalidation count out of range: " + m.regions().size());
+        }
+        out.writeByte(m.dimIndex());
+        out.writeByte(m.lod());
+        out.writeShort(m.regions().size());
+        for (final MapRegionInvalidateS2C.Region region : m.regions()) {
+            if (region == null) {
+                throw new ProtoException("null region invalidation");
+            }
+            out.writeInt(region.regionX());
+            out.writeInt(region.regionZ());
+        }
+    }
+
     // ---- Decode ----
 
     /** Parses exactly one {@link Message} from {@code payload}; throws on any violation. */
@@ -364,6 +458,10 @@ public final class MsgCodec {
                 case Proto.MSG_LOAD_STATE_DELTA_S2C -> decodeLoadStateDeltaS2C(in);
                 case Proto.MSG_MAP_SYNC_SUBSCRIBE_C2S -> decodeMapSyncSubscribeC2S(in);
                 case Proto.MSG_MAP_INVALIDATE_S2C -> decodeMapInvalidateS2C(in);
+                case Proto.MSG_MAP_REGION_VIEW_REQ_C2S -> decodeMapRegionViewReqC2S(in);
+                case Proto.MSG_MAP_REGION_PATCH_S2C -> decodeMapRegionPatchS2C(in);
+                case Proto.MSG_MAP_REGION_SYNC_SUBSCRIBE_C2S -> decodeMapRegionSyncSubscribeC2S(in);
+                case Proto.MSG_MAP_REGION_INVALIDATE_S2C -> decodeMapRegionInvalidateS2C(in);
                 default -> throw new ProtoException("unhandled message type id: 0x" + Integer.toHexString(typeId));
             };
             if (in.available() != 0) {
@@ -393,7 +491,8 @@ public final class MsgCodec {
             (flagBits & 4) != 0,
             (flagBits & 8) != 0,
             (flagBits & 16) != 0,
-            (flagBits & 32) != 0
+            (flagBits & 32) != 0,
+            (flagBits & 64) != 0
         );
         final String worldId = readUtf(in);
         final String worldgenVersion = readUtf(in);
@@ -427,6 +526,7 @@ public final class MsgCodec {
         final int reqId = in.readInt();
         final int dimIndex = in.readUnsignedByte();
         final int lod = in.readUnsignedByte();
+        validateRegionHeader(dimIndex, lod, "region page request");
         final int tileCount = in.readUnsignedByte();
         if (tileCount > Proto.MAX_TILES_PER_REQ) {
             throw new ProtoException("tile count " + tileCount + " above cap " + Proto.MAX_TILES_PER_REQ);
@@ -468,7 +568,8 @@ public final class MsgCodec {
             (flagBits & 4) != 0,
             (flagBits & 8) != 0,
             (flagBits & 16) != 0,
-            (flagBits & 32) != 0
+            (flagBits & 32) != 0,
+            (flagBits & 64) != 0
         );
         final int maxBytesPerSec = in.readInt();
         final int maxTilesPerReq = in.readUnsignedShort();
@@ -595,6 +696,90 @@ public final class MsgCodec {
         return new MapInvalidateS2C(dimIndex, lod, tiles);
     }
 
+    private static MapRegionViewReqC2S decodeMapRegionViewReqC2S(
+        final DataInputStream in
+    ) throws IOException, ProtoException {
+        final int reqId = in.readInt();
+        final int dimIndex = in.readUnsignedByte();
+        final int lod = in.readUnsignedByte();
+        validateRegionHeader(dimIndex, lod, "region page request");
+        final int count = in.readUnsignedByte();
+        if (count == 0 || count > Proto.MAX_REGION_PAGES_PER_REQ) {
+            throw new ProtoException("region page request count out of range: " + count);
+        }
+        final List<MapRegionViewReqC2S.RegionReq> regions = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            try {
+                regions.add(new MapRegionViewReqC2S.RegionReq(
+                    in.readInt(), in.readInt(),
+                    in.readUnsignedByte(), in.readUnsignedByte(),
+                    in.readUnsignedByte(), in.readUnsignedByte(),
+                    in.readLong()
+                ));
+            } catch (final IllegalArgumentException e) {
+                throw new ProtoException("invalid region page bounds", e);
+            }
+        }
+        return new MapRegionViewReqC2S(reqId, dimIndex, lod, regions);
+    }
+
+    private static MapRegionPatchS2C decodeMapRegionPatchS2C(
+        final DataInputStream in
+    ) throws IOException, ProtoException {
+        try {
+            final MapRegionPatchS2C message = new MapRegionPatchS2C(
+                in.readInt(), in.readUnsignedByte(), in.readUnsignedByte(),
+                in.readInt(), in.readInt(),
+                in.readUnsignedByte(), in.readUnsignedByte(),
+                in.readUnsignedByte(), in.readUnsignedByte(),
+                in.readUnsignedByte(), in.readLong(),
+                readBoundedBytes(in, ChunkPatchCodec.MAX_COMPRESSED_BYTES)
+            );
+            validateRegionHeader(message.dimIndex(), message.lod(), "region patch");
+            validateRegionPatchBody(message.mode(), message.body());
+            return message;
+        } catch (final IllegalArgumentException e) {
+            throw new ProtoException("invalid region patch bounds", e);
+        }
+    }
+
+    private static MapRegionSyncSubscribeC2S decodeMapRegionSyncSubscribeC2S(
+        final DataInputStream in
+    ) throws IOException, ProtoException {
+        final int dimIndex = in.readUnsignedByte();
+        final int lod = in.readUnsignedByte();
+        final int activeByte = in.readUnsignedByte();
+        if (activeByte > 1) {
+            throw new ProtoException("invalid region-sync active flag: " + activeByte);
+        }
+        final MapRegionSyncSubscribeC2S message = new MapRegionSyncSubscribeC2S(
+            dimIndex, lod, activeByte == 1,
+            in.readInt(), in.readInt(), in.readInt(), in.readInt()
+        );
+        validateRegionSyncBounds(message);
+        return message;
+    }
+
+    private static MapRegionInvalidateS2C decodeMapRegionInvalidateS2C(
+        final DataInputStream in
+    ) throws IOException, ProtoException {
+        final int dimIndex = in.readUnsignedByte();
+        final int lod = in.readUnsignedByte();
+        if (dimIndex >= Proto.MAX_DIM_ENTRIES
+            || lod > cn.net.rms.confluxmap.core.util.TileMath.MAX_LOD) {
+            throw new ProtoException("region invalidation header out of range");
+        }
+        final int count = in.readUnsignedShort();
+        if (count == 0 || count > Proto.MAX_REGION_INVALIDATIONS) {
+            throw new ProtoException("region invalidation count out of range: " + count);
+        }
+        final List<MapRegionInvalidateS2C.Region> regions = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            regions.add(new MapRegionInvalidateS2C.Region(in.readInt(), in.readInt()));
+        }
+        return new MapRegionInvalidateS2C(dimIndex, lod, regions);
+    }
+
     private static void validateLoadStateBounds(final LoadStateSubscribeC2S m) throws ProtoException {
         if (!m.active()) {
             return;
@@ -644,6 +829,60 @@ public final class MsgCodec {
             || height > Proto.MAX_MAP_SYNC_VIEW_TILES
             || width * height > Proto.MAX_MAP_SYNC_VIEW_TILES) {
             throw new ProtoException("map-sync viewport exceeds " + Proto.MAX_MAP_SYNC_VIEW_TILES + " tiles");
+        }
+    }
+
+    private static void validateRegionSyncBounds(
+        final MapRegionSyncSubscribeC2S m
+    ) throws ProtoException {
+        if (m.dimIndex() < 0 || m.dimIndex() >= Proto.MAX_DIM_ENTRIES) {
+            throw new ProtoException("region-sync subscription dimension out of range: " + m.dimIndex());
+        }
+        if (m.lod() < 0 || m.lod() > cn.net.rms.confluxmap.core.util.TileMath.MAX_LOD) {
+            throw new ProtoException("region-sync subscription LOD out of range: " + m.lod());
+        }
+        if (!m.active()) {
+            return;
+        }
+        if (m.minChunkX() > m.maxChunkX() || m.minChunkZ() > m.maxChunkZ()) {
+            throw new ProtoException("region-sync viewport bounds are inverted");
+        }
+        final long width = (long) m.maxChunkX() - m.minChunkX() + 1L;
+        final long height = (long) m.maxChunkZ() - m.minChunkZ() + 1L;
+        if (width > Proto.MAX_REGION_SYNC_SPAN_CHUNKS
+            || height > Proto.MAX_REGION_SYNC_SPAN_CHUNKS) {
+            throw new ProtoException(
+                "region-sync viewport exceeds " + Proto.MAX_REGION_SYNC_SPAN_CHUNKS + " chunks per axis"
+            );
+        }
+    }
+
+    private static void validateRegionHeader(
+        final int dimIndex, final int lod, final String label
+    ) throws ProtoException {
+        if (dimIndex < 0 || dimIndex >= Proto.MAX_DIM_ENTRIES) {
+            throw new ProtoException(label + " dimension out of range: " + dimIndex);
+        }
+        if (lod < 0 || lod > cn.net.rms.confluxmap.core.util.TileMath.MAX_LOD) {
+            throw new ProtoException(label + " LOD out of range: " + lod);
+        }
+    }
+
+    private static void validateRegionPatchBody(
+        final int mode, final byte[] body
+    ) throws ProtoException {
+        final int length = body == null ? -1 : body.length;
+        if (mode == Proto.PATCH_MODE_UNCHANGED || mode == Proto.PATCH_MODE_UNAVAILABLE) {
+            if (length != 0) {
+                throw new ProtoException("bodyless region patch mode contains a body");
+            }
+            return;
+        }
+        if (mode != Proto.PATCH_MODE_RESIDUAL && mode != Proto.PATCH_MODE_ABSOLUTE) {
+            throw new ProtoException("unsupported region patch mode " + mode);
+        }
+        if (length <= 0) {
+            throw new ProtoException("region correction patch body is empty");
         }
     }
 

@@ -256,6 +256,23 @@ Unchanged revalidation returns the existing content fingerprint with no patch bo
 LOD3-4 progress responses are bodyless and retry at two-second intervals; the
 authoritative patch is encoded once after the scan and validation pass complete.
 
+A later chunk-range follow-up removes the remaining fixed-tile overfetch. Capable
+clients derive an exact half-open chunk viewport from the fullscreen bounds, split
+it into cropped 16x16-chunk summary-region pages, and request no more pages per
+message than the negotiated server budget. At LOD4, one edge chunk is one sampled
+column rather than a complete 256x256-pixel correction tile. The page codec keeps
+the existing LOD sample density and exact correction fields while adaptively
+encoding generated, evaluated, and difference masks before bounded Deflate.
+
+Cold page scans parse only the requested chunk crop from the MCA location table.
+LOD2-4 Overworld baseline prediction samples only the page's output window; page modes whose
+baseline crosses that window use exact absolute fields instead of computing a whole tile.
+Exact per-chunk fingerprints and validation times are persisted in correction
+format v16; v15 pixels remain drawable but require revalidation. Event-driven
+invalidations retain the exact viewport subscription and stale only the visible
+crop of a changed summary region. Older companions remain on the previous
+capability-gated tile/progressive path.
+
 ## Deferred
 
 Parked because the request still does not identify missing behavior.

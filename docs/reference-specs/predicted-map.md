@@ -92,6 +92,27 @@ coordinates and the revision of each client's last committed snapshot. A tile is
 per edge and covers `2^lod` LOD-0 regions per side. A final `MAP_PATCH` is a complete authoritative
 snapshot, not a temporal delta: applying it atomically replaces every older residual sample.
 
+Servers advertising `chunkRangeCorrectionEnabled` use the exact visible chunk rectangle instead of
+the renderer's fixed 256x256-pixel texture bounds. The client splits that rectangle into cropped
+pages within the existing 16x16-chunk summary-region grid. `MAP_REGION_VIEW_REQ` carries only those
+pages, up to the lower of the negotiated request budget and the protocol cap. Edge pages retain
+their exact local chunk bounds, so one barely visible LOD-4 chunk produces one authoritative sample
+instead of forcing a 256x256-pixel coarse tile. Companions without the flag keep the tile protocol
+unchanged as a compatibility fallback.
+
+`ChunkPatchCodec` preserves the normal LOD density: 16x16 samples per chunk at LOD0, 2x2 at LOD3,
+and one at LOD4. Generated-chunk, evaluated-pixel, and difference-pixel masks independently choose
+between dense bits and sparse runs. Difference samples use the same grouped categorical planes and
+zigzag-delta surface heights as `PatchCodec`, then the complete body is Deflate-compressed with a
+bounded inflater. This removes unrepresented chunks without lowering terrain or construction
+quality inside the requested rectangle.
+
+Each page revision fingerprints its exact LOD, region crop, and ordered per-chunk fingerprints.
+`UNCHANGED` therefore revalidates only the same rectangle. The client persists page fingerprints,
+generated bits, and validation times per chunk in correction format v16; v15 pixels remain drawable
+after upgrade but are stale until exact pages revalidate them. Applying a page replaces only its
+owned output pixels, leaving adjacent cached corrections intact.
+
 Each patch carries a 16x16 diagnostic presence bitmap plus a raw `PatchCodec` body. The body starts
 with separate two-level sparse masks for evaluated pixels and pixels that differ from the shared
 deterministic baseline. Difference samples then use homogeneous value planes for biome, signed
@@ -111,7 +132,19 @@ The final body and presence bitmap produce an opaque content fingerprint used as
 Revalidating the same authoritative snapshot returns `UNCHANGED` with an empty body. A changed
 lower-revision source chunk therefore cannot hide behind an unchanged maximum game-time tick.
 
-Every supported map LOD can carry corrections. LOD3-4 are scanned progressively. Cold chunks are
+Every supported map LOD can carry corrections. Chunk-range page scans read the MCA location table
+once but parse only chunks inside the requested crop, on two bounded background workers. Identical
+page requests share the same in-flight/cache task, current live summaries overlay disk data, and
+source mtime plus live-region epoch are checked again before a response becomes authoritative.
+For Overworld LOD2-4, native overview and biome baseline queries also cover only the page's output
+window. End pages and LOD0-1 pages use cropped absolute samples where their baseline depends on
+data outside that window, preserving quality without reviving tile-wide prediction work. Flat
+pages compare against one uniform value and never allocate a tile-sized baseline grid.
+`MAP_REGION_SYNC_SUBSCRIBE` tracks the exact chunk viewport. Completed pages remain silent until a
+watched source region changes; `MAP_REGION_INVALIDATE` then makes only its current visible crop
+stale. There is no completed-page polling.
+
+The compatibility tile path still scans LOD3-4 progressively. Cold chunks are
 read in 32x32-chunk Anvil batches on two background workers; all four contained summary regions
 share one file open, and the bundled native selectively parses only the NBT fields needed for the
 centered columns. A missing native falls back to the Java NBT parser without changing results.

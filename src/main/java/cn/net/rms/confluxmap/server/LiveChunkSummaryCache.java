@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
+import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -75,6 +76,49 @@ public final class LiveChunkSummaryCache {
         }
         return changed
             ? new SummaryCodec.Region(region.rx(), region.rz(), region.sourceMcaMtimeMs(), merged)
+            : region;
+    }
+
+    public SummaryCodec.SampledRegion overlay(
+        final String dimension, final SummaryCodec.SampledRegion region
+    ) {
+        return overlay(
+            dimension, region,
+            new ChunkRegionSlice(region.rx(), region.rz(), 0, 0, 15, 15)
+        );
+    }
+
+    /** Overlays only the live chunks a cropped page can read. */
+    public SummaryCodec.SampledRegion overlay(
+        final String dimension,
+        final SummaryCodec.SampledRegion region,
+        final ChunkRegionSlice slice
+    ) {
+        if (slice == null || slice.regionX() != region.rx() || slice.regionZ() != region.rz()) {
+            throw new IllegalArgumentException("sampled overlay slice does not match region");
+        }
+        final SummaryCodec.SampledChunk[] merged = region.chunks().clone();
+        boolean changed = false;
+        for (int localZ = slice.minLocalChunkZ(); localZ <= slice.maxLocalChunkZ(); localZ++) {
+            for (int localX = slice.minLocalChunkX(); localX <= slice.maxLocalChunkX(); localX++) {
+                final SummaryCodec.Chunk live = get(
+                    dimension,
+                    region.rx() * 16 + localX,
+                    region.rz() * 16 + localZ
+                );
+                if (live != null) {
+                    merged[localZ * 16 + localX] = SummaryCodec.sample(
+                        live, region.sampleStride()
+                    );
+                    changed = true;
+                }
+            }
+        }
+        return changed
+            ? new SummaryCodec.SampledRegion(
+                region.rx(), region.rz(), region.sourceMcaMtimeMs(),
+                region.sampleStride(), merged
+            )
             : region;
     }
 

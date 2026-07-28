@@ -71,6 +71,19 @@ class ServerConfigTest {
     }
 
     @Test
+    void chunkRangeCorrectionsFollowTheCorrectionCapability() {
+        final ServerConfig config = new ServerConfig();
+        assertTrue(ServerNetworking.policyFlags(config).chunkRangeCorrectionEnabled());
+
+        config.shareCorrections = false;
+        assertFalse(ServerNetworking.policyFlags(config).chunkRangeCorrectionEnabled());
+
+        config.shareCorrections = true;
+        config.enabled = false;
+        assertFalse(ServerNetworking.policyFlags(config).chunkRangeCorrectionEnabled());
+    }
+
+    @Test
     void radarIsAllowedUnlessAnEnabledCompanionForbidsIt() {
         final ServerConfig config = new ServerConfig();
         assertFalse(ServerNetworking.policyFlags(config).entityRadarForbidden());

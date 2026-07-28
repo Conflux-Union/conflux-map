@@ -2,11 +2,39 @@ package cn.net.rms.confluxmap.core.net;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class MapSyncProgressTest {
+    @Test
+    void regionPagesUseTheSameVisibleBatchCounters() {
+        final MapSyncProgress progress = new MapSyncProgress();
+        final ChunkRegionSlice first = new ChunkRegionSlice(0, 0, 15, 3, 15, 4);
+        final ChunkRegionSlice second = new ChunkRegionSlice(1, 0, 0, 3, 0, 4);
+        progress.beginRegionBatch(0, 4, List.of(first, second));
+        final MapRegionViewReqC2S request = new MapRegionViewReqC2S(
+            8, 0, 4, List.of(
+                new MapRegionViewReqC2S.RegionReq(first, Long.MIN_VALUE),
+                new MapRegionViewReqC2S.RegionReq(second, Long.MIN_VALUE)
+            )
+        );
+
+        progress.requestStarted(request, 30, 1_000L);
+        progress.regionPatchReceived(regionPatch(8, first), 20, true, 2_000L);
+        assertEquals(
+            new MapSyncProgress.Snapshot(MapSyncProgress.State.SYNCING, 1, 2, 1_000L, 50L),
+            progress.snapshot()
+        );
+
+        progress.regionPatchReceived(regionPatch(8, second), 25, true, 3_000L);
+        assertEquals(
+            new MapSyncProgress.Snapshot(MapSyncProgress.State.COMPLETED, 2, 2, 2_000L, 75L),
+            progress.snapshot()
+        );
+    }
+
     @Test
     void completesAfterEveryRequestedTileArrives() {
         final MapSyncProgress progress = new MapSyncProgress();
@@ -183,6 +211,17 @@ class MapSyncProgressTest {
         return new MapPatchS2C(
             reqId, 0, 1, tileX, tileZ, mode,
             0L, new byte[Proto.PATCH_PRESENCE_BYTES], new byte[0]
+        );
+    }
+
+    private static MapRegionPatchS2C regionPatch(
+        final int reqId, final ChunkRegionSlice slice
+    ) {
+        return new MapRegionPatchS2C(
+            reqId, 0, 4, slice.regionX(), slice.regionZ(),
+            slice.minLocalChunkX(), slice.minLocalChunkZ(),
+            slice.maxLocalChunkX(), slice.maxLocalChunkZ(),
+            Proto.PATCH_MODE_UNAVAILABLE, 0L, new byte[0]
         );
     }
 }

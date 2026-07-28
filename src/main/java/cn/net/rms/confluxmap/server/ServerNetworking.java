@@ -10,6 +10,8 @@ import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.ErrorS2C;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import cn.net.rms.confluxmap.core.net.MapSyncSubscribeC2S;
+import cn.net.rms.confluxmap.core.net.MapRegionSyncSubscribeC2S;
+import cn.net.rms.confluxmap.core.net.MapRegionViewReqC2S;
 import cn.net.rms.confluxmap.core.net.LoadStateSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.MsgCodec;
@@ -101,6 +103,10 @@ public final class ServerNetworking {
                 handleLoadStateSubscribe(server, player, req);
             } else if (msg instanceof final MapSyncSubscribeC2S req) {
                 handleMapSyncSubscribe(server, player, req);
+            } else if (msg instanceof final MapRegionViewReqC2S req) {
+                handleMapRegionViewReq(server, player, req);
+            } else if (msg instanceof final MapRegionSyncSubscribeC2S req) {
+                handleMapRegionSyncSubscribe(server, player, req);
             } else {
                 ConfluxMapMod.LOGGER.warn(
                     "companion: unexpected {} from {} (server-side handlers expect C2S only)",
@@ -149,6 +155,20 @@ public final class ServerNetworking {
         companion.summaries().request(server, player, req, msg -> send(player, msg));
     }
 
+    private void handleMapRegionViewReq(
+        final MinecraftServer server,
+        final ServerPlayerEntity player,
+        final MapRegionViewReqC2S request
+    ) {
+        if (!companion.config().shareCorrections) {
+            send(player, new ErrorS2C(ErrorS2C.ERR_COMPANION_DISABLED, "map corrections are disabled"));
+            return;
+        }
+        companion.summaries().requestRegions(
+            server, player, request, message -> send(player, message)
+        );
+    }
+
     private void handleLoadStateSubscribe(
         final MinecraftServer server,
         final ServerPlayerEntity player,
@@ -180,6 +200,22 @@ public final class ServerNetworking {
         }
     }
 
+    private void handleMapRegionSyncSubscribe(
+        final MinecraftServer server,
+        final ServerPlayerEntity player,
+        final MapRegionSyncSubscribeC2S request
+    ) {
+        if (!companion.config().shareCorrections) {
+            send(player, new ErrorS2C(ErrorS2C.ERR_COMPANION_DISABLED, "map corrections are disabled"));
+            return;
+        }
+        if (!companion.summaries().subscribeRegions(
+            server, player.getUuid(), request, message -> send(player, message)
+        )) {
+            send(player, new ErrorS2C(ErrorS2C.ERR_MALFORMED_REQUEST, "invalid region-sync viewport"));
+        }
+    }
+
     private HelloPolicyS2C buildPolicy(final MinecraftServer server) {
         final ServerConfig cfg = companion.config();
         final HelloPolicyS2C.Flags flags = policyFlags(cfg);
@@ -202,6 +238,7 @@ public final class ServerNetworking {
             false,
             cfg.enabled && cfg.shareChunkLoadState,
             cfg.enabled && !cfg.allowEntityRadar,
+            cfg.enabled && cfg.shareCorrections,
             cfg.enabled && cfg.shareCorrections
         );
     }

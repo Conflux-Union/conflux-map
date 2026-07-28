@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.predict;
 
 import cn.net.rms.confluxmap.core.net.PatchCodec;
+import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import org.junit.jupiter.api.Test;
 
@@ -10,6 +11,37 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CorrectionTileTest {
+    @Test
+    void croppedLodFourRegionPatchReplacesOnlyCoveredChunks() {
+        final CorrectionTile tile = new CorrectionTile(4);
+        final PatchCodec.Sample retained = new PatchCodec.Sample(9 * 256 + 252, 1, 70, 1, 1, 0);
+        tile.applyPatch(
+            1L,
+            new byte[Proto.PATCH_PRESENCE_BYTES],
+            new PatchCodec.Patch(java.util.List.of(retained)),
+            1_000L
+        );
+        final byte[] generated = new byte[ChunkPatchCodec.maskBytes(6)];
+        final byte[] evaluated = new byte[ChunkPatchCodec.maskBytes(6)];
+        for (int i = 0; i < 6; i++) {
+            ChunkPatchCodec.setBit(generated, i);
+            ChunkPatchCodec.setBit(evaluated, i);
+        }
+        final ChunkPatchCodec.Patch page = new ChunkPatchCodec.Patch(
+            3, 2, 1, generated, evaluated, java.util.List.of(
+                new PatchCodec.Sample(0, 2, 90, 2, 11, 0),
+                new PatchCodec.Sample(5, 3, 95, 2, 12, 0)
+            )
+        );
+
+        tile.applyRegionSlice(253, 10, page, 2_000L);
+
+        assertEquals(retained, tile.sampleAt(9 * 256 + 252));
+        assertEquals(90, tile.sampleAt(10 * 256 + 253).surfaceY());
+        assertEquals(95, tile.sampleAt(11 * 256 + 255).surfaceY());
+        assertTrue(tile.regionSliceFreshAt(253, 10, 3, 2, 2_500L, 1_000L));
+        assertFalse(tile.regionSliceFreshAt(252, 10, 4, 2, 2_500L, 1_000L));
+    }
     @Test
     void generatedOnlyVisibilityUsesExactEvaluatedPixelsInsteadOfCoarsePresence() {
         final byte[] presence = new byte[Proto.PATCH_PRESENCE_BYTES];

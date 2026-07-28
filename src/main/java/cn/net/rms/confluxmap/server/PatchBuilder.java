@@ -22,10 +22,38 @@ public final class PatchBuilder {
         BaselineGrid baseline,
         DerivedGrid derived,
         int mapColorId,
-        boolean absolute
+        boolean absolute,
+        MapPixel uniformPixel
     ) {
+        public PreparedBaseline(
+            final BaselineGrid baseline,
+            final DerivedGrid derived,
+            final int mapColorId,
+            final boolean absolute
+        ) {
+            this(baseline, derived, mapColorId, absolute, null);
+        }
+
         public static PreparedBaseline absoluteOnly() {
-            return new PreparedBaseline(null, null, Proto.MAP_COLOR_NONE, true);
+            return new PreparedBaseline(null, null, Proto.MAP_COLOR_NONE, true, null);
+        }
+
+        public static PreparedBaseline uniform(
+            final FlatBaseline flat, final boolean absolute
+        ) {
+            if (flat == null) {
+                throw new IllegalArgumentException("flat baseline is null");
+            }
+            return new PreparedBaseline(
+                null,
+                null,
+                flat.mapColorId(),
+                absolute,
+                new MapPixel(
+                    flat.biomeId(), flat.surfaceY(), flat.kind(), flat.mapColorId(),
+                    flat.fluidDepth(), MapPixel.MAP_COLOR_NONE
+                )
+            );
         }
     }
 
@@ -42,7 +70,10 @@ public final class PatchBuilder {
         if (!supported(summary) || baseline == null) {
             return unavailable();
         }
-        return buildWithDerived(summary, sinceRevision, baseline, BaselineDeriver.derive(baseline), Proto.MAP_COLOR_NONE, absolute);
+        return buildWithDerived(
+            summary, sinceRevision, baseline, BaselineDeriver.derive(baseline),
+            Proto.MAP_COLOR_NONE, null, absolute
+        );
     }
 
     /**
@@ -70,6 +101,7 @@ public final class PatchBuilder {
         final BaselineGrid baseline,
         final DerivedGrid derived,
         final int baselineMapColorId,
+        final MapPixel uniformPixel,
         final boolean absolute
     ) {
         final byte[] evaluated = new byte[PatchCodec.MASK_BYTES];
@@ -86,15 +118,20 @@ public final class PatchBuilder {
                 }
                 final int pixel = z * SummaryTile.PIXELS + x;
                 PatchCodec.setEvaluated(evaluated, pixel);
-                final int baseIndex = BaselineGrid.index(x, z);
-                final MapPixel expected = new MapPixel(
-                    baseline.biomeId[baseIndex],
-                    derived.surfaceY[baseIndex],
-                    derived.kind[baseIndex] & 255,
-                    baselineMapColorId,
-                    derived.fluidDepth[baseIndex],
-                    MapPixel.MAP_COLOR_NONE
-                );
+                final MapPixel expected;
+                if (uniformPixel != null) {
+                    expected = uniformPixel;
+                } else {
+                    final int baseIndex = BaselineGrid.index(x, z);
+                    expected = new MapPixel(
+                        baseline.biomeId[baseIndex],
+                        derived.surfaceY[baseIndex],
+                        derived.kind[baseIndex] & 255,
+                        baselineMapColorId,
+                        derived.fluidDepth[baseIndex],
+                        MapPixel.MAP_COLOR_NONE
+                    );
+                }
                 if (absolute || !expected.equals(column.pixel())) {
                     records.add(toSample(x, z, column));
                 }
@@ -148,6 +185,49 @@ public final class PatchBuilder {
         return new PreparedBaseline(baseline, derived, Proto.MAP_COLOR_NONE, absolute);
     }
 
+    /** Prepares only the coarse output pixels owned by one cropped region page. */
+    public PreparedBaseline prepareFromSamplerWindow(
+        final SummaryView summary,
+        final BaselineSampler sampler,
+        final boolean end,
+        final long seed,
+        final boolean absolute,
+        final int minPixelX,
+        final int minPixelZ,
+        final int maxPixelX,
+        final int maxPixelZ
+    ) {
+        if (!supported(summary) || sampler == null) {
+            return null;
+        }
+        if (end || summary.lod() < 2) {
+            // End interpolation and the close-view exact residual lattice cross window bounds.
+            // Absolute pages retain quality without recreating a tile-wide baseline here.
+            return PreparedBaseline.absoluteOnly();
+        }
+        final long originX = summary.originBlockX();
+        final long originZ = summary.originBlockZ();
+        if (originX < Integer.MIN_VALUE || originX > Integer.MAX_VALUE
+            || originZ < Integer.MIN_VALUE || originZ > Integer.MAX_VALUE) {
+            return null;
+        }
+        final BaselineGrid baseline = LodSampling.sampleOverworldWindow(
+            sampler, summary.lod(), (int) originX, (int) originZ,
+            minPixelX, minPixelZ, maxPixelX, maxPixelZ
+        );
+        if (baseline == null) {
+            return null;
+        }
+        final DerivedGrid derived = BaselineDeriver.deriveWindow(
+            baseline, minPixelX, minPixelZ, maxPixelX, maxPixelZ
+        );
+        CanopyStylizer.applyWindow(
+            derived, baseline, seed, summary.lod(), (int) originX, (int) originZ,
+            minPixelX, minPixelZ, maxPixelX, maxPixelZ
+        );
+        return new PreparedBaseline(baseline, derived, Proto.MAP_COLOR_NONE, absolute);
+    }
+
     /**
      * Residual patch against a superflat dimension's uniform surface: the baseline the client
      * composes from the same {@link FlatBaseline} without cubiomes. The expected sample carries
@@ -171,9 +251,7 @@ public final class PatchBuilder {
         if (!supported(summary) || flat == null) {
             return null;
         }
-        return new PreparedBaseline(
-            flat.toBaselineGrid(), flat.toDerivedGrid(), flat.mapColorId(), absolute
-        );
+        return PreparedBaseline.uniform(flat, absolute);
     }
 
     public Result buildPrepared(
@@ -184,7 +262,8 @@ public final class PatchBuilder {
         if (!supported(summary) || prepared == null) {
             return unavailable();
         }
-        if (prepared.baseline() == null || prepared.derived() == null) {
+        if (prepared.uniformPixel() == null
+            && (prepared.baseline() == null || prepared.derived() == null)) {
             return buildAbsolute(summary, sinceRevision);
         }
         return buildWithDerived(
@@ -193,6 +272,7 @@ public final class PatchBuilder {
             prepared.baseline(),
             prepared.derived(),
             prepared.mapColorId(),
+            prepared.uniformPixel(),
             prepared.absolute()
         );
     }

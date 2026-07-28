@@ -22,6 +22,119 @@ import org.junit.jupiter.params.provider.ValueSource;
 class LodSamplingTest {
     private static final PositionBasedFakeSampler SAMPLER = new PositionBasedFakeSampler();
 
+    @ParameterizedTest
+    @ValueSource(ints = {2, 3, 4})
+    void coarseWindowMatchesTheFullTileAtEveryRequestedPixel(final int lod) {
+        final int minX = 113;
+        final int minZ = 47;
+        final int maxX = 119;
+        final int maxZ = 53;
+        final int originX = -16_384;
+        final int originZ = 8_192;
+        final long seed = 91L;
+        final BaselineGrid full = LodSampling.sample(
+            SAMPLER, false, lod, originX, originZ
+        );
+        final BaselineGrid window = LodSampling.sampleOverworldWindow(
+            SAMPLER, lod, originX, originZ, minX, minZ, maxX, maxZ
+        );
+        assertNotNull(full);
+        assertNotNull(window);
+        final DerivedGrid fullDerived = BaselineDeriver.derive(full);
+        CanopyStylizer.apply(fullDerived, full, seed, lod, originX, originZ);
+        final DerivedGrid windowDerived = BaselineDeriver.deriveWindow(
+            window, minX, minZ, maxX, maxZ
+        );
+        CanopyStylizer.applyWindow(
+            windowDerived, window, seed, lod, originX, originZ,
+            minX, minZ, maxX, maxZ
+        );
+
+        for (int z = minZ; z <= maxZ; z++) {
+            for (int x = minX; x <= maxX; x++) {
+                final int pixel = BaselineGrid.index(x, z);
+                assertEquals(full.terrainY[pixel], window.terrainY[pixel]);
+                assertEquals(full.biomeId[pixel], window.biomeId[pixel]);
+                assertEquals(full.baseSurfaceY[pixel], window.baseSurfaceY[pixel]);
+                assertEquals(full.surfaceFlags[pixel], window.surfaceFlags[pixel]);
+                assertEquals(fullDerived.surfaceY[pixel], windowDerived.surfaceY[pixel]);
+                assertEquals(fullDerived.kind[pixel], windowDerived.kind[pixel]);
+                assertEquals(fullDerived.fluidDepth[pixel], windowDerived.fluidDepth[pixel]);
+                if (full.supersampled()) {
+                    for (int subZ = 0; subZ < full.subPerAxis; subZ++) {
+                        for (int subX = 0; subX < full.subPerAxis; subX++) {
+                            final int sub = full.subIndex(pixel, subX, subZ);
+                            assertEquals(full.subBiomeId[sub], window.subBiomeId[sub]);
+                            assertEquals(fullDerived.subSurfaceY[sub], windowDerived.subSurfaceY[sub]);
+                            assertEquals(fullDerived.subKind[sub], windowDerived.subKind[sub]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @org.junit.jupiter.api.Test
+    void lodFourOnePixelWindowDoesNotSampleTheRestOfTheTile() {
+        final int[] overviewCells = {0};
+        final int[] surfaceBiomeCells = {0};
+        final BaselineSampler countingSampler = new BaselineSampler() {
+            @Override
+            public boolean biomes(
+                final int scale, final int x, final int z, final int w, final int h,
+                final int[] out
+            ) {
+                java.util.Arrays.fill(out, RiverStripeFakeSampler.PLAINS);
+                return true;
+            }
+
+            @Override
+            public boolean heights(
+                final int x4, final int z4, final int w, final int h, final int[] outY
+            ) {
+                return false;
+            }
+
+            @Override
+            public boolean overviewHeights(
+                final int blockX, final int blockZ, final int w, final int h, final int stride,
+                final int[] outTerrainY
+            ) {
+                overviewCells[0] += w * h;
+                java.util.Arrays.fill(outTerrainY, 70);
+                return true;
+            }
+
+            @Override
+            public boolean surfaceBiomes(
+                final int blockX, final int blockZ, final int w, final int h, final int stride,
+                final int[] terrainY, final int[] outBiomeIds
+            ) {
+                surfaceBiomeCells[0] += w * h;
+                java.util.Arrays.fill(outBiomeIds, RiverStripeFakeSampler.PLAINS);
+                return true;
+            }
+
+            @Override
+            public boolean endHeights(
+                final int x4, final int z4, final int w, final int h, final int[] outY
+            ) {
+                return false;
+            }
+        };
+
+        final BaselineGrid grid = LodSampling.sampleOverworldWindow(
+            countingSampler, 4, 0, 0, 37, 61, 37, 61
+        );
+
+        assertNotNull(grid);
+        assertEquals(1, overviewCells[0], "only the requested output pixel may run terrain prediction");
+        assertEquals(
+            5, surfaceBiomeCells[0],
+            "LOD4 samples one center biome plus the requested pixel's four sub-samples"
+        );
+    }
+
     @org.junit.jupiter.api.Test
     void reportedFullscreenZoomsPutTheMostExactWorkIntoTheClosestView() {
         final int screenWidth = 1920;

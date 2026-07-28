@@ -5,12 +5,14 @@ import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
+import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.tile.TileUpdate;
 import cn.net.rms.confluxmap.core.util.TileMath;
+import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
 import cn.net.rms.confluxmap.nativepredict.CubiomesContexts;
 import java.util.Collection;
 import java.util.HashMap;
@@ -124,6 +126,65 @@ public final class PredictionTileService {
         return applyCorrection(key, revision, presence, patch, System.currentTimeMillis());
     }
 
+    public boolean applyRegionCorrection(
+        final String dimension,
+        final int lod,
+        final ChunkRegionSlice slice,
+        final ChunkPatchCodec.Patch patch,
+        final long validatedAtMillis
+    ) {
+        final CorrectionStore store = correctionStore;
+        if (store == null || !store.applyRegionSlice(
+            dimension, lod, slice, patch, validatedAtMillis
+        )) {
+            return false;
+        }
+        markCorrectionDirty(regionKey(dimension, lod, slice));
+        return true;
+    }
+
+    public boolean validateRegionCorrection(
+        final String dimension,
+        final int lod,
+        final ChunkRegionSlice slice,
+        final long revision,
+        final long validatedAtMillis
+    ) {
+        final CorrectionStore store = correctionStore;
+        if (store == null || !store.validateRegionSlice(
+            dimension, lod, slice, revision, validatedAtMillis
+        )) {
+            return false;
+        }
+        markCorrectionDirty(regionKey(dimension, lod, slice));
+        return true;
+    }
+
+    public boolean invalidateRegionCorrection(
+        final String dimension, final int lod, final ChunkRegionSlice slice
+    ) {
+        final CorrectionStore store = correctionStore;
+        if (store == null || !store.invalidateRegionSlice(dimension, lod, slice)) {
+            return false;
+        }
+        final CorrectionStore.Key key = regionKey(dimension, lod, slice);
+        final SessionGuard.Session session = sessionGuard.current();
+        final DimensionId patchDimension = DimensionId.parse(dimension);
+        final String realLayer = PredictionDimensions.isEnd(patchDimension)
+            ? MapLayer.END_SURFACE.cacheId() : MapLayer.SURFACE.cacheId();
+        final TileKey tile = new TileKey(
+            session.world(), session.dimension(), realLayer + PredictedTileKeys.SUFFIX,
+            key.lod(), key.tileX(), key.tileZ()
+        );
+        synchronized (this) {
+            lowerCoverageGeneration++;
+            missingLowerCoverage.clear();
+            mipCache.removeCoverage(tile);
+            metadataTiles.remove(tile);
+        }
+        return true;
+    }
+
     public boolean applyCorrection(
         final CorrectionStore.Key key,
         final long revision,
@@ -227,6 +288,18 @@ public final class PredictionTileService {
             invalidateCachedTileAndAncestors(tile);
         }
         markDirty(tile, session.token());
+    }
+
+    private static CorrectionStore.Key regionKey(
+        final String dimension, final int lod, final ChunkRegionSlice slice
+    ) {
+        final int chunksPerTile = 16 << lod;
+        return new CorrectionStore.Key(
+            dimension,
+            lod,
+            Math.floorDiv(slice.minChunkX(), chunksPerTile),
+            Math.floorDiv(slice.minChunkZ(), chunksPerTile)
+        );
     }
 
     /** Main thread, from the session tracker: forget every queued/in-flight predicted tile, and invalidate cached native contexts. */

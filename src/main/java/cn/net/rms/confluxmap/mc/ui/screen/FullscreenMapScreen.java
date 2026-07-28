@@ -48,6 +48,7 @@ import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.update.UpdateCheckService;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.core.util.TileViewport;
+import cn.net.rms.confluxmap.core.util.ChunkViewport;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
@@ -1989,7 +1990,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         if (predictionActive) {
             predictionTiles.setViewport(session.dimension(), lod, firstTileX, lastTileX, firstTileZ, lastTileZ);
             ConfluxMapClient.get().mapSyncClient().reportViewport(
-                session.dimension(), lod, firstTileX, lastTileX, firstTileZ, lastTileZ
+                session.dimension(), lod, firstTileX, lastTileX, firstTileZ, lastTileZ,
+                ChunkViewport.covering(centerX, centerZ, width, height, scale)
             );
         } else {
             predictionTiles.clearViewport();

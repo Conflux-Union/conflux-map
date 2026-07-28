@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
+import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
 import cn.net.rms.confluxmap.nativepredict.NativeChunkNbtScanner;
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
@@ -76,6 +77,36 @@ final class AnvilMcaScanner {
         final int lod,
         final ChunkSummarizer summarizer
     ) {
+        return scan(path, mcaX, mcaZ, sourceMcaMtimeMs, lod, null, summarizer);
+    }
+
+    /** Parses only the requested crop while still reading the MCA location table once. */
+    SummaryCodec.SampledRegion scanRegion(
+        final Path path,
+        final int mcaX,
+        final int mcaZ,
+        final long sourceMcaMtimeMs,
+        final int lod,
+        final ChunkRegionSlice slice,
+        final ChunkSummarizer summarizer
+    ) {
+        if (slice == null || Math.floorDiv(slice.regionX(), 2) != mcaX
+            || Math.floorDiv(slice.regionZ(), 2) != mcaZ) {
+            throw new IllegalArgumentException("region slice does not belong to MCA");
+        }
+        final Scan scan = scan(path, mcaX, mcaZ, sourceMcaMtimeMs, lod, slice, summarizer);
+        return scan == null ? null : scan.region(slice.regionX(), slice.regionZ());
+    }
+
+    private Scan scan(
+        final Path path,
+        final int mcaX,
+        final int mcaZ,
+        final long sourceMcaMtimeMs,
+        final int lod,
+        final ChunkRegionSlice slice,
+        final ChunkSummarizer summarizer
+    ) {
         final int sampleStride = 1 << lod;
         final SummaryCodec.SampledChunk[][] chunks = new SummaryCodec.SampledChunk[4][SummaryCodec.CHUNKS];
         for (final SummaryCodec.SampledChunk[] region : chunks) {
@@ -94,6 +125,11 @@ final class AnvilMcaScanner {
                 if (location == 0) {
                     continue;
                 }
+                final int localX = mcaChunkIndex % CHUNKS_PER_SIDE;
+                final int localZ = mcaChunkIndex / CHUNKS_PER_SIDE;
+                if (slice != null && !contains(slice, mcaX, mcaZ, localX, localZ)) {
+                    continue;
+                }
                 final int sectorOffset = location >>> 8;
                 final int sectorCount = location & 0xFF;
                 final SummaryCodec.SampledChunk summary = scanChunk(
@@ -103,8 +139,6 @@ final class AnvilMcaScanner {
                 if (summary == null) {
                     continue;
                 }
-                final int localX = mcaChunkIndex % CHUNKS_PER_SIDE;
-                final int localZ = mcaChunkIndex / CHUNKS_PER_SIDE;
                 final int regionIndex = (localZ >>> 4) * SUMMARY_REGIONS_PER_SIDE + (localX >>> 4);
                 final int regionChunkIndex = (localZ & 15) * 16 + (localX & 15);
                 chunks[regionIndex][regionChunkIndex] = summary;
@@ -127,6 +161,24 @@ final class AnvilMcaScanner {
             }
         }
         return new Scan(mcaX, mcaZ, sourceMcaMtimeMs, regions);
+    }
+
+    private static boolean contains(
+        final ChunkRegionSlice slice,
+        final int mcaX,
+        final int mcaZ,
+        final int localMcaChunkX,
+        final int localMcaChunkZ
+    ) {
+        final int summaryRegionX = mcaX * 2 + (localMcaChunkX >>> 4);
+        final int summaryRegionZ = mcaZ * 2 + (localMcaChunkZ >>> 4);
+        final int localRegionChunkX = localMcaChunkX & 15;
+        final int localRegionChunkZ = localMcaChunkZ & 15;
+        return summaryRegionX == slice.regionX() && summaryRegionZ == slice.regionZ()
+            && localRegionChunkX >= slice.minLocalChunkX()
+            && localRegionChunkX <= slice.maxLocalChunkX()
+            && localRegionChunkZ >= slice.minLocalChunkZ()
+            && localRegionChunkZ <= slice.maxLocalChunkZ();
     }
 
     private SummaryCodec.SampledChunk scanChunk(

@@ -3,19 +3,31 @@ package cn.net.rms.confluxmap.core.predict;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class PredictionTileCodecTest {
     @Test
-    void olderCorrectionsAreRejectedWhenBaselineSemanticsChange() throws Exception {
+    void chunkMetadataRoundTripsInVersionSixteen() throws Exception {
+        final int chunks = (16 << 2) * (16 << 2);
+        final byte[] generated = new byte[(chunks + 7) / 8];
+        generated[0] = 1;
+        final long[] revisions = new long[chunks];
+        java.util.Arrays.fill(revisions, Long.MIN_VALUE);
+        revisions[0] = 91L;
+        final long[] validated = new long[chunks];
+        validated[0] = 1_700_000_123_456L;
         final PredictionTileCodec.FileData data = new PredictionTileCodec.FileData(
             2, -1, -1, 10L, 1_700_000_123_456L,
-            new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(List.of())
+            new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(List.of()),
+            generated, revisions, validated
         );
         final byte[] encoded = PredictionTileCodec.encode(data);
         final PredictionTileCodec.FileData decoded = PredictionTileCodec.decode(encoded);
@@ -26,8 +38,68 @@ class PredictionTileCodecTest {
         assertEquals(data.validatedAtMillis(), decoded.validatedAtMillis());
         assertArrayEquals(data.presence(), decoded.presence());
         assertEquals(0, decoded.patch().size());
-        encoded[4] = (byte) (PredictionTileCodec.FORMAT_VERSION - 1);
+        assertTrue(decoded.hasChunkMetadata());
+        assertArrayEquals(generated, decoded.generatedChunks());
+        assertArrayEquals(revisions, decoded.chunkRevisions());
+        assertArrayEquals(validated, decoded.chunkValidatedAtMillis());
+    }
+
+    @Test
+    void versionFifteenRemainsDrawableButHasNoTrustedChunkMetadata() throws Exception {
+        final byte[] encoded = encodeVersionFifteen(new PredictionTileCodec.FileData(
+            2, -1, -1, 10L, 1_700_000_123_456L,
+            new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(List.of())
+        ));
+
+        final PredictionTileCodec.FileData decoded = PredictionTileCodec.decode(encoded);
+
+        assertEquals(10L, decoded.revision());
+        assertEquals(1_700_000_123_456L, decoded.validatedAtMillis());
+        assertEquals(0, decoded.patch().size());
+        assertTrue(!decoded.hasChunkMetadata());
+    }
+
+    @Test
+    void unknownCorrectionVersionsAreRejected() throws Exception {
+        final PredictionTileCodec.FileData data = new PredictionTileCodec.FileData(
+            0, 0, 0, 0L, 0L,
+            new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(List.of())
+        );
+        final byte[] encoded = PredictionTileCodec.encode(data);
+        encoded[4] = (byte) (PredictionTileCodec.FORMAT_VERSION + 1);
 
         assertThrows(ProtoException.class, () -> PredictionTileCodec.decode(encoded));
+    }
+
+    @Test
+    void outOfRangeLodIsRejectedBeforeChunkMetadataAllocation() throws Exception {
+        final PredictionTileCodec.FileData data = new PredictionTileCodec.FileData(
+            0, 0, 0, 0L, 0L,
+            new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(List.of())
+        );
+        final byte[] encoded = PredictionTileCodec.encode(data);
+        encoded[5] = 7;
+
+        assertThrows(ProtoException.class, () -> PredictionTileCodec.decode(encoded));
+    }
+
+    private static byte[] encodeVersionFifteen(
+        final PredictionTileCodec.FileData data
+    ) throws Exception {
+        final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        final DataOutputStream out = new DataOutputStream(bytes);
+        out.write(PredictionTileCodec.MAGIC);
+        out.writeByte(15);
+        out.writeByte(data.lod());
+        out.writeInt(data.tileX());
+        out.writeInt(data.tileZ());
+        out.writeLong(data.revision());
+        out.writeLong(data.validatedAtMillis());
+        out.write(data.presence());
+        final byte[] body = PatchCodec.encode(data.patch());
+        out.writeInt(body.length);
+        out.write(body);
+        out.flush();
+        return bytes.toByteArray();
     }
 }

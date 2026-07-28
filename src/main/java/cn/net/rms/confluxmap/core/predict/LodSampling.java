@@ -116,6 +116,167 @@ public final class LodSampling {
         return grid;
     }
 
+    /**
+     * Samples only an inclusive output-pixel window of an Overworld tile at LOD2-4. These LODs
+     * use the per-pixel overview directly, so their target pixels have no dependency on a
+     * tile-wide exact-residual lattice. Unfilled cells remain private implementation detail and
+     * must not be read by the caller.
+     */
+    public static BaselineGrid sampleOverworldWindow(
+        final BaselineSampler sampler,
+        final int lod,
+        final int tileOriginX,
+        final int tileOriginZ,
+        final int minPixelX,
+        final int minPixelZ,
+        final int maxPixelX,
+        final int maxPixelZ
+    ) {
+        if (sampler == null || lod < 2 || lod > 4
+            || minPixelX < 0 || minPixelZ < 0
+            || maxPixelX >= PIXELS || maxPixelZ >= PIXELS
+            || minPixelX > maxPixelX || minPixelZ > maxPixelZ) {
+            throw new IllegalArgumentException("invalid coarse baseline window");
+        }
+        final BaselineGrid grid = new BaselineGrid(
+            lod, tileOriginX, tileOriginZ, BIOME_SUB_PER_AXIS[lod]
+        );
+        final int width = maxPixelX - minPixelX + 1;
+        final int height = maxPixelZ - minPixelZ + 1;
+        final int blocksPerPixel = 1 << lod;
+        final int blockX = tileOriginX + minPixelX * blocksPerPixel;
+        final int blockZ = tileOriginZ + minPixelZ * blocksPerPixel;
+        final int[] terrain = new int[width * height];
+        if (!sampler.overviewHeights(
+            blockX, blockZ, width, height, blocksPerPixel, terrain
+        )) {
+            return null;
+        }
+        final int[] biomes = new int[width * height];
+        if (!sampler.surfaceBiomes(
+            blockX, blockZ, width, height, blocksPerPixel, terrain, biomes
+        )) {
+            final int scale = BIOME_SCALE[lod];
+            final int stride = BIOME_STRIDE[lod];
+            final int nativeX = Math.floorDiv(tileOriginX, scale) + minPixelX * stride;
+            final int nativeZ = Math.floorDiv(tileOriginZ, scale) + minPixelZ * stride;
+            if (!sampler.biomesStrided(
+                scale, nativeX, nativeZ, width, height, stride, biomes
+            )) {
+                return null;
+            }
+        }
+        copyWindow(grid.terrainY, terrain, minPixelX, minPixelZ, width, height);
+        copyWindow(grid.biomeId, biomes, minPixelX, minPixelZ, width, height);
+        sampleSubBiomeWindow(
+            sampler, grid, blockX, blockZ,
+            minPixelX, minPixelZ, width, height, blocksPerPixel, terrain
+        );
+        resolveOverviewFluidWindow(grid, minPixelX, minPixelZ, maxPixelX, maxPixelZ);
+        return grid;
+    }
+
+    private static void sampleSubBiomeWindow(
+        final BaselineSampler sampler,
+        final BaselineGrid grid,
+        final int blockX,
+        final int blockZ,
+        final int minPixelX,
+        final int minPixelZ,
+        final int width,
+        final int height,
+        final int blocksPerPixel,
+        final int[] terrain
+    ) {
+        if (!grid.supersampled()) {
+            return;
+        }
+        final int sub = grid.subPerAxis;
+        final int subWidth = width * sub;
+        final int subHeight = height * sub;
+        final int[] heights = new int[subWidth * subHeight];
+        for (int z = 0; z < subHeight; z++) {
+            final int sourceRow = (z / sub) * width;
+            for (int x = 0; x < subWidth; x++) {
+                heights[z * subWidth + x] = terrain[sourceRow + x / sub];
+            }
+        }
+        final int[] biomes = new int[subWidth * subHeight];
+        final boolean sampled = sampler.surfaceBiomes(
+            blockX, blockZ, subWidth, subHeight, blocksPerPixel / sub, heights, biomes
+        );
+        for (int z = 0; z < subHeight; z++) {
+            for (int x = 0; x < subWidth; x++) {
+                final int pixelX = minPixelX + x / sub;
+                final int pixelZ = minPixelZ + z / sub;
+                final int pixel = BaselineGrid.index(pixelX, pixelZ);
+                grid.subBiomeId[grid.subIndex(pixel, x % sub, z % sub)] = sampled
+                    ? biomes[z * subWidth + x] : grid.biomeId[pixel];
+            }
+        }
+    }
+
+    private static void resolveOverviewFluidWindow(
+        final BaselineGrid grid,
+        final int minPixelX,
+        final int minPixelZ,
+        final int maxPixelX,
+        final int maxPixelZ
+    ) {
+        for (int pixelZ = minPixelZ; pixelZ <= maxPixelZ; pixelZ++) {
+            for (int pixelX = minPixelX; pixelX <= maxPixelX; pixelX++) {
+                final int index = BaselineGrid.index(pixelX, pixelZ);
+                final int solidY = grid.terrainY[index];
+                final boolean belowSeaLevel = solidY < BaselineDeriver.WATER_LEVEL;
+                final boolean fluid = solidY < PREDICTED_FLUID_CEILING
+                    || BiomeTable.get(grid.biomeId[index]).waterBiome();
+                if (belowSeaLevel && fluid) {
+                    grid.fluidY[index] = BaselineDeriver.WATER_LEVEL;
+                    grid.baseSurfaceY[index] = BaselineDeriver.WATER_LEVEL;
+                    grid.surfaceFlags[index] = BaselineGrid.SURFACE_FLUID;
+                } else {
+                    grid.fluidY[index] = BaselineGrid.NO_FLUID;
+                    grid.baseSurfaceY[index] = solidY;
+                    grid.surfaceFlags[index] = 0;
+                }
+                if (!grid.supersampled()) {
+                    continue;
+                }
+                for (int subZ = 0; subZ < grid.subPerAxis; subZ++) {
+                    for (int subX = 0; subX < grid.subPerAxis; subX++) {
+                        final int sub = grid.subIndex(index, subX, subZ);
+                        final boolean subFluid = solidY < PREDICTED_FLUID_CEILING
+                            || BiomeTable.get(grid.subBiomeId[sub]).waterBiome();
+                        if (belowSeaLevel && subFluid) {
+                            grid.subBaseSurfaceY[sub] = BaselineDeriver.WATER_LEVEL;
+                            grid.subSurfaceFlags[sub] = BaselineGrid.SURFACE_FLUID;
+                        } else {
+                            grid.subBaseSurfaceY[sub] = solidY;
+                            grid.subSurfaceFlags[sub] = 0;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static void copyWindow(
+        final int[] target,
+        final int[] source,
+        final int minPixelX,
+        final int minPixelZ,
+        final int width,
+        final int height
+    ) {
+        for (int z = 0; z < height; z++) {
+            System.arraycopy(
+                source, z * width,
+                target, BaselineGrid.index(minPixelX, minPixelZ + z),
+                width
+            );
+        }
+    }
+
     private static boolean sampleOverworld(
         final BaselineSampler sampler,
         final int lod,

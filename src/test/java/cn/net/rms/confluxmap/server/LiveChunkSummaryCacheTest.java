@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
+import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 
@@ -53,6 +54,30 @@ class LiveChunkSummaryCacheTest {
         cache.remove("minecraft:overworld", 35, -46);
         assertTrue(
             cache.regionEpoch("minecraft:overworld", 2, -3) > changed
+        );
+    }
+
+    @Test
+    void sampledPageOverlayDoesNotTouchLiveChunksOutsideItsCrop() {
+        final LiveChunkSummaryCache cache = new LiveChunkSummaryCache();
+        final SummaryCodec.SampledChunk diskChunk = SummaryCodec.sample(chunk(10L, 60), 16);
+        final SummaryCodec.SampledChunk[] diskChunks = new SummaryCodec.SampledChunk[SummaryCodec.CHUNKS];
+        Arrays.fill(diskChunks, diskChunk);
+        final SummaryCodec.SampledRegion disk = new SummaryCodec.SampledRegion(
+            2, -3, 123L, 16, diskChunks
+        );
+        cache.put("minecraft:overworld", 32, -48, chunk(20L, 90));
+        cache.put("minecraft:overworld", 47, -33, chunk(30L, 110));
+
+        final SummaryCodec.SampledRegion merged = cache.overlay(
+            "minecraft:overworld", disk,
+            new ChunkRegionSlice(2, -3, 0, 0, 0, 0)
+        );
+
+        assertEquals(90, merged.chunks()[0].column(0, 0).surfaceY());
+        assertEquals(
+            60, merged.chunks()[15 * 16 + 15].column(0, 0).surfaceY(),
+            "a one-chunk page must not sample or replace an adjacent live chunk"
         );
     }
 
