@@ -1,12 +1,13 @@
 package cn.net.rms.confluxmap.core.predict;
 
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
-import cn.net.rms.confluxmap.core.net.DiffSpec;
+import cn.net.rms.confluxmap.core.model.MapPixel;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.TileMath;
+import java.util.Arrays;
 
 /**
  * Turns a {@link DerivedGrid} (+ the {@link BaselineGrid} it was derived from, for biome ids)
@@ -78,6 +79,8 @@ public final class PredictedTileComposer {
         final int[] fluids = derived.fluidDepth.clone();
         final int[] biomes = grid.biomeId.clone();
         final int[] colors = new int[size * size];
+        final int[] floorColors = new int[size * size];
+        Arrays.fill(floorColors, MapPixel.MAP_COLOR_NONE);
         final boolean[] corrected = new boolean[size * size];
         if (corrections != null) {
             for (final PatchCodec.Sample sample : corrections.copyPatch().samples()) {
@@ -90,15 +93,12 @@ public final class PredictedTileComposer {
                     continue;
                 }
                 final int gridIndex = BaselineGrid.index(pixel & 255, pixel >>> 8);
-                final SurfaceKind predictedKind = SurfaceKind.byOrdinal(kinds[gridIndex]);
-                if (DiffSpec.keepsPredictedCanopy(predictedKind, correctedKind, sample.mapColorId())) {
-                    continue;
-                }
                 surface[gridIndex] = sample.surfaceY();
                 kinds[gridIndex] = (byte) sample.kind();
                 fluids[gridIndex] = sample.fluidDepth();
                 biomes[gridIndex] = sample.biomeId();
                 colors[pixel] = sample.mapColorId();
+                floorColors[pixel] = sample.floorMapColorId();
                 corrected[pixel] = true;
             }
         }
@@ -130,7 +130,7 @@ public final class PredictedTileComposer {
                 );
                 final int composed = corrected[outIdx] || !grid.supersampled()
                     ? baseColor(kind, biomes[idx], fluids[idx], palette,
-                        corrected[outIdx], colors[outIdx], baselineMapColorId)
+                        corrected[outIdx], colors[outIdx], floorColors[outIdx], baselineMapColorId)
                     : averagedSubColor(derived, grid, palette, idx, baselineMapColorId);
                 final int heightShaded = ShadingPipeline.applyShade(composed, heightShade);
                 out[outIdx] = ShadingPipeline.applyBrightnessMultiplier(heightShaded, reliefMultiplier);
@@ -147,6 +147,7 @@ public final class PredictedTileComposer {
         final PredictionPalette palette,
         final boolean corrected,
         final int correctedMapColorId,
+        final int correctedFloorMapColorId,
         final int baselineMapColorId
     ) {
         if (kind == SurfaceKind.WATER) {
@@ -157,7 +158,10 @@ public final class PredictedTileComposer {
                 ? BiomeTable.DEFAULT_WATER_TINT
                 : palette.waterTint(biomeId);
             final int water = Argb.multiply(palette.waterBase, waterTint);
-            return ShadingPipeline.compositeOver(water, seafloorColor(fluidDepth));
+            final int floor = corrected && paintsFromMapColor(correctedFloorMapColorId)
+                ? MapColorTable.argb(correctedFloorMapColorId)
+                : SEAFLOOR_BASE;
+            return ShadingPipeline.compositeOver(water, seafloorColor(fluidDepth, floor));
         }
         if (corrected && paintsFromMapColor(correctedMapColorId)) {
             return MapColorTable.argb(correctedMapColorId);
@@ -195,7 +199,7 @@ public final class PredictedTileComposer {
                 final int color = baseColor(
                     SurfaceKind.byOrdinal(derived.subKind[s]), grid.subBiomeId[s],
                     derived.subFluidDepth[s], palette, false, Proto.MAP_COLOR_NONE,
-                    baselineMapColorId
+                    MapPixel.MAP_COLOR_NONE, baselineMapColorId
                 );
                 a += Argb.alpha(color);
                 r += Argb.red(color);
@@ -297,9 +301,9 @@ public final class PredictedTileComposer {
     }
 
     /** Depth-darkened stand-in for a seafloor cubiomes never actually tells us about. */
-    private static int seafloorColor(final int fluidDepth) {
+    private static int seafloorColor(final int fluidDepth, final int floorColor) {
         final float brightness = Math.max(SEAFLOOR_MIN_BRIGHTNESS, 1f - fluidDepth / SEAFLOOR_DARKEN_RANGE_BLOCKS);
-        return Argb.scale(SEAFLOOR_BASE, brightness);
+        return Argb.scale(floorColor, brightness);
     }
 
     /** Height at one slope sample, with void/unknown boundaries treated as unavailable. */

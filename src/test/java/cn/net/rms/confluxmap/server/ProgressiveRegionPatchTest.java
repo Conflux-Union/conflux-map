@@ -6,10 +6,15 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.net.Proto;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraft.Bootstrap;
 import net.minecraft.SharedConstants;
+import net.minecraft.nbt.NbtCompound;
+import net.minecraft.nbt.NbtList;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -49,7 +54,7 @@ class ProgressiveRegionPatchTest {
             1L,
             (summary, sinceRevision, baseline) -> {
                 encodeAttempts.incrementAndGet();
-                throw new IllegalArgumentException("patch body exceeds compressed cap");
+                throw new IllegalArgumentException("patch body exceeds raw cap");
             }
         );
 
@@ -65,6 +70,98 @@ class ProgressiveRegionPatchTest {
 
         assertEquals(Proto.PATCH_MODE_UNAVAILABLE, response.mode());
         assertEquals(1, encodeAttempts.get(), "a terminal encode failure must not be retried per request");
+    }
+
+    @Test
+    void lodFourColdScanSummarizesOnlyTheVisibleColumn(
+        @TempDir final Path tempDir
+    ) {
+        assertEquals(
+            1,
+            classifiedColumnsAfterOneColdChunk(tempDir, 4),
+            "LOD 4 publishes one column per chunk and must not summarize the other 255"
+        );
+    }
+
+    @Test
+    void lodThreeColdScanSummarizesOnlyTheFourVisibleColumns(
+        @TempDir final Path tempDir
+    ) {
+        assertEquals(
+            4,
+            classifiedColumnsAfterOneColdChunk(tempDir, 3),
+            "LOD 3 publishes four columns per chunk and must not summarize the other 252"
+        );
+    }
+
+    @Test
+    void currentPartialCacheSuppliesSampledChunksBeforeNbtFallback(
+        @TempDir final Path tempDir
+    ) throws IOException {
+        final Path regionFile = tempDir.resolve("region").resolve("r.0.0.mca");
+        Files.createDirectories(regionFile.getParent());
+        Files.write(regionFile, new byte[] {0});
+        final long sourceMtime = Files.getLastModifiedTime(regionFile).toMillis();
+        final ChunkSummarizer summarizer = new ChunkSummarizer();
+        final SummaryDiskCache disk = new SummaryDiskCache(tempDir);
+        disk.saveLiveChunk(
+            "minecraft:overworld",
+            0,
+            0,
+            sourceMtime,
+            summarizer.summarize(generatedStoneChunk())
+        );
+        final AtomicInteger nbtReads = new AtomicInteger();
+        final ProgressiveRegionPatch patch = new ProgressiveRegionPatch(
+            "minecraft:overworld",
+            tempDir,
+            disk,
+            new LiveChunkSummaryTracker(new ServerConfig(), summarizer, (dimension, x, z) -> { }),
+            summarizer,
+            new PatchBuilder(),
+            Runnable::run,
+            4,
+            0,
+            0,
+            ignored -> PatchBuilder.PreparedBaseline.absoluteOnly(),
+            ignored -> {
+                nbtReads.incrementAndGet();
+                return generatedStoneChunk();
+            },
+            1L
+        );
+
+        patch.tick(2, Long.MAX_VALUE, () -> 0L);
+
+        assertEquals(1, nbtReads.get(), "only the missing cached chunk should read NBT");
+    }
+
+    @Test
+    void missingRegionSkipsColdNbtReads(@TempDir final Path tempDir) {
+        final AtomicInteger nbtReads = new AtomicInteger();
+        final ChunkSummarizer summarizer = new ChunkSummarizer();
+        final ProgressiveRegionPatch patch = new ProgressiveRegionPatch(
+            "minecraft:overworld",
+            tempDir,
+            new SummaryDiskCache(tempDir),
+            new LiveChunkSummaryTracker(new ServerConfig(), summarizer, (dimension, x, z) -> { }),
+            summarizer,
+            new PatchBuilder(),
+            Runnable::run,
+            3,
+            0,
+            0,
+            ignored -> PatchBuilder.PreparedBaseline.absoluteOnly(),
+            ignored -> {
+                nbtReads.incrementAndGet();
+                return generatedStoneChunk();
+            },
+            1L
+        );
+
+        patch.tick(1, Long.MAX_VALUE, () -> 0L);
+
+        assertEquals(0, nbtReads.get(), "a missing region file cannot contain a cold chunk");
     }
 
     @Test
@@ -102,5 +199,70 @@ class ProgressiveRegionPatchTest {
         assertTrue(patch.invalidateRegion(2, -3));
         assertFalse(patch.complete());
         assertTrue(patch.response(0L, 3L).mode() == Proto.PATCH_MODE_PARTIAL);
+    }
+
+    private static int classifiedColumnsAfterOneColdChunk(final Path tempDir, final int lod) {
+        final Path regionFile = tempDir.resolve("region").resolve("r.0.0.mca");
+        try {
+            Files.createDirectories(regionFile.getParent());
+            Files.write(regionFile, new byte[] {0});
+        } catch (final IOException e) {
+            throw new AssertionError("could not create cold-scan region fixture", e);
+        }
+        final AtomicInteger classifiedColumns = new AtomicInteger();
+        final ChunkSummarizer summarizer = new ChunkSummarizer(name -> {
+            classifiedColumns.incrementAndGet();
+            return 11;
+        });
+        final ProgressiveRegionPatch patch = new ProgressiveRegionPatch(
+            "minecraft:overworld",
+            tempDir,
+            new SummaryDiskCache(tempDir),
+            new LiveChunkSummaryTracker(new ServerConfig(), summarizer, (dimension, x, z) -> { }),
+            summarizer,
+            new PatchBuilder(),
+            Runnable::run,
+            lod,
+            0,
+            0,
+            ignored -> PatchBuilder.PreparedBaseline.absoluteOnly(),
+            ignored -> generatedStoneChunk(),
+            1L
+        );
+
+        patch.tick(1, Long.MAX_VALUE, () -> 0L);
+        return classifiedColumns.get();
+    }
+
+    private static NbtCompound generatedStoneChunk() {
+        final NbtCompound level = new NbtCompound();
+        level.putString("Status", "full");
+        level.putLong("LastUpdate", 1L);
+
+        final long[] heights = new long[(256 + 6) / 7];
+        long packedOnes = 0L;
+        for (int i = 0; i < 7; i++) {
+            packedOnes |= 1L << (i * 9);
+        }
+        Arrays.fill(heights, packedOnes);
+        final NbtCompound heightmaps = new NbtCompound();
+        heightmaps.putLongArray("MOTION_BLOCKING", heights);
+        level.put("Heightmaps", heightmaps);
+        level.putIntArray("Biomes", new int[1_024]);
+
+        final NbtCompound stone = new NbtCompound();
+        stone.putString("Name", "minecraft:stone");
+        final NbtList palette = new NbtList();
+        palette.add(stone);
+        final NbtCompound section = new NbtCompound();
+        section.putByte("Y", (byte) 0);
+        section.put("Palette", palette);
+        final NbtList sections = new NbtList();
+        sections.add(section);
+        level.put("Sections", sections);
+
+        final NbtCompound root = new NbtCompound();
+        root.put("Level", level);
+        return root;
     }
 }

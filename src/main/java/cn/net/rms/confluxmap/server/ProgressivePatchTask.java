@@ -7,7 +7,7 @@ import java.util.function.LongSupplier;
 final class ProgressivePatchTask {
     @FunctionalInterface
     interface ChunkSource {
-        SummaryCodec.Chunk load(int chunkX, int chunkZ);
+        SummaryCodec.SampledChunk load(int chunkX, int chunkZ);
     }
 
     private final int lod;
@@ -45,8 +45,12 @@ final class ProgressivePatchTask {
             final int regionZ = tileZ * regionsPerSide + regionIndex / regionsPerSide;
             final int chunkX = regionX * 16 + chunkIndex % 16;
             final int chunkZ = regionZ * 16 + chunkIndex / 16;
-            final SummaryCodec.Chunk chunk = source.load(chunkX, chunkZ);
-            grid.acceptChunk(chunkX, chunkZ, chunk == null ? SummaryCodec.Chunk.empty() : chunk);
+            final SummaryCodec.SampledChunk chunk = source.load(chunkX, chunkZ);
+            grid.acceptChunk(
+                chunkX,
+                chunkZ,
+                chunk == null ? SummaryCodec.SampledChunk.empty(1 << lod) : chunk
+            );
             processedChunks++;
             advanced++;
             if (nanoClock.getAsLong() - started >= maxNanos) {

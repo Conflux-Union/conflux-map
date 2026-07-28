@@ -23,15 +23,17 @@ public final class Proto {
 
     /**
      * Protocol version this build speaks. Mismatched minors are tolerated; majors are not.
-     * Major 2 switched the MAP_PATCH body to field-plane layout with delta-coded heights.
+     * Major 3 makes every final MAP_PATCH an exact authoritative snapshot. Its raw body carries
+     * evaluated and difference masks plus homogeneous value planes; Minecraft compresses the
+     * framed packet. Major 2 used tolerant incremental residuals and a compressed body.
      * Minor 1 added the per-dim generator preset in spare bits of HELLO_POLICY's dim flag byte.
      * Minor 2 added FLAT_BASELINE (0x07); pre-minor-2 clients log and ignore it.
      * Minor 3 added server-authoritative chunk load-state subscriptions (0x08/0x09).
      * Minor 4 added the server entity-radar policy and progressive coarse correction patches.
      * Minor 5 added event-driven correction invalidation subscriptions (0x0A/0x0B).
      */
-    public static final int PROTO_MAJOR = 2;
-    public static final int PROTO_MINOR = 5;
+    public static final int PROTO_MAJOR = 3;
+    public static final int PROTO_MINOR = 0;
 
     // ---- Message type ids (first byte of every framed payload) ----
 
@@ -106,19 +108,17 @@ public final class Proto {
     public static final int PATCH_PRESENCE_BYTES = 32;
 
     /**
-     * {@code mode} field in MAP_PATCH: no column data follows, so the receiver keeps the samples
-     * it already has and takes only the presence bitmap. Sent both when the server's baseline
-     * matches the client's prediction exactly, and for tiles coarser than the server's correction
-     * ceiling, where presence is the only thing cheap enough to compute.
+     * {@code mode} field in MAP_PATCH: validates a retained snapshot without replacing its samples.
+     * The body is empty and the client accepts the response only when its committed revision matches.
      */
     public static final int PATCH_MODE_UNCHANGED = 0;
-    /** {@code mode} field in MAP_PATCH: server sends differing pixels and removals (residual coding). */
+    /** {@code mode} field in MAP_PATCH: complete snapshot of pixels differing from the shared baseline. */
     public static final int PATCH_MODE_RESIDUAL = 1;
     /** {@code mode} field in MAP_PATCH: server sends every pixel (baseline mismatch or cold cache). */
     public static final int PATCH_MODE_ABSOLUTE = 2;
     /** {@code mode} field in MAP_PATCH: server has no data for this tile (prediction only). */
     public static final int PATCH_MODE_UNAVAILABLE = 3;
-    /** Sparse correction progress with revision 0; the client retries until a final patch arrives. */
+    /** Pending revision-0 snapshot progress; it stays non-drawable until a final patch arrives. */
     public static final int PATCH_MODE_PARTIAL = 4;
 
     /** Budget defaults advertised in HELLO_POLICY when the server config is at its defaults. */

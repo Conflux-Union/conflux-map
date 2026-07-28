@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.compat.Regs;
+import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.predict.CubiomesBiomeIds;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
@@ -8,6 +9,7 @@ import java.util.Map;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.tag.FluidTags;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.Heightmap;
@@ -52,12 +54,18 @@ final class WorldChunkColumnSource implements ChunkColumnSource {
 
     @Override
     public int motionBlockingHeight(final int x, final int z) {
-        return chunk.sampleHeightmap(Heightmap.Type.MOTION_BLOCKING, x, z);
+        return toExclusiveHeight(chunk.sampleHeightmap(Heightmap.Type.MOTION_BLOCKING, x, z));
     }
 
     @Override
     public int oceanFloorHeight(final int x, final int z) {
-        return chunk.sampleHeightmap(Heightmap.Type.OCEAN_FLOOR, x, z);
+        return toExclusiveHeight(chunk.sampleHeightmap(Heightmap.Type.OCEAN_FLOOR, x, z));
+    }
+
+    static int toExclusiveHeight(final int topBlockY) {
+        // WorldChunk.sampleHeightmap returns the top block's Y, while ChunkColumnSource exposes
+        // vanilla's stored heightmap value: the first Y above that block.
+        return topBlockY + 1;
     }
 
     @Override
@@ -68,6 +76,27 @@ final class WorldChunkColumnSource implements ChunkColumnSource {
             final Identifier id = Regs.blockId(block);
             return id == null ? "minecraft:air" : id.toString();
         });
+    }
+
+    @Override
+    public SurfaceKind fluidKindAt(final int x, final int y, final int z) {
+        pos.set(startX + x, y, startZ + z);
+        final net.minecraft.fluid.FluidState fluid = chunk.getBlockState(pos).getFluidState();
+        //#if MC>=260100
+        //$$ if (fluid.is(FluidTags.WATER)) {
+        //#else
+        if (fluid.isIn(FluidTags.WATER)) {
+        //#endif
+            return SurfaceKind.WATER;
+        }
+        //#if MC>=260100
+        //$$ if (fluid.is(FluidTags.LAVA)) {
+        //#else
+        if (fluid.isIn(FluidTags.LAVA)) {
+        //#endif
+            return SurfaceKind.LAVA;
+        }
+        return SurfaceKind.UNKNOWN;
     }
 
     @Override

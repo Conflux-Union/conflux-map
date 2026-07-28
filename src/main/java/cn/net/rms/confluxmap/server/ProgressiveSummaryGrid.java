@@ -39,6 +39,14 @@ final class ProgressiveSummaryGrid implements SummaryView {
     }
 
     void acceptChunk(final int chunkX, final int chunkZ, final SummaryCodec.Chunk chunk) {
+        acceptChunk(chunkX, chunkZ, SummaryCodec.sample(chunk, scale));
+    }
+
+    void acceptChunk(
+        final int chunkX,
+        final int chunkZ,
+        final SummaryCodec.SampledChunk chunk
+    ) {
         final int localChunkX = chunkX - originChunkX;
         final int localChunkZ = chunkZ - originChunkZ;
         final int chunksPerSide = 16 << lod;
@@ -46,21 +54,20 @@ final class ProgressiveSummaryGrid implements SummaryView {
             || localChunkZ < 0 || localChunkZ >= chunksPerSide || chunk == null) {
             return;
         }
+        if (chunk.sampleStride() != scale || chunk.samplesPerSide() != samplesPerChunk) {
+            throw new IllegalArgumentException("sampled chunk does not match summary LOD " + lod);
+        }
         final int basePixelX = localChunkX * samplesPerChunk;
         final int basePixelZ = localChunkZ * samplesPerChunk;
         for (int sampleZ = 0; sampleZ < samplesPerChunk; sampleZ++) {
-            final int localBlockZ = sampleZ * scale + (scale >>> 1);
             for (int sampleX = 0; sampleX < samplesPerChunk; sampleX++) {
-                final int localBlockX = sampleX * scale + (scale >>> 1);
                 final int pixelX = basePixelX + sampleX;
                 final int pixelZ = basePixelZ + sampleZ;
                 final int pixel = pixelZ * PIXELS + pixelX;
                 known[pixel] = true;
                 generated[pixel] = chunk.generated();
                 pixelRevisions[pixel] = chunk.revision();
-                columns[pixel] = chunk.generated()
-                    ? chunk.columns()[localBlockZ * 16 + localBlockX]
-                    : null;
+                columns[pixel] = chunk.generated() ? chunk.column(sampleX, sampleZ) : null;
                 if (chunk.generated()) {
                     final int cell = (pixelZ >>> 4) * 16 + (pixelX >>> 4);
                     presence[cell >>> 3] |= (byte) (1 << (cell & 7));

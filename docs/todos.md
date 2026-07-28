@@ -222,12 +222,15 @@ change, and preserve bounded server work. Test both a large contiguous footprint
 and a footprint crossing coarse tile boundaries.
 
 LOD 3-4 use a shared progressive scan capped at 2,048 chunks and 4 ms per server
-tick. Baseline sampling and patch encoding run on a daemon worker, while clients
-apply replaceable revision-0 progress overlays until a final revision arrives.
-Completed tiles remain silent. A capability-negotiated viewport subscription
-lets the server push a bounded tile-invalidation batch only after a watched
-source region changes; the client then requests that tile once with its
-committed revision. Reusable `.cfs` summaries require the current `.mca` mtime,
+tick. The scan still visits every covered chunk, but NBT and `.cfs` sources retain
+only the four centered columns per chunk visible at LOD3 or the single centered
+column visible at LOD4 instead of materializing all 256. Baseline sampling and
+patch encoding run on a daemon worker. Replaceable revision-0 snapshots report
+progress without changing the drawable committed tile; only a final snapshot is
+applied atomically. Completed tiles remain silent. A capability-negotiated
+viewport subscription lets the server push a bounded tile-invalidation batch
+only after a watched source region changes; the client then requests that tile
+once with its committed revision. Reusable `.cfs` summaries require the current `.mca` mtime,
 live summaries take priority, and every coarse source mtime/live epoch is
 revalidated before a final result is reused. Regression coverage includes a
 contiguous 128x128-chunk LOD-4 build and a build crossing an LOD-4 tile boundary.

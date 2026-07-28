@@ -17,7 +17,8 @@ class PatchDispatcherTest {
 
     @Test
     void budgetExhaustionQueuesTheTailInsteadOfDroppingIt() throws ProtoException {
-        final int patchBytes = MsgCodec.encode(patch(job(0, 0), 1_200)).length;
+        final int bodyBytes = 200_000;
+        final int patchBytes = MsgCodec.encode(patch(job(0, 0), bodyBytes)).length;
         final PlayerBudget budget = new PlayerBudget(2 * patchBytes + 10, 0);
         final PatchDispatcher dispatcher = new PatchDispatcher(budget, 16);
         // The token bucket anchors its refill clock to System.nanoTime() at construction, so the
@@ -26,17 +27,40 @@ class PatchDispatcherTest {
         assertEquals(0, dispatcher.submit(List.of(job(0, 0), job(1, 0), job(2, 0))));
 
         final List<MapPatchS2C> sent = new ArrayList<>();
-        dispatcher.drain(t0, j -> patch(j, 1_200), collect(sent));
+        dispatcher.drain(t0, j -> patch(j, bodyBytes), collect(sent));
         assertEquals(2, sent.size(), "bucket holds exactly two patches");
         assertEquals(1, dispatcher.queued(), "third tile must stay queued, not be dropped");
 
-        dispatcher.drain(t0, j -> patch(j, 1_200), collect(sent));
+        dispatcher.drain(t0, j -> patch(j, bodyBytes), collect(sent));
         assertEquals(2, sent.size(), "no tokens yet, nothing more may be sent");
 
-        dispatcher.drain(t0 + 1_000_000_000L, j -> patch(j, 1_200), collect(sent));
+        dispatcher.drain(t0 + 1_000_000_000L, j -> patch(j, bodyBytes), collect(sent));
         assertEquals(3, sent.size(), "refilled bucket delivers the queued tail");
         assertEquals(0, dispatcher.queued());
         assertEquals(List.of(0, 1, 2), sent.stream().map(MapPatchS2C::tileX).toList(), "strict FIFO order");
+    }
+
+    @Test
+    void oneLegalPatchLargerThanThePerSecondRateCanDrain() throws ProtoException {
+        final int bytesPerSecond = 65_536;
+        final int bodyBytes = 400_000;
+        final int wireBytes = MsgCodec.encode(patch(job(0, 0), bodyBytes)).length;
+        final PatchDispatcher dispatcher = new PatchDispatcher(new PlayerBudget(bytesPerSecond, 0), 16);
+        final long t0 = System.nanoTime();
+        dispatcher.submit(List.of(job(0, 0), job(1, 0)));
+
+        final List<MapPatchS2C> sent = new ArrayList<>();
+        dispatcher.drain(t0, j -> patch(j, bodyBytes), collect(sent));
+        assertEquals(1, sent.size(), "the initial burst must fit one legal atomic patch");
+        assertEquals(1, dispatcher.queued());
+
+        dispatcher.drain(t0 + 1_000_000_000L, j -> patch(j, bodyBytes), collect(sent));
+        assertEquals(1, sent.size(), "the configured sustained rate must still apply");
+
+        final long refillNanos = (long) Math.ceil((double) wireBytes / bytesPerSecond * 1_000_000_000d);
+        dispatcher.drain(t0 + refillNanos, j -> patch(j, bodyBytes), collect(sent));
+        assertEquals(2, sent.size(), "the queued patch must drain after its byte cost refills");
+        assertEquals(0, dispatcher.queued());
     }
 
     @Test

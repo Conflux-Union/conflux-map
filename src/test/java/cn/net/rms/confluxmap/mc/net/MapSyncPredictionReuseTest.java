@@ -104,7 +104,10 @@ class MapSyncPredictionReuseTest {
             client.reportViewport(DIM, 1, 0, 0, 0, 0);
             assertEquals(1, sent.size(), "expired lower-LOD validation must make the parent plannable again");
             assertEquals(1, sent.get(0).lod());
-            assertEquals(List.of(new MapViewReqC2S.TileReq(0, 0, 0L)), sent.get(0).tiles());
+            assertEquals(
+                List.of(new MapViewReqC2S.TileReq(0, 0, Long.MIN_VALUE)),
+                sent.get(0).tiles()
+            );
         } finally {
             executors.shutdown(2000);
         }

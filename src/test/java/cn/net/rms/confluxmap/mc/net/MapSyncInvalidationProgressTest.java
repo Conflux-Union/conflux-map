@@ -35,6 +35,74 @@ class MapSyncInvalidationProgressTest {
     @Test
     void viewportInvalidationDoesNotRestartVisibleBatch(@TempDir final Path tempDir) {
         final long[] nowMillis = {10_000L};
+        final Fixture fixture = fixture(tempDir, nowMillis);
+
+        try {
+            fixture.client.reportViewport(DIM, 0, 0, 3, 0, 2);
+            nowMillis[0] += 400L;
+            fixture.client.reportViewport(DIM, 0, 0, 3, 0, 2);
+
+            final MapViewReqC2S firstRequest = requests(fixture.sent).get(0);
+            assertProgress(fixture.client, 0, 12);
+
+            final MapViewReqC2S.TileReq firstTile = firstRequest.tiles().get(0);
+            fixture.client.onPatch(new MapPatchS2C(
+                firstRequest.reqId(), 0, 0, firstTile.tileX(), firstTile.tileZ(),
+                Proto.PATCH_MODE_UNAVAILABLE, 0L,
+                new byte[Proto.PATCH_PRESENCE_BYTES], new byte[0]
+            ), 40);
+            assertProgress(fixture.client, 1, 12);
+
+            fixture.client.onInvalidation(new MapInvalidateS2C(
+                0, 0, List.of(new MapInvalidateS2C.Tile(firstTile.tileX(), firstTile.tileZ()))
+            ));
+            nowMillis[0] += 400L;
+            fixture.client.reportViewport(DIM, 0, 0, 3, 0, 2);
+
+            assertProgress(fixture.client, 1, 12);
+            final List<MapViewReqC2S> requests = requests(fixture.sent);
+            assertEquals(2, requests.size(), "the invalidated tile must trigger a refresh request");
+            assertTrue(
+                requests.get(1).tiles().stream().anyMatch(
+                    tile -> tile.tileX() == firstTile.tileX() && tile.tileZ() == firstTile.tileZ()
+                ),
+                "the refresh request must include the invalidated tile"
+            );
+        } finally {
+            fixture.executors.shutdown(2000);
+        }
+    }
+
+    @Test
+    void unavailableTileStaysSettledUntilInvalidated(@TempDir final Path tempDir) {
+        final long[] nowMillis = {10_000L};
+        final Fixture fixture = fixture(tempDir, nowMillis);
+        try {
+            fixture.client.reportViewport(DIM, 0, 0, 0, 0, 0);
+            nowMillis[0] += 400L;
+            fixture.client.reportViewport(DIM, 0, 0, 0, 0, 0);
+            final MapViewReqC2S request = requests(fixture.sent).get(0);
+            fixture.client.onPatch(new MapPatchS2C(
+                request.reqId(), 0, 0, 0, 0, Proto.PATCH_MODE_UNAVAILABLE, 0L,
+                new byte[Proto.PATCH_PRESENCE_BYTES], new byte[0]
+            ), 40);
+
+            nowMillis[0] += 700_000L;
+            fixture.client.reportViewport(DIM, 0, 0, 0, 0, 0);
+            assertEquals(1, requests(fixture.sent).size(), "an unavailable tile must not be polled");
+
+            fixture.client.onInvalidation(new MapInvalidateS2C(
+                0, 0, List.of(new MapInvalidateS2C.Tile(0, 0))
+            ));
+            nowMillis[0] += 400L;
+            fixture.client.reportViewport(DIM, 0, 0, 0, 0, 0);
+            assertEquals(2, requests(fixture.sent).size(), "invalidation must reopen the settled tile");
+        } finally {
+            fixture.executors.shutdown(2000);
+        }
+    }
+
+    private static Fixture fixture(final Path tempDir, final long[] nowMillis) {
         final SessionGuard sessions = new SessionGuard();
         sessions.begin(WORLD, DIM);
         final MapExecutors executors = new MapExecutors();
@@ -47,7 +115,6 @@ class MapSyncInvalidationProgressTest {
         final CorrectionStore corrections = new CorrectionStore(tempDir);
         corrections.onSessionChanged(sessions.current());
         predictions.bindCorrectionStore(corrections);
-
         final CompanionSession companion = new CompanionSession();
         companion.onPolicy(new HelloPolicyS2C(
             new HelloPolicyS2C.Flags(false, true, false, false, false, true),
@@ -70,41 +137,10 @@ class MapSyncInvalidationProgressTest {
             new ConfluxConfig(),
             () -> nowMillis[0]
         );
+        return new Fixture(executors, client, sent);
+    }
 
-        try {
-            client.reportViewport(DIM, 0, 0, 3, 0, 2);
-            nowMillis[0] += 400L;
-            client.reportViewport(DIM, 0, 0, 3, 0, 2);
-
-            final MapViewReqC2S firstRequest = requests(sent).get(0);
-            assertProgress(client, 0, 12);
-
-            final MapViewReqC2S.TileReq firstTile = firstRequest.tiles().get(0);
-            client.onPatch(new MapPatchS2C(
-                firstRequest.reqId(), 0, 0, firstTile.tileX(), firstTile.tileZ(),
-                Proto.PATCH_MODE_UNAVAILABLE, 0L,
-                new byte[Proto.PATCH_PRESENCE_BYTES], new byte[0]
-            ), 40);
-            assertProgress(client, 1, 12);
-
-            client.onInvalidation(new MapInvalidateS2C(
-                0, 0, List.of(new MapInvalidateS2C.Tile(firstTile.tileX(), firstTile.tileZ()))
-            ));
-            nowMillis[0] += 400L;
-            client.reportViewport(DIM, 0, 0, 3, 0, 2);
-
-            assertProgress(client, 1, 12);
-            final List<MapViewReqC2S> requests = requests(sent);
-            assertEquals(2, requests.size(), "the invalidated tile must trigger a refresh request");
-            assertTrue(
-                requests.get(1).tiles().stream().anyMatch(
-                    tile -> tile.tileX() == firstTile.tileX() && tile.tileZ() == firstTile.tileZ()
-                ),
-                "the refresh request must include the invalidated tile"
-            );
-        } finally {
-            executors.shutdown(2000);
-        }
+    private record Fixture(MapExecutors executors, MapSyncClient client, List<Message> sent) {
     }
 
     private static List<MapViewReqC2S> requests(final List<Message> messages) {

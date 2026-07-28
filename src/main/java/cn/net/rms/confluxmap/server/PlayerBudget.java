@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.server;
 
+import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.TokenBucket;
 
 /**
@@ -7,12 +8,18 @@ import cn.net.rms.confluxmap.core.net.TokenBucket;
  * {@link PatchDispatcher}; this class owns only request spacing and the byte token bucket.
  */
 public final class PlayerBudget {
+    /** Raw patch body plus the fixed MAP_PATCH envelope, before Minecraft packet compression. */
+    static final int MAX_PATCH_WIRE_BYTES = PatchCodec.MAX_RAW_BYTES + 64;
+
     private final TokenBucket bytes;
     private final long minIntervalNanos;
     private long lastRequestNanos = Long.MIN_VALUE;
 
     public PlayerBudget(final int bytesPerSecond, final int minRequestIntervalMs) {
-        this.bytes = new TokenBucket(Math.max(1, bytesPerSecond), Math.max(1, bytesPerSecond));
+        final int refillRate = Math.max(1, bytesPerSecond);
+        // A rate bucket must be large enough for one legal atomic packet. Otherwise a raw residual
+        // larger than one second's allowance can never leave the FIFO, regardless of wait time.
+        this.bytes = new TokenBucket(Math.max(refillRate, MAX_PATCH_WIRE_BYTES), refillRate);
         this.minIntervalNanos = Math.max(0L, minRequestIntervalMs) * 1_000_000L;
     }
 

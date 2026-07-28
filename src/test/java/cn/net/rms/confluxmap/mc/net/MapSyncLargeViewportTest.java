@@ -59,13 +59,13 @@ class MapSyncLargeViewportTest {
 
     @Test
     void largeViewportEventuallySyncsEveryTileUnderDefaultBudgets(@TempDir final Path tempDir) throws Exception {
-        // 90 simulated seconds is ~3x the bandwidth floor for 64 tiles of ~25 KiB at 64 KiB/s.
+        // 90 simulated seconds leaves ample headroom for 64 raw field-plane patches at 64 KiB/s.
         final Fixture fixture = new Fixture(tempDir, 6_000);
         try {
             fixture.run(90_000L);
             assertTrue(
                 fixture.server.minAbsolutePatchBytes >= 15_000,
-                "scenario premise broken: absolute patches compressed below 15 KiB ("
+                "scenario premise broken: encoded absolute patches fell below 15 KiB ("
                     + fixture.server.minAbsolutePatchBytes + ")"
             );
             assertEquals(

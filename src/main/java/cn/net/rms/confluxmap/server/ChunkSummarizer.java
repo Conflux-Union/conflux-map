@@ -39,65 +39,134 @@ public final class ChunkSummarizer {
         final SummaryCodec.Column[] columns = new SummaryCodec.Column[SummaryCodec.COLUMNS];
         for (int z = 0; z < 16; z++) {
             for (int x = 0; x < 16; x++) {
-                final int index = z * 16 + x;
-                final int top = source.motionBlockingHeight(x, z);
-                final int groundY = top - 1;
-                final BlockInfo ground = blockAt(source, x, groundY, z);
-                int surfaceY = groundY;
-                BlockInfo block = ground;
-                // MOTION_BLOCKING excludes collision-less snow layers, so a snow-covered column
-                // would otherwise summarize as the grass beneath it and correct predicted snowy
-                // terrain to plain green. Promote the cover to the surface, mirroring the client
-                // capture's snow-layer promotion.
-                final String cover = source.blockNameAt(x, groundY + 1, z);
-                if (isSnowCover(cover)) {
-                    surfaceY = groundY + 1;
-                    block = classify(cover, mapColors);
-                }
-                final int biome = source.biomeIdAt(x, surfaceY, z);
-                // Fluid depth follows the ground under any snow cover: snow settled on ocean ice
-                // must keep its water column so it stays bucket-equivalent to the fluid baseline.
-                final boolean fluidSurface = ground.kind == SurfaceKind.WATER || ground.kind == SurfaceKind.ICE;
-                final int fluidDepth;
-                if (!fluidSurface) {
-                    fluidDepth = 0;
-                } else {
-                    final int oceanFloorHeight = ground.kind == SurfaceKind.WATER
-                        ? source.oceanFloorHeight(x, z)
-                        : ChunkColumnSource.NO_HEIGHT;
-                    if (oceanFloorHeight != ChunkColumnSource.NO_HEIGHT) {
-                        fluidDepth = clamp(top - oceanFloorHeight);
-                    } else {
-                        final int scanned = scanFluidDepth(source, x, groundY, z);
-                        // Ice resting directly on solid ground (spikes, glaciers) has no fluid column;
-                        // the scan's minimum depth of 1 would bucket-mismatch land baselines and
-                        // fabricate corrections there.
-                        fluidDepth = ground.kind == SurfaceKind.ICE && scanned <= 1 ? 0 : scanned;
-                    }
-                }
-                columns[index] = new SummaryCodec.Column(
-                    biome & 255, clampShort(surfaceY), block.kind.ordinal(), block.mapColorId, fluidDepth
-                );
+                columns[z * 16 + x] = summarizeColumn(source, x, z);
             }
         }
         return new SummaryCodec.Chunk(true, source.revision(), columns);
     }
 
+    SummaryCodec.SampledChunk summarizeForLod(final NbtCompound root, final int lod) {
+        return summarizeForLod(new NbtChunkColumnSource(root), lod);
+    }
+
+    SummaryCodec.SampledChunk summarizeForLod(final ChunkColumnSource source, final int lod) {
+        if (lod < 0 || lod > 4) {
+            throw new IllegalArgumentException("unsupported summary LOD " + lod);
+        }
+        final int sampleStride = 1 << lod;
+        final int samplesPerSide = 16 / sampleStride;
+        if (source == null || !source.generated()) {
+            return SummaryCodec.SampledChunk.empty(sampleStride);
+        }
+        final SummaryCodec.Column[] columns = new SummaryCodec.Column[samplesPerSide * samplesPerSide];
+        int sampleIndex = 0;
+        for (int sampleZ = 0; sampleZ < samplesPerSide; sampleZ++) {
+            final int z = sampleZ * sampleStride + (sampleStride >>> 1);
+            for (int sampleX = 0; sampleX < samplesPerSide; sampleX++) {
+                final int x = sampleX * sampleStride + (sampleStride >>> 1);
+                columns[sampleIndex++] = summarizeColumn(source, x, z);
+            }
+        }
+        return new SummaryCodec.SampledChunk(true, source.revision(), sampleStride, columns);
+    }
+
+    private SummaryCodec.Column summarizeColumn(
+        final ChunkColumnSource source,
+        final int x,
+        final int z
+    ) {
+        final int top = source.motionBlockingHeight(x, z);
+        final int groundY = top - 1;
+        final BlockInfo ground = blockAt(source, x, groundY, z);
+        int surfaceY = groundY;
+        BlockInfo block = ground;
+        int fluidSurfaceY = groundY;
+        BlockInfo fluidSurface = ground;
+        boolean promotedFluidCover = false;
+        // MOTION_BLOCKING excludes collision-less snow layers, so a snow-covered column would
+        // otherwise summarize as the grass beneath it and correct predicted snowy terrain to
+        // plain green. Some saved 1.17 heightmaps likewise stop below collision-less aquatic
+        // plants even though their block state still carries water. Promote either kind of cover
+        // from the actual block palette instead of turning the submerged floor into dry land.
+        final String cover = source.blockNameAt(x, groundY + 1, z);
+        final SurfaceKind coverFluid = source.fluidKindAt(x, groundY + 1, z);
+        if (coverFluid == SurfaceKind.WATER || coverFluid == SurfaceKind.LAVA) {
+            surfaceY = groundY + 1;
+            block = blockAt(source, x, surfaceY, z);
+            fluidSurfaceY = surfaceY;
+            fluidSurface = block;
+            promotedFluidCover = true;
+        } else if (isSnowCover(cover)) {
+            surfaceY = groundY + 1;
+            block = classify(cover, mapColors);
+        }
+        final int biome = source.biomeIdAt(x, surfaceY, z);
+        // Fluid depth follows the ground under any snow cover: snow settled on ocean ice must
+        // keep its water column so it stays bucket-equivalent to the fluid baseline.
+        final boolean hasFluidSurface = fluidSurface.kind == SurfaceKind.WATER
+            || fluidSurface.kind == SurfaceKind.ICE;
+        final int fluidDepth;
+        final int floorMapColorId;
+        if (!hasFluidSurface) {
+            fluidDepth = 0;
+            floorMapColorId = ProtoColor.NONE;
+        } else {
+            final int oceanFloorHeight = fluidSurface.kind == SurfaceKind.WATER && !promotedFluidCover
+                ? source.oceanFloorHeight(x, z)
+                : ChunkColumnSource.NO_HEIGHT;
+            final int floorY = oceanFloorHeight != ChunkColumnSource.NO_HEIGHT
+                && oceanFloorHeight <= fluidSurfaceY
+                ? oceanFloorHeight - 1
+                : scanFluidFloorY(source, x, fluidSurfaceY, z);
+            final int scannedDepth = clamp(fluidSurfaceY - floorY);
+            // Ice resting directly on solid ground (spikes, glaciers) has no fluid column; the
+            // scan's minimum depth of 1 would otherwise fabricate an underwater floor.
+            fluidDepth = fluidSurface.kind == SurfaceKind.ICE && scannedDepth <= 1 ? 0 : scannedDepth;
+            floorMapColorId = fluidDepth == 0
+                ? ProtoColor.NONE
+                : classify(source.blockNameAt(x, floorY, z), mapColors).mapColorId;
+        }
+        return new SummaryCodec.Column(
+            biome & 255,
+            clampShort(surfaceY),
+            block.kind.ordinal(),
+            block.mapColorId,
+            fluidDepth,
+            floorMapColorId
+        );
+    }
+
     private BlockInfo blockAt(final ChunkColumnSource source, final int x, final int y, final int z) {
+        final SurfaceKind fluid = source.fluidKindAt(x, y, z);
+        if (fluid == SurfaceKind.WATER) {
+            return new BlockInfo(SurfaceKind.WATER, 12);
+        }
+        if (fluid == SurfaceKind.LAVA) {
+            return new BlockInfo(SurfaceKind.LAVA, 4);
+        }
         return classify(source.blockNameAt(x, y, z), mapColors);
     }
 
-    private static int scanFluidDepth(final ChunkColumnSource source, final int x, final int surfaceY, final int z) {
+    private static int scanFluidFloorY(final ChunkColumnSource source, final int x, final int surfaceY, final int z) {
         int floorY = surfaceY - 1;
-        while (floorY >= source.bottomY() && isUnderwaterColumnBlock(source.blockNameAt(x, floorY, z))) {
+        while (floorY >= source.bottomY() && isUnderwaterColumnBlock(source, x, floorY, z)) {
             floorY--;
         }
-        return clamp(surfaceY - floorY);
+        return floorY;
     }
 
-    private static boolean isUnderwaterColumnBlock(final String name) {
-        return name.contains("water") || name.contains("bubble_column") || isKelp(name)
-            || name.contains("seagrass") || name.contains("sea_pickle") || name.contains("coral_fan");
+    private static boolean isUnderwaterColumnBlock(
+        final ChunkColumnSource source,
+        final int x,
+        final int y,
+        final int z
+    ) {
+        if (source.fluidKindAt(x, y, z) == SurfaceKind.WATER) {
+            return true;
+        }
+        final String name = source.blockNameAt(x, y, z);
+        return name.contains("bubble_column") || isKelp(name) || name.contains("seagrass")
+            || name.contains("sea_pickle") || name.contains("coral_fan");
     }
 
     private static boolean isKelp(final String name) {

@@ -28,4 +28,26 @@ class RegionStoragePathsTest {
             RegionStoragePaths.regionDirectory(root, "example:../outside")
         );
     }
+
+    @Test
+    void mapsSummaryRegionsToTheirContainingAnvilFilesWithFloorSemantics() {
+        final Path root = Path.of("world");
+
+        assertEquals(
+            root.resolve("region/r.0.0.mca"),
+            RegionStoragePaths.mcaFile(root, "minecraft:overworld", 1, 1)
+        );
+        assertEquals(
+            root.resolve("region/r.0.-1.mca"),
+            RegionStoragePaths.mcaFile(root, "minecraft:overworld", 1, -2)
+        );
+        assertEquals(
+            root.resolve("region/r.-1.-1.mca"),
+            RegionStoragePaths.mcaFile(root, "minecraft:overworld", -1, -1)
+        );
+        assertEquals(
+            root.resolve("region/r.-1.-1.mca"),
+            RegionStoragePaths.mcaFile(root, "minecraft:overworld", -2, -2)
+        );
+    }
 }

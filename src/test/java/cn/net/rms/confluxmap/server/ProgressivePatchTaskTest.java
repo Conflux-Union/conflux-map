@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import cn.net.rms.confluxmap.core.net.SummaryCodec;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
@@ -14,7 +13,7 @@ class ProgressivePatchTaskTest {
         final ProgressivePatchTask task = new ProgressivePatchTask(4, 0, 0);
         final AtomicInteger clock = new AtomicInteger();
         final int first = task.advance(
-            (x, z) -> SummaryCodec.Chunk.empty(),
+            (x, z) -> null,
             32,
             4,
             () -> clock.getAndIncrement()
@@ -24,7 +23,7 @@ class ProgressivePatchTaskTest {
         assertFalse(task.complete());
 
         final int second = task.advance(
-            (x, z) -> SummaryCodec.Chunk.empty(),
+            (x, z) -> null,
             3,
             Long.MAX_VALUE,
             () -> 0L
@@ -40,7 +39,7 @@ class ProgressivePatchTaskTest {
 
         task.advance((x, z) -> {
             positions.add(x + "," + z);
-            return SummaryCodec.Chunk.empty();
+            return null;
         }, 258, Long.MAX_VALUE, () -> 0L);
 
         assertEquals("-128,-128", positions.get(0));

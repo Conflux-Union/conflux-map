@@ -1,6 +1,6 @@
 package cn.net.rms.confluxmap.server;
 
-import cn.net.rms.confluxmap.core.net.DiffSpec;
+import cn.net.rms.confluxmap.core.model.MapPixel;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
@@ -72,34 +72,40 @@ public final class PatchBuilder {
         final int baselineMapColorId,
         final boolean absolute
     ) {
+        final byte[] evaluated = new byte[PatchCodec.MASK_BYTES];
         final List<PatchCodec.Sample> records = new ArrayList<>();
         for (int z = 0; z < SummaryTile.PIXELS; z++) {
             for (int x = 0; x < SummaryTile.PIXELS; x++) {
                 final SummaryView.Pixel actual = summary.pixel(x, z);
-                if (actual == null || !actual.generated() || actual.column() == null
-                    || actual.revision() <= sinceRevision) {
+                if (actual == null || !actual.generated() || actual.column() == null) {
                     continue;
                 }
-                final int baseIndex = BaselineGrid.index(x, z);
-                final DiffSpec.Sample expected = new DiffSpec.Sample(
-                    baseline.biomeId[baseIndex], derived.surfaceY[baseIndex], derived.kind[baseIndex], baselineMapColorId,
-                    derived.fluidDepth[baseIndex]
-                );
                 final SummaryCodec.Column column = actual.column();
                 if (column.kind() == SurfaceKind.UNKNOWN.ordinal()) {
                     continue;
                 }
-                final DiffSpec.Sample observed = new DiffSpec.Sample(
-                    column.biomeId(), column.surfaceY(), column.kind(), column.mapColorId(), column.fluidDepth()
+                final int pixel = z * SummaryTile.PIXELS + x;
+                PatchCodec.setEvaluated(evaluated, pixel);
+                final int baseIndex = BaselineGrid.index(x, z);
+                final MapPixel expected = new MapPixel(
+                    baseline.biomeId[baseIndex],
+                    derived.surfaceY[baseIndex],
+                    derived.kind[baseIndex] & 255,
+                    baselineMapColorId,
+                    derived.fluidDepth[baseIndex],
+                    MapPixel.MAP_COLOR_NONE
                 );
-                if (absolute || DiffSpec.differs(expected, observed)) {
+                if (absolute || !expected.equals(column.pixel())) {
                     records.add(toSample(x, z, column));
-                } else if (sinceRevision != 0L) {
-                    records.add(PatchCodec.removal(z * SummaryTile.PIXELS + x));
                 }
             }
         }
-        return result(summary, records, absolute ? Proto.PATCH_MODE_ABSOLUTE : Proto.PATCH_MODE_RESIDUAL);
+        return result(
+            summary,
+            evaluated,
+            records,
+            absolute ? Proto.PATCH_MODE_ABSOLUTE : Proto.PATCH_MODE_RESIDUAL
+        );
     }
 
     public Result buildFromSampler(
@@ -215,21 +221,20 @@ public final class PatchBuilder {
         if (!supported(summary)) {
             return unavailable();
         }
+        final byte[] evaluated = new byte[PatchCodec.MASK_BYTES];
         final List<PatchCodec.Sample> records = new ArrayList<>();
         for (int z = 0; z < SummaryTile.PIXELS; z++) {
             for (int x = 0; x < SummaryTile.PIXELS; x++) {
                 final SummaryView.Pixel actual = summary.pixel(x, z);
                 if (actual == null || !actual.generated() || actual.column() == null
-                    || actual.revision() <= sinceRevision) {
+                    || actual.column().kind() == SurfaceKind.UNKNOWN.ordinal()) {
                     continue;
                 }
-                if (actual.column().kind() == SurfaceKind.UNKNOWN.ordinal()) {
-                    continue;
-                }
+                PatchCodec.setEvaluated(evaluated, z * SummaryTile.PIXELS + x);
                 records.add(toSample(x, z, actual.column()));
             }
         }
-        return result(summary, records, Proto.PATCH_MODE_ABSOLUTE);
+        return result(summary, evaluated, records, Proto.PATCH_MODE_ABSOLUTE);
     }
 
     /** Compatibility overload for the LOD-0 single-region caller. */
@@ -241,19 +246,22 @@ public final class PatchBuilder {
     }
 
     private static PatchCodec.Sample toSample(final int pixelX, final int pixelZ, final SummaryCodec.Column column) {
-        return new PatchCodec.Sample(
-            pixelZ * SummaryTile.PIXELS + pixelX,
-            column.biomeId(), column.surfaceY(), column.kind(), column.mapColorId(), column.fluidDepth()
-        );
+        return new PatchCodec.Sample(pixelZ * SummaryTile.PIXELS + pixelX, column.pixel());
     }
 
     private static Result result(
-        final SummaryView summary, final List<PatchCodec.Sample> records, final int nonEmptyMode
+        final SummaryView summary,
+        final byte[] evaluated,
+        final List<PatchCodec.Sample> records,
+        final int mode
     ) {
-        if (records.isEmpty()) {
-            return new Result(Proto.PATCH_MODE_UNCHANGED, summary.revision(), summary.presence(), new byte[0], 0);
-        }
-        return new Result(nonEmptyMode, summary.revision(), summary.presence(), PatchCodec.encode(records), records.size());
+        return new Result(
+            mode,
+            summary.revision(),
+            summary.presence(),
+            PatchCodec.encode(new PatchCodec.Patch(evaluated, records)),
+            records.size()
+        );
     }
 
     public static Result unavailable() {

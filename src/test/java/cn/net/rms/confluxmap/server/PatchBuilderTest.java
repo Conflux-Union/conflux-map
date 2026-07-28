@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.predict.BaselineGrid;
+import cn.net.rms.confluxmap.core.predict.CorrectionTile;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -48,7 +49,7 @@ class PatchBuilderTest {
         }
 
         final PatchBuilder.Result result = new PatchBuilder().build(
-            grid.snapshot(false), 0L, baselineAt(70), false
+            grid.snapshot(false), Long.MIN_VALUE, baselineAt(70), false
         );
         final PatchCodec.Patch patch = PatchCodec.decode(result.body());
 
@@ -71,10 +72,10 @@ class PatchBuilderTest {
 
         final PatchBuilder builder = new PatchBuilder();
         final PatchCodec.Patch westPatch = PatchCodec.decode(
-            builder.build(west.snapshot(false), 0L, baselineAt(70), false).body()
+            builder.build(west.snapshot(false), Long.MIN_VALUE, baselineAt(70), false).body()
         );
         final PatchCodec.Patch eastPatch = PatchCodec.decode(
-            builder.build(east.snapshot(false), 0L, baselineAt(70), false).body()
+            builder.build(east.snapshot(false), Long.MIN_VALUE, baselineAt(70), false).body()
         );
 
         assertEquals(8 * 16, westPatch.size());
@@ -118,15 +119,21 @@ class PatchBuilderTest {
 
         final PatchBuilder.Result result = new PatchBuilder().build(summary, 0L, baseline, true);
 
-        assertEquals(Proto.PATCH_MODE_UNCHANGED, result.mode());
+        assertEquals(Proto.PATCH_MODE_ABSOLUTE, result.mode());
         assertEquals(0, result.recordCount());
+        try {
+            final PatchCodec.Patch patch = PatchCodec.decode(result.body());
+            assertTrue(!patch.evaluatedAt(0));
+        } catch (final cn.net.rms.confluxmap.core.net.ProtoException e) {
+            throw new AssertionError(e);
+        }
     }
 
     @Test
-    void changedResidualChunkRemovesCorrectionThatReturnedToBaseline() throws Exception {
+    void newResidualSnapshotReplacesOldCorrectionsAndMarksBaselineEquivalentPixelsEvaluated() throws Exception {
         final SummaryCodec.Chunk[] chunks = new SummaryCodec.Chunk[SummaryCodec.CHUNKS];
         Arrays.fill(chunks, SummaryCodec.Chunk.empty());
-        chunks[0] = chunk(20L, 70, 1);
+        chunks[0] = chunk(20L, 70, Proto.MAP_COLOR_NONE);
         chunks[1] = chunk(10L, 80, 11);
         final SummaryTile summary = new SummaryTile(
             0,
@@ -143,8 +150,39 @@ class PatchBuilderTest {
         assertEquals(Proto.PATCH_MODE_RESIDUAL, result.mode());
         final PatchCodec.Patch patch = PatchCodec.decode(result.body());
         assertEquals(256, patch.size());
-        assertTrue(PatchCodec.isRemoval(patch.sampleAt(0)));
-        assertNull(patch.sampleAt(16));
+        assertTrue(patch.evaluatedAt(0));
+        assertNull(patch.sampleAt(0), "baseline-equivalent pixels need no residual sample");
+        assertEquals(80, patch.sampleAt(16).surfaceY());
+
+        final CorrectionTile correction = new CorrectionTile();
+        correction.applyPatch(
+            10L,
+            result.presence(),
+            new PatchCodec.Patch(List.of(new PatchCodec.Sample(0, 1, 90, 1, 11, 0)))
+        );
+        correction.applyPatch(result.revision(), result.presence(), patch);
+        assertNull(correction.sampleAt(0), "snapshot replacement must remove stale residuals");
+    }
+
+    @Test
+    void tileMaxRevisionCannotSuppressAChangedLowerRevisionChunk() throws Exception {
+        final SummaryCodec.Chunk[] chunks = new SummaryCodec.Chunk[SummaryCodec.CHUNKS];
+        Arrays.fill(chunks, SummaryCodec.Chunk.empty());
+        chunks[0] = chunk(100L, 70, Proto.MAP_COLOR_NONE);
+        chunks[1] = chunk(11L, 90, 11);
+        final SummaryTile summary = new SummaryTile(
+            0,
+            0,
+            0,
+            List.of(new SummaryCodec.Region(0, 0, 0L, chunks))
+        );
+
+        final PatchBuilder.Result result = new PatchBuilder().build(
+            summary, 100L, baselineAt(70), false
+        );
+
+        assertEquals(Proto.PATCH_MODE_RESIDUAL, result.mode());
+        assertEquals(90, PatchCodec.decode(result.body()).sampleAt(16).surfaceY());
     }
 
     private static SummaryCodec.Region region(final int rx, final int rz, final int surfaceY) {

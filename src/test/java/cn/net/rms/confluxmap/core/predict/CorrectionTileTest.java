@@ -11,19 +11,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CorrectionTileTest {
     @Test
-    void highLodPresenceUsesOutputCellsWithoutClippingAtTheSixteenthChunk() {
+    void generatedOnlyVisibilityUsesExactEvaluatedPixelsInsteadOfCoarsePresence() {
         final byte[] presence = new byte[Proto.PATCH_PRESENCE_BYTES];
-        final int cell = 4;
-        presence[cell >>> 3] |= (byte) (1 << (cell & 7));
+        presence[0] = 1;
+        final byte[] evaluated = new byte[PatchCodec.MASK_BYTES];
+        PatchCodec.setEvaluated(evaluated, 64);
         final CorrectionTile tile = new CorrectionTile();
-        tile.applyPatch(1L, presence, new PatchCodec.Patch(java.util.List.of()));
+        tile.applyPatch(1L, presence, new PatchCodec.Patch(evaluated, java.util.List.of()));
 
         assertTrue(tile.hasGeneratedChunkForPixel(64, 2));
         assertFalse(tile.hasGeneratedChunkForPixel(0, 2));
     }
 
     @Test
-    void explicitRemovalDropsAnOlderCorrectionWithoutTouchingOtherPixels() {
+    void completeSnapshotOmissionDropsAnOlderCorrectionWithoutTouchingOtherPixels() {
         final byte[] presence = new byte[Proto.PATCH_PRESENCE_BYTES];
         final PatchCodec.Sample removed = new PatchCodec.Sample(1, 1, 80, 1, 11, 0);
         final PatchCodec.Sample retained = new PatchCodec.Sample(2, 1, 79, 1, 11, 0);
@@ -31,7 +32,7 @@ class CorrectionTileTest {
         tile.applyPatch(1L, presence, new PatchCodec.Patch(java.util.List.of(removed, retained)));
 
         final PatchCodec.Sample lowered = new PatchCodec.Sample(2, 1, 72, 1, 1, 0);
-        tile.applyPatch(2L, presence, new PatchCodec.Patch(java.util.List.of(PatchCodec.removal(1), lowered)));
+        tile.applyPatch(2L, presence, new PatchCodec.Patch(java.util.List.of(lowered)));
 
         assertNull(tile.sampleAt(1));
         assertEquals(lowered, tile.sampleAt(2));
@@ -48,18 +49,16 @@ class CorrectionTileTest {
         final byte[] firstPresence = new byte[Proto.PATCH_PRESENCE_BYTES];
         firstPresence[0] = 2;
         final PatchCodec.Sample progress = new PatchCodec.Sample(2, 1, 95, 1, 11, 0);
-        tile.applyPartial(firstPresence, new PatchCodec.Patch(java.util.List.of(
-            PatchCodec.removal(1), progress
-        )));
+        tile.applyPartial(firstPresence, new PatchCodec.Patch(java.util.List.of(progress)));
 
         assertEquals(20L, tile.revision(), "a partial scan must not become the sinceRevision watermark");
-        assertNull(tile.sampleAt(1), "a partial removal temporarily suppresses the committed correction");
-        assertEquals(progress, tile.sampleAt(2));
+        assertEquals(committed, tile.sampleAt(1), "the last complete snapshot stays drawable");
+        assertNull(tile.sampleAt(2), "pending samples are not mixed into the committed snapshot");
         assertTrue(tile.hasGeneratedChunk(0, 0), "committed presence remains visible");
-        assertTrue(tile.hasGeneratedChunk(1, 0), "partial presence is overlaid");
+        assertFalse(tile.hasGeneratedChunk(1, 0), "pending presence is not mixed into committed coverage");
 
         tile.applyPartial(new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(java.util.List.of()));
-        assertEquals(committed, tile.sampleAt(1), "restarting a scan drops stale progressive state");
+        assertEquals(committed, tile.sampleAt(1));
         assertNull(tile.sampleAt(2));
     }
 

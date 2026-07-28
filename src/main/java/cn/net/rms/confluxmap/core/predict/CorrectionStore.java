@@ -79,6 +79,21 @@ public final class CorrectionStore {
         return changed;
     }
 
+    /** Refreshes an unchanged committed snapshot without treating an empty body as replacement. */
+    public synchronized boolean validate(
+        final Key key,
+        final long revision,
+        final byte[] presence,
+        final long validatedAtMillis
+    ) {
+        final CorrectionTile tile = get(key);
+        final boolean changed = tile.validate(revision, presence, validatedAtMillis);
+        if (changed) {
+            dirty.put(key, Boolean.TRUE);
+        }
+        return changed;
+    }
+
     /** Applies an ephemeral progressive scan overlay; it is intentionally not persisted. */
     public synchronized boolean applyPartial(
         final Key key, final byte[] presence, final PatchCodec.Patch patch

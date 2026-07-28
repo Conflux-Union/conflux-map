@@ -35,6 +35,13 @@ class SummaryDiskCacheTest {
         assertEquals(62, region.chunks()[2 * 16 + 5].columns()[0].surfaceY());
         assertNotNull(cache.loadCurrent("minecraft:overworld", 2, -3, 124L));
         assertNull(cache.loadCurrent("minecraft:overworld", 2, -3, 123L));
+        final SummaryCodec.SampledRegion sampled = cache.loadCurrentSampled(
+            "minecraft:overworld", 2, -3, 124L, 4
+        );
+        assertNotNull(sampled);
+        assertEquals(1, sampled.chunks()[2 * 16 + 5].columns().length);
+        assertEquals(62, sampled.chunks()[2 * 16 + 5].column(0, 0).surfaceY());
+        assertNull(cache.loadCurrentSampled("minecraft:overworld", 2, -3, 123L, 4));
         assertTrue(cache.isStale("minecraft:overworld", 2, -3, 124L));
     }
 

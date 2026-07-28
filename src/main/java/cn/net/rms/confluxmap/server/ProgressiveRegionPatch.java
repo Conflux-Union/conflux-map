@@ -254,7 +254,7 @@ final class ProgressiveRegionPatch {
                 Proto.PATCH_MODE_PARTIAL,
                 0L,
                 result.presence(),
-                result.recordCount() == 0 ? EMPTY_PATCH_BODY : result.body()
+                result.body()
             );
         }
         return new Response(Proto.PATCH_MODE_PARTIAL, 0L, published.presence(), EMPTY_PATCH_BODY);
@@ -395,10 +395,10 @@ final class ProgressiveRegionPatch {
         private int currentRegionZ;
         private long mtimeBefore;
         private long liveEpochBefore;
-        private SummaryCodec.Region cached;
+        private SummaryCodec.SampledRegion cached;
 
         @Override
-        public SummaryCodec.Chunk load(final int chunkX, final int chunkZ) {
+        public SummaryCodec.SampledChunk load(final int chunkX, final int chunkZ) {
             final int regionX = Math.floorDiv(chunkX, 16);
             final int regionZ = Math.floorDiv(chunkZ, 16);
             final int regionIndex = (regionZ - baseRegionZ) * regionsPerSide + regionX - baseRegionX;
@@ -408,16 +408,25 @@ final class ProgressiveRegionPatch {
             if (regionIndex != currentRegionIndex) {
                 startRegion(regionIndex, regionX, regionZ);
             }
-            SummaryCodec.Chunk summary = liveChunks.get(dimension, chunkX, chunkZ);
-            if (summary == null && cached != null && cached.chunks()[chunkIndex].generated()) {
+            final SummaryCodec.Chunk live = liveChunks.get(dimension, chunkX, chunkZ);
+            final SummaryCodec.SampledChunk summary;
+            if (live != null) {
+                summary = SummaryCodec.sample(live, 1 << lod);
+            } else if (mtimeBefore <= 0L) {
+                summary = SummaryCodec.SampledChunk.empty(1 << lod);
+            } else if (cached != null && cached.chunks()[chunkIndex].generated()) {
                 summary = cached.chunks()[chunkIndex];
-            } else if (summary == null) {
+            } else {
+                SummaryCodec.SampledChunk scanned;
                 try {
                     final NbtCompound nbt = nbtReader.read(new ChunkPos(chunkX, chunkZ));
-                    summary = nbt == null ? SummaryCodec.Chunk.empty() : summarizer.summarize(nbt);
+                    scanned = nbt == null
+                        ? SummaryCodec.SampledChunk.empty(1 << lod)
+                        : summarizer.summarizeForLod(nbt, lod);
                 } catch (final IOException | RuntimeException ignored) {
-                    summary = SummaryCodec.Chunk.empty();
+                    scanned = SummaryCodec.SampledChunk.empty(1 << lod);
                 }
+                summary = scanned;
             }
             if (chunkIndex == SummaryCodec.CHUNKS - 1) {
                 finishRegion();
@@ -431,7 +440,7 @@ final class ProgressiveRegionPatch {
             currentRegionZ = regionZ;
             mtimeBefore = RegionStoragePaths.mcaMtimeMs(worldRoot, dimension, regionX, regionZ);
             liveEpochBefore = liveChunks.regionEpoch(dimension, regionX, regionZ);
-            cached = disk.loadCurrent(dimension, regionX, regionZ, mtimeBefore);
+            cached = disk.loadCurrentSampled(dimension, regionX, regionZ, mtimeBefore, lod);
         }
 
         private void finishRegion() {

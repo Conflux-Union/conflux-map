@@ -1,49 +1,63 @@
 package cn.net.rms.confluxmap.core.net;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
-import java.util.zip.Deflater;
-import java.util.zip.DeflaterOutputStream;
 import org.junit.jupiter.api.Test;
 
 class PatchCodecTest {
     @Test
     void roundTripUsesCoordinatesNotIterationOrder() throws Exception {
         final PatchCodec.Patch patch = new PatchCodec.Patch(List.of(
-            new PatchCodec.Sample(15 * 256 + 240, 4, 71, 2, 6, 8),
+            new PatchCodec.Sample(15 * 256 + 240, 4, 71, 2, 6, 8, 10),
             new PatchCodec.Sample(0, 1, 64, 1, 1, 0),
-            new PatchCodec.Sample(16 * 256 + 16, 2, 65, 2, 255, 2)
+            new PatchCodec.Sample(16 * 256 + 16, 2, 65, 2, 255, 2, 11)
         ));
         final PatchCodec.Patch decoded = PatchCodec.decode(PatchCodec.encode(patch));
         assertEquals(patch.samples().size(), decoded.samples().size());
-        assertEquals(patch.samples().get(0), decoded.sampleAt(patch.samples().get(0).pixelIndex()));
-        assertEquals(patch.samples().get(1), decoded.sampleAt(patch.samples().get(1).pixelIndex()));
-        assertEquals(patch.samples().get(2), decoded.sampleAt(patch.samples().get(2).pixelIndex()));
+        for (final PatchCodec.Sample sample : patch.samples()) {
+            assertEquals(sample, decoded.sampleAt(sample.pixelIndex()));
+            assertTrue(decoded.evaluatedAt(sample.pixelIndex()));
+        }
     }
 
     @Test
-    void removalsAndExtremeHeightsRoundTrip() throws Exception {
+    void evaluatedPixelWithoutDifferenceRoundTripsUnambiguously() throws Exception {
+        final byte[] evaluated = new byte[PatchCodec.MASK_BYTES];
+        PatchCodec.setEvaluated(evaluated, 42);
+
+        final PatchCodec.Patch decoded = PatchCodec.decode(PatchCodec.encode(
+            new PatchCodec.Patch(evaluated, List.of())
+        ));
+
+        assertTrue(decoded.evaluatedAt(42));
+        assertFalse(decoded.evaluatedAt(43));
+        assertEquals(null, decoded.sampleAt(42));
+    }
+
+    @Test
+    void floorColoursAndExtremeHeightsRoundTrip() throws Exception {
         final PatchCodec.Patch patch = new PatchCodec.Patch(List.of(
-            PatchCodec.removal(77),
+            new PatchCodec.Sample(77, 3, 64, 1, 9, 0),
             new PatchCodec.Sample(78, 3, Short.MAX_VALUE, 1, 9, 0),
             new PatchCodec.Sample(79, 3, Short.MIN_VALUE, 1, 9, 0),
-            new PatchCodec.Sample(255 * 256 + 255, 250, -60, 4, 60, 15)
+            new PatchCodec.Sample(255 * 256 + 255, 250, -60, 4, 60, 15, 10)
         ));
         final PatchCodec.Patch decoded = PatchCodec.decode(PatchCodec.encode(patch));
         assertEquals(patch.samples().size(), decoded.samples().size());
         for (final PatchCodec.Sample sample : patch.samples()) {
             assertEquals(sample, decoded.sampleAt(sample.pixelIndex()));
         }
-        assertTrue(PatchCodec.isRemoval(decoded.sampleAt(77)));
+        assertEquals(10, decoded.sampleAt(255 * 256 + 255).floorMapColorId());
     }
 
     @Test
-    void fullTileAbsolutePatchStaysUnderCompressedCap() throws Exception {
+    void fullTileRawPlanesStayUnderCustomPayloadCap() throws Exception {
         final List<PatchCodec.Sample> samples = new ArrayList<>(PatchCodec.PIXELS);
         for (int z = 0; z < 256; z++) {
             for (int x = 0; x < 256; x++) {
@@ -51,16 +65,19 @@ class PatchCodecTest {
                     + 7 * Math.sin((x + z) / 17.0));
                 final int biome = ((x / 60) * 3 + (z / 70) * 5) % 6 * 7;
                 samples.add(new PatchCodec.Sample(
-                    z * 256 + x, biome, surfaceY,
+                    z * 256 + x,
+                    biome,
+                    surfaceY,
                     (x * 31 + z) % 5 == 0 ? 2 : 1,
                     (biome * 3 + 1) % 60,
-                    biome == 0 ? 1 + (x + z) % 9 : 0
+                    biome == 0 ? 1 + (x + z) % 9 : 0,
+                    biome == 0 ? 10 : 255
                 ));
             }
         }
         final byte[] body = PatchCodec.encode(new PatchCodec.Patch(samples));
-        assertTrue(body.length <= PatchCodec.MAX_COMPRESSED_BYTES,
-            "full-tile body is " + body.length + " bytes, cap " + PatchCodec.MAX_COMPRESSED_BYTES);
+        assertEquals(PatchCodec.MAX_RAW_BYTES, body.length);
+        assertTrue(body.length < Proto.MAX_S2C_PAYLOAD);
         final PatchCodec.Patch decoded = PatchCodec.decode(body);
         assertEquals(PatchCodec.PIXELS, decoded.size());
         assertEquals(samples.get(129 * 256 + 200), decoded.sampleAt(129 * 256 + 200));
@@ -72,34 +89,25 @@ class PatchCodecTest {
     }
 
     @Test
-    void truncatedFieldPlaneIsRejected() throws Exception {
-        // Coarse bit 0 set, fine bits 0 and 1 set, then only one of the two biome bytes.
-        final byte[] raw = new byte[PatchCodec.COARSE_MASK_BYTES + PatchCodec.FINE_MASK_BYTES + 1];
-        raw[0] = 1;
-        raw[PatchCodec.COARSE_MASK_BYTES] = 3;
-        assertThrows(ProtoException.class, () -> PatchCodec.decode(deflate(raw)));
+    void truncatedFieldPlaneIsRejected() {
+        final byte[] evaluated = new byte[PatchCodec.MASK_BYTES];
+        PatchCodec.setEvaluated(evaluated, 0);
+        final byte[] valid = PatchCodec.encode(new PatchCodec.Patch(
+            evaluated,
+            List.of(new PatchCodec.Sample(0, 1, 64, 1, 1, 0))
+        ));
+        assertThrows(ProtoException.class, () -> PatchCodec.decode(Arrays.copyOf(valid, valid.length - 1)));
     }
 
     @Test
-    void overlongHeightVarintIsRejected() throws Exception {
-        final ByteArrayOutputStream raw = new ByteArrayOutputStream();
-        final byte[] masks = new byte[PatchCodec.COARSE_MASK_BYTES + PatchCodec.FINE_MASK_BYTES];
-        masks[0] = 1;
-        masks[PatchCodec.COARSE_MASK_BYTES] = 1;
-        raw.write(masks);
-        raw.write(4);
-        raw.write(new byte[] {(byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80, 1});
-        assertThrows(ProtoException.class, () -> PatchCodec.decode(deflate(raw.toByteArray())));
-    }
-
-    private static byte[] deflate(final byte[] raw) throws Exception {
-        final ByteArrayOutputStream out = new ByteArrayOutputStream();
-        final Deflater deflater = new Deflater();
-        try (DeflaterOutputStream stream = new DeflaterOutputStream(out, deflater)) {
-            stream.write(raw);
-        } finally {
-            deflater.end();
-        }
-        return out.toByteArray();
+    void differenceOutsideEvaluatedMaskIsRejected() {
+        final byte[] raw = new byte[
+            1 + PatchCodec.COARSE_MASK_BYTES * 2 + PatchCodec.FINE_MASK_BYTES + PatchCodec.RECORD_BYTES
+        ];
+        raw[0] = PatchCodec.FORMAT_VERSION;
+        final int differenceCoarse = 1 + PatchCodec.COARSE_MASK_BYTES;
+        raw[differenceCoarse] = 1;
+        raw[differenceCoarse + PatchCodec.COARSE_MASK_BYTES] = 1;
+        assertThrows(ProtoException.class, () -> PatchCodec.decode(raw));
     }
 }

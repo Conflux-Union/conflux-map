@@ -1,6 +1,5 @@
 package cn.net.rms.confluxmap.core.predict;
 
-import cn.net.rms.confluxmap.core.net.DiffSpec;
 import java.util.Arrays;
 
 /**
@@ -21,11 +20,6 @@ import java.util.Arrays;
  * @param fluidDepth consecutive water layers below the surface (0 for solid tops)
  */
 public record FlatBaseline(int biomeId, int surfaceY, int kind, int mapColorId, int fluidDepth) {
-
-    /** The equivalent per-pixel diff sample, for residual patch building. */
-    public DiffSpec.Sample toDiffSample() {
-        return new DiffSpec.Sample(biomeId, surfaceY, kind, mapColorId, fluidDepth);
-    }
 
     /** A margin-inclusive grid where every cell is this surface's biome and height. */
     public BaselineGrid toBaselineGrid() {

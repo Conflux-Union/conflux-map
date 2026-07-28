@@ -84,19 +84,31 @@ a world is upgraded. Old or cross-version candidate positions are intentionally 
 
 ## Companion protocol
 
-`confluxmap:map_sync` v2 uses big-endian framed messages. `MAP_VIEW_REQ` carries up to eight tile
-coordinates and a cached revision. A tile is 256 output pixels per edge and covers `2^lod` LOD-0
-regions per side. `MAP_PATCH` carries a 16x16 output-cell presence bitmap (one chunk per cell at
-LOD0, the union of touched chunks at higher LOD) and a
-deflate-compressed two-level sparse mask: 32-byte coarse mask, one 32-byte fine mask per coarse
-cell, then six-byte absolute column records. Every supported map LOD can carry corrections; LOD3-4
-are scanned progressively under one bounded server-tick budget. A coarse tile fully covered by
-fresh lower-LOD client results is omitted from `MAP_VIEW_REQ`, so it consumes no server scan or
-response work. Incremental residual patches use an otherwise-invalid `UNKNOWN` column as a removal marker
-when a previously corrected pixel returns to the predicted baseline. Older clients already ignore
-that marker as non-authoritative terrain. A missing or mismatched predictor uses absolute samples,
-never a false residual.
+`confluxmap:map_sync` v3 uses big-endian framed messages. `MAP_VIEW_REQ` carries up to eight tile
+coordinates and the revision of each client's last committed snapshot. A tile is 256 output pixels
+per edge and covers `2^lod` LOD-0 regions per side. A final `MAP_PATCH` is a complete authoritative
+snapshot, not a temporal delta: applying it atomically replaces every older residual sample.
 
-Prediction is honest about its limits: the v1 companion does not verify structure existence, so
+Each patch carries a 16x16 diagnostic presence bitmap plus a raw `PatchCodec` body. The body starts
+with separate two-level sparse masks for evaluated pixels and pixels that differ from the shared
+deterministic baseline. Difference samples then use homogeneous value planes for biome, signed
+surface Y, surface kind, top map colour, fluid depth, and floor map colour (seven bytes per sample).
+All fields are compared exactly. An evaluated pixel without a difference sample reconstructs from
+the baseline; a difference sample is the server's absolute actual value. Returning to the baseline
+therefore needs no removal marker—the next complete snapshot simply omits that sample.
+
+The patch body is deliberately not compressed by the mod. Sparse masks and homogeneous planes keep
+the bytes compressible, while Minecraft's normal packet compression owns the actual compression.
+A missing or mismatched predictor uses a complete absolute snapshot, never a false residual.
+
+Every supported map LOD can carry corrections. LOD3-4 are scanned progressively under one bounded
+server-tick budget. Every covered chunk is still visited so a visible construction cannot
+disappear, but cold NBT summaries and current `.cfs` caches materialize only the centered source
+columns represented by the output: four columns per chunk at LOD3 and one at LOD4. Revision-0
+partial snapshots replace pending progress but stay non-drawable; only the final snapshot replaces
+the committed tile. A coarse tile fully covered by fresh lower-LOD client results is omitted from
+`MAP_VIEW_REQ`, so it consumes no server scan or response work.
+
+Prediction is honest about its limits: the companion does not verify structure existence, so
 structure markers remain candidates. No server seed is shared unless the operator enables
 `shareSeed`.

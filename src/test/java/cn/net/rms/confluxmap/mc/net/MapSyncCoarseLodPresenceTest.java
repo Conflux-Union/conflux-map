@@ -124,10 +124,10 @@ class MapSyncCoarseLodPresenceTest {
             fixture.browse(COARSE_LOD, 30_000L);
 
             assertFalse(fixture.server.sinceRevisions.isEmpty(), "the coarse LOD must actually have been requested");
-            assertTrue(fixture.server.sinceRevisions.size() > 3, "partial patches must stay immediately retryable");
-            assertEquals(0L, fixture.corrections.get(DIM, COARSE_LOD, 0, 0).revision());
-            assertTrue(fixture.server.sinceRevisions.stream().allMatch(r -> r == 0L),
-                "the client must keep asking from revision 0: " + fixture.server.sinceRevisions);
+            assertTrue(fixture.server.sinceRevisions.size() >= 3, "partial snapshots must stay retryable");
+            assertEquals(1L, fixture.corrections.get(DIM, COARSE_LOD, 0, 0).revision());
+            assertTrue(fixture.server.sinceRevisions.stream().allMatch(r -> r == Long.MIN_VALUE),
+                "no committed snapshot must use the explicit sentinel: " + fixture.server.sinceRevisions);
         } finally {
             fixture.shutdown();
         }
@@ -154,7 +154,7 @@ class MapSyncCoarseLodPresenceTest {
             fixture.browse(COARSE_LOD, 12_000L);
 
             assertEquals(
-                List.of(0L), fixture.server.sinceRevisions,
+                List.of(Long.MIN_VALUE), fixture.server.sinceRevisions,
                 "a completed visible coarse tile must stay silent until the server invalidates it"
             );
         } finally {
@@ -169,7 +169,7 @@ class MapSyncCoarseLodPresenceTest {
             fixture.browse(0, 70_000L);
 
             assertEquals(
-                List.of(0L), fixture.server.sinceRevisions,
+                List.of(Long.MIN_VALUE), fixture.server.sinceRevisions,
                 "a final low-LOD answer must not turn into a one-minute polling loop"
             );
         } finally {
@@ -188,7 +188,7 @@ class MapSyncCoarseLodPresenceTest {
             fixture.browse(COARSE_LOD, 2_000L);
 
             assertEquals(
-                List.of(0L, 1L), fixture.server.sinceRevisions,
+                List.of(Long.MIN_VALUE, 1L), fixture.server.sinceRevisions,
                 "one server invalidation must produce one revision-aware refresh"
             );
         } finally {
@@ -335,6 +335,7 @@ class MapSyncCoarseLodPresenceTest {
         final List<MapSyncSubscribeC2S> subscriptions = new ArrayList<>();
         final boolean progressive;
         int errorCount;
+        int progressiveBuilds;
 
         FakeCompanionServer(final ServerConfig config, final boolean progressive) {
             this.config = config;
@@ -388,12 +389,41 @@ class MapSyncCoarseLodPresenceTest {
             final byte[] presence = TilePresence.build(
                 job.lod(), job.tileX(), job.tileZ(), FakeCompanionServer::cachedRegionFlags
             );
-            return new MapPatchS2C(job.reqId(), job.dimIndex(), job.lod(), job.tileX(), job.tileZ(),
-                progressive ? Proto.PATCH_MODE_PARTIAL : Proto.PATCH_MODE_UNCHANGED,
-                progressive ? 0L : 1L,
+            if (job.sinceRevision() == 1L) {
+                return new MapPatchS2C(
+                    job.reqId(), job.dimIndex(), job.lod(), job.tileX(), job.tileZ(),
+                    Proto.PATCH_MODE_UNCHANGED, 1L, presence, new byte[0]
+                );
+            }
+            final byte[] evaluated = evaluatedPixels(job);
+            final boolean partial = progressive && progressiveBuilds++ < 2;
+            return new MapPatchS2C(
+                job.reqId(), job.dimIndex(), job.lod(), job.tileX(), job.tileZ(),
+                partial ? Proto.PATCH_MODE_PARTIAL : Proto.PATCH_MODE_RESIDUAL,
+                partial ? 0L : 1L,
                 presence,
-                progressive ? PatchCodec.encode(List.of()) : new byte[0]
+                PatchCodec.encode(new PatchCodec.Patch(evaluated, List.of()))
             );
+        }
+
+        private static byte[] evaluatedPixels(final PatchDispatcher.TileJob job) {
+            final byte[] evaluated = new byte[PatchCodec.MASK_BYTES];
+            final int scale = 1 << job.lod();
+            final long originX = (long) job.tileX() * 256L * scale;
+            final long originZ = (long) job.tileZ() * 256L * scale;
+            for (int z = 0; z < 256; z++) {
+                final long blockZ = originZ + (long) z * scale + (scale >>> 1);
+                final long regionZ = Math.floorDiv(blockZ, 256L);
+                for (int x = 0; x < 256; x++) {
+                    final long blockX = originX + (long) x * scale + (scale >>> 1);
+                    final long regionX = Math.floorDiv(blockX, 256L);
+                    if (regionX >= 0 && regionX < GENERATED_REGIONS
+                        && regionZ >= 0 && regionZ < GENERATED_REGIONS) {
+                        PatchCodec.setEvaluated(evaluated, z * 256 + x);
+                    }
+                }
+            }
+            return evaluated;
         }
 
         /** World model: every chunk of regions 0..3 on both axes is generated; nothing else exists. */

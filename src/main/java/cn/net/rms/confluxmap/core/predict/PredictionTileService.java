@@ -125,7 +125,22 @@ public final class PredictionTileService {
         return true;
     }
 
-    /** Applies an uncommitted progressive scan and queues the same visible recomposition path. */
+    /** Validates an unchanged committed correction snapshot. */
+    public boolean validateCorrection(
+        final CorrectionStore.Key key,
+        final long revision,
+        final byte[] presence,
+        final long validatedAtMillis
+    ) {
+        final CorrectionStore store = correctionStore;
+        if (store == null || !store.validate(key, revision, presence, validatedAtMillis)) {
+            return false;
+        }
+        markCorrectionDirty(key);
+        return true;
+    }
+
+    /** Records uncommitted scan progress without replacing or recomposing the drawable snapshot. */
     public boolean applyPartialCorrection(
         final CorrectionStore.Key key,
         final byte[] presence,
@@ -135,7 +150,17 @@ public final class PredictionTileService {
         if (store == null || !store.applyPartial(key, presence, patch)) {
             return false;
         }
-        markCorrectionDirty(key);
+        final SessionGuard.Session session = sessionGuard.current();
+        final DimensionId patchDimension = DimensionId.parse(key.dimension());
+        final String realLayer = PredictionDimensions.isEnd(patchDimension)
+            ? MapLayer.END_SURFACE.cacheId() : MapLayer.SURFACE.cacheId();
+        final TileKey tile = new TileKey(
+            session.world(), session.dimension(), realLayer + PredictedTileKeys.SUFFIX,
+            key.lod(), key.tileX(), key.tileZ()
+        );
+        synchronized (this) {
+            mipCache.removeCoverage(tile);
+        }
         return true;
     }
 

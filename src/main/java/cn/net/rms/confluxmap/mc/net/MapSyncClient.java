@@ -182,7 +182,10 @@ public final class MapSyncClient {
                     empty &= value == 0;
                 }
                 final Long previous = lastRequestNanos.get(stamp);
-                tiles.add(new ViewRequestPlanner.Tile(x, z, tile.revision(), previous == null ? Long.MIN_VALUE : previous, empty));
+                final long snapshotRevision = tile.hasCommittedState() ? tile.revision() : Long.MIN_VALUE;
+                tiles.add(new ViewRequestPlanner.Tile(
+                    x, z, snapshotRevision, previous == null ? Long.MIN_VALUE : previous, empty
+                ));
             }
         }
         if (!batchPrepared) {
@@ -245,13 +248,13 @@ public final class MapSyncClient {
         }
         if (patch.mode() == Proto.PATCH_MODE_UNCHANGED) {
             final CorrectionStore.Key key = keyFor(patch);
-            if (key != null && predictionTiles.applyCorrection(
-                key, patch.tileRevision(), patch.presence(), new PatchCodec.Patch(List.of()),
-                millisClock.getAsLong()
+            if (key == null || !predictionTiles.validateCorrection(
+                key, patch.tileRevision(), patch.presence(), millisClock.getAsLong()
             )) {
-                corrections.flush();
+                return false;
             }
-            return key != null;
+            corrections.flush();
+            return true;
         }
         try {
             final PatchCodec.Patch decoded = PatchCodec.decode(patch.body());
@@ -261,11 +264,14 @@ public final class MapSyncClient {
             }
             if (patch.mode() == Proto.PATCH_MODE_PARTIAL) {
                 predictionTiles.applyPartialCorrection(key, patch.presence(), decoded);
-            } else if (predictionTiles.applyCorrection(
+                return true;
+            }
+            if (!predictionTiles.applyCorrection(
                 key, patch.tileRevision(), patch.presence(), decoded, millisClock.getAsLong()
             )) {
-                corrections.flush();
+                return false;
             }
+            corrections.flush();
             return true;
         } catch (final ProtoException e) {
             ConfluxMapMod.LOGGER.warn("companion: malformed MAP_PATCH body ({})", e.getMessage());

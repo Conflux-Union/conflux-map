@@ -480,6 +480,10 @@ public final class RegionSummaryService {
                     chunks[index] = live;
                     continue;
                 }
+                if (mtimeBefore <= 0L) {
+                    chunks[index] = SummaryCodec.Chunk.empty();
+                    continue;
+                }
                 if (cached != null && cached.chunks()[index].generated()) {
                     chunks[index] = cached.chunks()[index];
                     continue;

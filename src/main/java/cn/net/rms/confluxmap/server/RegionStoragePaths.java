@@ -6,17 +6,18 @@ import java.nio.file.Path;
 
 /** Resolves vanilla Anvil region files without loading or generating chunks. */
 final class RegionStoragePaths {
+    private static final int SUMMARY_REGIONS_PER_MCA = 2;
+
     private RegionStoragePaths() {
     }
 
     static long mcaMtimeMs(
         final Path worldRoot,
         final String dimension,
-        final int regionX,
-        final int regionZ
+        final int summaryRegionX,
+        final int summaryRegionZ
     ) {
-        final Path path = regionDirectory(worldRoot, dimension)
-            .resolve("r." + regionX + "." + regionZ + ".mca");
+        final Path path = mcaFile(worldRoot, dimension, summaryRegionX, summaryRegionZ);
         if (!Files.isRegularFile(path)) {
             return 0L;
         }
@@ -25,6 +26,18 @@ final class RegionStoragePaths {
         } catch (final IOException e) {
             return 0L;
         }
+    }
+
+    /** Maps one 16x16-chunk summary region to its containing 32x32-chunk Anvil file. */
+    static Path mcaFile(
+        final Path worldRoot,
+        final String dimension,
+        final int summaryRegionX,
+        final int summaryRegionZ
+    ) {
+        final int mcaX = Math.floorDiv(summaryRegionX, SUMMARY_REGIONS_PER_MCA);
+        final int mcaZ = Math.floorDiv(summaryRegionZ, SUMMARY_REGIONS_PER_MCA);
+        return regionDirectory(worldRoot, dimension).resolve("r." + mcaX + "." + mcaZ + ".mca");
     }
 
     static Path regionDirectory(final Path worldRoot, final String dimension) {
