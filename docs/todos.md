@@ -223,16 +223,26 @@ supported zoom, refresh an already visible coarse view after source chunks
 change, and preserve bounded server work. Test both a large contiguous footprint
 and a footprint crossing coarse tile boundaries.
 
-LOD 3-4 use a shared progressive scan capped at 2,048 chunks and 4 ms per server
-tick. The scan still visits every covered chunk, but NBT and `.cfs` sources retain
-only the four centered columns per chunk visible at LOD3 or the single centered
-column visible at LOD4 instead of materializing all 256. Baseline sampling and
-patch encoding run on a daemon worker. Replaceable revision-0 snapshots report
-progress without changing the drawable committed tile; only a final snapshot is
-applied atomically. Completed tiles remain silent. A capability-negotiated
+LOD 3-4 use a shared progressive scan. Cold source data is opened once per
+32x32-chunk Anvil file and scanned by two background workers; four 16x16 summary
+regions share that result instead of issuing up to 65,536 individual Minecraft
+chunk-storage futures for one LOD-4 tile. When the bundled native is available,
+its selective NBT parser retains only status/revision, heightmaps, section
+palettes and biomes, skipping entity, structure, tick and lighting payloads
+without constructing a full Java NBT tree. The Java parser remains the fallback.
+Both paths retain only the four centered columns per chunk visible at LOD3 or
+the single centered column visible at LOD4. Completed Anvil batches remain in
+the tile task across event-driven restarts, so an invalidation reuses every
+unchanged file and rescans only files whose mtime changed; live summaries are
+overlaid at consumption time. The 2,048-unit/4ms server-tick slice now only
+accepts completed batches and validates source stamps. Baseline sampling and
+patch encoding use their own daemon worker. Replaceable revision-0 snapshots
+report progress without changing the drawable committed tile; only a final
+snapshot is applied atomically. Completed tiles remain silent. A capability-negotiated
 viewport subscription lets the server push a bounded tile-invalidation batch
 only after a watched source region changes; the client then requests that tile
-once with its committed revision. Reusable `.cfs` summaries require the current `.mca` mtime,
+once with its committed revision. Reusable `.cfs` and task-local Anvil summaries
+require the current `.mca` mtime,
 live summaries take priority, and every coarse source mtime/live epoch is
 revalidated before a final result is reused. Regression coverage includes a
 contiguous 128x128-chunk LOD-4 build and a build crossing an LOD-4 tile boundary.

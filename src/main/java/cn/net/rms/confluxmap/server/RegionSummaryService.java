@@ -68,6 +68,11 @@ public final class RegionSummaryService {
         thread.setDaemon(true);
         return thread;
     });
+    private final ExecutorService progressiveScanWorker = Executors.newFixedThreadPool(2, runnable -> {
+        final Thread thread = new Thread(runnable, "ConfluxMap-anvil-scans");
+        thread.setDaemon(true);
+        return thread;
+    });
     /** Access-ordered global task cache; identical player requests reuse the same validated scan. */
     private final LinkedHashMap<ProgressiveKey, ProgressiveRegionPatch> progressiveTasks =
         new LinkedHashMap<>(16, 0.75f, true);
@@ -211,8 +216,10 @@ public final class RegionSummaryService {
             }
             progressiveTasks.clear();
         }
+        progressiveScanWorker.shutdownNow();
         progressiveWorker.shutdownNow();
         try {
+            progressiveScanWorker.awaitTermination(2L, TimeUnit.SECONDS);
             progressiveWorker.awaitTermination(2L, TimeUnit.SECONDS);
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -296,6 +303,7 @@ public final class RegionSummaryService {
                     summarizer,
                     patchBuilder,
                     progressiveWorker,
+                    progressiveScanWorker,
                     job.lod(),
                     job.tileX(),
                     job.tileZ(),

@@ -2,6 +2,8 @@ package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
+import cn.net.rms.confluxmap.core.predict.CubiomesBiomeIds;
+import cn.net.rms.confluxmap.nativepredict.NativeChunkNbtScanner;
 import net.minecraft.nbt.NbtCompound;
 
 /** Converts a narrow column source into a cheap surface-only chunk summary. */
@@ -68,6 +70,41 @@ public final class ChunkSummarizer {
             }
         }
         return new SummaryCodec.SampledChunk(true, source.revision(), sampleStride, columns);
+    }
+
+    SummaryCodec.SampledChunk summarizeNative(final NativeChunkNbtScanner.Chunk chunk) {
+        if (chunk == null || !chunk.generated()) {
+            return SummaryCodec.SampledChunk.empty(chunk == null ? 16 : chunk.sampleStride());
+        }
+        final SummaryCodec.Column[] columns = new SummaryCodec.Column[chunk.samples().length];
+        for (int i = 0; i < columns.length; i++) {
+            final NativeChunkNbtScanner.Sample sample = chunk.samples()[i];
+            final int biome = sample.biomeId() >= 0
+                ? sample.biomeId()
+                : biomeId(sample.biomeName());
+            final BlockInfo surface;
+            if (sample.fluidKind() == 1) {
+                surface = new BlockInfo(SurfaceKind.WATER, 12);
+            } else if (sample.fluidKind() == 2) {
+                surface = new BlockInfo(SurfaceKind.LAVA, 4);
+            } else {
+                surface = classify(sample.surfaceBlock(), mapColors);
+            }
+            final int floorMapColorId = sample.fluidDepth() == 0
+                ? ProtoColor.NONE
+                : classify(sample.floorBlock(), mapColors).mapColorId;
+            columns[i] = new SummaryCodec.Column(
+                biome & 255,
+                clampShort(sample.surfaceY()),
+                surface.kind.ordinal(),
+                surface.mapColorId,
+                clamp(sample.fluidDepth()),
+                floorMapColorId
+            );
+        }
+        return new SummaryCodec.SampledChunk(
+            true, chunk.revision(), chunk.sampleStride(), columns
+        );
     }
 
     private SummaryCodec.Column summarizeColumn(
@@ -233,6 +270,15 @@ public final class ChunkSummarizer {
 
     private static short clampShort(final int value) {
         return (short) Math.max(Short.MIN_VALUE + 1, Math.min(Short.MAX_VALUE, value));
+    }
+
+    private static int biomeId(final String name) {
+        if (name == null) {
+            return 1;
+        }
+        final int separator = name.indexOf(':');
+        final String path = separator >= 0 ? name.substring(separator + 1) : name;
+        return CubiomesBiomeIds.idForName(path).orElse(1);
     }
 
     /** One classified block: its map surface kind and vanilla map colour id. */

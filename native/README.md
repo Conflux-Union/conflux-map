@@ -1,10 +1,12 @@
-# Native prediction library
+# Native support library
 
-This directory holds everything needed to build `confluxnative`, the small JNI
-shim (`shim/confluxnative.c`) around [cubiomes](https://github.com/Cubitect/cubiomes),
+This directory holds everything needed to build `confluxnative`, the JNI
+shim (`shim/confluxnative.c`) around [cubiomes](https://github.com/Cubitect/cubiomes)
+and the allocation-light Anvil NBT scanner (`shim/anvilscan.c`),
 pulled in as a git submodule (our fork), that the
 `cn.net.rms.confluxmap.nativepredict` Java package loads to answer batch
-biome/height/structure queries. See `docs/reference-specs/predicted-map.md`
+biome/height/structure queries and selective chunk-NBT scans. See
+`docs/reference-specs/predicted-map.md`
 for what it predicts; this file is only the build/maintenance side.
 
 ## Layout
@@ -39,8 +41,10 @@ for what it predicts; this file is only the build/maintenance side.
   (`nm -D` for the two Linux `.so`s, `objdump -p` for the `.dll`'s export
   table, a small Mach-O symtab parse for the two `.dylib`) - every `Java_...` entry point shows up correctly
   exported and nothing else does.
-- `shim/confluxnative.c` - this project's own code (GPL-3.0), the only file
-  here that isn't vendored.
+- `shim/confluxnative.c` and `shim/anvilscan.c` - this project's own code
+  (GPL-3.0). The Anvil scanner receives already-decompressed chunk NBT from
+  Java and retains only the status, heightmap, palette and biome fields needed
+  by LOD-3/4 correction columns; unrelated NBT payloads are skipped in-place.
 - `prebuilt/<target>/<libname>` - **committed** compiled binaries, so a
   contributor without a C toolchain can still build/run/test the mod; `git`
   must not ignore this directory. `common.gradle`'s `processResources` copies

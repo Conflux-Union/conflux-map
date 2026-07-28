@@ -34,7 +34,7 @@
 #include "finders.h"
 #include "terrain_features.h"
 
-#define CFX_ABI 8
+#define CFX_ABI 9
 
 #define CFX_OK              0
 #define CFX_ERR_BAD_HANDLE  1

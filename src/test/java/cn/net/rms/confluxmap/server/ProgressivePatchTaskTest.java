@@ -60,9 +60,11 @@ class ProgressivePatchTaskTest {
 
         final int processed = task.advance(new ProgressivePatchTask.ChunkSource() {
             @Override
-            public SummaryCodec.SampledRegion loadRegion(final int regionX, final int regionZ) {
+            public ProgressivePatchTask.RegionLoad loadRegion(final int regionX, final int regionZ) {
                 regionLoads.incrementAndGet();
-                return new SummaryCodec.SampledRegion(regionX, regionZ, 0L, 16, empty);
+                return ProgressivePatchTask.RegionLoad.loaded(
+                    new SummaryCodec.SampledRegion(regionX, regionZ, 0L, 16, empty)
+                );
             }
 
             @Override
@@ -76,5 +78,27 @@ class ProgressivePatchTaskTest {
         assertEquals(256, regionLoads.get());
         assertEquals(0, chunkLoads.get());
         assertTrue(task.complete());
+    }
+
+    @Test
+    void pendingRegionDoesNotFallBackToIndividualChunks() {
+        final ProgressivePatchTask task = new ProgressivePatchTask(4, 0, 0);
+        final AtomicInteger chunkLoads = new AtomicInteger();
+
+        final int processed = task.advance(new ProgressivePatchTask.ChunkSource() {
+            @Override
+            public ProgressivePatchTask.RegionLoad loadRegion(final int regionX, final int regionZ) {
+                return ProgressivePatchTask.RegionLoad.waiting();
+            }
+
+            @Override
+            public SummaryCodec.SampledChunk load(final int chunkX, final int chunkZ) {
+                chunkLoads.incrementAndGet();
+                return null;
+            }
+        }, 256, Long.MAX_VALUE, () -> 0L);
+
+        assertEquals(0, processed);
+        assertEquals(0, chunkLoads.get());
     }
 }

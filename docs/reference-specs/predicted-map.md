@@ -6,7 +6,7 @@ overlays it; predictions never enter the `.cfr` column cache.
 ## Determinism
 
 The wire baseline is `{biomeId u8, surfaceY i16, kind u8, fluidDepth u8}`. The predictor version
-is `cb:9afc1038ea5a|shim:8|base:14`; palette colours are local and never sent. Synthetic canopy stays
+is `cb:9afc1038ea5a|shim:9|base:14`; palette colours are local and never sent. Synthetic canopy stays
 on the predicted plane instead of becoming a generated-chunk correction, so generated frontiers
 cannot introduce foliage-colour seams. Other height differences up to 2 blocks are tolerated, and
 fluid depth compares in buckets `0`, `1-3`, `4-9`, `10+`. A real map colour outside the biome's
@@ -111,11 +111,16 @@ The final body and presence bitmap produce an opaque content fingerprint used as
 Revalidating the same authoritative snapshot returns `UNCHANGED` with an empty body. A changed
 lower-revision source chunk therefore cannot hide behind an unchanged maximum game-time tick.
 
-Every supported map LOD can carry corrections. LOD3-4 are scanned progressively under one bounded
-server-tick budget. Every covered chunk is still visited so a visible construction cannot
-disappear, but cold NBT summaries and current `.cfs` caches materialize only the centered source
-columns represented by the output: four columns per chunk at LOD3 and one at LOD4. Missing regions
-and current sampled `.cfs` regions enter the grid as one region work unit. Scanning publishes only
+Every supported map LOD can carry corrections. LOD3-4 are scanned progressively. Cold chunks are
+read in 32x32-chunk Anvil batches on two background workers; all four contained summary regions
+share one file open, and the bundled native selectively parses only the NBT fields needed for the
+centered columns. A missing native falls back to the Java NBT parser without changing results.
+Completed Anvil batches stay task-local across invalidations and are reused while the source mtime
+matches, with current live summaries overlaid when consumed. Every covered chunk is still visited
+so a visible construction cannot disappear, but cold NBT summaries and current `.cfs` caches
+materialize only the centered source columns represented by the output: four columns per chunk at
+LOD3 and one at LOD4. Missing, cached, or completed Anvil regions enter the grid as one bounded
+server-tick work unit. Scanning publishes only
 bodyless revision-0 progress at a two-second client retry interval; patch encoding runs once after
 the source validation pass completes, and only that final snapshot replaces the committed tile.
 The first still-watched center-priority tile keeps the server slice until completion instead of

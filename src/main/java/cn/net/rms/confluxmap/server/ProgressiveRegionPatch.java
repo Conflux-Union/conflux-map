@@ -6,9 +6,12 @@ import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.function.LongSupplier;
@@ -59,6 +62,9 @@ final class ProgressiveRegionPatch {
         PatchBuilder.Result result;
     }
 
+    private record McaScanKey(int mcaX, int mcaZ, long sourceMcaMtimeMs) {
+    }
+
     private final String dimension;
     private final Path worldRoot;
     private final SummaryDiskCache disk;
@@ -66,6 +72,8 @@ final class ProgressiveRegionPatch {
     private final ChunkSummarizer summarizer;
     private final PreparedPatchEncoder patchEncoder;
     private final Executor worker;
+    private final Executor scanWorker;
+    private final AnvilMcaScanner mcaScanner;
     private final BaselineFactory baselineFactory;
     private final ChunkNbtReader nbtReader;
     private final int lod;
@@ -75,6 +83,7 @@ final class ProgressiveRegionPatch {
     private final int baseRegionX;
     private final int baseRegionZ;
     private final Map<Long, BuildSlot> builds = new LinkedHashMap<>();
+    private final Map<McaScanKey, CompletableFuture<AnvilMcaScanner.Scan>> mcaScans = new HashMap<>();
 
     private ProgressivePatchTask scanner;
     private RegionSource source;
@@ -110,13 +119,50 @@ final class ProgressiveRegionPatch {
             liveChunks,
             summarizer,
             worker,
+            worker,
             lod,
             tileX,
             tileZ,
             baselineFactory,
             nbtReader,
             nowNanos,
-            patchBuilder::buildPrepared
+            patchBuilder::buildPrepared,
+            new AnvilMcaScanner()
+        );
+    }
+
+    ProgressiveRegionPatch(
+        final String dimension,
+        final Path worldRoot,
+        final SummaryDiskCache disk,
+        final LiveChunkSummaryTracker liveChunks,
+        final ChunkSummarizer summarizer,
+        final PatchBuilder patchBuilder,
+        final Executor worker,
+        final Executor scanWorker,
+        final int lod,
+        final int tileX,
+        final int tileZ,
+        final BaselineFactory baselineFactory,
+        final ChunkNbtReader nbtReader,
+        final long nowNanos
+    ) {
+        this(
+            dimension,
+            worldRoot,
+            disk,
+            liveChunks,
+            summarizer,
+            worker,
+            scanWorker,
+            lod,
+            tileX,
+            tileZ,
+            baselineFactory,
+            nbtReader,
+            nowNanos,
+            patchBuilder::buildPrepared,
+            new AnvilMcaScanner()
         );
     }
 
@@ -135,6 +181,42 @@ final class ProgressiveRegionPatch {
         final long nowNanos,
         final PreparedPatchEncoder patchEncoder
     ) {
+        this(
+            dimension,
+            worldRoot,
+            disk,
+            liveChunks,
+            summarizer,
+            worker,
+            worker,
+            lod,
+            tileX,
+            tileZ,
+            baselineFactory,
+            nbtReader,
+            nowNanos,
+            patchEncoder,
+            new AnvilMcaScanner()
+        );
+    }
+
+    private ProgressiveRegionPatch(
+        final String dimension,
+        final Path worldRoot,
+        final SummaryDiskCache disk,
+        final LiveChunkSummaryTracker liveChunks,
+        final ChunkSummarizer summarizer,
+        final Executor worker,
+        final Executor scanWorker,
+        final int lod,
+        final int tileX,
+        final int tileZ,
+        final BaselineFactory baselineFactory,
+        final ChunkNbtReader nbtReader,
+        final long nowNanos,
+        final PreparedPatchEncoder patchEncoder,
+        final AnvilMcaScanner mcaScanner
+    ) {
         this.dimension = dimension;
         this.worldRoot = worldRoot;
         this.disk = disk;
@@ -142,6 +224,8 @@ final class ProgressiveRegionPatch {
         this.summarizer = summarizer;
         this.patchEncoder = patchEncoder;
         this.worker = worker;
+        this.scanWorker = scanWorker;
+        this.mcaScanner = mcaScanner;
         this.baselineFactory = baselineFactory;
         this.nbtReader = nbtReader;
         this.lod = lod;
@@ -262,6 +346,10 @@ final class ProgressiveRegionPatch {
     synchronized void close() {
         closed = true;
         builds.clear();
+        for (final CompletableFuture<AnvilMcaScanner.Scan> scan : mcaScans.values()) {
+            scan.cancel(false);
+        }
+        mcaScans.clear();
     }
 
     private void scheduleBaseline() {
@@ -387,7 +475,7 @@ final class ProgressiveRegionPatch {
         );
     }
 
-    /** Region-major source that decodes a current cache once, then fills only missing slots from NBT. */
+    /** Region-major source that prefers caches, then scans one whole Anvil file off-thread. */
     private final class RegionSource implements ProgressivePatchTask.ChunkSource {
         private int currentRegionIndex = -1;
         private int currentRegionX;
@@ -397,19 +485,40 @@ final class ProgressiveRegionPatch {
         private SummaryCodec.SampledRegion cached;
 
         @Override
-        public SummaryCodec.SampledRegion loadRegion(final int regionX, final int regionZ) {
+        public ProgressivePatchTask.RegionLoad loadRegion(final int regionX, final int regionZ) {
             final int regionIndex = (regionZ - baseRegionZ) * regionsPerSide + regionX - baseRegionX;
-            startRegion(regionIndex, regionX, regionZ);
-            if (liveEpochBefore != 0L) {
-                return null;
+            if (regionIndex != currentRegionIndex) {
+                startRegion(regionIndex, regionX, regionZ);
             }
             if (cached != null && cached.sourceMcaMtimeMs() > 0L) {
-                final SummaryCodec.SampledRegion result = cached;
+                final SummaryCodec.SampledRegion result = overlayLive(cached);
                 finishRegion();
-                return result;
+                return ProgressivePatchTask.RegionLoad.loaded(result);
             }
             if (mtimeBefore > 0L) {
-                return null;
+                final int mcaX = Math.floorDiv(regionX, 2);
+                final int mcaZ = Math.floorDiv(regionZ, 2);
+                final McaScanKey key = new McaScanKey(mcaX, mcaZ, mtimeBefore);
+                final CompletableFuture<AnvilMcaScanner.Scan> future = scanFuture(key);
+                prefetchAfter(regionIndex, key);
+                if (future == null) {
+                    return ProgressivePatchTask.RegionLoad.fallback();
+                }
+                if (!future.isDone()) {
+                    return ProgressivePatchTask.RegionLoad.waiting();
+                }
+                final AnvilMcaScanner.Scan scan;
+                try {
+                    scan = future.join();
+                } catch (final CompletionException | java.util.concurrent.CancellationException e) {
+                    return ProgressivePatchTask.RegionLoad.fallback();
+                }
+                if (scan == null || scan.sourceMcaMtimeMs() != mtimeBefore) {
+                    return ProgressivePatchTask.RegionLoad.fallback();
+                }
+                final SummaryCodec.SampledRegion result = overlayLive(scan.region(regionX, regionZ));
+                finishRegion();
+                return ProgressivePatchTask.RegionLoad.loaded(result);
             }
             final SummaryCodec.SampledChunk[] chunks = new SummaryCodec.SampledChunk[SummaryCodec.CHUNKS];
             java.util.Arrays.fill(chunks, SummaryCodec.SampledChunk.empty(1 << lod));
@@ -417,7 +526,7 @@ final class ProgressiveRegionPatch {
                 regionX, regionZ, 0L, 1 << lod, chunks
             );
             finishRegion();
-            return result;
+            return ProgressivePatchTask.RegionLoad.loaded(result);
         }
 
         @Override
@@ -477,6 +586,77 @@ final class ProgressiveRegionPatch {
             // Do not encode/write a newly scanned region on the server tick. Existing current
             // summaries are reused above; cold scans remain task-local so the 4 ms slice is not
             // defeated by optional cache persistence.
+        }
+
+        private CompletableFuture<AnvilMcaScanner.Scan> scanFuture(final McaScanKey key) {
+            CompletableFuture<AnvilMcaScanner.Scan> future = mcaScans.get(key);
+            if (future != null) {
+                return future;
+            }
+            mcaScans.keySet().removeIf(existing -> existing.mcaX() == key.mcaX()
+                && existing.mcaZ() == key.mcaZ()
+                && existing.sourceMcaMtimeMs() != key.sourceMcaMtimeMs());
+            final Path path = RegionStoragePaths.mcaFile(
+                worldRoot, dimension, key.mcaX() * 2, key.mcaZ() * 2
+            );
+            try {
+                future = CompletableFuture.supplyAsync(
+                    () -> mcaScanner.scan(
+                        path,
+                        key.mcaX(),
+                        key.mcaZ(),
+                        key.sourceMcaMtimeMs(),
+                        lod,
+                        summarizer
+                    ),
+                    scanWorker
+                );
+            } catch (final RejectedExecutionException e) {
+                return null;
+            }
+            mcaScans.put(key, future);
+            return future;
+        }
+
+        private void prefetchAfter(final int regionIndex, final McaScanKey current) {
+            final int totalRegions = regionsPerSide * regionsPerSide;
+            for (int next = regionIndex + 1; next < totalRegions; next++) {
+                final int regionX = baseRegionX + next % regionsPerSide;
+                final int regionZ = baseRegionZ + next / regionsPerSide;
+                final int mcaX = Math.floorDiv(regionX, 2);
+                final int mcaZ = Math.floorDiv(regionZ, 2);
+                if (mcaX == current.mcaX() && mcaZ == current.mcaZ()) {
+                    continue;
+                }
+                final long mtime = RegionStoragePaths.mcaMtimeMs(
+                    worldRoot, dimension, regionX, regionZ
+                );
+                if (mtime > 0L) {
+                    scanFuture(new McaScanKey(mcaX, mcaZ, mtime));
+                }
+                return;
+            }
+        }
+
+        private SummaryCodec.SampledRegion overlayLive(final SummaryCodec.SampledRegion base) {
+            SummaryCodec.SampledChunk[] chunks = null;
+            for (int localZ = 0; localZ < 16; localZ++) {
+                for (int localX = 0; localX < 16; localX++) {
+                    final int chunkX = base.rx() * 16 + localX;
+                    final int chunkZ = base.rz() * 16 + localZ;
+                    final SummaryCodec.Chunk live = liveChunks.get(dimension, chunkX, chunkZ);
+                    if (live == null) {
+                        continue;
+                    }
+                    if (chunks == null) {
+                        chunks = base.chunks().clone();
+                    }
+                    chunks[localZ * 16 + localX] = SummaryCodec.sample(live, 1 << lod);
+                }
+            }
+            return chunks == null ? base : new SummaryCodec.SampledRegion(
+                base.rx(), base.rz(), base.sourceMcaMtimeMs(), base.sampleStride(), chunks
+            );
         }
     }
 }

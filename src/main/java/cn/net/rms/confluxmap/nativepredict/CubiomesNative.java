@@ -18,6 +18,7 @@ package cn.net.rms.confluxmap.nativepredict;
  *   <li>5 - cubiomes reported a generation failure
  *   <li>6 - wrong dimension for this query (e.g. {@link #cfxEndHeights} on an Overworld handle)
  *   <li>7 - requested terrain feature is only partially supported for this biome
+ *   <li>8 - malformed chunk NBT (only from {@link #cfxScanChunkNbt})
  * </ul>
  *
  * <p>Nothing in this class loads the native library itself; that is {@link NativeLib}'s job.
@@ -30,6 +31,16 @@ final class CubiomesNative {
 
     /** Returns the shim's {@code CFX_ABI} constant, so Java can detect a stale/mismatched native build. */
     static native int cfxAbi();
+
+    /** Selectively parses one uncompressed chunk NBT payload into coarse centered columns. */
+    static native int cfxScanChunkNbt(
+        byte[] nbt,
+        int nbtLength,
+        int lod,
+        long[] outRevision,
+        int[] outNumeric,
+        String[] outStrings
+    );
 
     /**
      * Creates a context for the given cubiomes {@code MCVersion} int, world seed and dimension

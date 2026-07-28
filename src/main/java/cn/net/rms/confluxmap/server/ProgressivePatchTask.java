@@ -5,10 +5,27 @@ import java.util.function.LongSupplier;
 
 /** Region-major bounded scanner feeding one coarse correction summary grid. */
 final class ProgressivePatchTask {
+    record RegionLoad(boolean pending, SummaryCodec.SampledRegion region) {
+        static RegionLoad loaded(final SummaryCodec.SampledRegion region) {
+            if (region == null) {
+                throw new IllegalArgumentException("loaded region cannot be null");
+            }
+            return new RegionLoad(false, region);
+        }
+
+        static RegionLoad fallback() {
+            return new RegionLoad(false, null);
+        }
+
+        static RegionLoad waiting() {
+            return new RegionLoad(true, null);
+        }
+    }
+
     @FunctionalInterface
     interface ChunkSource {
-        default SummaryCodec.SampledRegion loadRegion(final int regionX, final int regionZ) {
-            return null;
+        default RegionLoad loadRegion(final int regionX, final int regionZ) {
+            return RegionLoad.fallback();
         }
 
         SummaryCodec.SampledChunk load(int chunkX, int chunkZ);
@@ -49,9 +66,12 @@ final class ProgressivePatchTask {
             final int regionX = tileX * regionsPerSide + regionIndex % regionsPerSide;
             final int regionZ = tileZ * regionsPerSide + regionIndex / regionsPerSide;
             if (chunkIndex == 0) {
-                final SummaryCodec.SampledRegion region = source.loadRegion(regionX, regionZ);
-                if (region != null) {
-                    grid.acceptRegion(region);
+                final RegionLoad loaded = source.loadRegion(regionX, regionZ);
+                if (loaded.pending()) {
+                    break;
+                }
+                if (loaded.region() != null) {
+                    grid.acceptRegion(loaded.region());
                     processedChunks += SummaryCodec.CHUNKS;
                     workUnits++;
                     if (nanoClock.getAsLong() - started >= maxNanos) {
