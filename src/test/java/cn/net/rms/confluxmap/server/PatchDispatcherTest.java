@@ -10,6 +10,7 @@ import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class PatchDispatcherTest {
@@ -116,6 +117,48 @@ class PatchDispatcherTest {
         assertEquals(1, sent.size(), "the healthy job behind the broken one must still be sent");
         assertEquals(1, sent.get(0).tileX());
         assertEquals(0, dispatcher.queued());
+    }
+
+    @Test
+    void timedDrainReportsRealQueueEncodeAndWireMeasurements() throws ProtoException {
+        final long[] clockValues = {100L, 120L, 130L, 200L};
+        final AtomicInteger clockIndex = new AtomicInteger();
+        final List<SyncPerformanceMonitor.Delivery> deliveries = new ArrayList<>();
+        final PatchDispatcher dispatcher = new PatchDispatcher(
+            new PlayerBudget(1 << 20, 0),
+            16,
+            () -> clockValues[clockIndex.getAndIncrement()],
+            deliveries::add
+        );
+        final PatchDispatcher.TileJob job = new PatchDispatcher.TileJob(
+            1, 0, 2, 4, 5, 0L, 10L, 20
+        );
+        final MapPatchS2C patch = patch(job, 8);
+        final int patchBytes = MsgCodec.encode(patch).length;
+        dispatcher.submit(List.of(job));
+
+        dispatcher.drainTimed(T0, ignored -> new PatchDispatcher.BuiltPatch(
+            patch,
+            new SyncPerformanceMonitor.DirectWork(30L, 40L),
+            SyncPerformanceMonitor.CumulativeWork.NONE
+        ), (message, encoded) -> assertEquals(patchBytes, encoded.length));
+
+        assertEquals(1, deliveries.size());
+        assertEquals(new SyncPerformanceMonitor.Delivery(
+            0,
+            2,
+            4,
+            5,
+            10L,
+            20,
+            Proto.PATCH_MODE_ABSOLUTE,
+            patchBytes,
+            90L,
+            10L,
+            200L,
+            new SyncPerformanceMonitor.DirectWork(30L, 40L),
+            SyncPerformanceMonitor.CumulativeWork.NONE
+        ), deliveries.get(0));
     }
 
     private static PatchDispatcher.TileJob job(final int tileX, final int tileZ) {

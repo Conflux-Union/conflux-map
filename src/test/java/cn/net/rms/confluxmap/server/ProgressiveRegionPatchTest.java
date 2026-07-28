@@ -205,6 +205,35 @@ class ProgressiveRegionPatchTest {
     }
 
     @Test
+    void progressiveWorkSnapshotAccumulatesServerIoAndCompute(@TempDir final Path tempDir) {
+        final ChunkSummarizer summarizer = new ChunkSummarizer();
+        final ProgressiveRegionPatch patch = new ProgressiveRegionPatch(
+            "minecraft:overworld",
+            tempDir,
+            new SummaryDiskCache(tempDir),
+            new LiveChunkSummaryTracker(new ServerConfig(), summarizer, (dimension, x, z) -> { }),
+            summarizer,
+            new PatchBuilder(),
+            Runnable::run,
+            3,
+            0,
+            0,
+            ignored -> PatchBuilder.PreparedBaseline.absoluteOnly(),
+            ignored -> null,
+            100L
+        );
+        final SyncPerformanceMonitor.CumulativeWork before = patch.workSnapshot();
+
+        patch.tick(1, Long.MAX_VALUE, System::nanoTime);
+
+        final SyncPerformanceMonitor.CumulativeWork after = patch.workSnapshot();
+        assertEquals(before.workId(), after.workId());
+        assertEquals(100L, after.startedNanos());
+        assertTrue(after.ioNanos() > before.ioNanos(), "source inspection must be measured as I/O/scan work");
+        assertTrue(after.computeNanos() > before.computeNanos(), "grid advancement must be measured as compute work");
+    }
+
+    @Test
     void completedPatchStopsPollingAndRestartsOnlyForACoveredRegionEvent(
         @TempDir final Path tempDir
     ) {

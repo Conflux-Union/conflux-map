@@ -60,7 +60,7 @@ public final class ConfluxMapCompanion {
         // Fabric global receivers and command callbacks outlive individual integrated worlds.
         networking.register();
         sharedWaypointNetworking.register();
-        SharedWaypointCommands.register(this);
+        ConfluxMapCommands.register(this);
         ServerLifecycleEvents.SERVER_STARTING.register(this::onServerStarting);
         ServerLifecycleEvents.SERVER_STARTED.register(this::onServerStarted);
         ServerLifecycleEvents.SERVER_STOPPING.register(this::onServerStopping);

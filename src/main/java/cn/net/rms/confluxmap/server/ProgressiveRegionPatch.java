@@ -14,6 +14,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.util.math.ChunkPos;
@@ -23,6 +24,7 @@ final class ProgressiveRegionPatch {
     static final int PUBLISH_CHUNK_INTERVAL = 2_048;
     private static final int MAX_REVISION_VARIANTS = 8;
     private static final byte[] EMPTY_PATCH_BODY = PatchCodec.encode(java.util.List.of());
+    private static final AtomicLong NEXT_WORK_ID = new AtomicLong();
 
     static byte[] emptyPatchBody() {
         return EMPTY_PATCH_BODY.clone();
@@ -82,8 +84,13 @@ final class ProgressiveRegionPatch {
     private final int regionsPerSide;
     private final int baseRegionX;
     private final int baseRegionZ;
+    private final long startedNanos;
     private final Map<Long, BuildSlot> builds = new LinkedHashMap<>();
     private final Map<McaScanKey, CompletableFuture<AnvilMcaScanner.Scan>> mcaScans = new HashMap<>();
+    private final long workId = NEXT_WORK_ID.incrementAndGet();
+    private final AtomicLong ioNanos = new AtomicLong();
+    private final AtomicLong computeNanos = new AtomicLong();
+    private final ThreadLocal<Long> threadIoNanos = ThreadLocal.withInitial(() -> 0L);
 
     private ProgressivePatchTask scanner;
     private RegionSource source;
@@ -242,6 +249,7 @@ final class ProgressiveRegionPatch {
         }
         this.baseRegionX = (int) firstRegionX;
         this.baseRegionZ = (int) firstRegionZ;
+        this.startedNanos = nowNanos;
         this.lastRequestedAtNanos = nowNanos;
         restartScan();
         scheduleBaseline();
@@ -253,6 +261,15 @@ final class ProgressiveRegionPatch {
 
     synchronized boolean complete() {
         return state == State.COMPLETE;
+    }
+
+    SyncPerformanceMonitor.CumulativeWork workSnapshot() {
+        return new SyncPerformanceMonitor.CumulativeWork(
+            workId,
+            startedNanos,
+            ioNanos.get(),
+            computeNanos.get()
+        );
     }
 
     /** Main server thread: advances initial chunk reads and the one pre-commit validation pass. */
@@ -267,38 +284,46 @@ final class ProgressiveRegionPatch {
         if (state == State.COMPLETE) {
             return;
         }
-        if (state == State.SCANNING) {
-            scanner.advance(source, maxChunksOrRegions, maxNanos, nanoClock);
-            if (scanner.processedChunks() - lastPublishedChunks >= PUBLISH_CHUNK_INTERVAL) {
+        final long workStartedNanos = System.nanoTime();
+        final long ioBefore = threadIoNanos.get();
+        try {
+            if (state == State.SCANNING) {
+                scanner.advance(source, maxChunksOrRegions, maxNanos, nanoClock);
+                if (scanner.processedChunks() - lastPublishedChunks >= PUBLISH_CHUNK_INTERVAL) {
+                    publish();
+                }
+                if (!scanner.complete()) {
+                    return;
+                }
+                if (!stamps.stableScan()) {
+                    restartScan();
+                    return;
+                }
                 publish();
-            }
-            if (!scanner.complete()) {
+                stamps.restartValidation();
+                state = State.VALIDATING;
                 return;
             }
-            if (!stamps.stableScan()) {
-                restartScan();
-                return;
-            }
-            publish();
-            stamps.restartValidation();
-            state = State.VALIDATING;
-            return;
-        }
 
-        final ProgressiveSourceStamps.Validation validation = stamps.validate(
-            this::currentMtime,
-            this::currentLiveEpoch,
-            maxChunksOrRegions,
-            maxNanos,
-            nanoClock
-        );
-        if (validation == ProgressiveSourceStamps.Validation.STALE) {
-            restartScan();
-        } else if (validation == ProgressiveSourceStamps.Validation.FRESH) {
-            if (state != State.COMPLETE) {
-                state = State.COMPLETE;
-                publish();
+            final ProgressiveSourceStamps.Validation validation = stamps.validate(
+                this::currentMtime,
+                this::currentLiveEpoch,
+                maxChunksOrRegions,
+                maxNanos,
+                nanoClock
+            );
+            if (validation == ProgressiveSourceStamps.Validation.STALE) {
+                restartScan();
+            } else if (validation == ProgressiveSourceStamps.Validation.FRESH) {
+                if (state != State.COMPLETE) {
+                    state = State.COMPLETE;
+                    publish();
+                }
             }
+        } finally {
+            final long elapsed = Math.max(0L, System.nanoTime() - workStartedNanos);
+            final long ioElapsed = Math.max(0L, threadIoNanos.get() - ioBefore);
+            computeNanos.addAndGet(Math.max(0L, elapsed - ioElapsed));
         }
     }
 
@@ -362,6 +387,7 @@ final class ProgressiveRegionPatch {
                     }
                 }
                 PatchBuilder.PreparedBaseline prepared;
+                final long computeStartedNanos = System.nanoTime();
                 try {
                     prepared = baselineFactory.prepare(origin);
                 } catch (final RuntimeException e) {
@@ -370,6 +396,8 @@ final class ProgressiveRegionPatch {
                         tileX, tileZ, lod, e.getMessage()
                     );
                     prepared = PatchBuilder.PreparedBaseline.absoluteOnly();
+                } finally {
+                    computeNanos.addAndGet(Math.max(0L, System.nanoTime() - computeStartedNanos));
                 }
                 if (prepared == null) {
                     prepared = PatchBuilder.PreparedBaseline.absoluteOnly();
@@ -404,6 +432,7 @@ final class ProgressiveRegionPatch {
                     }
                 }
                 PatchBuilder.Result result = null;
+                final long computeStartedNanos = System.nanoTime();
                 try {
                     result = patchEncoder.encode(snapshot, sinceRevision, prepared);
                 } catch (final IllegalArgumentException e) {
@@ -412,6 +441,8 @@ final class ProgressiveRegionPatch {
                         tileX, tileZ, lod, e.getMessage()
                     );
                     result = PatchBuilder.unavailable();
+                } finally {
+                    computeNanos.addAndGet(Math.max(0L, System.nanoTime() - computeStartedNanos));
                 }
                 synchronized (ProgressiveRegionPatch.this) {
                     slot.building = false;
@@ -459,12 +490,17 @@ final class ProgressiveRegionPatch {
     }
 
     private long currentMtime(final int regionIndex) {
-        return RegionStoragePaths.mcaMtimeMs(
-            worldRoot,
-            dimension,
-            baseRegionX + regionIndex % regionsPerSide,
-            baseRegionZ + regionIndex / regionsPerSide
-        );
+        final long started = System.nanoTime();
+        try {
+            return RegionStoragePaths.mcaMtimeMs(
+                worldRoot,
+                dimension,
+                baseRegionX + regionIndex % regionsPerSide,
+                baseRegionZ + regionIndex / regionsPerSide
+            );
+        } finally {
+            recordIoSince(started);
+        }
     }
 
     private long currentLiveEpoch(final int regionIndex) {
@@ -473,6 +509,12 @@ final class ProgressiveRegionPatch {
             baseRegionX + regionIndex % regionsPerSide,
             baseRegionZ + regionIndex / regionsPerSide
         );
+    }
+
+    private void recordIoSince(final long startedNanos) {
+        final long elapsed = Math.max(0L, System.nanoTime() - startedNanos);
+        ioNanos.addAndGet(elapsed);
+        threadIoNanos.set(threadIoNanos.get() + elapsed);
     }
 
     /** Region-major source that prefers caches, then scans one whole Anvil file off-thread. */
@@ -549,13 +591,21 @@ final class ProgressiveRegionPatch {
             } else if (cached != null && cached.chunks()[chunkIndex].generated()) {
                 summary = cached.chunks()[chunkIndex];
             } else {
+                NbtCompound nbt = null;
+                final long ioStartedNanos = System.nanoTime();
+                try {
+                    nbt = nbtReader.read(new ChunkPos(chunkX, chunkZ));
+                } catch (final IOException | RuntimeException ignored) {
+                    // A missing/corrupt source chunk is represented by an empty sample.
+                } finally {
+                    recordIoSince(ioStartedNanos);
+                }
                 SummaryCodec.SampledChunk scanned;
                 try {
-                    final NbtCompound nbt = nbtReader.read(new ChunkPos(chunkX, chunkZ));
                     scanned = nbt == null
                         ? SummaryCodec.SampledChunk.empty(1 << lod)
                         : summarizer.summarizeForLod(nbt, lod);
-                } catch (final IOException | RuntimeException ignored) {
+                } catch (final RuntimeException ignored) {
                     scanned = SummaryCodec.SampledChunk.empty(1 << lod);
                 }
                 summary = scanned;
@@ -567,22 +617,32 @@ final class ProgressiveRegionPatch {
         }
 
         private void startRegion(final int regionIndex, final int regionX, final int regionZ) {
-            currentRegionIndex = regionIndex;
-            currentRegionX = regionX;
-            currentRegionZ = regionZ;
-            mtimeBefore = RegionStoragePaths.mcaMtimeMs(worldRoot, dimension, regionX, regionZ);
-            liveEpochBefore = liveChunks.regionEpoch(dimension, regionX, regionZ);
-            cached = disk.loadCurrentSampled(dimension, regionX, regionZ, mtimeBefore, lod);
+            final long ioStartedNanos = System.nanoTime();
+            try {
+                currentRegionIndex = regionIndex;
+                currentRegionX = regionX;
+                currentRegionZ = regionZ;
+                mtimeBefore = RegionStoragePaths.mcaMtimeMs(worldRoot, dimension, regionX, regionZ);
+                liveEpochBefore = liveChunks.regionEpoch(dimension, regionX, regionZ);
+                cached = disk.loadCurrentSampled(dimension, regionX, regionZ, mtimeBefore, lod);
+            } finally {
+                recordIoSince(ioStartedNanos);
+            }
         }
 
         private void finishRegion() {
-            final long mtimeAfter = RegionStoragePaths.mcaMtimeMs(
-                worldRoot, dimension, currentRegionX, currentRegionZ
-            );
-            final long liveEpochAfter = liveChunks.regionEpoch(dimension, currentRegionX, currentRegionZ);
-            stamps.record(
-                currentRegionIndex, mtimeBefore, mtimeAfter, liveEpochBefore, liveEpochAfter
-            );
+            final long ioStartedNanos = System.nanoTime();
+            try {
+                final long mtimeAfter = RegionStoragePaths.mcaMtimeMs(
+                    worldRoot, dimension, currentRegionX, currentRegionZ
+                );
+                final long liveEpochAfter = liveChunks.regionEpoch(dimension, currentRegionX, currentRegionZ);
+                stamps.record(
+                    currentRegionIndex, mtimeBefore, mtimeAfter, liveEpochBefore, liveEpochAfter
+                );
+            } finally {
+                recordIoSince(ioStartedNanos);
+            }
             // Do not encode/write a newly scanned region on the server tick. Existing current
             // summaries are reused above; cold scans remain task-local so the 4 ms slice is not
             // defeated by optional cache persistence.
@@ -601,14 +661,21 @@ final class ProgressiveRegionPatch {
             );
             try {
                 future = CompletableFuture.supplyAsync(
-                    () -> mcaScanner.scan(
-                        path,
-                        key.mcaX(),
-                        key.mcaZ(),
-                        key.sourceMcaMtimeMs(),
-                        lod,
-                        summarizer
-                    ),
+                    () -> {
+                        final long ioStartedNanos = System.nanoTime();
+                        try {
+                            return mcaScanner.scan(
+                                path,
+                                key.mcaX(),
+                                key.mcaZ(),
+                                key.sourceMcaMtimeMs(),
+                                lod,
+                                summarizer
+                            );
+                        } finally {
+                            recordIoSince(ioStartedNanos);
+                        }
+                    },
                     scanWorker
                 );
             } catch (final RejectedExecutionException e) {
@@ -628,9 +695,15 @@ final class ProgressiveRegionPatch {
                 if (mcaX == current.mcaX() && mcaZ == current.mcaZ()) {
                     continue;
                 }
-                final long mtime = RegionStoragePaths.mcaMtimeMs(
-                    worldRoot, dimension, regionX, regionZ
-                );
+                final long ioStartedNanos = System.nanoTime();
+                final long mtime;
+                try {
+                    mtime = RegionStoragePaths.mcaMtimeMs(
+                        worldRoot, dimension, regionX, regionZ
+                    );
+                } finally {
+                    recordIoSince(ioStartedNanos);
+                }
                 if (mtime > 0L) {
                     scanFuture(new McaScanKey(mcaX, mcaZ, mtime));
                 }

@@ -13,7 +13,9 @@ import cn.net.rms.confluxmap.core.net.MapRegionViewReqC2S;
 import cn.net.rms.confluxmap.core.net.MapSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import cn.net.rms.confluxmap.core.net.Message;
+import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
+import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
 import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
 import cn.net.rms.confluxmap.core.util.TileMath;
@@ -40,7 +42,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
+import java.util.concurrent.atomic.AtomicLong;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -66,6 +68,16 @@ public final class RegionSummaryService {
     /** Hard global bound: a worst-case LOD0 page can approach the protocol's 576 KiB body cap. */
     private static final int REGION_PAGE_CACHE_LIMIT = 64;
     private static final int REGION_BASELINE_CACHE_LIMIT = 8;
+    private static final AtomicLong NEXT_REGION_WORK_ID = new AtomicLong();
+
+    @FunctionalInterface
+    public interface MessageSender {
+        void send(Message message);
+
+        default void sendEncoded(final Message message, final byte[] payload) {
+            send(message);
+        }
+    }
 
     private final ServerConfig config;
     private final ChunkSummarizer summarizer = new ChunkSummarizer(new RegistryMapColors());
@@ -118,8 +130,38 @@ public final class RegionSummaryService {
         long revision,
         byte[] body,
         long sourceMcaMtimeMs,
-        long liveEpoch
+        long liveEpoch,
+        SyncPerformanceMonitor.CumulativeWork work,
+        SyncPerformanceMonitor.CumulativeWork baselineWork
     ) {
+    }
+
+    private static final class RegionPageWork {
+        private final long workId = NEXT_REGION_WORK_ID.incrementAndGet();
+        private long startedNanos;
+        private long ioNanos;
+        private long computeNanos;
+
+        void start() {
+            startedNanos = System.nanoTime();
+        }
+
+        void addIo(final long nanos) {
+            ioNanos += Math.max(0L, nanos);
+        }
+
+        void addCompute(final long nanos) {
+            computeNanos += Math.max(0L, nanos);
+        }
+
+        SyncPerformanceMonitor.CumulativeWork snapshot() {
+            if (startedNanos <= 0L) {
+                return SyncPerformanceMonitor.CumulativeWork.NONE;
+            }
+            return new SyncPerformanceMonitor.CumulativeWork(
+                workId, startedNanos, ioNanos, computeNanos
+            );
+        }
     }
 
     private static final class RegionPageTask {
@@ -136,14 +178,22 @@ public final class RegionSummaryService {
 
     private static final class RegionBaselineTask {
         final CompletableFuture<PatchBuilder.PreparedBaseline> future;
+        final RegionPageWork work;
         long lastRequestedAtNanos;
 
         RegionBaselineTask(
             final CompletableFuture<PatchBuilder.PreparedBaseline> future,
+            final RegionPageWork work,
             final long lastRequestedAtNanos
         ) {
             this.future = future;
+            this.work = work;
             this.lastRequestedAtNanos = lastRequestedAtNanos;
+        }
+
+        SyncPerformanceMonitor.CumulativeWork workSnapshot() {
+            return work == null
+                ? SyncPerformanceMonitor.CumulativeWork.NONE : work.snapshot();
         }
     }
 
@@ -151,7 +201,9 @@ public final class RegionSummaryService {
         int reqId,
         int dimIndex,
         int lod,
-        MapRegionViewReqC2S.RegionReq request
+        MapRegionViewReqC2S.RegionReq request,
+        long receivedAtNanos,
+        int requestBytes
     ) {
     }
 
@@ -164,10 +216,17 @@ public final class RegionSummaryService {
     private static final class PlayerChannel {
         final PatchDispatcher dispatcher;
         final LinkedHashMap<RegionJobKey, RegionJob> regionQueue = new LinkedHashMap<>();
-        volatile Consumer<Message> sender;
+        final SyncPerformanceMonitor performance;
+        volatile MessageSender sender;
 
-        PlayerChannel(final PatchDispatcher dispatcher) {
-            this.dispatcher = dispatcher;
+        PlayerChannel(final PlayerBudget budget, final int maxPendingTiles) {
+            performance = new SyncPerformanceMonitor();
+            dispatcher = new PatchDispatcher(
+                budget,
+                maxPendingTiles,
+                System::nanoTime,
+                performance::record
+            );
         }
     }
 
@@ -190,30 +249,46 @@ public final class RegionSummaryService {
         final MinecraftServer server,
         final ServerPlayerEntity player,
         final MapViewReqC2S request,
-        final Consumer<Message> sender
+        final MessageSender sender
+    ) {
+        int requestPayloadBytes = 0;
+        try {
+            requestPayloadBytes = MsgCodec.encode(request).length;
+        } catch (final ProtoException ignored) {
+            // The normal network boundary already rejects unencodable requests.
+        }
+        request(server, player, request, requestPayloadBytes, sender);
+    }
+
+    public void request(
+        final MinecraftServer server,
+        final ServerPlayerEntity player,
+        final MapViewReqC2S request,
+        final int requestPayloadBytes,
+        final MessageSender sender
     ) {
         final long now = System.nanoTime();
-        final PlayerChannel channel = channels.computeIfAbsent(player.getUuid(), ignored -> new PlayerChannel(
-            new PatchDispatcher(
-                new PlayerBudget(config.maxBytesPerSecondPerPlayer, config.minRequestIntervalMs),
-                config.maxPendingTilesPerPlayer
-            )
-        ));
+        final PlayerChannel channel = channels.computeIfAbsent(player.getUuid(), ignored -> newPlayerChannel());
         channel.sender = sender;
         if (request.lod() > lodCeiling() || request.tiles().size() > config.maxTilesPerRequest
             || request.dimIndex() < 0 || !channel.dispatcher.budget().beginRequest(now)) {
-            sender.accept(new ErrorS2C(ErrorS2C.ERR_RATE_LIMITED, "map correction request is rate limited"));
+            sender.send(new ErrorS2C(ErrorS2C.ERR_RATE_LIMITED, "map correction request is rate limited"));
             return;
         }
         final List<PatchDispatcher.TileJob> jobs = new ArrayList<>(request.tiles().size());
+        final int requestTiles = request.tiles().size();
+        final int bytesPerTile = requestTiles == 0 ? 0 : Math.max(0, requestPayloadBytes) / requestTiles;
+        int remainingBytes = requestTiles == 0 ? 0 : Math.max(0, requestPayloadBytes) % requestTiles;
         for (final MapViewReqC2S.TileReq tile : request.tiles()) {
+            final int tileRequestBytes = bytesPerTile + (remainingBytes-- > 0 ? 1 : 0);
             jobs.add(new PatchDispatcher.TileJob(
-                request.reqId(), request.dimIndex(), request.lod(), tile.tileX(), tile.tileZ(), tile.sinceRevision()
+                request.reqId(), request.dimIndex(), request.lod(), tile.tileX(), tile.tileZ(),
+                tile.sinceRevision(), now, tileRequestBytes
             ));
         }
         final int overflow = channel.dispatcher.submit(jobs);
         if (overflow > 0) {
-            sender.accept(new ErrorS2C(ErrorS2C.ERR_RATE_LIMITED, "map correction queue is full"));
+            sender.send(new ErrorS2C(ErrorS2C.ERR_RATE_LIMITED, "map correction queue is full"));
         }
         invalidations.acknowledge(player.getUuid(), request);
         liveChunks.nominate(request, now);
@@ -224,31 +299,50 @@ public final class RegionSummaryService {
         final MinecraftServer server,
         final ServerPlayerEntity player,
         final MapRegionViewReqC2S request,
-        final Consumer<Message> sender
+        final MessageSender sender
+    ) {
+        int requestPayloadBytes = 0;
+        try {
+            requestPayloadBytes = MsgCodec.encode(request).length;
+        } catch (final ProtoException ignored) {
+            // The normal network boundary already rejects unencodable requests.
+        }
+        requestRegions(server, player, request, requestPayloadBytes, sender);
+    }
+
+    public void requestRegions(
+        final MinecraftServer server,
+        final ServerPlayerEntity player,
+        final MapRegionViewReqC2S request,
+        final int requestPayloadBytes,
+        final MessageSender sender
     ) {
         final long now = System.nanoTime();
-        final PlayerChannel channel = channels.computeIfAbsent(player.getUuid(), ignored -> new PlayerChannel(
-            new PatchDispatcher(
-                new PlayerBudget(config.maxBytesPerSecondPerPlayer, config.minRequestIntervalMs),
-                config.maxPendingTilesPerPlayer
-            )
-        ));
+        final PlayerChannel channel = channels.computeIfAbsent(
+            player.getUuid(), ignored -> newPlayerChannel()
+        );
         channel.sender = sender;
         if (request.lod() > lodCeiling() || request.regions().isEmpty()
             || request.regions().size() > Proto.MAX_REGION_PAGES_PER_REQ
             || request.regions().size() > config.maxTilesPerRequest
             || request.dimIndex() < 0 || worldAt(server, request.dimIndex()) == null
             || !channel.dispatcher.budget().beginRequest(now)) {
-            sender.accept(new ErrorS2C(
+            sender.send(new ErrorS2C(
                 ErrorS2C.ERR_RATE_LIMITED, "map region correction request is rate limited"
             ));
             return;
         }
         int overflow = 0;
+        final int requestRegions = request.regions().size();
+        final int bytesPerRegion = Math.max(0, requestPayloadBytes) / requestRegions;
+        int remainingBytes = Math.max(0, requestPayloadBytes) % requestRegions;
         synchronized (channel.regionQueue) {
             for (final MapRegionViewReqC2S.RegionReq region : request.regions()) {
+                final int regionRequestBytes = bytesPerRegion
+                    + (remainingBytes-- > 0 ? 1 : 0);
                 final RegionJob job = new RegionJob(
-                    request.reqId(), request.dimIndex(), request.lod(), region
+                    request.reqId(), request.dimIndex(), request.lod(), region,
+                    now, regionRequestBytes
                 );
                 final RegionJobKey key = new RegionJobKey(
                     request.dimIndex(), request.lod(), region.slice()
@@ -263,7 +357,7 @@ public final class RegionSummaryService {
             }
         }
         if (overflow > 0) {
-            sender.accept(new ErrorS2C(ErrorS2C.ERR_RATE_LIMITED, "map region correction queue is full"));
+            sender.send(new ErrorS2C(ErrorS2C.ERR_RATE_LIMITED, "map region correction queue is full"));
         }
         regionInvalidations.acknowledge(player.getUuid(), request);
         liveChunks.nominate(request, now);
@@ -274,17 +368,12 @@ public final class RegionSummaryService {
         final MinecraftServer server,
         final UUID player,
         final MapSyncSubscribeC2S request,
-        final Consumer<Message> sender
+        final MessageSender sender
     ) {
         if (request.active() && (request.lod() > lodCeiling() || worldAt(server, request.dimIndex()) == null)) {
             return false;
         }
-        final PlayerChannel channel = channels.computeIfAbsent(player, ignored -> new PlayerChannel(
-            new PatchDispatcher(
-                new PlayerBudget(config.maxBytesPerSecondPerPlayer, config.minRequestIntervalMs),
-                config.maxPendingTilesPerPlayer
-            )
-        ));
+        final PlayerChannel channel = channels.computeIfAbsent(player, ignored -> newPlayerChannel());
         channel.sender = sender;
         if (!invalidations.subscribe(player, request)) {
             return false;
@@ -301,18 +390,13 @@ public final class RegionSummaryService {
         final MinecraftServer server,
         final UUID player,
         final MapRegionSyncSubscribeC2S request,
-        final Consumer<Message> sender
+        final MessageSender sender
     ) {
         if (request.active() && (request.lod() > lodCeiling()
             || worldAt(server, request.dimIndex()) == null)) {
             return false;
         }
-        final PlayerChannel channel = channels.computeIfAbsent(player, ignored -> new PlayerChannel(
-            new PatchDispatcher(
-                new PlayerBudget(config.maxBytesPerSecondPerPlayer, config.minRequestIntervalMs),
-                config.maxPendingTilesPerPlayer
-            )
-        ));
+        final PlayerChannel channel = channels.computeIfAbsent(player, ignored -> newPlayerChannel());
         channel.sender = sender;
         if (!regionInvalidations.subscribe(player, request)) {
             return false;
@@ -338,11 +422,11 @@ public final class RegionSummaryService {
             final PlayerChannel channel = entry.getValue();
             final MapInvalidateS2C invalidation = invalidations.poll(entry.getKey());
             if (invalidation != null && channel.sender != null) {
-                channel.sender.accept(invalidation);
+                channel.sender.send(invalidation);
             }
             final MapRegionInvalidateS2C regionInvalidation = regionInvalidations.poll(entry.getKey());
             if (regionInvalidation != null && channel.sender != null) {
-                channel.sender.accept(regionInvalidation);
+                channel.sender.send(regionInvalidation);
             }
             if (channel.dispatcher.queued() > 0 && channel.sender != null) {
                 drain(server, channel, now);
@@ -364,6 +448,12 @@ public final class RegionSummaryService {
                 channel.regionQueue.clear();
             }
         }
+    }
+
+    /** Completed sync-item averages for one player's current server connection. */
+    public List<SyncPerformanceMonitor.LodSnapshot> performance(final UUID player) {
+        final PlayerChannel channel = channels.get(player);
+        return channel == null ? List.of() : channel.performance.snapshots();
     }
 
     /** Captures chunks still loaded when vanilla begins its final save/unload sequence. */
@@ -407,18 +497,29 @@ public final class RegionSummaryService {
     }
 
     private void drain(final MinecraftServer server, final PlayerChannel channel, final long nowNanos) {
-        final Consumer<Message> sender = channel.sender;
+        final MessageSender sender = channel.sender;
         if (sender == null) {
             return;
         }
         final SummaryDiskCache disk = diskFor(server);
-        channel.dispatcher.drain(nowNanos, job -> buildJob(server, disk, job), sender);
+        channel.dispatcher.drainTimed(
+            nowNanos,
+            job -> buildJob(server, disk, job),
+            sender::sendEncoded
+        );
+    }
+
+    private PlayerChannel newPlayerChannel() {
+        return new PlayerChannel(
+            new PlayerBudget(config.maxBytesPerSecondPerPlayer, config.minRequestIntervalMs),
+            config.maxPendingTilesPerPlayer
+        );
     }
 
     private void drainRegions(
         final MinecraftServer server, final PlayerChannel channel, final long nowNanos
     ) {
-        final Consumer<Message> sender = channel.sender;
+        final MessageSender sender = channel.sender;
         if (sender == null) {
             return;
         }
@@ -436,14 +537,15 @@ public final class RegionSummaryService {
             while (jobs.hasNext()) {
                 final RegionJob job = jobs.next().getValue();
                 final ServerWorld world = worldAt(server, job.dimIndex());
-                if (world == null || !config.shareCorrections) {
-                    sender.accept(unavailableRegion(job));
-                    jobs.remove();
-                    continue;
-                }
-                final RegionPageResult result = readyRegionPage(world, disk, job, nowNanos);
-                if (result == null) {
-                    return;
+                final boolean budgeted = world != null && config.shareCorrections;
+                final RegionPageResult result;
+                if (budgeted) {
+                    result = readyRegionPage(world, disk, job, nowNanos);
+                    if (result == null) {
+                        return;
+                    }
+                } else {
+                    result = unavailableRegionResult();
                 }
                 final boolean unchanged = result.mode() != Proto.PATCH_MODE_UNAVAILABLE
                     && job.request().sinceRevision() != Long.MIN_VALUE
@@ -457,16 +559,41 @@ public final class RegionSummaryService {
                     result.revision(), unchanged ? new byte[0] : result.body()
                 );
                 final byte[] encoded;
+                final long encodeStartedNanos = System.nanoTime();
                 try {
-                    encoded = cn.net.rms.confluxmap.core.net.MsgCodec.encode(response);
-                } catch (final cn.net.rms.confluxmap.core.net.ProtoException e) {
+                    encoded = MsgCodec.encode(response);
+                } catch (final ProtoException e) {
                     jobs.remove();
                     continue;
                 }
-                if (!channel.dispatcher.budget().allowBytes(encoded.length, nowNanos)) {
+                final long encodeNanos = Math.max(
+                    0L, System.nanoTime() - encodeStartedNanos
+                );
+                if (budgeted
+                    && !channel.dispatcher.budget().allowBytes(encoded.length, nowNanos)) {
                     return;
                 }
-                sender.accept(response);
+                sender.sendEncoded(response, encoded);
+                final long deliveredNanos = System.nanoTime();
+                final SyncPerformanceMonitor.CumulativeWork work = result.work();
+                final long queueNanos = work.present()
+                    ? Math.max(0L, work.startedNanos() - job.receivedAtNanos()) : 0L;
+                final SyncPerformanceMonitor.CumulativeWork baselineWork =
+                    result.baselineWork();
+                final SyncPerformanceMonitor.DirectWork directWork =
+                    baselineWork.present()
+                        && baselineWork.startedNanos() >= job.receivedAtNanos()
+                    ? new SyncPerformanceMonitor.DirectWork(
+                        baselineWork.ioNanos(), baselineWork.computeNanos()
+                    )
+                    : SyncPerformanceMonitor.DirectWork.NONE;
+                channel.performance.record(new SyncPerformanceMonitor.Delivery(
+                    job.dimIndex(), job.lod(),
+                    job.request().regionX(), job.request().regionZ(),
+                    job.receivedAtNanos(), job.requestBytes(), response.mode(), encoded.length,
+                    queueNanos, encodeNanos, deliveredNanos,
+                    directWork, work
+                ));
                 jobs.remove();
             }
         }
@@ -499,12 +626,16 @@ public final class RegionSummaryService {
                 if (regionPageTasks.size() >= REGION_PAGE_CACHE_LIMIT) {
                     return null;
                 }
-                final CompletableFuture<PatchBuilder.PreparedBaseline> baseline =
+                final RegionBaselineTask baseline =
                     regionBaseline(world, job.lod(), job.request().slice(), nowNanos);
+                final RegionPageWork work = new RegionPageWork();
                 final CompletableFuture<RegionPageResult> future = CompletableFuture.supplyAsync(
-                    () -> buildRegionPage(
-                        world, disk, job.lod(), job.request().slice(), baseline
-                    ),
+                    () -> {
+                        work.start();
+                        return buildRegionPage(
+                            world, disk, job.lod(), job.request().slice(), baseline, work
+                        );
+                    },
                     progressiveScanWorker
                 );
                 existing = new RegionPageTask(future, nowNanos);
@@ -540,52 +671,80 @@ public final class RegionSummaryService {
         final SummaryDiskCache disk,
         final int lod,
         final ChunkRegionSlice slice,
-        final CompletableFuture<PatchBuilder.PreparedBaseline> baselineFuture
+        final RegionBaselineTask baselineTask,
+        final RegionPageWork work
     ) {
         final String dimension = world.getRegistryKey().getValue().toString();
         final Path worldRoot = world.getServer().getSavePath(WorldSavePath.ROOT);
-        final long mtimeBefore = RegionStoragePaths.mcaMtimeMs(
-            worldRoot, dimension, slice.regionX(), slice.regionZ()
-        );
+        final long mtimeBefore;
+        long started = System.nanoTime();
+        try {
+            mtimeBefore = RegionStoragePaths.mcaMtimeMs(
+                worldRoot, dimension, slice.regionX(), slice.regionZ()
+            );
+        } finally {
+            work.addIo(System.nanoTime() - started);
+        }
         final long liveEpochBefore = liveChunks.regionEpoch(
             dimension, slice.regionX(), slice.regionZ()
         );
-        SummaryCodec.SampledRegion region = disk.loadCurrentSampled(
-            dimension, slice.regionX(), slice.regionZ(), mtimeBefore, lod
-        );
-        if (region == null) {
-            if (mtimeBefore <= 0L) {
-                region = emptySampledRegion(slice.regionX(), slice.regionZ(), lod);
-            } else {
-                final int mcaX = Math.floorDiv(slice.regionX(), 2);
-                final int mcaZ = Math.floorDiv(slice.regionZ(), 2);
-                final Path path = RegionStoragePaths.mcaFile(
-                    worldRoot, dimension, slice.regionX(), slice.regionZ()
-                );
-                final SummaryCodec.SampledRegion scanned = regionMcaScanner.scanRegion(
-                    path, mcaX, mcaZ, mtimeBefore, lod, slice, summarizer
-                );
-                if (scanned == null || scanned.sourceMcaMtimeMs() != mtimeBefore) {
-                    return unavailableRegionResult();
+        SummaryCodec.SampledRegion region;
+        started = System.nanoTime();
+        try {
+            region = disk.loadCurrentSampled(
+                dimension, slice.regionX(), slice.regionZ(), mtimeBefore, lod
+            );
+            if (region == null) {
+                if (mtimeBefore <= 0L) {
+                    region = emptySampledRegion(slice.regionX(), slice.regionZ(), lod);
+                } else {
+                    final int mcaX = Math.floorDiv(slice.regionX(), 2);
+                    final int mcaZ = Math.floorDiv(slice.regionZ(), 2);
+                    final Path path = RegionStoragePaths.mcaFile(
+                        worldRoot, dimension, slice.regionX(), slice.regionZ()
+                    );
+                    final SummaryCodec.SampledRegion scanned = regionMcaScanner.scanRegion(
+                        path, mcaX, mcaZ, mtimeBefore, lod, slice, summarizer
+                    );
+                    if (scanned == null || scanned.sourceMcaMtimeMs() != mtimeBefore) {
+                        return unavailableRegionResult(work.snapshot());
+                    }
+                    region = scanned;
                 }
-                region = scanned;
             }
+        } finally {
+            work.addIo(System.nanoTime() - started);
         }
-        region = liveChunks.overlay(dimension, region, slice);
+        started = System.nanoTime();
+        try {
+            region = liveChunks.overlay(dimension, region, slice);
+        } finally {
+            work.addCompute(System.nanoTime() - started);
+        }
         final PatchBuilder.PreparedBaseline prepared;
         try {
-            final PatchBuilder.PreparedBaseline completed = baselineFuture.join();
+            final PatchBuilder.PreparedBaseline completed = baselineTask.future.join();
             prepared = completed == null
                 ? PatchBuilder.PreparedBaseline.absoluteOnly() : completed;
         } catch (final CompletionException | java.util.concurrent.CancellationException e) {
-            return unavailableRegionResult();
+            return unavailableRegionResult(work.snapshot(), baselineTask.workSnapshot());
         }
-        final RegionPatchBuilder.Result built = regionPatchBuilder.build(
-            lod, slice, region, Long.MIN_VALUE, prepared
-        );
-        final long mtimeAfter = RegionStoragePaths.mcaMtimeMs(
-            worldRoot, dimension, slice.regionX(), slice.regionZ()
-        );
+        final RegionPatchBuilder.Result built;
+        started = System.nanoTime();
+        try {
+            built = regionPatchBuilder.build(lod, slice, region, Long.MIN_VALUE, prepared);
+        } finally {
+            work.addCompute(System.nanoTime() - started);
+        }
+        final long mtimeAfter;
+        started = System.nanoTime();
+        try {
+            mtimeAfter = RegionStoragePaths.mcaMtimeMs(
+                worldRoot, dimension, slice.regionX(), slice.regionZ()
+            );
+        } finally {
+            work.addIo(System.nanoTime() - started);
+        }
         final long liveEpochAfter = liveChunks.regionEpoch(
             dimension, slice.regionX(), slice.regionZ()
         );
@@ -593,7 +752,8 @@ public final class RegionSummaryService {
             throw new IllegalStateException("region source changed during page build");
         }
         return new RegionPageResult(
-            built.mode(), built.revision(), built.body(), mtimeAfter, liveEpochAfter
+            built.mode(), built.revision(), built.body(), mtimeAfter, liveEpochAfter,
+            work.snapshot(), baselineTask.workSnapshot()
         );
     }
 
@@ -612,12 +772,29 @@ public final class RegionSummaryService {
     }
 
     private static RegionPageResult unavailableRegionResult() {
-        return new RegionPageResult(
-            Proto.PATCH_MODE_UNAVAILABLE, 0L, new byte[0], Long.MIN_VALUE, Long.MIN_VALUE
+        return unavailableRegionResult(
+            SyncPerformanceMonitor.CumulativeWork.NONE,
+            SyncPerformanceMonitor.CumulativeWork.NONE
         );
     }
 
-    private CompletableFuture<PatchBuilder.PreparedBaseline> regionBaseline(
+    private static RegionPageResult unavailableRegionResult(
+        final SyncPerformanceMonitor.CumulativeWork work
+    ) {
+        return unavailableRegionResult(work, SyncPerformanceMonitor.CumulativeWork.NONE);
+    }
+
+    private static RegionPageResult unavailableRegionResult(
+        final SyncPerformanceMonitor.CumulativeWork work,
+        final SyncPerformanceMonitor.CumulativeWork baselineWork
+    ) {
+        return new RegionPageResult(
+            Proto.PATCH_MODE_UNAVAILABLE, 0L, new byte[0], Long.MIN_VALUE, Long.MIN_VALUE,
+            work, baselineWork
+        );
+    }
+
+    private RegionBaselineTask regionBaseline(
         final ServerWorld world,
         final int lod,
         final ChunkRegionSlice slice,
@@ -634,30 +811,39 @@ public final class RegionSummaryService {
             if (existing == null) {
                 makeRegionBaselineCapacity(nowNanos);
                 if (regionBaselineTasks.size() >= REGION_BASELINE_CACHE_LIMIT) {
-                    return CompletableFuture.completedFuture(
-                        PatchBuilder.PreparedBaseline.absoluteOnly()
+                    return new RegionBaselineTask(
+                        CompletableFuture.completedFuture(
+                            PatchBuilder.PreparedBaseline.absoluteOnly()
+                        ),
+                        null,
+                        nowNanos
                     );
                 }
                 final ProgressiveRegionPatch.BaselineFactory factory = regionBaselineFactory(
                     world, lod, slice
                 );
                 final SummaryView view = baselineView(lod, slice);
+                final RegionPageWork work = new RegionPageWork();
                 final CompletableFuture<PatchBuilder.PreparedBaseline> future =
                     CompletableFuture.supplyAsync(() -> {
+                        work.start();
+                        final long started = System.nanoTime();
                         try {
                             final PatchBuilder.PreparedBaseline prepared = factory.prepare(view);
                             return prepared == null
                                 ? PatchBuilder.PreparedBaseline.absoluteOnly() : prepared;
                         } catch (final RuntimeException e) {
                             return PatchBuilder.PreparedBaseline.absoluteOnly();
+                        } finally {
+                            work.addCompute(System.nanoTime() - started);
                         }
                     }, progressiveWorker);
-                existing = new RegionBaselineTask(future, nowNanos);
+                existing = new RegionBaselineTask(future, work, nowNanos);
                 regionBaselineTasks.put(key, existing);
             } else {
                 existing.lastRequestedAtNanos = nowNanos;
             }
-            return existing.future;
+            return existing;
         }
     }
 
@@ -711,47 +897,59 @@ public final class RegionSummaryService {
         return cn.net.rms.confluxmap.core.util.TileMath.MAX_LOD;
     }
 
-    private static MapRegionPatchS2C unavailableRegion(final RegionJob job) {
-        return new MapRegionPatchS2C(
-            job.reqId(), job.dimIndex(), job.lod(),
-            job.request().regionX(), job.request().regionZ(),
-            job.request().minLocalChunkX(), job.request().minLocalChunkZ(),
-            job.request().maxLocalChunkX(), job.request().maxLocalChunkZ(),
-            Proto.PATCH_MODE_UNAVAILABLE, 0L, new byte[0]
-        );
-    }
-
-    private MapPatchS2C buildJob(
+    private PatchDispatcher.BuiltPatch buildJob(
         final MinecraftServer server,
         final SummaryDiskCache disk,
         final PatchDispatcher.TileJob job
     ) {
+        long ioNanos = 0L;
+        long computeNanos = 0L;
         try {
             final ServerWorld world = worldAt(server, job.dimIndex());
             if (world == null || !config.shareCorrections) {
-                return unavailable(job);
+                return unavailable(job, ioNanos, computeNanos);
             }
             if (job.lod() >= PROGRESSIVE_MIN_LOD) {
                 return progressiveJob(world, disk, job);
             }
-            final SummaryTile summary = readTile(world, job.tileX(), job.tileZ(), job.lod(), disk);
-            final PatchBuilder.Result result = buildPatch(world, summary, job.sinceRevision());
-            return new MapPatchS2C(job.reqId(), job.dimIndex(), job.lod(), job.tileX(), job.tileZ(),
-                result.mode(), result.revision(), result.presence(), result.body());
+            final SummaryTile summary;
+            long started = System.nanoTime();
+            try {
+                summary = readTile(world, job.tileX(), job.tileZ(), job.lod(), disk);
+            } finally {
+                ioNanos += Math.max(0L, System.nanoTime() - started);
+            }
+            final PatchBuilder.Result result;
+            started = System.nanoTime();
+            try {
+                result = buildPatch(world, summary, job.sinceRevision());
+            } finally {
+                computeNanos += Math.max(0L, System.nanoTime() - started);
+            }
+            final MapPatchS2C patch = new MapPatchS2C(
+                job.reqId(), job.dimIndex(), job.lod(), job.tileX(), job.tileZ(),
+                result.mode(), result.revision(), result.presence(), result.body()
+            );
+            return new PatchDispatcher.BuiltPatch(
+                patch,
+                new SyncPerformanceMonitor.DirectWork(ioNanos, computeNanos),
+                SyncPerformanceMonitor.CumulativeWork.NONE
+            );
         } catch (final Exception e) {
             ConfluxMapMod.LOGGER.warn(
                 "companion: patch build failed for tile {},{} lod {} ({})",
                 job.tileX(), job.tileZ(), job.lod(), e.getMessage()
             );
-            return unavailable(job);
+            return unavailable(job, ioNanos, computeNanos);
         }
     }
 
-    private MapPatchS2C progressiveJob(
+    private PatchDispatcher.BuiltPatch progressiveJob(
         final ServerWorld world,
         final SummaryDiskCache disk,
         final PatchDispatcher.TileJob job
     ) {
+        final long responseStartedNanos = System.nanoTime();
         final long now = System.nanoTime();
         final ProgressiveKey key = new ProgressiveKey(world, job.lod(), job.tileX(), job.tileZ());
         final ProgressiveRegionPatch task;
@@ -760,11 +958,11 @@ public final class RegionSummaryService {
             if (existing == null) {
                 evictProgressiveTasks(now, true);
                 if (progressiveTasks.size() >= PROGRESSIVE_MAX_ACTIVE_TILES) {
-                    return new MapPatchS2C(
+                    return directBuilt(new MapPatchS2C(
                         job.reqId(), job.dimIndex(), job.lod(), job.tileX(), job.tileZ(),
                         Proto.PATCH_MODE_PARTIAL, 0L, new byte[Proto.PATCH_PRESENCE_BYTES],
                         ProgressiveRegionPatch.emptyPatchBody()
-                    );
+                    ), 0L, Math.max(0L, System.nanoTime() - responseStartedNanos));
                 }
                 final String dimension = world.getRegistryKey().getValue().toString();
                 final Path worldRoot = world.getServer().getSavePath(WorldSavePath.ROOT);
@@ -789,9 +987,16 @@ public final class RegionSummaryService {
             task = existing;
         }
         final ProgressiveRegionPatch.Response response = task.response(job.sinceRevision(), now);
-        return new MapPatchS2C(
+        final MapPatchS2C patch = new MapPatchS2C(
             job.reqId(), job.dimIndex(), job.lod(), job.tileX(), job.tileZ(),
             response.mode(), response.revision(), response.presence(), response.body()
+        );
+        return new PatchDispatcher.BuiltPatch(
+            patch,
+            new SyncPerformanceMonitor.DirectWork(
+                0L, Math.max(0L, System.nanoTime() - responseStartedNanos)
+            ),
+            task.workSnapshot()
         );
     }
 
@@ -943,9 +1148,29 @@ public final class RegionSummaryService {
         }
     }
 
-    private static MapPatchS2C unavailable(final PatchDispatcher.TileJob job) {
-        return new MapPatchS2C(job.reqId(), job.dimIndex(), job.lod(), job.tileX(), job.tileZ(),
-            Proto.PATCH_MODE_UNAVAILABLE, 0L, new byte[Proto.PATCH_PRESENCE_BYTES], new byte[0]);
+    private static PatchDispatcher.BuiltPatch unavailable(
+        final PatchDispatcher.TileJob job,
+        final long ioNanos,
+        final long computeNanos
+    ) {
+        return directBuilt(
+            new MapPatchS2C(job.reqId(), job.dimIndex(), job.lod(), job.tileX(), job.tileZ(),
+                Proto.PATCH_MODE_UNAVAILABLE, 0L, new byte[Proto.PATCH_PRESENCE_BYTES], new byte[0]),
+            ioNanos,
+            computeNanos
+        );
+    }
+
+    private static PatchDispatcher.BuiltPatch directBuilt(
+        final MapPatchS2C patch,
+        final long ioNanos,
+        final long computeNanos
+    ) {
+        return new PatchDispatcher.BuiltPatch(
+            patch,
+            new SyncPerformanceMonitor.DirectWork(ioNanos, computeNanos),
+            SyncPerformanceMonitor.CumulativeWork.NONE
+        );
     }
 
     private PatchBuilder.Result buildPatch(

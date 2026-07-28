@@ -12,12 +12,13 @@ import cn.net.rms.confluxmap.server.shared.SharedWaypointService;
 import net.fabricmc.fabric.api.command.v1.CommandRegistrationCallback;
 //#endif
 import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.server.network.ServerPlayerEntity;
 
-/** Operator controls for the shared-waypoint runtime kill switch. */
-final class SharedWaypointCommands {
+/** Server commands for the companion's player diagnostics and operator controls. */
+final class ConfluxMapCommands {
     private static boolean registered;
 
-    private SharedWaypointCommands() {
+    private ConfluxMapCommands() {
     }
 
     static synchronized void register(final ConfluxMapCompanion companion) {
@@ -43,7 +44,29 @@ final class SharedWaypointCommands {
                     .then(literal("disable")
                         .requires(source -> MinecraftAccess.hasPermission(source, 2))
                         .executes(context -> disable(companion, context.getSource()))))
+                .then(literal("performance")
+                    .requires(source -> source.getEntity() instanceof ServerPlayerEntity)
+                    .executes(context -> performance(companion, context.getSource())))
         ));
+    }
+
+    private static int performance(
+        final ConfluxMapCompanion companion,
+        final ServerCommandSource source
+    ) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        if (!companion.isEnabled()) {
+            return error(source, "Conflux Map companion is disabled.");
+        }
+        final ServerPlayerEntity player = source.getPlayer();
+        final java.util.List<SyncPerformanceMonitor.LodSnapshot> snapshots =
+            companion.summaries().performance(player.getUuid());
+        for (final String line : SyncPerformanceFormatter.format(
+            snapshots,
+            cn.net.rms.confluxmap.core.util.TileMath.MAX_LOD
+        )) {
+            MinecraftAccess.sendFeedback(source, Texts.literal(line), false);
+        }
+        return 1;
     }
 
     private static int status(

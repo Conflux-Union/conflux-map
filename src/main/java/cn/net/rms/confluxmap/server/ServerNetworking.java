@@ -98,13 +98,13 @@ public final class ServerNetworking {
             if (msg instanceof final HelloC2S hello) {
                 handleHello(server, player, hello);
             } else if (msg instanceof final MapViewReqC2S req) {
-                handleMapViewReq(server, player, req);
+                handleMapViewReq(server, player, req, payload.length);
             } else if (msg instanceof final LoadStateSubscribeC2S req) {
                 handleLoadStateSubscribe(server, player, req);
             } else if (msg instanceof final MapSyncSubscribeC2S req) {
                 handleMapSyncSubscribe(server, player, req);
             } else if (msg instanceof final MapRegionViewReqC2S req) {
-                handleMapRegionViewReq(server, player, req);
+                handleMapRegionViewReq(server, player, req, payload.length);
             } else if (msg instanceof final MapRegionSyncSubscribeC2S req) {
                 handleMapRegionSyncSubscribe(server, player, req);
             } else {
@@ -147,25 +147,31 @@ public final class ServerNetworking {
         );
     }
 
-    private void handleMapViewReq(final MinecraftServer server, final ServerPlayerEntity player, final MapViewReqC2S req) {
+    private void handleMapViewReq(
+        final MinecraftServer server,
+        final ServerPlayerEntity player,
+        final MapViewReqC2S req,
+        final int payloadBytes
+    ) {
         if (!companion.config().shareCorrections) {
             send(player, new ErrorS2C(ErrorS2C.ERR_COMPANION_DISABLED, "map corrections are disabled"));
             return;
         }
-        companion.summaries().request(server, player, req, msg -> send(player, msg));
+        companion.summaries().request(server, player, req, payloadBytes, senderFor(player));
     }
 
     private void handleMapRegionViewReq(
         final MinecraftServer server,
         final ServerPlayerEntity player,
-        final MapRegionViewReqC2S request
+        final MapRegionViewReqC2S request,
+        final int payloadBytes
     ) {
         if (!companion.config().shareCorrections) {
             send(player, new ErrorS2C(ErrorS2C.ERR_COMPANION_DISABLED, "map corrections are disabled"));
             return;
         }
         companion.summaries().requestRegions(
-            server, player, request, message -> send(player, message)
+            server, player, request, payloadBytes, senderFor(player)
         );
     }
 
@@ -194,7 +200,7 @@ public final class ServerNetworking {
             return;
         }
         if (!companion.summaries().subscribe(
-            server, player.getUuid(), request, message -> send(player, message)
+            server, player.getUuid(), request, senderFor(player)
         )) {
             send(player, new ErrorS2C(ErrorS2C.ERR_MALFORMED_REQUEST, "invalid map-sync viewport"));
         }
@@ -210,7 +216,7 @@ public final class ServerNetworking {
             return;
         }
         if (!companion.summaries().subscribeRegions(
-            server, player.getUuid(), request, message -> send(player, message)
+            server, player.getUuid(), request, senderFor(player)
         )) {
             send(player, new ErrorS2C(ErrorS2C.ERR_MALFORMED_REQUEST, "invalid region-sync viewport"));
         }
@@ -291,7 +297,25 @@ public final class ServerNetworking {
             ConfluxMapMod.LOGGER.error("companion: failed to serialize {}: {}", msg.getClass().getSimpleName(), e.getMessage());
             return;
         }
+        send(player, payload);
+    }
+
+    private static void send(final ServerPlayerEntity player, final byte[] payload) {
         PlayNetworking.sendServer(player, CHANNEL, payload);
+    }
+
+    private static RegionSummaryService.MessageSender senderFor(final ServerPlayerEntity player) {
+        return new RegionSummaryService.MessageSender() {
+            @Override
+            public void send(final Message message) {
+                ServerNetworking.send(player, message);
+            }
+
+            @Override
+            public void sendEncoded(final Message message, final byte[] payload) {
+                ServerNetworking.send(player, payload);
+            }
+        };
     }
 
     private static void validatePayload(final byte[] payload) throws ProtoException {
