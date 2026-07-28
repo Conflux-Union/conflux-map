@@ -84,7 +84,7 @@ a world is upgraded. Old or cross-version candidate positions are intentionally 
 
 ## Companion protocol
 
-`confluxmap:map_sync` v3 uses big-endian framed messages. `MAP_VIEW_REQ` carries up to eight tile
+`confluxmap:map_sync` v4 uses big-endian framed messages. `MAP_VIEW_REQ` carries up to eight tile
 coordinates and the revision of each client's last committed snapshot. A tile is 256 output pixels
 per edge and covers `2^lod` LOD-0 regions per side. A final `MAP_PATCH` is a complete authoritative
 snapshot, not a temporal delta: applying it atomically replaces every older residual sample.
@@ -97,9 +97,12 @@ All fields are compared exactly. An evaluated pixel without a difference sample 
 the baseline; a difference sample is the server's absolute actual value. Returning to the baseline
 therefore needs no removal marker—the next complete snapshot simply omits that sample.
 
-The patch body is deliberately not compressed by the mod. Sparse masks and homogeneous planes keep
-the bytes compressible, while Minecraft's normal packet compression owns the actual compression.
-A missing or mismatched predictor uses a complete absolute snapshot, never a false residual.
+`PatchCodec` writes the evaluated and difference sparse masks, then homogeneous value planes.
+Surface heights are zigzag-varint deltas in pixel order; categorical fields remain grouped for
+long terrain runs. Each body is Deflate-compressed with bounded inflation before `MAP_PATCH` is
+framed, so client traffic accounting reflects the compact payload instead of the pre-compression
+field planes. A missing or mismatched predictor uses a complete absolute snapshot, never a false
+residual.
 
 Every supported map LOD can carry corrections. LOD3-4 are scanned progressively under one bounded
 server-tick budget. Every covered chunk is still visited so a visible construction cannot

@@ -5,9 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.zip.Deflater;
+import java.util.zip.DeflaterOutputStream;
 import org.junit.jupiter.api.Test;
 
 class PatchCodecTest {
@@ -57,7 +60,7 @@ class PatchCodecTest {
     }
 
     @Test
-    void fullTileRawPlanesStayUnderCustomPayloadCap() throws Exception {
+    void structuredFullTileStaysUnderCompressedCap() throws Exception {
         final List<PatchCodec.Sample> samples = new ArrayList<>(PatchCodec.PIXELS);
         for (int z = 0; z < 256; z++) {
             for (int x = 0; x < 256; x++) {
@@ -76,8 +79,8 @@ class PatchCodecTest {
             }
         }
         final byte[] body = PatchCodec.encode(new PatchCodec.Patch(samples));
-        assertEquals(PatchCodec.MAX_RAW_BYTES, body.length);
-        assertTrue(body.length < Proto.MAX_S2C_PAYLOAD);
+        assertTrue(body.length <= 48 * 1024,
+            "structured full-tile body is " + body.length + " bytes");
         final PatchCodec.Patch decoded = PatchCodec.decode(body);
         assertEquals(PatchCodec.PIXELS, decoded.size());
         assertEquals(samples.get(129 * 256 + 200), decoded.sampleAt(129 * 256 + 200));
@@ -108,6 +111,30 @@ class PatchCodecTest {
         final int differenceCoarse = 1 + PatchCodec.COARSE_MASK_BYTES;
         raw[differenceCoarse] = 1;
         raw[differenceCoarse + PatchCodec.COARSE_MASK_BYTES] = 1;
-        assertThrows(ProtoException.class, () -> PatchCodec.decode(raw));
+        assertThrows(ProtoException.class, () -> PatchCodec.decode(deflate(raw)));
+    }
+
+    @Test
+    void compressedBodyCannotInflatePastRawCap() {
+        final byte[] oversized = new byte[PatchCodec.MAX_RAW_BYTES + 1];
+        assertThrows(ProtoException.class, () -> PatchCodec.decode(deflate(oversized)));
+    }
+
+    @Test
+    void trailingCompressedBytesAreRejected() throws Exception {
+        final byte[] valid = PatchCodec.encode(new PatchCodec.Patch(List.of()));
+        final byte[] trailing = Arrays.copyOf(valid, valid.length + 1);
+        assertThrows(ProtoException.class, () -> PatchCodec.decode(trailing));
+    }
+
+    private static byte[] deflate(final byte[] raw) throws Exception {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        final Deflater deflater = new Deflater();
+        try (DeflaterOutputStream stream = new DeflaterOutputStream(out, deflater)) {
+            stream.write(raw);
+        } finally {
+            deflater.end();
+        }
+        return out.toByteArray();
     }
 }

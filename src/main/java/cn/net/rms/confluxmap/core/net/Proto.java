@@ -23,16 +23,16 @@ public final class Proto {
 
     /**
      * Protocol version this build speaks. Mismatched minors are tolerated; majors are not.
-     * Major 3 makes every final MAP_PATCH an exact authoritative snapshot. Its raw body carries
-     * evaluated and difference masks plus homogeneous value planes; Minecraft compresses the
-     * framed packet. Major 2 used tolerant incremental residuals and a compressed body.
+     * Major 4 keeps major 3's exact authoritative snapshots but delta-encodes heights and
+     * compresses each patch body before framing. Major 3 carried raw evaluated/difference masks
+     * and homogeneous value planes. Major 2 used tolerant incremental residuals.
      * Minor 1 added the per-dim generator preset in spare bits of HELLO_POLICY's dim flag byte.
      * Minor 2 added FLAT_BASELINE (0x07); pre-minor-2 clients log and ignore it.
      * Minor 3 added server-authoritative chunk load-state subscriptions (0x08/0x09).
      * Minor 4 added the server entity-radar policy and progressive coarse correction patches.
      * Minor 5 added event-driven correction invalidation subscriptions (0x0A/0x0B).
      */
-    public static final int PROTO_MAJOR = 3;
+    public static final int PROTO_MAJOR = 4;
     public static final int PROTO_MINOR = 0;
 
     // ---- Message type ids (first byte of every framed payload) ----

@@ -204,7 +204,7 @@ public final class MsgCodec {
             out.writeInt(entry.blockZ());
             out.writeByte(entry.state());
         }
-        writeBoundedBytes(out, m.body(), Proto.MAX_S2C_PAYLOAD);
+        writeBoundedBytes(out, m.body(), PatchCodec.MAX_COMPRESSED_BYTES);
     }
 
     private static void encodePolicyUpdateS2C(final DataOutputStream out, final PolicyUpdateS2C m) throws IOException {
@@ -456,7 +456,7 @@ public final class MsgCodec {
         for (int i = 0; i < structCount; i++) {
             structures.add(new MapPatchS2C.StructureEntry(in.readUnsignedByte(), in.readInt(), in.readInt(), in.readUnsignedByte()));
         }
-        final byte[] body = readBoundedBytes(in, Proto.MAX_S2C_PAYLOAD);
+        final byte[] body = readBoundedBytes(in, PatchCodec.MAX_COMPRESSED_BYTES);
         return new MapPatchS2C(reqId, dimIndex, lod, tileX, tileZ, mode, tileRevision, presence, body, structures);
     }
 

@@ -9,25 +9,32 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.zip.DataFormatException;
+import java.util.zip.Deflater;
+import java.util.zip.DeflaterOutputStream;
+import java.util.zip.Inflater;
 
 /**
- * Hostile-input-safe raw layout for one authoritative residual correction snapshot.
+ * Compact, hostile-input-safe layout for one authoritative correction snapshot.
  *
- * <p>The body is deliberately not application-compressed. It contains two hierarchical sparse bit
- * planes followed by fixed-width homogeneous value planes, leaving Minecraft's packet compression
- * to compress long runs and repeated terrain values. {@code evaluated[pixel]} distinguishes a
+ * <p>The compressed body contains two hierarchical sparse bit planes followed by homogeneous value
+ * planes. Heights are zigzag-varint deltas in pixel order; the remaining categorical fields stay
+ * grouped so Deflate can exploit long terrain runs. {@code evaluated[pixel]} distinguishes a
  * column the server proved equivalent to the deterministic baseline from a column it could not
  * read; {@code difference[pixel]} is implicit in the sample mask.
  */
 public final class PatchCodec {
-    public static final int FORMAT_VERSION = 2;
+    public static final int FORMAT_VERSION = 3;
     public static final int PIXELS = 256 * 256;
     public static final int MASK_BYTES = PIXELS / 8;
     public static final int COARSE_MASK_BYTES = 32;
     public static final int FINE_MASK_BYTES = 32;
     public static final int MAX_SPARSE_MASK_BYTES = COARSE_MASK_BYTES + 256 * FINE_MASK_BYTES;
     public static final int RECORD_BYTES = 7;
-    public static final int MAX_RAW_BYTES = 1 + MAX_SPARSE_MASK_BYTES * 2 + PIXELS * RECORD_BYTES;
+    private static final int MAX_DELTA_HEIGHT_BYTES = 3;
+    public static final int MAX_RAW_BYTES =
+        1 + MAX_SPARSE_MASK_BYTES * 2 + PIXELS * (RECORD_BYTES - 2 + MAX_DELTA_HEIGHT_BYTES);
+    public static final int MAX_COMPRESSED_BYTES = 576 * 1024;
 
     private PatchCodec() {
     }
@@ -169,18 +176,20 @@ public final class PatchCodec {
             }
         }
         try {
-            final ByteArrayOutputStream bytes = new ByteArrayOutputStream(
+            final ByteArrayOutputStream rawBytes = new ByteArrayOutputStream(
                 1 + COARSE_MASK_BYTES * 2 + ordered.size() * RECORD_BYTES
             );
-            final DataOutputStream out = new DataOutputStream(bytes);
+            final DataOutputStream out = new DataOutputStream(rawBytes);
             out.writeByte(FORMAT_VERSION);
             writeSparseMask(out, patch.evaluated());
             writeSparseMask(out, difference);
             for (final Sample sample : ordered) {
                 out.writeByte(sample.biomeId());
             }
+            int previousY = 0;
             for (final Sample sample : ordered) {
-                out.writeShort(sample.surfaceY());
+                writeZigzagVarint(out, sample.surfaceY() - previousY);
+                previousY = sample.surfaceY();
             }
             for (final Sample sample : ordered) {
                 out.writeByte(sample.kind());
@@ -195,11 +204,11 @@ public final class PatchCodec {
                 out.writeByte(sample.floorMapColorId());
             }
             out.flush();
-            final byte[] result = bytes.toByteArray();
-            if (result.length > MAX_RAW_BYTES) {
+            final byte[] raw = rawBytes.toByteArray();
+            if (raw.length > MAX_RAW_BYTES) {
                 throw new IllegalArgumentException("patch body exceeds raw cap");
             }
-            return result;
+            return deflate(raw);
         } catch (final IOException e) {
             throw new IllegalStateException("in-memory patch encoding failed", e);
         }
@@ -218,11 +227,12 @@ public final class PatchCodec {
     }
 
     public static Patch decode(final byte[] body) throws ProtoException {
-        if (body == null || body.length < 1 + COARSE_MASK_BYTES * 2 || body.length > MAX_RAW_BYTES) {
+        if (body == null || body.length == 0 || body.length > MAX_COMPRESSED_BYTES) {
             throw new ProtoException("invalid patch body length: " + (body == null ? -1 : body.length));
         }
+        final byte[] raw = inflate(body);
         try {
-            final DataInputStream in = new DataInputStream(new ByteArrayInputStream(body));
+            final DataInputStream in = new DataInputStream(new ByteArrayInputStream(raw));
             final int version = in.readUnsignedByte();
             if (version != FORMAT_VERSION) {
                 throw new ProtoException("unsupported patch body version " + version);
@@ -236,12 +246,6 @@ public final class PatchCodec {
                 }
                 count += Integer.bitCount(difference[i] & 255);
             }
-            final int expectedBytes = count * RECORD_BYTES;
-            if (in.available() != expectedBytes) {
-                throw new ProtoException(
-                    "patch field planes have wrong length: expected " + expectedBytes + ", got " + in.available()
-                );
-            }
             final int[] pixels = new int[count];
             int next = 0;
             for (int pixel = 0; pixel < PIXELS; pixel++) {
@@ -250,11 +254,22 @@ public final class PatchCodec {
                 }
             }
             final int[] biomes = readUnsignedBytePlane(in, count);
-            final int[] surfaceYs = readShortPlane(in, count);
+            final int[] surfaceYs = new int[count];
+            int previousY = 0;
+            for (int i = 0; i < count; i++) {
+                previousY += readZigzagVarint(in);
+                if (previousY < Short.MIN_VALUE || previousY > Short.MAX_VALUE) {
+                    throw new ProtoException("surface height outside i16: " + previousY);
+                }
+                surfaceYs[i] = previousY;
+            }
             final int[] kinds = readUnsignedBytePlane(in, count);
             final int[] mapColors = readUnsignedBytePlane(in, count);
             final int[] fluidDepths = readUnsignedBytePlane(in, count);
             final int[] floorMapColors = readUnsignedBytePlane(in, count);
+            if (in.available() != 0) {
+                throw new ProtoException("trailing bytes in patch body: " + in.available());
+            }
             final List<Sample> samples = new ArrayList<>(count);
             for (int i = 0; i < count; i++) {
                 samples.add(new Sample(
@@ -272,6 +287,57 @@ public final class PatchCodec {
             throw new ProtoException("malformed patch body: " + e.getMessage(), e);
         } catch (final IOException e) {
             throw new ProtoException("malformed patch body", e);
+        }
+    }
+
+    private static byte[] deflate(final byte[] raw) throws IOException {
+        final ByteArrayOutputStream compressed = new ByteArrayOutputStream(Math.min(raw.length, 64 * 1024));
+        final Deflater deflater = new Deflater(Deflater.DEFAULT_COMPRESSION);
+        try {
+            final DeflaterOutputStream out = new DeflaterOutputStream(compressed, deflater, 8192);
+            out.write(raw);
+            out.finish();
+        } finally {
+            deflater.end();
+        }
+        final byte[] result = compressed.toByteArray();
+        if (result.length > MAX_COMPRESSED_BYTES) {
+            throw new IllegalArgumentException("patch body exceeds compressed cap: " + result.length);
+        }
+        return result;
+    }
+
+    private static byte[] inflate(final byte[] body) throws ProtoException {
+        final Inflater inflater = new Inflater();
+        final ByteArrayOutputStream raw = new ByteArrayOutputStream(Math.min(body.length * 4, MAX_RAW_BYTES));
+        final byte[] buffer = new byte[8192];
+        try {
+            inflater.setInput(body);
+            while (!inflater.finished()) {
+                final int read = inflater.inflate(buffer);
+                if (read > 0) {
+                    if (raw.size() > MAX_RAW_BYTES - read) {
+                        throw new ProtoException("inflated patch body exceeds cap");
+                    }
+                    raw.write(buffer, 0, read);
+                    continue;
+                }
+                if (inflater.needsDictionary()) {
+                    throw new ProtoException("patch body requires a compression dictionary");
+                }
+                if (inflater.needsInput()) {
+                    throw new ProtoException("truncated compressed patch body");
+                }
+                throw new ProtoException("compressed patch body made no progress");
+            }
+            if (inflater.getRemaining() != 0) {
+                throw new ProtoException("trailing compressed patch bytes: " + inflater.getRemaining());
+            }
+            return raw.toByteArray();
+        } catch (final DataFormatException e) {
+            throw new ProtoException("malformed compressed patch body", e);
+        } finally {
+            inflater.end();
         }
     }
 
@@ -352,12 +418,25 @@ public final class PatchCodec {
         return values;
     }
 
-    private static int[] readShortPlane(final DataInputStream in, final int count) throws IOException {
-        final int[] values = new int[count];
-        for (int i = 0; i < count; i++) {
-            values[i] = in.readShort();
+    private static void writeZigzagVarint(final DataOutputStream out, final int value) throws IOException {
+        int encoded = (value << 1) ^ (value >> 31);
+        while ((encoded & ~0x7F) != 0) {
+            out.writeByte((encoded & 0x7F) | 0x80);
+            encoded >>>= 7;
         }
-        return values;
+        out.writeByte(encoded);
+    }
+
+    private static int readZigzagVarint(final DataInputStream in) throws IOException, ProtoException {
+        int encoded = 0;
+        for (int shift = 0; shift < MAX_DELTA_HEIGHT_BYTES * 7; shift += 7) {
+            final int next = in.readUnsignedByte();
+            encoded |= (next & 0x7F) << shift;
+            if ((next & 0x80) == 0) {
+                return (encoded >>> 1) ^ -(encoded & 1);
+            }
+        }
+        throw new ProtoException("overlong surface height delta");
     }
 
     private static void setBit(final byte[] bits, final int index) {

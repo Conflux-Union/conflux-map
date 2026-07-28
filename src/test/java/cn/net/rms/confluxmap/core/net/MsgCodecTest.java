@@ -326,6 +326,15 @@ class MsgCodecTest {
     }
 
     @Test
+    void encodeRejectsPatchBodyAboveCompressedCap() {
+        final MapPatchS2C msg = new MapPatchS2C(
+            1, 0, 0, 0, 0, Proto.PATCH_MODE_ABSOLUTE, 1L,
+            new byte[Proto.PATCH_PRESENCE_BYTES], new byte[PatchCodec.MAX_COMPRESSED_BYTES + 1]
+        );
+        assertThrows(ProtoException.class, () -> MsgCodec.encode(msg));
+    }
+
+    @Test
     void decodeRejectsTooLongUtf8() throws ProtoException {
         // Encode a valid hello, then patch the u16 length prefix of the first utf field
         // to exceed MAX_UTF8_BYTES so the decoder refuses it.

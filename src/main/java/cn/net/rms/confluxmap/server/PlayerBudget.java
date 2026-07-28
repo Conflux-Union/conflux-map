@@ -8,8 +8,8 @@ import cn.net.rms.confluxmap.core.net.TokenBucket;
  * {@link PatchDispatcher}; this class owns only request spacing and the byte token bucket.
  */
 public final class PlayerBudget {
-    /** Raw patch body plus the fixed MAP_PATCH envelope, before Minecraft packet compression. */
-    static final int MAX_PATCH_WIRE_BYTES = PatchCodec.MAX_RAW_BYTES + 64;
+    /** Compressed patch body plus the fixed MAP_PATCH envelope. */
+    static final int MAX_PATCH_WIRE_BYTES = PatchCodec.MAX_COMPRESSED_BYTES + 64;
 
     private final TokenBucket bytes;
     private final long minIntervalNanos;

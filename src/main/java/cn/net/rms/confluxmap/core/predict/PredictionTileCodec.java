@@ -21,9 +21,10 @@ public final class PredictionTileCodec {
      * Bumped whenever persisted correction semantics change; old corrections are non-authoritative.
      * Version 12 persists the client's last final server-validation time. Version 13 stores raw
      * authoritative snapshots with pixel-level evaluated coverage and submerged floor colours.
-     * Version 14 discards snapshots derived from inclusive live-chunk heightmap values.
+     * Version 14 discards snapshots derived from inclusive live-chunk heightmap values. Version
+     * 15 stores protocol-v4 compressed patch bodies.
      */
-    public static final int FORMAT_VERSION = 14;
+    public static final int FORMAT_VERSION = 15;
 
     private PredictionTileCodec() {
     }
@@ -83,7 +84,7 @@ public final class PredictionTileCodec {
             final byte[] presence = new byte[Proto.PATCH_PRESENCE_BYTES];
             in.readFully(presence);
             final int bodyLength = in.readInt();
-            if (bodyLength <= 0 || bodyLength > PatchCodec.MAX_RAW_BYTES || bodyLength > in.available()) {
+            if (bodyLength <= 0 || bodyLength > PatchCodec.MAX_COMPRESSED_BYTES || bodyLength > in.available()) {
                 throw new ProtoException("invalid correction body length " + bodyLength);
             }
             final byte[] body = new byte[bodyLength];

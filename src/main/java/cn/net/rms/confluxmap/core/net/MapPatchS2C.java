@@ -5,9 +5,8 @@ import java.util.List;
 /**
  * {@code 0x04 S2C MAP_PATCH}: one tile's worth of server-side correction data.
  *
- * <p>The fixed header, presence bitmap, structure entries, and raw residual body are all parsed by
- * {@link MsgCodec}; {@link PatchCodec} owns the body layout. Minecraft's packet layer performs the
- * actual compression.
+ * <p>The fixed header, presence bitmap, structure entries, and compressed residual body are all
+ * parsed by {@link MsgCodec}; {@link PatchCodec} owns the body layout and bounded decompression.
  *
  * @param reqId         echo of {@link MapViewReqC2S#reqId()}
  * @param dimIndex      echo of {@link MapViewReqC2S#dimIndex()}
@@ -21,7 +20,7 @@ import java.util.List;
  *                      echoes it back as {@link MapViewReqC2S.TileReq#sinceRevision()} on the next request
  * @param presence      exactly {@value Proto#PATCH_PRESENCE_BYTES} bytes; one coarse diagnostic bit
  *                      per 16x16 output-pixel cell. Exact evaluated coverage lives in the body.
- * @param body          PatchCodec raw field-plane payload; its interpretation depends on {@code mode}:
+ * @param body          PatchCodec-compressed field-plane payload; its interpretation depends on {@code mode}:
  *                      <ul>
  *                        <li>{@link Proto#PATCH_MODE_UNCHANGED} / {@link Proto#PATCH_MODE_UNAVAILABLE}:
  *                            always empty.</li>
