@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.compat.Nbts;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
@@ -232,7 +233,7 @@ class ChunkSummarizerTest {
     @Test
     void fluidCoverAboveTheMotionBlockingSurfacePromotesTheWaterSurface() {
         final NbtCompound chunk = coveredChunk("minecraft:clay", "minecraft:seagrass");
-        final NbtCompound heightmaps = chunk.getCompound("Level").getCompound("Heightmaps");
+        final NbtCompound heightmaps = Nbts.compound(Nbts.compound(chunk, "Level"), "Heightmaps");
         heightmaps.putLongArray("OCEAN_FLOOR", pack(9, 256, ignored -> 61));
         final SummaryCodec.Column column = new ChunkSummarizer()
             .summarize(chunk)

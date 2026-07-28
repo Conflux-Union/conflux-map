@@ -79,6 +79,11 @@ final class PredictionMipCache {
         return children == null ? null : aggregate(children, mode);
     }
 
+    synchronized Tile exact(final TileKey key, final PredictionViewMode mode) {
+        final Tile tile = tiles.get(key);
+        return tile != null && tile.mode() == mode ? tile : null;
+    }
+
     synchronized long lowerCoverageValidatedAt(
         final TileKey parent,
         final PredictionViewMode mode
@@ -158,7 +163,7 @@ final class PredictionMipCache {
         );
     }
 
-    private static Tile aggregate(final Tile[] children, final PredictionViewMode mode) {
+    static Tile aggregate(final Tile[] children, final PredictionViewMode mode) {
         final int[] pixels = new int[BaselineGrid.PIXELS * BaselineGrid.PIXELS];
         final byte[] biomes = new byte[pixels.length];
         final int[] surfaces = new int[pixels.length];

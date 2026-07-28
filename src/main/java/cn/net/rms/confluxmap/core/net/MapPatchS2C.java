@@ -16,8 +16,8 @@ import java.util.List;
  * @param mode          one of {@link Proto#PATCH_MODE_UNCHANGED} / {@link Proto#PATCH_MODE_RESIDUAL} /
  *                      {@link Proto#PATCH_MODE_ABSOLUTE} / {@link Proto#PATCH_MODE_UNAVAILABLE} /
  *                      {@link Proto#PATCH_MODE_PARTIAL}
- * @param tileRevision  server's current revision counter for this tile (game-time ticks); the client
- *                      echoes it back as {@link MapViewReqC2S.TileReq#sinceRevision()} on the next request
+ * @param tileRevision  opaque fingerprint of the authoritative tile snapshot; the client echoes it
+ *                      back as {@link MapViewReqC2S.TileReq#sinceRevision()} on the next request
  * @param presence      exactly {@value Proto#PATCH_PRESENCE_BYTES} bytes; one coarse diagnostic bit
  *                      per 16x16 output-pixel cell. Exact evaluated coverage lives in the body.
  * @param body          PatchCodec-compressed field-plane payload; its interpretation depends on {@code mode}:

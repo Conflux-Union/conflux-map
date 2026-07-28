@@ -185,6 +185,33 @@ class PatchBuilderTest {
         assertEquals(90, PatchCodec.decode(result.body()).sampleAt(16).surfaceY());
     }
 
+    @Test
+    void identicalAuthoritativeSnapshotReturnsUnchangedWithoutABody() {
+        final SummaryCodec.Chunk[] chunks = new SummaryCodec.Chunk[SummaryCodec.CHUNKS];
+        Arrays.fill(chunks, SummaryCodec.Chunk.empty());
+        chunks[0] = chunk(100L, 70, Proto.MAP_COLOR_NONE);
+        chunks[1] = chunk(11L, 90, 11);
+        final SummaryTile summary = new SummaryTile(
+            0,
+            0,
+            0,
+            List.of(new SummaryCodec.Region(0, 0, 0L, chunks))
+        );
+        final PatchBuilder builder = new PatchBuilder();
+        final PatchBuilder.Result first = builder.build(
+            summary, Long.MIN_VALUE, baselineAt(70), false
+        );
+
+        final PatchBuilder.Result unchanged = builder.build(
+            summary, first.revision(), baselineAt(70), false
+        );
+
+        assertEquals(Proto.PATCH_MODE_UNCHANGED, unchanged.mode());
+        assertEquals(first.revision(), unchanged.revision());
+        assertEquals(0, unchanged.body().length);
+        assertEquals(0, unchanged.recordCount());
+    }
+
     private static SummaryCodec.Region region(final int rx, final int rz, final int surfaceY) {
         final SummaryCodec.Chunk[] chunks = new SummaryCodec.Chunk[SummaryCodec.CHUNKS];
         Arrays.fill(chunks, SummaryCodec.Chunk.empty());

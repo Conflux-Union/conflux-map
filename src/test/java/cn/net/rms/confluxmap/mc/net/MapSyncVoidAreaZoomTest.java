@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.mc.net;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
@@ -136,6 +137,7 @@ class MapSyncVoidAreaZoomTest {
         final FakeVoidWorldServer server;
         final MapSyncClient client;
         final CorrectionStore corrections;
+        final PredictionTileService predictionTiles;
         final MapExecutors executors;
         final Deque<byte[]> wire = new ArrayDeque<>();
         long nowMs = SIM_START_MS;
@@ -149,8 +151,9 @@ class MapSyncVoidAreaZoomTest {
             executors = new MapExecutors();
             final TileService uploads =
                 new TileService(new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel());
-            final PredictionTileService predictionTiles =
-                new PredictionTileService(sessionGuard, new PredictionState(), executors, uploads);
+            predictionTiles = new PredictionTileService(
+                sessionGuard, new PredictionState(), executors, uploads
+            );
             corrections = new CorrectionStore(tempDir);
             corrections.onSessionChanged(sessionGuard.current());
             predictionTiles.bindCorrectionStore(corrections);
@@ -187,18 +190,32 @@ class MapSyncVoidAreaZoomTest {
             );
         }
 
-        void browse(final int lod, final long durationMs) throws ProtoException {
+        void browse(final int lod, final long durationMs) throws Exception {
             final Viewport view = new Viewport(lod);
             final long start = nowMs - SIM_START_MS;
+            reportFrame(view);
+            awaitPredictionIdle();
             for (long t = start; t <= start + durationMs; t += FRAME_MS) {
                 nowMs = SIM_START_MS + t;
-                server.tickDrain(nanos(), client);
-                client.reportViewport(DIM, lod, view.minX, view.maxX, view.minZ, view.maxZ);
-                while (!wire.isEmpty()) {
-                    final MapViewReqC2S request = (MapViewReqC2S) MsgCodec.decode(wire.poll());
-                    server.handle(request, nanos(), client);
-                }
+                reportFrame(view);
             }
+        }
+
+        private void reportFrame(final Viewport view) throws ProtoException {
+            server.tickDrain(nanos(), client);
+            client.reportViewport(DIM, view.lod, view.minX, view.maxX, view.minZ, view.maxZ);
+            while (!wire.isEmpty()) {
+                final MapViewReqC2S request = (MapViewReqC2S) MsgCodec.decode(wire.poll());
+                server.handle(request, nanos(), client);
+            }
+        }
+
+        private void awaitPredictionIdle() throws InterruptedException {
+            final long deadline = System.currentTimeMillis() + 2_000L;
+            while (!predictionTiles.isIdleForTest() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(1L);
+            }
+            assertTrue(predictionTiles.isIdleForTest(), "lower-LOD cache checks did not drain");
         }
 
         /**

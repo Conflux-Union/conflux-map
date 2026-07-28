@@ -232,6 +232,14 @@ final class ProgressiveRegionPatch {
     /** Any request thread: returns the newest immutable build and schedules a fresher one if needed. */
     synchronized Response response(final long sinceRevision, final long nowNanos) {
         lastRequestedAtNanos = nowNanos;
+        if (state != State.COMPLETE) {
+            return new Response(
+                Proto.PATCH_MODE_PARTIAL,
+                0L,
+                published.presence(),
+                EMPTY_PATCH_BODY
+            );
+        }
         trimBuildVariants(sinceRevision);
         BuildSlot slot = builds.get(sinceRevision);
         if (slot == null && builds.size() >= MAX_REVISION_VARIANTS) {
@@ -244,18 +252,9 @@ final class ProgressiveRegionPatch {
         if (baselineReady && slot.generation != generation && !slot.building) {
             scheduleBuild(sinceRevision, slot, generation, published, baseline);
         }
-        final boolean finalFresh = state == State.COMPLETE;
         if (slot.generation == generation && slot.result != null) {
             final PatchBuilder.Result result = slot.result;
-            if (finalFresh) {
-                return new Response(result.mode(), result.revision(), result.presence(), result.body());
-            }
-            return new Response(
-                Proto.PATCH_MODE_PARTIAL,
-                0L,
-                result.presence(),
-                result.body()
-            );
+            return new Response(result.mode(), result.revision(), result.presence(), result.body());
         }
         return new Response(Proto.PATCH_MODE_PARTIAL, 0L, published.presence(), EMPTY_PATCH_BODY);
     }
@@ -396,6 +395,30 @@ final class ProgressiveRegionPatch {
         private long mtimeBefore;
         private long liveEpochBefore;
         private SummaryCodec.SampledRegion cached;
+
+        @Override
+        public SummaryCodec.SampledRegion loadRegion(final int regionX, final int regionZ) {
+            final int regionIndex = (regionZ - baseRegionZ) * regionsPerSide + regionX - baseRegionX;
+            startRegion(regionIndex, regionX, regionZ);
+            if (liveEpochBefore != 0L) {
+                return null;
+            }
+            if (cached != null && cached.sourceMcaMtimeMs() > 0L) {
+                final SummaryCodec.SampledRegion result = cached;
+                finishRegion();
+                return result;
+            }
+            if (mtimeBefore > 0L) {
+                return null;
+            }
+            final SummaryCodec.SampledChunk[] chunks = new SummaryCodec.SampledChunk[SummaryCodec.CHUNKS];
+            java.util.Arrays.fill(chunks, SummaryCodec.SampledChunk.empty(1 << lod));
+            final SummaryCodec.SampledRegion result = new SummaryCodec.SampledRegion(
+                regionX, regionZ, 0L, 1 << lod, chunks
+            );
+            finishRegion();
+            return result;
+        }
 
         @Override
         public SummaryCodec.SampledChunk load(final int chunkX, final int chunkZ) {

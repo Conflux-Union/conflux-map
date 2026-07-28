@@ -41,6 +41,7 @@ final class RegionStoragePaths {
     }
 
     static Path regionDirectory(final Path worldRoot, final String dimension) {
+        //#if MC<260100
         if ("minecraft:overworld".equals(dimension)) {
             return worldRoot.resolve("region");
         }
@@ -50,6 +51,7 @@ final class RegionStoragePaths {
         if ("minecraft:the_end".equals(dimension)) {
             return worldRoot.resolve("DIM1").resolve("region");
         }
+        //#endif
         final String[] id = dimension == null ? new String[0] : dimension.split(":", 2);
         final String namespace = id.length == 2 && safeSegment(id[0]) ? id[0] : "unknown";
         Path path = worldRoot.resolve("dimensions").resolve(namespace);

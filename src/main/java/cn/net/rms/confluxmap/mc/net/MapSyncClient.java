@@ -38,6 +38,8 @@ public final class MapSyncClient {
     private static final long ERROR_BACKOFF_MS = 1_000L;
     /** A request silent for this long is considered dropped; its unanswered tiles become plannable again. */
     private static final long REQUEST_TIMEOUT_MS = 10_000L;
+    /** Coarse scans publish lightweight progress; retry them well below the normal request rate. */
+    private static final long PARTIAL_RETRY_INTERVAL_MS = 2_000L;
     /**
      * Outstanding-request window. Two full requests match the server's default 16-tile delivery
      * queue ({@code maxPendingTilesPerPlayer}), so the client never overflows it while still
@@ -72,6 +74,7 @@ public final class MapSyncClient {
      * predicted-only for minutes.
      */
     private final Map<TileStamp, Long> lastRequestNanos = new HashMap<>();
+    private final Map<TileStamp, Long> partialRetryAfterMillis = new HashMap<>();
     /** Final answers stay reusable until the viewport re-enters stale data or the server invalidates them. */
     private final Set<TileStamp> settledTiles = new HashSet<>();
     /** Server-invalidated tiles bypass cross-LOD reuse until their replacement patch is final. */
@@ -168,11 +171,24 @@ public final class MapSyncClient {
                 if (settledTiles.contains(stamp)) {
                     continue;
                 }
-                if (!invalidatedTiles.contains(stamp)
-                    && predictionTiles.hasFreshLowerCoverage(dimension, lod, x, z, now)) {
-                    settledTiles.add(stamp);
-                    progress.tileSettled(dimIndex, lod, x, z, System.nanoTime());
-                    continue;
+                final Long partialRetryAfter = partialRetryAfterMillis.get(stamp);
+                if (partialRetryAfter != null) {
+                    if (now < partialRetryAfter) {
+                        continue;
+                    }
+                    partialRetryAfterMillis.remove(stamp);
+                }
+                if (!invalidatedTiles.contains(stamp)) {
+                    final PredictionTileService.LowerCoverageState coverage =
+                        predictionTiles.prepareFreshLowerCoverage(dimension, lod, x, z, now);
+                    if (coverage == PredictionTileService.LowerCoverageState.READY) {
+                        settledTiles.add(stamp);
+                        progress.tileSettled(dimIndex, lod, x, z, System.nanoTime());
+                        continue;
+                    }
+                    if (coverage == PredictionTileService.LowerCoverageState.PENDING) {
+                        continue;
+                    }
                 }
                 final CorrectionStore.Key key = new CorrectionStore.Key(dimensionId, lod, x, z);
                 final cn.net.rms.confluxmap.core.predict.CorrectionTile tile = corrections.get(key);
@@ -224,7 +240,9 @@ public final class MapSyncClient {
     }
 
     public synchronized void onPatch(final MapPatchS2C patch, final int payloadBytes) {
-        completeTile(patch.reqId(), patch.tileX(), patch.tileZ());
+        if (!completeTile(patch)) {
+            return;
+        }
         boolean accepted = false;
         try {
             accepted = applyPatch(patch);
@@ -283,7 +301,12 @@ public final class MapSyncClient {
     private void allowPartialRetry(final MapPatchS2C patch) {
         final CorrectionStore.Key key = keyFor(patch);
         if (key != null) {
-            lastRequestNanos.remove(new TileStamp(key.dimension(), key.lod(), key.tileX(), key.tileZ()));
+            final TileStamp stamp = new TileStamp(key.dimension(), key.lod(), key.tileX(), key.tileZ());
+            lastRequestNanos.remove(stamp);
+            partialRetryAfterMillis.put(
+                stamp,
+                millisClock.getAsLong() + PARTIAL_RETRY_INTERVAL_MS
+            );
         }
     }
 
@@ -292,6 +315,7 @@ public final class MapSyncClient {
         if (key != null) {
             final TileStamp stamp = new TileStamp(key.dimension(), key.lod(), key.tileX(), key.tileZ());
             invalidatedTiles.remove(stamp);
+            partialRetryAfterMillis.remove(stamp);
             settledTiles.add(stamp);
         }
     }
@@ -305,19 +329,22 @@ public final class MapSyncClient {
             return;
         }
         final String dimension = policy.dims().get(invalidation.dimIndex()).dimId();
+        final List<CorrectionStore.Key> invalidatedKeys = new ArrayList<>();
         for (final MapInvalidateS2C.Tile tile : invalidation.tiles()) {
             if (tile.tileX() < lastMinX || tile.tileX() > lastMaxX
                 || tile.tileZ() < lastMinZ || tile.tileZ() > lastMaxZ) {
                 continue;
             }
             final TileStamp stamp = new TileStamp(dimension, invalidation.lod(), tile.tileX(), tile.tileZ());
-            predictionTiles.invalidateCorrectionValidation(new CorrectionStore.Key(
+            invalidatedKeys.add(new CorrectionStore.Key(
                 dimension, invalidation.lod(), tile.tileX(), tile.tileZ()
             ));
             settledTiles.remove(stamp);
             lastRequestNanos.remove(stamp);
+            partialRetryAfterMillis.remove(stamp);
             invalidatedTiles.add(stamp);
         }
+        predictionTiles.invalidateCorrectionValidations(invalidatedKeys);
     }
 
     /** Stops server-side source watching when the predicted map viewport is no longer active. */
@@ -332,6 +359,7 @@ public final class MapSyncClient {
         progress.reset();
         settledTiles.clear();
         invalidatedTiles.clear();
+        partialRetryAfterMillis.clear();
         lastDimension = null;
         lastDimIndex = -1;
         lastLod = -1;
@@ -366,13 +394,23 @@ public final class MapSyncClient {
                 final cn.net.rms.confluxmap.core.predict.CorrectionTile tile = corrections.get(
                     new CorrectionStore.Key(dimensionId, lod, x, z)
                 );
+                final boolean directFresh = tile.isFreshAt(
+                    now,
+                    PredictionTileService.CORRECTION_REUSE_TTL_MS
+                );
+                final PredictionTileService.LowerCoverageState lowerCoverage =
+                    invalidatedTiles.contains(stamp) || directFresh
+                        ? PredictionTileService.LowerCoverageState.MISSING_OR_STALE
+                        : predictionTiles.prepareFreshLowerCoverage(dimension, lod, x, z, now);
                 if (!invalidatedTiles.contains(stamp)
-                    && (tile.isFreshAt(now, PredictionTileService.CORRECTION_REUSE_TTL_MS)
-                    || predictionTiles.hasFreshLowerCoverage(dimension, lod, x, z, now))) {
+                    && (directFresh
+                    || lowerCoverage == PredictionTileService.LowerCoverageState.READY)) {
                     settledTiles.add(stamp);
                 } else {
                     settledTiles.remove(stamp);
-                    lastRequestNanos.remove(stamp);
+                    if (lowerCoverage != PredictionTileService.LowerCoverageState.PENDING) {
+                        lastRequestNanos.remove(stamp);
+                    }
                 }
             }
         }
@@ -392,12 +430,16 @@ public final class MapSyncClient {
         invalidatedTiles.removeIf(stamp -> !stamp.dimension().equals(dimension) || stamp.lod() != lod
             || stamp.tileX() < minX || stamp.tileX() > maxX
             || stamp.tileZ() < minZ || stamp.tileZ() > maxZ);
+        partialRetryAfterMillis.keySet().removeIf(stamp -> !stamp.dimension().equals(dimension) || stamp.lod() != lod
+            || stamp.tileX() < minX || stamp.tileX() > maxX
+            || stamp.tileZ() < minZ || stamp.tileZ() > maxZ);
     }
 
     public synchronized void reset() {
         lastRequestNanos.clear();
         settledTiles.clear();
         invalidatedTiles.clear();
+        partialRetryAfterMillis.clear();
         inFlightRequests.clear();
         stableSince = Long.MIN_VALUE;
         batchPrepared = false;
@@ -426,16 +468,26 @@ public final class MapSyncClient {
         progress.requestFailed(payloadBytes, System.nanoTime());
     }
 
-    private void completeTile(final int reqId, final int tileX, final int tileZ) {
-        final InFlightRequest request = inFlightRequests.get(reqId);
+    private boolean completeTile(final MapPatchS2C patch) {
+        final InFlightRequest request = inFlightRequests.get(patch.reqId());
         if (request == null) {
-            return;
+            return false;
+        }
+        final CorrectionStore.Key key = keyFor(patch);
+        if (key == null || !request.dimension.equals(key.dimension()) || request.lod != patch.lod()) {
+            return false;
+        }
+        final TileStamp stamp = new TileStamp(
+            request.dimension, request.lod, patch.tileX(), patch.tileZ()
+        );
+        if (request.pendingStamps.remove(stamp) == null) {
+            return false;
         }
         request.lastActivityMs = millisClock.getAsLong();
-        request.pendingStamps.remove(new TileStamp(request.dimension, request.lod, tileX, tileZ));
         if (request.pendingStamps.isEmpty()) {
-            inFlightRequests.remove(reqId);
+            inFlightRequests.remove(patch.reqId());
         }
+        return true;
     }
 
     private void rollbackPendingTiles() {

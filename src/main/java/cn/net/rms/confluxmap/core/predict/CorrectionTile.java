@@ -32,9 +32,6 @@ public final class CorrectionTile {
         if (newPresence == null || newPresence.length != Proto.PATCH_PRESENCE_BYTES || patch == null) {
             throw new IllegalArgumentException("invalid correction patch");
         }
-        if (patchRevision < revision) {
-            return false;
-        }
         clearProgress();
         Arrays.fill(samples, null);
         Arrays.fill(evaluated, (byte) 0);

@@ -102,6 +102,7 @@ public final class PatchBuilder {
         }
         return result(
             summary,
+            sinceRevision,
             evaluated,
             records,
             absolute ? Proto.PATCH_MODE_ABSOLUTE : Proto.PATCH_MODE_RESIDUAL
@@ -234,7 +235,7 @@ public final class PatchBuilder {
                 records.add(toSample(x, z, actual.column()));
             }
         }
-        return result(summary, evaluated, records, Proto.PATCH_MODE_ABSOLUTE);
+        return result(summary, sinceRevision, evaluated, records, Proto.PATCH_MODE_ABSOLUTE);
     }
 
     /** Compatibility overload for the LOD-0 single-region caller. */
@@ -251,17 +252,68 @@ public final class PatchBuilder {
 
     private static Result result(
         final SummaryView summary,
+        final long sinceRevision,
         final byte[] evaluated,
         final List<PatchCodec.Sample> records,
         final int mode
     ) {
+        final byte[] presence = summary.presence();
+        final long revision = snapshotRevision(mode, presence, evaluated, records);
+        if (sinceRevision != Long.MIN_VALUE && sinceRevision == revision) {
+            return new Result(
+                Proto.PATCH_MODE_UNCHANGED,
+                revision,
+                presence,
+                new byte[0],
+                0
+            );
+        }
+        final byte[] body = PatchCodec.encode(new PatchCodec.Patch(evaluated, records));
         return new Result(
             mode,
-            summary.revision(),
-            summary.presence(),
-            PatchCodec.encode(new PatchCodec.Patch(evaluated, records)),
+            revision,
+            presence,
+            body,
             records.size()
         );
+    }
+
+    /** Stable opaque token for one complete authoritative snapshot. */
+    private static long snapshotRevision(
+        final int mode,
+        final byte[] presence,
+        final byte[] evaluated,
+        final List<PatchCodec.Sample> records
+    ) {
+        long hash = 0xcbf29ce484222325L;
+        hash = fnv1a(hash, mode);
+        for (final byte value : presence) {
+            hash = fnv1a(hash, value);
+        }
+        for (final byte value : evaluated) {
+            hash = fnv1a(hash, value);
+        }
+        for (final PatchCodec.Sample sample : records) {
+            hash = fnv1aInt(hash, sample.pixelIndex());
+            hash = fnv1a(hash, sample.biomeId());
+            hash = fnv1aInt(hash, sample.surfaceY());
+            hash = fnv1a(hash, sample.kind());
+            hash = fnv1a(hash, sample.mapColorId());
+            hash = fnv1a(hash, sample.fluidDepth());
+            hash = fnv1a(hash, sample.floorMapColorId());
+        }
+        return hash == Long.MIN_VALUE ? Long.MAX_VALUE : hash;
+    }
+
+    private static long fnv1aInt(long hash, final int value) {
+        for (int shift = 0; shift < Integer.SIZE; shift += Byte.SIZE) {
+            hash = fnv1a(hash, value >>> shift);
+        }
+        return hash;
+    }
+
+    private static long fnv1a(final long hash, final int value) {
+        return (hash ^ (value & 0xFFL)) * 0x100000001b3L;
     }
 
     public static Result unavailable() {

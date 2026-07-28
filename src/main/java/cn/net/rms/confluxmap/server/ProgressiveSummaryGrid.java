@@ -77,6 +77,21 @@ final class ProgressiveSummaryGrid implements SummaryView {
         }
     }
 
+    void acceptRegion(final SummaryCodec.SampledRegion region) {
+        if (region == null || region.sampleStride() != scale) {
+            throw new IllegalArgumentException("sampled region does not match summary LOD " + lod);
+        }
+        for (int localZ = 0; localZ < 16; localZ++) {
+            for (int localX = 0; localX < 16; localX++) {
+                acceptChunk(
+                    region.rx() * 16 + localX,
+                    region.rz() * 16 + localZ,
+                    region.chunks()[localZ * 16 + localX]
+                );
+            }
+        }
+    }
+
     SummaryView snapshot(final boolean complete) {
         return new Snapshot(
             lod, originBlockX(), originBlockZ(), complete ? maxRevision : 0L,

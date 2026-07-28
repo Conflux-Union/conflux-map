@@ -71,7 +71,7 @@ public final class RegionSummaryService {
     /** Access-ordered global task cache; identical player requests reuse the same validated scan. */
     private final LinkedHashMap<ProgressiveKey, ProgressiveRegionPatch> progressiveTasks =
         new LinkedHashMap<>(16, 0.75f, true);
-    private int progressiveCursor;
+    private ProgressiveKey activeProgressiveKey;
     private Path diskRoot;
     private SummaryDiskCache diskCache;
 
@@ -343,20 +343,33 @@ public final class RegionSummaryService {
         return ignored -> PatchBuilder.PreparedBaseline.absoluteOnly();
     }
 
-    /** Gives one active coarse tile a bounded main-thread slice, rotating fairly across players. */
+    /** Gives one watched center-priority coarse tile a bounded main-thread slice until completion. */
     private void tickProgressive(final MinecraftServer server, final long nowNanos) {
+        final ProgressiveKey selectedKey;
         final ProgressiveRegionPatch next;
         synchronized (progressiveTasks) {
             evictProgressiveTasks(nowNanos, false);
             if (progressiveTasks.isEmpty()) {
+                activeProgressiveKey = null;
                 return;
             }
-            final List<Map.Entry<ProgressiveKey, ProgressiveRegionPatch>> tasks =
-                new ArrayList<>(progressiveTasks.entrySet());
-            progressiveCursor = Math.floorMod(progressiveCursor, tasks.size());
-            final Map.Entry<ProgressiveKey, ProgressiveRegionPatch> entry = tasks.get(progressiveCursor);
-            next = entry.getValue();
-            progressiveCursor = (progressiveCursor + 1) % tasks.size();
+            ProgressiveRegionPatch active = activeProgressiveKey == null
+                ? null : progressiveTasks.get(activeProgressiveKey);
+            final boolean activeWatched = activeProgressiveKey != null
+                && watched(server, activeProgressiveKey);
+            if (active == null || active.complete()
+                || (!activeWatched && hasWatchedIncomplete(server))) {
+                activeProgressiveKey = firstIncomplete(server, true);
+                if (activeProgressiveKey == null) {
+                    activeProgressiveKey = firstIncomplete(server, false);
+                }
+                active = activeProgressiveKey == null ? null : progressiveTasks.get(activeProgressiveKey);
+            }
+            if (active == null) {
+                return;
+            }
+            selectedKey = activeProgressiveKey;
+            next = active;
         }
         // The task retains the world/disk it was created for. A server-session change constructs a
         // new RegionSummaryService, and close() invalidates every old task before those are reused.
@@ -365,6 +378,33 @@ public final class RegionSummaryService {
             PROGRESSIVE_MAX_NANOS_PER_TICK,
             System::nanoTime
         );
+        if (next.complete()) {
+            synchronized (progressiveTasks) {
+                if (selectedKey.equals(activeProgressiveKey)) {
+                    activeProgressiveKey = null;
+                }
+            }
+        }
+    }
+
+    private boolean hasWatchedIncomplete(final MinecraftServer server) {
+        return firstIncomplete(server, true) != null;
+    }
+
+    /** Request insertion order is center-first, so the first watched task is the visual priority. */
+    private ProgressiveKey firstIncomplete(final MinecraftServer server, final boolean watchedOnly) {
+        for (final Map.Entry<ProgressiveKey, ProgressiveRegionPatch> entry : progressiveTasks.entrySet()) {
+            if (!entry.getValue().complete() && (!watchedOnly || watched(server, entry.getKey()))) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
+
+    private boolean watched(final MinecraftServer server, final ProgressiveKey key) {
+        final int dimIndex = worldIndex(server, key.world());
+        return dimIndex >= 0
+            && invalidations.watches(dimIndex, key.lod(), key.tileX(), key.tileZ());
     }
 
     /** Removes idle tasks; under capacity pressure, completed entries are safe to recreate. */
@@ -375,9 +415,7 @@ public final class RegionSummaryService {
             final Map.Entry<ProgressiveKey, ProgressiveRegionPatch> entry = iterator.next();
             final ProgressiveKey key = entry.getKey();
             final ProgressiveRegionPatch task = entry.getValue();
-            final int dimIndex = worldIndex(key.world().getServer(), key.world());
-            final boolean watched = dimIndex >= 0
-                && invalidations.watches(dimIndex, key.lod(), key.tileX(), key.tileZ());
+            final boolean watched = watched(key.world().getServer(), key);
             final boolean expired = !watched
                 && nowNanos - task.lastRequestedAtNanos() > PROGRESSIVE_IDLE_TTL_NANOS;
             final boolean capacityVictim = forCapacity

@@ -14,6 +14,7 @@ import cn.net.rms.confluxmap.core.net.MapSyncProgress;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.Proto;
+import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.predict.CorrectionStore;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionTileService;
@@ -102,6 +103,36 @@ class MapSyncInvalidationProgressTest {
         }
     }
 
+    @Test
+    void lateUnknownSnapshotCannotReplaceTheCurrentOpaqueRevision(@TempDir final Path tempDir) {
+        final long[] nowMillis = {10_000L};
+        final Fixture fixture = fixture(tempDir, nowMillis);
+        try {
+            fixture.client.reportViewport(DIM, 0, 0, 0, 0, 0);
+            nowMillis[0] += 400L;
+            fixture.client.reportViewport(DIM, 0, 0, 0, 0, 0);
+
+            fixture.client.onPatch(new MapPatchS2C(
+                999,
+                0,
+                0,
+                0,
+                0,
+                Proto.PATCH_MODE_RESIDUAL,
+                5L,
+                new byte[Proto.PATCH_PRESENCE_BYTES],
+                PatchCodec.encode(new PatchCodec.Patch(List.of()))
+            ), 40);
+
+            assertTrue(
+                !fixture.corrections.get(DIM, 0, 0, 0).hasCommittedState(),
+                "a response outside the in-flight request set must be ignored"
+            );
+        } finally {
+            fixture.executors.shutdown(2000);
+        }
+    }
+
     private static Fixture fixture(final Path tempDir, final long[] nowMillis) {
         final SessionGuard sessions = new SessionGuard();
         sessions.begin(WORLD, DIM);
@@ -137,10 +168,15 @@ class MapSyncInvalidationProgressTest {
             new ConfluxConfig(),
             () -> nowMillis[0]
         );
-        return new Fixture(executors, client, sent);
+        return new Fixture(executors, client, corrections, sent);
     }
 
-    private record Fixture(MapExecutors executors, MapSyncClient client, List<Message> sent) {
+    private record Fixture(
+        MapExecutors executors,
+        MapSyncClient client,
+        CorrectionStore corrections,
+        List<Message> sent
+    ) {
     }
 
     private static List<MapViewReqC2S> requests(final List<Message> messages) {

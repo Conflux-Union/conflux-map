@@ -181,12 +181,14 @@ underlay remains the fallback without adding per-region draw calls.
 Prediction now keeps a bounded CPU LRU of recent composed tiles. A coarser tile
 is reconstructed recursively from four complete lower-LOD children with the
 same alpha-weighted 2x2 filter, including their committed correction pixels and
-cursor metadata. A child update invalidates every cached ancestor. On viewport
-entry, network sync skips a coarse tile only when every contributing child has
-a final server validation no older than five seconds. Expiry is checked lazily
-on a later viewport entry and never starts background polling. Missing, expired,
-future-dated, progressive, or server-invalidated entries use the normal coarse
-request path.
+cursor metadata. A child update invalidates every cached ancestor. A bounded
+background reducer also streams persisted lower-LOD corrections into parent
+mips, so direct LOD0-to-LOD4 reuse does not require all 256 children to fit the
+64-tile CPU LRU. On viewport entry, network sync skips a coarse tile only when
+every contributing child has a final server validation no older than 30 minutes.
+Expiry is checked lazily on a later viewport entry and never starts background
+polling. Missing, expired, future-dated, progressive, or server-invalidated
+entries use the normal coarse request path.
 
 ## Confirmed bugs
 
@@ -238,8 +240,11 @@ contiguous 128x128-chunk LOD-4 build and a build crossing an LOD-4 tile boundary
 When a coarse prediction is fully reconstructible from fresh lower-LOD client
 tiles, the client omits that tile from `MAP_VIEW_REQ`; the server performs no
 summary scan, baseline sampling, patch encoding, or response for it. The oldest
-contributing final validation controls the five-second viewport-entry freshness
-check, while server invalidations expire every overlapping loaded LOD cache.
+contributing final validation controls the 30-minute viewport-entry freshness
+check, while server invalidations persistently expire every overlapping LOD cache.
+Unchanged revalidation returns the existing content fingerprint with no patch body.
+LOD3-4 progress responses are bodyless and retry at two-second intervals; the
+authoritative patch is encoded once after the scan and validation pass complete.
 
 ## Deferred
 

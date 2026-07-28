@@ -134,6 +134,28 @@ class MapSyncCoarseLodPresenceTest {
     }
 
     @Test
+    void partialCoarseTileUsesABoundedRetryInterval() throws Exception {
+        final Fixture fixture = new Fixture(new ServerConfig());
+        try {
+            fixture.browse(COARSE_LOD, 1_500L);
+
+            assertEquals(
+                1,
+                fixture.server.sinceRevisions.size(),
+                "a partial coarse response must not restart the request every normal debounce interval"
+            );
+
+            fixture.browse(COARSE_LOD, 1_500L);
+            assertTrue(
+                fixture.server.sinceRevisions.size() >= 2,
+                "the partial tile must remain retryable after its dedicated cooldown"
+            );
+        } finally {
+            fixture.shutdown();
+        }
+    }
+
+    @Test
     void coarseLodIsAcceptedWithoutAnOperatorCeiling() throws Exception {
         final ServerConfig config = new ServerConfig();
         final Fixture fixture = new Fixture(config);
@@ -230,6 +252,7 @@ class MapSyncCoarseLodPresenceTest {
         final FakeCompanionServer server;
         final MapSyncClient client;
         final CorrectionStore corrections;
+        final PredictionTileService predictionTiles;
         final MapExecutors executors;
         final Deque<byte[]> wire = new ArrayDeque<>();
         long nowMs = SIM_START_MS;
@@ -247,8 +270,9 @@ class MapSyncCoarseLodPresenceTest {
             executors = new MapExecutors();
             final TileService uploads =
                 new TileService(new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel());
-            final PredictionTileService predictionTiles =
-                new PredictionTileService(sessionGuard, new PredictionState(), executors, uploads);
+            predictionTiles = new PredictionTileService(
+                sessionGuard, new PredictionState(), executors, uploads
+            );
             corrections = new CorrectionStore(tempRoot());
             corrections.onSessionChanged(sessionGuard.current());
             predictionTiles.bindCorrectionStore(corrections);
@@ -294,14 +318,26 @@ class MapSyncCoarseLodPresenceTest {
             }
         }
 
-        void browse(final int lod, final long durationMs) throws ProtoException {
+        void browse(final int lod, final long durationMs) throws Exception {
             final long start = nowMs - SIM_START_MS;
+            server.tickDrain(nanos(), client);
+            client.reportViewport(DIM, lod, 0, 0, 0, 0);
+            drainWire();
+            awaitPredictionIdle();
             for (long t = start; t <= start + durationMs; t += FRAME_MS) {
                 nowMs = SIM_START_MS + t;
                 server.tickDrain(nanos(), client);
                 client.reportViewport(DIM, lod, 0, 0, 0, 0);
                 drainWire();
             }
+        }
+
+        private void awaitPredictionIdle() throws InterruptedException {
+            final long deadline = System.currentTimeMillis() + 2_000L;
+            while (!predictionTiles.isIdleForTest() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(1L);
+            }
+            assertTrue(predictionTiles.isIdleForTest(), "lower-LOD cache check did not drain");
         }
 
         void drainWire() throws ProtoException {

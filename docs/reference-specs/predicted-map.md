@@ -19,10 +19,13 @@ adjacent tiles at different brightness levels.
 Recent composed prediction tiles also form a bounded CPU mip cache. One coarse tile is rebuilt
 recursively from four complete lower-LOD children with the captured map's alpha-weighted 2x2 box
 filter. The cached result includes committed correction colours plus biome/surface cursor metadata;
-changing any child invalidates every cached ancestor. Local deterministic prediction has no
-wall-clock expiry inside a world session. Skipping companion work is stricter: every contributing
-child must carry a final server validation no older than five seconds. Progressive, missing,
-future-dated, or expired entries cannot suppress a request.
+changing any child invalidates every cached ancestor. A bounded background reducer can rebuild a
+coarse tile from persisted correction children even when the required fine tiles exceed the CPU
+LRU; it promotes each four-child group immediately instead of retaining the whole fine coverage.
+Local deterministic prediction has no wall-clock expiry inside a world session. Skipping companion
+work is stricter: every contributing child must carry a final server validation no older than 30
+minutes. Progressive, missing, future-dated, expired, or persistently invalidated entries cannot
+suppress a request.
 
 Predicted terrain layers a fixed southwest directional relief over the captured-map absolute-height
 curve. At LOD0, where one texel represents one block, relief uses the same one-sided southwest
@@ -104,13 +107,20 @@ framed, so client traffic accounting reflects the compact payload instead of the
 field planes. A missing or mismatched predictor uses a complete absolute snapshot, never a false
 residual.
 
+The final body and presence bitmap produce an opaque content fingerprint used as the tile revision.
+Revalidating the same authoritative snapshot returns `UNCHANGED` with an empty body. A changed
+lower-revision source chunk therefore cannot hide behind an unchanged maximum game-time tick.
+
 Every supported map LOD can carry corrections. LOD3-4 are scanned progressively under one bounded
 server-tick budget. Every covered chunk is still visited so a visible construction cannot
 disappear, but cold NBT summaries and current `.cfs` caches materialize only the centered source
-columns represented by the output: four columns per chunk at LOD3 and one at LOD4. Revision-0
-partial snapshots replace pending progress but stay non-drawable; only the final snapshot replaces
-the committed tile. A coarse tile fully covered by fresh lower-LOD client results is omitted from
-`MAP_VIEW_REQ`, so it consumes no server scan or response work.
+columns represented by the output: four columns per chunk at LOD3 and one at LOD4. Missing regions
+and current sampled `.cfs` regions enter the grid as one region work unit. Scanning publishes only
+bodyless revision-0 progress at a two-second client retry interval; patch encoding runs once after
+the source validation pass completes, and only that final snapshot replaces the committed tile.
+The first still-watched center-priority tile keeps the server slice until completion instead of
+being diluted across every visible coarse tile. A coarse tile fully covered by fresh lower-LOD
+client results is omitted from `MAP_VIEW_REQ`, so it consumes no server scan or response work.
 
 Prediction is honest about its limits: the companion does not verify structure existence, so
 structure markers remain candidates. No server seed is shared unless the operator enables

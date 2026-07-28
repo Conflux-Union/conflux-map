@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.server;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -70,6 +71,45 @@ class ProgressiveRegionPatchTest {
 
         assertEquals(Proto.PATCH_MODE_UNAVAILABLE, response.mode());
         assertEquals(1, encodeAttempts.get(), "a terminal encode failure must not be retried per request");
+    }
+
+    @Test
+    void progressiveSnapshotsStayBodylessUntilTheFinalEncode(@TempDir final Path tempDir) {
+        final ChunkSummarizer summarizer = new ChunkSummarizer(new RegistryMapColors());
+        final AtomicInteger encodeAttempts = new AtomicInteger();
+        final ProgressiveRegionPatch patch = new ProgressiveRegionPatch(
+            "minecraft:overworld",
+            tempDir,
+            new SummaryDiskCache(tempDir),
+            new LiveChunkSummaryTracker(new ServerConfig(), summarizer, (dimension, x, z) -> { }),
+            summarizer,
+            Runnable::run,
+            3,
+            0,
+            0,
+            ignored -> PatchBuilder.PreparedBaseline.absoluteOnly(),
+            ignored -> null,
+            1L,
+            (summary, sinceRevision, baseline) -> {
+                encodeAttempts.incrementAndGet();
+                return new PatchBuilder().buildPrepared(summary, sinceRevision, baseline);
+            }
+        );
+
+        patch.tick(ProgressiveRegionPatch.PUBLISH_CHUNK_INTERVAL, Long.MAX_VALUE, () -> 0L);
+        final ProgressiveRegionPatch.Response partial = patch.response(Long.MIN_VALUE, 2L);
+
+        assertEquals(Proto.PATCH_MODE_PARTIAL, partial.mode());
+        assertArrayEquals(ProgressiveRegionPatch.emptyPatchBody(), partial.body());
+        assertEquals(0, encodeAttempts.get(), "progress publication must not encode a growing snapshot");
+
+        for (int i = 0; i < 20 && !patch.complete(); i++) {
+            patch.tick(Integer.MAX_VALUE, Long.MAX_VALUE, () -> 0L);
+        }
+        assertTrue(patch.complete());
+        final ProgressiveRegionPatch.Response complete = patch.response(Long.MIN_VALUE, 3L);
+        assertNotEquals(Proto.PATCH_MODE_PARTIAL, complete.mode());
+        assertEquals(1, encodeAttempts.get(), "the authoritative snapshot must encode once");
     }
 
     @Test

@@ -39,6 +39,24 @@ class CorrectionTileTest {
     }
 
     @Test
+    void opaqueSnapshotRevisionCanMoveNumericallyBackward() {
+        final byte[] presence = new byte[Proto.PATCH_PRESENCE_BYTES];
+        final CorrectionTile tile = new CorrectionTile();
+        tile.applyPatch(
+            100L,
+            presence,
+            new PatchCodec.Patch(java.util.List.of(new PatchCodec.Sample(1, 1, 80, 1, 11, 0)))
+        );
+        final PatchCodec.Sample replacement = new PatchCodec.Sample(2, 1, 72, 1, 1, 0);
+
+        assertTrue(tile.applyPatch(5L, presence, new PatchCodec.Patch(java.util.List.of(replacement))));
+
+        assertNull(tile.sampleAt(1));
+        assertEquals(replacement, tile.sampleAt(2));
+        assertEquals(5L, tile.revision());
+    }
+
+    @Test
     void partialScanReplacesItsOverlayWithoutAdvancingCommittedRevision() {
         final byte[] committedPresence = new byte[Proto.PATCH_PRESENCE_BYTES];
         committedPresence[0] = 1;

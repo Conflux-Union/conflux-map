@@ -272,6 +272,61 @@ class PredictionTileServiceTest {
     }
 
     @Test
+    void lodFourRebuildsFromMoreThanTheMemoryLimitOfPersistentLodZeroTiles(
+        @TempDir final Path tempDir
+    ) throws InterruptedException {
+        final long nowMillis = 20_000L;
+        final SessionGuard sessionGuard = new SessionGuard();
+        sessionGuard.begin(WORLD, DIM);
+        final CorrectionStore writer = new CorrectionStore(tempDir);
+        writer.onSessionChanged(sessionGuard.current());
+        for (int tileZ = 0; tileZ < 16; tileZ++) {
+            for (int tileX = 0; tileX < 16; tileX++) {
+                assertTrue(writer.apply(
+                    new CorrectionStore.Key(DIM.toString(), 0, tileX, tileZ),
+                    1L,
+                    new byte[Proto.PATCH_PRESENCE_BYTES],
+                    new PatchCodec.Patch(List.of()),
+                    nowMillis
+                ));
+            }
+        }
+        writer.flush();
+
+        final MapExecutors executors = new MapExecutors();
+        final TileService uploads = new TileService(
+            new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.FLAT, WorldPreset.DEFAULT);
+        state.setFlatBaseline(new FlatBaseline(1, 63, SurfaceKind.LAND.ordinal(), 11, 0));
+        final PredictionTileService predictionTiles = new PredictionTileService(
+            sessionGuard, state, executors, uploads, () -> nowMillis
+        );
+        final CorrectionStore reopened = new CorrectionStore(tempDir);
+        reopened.onSessionChanged(sessionGuard.current());
+        predictionTiles.bindCorrectionStore(reopened);
+
+        try {
+            assertEquals(
+                PredictionTileService.LowerCoverageState.PENDING,
+                predictionTiles.prepareFreshLowerCoverage(DIM, 4, 0, 0, nowMillis)
+            );
+            awaitIdle(predictionTiles, 20_000L);
+            assertEquals(
+                PredictionTileService.LowerCoverageState.READY,
+                predictionTiles.prepareFreshLowerCoverage(DIM, 4, 0, 0, nowMillis)
+            );
+            assertTrue(
+                uploads.drainUploads(512).stream().anyMatch(update -> update.key().lod() == 4),
+                "the locally reduced LOD4 tile must reach the normal upload seam"
+            );
+        } finally {
+            executors.shutdown(2000);
+        }
+    }
+
+    @Test
     void staleSessionTokenResultsAreDropped() throws InterruptedException {
         final SessionGuard sessionGuard = new SessionGuard();
         final MapExecutors executors = new MapExecutors();

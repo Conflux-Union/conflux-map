@@ -94,12 +94,21 @@ class MapSyncPredictionReuseTest {
             client.reportViewport(DIM, 1, 0, 0, 0, 0);
             assertTrue(sent.isEmpty(), "fresh lower-LOD coverage must avoid a server request");
 
-            nowMillis[0] += PredictionTileService.CORRECTION_REUSE_TTL_MS + 1L;
+            nowMillis[0] += 5_001L;
+            client.clearViewport();
+            client.reportViewport(DIM, 1, 0, 0, 0, 0);
+            awaitIdle(predictions);
+            nowMillis[0] += 400L;
+            client.reportViewport(DIM, 1, 0, 0, 0, 0);
+            assertTrue(sent.isEmpty(), "a short revisit must keep using the completed cache");
+
+            nowMillis[0] += PredictionTileService.CORRECTION_REUSE_TTL_MS;
             client.reportViewport(DIM, 1, 0, 0, 0, 0);
             assertTrue(sent.isEmpty(), "expiry must not start polling an unchanged viewport");
 
             client.clearViewport();
             client.reportViewport(DIM, 1, 0, 0, 0, 0);
+            awaitIdle(predictions);
             nowMillis[0] += 400L;
             client.reportViewport(DIM, 1, 0, 0, 0, 0);
             assertEquals(1, sent.size(), "expired lower-LOD validation must make the parent plannable again");

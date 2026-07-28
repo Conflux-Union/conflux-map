@@ -7,6 +7,10 @@ import java.util.function.LongSupplier;
 final class ProgressivePatchTask {
     @FunctionalInterface
     interface ChunkSource {
+        default SummaryCodec.SampledRegion loadRegion(final int regionX, final int regionZ) {
+            return null;
+        }
+
         SummaryCodec.SampledChunk load(int chunkX, int chunkZ);
     }
 
@@ -37,12 +41,25 @@ final class ProgressivePatchTask {
             return 0;
         }
         final long started = nanoClock.getAsLong();
-        int advanced = 0;
-        while (advanced < maxChunks && !complete()) {
+        final int processedBefore = processedChunks;
+        int workUnits = 0;
+        while (workUnits < maxChunks && !complete()) {
             final int regionIndex = processedChunks / SummaryCodec.CHUNKS;
             final int chunkIndex = processedChunks % SummaryCodec.CHUNKS;
             final int regionX = tileX * regionsPerSide + regionIndex % regionsPerSide;
             final int regionZ = tileZ * regionsPerSide + regionIndex / regionsPerSide;
+            if (chunkIndex == 0) {
+                final SummaryCodec.SampledRegion region = source.loadRegion(regionX, regionZ);
+                if (region != null) {
+                    grid.acceptRegion(region);
+                    processedChunks += SummaryCodec.CHUNKS;
+                    workUnits++;
+                    if (nanoClock.getAsLong() - started >= maxNanos) {
+                        break;
+                    }
+                    continue;
+                }
+            }
             final int chunkX = regionX * 16 + chunkIndex % 16;
             final int chunkZ = regionZ * 16 + chunkIndex / 16;
             final SummaryCodec.SampledChunk chunk = source.load(chunkX, chunkZ);
@@ -52,12 +69,12 @@ final class ProgressivePatchTask {
                 chunk == null ? SummaryCodec.SampledChunk.empty(1 << lod) : chunk
             );
             processedChunks++;
-            advanced++;
+            workUnits++;
             if (nanoClock.getAsLong() - started >= maxNanos) {
                 break;
             }
         }
-        return advanced;
+        return processedChunks - processedBefore;
     }
 
     int processedChunks() {

@@ -100,6 +100,36 @@ class CorrectionStoreTest {
         assertEquals(10_000L, store.get(neighbor).validatedAtMillis());
     }
 
+    @Test
+    void coarseInvalidationSurvivesAStoreReloadForUnloadedChildren(@TempDir final Path tempDir) {
+        final WorldIdentity world = WorldIdentity.singleplayer("persistent-invalidation");
+        final CorrectionStore writer = new CorrectionStore(tempDir);
+        writer.setNamespace(world);
+        final CorrectionStore.Key child = new CorrectionStore.Key("minecraft:overworld", 0, 2, 3);
+        writer.apply(
+            child,
+            1L,
+            new byte[Proto.PATCH_PRESENCE_BYTES],
+            new PatchCodec.Patch(List.of()),
+            System.currentTimeMillis()
+        );
+        writer.flush();
+
+        final CorrectionStore invalidator = new CorrectionStore(tempDir);
+        invalidator.setNamespace(world);
+        assertTrue(invalidator.invalidateCoverage(
+            new CorrectionStore.Key("minecraft:overworld", 1, 1, 1)
+        ));
+
+        final CorrectionStore reopened = new CorrectionStore(tempDir);
+        reopened.setNamespace(world);
+        assertEquals(
+            0L,
+            reopened.get(child).validatedAtMillis(),
+            "a persisted invalidation must override an overlapping correction file"
+        );
+    }
+
     private static Path correctionFile(
         final Path root,
         final WorldIdentity world,

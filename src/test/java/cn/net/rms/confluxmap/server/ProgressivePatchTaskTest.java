@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.core.net.SummaryCodec;
+import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
@@ -46,5 +48,33 @@ class ProgressivePatchTaskTest {
         assertEquals("-113,-113", positions.get(255));
         assertEquals("-112,-128", positions.get(256));
         assertTrue(task.processedChunks() == 258);
+    }
+
+    @Test
+    void lodFourConsumesMissingOrCachedRegionsAsSingleWorkUnits() {
+        final ProgressivePatchTask task = new ProgressivePatchTask(4, 0, 0);
+        final AtomicInteger regionLoads = new AtomicInteger();
+        final AtomicInteger chunkLoads = new AtomicInteger();
+        final SummaryCodec.SampledChunk[] empty = new SummaryCodec.SampledChunk[SummaryCodec.CHUNKS];
+        Arrays.fill(empty, SummaryCodec.SampledChunk.empty(16));
+
+        final int processed = task.advance(new ProgressivePatchTask.ChunkSource() {
+            @Override
+            public SummaryCodec.SampledRegion loadRegion(final int regionX, final int regionZ) {
+                regionLoads.incrementAndGet();
+                return new SummaryCodec.SampledRegion(regionX, regionZ, 0L, 16, empty);
+            }
+
+            @Override
+            public SummaryCodec.SampledChunk load(final int chunkX, final int chunkZ) {
+                chunkLoads.incrementAndGet();
+                return null;
+            }
+        }, 256, Long.MAX_VALUE, () -> 0L);
+
+        assertEquals(65_536, processed);
+        assertEquals(256, regionLoads.get());
+        assertEquals(0, chunkLoads.get());
+        assertTrue(task.complete());
     }
 }
