@@ -9,6 +9,9 @@ import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
 import cn.net.rms.confluxmap.core.net.HelloC2S;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.MapPatchS2C;
+import cn.net.rms.confluxmap.core.net.MapInvalidateS2C;
+import cn.net.rms.confluxmap.core.net.MapRegionInvalidateS2C;
+import cn.net.rms.confluxmap.core.net.MapRegionPatchS2C;
 import cn.net.rms.confluxmap.core.net.LoadStateDeltaS2C;
 import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.MsgCodec;
@@ -84,6 +87,21 @@ public final class ClientNetworking {
                 onPolicyUpdate(u);
             } else if (msg instanceof final MapPatchS2C p) {
                 onMapPatch(p, payload.length);
+            } else if (msg instanceof final MapInvalidateS2C invalidation) {
+                final MapSyncClient sync = mapSync;
+                if (sync != null) {
+                    sync.onInvalidation(invalidation);
+                }
+            } else if (msg instanceof final MapRegionPatchS2C patch) {
+                final MapSyncClient sync = mapSync;
+                if (sync != null) {
+                    sync.onRegionPatch(patch, payload.length);
+                }
+            } else if (msg instanceof final MapRegionInvalidateS2C invalidation) {
+                final MapSyncClient sync = mapSync;
+                if (sync != null) {
+                    sync.onRegionInvalidation(invalidation);
+                }
             } else if (msg instanceof final LoadStateDeltaS2C delta) {
                 final ChunkLoadStateClient loadStates = chunkLoadStates;
                 if (loadStates != null) {

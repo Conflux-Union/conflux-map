@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.server;
 
+import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProto;
 
 /**
@@ -11,7 +12,7 @@ import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProto;
  * ON so a fresh server install gets map-sync benefits without extra setup.
  */
 public final class ServerConfig {
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 3;
 
     public int schemaVersion = SCHEMA_VERSION;
 
@@ -42,32 +43,20 @@ public final class ServerConfig {
     public int maxSharedWaypointsPerPlayer = 64;
     /** Per-player shared-waypoint mutation rate; a small burst is allowed. */
     public int sharedWaypointMutationsPerMinute = 30;
-    /** Hard ceiling on which LOD the server will compute patches for; above this returns UNAVAILABLE. */
-    public int maxPatchLod = 2;
-    /**
-     * Hard ceiling on which LOD the server will answer with a presence-only patch - the
-     * generated-chunk bitmap and no column data. This is what the client's generated-only view
-     * mode needs once zoomed out past {@link #maxPatchLod}, where full corrections are too
-     * expensive to build. Answered from the summary cache alone, so it never scans region files.
-     * Set to 0 to disable and keep the old UNAVAILABLE behaviour.
-     */
-    public int maxPresenceLod = 4;
     /** One MAP_VIEW_REQ carries at most this many tiles. */
-    public int maxTilesPerRequest = 8;
-    /** Per-player cap on tiles queued for paced delivery; only tiles beyond this are rejected. */
-    public int maxPendingTilesPerPlayer = 16;
+    public int maxTilesPerRequest = Proto.DEFAULT_MAX_TILES_PER_REQ;
+    /** Per-player cap on tiles queued for paced delivery; defaults to one full subscribed viewport. */
+    public int maxPendingTilesPerPlayer = Proto.MAX_MAP_SYNC_VIEW_TILES;
     /** Per-player token-bucket rate, bytes/sec. */
-    public int maxBytesPerSecondPerPlayer = 65_536;
+    public int maxBytesPerSecondPerPlayer = Proto.DEFAULT_MAX_BYTES_PER_SEC;
     /** Per-player minimum spacing between MAP_VIEW_REQ packets, milliseconds. */
-    public int minRequestIntervalMs = 300;
+    public int minRequestIntervalMs = Proto.DEFAULT_MIN_REQ_INTERVAL_MS;
     /** Global live-summary refresh budget in chunks/sec. */
     public int maxChunkSummariesPerSecond = 4_000;
 
     /** Clamp out-of-range values loaded from a hand-edited file. */
     public void normalize() {
         shareStructureInfo = false;
-        maxPatchLod = clamp(maxPatchLod, 0, 4);
-        maxPresenceLod = clamp(maxPresenceLod, 0, 4);
         maxTilesPerRequest = clamp(maxTilesPerRequest, 1, 255);
         maxPendingTilesPerPlayer = clamp(maxPendingTilesPerPlayer, 1, 1024);
         maxBytesPerSecondPerPlayer = clamp(maxBytesPerSecondPerPlayer, 1024, 1 << 20);

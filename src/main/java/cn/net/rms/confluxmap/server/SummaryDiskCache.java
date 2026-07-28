@@ -53,6 +53,39 @@ public final class SummaryDiskCache {
     }
 
     /**
+     * Loads only the centered columns consumed by the requested LOD when the cache still matches
+     * the source region. This avoids materializing every fine column for a coarse tile.
+     */
+    public synchronized SummaryCodec.SampledRegion loadCurrentSampled(
+        final String dimension,
+        final int regionX,
+        final int regionZ,
+        final long sourceMcaMtimeMs,
+        final int lod
+    ) {
+        if (sourceMcaMtimeMs <= 0L) {
+            return null;
+        }
+        if (lod < 0 || lod > 4) {
+            throw new IllegalArgumentException("unsupported summary LOD " + lod);
+        }
+        final Path path = pathFor(dimension, regionX, regionZ);
+        if (!Files.isRegularFile(path)) {
+            return null;
+        }
+        try (InputStream in = new BufferedInputStream(Files.newInputStream(path))) {
+            final SummaryCodec.SampledRegion region = SummaryCodec.decodeSampled(in, 1 << lod);
+            if (region.rx() != regionX || region.rz() != regionZ) {
+                throw new ProtoException("summary coordinates do not match file name");
+            }
+            return absoluteMtime(region.sourceMcaMtimeMs()) == sourceMcaMtimeMs ? region : null;
+        } catch (IOException | ProtoException e) {
+            quarantine(path);
+            return null;
+        }
+    }
+
+    /**
      * Loads only a region's chunk-generation flags, reading the fixed-size header and stopping
      * before the deflated column body. Used by coarse presence answers, which span far too many
      * regions to decode in full.

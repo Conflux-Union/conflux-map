@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.core.net;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -33,6 +34,61 @@ class SummaryCodecTest {
      * Coarse presence answers read the flags of hundreds of regions per tile, so they must not pay
      * for the column body. Feeding a header-only prefix proves the body is never touched.
      */
+    @Test
+    void sampledDecodeKeepsOnlyTheColumnsVisibleAtTheRequestedLod() throws Exception {
+        final SummaryCodec.Chunk[] chunks = new SummaryCodec.Chunk[SummaryCodec.CHUNKS];
+        Arrays.fill(chunks, SummaryCodec.Chunk.empty());
+        final SummaryCodec.Column[] columns = new SummaryCodec.Column[SummaryCodec.COLUMNS];
+        for (int index = 0; index < columns.length; index++) {
+            columns[index] = new SummaryCodec.Column(
+                index,
+                index - 128,
+                index & 7,
+                index & 63,
+                index % 255
+            );
+        }
+        chunks[16] = new SummaryCodec.Chunk(
+            false, 77L, new SummaryCodec.Column[SummaryCodec.COLUMNS]
+        );
+        chunks[17] = new SummaryCodec.Chunk(true, 99L, columns);
+        final SummaryCodec.Column[] laterColumns = new SummaryCodec.Column[SummaryCodec.COLUMNS];
+        for (int index = 0; index < laterColumns.length; index++) {
+            laterColumns[index] = new SummaryCodec.Column(
+                255 - index,
+                512 - index,
+                (index + 1) & 7,
+                (index + 1) & 63,
+                (index + 1) % 255
+            );
+        }
+        chunks[200] = new SummaryCodec.Chunk(true, 101L, laterColumns);
+        final byte[] encoded = SummaryCodec.encode(new SummaryCodec.Region(2, -3, 1234L, chunks));
+
+        final SummaryCodec.SampledRegion lodFour = SummaryCodec.decodeSampled(
+            new ByteArrayInputStream(encoded), 16
+        );
+        final SummaryCodec.SampledRegion lodThree = SummaryCodec.decodeSampled(
+            new ByteArrayInputStream(encoded), 8
+        );
+
+        assertEquals(1, lodFour.chunks()[17].columns().length);
+        assertEquals(columns[8 * 16 + 8], lodFour.chunks()[17].column(0, 0));
+        assertArrayEquals(
+            new SummaryCodec.Column[] {
+                columns[4 * 16 + 4],
+                columns[4 * 16 + 12],
+                columns[12 * 16 + 4],
+                columns[12 * 16 + 12]
+            },
+            lodThree.chunks()[17].columns()
+        );
+        assertEquals(99L, lodFour.chunks()[17].revision());
+        assertFalse(lodFour.chunks()[16].generated());
+        assertEquals(77L, lodFour.chunks()[16].revision());
+        assertEquals(laterColumns[8 * 16 + 8], lodFour.chunks()[200].column(0, 0));
+    }
+
     @Test
     void generatedFlagsAreReadableWithoutTheColumnBody() throws Exception {
         final byte[] encoded = SummaryCodec.encode(regionWithGeneratedChunk(2, -3, 17, 99L));

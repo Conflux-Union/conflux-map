@@ -2,7 +2,11 @@ package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
+import cn.net.rms.confluxmap.core.net.MapRegionViewReqC2S;
+import cn.net.rms.confluxmap.core.net.MapRegionSyncSubscribeC2S;
+import cn.net.rms.confluxmap.core.net.MapSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
+import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
@@ -14,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.world.ServerWorld;
@@ -25,10 +30,12 @@ import net.minecraft.world.chunk.WorldChunk;
 final class LiveChunkSummaryTracker {
     private static final int MAX_REGION_FLUSHES_PER_TICK = 8;
     private static final int MAX_LIVE_SUMMARIES_PER_TICK = 2;
+    private static final int MAX_LIVE_INSPECTIONS_PER_TICK = 128;
     private static final long LIVE_DEMAND_TTL_NANOS = 2_000_000_000L;
 
     private final ServerConfig config;
     private final ChunkSummarizer summarizer;
+    private final RegionChangeListener regionChanges;
     private final LiveChunkSummaryCache summaries = new LiveChunkSummaryCache();
     private final Map<LoadedKey, WorldChunk> loadedChunks = new HashMap<>();
     private final ArrayDeque<LoadedKey> refreshQueue = new ArrayDeque<>();
@@ -37,6 +44,7 @@ final class LiveChunkSummaryTracker {
     private final Map<PendingRegionKey, Map<Integer, PendingChunk>> pendingRegions = new LinkedHashMap<>();
     private final ConcurrentLinkedQueue<LiveDemand> incomingDemands = new ConcurrentLinkedQueue<>();
     private final List<LiveDemand> activeDemands = new ArrayList<>();
+    private final Map<UUID, LiveDemand> watchedDemands = new HashMap<>();
     private final Map<ServerWorld, Integer> dimensionIndices = new HashMap<>();
 
     private record LoadedKey(ServerWorld world, long chunkPos) {
@@ -72,9 +80,19 @@ final class LiveChunkSummaryTracker {
         }
     }
 
-    LiveChunkSummaryTracker(final ServerConfig config, final ChunkSummarizer summarizer) {
+    @FunctionalInterface
+    interface RegionChangeListener {
+        void onChanged(String dimension, int regionX, int regionZ);
+    }
+
+    LiveChunkSummaryTracker(
+        final ServerConfig config,
+        final ChunkSummarizer summarizer,
+        final RegionChangeListener regionChanges
+    ) {
         this.config = config;
         this.summarizer = summarizer;
+        this.regionChanges = regionChanges;
     }
 
     void onChunkLoad(final ServerWorld world, final WorldChunk chunk) {
@@ -122,6 +140,58 @@ final class LiveChunkSummaryTracker {
         }
     }
 
+    void nominate(final MapRegionViewReqC2S request, final long nowNanos) {
+        final long expiresAt = nowNanos + LIVE_DEMAND_TTL_NANOS;
+        for (final MapRegionViewReqC2S.RegionReq region : request.regions()) {
+            final cn.net.rms.confluxmap.core.util.ChunkRegionSlice slice = region.slice();
+            incomingDemands.add(new LiveDemand(
+                request.dimIndex(),
+                slice.minChunkX(), slice.minChunkZ(),
+                slice.minChunkX() + slice.width() - 1,
+                slice.minChunkZ() + slice.height() - 1,
+                expiresAt
+            ));
+        }
+    }
+
+    boolean watch(final UUID player, final MapSyncSubscribeC2S request) {
+        if (!request.active()) {
+            watchedDemands.remove(player);
+            return true;
+        }
+        final long chunksPerTile = 16L << request.lod();
+        final long minX = (long) request.minTileX() * chunksPerTile;
+        final long minZ = (long) request.minTileZ() * chunksPerTile;
+        final long maxX = ((long) request.maxTileX() + 1L) * chunksPerTile - 1L;
+        final long maxZ = ((long) request.maxTileZ() + 1L) * chunksPerTile - 1L;
+        if (minX < Integer.MIN_VALUE || maxX > Integer.MAX_VALUE
+            || minZ < Integer.MIN_VALUE || maxZ > Integer.MAX_VALUE) {
+            return false;
+        }
+        watchedDemands.put(player, new LiveDemand(
+            request.dimIndex(), (int) minX, (int) minZ, (int) maxX, (int) maxZ, Long.MAX_VALUE
+        ));
+        return true;
+    }
+
+    boolean watch(final UUID player, final MapRegionSyncSubscribeC2S request) {
+        if (!request.active()) {
+            watchedDemands.remove(player);
+            return true;
+        }
+        watchedDemands.put(player, new LiveDemand(
+            request.dimIndex(),
+            request.minChunkX(), request.minChunkZ(),
+            request.maxChunkX(), request.maxChunkZ(),
+            Long.MAX_VALUE
+        ));
+        return true;
+    }
+
+    void unwatch(final UUID player) {
+        watchedDemands.remove(player);
+    }
+
     void tick(final MinecraftServer server, final SummaryDiskCache disk) {
         refreshLoadedChunks(System.nanoTime());
         flushPendingRegions(server, disk, MAX_REGION_FLUSHES_PER_TICK, false);
@@ -133,6 +203,24 @@ final class LiveChunkSummaryTracker {
 
     SummaryCodec.Region overlay(final String dimension, final SummaryCodec.Region region) {
         return summaries.overlay(dimension, region);
+    }
+
+    SummaryCodec.SampledRegion overlay(
+        final String dimension, final SummaryCodec.SampledRegion region
+    ) {
+        return summaries.overlay(dimension, region);
+    }
+
+    SummaryCodec.SampledRegion overlay(
+        final String dimension,
+        final SummaryCodec.SampledRegion region,
+        final ChunkRegionSlice slice
+    ) {
+        return summaries.overlay(dimension, region, slice);
+    }
+
+    long regionEpoch(final String dimension, final int regionX, final int regionZ) {
+        return summaries.regionEpoch(dimension, regionX, regionZ);
     }
 
     void prepareStop() {
@@ -151,6 +239,7 @@ final class LiveChunkSummaryTracker {
         pendingRegions.clear();
         incomingDemands.clear();
         activeDemands.clear();
+        watchedDemands.clear();
         dimensionIndices.clear();
         summaries.clear();
     }
@@ -161,14 +250,15 @@ final class LiveChunkSummaryTracker {
             activeDemands.add(incoming);
         }
         activeDemands.removeIf(demand -> nowNanos >= demand.expiresAtNanos());
-        if (activeDemands.isEmpty()) {
+        if (activeDemands.isEmpty() && watchedDemands.isEmpty()) {
             return;
         }
         final int available = refreshQueue.size();
         final int configuredPerTick = Math.max(1, (config.maxChunkSummariesPerSecond + 19) / 20);
         final int budget = Math.min(MAX_LIVE_SUMMARIES_PER_TICK, configuredPerTick);
         int captured = 0;
-        for (int inspected = 0; inspected < available && captured < budget; inspected++) {
+        final int inspectionBudget = Math.min(available, MAX_LIVE_INSPECTIONS_PER_TICK);
+        for (int inspected = 0; inspected < inspectionBudget && captured < budget; inspected++) {
             final LoadedKey key = refreshQueue.removeFirst();
             final WorldChunk chunk = loadedChunks.get(key);
             if (chunk == null) {
@@ -205,6 +295,11 @@ final class LiveChunkSummaryTracker {
                 return true;
             }
         }
+        for (final LiveDemand demand : watchedDemands.values()) {
+            if (demand.contains(dimensionIndex, chunkX, chunkZ, nowNanos)) {
+                return true;
+            }
+        }
         return false;
     }
 
@@ -214,12 +309,15 @@ final class LiveChunkSummaryTracker {
         final int chunkZ = chunkZ(pos);
         final String dimension = dimension(world);
         try {
-            summaries.put(
+            final boolean changed = summaries.put(
                 dimension,
                 chunkX,
                 chunkZ,
                 summarizer.summarize(new WorldChunkColumnSource(world, chunk, world.getTime()))
             );
+            if (changed) {
+                regionChanges.onChanged(dimension, Math.floorDiv(chunkX, 16), Math.floorDiv(chunkZ, 16));
+            }
         } catch (final RuntimeException e) {
             ConfluxMapMod.LOGGER.warn(
                 "companion: failed to summarize live chunk {},{} in {} ({})",

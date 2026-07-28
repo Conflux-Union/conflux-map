@@ -165,14 +165,14 @@ Use the mod's existing internal cubiomes/companion data path. Seed-calculator
 software is only a visual reference, not a runtime dependency or external data
 source.
 
-### 9. Preserve high-resolution captured data while zooming
+### 9. Preserve high-resolution captured data while zooming — completed
 
 For chunks that have already been captured at a fine LOD, render from the
 finest available real map data and scale it down at wider zoom levels instead of
 switching those chunks to a separately composed coarse-LOD tile.
 
-- Apply this preference to captured/actual map data; prediction may retain its
-  own LOD-aware sampling path.
+- Apply this preference to captured/actual map data and to prediction results
+  whose lower-LOD cache is complete and current.
 - Fall back to the best available coarser data where fine data is missing, so
   partially explored areas still render.
 - Avoid seams where fine and coarse sources meet and preserve unknown-pixel
@@ -183,6 +183,25 @@ switching those chunks to a separately composed coarse-LOD tile.
 The result should behave like traditional map-image scaling for explored
 terrain while retaining the current sparse/coarse path as a fallback for data
 that was never captured in detail.
+
+Completed on 2026-07-27. Coarse real tiles are composed by alpha-weighted
+downsampling of the finest resident LOD-0 regions. A coarse viewport now pulls
+its covered persistent LOD-0 cache regions through a bounded 64-read queue, and
+one region merge invalidates the affected LOD parents as a batch. Missing fine
+regions remain unclaimed and transparent, so the existing prediction/correction
+underlay remains the fallback without adding per-region draw calls.
+
+Prediction now keeps a bounded CPU LRU of recent composed tiles. A coarser tile
+is reconstructed recursively from four complete lower-LOD children with the
+same alpha-weighted 2x2 filter, including their committed correction pixels and
+cursor metadata. A child update invalidates every cached ancestor. A bounded
+background reducer also streams persisted lower-LOD corrections into parent
+mips, so direct LOD0-to-LOD4 reuse does not require all 256 children to fit the
+64-tile CPU LRU. On viewport entry, network sync skips a coarse tile only when
+every contributing child has a final server validation no older than 30 minutes.
+Expiry is checked lazily on a later viewport entry and never starts background
+polling. Missing, expired, future-dated, progressive, or server-invalidated
+entries use the normal coarse request path.
 
 ## Confirmed bugs
 
@@ -196,7 +215,7 @@ user-facing multiplier with stable precision, so the zoom-out sequence reads
 viewport/LOD math remain unchanged, and focused regression coverage locks down
 the presentation boundary.
 
-### Bug 2. Large player-built structures do not sync at low zoom
+### Bug 2. Large player-built structures do not sync at low zoom — completed
 
 Affected release: `0.1.0-beta.5`.
 
@@ -204,18 +223,65 @@ At `scale=16` blocks per pixel (the corrected label is `0.0625x`, LOD 4), a
 large artificial structure can cover enough area to be visible but still fail
 to appear correctly through companion synchronization.
 
-The first investigation target is the current LOD gate: `MapSyncClient` does
-request coarse viewports, but `PatchBuilder.MAX_SUPPORTED_LOD` and the default
-`ServerConfig#maxPatchLod` stop full correction patches at LOD 2. Higher LODs
-receive presence-only data, which cannot describe player-built surface changes.
-Verify this with a focused LOD-4 server/client regression before choosing the
-fix; do not treat generated-chunk presence as equivalent to synchronized column
-data.
+The cause was the LOD gate: coarse requests above LOD 2 received generated
+presence but no column corrections. The operator-configurable correction and
+presence ceilings have been removed; every supported map LOD now carries full
+correction data.
 
 The fix must make captured/synchronized construction visible at the widest
 supported zoom, refresh an already visible coarse view after source chunks
 change, and preserve bounded server work. Test both a large contiguous footprint
 and a footprint crossing coarse tile boundaries.
+
+LOD 3-4 use a shared progressive scan. Cold source data is opened once per
+32x32-chunk Anvil file and scanned by two background workers; four 16x16 summary
+regions share that result instead of issuing up to 65,536 individual Minecraft
+chunk-storage futures for one LOD-4 tile. When the bundled native is available,
+its selective NBT parser retains only status/revision, heightmaps, section
+palettes and biomes, skipping entity, structure, tick and lighting payloads
+without constructing a full Java NBT tree. The Java parser remains the fallback.
+Both paths retain only the four centered columns per chunk visible at LOD3 or
+the single centered column visible at LOD4. Completed Anvil batches remain in
+the tile task across event-driven restarts, so an invalidation reuses every
+unchanged file and rescans only files whose mtime changed; live summaries are
+overlaid at consumption time. The 2,048-unit/4ms server-tick slice now only
+accepts completed batches and validates source stamps. Baseline sampling and
+patch encoding use their own daemon worker. Replaceable revision-0 snapshots
+report progress without changing the drawable committed tile; only a final
+snapshot is applied atomically. Completed tiles remain silent. A capability-negotiated
+viewport subscription lets the server push a bounded tile-invalidation batch
+only after a watched source region changes; the client then requests that tile
+once with its committed revision. Reusable `.cfs` and task-local Anvil summaries
+require the current `.mca` mtime,
+live summaries take priority, and every coarse source mtime/live epoch is
+revalidated before a final result is reused. Regression coverage includes a
+contiguous 128x128-chunk LOD-4 build and a build crossing an LOD-4 tile boundary.
+
+When a coarse prediction is fully reconstructible from fresh lower-LOD client
+tiles, the client omits that tile from `MAP_VIEW_REQ`; the server performs no
+summary scan, baseline sampling, patch encoding, or response for it. The oldest
+contributing final validation controls the 30-minute viewport-entry freshness
+check, while server invalidations persistently expire every overlapping LOD cache.
+Unchanged revalidation returns the existing content fingerprint with no patch body.
+LOD3-4 progress responses are bodyless and retry at two-second intervals; the
+authoritative patch is encoded once after the scan and validation pass complete.
+
+A later chunk-range follow-up removes the remaining fixed-tile overfetch. Capable
+clients derive an exact half-open chunk viewport from the fullscreen bounds, split
+it into cropped 16x16-chunk summary-region pages, and request no more pages per
+message than the negotiated server budget. At LOD4, one edge chunk is one sampled
+column rather than a complete 256x256-pixel correction tile. The page codec keeps
+the existing LOD sample density and exact correction fields while adaptively
+encoding generated, evaluated, and difference masks before bounded Deflate.
+
+Cold page scans parse only the requested chunk crop from the MCA location table.
+LOD2-4 Overworld baseline prediction samples only the page's output window; page modes whose
+baseline crosses that window use exact absolute fields instead of computing a whole tile.
+Exact per-chunk fingerprints and validation times are persisted in correction
+format v16; v15 pixels remain drawable but require revalidation. Event-driven
+invalidations retain the exact viewport subscription and stale only the visible
+crop of a changed summary region. Older companions remain on the previous
+capability-gated tile/progressive path.
 
 ## Deferred
 

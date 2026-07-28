@@ -1,6 +1,6 @@
 package cn.net.rms.confluxmap.server;
 
-import cn.net.rms.confluxmap.core.net.DiffSpec;
+import cn.net.rms.confluxmap.core.model.MapPixel;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
@@ -12,27 +12,68 @@ import cn.net.rms.confluxmap.core.predict.CanopyStylizer;
 import cn.net.rms.confluxmap.core.predict.DerivedGrid;
 import cn.net.rms.confluxmap.core.predict.FlatBaseline;
 import cn.net.rms.confluxmap.core.predict.LodSampling;
+import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.ArrayList;
 import java.util.List;
 
 /** Builds one correction patch from summaries and the same deterministic client baseline. */
 public final class PatchBuilder {
-    public static final int MAX_SUPPORTED_LOD = 2;
+    public record PreparedBaseline(
+        BaselineGrid baseline,
+        DerivedGrid derived,
+        int mapColorId,
+        boolean absolute,
+        MapPixel uniformPixel
+    ) {
+        public PreparedBaseline(
+            final BaselineGrid baseline,
+            final DerivedGrid derived,
+            final int mapColorId,
+            final boolean absolute
+        ) {
+            this(baseline, derived, mapColorId, absolute, null);
+        }
+
+        public static PreparedBaseline absoluteOnly() {
+            return new PreparedBaseline(null, null, Proto.MAP_COLOR_NONE, true, null);
+        }
+
+        public static PreparedBaseline uniform(
+            final FlatBaseline flat, final boolean absolute
+        ) {
+            if (flat == null) {
+                throw new IllegalArgumentException("flat baseline is null");
+            }
+            return new PreparedBaseline(
+                null,
+                null,
+                flat.mapColorId(),
+                absolute,
+                new MapPixel(
+                    flat.biomeId(), flat.surfaceY(), flat.kind(), flat.mapColorId(),
+                    flat.fluidDepth(), MapPixel.MAP_COLOR_NONE
+                )
+            );
+        }
+    }
 
     public record Result(int mode, long revision, byte[] presence, byte[] body, int recordCount) {
     }
 
     /** Builds a residual or absolute patch from a tile-wide summary grid. */
     public Result build(
-        final SummaryTile summary,
+        final SummaryView summary,
         final long sinceRevision,
         final BaselineGrid baseline,
         final boolean absolute
     ) {
-        if (summary == null || summary.lod() > MAX_SUPPORTED_LOD || baseline == null) {
+        if (!supported(summary) || baseline == null) {
             return unavailable();
         }
-        return buildWithDerived(summary, sinceRevision, baseline, BaselineDeriver.derive(baseline), Proto.MAP_COLOR_NONE, absolute);
+        return buildWithDerived(
+            summary, sinceRevision, baseline, BaselineDeriver.derive(baseline),
+            Proto.MAP_COLOR_NONE, null, absolute
+        );
     }
 
     /**
@@ -55,69 +96,136 @@ public final class PatchBuilder {
     }
 
     private Result buildWithDerived(
-        final SummaryTile summary,
+        final SummaryView summary,
         final long sinceRevision,
         final BaselineGrid baseline,
         final DerivedGrid derived,
         final int baselineMapColorId,
+        final MapPixel uniformPixel,
         final boolean absolute
     ) {
+        final byte[] evaluated = new byte[PatchCodec.MASK_BYTES];
         final List<PatchCodec.Sample> records = new ArrayList<>();
         for (int z = 0; z < SummaryTile.PIXELS; z++) {
             for (int x = 0; x < SummaryTile.PIXELS; x++) {
-                final SummaryTile.Pixel actual = summary.pixel(x, z);
-                if (actual == null || !actual.chunk().generated() || actual.column() == null
-                    || actual.chunk().revision() <= sinceRevision) {
+                final SummaryView.Pixel actual = summary.pixel(x, z);
+                if (actual == null || !actual.generated() || actual.column() == null) {
                     continue;
                 }
-                final int baseIndex = BaselineGrid.index(x, z);
-                final DiffSpec.Sample expected = new DiffSpec.Sample(
-                    baseline.biomeId[baseIndex], derived.surfaceY[baseIndex], derived.kind[baseIndex], baselineMapColorId,
-                    derived.fluidDepth[baseIndex]
-                );
                 final SummaryCodec.Column column = actual.column();
                 if (column.kind() == SurfaceKind.UNKNOWN.ordinal()) {
                     continue;
                 }
-                final DiffSpec.Sample observed = new DiffSpec.Sample(
-                    column.biomeId(), column.surfaceY(), column.kind(), column.mapColorId(), column.fluidDepth()
-                );
-                if (absolute || DiffSpec.differs(expected, observed)) {
+                final int pixel = z * SummaryTile.PIXELS + x;
+                PatchCodec.setEvaluated(evaluated, pixel);
+                final MapPixel expected;
+                if (uniformPixel != null) {
+                    expected = uniformPixel;
+                } else {
+                    final int baseIndex = BaselineGrid.index(x, z);
+                    expected = new MapPixel(
+                        baseline.biomeId[baseIndex],
+                        derived.surfaceY[baseIndex],
+                        derived.kind[baseIndex] & 255,
+                        baselineMapColorId,
+                        derived.fluidDepth[baseIndex],
+                        MapPixel.MAP_COLOR_NONE
+                    );
+                }
+                if (absolute || !expected.equals(column.pixel())) {
                     records.add(toSample(x, z, column));
-                } else if (sinceRevision != 0L) {
-                    records.add(PatchCodec.removal(z * SummaryTile.PIXELS + x));
                 }
             }
         }
-        return result(summary, records, absolute ? Proto.PATCH_MODE_ABSOLUTE : Proto.PATCH_MODE_RESIDUAL);
+        return result(
+            summary,
+            sinceRevision,
+            evaluated,
+            records,
+            absolute ? Proto.PATCH_MODE_ABSOLUTE : Proto.PATCH_MODE_RESIDUAL
+        );
     }
 
     public Result buildFromSampler(
-        final SummaryTile summary,
+        final SummaryView summary,
         final long sinceRevision,
         final BaselineSampler sampler,
         final boolean end,
         final long seed,
         final boolean absolute
     ) {
-        if (summary == null || summary.lod() > MAX_SUPPORTED_LOD || sampler == null) {
-            return unavailable();
+        final PreparedBaseline prepared = prepareFromSampler(summary, sampler, end, seed, absolute);
+        return prepared == null ? unavailable() : buildPrepared(summary, sinceRevision, prepared);
+    }
+
+    public PreparedBaseline prepareFromSampler(
+        final SummaryView summary,
+        final BaselineSampler sampler,
+        final boolean end,
+        final long seed,
+        final boolean absolute
+    ) {
+        if (!supported(summary) || sampler == null) {
+            return null;
         }
         final long originX = summary.originBlockX();
         final long originZ = summary.originBlockZ();
         if (originX < Integer.MIN_VALUE || originX > Integer.MAX_VALUE
             || originZ < Integer.MIN_VALUE || originZ > Integer.MAX_VALUE) {
-            return unavailable();
+            return null;
         }
         final BaselineGrid baseline = LodSampling.sample(
             sampler, end, summary.lod(), (int) originX, (int) originZ
         );
         if (baseline == null) {
-            return unavailable();
+            return null;
         }
         final DerivedGrid derived = BaselineDeriver.derive(baseline);
         CanopyStylizer.apply(derived, baseline, seed, summary.lod(), (int) originX, (int) originZ);
-        return buildWithDerived(summary, sinceRevision, baseline, derived, Proto.MAP_COLOR_NONE, absolute);
+        return new PreparedBaseline(baseline, derived, Proto.MAP_COLOR_NONE, absolute);
+    }
+
+    /** Prepares only the coarse output pixels owned by one cropped region page. */
+    public PreparedBaseline prepareFromSamplerWindow(
+        final SummaryView summary,
+        final BaselineSampler sampler,
+        final boolean end,
+        final long seed,
+        final boolean absolute,
+        final int minPixelX,
+        final int minPixelZ,
+        final int maxPixelX,
+        final int maxPixelZ
+    ) {
+        if (!supported(summary) || sampler == null) {
+            return null;
+        }
+        if (end || summary.lod() < 2) {
+            // End interpolation and the close-view exact residual lattice cross window bounds.
+            // Absolute pages retain quality without recreating a tile-wide baseline here.
+            return PreparedBaseline.absoluteOnly();
+        }
+        final long originX = summary.originBlockX();
+        final long originZ = summary.originBlockZ();
+        if (originX < Integer.MIN_VALUE || originX > Integer.MAX_VALUE
+            || originZ < Integer.MIN_VALUE || originZ > Integer.MAX_VALUE) {
+            return null;
+        }
+        final BaselineGrid baseline = LodSampling.sampleOverworldWindow(
+            sampler, summary.lod(), (int) originX, (int) originZ,
+            minPixelX, minPixelZ, maxPixelX, maxPixelZ
+        );
+        if (baseline == null) {
+            return null;
+        }
+        final DerivedGrid derived = BaselineDeriver.deriveWindow(
+            baseline, minPixelX, minPixelZ, maxPixelX, maxPixelZ
+        );
+        CanopyStylizer.applyWindow(
+            derived, baseline, seed, summary.lod(), (int) originX, (int) originZ,
+            minPixelX, minPixelZ, maxPixelX, maxPixelZ
+        );
+        return new PreparedBaseline(baseline, derived, Proto.MAP_COLOR_NONE, absolute);
     }
 
     /**
@@ -126,16 +234,46 @@ public final class PatchBuilder {
      * the flat top block's real map color, so an untouched flat surface produces no records.
      */
     public Result buildFromUniform(
-        final SummaryTile summary,
+        final SummaryView summary,
         final long sinceRevision,
         final FlatBaseline flat,
         final boolean absolute
     ) {
-        if (summary == null || summary.lod() > MAX_SUPPORTED_LOD || flat == null) {
+        final PreparedBaseline prepared = prepareFromUniform(summary, flat, absolute);
+        return prepared == null ? unavailable() : buildPrepared(summary, sinceRevision, prepared);
+    }
+
+    public PreparedBaseline prepareFromUniform(
+        final SummaryView summary,
+        final FlatBaseline flat,
+        final boolean absolute
+    ) {
+        if (!supported(summary) || flat == null) {
+            return null;
+        }
+        return PreparedBaseline.uniform(flat, absolute);
+    }
+
+    public Result buildPrepared(
+        final SummaryView summary,
+        final long sinceRevision,
+        final PreparedBaseline prepared
+    ) {
+        if (!supported(summary) || prepared == null) {
             return unavailable();
         }
+        if (prepared.uniformPixel() == null
+            && (prepared.baseline() == null || prepared.derived() == null)) {
+            return buildAbsolute(summary, sinceRevision);
+        }
         return buildWithDerived(
-            summary, sinceRevision, flat.toBaselineGrid(), flat.toDerivedGrid(), flat.mapColorId(), absolute
+            summary,
+            sinceRevision,
+            prepared.baseline(),
+            prepared.derived(),
+            prepared.mapColorId(),
+            prepared.uniformPixel(),
+            prepared.absolute()
         );
     }
 
@@ -160,25 +298,24 @@ public final class PatchBuilder {
     }
 
     /** Absolute fallback used when the server cannot load the matching native predictor. */
-    public Result buildAbsolute(final SummaryTile summary, final long sinceRevision) {
-        if (summary == null || summary.lod() > MAX_SUPPORTED_LOD) {
+    public Result buildAbsolute(final SummaryView summary, final long sinceRevision) {
+        if (!supported(summary)) {
             return unavailable();
         }
+        final byte[] evaluated = new byte[PatchCodec.MASK_BYTES];
         final List<PatchCodec.Sample> records = new ArrayList<>();
         for (int z = 0; z < SummaryTile.PIXELS; z++) {
             for (int x = 0; x < SummaryTile.PIXELS; x++) {
-                final SummaryTile.Pixel actual = summary.pixel(x, z);
-                if (actual == null || !actual.chunk().generated() || actual.column() == null
-                    || actual.chunk().revision() <= sinceRevision) {
+                final SummaryView.Pixel actual = summary.pixel(x, z);
+                if (actual == null || !actual.generated() || actual.column() == null
+                    || actual.column().kind() == SurfaceKind.UNKNOWN.ordinal()) {
                     continue;
                 }
-                if (actual.column().kind() == SurfaceKind.UNKNOWN.ordinal()) {
-                    continue;
-                }
+                PatchCodec.setEvaluated(evaluated, z * SummaryTile.PIXELS + x);
                 records.add(toSample(x, z, actual.column()));
             }
         }
-        return result(summary, records, Proto.PATCH_MODE_ABSOLUTE);
+        return result(summary, sinceRevision, evaluated, records, Proto.PATCH_MODE_ABSOLUTE);
     }
 
     /** Compatibility overload for the LOD-0 single-region caller. */
@@ -190,22 +327,80 @@ public final class PatchBuilder {
     }
 
     private static PatchCodec.Sample toSample(final int pixelX, final int pixelZ, final SummaryCodec.Column column) {
-        return new PatchCodec.Sample(
-            pixelZ * SummaryTile.PIXELS + pixelX,
-            column.biomeId(), column.surfaceY(), column.kind(), column.mapColorId(), column.fluidDepth()
-        );
+        return new PatchCodec.Sample(pixelZ * SummaryTile.PIXELS + pixelX, column.pixel());
     }
 
     private static Result result(
-        final SummaryTile summary, final List<PatchCodec.Sample> records, final int nonEmptyMode
+        final SummaryView summary,
+        final long sinceRevision,
+        final byte[] evaluated,
+        final List<PatchCodec.Sample> records,
+        final int mode
     ) {
-        if (records.isEmpty()) {
-            return new Result(Proto.PATCH_MODE_UNCHANGED, summary.revision(), summary.presence(), new byte[0], 0);
+        final byte[] presence = summary.presence();
+        final long revision = snapshotRevision(mode, presence, evaluated, records);
+        if (sinceRevision != Long.MIN_VALUE && sinceRevision == revision) {
+            return new Result(
+                Proto.PATCH_MODE_UNCHANGED,
+                revision,
+                presence,
+                new byte[0],
+                0
+            );
         }
-        return new Result(nonEmptyMode, summary.revision(), summary.presence(), PatchCodec.encode(records), records.size());
+        final byte[] body = PatchCodec.encode(new PatchCodec.Patch(evaluated, records));
+        return new Result(
+            mode,
+            revision,
+            presence,
+            body,
+            records.size()
+        );
+    }
+
+    /** Stable opaque token for one complete authoritative snapshot. */
+    private static long snapshotRevision(
+        final int mode,
+        final byte[] presence,
+        final byte[] evaluated,
+        final List<PatchCodec.Sample> records
+    ) {
+        long hash = 0xcbf29ce484222325L;
+        hash = fnv1a(hash, mode);
+        for (final byte value : presence) {
+            hash = fnv1a(hash, value);
+        }
+        for (final byte value : evaluated) {
+            hash = fnv1a(hash, value);
+        }
+        for (final PatchCodec.Sample sample : records) {
+            hash = fnv1aInt(hash, sample.pixelIndex());
+            hash = fnv1a(hash, sample.biomeId());
+            hash = fnv1aInt(hash, sample.surfaceY());
+            hash = fnv1a(hash, sample.kind());
+            hash = fnv1a(hash, sample.mapColorId());
+            hash = fnv1a(hash, sample.fluidDepth());
+            hash = fnv1a(hash, sample.floorMapColorId());
+        }
+        return hash == Long.MIN_VALUE ? Long.MAX_VALUE : hash;
+    }
+
+    private static long fnv1aInt(long hash, final int value) {
+        for (int shift = 0; shift < Integer.SIZE; shift += Byte.SIZE) {
+            hash = fnv1a(hash, value >>> shift);
+        }
+        return hash;
+    }
+
+    private static long fnv1a(final long hash, final int value) {
+        return (hash ^ (value & 0xFFL)) * 0x100000001b3L;
     }
 
     public static Result unavailable() {
         return new Result(Proto.PATCH_MODE_UNAVAILABLE, 0L, new byte[Proto.PATCH_PRESENCE_BYTES], new byte[0], 0);
+    }
+
+    private static boolean supported(final SummaryView summary) {
+        return summary != null && summary.lod() >= 0 && summary.lod() <= TileMath.MAX_LOD;
     }
 }

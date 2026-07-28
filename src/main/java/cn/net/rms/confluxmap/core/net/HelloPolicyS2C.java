@@ -33,14 +33,16 @@ public record HelloPolicyS2C(
         boolean correctionsEnabled,
         boolean structureInfoEnabled,
         boolean chunkLoadStateEnabled,
-        boolean entityRadarForbidden
+        boolean entityRadarForbidden,
+        boolean correctionInvalidationEnabled,
+        boolean chunkRangeCorrectionEnabled
     ) {
         public Flags(
             final boolean seedGranted,
             final boolean correctionsEnabled,
             final boolean structureInfoEnabled
         ) {
-            this(seedGranted, correctionsEnabled, structureInfoEnabled, false, false);
+            this(seedGranted, correctionsEnabled, structureInfoEnabled, false, false, false, false);
         }
 
         public Flags(
@@ -49,7 +51,34 @@ public record HelloPolicyS2C(
             final boolean structureInfoEnabled,
             final boolean chunkLoadStateEnabled
         ) {
-            this(seedGranted, correctionsEnabled, structureInfoEnabled, chunkLoadStateEnabled, false);
+            this(seedGranted, correctionsEnabled, structureInfoEnabled, chunkLoadStateEnabled, false, false, false);
+        }
+
+        public Flags(
+            final boolean seedGranted,
+            final boolean correctionsEnabled,
+            final boolean structureInfoEnabled,
+            final boolean chunkLoadStateEnabled,
+            final boolean entityRadarForbidden
+        ) {
+            this(
+                seedGranted, correctionsEnabled, structureInfoEnabled,
+                chunkLoadStateEnabled, entityRadarForbidden, false, false
+            );
+        }
+
+        public Flags(
+            final boolean seedGranted,
+            final boolean correctionsEnabled,
+            final boolean structureInfoEnabled,
+            final boolean chunkLoadStateEnabled,
+            final boolean entityRadarForbidden,
+            final boolean correctionInvalidationEnabled
+        ) {
+            this(
+                seedGranted, correctionsEnabled, structureInfoEnabled,
+                chunkLoadStateEnabled, entityRadarForbidden, correctionInvalidationEnabled, false
+            );
         }
     }
 

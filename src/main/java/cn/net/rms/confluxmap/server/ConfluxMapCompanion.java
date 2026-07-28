@@ -60,7 +60,7 @@ public final class ConfluxMapCompanion {
         // Fabric global receivers and command callbacks outlive individual integrated worlds.
         networking.register();
         sharedWaypointNetworking.register();
-        SharedWaypointCommands.register(this);
+        ConfluxMapCommands.register(this);
         ServerLifecycleEvents.SERVER_STARTING.register(this::onServerStarting);
         ServerLifecycleEvents.SERVER_STARTED.register(this::onServerStarted);
         ServerLifecycleEvents.SERVER_STOPPING.register(this::onServerStopping);
@@ -133,9 +133,9 @@ public final class ConfluxMapCompanion {
             sharedWaypoints = loadSharedWaypoints(server);
         }
         ConfluxMapMod.LOGGER.info(
-            "companion ready (shareSeed={} shareCorrections={} shareChunkLoadState={} allowEntityRadar={} shareWaypoints={} maxPatchLod={} maxPresenceLod={} maxTilesPerRequest={})",
-            config.shareSeed, config.shareCorrections, chunkLoadStates != null, config.allowEntityRadar, sharedWaypoints != null,
-            config.maxPatchLod, config.maxPresenceLod, config.maxTilesPerRequest
+            "companion ready (shareSeed={} shareCorrections={} shareChunkLoadState={} allowEntityRadar={} shareWaypoints={} maxTilesPerRequest={})",
+            config.shareSeed, config.shareCorrections, chunkLoadStates != null,
+            config.allowEntityRadar, sharedWaypoints != null, config.maxTilesPerRequest
         );
     }
 

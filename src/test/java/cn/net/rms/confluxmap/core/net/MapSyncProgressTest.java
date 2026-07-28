@@ -2,40 +2,125 @@ package cn.net.rms.confluxmap.core.net;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class MapSyncProgressTest {
     @Test
-    void completesAfterEveryRequestedTileArrives() {
+    void regionPagesUseTheSameVisibleBatchCounters() {
         final MapSyncProgress progress = new MapSyncProgress();
-        final MapViewReqC2S request = request(7, tile(2, 3), tile(4, 5));
+        final ChunkRegionSlice first = new ChunkRegionSlice(0, 0, 15, 3, 15, 4);
+        final ChunkRegionSlice second = new ChunkRegionSlice(1, 0, 0, 3, 0, 4);
+        progress.beginRegionBatch(0, 4, List.of(first, second));
+        final MapRegionViewReqC2S request = new MapRegionViewReqC2S(
+            8, 0, 4, List.of(
+                new MapRegionViewReqC2S.RegionReq(first, Long.MIN_VALUE),
+                new MapRegionViewReqC2S.RegionReq(second, Long.MIN_VALUE)
+            )
+        );
 
-        progress.requestStarted(request, 40, 1_000L);
-        assertEquals(MapSyncProgress.State.SYNCING, progress.snapshot().state());
-
-        progress.patchReceived(patch(7, 2, 3), 100, 2_000L);
-        assertEquals(MapSyncProgress.State.SYNCING, progress.snapshot().state());
-
-        progress.patchReceived(patch(7, 4, 5), 60, 4_500L);
+        progress.requestStarted(request, 30, 1_000L);
+        progress.regionPatchReceived(regionPatch(8, first), 20, true, 2_000L);
         assertEquals(
-            new MapSyncProgress.Snapshot(MapSyncProgress.State.COMPLETED, 3_500L, 200L),
+            new MapSyncProgress.Snapshot(MapSyncProgress.State.SYNCING, 1, 2, 1_000L, 50L),
+            progress.snapshot()
+        );
+
+        progress.regionPatchReceived(regionPatch(8, second), 25, true, 3_000L);
+        assertEquals(
+            new MapSyncProgress.Snapshot(MapSyncProgress.State.COMPLETED, 2, 2, 2_000L, 75L),
             progress.snapshot()
         );
     }
 
     @Test
-    void overlappingRequestsFormOneVisibleSync() {
+    void completesAfterEveryRequestedTileArrives() {
         final MapSyncProgress progress = new MapSyncProgress();
+        beginBatch(progress, tile(2, 3), tile(4, 5));
+        final MapViewReqC2S request = request(7, tile(2, 3), tile(4, 5));
+
+        progress.requestStarted(request, 40, 1_000L);
+        assertEquals(
+            new MapSyncProgress.Snapshot(MapSyncProgress.State.SYNCING, 0, 2, 0L, 40L),
+            progress.snapshot()
+        );
+
+        progress.patchReceived(patch(7, 2, 3), 100, 2_000L);
+        assertEquals(
+            new MapSyncProgress.Snapshot(MapSyncProgress.State.SYNCING, 1, 2, 1_000L, 140L),
+            progress.snapshot()
+        );
+
+        progress.patchReceived(patch(7, 4, 5), 60, 4_500L);
+        assertEquals(
+            new MapSyncProgress.Snapshot(MapSyncProgress.State.COMPLETED, 2, 2, 3_500L, 200L),
+            progress.snapshot()
+        );
+    }
+
+    @Test
+    void overlappingRequestsFormOneVisibleBatch() {
+        final MapSyncProgress progress = new MapSyncProgress();
+        beginBatch(progress, tile(0, 0), tile(1, 1));
 
         progress.requestStarted(request(1, tile(0, 0)), 20, 1_000L);
         progress.requestStarted(request(2, tile(1, 1)), 30, 1_500L);
         progress.patchReceived(patch(1, 0, 0), 40, 2_000L);
-        assertEquals(MapSyncProgress.State.SYNCING, progress.snapshot().state());
+        assertEquals(
+            new MapSyncProgress.Snapshot(MapSyncProgress.State.SYNCING, 1, 2, 1_000L, 90L),
+            progress.snapshot()
+        );
 
         progress.patchReceived(patch(2, 1, 1), 50, 3_000L);
         assertEquals(
-            new MapSyncProgress.Snapshot(MapSyncProgress.State.COMPLETED, 2_000L, 140L),
+            new MapSyncProgress.Snapshot(MapSyncProgress.State.COMPLETED, 2, 2, 2_000L, 140L),
+            progress.snapshot()
+        );
+    }
+
+    @Test
+    void sequentialRequestsKeepBatchTotals() {
+        final MapSyncProgress progress = new MapSyncProgress();
+        beginBatch(progress, tile(0, 0), tile(1, 1), tile(2, 2));
+
+        progress.requestStarted(request(1, tile(0, 0)), 20, 1_000L);
+        progress.patchReceived(patch(1, 0, 0), 40, 2_000L);
+        assertEquals(
+            new MapSyncProgress.Snapshot(MapSyncProgress.State.SYNCING, 1, 3, 1_000L, 60L),
+            progress.snapshot()
+        );
+
+        progress.requestStarted(request(2, tile(1, 1)), 30, 4_000L);
+        progress.patchReceived(patch(2, 1, 1), 50, 5_000L);
+        progress.requestStarted(request(3, tile(2, 2)), 25, 6_000L);
+        progress.patchReceived(patch(3, 2, 2), 35, 8_000L);
+
+        assertEquals(
+            new MapSyncProgress.Snapshot(MapSyncProgress.State.COMPLETED, 3, 3, 7_000L, 200L),
+            progress.snapshot()
+        );
+    }
+
+    @Test
+    void partialPatchKeepsTilePendingAcrossRetry() {
+        final MapSyncProgress progress = new MapSyncProgress();
+        beginBatch(progress, tile(8, 9));
+
+        progress.requestStarted(request(1, tile(8, 9)), 20, 1_000L);
+        progress.patchReceived(patch(1, 8, 9, Proto.PATCH_MODE_PARTIAL), 30, 2_000L);
+        assertEquals(
+            new MapSyncProgress.Snapshot(MapSyncProgress.State.SYNCING, 0, 1, 1_000L, 50L),
+            progress.snapshot()
+        );
+
+        progress.patchReceived(patch(1, 8, 9, Proto.PATCH_MODE_PARTIAL), 30, 2_500L);
+        progress.requestStarted(request(2, tile(8, 9)), 25, 3_000L);
+        progress.patchReceived(patch(2, 8, 9), 40, 5_000L);
+
+        assertEquals(
+            new MapSyncProgress.Snapshot(MapSyncProgress.State.COMPLETED, 1, 1, 4_000L, 115L),
             progress.snapshot()
         );
     }
@@ -43,6 +128,7 @@ class MapSyncProgressTest {
     @Test
     void ignoresUnrelatedAndDuplicatePatches() {
         final MapSyncProgress progress = new MapSyncProgress();
+        beginBatch(progress, tile(8, 9), tile(10, 11));
         progress.requestStarted(request(3, tile(8, 9), tile(10, 11)), 25, 100L);
 
         progress.patchReceived(patch(99, 8, 9), 1_000, 200L);
@@ -51,14 +137,27 @@ class MapSyncProgressTest {
         progress.patchReceived(patch(3, 8, 9), 75, 500L);
 
         assertEquals(
-            new MapSyncProgress.Snapshot(MapSyncProgress.State.SYNCING, 0L, 100L),
+            new MapSyncProgress.Snapshot(MapSyncProgress.State.SYNCING, 1, 2, 300L, 100L),
             progress.snapshot()
         );
     }
 
     @Test
-    void resetClearsCurrentAndCompletedSyncs() {
+    void snapshotReportsCurrentWholeBatchDuration() {
         final MapSyncProgress progress = new MapSyncProgress();
+        beginBatch(progress, tile(0, 0), tile(1, 1));
+        progress.requestStarted(request(4, tile(0, 0)), 20, 1_000L);
+
+        assertEquals(
+            new MapSyncProgress.Snapshot(MapSyncProgress.State.SYNCING, 0, 2, 4_000L, 20L),
+            progress.snapshot(5_000L)
+        );
+    }
+
+    @Test
+    void resetClearsCurrentAndCompletedBatches() {
+        final MapSyncProgress progress = new MapSyncProgress();
+        beginBatch(progress, tile(0, 0));
         progress.requestStarted(request(4, tile(0, 0)), 20, 1_000L);
         progress.patchReceived(patch(4, 0, 0), 30, 2_000L);
 
@@ -68,15 +167,29 @@ class MapSyncProgressTest {
     }
 
     @Test
-    void serverErrorEndsTheVisibleSyncAsFailed() {
+    void serverErrorPreservesCurrentBatchTotals() {
         final MapSyncProgress progress = new MapSyncProgress();
+        beginBatch(progress, tile(0, 0), tile(1, 1));
         progress.requestStarted(request(5, tile(0, 0), tile(1, 1)), 20, 1_000L);
+        progress.patchReceived(patch(5, 0, 0), 40, 2_000L);
 
         progress.requestFailed(30, 2_500L);
 
         assertEquals(
-            new MapSyncProgress.Snapshot(MapSyncProgress.State.FAILED, 1_500L, 50L),
+            new MapSyncProgress.Snapshot(MapSyncProgress.State.FAILED, 1, 2, 1_500L, 90L),
             progress.snapshot()
+        );
+    }
+
+    private static void beginBatch(
+        final MapSyncProgress progress, final MapViewReqC2S.TileReq... tiles
+    ) {
+        progress.beginBatch(
+            0,
+            1,
+            Arrays.stream(tiles)
+                .map(tile -> new MapSyncProgress.BatchTile(tile.tileX(), tile.tileZ()))
+                .toList()
         );
     }
 
@@ -89,9 +202,26 @@ class MapSyncProgressTest {
     }
 
     private static MapPatchS2C patch(final int reqId, final int tileX, final int tileZ) {
+        return patch(reqId, tileX, tileZ, Proto.PATCH_MODE_UNCHANGED);
+    }
+
+    private static MapPatchS2C patch(
+        final int reqId, final int tileX, final int tileZ, final int mode
+    ) {
         return new MapPatchS2C(
-            reqId, 0, 1, tileX, tileZ, Proto.PATCH_MODE_UNCHANGED,
+            reqId, 0, 1, tileX, tileZ, mode,
             0L, new byte[Proto.PATCH_PRESENCE_BYTES], new byte[0]
+        );
+    }
+
+    private static MapRegionPatchS2C regionPatch(
+        final int reqId, final ChunkRegionSlice slice
+    ) {
+        return new MapRegionPatchS2C(
+            reqId, 0, 4, slice.regionX(), slice.regionZ(),
+            slice.minLocalChunkX(), slice.minLocalChunkZ(),
+            slice.maxLocalChunkX(), slice.maxLocalChunkZ(),
+            Proto.PATCH_MODE_UNAVAILABLE, 0L, new byte[0]
         );
     }
 }

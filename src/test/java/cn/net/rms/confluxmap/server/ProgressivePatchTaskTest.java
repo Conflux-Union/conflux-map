@@ -1,0 +1,104 @@
+package cn.net.rms.confluxmap.server;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import cn.net.rms.confluxmap.core.net.SummaryCodec;
+import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.Test;
+
+class ProgressivePatchTaskTest {
+    @Test
+    void advancesAtMostTheChunkAndTimeBudgets() {
+        final ProgressivePatchTask task = new ProgressivePatchTask(4, 0, 0);
+        final AtomicInteger clock = new AtomicInteger();
+        final int first = task.advance(
+            (x, z) -> null,
+            32,
+            4,
+            () -> clock.getAndIncrement()
+        );
+
+        assertEquals(4, first, "time budget stops the pass after four clock units");
+        assertFalse(task.complete());
+
+        final int second = task.advance(
+            (x, z) -> null,
+            3,
+            Long.MAX_VALUE,
+            () -> 0L
+        );
+        assertEquals(3, second, "chunk budget independently caps the pass");
+        assertEquals(7, task.processedChunks());
+    }
+
+    @Test
+    void scansRegionsInContiguousRegionMajorOrder() {
+        final ProgressivePatchTask task = new ProgressivePatchTask(3, -1, -1);
+        final java.util.ArrayList<String> positions = new java.util.ArrayList<>();
+
+        task.advance((x, z) -> {
+            positions.add(x + "," + z);
+            return null;
+        }, 258, Long.MAX_VALUE, () -> 0L);
+
+        assertEquals("-128,-128", positions.get(0));
+        assertEquals("-113,-113", positions.get(255));
+        assertEquals("-112,-128", positions.get(256));
+        assertTrue(task.processedChunks() == 258);
+    }
+
+    @Test
+    void lodFourConsumesMissingOrCachedRegionsAsSingleWorkUnits() {
+        final ProgressivePatchTask task = new ProgressivePatchTask(4, 0, 0);
+        final AtomicInteger regionLoads = new AtomicInteger();
+        final AtomicInteger chunkLoads = new AtomicInteger();
+        final SummaryCodec.SampledChunk[] empty = new SummaryCodec.SampledChunk[SummaryCodec.CHUNKS];
+        Arrays.fill(empty, SummaryCodec.SampledChunk.empty(16));
+
+        final int processed = task.advance(new ProgressivePatchTask.ChunkSource() {
+            @Override
+            public ProgressivePatchTask.RegionLoad loadRegion(final int regionX, final int regionZ) {
+                regionLoads.incrementAndGet();
+                return ProgressivePatchTask.RegionLoad.loaded(
+                    new SummaryCodec.SampledRegion(regionX, regionZ, 0L, 16, empty)
+                );
+            }
+
+            @Override
+            public SummaryCodec.SampledChunk load(final int chunkX, final int chunkZ) {
+                chunkLoads.incrementAndGet();
+                return null;
+            }
+        }, 256, Long.MAX_VALUE, () -> 0L);
+
+        assertEquals(65_536, processed);
+        assertEquals(256, regionLoads.get());
+        assertEquals(0, chunkLoads.get());
+        assertTrue(task.complete());
+    }
+
+    @Test
+    void pendingRegionDoesNotFallBackToIndividualChunks() {
+        final ProgressivePatchTask task = new ProgressivePatchTask(4, 0, 0);
+        final AtomicInteger chunkLoads = new AtomicInteger();
+
+        final int processed = task.advance(new ProgressivePatchTask.ChunkSource() {
+            @Override
+            public ProgressivePatchTask.RegionLoad loadRegion(final int regionX, final int regionZ) {
+                return ProgressivePatchTask.RegionLoad.waiting();
+            }
+
+            @Override
+            public SummaryCodec.SampledChunk load(final int chunkX, final int chunkZ) {
+                chunkLoads.incrementAndGet();
+                return null;
+            }
+        }, 256, Long.MAX_VALUE, () -> 0L);
+
+        assertEquals(0, processed);
+        assertEquals(0, chunkLoads.get());
+    }
+}

@@ -16,30 +16,53 @@ public final class BaselineDeriver {
     }
 
     public static DerivedGrid derive(final BaselineGrid grid) {
+        return deriveWindow(
+            grid,
+            -BaselineGrid.MARGIN,
+            -BaselineGrid.MARGIN,
+            BaselineGrid.PIXELS - 1 + BaselineGrid.MARGIN,
+            BaselineGrid.PIXELS - 1 + BaselineGrid.MARGIN
+        );
+    }
+
+    public static DerivedGrid deriveWindow(
+        final BaselineGrid grid,
+        final int minPixelX,
+        final int minPixelZ,
+        final int maxPixelX,
+        final int maxPixelZ
+    ) {
+        if (grid == null || minPixelX < -BaselineGrid.MARGIN
+            || minPixelZ < -BaselineGrid.MARGIN
+            || maxPixelX >= BaselineGrid.PIXELS + BaselineGrid.MARGIN
+            || maxPixelZ >= BaselineGrid.PIXELS + BaselineGrid.MARGIN
+            || minPixelX > maxPixelX || minPixelZ > maxPixelZ) {
+            throw new IllegalArgumentException("invalid baseline derivation window");
+        }
         final DerivedGrid out = new DerivedGrid(grid.subPerAxis);
-        final int n = grid.terrainY.length;
-        for (int i = 0; i < n; i++) {
-            final int localX = i % BaselineGrid.SIZE - BaselineGrid.MARGIN;
-            final int localZ = i / BaselineGrid.SIZE - BaselineGrid.MARGIN;
-            deriveColumn(
-                grid.terrainY[i], grid.biomeId[i], grid.baseSurfaceY[i], grid.surfaceFlags[i],
-                grid.blockX(localX), grid.blockZ(localZ),
-                out.kind, out.surfaceY, out.fluidDepth, i
-            );
-            if (!grid.supersampled()) {
-                continue;
-            }
-            for (int sz = 0; sz < grid.subPerAxis; sz++) {
-                for (int sx = 0; sx < grid.subPerAxis; sx++) {
-                    final int s = grid.subIndex(i, sx, sz);
-                    // Terrain height is shared with the pixel centre by design; only the biome and
-                    // the fluid classification that follows from it vary per sub-sample.
-                    deriveColumn(
-                        grid.terrainY[i], grid.subBiomeId[s], grid.subBaseSurfaceY[s],
-                        grid.subSurfaceFlags[s],
-                        grid.subBlockX(localX, sx), grid.subBlockZ(localZ, sz),
-                        out.subKind, out.subSurfaceY, out.subFluidDepth, s
-                    );
+        for (int localZ = minPixelZ; localZ <= maxPixelZ; localZ++) {
+            for (int localX = minPixelX; localX <= maxPixelX; localX++) {
+                final int i = BaselineGrid.index(localX, localZ);
+                deriveColumn(
+                    grid.terrainY[i], grid.biomeId[i], grid.baseSurfaceY[i], grid.surfaceFlags[i],
+                    grid.blockX(localX), grid.blockZ(localZ),
+                    out.kind, out.surfaceY, out.fluidDepth, i
+                );
+                if (!grid.supersampled()) {
+                    continue;
+                }
+                for (int sz = 0; sz < grid.subPerAxis; sz++) {
+                    for (int sx = 0; sx < grid.subPerAxis; sx++) {
+                        final int s = grid.subIndex(i, sx, sz);
+                        // Terrain height is shared with the pixel centre by design; only the biome and
+                        // the fluid classification that follows from it vary per sub-sample.
+                        deriveColumn(
+                            grid.terrainY[i], grid.subBiomeId[s], grid.subBaseSurfaceY[s],
+                            grid.subSurfaceFlags[s],
+                            grid.subBlockX(localX, sx), grid.subBlockZ(localZ, sz),
+                            out.subKind, out.subSurfaceY, out.subFluidDepth, s
+                        );
+                    }
                 }
             }
         }

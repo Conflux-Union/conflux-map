@@ -17,7 +17,7 @@ public record MapViewReqC2S(int reqId, int dimIndex, int lod, List<TileReq> tile
     /**
      * @param tileX          tile X coordinate (256 output pixels; world span is 256 << lod blocks)
      * @param tileZ          tile Z coordinate
-     * @param sinceRevision  last {@code tileRevision} the client has cached for this tile; 0 = cold
+     * @param sinceRevision  last committed {@code tileRevision}; {@link Long#MIN_VALUE} means cold
      */
     public record TileReq(int tileX, int tileZ, long sinceRevision) {
     }

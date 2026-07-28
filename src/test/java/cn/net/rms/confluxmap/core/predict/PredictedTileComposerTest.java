@@ -277,7 +277,7 @@ class PredictedTileComposerTest {
     }
 
     @Test
-    void correctedFoliageKeepsTheContinuousPredictedCanopyPlane() {
+    void authoritativeFoliageCorrectionReplacesThePredictedGroundPixel() {
         final BaselineGrid grid = new BaselineGrid();
         final DerivedGrid derived = new DerivedGrid();
         Arrays.fill(grid.biomeId, 7);
@@ -294,7 +294,11 @@ class PredictedTileComposerTest {
             derived, grid, PredictionPalette.defaults(), corrections, PredictionViewMode.EVERYWHERE, 0
         );
 
-        assertEquals(baseline[pixel], corrected[pixel], "natural foliage corrections must not create chunk-edge colour patches");
+        assertNotEquals(
+            baseline[pixel],
+            corrected[pixel],
+            "an authoritative residual must not be discarded by a visual canopy tolerance"
+        );
     }
 
     @Test

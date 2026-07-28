@@ -11,6 +11,7 @@ import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.net.ErrorS2C;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.MapPatchS2C;
+import cn.net.rms.confluxmap.core.net.MapSyncProgress;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
@@ -58,13 +59,13 @@ class MapSyncLargeViewportTest {
 
     @Test
     void largeViewportEventuallySyncsEveryTileUnderDefaultBudgets(@TempDir final Path tempDir) throws Exception {
-        // 90 simulated seconds is ~3x the bandwidth floor for 64 tiles of ~25 KiB at 64 KiB/s.
+        // 90 simulated seconds leaves ample headroom for 64 incompressible patches at 64 KiB/s.
         final Fixture fixture = new Fixture(tempDir, 6_000);
         try {
             fixture.run(90_000L);
             assertTrue(
                 fixture.server.minAbsolutePatchBytes >= 15_000,
-                "scenario premise broken: absolute patches compressed below 15 KiB ("
+                "scenario premise broken: encoded absolute patches fell below 15 KiB ("
                     + fixture.server.minAbsolutePatchBytes + ")"
             );
             assertEquals(
@@ -77,6 +78,16 @@ class MapSyncLargeViewportTest {
                 0, fixture.server.errorCount,
                 "queued delivery must absorb budget pressure without rate-limit errors"
             );
+            final MapSyncProgress.Snapshot status = fixture.client.status();
+            assertEquals(MapSyncProgress.State.COMPLETED, status.state());
+            assertEquals(VIEW_TILES, status.completedTiles());
+            assertEquals(VIEW_TILES, status.totalTiles());
+            assertEquals(
+                fixture.requestBytes + fixture.server.patchBytes,
+                status.trafficBytes(),
+                "the visible batch must retain traffic from every subrequest"
+            );
+            assertTrue(status.durationNanos() > 0L);
         } finally {
             fixture.shutdown();
         }
@@ -91,6 +102,23 @@ class MapSyncLargeViewportTest {
                 VIEW_TILES, fixture.server.served.size(),
                 "harness sanity: tiny patches must sync the full viewport, missing "
                     + missing(fixture.server.served)
+            );
+        } finally {
+            fixture.shutdown();
+        }
+    }
+
+    @Test
+    void coldResidualViewportStaysUnderTwoHundredKiB(@TempDir final Path tempDir) throws Exception {
+        final Fixture fixture = new Fixture(tempDir, 6_000, true);
+        try {
+            fixture.run(90_000L);
+            final MapSyncProgress.Snapshot status = fixture.client.status();
+            assertEquals(MapSyncProgress.State.COMPLETED, status.state());
+            assertEquals(VIEW_TILES, status.completedTiles());
+            assertTrue(
+                status.trafficBytes() <= 200 * 1024L,
+                "cold residual viewport used " + status.trafficBytes() + " bytes"
             );
         } finally {
             fixture.shutdown();
@@ -119,11 +147,18 @@ class MapSyncLargeViewportTest {
         final MapExecutors executors;
         final Deque<byte[]> wire = new ArrayDeque<>();
         long nowMs = SIM_START_MS;
+        long requestBytes;
         final long nanoOrigin = System.nanoTime();
 
-        Fixture(final Path tempDir, final int samplesPerAbsolutePatch) {
+        Fixture(final Path tempDir, final int samplesPerPatch) {
+            this(tempDir, samplesPerPatch, false);
+        }
+
+        Fixture(
+            final Path tempDir, final int samplesPerPatch, final boolean structuredResidual
+        ) {
             final ServerConfig serverConfig = new ServerConfig();
-            server = new FakeCompanionServer(serverConfig, samplesPerAbsolutePatch);
+            server = new FakeCompanionServer(serverConfig, samplesPerPatch, structuredResidual);
 
             final SessionGuard sessionGuard = new SessionGuard();
             sessionGuard.begin(WORLD, DIM);
@@ -145,7 +180,7 @@ class MapSyncLargeViewportTest {
                     serverConfig.maxBytesPerSecondPerPlayer,
                     serverConfig.maxTilesPerRequest,
                     serverConfig.minRequestIntervalMs,
-                    serverConfig.maxPatchLod
+                    Proto.DEFAULT_MAX_PATCH_LOD
                 ),
                 List.of(new HelloPolicyS2C.DimDescriptor(DIM.toString(), "overworld", true, false, 0L, WorldPreset.DEFAULT))
             ));
@@ -155,6 +190,7 @@ class MapSyncLargeViewportTest {
                 message -> {
                     try {
                         final byte[] payload = MsgCodec.encode(message);
+                        requestBytes += payload.length;
                         wire.add(payload);
                         return payload.length;
                     } catch (final ProtoException e) {
@@ -196,24 +232,31 @@ class MapSyncLargeViewportTest {
     private static final class FakeCompanionServer {
         final ServerConfig config;
         final PatchDispatcher dispatcher;
-        final int samplesPerAbsolutePatch;
+        final int samplesPerPatch;
+        final boolean structuredResidual;
         final Set<Long> served = new HashSet<>();
         int requestCount;
         int errorCount;
         int minAbsolutePatchBytes = Integer.MAX_VALUE;
+        long patchBytes;
 
-        FakeCompanionServer(final ServerConfig config, final int samplesPerAbsolutePatch) {
+        FakeCompanionServer(
+            final ServerConfig config,
+            final int samplesPerPatch,
+            final boolean structuredResidual
+        ) {
             this.config = config;
             this.dispatcher = new PatchDispatcher(
                 new PlayerBudget(config.maxBytesPerSecondPerPlayer, config.minRequestIntervalMs),
                 config.maxPendingTilesPerPlayer
             );
-            this.samplesPerAbsolutePatch = samplesPerAbsolutePatch;
+            this.samplesPerPatch = samplesPerPatch;
+            this.structuredResidual = structuredResidual;
         }
 
         void handle(final MapViewReqC2S request, final long nowNanos, final MapSyncClient client) throws ProtoException {
             requestCount++;
-            if (request.lod() > config.maxPatchLod || request.tiles().size() > config.maxTilesPerRequest
+            if (request.lod() > Proto.DEFAULT_MAX_PATCH_LOD || request.tiles().size() > config.maxTilesPerRequest
                 || request.dimIndex() < 0 || !dispatcher.budget().beginRequest(nowNanos)) {
                 deliverError(client);
                 return;
@@ -240,6 +283,7 @@ class MapSyncLargeViewportTest {
                 if (patch.mode() == Proto.PATCH_MODE_ABSOLUTE) {
                     minAbsolutePatchBytes = Math.min(minAbsolutePatchBytes, encoded.length);
                 }
+                patchBytes += encoded.length;
                 served.add(tileKey(patch.tileX(), patch.tileZ()));
                 client.onPatch((MapPatchS2C) MsgCodec.decode(encoded), encoded.length);
             } catch (final ProtoException e) {
@@ -262,21 +306,54 @@ class MapSyncLargeViewportTest {
                     Proto.PATCH_MODE_UNCHANGED, 1L, presence, new byte[0]
                 );
             }
-            final List<PatchCodec.Sample> samples = new ArrayList<>(samplesPerAbsolutePatch);
-            for (int i = 0; i < samplesPerAbsolutePatch; i++) {
-                final long h = mix((((long) job.tileX() << 20) ^ job.tileZ()) * 65_536L + i);
-                samples.add(new PatchCodec.Sample(
-                    i,
-                    (int) (h & 0xFF),
-                    40 + (int) ((h >>> 16) & 0x7F),
-                    SurfaceKind.LAND.ordinal(),
-                    (int) ((h >>> 24) & 0x3F),
-                    (int) ((h >>> 32) & 0x0F)
-                ));
+            final List<PatchCodec.Sample> samples = new ArrayList<>(samplesPerPatch);
+            for (int i = 0; i < samplesPerPatch; i++) {
+                if (structuredResidual) {
+                    final int x = i & 255;
+                    final int z = i >>> 8;
+                    final int tileOffset = job.tileX() * 3 + job.tileZ() * 5;
+                    final int surfaceY = 72 + (int) (
+                        18 * Math.sin((x + tileOffset) / 41.0) * Math.cos((z + tileOffset) / 53.0)
+                            + 7 * Math.sin((x + z) / 17.0)
+                    );
+                    final int biome = ((x / 60) * 3 + (z / 70) * 5 + tileOffset) % 6 * 7;
+                    samples.add(new PatchCodec.Sample(
+                        i,
+                        biome,
+                        surfaceY,
+                        (x * 31 + z) % 5 == 0 ? SurfaceKind.WATER.ordinal() : SurfaceKind.LAND.ordinal(),
+                        (biome * 3 + 1) % 60,
+                        biome == 0 ? 1 + (x + z) % 9 : 0,
+                        biome == 0 ? 10 : 255
+                    ));
+                } else {
+                    final long h = mix((((long) job.tileX() << 20) ^ job.tileZ()) * 65_536L + i);
+                    samples.add(new PatchCodec.Sample(
+                        i,
+                        (int) (h & 0xFF),
+                        40 + (int) ((h >>> 16) & 0x7F),
+                        SurfaceKind.LAND.ordinal(),
+                        (int) ((h >>> 24) & 0x3F),
+                        (int) ((h >>> 32) & 0x0F)
+                    ));
+                }
+            }
+            final byte[] evaluated = new byte[PatchCodec.MASK_BYTES];
+            if (structuredResidual) {
+                for (int pixel = 0; pixel < PatchCodec.PIXELS; pixel++) {
+                    PatchCodec.setEvaluated(evaluated, pixel);
+                }
+            } else {
+                for (final PatchCodec.Sample sample : samples) {
+                    PatchCodec.setEvaluated(evaluated, sample.pixelIndex());
+                }
             }
             return new MapPatchS2C(
                 job.reqId(), job.dimIndex(), job.lod(), job.tileX(), job.tileZ(),
-                Proto.PATCH_MODE_ABSOLUTE, 1L, presence, PatchCodec.encode(new PatchCodec.Patch(samples))
+                structuredResidual ? Proto.PATCH_MODE_RESIDUAL : Proto.PATCH_MODE_ABSOLUTE,
+                1L,
+                presence,
+                PatchCodec.encode(new PatchCodec.Patch(evaluated, samples))
             );
         }
 

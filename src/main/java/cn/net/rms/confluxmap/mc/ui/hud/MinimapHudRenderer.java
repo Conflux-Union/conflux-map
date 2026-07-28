@@ -375,8 +375,9 @@ public final class MinimapHudRenderer {
         final int lastTileX = TileMath.blockToTile((int) Math.ceil(player.x() + coverRadius));
         final int firstTileZ = TileMath.blockToTile((int) Math.floor(player.z() - coverRadius));
         final int lastTileZ = TileMath.blockToTile((int) Math.ceil(player.z() + coverRadius));
-        final String layerId = layerSelector.current().layer().cacheId();
-        tiles.setViewport(0, firstTileX, lastTileX, firstTileZ, lastTileZ);
+        final MapLayer layer = layerSelector.current().layer();
+        final String layerId = layer.cacheId();
+        tiles.setViewport(layer, 0, firstTileX, lastTileX, firstTileZ, lastTileZ);
 
         for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
             for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {

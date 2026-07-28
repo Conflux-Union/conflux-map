@@ -28,7 +28,7 @@
   "key.confluxmap.reload_prediction.comment": "Discard and regenerate the current seed preview tiles.",
   "confluxmap.screen.map.title": "World Map",
   "confluxmap.map.scale": "Scale: %s",
-  "confluxmap.map.server_sync.syncing": "Map update in progress",
+  "confluxmap.map.server_sync.syncing": "Updating map: %s/%s complete",
   "confluxmap.map.server_sync.completed": "Map updated in %s (%s downloaded)",
   "confluxmap.map.server_sync.failed": "Map update failed",
   "confluxmap.map.update_badge": "Update available: %s",

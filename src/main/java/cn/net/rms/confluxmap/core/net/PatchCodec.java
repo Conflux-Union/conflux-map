@@ -1,6 +1,6 @@
 package cn.net.rms.confluxmap.core.net;
 
-import cn.net.rms.confluxmap.core.model.SurfaceKind;
+import cn.net.rms.confluxmap.core.model.MapPixel;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -9,70 +9,130 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.zip.DataFormatException;
 import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
-import java.util.zip.InflaterInputStream;
+import java.util.zip.Inflater;
 
 /**
- * Compact, hostile-input-safe codec for the sparse MAP_PATCH body.
+ * Compact, hostile-input-safe layout for one authoritative correction snapshot.
  *
- * <p>Pre-deflate layout: the 32-byte coarse bitmap of active 16x16 cells, the 32-byte fine
- * bitmap of every active cell in ascending cell order, then one plane per field over all
- * masked pixels in mask-traversal order: {@code biomeId u8}, {@code surfaceY} as a
- * zigzag-varint delta against the previous masked pixel, {@code kind u8}, {@code mapColorId u8},
- * {@code fluidDepth u8}. Field-separated planes keep same-typed bytes adjacent and the height
- * plane near-zero, which deflate compresses far better than interleaved per-pixel records.
+ * <p>The compressed body contains two hierarchical sparse bit planes followed by homogeneous value
+ * planes. Heights are zigzag-varint deltas in pixel order; the remaining categorical fields stay
+ * grouped so Deflate can exploit long terrain runs. {@code evaluated[pixel]} distinguishes a
+ * column the server proved equivalent to the deterministic baseline from a column it could not
+ * read; {@code difference[pixel]} is implicit in the sample mask.
  */
 public final class PatchCodec {
+    public static final int FORMAT_VERSION = 3;
     public static final int PIXELS = 256 * 256;
+    public static final int MASK_BYTES = PIXELS / 8;
     public static final int COARSE_MASK_BYTES = 32;
     public static final int FINE_MASK_BYTES = 32;
-    public static final int MAX_RAW_BYTES = 512 * 1024;
-    public static final int MAX_COMPRESSED_BYTES = 48 * 1024;
+    public static final int MAX_SPARSE_MASK_BYTES = COARSE_MASK_BYTES + 256 * FINE_MASK_BYTES;
+    public static final int RECORD_BYTES = 7;
+    private static final int MAX_DELTA_HEIGHT_BYTES = 3;
+    public static final int MAX_RAW_BYTES =
+        1 + MAX_SPARSE_MASK_BYTES * 2 + PIXELS * (RECORD_BYTES - 2 + MAX_DELTA_HEIGHT_BYTES);
+    public static final int MAX_COMPRESSED_BYTES = 576 * 1024;
 
     private PatchCodec() {
     }
 
-    /** Encodes removal of an older correction while remaining harmless to clients that ignore unknown samples. */
-    public static Sample removal(final int pixelIndex) {
-        return new Sample(pixelIndex, 0, Short.MIN_VALUE, SurfaceKind.UNKNOWN.ordinal(), Proto.MAP_COLOR_NONE, 0);
-    }
-
-    public static boolean isRemoval(final Sample sample) {
-        return sample != null
-            && sample.biomeId() == 0
-            && sample.surfaceY() == Short.MIN_VALUE
-            && sample.kind() == SurfaceKind.UNKNOWN.ordinal()
-            && sample.mapColorId() == Proto.MAP_COLOR_NONE
-            && sample.fluidDepth() == 0;
-    }
-
-    /** One corrected pixel or {@link #removal(int) removal marker}. {@code pixelIndex = z * 256 + x}. */
-    public record Sample(int pixelIndex, int biomeId, int surfaceY, int kind, int mapColorId, int fluidDepth) {
+    /** One absolute actual pixel selected by the residual difference mask. */
+    public record Sample(int pixelIndex, MapPixel pixel) {
         public Sample {
             if (pixelIndex < 0 || pixelIndex >= PIXELS) {
                 throw new IllegalArgumentException("pixel index outside tile: " + pixelIndex);
             }
-            checkByte("biomeId", biomeId);
-            if (surfaceY < Short.MIN_VALUE || surfaceY > Short.MAX_VALUE) {
-                throw new IllegalArgumentException("surfaceY outside i16: " + surfaceY);
+            if (pixel == null) {
+                throw new IllegalArgumentException("patch sample pixel is null");
             }
-            checkByte("kind", kind);
-            checkByte("mapColorId", mapColorId);
-            checkByte("fluidDepth", fluidDepth);
         }
 
-        private static void checkByte(final String field, final int value) {
-            if (value < 0 || value > 255) {
-                throw new IllegalArgumentException(field + " outside u8: " + value);
-            }
+        public Sample(
+            final int pixelIndex,
+            final int biomeId,
+            final int surfaceY,
+            final int kind,
+            final int mapColorId,
+            final int fluidDepth
+        ) {
+            this(pixelIndex, new MapPixel(biomeId, surfaceY, kind, mapColorId, fluidDepth));
+        }
+
+        public Sample(
+            final int pixelIndex,
+            final int biomeId,
+            final int surfaceY,
+            final int kind,
+            final int mapColorId,
+            final int fluidDepth,
+            final int floorMapColorId
+        ) {
+            this(pixelIndex, new MapPixel(
+                biomeId, surfaceY, kind, mapColorId, fluidDepth, floorMapColorId
+            ));
+        }
+
+        public int biomeId() {
+            return pixel.biomeId();
+        }
+
+        public int surfaceY() {
+            return pixel.surfaceY();
+        }
+
+        public int kind() {
+            return pixel.kind();
+        }
+
+        public int mapColorId() {
+            return pixel.mapColorId();
+        }
+
+        public int fluidDepth() {
+            return pixel.fluidDepth();
+        }
+
+        public int floorMapColorId() {
+            return pixel.floorMapColorId();
         }
     }
 
-    /** Decoded sparse records, sorted by pixel index. */
-    public record Patch(List<Sample> samples) {
+    /** Evaluated coverage plus absolute residual samples, sorted by pixel on the wire. */
+    public record Patch(byte[] evaluated, List<Sample> samples) {
         public Patch {
+            if (evaluated == null || evaluated.length != MASK_BYTES) {
+                throw new IllegalArgumentException("evaluated mask must contain " + MASK_BYTES + " bytes");
+            }
+            if (samples == null) {
+                throw new IllegalArgumentException("patch samples are null");
+            }
+            evaluated = evaluated.clone();
             samples = List.copyOf(samples);
+            final boolean[] seen = new boolean[PIXELS];
+            for (final Sample sample : samples) {
+                if (sample == null || seen[sample.pixelIndex()]) {
+                    throw new IllegalArgumentException(
+                        sample == null ? "patch contains null sample" : "duplicate pixel index " + sample.pixelIndex()
+                    );
+                }
+                if (!hasBit(evaluated, sample.pixelIndex())) {
+                    throw new IllegalArgumentException("difference pixel was not evaluated: " + sample.pixelIndex());
+                }
+                seen[sample.pixelIndex()] = true;
+            }
+        }
+
+        /** Compatibility constructor: handcrafted samples are evaluated exactly where they differ. */
+        public Patch(final List<Sample> samples) {
+            this(evaluatedFrom(samples), samples);
+        }
+
+        @Override
+        public byte[] evaluated() {
+            return evaluated.clone();
         }
 
         public int size() {
@@ -83,7 +143,13 @@ public final class PatchCodec {
             return samples;
         }
 
+        public boolean evaluatedAt(final int pixelIndex) {
+            checkPixel(pixelIndex);
+            return hasBit(evaluated, pixelIndex);
+        }
+
         public Sample sampleAt(final int pixelIndex) {
+            checkPixel(pixelIndex);
             for (final Sample sample : samples) {
                 if (sample.pixelIndex() == pixelIndex) {
                     return sample;
@@ -98,76 +164,51 @@ public final class PatchCodec {
             throw new IllegalArgumentException("patch is null");
         }
         final Sample[] byPixel = new Sample[PIXELS];
-        final byte[] coarse = new byte[COARSE_MASK_BYTES];
-        final byte[][] fine = new byte[PIXELS / 256][];
+        final byte[] difference = new byte[MASK_BYTES];
         for (final Sample sample : patch.samples()) {
-            final int pixel = sample.pixelIndex();
+            byPixel[sample.pixelIndex()] = sample;
+            setBit(difference, sample.pixelIndex());
+        }
+        final List<Sample> ordered = new ArrayList<>(patch.size());
+        for (int pixel = 0; pixel < PIXELS; pixel++) {
             if (byPixel[pixel] != null) {
-                throw new IllegalArgumentException("duplicate pixel index " + pixel);
+                ordered.add(byPixel[pixel]);
             }
-            byPixel[pixel] = sample;
-            final int x = pixel & 255;
-            final int z = pixel >>> 8;
-            final int coarseIndex = (z >>> 4) * 16 + (x >>> 4);
-            final int fineIndex = (z & 15) * 16 + (x & 15);
-            setBit(coarse, coarseIndex);
-            if (fine[coarseIndex] == null) {
-                fine[coarseIndex] = new byte[FINE_MASK_BYTES];
-            }
-            setBit(fine[coarseIndex], fineIndex);
         }
         try {
-            final ByteArrayOutputStream rawBytes = new ByteArrayOutputStream(COARSE_MASK_BYTES + patch.size() * 40);
-            final DataOutputStream raw = new DataOutputStream(rawBytes);
-            raw.write(coarse);
-            final List<Sample> ordered = new ArrayList<>(patch.size());
-            for (int coarseIndex = 0; coarseIndex < fine.length; coarseIndex++) {
-                if (fine[coarseIndex] == null) {
-                    continue;
-                }
-                raw.write(fine[coarseIndex]);
-                for (int fineIndex = 0; fineIndex < 256; fineIndex++) {
-                    if (hasBit(fine[coarseIndex], fineIndex)) {
-                        ordered.add(byPixel[pixelAt(coarseIndex, fineIndex)]);
-                    }
-                }
-            }
+            final ByteArrayOutputStream rawBytes = new ByteArrayOutputStream(
+                1 + COARSE_MASK_BYTES * 2 + ordered.size() * RECORD_BYTES
+            );
+            final DataOutputStream out = new DataOutputStream(rawBytes);
+            out.writeByte(FORMAT_VERSION);
+            writeSparseMask(out, patch.evaluated());
+            writeSparseMask(out, difference);
             for (final Sample sample : ordered) {
-                raw.writeByte(sample.biomeId());
+                out.writeByte(sample.biomeId());
             }
             int previousY = 0;
             for (final Sample sample : ordered) {
-                writeZigzagVarint(raw, sample.surfaceY() - previousY);
+                writeZigzagVarint(out, sample.surfaceY() - previousY);
                 previousY = sample.surfaceY();
             }
             for (final Sample sample : ordered) {
-                raw.writeByte(sample.kind());
+                out.writeByte(sample.kind());
             }
             for (final Sample sample : ordered) {
-                raw.writeByte(sample.mapColorId());
+                out.writeByte(sample.mapColorId());
             }
             for (final Sample sample : ordered) {
-                raw.writeByte(sample.fluidDepth());
+                out.writeByte(sample.fluidDepth());
             }
-            raw.flush();
-            final byte[] uncompressed = rawBytes.toByteArray();
-            if (uncompressed.length > MAX_RAW_BYTES) {
+            for (final Sample sample : ordered) {
+                out.writeByte(sample.floorMapColorId());
+            }
+            out.flush();
+            final byte[] raw = rawBytes.toByteArray();
+            if (raw.length > MAX_RAW_BYTES) {
                 throw new IllegalArgumentException("patch body exceeds raw cap");
             }
-            final ByteArrayOutputStream compressed = new ByteArrayOutputStream(uncompressed.length);
-            final Deflater deflater = new Deflater(Deflater.DEFAULT_COMPRESSION);
-            try {
-                final DeflaterOutputStream out = new DeflaterOutputStream(compressed, deflater, 8192);
-                out.write(uncompressed);
-                out.finish();
-            } finally {
-                deflater.end();
-            }
-            final byte[] result = compressed.toByteArray();
-            if (result.length > MAX_COMPRESSED_BYTES) {
-                throw new IllegalArgumentException("patch body exceeds compressed cap: " + result.length);
-            }
-            return result;
+            return deflate(raw);
         } catch (final IOException e) {
             throw new IllegalStateException("in-memory patch encoding failed", e);
         }
@@ -192,51 +233,56 @@ public final class PatchCodec {
         final byte[] raw = inflate(body);
         try {
             final DataInputStream in = new DataInputStream(new ByteArrayInputStream(raw));
-            final byte[] coarse = new byte[COARSE_MASK_BYTES];
-            in.readFully(coarse);
-            final byte[][] fine = new byte[PIXELS / 256][];
+            final int version = in.readUnsignedByte();
+            if (version != FORMAT_VERSION) {
+                throw new ProtoException("unsupported patch body version " + version);
+            }
+            final byte[] evaluated = readSparseMask(in);
+            final byte[] difference = readSparseMask(in);
             int count = 0;
-            for (int coarseIndex = 0; coarseIndex < 256; coarseIndex++) {
-                if (!hasBit(coarse, coarseIndex)) {
-                    continue;
+            for (int i = 0; i < MASK_BYTES; i++) {
+                if ((difference[i] & ~evaluated[i]) != 0) {
+                    throw new ProtoException("difference mask contains unevaluated pixels");
                 }
-                final byte[] mask = new byte[FINE_MASK_BYTES];
-                in.readFully(mask);
-                fine[coarseIndex] = mask;
-                for (final byte b : mask) {
-                    count += Integer.bitCount(b & 0xFF);
-                }
+                count += Integer.bitCount(difference[i] & 255);
             }
             final int[] pixels = new int[count];
             int next = 0;
-            for (int coarseIndex = 0; coarseIndex < 256; coarseIndex++) {
-                if (fine[coarseIndex] == null) {
-                    continue;
-                }
-                for (int fineIndex = 0; fineIndex < 256; fineIndex++) {
-                    if (hasBit(fine[coarseIndex], fineIndex)) {
-                        pixels[next++] = pixelAt(coarseIndex, fineIndex);
-                    }
+            for (int pixel = 0; pixel < PIXELS; pixel++) {
+                if (hasBit(difference, pixel)) {
+                    pixels[next++] = pixel;
                 }
             }
-            final int[] biomes = readBytePlane(in, count);
+            final int[] biomes = readUnsignedBytePlane(in, count);
             final int[] surfaceYs = new int[count];
             int previousY = 0;
             for (int i = 0; i < count; i++) {
                 previousY += readZigzagVarint(in);
+                if (previousY < Short.MIN_VALUE || previousY > Short.MAX_VALUE) {
+                    throw new ProtoException("surface height outside i16: " + previousY);
+                }
                 surfaceYs[i] = previousY;
             }
-            final int[] kinds = readBytePlane(in, count);
-            final int[] mapColors = readBytePlane(in, count);
-            final int[] fluidDepths = readBytePlane(in, count);
+            final int[] kinds = readUnsignedBytePlane(in, count);
+            final int[] mapColors = readUnsignedBytePlane(in, count);
+            final int[] fluidDepths = readUnsignedBytePlane(in, count);
+            final int[] floorMapColors = readUnsignedBytePlane(in, count);
             if (in.available() != 0) {
                 throw new ProtoException("trailing bytes in patch body: " + in.available());
             }
             final List<Sample> samples = new ArrayList<>(count);
             for (int i = 0; i < count; i++) {
-                samples.add(new Sample(pixels[i], biomes[i], surfaceYs[i], kinds[i], mapColors[i], fluidDepths[i]));
+                samples.add(new Sample(
+                    pixels[i],
+                    biomes[i],
+                    surfaceYs[i],
+                    kinds[i],
+                    mapColors[i],
+                    fluidDepths[i],
+                    floorMapColors[i]
+                ));
             }
-            return new Patch(samples);
+            return new Patch(evaluated, samples);
         } catch (final EOFException | IllegalArgumentException e) {
             throw new ProtoException("malformed patch body: " + e.getMessage(), e);
         } catch (final IOException e) {
@@ -244,43 +290,127 @@ public final class PatchCodec {
         }
     }
 
-    private static byte[] inflate(final byte[] body) throws ProtoException {
+    private static byte[] deflate(final byte[] raw) throws IOException {
+        final ByteArrayOutputStream compressed = new ByteArrayOutputStream(Math.min(raw.length, 64 * 1024));
+        final Deflater deflater = new Deflater(Deflater.DEFAULT_COMPRESSION);
         try {
-            final InflaterInputStream in = new InflaterInputStream(new ByteArrayInputStream(body));
-            final ByteArrayOutputStream out = new ByteArrayOutputStream();
-            final byte[] buffer = new byte[8192];
-            int total = 0;
-            int read;
-            while ((read = in.read(buffer)) != -1) {
-                total += read;
-                if (total > MAX_RAW_BYTES) {
-                    throw new ProtoException("inflated patch body exceeds cap");
+            final DeflaterOutputStream out = new DeflaterOutputStream(compressed, deflater, 8192);
+            out.write(raw);
+            out.finish();
+        } finally {
+            deflater.end();
+        }
+        final byte[] result = compressed.toByteArray();
+        if (result.length > MAX_COMPRESSED_BYTES) {
+            throw new IllegalArgumentException("patch body exceeds compressed cap: " + result.length);
+        }
+        return result;
+    }
+
+    private static byte[] inflate(final byte[] body) throws ProtoException {
+        final Inflater inflater = new Inflater();
+        final ByteArrayOutputStream raw = new ByteArrayOutputStream(Math.min(body.length * 4, MAX_RAW_BYTES));
+        final byte[] buffer = new byte[8192];
+        try {
+            inflater.setInput(body);
+            while (!inflater.finished()) {
+                final int read = inflater.inflate(buffer);
+                if (read > 0) {
+                    if (raw.size() > MAX_RAW_BYTES - read) {
+                        throw new ProtoException("inflated patch body exceeds cap");
+                    }
+                    raw.write(buffer, 0, read);
+                    continue;
                 }
-                out.write(buffer, 0, read);
+                if (inflater.needsDictionary()) {
+                    throw new ProtoException("patch body requires a compression dictionary");
+                }
+                if (inflater.needsInput()) {
+                    throw new ProtoException("truncated compressed patch body");
+                }
+                throw new ProtoException("compressed patch body made no progress");
             }
-            return out.toByteArray();
-        } catch (final ProtoException e) {
-            throw e;
-        } catch (final IOException e) {
-            throw new ProtoException("invalid deflate patch body", e);
+            if (inflater.getRemaining() != 0) {
+                throw new ProtoException("trailing compressed patch bytes: " + inflater.getRemaining());
+            }
+            return raw.toByteArray();
+        } catch (final DataFormatException e) {
+            throw new ProtoException("malformed compressed patch body", e);
+        } finally {
+            inflater.end();
         }
     }
 
-    private static void setBit(final byte[] bits, final int index) {
-        bits[index >>> 3] |= (byte) (1 << (index & 7));
+    public static void setEvaluated(final byte[] evaluated, final int pixelIndex) {
+        if (evaluated == null || evaluated.length != MASK_BYTES) {
+            throw new IllegalArgumentException("invalid evaluated mask");
+        }
+        checkPixel(pixelIndex);
+        setBit(evaluated, pixelIndex);
     }
 
-    private static boolean hasBit(final byte[] bits, final int index) {
-        return (bits[index >>> 3] & (1 << (index & 7))) != 0;
+    private static byte[] evaluatedFrom(final List<Sample> samples) {
+        if (samples == null) {
+            throw new IllegalArgumentException("patch samples are null");
+        }
+        final byte[] result = new byte[MASK_BYTES];
+        for (final Sample sample : samples) {
+            if (sample == null) {
+                throw new IllegalArgumentException("patch contains null sample");
+            }
+            setBit(result, sample.pixelIndex());
+        }
+        return result;
     }
 
-    private static int pixelAt(final int coarseIndex, final int fineIndex) {
-        final int x = ((coarseIndex & 15) << 4) | (fineIndex & 15);
-        final int z = ((coarseIndex >>> 4) << 4) | (fineIndex >>> 4);
-        return (z << 8) | x;
+    private static void writeSparseMask(final DataOutputStream out, final byte[] pixels) throws IOException {
+        final byte[] coarse = new byte[COARSE_MASK_BYTES];
+        final byte[][] fine = new byte[256][];
+        for (int pixel = 0; pixel < PIXELS; pixel++) {
+            if (!hasBit(pixels, pixel)) {
+                continue;
+            }
+            final int x = pixel & 255;
+            final int z = pixel >>> 8;
+            final int coarseIndex = (z >>> 4) * 16 + (x >>> 4);
+            final int fineIndex = (z & 15) * 16 + (x & 15);
+            setBit(coarse, coarseIndex);
+            if (fine[coarseIndex] == null) {
+                fine[coarseIndex] = new byte[FINE_MASK_BYTES];
+            }
+            setBit(fine[coarseIndex], fineIndex);
+        }
+        out.write(coarse);
+        for (final byte[] mask : fine) {
+            if (mask != null) {
+                out.write(mask);
+            }
+        }
     }
 
-    private static int[] readBytePlane(final DataInputStream in, final int count) throws IOException {
+    private static byte[] readSparseMask(final DataInputStream in) throws IOException {
+        final byte[] coarse = new byte[COARSE_MASK_BYTES];
+        in.readFully(coarse);
+        final byte[] pixels = new byte[MASK_BYTES];
+        for (int coarseIndex = 0; coarseIndex < 256; coarseIndex++) {
+            if (!hasBit(coarse, coarseIndex)) {
+                continue;
+            }
+            final byte[] fine = new byte[FINE_MASK_BYTES];
+            in.readFully(fine);
+            for (int fineIndex = 0; fineIndex < 256; fineIndex++) {
+                if (!hasBit(fine, fineIndex)) {
+                    continue;
+                }
+                final int x = ((coarseIndex & 15) << 4) | (fineIndex & 15);
+                final int z = ((coarseIndex >>> 4) << 4) | (fineIndex >>> 4);
+                setBit(pixels, (z << 8) | x);
+            }
+        }
+        return pixels;
+    }
+
+    private static int[] readUnsignedBytePlane(final DataInputStream in, final int count) throws IOException {
         final int[] values = new int[count];
         for (int i = 0; i < count; i++) {
             values[i] = in.readUnsignedByte();
@@ -299,13 +429,27 @@ public final class PatchCodec {
 
     private static int readZigzagVarint(final DataInputStream in) throws IOException, ProtoException {
         int encoded = 0;
-        for (int shift = 0; shift < 35; shift += 7) {
-            final int b = in.readUnsignedByte();
-            encoded |= (b & 0x7F) << shift;
-            if ((b & 0x80) == 0) {
+        for (int shift = 0; shift < MAX_DELTA_HEIGHT_BYTES * 7; shift += 7) {
+            final int next = in.readUnsignedByte();
+            encoded |= (next & 0x7F) << shift;
+            if ((next & 0x80) == 0) {
                 return (encoded >>> 1) ^ -(encoded & 1);
             }
         }
-        throw new ProtoException("varint longer than 5 bytes");
+        throw new ProtoException("overlong surface height delta");
+    }
+
+    private static void setBit(final byte[] bits, final int index) {
+        bits[index >>> 3] |= (byte) (1 << (index & 7));
+    }
+
+    private static boolean hasBit(final byte[] bits, final int index) {
+        return (bits[index >>> 3] & (1 << (index & 7))) != 0;
+    }
+
+    private static void checkPixel(final int pixelIndex) {
+        if (pixelIndex < 0 || pixelIndex >= PIXELS) {
+            throw new IndexOutOfBoundsException("pixel index outside tile: " + pixelIndex);
+        }
     }
 }

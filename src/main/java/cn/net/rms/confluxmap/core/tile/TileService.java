@@ -41,6 +41,7 @@ import java.util.function.Predicate;
  */
 public final class TileService {
     private static final int UPLOAD_QUEUE_CAPACITY = 64;
+    private static final int VIEWPORT_REGION_LOAD_ATTEMPTS = 128;
 
     private final MapWorldService mapWorlds;
     private final MapExecutors executors;
@@ -60,6 +61,8 @@ public final class TileService {
 
     /** Latest fullscreen viewport. Visible requests use deterministic top-left row-major order. */
     private ViewportRect viewport;
+    /** Next LOD-0 region in the current viewport to offer to the bounded disk-load queue. */
+    private long viewportRegionLoadCursor;
 
     private volatile int viewpointX;
     private volatile int viewpointZ;
@@ -96,6 +99,8 @@ public final class TileService {
             inFlight.clear();
             requestedBiomeTiles.clear();
             uploads.clear();
+            viewport = null;
+            viewportRegionLoadCursor = 0L;
         }
     }
 
@@ -110,11 +115,21 @@ public final class TileService {
      * inside this rectangle are started from the top-left, left-to-right, then top-to-bottom.
      */
     public void setViewport(
-        final int lod, final int minTileX, final int maxTileX, final int minTileZ, final int maxTileZ
+        final MapLayer layer,
+        final int lod,
+        final int minTileX,
+        final int maxTileX,
+        final int minTileZ,
+        final int maxTileZ
     ) {
+        final ViewportRect next = new ViewportRect(layer.type(), lod, minTileX, maxTileX, minTileZ, maxTileZ);
         synchronized (this) {
-            viewport = new ViewportRect(lod, minTileX, maxTileX, minTileZ, maxTileZ);
+            if (!next.equals(viewport)) {
+                viewportRegionLoadCursor = 0L;
+            }
+            viewport = next;
         }
+        scheduleViewportRegionLoads(next);
         pump();
     }
 
@@ -122,6 +137,7 @@ public final class TileService {
     public void clearViewport() {
         synchronized (this) {
             viewport = null;
+            viewportRegionLoadCursor = 0L;
         }
         pump();
     }
@@ -163,6 +179,36 @@ public final class TileService {
             );
             markDirty(coarse, token);
             markBiomeDirtyIfRequested(BiomeTileKeys.toBiome(coarse), token);
+        }
+    }
+
+    /**
+     * Disk-cache counterpart of {@link #markChunkStored}: one region read may merge up to 256
+     * chunks, so invalidate its affected tiles once instead of issuing the same parent keys 256
+     * times. The east and north neighbors consume this region's boundary columns for slope shade.
+     */
+    public void markRegionStored(
+        final long token,
+        final DimensionId dimensionId,
+        final MapLayer layer,
+        final int regionX,
+        final int regionZ
+    ) {
+        final MapWorld world = mapWorlds.ifCurrent(token);
+        if (world == null) {
+            return;
+        }
+        final SessionGuard.Session session = world.session();
+        for (int lod = 0; lod <= TileMath.MAX_LOD; lod++) {
+            markDirty(new TileKey(
+                session.world(), dimensionId, layer.cacheId(), lod, regionX >> lod, regionZ >> lod
+            ), token);
+            markDirty(new TileKey(
+                session.world(), dimensionId, layer.cacheId(), lod, (regionX + 1) >> lod, regionZ >> lod
+            ), token);
+            markDirty(new TileKey(
+                session.world(), dimensionId, layer.cacheId(), lod, regionX >> lod, (regionZ - 1) >> lod
+            ), token);
         }
     }
 
@@ -238,11 +284,8 @@ public final class TileService {
             dirty.put(key, session.token());
         }
         pump();
-        // LOD0 tile coordinates are region coordinates; higher LODs cover many regions at once and
-        // the disk cache only ever stores LOD0 data, so there's nothing more specific to load there -
-        // those regions get pulled in individually as their own LOD0 tiles are requested/captured.
-        // Only MapLayer.Type.persistent() layers ever touch the disk cache at all (dynamic layers
-        // like CAVE_AUTO/NETHER_CURRENT are memory-only per cave-nether-layers.md's live-map model).
+        // A viewport proactively schedules every covered region at higher LODs. Keep this direct
+        // LOD0 touch for callers that request a tile without first publishing a viewport.
         if (key.lod() == 0) {
             final MapLayer.Type layerType = MapLayer.parse(
                 BiomeTileKeys.realLayerId(key.layerId())
@@ -270,6 +313,55 @@ public final class TileService {
         final RegionDiskCache cache = cacheService.current();
         if (cache != null) {
             cache.ensureRegionLoaded(layerType, regionX, regionZ);
+        }
+    }
+
+    /**
+     * Offers a bounded row-major slice of the coarse viewport's LOD-0 regions to the disk cache.
+     * The cache has its own pending-read cap; when full, the cursor stays put and the next rendered
+     * frame retries. Already accepted regions are session-deduped by {@link RegionDiskCache}.
+     */
+    private void scheduleViewportRegionLoads(final ViewportRect active) {
+        if (!active.layerType().persistent()) {
+            return;
+        }
+        final RegionCacheService cacheService = regionCache;
+        final RegionDiskCache cache = cacheService == null ? null : cacheService.current();
+        if (cache == null) {
+            return;
+        }
+        final long tileWidth = (long) active.maxTileX() - active.minTileX() + 1L;
+        final long tileHeight = (long) active.maxTileZ() - active.minTileZ() + 1L;
+        if (tileWidth <= 0L || tileHeight <= 0L) {
+            return;
+        }
+        final int regionsPerTile = 1 << active.lod();
+        final long regionsPerTileSquared = (long) regionsPerTile * regionsPerTile;
+        final long total = tileWidth * tileHeight * regionsPerTileSquared;
+        int attempted = 0;
+        while (attempted < VIEWPORT_REGION_LOAD_ATTEMPTS) {
+            final long cursor;
+            synchronized (this) {
+                if (!active.equals(viewport) || viewportRegionLoadCursor >= total) {
+                    return;
+                }
+                cursor = viewportRegionLoadCursor;
+            }
+            final long tileIndex = cursor / regionsPerTileSquared;
+            final int regionIndex = (int) (cursor % regionsPerTileSquared);
+            final int tileX = active.minTileX() + (int) (tileIndex % tileWidth);
+            final int tileZ = active.minTileZ() + (int) (tileIndex / tileWidth);
+            final int regionX = tileX * regionsPerTile + regionIndex % regionsPerTile;
+            final int regionZ = tileZ * regionsPerTile + regionIndex / regionsPerTile;
+            if (!cache.ensureRegionLoaded(active.layerType(), regionX, regionZ)) {
+                return;
+            }
+            synchronized (this) {
+                if (active.equals(viewport) && viewportRegionLoadCursor == cursor) {
+                    viewportRegionLoadCursor++;
+                }
+            }
+            attempted++;
         }
     }
 
@@ -660,7 +752,9 @@ public final class TileService {
         }
     }
 
-    private record ViewportRect(int lod, int minTileX, int maxTileX, int minTileZ, int maxTileZ) {
+    private record ViewportRect(
+        MapLayer.Type layerType, int lod, int minTileX, int maxTileX, int minTileZ, int maxTileZ
+    ) {
         boolean contains(final TileKey key) {
             return key.lod() == lod
                 && key.tileX() >= minTileX && key.tileX() <= maxTileX

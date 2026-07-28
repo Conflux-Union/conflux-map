@@ -49,6 +49,7 @@ import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.update.UpdateCheckService;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.core.util.TileViewport;
+import cn.net.rms.confluxmap.core.util.ChunkViewport;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
@@ -902,6 +903,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         chunkLoadStates.deactivate();
         tiles.clearViewport();
         predictionTiles.clearViewport();
+        ConfluxMapClient.get().mapSyncClient().clearViewport();
         structureMarkers.flush();
         super.onClose();
     }
@@ -909,6 +911,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     @Override
     public void removed() {
         chunkLoadStates.deactivate();
+        ConfluxMapClient.get().mapSyncClient().clearViewport();
         super.removed();
     }
 
@@ -1988,14 +1991,16 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final String layerId = layer.cacheId();
         final boolean biomeMode = biomeMode();
         final boolean predictionActive = predictionActive(layer, session);
-        tiles.setViewport(lod, firstTileX, lastTileX, firstTileZ, lastTileZ);
+        tiles.setViewport(layer, lod, firstTileX, lastTileX, firstTileZ, lastTileZ);
         if (predictionActive) {
             predictionTiles.setViewport(session.dimension(), lod, firstTileX, lastTileX, firstTileZ, lastTileZ);
             ConfluxMapClient.get().mapSyncClient().reportViewport(
-                session.dimension(), lod, firstTileX, lastTileX, firstTileZ, lastTileZ
+                session.dimension(), lod, firstTileX, lastTileX, firstTileZ, lastTileZ,
+                ChunkViewport.covering(centerX, centerZ, width, height, scale)
             );
         } else {
             predictionTiles.clearViewport();
+            ConfluxMapClient.get().mapSyncClient().clearViewport();
         }
 
         if (predictionActive) {
@@ -2381,7 +2386,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final int color;
         switch (status.state()) {
             case SYNCING -> {
-                text = Texts.translatable("confluxmap.map.server_sync.syncing").getString();
+                text = Texts.translatable(
+                    "confluxmap.map.server_sync.syncing",
+                    status.completedTiles(), status.totalTiles()
+                ).getString();
                 color = SYNCING_TEXT_COLOR;
             }
             case COMPLETED -> {

@@ -35,6 +35,7 @@ preprocess {
 // into every version subproject's jar via processResources.
 final List<String> nativeSources = [
     'native/shim/confluxnative.c',
+    'native/shim/anvilscan.c',
     'native/cubiomes/biomenoise.c',
     'native/cubiomes/biomes.c',
     'native/cubiomes/generator.c',

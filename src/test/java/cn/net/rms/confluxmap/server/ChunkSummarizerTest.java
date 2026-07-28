@@ -4,10 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.compat.Nbts;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
 import cn.net.rms.confluxmap.core.predict.BaselineGrid;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.function.IntUnaryOperator;
@@ -78,14 +80,89 @@ class ChunkSummarizerTest {
     }
 
     @Test
-    void naturalOceanSummaryDoesNotProduceAFalseCorrection() {
+    void sampledLodSummariesReadOnlyCenteredOutputCoordinates() {
+        final List<String> positions = new ArrayList<>();
+        final ChunkColumnSource source = new ChunkColumnSource() {
+            @Override
+            public boolean generated() {
+                return true;
+            }
+
+            @Override
+            public long revision() {
+                return 1L;
+            }
+
+            @Override
+            public int bottomY() {
+                return 0;
+            }
+
+            @Override
+            public int motionBlockingHeight(final int x, final int z) {
+                positions.add(x + "," + z);
+                return 64;
+            }
+
+            @Override
+            public int oceanFloorHeight(final int x, final int z) {
+                return ChunkColumnSource.NO_HEIGHT;
+            }
+
+            @Override
+            public String blockNameAt(final int x, final int y, final int z) {
+                return "minecraft:stone";
+            }
+
+            @Override
+            public int biomeIdAt(final int x, final int y, final int z) {
+                return 1;
+            }
+        };
+        final ChunkSummarizer summarizer = new ChunkSummarizer();
+
+        summarizer.summarizeForLod(source, 3);
+        assertEquals(List.of("4,4", "12,4", "4,12", "12,12"), positions);
+
+        positions.clear();
+        summarizer.summarizeForLod(source, 4);
+        assertEquals(List.of("8,8"), positions);
+    }
+
+    @Test
+    void sampledLodSummariesMatchTheCorrespondingFullColumns() {
+        final ChunkSummarizer summarizer = new ChunkSummarizer();
+        final NbtCompound nbt = oceanChunk();
+        final SummaryCodec.Chunk full = summarizer.summarize(nbt);
+
+        for (int lod = 3; lod <= 4; lod++) {
+            final int stride = 1 << lod;
+            final int side = 16 / stride;
+            final SummaryCodec.SampledChunk sampled = summarizer.summarizeForLod(nbt, lod);
+            for (int sampleZ = 0; sampleZ < side; sampleZ++) {
+                final int z = sampleZ * stride + (stride >>> 1);
+                for (int sampleX = 0; sampleX < side; sampleX++) {
+                    final int x = sampleX * stride + (stride >>> 1);
+                    assertEquals(
+                        full.columns()[z * 16 + x],
+                        sampled.column(sampleX, sampleZ),
+                        "LOD " + lod + " sample " + sampleX + "," + sampleZ + " disagreed"
+                    );
+                }
+            }
+        }
+    }
+
+    @Test
+    void naturalOceanSummaryCarriesAnExactSeafloorCorrection() {
         final SummaryCodec.Chunk chunk = new ChunkSummarizer().summarize(oceanChunk());
         final SummaryCodec.Column column = chunk.columns()[0];
         assertEquals(62, column.surfaceY());
         assertEquals(SurfaceKind.WATER.ordinal(), column.kind());
         assertEquals(13, column.fluidDepth());
+        assertEquals(11, column.floorMapColorId());
 
-        assertNoFalseCorrection(chunk);
+        assertExactSeafloorCorrection(chunk);
         assertModernRootAndPalettedContainersAreSummarized();
     }
 
@@ -100,7 +177,7 @@ class ChunkSummarizerTest {
         assertEquals(0, column.biomeId());
     }
 
-    private static void assertNoFalseCorrection(final SummaryCodec.Chunk chunk) {
+    private static void assertExactSeafloorCorrection(final SummaryCodec.Chunk chunk) {
         final SummaryCodec.Chunk[] chunks = new SummaryCodec.Chunk[SummaryCodec.CHUNKS];
         Arrays.fill(chunks, SummaryCodec.Chunk.empty());
         chunks[0] = chunk;
@@ -116,8 +193,8 @@ class ChunkSummarizerTest {
 
         final PatchBuilder.Result result = new PatchBuilder().build(summary, 0L, baseline, false);
 
-        assertEquals(Proto.PATCH_MODE_UNCHANGED, result.mode());
-        assertEquals(0, result.recordCount());
+        assertEquals(Proto.PATCH_MODE_RESIDUAL, result.mode());
+        assertEquals(256, result.recordCount());
     }
 
     @Test
@@ -151,6 +228,21 @@ class ChunkSummarizerTest {
 
         assertEquals(SurfaceKind.LAND.ordinal(), column.kind());
         assertEquals(61, column.surfaceY());
+    }
+
+    @Test
+    void fluidCoverAboveTheMotionBlockingSurfacePromotesTheWaterSurface() {
+        final NbtCompound chunk = coveredChunk("minecraft:clay", "minecraft:seagrass");
+        final NbtCompound heightmaps = Nbts.compound(Nbts.compound(chunk, "Level"), "Heightmaps");
+        heightmaps.putLongArray("OCEAN_FLOOR", pack(9, 256, ignored -> 61));
+        final SummaryCodec.Column column = new ChunkSummarizer()
+            .summarize(chunk)
+            .columns()[0];
+
+        assertEquals(SurfaceKind.WATER.ordinal(), column.kind());
+        assertEquals(62, column.surfaceY());
+        assertEquals(1, column.fluidDepth());
+        assertEquals(1, column.floorMapColorId());
     }
 
     @Test
@@ -248,7 +340,8 @@ class ChunkSummarizerTest {
         assertEquals(SurfaceKind.WATER.ordinal(), column.kind());
         assertEquals(12, column.mapColorId());
         assertEquals(13, column.fluidDepth());
-        assertNoFalseCorrection(chunk);
+        assertEquals(11, column.floorMapColorId());
+        assertExactSeafloorCorrection(chunk);
     }
 
     private static NbtCompound oceanChunk() {

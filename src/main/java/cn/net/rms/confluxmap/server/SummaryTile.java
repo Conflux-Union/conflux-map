@@ -12,7 +12,7 @@ import java.util.Collection;
  * mapping in one object prevents the summary reader and patch builder from silently using
  * different coordinate systems.
  */
-public final class SummaryTile {
+public final class SummaryTile implements SummaryView {
     public static final int PIXELS = 256;
     public static final int REGION_BLOCKS = 256;
     private static final int CHUNK_BLOCKS = 16;
@@ -118,7 +118,8 @@ public final class SummaryTile {
     }
 
     /** The actual column represented by one output pixel, or a generated-without-column marker. */
-    public Pixel pixel(final int pixelX, final int pixelZ) {
+    @Override
+    public SummaryView.Pixel pixel(final int pixelX, final int pixelZ) {
         if (pixelX < 0 || pixelX >= PIXELS || pixelZ < 0 || pixelZ >= PIXELS) {
             return null;
         }
@@ -128,15 +129,15 @@ public final class SummaryTile {
     }
 
     /** Looks up a summary column using world block coordinates with floor semantics. */
-    public Pixel pixelAtBlock(final long blockX, final long blockZ) {
+    public SummaryView.Pixel pixelAtBlock(final long blockX, final long blockZ) {
         final SummaryCodec.Chunk chunk = chunkAtBlock(blockX, blockZ);
         if (chunk == null || !chunk.generated()) {
-            return chunk == null ? null : new Pixel(chunk, null);
+            return chunk == null ? null : new SummaryView.Pixel(false, chunk.revision(), null);
         }
         final int localX = (int) Math.floorMod(blockX, REGION_BLOCKS);
         final int localZ = (int) Math.floorMod(blockZ, REGION_BLOCKS);
         final SummaryCodec.Column column = chunk.columns()[(localZ & 15) * 16 + (localX & 15)];
-        return new Pixel(chunk, column);
+        return new SummaryView.Pixel(true, chunk.revision(), column);
     }
 
     public SummaryCodec.Chunk chunkAtBlock(final long blockX, final long blockZ) {
@@ -204,6 +205,4 @@ public final class SummaryTile {
         return region.chunks()[localZ * 16 + localX];
     }
 
-    public record Pixel(SummaryCodec.Chunk chunk, SummaryCodec.Column column) {
-    }
 }

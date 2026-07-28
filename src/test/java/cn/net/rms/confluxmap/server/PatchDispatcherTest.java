@@ -10,6 +10,7 @@ import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class PatchDispatcherTest {
@@ -17,7 +18,8 @@ class PatchDispatcherTest {
 
     @Test
     void budgetExhaustionQueuesTheTailInsteadOfDroppingIt() throws ProtoException {
-        final int patchBytes = MsgCodec.encode(patch(job(0, 0), 1_200)).length;
+        final int bodyBytes = 200_000;
+        final int patchBytes = MsgCodec.encode(patch(job(0, 0), bodyBytes)).length;
         final PlayerBudget budget = new PlayerBudget(2 * patchBytes + 10, 0);
         final PatchDispatcher dispatcher = new PatchDispatcher(budget, 16);
         // The token bucket anchors its refill clock to System.nanoTime() at construction, so the
@@ -26,17 +28,40 @@ class PatchDispatcherTest {
         assertEquals(0, dispatcher.submit(List.of(job(0, 0), job(1, 0), job(2, 0))));
 
         final List<MapPatchS2C> sent = new ArrayList<>();
-        dispatcher.drain(t0, j -> patch(j, 1_200), collect(sent));
+        dispatcher.drain(t0, j -> patch(j, bodyBytes), collect(sent));
         assertEquals(2, sent.size(), "bucket holds exactly two patches");
         assertEquals(1, dispatcher.queued(), "third tile must stay queued, not be dropped");
 
-        dispatcher.drain(t0, j -> patch(j, 1_200), collect(sent));
+        dispatcher.drain(t0, j -> patch(j, bodyBytes), collect(sent));
         assertEquals(2, sent.size(), "no tokens yet, nothing more may be sent");
 
-        dispatcher.drain(t0 + 1_000_000_000L, j -> patch(j, 1_200), collect(sent));
+        dispatcher.drain(t0 + 1_000_000_000L, j -> patch(j, bodyBytes), collect(sent));
         assertEquals(3, sent.size(), "refilled bucket delivers the queued tail");
         assertEquals(0, dispatcher.queued());
         assertEquals(List.of(0, 1, 2), sent.stream().map(MapPatchS2C::tileX).toList(), "strict FIFO order");
+    }
+
+    @Test
+    void oneLegalPatchLargerThanThePerSecondRateCanDrain() throws ProtoException {
+        final int bytesPerSecond = 65_536;
+        final int bodyBytes = 400_000;
+        final int wireBytes = MsgCodec.encode(patch(job(0, 0), bodyBytes)).length;
+        final PatchDispatcher dispatcher = new PatchDispatcher(new PlayerBudget(bytesPerSecond, 0), 16);
+        final long t0 = System.nanoTime();
+        dispatcher.submit(List.of(job(0, 0), job(1, 0)));
+
+        final List<MapPatchS2C> sent = new ArrayList<>();
+        dispatcher.drain(t0, j -> patch(j, bodyBytes), collect(sent));
+        assertEquals(1, sent.size(), "the initial burst must fit one legal atomic patch");
+        assertEquals(1, dispatcher.queued());
+
+        dispatcher.drain(t0 + 1_000_000_000L, j -> patch(j, bodyBytes), collect(sent));
+        assertEquals(1, sent.size(), "the configured sustained rate must still apply");
+
+        final long refillNanos = (long) Math.ceil((double) wireBytes / bytesPerSecond * 1_000_000_000d);
+        dispatcher.drain(t0 + refillNanos, j -> patch(j, bodyBytes), collect(sent));
+        assertEquals(2, sent.size(), "the queued patch must drain after its byte cost refills");
+        assertEquals(0, dispatcher.queued());
     }
 
     @Test
@@ -64,6 +89,22 @@ class PatchDispatcherTest {
     }
 
     @Test
+    void defaultQueueAcceptsOneNormalSubscribedViewport() {
+        final ServerConfig config = new ServerConfig();
+        final PatchDispatcher dispatcher = new PatchDispatcher(
+            new PlayerBudget(config.maxBytesPerSecondPerPlayer, config.minRequestIntervalMs),
+            config.maxPendingTilesPerPlayer
+        );
+        final List<PatchDispatcher.TileJob> viewport = new ArrayList<>(Proto.MAX_MAP_SYNC_VIEW_TILES);
+        for (int tile = 0; tile < Proto.MAX_MAP_SYNC_VIEW_TILES; tile++) {
+            viewport.add(job(tile, 0));
+        }
+
+        assertEquals(0, dispatcher.submit(viewport));
+        assertEquals(Proto.MAX_MAP_SYNC_VIEW_TILES, dispatcher.queued());
+    }
+
+    @Test
     void unencodablePatchIsDroppedInsteadOfWedgingTheQueue() {
         final PatchDispatcher dispatcher = new PatchDispatcher(new PlayerBudget(1 << 20, 0), 16);
         dispatcher.submit(List.of(job(0, 0), job(1, 0)));
@@ -76,6 +117,48 @@ class PatchDispatcherTest {
         assertEquals(1, sent.size(), "the healthy job behind the broken one must still be sent");
         assertEquals(1, sent.get(0).tileX());
         assertEquals(0, dispatcher.queued());
+    }
+
+    @Test
+    void timedDrainReportsRealQueueEncodeAndWireMeasurements() throws ProtoException {
+        final long[] clockValues = {100L, 120L, 130L, 200L};
+        final AtomicInteger clockIndex = new AtomicInteger();
+        final List<SyncPerformanceMonitor.Delivery> deliveries = new ArrayList<>();
+        final PatchDispatcher dispatcher = new PatchDispatcher(
+            new PlayerBudget(1 << 20, 0),
+            16,
+            () -> clockValues[clockIndex.getAndIncrement()],
+            deliveries::add
+        );
+        final PatchDispatcher.TileJob job = new PatchDispatcher.TileJob(
+            1, 0, 2, 4, 5, 0L, 10L, 20
+        );
+        final MapPatchS2C patch = patch(job, 8);
+        final int patchBytes = MsgCodec.encode(patch).length;
+        dispatcher.submit(List.of(job));
+
+        dispatcher.drainTimed(T0, ignored -> new PatchDispatcher.BuiltPatch(
+            patch,
+            new SyncPerformanceMonitor.DirectWork(30L, 40L),
+            SyncPerformanceMonitor.CumulativeWork.NONE
+        ), (message, encoded) -> assertEquals(patchBytes, encoded.length));
+
+        assertEquals(1, deliveries.size());
+        assertEquals(new SyncPerformanceMonitor.Delivery(
+            0,
+            2,
+            4,
+            5,
+            10L,
+            20,
+            Proto.PATCH_MODE_ABSOLUTE,
+            patchBytes,
+            90L,
+            10L,
+            200L,
+            new SyncPerformanceMonitor.DirectWork(30L, 40L),
+            SyncPerformanceMonitor.CumulativeWork.NONE
+        ), deliveries.get(0));
     }
 
     private static PatchDispatcher.TileJob job(final int tileX, final int tileZ) {

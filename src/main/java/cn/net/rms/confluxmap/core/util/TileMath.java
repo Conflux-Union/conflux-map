@@ -47,16 +47,16 @@ public final class TileMath {
     }
 
     /**
-     * Chooses the coarsest available LOD whose texel is at least one screen pixel wide. Using
-     * floor here minifies the selected texture between power-of-two zoom steps, which aliases
-     * prediction's deterministic canopy grid into large stripe patterns.
+     * Chooses the finest useful LOD whose texel is no larger than one screen pixel. Keeping the
+     * selected texture at full resolution avoids the two-pixel texel expansion and visible blur
+     * that otherwise occurs immediately after crossing an LOD boundary.
      */
     public static int lodForScale(final double blocksPerScreenPixel) {
         if (!Double.isFinite(blocksPerScreenPixel) || blocksPerScreenPixel <= 1.0) {
             return 0;
         }
         final double exact = Math.log(blocksPerScreenPixel) / Math.log(2.0);
-        final int lod = (int) Math.ceil(exact - 1.0e-10);
+        final int lod = (int) Math.floor(exact + 1.0e-10);
         return Math.max(0, Math.min(MAX_LOD, lod));
     }
 
@@ -68,5 +68,24 @@ public final class TileMath {
     /** Pixel offset of a block within its LOD tile, in [0, 255]. */
     public static int blockToPixelInTile(final int block, final int lod) {
         return (block >> lod) & (TILE_SIZE - 1);
+    }
+
+    /** Whether two aligned LOD tiles overlap when expressed in LOD-0 tile coordinates. */
+    public static boolean overlaps(
+        final int firstLod,
+        final int firstTileX,
+        final int firstTileZ,
+        final int secondLod,
+        final int secondTileX,
+        final int secondTileZ
+    ) {
+        final long firstScale = 1L << firstLod;
+        final long secondScale = 1L << secondLod;
+        final long firstX = (long) firstTileX * firstScale;
+        final long firstZ = (long) firstTileZ * firstScale;
+        final long secondX = (long) secondTileX * secondScale;
+        final long secondZ = (long) secondTileZ * secondScale;
+        return firstX < secondX + secondScale && secondX < firstX + firstScale
+            && firstZ < secondZ + secondScale && secondZ < firstZ + firstScale;
     }
 }

@@ -67,6 +67,29 @@ public final class CanopyStylizer {
         applySynthetic(derived, grid, seed, lod, tileOriginX, tileOriginZ);
     }
 
+    public static void applyWindow(
+        final DerivedGrid derived,
+        final BaselineGrid grid,
+        final long seed,
+        final int lod,
+        final int tileOriginX,
+        final int tileOriginZ,
+        final int minPixelX,
+        final int minPixelZ,
+        final int maxPixelX,
+        final int maxPixelZ
+    ) {
+        if (lod < 2 || minPixelX < 0 || minPixelZ < 0
+            || maxPixelX >= BaselineGrid.PIXELS || maxPixelZ >= BaselineGrid.PIXELS
+            || minPixelX > maxPixelX || minPixelZ > maxPixelZ) {
+            throw new IllegalArgumentException("invalid canopy window");
+        }
+        applySyntheticWindow(
+            derived, grid, seed, lod, tileOriginX, tileOriginZ,
+            minPixelX, minPixelZ, maxPixelX, maxPixelZ, null
+        );
+    }
+
     /** Uses native natural features when available, with per-chunk or full-tile synthetic fallback. */
     public static void apply(
         final DerivedGrid derived, final BaselineGrid grid, final BaselineSampler sampler,
@@ -90,11 +113,31 @@ public final class CanopyStylizer {
         final DerivedGrid derived, final BaselineGrid grid, final long seed,
         final int lod, final int tileOriginX, final int tileOriginZ, final Set<Long> chunks
     ) {
+        applySyntheticWindow(
+            derived, grid, seed, lod, tileOriginX, tileOriginZ,
+            -BaselineGrid.MARGIN, -BaselineGrid.MARGIN,
+            BaselineGrid.PIXELS - 1 + BaselineGrid.MARGIN,
+            BaselineGrid.PIXELS - 1 + BaselineGrid.MARGIN,
+            chunks
+        );
+    }
+
+    private static void applySyntheticWindow(
+        final DerivedGrid derived,
+        final BaselineGrid grid,
+        final long seed,
+        final int lod,
+        final int tileOriginX,
+        final int tileOriginZ,
+        final int minPixelX,
+        final int minPixelZ,
+        final int maxPixelX,
+        final int maxPixelZ,
+        final Set<Long> chunks
+    ) {
         final int bpp = 1 << lod;
-        final int min = -BaselineGrid.MARGIN;
-        final int max = BaselineGrid.PIXELS - 1 + BaselineGrid.MARGIN;
-        for (int pz = min; pz <= max; pz++) {
-            for (int px = min; px <= max; px++) {
+        for (int pz = minPixelZ; pz <= maxPixelZ; pz++) {
+            for (int px = minPixelX; px <= maxPixelX; px++) {
                 final int idx = BaselineGrid.index(px, pz);
                 // Sub-samples run their own biome/kind checks: a forest sub-sample inside a
                 // treeless centre pixel still needs canopy, so this cannot sit behind the

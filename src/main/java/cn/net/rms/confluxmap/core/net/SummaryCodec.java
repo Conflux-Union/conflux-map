@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.core.net;
 
+import cn.net.rms.confluxmap.core.model.MapPixel;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -20,23 +21,43 @@ public final class SummaryCodec {
      * Version 5 carries real registry map colours instead of the natural/artificial heuristic ids.
      * Version 6 promotes collision-less snow cover to the surface (snowy columns no longer
      * summarize as the green land beneath) and reports ice fluid depth from the ground under the
-     * cover, with land-borne ice carrying no fluid column.
+     * cover, with land-borne ice carrying no fluid column. Version 7 keeps the submerged floor's
+     * map colour separate from the water/ice surface. Version 8 invalidates live-chunk summaries
+     * created with inclusive top-block Y values.
      */
-    public static final int FORMAT_VERSION = 6;
+    public static final int FORMAT_VERSION = 8;
     public static final int CHUNKS = 256;
     public static final int COLUMNS = 256;
-    public static final int RECORD_BYTES = 6;
+    public static final int RECORD_BYTES = 7;
     public static final int MAX_RAW_BYTES = CHUNKS * COLUMNS * RECORD_BYTES;
 
     private SummaryCodec() {
     }
 
-    public record Column(int biomeId, int surfaceY, int kind, int mapColorId, int fluidDepth) {
+    public record Column(
+        int biomeId,
+        int surfaceY,
+        int kind,
+        int mapColorId,
+        int fluidDepth,
+        int floorMapColorId
+    ) {
         public Column {
-            if (biomeId < 0 || biomeId > 255 || kind < 0 || kind > 255 || mapColorId < 0 || mapColorId > 255
-                || fluidDepth < 0 || fluidDepth > 255 || surfaceY < Short.MIN_VALUE || surfaceY > Short.MAX_VALUE) {
-                throw new IllegalArgumentException("summary column field outside wire range");
-            }
+            new MapPixel(biomeId, surfaceY, kind, mapColorId, fluidDepth, floorMapColorId);
+        }
+
+        public Column(
+            final int biomeId,
+            final int surfaceY,
+            final int kind,
+            final int mapColorId,
+            final int fluidDepth
+        ) {
+            this(biomeId, surfaceY, kind, mapColorId, fluidDepth, MapPixel.MAP_COLOR_NONE);
+        }
+
+        public MapPixel pixel() {
+            return new MapPixel(biomeId, surfaceY, kind, mapColorId, fluidDepth, floorMapColorId);
         }
     }
 
@@ -73,6 +94,70 @@ public final class SummaryCodec {
                 throw new IllegalArgumentException("summary region must contain 256 chunk flags");
             }
             flags = flags.clone();
+        }
+    }
+
+    /**
+     * The centered source columns that one output LOD can actually publish from a chunk.
+     * A stride of 16 carries one column; a stride of 8 carries four.
+     */
+    public record SampledChunk(boolean generated, long revision, int sampleStride, Column[] columns) {
+        public SampledChunk {
+            final int samplesPerSide = SummaryCodec.samplesPerSide(sampleStride);
+            if (columns == null || columns.length != samplesPerSide * samplesPerSide) {
+                throw new IllegalArgumentException("sampled chunk has the wrong column count");
+            }
+            if (generated) {
+                for (final Column column : columns) {
+                    if (column == null) {
+                        throw new IllegalArgumentException("generated sampled chunk contains a null column");
+                    }
+                }
+            }
+            columns = columns.clone();
+        }
+
+        public int samplesPerSide() {
+            return SummaryCodec.samplesPerSide(sampleStride);
+        }
+
+        public Column column(final int sampleX, final int sampleZ) {
+            final int side = samplesPerSide();
+            if (sampleX < 0 || sampleX >= side || sampleZ < 0 || sampleZ >= side) {
+                throw new IndexOutOfBoundsException("sample coordinate outside chunk");
+            }
+            return columns[sampleZ * side + sampleX];
+        }
+
+        public static SampledChunk empty(final int sampleStride) {
+            return empty(sampleStride, 0L);
+        }
+
+        public static SampledChunk empty(final int sampleStride, final long revision) {
+            final int side = SummaryCodec.samplesPerSide(sampleStride);
+            return new SampledChunk(false, revision, sampleStride, new Column[side * side]);
+        }
+    }
+
+    /** One region decoded at the centered column density required by an output LOD. */
+    public record SampledRegion(
+        int rx,
+        int rz,
+        long sourceMcaMtimeMs,
+        int sampleStride,
+        SampledChunk[] chunks
+    ) {
+        public SampledRegion {
+            samplesPerSide(sampleStride);
+            if (chunks == null || chunks.length != CHUNKS) {
+                throw new IllegalArgumentException("sampled summary region must contain 256 chunks");
+            }
+            for (final SampledChunk chunk : chunks) {
+                if (chunk == null || chunk.sampleStride() != sampleStride) {
+                    throw new IllegalArgumentException("sampled summary chunk stride mismatch");
+                }
+            }
+            chunks = chunks.clone();
         }
     }
 
@@ -116,6 +201,7 @@ public final class SummaryCodec {
                 columns.writeByte(column.kind());
                 columns.writeByte(column.mapColorId());
                 columns.writeByte(column.fluidDepth());
+                columns.writeByte(column.floorMapColorId());
             }
         }
         columns.flush();
@@ -157,7 +243,7 @@ public final class SummaryCodec {
             if (generated[chunkIndex]) {
                 for (int column = 0; column < COLUMNS; column++) {
                     values[column] = new Column(columns.readUnsignedByte(), columns.readShort(), columns.readUnsignedByte(),
-                        columns.readUnsignedByte(), columns.readUnsignedByte());
+                        columns.readUnsignedByte(), columns.readUnsignedByte(), columns.readUnsignedByte());
                 }
             }
             chunks[chunkIndex] = new Chunk(generated[chunkIndex], revisions[chunkIndex], values);
@@ -166,6 +252,72 @@ public final class SummaryCodec {
             throw new ProtoException("trailing summary body bytes: " + columns.available());
         }
         return new Region(rx, rz, mtime, chunks);
+    }
+
+    /**
+     * Decodes only the centered columns consumed by an output LOD. The compressed body is still
+     * validated in full, but unused records never become {@link Column} objects.
+     */
+    public static SampledRegion decodeSampled(
+        final InputStream source,
+        final int sampleStride
+    ) throws IOException, ProtoException {
+        final int side = samplesPerSide(sampleStride);
+        final Header header = readHeader(new DataInputStream(source));
+        int generatedCount = 0;
+        for (final boolean flag : header.generated()) {
+            generatedCount += flag ? 1 : 0;
+        }
+        final byte[] raw = inflate(source, generatedCount * COLUMNS * RECORD_BYTES);
+        final SampledChunk[] chunks = new SampledChunk[CHUNKS];
+        int generatedIndex = 0;
+        for (int chunkIndex = 0; chunkIndex < CHUNKS; chunkIndex++) {
+            if (!header.generated()[chunkIndex]) {
+                chunks[chunkIndex] = SampledChunk.empty(
+                    sampleStride, header.revisions()[chunkIndex]
+                );
+                continue;
+            }
+            final Column[] sampled = new Column[side * side];
+            final int chunkOffset = generatedIndex * COLUMNS * RECORD_BYTES;
+            int sampleIndex = 0;
+            for (int sampleZ = 0; sampleZ < side; sampleZ++) {
+                final int columnZ = sampleZ * sampleStride + (sampleStride >>> 1);
+                for (int sampleX = 0; sampleX < side; sampleX++) {
+                    final int columnX = sampleX * sampleStride + (sampleStride >>> 1);
+                    final int columnIndex = columnZ * 16 + columnX;
+                    sampled[sampleIndex++] = decodeColumn(raw, chunkOffset + columnIndex * RECORD_BYTES);
+                }
+            }
+            chunks[chunkIndex] = new SampledChunk(
+                true, header.revisions()[chunkIndex], sampleStride, sampled
+            );
+            generatedIndex++;
+        }
+        return new SampledRegion(
+            header.rx(), header.rz(), header.mtime(), sampleStride, chunks
+        );
+    }
+
+    /** Samples an in-memory full summary with the same centered coordinates as {@link #decodeSampled}. */
+    public static SampledChunk sample(final Chunk chunk, final int sampleStride) {
+        final int side = samplesPerSide(sampleStride);
+        if (chunk == null) {
+            return SampledChunk.empty(sampleStride);
+        }
+        if (!chunk.generated()) {
+            return SampledChunk.empty(sampleStride, chunk.revision());
+        }
+        final Column[] sampled = new Column[side * side];
+        int sampleIndex = 0;
+        for (int sampleZ = 0; sampleZ < side; sampleZ++) {
+            final int columnZ = sampleZ * sampleStride + (sampleStride >>> 1);
+            for (int sampleX = 0; sampleX < side; sampleX++) {
+                final int columnX = sampleX * sampleStride + (sampleStride >>> 1);
+                sampled[sampleIndex++] = chunk.columns()[columnZ * 16 + columnX];
+            }
+        }
+        return new SampledChunk(true, chunk.revision(), sampleStride, sampled);
     }
 
     /**
@@ -183,6 +335,26 @@ public final class SummaryCodec {
             }
         }
         return new Generated(header.rx(), header.rz(), header.mtime(), header.generated(), maxRevision);
+    }
+
+    private static Column decodeColumn(final byte[] raw, final int offset) {
+        final int surfaceY = (short) (((raw[offset + 1] & 255) << 8) | (raw[offset + 2] & 255));
+        return new Column(
+            raw[offset] & 255,
+            surfaceY,
+            raw[offset + 3] & 255,
+            raw[offset + 4] & 255,
+            raw[offset + 5] & 255,
+            raw[offset + 6] & 255
+        );
+    }
+
+    private static int samplesPerSide(final int sampleStride) {
+        if (sampleStride <= 0 || sampleStride > 16 || 16 % sampleStride != 0
+            || (sampleStride & (sampleStride - 1)) != 0) {
+            throw new IllegalArgumentException("sample stride must be a power of two from 1 to 16");
+        }
+        return 16 / sampleStride;
     }
 
     private static Header readHeader(final DataInputStream in) throws IOException, ProtoException {

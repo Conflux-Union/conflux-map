@@ -9,6 +9,9 @@ import cn.net.rms.confluxmap.core.net.HelloC2S;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.ErrorS2C;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
+import cn.net.rms.confluxmap.core.net.MapSyncSubscribeC2S;
+import cn.net.rms.confluxmap.core.net.MapRegionSyncSubscribeC2S;
+import cn.net.rms.confluxmap.core.net.MapRegionViewReqC2S;
 import cn.net.rms.confluxmap.core.net.LoadStateSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.MsgCodec;
@@ -95,9 +98,15 @@ public final class ServerNetworking {
             if (msg instanceof final HelloC2S hello) {
                 handleHello(server, player, hello);
             } else if (msg instanceof final MapViewReqC2S req) {
-                handleMapViewReq(server, player, req);
+                handleMapViewReq(server, player, req, payload.length);
             } else if (msg instanceof final LoadStateSubscribeC2S req) {
                 handleLoadStateSubscribe(server, player, req);
+            } else if (msg instanceof final MapSyncSubscribeC2S req) {
+                handleMapSyncSubscribe(server, player, req);
+            } else if (msg instanceof final MapRegionViewReqC2S req) {
+                handleMapRegionViewReq(server, player, req, payload.length);
+            } else if (msg instanceof final MapRegionSyncSubscribeC2S req) {
+                handleMapRegionSyncSubscribe(server, player, req);
             } else {
                 ConfluxMapMod.LOGGER.warn(
                     "companion: unexpected {} from {} (server-side handlers expect C2S only)",
@@ -138,12 +147,32 @@ public final class ServerNetworking {
         );
     }
 
-    private void handleMapViewReq(final MinecraftServer server, final ServerPlayerEntity player, final MapViewReqC2S req) {
+    private void handleMapViewReq(
+        final MinecraftServer server,
+        final ServerPlayerEntity player,
+        final MapViewReqC2S req,
+        final int payloadBytes
+    ) {
         if (!companion.config().shareCorrections) {
             send(player, new ErrorS2C(ErrorS2C.ERR_COMPANION_DISABLED, "map corrections are disabled"));
             return;
         }
-        companion.summaries().request(server, player, req, msg -> send(player, msg));
+        companion.summaries().request(server, player, req, payloadBytes, senderFor(player));
+    }
+
+    private void handleMapRegionViewReq(
+        final MinecraftServer server,
+        final ServerPlayerEntity player,
+        final MapRegionViewReqC2S request,
+        final int payloadBytes
+    ) {
+        if (!companion.config().shareCorrections) {
+            send(player, new ErrorS2C(ErrorS2C.ERR_COMPANION_DISABLED, "map corrections are disabled"));
+            return;
+        }
+        companion.summaries().requestRegions(
+            server, player, request, payloadBytes, senderFor(player)
+        );
     }
 
     private void handleLoadStateSubscribe(
@@ -161,6 +190,38 @@ public final class ServerNetworking {
         }
     }
 
+    private void handleMapSyncSubscribe(
+        final MinecraftServer server,
+        final ServerPlayerEntity player,
+        final MapSyncSubscribeC2S request
+    ) {
+        if (!companion.config().shareCorrections) {
+            send(player, new ErrorS2C(ErrorS2C.ERR_COMPANION_DISABLED, "map corrections are disabled"));
+            return;
+        }
+        if (!companion.summaries().subscribe(
+            server, player.getUuid(), request, senderFor(player)
+        )) {
+            send(player, new ErrorS2C(ErrorS2C.ERR_MALFORMED_REQUEST, "invalid map-sync viewport"));
+        }
+    }
+
+    private void handleMapRegionSyncSubscribe(
+        final MinecraftServer server,
+        final ServerPlayerEntity player,
+        final MapRegionSyncSubscribeC2S request
+    ) {
+        if (!companion.config().shareCorrections) {
+            send(player, new ErrorS2C(ErrorS2C.ERR_COMPANION_DISABLED, "map corrections are disabled"));
+            return;
+        }
+        if (!companion.summaries().subscribeRegions(
+            server, player.getUuid(), request, senderFor(player)
+        )) {
+            send(player, new ErrorS2C(ErrorS2C.ERR_MALFORMED_REQUEST, "invalid region-sync viewport"));
+        }
+    }
+
     private HelloPolicyS2C buildPolicy(final MinecraftServer server) {
         final ServerConfig cfg = companion.config();
         final HelloPolicyS2C.Flags flags = policyFlags(cfg);
@@ -169,7 +230,7 @@ public final class ServerNetworking {
             cfg.maxBytesPerSecondPerPlayer,
             cfg.maxTilesPerRequest,
             cfg.minRequestIntervalMs,
-            cfg.maxPatchLod
+            Proto.DEFAULT_MAX_PATCH_LOD
         );
         final List<HelloPolicyS2C.DimDescriptor> dims = buildDimDescriptors(server, flags.seedGranted());
         return new HelloPolicyS2C(flags, worldId.toString(), WORLDGEN_VERSION, budgets, dims);
@@ -182,7 +243,9 @@ public final class ServerNetworking {
             cfg.enabled && cfg.shareCorrections,
             false,
             cfg.enabled && cfg.shareChunkLoadState,
-            cfg.enabled && !cfg.allowEntityRadar
+            cfg.enabled && !cfg.allowEntityRadar,
+            cfg.enabled && cfg.shareCorrections,
+            cfg.enabled && cfg.shareCorrections
         );
     }
 
@@ -234,7 +297,25 @@ public final class ServerNetworking {
             ConfluxMapMod.LOGGER.error("companion: failed to serialize {}: {}", msg.getClass().getSimpleName(), e.getMessage());
             return;
         }
+        send(player, payload);
+    }
+
+    private static void send(final ServerPlayerEntity player, final byte[] payload) {
         PlayNetworking.sendServer(player, CHANNEL, payload);
+    }
+
+    private static RegionSummaryService.MessageSender senderFor(final ServerPlayerEntity player) {
+        return new RegionSummaryService.MessageSender() {
+            @Override
+            public void send(final Message message) {
+                ServerNetworking.send(player, message);
+            }
+
+            @Override
+            public void sendEncoded(final Message message, final byte[] payload) {
+                ServerNetworking.send(player, payload);
+            }
+        };
     }
 
     private static void validatePayload(final byte[] payload) throws ProtoException {

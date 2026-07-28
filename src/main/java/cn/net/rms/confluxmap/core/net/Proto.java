@@ -23,14 +23,18 @@ public final class Proto {
 
     /**
      * Protocol version this build speaks. Mismatched minors are tolerated; majors are not.
-     * Major 2 switched the MAP_PATCH body to field-plane layout with delta-coded heights.
+     * Major 4 keeps major 3's exact authoritative snapshots but delta-encodes heights and
+     * compresses each patch body before framing. Major 3 carried raw evaluated/difference masks
+     * and homogeneous value planes. Major 2 used tolerant incremental residuals.
      * Minor 1 added the per-dim generator preset in spare bits of HELLO_POLICY's dim flag byte.
      * Minor 2 added FLAT_BASELINE (0x07); pre-minor-2 clients log and ignore it.
      * Minor 3 added server-authoritative chunk load-state subscriptions (0x08/0x09).
-     * Minor 4 added the server entity-radar policy in HELLO_POLICY's flag byte.
+     * Minor 4 added the server entity-radar policy and progressive coarse correction patches.
+     * Minor 5 added event-driven correction invalidation subscriptions (0x0A/0x0B).
+     * Minor 6 added chunk-range correction pages (0x0C-0x0F), capability-gated in policy flags.
      */
-    public static final int PROTO_MAJOR = 2;
-    public static final int PROTO_MINOR = 4;
+    public static final int PROTO_MAJOR = 4;
+    public static final int PROTO_MINOR = 0;
 
     // ---- Message type ids (first byte of every framed payload) ----
 
@@ -52,11 +56,23 @@ public final class Proto {
     public static final int MSG_LOAD_STATE_SUBSCRIBE_C2S = 0x08;
     /** S2C: one bounded initial-snapshot or incremental load-state batch. */
     public static final int MSG_LOAD_STATE_DELTA_S2C = 0x09;
+    /** C2S: subscribe to or cancel correction invalidations for the current map viewport. */
+    public static final int MSG_MAP_SYNC_SUBSCRIBE_C2S = 0x0A;
+    /** S2C: correction tiles whose backing server regions changed. */
+    public static final int MSG_MAP_INVALIDATE_S2C = 0x0B;
+    /** C2S: bounded cropped 16x16-chunk region pages needed by the current viewport. */
+    public static final int MSG_MAP_REGION_VIEW_REQ_C2S = 0x0C;
+    /** S2C: one authoritative cropped region-page correction snapshot. */
+    public static final int MSG_MAP_REGION_PATCH_S2C = 0x0D;
+    /** C2S: exact chunk-viewport subscription for region invalidations. */
+    public static final int MSG_MAP_REGION_SYNC_SUBSCRIBE_C2S = 0x0E;
+    /** S2C: changed source regions intersecting an exact chunk subscription. */
+    public static final int MSG_MAP_REGION_INVALIDATE_S2C = 0x0F;
 
     /** First valid message id; used to range-check the type byte. */
     public static final int MSG_MIN = MSG_HELLO_C2S;
     /** Last valid message id for this proto major version. */
-    public static final int MSG_MAX = MSG_LOAD_STATE_DELTA_S2C;
+    public static final int MSG_MAX = MSG_MAP_REGION_INVALIDATE_S2C;
 
     // ---- Hard caps (enforced everywhere untrusted bytes cross a boundary) ----
 
@@ -85,6 +101,16 @@ public final class Proto {
 
     /** Maximum entries in one load-state payload; each entry is ten bytes on the wire. */
     public static final int MAX_LOAD_STATE_ENTRIES = 512;
+    /** Maximum number of predicted tiles covered by one active correction subscription. */
+    public static final int MAX_MAP_SYNC_VIEW_TILES = 256;
+    /** Maximum invalidated tiles carried in one server notification. */
+    public static final int MAX_MAP_INVALIDATION_TILES = 256;
+    /** Maximum cropped summary-region pages carried by one request. */
+    public static final int MAX_REGION_PAGES_PER_REQ = 32;
+    /** Maximum changed summary regions carried by one invalidation. */
+    public static final int MAX_REGION_INVALIDATIONS = 256;
+    /** Maximum exact correction viewport width or height in chunks. */
+    public static final int MAX_REGION_SYNC_SPAN_CHUNKS = 4_096;
     /** Maximum requested viewport width or height, in chunks. */
     public static final int MAX_LOAD_STATE_SPAN = 4_096;
     /** Wire sentinel for a chunk that left the server's loaded set. */
@@ -97,25 +123,25 @@ public final class Proto {
     public static final int PATCH_PRESENCE_BYTES = 32;
 
     /**
-     * {@code mode} field in MAP_PATCH: no column data follows, so the receiver keeps the samples
-     * it already has and takes only the presence bitmap. Sent both when the server's baseline
-     * matches the client's prediction exactly, and for tiles coarser than the server's correction
-     * ceiling, where presence is the only thing cheap enough to compute.
+     * {@code mode} field in MAP_PATCH: validates a retained snapshot without replacing its samples.
+     * The body is empty and the client accepts the response only when its committed revision matches.
      */
     public static final int PATCH_MODE_UNCHANGED = 0;
-    /** {@code mode} field in MAP_PATCH: server sends differing pixels and removals (residual coding). */
+    /** {@code mode} field in MAP_PATCH: complete snapshot of pixels differing from the shared baseline. */
     public static final int PATCH_MODE_RESIDUAL = 1;
     /** {@code mode} field in MAP_PATCH: server sends every pixel (baseline mismatch or cold cache). */
     public static final int PATCH_MODE_ABSOLUTE = 2;
     /** {@code mode} field in MAP_PATCH: server has no data for this tile (prediction only). */
     public static final int PATCH_MODE_UNAVAILABLE = 3;
+    /** Pending revision-0 snapshot progress; it stays non-drawable until a final patch arrives. */
+    public static final int PATCH_MODE_PARTIAL = 4;
 
     /** Budget defaults advertised in HELLO_POLICY when the server config is at its defaults. */
-    public static final int DEFAULT_MAX_BYTES_PER_SEC = 65_536;
+    public static final int DEFAULT_MAX_BYTES_PER_SEC = 256 * 1024;
     /** Budget defaults advertised in HELLO_POLICY when the server config is at its defaults. */
     public static final int DEFAULT_MAX_TILES_PER_REQ = 8;
     /** Budget defaults advertised in HELLO_POLICY when the server config is at its defaults. */
-    public static final int DEFAULT_MIN_REQ_INTERVAL_MS = 300;
+    public static final int DEFAULT_MIN_REQ_INTERVAL_MS = 100;
     /** Budget defaults advertised in HELLO_POLICY when the server config is at its defaults. */
-    public static final int DEFAULT_MAX_PATCH_LOD = 2;
+    public static final int DEFAULT_MAX_PATCH_LOD = 4;
 }

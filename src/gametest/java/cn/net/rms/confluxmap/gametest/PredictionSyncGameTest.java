@@ -25,6 +25,7 @@ import cn.net.rms.confluxmap.compat.MinecraftVersion;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import cn.net.rms.confluxmap.server.RegionSummaryService;
 import cn.net.rms.confluxmap.server.ServerConfig;
+import cn.net.rms.confluxmap.server.SyncPerformanceMonitor;
 import com.mojang.authlib.GameProfile;
 import java.util.ArrayList;
 import java.util.List;
@@ -165,6 +166,14 @@ public final class PredictionSyncGameTest implements FabricGameTest {
 
         require(context, responses.size() == 1, "expected one server response, got " + responses);
         require(context, responses.get(0) instanceof MapPatchS2C, "expected MAP_PATCH, got " + responses.get(0));
+        final List<SyncPerformanceMonitor.LodSnapshot> performance = summaries.performance(player.getUuid());
+        require(context, performance.size() == 1, "expected one LOD performance bucket, got " + performance);
+        final SyncPerformanceMonitor.LodSnapshot sync = performance.get(0);
+        require(context, sync.lod() == 0 && sync.samples() == 1L, "wrong sync performance sample " + sync);
+        require(context, sync.averageTotalNanos() > 0L, "sync total duration was not measured");
+        require(context, sync.averageIoNanos() > 0L, "server I/O/scan duration was not measured");
+        require(context, sync.averageComputeNanos() > 0L, "server compute duration was not measured");
+        require(context, sync.averageTrafficBytes() > 0L, "sync payload traffic was not measured");
 
         try {
             final MapPatchS2C patch = (MapPatchS2C) MsgCodec.decode(MsgCodec.encode(responses.get(0)));

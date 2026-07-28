@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.compat.Nbts;
+import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.PackedBits;
 import cn.net.rms.confluxmap.core.predict.CubiomesBiomeIds;
 import java.util.ArrayList;
@@ -74,19 +75,14 @@ final class NbtChunkColumnSource implements ChunkColumnSource {
 
     @Override
     public String blockNameAt(final int x, final int y, final int z) {
-        final int sectionY = Math.floorDiv(y, 16);
-        final int localY = Math.floorMod(y, 16);
-        for (final Section section : sections) {
-            if (section.y != sectionY) {
-                continue;
-            }
-            final int localIndex = (localY * 16 + z) * 16 + x;
-            final int paletteIndex = section.states.length == 0
-                ? 0
-                : PackedBits.decode(section.states, section.bits, localIndex);
-            return section.names[Math.min(paletteIndex, section.names.length - 1)];
-        }
-        return "minecraft:air";
+        final Section section = sectionAt(y);
+        return section == null ? "minecraft:air" : section.names[paletteIndex(section, x, y, z)];
+    }
+
+    @Override
+    public SurfaceKind fluidKindAt(final int x, final int y, final int z) {
+        final Section section = sectionAt(y);
+        return section == null ? SurfaceKind.UNKNOWN : section.fluidKinds[paletteIndex(section, x, y, z)];
     }
 
     @Override
@@ -122,11 +118,15 @@ final class NbtChunkColumnSource implements ChunkColumnSource {
             final String dataKey = modern ? "data" : "BlockStates";
             final NbtList palette = Nbts.list(blockStates, paletteKey, 10);
             final String[] names = new String[Math.max(1, palette.size())];
+            final SurfaceKind[] fluidKinds = new SurfaceKind[names.length];
             for (int p = 0; p < palette.size(); p++) {
-                names[p] = Nbts.string(Nbts.compound(palette, p), "Name");
+                final NbtCompound entry = Nbts.compound(palette, p);
+                names[p] = Nbts.string(entry, "Name");
+                fluidKinds[p] = fluidKind(names[p], Nbts.compound(entry, "Properties"));
             }
             if (palette.isEmpty()) {
                 names[0] = "minecraft:air";
+                fluidKinds[0] = SurfaceKind.UNKNOWN;
             }
             final long[] states = Nbts.longArray(blockStates, dataKey);
             final int bits = Math.max(4, bitsFor(names.length));
@@ -143,6 +143,7 @@ final class NbtChunkColumnSource implements ChunkColumnSource {
             result.add(new Section(
                 y,
                 names,
+                fluidKinds,
                 states,
                 bits,
                 biomeIds,
@@ -151,6 +152,34 @@ final class NbtChunkColumnSource implements ChunkColumnSource {
             ));
         }
         return result;
+    }
+
+    private Section sectionAt(final int y) {
+        final int sectionY = Math.floorDiv(y, 16);
+        for (final Section section : sections) {
+            if (section.y == sectionY) {
+                return section;
+            }
+        }
+        return null;
+    }
+
+    private static int paletteIndex(final Section section, final int x, final int y, final int z) {
+        final int localIndex = (Math.floorMod(y, 16) * 16 + z) * 16 + x;
+        final int decoded = section.states.length == 0
+            ? 0
+            : PackedBits.decode(section.states, section.bits, localIndex);
+        return Math.min(decoded, section.names.length - 1);
+    }
+
+    private static SurfaceKind fluidKind(final String name, final NbtCompound properties) {
+        if ("true".equals(Nbts.string(properties, "waterlogged"))
+            || name.contains("water") || "minecraft:kelp".equals(name) || "minecraft:kelp_plant".equals(name)
+            || "minecraft:seagrass".equals(name) || "minecraft:tall_seagrass".equals(name)
+            || "minecraft:bubble_column".equals(name) || "minecraft:sea_pickle".equals(name)) {
+            return SurfaceKind.WATER;
+        }
+        return name.contains("lava") ? SurfaceKind.LAVA : SurfaceKind.UNKNOWN;
     }
 
     private static int columnIndex(final int x, final int z) {
@@ -176,6 +205,7 @@ final class NbtChunkColumnSource implements ChunkColumnSource {
     private record Section(
         int y,
         String[] names,
+        SurfaceKind[] fluidKinds,
         long[] states,
         int bits,
         int[] biomeIds,
