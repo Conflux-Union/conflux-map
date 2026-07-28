@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Generate user-facing changelog
@@ -207,7 +207,7 @@ jobs:
               "$PREVIOUS_TAG" "$CURRENT_TAG" >> release-notes/changelog.md
           fi
       - name: Upload changelog
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: release-changelog
           path: release-notes/changelog.md
@@ -220,7 +220,7 @@ jobs:
       versions: ${{ steps.Get_Versions.outputs.versions }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Get Minecraft versions
         id: Get_Versions
         run: |
@@ -234,19 +234,19 @@ jobs:
         minecraft_version: ${{ fromJson(needs.Get-Versions.outputs.versions) }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           submodules: true
       - name: Validate Gradle wrapper
-        uses: gradle/actions/wrapper-validation@v4
+        uses: gradle/actions/wrapper-validation@v5
       - name: Setup JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '22'
           distribution: 'temurin'
       - name: Cache Gradle packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.gradle/caches
@@ -262,7 +262,7 @@ jobs:
       - name: Stop Gradle daemon
         run: ./gradlew --stop
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: build-${{ matrix.minecraft_version }}
           path: versions/${{ matrix.minecraft_version }}/build/libs/*.jar
@@ -276,7 +276,7 @@ jobs:
         minecraft_version: ${{ fromJson(needs.Get-Versions.outputs.versions) }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Extract version info
@@ -320,18 +320,18 @@ jobs:
             echo 'EOF'
           } >> $GITHUB_OUTPUT
       - name: Download build artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: build-${{ matrix.minecraft_version }}
           path: versions/${{ matrix.minecraft_version }}/build/libs/
       - name: Download changelog
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: release-changelog
           path: release-notes/
       - name: Publish to Modrinth
         if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
-        uses: Kir-Antipov/mc-publish@v3.3
+        uses: Kir-Antipov/mc-publish@v3.3.1
         with:
           modrinth-id: ${{ vars.MODRINTH_ID }}
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
@@ -356,7 +356,7 @@ jobs:
     needs: [ Build-Matrix, Get-Versions ]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Extract version info
@@ -369,7 +369,7 @@ jobs:
           echo "mod_id=$MOD_ID" >> $GITHUB_OUTPUT
           echo "mod_name=$MOD_NAME" >> $GITHUB_OUTPUT
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           path: artifacts/
       - name: Reorganize artifacts
@@ -413,7 +413,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish to GitHub release
         if: github.event_name == 'workflow_dispatch'
-        uses: Kir-Antipov/mc-publish@v3.3
+        uses: Kir-Antipov/mc-publish@v3.3.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           files: |
