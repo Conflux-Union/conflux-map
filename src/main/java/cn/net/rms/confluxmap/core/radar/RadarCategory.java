@@ -12,6 +12,6 @@ public enum RadarCategory {
     PLAYER,
     HOSTILE,
     PASSIVE,
-    /** Anything living that doesn't fall into a known spawn group; effectively unreachable for vanilla 1.17.1 entities, kept as a defensive default. */
+    /** Dropped items, vehicles, projectiles, and anything else outside the known living-entity groups. */
     OTHER
 }

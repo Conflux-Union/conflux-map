@@ -69,6 +69,8 @@ net.minecraft.command.permission.Permission net.minecraft.server.permissions.Per
 net.minecraft.command.permission.PermissionLevel net.minecraft.server.permissions.PermissionLevel
 net.minecraft.entity.Entity net.minecraft.world.entity.Entity
 net.minecraft.entity.EntityType net.minecraft.world.entity.EntityType
+net.minecraft.entity.FlyingItemEntity net.minecraft.world.entity.projectile.ItemSupplier
+net.minecraft.entity.ItemEntity net.minecraft.world.entity.item.ItemEntity
 net.minecraft.entity.LivingEntity net.minecraft.world.entity.LivingEntity
 net.minecraft.entity.SpawnGroup net.minecraft.world.entity.MobCategory
 net.minecraft.entity.mob.PhantomEntity net.minecraft.world.entity.monster.Phantom
@@ -85,6 +87,7 @@ net.minecraft.entity.passive.StriderEntity net.minecraft.world.entity.monster.St
 net.minecraft.entity.passive.VillagerEntity net.minecraft.world.entity.npc.villager.Villager
 net.minecraft.entity.passive.WolfEntity net.minecraft.world.entity.animal.wolf.Wolf
 net.minecraft.entity.player.PlayerEntity net.minecraft.world.entity.player.Player
+net.minecraft.item.ItemStack net.minecraft.world.item.ItemStack
 net.minecraft.fluid.FluidState net.minecraft.world.level.material.FluidState
 net.minecraft.nbt.NbtCompound net.minecraft.nbt.CompoundTag
 net.minecraft.nbt.NbtList net.minecraft.nbt.ListTag
@@ -149,6 +152,9 @@ net.minecraft.client.font.TextRenderer trimToWidth plainSubstrByWidth
 net.minecraft.client.font.TextRenderer fontHeight lineHeight
 net.minecraft.client.gui.DrawContext drawTextWithShadow text
 net.minecraft.client.MinecraftClient getBlockRenderManager getBlockRenderer
+net.minecraft.entity.Entity getPickBlockStack getPickResult
+net.minecraft.entity.FlyingItemEntity getStack getItem
+net.minecraft.entity.ItemEntity getStack getItem
 net.minecraft.client.gui.screen.Screen render extractRenderState
 net.minecraft.client.gui.screen.Screen renderBackground extractBackground
 net.minecraft.client.gui.widget.ButtonWidget renderWidget extractContents

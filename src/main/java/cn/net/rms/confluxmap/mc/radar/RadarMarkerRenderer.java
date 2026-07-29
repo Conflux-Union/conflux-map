@@ -9,9 +9,16 @@ import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.FlyingItemEntity;
+import net.minecraft.entity.ItemEntity;
+//#if MC<12100
+import net.minecraft.entity.vehicle.AbstractMinecartEntity;
+import net.minecraft.item.Items;
+//#endif
+import net.minecraft.item.ItemStack;
 
 /**
- * Draws one already-projected radar marker (entity head icon or shaped-dot fallback,
+ * Draws one already-projected radar marker (entity head/item icon or shaped-dot fallback,
  * plus an optional player name label), shared by {@code MinimapHudRenderer} and
  * {@code FullscreenMapScreen} so both surfaces render radar entries identically. Extracted
  * verbatim from {@code MinimapHudRenderer}'s original radar-marker drawing - see
@@ -29,6 +36,7 @@ public final class RadarMarkerRenderer {
 
     private static final float ICON_HALF_SIZE = 5f;
     private static final float ICON_SIZE = ICON_HALF_SIZE * 2f;
+    private static final float ITEM_ICON_SIZE = ICON_SIZE;
     /** The outline mask pads each icon cell 16px -> 18px, so its quad scales up around the same center. */
     private static final float OUTLINE_HALF_SIZE =
         ICON_HALF_SIZE * EntityIconOutlineTexture.PADDED_CELL_PX / (float) EntityIconOutlineTexture.CELL_PX;
@@ -49,11 +57,9 @@ public final class RadarMarkerRenderer {
     }
 
     /**
-     * Draws the entity head icon (VoxelMap-style: a small sub-UV crop of the entity's own skin/
-     * mob texture, ringed in a category color) when available, falling back to the original
-     * shaped dot otherwise - either because icons are disabled, the entity isn't currently loaded
-     * (only the scan-time snapshot position survived), or its species has no entry in
-     * {@link EntityIconManager}'s UV table.
+     * Draws an entity head icon or the entity's normal in-game item icon when available, falling
+     * back to the original shaped dot otherwise. Dropped and flying items use their live stack;
+     * other targets use the same item form as creative pick-block where vanilla exposes one.
      *
      * <p>Spectator-mode entries render every element (icon, contour, dot, name) at
      * {@link #SPECTATOR_ALPHA} of its normal alpha, on top of any elevation fading.
@@ -85,6 +91,14 @@ public final class RadarMarkerRenderer {
         final MatrixStack matrices = draw.matrices();
         final float alphaScale = entry.spectator() ? SPECTATOR_ALPHA : 1f;
         if (config.radarIconsEnabled && live != null) {
+            final ItemStack itemIcon = entry.category() == RadarCategory.OTHER
+                ? itemIconFor(live)
+                : ItemStack.EMPTY;
+            if (!itemIcon.isEmpty()) {
+                final int contourBase = contourBase(backdrop, blockX, blockZ, blocksPerPixel);
+                drawItemIcon(draw, client, itemIcon, x, y, yDelta, alphaScale, contourBase);
+                return;
+            }
             final EntityIconManager.FaceIcon icon = iconManager.iconFor(live);
             if (icon != null) {
                 final int contourBase = contourBase(backdrop, blockX, blockZ, blocksPerPixel);
@@ -113,6 +127,64 @@ public final class RadarMarkerRenderer {
                 RenderUtil.fillRect(matrices, x - 1.5f, y - 1.5f, 3f, 3f, color);
                 break;
         }
+    }
+
+    private static ItemStack itemIconFor(final Entity entity) {
+        if (entity instanceof ItemEntity) {
+            return ((ItemEntity) entity).getStack();
+        }
+        if (entity instanceof FlyingItemEntity) {
+            return ((FlyingItemEntity) entity).getStack();
+        }
+        final ItemStack picked = entity.getPickBlockStack();
+        if (picked != null && !picked.isEmpty()) {
+            return picked;
+        }
+        //#if MC<12100
+        // Vanilla 1.17.1 implements pick-block for boats but not minecarts. Later versions expose
+        // the correct stack directly from every minecart subclass.
+        if (entity instanceof AbstractMinecartEntity) {
+            switch (((AbstractMinecartEntity) entity).getMinecartType()) {
+                case RIDEABLE:
+                    return new ItemStack(Items.MINECART);
+                case CHEST:
+                    return new ItemStack(Items.CHEST_MINECART);
+                case FURNACE:
+                    return new ItemStack(Items.FURNACE_MINECART);
+                case TNT:
+                    return new ItemStack(Items.TNT_MINECART);
+                case HOPPER:
+                    return new ItemStack(Items.HOPPER_MINECART);
+                case COMMAND_BLOCK:
+                    return new ItemStack(Items.COMMAND_BLOCK_MINECART);
+                default:
+                    break;
+            }
+        }
+        //#endif
+        return ItemStack.EMPTY;
+    }
+
+    private static void drawItemIcon(
+        final GuiDraw draw,
+        final MinecraftClient client,
+        final ItemStack stack,
+        final float x,
+        final float y,
+        final int yDelta,
+        final float alphaScale,
+        final int contourBase
+    ) {
+        final MatrixStack matrices = draw.matrices();
+        final int contour = Argb.scaleAlpha(elevationColor(contourBase, yDelta), alphaScale);
+        final float left = x - ITEM_ICON_SIZE / 2f - 1f;
+        final float top = y - ITEM_ICON_SIZE / 2f - 1f;
+        final float edge = ITEM_ICON_SIZE + 2f;
+        RenderUtil.fillRect(matrices, left, top, edge, 1f, contour);
+        RenderUtil.fillRect(matrices, left, top + edge - 1f, edge, 1f, contour);
+        RenderUtil.fillRect(matrices, left, top + 1f, 1f, edge - 2f, contour);
+        RenderUtil.fillRect(matrices, left + edge - 1f, top + 1f, 1f, edge - 2f, contour);
+        draw.drawItemIcon(client, stack, x, y, ITEM_ICON_SIZE);
     }
 
     /**

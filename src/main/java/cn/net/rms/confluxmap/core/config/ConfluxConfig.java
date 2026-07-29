@@ -80,11 +80,11 @@ public final class ConfluxConfig {
     public boolean radarShowHostile = true;
     /** Spec default for the "neutral" category is off; M1's PASSIVE bucket is that same category. */
     public boolean radarShowPassive = false;
-    /** Defensive fallback bucket (see {@code core.radar.RadarCategory}); off by default alongside PASSIVE. */
+    /** Dropped items, vehicles, projectiles, and defensive fallback targets; off by default to limit clutter. */
     public boolean radarShowOther = false;
     public boolean radarShowPlayerNames = true;
     public int radarMaxEntities = 100;
-    /** VoxelMap-style entity head icons with a hostile/passive/player/other border ring, instead of the plain shaped dot. */
+    /** Entity head and item-form icons instead of plain shaped dots when an in-game icon is available. */
     public boolean radarIconsEnabled = true;
     /** 3-D straight-line blocks; 0 means "no cutoff" (see waypoint-ux.md S7). */
     public int waypointRenderDistance = 0;

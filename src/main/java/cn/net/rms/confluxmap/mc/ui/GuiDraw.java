@@ -1,17 +1,20 @@
 package cn.net.rms.confluxmap.mc.ui;
 
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import com.mojang.blaze3d.systems.RenderSystem;
 //#if MC>=12108
 //$$ import org.joml.Matrix3x2fStack;
 //$$ import org.joml.Matrix4f;
 //#endif
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.gui.screen.Screen;
 //#if MC>=12000
 //$$ import net.minecraft.client.gui.DrawContext;
 //$$ import net.minecraft.client.font.TextRenderer.TextLayerType;
 //#endif
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.item.ItemStack;
 import net.minecraft.text.OrderedText;
 import net.minecraft.text.Text;
 
@@ -55,6 +58,55 @@ public final class GuiDraw {
 
     public MatrixStack matrices() {
         return matrices;
+    }
+
+    /** Draws the item's normal 16px GUI model, scaled and centered on one radar marker. */
+    public void drawItemIcon(
+        final MinecraftClient client,
+        final ItemStack stack,
+        final float centerX,
+        final float centerY,
+        final float size
+    ) {
+        final float scale = size / 16f;
+        final float left = centerX - size / 2f;
+        final float top = centerY - size / 2f;
+        //#if MC>=12108
+        //$$ final Matrix3x2fStack pose = context.getMatrices();
+        //$$ pose.pushMatrix();
+        //$$ try {
+        //$$     pose.translate(left, top);
+        //$$     pose.scale(scale, scale);
+        //#if MC>=260100
+        //$$     context.item(stack, 0, 0);
+        //#else
+        //$$     context.drawItem(stack, 0, 0);
+        //#endif
+        //$$ } finally {
+        //$$     pose.popMatrix();
+        //$$ }
+        //#elseif MC>=12000
+        //$$ matrices.push();
+        //$$ try {
+        //$$     matrices.translate(left, top, 0);
+        //$$     matrices.scale(scale, scale, 1f);
+        //$$     context.drawItem(stack, 0, 0);
+        //$$ } finally {
+        //$$     matrices.pop();
+        //$$ }
+        //#else
+        final MatrixStack modelView = RenderSystem.getModelViewStack();
+        modelView.push();
+        try {
+            modelView.translate(left, top, 0);
+            modelView.scale(scale, scale, 1f);
+            RenderSystem.applyModelViewMatrix();
+            client.getItemRenderer().renderInGui(stack, 0, 0);
+        } finally {
+            modelView.pop();
+            RenderSystem.applyModelViewMatrix();
+        }
+        //#endif
     }
 
     public void renderBackground(

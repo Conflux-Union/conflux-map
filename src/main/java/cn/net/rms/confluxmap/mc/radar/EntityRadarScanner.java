@@ -36,8 +36,8 @@ import net.minecraft.entity.player.PlayerEntity;
  * per-species management dialog. M1 has no per-species dialog and no icon system, so this
  * scanner uses the coarser spawn-group classifier for everything: {@link SpawnGroup#MONSTER}
  * to {@link RadarCategory#HOSTILE}; {@code CREATURE}/{@code AMBIENT}/water
- * variants/{@code MISC} to {@link RadarCategory#PASSIVE}; anything else living to
- * {@link RadarCategory#OTHER} (unreachable for vanilla 1.17.1 entities). This is simpler and
+ * variants to {@link RadarCategory#PASSIVE}; miscellaneous living entities and every non-living
+ * entity to {@link RadarCategory#OTHER}. This is simpler and
  * cheaper than reproducing the live classifier, at the cost of not flagging a neutral mob that
  * is currently angry at the player as hostile the way the reference implementation does.
  */
@@ -151,7 +151,7 @@ public final class EntityRadarScanner {
 
         final List<RadarEntry> raw = new ArrayList<>();
         for (final Entity entity : client.world.getEntities()) {
-            if (entity == self || !(entity instanceof LivingEntity)) {
+            if (entity == self) {
                 continue;
             }
             // Spectators are kept (flagged for translucent rendering) rather than hidden, and
@@ -191,13 +191,16 @@ public final class EntityRadarScanner {
         if (entity instanceof PlayerEntity) {
             return RadarCategory.PLAYER;
         }
+        if (!(entity instanceof LivingEntity)) {
+            return RadarCategory.OTHER;
+        }
         final SpawnGroup group = entity.getType().getSpawnGroup();
         if (group == SpawnGroup.MONSTER) {
             return RadarCategory.HOSTILE;
         }
         if (group == SpawnGroup.CREATURE || group == SpawnGroup.AMBIENT
             || group == SpawnGroup.WATER_CREATURE || group == SpawnGroup.WATER_AMBIENT
-            || group == SpawnGroup.UNDERGROUND_WATER_CREATURE || group == SpawnGroup.MISC) {
+            || group == SpawnGroup.UNDERGROUND_WATER_CREATURE) {
             return RadarCategory.PASSIVE;
         }
         return RadarCategory.OTHER;
