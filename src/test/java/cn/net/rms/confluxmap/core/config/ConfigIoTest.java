@@ -22,6 +22,17 @@ class ConfigIoTest {
     private static final Logger LOGGER = LogManager.getLogger("ConfigIoTest");
 
     @Test
+    void loadCreatesNewConfigWithSmallerDefaultMinimap(@TempDir final Path tmp) throws IOException {
+        final Path file = tmp.resolve("config.json");
+
+        final ConfluxConfig loaded = new ConfigIo(file, LOGGER).load();
+
+        assertEquals(90, ConfluxConfig.DEFAULT_MINIMAP_SIZE);
+        assertEquals(ConfluxConfig.DEFAULT_MINIMAP_SIZE, loaded.minimapSize);
+        assertTrue(Files.readString(file, StandardCharsets.UTF_8).contains("\"minimapSize\": 90"));
+    }
+
+    @Test
     void loadFillsMissingFieldsAndRewritesFile(@TempDir final Path tmp) throws IOException {
         final Path file = tmp.resolve("config.json");
         Files.writeString(file, "{\"schemaVersion\":1,\"minimapSize\":300}", StandardCharsets.UTF_8);
