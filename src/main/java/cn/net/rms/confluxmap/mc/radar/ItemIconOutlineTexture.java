@@ -172,7 +172,7 @@ final class ItemIconOutlineTexture {
 
     private static void configureSampling(final NativeImageBackedTexture texture) {
         //#if MC>=12111
-        // Sampling is selected explicitly when the render pass binds the texture.
+        //$$ // Sampling is selected explicitly when the render pass binds the texture.
         //#else
         texture.setFilter(false, false);
         //#if MC>=12105

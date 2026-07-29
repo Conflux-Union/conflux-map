@@ -104,16 +104,16 @@ public final class RenderUtil {
     //$$         )
     //$$     );
     //$$ }
-
+    //$$
     //$$ public static void bindTexture(final GpuTextureView texture, final GpuSampler sampler) {
     //$$     boundTexture = texture;
     //$$     boundSampler = sampler;
     //$$ }
-
+    //$$
     //$$ static GpuTextureView boundTexture() {
     //$$     return boundTexture;
     //$$ }
-
+    //$$
     //$$ static GpuSampler boundSampler() {
     //$$     return boundSampler;
     //$$ }
@@ -134,11 +134,11 @@ public final class RenderUtil {
     //$$ static Framebuffer drawTarget() {
     //$$     return drawTarget == null ? MinecraftClient.getInstance().getFramebuffer() : drawTarget;
     //$$ }
-
+    //$$
     //$$ static void setDrawTarget(final Framebuffer target) {
     //$$     drawTarget = target;
     //$$ }
-
+    //$$
     //$$ static void applyScissor(final RenderPass pass) {
     //$$     if (scissorEnabled) {
     //$$         pass.enableScissor(scissorX, scissorY, scissorWidth, scissorHeight);
@@ -154,18 +154,18 @@ public final class RenderUtil {
     //$$ public static void setGuiState(final GuiRenderState state) {
     //$$     guiState = state;
     //$$ }
-
+    //$$
     //$$ /** Null while an {@link OffscreenCanvas} owns the draws - those target its own framebuffer. */
     //$$ static GuiRenderState guiState() {
     //$$     return drawTarget == null ? guiState : null;
     //$$ }
-
+    //$$
     //$$ static ScreenRect guiScissor() {
     //$$     return scissorEnabled
     //$$         ? new ScreenRect(guiScissorX, guiScissorY, guiScissorWidth, guiScissorHeight)
     //$$         : null;
     //$$ }
-
+    //$$
     //$$ static TextureSetup guiTextureSetup(final boolean textured) {
     //$$     if (!textured || boundTexture == null) {
     //$$         return TextureSetup.empty();
@@ -642,7 +642,7 @@ public final class RenderUtil {
 
     private static void useTextureShader() {
         //#if MC>=12105
-        // Pipeline selection happens at draw time.
+        //$$ // Pipeline selection happens at draw time.
         //#elseif MC>=12103
         //$$ RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX);
         //#elseif MC>=12100
@@ -654,7 +654,7 @@ public final class RenderUtil {
 
     private static void useColorShader() {
         //#if MC>=12105
-        // Pipeline selection happens at draw time.
+        //$$ // Pipeline selection happens at draw time.
         //#elseif MC>=12103
         //$$ RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
         //#elseif MC>=12100
@@ -666,7 +666,7 @@ public final class RenderUtil {
 
     private static void useTintedTextureShader() {
         //#if MC>=12105
-        // Pipeline selection happens at draw time.
+        //$$ // Pipeline selection happens at draw time.
         //#elseif MC>=12103
         //$$ RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
         //#elseif MC>=12100

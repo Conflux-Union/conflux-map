@@ -191,7 +191,7 @@ public final class TileTextureManager {
     /** Keep tile edges independent: repeat/linear state can leak from another texture or shader. */
     private static void configureSampling(final NativeImageBackedTexture texture) {
         //#if MC>=12111
-        // Sampling is selected explicitly when the render pass binds the texture.
+        //$$ // Sampling is selected explicitly when the render pass binds the texture.
         //#else
         texture.setFilter(false, false);
         //#if MC>=12105

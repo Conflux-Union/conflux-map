@@ -24,7 +24,7 @@ import java.util.UUID;
 //$$ import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
 //$$ import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
 //#elseif MC>=12109
-// 1.21.9's Fabric API has no world render events; WorldRendererMixin supplies them instead.
+//$$ // 1.21.9's Fabric API has no world render events; WorldRendererMixin supplies them instead.
 //#else
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
