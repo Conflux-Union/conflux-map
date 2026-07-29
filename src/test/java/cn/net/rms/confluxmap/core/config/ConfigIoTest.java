@@ -29,7 +29,9 @@ class ConfigIoTest {
 
         assertEquals(90, ConfluxConfig.DEFAULT_MINIMAP_SIZE);
         assertEquals(ConfluxConfig.DEFAULT_MINIMAP_SIZE, loaded.minimapSize);
+        assertEquals(ConfluxConfig.DEFAULT_RADAR_ICON_SIZE, loaded.radarIconSize);
         assertTrue(Files.readString(file, StandardCharsets.UTF_8).contains("\"minimapSize\": 90"));
+        assertTrue(Files.readString(file, StandardCharsets.UTF_8).contains("\"radarIconSize\": 10"));
     }
 
     @Test
@@ -45,6 +47,7 @@ class ConfigIoTest {
         assertEquals(ConfluxConfig.DEFAULT_ANNOTATION_ERASER_SIZE, loaded.annotationEraserSize);
         assertEquals(new ConfluxConfig().fullscreenDisplayMode, loaded.fullscreenDisplayMode);
         assertEquals(new ConfluxConfig().chunkLoadDetailMode, loaded.chunkLoadDetailMode);
+        assertEquals(ConfluxConfig.DEFAULT_RADAR_ICON_SIZE, loaded.radarIconSize);
         assertEquals(1.0, loaded.minimapPositionX);
         assertEquals(0.0, loaded.minimapPositionY);
         assertEquals(ConfluxConfig.SCHEMA_VERSION, loaded.schemaVersion);
@@ -57,6 +60,7 @@ class ConfigIoTest {
         assertTrue(rewritten.contains("\"annotationEraserSize\""));
         assertTrue(rewritten.contains("\"fullscreenDisplayMode\""));
         assertTrue(rewritten.contains("\"chunkLoadDetailMode\""));
+        assertTrue(rewritten.contains("\"radarIconSize\""));
         assertTrue(rewritten.contains("\"minimapPositionX\": 1.0"));
         assertTrue(rewritten.contains("\"minimapPositionY\": 0.0"));
         assertTrue(rewritten.contains("\"minimapSize\": 256"));
@@ -94,6 +98,24 @@ class ConfigIoTest {
         final ConfluxConfig clamped = io.load();
         assertEquals(0.0, clamped.minimapPositionX);
         assertEquals(1.0, clamped.minimapPositionY);
+    }
+
+    @Test
+    void radarIconSizeRoundTripsAndClampsInvalidValues(@TempDir final Path tmp) throws IOException {
+        final Path file = tmp.resolve("config.json");
+        final ConfigIo io = new ConfigIo(file, LOGGER);
+        final ConfluxConfig config = new ConfluxConfig();
+        config.radarIconSize = 6;
+
+        io.save(config);
+        assertEquals(6, io.load().radarIconSize);
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":2,\"radarIconSize\":100}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(ConfluxConfig.MAX_RADAR_ICON_SIZE, io.load().radarIconSize);
     }
 
     @Test

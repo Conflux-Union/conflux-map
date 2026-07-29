@@ -3,9 +3,12 @@ package cn.net.rms.confluxmap.mc.radar;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.radar.RadarCategory;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
+import cn.net.rms.confluxmap.core.radar.RadarMarkerClusterer;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import java.util.ArrayList;
+import java.util.List;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
@@ -18,10 +21,10 @@ import net.minecraft.item.Items;
 import net.minecraft.item.ItemStack;
 
 /**
- * Draws one already-projected radar marker (entity head/item icon or shaped-dot fallback,
- * plus an optional player name label), shared by {@code MinimapHudRenderer} and
- * {@code FullscreenMapScreen} so both surfaces render radar entries identically. Extracted
- * verbatim from {@code MinimapHudRenderer}'s original radar-marker drawing - see
+ * Draws already-projected radar markers (entity head/item icon or shaped-dot fallback,
+ * plus optional player name labels and overlap counts), shared by {@code MinimapHudRenderer} and
+ * {@code FullscreenMapScreen} so both surfaces render radar entries identically. Its visual rules
+ * evolved from {@code MinimapHudRenderer}'s original radar-marker drawing - see
  * docs/reference-specs/radar-icons.md secs 2-3 for the VoxelMap-style look this reproduces
  * (elevation dimming, thin silhouette contour, no faction frames). Two deliberate contour
  * deviations from the spec (user request): the outline ring is 1px (one fill pass, not two),
@@ -34,17 +37,10 @@ public final class RadarMarkerRenderer {
     private static final int OTHER_COLOR = 0xFFA0A0A0;
     private static final int VERTICAL_WINDOW = 32;
 
-    private static final float ICON_HALF_SIZE = 5f;
-    private static final float ICON_SIZE = ICON_HALF_SIZE * 2f;
-    private static final float ITEM_ICON_SIZE = ICON_SIZE;
-    /** The outline mask pads each icon cell 16px -> 18px, so its quad scales up around the same center. */
-    private static final float OUTLINE_HALF_SIZE =
-        ICON_HALF_SIZE * EntityIconOutlineTexture.PADDED_CELL_PX / (float) EntityIconOutlineTexture.CELL_PX;
-    private static final float OUTLINE_SIZE = OUTLINE_HALF_SIZE * 2f;
-    /** Name labels sit just below the icon's contour. */
-    private static final float ICON_NAME_OFFSET = 7f;
     private static final int BLACK_CONTOUR = 0xB0000000;
     private static final int WHITE_CONTOUR = 0xB0FFFFFF;
+    private static final int STACK_BADGE_BACKGROUND = 0xD0000000;
+    private static final int STACK_BADGE_TEXT = 0xFFFFFFFF;
     /** Backdrops at least this bright (Rec. 709 luminance, 0-255) keep the black contour; darker ones flip to white. */
     private static final int CONTOUR_FLIP_LUMINANCE = 100;
     /** No elevation treatment inside this band - nearby mobs always render fully readable. */
@@ -56,38 +52,87 @@ public final class RadarMarkerRenderer {
     private RadarMarkerRenderer() {
     }
 
+    /** Complete per-frame position and live state for one projected radar marker. */
+    public record Marker(
+        RadarEntry entry,
+        float x,
+        float y,
+        double blockX,
+        double blockZ,
+        int yDelta,
+        Entity live
+    ) {
+    }
+
     /**
-     * Draws an entity head icon or the entity's normal in-game item icon when available, falling
-     * back to the original shaped dot otherwise. Dropped and flying items use their live stack;
-     * other targets use the same item form as creative pick-block where vanilla exposes one.
+     * Clusters overlapping non-player icons, then draws an entity head icon or the entity's normal
+     * in-game item icon when available, falling back to the original shaped dot otherwise. Dropped
+     * and flying items use their live stack; other targets use the same item form as creative
+     * pick-block where vanilla exposes one.
      *
      * <p>Spectator-mode entries render every element (icon, contour, dot, name) at
      * {@link #SPECTATOR_ALPHA} of its normal alpha, on top of any elevation fading.
      *
      * @param backdrop the caller's map-color-under-a-position lookup, for contour contrast
-     * @param x screen-space marker center (already projected/rotated by the caller)
-     * @param y screen-space marker center (already projected/rotated by the caller)
-     * @param blockX the marker's world X (the position {@code x}/{@code y} were projected from)
-     * @param blockZ the marker's world Z (the position {@code x}/{@code y} were projected from)
+     * @param markers visible markers with screen-space positions already projected by the caller
      * @param blocksPerPixel the caller's current zoom, to size the backdrop sampling footprint
-     * @param yDelta the entity's current world Y minus the player's, for elevation dimming
-     * @param live the live entity if still loaded, or {@code null} to force the dot fallback
      */
-    public static void draw(
+    public static void drawAll(
         final GuiDraw draw,
         final MinecraftClient client,
         final ConfluxConfig config,
         final EntityIconManager iconManager,
         final RadarBackdrop backdrop,
-        final RadarEntry entry,
-        final float x,
-        final float y,
-        final double blockX,
-        final double blockZ,
-        final float blocksPerPixel,
-        final int yDelta,
-        final Entity live
+        final List<Marker> markers,
+        final float blocksPerPixel
     ) {
+        if (markers.isEmpty()) {
+            return;
+        }
+        if (!config.radarIconsEnabled || markers.size() == 1) {
+            for (final Marker marker : markers) {
+                drawMarker(draw, client, config, iconManager, backdrop, marker, blocksPerPixel);
+            }
+            return;
+        }
+
+        final List<RadarMarkerClusterer.Candidate> candidates = new ArrayList<>(markers.size());
+        for (int i = 0; i < markers.size(); i++) {
+            final Marker marker = markers.get(i);
+            candidates.add(new RadarMarkerClusterer.Candidate(
+                i, marker.x(), marker.y(), marker.entry().category(), marker.entry().entityId()
+            ));
+        }
+        for (final RadarMarkerClusterer.Cluster cluster
+            : RadarMarkerClusterer.cluster(candidates, outlineHalfSize(config.radarIconSize) * 2f)) {
+            final Marker marker = markers.get(cluster.representativeIndex());
+            final boolean iconDrawn = drawMarker(
+                draw, client, config, iconManager, backdrop, marker, blocksPerPixel
+            );
+            if (cluster.count() > 1) {
+                drawStackCount(
+                    draw, client, marker.x(), marker.y(),
+                    iconDrawn ? config.radarIconSize / 2f : 2.5f,
+                    config.radarIconSize, cluster.count(), marker.entry().spectator()
+                );
+            }
+        }
+    }
+
+    private static boolean drawMarker(
+        final GuiDraw draw,
+        final MinecraftClient client,
+        final ConfluxConfig config,
+        final EntityIconManager iconManager,
+        final RadarBackdrop backdrop,
+        final Marker marker,
+        final float blocksPerPixel
+    ) {
+        final RadarEntry entry = marker.entry();
+        final float x = marker.x();
+        final float y = marker.y();
+        final int yDelta = marker.yDelta();
+        final Entity live = marker.live();
         final MatrixStack matrices = draw.matrices();
         final float alphaScale = entry.spectator() ? SPECTATOR_ALPHA : 1f;
         if (config.radarIconsEnabled && live != null) {
@@ -95,18 +140,30 @@ public final class RadarMarkerRenderer {
                 ? itemIconFor(live)
                 : ItemStack.EMPTY;
             if (!itemIcon.isEmpty()) {
-                final int contourBase = contourBase(backdrop, blockX, blockZ, blocksPerPixel);
-                drawItemIcon(draw, client, iconManager, itemIcon, x, y, yDelta, alphaScale, contourBase);
-                return;
+                final int contourBase = contourBase(
+                    backdrop, marker.blockX(), marker.blockZ(), blocksPerPixel, config.radarIconSize
+                );
+                drawItemIcon(
+                    draw, client, iconManager, itemIcon, x, y, config.radarIconSize,
+                    yDelta, alphaScale, contourBase
+                );
+                return true;
             }
             final EntityIconManager.FaceIcon icon = iconManager.iconFor(live);
             if (icon != null) {
-                final int contourBase = contourBase(backdrop, blockX, blockZ, blocksPerPixel);
-                drawIcon(matrices, client, iconManager, icon, x, y, yDelta, alphaScale, contourBase);
+                final int contourBase = contourBase(
+                    backdrop, marker.blockX(), marker.blockZ(), blocksPerPixel, config.radarIconSize
+                );
+                drawIcon(
+                    matrices, client, iconManager, icon, x, y, config.radarIconSize,
+                    yDelta, alphaScale, contourBase
+                );
                 if (config.radarShowPlayerNames && entry.category() == RadarCategory.PLAYER && entry.name() != null) {
-                    drawCenteredLine(client, draw, entry.name(), x, y + ICON_NAME_OFFSET, alphaScale);
+                    drawCenteredLine(
+                        client, draw, entry.name(), x, y + config.radarIconSize / 2f + 2f, alphaScale
+                    );
                 }
-                return;
+                return true;
             }
         }
         final int color = Argb.scaleAlpha(elevationColor(baseColor(entry.category()), yDelta), alphaScale);
@@ -127,6 +184,7 @@ public final class RadarMarkerRenderer {
                 RenderUtil.fillRect(matrices, x - 1.5f, y - 1.5f, 3f, 3f, color);
                 break;
         }
+        return false;
     }
 
     private static ItemStack itemIconFor(final Entity entity) {
@@ -172,6 +230,7 @@ public final class RadarMarkerRenderer {
         final ItemStack stack,
         final float x,
         final float y,
+        final float iconSize,
         final int yDelta,
         final float alphaScale,
         final int contourBase
@@ -179,12 +238,14 @@ public final class RadarMarkerRenderer {
         final MatrixStack matrices = draw.matrices();
         final int contour = Argb.scaleAlpha(elevationColor(contourBase, yDelta), alphaScale);
         if (iconManager.bindItemOutlineTexture(client, stack)) {
+            final float outlineHalfSize = outlineHalfSize(iconSize);
             RenderUtil.drawTintedQuad(
-                matrices, x - OUTLINE_HALF_SIZE, y - OUTLINE_HALF_SIZE, OUTLINE_SIZE, OUTLINE_SIZE,
+                matrices, x - outlineHalfSize, y - outlineHalfSize,
+                outlineHalfSize * 2f, outlineHalfSize * 2f,
                 0f, 0f, 1f, 1f, contour
             );
         }
-        draw.drawItemIcon(client, stack, x, y, ITEM_ICON_SIZE);
+        draw.drawItemIcon(client, stack, x, y, iconSize);
     }
 
     /**
@@ -193,8 +254,14 @@ public final class RadarMarkerRenderer {
      * as the icon slides across mixed terrain. Base contour only; elevation/spectator treatment
      * is applied at draw time like every other marker element.
      */
-    private static int contourBase(final RadarBackdrop backdrop, final double blockX, final double blockZ, final float blocksPerPixel) {
-        final float reach = (ICON_HALF_SIZE + 1f) * blocksPerPixel;
+    private static int contourBase(
+        final RadarBackdrop backdrop,
+        final double blockX,
+        final double blockZ,
+        final float blocksPerPixel,
+        final float iconSize
+    ) {
+        final float reach = (iconSize / 2f + 1f) * blocksPerPixel;
         final int luminance = (Argb.luminance(backdrop.argbAt(blockX, blockZ))
             + Argb.luminance(backdrop.argbAt(blockX - reach, blockZ))
             + Argb.luminance(backdrop.argbAt(blockX + reach, blockZ))
@@ -219,22 +286,26 @@ public final class RadarMarkerRenderer {
         final EntityIconManager.FaceIcon icon,
         final float x,
         final float y,
+        final float iconSize,
         final int yDelta,
         final float alphaScale,
         final int contourBase
     ) {
         final int contour = Argb.scaleAlpha(elevationColor(contourBase, yDelta), alphaScale);
+        final float iconHalfSize = iconSize / 2f;
+        final float outlineHalfSize = outlineHalfSize(iconSize);
         if (icon.fromSheet() && iconManager.bindOutlineTexture(client)) {
             // The padded outline grid mirrors the sheet grid, so the sheet UV rect addresses
             // the matching mask cell; only the quad grows by the padding ratio.
             RenderUtil.drawTintedQuad(
-                matrices, x - OUTLINE_HALF_SIZE, y - OUTLINE_HALF_SIZE, OUTLINE_SIZE, OUTLINE_SIZE,
+                matrices, x - outlineHalfSize, y - outlineHalfSize,
+                outlineHalfSize * 2f, outlineHalfSize * 2f,
                 icon.u0(), icon.v0(), icon.u1(), icon.v1(), contour
             );
         } else {
-            final float left = x - ICON_HALF_SIZE - 1f;
-            final float top = y - ICON_HALF_SIZE - 1f;
-            final float edge = ICON_SIZE + 2f;
+            final float left = x - iconHalfSize - 1f;
+            final float top = y - iconHalfSize - 1f;
+            final float edge = iconSize + 2f;
             RenderUtil.fillRect(matrices, left, top, edge, 1f, contour);
             RenderUtil.fillRect(matrices, left, top + edge - 1f, edge, 1f, contour);
             RenderUtil.fillRect(matrices, left, top + 1f, 1f, edge - 2f, contour);
@@ -243,16 +314,55 @@ public final class RadarMarkerRenderer {
         final int tint = Argb.scaleAlpha(elevationColor(0xFFFFFFFF, yDelta), alphaScale);
         RenderUtil.bindTexture(client, icon.texture());
         RenderUtil.drawTintedQuad(
-            matrices, x - ICON_HALF_SIZE, y - ICON_HALF_SIZE, ICON_SIZE, ICON_SIZE,
+            matrices, x - iconHalfSize, y - iconHalfSize, iconSize, iconSize,
             icon.u0(), icon.v0(), icon.u1(), icon.v1(), tint
         );
         if (icon.hasOverlay()) {
             RenderUtil.bindTexture(client, icon.overlayTexture());
             RenderUtil.drawTintedQuad(
-                matrices, x - ICON_HALF_SIZE, y - ICON_HALF_SIZE, ICON_SIZE, ICON_SIZE,
+                matrices, x - iconHalfSize, y - iconHalfSize, iconSize, iconSize,
                 icon.ou0(), icon.ov0(), icon.ou1(), icon.ov1(), tint
             );
         }
+    }
+
+    private static float outlineHalfSize(final float iconSize) {
+        return iconSize / 2f * EntityIconOutlineTexture.PADDED_CELL_PX
+            / (float) EntityIconOutlineTexture.CELL_PX;
+    }
+
+    /** Draws a compact count plate centered on the representative marker's bottom-right corner. */
+    private static void drawStackCount(
+        final GuiDraw draw,
+        final MinecraftClient client,
+        final float x,
+        final float y,
+        final float markerHalfSize,
+        final float iconSize,
+        final int count,
+        final boolean spectator
+    ) {
+        final String text = Integer.toString(count);
+        final float alphaScale = spectator ? SPECTATOR_ALPHA : 1f;
+        final float textScale = Math.max(0.4f, Math.min(0.65f, iconSize / 16f));
+        final int textWidth = client.textRenderer.getWidth(text);
+        final float badgeWidth = textWidth * textScale + 2f;
+        final float badgeHeight = client.textRenderer.fontHeight * textScale + 1f;
+        final float centerX = x + markerHalfSize - 0.5f;
+        final float centerY = y + markerHalfSize - 0.5f;
+        final float left = centerX - badgeWidth / 2f;
+        final float top = centerY - badgeHeight / 2f;
+        RenderUtil.fillRect(
+            draw.matrices(), left, top, badgeWidth, badgeHeight,
+            Argb.scaleAlpha(STACK_BADGE_BACKGROUND, alphaScale)
+        );
+        draw.matrices().push();
+        draw.matrices().translate(left + 1f, top + 0.5f, 0f);
+        draw.matrices().scale(textScale, textScale, 1f);
+        draw.drawTextWithShadow(
+            client.textRenderer, text, 0f, 0f, Argb.scaleAlpha(STACK_BADGE_TEXT, alphaScale)
+        );
+        draw.matrices().pop();
     }
 
     private static int baseColor(final RadarCategory category) {

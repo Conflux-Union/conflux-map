@@ -393,6 +393,12 @@ public final class ConfigScreen extends ConfluxScreen {
                     () -> config.radarIconsEnabled, v -> config.radarIconsEnabled = v,
                     radarControlsActive, radarTooltipKey
                 );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.radar.icon_size",
+                    ConfluxConfig.MIN_RADAR_ICON_SIZE, ConfluxConfig.MAX_RADAR_ICON_SIZE,
+                    () -> config.radarIconSize, v -> config.radarIconSize = v,
+                    ConfigScreen::pxText, radarControlsActive, radarTooltipKey
+                );
                 break;
             case WAYPOINTS:
                 y = addToggleRow(

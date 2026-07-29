@@ -30,6 +30,7 @@ import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 //#if MC>=260100
@@ -427,6 +428,7 @@ public final class MinimapHudRenderer {
             layerSelector.current().layer().cacheId(), 0, false, 0, RADAR_BACKDROP_FALLBACK
         );
 
+        final List<RadarMarkerRenderer.Marker> markers = new ArrayList<>();
         for (final RadarEntry entry : radarScanner.snapshot()) {
             double ex = entry.x();
             double ez = entry.z();
@@ -447,10 +449,9 @@ public final class MinimapHudRenderer {
             }
             final float x = centerX + dirX * cos - dirY * sin;
             final float y = centerY + dirX * sin + dirY * cos;
-            RadarMarkerRenderer.draw(
-                draw, client, config, iconManager, backdrop, entry, x, y, ex, ez, blocksPerPixel, yDelta, live
-            );
+            markers.add(new RadarMarkerRenderer.Marker(entry, x, y, ex, ez, yDelta, live));
         }
+        RadarMarkerRenderer.drawAll(draw, client, config, iconManager, backdrop, markers, blocksPerPixel);
     }
 
     private void drawPlayerArrow(final MatrixStack matrices, final float centerX, final float centerY, final float angle) {

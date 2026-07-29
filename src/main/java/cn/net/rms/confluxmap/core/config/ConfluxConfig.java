@@ -15,6 +15,9 @@ public final class ConfluxConfig {
     public static final int MIN_ANNOTATION_ERASER_SIZE = 4;
     public static final int MAX_ANNOTATION_ERASER_SIZE = 64;
     public static final int DEFAULT_ANNOTATION_ERASER_SIZE = 16;
+    public static final int MIN_RADAR_ICON_SIZE = 4;
+    public static final int MAX_RADAR_ICON_SIZE = 16;
+    public static final int DEFAULT_RADAR_ICON_SIZE = 10;
 
     public int schemaVersion = SCHEMA_VERSION;
 
@@ -86,6 +89,8 @@ public final class ConfluxConfig {
     public int radarMaxEntities = 100;
     /** Entity head and item-form icons instead of plain shaped dots when an in-game icon is available. */
     public boolean radarIconsEnabled = true;
+    /** Screen-pixel size shared by entity faces and item-form radar icons. */
+    public int radarIconSize = DEFAULT_RADAR_ICON_SIZE;
     /** 3-D straight-line blocks; 0 means "no cutoff" (see waypoint-ux.md S7). */
     public int waypointRenderDistance = 0;
     /** Show private, client-owned waypoints on every map/world rendering surface. */
@@ -158,6 +163,7 @@ public final class ConfluxConfig {
         c.radarShowPlayerNames = radarShowPlayerNames;
         c.radarMaxEntities = radarMaxEntities;
         c.radarIconsEnabled = radarIconsEnabled;
+        c.radarIconSize = radarIconSize;
         c.waypointRenderDistance = waypointRenderDistance;
         c.localWaypointsVisible = localWaypointsVisible;
         c.sharedWaypointsVisible = sharedWaypointsVisible;
@@ -211,6 +217,7 @@ public final class ConfluxConfig {
         snapshotBudgetPerTick = clamp(snapshotBudgetPerTick, 1, 64);
         gpuTileCacheLimit = clamp(gpuTileCacheLimit, 16, 2048);
         radarMaxEntities = clamp(radarMaxEntities, 1, 500);
+        radarIconSize = clamp(radarIconSize, MIN_RADAR_ICON_SIZE, MAX_RADAR_ICON_SIZE);
         waypointRenderDistance = clamp(waypointRenderDistance, 0, 100_000);
         deathPointsKept = clamp(deathPointsKept, 0, 50);
         if (predictionViewMode == null) {

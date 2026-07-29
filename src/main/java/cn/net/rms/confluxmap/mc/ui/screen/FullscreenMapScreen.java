@@ -2120,6 +2120,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             BACKGROUND_COLOR
         );
 
+        final List<RadarMarkerRenderer.Marker> markers = new ArrayList<>();
         for (final RadarEntry entry : radarScanner.snapshot()) {
             double ex = entry.x();
             double ez = entry.z();
@@ -2137,11 +2138,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 || screenY < -RADAR_CULL_MARGIN || screenY > height + RADAR_CULL_MARGIN) {
                 continue;
             }
-            RadarMarkerRenderer.draw(
-                draw, this.client, config, radarIconManager, backdrop, entry, screenX, screenY,
-                ex, ez, (float) scale, yDelta, live
-            );
+            markers.add(new RadarMarkerRenderer.Marker(
+                entry, screenX, screenY, ex, ez, yDelta, live
+            ));
         }
+        RadarMarkerRenderer.drawAll(
+            draw, this.client, config, radarIconManager, backdrop, markers, (float) scale
+        );
     }
 
     private void drawStructures(final GuiDraw draw, final int mouseX, final int mouseY) {
