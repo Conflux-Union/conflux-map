@@ -1420,8 +1420,16 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         tiles.setViewpoint((int) Math.floor(centerX), (int) Math.floor(centerZ));
         predictionTiles.setViewpoint((int) Math.floor(centerX), (int) Math.floor(centerZ));
         // This screen owns radarViewRange while it's open (MinimapHudRenderer stops writing it -
-        // see its render() javadoc); the viewport half-diagonal is what's actually visible here.
-        radarViewRange.set(Math.hypot(width, height) / 2.0 * scale);
+        // see its render() javadoc).
+        final Optional<PlayerView> radarObserver = gameBridge.player(tickDelta);
+        if (radarObserver.isPresent()) {
+            final PlayerView observer = radarObserver.get();
+            radarViewRange.setForAxisAlignedViewport(
+                observer.x(), observer.z(), centerX, centerZ, width, height, scale
+            );
+        } else {
+            radarViewRange.set(0);
+        }
 
         RenderUtil.fillRect(matrices, 0, 0, width, height, BACKGROUND_COLOR);
         drawGrid(matrices);
