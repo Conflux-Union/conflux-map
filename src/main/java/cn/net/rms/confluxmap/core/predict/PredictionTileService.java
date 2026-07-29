@@ -66,8 +66,10 @@ public final class PredictionTileService {
     private final Map<TileKey, Long> dirty = new HashMap<>();
     /** Guarded by {@code this}: tiles currently being composed on a worker. */
     private final Set<TileKey> inFlight = new HashSet<>();
-    /** Biome variants requested at least once this session, for correction-driven refreshes. */
-    private final Set<TileKey> requestedBiomeTiles = new HashSet<>();
+    /** Prediction variants requested or uploaded at least once this session. */
+    private final Set<TileKey> requestedTiles = new HashSet<>();
+    /** Tracked textures that were last composed under an older view mode. */
+    private final Set<TileKey> staleViewModeTiles = new HashSet<>();
     /** Guarded by {@code this}: output-pixel metadata retained for fullscreen cursor/actions. */
     private final Map<TileKey, TileMetadata> metadataTiles = new HashMap<>();
     /** Recent CPU results used to build a coarser tile without resampling. */
@@ -115,7 +117,25 @@ public final class PredictionTileService {
     }
 
     public void setViewMode(final PredictionViewMode mode) {
-        this.viewMode = mode == null ? PredictionViewMode.EVERYWHERE : mode;
+        final PredictionViewMode nextMode = mode == null ? PredictionViewMode.EVERYWHERE : mode;
+        final SessionGuard.Session session = sessionGuard.current();
+        synchronized (this) {
+            if (nextMode == viewMode) {
+                return;
+            }
+            viewMode = nextMode;
+            staleViewModeTiles.addAll(requestedTiles);
+            if (viewport != null && session.active()
+                && viewport.dimension().equals(session.dimension())) {
+                for (final TileKey key : staleViewModeTiles) {
+                    if (viewport.contains(key)) {
+                        metadataTiles.remove(key);
+                        dirty.put(key, session.token());
+                    }
+                }
+            }
+        }
+        pump();
     }
 
     public PredictionViewMode viewMode() {
@@ -313,7 +333,8 @@ public final class PredictionTileService {
             reloadGeneration++;
             lowerCoverageGeneration++;
             dirty.clear();
-            requestedBiomeTiles.clear();
+            requestedTiles.clear();
+            staleViewModeTiles.clear();
             metadataTiles.clear();
             mipCache.clear();
             lowerCoverageQueue.clear();
@@ -333,6 +354,7 @@ public final class PredictionTileService {
             reloadGeneration++;
             lowerCoverageGeneration++;
             dirty.clear();
+            staleViewModeTiles.clear();
             metadataTiles.clear();
             mipCache.clear();
             lowerCoverageQueue.clear();
@@ -387,6 +409,14 @@ public final class PredictionTileService {
                             metadataTiles.remove(key);
                             dirty.put(key, session.token());
                         }
+                    }
+                }
+            }
+            if (changed && session.active() && dimension.equals(session.dimension())) {
+                for (final TileKey key : staleViewModeTiles) {
+                    if (rect.contains(key)) {
+                        metadataTiles.remove(key);
+                        dirty.put(key, session.token());
                     }
                 }
             }
@@ -469,9 +499,7 @@ public final class PredictionTileService {
             return;
         }
         synchronized (this) {
-            if (BiomeTileKeys.isBiome(key)) {
-                requestedBiomeTiles.add(key);
-            }
+            requestedTiles.add(key);
             // The renderer retries a missing texture every frame. Keep that retry idempotent so
             // one slow native composition cannot continuously requeue itself.
             if (dirty.containsKey(key) || inFlight.contains(key)) {
@@ -484,7 +512,7 @@ public final class PredictionTileService {
 
     private void markBiomeDirtyIfRequested(final TileKey key, final long token) {
         synchronized (this) {
-            if (!requestedBiomeTiles.contains(key)) {
+            if (!requestedTiles.contains(key)) {
                 return;
             }
         }
@@ -571,7 +599,9 @@ public final class PredictionTileService {
             composition = composeTile(key, token);
         } finally {
             synchronized (this) {
-                if (composition != null && generation == reloadGeneration) {
+                if (composition != null && generation == reloadGeneration
+                    && composition.mode() == viewMode) {
+                    requestedTiles.add(key);
                     metadataTiles.put(key, composition.metadata());
                     mipCache.put(key, new PredictionMipCache.Tile(
                         composition.update().argbPixels(),
@@ -582,6 +612,7 @@ public final class PredictionTileService {
                         composition.freshnessValidatedAtMillis(),
                         composition.serverCoverageValidatedAtMillis()
                     ));
+                    staleViewModeTiles.remove(key);
                     invalidateCachedAncestorsAndQueueVisible(key, token);
                     uploads.submitUpload(composition.update());
                 }

@@ -152,6 +152,73 @@ class PredictionTileServiceTest {
     }
 
     @Test
+    void changingViewModeRefreshesCurrentAndReenteredTiles(
+        @TempDir final Path tempDir
+    ) throws InterruptedException {
+        final SessionGuard sessionGuard = new SessionGuard();
+        final MapExecutors executors = new MapExecutors();
+        final TileService uploads = new TileService(
+            new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.FLAT, WorldPreset.DEFAULT);
+        state.setFlatBaseline(new FlatBaseline(1, 63, SurfaceKind.LAND.ordinal(), 11, 0));
+        final PredictionTileService predictionTiles = newService(sessionGuard, state, executors, uploads);
+        predictionTiles.bindCorrectionStore(new CorrectionStore(tempDir));
+        sessionGuard.begin(WORLD, DIM);
+
+        final TileKey firstTile = new TileKey(WORLD, DIM, "surface!pred", 2, 0, 0);
+        final TileKey secondTile = new TileKey(WORLD, DIM, "surface!pred", 2, 1, 0);
+        try {
+            predictionTiles.setViewport(DIM, 2, 0, 0, 0, 0);
+            predictionTiles.requestTile(firstTile);
+            awaitIdle(predictionTiles, 10_000L);
+            final TileUpdate everywhere = uploads.drainUploads(4).stream()
+                .filter(update -> update.key().equals(firstTile))
+                .findFirst()
+                .orElseThrow();
+            assertTrue(
+                java.util.Arrays.stream(everywhere.argbPixels()).anyMatch(pixel -> pixel != 0),
+                "the everywhere mode should draw the seed preview"
+            );
+
+            predictionTiles.setViewport(DIM, 2, 1, 1, 0, 0);
+            predictionTiles.requestTile(secondTile);
+            awaitIdle(predictionTiles, 10_000L);
+            uploads.drainUploads(4);
+
+            predictionTiles.setViewMode(PredictionViewMode.GENERATED_ONLY);
+            awaitIdle(predictionTiles, 10_000L);
+
+            final TileUpdate generatedOnly = uploads.drainUploads(4).stream()
+                .filter(update -> update.key().equals(secondTile))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                    "changing the view mode must upload a replacement for every visible tile"
+                ));
+            assertTrue(
+                java.util.Arrays.stream(generatedOnly.argbPixels()).allMatch(pixel -> pixel == 0),
+                "generated-only mode should clear an ungenerated tile without waiting for a pan"
+            );
+
+            predictionTiles.setViewport(DIM, 2, 0, 0, 0, 0);
+            awaitIdle(predictionTiles, 10_000L);
+            final TileUpdate reentered = uploads.drainUploads(4).stream()
+                .filter(update -> update.key().equals(firstTile))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                    "a tile cached under the old view mode must refresh when it re-enters the viewport"
+                ));
+            assertTrue(
+                java.util.Arrays.stream(reentered.argbPixels()).allMatch(pixel -> pixel == 0),
+                "re-entered tiles must use the current generated-only mode"
+            );
+        } finally {
+            executors.shutdown(2000);
+        }
+    }
+
+    @Test
     void lodOneReusesFourLodZeroTilesIncludingCommittedCorrections(
         @TempDir final Path tempDir
     ) throws InterruptedException {
