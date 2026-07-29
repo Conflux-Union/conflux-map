@@ -58,9 +58,10 @@ public final class CompanionSession {
         this.policy = policy;
         state.set(State.ACTIVE);
         ConfluxMapMod.LOGGER.info(
-            "companion active (worldId={} worldgen={} seedGranted={} corrections={} structures={} chunkLoadState={} entityRadarAllowed={})",
+            "companion active (worldId={} worldgen={} seedGranted={} corrections={} biomeMapAllowed={} structureSearchAllowed={} chunkLoadState={} entityRadarAllowed={})",
             policy.worldId(), policy.worldgenVersion(),
-            policy.flags().seedGranted(), policy.flags().correctionsEnabled(), policy.flags().structureInfoEnabled(),
+            policy.flags().seedGranted(), policy.flags().correctionsEnabled(),
+            !policy.flags().biomeMapForbidden(), !policy.flags().structureSearchForbidden(),
             policy.flags().chunkLoadStateEnabled(), !policy.flags().entityRadarForbidden()
         );
     }
@@ -147,6 +148,18 @@ public final class CompanionSession {
     public boolean entityRadarAllowed() {
         final HelloPolicyS2C current = policy;
         return state.get() != State.ACTIVE || current == null || !current.flags().entityRadarForbidden();
+    }
+
+    /** Older or absent companion policies preserve the historical biome-map behavior. */
+    public boolean biomeMapAllowed() {
+        final HelloPolicyS2C current = policy;
+        return state.get() != State.ACTIVE || current == null || !current.flags().biomeMapForbidden();
+    }
+
+    /** Older or absent companion policies preserve the historical structure-search behavior. */
+    public boolean structureSearchAllowed() {
+        final HelloPolicyS2C current = policy;
+        return state.get() != State.ACTIVE || current == null || !current.flags().structureSearchForbidden();
     }
 
     /**

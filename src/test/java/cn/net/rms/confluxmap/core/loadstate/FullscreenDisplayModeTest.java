@@ -30,4 +30,20 @@ class FullscreenDisplayModeTest {
             FullscreenDisplayMode.CHUNK_LOAD_STATE.next(false)
         );
     }
+
+    @Test
+    void skipsBiomeWhenServerDoesNotAllowIt() {
+        assertEquals(
+            FullscreenDisplayMode.CHUNK_LOAD_STATE,
+            FullscreenDisplayMode.TERRAIN.next(true, false)
+        );
+        assertEquals(
+            FullscreenDisplayMode.TERRAIN,
+            FullscreenDisplayMode.CHUNK_LOAD_STATE.next(true, false)
+        );
+        assertEquals(
+            FullscreenDisplayMode.TERRAIN,
+            FullscreenDisplayMode.TERRAIN.next(false, false)
+        );
+    }
 }

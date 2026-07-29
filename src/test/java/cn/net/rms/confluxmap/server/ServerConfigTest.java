@@ -26,9 +26,10 @@ class ServerConfigTest {
         assertEquals(ServerConfig.SCHEMA_VERSION, c.schemaVersion);
         // shareSeed defaults OFF for security (plan requirement).
         assertEquals(false, c.shareSeed);
+        assertTrue(c.allowBiomeMap);
+        assertTrue(c.allowStructureSearch);
         assertTrue(c.enabled);
         assertTrue(c.shareCorrections);
-        assertFalse(c.shareStructureInfo);
         assertFalse(c.shareChunkLoadState);
         assertTrue(c.allowEntityRadar);
         assertFalse(c.shareWaypoints);
@@ -96,6 +97,24 @@ class ServerConfigTest {
     }
 
     @Test
+    void seedFeaturesAreAllowedUnlessSeedSharingExplicitlyForbidsThem() {
+        final ServerConfig config = new ServerConfig();
+        config.allowBiomeMap = false;
+        config.allowStructureSearch = false;
+
+        assertFalse(ServerNetworking.policyFlags(config).biomeMapForbidden());
+        assertFalse(ServerNetworking.policyFlags(config).structureSearchForbidden());
+
+        config.shareSeed = true;
+        assertTrue(ServerNetworking.policyFlags(config).biomeMapForbidden());
+        assertTrue(ServerNetworking.policyFlags(config).structureSearchForbidden());
+
+        config.enabled = false;
+        assertFalse(ServerNetworking.policyFlags(config).biomeMapForbidden());
+        assertFalse(ServerNetworking.policyFlags(config).structureSearchForbidden());
+    }
+
+    @Test
     void normalizeClampsOutliers() {
         final ServerConfig c = new ServerConfig();
         c.maxTilesPerRequest = -5;
@@ -103,7 +122,6 @@ class ServerConfigTest {
         c.maxBytesPerSecondPerPlayer = 1;
         c.minRequestIntervalMs = -100;
         c.maxChunkSummariesPerSecond = 0;
-        c.shareStructureInfo = true;
         c.maxSharedWaypointsPerWorld = 0;
         c.maxSharedWaypointsPerPlayer = 50_000;
         c.sharedWaypointMutationsPerMinute = 50_000;
@@ -113,7 +131,6 @@ class ServerConfigTest {
         assertEquals(1024, c.maxBytesPerSecondPerPlayer);
         assertEquals(0, c.minRequestIntervalMs);
         assertEquals(1, c.maxChunkSummariesPerSecond);
-        assertFalse(c.shareStructureInfo);
         assertEquals(1, c.maxSharedWaypointsPerWorld);
         assertEquals(1, c.maxSharedWaypointsPerPlayer);
         assertEquals(6_000, c.sharedWaypointMutationsPerMinute);
@@ -136,6 +153,8 @@ class ServerConfigTest {
         final ServerConfigIo io = new ServerConfigIo(tmp.resolve("server.json"), LOGGER);
         final ServerConfig original = new ServerConfig();
         original.shareSeed = true;
+        original.allowBiomeMap = false;
+        original.allowStructureSearch = false;
         original.shareChunkLoadState = true;
         original.allowEntityRadar = false;
         original.maxTilesPerRequest = 5;
@@ -152,8 +171,9 @@ class ServerConfigTest {
         assertEquals(original.schemaVersion, loaded.schemaVersion);
         assertEquals(original.enabled, loaded.enabled);
         assertEquals(original.shareSeed, loaded.shareSeed);
+        assertEquals(original.allowBiomeMap, loaded.allowBiomeMap);
+        assertEquals(original.allowStructureSearch, loaded.allowStructureSearch);
         assertEquals(original.shareCorrections, loaded.shareCorrections);
-        assertEquals(original.shareStructureInfo, loaded.shareStructureInfo);
         assertEquals(original.shareChunkLoadState, loaded.shareChunkLoadState);
         assertEquals(original.allowEntityRadar, loaded.allowEntityRadar);
         assertEquals(original.maxTilesPerRequest, loaded.maxTilesPerRequest);
@@ -195,7 +215,8 @@ class ServerConfigTest {
         final Path file = tmp.resolve("server.json");
         Files.writeString(
             file,
-            "{\"schemaVersion\":1,\"shareSeed\":true,\"maxPatchLod\":2,\"maxPresenceLod\":4}",
+            "{\"schemaVersion\":1,\"shareSeed\":true,\"shareStructureInfo\":true,"
+                + "\"maxPatchLod\":2,\"maxPresenceLod\":4}",
             StandardCharsets.UTF_8
         );
 
@@ -203,11 +224,14 @@ class ServerConfigTest {
 
         assertTrue(loaded.shareSeed);
         assertTrue(loaded.allowEntityRadar);
+        assertTrue(loaded.allowBiomeMap);
+        assertTrue(loaded.allowStructureSearch);
         // The upgrade is persisted so the on-disk file now carries the full schema.
         final String rewritten = Files.readString(file, StandardCharsets.UTF_8);
         assertTrue(rewritten.contains("\"sharedWaypointMutationsPerMinute\""));
         assertTrue(rewritten.contains("\"allowEntityRadar\": true"));
         assertTrue(rewritten.contains("\"shareSeed\": true"));
+        assertFalse(rewritten.contains("shareStructureInfo"));
         assertFalse(rewritten.contains("maxPatchLod"), "LOD sync is no longer operator-capped");
         assertFalse(rewritten.contains("maxPresenceLod"));
     }
@@ -229,7 +253,7 @@ class ServerConfigTest {
         assertEquals(256 * 1024, loaded.maxBytesPerSecondPerPlayer);
         assertEquals(100, loaded.minRequestIntervalMs);
         final String rewritten = Files.readString(file, StandardCharsets.UTF_8);
-        assertTrue(rewritten.contains("\"schemaVersion\": 3"));
+        assertTrue(rewritten.contains("\"schemaVersion\": " + ServerConfig.SCHEMA_VERSION));
         assertTrue(rewritten.contains("\"maxPendingTilesPerPlayer\": 256"));
     }
 
@@ -253,12 +277,13 @@ class ServerConfigTest {
     @Test
     void loadKeepsNewerSchemaFileIntact(@TempDir final Path tmp) throws IOException {
         final Path file = tmp.resolve("server.json");
-        final String futureJson = "{\"schemaVersion\": 4, \"futureField\": true}";
+        final int futureSchema = ServerConfig.SCHEMA_VERSION + 1;
+        final String futureJson = "{\"schemaVersion\": " + futureSchema + ", \"futureField\": true}";
         Files.writeString(file, futureJson, StandardCharsets.UTF_8);
 
         final ServerConfig loaded = new ServerConfigIo(file, LOGGER).load();
 
-        assertEquals(4, loaded.schemaVersion);
+        assertEquals(futureSchema, loaded.schemaVersion);
         assertEquals(futureJson, Files.readString(file, StandardCharsets.UTF_8));
     }
 

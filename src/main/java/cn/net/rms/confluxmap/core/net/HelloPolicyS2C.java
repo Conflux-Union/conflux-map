@@ -25,59 +25,79 @@ public record HelloPolicyS2C(
      * Top-level booleans the server advertises. {@code seedGranted} means a per-dim {@code seed}
      * is included in {@link DimDescriptor} - off by default (server config {@code shareSeed=false}).
      * {@code chunkLoadStateEnabled} is also opt-in because the loaded set can reveal activity.
-     * {@code entityRadarForbidden} is intentionally negative: peers predating this flag decode
-     * its absent bit as "not forbidden" and preserve the historical radar behavior.
+     * {@code biomeMapForbidden}, {@code structureSearchForbidden}, and
+     * {@code entityRadarForbidden} are intentionally negative: peers predating these flags
+     * decode absent bits as "not forbidden" and preserve the historical behavior.
+     * Bit 2 formerly advertised reserved structure-verification data that no server version
+     * emitted; it now carries the biome-map policy without changing the frame shape.
      */
     public record Flags(
         boolean seedGranted,
         boolean correctionsEnabled,
-        boolean structureInfoEnabled,
+        boolean biomeMapForbidden,
         boolean chunkLoadStateEnabled,
         boolean entityRadarForbidden,
         boolean correctionInvalidationEnabled,
-        boolean chunkRangeCorrectionEnabled
+        boolean chunkRangeCorrectionEnabled,
+        boolean structureSearchForbidden
     ) {
         public Flags(
             final boolean seedGranted,
             final boolean correctionsEnabled,
-            final boolean structureInfoEnabled
+            final boolean biomeMapForbidden
         ) {
-            this(seedGranted, correctionsEnabled, structureInfoEnabled, false, false, false, false);
+            this(seedGranted, correctionsEnabled, biomeMapForbidden, false, false, false, false, false);
         }
 
         public Flags(
             final boolean seedGranted,
             final boolean correctionsEnabled,
-            final boolean structureInfoEnabled,
+            final boolean biomeMapForbidden,
             final boolean chunkLoadStateEnabled
         ) {
-            this(seedGranted, correctionsEnabled, structureInfoEnabled, chunkLoadStateEnabled, false, false, false);
+            this(seedGranted, correctionsEnabled, biomeMapForbidden, chunkLoadStateEnabled, false, false, false, false);
         }
 
         public Flags(
             final boolean seedGranted,
             final boolean correctionsEnabled,
-            final boolean structureInfoEnabled,
+            final boolean biomeMapForbidden,
             final boolean chunkLoadStateEnabled,
             final boolean entityRadarForbidden
         ) {
             this(
-                seedGranted, correctionsEnabled, structureInfoEnabled,
-                chunkLoadStateEnabled, entityRadarForbidden, false, false
+                seedGranted, correctionsEnabled, biomeMapForbidden,
+                chunkLoadStateEnabled, entityRadarForbidden, false, false, false
             );
         }
 
         public Flags(
             final boolean seedGranted,
             final boolean correctionsEnabled,
-            final boolean structureInfoEnabled,
+            final boolean biomeMapForbidden,
             final boolean chunkLoadStateEnabled,
             final boolean entityRadarForbidden,
             final boolean correctionInvalidationEnabled
         ) {
             this(
-                seedGranted, correctionsEnabled, structureInfoEnabled,
-                chunkLoadStateEnabled, entityRadarForbidden, correctionInvalidationEnabled, false
+                seedGranted, correctionsEnabled, biomeMapForbidden,
+                chunkLoadStateEnabled, entityRadarForbidden, correctionInvalidationEnabled, false, false
+            );
+        }
+
+        public Flags(
+            final boolean seedGranted,
+            final boolean correctionsEnabled,
+            final boolean biomeMapForbidden,
+            final boolean chunkLoadStateEnabled,
+            final boolean entityRadarForbidden,
+            final boolean correctionInvalidationEnabled,
+            final boolean chunkRangeCorrectionEnabled
+        ) {
+            this(
+                seedGranted, correctionsEnabled, biomeMapForbidden,
+                chunkLoadStateEnabled, entityRadarForbidden, correctionInvalidationEnabled,
+                chunkRangeCorrectionEnabled, false
             );
         }
     }

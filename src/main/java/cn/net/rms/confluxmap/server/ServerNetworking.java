@@ -237,15 +237,16 @@ public final class ServerNetworking {
     }
 
     static HelloPolicyS2C.Flags policyFlags(final ServerConfig cfg) {
-        // The v1 frame reserves structure entries, but RegionSummaryService does not emit them yet.
+        final boolean sharedSeedPolicy = cfg.enabled && cfg.shareSeed;
         return new HelloPolicyS2C.Flags(
-            cfg.enabled && cfg.shareSeed,
+            sharedSeedPolicy,
             cfg.enabled && cfg.shareCorrections,
-            false,
+            sharedSeedPolicy && !cfg.allowBiomeMap,
             cfg.enabled && cfg.shareChunkLoadState,
             cfg.enabled && !cfg.allowEntityRadar,
             cfg.enabled && cfg.shareCorrections,
-            cfg.enabled && cfg.shareCorrections
+            cfg.enabled && cfg.shareCorrections,
+            sharedSeedPolicy && !cfg.allowStructureSearch
         );
     }
 

@@ -55,8 +55,9 @@ import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatCodec;
-import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.net.ChunkLoadStateClient;
+import cn.net.rms.confluxmap.mc.net.CompanionSession;
+import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
 import cn.net.rms.confluxmap.mc.radar.RadarBackdrop;
@@ -216,6 +217,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private final WaypointRenderCatalog waypointRenderCatalog;
     private final ConfluxConfig config;
     private final SharedWaypointClient sharedWaypoints;
+    private final CompanionSession companion;
     private final ChunkLoadStateClient chunkLoadStates;
     private final EntityRadarScanner radarScanner;
     private final EntityIconManager radarIconManager;
@@ -259,6 +261,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private ButtonWidget annotationLabelButton;
     private ButtonWidget annotationUndoButton;
     private ButtonWidget annotationRedoButton;
+    private FullscreenDisplayMode controlsDisplayMode;
     private boolean annotationColorMenuOpen;
     private AnnotationTool annotationTool = AnnotationTool.SELECT;
     private AnnotationPersistence newAnnotationPersistence = AnnotationPersistence.PERSISTENT;
@@ -291,6 +294,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         this.waypointRenderCatalog = app.waypointRenderCatalog();
         this.config = app.config();
         this.sharedWaypoints = app.sharedWaypoints();
+        this.companion = app.companionSession();
         this.chunkLoadStates = app.chunkLoadStateClient();
         this.radarScanner = app.radarScanner();
         this.radarIconManager = app.entityIconManager();
@@ -340,6 +344,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         annotationToolbarBounds = null;
         annotationColorMenuBounds = null;
         displayModeButton = null;
+        controlsDisplayMode = null;
         loadStateDetailButton = null;
 
         final int x = width - MARGIN - CONTROL_SIZE;
@@ -352,6 +357,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             0,
             ignored -> cycleDisplayMode()
         ));
+        controlsDisplayMode = displayMode();
+        refreshDisplayModeButton();
         y += CONTROL_SIZE + CONTROL_GAP;
         localVisibilityButton = addDrawableChild(new MapIconButton(
             x, y, LOCAL_WAYPOINT_ICON, LOCAL_CONTROL_ACCENT, b -> {
@@ -809,7 +816,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     private void cycleDisplayMode() {
         final FullscreenDisplayMode current = displayMode();
-        config.fullscreenDisplayMode = current.next(chunkLoadStates.available());
+        config.fullscreenDisplayMode = current.next(
+            chunkLoadStates.available(), companion.biomeMapAllowed()
+        );
         if (current == FullscreenDisplayMode.CHUNK_LOAD_STATE
             && config.fullscreenDisplayMode != FullscreenDisplayMode.CHUNK_LOAD_STATE) {
             chunkLoadStates.deactivate();
@@ -850,13 +859,15 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         if (!chunkLoadStates.available() && chunkLoadStates.snapshot().active()) {
             chunkLoadStates.reset();
         }
+        if (controlsDisplayMode != displayMode()) {
+            rebuildWaypointControls();
+            return;
+        }
         if (loadStateMode() != (loadStateDetailButton != null)) {
             rebuildWaypointControls();
             return;
         }
-        if (displayModeButton != null) {
-            displayModeButton.setMessage(displayModeTooltip());
-        }
+        refreshDisplayModeButton();
         final SharedWaypointAvailability availability = sharedWaypoints.availability();
         if (sharedAvailability == null || availability.enabled() != sharedAvailability.enabled()) {
             rebuildWaypointControls();
@@ -1512,6 +1523,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             && !chunkLoadStates.available()) {
             return FullscreenDisplayMode.TERRAIN;
         }
+        if (config.fullscreenDisplayMode == FullscreenDisplayMode.BIOME
+            && !companion.biomeMapAllowed()) {
+            return FullscreenDisplayMode.TERRAIN;
+        }
         return config.fullscreenDisplayMode;
     }
 
@@ -1529,10 +1544,26 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             case CHUNK_LOAD_STATE -> "confluxmap.map.display_mode.chunk_load_state";
             case BIOME -> "confluxmap.map.display_mode.biome";
         };
-        return Texts.translatable(
+        final Text currentMode = Texts.translatable(
             "confluxmap.map.display_mode",
             Texts.translatable(valueKey).getString()
         );
+        return companion.biomeMapAllowed()
+            ? currentMode
+            : Texts.translatable(
+                "confluxmap.map.display_mode.biome_disabled_by_server",
+                currentMode.getString()
+            );
+    }
+
+    private void refreshDisplayModeButton() {
+        if (displayModeButton == null) {
+            return;
+        }
+        displayModeButton.setMessage(displayModeTooltip());
+        displayModeButton.active = displayMode().next(
+            chunkLoadStates.available(), companion.biomeMapAllowed()
+        ) != displayMode();
     }
 
     private Text loadStateDetailLabel() {
@@ -1702,9 +1733,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             tooltip = Texts.translatable("confluxmap.map.location_menu.teleport_unavailable");
         } else if (structureSearchButton != null && structureSearchButton.isHovered()) {
             tooltip = Texts.translatable(
-                structureSearchButton.active
-                    ? "confluxmap.map.structure_search.tooltip"
-                    : "confluxmap.map.structure_search.unavailable"
+                !companion.structureSearchAllowed()
+                    ? "confluxmap.map.structure_search.disabled_by_server"
+                    : structureSearchButton.active
+                        ? "confluxmap.map.structure_search.tooltip"
+                        : "confluxmap.map.structure_search.unavailable"
             );
         } else if (annotationTooltip != null) {
             tooltip = annotationTooltip;
@@ -2111,7 +2144,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     private void drawStructures(final GuiDraw draw, final int mouseX, final int mouseY) {
         hoveredStructure = null;
-        if (!config.predictionShowStructures || currentLod() > 2 || !predictionState.seedKnown()) {
+        if (!companion.structureSearchAllowed() || !config.predictionShowStructures
+            || currentLod() > 2 || !predictionState.seedKnown()) {
             return;
         }
         final int minX = (int) Math.floor(centerX - width / 2.0 * scale);
@@ -2570,11 +2604,15 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             return;
         }
         final DimensionId dimension = gameBridge.session().dimension();
-        structureSearchButton.active = predictionState.structuresCubiomesBacked(dimension)
+        structureSearchButton.active = companion.structureSearchAllowed()
+            && predictionState.structuresCubiomesBacked(dimension)
             && !structureMarkers.availableTypes(dimension).isEmpty();
     }
 
     private void openStructureSearch() {
+        if (!companion.structureSearchAllowed()) {
+            return;
+        }
         final DimensionId dimension = gameBridge.session().dimension();
         MinecraftClient.getInstance().setScreen(new StructureSearchScreen(
             this,

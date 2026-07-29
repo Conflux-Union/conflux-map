@@ -132,7 +132,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
         predictionState = new PredictionState();
         structureMarkerService = new StructureMarkerService(
             FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("cache"),
-            predictionState
+            predictionState,
+            companionSession::structureSearchAllowed
         );
         predictionTileService = new PredictionTileService(sessionGuard, predictionState, executors, tileService);
         predictionTileService.setViewMode(config.predictionViewMode);

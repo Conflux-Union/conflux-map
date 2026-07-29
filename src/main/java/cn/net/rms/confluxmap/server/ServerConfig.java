@@ -12,7 +12,7 @@ import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProto;
  * ON so a fresh server install gets map-sync benefits without extra setup.
  */
 public final class ServerConfig {
-    public static final int SCHEMA_VERSION = 3;
+    public static final int SCHEMA_VERSION = 4;
 
     public int schemaVersion = SCHEMA_VERSION;
 
@@ -27,10 +27,19 @@ public final class ServerConfig {
      * explicitly when the prediction underlay matters more than seed secrecy.
      */
     public boolean shareSeed = false;
+    /**
+     * Whether cooperating clients may use the fullscreen biome-map mode while the seed is
+     * shared. This is a UI policy, not a secrecy boundary: a client that knows the seed can
+     * derive biome locations independently.
+     */
+    public boolean allowBiomeMap = true;
+    /**
+     * Whether cooperating clients may render or search seed-derived structure candidates while
+     * the seed is shared. This cannot prevent a modified client from deriving the same data.
+     */
+    public boolean allowStructureSearch = true;
     /** Whether the server will serve map corrections (MAP_PATCH). S3 frames the channel; S4 fills it. */
     public boolean shareCorrections = true;
-    /** Reserved protocol setting. Forced OFF until the server emits real structure verification data. */
-    public boolean shareStructureInfo = false;
     /** Whether clients may see the server's currently loaded chunks and effective ticket levels. */
     public boolean shareChunkLoadState = false;
     /** Whether cooperating Conflux Map clients may scan and render their entity radar. */
@@ -56,7 +65,6 @@ public final class ServerConfig {
 
     /** Clamp out-of-range values loaded from a hand-edited file. */
     public void normalize() {
-        shareStructureInfo = false;
         maxTilesPerRequest = clamp(maxTilesPerRequest, 1, 255);
         maxPendingTilesPerPlayer = clamp(maxPendingTilesPerPlayer, 1, 1024);
         maxBytesPerSecondPerPlayer = clamp(maxBytesPerSecondPerPlayer, 1024, 1 << 20);

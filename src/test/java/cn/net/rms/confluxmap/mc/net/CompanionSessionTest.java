@@ -51,13 +51,42 @@ class CompanionSessionTest {
         assertTrue(session.entityRadarAllowed());
     }
 
+    @Test
+    void onlyAnActiveCompanionPolicyCanForbidSeedFeatures() {
+        final CompanionSession session = new CompanionSession();
+        assertTrue(session.biomeMapAllowed());
+        assertTrue(session.structureSearchAllowed());
+
+        session.onPolicy(policy(
+            "11111111-2222-3333-4444-555555555555", false, true, true
+        ));
+        assertFalse(session.biomeMapAllowed());
+        assertFalse(session.structureSearchAllowed());
+
+        session.reset();
+        assertTrue(session.biomeMapAllowed());
+        assertTrue(session.structureSearchAllowed());
+    }
+
     private static HelloPolicyS2C policy(final String worldId) {
         return policy(worldId, false);
     }
 
     private static HelloPolicyS2C policy(final String worldId, final boolean entityRadarForbidden) {
+        return policy(worldId, entityRadarForbidden, false, false);
+    }
+
+    private static HelloPolicyS2C policy(
+        final String worldId,
+        final boolean entityRadarForbidden,
+        final boolean biomeMapForbidden,
+        final boolean structureSearchForbidden
+    ) {
         return new HelloPolicyS2C(
-            new HelloPolicyS2C.Flags(false, true, true, false, entityRadarForbidden),
+            new HelloPolicyS2C.Flags(
+                false, true, biomeMapForbidden, false, entityRadarForbidden,
+                false, false, structureSearchForbidden
+            ),
             worldId,
             "1.17.1",
             new HelloPolicyS2C.Budgets(65_536, 8, 300, 2),

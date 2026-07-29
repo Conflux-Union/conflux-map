@@ -131,7 +131,7 @@ public final class MsgCodec {
         if (f.correctionsEnabled()) {
             flagBits |= 2;
         }
-        if (f.structureInfoEnabled()) {
+        if (f.biomeMapForbidden()) {
             flagBits |= 4;
         }
         if (f.chunkLoadStateEnabled()) {
@@ -145,6 +145,9 @@ public final class MsgCodec {
         }
         if (f.chunkRangeCorrectionEnabled()) {
             flagBits |= 64;
+        }
+        if (f.structureSearchForbidden()) {
+            flagBits |= 128;
         }
         out.writeByte(flagBits);
         writeUtf(out, m.worldId());
@@ -229,7 +232,7 @@ public final class MsgCodec {
         if (f.correctionsEnabled()) {
             flagBits |= 2;
         }
-        if (f.structureInfoEnabled()) {
+        if (f.biomeMapForbidden()) {
             flagBits |= 4;
         }
         if (f.chunkLoadStateEnabled()) {
@@ -243,6 +246,9 @@ public final class MsgCodec {
         }
         if (f.chunkRangeCorrectionEnabled()) {
             flagBits |= 64;
+        }
+        if (f.structureSearchForbidden()) {
+            flagBits |= 128;
         }
         out.writeByte(flagBits);
         final HelloPolicyS2C.Budgets b = m.budgets();
@@ -492,7 +498,8 @@ public final class MsgCodec {
             (flagBits & 8) != 0,
             (flagBits & 16) != 0,
             (flagBits & 32) != 0,
-            (flagBits & 64) != 0
+            (flagBits & 64) != 0,
+            (flagBits & 128) != 0
         );
         final String worldId = readUtf(in);
         final String worldgenVersion = readUtf(in);
@@ -569,7 +576,8 @@ public final class MsgCodec {
             (flagBits & 8) != 0,
             (flagBits & 16) != 0,
             (flagBits & 32) != 0,
-            (flagBits & 64) != 0
+            (flagBits & 64) != 0,
+            (flagBits & 128) != 0
         );
         final int maxBytesPerSec = in.readInt();
         final int maxTilesPerReq = in.readUnsignedShort();

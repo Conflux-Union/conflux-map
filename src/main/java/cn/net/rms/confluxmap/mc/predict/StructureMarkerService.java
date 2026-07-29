@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 
 /**
  * Owns structure-marker session state, native candidate lookup, and persistence. UI code only
@@ -23,12 +24,18 @@ import java.util.Set;
 public final class StructureMarkerService {
     private final Path cacheRoot;
     private final PredictionState prediction;
+    private final BooleanSupplier structureSearchAllowed;
     private StructureIndex current;
     private DimensionId currentDimension;
 
-    public StructureMarkerService(final Path cacheRoot, final PredictionState prediction) {
+    public StructureMarkerService(
+        final Path cacheRoot,
+        final PredictionState prediction,
+        final BooleanSupplier structureSearchAllowed
+    ) {
         this.cacheRoot = cacheRoot;
         this.prediction = prediction;
+        this.structureSearchAllowed = structureSearchAllowed;
     }
 
     public synchronized void onSessionChanged(final SessionGuard.Session session) {
@@ -87,7 +94,9 @@ public final class StructureMarkerService {
         final int minBlockZ,
         final int maxBlockZ
     ) {
-        return current == null ? List.of() : current.query(minBlockX, maxBlockX, minBlockZ, maxBlockZ);
+        return current == null || !structureSearchAllowed.getAsBoolean()
+            ? List.of()
+            : current.query(minBlockX, maxBlockX, minBlockZ, maxBlockZ);
     }
 
     public synchronized List<StructureIndex.Marker> query(
@@ -117,7 +126,8 @@ public final class StructureMarkerService {
         final double blocksPerPixel,
         final Set<StructureIndex.StructureType> includedTypes
     ) {
-        if (current == null || currentDimension == null || includedTypes.isEmpty()) {
+        if (current == null || currentDimension == null || includedTypes.isEmpty()
+            || !structureSearchAllowed.getAsBoolean()) {
             return List.of();
         }
         final EnumSet<StructureIndex.StructureType> visible =
@@ -129,7 +139,9 @@ public final class StructureMarkerService {
     }
 
     public synchronized EnumSet<StructureIndex.StructureType> availableTypes(final DimensionId dimension) {
-        return StructureIndex.StructureType.availableIn(prediction.mcVersion(), dimension);
+        return structureSearchAllowed.getAsBoolean()
+            ? StructureIndex.StructureType.availableIn(prediction.mcVersion(), dimension)
+            : EnumSet.noneOf(StructureIndex.StructureType.class);
     }
 
     public int mcVersion() {
@@ -142,7 +154,9 @@ public final class StructureMarkerService {
         final int blockZ,
         final int maxRadius
     ) {
-        return current == null ? Optional.empty() : current.findNearest(type, blockX, blockZ, maxRadius);
+        return current == null || !structureSearchAllowed.getAsBoolean()
+            ? Optional.empty()
+            : current.findNearest(type, blockX, blockZ, maxRadius);
     }
 
     public synchronized void flush() {
@@ -159,7 +173,8 @@ public final class StructureMarkerService {
         final int maxRegionX,
         final int maxRegionZ
     ) {
-        if (!type.supports(prediction.mcVersion(), session.dimension())
+        if (!structureSearchAllowed.getAsBoolean()
+            || !type.supports(prediction.mcVersion(), session.dimension())
             || !prediction.structuresCubiomesBacked(session.dimension())) {
             return new long[0];
         }
@@ -210,7 +225,8 @@ public final class StructureMarkerService {
         final int blockZ,
         final int maxRadius
     ) {
-        if (!type.supports(prediction.mcVersion(), session.dimension())
+        if (!structureSearchAllowed.getAsBoolean()
+            || !type.supports(prediction.mcVersion(), session.dimension())
             || !prediction.structuresCubiomesBacked(session.dimension())) {
             return OptionalLong.empty();
         }

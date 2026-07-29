@@ -133,9 +133,10 @@ public final class ConfluxMapCompanion {
             sharedWaypoints = loadSharedWaypoints(server);
         }
         ConfluxMapMod.LOGGER.info(
-            "companion ready (shareSeed={} shareCorrections={} shareChunkLoadState={} allowEntityRadar={} shareWaypoints={} maxTilesPerRequest={})",
-            config.shareSeed, config.shareCorrections, chunkLoadStates != null,
-            config.allowEntityRadar, sharedWaypoints != null, config.maxTilesPerRequest
+            "companion ready (shareSeed={} allowBiomeMap={} allowStructureSearch={} shareCorrections={} shareChunkLoadState={} allowEntityRadar={} shareWaypoints={} maxTilesPerRequest={})",
+            config.shareSeed, config.allowBiomeMap, config.allowStructureSearch,
+            config.shareCorrections, chunkLoadStates != null, config.allowEntityRadar,
+            sharedWaypoints != null, config.maxTilesPerRequest
         );
     }
 

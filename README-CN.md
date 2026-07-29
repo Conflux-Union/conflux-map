@@ -102,6 +102,16 @@ Conflux Map 是一个面向 Minecraft 1.17.1、整条 1.21 线以及 26.1 的 Fa
 识别到 Conflux Map 格式或带 `X/Y/Z` 标签的消息时，聊天中会提供点击导入动作，并在
 实际保存前打开本地坐标点编辑表单。
 
+## 服务端种子功能策略
+
+开启 `shareSeed` 后，服务端管理员可以在 `config/confluxmap/server.json` 中分别设置
+`allowBiomeMap` 和 `allowStructureSearch`。两项默认都是 `true`。将其中一项设为
+`false` 并重启服务器后，正常客户端会禁用全屏群系模式，或禁用结构图层和最近候选
+位置查找。
+
+这些配置是客户端策略，不是反作弊。服务端一旦共享种子，修改过的客户端或外部工具
+仍然可以自行推算相同的群系和结构数据。
+
 ## 构建
 
 需要 JDK 21 或更高版本。其余的东西 —— Minecraft、映射表、Fabric API，以及 `26.1.2`

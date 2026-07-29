@@ -127,6 +127,18 @@ outgoing messages (Conflux Map and Xaero formats) before confirmation. Recognize
 Map or labelled `X/Y/Z` messages expose a click-to-import action that opens the
 local waypoint editor before anything is saved.
 
+## Server seed-feature policy
+
+When `shareSeed` is enabled, server operators can independently set
+`allowBiomeMap` and `allowStructureSearch` in
+`config/confluxmap/server.json`. Both default to `true`. Setting one to
+`false` makes cooperating clients disable the fullscreen biome mode or the
+structure layer and nearest-candidate search after the server restarts.
+
+These settings are client policy, not anti-cheat. Once a server shares its
+seed, a modified client or an external tool can derive the same biome and
+structure data independently.
+
 ## Building
 
 Requires JDK 21 or newer. Everything else — Minecraft, mappings, Fabric API, and the JDK 25 the

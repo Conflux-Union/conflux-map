@@ -162,4 +162,7 @@ client results is omitted from `MAP_VIEW_REQ`, so it consumes no server scan or 
 
 Prediction is honest about its limits: the companion does not verify structure existence, so
 structure markers remain candidates. No server seed is shared unless the operator enables
-`shareSeed`.
+`shareSeed`. While sharing it, the operator can separately disable the biome-map mode and
+structure candidate layer/search for cooperating clients through `allowBiomeMap` and
+`allowStructureSearch`. These policy flags are not an anti-cheat boundary because possession of
+the seed is sufficient to derive the same data independently.
