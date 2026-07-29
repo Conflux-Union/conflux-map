@@ -11,6 +11,7 @@ import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
  */
 public final class ConfluxConfig {
     public static final int SCHEMA_VERSION = 2;
+    public static final int DEFAULT_MINIMAP_SIZE = 90;
     public static final int MIN_ANNOTATION_ERASER_SIZE = 4;
     public static final int MAX_ANNOTATION_ERASER_SIZE = 64;
     public static final int DEFAULT_ANNOTATION_ERASER_SIZE = 16;
@@ -40,7 +41,7 @@ public final class ConfluxConfig {
     /** Top-left origin as a fraction of the available vertical HUD travel. */
     public double minimapPositionY = 0.0;
     public Shape minimapShape = Shape.SQUARE;
-    public int minimapSize = 128;
+    public int minimapSize = DEFAULT_MINIMAP_SIZE;
     public boolean minimapRotate = true;
     public int minimapZoomIndex = 1;
     public boolean showCoordinates = true;
