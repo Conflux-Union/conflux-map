@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.ui.hud;
 
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.compat.Regs;
@@ -144,7 +145,7 @@ public final class MinimapHudRenderer {
         final GuiDraw draw = GuiDraw.of(matrices);
     //#endif
         textures.beginFrame();
-        final boolean fullscreenOpen = client.currentScreen instanceof FullscreenMapScreen;
+        final boolean fullscreenOpen = MinecraftAccess.screen(client) instanceof FullscreenMapScreen;
         if (!config.minimapEnabled || !gameBridge.session().active() || fullscreenOpen) {
             // FullscreenMapScreen owns radarViewRange while it's open; otherwise the minimap
             // isn't rendering at all, so there's no visible map surface for the radar to scan.

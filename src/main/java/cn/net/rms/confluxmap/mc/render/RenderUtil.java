@@ -3,7 +3,9 @@ package cn.net.rms.confluxmap.mc.render;
 import cn.net.rms.confluxmap.core.util.Argb;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
+//#if MC<260200
 import net.minecraft.client.font.TextRenderer;
+//#endif
 import net.minecraft.client.render.GameRenderer;
 //#if MC>=12108
 //$$ import com.mojang.blaze3d.textures.GpuTextureView;
@@ -29,7 +31,9 @@ import net.minecraft.client.render.GameRenderer;
 //#if MC>=12105
 //$$ import com.mojang.blaze3d.systems.RenderPass;
 //#endif
+//#if MC<260200
 import net.minecraft.client.render.VertexConsumerProvider;
+//#endif
 //#if MC<12105
 import net.minecraft.client.render.VertexFormat;
 //#endif
@@ -132,7 +136,13 @@ public final class RenderUtil {
 
     //#if MC>=12105
     //$$ static Framebuffer drawTarget() {
+    //#if MC>=260200
+    //$$     return drawTarget == null
+    //$$         ? Minecraft.getInstance().gameRenderer.mainRenderTarget()
+    //$$         : drawTarget;
+    //#else
     //$$     return drawTarget == null ? MinecraftClient.getInstance().getFramebuffer() : drawTarget;
+    //#endif
     //$$ }
 
     //$$ static void setDrawTarget(final Framebuffer target) {
@@ -212,6 +222,7 @@ public final class RenderUtil {
         //#endif
     }
 
+    //#if MC<260200
     /** Draws fully-lit marker text through the versioned text-layer argument. */
     public static void drawSeeThroughText(
         final TextRenderer textRenderer,
@@ -234,6 +245,7 @@ public final class RenderUtil {
         );
         //#endif
     }
+    //#endif
 
     /**
      * Binds an already-vanilla-managed texture (player skin, mob texture, etc.) by identifier.
@@ -272,14 +284,14 @@ public final class RenderUtil {
     ) {
         final var model = matrices.peek().getModel();
         //#if MC>=12105
-        //$$ final Mesh mesh = Mesh.beginGui(VertexFormat.DrawMode.QUADS, Mesh.tintedTextureFormat());
+        //$$ final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, Mesh.tintedTextureFormat());
         //$$ mesh.tintedVertex(model, x, y + height, 0, u0, v1, 1f, 1f, 1f, 1f);
         //$$ mesh.tintedVertex(model, x + width, y + height, 0, u1, v1, 1f, 1f, 1f, 1f);
         //$$ mesh.tintedVertex(model, x + width, y, 0, u1, v0, 1f, 1f, 1f, 1f);
         //$$ mesh.tintedVertex(model, x, y, 0, u0, v0, 1f, 1f, 1f, 1f);
         //$$ mesh.drawGui(RenderPipelines.GUI_TEXTURED);
         //#else
-        final Mesh mesh = Mesh.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_TEXTURE);
+        final Mesh mesh = Mesh.begin(Mesh.Mode.QUADS, VertexFormats.POSITION_TEXTURE);
         mesh.vertex(model, x, y + height, 0).texture(u0, v1).next();
         mesh.vertex(model, x + width, y + height, 0).texture(u1, v1).next();
         mesh.vertex(model, x + width, y, 0).texture(u1, v0).next();
@@ -318,7 +330,7 @@ public final class RenderUtil {
         final float g = Argb.green(argbColor) / 255f;
         final float b = Argb.blue(argbColor) / 255f;
         final var model = matrices.peek().getModel();
-        final Mesh mesh = Mesh.beginGui(VertexFormat.DrawMode.QUADS, Mesh.tintedTextureFormat());
+        final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, Mesh.tintedTextureFormat());
         mesh.tintedVertex(model, x, y + height, 0, u0, v1, r, g, b, a);
         mesh.tintedVertex(model, x + width, y + height, 0, u1, v1, r, g, b, a);
         mesh.tintedVertex(model, x + width, y, 0, u1, v0, r, g, b, a);
@@ -392,9 +404,9 @@ public final class RenderUtil {
         final float b = Argb.blue(argbColor) / 255f;
         final var model = matrices.peek().getModel();
         //#if MC>=12105
-        //$$ final Mesh mesh = Mesh.beginGui(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+        //$$ final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, VertexFormats.POSITION_COLOR);
         //#else
-        final Mesh mesh = Mesh.begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
+        final Mesh mesh = Mesh.begin(Mesh.Mode.TRIANGLES, VertexFormats.POSITION_COLOR);
         //#endif
         mesh.vertex(model, x0, y0, 0).color(r, g, b, a).next();
         mesh.vertex(model, x1, y1, 0).color(r, g, b, a).next();
@@ -428,7 +440,7 @@ public final class RenderUtil {
     ) {
         final var model = matrices.peek().getModel();
         //#if MC>=12105
-        //$$ final Mesh mesh = Mesh.beginGui(VertexFormat.DrawMode.QUADS, Mesh.tintedTextureFormat());
+        //$$ final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, Mesh.tintedTextureFormat());
         //$$ final int segments = 48;
         //$$ for (int i = 0; i < segments; i++) {
         //$$     final double angle0 = 2.0 * Math.PI * i / segments;
@@ -453,7 +465,7 @@ public final class RenderUtil {
         //$$ mesh.drawGui(RenderPipelines.GUI_TEXTURED);
         //#else
         RenderSystem.disableCull();
-        final Mesh mesh = Mesh.begin(VertexFormat.DrawMode.TRIANGLE_FAN, VertexFormats.POSITION_TEXTURE);
+        final Mesh mesh = Mesh.begin(Mesh.Mode.TRIANGLE_FAN, VertexFormats.POSITION_TEXTURE);
         mesh.vertex(model, centerX, centerY, 0).texture(0.5f, 0.5f).next();
         final int segments = 48;
         for (int i = 0; i <= segments; i++) {
@@ -488,9 +500,9 @@ public final class RenderUtil {
         final float b = Argb.blue(argbColor) / 255f;
         final var model = matrices.peek().getModel();
         //#if MC>=12105
-        //$$ final Mesh mesh = Mesh.beginGui(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+        //$$ final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, VertexFormats.POSITION_COLOR);
         //#else
-        final Mesh mesh = Mesh.begin(VertexFormat.DrawMode.TRIANGLE_STRIP, VertexFormats.POSITION_COLOR);
+        final Mesh mesh = Mesh.begin(Mesh.Mode.TRIANGLE_STRIP, VertexFormats.POSITION_COLOR);
         //#endif
         final int segments = 48;
         final float inner = outerRadius - thickness;
@@ -569,7 +581,7 @@ public final class RenderUtil {
         final float g = Argb.green(argbColor) / 255f;
         final float b = Argb.blue(argbColor) / 255f;
         final var model = matrices.peek().getModel();
-        final Mesh mesh = Mesh.begin(VertexFormat.DrawMode.TRIANGLES, VertexFormats.POSITION_COLOR);
+        final Mesh mesh = Mesh.begin(Mesh.Mode.TRIANGLES, VertexFormats.POSITION_COLOR);
         mesh.vertex(model, x0, y0, z0).color(r, g, b, a).next();
         mesh.vertex(model, x1, y1, z1).color(r, g, b, a).next();
         mesh.vertex(model, x2, y2, z2).color(r, g, b, a).next();
@@ -618,8 +630,8 @@ public final class RenderUtil {
         final float b = Argb.blue(argbColor) / 255f;
         final var model = matrices.peek().getModel();
         final Mesh mesh = gui
-            ? Mesh.beginGui(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR)
-            : Mesh.begin(VertexFormat.DrawMode.QUADS, VertexFormats.POSITION_COLOR);
+            ? Mesh.beginGui(Mesh.Mode.QUADS, VertexFormats.POSITION_COLOR)
+            : Mesh.begin(Mesh.Mode.QUADS, VertexFormats.POSITION_COLOR);
         mesh.vertex(model, x, y + height, 0).color(r, g, b, a).next();
         mesh.vertex(model, x + width, y + height, 0).color(r, g, b, a).next();
         mesh.vertex(model, x + width, y, 0).color(r, g, b, a).next();

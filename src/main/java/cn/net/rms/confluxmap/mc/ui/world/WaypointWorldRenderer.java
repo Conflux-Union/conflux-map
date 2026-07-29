@@ -31,8 +31,16 @@ import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 //#endif
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
+//#if MC>=260200
+//$$ import net.minecraft.client.renderer.SubmitNodeCollector;
+//$$ import net.minecraft.client.renderer.rendertype.RenderTypes;
+//$$ import net.minecraft.network.chat.Component;
+//$$ import org.joml.Quaternionf;
+//#endif
 import net.minecraft.client.render.Camera;
+//#if MC<260200
 import net.minecraft.client.render.VertexConsumerProvider;
+//#endif
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
@@ -133,7 +141,10 @@ public final class WaypointWorldRenderer {
     //#endif
 
     public void register() {
-        //#if MC>=260100
+        //#if MC>=260200
+        //$$ LevelRenderEvents.BEFORE_TRANSLUCENT_TERRAIN.register(this::renderBeams);
+        //$$ LevelRenderEvents.COLLECT_SUBMITS.register(this::renderHud);
+        //#elseif MC>=260100
         //$$ // 26.1 moved these into the level package and spelled out that the translucent hook is
         //$$ // the terrain one.
         //$$ LevelRenderEvents.BEFORE_TRANSLUCENT_TERRAIN.register(this::renderBeams);
@@ -174,7 +185,11 @@ public final class WaypointWorldRenderer {
         }
         final PlayerView player = playerViewOpt.get();
         final DimensionId currentDimension = gameBridge.session().dimension();
-        //#if MC>=12111
+        //#if MC>=260200
+        //$$ final Camera camera = client.gameRenderer.mainCamera();
+        //$$ final Vec3 cameraPos = camera.position();
+        //$$ final PoseStack matrices = context.poseStack();
+        //#elseif MC>=12111
         //$$ final Camera camera = client.gameRenderer.getCamera();
         //$$ final Vec3d cameraPos = camera.getCameraPos();
         //#if MC>=260100
@@ -252,9 +267,17 @@ public final class WaypointWorldRenderer {
         }
         final PlayerView player = playerViewOpt.get();
         final DimensionId currentDimension = gameBridge.session().dimension();
-        //#if MC>=12111
+        //#if MC>=260200
+        //$$ final var cameraState = context.levelState().cameraRenderState;
+        //$$ final Vec3 cameraPos = cameraState.pos;
+        //$$ final float cameraYaw = cameraState.yRot;
+        //$$ final float cameraPitch = cameraState.xRot;
+        //$$ final PoseStack matrices = context.poseStack();
+        //#elseif MC>=12111
         //$$ final Camera camera = client.gameRenderer.getCamera();
         //$$ final Vec3d cameraPos = camera.getCameraPos();
+        //$$ final float cameraYaw = camera.getYaw();
+        //$$ final float cameraPitch = camera.getPitch();
         //#if MC>=260100
         //$$ final PoseStack matrices = context.poseStack();
         //#else
@@ -263,14 +286,20 @@ public final class WaypointWorldRenderer {
         //#elseif MC>=12109
         //$$ final Camera camera = client.gameRenderer.getCamera();
         //$$ final Vec3d cameraPos = camera.getCameraPos();
+        //$$ final float cameraYaw = camera.getYaw();
+        //$$ final float cameraPitch = camera.getPitch();
         //#else
         final Camera camera = context.camera();
         final Vec3d cameraPos = camera.getPos();
+        final float cameraYaw = camera.getYaw();
+        final float cameraPitch = camera.getPitch();
         final MatrixStack matrices = context.matrixStack();
         //#endif
         final double maxDistance = maxVisibleDistance();
         final List<WaypointRenderEntry> waypoints = waypointRenderCatalog.snapshot(currentDimension);
-        final WaypointRenderEntry targetedWaypoint = targetedWaypoint(waypoints, camera, cameraPos, maxDistance);
+        final WaypointRenderEntry targetedWaypoint = targetedWaypoint(
+            waypoints, cameraYaw, cameraPitch, cameraPos, maxDistance
+        );
         final float animationDeltaSeconds = animationDeltaSeconds();
         final Set<UUID> visibleWaypointIds = new HashSet<>();
 
@@ -286,13 +315,17 @@ public final class WaypointWorldRenderer {
         if (!visibleWaypointIds.isEmpty()) {
             // Modern LAST keeps the camera view rotation in ModelView while its context stack is
             // local identity. Legacy LAST needs that stale global transform cleared instead.
+            //#if MC<260200
             RenderUtil.pushWorldHudModelView();
+            //#endif
             try {
                 //#if MC<12105
                 RenderSystem.disableDepthTest();
                 RenderSystem.depthMask(false);
                 //#endif
+                //#if MC<260200
                 final VertexConsumerProvider.Immediate immediate = client.getBufferBuilders().getEntityVertexConsumers();
+                //#endif
                 for (final WaypointRenderEntry waypoint : waypoints) {
                     if (!visibleWaypointIds.contains(waypoint.id())) {
                         continue;
@@ -303,18 +336,30 @@ public final class WaypointWorldRenderer {
                     final double distance3d = Math.sqrt(dx * dx + dy * dy + dz * dz);
                     final boolean targeted = targetedWaypoint != null && targetedWaypoint.id().equals(waypoint.id());
                     final float progress = updateLabelAnimation(waypoint.id(), targeted, animationDeltaSeconds);
+                    //#if MC>=260200
+                    //$$ drawLabel(
+                    //$$     matrices, context.submitNodeCollector(), cameraState.orientation,
+                    //$$     cameraPos, waypoint.x(), waypoint.y(), waypoint.z(), waypoint,
+                    //$$     distance3d, progress
+                    //$$ );
+                    //#else
                     drawLabel(
                         matrices, immediate, camera, cameraPos, waypoint.x(), waypoint.y(), waypoint.z(),
                         waypoint, distance3d, progress
                     );
+                    //#endif
                 }
+                //#if MC<260200
                 immediate.draw();
+                //#endif
             } finally {
                 //#if MC<12105
                 RenderSystem.depthMask(true);
                 RenderSystem.enableDepthTest();
                 //#endif
+                //#if MC<260200
                 RenderUtil.popModelView();
+                //#endif
             }
         }
 
@@ -336,7 +381,8 @@ public final class WaypointWorldRenderer {
 
     private WaypointRenderEntry targetedWaypoint(
         final List<WaypointRenderEntry> waypoints,
-        final Camera camera,
+        final float cameraYaw,
+        final float cameraPitch,
         final Vec3d cameraPos,
         final double maxDistance
     ) {
@@ -352,7 +398,7 @@ public final class WaypointWorldRenderer {
                 continue;
             }
             final double alignment = WaypointHudMotion.alignment(
-                camera.getYaw(), camera.getPitch(), dx, dy, dz
+                cameraYaw, cameraPitch, dx, dy, dz
             );
             if (!WaypointHudMotion.insideTargetCone(alignment, distance)) {
                 continue;
@@ -441,10 +487,17 @@ public final class WaypointWorldRenderer {
     }
 
     /** Camera-facing marker with an interruptible, right-expanding detail panel. */
+    //#if MC>=260200
+    //$$ private void drawLabel(
+    //$$     final PoseStack matrices,
+    //$$     final SubmitNodeCollector submits,
+    //$$     final Quaternionf cameraRotation,
+    //#else
     private void drawLabel(
         final MatrixStack matrices,
         final VertexConsumerProvider.Immediate immediate,
         final Camera camera,
+    //#endif
         final Vec3d cameraPos,
         final double worldX,
         final double worldY,
@@ -480,7 +533,11 @@ public final class WaypointWorldRenderer {
 
         matrices.push();
         matrices.translate(worldX - cameraPos.x, worldY + LABEL_Y_OFFSET - cameraPos.y, worldZ - cameraPos.z);
+        //#if MC>=260200
+        //$$ matrices.mulPose(cameraRotation);
+        //#else
         matrices.multiply(camera.getRotation());
+        //#endif
         //#if MC>=12100
         //$$ matrices.scale(scale, -scale, scale);
         //#else
@@ -488,12 +545,23 @@ public final class WaypointWorldRenderer {
         //#endif
 
         if (panelWidth > 0.5f) {
+            //#if MC>=260200
+            //$$ submitRect(
+            //$$     submits, matrices, panelX, -LABEL_PANEL_HEIGHT / 2f,
+            //$$     panelWidth, LABEL_PANEL_HEIGHT, withAlpha(LABEL_BACKGROUND_COLOR, nearFade)
+            //$$ );
+            //#else
             RenderUtil.fillRect3D(
                 matrices, panelX, -LABEL_PANEL_HEIGHT / 2f,
                 panelWidth, LABEL_PANEL_HEIGHT, withAlpha(LABEL_BACKGROUND_COLOR, nearFade)
             );
+            //#endif
         }
+        //#if MC>=260200
+        //$$ drawIcon(matrices, textRenderer, submits, waypoint, iconHalfSize, nearFade);
+        //#else
         drawIcon(matrices, textRenderer, immediate, waypoint, iconHalfSize, nearFade);
+        //#endif
 
         final float textReveal = MathHelper.clamp(
             (easedProgress - LABEL_TEXT_REVEAL_START) / (1f - LABEL_TEXT_REVEAL_START), 0f, 1f
@@ -501,6 +569,16 @@ public final class WaypointWorldRenderer {
         if (textReveal > 0.01f) {
             final float textX = panelX + LABEL_PANEL_PADDING + (1f - textReveal) * 4f;
             final float textAlpha = nearFade * textReveal;
+            //#if MC>=260200
+            //$$ submitText(
+            //$$     submits, matrices, name, textX, -9f,
+            //$$     withAlpha(LABEL_NAME_COLOR, textAlpha)
+            //$$ );
+            //$$ submitText(
+            //$$     submits, matrices, distanceText, textX, 1f,
+            //$$     withAlpha(LABEL_DISTANCE_COLOR, textAlpha)
+            //$$ );
+            //#else
             RenderUtil.drawSeeThroughText(
                 textRenderer, name, textX, -9f, withAlpha(LABEL_NAME_COLOR, textAlpha),
                 matrices, immediate, LABEL_LIGHT
@@ -509,19 +587,37 @@ public final class WaypointWorldRenderer {
                 textRenderer, distanceText, textX, 1f, withAlpha(LABEL_DISTANCE_COLOR, textAlpha),
                 matrices, immediate, LABEL_LIGHT
             );
+            //#endif
         }
         matrices.pop();
     }
 
+    //#if MC>=260200
+    //$$ private static void drawIcon(
+    //$$     final PoseStack matrices,
+    //$$     final Font textRenderer,
+    //$$     final SubmitNodeCollector submits,
+    //#else
     private static void drawIcon(
         final MatrixStack matrices,
         final TextRenderer textRenderer,
         final VertexConsumerProvider.Immediate immediate,
+    //#endif
         final WaypointRenderEntry waypoint,
         final float halfSize,
         final float alpha
     ) {
         final float size = halfSize * 2f;
+        //#if MC>=260200
+        //$$ submitRect(
+        //$$     submits, matrices, -halfSize - 1f, -halfSize - 1f, size + 2f, size + 2f,
+        //$$     withAlpha(outlineColor(waypoint), alpha)
+        //$$ );
+        //$$ submitRect(
+        //$$     submits, matrices, -halfSize, -halfSize, size, size,
+        //$$     withAlpha(waypoint.colorArgb() | 0xFF000000, alpha)
+        //$$ );
+        //#else
         RenderUtil.fillRect3D(
             matrices, -halfSize - 1f, -halfSize - 1f, size + 2f, size + 2f,
             withAlpha(outlineColor(waypoint), alpha)
@@ -530,6 +626,7 @@ public final class WaypointWorldRenderer {
             matrices, -halfSize, -halfSize, size, size,
             withAlpha(waypoint.colorArgb() | 0xFF000000, alpha)
         );
+        //#endif
 
         final String initial = initial(waypoint.name());
         final int initialWidth = textRenderer.getWidth(initial);
@@ -537,12 +634,64 @@ public final class WaypointWorldRenderer {
         final float textScale = Math.min(1f, available / Math.max(initialWidth, textRenderer.fontHeight));
         matrices.push();
         matrices.scale(textScale, textScale, 1f);
+        //#if MC>=260200
+        //$$ submitText(
+        //$$     submits, matrices, initial, -initialWidth / 2f, -textRenderer.lineHeight / 2f,
+        //$$     withAlpha(LABEL_NAME_COLOR, alpha)
+        //$$ );
+        //#else
         RenderUtil.drawSeeThroughText(
             textRenderer, initial, -initialWidth / 2f, -textRenderer.fontHeight / 2f,
             withAlpha(LABEL_NAME_COLOR, alpha), matrices, immediate, LABEL_LIGHT
         );
+        //#endif
         matrices.pop();
     }
+
+    //#if MC>=260200
+    //$$ private static void submitRect(
+    //$$     final SubmitNodeCollector submits,
+    //$$     final PoseStack matrices,
+    //$$     final float x,
+    //$$     final float y,
+    //$$     final float width,
+    //$$     final float height,
+    //$$     final int color
+    //$$ ) {
+    //$$     submits.submitCustomGeometry(
+    //$$         matrices,
+    //$$         RenderTypes.textBackgroundSeeThrough(),
+    //$$         (pose, vertices) -> {
+    //$$             vertices.addVertex(pose, x, y + height, 0f).setColor(color).setLight(LABEL_LIGHT);
+    //$$             vertices.addVertex(pose, x + width, y + height, 0f).setColor(color).setLight(LABEL_LIGHT);
+    //$$             vertices.addVertex(pose, x + width, y, 0f).setColor(color).setLight(LABEL_LIGHT);
+    //$$             vertices.addVertex(pose, x, y, 0f).setColor(color).setLight(LABEL_LIGHT);
+    //$$         }
+    //$$     );
+    //$$ }
+    //$$
+    //$$ private static void submitText(
+    //$$     final SubmitNodeCollector submits,
+    //$$     final PoseStack matrices,
+    //$$     final String text,
+    //$$     final float x,
+    //$$     final float y,
+    //$$     final int color
+    //$$ ) {
+    //$$     submits.submitText(
+    //$$         matrices,
+    //$$         x,
+    //$$         y,
+    //$$         Component.literal(text).getVisualOrderText(),
+    //$$         false,
+    //$$         Font.DisplayMode.SEE_THROUGH,
+    //$$         LABEL_LIGHT,
+    //$$         color,
+    //$$         0,
+    //$$         0
+    //$$     );
+    //$$ }
+    //#endif
 
     private static int withAlpha(final int argb, final float alpha) {
         final int a = Math.round(Argb.alpha(argb) * MathHelper.clamp(alpha, 0f, 1f));

@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
@@ -155,7 +156,7 @@ final class StructureSearchScreen extends ConfluxScreen {
 
     @Override
     public void onClose() {
-        MinecraftClient.getInstance().setScreen(parent);
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
     }
 
     private void locate(final StructureIndex.StructureType type) {
@@ -172,7 +173,7 @@ final class StructureSearchScreen extends ConfluxScreen {
         );
         if (marker.isPresent()) {
             parent.focusStructure(marker.get());
-            MinecraftClient.getInstance().setScreen(parent);
+            MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
         }
     }
 

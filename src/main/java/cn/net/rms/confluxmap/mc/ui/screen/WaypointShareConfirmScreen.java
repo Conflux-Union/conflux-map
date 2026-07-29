@@ -106,7 +106,7 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
 
     @Override
     public void onClose() {
-        MinecraftClient.getInstance().setScreen(parent);
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
     }
 
     @Override

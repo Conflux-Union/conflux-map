@@ -1,8 +1,16 @@
 package cn.net.rms.confluxmap.mc.render;
 
-import net.minecraft.client.render.BufferBuilder;
-import net.minecraft.client.render.Tessellator;
-//#if MC>=12105
+//#if MC>=260200
+//$$ import com.mojang.blaze3d.PrimitiveTopology;
+//$$ import com.mojang.blaze3d.pipeline.BindGroupLayout;
+//$$ import com.mojang.blaze3d.pipeline.RenderPipeline;
+//$$ import com.mojang.blaze3d.systems.RenderPass;
+//$$ import com.mojang.blaze3d.systems.RenderSystem;
+//$$ import com.mojang.blaze3d.vertex.VertexFormat;
+//$$ import java.util.Optional;
+//$$ import java.util.OptionalDouble;
+//$$ import net.minecraft.client.renderer.StagedVertexBuffer;
+//#elseif MC>=12105
 //$$ import com.mojang.blaze3d.buffers.GpuBuffer;
 //$$ import com.mojang.blaze3d.pipeline.RenderPipeline;
 //$$ import com.mojang.blaze3d.systems.RenderPass;
@@ -13,6 +21,10 @@ import net.minecraft.client.render.Tessellator;
 //$$ import net.minecraft.client.render.BuiltBuffer;
 //#else
 import net.minecraft.client.render.VertexFormat;
+//#endif
+//#if MC<260200
+import net.minecraft.client.render.BufferBuilder;
+import net.minecraft.client.render.Tessellator;
 //#endif
 import net.minecraft.client.render.VertexFormats;
 
@@ -61,12 +73,29 @@ import net.minecraft.util.math.Matrix4f;
  * its vertices instead of the tessellator's and is exempt from that.
  */
 public final class Mesh {
+    public enum Mode {
+        TRIANGLES,
+        TRIANGLE_STRIP,
+        TRIANGLE_FAN,
+        QUADS
+    }
+
+    //#if MC>=260200
+    //$$ private static final StagedVertexBuffer IMMEDIATE =
+    //$$     new StagedVertexBuffer(() -> "Conflux Map immediate geometry", 1 << 20);
+    //#endif
+
     //#if MC>=12108
     //$$ /** Captured vertex layout: x, y, z, u, v, r, g, b, a. */
     //$$ private static final int STRIDE = 9;
     //#endif
 
+    //#if MC>=260200
+    //$$ private final VertexConsumer buffer;
+    //$$ private final StagedVertexBuffer.Draw stagedDraw;
+    //#else
     private final BufferBuilder buffer;
+    //#endif
     //#if MC>=12108
     //$$ private final GuiRenderState guiState;
     //$$ private final boolean textured;
@@ -75,8 +104,14 @@ public final class Mesh {
     //$$ private int vertexCount;
     //#endif
 
+    //#if MC>=260200
+    //$$ private Mesh(final VertexConsumer buffer, final StagedVertexBuffer.Draw stagedDraw) {
+    //$$     this.buffer = buffer;
+    //$$     this.stagedDraw = stagedDraw;
+    //#else
     private Mesh(final BufferBuilder buffer) {
         this.buffer = buffer;
+    //#endif
         //#if MC>=12108
         //$$ this.guiState = null;
         //$$ this.textured = false;
@@ -87,6 +122,9 @@ public final class Mesh {
     //#if MC>=12108
     //$$ private Mesh(final GuiRenderState guiState, final boolean textured) {
     //$$     this.buffer = null;
+    //#if MC>=260200
+    //$$     this.stagedDraw = null;
+    //#endif
     //$$     this.guiState = guiState;
     //$$     this.textured = textured;
     //$$     this.pending = new float[STRIDE];
@@ -95,15 +133,38 @@ public final class Mesh {
     //#endif
 
     /** Starts a batch in {@code format}; finish it with {@link #draw()}. */
-    public static Mesh begin(final VertexFormat.DrawMode mode, final VertexFormat format) {
-        //#if MC>=12100
-        //$$ return new Mesh(Tessellator.getInstance().begin(mode, format));
+    public static Mesh begin(final Mode mode, final VertexFormat format) {
+        //#if MC>=260200
+        //$$ final StagedVertexBuffer.Draw draw = IMMEDIATE.appendDraw(format, topology(mode));
+        //$$ return new Mesh(IMMEDIATE.getVertexBuilder(draw), draw);
+        //#elseif MC>=12100
+        //$$ return new Mesh(Tessellator.getInstance().begin(legacyMode(mode), format));
         //#else
         final BufferBuilder buffer = Tessellator.getInstance().getBuffer();
-        buffer.begin(mode, format);
+        buffer.begin(legacyMode(mode), format);
         return new Mesh(buffer);
         //#endif
     }
+
+    //#if MC>=260200
+    //$$ private static PrimitiveTopology topology(final Mode mode) {
+    //$$     return switch (mode) {
+    //$$         case TRIANGLES -> PrimitiveTopology.TRIANGLES;
+    //$$         case TRIANGLE_STRIP -> PrimitiveTopology.TRIANGLE_STRIP;
+    //$$         case TRIANGLE_FAN -> PrimitiveTopology.TRIANGLE_FAN;
+    //$$         case QUADS -> PrimitiveTopology.QUADS;
+    //$$     };
+    //$$ }
+    //#else
+    private static VertexFormat.DrawMode legacyMode(final Mode mode) {
+        return switch (mode) {
+            case TRIANGLES -> VertexFormat.DrawMode.TRIANGLES;
+            case TRIANGLE_STRIP -> VertexFormat.DrawMode.TRIANGLE_STRIP;
+            case TRIANGLE_FAN -> VertexFormat.DrawMode.TRIANGLE_FAN;
+            case QUADS -> VertexFormat.DrawMode.QUADS;
+        };
+    }
+    //#endif
 
     /**
      * Starts a batch of flat GUI-space geometry; finish it with {@code drawGui}.
@@ -115,7 +176,7 @@ public final class Mesh {
      * captured and handed to the state instead. Older versions - and canvas batches, which target
      * {@link OffscreenCanvas}' own framebuffer rather than the screen - still draw immediately.
      */
-    public static Mesh beginGui(final VertexFormat.DrawMode mode, final VertexFormat format) {
+    public static Mesh beginGui(final Mode mode, final VertexFormat format) {
         //#if MC>=12108
         //$$ final GuiRenderState guiState = RenderUtil.guiState();
         //$$ if (guiState != null) {
@@ -150,7 +211,11 @@ public final class Mesh {
         //$$     return this;
         //$$ }
         //#endif
+        //#if MC>=260200
+        //$$ buffer.addVertex(model, x, y, z);
+        //#else
         buffer.vertex(model, x, y, z);
+        //#endif
         return this;
     }
 
@@ -162,7 +227,11 @@ public final class Mesh {
         //$$     return this;
         //$$ }
         //#endif
+        //#if MC>=260200
+        //$$ buffer.setUv(u, v);
+        //#else
         buffer.texture(u, v);
+        //#endif
         return this;
     }
 
@@ -176,7 +245,11 @@ public final class Mesh {
         //$$     return this;
         //$$ }
         //#endif
+        //#if MC>=260200
+        //$$ buffer.setColor(r, g, b, a);
+        //#else
         buffer.color(r, g, b, a);
+        //#endif
         return this;
     }
 
@@ -258,8 +331,40 @@ public final class Mesh {
     //$$     draw(pipeline);
     //$$ }
 
-    //$$ /** Uploads and draws the batch through the pipeline-based 1.21.5 renderer. */
+    //$$ /** Uploads and draws the batch through the pipeline-based renderer. */
     //$$ public void draw(final RenderPipeline pipeline) {
+    //#if MC>=260200
+    //$$     try {
+    //$$         IMMEDIATE.upload();
+    //$$         final StagedVertexBuffer.ExecuteInfo info = IMMEDIATE.getExecuteInfo(stagedDraw);
+    //$$         final var target = RenderUtil.drawTarget();
+    //$$         final var dynamicTransforms = RenderSystem.getDynamicUniforms().writeTransform(
+    //$$             RenderSystem.getModelViewMatrixCopy()
+    //$$         );
+    //$$         try (RenderPass pass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
+    //$$             () -> "Conflux Map immediate " + pipeline.getLocation(),
+    //$$             target.getColorTextureView(),
+    //$$             Optional.empty(),
+    //$$             target.useDepth ? target.getDepthTextureView() : null,
+    //$$             OptionalDouble.empty()
+    //$$         )) {
+    //$$             pass.setPipeline(pipeline);
+    //$$             RenderSystem.bindDefaultUniforms(pass);
+    //$$             pass.setUniform("DynamicTransforms", dynamicTransforms);
+    //$$             pass.setVertexBuffer(0, info.vertexBuffer().slice());
+    //$$             RenderUtil.applyScissor(pass);
+    //$$             if (BindGroupLayout.flattenSamplers(pipeline.getBindGroupLayouts()).contains("Sampler0")
+    //$$                 && RenderUtil.boundTexture() != null
+    //$$                 && RenderUtil.boundSampler() != null) {
+    //$$                 pass.bindTexture("Sampler0", RenderUtil.boundTexture(), RenderUtil.boundSampler());
+    //$$             }
+    //$$             pass.setIndexBuffer(info.indexBuffer(), info.indexType());
+    //$$             pass.drawIndexed(info.indexCount(), 1, info.firstIndex(), info.baseVertex(), 0);
+    //$$         }
+    //$$     } finally {
+    //$$         IMMEDIATE.endFrame();
+    //$$     }
+    //#else
     //$$     try (BuiltBuffer built = buffer.end()) {
     //$$         final GpuBuffer vertexBuffer = pipeline.getVertexFormat()
     //$$             .uploadImmediateVertexBuffer(built.getBuffer());
@@ -348,7 +453,15 @@ public final class Mesh {
     //#endif
     //$$         }
     //$$     }
+    //#endif
     //$$ }
+
+    //#if MC>=260200
+    //$$ /** Releases the reusable immediate vertex buffers during client shutdown. */
+    //$$ public static void close() {
+    //$$     IMMEDIATE.close();
+    //$$ }
+    //#endif
     //#endif
 
     //#if MC>=12108

@@ -1,0 +1,5 @@
+# Mapping file for version 26.1.2 to 26.2
+# Format: old_version_class new_version_class
+#
+# Both versions use Mojang's unobfuscated official namespace. Add only pure renames here; API
+# shape changes belong in explicit preprocessor branches at their call sites.

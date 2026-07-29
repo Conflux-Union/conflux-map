@@ -71,6 +71,12 @@ class CubiomesNativeTest {
         return mc.getAsInt();
     }
 
+    private static int mc262() {
+        final OptionalInt mc = McVersions.toCubiomes("26.2");
+        assertTrue(mc.isPresent(), "McVersions must know \"26.2\"");
+        return mc.getAsInt();
+    }
+
     private static CubiomesContext open(final int dim) {
         final CubiomesContext ctx = CubiomesContext.create(mc17(), SEED, dim, 0);
         assertNotNull(ctx, "context creation must succeed for a valid version/dim");
@@ -393,6 +399,7 @@ class CubiomesNativeTest {
         assertEndCityTerrainRejected(mc17());
         assertEndCityTerrainRejected(mc21());
         assertEndCityTerrainRejected(mc261());
+        assertEndCityTerrainRejected(mc262());
     }
 
     @Test
@@ -400,6 +407,7 @@ class CubiomesNativeTest {
         assertNearestEndCityMatchesExhaustiveSearch(mc17());
         assertNearestEndCityMatchesExhaustiveSearch(mc21());
         assertNearestEndCityMatchesExhaustiveSearch(mc261());
+        assertNearestEndCityMatchesExhaustiveSearch(mc262());
     }
 
     private static void assertEndCityTerrainRejected(final int mc) {
@@ -458,6 +466,9 @@ class CubiomesNativeTest {
         assertEveryStructureCanBeLocated(mc261(), OVERWORLD, MODERN_OVERWORLD_STRUCTURES);
         assertEveryStructureCanBeLocated(mc261(), NETHER, MODERN_NETHER_STRUCTURES);
         assertEveryStructureCanBeLocated(mc261(), END, new int[] {20});
+        assertEveryStructureCanBeLocated(mc262(), OVERWORLD, MODERN_OVERWORLD_STRUCTURES);
+        assertEveryStructureCanBeLocated(mc262(), NETHER, MODERN_NETHER_STRUCTURES);
+        assertEveryStructureCanBeLocated(mc262(), END, new int[] {20});
     }
 
     private static void assertEveryStructureCanBeLocated(

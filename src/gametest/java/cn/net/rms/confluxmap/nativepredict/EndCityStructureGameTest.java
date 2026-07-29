@@ -37,7 +37,11 @@ public final class EndCityStructureGameTest implements FabricGameTest {
     //$$
     //$$     final long[] nearest = new long[1];
     //$$     try (CubiomesContext nativeContext = CubiomesContext.create(
+    //#if MC>=260200
+    //$$         McVersions.toCubiomes("26.2").orElseThrow(), endWorld.getSeed(), 1, 0
+    //#else
     //$$         McVersions.toCubiomes("26.1.2").orElseThrow(), endWorld.getSeed(), 1, 0
+    //#endif
     //$$     )) {
     //$$         if (nativeContext == null
     //$$             || !nativeContext.nearestStructure(20, 0, 0, 100_000, nearest)) {

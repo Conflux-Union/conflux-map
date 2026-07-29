@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
@@ -45,7 +46,7 @@ public final class AnnotationEraserSettingsScreen extends ConfluxScreen {
 
     private void saveAndReturn() {
         ConfluxMapClient.get().configIo().save(config);
-        MinecraftClient.getInstance().setScreen(parent);
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
     }
 
     @Override

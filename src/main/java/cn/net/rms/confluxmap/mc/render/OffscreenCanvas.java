@@ -8,6 +8,10 @@ import net.minecraft.client.util.Window;
 
 //#if MC>=12103
 //$$ import com.mojang.blaze3d.systems.ProjectionType;
+//#if MC>=260200
+//$$ import com.mojang.blaze3d.GpuFormat;
+//$$ import org.joml.Vector4f;
+//#endif
 //#if MC>=260100
 //$$ import net.minecraft.client.renderer.ProjectionMatrixBuffer;
 //#elseif MC>=12108
@@ -45,7 +49,11 @@ public final class OffscreenCanvas {
     public void begin(final int sizePx) {
         if (framebuffer == null || framebuffer.textureWidth != sizePx) {
             close();
-            //#if MC>=12105
+            //#if MC>=260200
+            //$$ framebuffer = new TextureTarget(
+            //$$     "Conflux Map minimap", sizePx, sizePx, false, GpuFormat.RGBA8_UNORM
+            //$$ );
+            //#elseif MC>=12105
             //$$ framebuffer = new SimpleFramebuffer("Conflux Map minimap", sizePx, sizePx, false);
             //#elseif MC>=12103
             //$$ framebuffer = new SimpleFramebuffer(sizePx, sizePx, false);
@@ -62,7 +70,12 @@ public final class OffscreenCanvas {
         //$$     projectionMatrix = new RawProjectionMatrix("Conflux Map minimap projection");
         //$$ }
         //#endif
-        //#if MC>=12105
+        //#if MC>=260200
+        //$$ RenderSystem.getDevice().createCommandEncoder().clearColorTexture(
+        //$$     framebuffer.getColorTexture(), new Vector4f(0f, 0f, 0f, 0f)
+        //$$ );
+        //$$ RenderUtil.setDrawTarget(framebuffer);
+        //#elseif MC>=12105
         //$$ RenderSystem.getDevice().createCommandEncoder().clearColorTexture(
         //$$     framebuffer.getColorAttachment(), 0
         //$$ );

@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.mc.radar;
 
 import cn.net.rms.confluxmap.compat.Ids;
+import cn.net.rms.confluxmap.compat.Regs;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -312,100 +313,104 @@ public final class EntityIconManager {
     private static Map<EntityType<?>, CellIcon> buildSheetTable() {
         final Map<EntityType<?>, CellIcon> map = new HashMap<>();
 
-        map.put(EntityType.AXOLOTL, icon(3, 9, EntityIconManager::axolotlVariant,
+        put(map, "axolotl", icon(3, 9, EntityIconManager::axolotlVariant,
             v("0", 3, 9), v("1", 4, 3), v("2", 6, 11), v("3", 11, 11), v("4", 12, 12)));
-        map.put(EntityType.BAT, icon(7, 13));
-        map.put(EntityType.BEE, icon(6, 13));
-        map.put(EntityType.BLAZE, icon(1, 13));
-        map.put(EntityType.CAT, icon(6, 6, EntityIconManager::catVariant,
+        put(map, "bat", icon(7, 13));
+        put(map, "bee", icon(6, 13));
+        put(map, "blaze", icon(1, 13));
+        put(map, "cat", icon(6, 6, EntityIconManager::catVariant,
             v("all_black", 10, 13), v("black", 5, 13), v("british_shorthair", 12, 8), v("calico", 10, 12),
             v("jellie", 9, 10), v("persian", 9, 1), v("ragdoll", 8, 1), v("red", 5, 8),
             v("siamese", 7, 5), v("tabby", 6, 6), v("white", 5, 2)));
-        map.put(EntityType.CAVE_SPIDER, icon(9, 12));
-        map.put(EntityType.CHICKEN, icon(7, 12));
-        map.put(EntityType.COD, icon(6, 12));
-        map.put(EntityType.COW, icon(4, 12));
-        map.put(EntityType.CREEPER, icon(1, 12));
-        map.put(EntityType.DOLPHIN, icon(11, 8));
-        map.put(EntityType.DONKEY, icon(11, 7));
-        map.put(EntityType.DROWNED, icon(11, 6));
-        map.put(EntityType.ELDER_GUARDIAN, icon(11, 5));
-        map.put(EntityType.ENDER_DRAGON, icon(11, 4));
-        map.put(EntityType.ENDERMAN, icon(11, 3));
-        map.put(EntityType.ENDERMITE, icon(11, 2));
-        map.put(EntityType.EVOKER, icon(11, 1));
-        map.put(EntityType.FOX, icon(10, 11, EntityIconManager::foxVariant,
+        put(map, "cave_spider", icon(9, 12));
+        put(map, "chicken", icon(7, 12));
+        put(map, "cod", icon(6, 12));
+        put(map, "cow", icon(4, 12));
+        put(map, "creeper", icon(1, 12));
+        put(map, "dolphin", icon(11, 8));
+        put(map, "donkey", icon(11, 7));
+        put(map, "drowned", icon(11, 6));
+        put(map, "elder_guardian", icon(11, 5));
+        put(map, "ender_dragon", icon(11, 4));
+        put(map, "enderman", icon(11, 3));
+        put(map, "endermite", icon(11, 2));
+        put(map, "evoker", icon(11, 1));
+        put(map, "fox", icon(10, 11, EntityIconManager::foxVariant,
             v("red", 10, 11), v("snow", 5, 7)));
-        map.put(EntityType.GHAST, icon(9, 11));
-        map.put(EntityType.GLOW_SQUID, icon(8, 11));
-        map.put(EntityType.GOAT, icon(7, 11));
-        map.put(EntityType.GUARDIAN, icon(10, 6));
-        map.put(EntityType.HOGLIN, icon(10, 5));
-        map.put(EntityType.HORSE, icon(10, 4));
-        map.put(EntityType.HUSK, icon(10, 3));
-        map.put(EntityType.ILLUSIONER, icon(10, 2));
-        map.put(EntityType.IRON_GOLEM, icon(10, 1));
-        map.put(EntityType.LLAMA, icon(3, 12, EntityIconManager::llamaVariant,
+        put(map, "ghast", icon(9, 11));
+        put(map, "glow_squid", icon(8, 11));
+        put(map, "goat", icon(7, 11));
+        put(map, "guardian", icon(10, 6));
+        put(map, "hoglin", icon(10, 5));
+        put(map, "horse", icon(10, 4));
+        put(map, "husk", icon(10, 3));
+        put(map, "illusioner", icon(10, 2));
+        put(map, "iron_golem", icon(10, 1));
+        put(map, "llama", icon(3, 12, EntityIconManager::llamaVariant,
             v("0", 3, 12), v("1", 5, 1), v("2", 12, 7), v("3", 1, 11)));
-        map.put(EntityType.MAGMA_CUBE, icon(9, 8));
-        map.put(EntityType.MOOSHROOM, icon(9, 7, EntityIconManager::mooshroomVariant,
+        put(map, "magma_cube", icon(9, 8));
+        put(map, "mooshroom", icon(9, 7, EntityIconManager::mooshroomVariant,
             v("brown", 12, 6), v("red", 9, 7)));
-        map.put(EntityType.MULE, icon(9, 6));
-        map.put(EntityType.OCELOT, icon(9, 5));
-        map.put(EntityType.PANDA, icon(9, 2, EntityIconManager::pandaVariant,
+        put(map, "mule", icon(9, 6));
+        put(map, "ocelot", icon(9, 5));
+        put(map, "panda", icon(9, 2, EntityIconManager::pandaVariant,
             v("aggressive", 12, 13), v("brown", 12, 5), v("lazy", 8, 10),
             v("playful", 8, 7), v("weak", 5, 3), v("worried", 3, 3)));
-        map.put(EntityType.PARROT, icon(6, 8, EntityIconManager::parrotVariant,
+        put(map, "parrot", icon(6, 8, EntityIconManager::parrotVariant,
             v("0", 6, 8), v("1", 12, 11), v("2", 4, 11), v("3", 3, 2), v("4", 10, 10)));
-        map.put(EntityType.PHANTOM, icon(8, 9));
-        map.put(EntityType.PIG, icon(7, 9));
-        map.put(EntityType.PIGLIN, icon(6, 9));
-        map.put(EntityType.PIGLIN_BRUTE, icon(5, 9));
-        map.put(EntityType.PILLAGER, icon(4, 9));
-        map.put(EntityType.POLAR_BEAR, icon(8, 6));
-        map.put(EntityType.PUFFERFISH, icon(8, 5));
-        map.put(EntityType.RABBIT, icon(12, 4, EntityIconManager::rabbitVariant,
+        put(map, "phantom", icon(8, 9));
+        put(map, "pig", icon(7, 9));
+        put(map, "piglin", icon(6, 9));
+        put(map, "piglin_brute", icon(5, 9));
+        put(map, "pillager", icon(4, 9));
+        put(map, "polar_bear", icon(8, 6));
+        put(map, "pufferfish", icon(8, 5));
+        put(map, "rabbit", icon(12, 4, EntityIconManager::rabbitVariant,
             v("0", 12, 4), v("1", 4, 5), v("2", 4, 13), v("3", 1, 5), v("4", 5, 11), v("5", 1, 8), v("99", 11, 12)));
-        map.put(EntityType.RAVAGER, icon(7, 8));
-        map.put(EntityType.SALMON, icon(2, 8));
-        map.put(EntityType.SHEEP, icon(3, 5, EntityIconManager::sheepVariant,
+        put(map, "ravager", icon(7, 8));
+        put(map, "salmon", icon(2, 8));
+        put(map, "sheep", icon(3, 5, EntityIconManager::sheepVariant,
             v("black", 3, 13), v("blue", 12, 10), v("brown", 12, 3), v("cyan", 11, 10),
             v("gray", 10, 9), v("green", 3, 11), v("light_blue", 7, 10), v("light_gray", 5, 10),
             v("lime", 3, 10), v("magenta", 1, 10), v("orange", 9, 4), v("pink", 2, 9),
             v("purple", 8, 3), v("red", 4, 8), v("white", 3, 5), v("yellow", 3, 1)));
-        map.put(EntityType.SHULKER, icon(7, 6));
-        map.put(EntityType.SILVERFISH, icon(7, 4));
-        map.put(EntityType.SKELETON, icon(7, 3));
-        map.put(EntityType.SKELETON_HORSE, icon(7, 2));
-        map.put(EntityType.SLIME, icon(6, 7));
-        map.put(EntityType.SNOW_GOLEM, icon(8, 4));
-        map.put(EntityType.SPIDER, icon(4, 7));
-        map.put(EntityType.SQUID, icon(3, 7));
-        map.put(EntityType.STRAY, icon(2, 7));
-        map.put(EntityType.STRIDER, icon(5, 4, EntityIconManager::striderVariant,
+        put(map, "shulker", icon(7, 6));
+        put(map, "silverfish", icon(7, 4));
+        put(map, "skeleton", icon(7, 3));
+        put(map, "skeleton_horse", icon(7, 2));
+        put(map, "slime", icon(6, 7));
+        put(map, "snow_golem", icon(8, 4));
+        put(map, "spider", icon(4, 7));
+        put(map, "squid", icon(3, 7));
+        put(map, "stray", icon(2, 7));
+        put(map, "strider", icon(5, 4, EntityIconManager::striderVariant,
             v("false", 5, 4), v("true", 1, 7)));
-        map.put(EntityType.TRADER_LLAMA, icon(2, 12, EntityIconManager::llamaVariant,
+        put(map, "trader_llama", icon(2, 12, EntityIconManager::llamaVariant,
             v("0", 2, 12), v("1", 4, 4), v("2", 12, 1), v("3", 10, 7)));
-        map.put(EntityType.TROPICAL_FISH, icon(6, 1));
-        map.put(EntityType.TURTLE, icon(5, 6));
-        map.put(EntityType.VEX, icon(4, 6));
+        put(map, "tropical_fish", icon(6, 1));
+        put(map, "turtle", icon(5, 6));
+        put(map, "vex", icon(4, 6));
         // The cellmap's villager_profession variant table is empty (no vanilla profession got its
         // own cell), so every villager currently renders its base cell regardless of profession;
         // the resolver is still wired up so a future non-empty table needs no code change here.
-        map.put(EntityType.VILLAGER, icon(8, 8, EntityIconManager::villagerVariant));
-        map.put(EntityType.VINDICATOR, icon(3, 6));
-        map.put(EntityType.WANDERING_TRADER, icon(2, 6));
-        map.put(EntityType.WITCH, icon(4, 2));
-        map.put(EntityType.WITHER, icon(4, 1));
-        map.put(EntityType.WITHER_SKELETON, icon(3, 4));
-        map.put(EntityType.WOLF, icon(1, 4, EntityIconManager::wolfVariant,
+        put(map, "villager", icon(8, 8, EntityIconManager::villagerVariant));
+        put(map, "vindicator", icon(3, 6));
+        put(map, "wandering_trader", icon(2, 6));
+        put(map, "witch", icon(4, 2));
+        put(map, "wither", icon(4, 1));
+        put(map, "wither_skeleton", icon(3, 4));
+        put(map, "wolf", icon(1, 4, EntityIconManager::wolfVariant,
             v("angry", 8, 13), v("tame", 6, 4)));
-        map.put(EntityType.ZOGLIN, icon(1, 2));
-        map.put(EntityType.ZOMBIE, icon(1, 3));
-        map.put(EntityType.ZOMBIE_HORSE, icon(2, 2));
-        map.put(EntityType.ZOMBIE_VILLAGER, icon(2, 1));
-        map.put(EntityType.ZOMBIFIED_PIGLIN, icon(1, 1));
+        put(map, "zoglin", icon(1, 2));
+        put(map, "zombie", icon(1, 3));
+        put(map, "zombie_horse", icon(2, 2));
+        put(map, "zombie_villager", icon(2, 1));
+        put(map, "zombified_piglin", icon(1, 1));
 
         return Map.copyOf(map);
+    }
+
+    private static void put(final Map<EntityType<?>, CellIcon> map, final String id, final CellIcon icon) {
+        Regs.entityType(Ids.of("minecraft", id)).ifPresent(type -> map.put(type, icon));
     }
 }

@@ -59,6 +59,8 @@ public final class McVersions {
         put(29, "1.21.5", "1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11");
         // 26.1 keeps 1.21.11 worldgen but has its own cubiomes enum entry and version line.
         put(30, "26.1", "26.1.1", "26.1.2");
+        // 26.2 adds the Chaos Cubed worldgen family, including sulfur caves.
+        put(31, "26.2");
     }
 
     private McVersions() {

@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.input;
 
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
@@ -97,7 +98,7 @@ public final class Keybinds {
                 maliLibBackend.syncConfigScreenKey(maliLibHint);
                 while (maliLibHint.wasPressed()) {
                     final MinecraftClient client = MinecraftClient.getInstance();
-                    if (client.currentScreen == null) {
+                    if (MinecraftAccess.screen(client) == null) {
                         maliLibBackend.openHotkeyScreen();
                     }
                 }

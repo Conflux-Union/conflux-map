@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.compat.Texts;
@@ -312,7 +313,7 @@ public final class ConfigScreen extends ConfluxScreen {
                 y = addActionRow(
                     y,
                     "confluxmap.config.minimap.position",
-                    () -> MinecraftClient.getInstance().setScreen(new MinimapPositionScreen(this, config, configIo))
+                    () -> MinecraftAccess.setScreen(MinecraftClient.getInstance(), new MinimapPositionScreen(this, config, configIo))
                 );
                 y = addEnumRow(
                     y, "confluxmap.config.minimap.shape", ConfluxConfig.Shape.values(),

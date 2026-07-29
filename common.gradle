@@ -136,9 +136,14 @@ final String newestMinecraftVersion = supportedMinecraftVersions.max(mcSortKey)
 // still declares `provides: [fabric]` so either id resolves there, but 26.1 dropped that alias, and
 // 1.17's build predates the rename - so only the ends of the matrix are actually constrained.
 final String fabricApiId = mcVersion >= 260100 ? 'fabric-api' : 'fabric'
-final String minecraftDependency = oldestMinecraftVersion == newestMinecraftVersion
+final String defaultMinecraftDependency = oldestMinecraftVersion == newestMinecraftVersion
         ? oldestMinecraftVersion
         : ">=$oldestMinecraftVersion <=$newestMinecraftVersion"
+// Unobfuscated releases no longer publish intermediary mappings for a version-coverage scan.
+// A node may therefore declare an explicit semantic-version range after its API breakpoint was
+// verified against the current release. For example, ~26.2 covers stable 26.2 patch releases but
+// deliberately excludes 26.3 and 26.2 pre-releases.
+final String minecraftDependency = project.findProperty('minecraft_dependency') ?: defaultMinecraftDependency
 processResources {
     inputs.property 'modId', id
     inputs.property 'modVersion', project.version.toString()

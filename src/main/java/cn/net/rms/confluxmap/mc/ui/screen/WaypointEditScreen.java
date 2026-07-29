@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
@@ -411,7 +412,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
             final WaypointShareConfirmScreen.Target target = createTarget == CreateTarget.PUBLIC
                 ? WaypointShareConfirmScreen.Target.PUBLIC
                 : WaypointShareConfirmScreen.Target.CHAT;
-            MinecraftClient.getInstance().setScreen(new WaypointShareConfirmScreen(parent, waypoint, target));
+            MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WaypointShareConfirmScreen(parent, waypoint, target));
             return;
         }
         final WaypointStore store = boundLocalStore;
@@ -422,11 +423,11 @@ public final class WaypointEditScreen extends ConfluxScreen {
                 store.update(waypoint);
             }
         }
-        MinecraftClient.getInstance().setScreen(parent);
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
     }
 
     private void onCancel() {
-        MinecraftClient.getInstance().setScreen(parent);
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
     }
 
     @Override
@@ -434,13 +435,13 @@ public final class WaypointEditScreen extends ConfluxScreen {
         super.tick();
         if (createTarget == CreateTarget.LOCAL
             && boundLocalStore != ConfluxMapClient.get().waypointService().current()) {
-            MinecraftClient.getInstance().setScreen(parent);
+            MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
             return;
         }
         if (createTarget == CreateTarget.PUBLIC) {
             final SharedWaypointAvailability availability = sharedWaypoints.availability();
             if (!availability.visible()) {
-                MinecraftClient.getInstance().setScreen(parent);
+                MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
                 return;
             }
             updatePublicDoneButton();

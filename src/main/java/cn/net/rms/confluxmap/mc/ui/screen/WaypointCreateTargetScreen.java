@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
@@ -56,7 +57,7 @@ public final class WaypointCreateTargetScreen extends ConfluxScreen {
         addDrawableChild(Widgets.button(
             left, buttonY, 200, 20,
             Texts.translatable("confluxmap.screen.waypoint.create_local"),
-            button -> MinecraftClient.getInstance().setScreen(
+            button -> MinecraftAccess.setScreen(MinecraftClient.getInstance(),
                 WaypointEditScreen.forCreate(parent, dimensionId, x, y, z)
             )
         ));
@@ -65,7 +66,7 @@ public final class WaypointCreateTargetScreen extends ConfluxScreen {
             publicButton = addDrawableChild(Widgets.button(
                 left, buttonY, 200, 20,
                 Texts.translatable("confluxmap.screen.waypoint.create_public"),
-                button -> MinecraftClient.getInstance().setScreen(
+                button -> MinecraftAccess.setScreen(MinecraftClient.getInstance(),
                     WaypointEditScreen.forPublicCreate(parent, dimensionId, x, y, z)
                 )
             ));
@@ -76,7 +77,7 @@ public final class WaypointCreateTargetScreen extends ConfluxScreen {
         addDrawableChild(Widgets.button(
             left, buttonY, 200, 20,
             Texts.translatable("confluxmap.screen.waypoint.create_chat"),
-            button -> MinecraftClient.getInstance().setScreen(
+            button -> MinecraftAccess.setScreen(MinecraftClient.getInstance(),
                 WaypointEditScreen.forChatCreate(parent, dimensionId, x, y, z)
             )
         ));
@@ -90,7 +91,7 @@ public final class WaypointCreateTargetScreen extends ConfluxScreen {
 
     @Override
     public void onClose() {
-        MinecraftClient.getInstance().setScreen(parent);
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
     }
 
     @Override

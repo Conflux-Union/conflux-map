@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.world;
 
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
@@ -53,7 +54,7 @@ public final class DeathWatcher {
     }
 
     private void tick(final MinecraftClient client) {
-        final boolean deathScreenOpen = client.currentScreen instanceof DeathScreen;
+        final boolean deathScreenOpen = MinecraftAccess.screen(client) instanceof DeathScreen;
         final boolean justDied = deathScreenOpen && !deathScreenWasOpen;
         deathScreenWasOpen = deathScreenOpen;
         if (justDied) {

@@ -383,7 +383,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
         manageWaypointsButton = addDrawableChild(new MapIconButton(
             x, y, MANAGE_WAYPOINT_ICON, 0,
-            b -> MinecraftClient.getInstance().setScreen(
+            b -> MinecraftAccess.setScreen(MinecraftClient.getInstance(),
                 new WaypointListScreen(this, WaypointListScreen.Tab.LOCAL)
             )
         ));
@@ -722,7 +722,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         rebuildWaypointControls();
         if (openEraserSettings) {
             lastEraserButtonClickMs = Long.MIN_VALUE;
-            MinecraftClient.getInstance().setScreen(new AnnotationEraserSettingsScreen(this, config));
+            MinecraftAccess.setScreen(MinecraftClient.getInstance(), new AnnotationEraserSettingsScreen(this, config));
         }
     }
 
@@ -787,7 +787,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         if (store == null) {
             return;
         }
-        selectedAnnotation().ifPresent(annotation -> MinecraftClient.getInstance().setScreen(
+        selectedAnnotation().ifPresent(annotation -> MinecraftAccess.setScreen(MinecraftClient.getInstance(),
             new AnnotationLabelScreen(this, store, annotation)
         ));
     }
@@ -1174,7 +1174,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
         dismissLocationMenu();
         switch (action) {
-            case SET_WAYPOINT -> target.blockY().ifPresent(y -> MinecraftClient.getInstance().setScreen(
+            case SET_WAYPOINT -> target.blockY().ifPresent(y -> MinecraftAccess.setScreen(MinecraftClient.getInstance(),
                 WaypointEditScreen.forCreate(
                     this, gameBridge.session().dimension(), target.blockX(), y, target.blockZ()
                 )
@@ -1369,7 +1369,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             if (!sharedWaypoints.availability().enabled()) {
                 return;
             }
-            MinecraftClient.getInstance().setScreen(new WaypointListScreen(
+            MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WaypointListScreen(
                 this,
                 waypoint.locked() ? WaypointListScreen.Tab.LOCKED : WaypointListScreen.Tab.PUBLIC
             ));
@@ -1377,7 +1377,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
         for (final Waypoint local : waypointService.list()) {
             if (local.id.equals(waypoint.id())) {
-                MinecraftClient.getInstance().setScreen(WaypointEditScreen.forEdit(this, local));
+                MinecraftAccess.setScreen(MinecraftClient.getInstance(), WaypointEditScreen.forEdit(this, local));
                 return;
             }
         }
@@ -2619,7 +2619,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             return;
         }
         final DimensionId dimension = gameBridge.session().dimension();
-        MinecraftClient.getInstance().setScreen(new StructureSearchScreen(
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new StructureSearchScreen(
             this,
             structureMarkers,
             dimension,
