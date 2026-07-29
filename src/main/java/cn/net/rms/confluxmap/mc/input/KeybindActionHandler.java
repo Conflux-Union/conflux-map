@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.input;
 
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
@@ -99,29 +100,29 @@ final class KeybindActionHandler {
 
     private boolean toggleMapScreen() {
         final MinecraftClient client = MinecraftClient.getInstance();
-        if (client.currentScreen instanceof FullscreenMapScreen) {
-            client.currentScreen.onClose();
+        if (MinecraftAccess.screen(client) instanceof FullscreenMapScreen) {
+            MinecraftAccess.screen(client).onClose();
             return true;
         }
-        if (client.player == null || client.currentScreen != null) {
+        if (client.player == null || MinecraftAccess.screen(client) != null) {
             return false;
         }
-        client.setScreen(new FullscreenMapScreen(vanillaOpenMapKey));
+        MinecraftAccess.setScreen(client, new FullscreenMapScreen(vanillaOpenMapKey));
         return true;
     }
 
     private static boolean openScreen(final Screen screen) {
         final MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.currentScreen != null) {
+        if (client.player == null || MinecraftAccess.screen(client) != null) {
             return false;
         }
-        client.setScreen(screen);
+        MinecraftAccess.setScreen(client, screen);
         return true;
     }
 
     private static boolean openNewWaypointAtPlayer() {
         final MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.currentScreen != null) {
+        if (client.player == null || MinecraftAccess.screen(client) != null) {
             return false;
         }
         final Optional<PlayerView> playerView = ConfluxMapClient.get().gameBridge().player();
@@ -129,7 +130,7 @@ final class KeybindActionHandler {
             return false;
         }
         final PlayerView player = playerView.get();
-        client.setScreen(WaypointEditScreen.forCreate(
+        MinecraftAccess.setScreen(client, WaypointEditScreen.forCreate(
             null,
             player.dimension(),
             player.blockX(),

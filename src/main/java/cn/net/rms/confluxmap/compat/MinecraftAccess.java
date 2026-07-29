@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.compat;
 import java.io.IOException;
 import java.io.InputStream;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
@@ -22,6 +23,24 @@ public final class MinecraftAccess {
         //$$ return client.options.getViewDistance().getValue();
         //#else
         return client.options.viewDistance;
+        //#endif
+    }
+
+    /** The active screen, whose owner moved from Minecraft to Gui in 26.2. */
+    public static Screen screen(final MinecraftClient client) {
+        //#if MC>=260200
+        //$$ return client.gui.screen();
+        //#else
+        return client.currentScreen;
+        //#endif
+    }
+
+    /** Changes the active screen through the version-appropriate owner. */
+    public static void setScreen(final MinecraftClient client, final Screen screen) {
+        //#if MC>=260200
+        //$$ client.gui.setScreen(screen);
+        //#else
+        client.setScreen(screen);
         //#endif
     }
 

@@ -35,6 +35,7 @@ import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
 import cn.net.rms.confluxmap.mc.radar.EntityIconReloadListener;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
+import cn.net.rms.confluxmap.mc.render.Mesh;
 import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureService;
 import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
 import cn.net.rms.confluxmap.mc.ui.hud.MinimapHudRenderer;
@@ -239,6 +240,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.endSession();
         correctionStore.flush();
         configIo.save(config);
+        //#if MC>=260200
+        //$$ Mesh.close();
+        //#endif
         executors.shutdown(5000L);
     }
 

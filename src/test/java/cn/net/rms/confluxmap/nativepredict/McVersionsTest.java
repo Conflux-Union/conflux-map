@@ -10,4 +10,10 @@ class McVersionsTest {
         assertEquals(30, McVersions.toCubiomes("26.1").orElseThrow());
         assertEquals(30, McVersions.toCubiomes("26.1.2").orElseThrow());
     }
+
+    @Test
+    void minecraft262UsesItsPinnedCubiomesGenerator() {
+        assertEquals(31, McVersions.toCubiomes("26.2").orElseThrow());
+        assertEquals(31, McVersions.toCubiomes("26.2.1").orElseThrow());
+    }
 }

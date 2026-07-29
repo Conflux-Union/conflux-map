@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
@@ -44,7 +45,7 @@ public final class WaypointShareMenuScreen extends ConfluxScreen {
             publishButton = addDrawableChild(Widgets.button(
                 left, buttonY, 200, 20,
                 Texts.translatable("confluxmap.screen.waypoint.publish"),
-                button -> MinecraftClient.getInstance().setScreen(
+                button -> MinecraftAccess.setScreen(MinecraftClient.getInstance(),
                     new WaypointShareConfirmScreen(parent, waypoint, WaypointShareConfirmScreen.Target.PUBLIC)
                 )
             ));
@@ -54,7 +55,7 @@ public final class WaypointShareMenuScreen extends ConfluxScreen {
         addDrawableChild(Widgets.button(
             left, buttonY, 200, 20,
             Texts.translatable("confluxmap.screen.waypoint.send_chat"),
-            button -> MinecraftClient.getInstance().setScreen(
+            button -> MinecraftAccess.setScreen(MinecraftClient.getInstance(),
                 new WaypointShareConfirmScreen(parent, waypoint, WaypointShareConfirmScreen.Target.CHAT)
             )
         ));
@@ -68,7 +69,7 @@ public final class WaypointShareMenuScreen extends ConfluxScreen {
 
     @Override
     public void onClose() {
-        MinecraftClient.getInstance().setScreen(parent);
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
     }
 
     @Override

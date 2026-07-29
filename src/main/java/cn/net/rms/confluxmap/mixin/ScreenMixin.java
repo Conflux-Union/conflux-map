@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mixin;
 
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatClickPayload;
 import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatCodec;
 import cn.net.rms.confluxmap.compat.Texts;
@@ -113,7 +114,7 @@ public abstract class ScreenMixin {
             return true;
         }
         final WaypointChatCodec.Candidate waypoint = candidate.get();
-        client.setScreen(WaypointEditScreen.forCreate(
+        MinecraftAccess.setScreen(client, WaypointEditScreen.forCreate(
             parent,
             waypoint.dimensionId(),
             waypoint.name(),

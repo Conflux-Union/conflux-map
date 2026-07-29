@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.compat;
 
 import net.minecraft.block.Block;
+import net.minecraft.entity.EntityType;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
@@ -52,6 +53,15 @@ public final class Regs {
         //#endif
     }
 
+    /** The static entity-type registry. */
+    public static Registry<EntityType<?>> entityTypes() {
+        //#if MC>=12100
+        //$$ return Registries.ENTITY_TYPE;
+        //#else
+        return Registry.ENTITY_TYPE;
+        //#endif
+    }
+
     /** Looks up a biome without exposing the registry API rename at 1.21.3. */
     public static Biome biome(final Registry<Biome> registry, final Identifier id) {
         //#if MC>=12103
@@ -71,6 +81,15 @@ public final class Regs {
         //$$ return blocks().getOptionalValue(id);
         //#else
         return blocks().getOrEmpty(id);
+        //#endif
+    }
+
+    /** Looks an entity type up by identifier without depending on generated constant owners. */
+    public static Optional<EntityType<?>> entityType(final Identifier id) {
+        //#if MC>=12105
+        //$$ return entityTypes().getOptionalValue(id);
+        //#else
+        return entityTypes().getOrEmpty(id);
         //#endif
     }
 

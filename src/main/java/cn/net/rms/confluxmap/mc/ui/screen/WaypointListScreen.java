@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
@@ -185,7 +186,7 @@ public final class WaypointListScreen extends ConfluxScreen {
 
     @Override
     public void onClose() {
-        MinecraftClient.getInstance().setScreen(parent);
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
     }
 
     @Override
@@ -634,7 +635,7 @@ public final class WaypointListScreen extends ConfluxScreen {
         final double x = Math.floor(playerView.map(PlayerView::x).orElse(0.0));
         final double y = Math.floor(playerView.map(PlayerView::y).orElse(64.0));
         final double z = Math.floor(playerView.map(PlayerView::z).orElse(0.0));
-        MinecraftClient.getInstance().setScreen(
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(),
             tab == Tab.PUBLIC
                 ? WaypointEditScreen.forPublicCreate(this, dimension, x, y, z)
                 : WaypointEditScreen.forCreate(
@@ -650,7 +651,7 @@ public final class WaypointListScreen extends ConfluxScreen {
             || !renderedStore.persistenceWritable()) {
             return;
         }
-        MinecraftClient.getInstance().setScreen(WaypointEditScreen.forEdit(this, waypoint));
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), WaypointEditScreen.forEdit(this, waypoint));
     }
 
     private void openImport(final WaypointStore renderedStore) {
@@ -659,18 +660,18 @@ public final class WaypointListScreen extends ConfluxScreen {
             || !renderedStore.persistenceWritable()) {
             return;
         }
-        MinecraftClient.getInstance().setScreen(new WaypointImportScreen(this, renderedStore));
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WaypointImportScreen(this, renderedStore));
     }
 
     private void openShare(final WaypointStore renderedStore, final Waypoint waypoint) {
         if (renderedStore != waypointService.current()) {
             return;
         }
-        MinecraftClient.getInstance().setScreen(new WaypointShareMenuScreen(this, waypoint));
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WaypointShareMenuScreen(this, waypoint));
     }
 
     private void openSharedChat(final SharedWaypoint waypoint) {
-        MinecraftClient.getInstance().setScreen(new WaypointShareConfirmScreen(
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WaypointShareConfirmScreen(
             this,
             displayCopy(waypoint),
             WaypointShareConfirmScreen.Target.CHAT
@@ -888,7 +889,7 @@ public final class WaypointListScreen extends ConfluxScreen {
         if (store == null || store != waypointService.current() || !store.persistenceWritable()) {
             return;
         }
-        MinecraftClient.getInstance().setScreen(new WaypointSetNameScreen(
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WaypointSetNameScreen(
             this,
             store,
             existingName,
@@ -909,7 +910,7 @@ public final class WaypointListScreen extends ConfluxScreen {
             return;
         }
         final String setName = selectedSetFilter;
-        MinecraftClient.getInstance().setScreen(new WaypointSetDeleteConfirmScreen(
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WaypointSetDeleteConfirmScreen(
             this,
             store,
             setName,
