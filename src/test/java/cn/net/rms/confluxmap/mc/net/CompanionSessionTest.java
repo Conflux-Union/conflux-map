@@ -68,6 +68,25 @@ class CompanionSessionTest {
         assertTrue(session.structureSearchAllowed());
     }
 
+    @Test
+    void activePolicyReportsWithheldSeedAndCorrectionsAsServerDisabled() {
+        final CompanionSession session = new CompanionSession();
+        session.onPolicy(new HelloPolicyS2C(
+            new HelloPolicyS2C.Flags(false, false, false, false),
+            "11111111-2222-3333-4444-555555555555",
+            "1.17.1",
+            new HelloPolicyS2C.Budgets(65_536, 8, 300, 2),
+            List.of()
+        ));
+
+        assertTrue(session.seedSharingDisabledByServer());
+        assertTrue(session.mapCorrectionsDisabledByServer());
+
+        session.reset();
+        assertFalse(session.seedSharingDisabledByServer());
+        assertFalse(session.mapCorrectionsDisabledByServer());
+    }
+
     private static HelloPolicyS2C policy(final String worldId) {
         return policy(worldId, false);
     }

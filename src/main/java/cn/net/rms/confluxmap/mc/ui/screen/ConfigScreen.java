@@ -1,15 +1,17 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.ConfluxMapClient;
+import cn.net.rms.confluxmap.bridge.GameBridge;
+import cn.net.rms.confluxmap.compat.Texts;
+import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
+import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
-import cn.net.rms.confluxmap.compat.Widgets;
-import cn.net.rms.confluxmap.compat.Texts;
 import java.util.Arrays;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -83,6 +85,51 @@ public final class ConfigScreen extends ConfluxScreen {
         String noticeKey() {
             return noticeKey;
         }
+
+        String tooltipKey() {
+            return noticeKey;
+        }
+    }
+
+    enum PredictionControl { UNDERLAY, NETWORK_SYNC, STRUCTURES }
+
+    record PredictionSettingsAccess(
+        boolean underlayDisabledByServer,
+        boolean networkSyncDisabledByServer,
+        boolean structuresDisabledByServer,
+        boolean structureSearchAllowed
+    ) {
+        static PredictionSettingsAccess from(
+            final boolean singleplayer,
+            final boolean seedIndependentUnderlay,
+            final boolean seedSharingDisabledByServer,
+            final boolean networkSyncDisabledByServer,
+            final boolean structureSearchAllowed
+        ) {
+            final boolean remoteSeedDisabled = !singleplayer && seedSharingDisabledByServer;
+            return new PredictionSettingsAccess(
+                remoteSeedDisabled && !seedIndependentUnderlay,
+                networkSyncDisabledByServer,
+                remoteSeedDisabled,
+                structureSearchAllowed
+            );
+        }
+
+        String disabledReasonKey(final PredictionControl control) {
+            return switch (control) {
+                case UNDERLAY -> underlayDisabledByServer
+                    ? "confluxmap.screen.config.prediction.seed_disabled_by_server"
+                    : null;
+                case NETWORK_SYNC -> networkSyncDisabledByServer
+                    ? "confluxmap.screen.config.prediction.sync_disabled_by_server"
+                    : null;
+                case STRUCTURES -> !structureSearchAllowed
+                    ? "confluxmap.map.structure_search.disabled_by_server"
+                    : structuresDisabledByServer
+                        ? "confluxmap.screen.config.prediction.seed_disabled_by_server"
+                        : null;
+            };
+        }
     }
 
     private static final int MARGIN = 8;
@@ -107,6 +154,8 @@ public final class ConfigScreen extends ConfluxScreen {
     private final ConfigIo configIo;
     private final CompanionSession companionSession;
     private final SharedWaypointClient sharedWaypoints;
+    private final GameBridge gameBridge;
+    private final PredictionState predictionState;
 
     private Category category = Category.MINIMAP;
     private int rowWidth = MAX_ROW_WIDTH;
@@ -115,6 +164,7 @@ public final class ConfigScreen extends ConfluxScreen {
     private int contentHeight;
     private SharedWaypointAvailability sharedAvailability;
     private RadarSettingsAccess radarAccess = RadarSettingsAccess.ALLOWED;
+    private PredictionSettingsAccess predictionAccess;
 
     public ConfigScreen() {
         super(Texts.translatable("confluxmap.screen.config.title"));
@@ -123,6 +173,8 @@ public final class ConfigScreen extends ConfluxScreen {
         this.configIo = app.configIo();
         this.companionSession = app.companionSession();
         this.sharedWaypoints = app.sharedWaypoints();
+        this.gameBridge = app.gameBridge();
+        this.predictionState = app.predictionState();
     }
 
     /** Keep the world (and this session's capture pipeline) running while the screen is open. */
@@ -154,6 +206,13 @@ public final class ConfigScreen extends ConfluxScreen {
         if (currentRadarAccess != radarAccess) {
             radarAccess = currentRadarAccess;
             if (category == Category.RADAR) {
+                rebuild();
+            }
+        }
+        final PredictionSettingsAccess currentPredictionAccess = predictionSettingsAccess();
+        if (!currentPredictionAccess.equals(predictionAccess)) {
+            predictionAccess = currentPredictionAccess;
+            if (category == Category.PREDICTION) {
                 rebuild();
             }
         }
@@ -211,6 +270,7 @@ public final class ConfigScreen extends ConfluxScreen {
     private void rebuild() {
         sharedAvailability = sharedWaypoints.availability();
         radarAccess = RadarSettingsAccess.from(companionSession.entityRadarAllowed());
+        predictionAccess = predictionSettingsAccess();
         clearChildren();
         addTabs();
         addRows();
@@ -292,38 +352,46 @@ public final class ConfigScreen extends ConfluxScreen {
                 break;
             case RADAR:
                 final boolean radarControlsActive = radarAccess.controlsActive();
+                final String radarTooltipKey = radarAccess.tooltipKey();
                 y = addToggleRow(
                     y, "confluxmap.config.radar.enabled",
-                    () -> config.radarEnabled, v -> config.radarEnabled = v, radarControlsActive
+                    () -> config.radarEnabled, v -> config.radarEnabled = v,
+                    radarControlsActive, radarTooltipKey
                 );
                 y = addToggleRow(
                     y, "confluxmap.config.radar.show_players",
-                    () -> config.radarShowPlayers, v -> config.radarShowPlayers = v, radarControlsActive
+                    () -> config.radarShowPlayers, v -> config.radarShowPlayers = v,
+                    radarControlsActive, radarTooltipKey
                 );
                 y = addToggleRow(
                     y, "confluxmap.config.radar.show_hostile",
-                    () -> config.radarShowHostile, v -> config.radarShowHostile = v, radarControlsActive
+                    () -> config.radarShowHostile, v -> config.radarShowHostile = v,
+                    radarControlsActive, radarTooltipKey
                 );
                 y = addToggleRow(
                     y, "confluxmap.config.radar.show_passive",
-                    () -> config.radarShowPassive, v -> config.radarShowPassive = v, radarControlsActive
+                    () -> config.radarShowPassive, v -> config.radarShowPassive = v,
+                    radarControlsActive, radarTooltipKey
                 );
                 y = addToggleRow(
                     y, "confluxmap.config.radar.show_other",
-                    () -> config.radarShowOther, v -> config.radarShowOther = v, radarControlsActive
+                    () -> config.radarShowOther, v -> config.radarShowOther = v,
+                    radarControlsActive, radarTooltipKey
                 );
                 y = addToggleRow(
                     y, "confluxmap.config.radar.show_player_names",
-                    () -> config.radarShowPlayerNames, v -> config.radarShowPlayerNames = v, radarControlsActive
+                    () -> config.radarShowPlayerNames, v -> config.radarShowPlayerNames = v,
+                    radarControlsActive, radarTooltipKey
                 );
                 y = addIntSliderRow(
                     y, "confluxmap.config.radar.max_entities", 1, 500,
                     () -> config.radarMaxEntities, v -> config.radarMaxEntities = v,
-                    ConfigScreen::plainText, radarControlsActive
+                    ConfigScreen::plainText, radarControlsActive, radarTooltipKey
                 );
                 y = addToggleRow(
                     y, "confluxmap.config.radar.icons_enabled",
-                    () -> config.radarIconsEnabled, v -> config.radarIconsEnabled = v, radarControlsActive
+                    () -> config.radarIconsEnabled, v -> config.radarIconsEnabled = v,
+                    radarControlsActive, radarTooltipKey
                 );
                 break;
             case WAYPOINTS:
@@ -331,11 +399,14 @@ public final class ConfigScreen extends ConfluxScreen {
                     y, "confluxmap.config.waypoints.show_local",
                     () -> config.localWaypointsVisible, v -> config.localWaypointsVisible = v
                 );
-                if (sharedAvailability.enabled()) {
+                if (sharedAvailability.visible()) {
                     y = addToggleRow(
                         y, "confluxmap.config.waypoints.show_shared",
                         () -> config.sharedWaypointsVisible, v -> config.sharedWaypointsVisible = v,
-                        sharedAvailability.ready()
+                        sharedAvailability.ready(),
+                        sharedAvailability.disabledByServer()
+                            ? "confluxmap.shared_waypoints.disabled_by_server"
+                            : null
                     );
                 }
                 y = addToggleRow(
@@ -378,20 +449,43 @@ public final class ConfigScreen extends ConfluxScreen {
                 );
                 break;
             case PREDICTION:
-                y = addToggleRow(y, "confluxmap.config.prediction.enabled", () -> config.predictionEnabled, v -> config.predictionEnabled = v);
-                y = addToggleRow(y, "confluxmap.config.prediction.network_sync", () -> config.predictionNetworkSync, v -> config.predictionNetworkSync = v);
-                y = addToggleRow(y, "confluxmap.config.prediction.show_structures", () -> config.predictionShowStructures, v -> config.predictionShowStructures = v);
+                final String underlayReason = predictionAccess.disabledReasonKey(
+                    PredictionControl.UNDERLAY
+                );
+                final String syncReason = predictionAccess.disabledReasonKey(
+                    PredictionControl.NETWORK_SYNC
+                );
+                final String structureReason = predictionAccess.disabledReasonKey(
+                    PredictionControl.STRUCTURES
+                );
+                y = addToggleRow(
+                    y, "confluxmap.config.prediction.enabled",
+                    () -> config.predictionEnabled, v -> config.predictionEnabled = v,
+                    underlayReason == null, underlayReason
+                );
+                y = addToggleRow(
+                    y, "confluxmap.config.prediction.network_sync",
+                    () -> config.predictionNetworkSync, v -> config.predictionNetworkSync = v,
+                    syncReason == null, syncReason
+                );
+                y = addToggleRow(
+                    y, "confluxmap.config.prediction.show_structures",
+                    () -> config.predictionShowStructures, v -> config.predictionShowStructures = v,
+                    structureReason == null, structureReason
+                );
                 y = addEnumRow(
                     y, "confluxmap.config.prediction.view_mode", PredictionViewMode.values(),
                     () -> config.predictionViewMode,
                     v -> {
                         config.predictionViewMode = v;
                         ConfluxMapClient.get().predictionTileService().setViewMode(v);
-                    }, ConfigScreen::predictionViewModeKey
+                    }, ConfigScreen::predictionViewModeKey,
+                    underlayReason == null, underlayReason
                 );
                 y = addIntSliderRow(
                     y, "confluxmap.config.prediction.debounce", 100, 2000,
-                    () -> config.predictionDebounceMs, v -> config.predictionDebounceMs = v, ConfigScreen::plainText
+                    () -> config.predictionDebounceMs, v -> config.predictionDebounceMs = v,
+                    ConfigScreen::plainText, underlayReason == null, underlayReason
                 );
                 break;
             default:
@@ -415,6 +509,17 @@ public final class ConfigScreen extends ConfluxScreen {
         final Consumer<Boolean> setter,
         final boolean active
     ) {
+        return addToggleRow(y, labelKey, getter, setter, active, null);
+    }
+
+    private int addToggleRow(
+        final int y,
+        final String labelKey,
+        final BooleanSupplier getter,
+        final Consumer<Boolean> setter,
+        final boolean active,
+        final String disabledTooltipKey
+    ) {
         if (rowVisible(y)) {
             final ButtonWidget button = addDrawableChild(Widgets.button(
                 rowX(), y, rowWidth, ROW_HEIGHT - 2, boolLabel(labelKey, getter.getAsBoolean()),
@@ -425,6 +530,7 @@ public final class ConfigScreen extends ConfluxScreen {
                 }
             ));
             button.active = active;
+            setDisabledTooltip(button, disabledTooltipKey);
         }
         return y + ROW_HEIGHT;
     }
@@ -437,8 +543,21 @@ public final class ConfigScreen extends ConfluxScreen {
         final Consumer<T> setter,
         final Function<T, String> valueKeyFn
     ) {
+        return addEnumRow(y, labelKey, values, getter, setter, valueKeyFn, true, null);
+    }
+
+    private <T> int addEnumRow(
+        final int y,
+        final String labelKey,
+        final T[] values,
+        final Supplier<T> getter,
+        final Consumer<T> setter,
+        final Function<T, String> valueKeyFn,
+        final boolean active,
+        final String disabledTooltipKey
+    ) {
         if (rowVisible(y)) {
-            addDrawableChild(Widgets.button(
+            final ButtonWidget button = addDrawableChild(Widgets.button(
                 rowX(), y, rowWidth, ROW_HEIGHT - 2, enumLabel(labelKey, getter.get(), valueKeyFn),
                 b -> {
                     final T next = nextValue(values, getter.get());
@@ -446,6 +565,8 @@ public final class ConfigScreen extends ConfluxScreen {
                     b.setMessage(enumLabel(labelKey, next, valueKeyFn));
                 }
             ));
+            button.active = active;
+            setDisabledTooltip(button, disabledTooltipKey);
         }
         return y + ROW_HEIGHT;
     }
@@ -495,11 +616,26 @@ public final class ConfigScreen extends ConfluxScreen {
         final IntFunction<String> valueText,
         final boolean active
     ) {
+        return addIntSliderRow(y, labelKey, min, max, getter, setter, valueText, active, null);
+    }
+
+    private int addIntSliderRow(
+        final int y,
+        final String labelKey,
+        final int min,
+        final int max,
+        final IntSupplier getter,
+        final IntConsumer setter,
+        final IntFunction<String> valueText,
+        final boolean active,
+        final String disabledTooltipKey
+    ) {
         if (rowVisible(y)) {
             final IntSliderWidget slider = addDrawableChild(
                 new IntSliderWidget(rowX(), y, rowWidth, ROW_HEIGHT - 2, min, max, labelKey, getter, setter, valueText)
             );
             slider.active = active;
+            setDisabledTooltip(slider, disabledTooltipKey);
         }
         return y + ROW_HEIGHT;
     }
@@ -539,6 +675,20 @@ public final class ConfigScreen extends ConfluxScreen {
 
     private static String renderDistanceText(final int value) {
         return value == 0 ? resolvedText("confluxmap.value.unlimited") : blocksText(value);
+    }
+
+    private PredictionSettingsAccess predictionSettingsAccess() {
+        final boolean singleplayer = MinecraftClient.getInstance().isInSingleplayer();
+        final boolean seedIndependentUnderlay = predictionState.flatBaseline(
+            gameBridge.session().dimension()
+        ) != null;
+        return PredictionSettingsAccess.from(
+            singleplayer,
+            seedIndependentUnderlay,
+            companionSession.seedSharingDisabledByServer(),
+            companionSession.mapCorrectionsDisabledByServer(),
+            companionSession.structureSearchAllowed()
+        );
     }
 
     private static String shapeKey(final ConfluxConfig.Shape shape) {

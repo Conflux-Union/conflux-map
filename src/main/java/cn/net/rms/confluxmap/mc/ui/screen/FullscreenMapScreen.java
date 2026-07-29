@@ -369,7 +369,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         ));
         localVisibilityButton.setSelected(config.localWaypointsVisible);
         y += CONTROL_SIZE + CONTROL_GAP;
-        if (sharedAvailability.enabled()) {
+        if (sharedAvailability.visible()) {
             sharedVisibilityButton = addDrawableChild(new MapIconButton(
                 x, y, SHARED_WAYPOINT_ICON, SHARED_CONTROL_ACCENT, b -> {
                     config.sharedWaypointsVisible = !config.sharedWaypointsVisible;
@@ -869,7 +869,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
         refreshDisplayModeButton();
         final SharedWaypointAvailability availability = sharedWaypoints.availability();
-        if (sharedAvailability == null || availability.enabled() != sharedAvailability.enabled()) {
+        if (sharedAvailability == null || availability.visible() != sharedAvailability.visible()) {
             rebuildWaypointControls();
             return;
         }
@@ -1720,9 +1720,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         } else if (localVisibilityButton != null && localVisibilityButton.isHovered()) {
             tooltip = visibilityTooltip(true);
         } else if (sharedVisibilityButton != null && sharedVisibilityButton.isHovered()) {
-            tooltip = sharedVisibilityButton.active
-                ? visibilityTooltip(false)
-                : Texts.translatable("confluxmap.map.waypoints.shared.unavailable");
+            tooltip = sharedAvailability.disabledByServer()
+                ? Texts.translatable("confluxmap.shared_waypoints.disabled_by_server")
+                : sharedVisibilityButton.active
+                    ? visibilityTooltip(false)
+                    : Texts.translatable("confluxmap.map.waypoints.shared.unavailable");
         } else if (manageWaypointsButton != null && manageWaypointsButton.isHovered()) {
             tooltip = Texts.translatable("confluxmap.map.waypoints.manage.tooltip");
         } else if (locationActionHeightUnavailable()) {

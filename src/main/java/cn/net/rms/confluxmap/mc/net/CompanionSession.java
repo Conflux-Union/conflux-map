@@ -162,6 +162,18 @@ public final class CompanionSession {
         return state.get() != State.ACTIVE || current == null || !current.flags().structureSearchForbidden();
     }
 
+    /** Whether an active companion explicitly withheld the seed from this client. */
+    public boolean seedSharingDisabledByServer() {
+        final HelloPolicyS2C current = policy;
+        return state.get() == State.ACTIVE && current != null && !current.flags().seedGranted();
+    }
+
+    /** Whether an active companion explicitly declined to serve map corrections. */
+    public boolean mapCorrectionsDisabledByServer() {
+        final HelloPolicyS2C current = policy;
+        return state.get() == State.ACTIVE && current != null && !current.flags().correctionsEnabled();
+    }
+
     /**
      * The server-advertised uniform surface for dimension index {@code dimIndex}, or empty when
      * the session is not active or the dim is not superflat (including pre-minor-2 servers,

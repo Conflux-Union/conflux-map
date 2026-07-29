@@ -15,6 +15,7 @@ class ConfigScreenRadarPolicyTest {
         assertEquals(ConfigScreen.RadarSettingsAccess.ALLOWED, access);
         assertTrue(access.controlsActive());
         assertNull(access.noticeKey());
+        assertNull(access.tooltipKey());
     }
 
     @Test
@@ -24,5 +25,6 @@ class ConfigScreenRadarPolicyTest {
         assertEquals(ConfigScreen.RadarSettingsAccess.FORBIDDEN_BY_SERVER, access);
         assertFalse(access.controlsActive());
         assertEquals("confluxmap.screen.config.radar.disabled_by_server", access.noticeKey());
+        assertEquals("confluxmap.screen.config.radar.disabled_by_server", access.tooltipKey());
     }
 }

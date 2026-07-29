@@ -72,7 +72,7 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
     protected void init() {
         confirmButton = null;
         final SharedWaypointAvailability availability = sharedWaypoints.availability();
-        if (target == Target.PUBLIC && !availability.enabled()) {
+        if (target == Target.PUBLIC && !availability.visible()) {
             return;
         }
 
@@ -121,7 +121,7 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
             return;
         }
         final SharedWaypointAvailability availability = sharedWaypoints.availability();
-        if (!availability.enabled()) {
+        if (!availability.visible()) {
             onClose();
             return;
         }
@@ -134,6 +134,12 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
         final boolean shared = sharedWaypoints.isLocationShared(waypoint);
         final boolean pending = sharedWaypoints.isCreatePending(waypoint);
         confirmButton.active = availability.ready() && !shared && !pending;
+        setDisabledTooltip(
+            confirmButton,
+            availability.disabledByServer()
+                ? "confluxmap.shared_waypoints.disabled_by_server"
+                : null
+        );
         confirmButton.setMessage(Texts.translatable(
             shared
                 ? "confluxmap.screen.waypoint.already_shared"

@@ -6,6 +6,7 @@ import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
+import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.StructureIconCatalog;
@@ -38,6 +39,7 @@ final class StructureSearchScreen extends ConfluxScreen {
     private final StructureMarkerService structures;
     private final DimensionId dimension;
     private final ConfluxConfig config;
+    private final CompanionSession companion;
     private final List<StructureIndex.StructureType> available;
     private final Map<StructureIndex.StructureType, ButtonWidget> visibilityButtons =
         new EnumMap<>(StructureIndex.StructureType.class);
@@ -64,7 +66,9 @@ final class StructureSearchScreen extends ConfluxScreen {
         this.parent = parent;
         this.structures = structures;
         this.dimension = dimension;
-        this.config = ConfluxMapClient.get().config();
+        final ConfluxMapClient app = ConfluxMapClient.get();
+        this.config = app.config();
+        this.companion = app.companionSession();
         this.available = new ArrayList<>(available);
         this.available.sort(Comparator.comparing(StructureSearchScreen::localizedName));
     }
@@ -132,12 +136,14 @@ final class StructureSearchScreen extends ConfluxScreen {
             Texts.translatable("confluxmap.screen.structure_search.back"),
             ignored -> onClose()
         ));
+        updatePolicyAccess();
         updateRows();
     }
 
     @Override
     public void tick() {
         Widgets.tick(searchField);
+        updatePolicyAccess();
         final String query = searchField == null ? "" : searchField.getText();
         if (!query.equals(observedQuery)) {
             observedQuery = query;
@@ -153,6 +159,9 @@ final class StructureSearchScreen extends ConfluxScreen {
     }
 
     private void locate(final StructureIndex.StructureType type) {
+        if (!companion.structureSearchAllowed()) {
+            return;
+        }
         statusKey = "confluxmap.screen.structure_search.not_found";
         statusArgs = new Object[] {localizedName(type), SEARCH_RADIUS};
         final Optional<StructureIndex.Marker> marker = structures.findNearest(
@@ -168,12 +177,18 @@ final class StructureSearchScreen extends ConfluxScreen {
     }
 
     private void toggleMasterVisibility() {
+        if (!companion.structureSearchAllowed()) {
+            return;
+        }
         config.predictionShowStructures = !config.predictionShowStructures;
         masterButton.setMessage(masterLabel());
         saveConfig();
     }
 
     private void toggleTypeVisibility(final StructureIndex.StructureType type) {
+        if (!companion.structureSearchAllowed()) {
+            return;
+        }
         final boolean visible = isVisible(type);
         config.predictionStructureVisibility.setVisible(
             structures.mcVersion(), dimension, type, !visible
@@ -202,6 +217,25 @@ final class StructureSearchScreen extends ConfluxScreen {
 
     private void saveConfig() {
         ConfluxMapClient.get().configIo().save(config);
+    }
+
+    private void updatePolicyAccess() {
+        final boolean allowed = companion.structureSearchAllowed();
+        final String reasonKey = allowed
+            ? null
+            : "confluxmap.map.structure_search.disabled_by_server";
+        if (masterButton != null) {
+            masterButton.active = allowed;
+            setDisabledTooltip(masterButton, reasonKey);
+        }
+        for (final ButtonWidget button : visibilityButtons.values()) {
+            button.active = allowed;
+            setDisabledTooltip(button, reasonKey);
+        }
+        for (final ButtonWidget button : locateButtons.values()) {
+            button.active = allowed;
+            setDisabledTooltip(button, reasonKey);
+        }
     }
 
     private void updateRows() {

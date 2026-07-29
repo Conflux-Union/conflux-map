@@ -8,11 +8,20 @@ import org.junit.jupiter.api.Test;
 
 class SharedWaypointAvailabilityTest {
     @Test
-    void onlyEnabledStateExposesPublicControls() {
+    void supportedServerKeepsPublicControlsVisibleWhenFeatureIsDisabled() {
         for (final SharedWaypointClientState.State state : SharedWaypointClientState.State.values()) {
             final SharedWaypointAvailability availability = SharedWaypointAvailability.from(state, false);
+            assertEquals(
+                state == SharedWaypointClientState.State.SUPPORTED_DISABLED
+                    || state == SharedWaypointClientState.State.ENABLED,
+                availability.visible()
+            );
             assertEquals(state == SharedWaypointClientState.State.ENABLED, availability.enabled());
             assertFalse(availability.ready());
+            assertEquals(
+                state == SharedWaypointClientState.State.SUPPORTED_DISABLED,
+                availability.disabledByServer()
+            );
         }
     }
 

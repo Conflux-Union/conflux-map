@@ -38,9 +38,9 @@ public final class WaypointShareMenuScreen extends ConfluxScreen {
         publishButton = null;
 
         final int left = width / 2 - 100;
-        final int top = Math.max(54, height / 2 - (sharedAvailability.enabled() ? 42 : 30));
+        final int top = Math.max(54, height / 2 - (sharedAvailability.visible() ? 42 : 30));
         int buttonY = top;
-        if (sharedAvailability.enabled()) {
+        if (sharedAvailability.visible()) {
             publishButton = addDrawableChild(Widgets.button(
                 left, buttonY, 200, 20,
                 Texts.translatable("confluxmap.screen.waypoint.publish"),
@@ -80,7 +80,7 @@ public final class WaypointShareMenuScreen extends ConfluxScreen {
     public void tick() {
         super.tick();
         final SharedWaypointAvailability availability = sharedWaypoints.availability();
-        if (sharedAvailability == null || availability.enabled() != sharedAvailability.enabled()) {
+        if (sharedAvailability == null || availability.visible() != sharedAvailability.visible()) {
             rebuild();
             return;
         }
@@ -97,7 +97,7 @@ public final class WaypointShareMenuScreen extends ConfluxScreen {
         draw.drawTextWithShadow(
             this.textRenderer, title, width / 2f - this.textRenderer.getWidth(title) / 2f, 24, 0xFFFFFFFF
         );
-        if (sharedAvailability != null && sharedAvailability.enabled()) {
+        if (sharedAvailability != null && sharedAvailability.visible()) {
             final String status = this.textRenderer.trimToWidth(
                 Texts.translatable(statusKey()).getString(), Math.max(40, width - 24)
             );
@@ -112,6 +112,9 @@ public final class WaypointShareMenuScreen extends ConfluxScreen {
     }
 
     private String statusKey() {
+        if (sharedAvailability.disabledByServer()) {
+            return "confluxmap.shared_waypoints.disabled";
+        }
         if (sharedWaypoints.isLocationShared(waypoint)) {
             return "confluxmap.screen.waypoint.duplicate_location";
         }
@@ -127,6 +130,12 @@ public final class WaypointShareMenuScreen extends ConfluxScreen {
         final boolean shared = sharedWaypoints.isLocationShared(waypoint);
         final boolean pending = sharedWaypoints.isCreatePending(waypoint);
         publishButton.active = sharedAvailability.ready() && !shared && !pending;
+        setDisabledTooltip(
+            publishButton,
+            sharedAvailability.disabledByServer()
+                ? "confluxmap.shared_waypoints.disabled_by_server"
+                : null
+        );
         publishButton.setMessage(Texts.translatable(
             shared
                 ? "confluxmap.screen.waypoint.already_shared"

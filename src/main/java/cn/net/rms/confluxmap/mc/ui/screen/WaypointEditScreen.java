@@ -2,7 +2,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.model.DimensionId;
-import cn.net.rms.confluxmap.core.net.shared.SharedWaypointClientState;
+import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointSet;
 import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
@@ -293,6 +293,8 @@ public final class WaypointEditScreen extends ConfluxScreen {
         ));
         if (createTarget == CreateTarget.LOCAL) {
             doneButton.active = boundLocalStore != null && boundLocalStore.persistenceWritable();
+        } else if (createTarget == CreateTarget.PUBLIC) {
+            updatePublicDoneButton();
         }
         addDrawableChild(Widgets.button(
             centerX + 4, height - 32, 100, FIELD_HEIGHT, Texts.translatable("confluxmap.screen.waypoint.cancel"), b -> onCancel()
@@ -387,6 +389,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
                 || !boundLocalStore.persistenceWritable())) {
             return;
         }
+        if (createTarget == CreateTarget.PUBLIC && !sharedWaypoints.availability().ready()) {
+            return;
+        }
         final String name = nameField.getText().trim();
         if (name.isEmpty()) {
             return;
@@ -432,10 +437,25 @@ public final class WaypointEditScreen extends ConfluxScreen {
             MinecraftClient.getInstance().setScreen(parent);
             return;
         }
-        if (createTarget == CreateTarget.PUBLIC
-            && sharedWaypoints.state() != SharedWaypointClientState.State.ENABLED) {
-            MinecraftClient.getInstance().setScreen(parent);
+        if (createTarget == CreateTarget.PUBLIC) {
+            final SharedWaypointAvailability availability = sharedWaypoints.availability();
+            if (!availability.visible()) {
+                MinecraftClient.getInstance().setScreen(parent);
+                return;
+            }
+            updatePublicDoneButton();
         }
+    }
+
+    private void updatePublicDoneButton() {
+        final SharedWaypointAvailability availability = sharedWaypoints.availability();
+        doneButton.active = availability.ready();
+        setDisabledTooltip(
+            doneButton,
+            availability.disabledByServer()
+                ? "confluxmap.shared_waypoints.disabled_by_server"
+                : null
+        );
     }
 
     private static double parseOr(final String text, final double fallback) {

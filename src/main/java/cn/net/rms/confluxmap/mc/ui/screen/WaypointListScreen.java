@@ -325,7 +325,8 @@ public final class WaypointListScreen extends ConfluxScreen {
     }
 
     private void addTabs() {
-        final List<Tab> tabs = sharedWaypoints.availability().enabled()
+        final SharedWaypointAvailability availability = sharedWaypoints.availability();
+        final List<Tab> tabs = availability.visible()
             ? List.of(Tab.LOCAL, Tab.PUBLIC, Tab.LOCKED)
             : List.of(Tab.LOCAL);
         final int availableWidth = contentWidth() - GAP * (tabs.size() - 1);
@@ -341,7 +342,10 @@ public final class WaypointListScreen extends ConfluxScreen {
                 Texts.translatable(tabKey(candidate)),
                 ignored -> selectTab(candidate)
             ));
-            button.active = candidate != tab;
+            button.active = candidate != tab && (candidate == Tab.LOCAL || availability.enabled());
+            if (candidate != Tab.LOCAL && availability.disabledByServer()) {
+                setDisabledTooltip(button, "confluxmap.shared_waypoints.disabled_by_server");
+            }
             x += tabWidth + GAP;
         }
     }

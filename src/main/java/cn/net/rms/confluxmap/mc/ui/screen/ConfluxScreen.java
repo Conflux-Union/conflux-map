@@ -1,16 +1,21 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.compat.Texts;
+import java.util.IdentityHashMap;
+import java.util.Map;
 //#if MC>=12000
 //$$ import net.minecraft.client.gui.DrawContext;
 //#else
 import net.minecraft.client.util.math.MatrixStack;
 //#endif
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.text.Text;
 
 /** Screen base that keeps the MatrixStack-to-DrawContext rewrite at one lifecycle seam. */
 public abstract class ConfluxScreen extends Screen {
+    private final Map<ClickableWidget, String> disabledTooltipKeys = new IdentityHashMap<>();
     //#if MC>=12000
     //$$ /**
     //$$  * Screen.render owns the widget loop, but its implicit background must not cover
@@ -43,6 +48,7 @@ public abstract class ConfluxScreen extends Screen {
     //$$         renderingVanillaWidgets = false;
     //$$     }
     //$$     renderAfterWidgets(draw, mouseX, mouseY, tickDelta);
+    //$$     renderDisabledTooltip(draw, mouseX, mouseY);
     //$$ }
     //$$
     //$$ @Override
@@ -83,6 +89,7 @@ public abstract class ConfluxScreen extends Screen {
     //$$         renderingVanillaWidgets = false;
     //$$     }
     //$$     renderAfterWidgets(draw, mouseX, mouseY, tickDelta);
+    //$$     renderDisabledTooltip(draw, mouseX, mouseY);
     //$$ }
     //$$
     //$$ @Override
@@ -117,6 +124,7 @@ public abstract class ConfluxScreen extends Screen {
         renderContents(draw, mouseX, mouseY, tickDelta);
         super.render(matrices, mouseX, mouseY, tickDelta);
         renderAfterWidgets(draw, mouseX, mouseY, tickDelta);
+        renderDisabledTooltip(draw, mouseX, mouseY);
     }
     //#endif
 
@@ -128,5 +136,34 @@ public abstract class ConfluxScreen extends Screen {
         final int mouseY,
         final float tickDelta
     ) {
+    }
+
+    /** Associates one inactive control with the translated reason it cannot be used. */
+    protected final void setDisabledTooltip(final ClickableWidget widget, final String translationKey) {
+        if (widget == null) {
+            return;
+        }
+        if (translationKey == null) {
+            disabledTooltipKeys.remove(widget);
+            return;
+        }
+        disabledTooltipKeys.put(widget, translationKey);
+    }
+
+    private void renderDisabledTooltip(final GuiDraw draw, final int mouseX, final int mouseY) {
+        disabledTooltipKeys.entrySet().removeIf(entry -> !children().contains(entry.getKey()));
+        for (final Map.Entry<ClickableWidget, String> entry : disabledTooltipKeys.entrySet()) {
+            final ClickableWidget widget = entry.getKey();
+            if (widget.visible && !widget.active && widget.isHovered()) {
+                draw.drawTooltip(
+                    this,
+                    this.textRenderer,
+                    Texts.translatable(entry.getValue()),
+                    mouseX,
+                    mouseY
+                );
+                return;
+            }
+        }
     }
 }

@@ -51,7 +51,7 @@ public final class WaypointCreateTargetScreen extends ConfluxScreen {
         publicButton = null;
 
         final int left = width / 2 - 100;
-        final int top = Math.max(48, height / 2 - (sharedAvailability.enabled() ? 54 : 42));
+        final int top = Math.max(48, height / 2 - (sharedAvailability.visible() ? 54 : 42));
         int buttonY = top;
         addDrawableChild(Widgets.button(
             left, buttonY, 200, 20,
@@ -61,7 +61,7 @@ public final class WaypointCreateTargetScreen extends ConfluxScreen {
             )
         ));
         buttonY += 24;
-        if (sharedAvailability.enabled()) {
+        if (sharedAvailability.visible()) {
             publicButton = addDrawableChild(Widgets.button(
                 left, buttonY, 200, 20,
                 Texts.translatable("confluxmap.screen.waypoint.create_public"),
@@ -70,6 +70,7 @@ public final class WaypointCreateTargetScreen extends ConfluxScreen {
                 )
             ));
             publicButton.active = sharedAvailability.ready();
+            updatePublicButtonTooltip();
             buttonY += 24;
         }
         addDrawableChild(Widgets.button(
@@ -101,13 +102,14 @@ public final class WaypointCreateTargetScreen extends ConfluxScreen {
     public void tick() {
         super.tick();
         final SharedWaypointAvailability availability = sharedWaypoints.availability();
-        if (sharedAvailability == null || availability.enabled() != sharedAvailability.enabled()) {
+        if (sharedAvailability == null || availability.visible() != sharedAvailability.visible()) {
             rebuild();
             return;
         }
         sharedAvailability = availability;
         if (publicButton != null) {
             publicButton.active = availability.ready();
+            updatePublicButtonTooltip();
         }
     }
 
@@ -125,7 +127,7 @@ public final class WaypointCreateTargetScreen extends ConfluxScreen {
         draw.drawTextWithShadow(
             this.textRenderer, coords, width / 2f - this.textRenderer.getWidth(coords) / 2f, 34, 0xFFB8B8B8
         );
-        if (sharedAvailability != null && sharedAvailability.enabled()) {
+        if (sharedAvailability != null && sharedAvailability.visible()) {
             final String status = this.textRenderer.trimToWidth(
                 Texts.translatable(statusKey()).getString(), Math.max(40, width - 24)
             );
@@ -140,9 +142,21 @@ public final class WaypointCreateTargetScreen extends ConfluxScreen {
     }
 
     private String statusKey() {
+        if (sharedAvailability.disabledByServer()) {
+            return "confluxmap.shared_waypoints.disabled";
+        }
         return sharedAvailability.ready()
             ? "confluxmap.shared_waypoints.status.enabled"
             : "confluxmap.shared_waypoints.status.syncing";
+    }
+
+    private void updatePublicButtonTooltip() {
+        setDisabledTooltip(
+            publicButton,
+            sharedAvailability.disabledByServer()
+                ? "confluxmap.shared_waypoints.disabled_by_server"
+                : null
+        );
     }
 
     private static String formatCoordinate(final double value) {
