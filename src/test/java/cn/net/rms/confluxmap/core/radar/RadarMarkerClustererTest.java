@@ -39,4 +39,14 @@ class RadarMarkerClustererTest {
             RadarMarkerClusterer.cluster(candidates, 10f)
         );
     }
+
+    private static RadarMarkerClusterer.Candidate candidate(
+        final int index,
+        final float x,
+        final float y,
+        final RadarCategory category,
+        final int entityId
+    ) {
+        return new RadarMarkerClusterer.Candidate(index, x, y, category, entityId);
+    }
 }
