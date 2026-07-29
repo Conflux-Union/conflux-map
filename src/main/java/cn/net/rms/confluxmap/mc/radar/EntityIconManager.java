@@ -21,6 +21,7 @@ import net.minecraft.entity.passive.SheepEntity;
 import net.minecraft.entity.passive.StriderEntity;
 import net.minecraft.entity.passive.VillagerEntity;
 import net.minecraft.entity.passive.WolfEntity;
+import net.minecraft.item.ItemStack;
 import net.minecraft.util.Identifier;
 
 /**
@@ -112,6 +113,7 @@ public final class EntityIconManager {
     private static final Map<EntityType<?>, CellIcon> SHEET_TABLE = buildSheetTable();
 
     private final EntityIconOutlineTexture outlineTexture = new EntityIconOutlineTexture(SHEET);
+    private final ItemIconOutlineTexture itemOutlineTexture = new ItemIconOutlineTexture();
 
     public EntityIconManager() {
     }
@@ -121,9 +123,15 @@ public final class EntityIconManager {
         return outlineTexture.bind(client);
     }
 
-    /** Render thread, resource reload: re-bake the outline mask from the (possibly overridden) sheet. */
+    /** Render thread. Binds a cached alpha-tight outline for the stack's flat GUI model. */
+    public boolean bindItemOutlineTexture(final MinecraftClient client, final ItemStack stack) {
+        return itemOutlineTexture.bind(client, stack);
+    }
+
+    /** Render thread, resource reload: drop entity-sheet and resolved-item outline masks. */
     public void invalidateOutlineTexture() {
         outlineTexture.invalidate();
+        itemOutlineTexture.invalidate();
     }
 
     /**

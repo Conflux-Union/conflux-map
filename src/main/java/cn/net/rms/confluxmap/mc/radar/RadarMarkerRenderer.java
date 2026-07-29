@@ -96,7 +96,7 @@ public final class RadarMarkerRenderer {
                 : ItemStack.EMPTY;
             if (!itemIcon.isEmpty()) {
                 final int contourBase = contourBase(backdrop, blockX, blockZ, blocksPerPixel);
-                drawItemIcon(draw, client, itemIcon, x, y, yDelta, alphaScale, contourBase);
+                drawItemIcon(draw, client, iconManager, itemIcon, x, y, yDelta, alphaScale, contourBase);
                 return;
             }
             final EntityIconManager.FaceIcon icon = iconManager.iconFor(live);
@@ -168,6 +168,7 @@ public final class RadarMarkerRenderer {
     private static void drawItemIcon(
         final GuiDraw draw,
         final MinecraftClient client,
+        final EntityIconManager iconManager,
         final ItemStack stack,
         final float x,
         final float y,
@@ -177,13 +178,12 @@ public final class RadarMarkerRenderer {
     ) {
         final MatrixStack matrices = draw.matrices();
         final int contour = Argb.scaleAlpha(elevationColor(contourBase, yDelta), alphaScale);
-        final float left = x - ITEM_ICON_SIZE / 2f - 1f;
-        final float top = y - ITEM_ICON_SIZE / 2f - 1f;
-        final float edge = ITEM_ICON_SIZE + 2f;
-        RenderUtil.fillRect(matrices, left, top, edge, 1f, contour);
-        RenderUtil.fillRect(matrices, left, top + edge - 1f, edge, 1f, contour);
-        RenderUtil.fillRect(matrices, left, top + 1f, 1f, edge - 2f, contour);
-        RenderUtil.fillRect(matrices, left + edge - 1f, top + 1f, 1f, edge - 2f, contour);
+        if (iconManager.bindItemOutlineTexture(client, stack)) {
+            RenderUtil.drawTintedQuad(
+                matrices, x - OUTLINE_HALF_SIZE, y - OUTLINE_HALF_SIZE, OUTLINE_SIZE, OUTLINE_SIZE,
+                0f, 0f, 1f, 1f, contour
+            );
+        }
         draw.drawItemIcon(client, stack, x, y, ITEM_ICON_SIZE);
     }
 

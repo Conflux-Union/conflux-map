@@ -7,8 +7,8 @@ import net.minecraft.resource.ResourceManager;
 import net.minecraft.util.Identifier;
 
 /**
- * Drops {@link EntityIconManager}'s baked icon outline mask whenever resources (a resource
- * pack) reload, so an overridden entity-icon sheet re-bakes its silhouette outlines.
+ * Drops {@link EntityIconManager}'s baked outline masks whenever resources reload, so an
+ * overridden entity-icon sheet or item model re-bakes its silhouette outline.
  */
 public final class EntityIconReloadListener implements SimpleSynchronousResourceReloadListener {
     private static final Identifier ID = Ids.of(ConfluxMapMod.ID, "entity_icon_outlines");

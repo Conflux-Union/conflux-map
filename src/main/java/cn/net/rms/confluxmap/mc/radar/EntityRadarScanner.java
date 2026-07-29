@@ -12,8 +12,8 @@ import java.util.function.BooleanSupplier;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.SpawnGroup;
+import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.mob.PhantomEntity;
 import net.minecraft.entity.player.PlayerEntity;
 
@@ -34,10 +34,10 @@ import net.minecraft.entity.player.PlayerEntity;
  * player's UUID) used for the actual radar, plus a separate coarser
  * {@link net.minecraft.entity.SpawnGroup}-based classifier used only for VoxelMap's
  * per-species management dialog. M1 has no per-species dialog and no icon system, so this
- * scanner uses the coarser spawn-group classifier for everything: {@link SpawnGroup#MONSTER}
- * to {@link RadarCategory#HOSTILE}; {@code CREATURE}/{@code AMBIENT}/water
- * variants to {@link RadarCategory#PASSIVE}; miscellaneous living entities and every non-living
- * entity to {@link RadarCategory#OTHER}. This is simpler and
+ * scanner uses a coarser classifier: players stay separate, {@link MobEntity mobs} in
+ * {@link SpawnGroup#MONSTER} become {@link RadarCategory#HOSTILE}, all remaining mobs become
+ * {@link RadarCategory#PASSIVE}, and non-mob entities become {@link RadarCategory#OTHER}. This is
+ * simpler and
  * cheaper than reproducing the live classifier, at the cost of not flagging a neutral mob that
  * is currently angry at the player as hostile the way the reference implementation does.
  */
@@ -191,18 +191,13 @@ public final class EntityRadarScanner {
         if (entity instanceof PlayerEntity) {
             return RadarCategory.PLAYER;
         }
-        if (!(entity instanceof LivingEntity)) {
+        if (!(entity instanceof MobEntity)) {
             return RadarCategory.OTHER;
         }
         final SpawnGroup group = entity.getType().getSpawnGroup();
         if (group == SpawnGroup.MONSTER) {
             return RadarCategory.HOSTILE;
         }
-        if (group == SpawnGroup.CREATURE || group == SpawnGroup.AMBIENT
-            || group == SpawnGroup.WATER_CREATURE || group == SpawnGroup.WATER_AMBIENT
-            || group == SpawnGroup.UNDERGROUND_WATER_CREATURE) {
-            return RadarCategory.PASSIVE;
-        }
-        return RadarCategory.OTHER;
+        return RadarCategory.PASSIVE;
     }
 }

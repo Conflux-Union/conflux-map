@@ -20,6 +20,7 @@ net.minecraft.block.VineBlock net.minecraft.world.level.block.VineBlock
 net.minecraft.client.MinecraftClient net.minecraft.client.Minecraft
 net.minecraft.client.color.world.BiomeColors net.minecraft.client.renderer.BiomeColors
 net.minecraft.client.font.TextRenderer net.minecraft.client.gui.Font
+net.minecraft.client.item.ItemModelManager net.minecraft.client.renderer.item.ItemModelResolver
 net.minecraft.client.gl.Framebuffer com.mojang.blaze3d.pipeline.RenderTarget
 net.minecraft.client.gl.GpuSampler com.mojang.blaze3d.textures.GpuSampler
 net.minecraft.client.gl.RenderPipelines net.minecraft.client.renderer.RenderPipelines
@@ -46,6 +47,7 @@ net.minecraft.client.render.BufferBuilder com.mojang.blaze3d.vertex.BufferBuilde
 net.minecraft.client.render.BuiltBuffer com.mojang.blaze3d.vertex.MeshData
 net.minecraft.client.render.Camera net.minecraft.client.Camera
 net.minecraft.client.render.GameRenderer net.minecraft.client.renderer.GameRenderer
+net.minecraft.client.render.item.ItemRenderState net.minecraft.client.renderer.item.ItemStackRenderState
 net.minecraft.client.render.RenderTickCounter net.minecraft.client.DeltaTracker
 net.minecraft.client.render.Tessellator com.mojang.blaze3d.vertex.Tesselator
 net.minecraft.client.render.VertexConsumer com.mojang.blaze3d.vertex.VertexConsumer
@@ -73,6 +75,7 @@ net.minecraft.entity.FlyingItemEntity net.minecraft.world.entity.projectile.Item
 net.minecraft.entity.ItemEntity net.minecraft.world.entity.item.ItemEntity
 net.minecraft.entity.LivingEntity net.minecraft.world.entity.LivingEntity
 net.minecraft.entity.SpawnGroup net.minecraft.world.entity.MobCategory
+net.minecraft.entity.mob.MobEntity net.minecraft.world.entity.Mob
 net.minecraft.entity.mob.PhantomEntity net.minecraft.world.entity.monster.Phantom
 net.minecraft.entity.passive.AxolotlEntity net.minecraft.world.entity.animal.axolotl.Axolotl
 net.minecraft.entity.passive.CatEntity net.minecraft.world.entity.animal.feline.Cat
@@ -88,6 +91,7 @@ net.minecraft.entity.passive.VillagerEntity net.minecraft.world.entity.npc.villa
 net.minecraft.entity.passive.WolfEntity net.minecraft.world.entity.animal.wolf.Wolf
 net.minecraft.entity.player.PlayerEntity net.minecraft.world.entity.player.Player
 net.minecraft.item.ItemStack net.minecraft.world.item.ItemStack
+net.minecraft.item.ModelTransformationMode net.minecraft.world.item.ItemDisplayContext
 net.minecraft.fluid.FluidState net.minecraft.world.level.material.FluidState
 net.minecraft.nbt.NbtCompound net.minecraft.nbt.CompoundTag
 net.minecraft.nbt.NbtList net.minecraft.nbt.ListTag
@@ -152,6 +156,9 @@ net.minecraft.client.font.TextRenderer trimToWidth plainSubstrByWidth
 net.minecraft.client.font.TextRenderer fontHeight lineHeight
 net.minecraft.client.gui.DrawContext drawTextWithShadow text
 net.minecraft.client.MinecraftClient getBlockRenderManager getBlockRenderer
+net.minecraft.client.MinecraftClient getItemModelManager getItemModelResolver
+net.minecraft.client.item.ItemModelManager updateForNonLivingEntity updateForNonLiving
+net.minecraft.client.render.item.ItemRenderState isSideLit usesBlockLight
 net.minecraft.entity.Entity getPickBlockStack getPickResult
 net.minecraft.entity.FlyingItemEntity getStack getItem
 net.minecraft.entity.ItemEntity getStack getItem
