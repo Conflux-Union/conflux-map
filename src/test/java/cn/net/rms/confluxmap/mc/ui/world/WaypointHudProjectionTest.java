@@ -77,7 +77,7 @@ final class WaypointHudProjectionTest {
     //$$ void modernLabelQuadFacesTheCamera() throws Exception {
     //$$     final String source = Files.readString(preprocessedSource());
     //$$     final String drawLabel = methodBody(
-    //$$         source, "private void drawLabel("
+    //$$         source, "\n    private void drawLabel("
     //$$     );
     //$$
     //$$     assertTrue(
