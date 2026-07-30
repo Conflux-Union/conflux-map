@@ -80,7 +80,7 @@ public final class LayerSelector {
         final MapLayer layer;
         switch (kind) {
             case HAS_CEILING:
-                layer = resolveNether(config.layerOverride);
+                layer = resolveNether(config.layerOverride, eyeY, logicalHeight(world.getDimension()));
                 break;
             case NO_SKY_NO_CEILING:
                 // §1.2/§4: M1 always renders the End as a plain top-down surface (no player-relative
@@ -91,7 +91,7 @@ public final class LayerSelector {
                 layer = resolveOverworld(world, player, eyeY, config.layerOverride);
         }
 
-        final Decision decision = new Decision(layer, pivotFor(layer, world, debouncedPivotY));
+        final Decision decision = new Decision(layer, pivotFor(layer, world.getTopY(), debouncedPivotY));
         current = decision;
         return decision;
     }
@@ -118,9 +118,21 @@ public final class LayerSelector {
         }
     }
 
-    /** §1 Case A: nether-like dimensions never fall back to bare SURFACE; only AUTO/NETHER_CEILING exist. */
-    private static MapLayer resolveNether(final ConfluxConfig.LayerOverride override) {
-        return override == ConfluxConfig.LayerOverride.FORCE_UNDERGROUND ? MapLayer.NETHER_CEILING : MapLayer.NETHER_CURRENT;
+    /** §1 Case A: above-roof play uses the top-down roof layer; lower play keeps the current-Y floor scan. */
+    static MapLayer resolveNether(
+        final ConfluxConfig.LayerOverride override, final int eyeY, final int logicalHeight
+    ) {
+        return override == ConfluxConfig.LayerOverride.FORCE_UNDERGROUND || eyeY >= logicalHeight
+            ? MapLayer.NETHER_CEILING
+            : MapLayer.NETHER_CURRENT;
+    }
+
+    private static int logicalHeight(final DimensionType type) {
+        //#if MC>=12100
+        //$$ return type.logicalHeight();
+        //#else
+        return type.getLogicalHeight();
+        //#endif
     }
 
     /** §1 Case C: sky-light-gated automatic cave detection, or a manual pin. */
@@ -148,13 +160,13 @@ public final class LayerSelector {
      * for the nether-roof pivot, or an unused constant for the two top-down surface layers (kept
      * fixed so drifting player Y never spuriously flags a "layer changed" reseed while surfaced).
      */
-    private static int pivotFor(final MapLayer layer, final ClientWorld world, final int debouncedPivotY) {
+    static int pivotFor(final MapLayer layer, final int worldTopY, final int debouncedPivotY) {
         switch (layer.type()) {
             case SURFACE:
             case END_SURFACE:
                 return 0;
             case NETHER_CEILING:
-                return world.getTopY() - 1;
+                return worldTopY - 1;
             case CAVE_SLICE:
             case NETHER_SLICE:
                 return layer.param();

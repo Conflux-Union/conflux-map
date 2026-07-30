@@ -464,6 +464,11 @@ public final class TileService {
         final boolean biomeMode = BiomeTileKeys.isBiome(key);
         final MapLayer layer = MapLayer.parse(BiomeTileKeys.realLayerId(key.layerId()));
         final ColumnStore store = world.store(layer);
+        // The roof view is a block-accurate top-down layer. Directional relief compares each
+        // pixel with its southwest neighbor, which paints an isolated raised block's northeast
+        // neighbor and looks like a displaced translucent copy. Its fixed Y=80 height term also
+        // washes the entire bedrock roof toward white, so neither geometric shade belongs here.
+        final boolean applyTerrainShading = layer.type() != MapLayer.Type.NETHER_CEILING;
         // Dynamic lighting only ever touches the live SURFACE layer (never CAVE/NETHER/END, which
         // already bake their light at snapshot time - see ChunkSnapshot#light's javadoc). Reading
         // the model's factor once per tile compose (rather than per-column) is fine: it's a slow
@@ -485,7 +490,7 @@ public final class TileService {
         final int[] pixels;
         if (key.lod() == 0) {
             pixels = composeLod0(
-                store, key.tileX(), key.tileZ(), biomeMode,
+                store, key.tileX(), key.tileZ(), biomeMode, applyTerrainShading,
                 applyDaylight, daylightFactor, lightPlane
             );
             if (store.region(key.tileX(), key.tileZ()) != null) {
@@ -493,7 +498,8 @@ public final class TileService {
             }
         } else {
             pixels = composeLodN(
-                store, key, biomeMode, applyDaylight, daylightFactor, lightPlane, changed
+                store, key, biomeMode, applyTerrainShading,
+                applyDaylight, daylightFactor, lightPlane, changed
             );
         }
         final TileUpdate.Relight relight = lightPlane == null
@@ -512,6 +518,7 @@ public final class TileService {
         final int regionX,
         final int regionZ,
         final boolean biomeMode,
+        final boolean applyTerrainShading,
         final boolean applyDaylight,
         final float daylightFactor,
         final byte[] outLight
@@ -524,7 +531,7 @@ public final class TileService {
             final RegionColumns southWest = store.region(regionX - 1, regionZ + 1);
             composeRegion(
                 region, west, south, southWest, pixels,
-                biomeMode, applyDaylight, daylightFactor, outLight
+                biomeMode, applyTerrainShading, applyDaylight, daylightFactor, outLight
             );
         }
         return pixels;
@@ -546,6 +553,7 @@ public final class TileService {
         final ColumnStore store,
         final TileKey key,
         final boolean biomeMode,
+        final boolean applyTerrainShading,
         final boolean applyDaylight,
         final float daylightFactor,
         final byte[] outLight,
@@ -567,7 +575,7 @@ public final class TileService {
                 }
                 final byte[] fullLight = outLight == null ? null : new byte[size * size];
                 final int[] full = composeLod0(
-                    store, regionX, regionZ, biomeMode,
+                    store, regionX, regionZ, biomeMode, applyTerrainShading,
                     applyDaylight, daylightFactor, fullLight
                 );
                 final int[] downsampled = downsample(full, size, lod);
@@ -657,6 +665,7 @@ public final class TileService {
         final RegionColumns southWest,
         final int[] outPixels,
         final boolean biomeMode,
+        final boolean applyTerrainShading,
         final boolean applyDaylight,
         final float daylightFactor,
         final byte[] outLight
@@ -690,10 +699,15 @@ public final class TileService {
                     outPixels[idx] = BiomeColorPalette.color(biomeId[idx]);
                     continue;
                 }
-                final Integer neighborHeight = neighborHeight(x, z, surfaceY, region, west, south, southWest);
-                final double shade = ShadingPipeline.combinedShade(
-                    true, true, surfaceY[idx], ShadingPipeline.REFERENCE_HEIGHT, neighborHeight
-                );
+                final double shade;
+                if (applyTerrainShading) {
+                    final Integer neighborHeight = neighborHeight(x, z, surfaceY, region, west, south, southWest);
+                    shade = ShadingPipeline.combinedShade(
+                        true, true, surfaceY[idx], ShadingPipeline.REFERENCE_HEIGHT, neighborHeight
+                    );
+                } else {
+                    shade = 0.0;
+                }
                 final int shadedBase = ShadingPipeline.applyShade(Argb.multiply(baseArgb[idx], tintArgb[idx]), shade);
                 final int shadedOverlay = overlayArgb[idx] == Argb.TRANSPARENT
                     ? Argb.TRANSPARENT

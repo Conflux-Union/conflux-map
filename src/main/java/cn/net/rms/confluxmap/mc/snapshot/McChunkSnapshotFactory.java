@@ -497,9 +497,10 @@ public final class McChunkSnapshotFactory {
     /**
      * cave-nether-layers.md §5.1/§5.2: darken/tint {@code argb} by the block+sky light at
      * {@code pos}, with lava/magma's block-light forced to 14 (§3's lava-glow override) and
-     * the result forced fully transparent when both channels are exactly zero (§5.3 - the
-     * same treatment as a "no floor found" column). See {@link LightTint} for the
-     * (simplified) block-light/sky-light -> color curve itself.
+     * the dimension ambient/readability floor retained when both channels are zero. A column
+     * where the floor scan found nothing is handled separately by {@link #writeVoid}; sampled
+     * terrain must never become indistinguishable from an unknown column merely because it is
+     * unlit. See {@link LightTint} for the (simplified) block-light/sky-light -> color curve.
      */
     private static int applyLight(
         final int argb,
@@ -519,9 +520,6 @@ public final class McChunkSnapshotFactory {
             ? 14
             : world.getLightLevel(LightType.BLOCK, pos);
         //#endif
-        if (blockLevel == 0 && skyLevel == 0) {
-            return argb & 0x00FFFFFF;
-        }
         return Argb.multiply(argb, LightTint.multiplier(blockLevel, skyLevel, netherAmbient));
     }
 
