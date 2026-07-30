@@ -141,13 +141,15 @@ public final class WaypointWorldRenderer {
     //#endif
 
     public void register() {
+        //#if MC>=260100
+        //$$ // The beam pipeline writes depth, so it must run after translucent terrain; drawing it
+        //$$ // first makes water fail its depth test and disappear where the beam crosses it.
+        //#endif
         //#if MC>=260200
-        //$$ LevelRenderEvents.BEFORE_TRANSLUCENT_TERRAIN.register(this::renderBeams);
+        //$$ LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(this::renderBeams);
         //$$ LevelRenderEvents.COLLECT_SUBMITS.register(this::renderHud);
         //#elseif MC>=260100
-        //$$ // 26.1 moved these into the level package and spelled out that the translucent hook is
-        //$$ // the terrain one.
-        //$$ LevelRenderEvents.BEFORE_TRANSLUCENT_TERRAIN.register(this::renderBeams);
+        //$$ LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(this::renderBeams);
         //$$ LevelRenderEvents.END_MAIN.register(this::renderHud);
         //#elseif MC>=12111
         //$$ WorldRenderEvents.BEFORE_TRANSLUCENT.register(this::renderBeams);
