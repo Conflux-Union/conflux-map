@@ -12,6 +12,7 @@ import cn.net.rms.confluxmap.core.waypoint.DimensionScale;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointListFilter;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
+import cn.net.rms.confluxmap.core.waypoint.WaypointVerticalRelation;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.core.waypoint.WaypointSet;
 import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
@@ -1254,7 +1255,8 @@ public final class WaypointListScreen extends ConfluxScreen {
                 row.y() + ROW_HEIGHT / 2f,
                 MARKER_SIZE / 2f - 1f,
                 1f,
-                hovered
+                hovered,
+                WaypointVerticalRelation.NONE
             );
             final int maxNameWidth = Math.max(24, nameRight() - nameX());
             final String name = this.textRenderer.trimToWidth(row.name(), maxNameWidth);

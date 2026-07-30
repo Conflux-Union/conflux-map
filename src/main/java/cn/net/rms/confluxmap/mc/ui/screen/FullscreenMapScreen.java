@@ -27,6 +27,7 @@ import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
+import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfile;
 import cn.net.rms.confluxmap.core.net.MapSyncProgress;
 import cn.net.rms.confluxmap.core.net.ChunkLoadBand;
 import cn.net.rms.confluxmap.core.net.LoadStateDeltaS2C;
@@ -53,6 +54,7 @@ import cn.net.rms.confluxmap.core.util.ChunkViewport;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
+import cn.net.rms.confluxmap.core.waypoint.WaypointVerticalRelation;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatCodec;
 import cn.net.rms.confluxmap.mc.net.ChunkLoadStateClient;
@@ -73,6 +75,7 @@ import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.StructureMarkerRenderer;
 import cn.net.rms.confluxmap.mc.world.ClientChunkLookup;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
+import cn.net.rms.confluxmap.mc.world.ClientMultiworldService;
 import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -225,6 +228,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private final StructureMarkerService structureMarkers;
     private final UpdateCheckService updateCheck;
     private final ClientGroundTeleportService groundTeleport;
+    private final ClientMultiworldService clientMultiworld;
 
     /** World point currently at screen center, and blocks-per-pixel; all mutable, panned/zoomed by input. */
     private double centerX;
@@ -245,6 +249,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private MapIconButton manageWaypointsButton;
     private MapIconButton structureSearchButton;
     private MapIconButton displayModeButton;
+    private ButtonWidget clientWorldButton;
     private int waypointControlsBottom;
     private FullscreenMapLocationMenu.Bounds locationMenuBounds;
     private FullscreenMapLocationMenu.Target locationMenuTarget;
@@ -302,6 +307,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         this.structureMarkers = app.structureMarkerService();
         this.updateCheck = app.updateCheck();
         this.groundTeleport = app.groundTeleportService();
+        this.clientMultiworld = app.clientMultiworldService();
 
         final DimensionId dimension = gameBridge.session().dimension();
         final Optional<PlayerView> player = gameBridge.player();
@@ -344,6 +350,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         annotationToolbarBounds = null;
         annotationColorMenuBounds = null;
         displayModeButton = null;
+        clientWorldButton = null;
         controlsDisplayMode = null;
         loadStateDetailButton = null;
 
@@ -360,6 +367,18 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         controlsDisplayMode = displayMode();
         refreshDisplayModeButton();
         y += CONTROL_SIZE + CONTROL_GAP;
+        if (clientMultiworld.canManageProfiles()) {
+            clientWorldButton = addDrawableChild(Widgets.button(
+                x, y, CONTROL_SIZE, CONTROL_SIZE,
+                Texts.literal("W"),
+                ignored -> MinecraftAccess.setScreen(
+                    MinecraftClient.getInstance(),
+                    new ClientWorldSelectScreen(this, openMapKey, false)
+                )
+            ));
+            annotationTooltips.put(clientWorldButton, "confluxmap.map.client_world");
+            y += CONTROL_SIZE + CONTROL_GAP;
+        }
         localVisibilityButton = addDrawableChild(new MapIconButton(
             x, y, LOCAL_WAYPOINT_ICON, LOCAL_CONTROL_ACCENT, b -> {
                 config.localWaypointsVisible = !config.localWaypointsVisible;
@@ -1442,7 +1461,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         drawStructures(draw, mouseX, mouseY);
         drawRadar(draw, tickDelta);
 
-        drawWaypoints(draw, mouseX, mouseY);
+        drawWaypoints(draw, mouseX, mouseY, radarObserver);
         drawPlayerMarker(matrices, tickDelta);
         drawDimensionLabel(draw);
         drawLayerLabel(draw);
@@ -1783,6 +1802,14 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             }
             if (entry.getKey() == annotationEraserButton) {
                 return Texts.translatable(entry.getValue(), config.annotationEraserSize);
+            }
+            if (entry.getKey() == clientWorldButton) {
+                return Texts.translatable(
+                    entry.getValue(),
+                    clientMultiworld.currentProfile()
+                        .map(ClientWorldProfile::displayName)
+                        .orElse("?")
+                );
             }
             return Texts.translatable(entry.getValue());
         }
@@ -2329,7 +2356,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
      * brightened (see {@link WaypointMarkerRenderer}) and has its coordinates shown in the
      * footer by {@link #drawCursorCoords}.
      */
-    private void drawWaypoints(final GuiDraw draw, final int mouseX, final int mouseY) {
+    private void drawWaypoints(
+        final GuiDraw draw,
+        final int mouseX,
+        final int mouseY,
+        final Optional<PlayerView> playerView
+    ) {
         final DimensionId currentDimension = gameBridge.session().dimension();
         final double pxPerBlock = 1.0 / scale;
         final List<ScreenMarker> markers = new ArrayList<>();
@@ -2357,8 +2389,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         for (final ScreenMarker marker : markers) {
             final WaypointRenderEntry waypoint = marker.waypoint();
             final boolean isHovered = waypoint == hoveredWaypoint;
+            final WaypointVerticalRelation relation = playerView
+                .map(player -> WaypointVerticalRelation.between(waypoint.y(), player.y()))
+                .orElse(WaypointVerticalRelation.NONE);
             WaypointMarkerRenderer.draw(
-                draw, this.client.textRenderer, waypoint, marker.screenX(), marker.screenY(), MARKER_HALF_SIZE, 1f, isHovered
+                draw, this.client.textRenderer, waypoint, marker.screenX(), marker.screenY(),
+                MARKER_HALF_SIZE, 1f, isHovered, relation
             );
             if (scale <= NAME_LABEL_MAX_SCALE || isHovered) {
                 draw.drawTextWithShadow(

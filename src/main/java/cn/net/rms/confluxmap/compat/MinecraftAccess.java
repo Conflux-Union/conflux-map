@@ -4,6 +4,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
+//#if MC>=260200
+//$$ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+//#else
+import net.minecraft.client.gui.screen.ingame.HandledScreen;
+//#endif
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
@@ -41,6 +46,15 @@ public final class MinecraftAccess {
         //$$ client.gui.setScreen(screen);
         //#else
         client.setScreen(screen);
+        //#endif
+    }
+
+    /** Inventory-style screens also host JEI/REI overlays, so the minimap HUD must yield to them. */
+    public static boolean isContainerScreen(final Screen screen) {
+        //#if MC>=260200
+        //$$ return screen instanceof AbstractContainerScreen<?>;
+        //#else
+        return screen instanceof HandledScreen<?>;
         //#endif
     }
 

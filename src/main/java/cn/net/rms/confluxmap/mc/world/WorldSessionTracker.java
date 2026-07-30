@@ -31,12 +31,22 @@ public final class WorldSessionTracker {
     private final SessionGuard guard;
     private final List<Consumer<SessionGuard.Session>> listeners = new ArrayList<>();
     private final CompanionSession companion;
+    private final ClientMultiworldService clientMultiworld;
     private Path singleplayerSaveRoot;
     private WorldIdentity singleplayerIdentity;
 
     public WorldSessionTracker(final SessionGuard guard, final CompanionSession companion) {
+        this(guard, companion, null);
+    }
+
+    public WorldSessionTracker(
+        final SessionGuard guard,
+        final CompanionSession companion,
+        final ClientMultiworldService clientMultiworld
+    ) {
         this.guard = guard;
         this.companion = companion;
+        this.clientMultiworld = clientMultiworld;
     }
 
     public void register() {
@@ -137,7 +147,12 @@ public final class WorldSessionTracker {
         singleplayerSaveRoot = null;
         singleplayerIdentity = null;
         final String address = resolveAddress(client);
-        return companion.resolveWorldIdentity(address);
+        if (companion.state() == CompanionSession.State.ACTIVE
+            || companion.state() == CompanionSession.State.HELLO_SENT
+            || clientMultiworld == null) {
+            return companion.resolveWorldIdentity(address);
+        }
+        return clientMultiworld.resolve(address);
     }
 
     private static String resolveAddress(final MinecraftClient client) {

@@ -94,6 +94,23 @@ final class WaypointHudProjectionTest {
     //$$     );
     //$$ }
     //$$
+    //#if MC>=260200
+    //$$ @Test
+    //$$ void submittedLabelTextRendersAfterEveryOpaquePlate() throws Exception {
+    //$$     final String source = Files.readString(preprocessedSource());
+    //$$     final String drawLabel = methodBody(source, "\n    private void drawLabel(");
+    //$$
+    //$$     assertTrue(
+    //$$         drawLabel.contains("final OrderedSubmitNodeCollector plates = submits.order(0)"),
+    //$$         "26.2 must submit panels and marker colors into the earlier order"
+    //$$     );
+    //$$     assertTrue(
+    //$$         drawLabel.contains("final OrderedSubmitNodeCollector text = submits.order(1)"),
+    //$$         "26.2 must submit marker initials and labels after opaque plates"
+    //$$     );
+    //$$ }
+    //#endif
+    //$$
     //$$ private static float labelQuadSignedArea(final float xScale) {
     //$$     final Vector4f topLeft = new Vector4f(0f, -1f, -10f, 1f);
     //$$     final Vector4f topRight = new Vector4f(xScale, -1f, -10f, 1f);

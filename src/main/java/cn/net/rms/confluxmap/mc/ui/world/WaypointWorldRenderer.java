@@ -8,6 +8,7 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
+import cn.net.rms.confluxmap.core.waypoint.WaypointVerticalRelation;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.HashMap;
@@ -33,6 +34,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 //#if MC>=260200
 //$$ import net.minecraft.client.renderer.SubmitNodeCollector;
+//$$ import net.minecraft.client.renderer.OrderedSubmitNodeCollector;
 //$$ import net.minecraft.client.renderer.rendertype.RenderTypes;
 //$$ import net.minecraft.network.chat.Component;
 //$$ import org.joml.Quaternionf;
@@ -96,6 +98,8 @@ public final class WaypointWorldRenderer {
     private static final int LABEL_LOCKED_OUTLINE_COLOR = 0xFFFFD166;
     private static final int LABEL_NAME_COLOR = 0xFFFFFFFF;
     private static final int LABEL_DISTANCE_COLOR = 0xFFC8C8C8;
+    private static final int LABEL_HEIGHT_BADGE_OUTLINE = 0xFF101010;
+    private static final int LABEL_HEIGHT_BADGE_FILL = 0xFFFFFFFF;
     /** LightmapTextureManager.pack(15, 15) - always fully lit, like other UI-ish world markers. */
     private static final int LABEL_LIGHT = 0xF000F0;
 
@@ -340,12 +344,13 @@ public final class WaypointWorldRenderer {
                     //$$ drawLabel(
                     //$$     matrices, context.submitNodeCollector(), cameraState.orientation,
                     //$$     cameraPos, waypoint.x(), waypoint.y(), waypoint.z(), waypoint,
-                    //$$     distance3d, progress
+                    //$$     distance3d, progress, WaypointVerticalRelation.between(waypoint.y(), player.y())
                     //$$ );
                     //#else
                     drawLabel(
                         matrices, immediate, camera, cameraPos, waypoint.x(), waypoint.y(), waypoint.z(),
-                        waypoint, distance3d, progress
+                        waypoint, distance3d, progress,
+                        WaypointVerticalRelation.between(waypoint.y(), player.y())
                     );
                     //#endif
                 }
@@ -504,7 +509,8 @@ public final class WaypointWorldRenderer {
         final double worldZ,
         final WaypointRenderEntry waypoint,
         final double distance3d,
-        final float animationProgress
+        final float animationProgress,
+        final WaypointVerticalRelation verticalRelation
     ) {
         final float nearFade = (float) MathHelper.clamp(distance3d / LABEL_NEAR_FADE_BLOCKS, 0.0, 1.0);
         if (nearFade <= 0.01f) {
@@ -544,10 +550,15 @@ public final class WaypointWorldRenderer {
         matrices.scale(-scale, -scale, scale);
         //#endif
 
+        //#if MC>=260200
+        //$$ final OrderedSubmitNodeCollector plates = submits.order(0);
+        //$$ final OrderedSubmitNodeCollector text = submits.order(1);
+        //#endif
+
         if (panelWidth > 0.5f) {
             //#if MC>=260200
             //$$ submitRect(
-            //$$     submits, matrices, panelX, -LABEL_PANEL_HEIGHT / 2f,
+            //$$     plates, matrices, panelX, -LABEL_PANEL_HEIGHT / 2f,
             //$$     panelWidth, LABEL_PANEL_HEIGHT, withAlpha(LABEL_BACKGROUND_COLOR, nearFade)
             //$$ );
             //#else
@@ -558,9 +569,15 @@ public final class WaypointWorldRenderer {
             //#endif
         }
         //#if MC>=260200
-        //$$ drawIcon(matrices, textRenderer, submits, waypoint, iconHalfSize, nearFade);
+        //$$ drawIcon(
+        //$$     matrices, textRenderer, plates, text, waypoint, iconHalfSize, nearFade,
+        //$$     verticalRelation
+        //$$ );
         //#else
-        drawIcon(matrices, textRenderer, immediate, waypoint, iconHalfSize, nearFade);
+        drawIcon(
+            matrices, textRenderer, immediate, waypoint, iconHalfSize, nearFade,
+            verticalRelation
+        );
         //#endif
 
         final float textReveal = MathHelper.clamp(
@@ -571,11 +588,11 @@ public final class WaypointWorldRenderer {
             final float textAlpha = nearFade * textReveal;
             //#if MC>=260200
             //$$ submitText(
-            //$$     submits, matrices, name, textX, -9f,
+            //$$     text, matrices, name, textX, -9f,
             //$$     withAlpha(LABEL_NAME_COLOR, textAlpha)
             //$$ );
             //$$ submitText(
-            //$$     submits, matrices, distanceText, textX, 1f,
+            //$$     text, matrices, distanceText, textX, 1f,
             //$$     withAlpha(LABEL_DISTANCE_COLOR, textAlpha)
             //$$ );
             //#else
@@ -596,7 +613,8 @@ public final class WaypointWorldRenderer {
     //$$ private static void drawIcon(
     //$$     final PoseStack matrices,
     //$$     final Font textRenderer,
-    //$$     final SubmitNodeCollector submits,
+    //$$     final OrderedSubmitNodeCollector plates,
+    //$$     final OrderedSubmitNodeCollector text,
     //#else
     private static void drawIcon(
         final MatrixStack matrices,
@@ -605,16 +623,17 @@ public final class WaypointWorldRenderer {
     //#endif
         final WaypointRenderEntry waypoint,
         final float halfSize,
-        final float alpha
+        final float alpha,
+        final WaypointVerticalRelation verticalRelation
     ) {
         final float size = halfSize * 2f;
         //#if MC>=260200
         //$$ submitRect(
-        //$$     submits, matrices, -halfSize - 1f, -halfSize - 1f, size + 2f, size + 2f,
+        //$$     plates, matrices, -halfSize - 1f, -halfSize - 1f, size + 2f, size + 2f,
         //$$     withAlpha(outlineColor(waypoint), alpha)
         //$$ );
         //$$ submitRect(
-        //$$     submits, matrices, -halfSize, -halfSize, size, size,
+        //$$     plates, matrices, -halfSize, -halfSize, size, size,
         //$$     withAlpha(waypoint.colorArgb() | 0xFF000000, alpha)
         //$$ );
         //#else
@@ -636,7 +655,7 @@ public final class WaypointWorldRenderer {
         matrices.scale(textScale, textScale, 1f);
         //#if MC>=260200
         //$$ submitText(
-        //$$     submits, matrices, initial, -initialWidth / 2f, -textRenderer.lineHeight / 2f,
+        //$$     text, matrices, initial, -initialWidth / 2f, -textRenderer.lineHeight / 2f,
         //$$     withAlpha(LABEL_NAME_COLOR, alpha)
         //$$ );
         //#else
@@ -646,11 +665,71 @@ public final class WaypointWorldRenderer {
         );
         //#endif
         matrices.pop();
+        //#if MC>=260200
+        //$$ submitHeightBadge(plates, matrices, verticalRelation, halfSize, alpha);
+        //#else
+        drawHeightBadge(matrices, verticalRelation, halfSize, alpha);
+        //#endif
     }
 
     //#if MC>=260200
+    //$$ private static void submitHeightBadge(
+    //$$     final OrderedSubmitNodeCollector plates,
+    //$$     final PoseStack matrices,
+    //$$     final WaypointVerticalRelation relation,
+    //$$     final float halfSize,
+    //$$     final float alpha
+    //$$ ) {
+    //$$     if (relation == WaypointVerticalRelation.NONE) {
+    //$$         return;
+    //$$     }
+    //$$     final float centerX = -halfSize;
+    //$$     final float centerY = -halfSize;
+    //$$     final int outline = withAlpha(LABEL_HEIGHT_BADGE_OUTLINE, alpha);
+    //$$     final int fill = withAlpha(LABEL_HEIGHT_BADGE_FILL, alpha);
+    //$$     if (relation == WaypointVerticalRelation.LEVEL) {
+    //$$         submitRect(plates, matrices, centerX - 2.5f, centerY - 2.5f, 5f, 5f, outline);
+    //$$         submitRect(plates, matrices, centerX - 1.5f, centerY - 1.5f, 3f, 3f, fill);
+    //$$         return;
+    //$$     }
+    //$$     final float tipY = relation == WaypointVerticalRelation.ABOVE ? centerY - 2.5f : centerY + 2.5f;
+    //$$     final float baseY = relation == WaypointVerticalRelation.ABOVE ? centerY + 2f : centerY - 2f;
+    //$$     submitTriangle(plates, matrices, centerX, tipY, centerX - 2.5f, baseY, centerX + 2.5f, baseY, outline);
+    //$$     final float innerTipY = relation == WaypointVerticalRelation.ABOVE ? centerY - 1.2f : centerY + 1.2f;
+    //$$     final float innerBaseY = relation == WaypointVerticalRelation.ABOVE ? centerY + 1f : centerY - 1f;
+    //$$     submitTriangle(plates, matrices, centerX, innerTipY, centerX - 1.2f, innerBaseY, centerX + 1.2f, innerBaseY, fill);
+    //$$ }
+    //#else
+    private static void drawHeightBadge(
+        final MatrixStack matrices,
+        final WaypointVerticalRelation relation,
+        final float halfSize,
+        final float alpha
+    ) {
+        if (relation == WaypointVerticalRelation.NONE) {
+            return;
+        }
+        final float centerX = -halfSize;
+        final float centerY = -halfSize;
+        final int outline = withAlpha(LABEL_HEIGHT_BADGE_OUTLINE, alpha);
+        final int fill = withAlpha(LABEL_HEIGHT_BADGE_FILL, alpha);
+        if (relation == WaypointVerticalRelation.LEVEL) {
+            RenderUtil.fillRect3D(matrices, centerX - 2.5f, centerY - 2.5f, 5f, 5f, outline);
+            RenderUtil.fillRect3D(matrices, centerX - 1.5f, centerY - 1.5f, 3f, 3f, fill);
+            return;
+        }
+        final float tipY = relation == WaypointVerticalRelation.ABOVE ? centerY - 2.5f : centerY + 2.5f;
+        final float baseY = relation == WaypointVerticalRelation.ABOVE ? centerY + 2f : centerY - 2f;
+        RenderUtil.fillTriangle3D(matrices, centerX, tipY, 0f, centerX - 2.5f, baseY, 0f, centerX + 2.5f, baseY, 0f, outline);
+        final float innerTipY = relation == WaypointVerticalRelation.ABOVE ? centerY - 1.2f : centerY + 1.2f;
+        final float innerBaseY = relation == WaypointVerticalRelation.ABOVE ? centerY + 1f : centerY - 1f;
+        RenderUtil.fillTriangle3D(matrices, centerX, innerTipY, 0f, centerX - 1.2f, innerBaseY, 0f, centerX + 1.2f, innerBaseY, 0f, fill);
+    }
+    //#endif
+
+    //#if MC>=260200
     //$$ private static void submitRect(
-    //$$     final SubmitNodeCollector submits,
+    //$$     final OrderedSubmitNodeCollector submits,
     //$$     final PoseStack matrices,
     //$$     final float x,
     //$$     final float y,
@@ -670,8 +749,31 @@ public final class WaypointWorldRenderer {
     //$$     );
     //$$ }
     //$$
+    //$$ private static void submitTriangle(
+    //$$     final OrderedSubmitNodeCollector submits,
+    //$$     final PoseStack matrices,
+    //$$     final float x0,
+    //$$     final float y0,
+    //$$     final float x1,
+    //$$     final float y1,
+    //$$     final float x2,
+    //$$     final float y2,
+    //$$     final int color
+    //$$ ) {
+    //$$     submits.submitCustomGeometry(
+    //$$         matrices,
+    //$$         RenderTypes.textBackgroundSeeThrough(),
+    //$$         (pose, vertices) -> {
+    //$$             vertices.addVertex(pose, x0, y0, 0f).setColor(color).setLight(LABEL_LIGHT);
+    //$$             vertices.addVertex(pose, x1, y1, 0f).setColor(color).setLight(LABEL_LIGHT);
+    //$$             vertices.addVertex(pose, x2, y2, 0f).setColor(color).setLight(LABEL_LIGHT);
+    //$$             vertices.addVertex(pose, x2, y2, 0f).setColor(color).setLight(LABEL_LIGHT);
+    //$$         }
+    //$$     );
+    //$$ }
+    //$$
     //$$ private static void submitText(
-    //$$     final SubmitNodeCollector submits,
+    //$$     final OrderedSubmitNodeCollector submits,
     //$$     final PoseStack matrices,
     //$$     final String text,
     //$$     final float x,

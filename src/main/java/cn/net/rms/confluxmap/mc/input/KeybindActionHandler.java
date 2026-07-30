@@ -6,6 +6,7 @@ import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.mc.ui.screen.ConfigScreen;
+import cn.net.rms.confluxmap.mc.ui.screen.ClientWorldSelectScreen;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 import cn.net.rms.confluxmap.mc.ui.screen.WaypointEditScreen;
 import cn.net.rms.confluxmap.mc.ui.screen.WaypointListScreen;
@@ -105,6 +106,13 @@ final class KeybindActionHandler {
             return true;
         }
         if (client.player == null || MinecraftAccess.screen(client) != null) {
+            return false;
+        }
+        if (ConfluxMapClient.get().clientMultiworldService().needsSelection()) {
+            MinecraftAccess.setScreen(client, new ClientWorldSelectScreen(null, vanillaOpenMapKey, true));
+            return true;
+        }
+        if (!ConfluxMapClient.get().sessionGuard().current().active()) {
             return false;
         }
         MinecraftAccess.setScreen(client, new FullscreenMapScreen(vanillaOpenMapKey));
