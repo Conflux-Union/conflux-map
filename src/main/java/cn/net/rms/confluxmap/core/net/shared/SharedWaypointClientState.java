@@ -65,12 +65,14 @@ public final class SharedWaypointClientState {
     private int handshakeTicks;
     private int subscriptionRetryTicks;
     private boolean disabledNoticeShown;
+    private int negotiatedMinor = -1;
 
     /** Starts one connection lifecycle and returns whether the transport should send HELLO. */
     public synchronized boolean beginConnection(final boolean channelAvailable) {
         handshakeTicks = 0;
         subscriptionRetryTicks = 0;
         disabledNoticeShown = false;
+        negotiatedMinor = -1;
         view.set(View.empty(channelAvailable ? State.HANDSHAKE : State.UNSUPPORTED));
         return channelAvailable;
     }
@@ -80,6 +82,7 @@ public final class SharedWaypointClientState {
         handshakeTicks = 0;
         subscriptionRetryTicks = 0;
         disabledNoticeShown = false;
+        negotiatedMinor = -1;
         view.set(View.empty(State.UNKNOWN));
     }
 
@@ -122,12 +125,14 @@ public final class SharedWaypointClientState {
         }
         if (!status.supported() || status.major() != SharedWaypointProto.PROTO_MAJOR) {
             subscriptionRetryTicks = 0;
+            negotiatedMinor = -1;
             view.set(View.empty(State.UNSUPPORTED));
             return Action.NONE;
         }
         if (!validStatus(status)) {
             return rejectProtocol();
         }
+        negotiatedMinor = Math.min(status.minor(), SharedWaypointProto.PROTO_MINOR);
 
         handshakeTicks = 0;
         if (!status.enabled()) {
@@ -314,6 +319,10 @@ public final class SharedWaypointClientState {
         return view.get();
     }
 
+    public synchronized int negotiatedMinor() {
+        return negotiatedMinor;
+    }
+
     public boolean canMutate() {
         final View current = view.get();
         return current.state() == State.ENABLED && current.synchronizedSnapshot();
@@ -321,6 +330,7 @@ public final class SharedWaypointClientState {
 
     private Action rejectProtocol() {
         subscriptionRetryTicks = 0;
+        negotiatedMinor = -1;
         view.set(View.empty(State.UNSUPPORTED));
         return Action.REJECTED;
     }

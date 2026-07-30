@@ -15,6 +15,7 @@ import cn.net.rms.confluxmap.core.tile.TileUpdate;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
 import cn.net.rms.confluxmap.nativepredict.CubiomesContexts;
+import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -156,9 +157,26 @@ public final class PredictionTileService {
         final ChunkPatchCodec.Patch patch,
         final long validatedAtMillis
     ) {
+        return applyRegionCorrection(
+            dimension, lod, slice, patch,
+            cn.net.rms.confluxmap.core.net.Proto.PATCH_MODE_RESIDUAL,
+            cn.net.rms.confluxmap.core.net.MapSyncCompatibility.STABLE_PREDICTOR,
+            validatedAtMillis
+        );
+    }
+
+    public boolean applyRegionCorrection(
+        final String dimension,
+        final int lod,
+        final ChunkRegionSlice slice,
+        final ChunkPatchCodec.Patch patch,
+        final int patchMode,
+        final String baselineProfile,
+        final long validatedAtMillis
+    ) {
         final CorrectionStore store = correctionStore;
         if (store == null || !store.applyRegionSlice(
-            dimension, lod, slice, patch, validatedAtMillis
+            dimension, lod, slice, patch, patchMode, baselineProfile, validatedAtMillis
         )) {
             return false;
         }
@@ -215,8 +233,27 @@ public final class PredictionTileService {
         final cn.net.rms.confluxmap.core.net.PatchCodec.Patch patch,
         final long validatedAtMillis
     ) {
+        return applyCorrection(
+            key, revision, presence, patch,
+            cn.net.rms.confluxmap.core.net.Proto.PATCH_MODE_RESIDUAL,
+            cn.net.rms.confluxmap.core.net.MapSyncCompatibility.STABLE_PREDICTOR,
+            validatedAtMillis
+        );
+    }
+
+    public boolean applyCorrection(
+        final CorrectionStore.Key key,
+        final long revision,
+        final byte[] presence,
+        final cn.net.rms.confluxmap.core.net.PatchCodec.Patch patch,
+        final int patchMode,
+        final String baselineProfile,
+        final long validatedAtMillis
+    ) {
         final CorrectionStore store = correctionStore;
-        if (store == null || !store.apply(key, revision, presence, patch, validatedAtMillis)) {
+        if (store == null || !store.apply(
+            key, revision, presence, patch, patchMode, baselineProfile, validatedAtMillis
+        )) {
             return false;
         }
         markCorrectionDirty(key);
@@ -649,9 +686,12 @@ public final class PredictionTileService {
 
         final PredictionMipCache.Tile lower = mipCache.lowerTile(key, compositionMode);
         final CorrectionStore store = correctionStore;
-        final CorrectionTile directCorrections = store == null
+        final CorrectionTile storedCorrections = store == null
             ? null
             : store.get(key.dimension(), lod, key.tileX(), key.tileZ());
+        final CorrectionTile directCorrections = supportsCorrectionBaseline(
+            storedCorrections, PredictorVersion.full()
+        ) ? storedCorrections : null;
         final boolean directHasServerState = directCorrections != null
             && directCorrections.hasCommittedState();
         final long directValidatedAt = directCorrections == null
@@ -697,13 +737,19 @@ public final class PredictionTileService {
         }
 
         final int[] pixels = BiomeTileKeys.isBiome(key)
-            ? PredictedBiomeComposer.compose(derived, grid, directCorrections, compositionMode, lod)
+            ? PredictedBiomeComposer.compose(
+                derived, grid, directCorrections, compositionMode, lod, derived, grid
+            )
             : PredictedTileComposer.compose(
-                derived, grid, state.palette(), directCorrections, compositionMode, lod, baselineMapColorId
+                derived, grid, state.palette(), directCorrections, compositionMode, lod,
+                baselineMapColorId, derived, grid, baselineMapColorId
             );
         return new Composition(
             TileUpdate.fullTile(key, pixels),
-            new TileMetadata(biomeIds(grid, directCorrections), surfaceYs(derived, directCorrections)),
+            new TileMetadata(
+                biomeIds(grid, directCorrections, grid),
+                surfaceYs(derived, directCorrections, derived)
+            ),
             compositionMode,
             directHasServerState,
             directValidatedAt,
@@ -964,7 +1010,20 @@ public final class PredictionTileService {
         }
     }
 
-    private static byte[] biomeIds(final BaselineGrid grid, final CorrectionTile corrections) {
+    static boolean supportsCorrectionBaseline(
+        final CorrectionTile corrections,
+        final String currentBaselineProfile
+    ) {
+        return corrections == null
+            || corrections.patchMode() == Proto.PATCH_MODE_ABSOLUTE
+            || corrections.baselineProfile().equals(currentBaselineProfile);
+    }
+
+    private static byte[] biomeIds(
+        final BaselineGrid grid,
+        final CorrectionTile corrections,
+        final BaselineGrid correctionGrid
+    ) {
         final byte[] biomes = new byte[BaselineGrid.PIXELS * BaselineGrid.PIXELS];
         for (int z = 0; z < BaselineGrid.PIXELS; z++) {
             for (int x = 0; x < BaselineGrid.PIXELS; x++) {
@@ -972,8 +1031,24 @@ public final class PredictionTileService {
             }
         }
         if (corrections != null) {
-            for (final PatchCodec.Sample sample : corrections.copyPatch().samples()) {
-                if (SurfaceKind.byOrdinal(sample.kind()) != SurfaceKind.UNKNOWN) {
+            final PatchCodec.Patch correctionPatch = corrections.copyPatch();
+            if (corrections.patchMode() == Proto.PATCH_MODE_RESIDUAL) {
+                final byte[] evaluated = correctionPatch.evaluated();
+                for (int pixel = 0; pixel < biomes.length; pixel++) {
+                    if ((evaluated[pixel >>> 3] & (1 << (pixel & 7))) != 0) {
+                        biomes[pixel] = (byte) correctionGrid.biomeId[
+                            BaselineGrid.index(pixel & 255, pixel >>> 8)
+                        ];
+                    }
+                }
+            }
+            for (final PatchCodec.Sample sample : correctionPatch.samples()) {
+                if (SurfaceKind.byOrdinal(sample.kind()) == SurfaceKind.UNKNOWN) {
+                    final int pixel = sample.pixelIndex();
+                    biomes[pixel] = (byte) grid.biomeId[
+                        BaselineGrid.index(pixel & 255, pixel >>> 8)
+                    ];
+                } else {
                     biomes[sample.pixelIndex()] = (byte) sample.biomeId();
                 }
             }
@@ -981,7 +1056,11 @@ public final class PredictionTileService {
         return biomes;
     }
 
-    private static int[] surfaceYs(final DerivedGrid derived, final CorrectionTile corrections) {
+    private static int[] surfaceYs(
+        final DerivedGrid derived,
+        final CorrectionTile corrections,
+        final DerivedGrid correctionDerived
+    ) {
         final int[] surfaces = new int[BaselineGrid.PIXELS * BaselineGrid.PIXELS];
         for (int z = 0; z < BaselineGrid.PIXELS; z++) {
             for (int x = 0; x < BaselineGrid.PIXELS; x++) {
@@ -989,8 +1068,24 @@ public final class PredictionTileService {
             }
         }
         if (corrections != null) {
-            for (final PatchCodec.Sample sample : corrections.copyPatch().samples()) {
-                if (SurfaceKind.byOrdinal(sample.kind()) != SurfaceKind.UNKNOWN) {
+            final PatchCodec.Patch correctionPatch = corrections.copyPatch();
+            if (corrections.patchMode() == Proto.PATCH_MODE_RESIDUAL) {
+                final byte[] evaluated = correctionPatch.evaluated();
+                for (int pixel = 0; pixel < surfaces.length; pixel++) {
+                    if ((evaluated[pixel >>> 3] & (1 << (pixel & 7))) != 0) {
+                        surfaces[pixel] = correctionDerived.surfaceY[
+                            BaselineGrid.index(pixel & 255, pixel >>> 8)
+                        ];
+                    }
+                }
+            }
+            for (final PatchCodec.Sample sample : correctionPatch.samples()) {
+                if (SurfaceKind.byOrdinal(sample.kind()) == SurfaceKind.UNKNOWN) {
+                    final int pixel = sample.pixelIndex();
+                    surfaces[pixel] = derived.surfaceY[
+                        BaselineGrid.index(pixel & 255, pixel >>> 8)
+                    ];
+                } else {
                     surfaces[sample.pixelIndex()] = sample.surfaceY();
                 }
             }

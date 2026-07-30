@@ -3,26 +3,31 @@ package cn.net.rms.confluxmap.server;
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
+import cn.net.rms.confluxmap.compat.MinecraftVersion;
 import cn.net.rms.confluxmap.compat.PlayNetworking;
+import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
+import cn.net.rms.confluxmap.core.net.ErrorS2C;
 import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
 import cn.net.rms.confluxmap.core.net.HelloC2S;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
-import cn.net.rms.confluxmap.core.net.ErrorS2C;
-import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
-import cn.net.rms.confluxmap.core.net.MapSyncSubscribeC2S;
+import cn.net.rms.confluxmap.core.net.LoadStateSubscribeC2S;
+import cn.net.rms.confluxmap.core.net.MapCompatibilityS2C;
 import cn.net.rms.confluxmap.core.net.MapRegionSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapRegionViewReqC2S;
-import cn.net.rms.confluxmap.core.net.LoadStateSubscribeC2S;
+import cn.net.rms.confluxmap.core.net.MapSyncCompatibility;
+import cn.net.rms.confluxmap.core.net.MapSyncSubscribeC2S;
+import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.MsgCodec;
+import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
-import cn.net.rms.confluxmap.compat.MinecraftVersion;
+import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
@@ -47,6 +52,8 @@ public final class ServerNetworking {
     private final ConfluxMapCompanion companion;
     private final ConcurrentMap<UUID, Integer> malformedStrikes = new ConcurrentHashMap<>();
     private final Set<UUID> mutedPlayers = ConcurrentHashMap.newKeySet();
+    private final ConcurrentMap<UUID, MapSyncCompatibility.ServerSelection> peerProfiles =
+        new ConcurrentHashMap<>();
     private boolean registered;
 
     public ServerNetworking(final ConfluxMapCompanion companion) {
@@ -63,6 +70,7 @@ public final class ServerNetworking {
             final UUID uuid = handler.getPlayer().getUuid();
             malformedStrikes.remove(uuid);
             mutedPlayers.remove(uuid);
+            peerProfiles.remove(uuid);
             companion.summaries().remove(uuid);
             final ChunkLoadStateService loadStates = companion.chunkLoadStates();
             if (loadStates != null) {
@@ -132,18 +140,52 @@ public final class ServerNetworking {
         if (!companion.isEnabled()) {
             return;
         }
-        // FLAT_BASELINE goes out first: the client activates its session on HELLO_POLICY, so the
+        final MapSyncCompatibility.ClientHello clientHello =
+            MapSyncCompatibility.parseClientHello(hello.predictorVersion());
+        final MapSyncCompatibility.ServerSelection selection =
+            MapSyncCompatibility.selectServer(clientHello, PredictorVersion.full());
+        companion.summaries().remove(player.getUuid());
+        peerProfiles.put(player.getUuid(), selection);
+        if (selection.sendCompatibility()) {
+            send(player, compatibility(selection));
+        }
+        // FLAT_BASELINE goes out before policy: the client activates its session on HELLO_POLICY, so the
         // flat surfaces must already be stored by then. Pre-minor-2 clients log and ignore it.
         final List<FlatBaselineS2C.Entry> flatEntries = buildFlatBaselines(server);
         if (!flatEntries.isEmpty()) {
             send(player, new FlatBaselineS2C(flatEntries));
         }
-        final HelloPolicyS2C policy = buildPolicy(server);
+        final HelloPolicyS2C policy = buildPolicy(server, selection);
         send(player, policy);
         ConfluxMapMod.LOGGER.info(
-            "companion: replied HELLO_POLICY to {} (modVersion={} predictorVersion={} worldId={} seedGranted={})",
-            MinecraftAccess.playerName(player), hello.modVersion(), hello.predictorVersion(),
-            policy.worldId(), policy.flags().seedGranted()
+            "companion: replied HELLO_POLICY to {} (modVersion={} predictorVersion={} corrections={} absolute={} negotiated={} worldId={} seedGranted={})",
+            MinecraftAccess.playerName(player), hello.modVersion(), clientHello.predictorVersion(),
+            policy.flags().correctionsEnabled(), selection.forceAbsolute(),
+            selection.sendCompatibility(), policy.worldId(), policy.flags().seedGranted()
+        );
+    }
+
+    private static MapCompatibilityS2C compatibility(
+        final MapSyncCompatibility.ServerSelection selection
+    ) {
+        final int mode = !selection.correctionsEnabled()
+            ? MapCompatibilityS2C.MODE_DISABLED
+            : selection.forceAbsolute()
+                ? MapCompatibilityS2C.MODE_ABSOLUTE : MapCompatibilityS2C.MODE_RESIDUAL;
+        final int reason = !selection.correctionsEnabled()
+            ? MapCompatibilityS2C.REASON_NO_COMMON_WIRE
+            : selection.forceAbsolute()
+                ? MapCompatibilityS2C.REASON_BASELINE_MISMATCH : MapCompatibilityS2C.REASON_NONE;
+        return new MapCompatibilityS2C(
+            MapSyncCompatibility.NEGOTIATION_VERSION,
+            ConfluxMapMod.getVersion(),
+            Proto.PROTO_MAJOR,
+            Proto.PROTO_MINOR,
+            PatchCodec.FORMAT_VERSION,
+            ChunkPatchCodec.FORMAT_VERSION,
+            PredictorVersion.full(),
+            mode,
+            reason
         );
     }
 
@@ -153,11 +195,14 @@ public final class ServerNetworking {
         final MapViewReqC2S req,
         final int payloadBytes
     ) {
-        if (!companion.config().shareCorrections) {
+        final MapSyncCompatibility.ServerSelection profile = peerProfile(player);
+        if (!companion.config().shareCorrections || !profile.correctionsEnabled()) {
             send(player, new ErrorS2C(ErrorS2C.ERR_COMPANION_DISABLED, "map corrections are disabled"));
             return;
         }
-        companion.summaries().request(server, player, req, payloadBytes, senderFor(player));
+        companion.summaries().request(
+            server, player, req, payloadBytes, profile.forceAbsolute(), senderFor(player)
+        );
     }
 
     private void handleMapRegionViewReq(
@@ -166,12 +211,13 @@ public final class ServerNetworking {
         final MapRegionViewReqC2S request,
         final int payloadBytes
     ) {
-        if (!companion.config().shareCorrections) {
+        final MapSyncCompatibility.ServerSelection profile = peerProfile(player);
+        if (!companion.config().shareCorrections || !profile.correctionsEnabled()) {
             send(player, new ErrorS2C(ErrorS2C.ERR_COMPANION_DISABLED, "map corrections are disabled"));
             return;
         }
         companion.summaries().requestRegions(
-            server, player, request, payloadBytes, senderFor(player)
+            server, player, request, payloadBytes, profile.forceAbsolute(), senderFor(player)
         );
     }
 
@@ -195,7 +241,7 @@ public final class ServerNetworking {
         final ServerPlayerEntity player,
         final MapSyncSubscribeC2S request
     ) {
-        if (!companion.config().shareCorrections) {
+        if (!companion.config().shareCorrections || !peerProfile(player).correctionsEnabled()) {
             send(player, new ErrorS2C(ErrorS2C.ERR_COMPANION_DISABLED, "map corrections are disabled"));
             return;
         }
@@ -211,7 +257,7 @@ public final class ServerNetworking {
         final ServerPlayerEntity player,
         final MapRegionSyncSubscribeC2S request
     ) {
-        if (!companion.config().shareCorrections) {
+        if (!companion.config().shareCorrections || !peerProfile(player).correctionsEnabled()) {
             send(player, new ErrorS2C(ErrorS2C.ERR_COMPANION_DISABLED, "map corrections are disabled"));
             return;
         }
@@ -222,9 +268,19 @@ public final class ServerNetworking {
         }
     }
 
-    private HelloPolicyS2C buildPolicy(final MinecraftServer server) {
+    private MapSyncCompatibility.ServerSelection peerProfile(final ServerPlayerEntity player) {
+        return peerProfiles.getOrDefault(
+            player.getUuid(), new MapSyncCompatibility.ServerSelection(false, false, false, "")
+        );
+    }
+
+    private HelloPolicyS2C buildPolicy(
+        final MinecraftServer server,
+        final MapSyncCompatibility.ServerSelection selection
+    ) {
         final ServerConfig cfg = companion.config();
-        final HelloPolicyS2C.Flags flags = policyFlags(cfg);
+        final HelloPolicyS2C.Flags configured = policyFlags(cfg);
+        final HelloPolicyS2C.Flags flags = compatibleFlags(configured, selection);
         final UUID worldId = companion.worldIds().get(server);
         final HelloPolicyS2C.Budgets budgets = new HelloPolicyS2C.Budgets(
             cfg.maxBytesPerSecondPerPlayer,
@@ -234,6 +290,21 @@ public final class ServerNetworking {
         );
         final List<HelloPolicyS2C.DimDescriptor> dims = buildDimDescriptors(server, flags.seedGranted());
         return new HelloPolicyS2C(flags, worldId.toString(), WORLDGEN_VERSION, budgets, dims);
+    }
+
+    static HelloPolicyS2C.Flags compatibleFlags(
+        final HelloPolicyS2C.Flags configured,
+        final MapSyncCompatibility.ServerSelection selection
+    ) {
+        final boolean corrections = configured.correctionsEnabled()
+            && selection.correctionsEnabled();
+        return new HelloPolicyS2C.Flags(
+            configured.seedGranted(), corrections, configured.biomeMapForbidden(),
+            configured.chunkLoadStateEnabled(), configured.entityRadarForbidden(),
+            corrections && configured.correctionInvalidationEnabled(),
+            corrections && configured.chunkRangeCorrectionEnabled(),
+            configured.structureSearchForbidden()
+        );
     }
 
     static HelloPolicyS2C.Flags policyFlags(final ServerConfig cfg) {

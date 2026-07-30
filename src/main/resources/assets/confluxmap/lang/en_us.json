@@ -262,6 +262,7 @@
   "confluxmap.config.prediction.show_structures": "Show Possible Structures: %s",
   "confluxmap.screen.config.prediction.seed_disabled_by_server": "This server does not share its world seed",
   "confluxmap.screen.config.prediction.sync_disabled_by_server": "Map sync is disabled by this server",
+  "confluxmap.screen.config.prediction.sync_incompatible_server": "This server's Conflux Map version is not compatible with safe map sync",
   "confluxmap.structure.desert_pyramid": "Desert Pyramid",
   "confluxmap.structure.jungle_temple": "Jungle Temple",
   "confluxmap.structure.swamp_hut": "Swamp Hut",

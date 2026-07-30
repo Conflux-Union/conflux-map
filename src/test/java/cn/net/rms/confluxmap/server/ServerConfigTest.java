@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.net.Proto;
+import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
+import cn.net.rms.confluxmap.core.net.MapSyncCompatibility;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProto;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -82,6 +84,26 @@ class ServerConfigTest {
         config.shareCorrections = true;
         config.enabled = false;
         assertFalse(ServerNetworking.policyFlags(config).chunkRangeCorrectionEnabled());
+    }
+
+    @Test
+    void incompatiblePeerMasksOnlyCorrectionCapabilities() {
+        final ServerConfig config = new ServerConfig();
+        config.shareSeed = true;
+        config.shareChunkLoadState = true;
+        config.allowEntityRadar = false;
+        final HelloPolicyS2C.Flags configured = ServerNetworking.policyFlags(config);
+        final HelloPolicyS2C.Flags masked = ServerNetworking.compatibleFlags(
+            configured,
+            new MapSyncCompatibility.ServerSelection(false, false, false, "")
+        );
+
+        assertFalse(masked.correctionsEnabled());
+        assertFalse(masked.correctionInvalidationEnabled());
+        assertFalse(masked.chunkRangeCorrectionEnabled());
+        assertTrue(masked.seedGranted());
+        assertTrue(masked.chunkLoadStateEnabled());
+        assertTrue(masked.entityRadarForbidden());
     }
 
     @Test

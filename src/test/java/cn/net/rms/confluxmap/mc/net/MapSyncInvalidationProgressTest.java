@@ -147,7 +147,7 @@ class MapSyncInvalidationProgressTest {
         corrections.onSessionChanged(sessions.current());
         predictions.bindCorrectionStore(corrections);
         final CompanionSession companion = new CompanionSession();
-        companion.onPolicy(new HelloPolicyS2C(
+        MapSyncTestCompanion.activate(companion, new HelloPolicyS2C(
             new HelloPolicyS2C.Flags(false, true, false, false, false, true),
             "11111111-2222-3333-4444-555555555555",
             "1.17",

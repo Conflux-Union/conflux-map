@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.core.predict;
 
+import cn.net.rms.confluxmap.core.net.MapSyncCompatibility;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
@@ -8,6 +9,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -17,7 +22,7 @@ import java.util.zip.DataFormatException;
 import java.util.zip.DeflaterOutputStream;
 import java.util.zip.Inflater;
 
-/** Atomic on-disk codec for one client's absolute prediction correction tile. */
+/** Atomic on-disk codec for one client's committed prediction correction tile. */
 public final class PredictionTileCodec {
     public static final byte[] MAGIC = {'C', 'F', 'P', 'T'};
     /**
@@ -28,9 +33,12 @@ public final class PredictionTileCodec {
      * 15 stores protocol-v4 compressed patch bodies. Version 16 adds exact per-chunk generated,
      * revision, and validation metadata for cropped summary-region pages. Version 15 remains
      * drawable, but its tile-wide validation cannot prove that an exact chunk range is fresh.
+     * Version 17 records the wire patch mode and predictor baseline that omitted residual pixels
+     * reconstruct from.
      */
-    public static final int FORMAT_VERSION = 16;
-    private static final int LEGACY_FORMAT_VERSION = 15;
+    public static final int FORMAT_VERSION = 17;
+    private static final int LEGACY_FORMAT_VERSION = 16;
+    private static final int OLDEST_READABLE_FORMAT_VERSION = 15;
     private static final int CHUNK_METADATA_VERSION = 1;
     private static final int MAX_CHUNK_METADATA_RAW_BYTES = 1_250_000;
     private static final int MAX_CHUNK_METADATA_COMPRESSED_BYTES = 1_250_000;
@@ -48,7 +56,9 @@ public final class PredictionTileCodec {
         PatchCodec.Patch patch,
         byte[] generatedChunks,
         long[] chunkRevisions,
-        long[] chunkValidatedAtMillis
+        long[] chunkValidatedAtMillis,
+        int patchMode,
+        String baselineProfile
     ) {
         public FileData {
             if (presence == null || presence.length != Proto.PATCH_PRESENCE_BYTES) {
@@ -56,6 +66,11 @@ public final class PredictionTileCodec {
             }
             if (lod < 0 || lod > 4 || patch == null) {
                 throw new IllegalArgumentException("invalid correction file data");
+            }
+            if ((patchMode != Proto.PATCH_MODE_RESIDUAL && patchMode != Proto.PATCH_MODE_ABSOLUTE)
+                || baselineProfile == null
+                || (patchMode == Proto.PATCH_MODE_RESIDUAL && baselineProfile.isEmpty())) {
+                throw new IllegalArgumentException("invalid correction source profile");
             }
             presence = presence.clone();
             generatedChunks = generatedChunks == null ? new byte[0] : generatedChunks.clone();
@@ -79,11 +94,31 @@ public final class PredictionTileCodec {
             final long revision,
             final long validatedAtMillis,
             final byte[] presence,
+            final PatchCodec.Patch patch,
+            final byte[] generatedChunks,
+            final long[] chunkRevisions,
+            final long[] chunkValidatedAtMillis
+        ) {
+            this(
+                lod, tileX, tileZ, revision, validatedAtMillis, presence, patch,
+                generatedChunks, chunkRevisions, chunkValidatedAtMillis,
+                Proto.PATCH_MODE_RESIDUAL, MapSyncCompatibility.STABLE_PREDICTOR
+            );
+        }
+
+        public FileData(
+            final int lod,
+            final int tileX,
+            final int tileZ,
+            final long revision,
+            final long validatedAtMillis,
+            final byte[] presence,
             final PatchCodec.Patch patch
         ) {
             this(
                 lod, tileX, tileZ, revision, validatedAtMillis, presence, patch,
-                new byte[0], new long[0], new long[0]
+                new byte[0], new long[0], new long[0],
+                Proto.PATCH_MODE_RESIDUAL, MapSyncCompatibility.STABLE_PREDICTOR
             );
         }
 
@@ -118,6 +153,8 @@ public final class PredictionTileCodec {
             header.writeInt(data.tileZ());
             header.writeLong(data.revision());
             header.writeLong(data.validatedAtMillis());
+            header.writeByte(data.patchMode());
+            writeBoundedUtf(header, data.baselineProfile());
             header.write(data.presence());
             final byte[] body = PatchCodec.encode(data.patch());
             header.writeInt(body.length);
@@ -141,7 +178,8 @@ public final class PredictionTileCodec {
                 throw new ProtoException("invalid correction header");
             }
             final int formatVersion = in.readUnsignedByte();
-            if (formatVersion != FORMAT_VERSION && formatVersion != LEGACY_FORMAT_VERSION) {
+            if (formatVersion != FORMAT_VERSION && formatVersion != LEGACY_FORMAT_VERSION
+                && formatVersion != OLDEST_READABLE_FORMAT_VERSION) {
                 throw new ProtoException("unsupported correction version " + formatVersion);
             }
             final int lod = in.readUnsignedByte();
@@ -152,6 +190,10 @@ public final class PredictionTileCodec {
             final int tileZ = in.readInt();
             final long revision = in.readLong();
             final long validatedAtMillis = in.readLong();
+            final int patchMode = formatVersion >= FORMAT_VERSION
+                ? in.readUnsignedByte() : Proto.PATCH_MODE_RESIDUAL;
+            final String baselineProfile = formatVersion >= FORMAT_VERSION
+                ? readBoundedUtf(in) : MapSyncCompatibility.STABLE_PREDICTOR;
             final byte[] presence = new byte[Proto.PATCH_PRESENCE_BYTES];
             in.readFully(presence);
             final int bodyLength = in.readInt();
@@ -161,12 +203,13 @@ public final class PredictionTileCodec {
             final byte[] body = new byte[bodyLength];
             in.readFully(body);
             final PatchCodec.Patch patch = PatchCodec.decode(body);
-            if (formatVersion == LEGACY_FORMAT_VERSION) {
+            if (formatVersion == OLDEST_READABLE_FORMAT_VERSION) {
                 if (in.available() != 0) {
                     throw new ProtoException("trailing legacy correction bytes");
                 }
                 return new FileData(
-                    lod, tileX, tileZ, revision, validatedAtMillis, presence, patch
+                    lod, tileX, tileZ, revision, validatedAtMillis, presence, patch,
+                    new byte[0], new long[0], new long[0], patchMode, baselineProfile
                 );
             }
             final int metadataLength = in.readInt();
@@ -180,7 +223,8 @@ public final class PredictionTileCodec {
                 throw new ProtoException("trailing correction bytes");
             }
             return decodeChunkMetadata(
-                lod, tileX, tileZ, revision, validatedAtMillis, presence, patch, metadata
+                lod, tileX, tileZ, revision, validatedAtMillis, presence, patch,
+                metadata, patchMode, baselineProfile
             );
         } catch (final ProtoException e) {
             throw e;
@@ -253,10 +297,15 @@ public final class PredictionTileCodec {
         final long validatedAtMillis,
         final byte[] presence,
         final PatchCodec.Patch patch,
-        final byte[] compressed
+        final byte[] compressed,
+        final int patchMode,
+        final String baselineProfile
     ) throws IOException, ProtoException {
         if (compressed.length == 0) {
-            return new FileData(lod, tileX, tileZ, revision, validatedAtMillis, presence, patch);
+            return new FileData(
+                lod, tileX, tileZ, revision, validatedAtMillis, presence, patch,
+                new byte[0], new long[0], new long[0], patchMode, baselineProfile
+            );
         }
         final byte[] rawBytes = inflateChunkMetadata(compressed);
         final DataInputStream raw = new DataInputStream(new ByteArrayInputStream(rawBytes));
@@ -293,8 +342,39 @@ public final class PredictionTileCodec {
         }
         return new FileData(
             lod, tileX, tileZ, revision, validatedAtMillis, presence, patch,
-            generated, revisions, validated
+            generated, revisions, validated, patchMode, baselineProfile
         );
+    }
+
+    private static void writeBoundedUtf(
+        final DataOutputStream out, final String value
+    ) throws IOException {
+        final byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length > Proto.MAX_UTF8_BYTES) {
+            throw new IllegalArgumentException("correction baseline profile is too long");
+        }
+        out.writeShort(bytes.length);
+        out.write(bytes);
+    }
+
+    private static String readBoundedUtf(
+        final DataInputStream in
+    ) throws IOException, ProtoException {
+        final int length = in.readUnsignedShort();
+        if (length > Proto.MAX_UTF8_BYTES || length > in.available()) {
+            throw new ProtoException("invalid correction baseline profile length " + length);
+        }
+        final byte[] bytes = new byte[length];
+        in.readFully(bytes);
+        try {
+            return StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes))
+                .toString();
+        } catch (final CharacterCodingException e) {
+            throw new ProtoException("malformed correction baseline profile", e);
+        }
     }
 
     private static byte[] inflateChunkMetadata(final byte[] compressed) throws ProtoException {

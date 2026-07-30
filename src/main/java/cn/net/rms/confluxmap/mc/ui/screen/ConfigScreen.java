@@ -96,7 +96,7 @@ public final class ConfigScreen extends ConfluxScreen {
 
     record PredictionSettingsAccess(
         boolean underlayDisabledByServer,
-        boolean networkSyncDisabledByServer,
+        String networkSyncDisabledReasonKey,
         boolean structuresDisabledByServer,
         boolean structureSearchAllowed
     ) {
@@ -104,13 +104,13 @@ public final class ConfigScreen extends ConfluxScreen {
             final boolean singleplayer,
             final boolean seedIndependentUnderlay,
             final boolean seedSharingDisabledByServer,
-            final boolean networkSyncDisabledByServer,
+            final String networkSyncDisabledReasonKey,
             final boolean structureSearchAllowed
         ) {
             final boolean remoteSeedDisabled = !singleplayer && seedSharingDisabledByServer;
             return new PredictionSettingsAccess(
                 remoteSeedDisabled && !seedIndependentUnderlay,
-                networkSyncDisabledByServer,
+                networkSyncDisabledReasonKey,
                 remoteSeedDisabled,
                 structureSearchAllowed
             );
@@ -121,9 +121,7 @@ public final class ConfigScreen extends ConfluxScreen {
                 case UNDERLAY -> underlayDisabledByServer
                     ? "confluxmap.screen.config.prediction.seed_disabled_by_server"
                     : null;
-                case NETWORK_SYNC -> networkSyncDisabledByServer
-                    ? "confluxmap.screen.config.prediction.sync_disabled_by_server"
-                    : null;
+                case NETWORK_SYNC -> networkSyncDisabledReasonKey;
                 case STRUCTURES -> !structureSearchAllowed
                     ? "confluxmap.map.structure_search.disabled_by_server"
                     : structuresDisabledByServer
@@ -693,7 +691,7 @@ public final class ConfigScreen extends ConfluxScreen {
             singleplayer,
             seedIndependentUnderlay,
             companionSession.seedSharingDisabledByServer(),
-            companionSession.mapCorrectionsDisabledByServer(),
+            companionSession.mapCorrectionDisabledReasonKey(),
             companionSession.structureSearchAllowed()
         );
     }

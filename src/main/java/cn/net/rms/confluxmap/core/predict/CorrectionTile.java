@@ -3,9 +3,10 @@ package cn.net.rms.confluxmap.core.predict;
 import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
+import cn.net.rms.confluxmap.core.net.MapSyncCompatibility;
 import java.util.Arrays;
 
-/** Thread-safe absolute corrections and generated-chunk presence for one predicted tile. */
+/** Thread-safe committed corrections, source profile, and generated-chunk presence for one tile. */
 public final class CorrectionTile {
     public static final int PIXELS = 256 * 256;
     private final int lod;
@@ -25,6 +26,8 @@ public final class CorrectionTile {
     private long revision = Long.MIN_VALUE;
     /** Client wall-clock time of the newest committed server validation; zero means unvalidated. */
     private long validatedAtMillis;
+    private int patchMode = Proto.PATCH_MODE_RESIDUAL;
+    private String baselineProfile = MapSyncCompatibility.STABLE_PREDICTOR;
 
     public CorrectionTile() {
         this(0);
@@ -54,9 +57,25 @@ public final class CorrectionTile {
         final PatchCodec.Patch patch,
         final long patchValidatedAtMillis
     ) {
+        return applyPatch(
+            patchRevision, newPresence, patch,
+            Proto.PATCH_MODE_RESIDUAL, MapSyncCompatibility.STABLE_PREDICTOR,
+            patchValidatedAtMillis
+        );
+    }
+
+    public synchronized boolean applyPatch(
+        final long patchRevision,
+        final byte[] newPresence,
+        final PatchCodec.Patch patch,
+        final int newPatchMode,
+        final String newBaselineProfile,
+        final long patchValidatedAtMillis
+    ) {
         if (newPresence == null || newPresence.length != Proto.PATCH_PRESENCE_BYTES || patch == null) {
             throw new IllegalArgumentException("invalid correction patch");
         }
+        checkSource(newPatchMode, newBaselineProfile);
         clearProgress();
         Arrays.fill(samples, null);
         Arrays.fill(evaluated, (byte) 0);
@@ -72,6 +91,8 @@ public final class CorrectionTile {
         Arrays.fill(chunkValidatedAtMillis, 0L);
         revision = patchRevision;
         validatedAtMillis = Math.max(0L, patchValidatedAtMillis);
+        patchMode = newPatchMode;
+        baselineProfile = newBaselineProfile;
         return true;
     }
 
@@ -82,9 +103,38 @@ public final class CorrectionTile {
         final ChunkPatchCodec.Patch patch,
         final long patchValidatedAtMillis
     ) {
+        return applyRegionSlice(
+            minTileChunkX, minTileChunkZ, patch,
+            Proto.PATCH_MODE_RESIDUAL, MapSyncCompatibility.STABLE_PREDICTOR,
+            patchValidatedAtMillis
+        );
+    }
+
+    public synchronized boolean applyRegionSlice(
+        final int minTileChunkX,
+        final int minTileChunkZ,
+        final ChunkPatchCodec.Patch patch,
+        final int newPatchMode,
+        final String newBaselineProfile,
+        final long patchValidatedAtMillis
+    ) {
         checkRegionSlice(minTileChunkX, minTileChunkZ, patch.chunkWidth(), patch.chunkHeight());
         if (patch.samplesPerChunk() != samplesPerChunk || patchValidatedAtMillis <= 0L) {
             throw new IllegalArgumentException("region patch does not match correction tile LOD");
+        }
+        checkSource(newPatchMode, newBaselineProfile);
+        final boolean hadCommittedState = hasCommittedState();
+        if (hadCommittedState
+            && patchMode == Proto.PATCH_MODE_RESIDUAL
+            && newPatchMode == Proto.PATCH_MODE_RESIDUAL
+            && !baselineProfile.equals(newBaselineProfile)) {
+            clearCommitted();
+        }
+        if (!hadCommittedState
+            || patchMode == Proto.PATCH_MODE_ABSOLUTE
+            || newPatchMode == Proto.PATCH_MODE_RESIDUAL) {
+            patchMode = newPatchMode;
+            baselineProfile = newBaselineProfile;
         }
         clearProgress();
         final PatchCodec.Sample[] sourceSamples = new PatchCodec.Sample[patch.pixelCount()];
@@ -327,6 +377,28 @@ public final class CorrectionTile {
         return samples[pixelIndex];
     }
 
+    public synchronized int patchMode() {
+        return patchMode;
+    }
+
+    public synchronized String baselineProfile() {
+        return baselineProfile;
+    }
+
+    /** Absolute snapshots are baseline-independent; residual snapshots require an exact profile. */
+    public synchronized boolean matchesSource(
+        final int expectedPatchMode,
+        final String expectedBaselineProfile
+    ) {
+        if (patchMode == Proto.PATCH_MODE_ABSOLUTE) {
+            return expectedPatchMode == Proto.PATCH_MODE_RESIDUAL
+                || expectedPatchMode == Proto.PATCH_MODE_ABSOLUTE;
+        }
+        return expectedPatchMode == Proto.PATCH_MODE_RESIDUAL
+            && expectedBaselineProfile != null
+            && baselineProfile.equals(expectedBaselineProfile);
+    }
+
     public synchronized PatchCodec.Patch copyPatch() {
         final java.util.ArrayList<PatchCodec.Sample> copy = new java.util.ArrayList<>();
         for (final PatchCodec.Sample sample : samples) {
@@ -386,6 +458,25 @@ public final class CorrectionTile {
             revision = Long.MIN_VALUE;
             validatedAtMillis = completeValidatedAt();
         }
+    }
+
+    private static void checkSource(final int mode, final String profile) {
+        if ((mode != Proto.PATCH_MODE_RESIDUAL && mode != Proto.PATCH_MODE_ABSOLUTE)
+            || profile == null || (mode == Proto.PATCH_MODE_RESIDUAL && profile.isEmpty())) {
+            throw new IllegalArgumentException("invalid correction source");
+        }
+    }
+
+    private void clearCommitted() {
+        clearProgress();
+        Arrays.fill(samples, null);
+        Arrays.fill(evaluated, (byte) 0);
+        Arrays.fill(presence, (byte) 0);
+        Arrays.fill(generatedChunks, false);
+        Arrays.fill(chunkRevisions, Long.MIN_VALUE);
+        Arrays.fill(chunkValidatedAtMillis, 0L);
+        revision = Long.MIN_VALUE;
+        validatedAtMillis = 0L;
     }
 
     public synchronized boolean hasGeneratedChunk(final int cellX, final int cellZ) {

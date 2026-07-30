@@ -71,6 +71,27 @@ class SharedWaypointClientStateTest {
     }
 
     @Test
+    void recordsTheNegotiatedMinorForDiagnostics() {
+        final SharedWaypointClientState state = enabledHandshake(state());
+
+        state.onStatus(new StatusS2C(
+            SharedWaypointProto.PROTO_MAJOR,
+            0,
+            true,
+            true,
+            false,
+            "world-id",
+            0L,
+            32,
+            8
+        ));
+
+        assertEquals(0, state.negotiatedMinor());
+        state.reset();
+        assertEquals(-1, state.negotiatedMinor());
+    }
+
+    @Test
     void deltasRequireExactlyTheNextRevisionAndGapResubscribes() {
         final SharedWaypointClientState state = synchronizedState(4L);
 

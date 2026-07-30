@@ -111,10 +111,14 @@ public final class RegionSummaryService {
     private Path diskRoot;
     private SummaryDiskCache diskCache;
 
-    private record ProgressiveKey(ServerWorld world, int lod, int tileX, int tileZ) {
+    private record ProgressiveKey(
+        ServerWorld world, int lod, int tileX, int tileZ, boolean forceAbsolute
+    ) {
     }
 
-    private record RegionPageKey(ServerWorld world, int lod, ChunkRegionSlice slice) {
+    private record RegionPageKey(
+        ServerWorld world, int lod, ChunkRegionSlice slice, boolean forceAbsolute
+    ) {
     }
 
     private record RegionBaselineKey(
@@ -203,7 +207,8 @@ public final class RegionSummaryService {
         int lod,
         MapRegionViewReqC2S.RegionReq request,
         long receivedAtNanos,
-        int requestBytes
+        int requestBytes,
+        boolean forceAbsolute
     ) {
     }
 
@@ -267,6 +272,17 @@ public final class RegionSummaryService {
         final int requestPayloadBytes,
         final MessageSender sender
     ) {
+        request(server, player, request, requestPayloadBytes, false, sender);
+    }
+
+    public void request(
+        final MinecraftServer server,
+        final ServerPlayerEntity player,
+        final MapViewReqC2S request,
+        final int requestPayloadBytes,
+        final boolean forceAbsolute,
+        final MessageSender sender
+    ) {
         final long now = System.nanoTime();
         final PlayerChannel channel = channels.computeIfAbsent(player.getUuid(), ignored -> newPlayerChannel());
         channel.sender = sender;
@@ -283,7 +299,7 @@ public final class RegionSummaryService {
             final int tileRequestBytes = bytesPerTile + (remainingBytes-- > 0 ? 1 : 0);
             jobs.add(new PatchDispatcher.TileJob(
                 request.reqId(), request.dimIndex(), request.lod(), tile.tileX(), tile.tileZ(),
-                tile.sinceRevision(), now, tileRequestBytes
+                tile.sinceRevision(), now, tileRequestBytes, forceAbsolute
             ));
         }
         final int overflow = channel.dispatcher.submit(jobs);
@@ -317,6 +333,17 @@ public final class RegionSummaryService {
         final int requestPayloadBytes,
         final MessageSender sender
     ) {
+        requestRegions(server, player, request, requestPayloadBytes, false, sender);
+    }
+
+    public void requestRegions(
+        final MinecraftServer server,
+        final ServerPlayerEntity player,
+        final MapRegionViewReqC2S request,
+        final int requestPayloadBytes,
+        final boolean forceAbsolute,
+        final MessageSender sender
+    ) {
         final long now = System.nanoTime();
         final PlayerChannel channel = channels.computeIfAbsent(
             player.getUuid(), ignored -> newPlayerChannel()
@@ -342,7 +369,7 @@ public final class RegionSummaryService {
                     + (remainingBytes-- > 0 ? 1 : 0);
                 final RegionJob job = new RegionJob(
                     request.reqId(), request.dimIndex(), request.lod(), region,
-                    now, regionRequestBytes
+                    now, regionRequestBytes, forceAbsolute
                 );
                 final RegionJobKey key = new RegionJobKey(
                     request.dimIndex(), request.lod(), region.slice()
@@ -617,7 +644,9 @@ public final class RegionSummaryService {
         if (world == null) {
             return unavailableRegionResult();
         }
-        final RegionPageKey key = new RegionPageKey(world, job.lod(), job.request().slice());
+        final RegionPageKey key = new RegionPageKey(
+            world, job.lod(), job.request().slice(), job.forceAbsolute()
+        );
         final RegionPageTask task;
         synchronized (regionPageTasks) {
             RegionPageTask existing = regionPageTasks.get(key);
@@ -626,8 +655,9 @@ public final class RegionSummaryService {
                 if (regionPageTasks.size() >= REGION_PAGE_CACHE_LIMIT) {
                     return null;
                 }
-                final RegionBaselineTask baseline =
-                    regionBaseline(world, job.lod(), job.request().slice(), nowNanos);
+                final RegionBaselineTask baseline = regionBaseline(
+                    world, job.lod(), job.request().slice(), job.forceAbsolute(), nowNanos
+                );
                 final RegionPageWork work = new RegionPageWork();
                 final CompletableFuture<RegionPageResult> future = CompletableFuture.supplyAsync(
                     () -> {
@@ -798,8 +828,16 @@ public final class RegionSummaryService {
         final ServerWorld world,
         final int lod,
         final ChunkRegionSlice slice,
+        final boolean forceAbsolute,
         final long nowNanos
     ) {
+        if (forceAbsolute) {
+            return new RegionBaselineTask(
+                CompletableFuture.completedFuture(PatchBuilder.PreparedBaseline.absoluteOnly()),
+                null,
+                nowNanos
+            );
+        }
         final int chunksPerTile = 16 << lod;
         final int tileX = Math.floorDiv(slice.minChunkX(), chunksPerTile);
         final int tileZ = Math.floorDiv(slice.minChunkZ(), chunksPerTile);
@@ -922,7 +960,9 @@ public final class RegionSummaryService {
             final PatchBuilder.Result result;
             started = System.nanoTime();
             try {
-                result = buildPatch(world, summary, job.sinceRevision());
+                result = buildPatch(
+                    world, summary, job.sinceRevision(), job.forceAbsolute()
+                );
             } finally {
                 computeNanos += Math.max(0L, System.nanoTime() - started);
             }
@@ -951,7 +991,9 @@ public final class RegionSummaryService {
     ) {
         final long responseStartedNanos = System.nanoTime();
         final long now = System.nanoTime();
-        final ProgressiveKey key = new ProgressiveKey(world, job.lod(), job.tileX(), job.tileZ());
+        final ProgressiveKey key = new ProgressiveKey(
+            world, job.lod(), job.tileX(), job.tileZ(), job.forceAbsolute()
+        );
         final ProgressiveRegionPatch task;
         synchronized (progressiveTasks) {
             ProgressiveRegionPatch existing = progressiveTasks.get(key);
@@ -978,7 +1020,9 @@ public final class RegionSummaryService {
                     job.lod(),
                     job.tileX(),
                     job.tileZ(),
-                    baselineFactory(world),
+                    job.forceAbsolute()
+                        ? ignored -> PatchBuilder.PreparedBaseline.absoluteOnly()
+                        : baselineFactory(world),
                     pos -> readChunkNbt(world, pos),
                     now
                 );
@@ -1174,8 +1218,14 @@ public final class RegionSummaryService {
     }
 
     private PatchBuilder.Result buildPatch(
-        final ServerWorld world, final SummaryTile summary, final long sinceRevision
+        final ServerWorld world,
+        final SummaryTile summary,
+        final long sinceRevision,
+        final boolean forceAbsolute
     ) {
+        if (forceAbsolute) {
+            return patchBuilder.buildAbsolute(summary, sinceRevision);
+        }
         // Residual patches assume the client predicts the identical baseline, so the sampler must
         // mirror the client's preset-derived generator flags. A superflat dim diffs against its
         // uniform surface instead; debug/custom presets have no shared baseline and ship absolute.

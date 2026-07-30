@@ -20,6 +20,63 @@ class PredictedTileComposerTest {
     /** Vanilla map colour GRASS - the id a grass block reports in every biome. */
     private static final int GRASS_MAP_COLOR = 1;
 
+    @Test
+    void residualsUseTheSourceBaselineButKeepTheCurrentPredictionForUnknownSamples() {
+        final BaselineGrid currentGrid = flatGrid(1);
+        final DerivedGrid currentDerived = flatDerived(80);
+        final BaselineGrid legacyGrid = flatGrid(2);
+        final DerivedGrid legacyDerived = flatDerived(80);
+        final byte[] evaluated = new byte[PatchCodec.MASK_BYTES];
+        Arrays.fill(evaluated, (byte) 0xFF);
+        final CorrectionTile corrections = new CorrectionTile();
+        corrections.applyPatch(
+            1L,
+            new byte[Proto.PATCH_PRESENCE_BYTES],
+            new PatchCodec.Patch(evaluated, java.util.List.of(
+                new PatchCodec.Sample(
+                    0, 0, 0, SurfaceKind.UNKNOWN.ordinal(), Proto.MAP_COLOR_NONE, 0
+                )
+            )),
+            Proto.PATCH_MODE_RESIDUAL,
+            "legacy-v4",
+            1_000L
+        );
+
+        final int[] composed = PredictedTileComposer.compose(
+            currentDerived,
+            currentGrid,
+            PredictionPalette.defaults(),
+            corrections,
+            PredictionViewMode.EVERYWHERE,
+            0,
+            Proto.MAP_COLOR_NONE,
+            legacyDerived,
+            legacyGrid,
+            Proto.MAP_COLOR_NONE
+        );
+        final int[] expected = PredictedTileComposer.compose(
+            legacyDerived, legacyGrid, PredictionPalette.defaults()
+        );
+        expected[0] = PredictedTileComposer.compose(
+            currentDerived, currentGrid, PredictionPalette.defaults()
+        )[0];
+
+        assertArrayEquals(expected, composed);
+    }
+
+    private static BaselineGrid flatGrid(final int biome) {
+        final BaselineGrid grid = new BaselineGrid();
+        Arrays.fill(grid.biomeId, biome);
+        return grid;
+    }
+
+    private static DerivedGrid flatDerived(final int y) {
+        final DerivedGrid derived = new DerivedGrid();
+        Arrays.fill(derived.surfaceY, y);
+        Arrays.fill(derived.kind, (byte) SurfaceKind.LAND.ordinal());
+        return derived;
+    }
+
     private static int[] composeTile(final long seed, final int lod, final int tileOriginX, final int tileOriginZ) {
         final PositionBasedFakeSampler sampler = new PositionBasedFakeSampler();
         final BaselineGrid grid = LodSampling.sample(sampler, false, lod, tileOriginX, tileOriginZ);

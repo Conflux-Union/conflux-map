@@ -2,9 +2,15 @@ package cn.net.rms.confluxmap.mc.net;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
+import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
 import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
+import cn.net.rms.confluxmap.core.net.MapCompatibilityS2C;
+import cn.net.rms.confluxmap.core.net.MapSyncCompatibility;
+import cn.net.rms.confluxmap.core.net.PatchCodec;
+import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.predict.FlatBaseline;
+import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -43,6 +49,9 @@ public final class CompanionSession {
     private final AtomicReference<State> state = new AtomicReference<>(State.NONE);
     private volatile HelloPolicyS2C policy;
     private volatile FlatBaselineS2C flatBaselines;
+    private volatile MapCompatibilityS2C pendingCompatibility;
+    private volatile MapSyncCompatibility.ClientMode mapSyncMode =
+        MapSyncCompatibility.ClientMode.INCOMPATIBLE;
     private int ticksSinceHello;
 
     /** Called from {@link ClientNetworking#sendHello()} the moment a C2S HELLO leaves the wire. */
@@ -50,19 +59,73 @@ public final class CompanionSession {
         state.set(State.HELLO_SENT);
         policy = null;
         flatBaselines = null;
+        pendingCompatibility = null;
+        mapSyncMode = MapSyncCompatibility.ClientMode.INCOMPATIBLE;
         ticksSinceHello = 0;
+    }
+
+    /** Stores an explicit profile selection; HELLO_POLICY still owns session activation. */
+    public void onCompatibility(final MapCompatibilityS2C compatibility) {
+        if (state.get() == State.HELLO_SENT) {
+            pendingCompatibility = compatibility;
+        }
     }
 
     /** Called from {@link ClientNetworking}'s receiver when an S2C HELLO_POLICY arrives. */
     public void onPolicy(final HelloPolicyS2C policy) {
-        this.policy = policy;
+        final MapSyncCompatibility.ClientMode selected = selectMapSyncMode(policy);
+        mapSyncMode = selected;
+        this.policy = selected == MapSyncCompatibility.ClientMode.INCOMPATIBLE
+            ? withoutCorrections(policy) : policy;
         state.set(State.ACTIVE);
         ConfluxMapMod.LOGGER.info(
-            "companion active (worldId={} worldgen={} seedGranted={} corrections={} biomeMapAllowed={} structureSearchAllowed={} chunkLoadState={} entityRadarAllowed={})",
-            policy.worldId(), policy.worldgenVersion(),
-            policy.flags().seedGranted(), policy.flags().correctionsEnabled(),
+            "companion active (worldId={} worldgen={} seedGranted={} corrections={} mapSyncMode={} biomeMapAllowed={} structureSearchAllowed={} chunkLoadState={} entityRadarAllowed={})",
+            policy.worldId(), policy.worldgenVersion(), policy.flags().seedGranted(),
+            this.policy.flags().correctionsEnabled(), selected,
             !policy.flags().biomeMapForbidden(), !policy.flags().structureSearchForbidden(),
             policy.flags().chunkLoadStateEnabled(), !policy.flags().entityRadarForbidden()
+        );
+    }
+
+    private MapSyncCompatibility.ClientMode selectMapSyncMode(final HelloPolicyS2C received) {
+        final MapCompatibilityS2C compatibility = pendingCompatibility;
+        if (compatibility == null) {
+            return MapSyncCompatibility.fallbackClientMode(
+                received.flags().correctionsEnabled(),
+                received.flags().chunkRangeCorrectionEnabled(),
+                PredictorVersion.full()
+            );
+        }
+        final boolean wireMatches =
+            compatibility.negotiationVersion() == MapSyncCompatibility.NEGOTIATION_VERSION
+            && compatibility.protocolMajor() == Proto.PROTO_MAJOR
+            && compatibility.protocolMinor() == Proto.PROTO_MINOR
+            && compatibility.patchCodecVersion() == PatchCodec.FORMAT_VERSION
+            && compatibility.regionCodecVersion() == ChunkPatchCodec.FORMAT_VERSION;
+        if (!wireMatches || compatibility.correctionMode() == MapCompatibilityS2C.MODE_DISABLED) {
+            return MapSyncCompatibility.ClientMode.INCOMPATIBLE;
+        }
+        if (!received.flags().correctionsEnabled()) {
+            return MapSyncCompatibility.ClientMode.SERVER_DISABLED;
+        }
+        if (compatibility.correctionMode() == MapCompatibilityS2C.MODE_RESIDUAL
+            && !PredictorVersion.full().equals(compatibility.serverPredictorVersion())) {
+            return MapSyncCompatibility.ClientMode.INCOMPATIBLE;
+        }
+        return compatibility.correctionMode() == MapCompatibilityS2C.MODE_RESIDUAL
+            ? MapSyncCompatibility.ClientMode.OPTIMAL_RESIDUAL
+            : MapSyncCompatibility.ClientMode.COMPATIBLE_ABSOLUTE;
+    }
+
+    private static HelloPolicyS2C withoutCorrections(final HelloPolicyS2C source) {
+        final HelloPolicyS2C.Flags flags = source.flags();
+        return new HelloPolicyS2C(
+            new HelloPolicyS2C.Flags(
+                flags.seedGranted(), false, flags.biomeMapForbidden(),
+                flags.chunkLoadStateEnabled(), flags.entityRadarForbidden(),
+                false, false, flags.structureSearchForbidden()
+            ),
+            source.worldId(), source.worldgenVersion(), source.budgets(), source.dims()
         );
     }
 
@@ -76,6 +139,8 @@ public final class CompanionSession {
         state.set(State.NONE);
         policy = null;
         flatBaselines = null;
+        pendingCompatibility = null;
+        mapSyncMode = MapSyncCompatibility.ClientMode.INCOMPATIBLE;
         ticksSinceHello = 0;
     }
 
@@ -172,6 +237,34 @@ public final class CompanionSession {
     public boolean mapCorrectionsDisabledByServer() {
         final HelloPolicyS2C current = policy;
         return state.get() == State.ACTIVE && current != null && !current.flags().correctionsEnabled();
+    }
+
+    public MapSyncCompatibility.ClientMode mapSyncMode() {
+        return mapSyncMode;
+    }
+
+    public String mapSyncBaselineProfile() {
+        if (mapSyncMode == MapSyncCompatibility.ClientMode.LEGACY_RESIDUAL) {
+            return MapSyncCompatibility.STABLE_PREDICTOR;
+        }
+        final MapCompatibilityS2C compatibility = pendingCompatibility;
+        if (mapSyncMode == MapSyncCompatibility.ClientMode.OPTIMAL_RESIDUAL
+            && compatibility != null) {
+            return compatibility.serverPredictorVersion();
+        }
+        return "";
+    }
+
+    /** Player-facing reason for a disabled sync control, or {@code null} while usable. */
+    public @Nullable String mapCorrectionDisabledReasonKey() {
+        if (state.get() != State.ACTIVE) {
+            return null;
+        }
+        if (mapSyncMode == MapSyncCompatibility.ClientMode.INCOMPATIBLE) {
+            return "confluxmap.screen.config.prediction.sync_incompatible_server";
+        }
+        return mapCorrectionsDisabledByServer()
+            ? "confluxmap.screen.config.prediction.sync_disabled_by_server" : null;
     }
 
     /**

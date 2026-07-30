@@ -343,8 +343,9 @@ public final class SharedWaypointClient {
         if (message instanceof final StatusS2C status) {
             action = stateMachine.onStatus(status);
             ConfluxMapMod.LOGGER.info(
-                "shared-waypoint: STATUS received (supported={} enabled={} worldId={} revision={})",
-                status.supported(), status.enabled(), status.worldId(), status.revision()
+                "shared-waypoint: STATUS received (supported={} enabled={} proto={}.{} worldId={} revision={})",
+                status.supported(), status.enabled(), status.major(), stateMachine.negotiatedMinor(),
+                status.worldId(), status.revision()
             );
         } else if (message instanceof final SnapshotS2C snapshot) {
             action = stateMachine.onSnapshot(snapshot);

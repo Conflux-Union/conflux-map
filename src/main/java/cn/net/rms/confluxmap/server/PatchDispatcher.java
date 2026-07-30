@@ -21,7 +21,7 @@ import java.util.function.LongSupplier;
  * <p>Thread-safe: requests enqueue from the network thread while the server tick drains.
  */
 public final class PatchDispatcher {
-    /** One tile's worth of pending patch work; identity is (dimIndex, lod, tileX, tileZ). */
+    /** One tile's pending work; identity includes its negotiated residual/absolute source mode. */
     public record TileJob(
         int reqId,
         int dimIndex,
@@ -30,8 +30,25 @@ public final class PatchDispatcher {
         int tileZ,
         long sinceRevision,
         long receivedAtNanos,
-        int requestBytes
+        int requestBytes,
+        boolean forceAbsolute
     ) {
+        public TileJob(
+            final int reqId,
+            final int dimIndex,
+            final int lod,
+            final int tileX,
+            final int tileZ,
+            final long sinceRevision,
+            final long receivedAtNanos,
+            final int requestBytes
+        ) {
+            this(
+                reqId, dimIndex, lod, tileX, tileZ, sinceRevision,
+                receivedAtNanos, requestBytes, false
+            );
+        }
+
         public TileJob(
             final int reqId,
             final int dimIndex,
@@ -40,7 +57,7 @@ public final class PatchDispatcher {
             final int tileZ,
             final long sinceRevision
         ) {
-            this(reqId, dimIndex, lod, tileX, tileZ, sinceRevision, 0L, 0);
+            this(reqId, dimIndex, lod, tileX, tileZ, sinceRevision, 0L, 0, false);
         }
     }
 
@@ -92,7 +109,7 @@ public final class PatchDispatcher {
         void delivered(SyncPerformanceMonitor.Delivery delivery);
     }
 
-    private record JobKey(int dimIndex, int lod, int tileX, int tileZ) {
+    private record JobKey(int dimIndex, int lod, int tileX, int tileZ, boolean forceAbsolute) {
     }
 
     private static final class QueuedJob {
@@ -133,7 +150,9 @@ public final class PatchDispatcher {
     public synchronized int submit(final List<TileJob> jobs) {
         int overflow = 0;
         for (final TileJob job : jobs) {
-            final JobKey key = new JobKey(job.dimIndex(), job.lod(), job.tileX(), job.tileZ());
+            final JobKey key = new JobKey(
+                job.dimIndex(), job.lod(), job.tileX(), job.tileZ(), job.forceAbsolute()
+            );
             final QueuedJob existing = queue.get(key);
             if (existing != null) {
                 existing.job = job;

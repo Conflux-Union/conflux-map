@@ -278,7 +278,7 @@ class MapSyncCoarseLodPresenceTest {
             predictionTiles.bindCorrectionStore(corrections);
 
             final CompanionSession session = new CompanionSession();
-            session.onPolicy(new HelloPolicyS2C(
+            MapSyncTestCompanion.activate(session, new HelloPolicyS2C(
                 new HelloPolicyS2C.Flags(false, true, false, false, false, true),
                 "11111111-2222-3333-4444-555555555555",
                 "1.17",

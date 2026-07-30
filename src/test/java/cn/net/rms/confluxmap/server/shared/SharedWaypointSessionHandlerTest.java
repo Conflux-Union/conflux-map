@@ -102,6 +102,44 @@ class SharedWaypointSessionHandlerTest {
     }
 
     @Test
+    void negotiatesTheHighestSharedMinorAndDowngradesNewErrorCodes() {
+        final Fixture legacy = fixture(true);
+        final StatusS2C legacyStatus = assertInstanceOf(
+            StatusS2C.class,
+            legacy.handler.handle(
+                PLAYER,
+                new HelloC2S(SharedWaypointProto.PROTO_MAJOR, 0),
+                legacy.environment
+            ).direct().get(0)
+        );
+        assertEquals(0, legacyStatus.minor());
+
+        legacy.handler.handle(PLAYER, create(uuid(130), 0L, "Spawn"), legacy.environment);
+        final ResultS2C legacyDuplicate = assertInstanceOf(
+            ResultS2C.class,
+            legacy.handler.handle(
+                PLAYER,
+                create(uuid(131), 1L, "Duplicate"),
+                legacy.environment
+            ).direct().get(0)
+        );
+        assertEquals(SharedWaypointProto.RESULT_ERROR_INVALID_REQUEST, legacyDuplicate.errorCode());
+
+        final Fixture current = fixture(true);
+        compatibleHello(current, PLAYER);
+        current.handler.handle(PLAYER, create(uuid(132), 0L, "Spawn"), current.environment);
+        final ResultS2C currentDuplicate = assertInstanceOf(
+            ResultS2C.class,
+            current.handler.handle(
+                PLAYER,
+                create(uuid(133), 1L, "Duplicate"),
+                current.environment
+            ).direct().get(0)
+        );
+        assertEquals(SharedWaypointProto.RESULT_ERROR_DUPLICATE_LOCATION, currentDuplicate.errorCode());
+    }
+
+    @Test
     void noopAndIdempotentReplayOnlyReturnResult() {
         final Fixture fixture = fixture(true);
         compatibleHello(fixture, PLAYER);
@@ -338,7 +376,10 @@ class SharedWaypointSessionHandlerTest {
             SharedWaypointService.MutationError.ID_GENERATION_FAILED
         };
         for (int i = 0; i < errors.length; i++) {
-            assertEquals(expected[i], SharedWaypointSessionHandler.errorCode(errors[i]));
+            assertEquals(
+                expected[i],
+                SharedWaypointSessionHandler.errorCode(errors[i], SharedWaypointProto.PROTO_MINOR)
+            );
         }
     }
 

@@ -9,7 +9,7 @@ class ConfigScreenPredictionPolicyTest {
     @Test
     void withheldSeedDisablesSeedDependentControlsButNotServerMapSync() {
         final ConfigScreen.PredictionSettingsAccess access =
-            ConfigScreen.PredictionSettingsAccess.from(false, false, true, false, true);
+            ConfigScreen.PredictionSettingsAccess.from(false, false, true, null, true);
 
         assertEquals(
             "confluxmap.screen.config.prediction.seed_disabled_by_server",
@@ -25,7 +25,7 @@ class ConfigScreenPredictionPolicyTest {
     @Test
     void seedIndependentFlatUnderlayStaysUsableWithoutEnablingStructureControls() {
         final ConfigScreen.PredictionSettingsAccess access =
-            ConfigScreen.PredictionSettingsAccess.from(false, true, true, false, true);
+            ConfigScreen.PredictionSettingsAccess.from(false, true, true, null, true);
 
         assertNull(access.disabledReasonKey(ConfigScreen.PredictionControl.UNDERLAY));
         assertEquals(
@@ -37,7 +37,13 @@ class ConfigScreenPredictionPolicyTest {
     @Test
     void directServerPoliciesExplainCorrectionAndStructureControls() {
         final ConfigScreen.PredictionSettingsAccess access =
-            ConfigScreen.PredictionSettingsAccess.from(false, false, false, true, false);
+            ConfigScreen.PredictionSettingsAccess.from(
+                false,
+                false,
+                false,
+                "confluxmap.screen.config.prediction.sync_disabled_by_server",
+                false
+            );
 
         assertNull(access.disabledReasonKey(ConfigScreen.PredictionControl.UNDERLAY));
         assertEquals(
@@ -53,9 +59,26 @@ class ConfigScreenPredictionPolicyTest {
     @Test
     void singleplayerNeverTreatsSeedSharingAsARestriction() {
         final ConfigScreen.PredictionSettingsAccess access =
-            ConfigScreen.PredictionSettingsAccess.from(true, false, true, false, true);
+            ConfigScreen.PredictionSettingsAccess.from(true, false, true, null, true);
 
         assertNull(access.disabledReasonKey(ConfigScreen.PredictionControl.UNDERLAY));
         assertNull(access.disabledReasonKey(ConfigScreen.PredictionControl.STRUCTURES));
+    }
+
+    @Test
+    void incompatibleServerUsesItsSpecificMapSyncExplanation() {
+        final ConfigScreen.PredictionSettingsAccess access =
+            ConfigScreen.PredictionSettingsAccess.from(
+                false,
+                false,
+                false,
+                "confluxmap.screen.config.prediction.sync_incompatible_server",
+                true
+            );
+
+        assertEquals(
+            "confluxmap.screen.config.prediction.sync_incompatible_server",
+            access.disabledReasonKey(ConfigScreen.PredictionControl.NETWORK_SYNC)
+        );
     }
 }

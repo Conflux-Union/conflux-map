@@ -92,6 +92,19 @@ coordinates and the revision of each client's last committed snapshot. A tile is
 per edge and covers `2^lod` LOD-0 regions per side. A final `MAP_PATCH` is a complete authoritative
 snapshot, not a temporal delta: applying it atomically replaces every older residual sample.
 
+The released `HELLO_C2S` frame remains byte-compatible. Negotiation-aware clients append optional
+map-sync capabilities to its predictor string; old companions ignore the suffix. A new companion
+selects one profile per connection before sending policy: matching predictors use residual patches,
+a different predictor with the same wire codecs uses absolute patches, and no common wire profile
+disables only map corrections. A new client receiving no explicit selection recognizes the stable
+v0.1.0 policy fingerprint and uses that residual baseline while it can still reproduce it locally.
+It does not guess capabilities for older or unknown companions. This makes v0.1.0 the supported
+compatibility floor while preserving safe behavior in both version directions.
+
+The independent shared-waypoint protocol intersects minor versions after a matching major version.
+Messages and result codes introduced after that minor are downgraded to an older representable
+result instead of being sent to a peer that cannot decode their meaning.
+
 Servers advertising `chunkRangeCorrectionEnabled` use the exact visible chunk rectangle instead of
 the renderer's fixed 256x256-pixel texture bounds. The client splits that rectangle into cropped
 pages within the existing 16x16-chunk summary-region grid. `MAP_REGION_VIEW_REQ` carries only those
@@ -109,9 +122,10 @@ quality inside the requested rectangle.
 
 Each page revision fingerprints its exact LOD, region crop, and ordered per-chunk fingerprints.
 `UNCHANGED` therefore revalidates only the same rectangle. The client persists page fingerprints,
-generated bits, and validation times per chunk in correction format v16; v15 pixels remain drawable
-after upgrade but are stale until exact pages revalidate them. Applying a page replaces only its
-owned output pixels, leaving adjacent cached corrections intact.
+generated bits, validation times per chunk, patch mode, and source baseline profile in correction
+format v17. v15 pixels remain drawable after upgrade but are stale until exact pages revalidate
+them; v16 entries load as residual data from the stable v0.1.0 profile. Applying a page replaces
+only its owned output pixels, leaving adjacent cached corrections intact.
 
 Each patch carries a 16x16 diagnostic presence bitmap plus a raw `PatchCodec` body. The body starts
 with separate two-level sparse masks for evaluated pixels and pixels that differ from the shared

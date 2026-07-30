@@ -35,6 +35,45 @@ class MsgCodecTest {
     }
 
     @Test
+    void mapCompatibilityRoundTrips() throws ProtoException {
+        final MapCompatibilityS2C original = new MapCompatibilityS2C(
+            MapSyncCompatibility.NEGOTIATION_VERSION,
+            "0.2.0",
+            Proto.PROTO_MAJOR,
+            Proto.PROTO_MINOR,
+            PatchCodec.FORMAT_VERSION,
+            ChunkPatchCodec.FORMAT_VERSION,
+            "cb:9afc1038ea5a|shim:9|base:14",
+            MapCompatibilityS2C.MODE_RESIDUAL,
+            MapCompatibilityS2C.REASON_NONE
+        );
+
+        final MapCompatibilityS2C decoded = (MapCompatibilityS2C) MsgCodec.decode(
+            MsgCodec.encode(original)
+        );
+
+        assertEquals(original, decoded);
+        assertEquals(Proto.MSG_MAP_COMPATIBILITY_S2C, decoded.typeId());
+    }
+
+    @Test
+    void mapCompatibilityRejectsUnknownSelections() {
+        final MapCompatibilityS2C invalid = new MapCompatibilityS2C(
+            MapSyncCompatibility.NEGOTIATION_VERSION,
+            "0.2.0",
+            Proto.PROTO_MAJOR,
+            Proto.PROTO_MINOR,
+            PatchCodec.FORMAT_VERSION,
+            ChunkPatchCodec.FORMAT_VERSION,
+            MapSyncCompatibility.STABLE_PREDICTOR,
+            255,
+            MapCompatibilityS2C.REASON_NONE
+        );
+
+        assertThrows(ProtoException.class, () -> MsgCodec.encode(invalid));
+    }
+
+    @Test
     void helloPolicyRoundTripsWithSeed() throws ProtoException {
         final HelloPolicyS2C original = new HelloPolicyS2C(
             new HelloPolicyS2C.Flags(true, true, true, true, true, true, true, true),

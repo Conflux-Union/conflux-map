@@ -63,6 +63,7 @@ public final class CorrectionStore {
                 final PredictionTileCodec.FileData data = PredictionTileCodec.read(path);
                 tile.applyPatch(
                     data.revision(), data.presence(), data.patch(),
+                    data.patchMode(), data.baselineProfile(),
                     data.hasChunkMetadata() ? data.validatedAtMillis() : 0L
                 );
                 if (data.hasChunkMetadata()) {
@@ -94,8 +95,27 @@ public final class CorrectionStore {
         final PatchCodec.Patch patch,
         final long validatedAtMillis
     ) {
+        return apply(
+            key, revision, presence, patch,
+            cn.net.rms.confluxmap.core.net.Proto.PATCH_MODE_RESIDUAL,
+            cn.net.rms.confluxmap.core.net.MapSyncCompatibility.STABLE_PREDICTOR,
+            validatedAtMillis
+        );
+    }
+
+    public synchronized boolean apply(
+        final Key key,
+        final long revision,
+        final byte[] presence,
+        final PatchCodec.Patch patch,
+        final int patchMode,
+        final String baselineProfile,
+        final long validatedAtMillis
+    ) {
         final CorrectionTile tile = get(key);
-        final boolean changed = tile.applyPatch(revision, presence, patch, validatedAtMillis);
+        final boolean changed = tile.applyPatch(
+            revision, presence, patch, patchMode, baselineProfile, validatedAtMillis
+        );
         if (changed) {
             dirty.put(key, Boolean.TRUE);
         }
@@ -109,10 +129,28 @@ public final class CorrectionStore {
         final ChunkPatchCodec.Patch patch,
         final long validatedAtMillis
     ) {
+        return applyRegionSlice(
+            dimension, lod, slice, patch,
+            cn.net.rms.confluxmap.core.net.Proto.PATCH_MODE_RESIDUAL,
+            cn.net.rms.confluxmap.core.net.MapSyncCompatibility.STABLE_PREDICTOR,
+            validatedAtMillis
+        );
+    }
+
+    public synchronized boolean applyRegionSlice(
+        final String dimension,
+        final int lod,
+        final ChunkRegionSlice slice,
+        final ChunkPatchCodec.Patch patch,
+        final int patchMode,
+        final String baselineProfile,
+        final long validatedAtMillis
+    ) {
         final RegionTarget target = regionTarget(dimension, lod, slice);
         final CorrectionTile tile = get(target.key());
         final boolean changed = tile.applyRegionSlice(
-            target.minTileChunkX(), target.minTileChunkZ(), patch, validatedAtMillis
+            target.minTileChunkX(), target.minTileChunkZ(), patch,
+            patchMode, baselineProfile, validatedAtMillis
         );
         if (changed) {
             dirty.put(target.key(), Boolean.TRUE);
@@ -149,6 +187,23 @@ public final class CorrectionStore {
         );
     }
 
+    public synchronized long regionSliceRevision(
+        final String dimension,
+        final int lod,
+        final ChunkRegionSlice slice,
+        final int expectedPatchMode,
+        final String expectedBaselineProfile
+    ) {
+        final RegionTarget target = regionTarget(dimension, lod, slice);
+        final CorrectionTile tile = get(target.key());
+        if (!tile.matchesSource(expectedPatchMode, expectedBaselineProfile)) {
+            return Long.MIN_VALUE;
+        }
+        return tile.regionSliceRevision(
+            target.minTileChunkX(), target.minTileChunkZ(), slice
+        );
+    }
+
     public synchronized boolean regionSliceFreshAt(
         final String dimension,
         final int lod,
@@ -161,6 +216,24 @@ public final class CorrectionStore {
             target.minTileChunkX(), target.minTileChunkZ(),
             slice.width(), slice.height(), nowMillis, ttlMillis
         );
+    }
+
+    public synchronized boolean regionSliceFreshAt(
+        final String dimension,
+        final int lod,
+        final ChunkRegionSlice slice,
+        final long nowMillis,
+        final long ttlMillis,
+        final int expectedPatchMode,
+        final String expectedBaselineProfile
+    ) {
+        final RegionTarget target = regionTarget(dimension, lod, slice);
+        final CorrectionTile tile = get(target.key());
+        return tile.matchesSource(expectedPatchMode, expectedBaselineProfile)
+            && tile.regionSliceFreshAt(
+                target.minTileChunkX(), target.minTileChunkZ(),
+                slice.width(), slice.height(), nowMillis, ttlMillis
+            );
     }
 
     public synchronized boolean invalidateRegionSlice(
@@ -236,7 +309,8 @@ public final class CorrectionStore {
                 PredictionTileCodec.writeAtomic(pathFor(key), new PredictionTileCodec.FileData(
                     key.lod(), key.tileX(), key.tileZ(), tile.storedRevision(), tile.validatedAtMillis(),
                     tile.presence(), tile.copyPatch(), tile.copyGeneratedChunkMask(),
-                    tile.copyChunkRevisions(), tile.copyChunkValidatedAtMillis()
+                    tile.copyChunkRevisions(), tile.copyChunkValidatedAtMillis(),
+                    tile.patchMode(), tile.baselineProfile()
                 ));
                 dirty.remove(key);
             } catch (final IOException e) {

@@ -20,6 +20,29 @@ import org.junit.jupiter.api.io.TempDir;
 
 class CorrectionStoreTest {
     @Test
+    void absoluteSourceProfileSurvivesReload(@TempDir final Path tempDir) {
+        final CorrectionStore.Key key = new CorrectionStore.Key(
+            "minecraft:overworld", 0, 0, 0
+        );
+        final CorrectionStore writer = new CorrectionStore(tempDir);
+        writer.apply(
+            key,
+            1L,
+            new byte[Proto.PATCH_PRESENCE_BYTES],
+            new PatchCodec.Patch(List.of()),
+            Proto.PATCH_MODE_ABSOLUTE,
+            "",
+            10_000L
+        );
+        writer.flush();
+
+        final CorrectionTile reopened = new CorrectionStore(tempDir).get(key);
+
+        assertEquals(Proto.PATCH_MODE_ABSOLUTE, reopened.patchMode());
+        assertEquals("", reopened.baselineProfile());
+    }
+
+    @Test
     void regionSliceRevisionAndFreshnessSurviveReload(@TempDir final Path tempDir) {
         final String dimension = "minecraft:overworld";
         final ChunkRegionSlice slice = new ChunkRegionSlice(0, 0, 15, 3, 15, 4);
@@ -43,6 +66,43 @@ class CorrectionStoreTest {
         assertTrue(reopened.regionSliceFreshAt(dimension, 4, slice, 10_500L, 1_000L));
         assertEquals(70, reopened.get(new CorrectionStore.Key(dimension, 4, 0, 0))
             .sampleAt(3 * 256 + 15).surfaceY());
+    }
+
+    @Test
+    void regionRevisionAndFreshnessAreNotReusedAcrossSourceProfiles(
+        @TempDir final Path tempDir
+    ) {
+        final String dimension = "minecraft:overworld";
+        final ChunkRegionSlice slice = new ChunkRegionSlice(0, 0, 0, 0, 0, 0);
+        final ChunkPatchCodec.Patch patch = new ChunkPatchCodec.Patch(
+            1, 1, 1, new byte[] {1}, new byte[] {1}, List.of()
+        );
+        final CorrectionStore store = new CorrectionStore(tempDir);
+        store.applyRegionSlice(
+            dimension,
+            4,
+            slice,
+            patch,
+            Proto.PATCH_MODE_RESIDUAL,
+            "baseline-v1",
+            10_000L
+        );
+
+        assertEquals(
+            Long.MIN_VALUE,
+            store.regionSliceRevision(
+                dimension, 4, slice, Proto.PATCH_MODE_RESIDUAL, "baseline-v2"
+            )
+        );
+        assertFalse(store.regionSliceFreshAt(
+            dimension,
+            4,
+            slice,
+            10_500L,
+            1_000L,
+            Proto.PATCH_MODE_ABSOLUTE,
+            ""
+        ));
     }
 
     @Test

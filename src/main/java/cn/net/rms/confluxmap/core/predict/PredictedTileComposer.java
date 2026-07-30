@@ -72,6 +72,29 @@ public final class PredictedTileComposer {
         final int lod,
         final int baselineMapColorId
     ) {
+        return compose(
+            derived, grid, palette, corrections, viewMode, lod, baselineMapColorId,
+            derived, grid, baselineMapColorId
+        );
+    }
+
+    /**
+     * Composes a residual received against a possibly older wire baseline. Evaluated pixels that
+     * have no explicit difference record reconstruct from that source baseline, while unread
+     * pixels continue to use the newest local prediction.
+     */
+    public static int[] compose(
+        final DerivedGrid derived,
+        final BaselineGrid grid,
+        final PredictionPalette palette,
+        final CorrectionTile corrections,
+        final PredictionViewMode viewMode,
+        final int lod,
+        final int baselineMapColorId,
+        final DerivedGrid correctionDerived,
+        final BaselineGrid correctionGrid,
+        final int correctionBaselineMapColorId
+    ) {
         final int size = BaselineGrid.PIXELS;
         final int[] out = new int[size * size];
         final int[] surface = derived.surfaceY.clone();
@@ -83,13 +106,46 @@ public final class PredictedTileComposer {
         Arrays.fill(floorColors, MapPixel.MAP_COLOR_NONE);
         final boolean[] corrected = new boolean[size * size];
         if (corrections != null) {
-            for (final PatchCodec.Sample sample : corrections.copyPatch().samples()) {
+            final PatchCodec.Patch correctionPatch = corrections.copyPatch();
+            if (corrections.patchMode() == Proto.PATCH_MODE_RESIDUAL
+                && correctionDerived != null && correctionGrid != null) {
+                System.arraycopy(
+                    correctionDerived.surfaceY, 0, surface, 0, surface.length
+                );
+                System.arraycopy(correctionDerived.kind, 0, kinds, 0, kinds.length);
+                System.arraycopy(
+                    correctionDerived.fluidDepth, 0, fluids, 0, fluids.length
+                );
+                System.arraycopy(correctionGrid.biomeId, 0, biomes, 0, biomes.length);
+                final byte[] sourceEvaluated = correctionPatch.evaluated();
+                for (int pixel = 0; pixel < out.length; pixel++) {
+                    final int gridIndex = BaselineGrid.index(pixel & 255, pixel >>> 8);
+                    if ((sourceEvaluated[pixel >>> 3] & (1 << (pixel & 7))) == 0) {
+                        surface[gridIndex] = derived.surfaceY[gridIndex];
+                        kinds[gridIndex] = derived.kind[gridIndex];
+                        fluids[gridIndex] = derived.fluidDepth[gridIndex];
+                        biomes[gridIndex] = grid.biomeId[gridIndex];
+                        continue;
+                    }
+                    colors[pixel] = correctionBaselineMapColorId;
+                    corrected[pixel] = true;
+                }
+            }
+            for (final PatchCodec.Sample sample : correctionPatch.samples()) {
                 final int pixel = sample.pixelIndex();
                 final SurfaceKind correctedKind = SurfaceKind.byOrdinal(sample.kind());
                 // UNKNOWN means the server summary did not have a usable surface column (most
                 // commonly a structure_starts chunk without heightmaps). It is not authoritative
                 // terrain and must never erase the deterministic baseline underneath it.
                 if (correctedKind == SurfaceKind.UNKNOWN) {
+                    final int gridIndex = BaselineGrid.index(pixel & 255, pixel >>> 8);
+                    surface[gridIndex] = derived.surfaceY[gridIndex];
+                    kinds[gridIndex] = derived.kind[gridIndex];
+                    fluids[gridIndex] = derived.fluidDepth[gridIndex];
+                    biomes[gridIndex] = grid.biomeId[gridIndex];
+                    colors[pixel] = MapPixel.MAP_COLOR_NONE;
+                    floorColors[pixel] = MapPixel.MAP_COLOR_NONE;
+                    corrected[pixel] = false;
                     continue;
                 }
                 final int gridIndex = BaselineGrid.index(pixel & 255, pixel >>> 8);

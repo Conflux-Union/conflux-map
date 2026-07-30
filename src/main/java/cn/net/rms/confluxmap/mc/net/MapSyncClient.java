@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.mc.net;
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.MapPatchS2C;
 import cn.net.rms.confluxmap.core.net.MapInvalidateS2C;
@@ -11,18 +12,18 @@ import cn.net.rms.confluxmap.core.net.MapRegionPatchS2C;
 import cn.net.rms.confluxmap.core.net.MapRegionSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapRegionViewReqC2S;
 import cn.net.rms.confluxmap.core.net.MapSyncProgress;
+import cn.net.rms.confluxmap.core.net.MapSyncCompatibility;
 import cn.net.rms.confluxmap.core.net.MapSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
-import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.predict.CorrectionStore;
 import cn.net.rms.confluxmap.core.predict.PredictionTileService;
 import cn.net.rms.confluxmap.core.predict.ViewRequestPlanner;
-import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
 import cn.net.rms.confluxmap.core.util.ChunkViewport;
+import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -230,7 +231,9 @@ public final class MapSyncClient {
                     empty &= value == 0;
                 }
                 final Long previous = lastRequestNanos.get(stamp);
-                final long snapshotRevision = tile.hasTileSnapshot() ? tile.revision() : Long.MIN_VALUE;
+                final long snapshotRevision = tile.hasTileSnapshot()
+                    && tile.matchesSource(activePatchMode(), activeBaselineProfile())
+                        ? tile.revision() : Long.MIN_VALUE;
                 tiles.add(new ViewRequestPlanner.Tile(
                     x, z, snapshotRevision, previous == null ? Long.MIN_VALUE : previous, empty
                 ));
@@ -339,7 +342,13 @@ public final class MapSyncClient {
                 continue;
             }
             if (!invalidatedRegions.contains(stamp) && corrections.regionSliceFreshAt(
-                dimensionId, lod, slice, now, PredictionTileService.CORRECTION_REUSE_TTL_MS
+                dimensionId,
+                lod,
+                slice,
+                now,
+                PredictionTileService.CORRECTION_REUSE_TTL_MS,
+                activePatchMode(),
+                activeBaselineProfile()
             )) {
                 settledRegions.add(stamp);
                 continue;
@@ -371,7 +380,10 @@ public final class MapSyncClient {
         for (int i = 0; i < count; i++) {
             final ChunkRegionSlice slice = candidates.get(i);
             regions.add(new MapRegionViewReqC2S.RegionReq(
-                slice, corrections.regionSliceRevision(dimensionId, lod, slice)
+                slice,
+                corrections.regionSliceRevision(
+                    dimensionId, lod, slice, activePatchMode(), activeBaselineProfile()
+                )
             ));
         }
         final MapRegionViewReqC2S request = new MapRegionViewReqC2S(
@@ -446,7 +458,8 @@ public final class MapSyncClient {
                 if (ChunkPatchCodec.regionRevision(patch.lod(), patch.slice(), decoded)
                     == patch.regionRevision()) {
                     accepted = predictionTiles.applyRegionCorrection(
-                        request.dimension, patch.lod(), patch.slice(), decoded, millisClock.getAsLong()
+                        request.dimension, patch.lod(), patch.slice(), decoded,
+                        patch.mode(), baselineProfile(patch.mode()), millisClock.getAsLong()
                     );
                 }
             } catch (final ProtoException | IllegalArgumentException e) {
@@ -487,16 +500,32 @@ public final class MapSyncClient {
                 return true;
             }
             if (!predictionTiles.applyCorrection(
-                key, patch.tileRevision(), patch.presence(), decoded, millisClock.getAsLong()
+                key, patch.tileRevision(), patch.presence(), decoded,
+                patch.mode(), baselineProfile(patch.mode()), millisClock.getAsLong()
             )) {
                 return false;
             }
             corrections.flush();
             return true;
-        } catch (final ProtoException e) {
+        } catch (final ProtoException | IllegalArgumentException e) {
             ConfluxMapMod.LOGGER.warn("companion: malformed MAP_PATCH body ({})", e.getMessage());
             return false;
         }
+    }
+
+    private String baselineProfile(final int patchMode) {
+        return patchMode == Proto.PATCH_MODE_RESIDUAL
+            ? companion.mapSyncBaselineProfile() : "";
+    }
+
+    private int activePatchMode() {
+        return companion.mapSyncMode() == MapSyncCompatibility.ClientMode.COMPATIBLE_ABSOLUTE
+            ? Proto.PATCH_MODE_ABSOLUTE : Proto.PATCH_MODE_RESIDUAL;
+    }
+
+    private String activeBaselineProfile() {
+        return activePatchMode() == Proto.PATCH_MODE_RESIDUAL
+            ? companion.mapSyncBaselineProfile() : "";
     }
 
     /** Progressive revision-0 patches must remain plannable on the next normal request interval. */
@@ -630,10 +659,9 @@ public final class MapSyncClient {
                 final cn.net.rms.confluxmap.core.predict.CorrectionTile tile = corrections.get(
                     new CorrectionStore.Key(dimensionId, lod, x, z)
                 );
-                final boolean directFresh = tile.isFreshAt(
-                    now,
-                    PredictionTileService.CORRECTION_REUSE_TTL_MS
-                );
+                final boolean directFresh = tile.matchesSource(
+                    activePatchMode(), activeBaselineProfile()
+                ) && tile.isFreshAt(now, PredictionTileService.CORRECTION_REUSE_TTL_MS);
                 final PredictionTileService.LowerCoverageState lowerCoverage =
                     invalidatedTiles.contains(stamp) || directFresh
                         ? PredictionTileService.LowerCoverageState.MISSING_OR_STALE

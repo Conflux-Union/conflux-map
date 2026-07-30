@@ -27,7 +27,7 @@ Conflux Map is a Fabric client-side minimap and world map
   structure locations you can search by name. Real terrain draws over the
   guess as you explore.
 - **One jar, client first.** Everything works in singleplayer with zero setup.
-  Drop the same jar on a server and it can additionally serve real-terrain
+  Drop a compatible Conflux Map jar on a server and it can additionally serve real-terrain
   corrections, shared waypoints, and chunk-load-level overlays, each gated
   behind an explicit operator opt-in.
 
@@ -145,7 +145,7 @@ is not implemented yet.
 
 ## Shared waypoints
 
-Shared waypoints require the same jar on the server and are disabled by
+Shared waypoints require a compatible Conflux Map jar on the server and are disabled by
 default. A level-2 operator can use `/confluxmap waypoints enable`, `disable`,
 or `status`; the setting is persisted in `config/confluxmap/server.json`.
 When the feature is disabled or unavailable, shared waypoint buttons, tabs,
@@ -164,6 +164,13 @@ Recognized Conflux Map or labelled `X/Y/Z` messages expose a click-to-import
 action that opens the local waypoint editor before anything is saved.
 
 ## Server companion policy
+
+Client and server versions do not need to be identical. v0.1.0 is the supported
+compatibility floor: matching prediction profiles keep the smallest residual patches,
+different current profiles fall back to complete absolute patches, and an unknown older
+protocol disables only map correction sync. Shared waypoints independently negotiate their
+highest common minor version. A disabled sync setting remains visible in the client with the
+server or compatibility reason, and the saved client preference is not changed.
 
 Everything the companion shares is controlled in `config/confluxmap/server.json`:
 

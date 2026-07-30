@@ -262,6 +262,7 @@
   "confluxmap.config.prediction.show_structures": "显示可能存在的结构：%s",
   "confluxmap.screen.config.prediction.seed_disabled_by_server": "此服务器未共享世界种子",
   "confluxmap.screen.config.prediction.sync_disabled_by_server": "此服务器已禁用地图同步",
+  "confluxmap.screen.config.prediction.sync_incompatible_server": "此服务器的 Conflux Map 版本不兼容，无法安全同步地图",
   "confluxmap.structure.desert_pyramid": "沙漠神殿",
   "confluxmap.structure.jungle_temple": "丛林神庙",
   "confluxmap.structure.swamp_hut": "沼泽小屋",

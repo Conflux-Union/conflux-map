@@ -8,11 +8,13 @@ import cn.net.rms.confluxmap.core.net.ErrorS2C;
 import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
 import cn.net.rms.confluxmap.core.net.HelloC2S;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
-import cn.net.rms.confluxmap.core.net.MapPatchS2C;
+import cn.net.rms.confluxmap.core.net.LoadStateDeltaS2C;
+import cn.net.rms.confluxmap.core.net.MapCompatibilityS2C;
 import cn.net.rms.confluxmap.core.net.MapInvalidateS2C;
+import cn.net.rms.confluxmap.core.net.MapPatchS2C;
 import cn.net.rms.confluxmap.core.net.MapRegionInvalidateS2C;
 import cn.net.rms.confluxmap.core.net.MapRegionPatchS2C;
-import cn.net.rms.confluxmap.core.net.LoadStateDeltaS2C;
+import cn.net.rms.confluxmap.core.net.MapSyncCompatibility;
 import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.PolicyUpdateS2C;
@@ -81,6 +83,8 @@ public final class ClientNetworking {
             final Message msg = MsgCodec.decode(payload);
             if (msg instanceof final HelloPolicyS2C p) {
                 session.onPolicy(p);
+            } else if (msg instanceof final MapCompatibilityS2C compatibility) {
+                session.onCompatibility(compatibility);
             } else if (msg instanceof final FlatBaselineS2C f) {
                 session.onFlatBaselines(f);
             } else if (msg instanceof final PolicyUpdateS2C u) {
@@ -124,7 +128,7 @@ public final class ClientNetworking {
     public void sendHello() {
         final HelloC2S hello = new HelloC2S(
             ConfluxMapMod.getVersion(),
-            PredictorVersion.full()
+            MapSyncCompatibility.advertise(PredictorVersion.full())
         );
         if (sendMessage(hello) < 0) {
             return;

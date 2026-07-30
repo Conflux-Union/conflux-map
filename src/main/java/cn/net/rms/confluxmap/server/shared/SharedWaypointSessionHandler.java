@@ -86,6 +86,7 @@ public final class SharedWaypointSessionHandler {
     private static final class Session {
         private final SessionTokenBucket controlRequests;
         private boolean compatible;
+        private int negotiatedMinor = -1;
         private boolean subscribed;
         private boolean operator;
         private int malformedStrikes;
@@ -153,8 +154,11 @@ public final class SharedWaypointSessionHandler {
             }
             session.subscribed = false;
             session.compatible = hello.major() == SharedWaypointProto.PROTO_MAJOR && hello.minor() >= 0;
+            session.negotiatedMinor = session.compatible
+                ? Math.min(hello.minor(), SharedWaypointProto.PROTO_MINOR)
+                : -1;
             session.operator = peer.operator();
-            return Dispatch.direct(status(peer, environment, session.compatible));
+            return Dispatch.direct(status(peer, environment, session.compatible, session.negotiatedMinor));
         }
 
         final Session session = sessions.get(peer.id());
@@ -169,7 +173,7 @@ public final class SharedWaypointSessionHandler {
             session.operator = peer.operator();
             if (!environment.enabled()) {
                 session.subscribed = false;
-                return Dispatch.direct(status(peer, environment, true));
+                return Dispatch.direct(status(peer, environment, true, session.negotiatedMinor));
             }
             session.subscribed = true;
             final SharedWaypointStore.Snapshot snapshot = environment.service().snapshot();
@@ -181,7 +185,7 @@ public final class SharedWaypointSessionHandler {
             if (!environment.enabled()) {
                 return disabled(session, create.operationId(), peer, environment);
             }
-            return mutation(environment.service().create(
+            return mutation(session, environment.service().create(
                 actor(peer),
                 new SharedWaypointService.CreateRequest(
                     create.operationId(), create.expectedRevision(), create.name(), create.dimensionId(),
@@ -193,7 +197,7 @@ public final class SharedWaypointSessionHandler {
             if (!environment.enabled()) {
                 return disabled(session, delete.operationId(), peer, environment);
             }
-            return mutation(environment.service().delete(
+            return mutation(session, environment.service().delete(
                 actor(peer),
                 new SharedWaypointService.DeleteRequest(
                     delete.operationId(), delete.expectedRevision(), delete.id()
@@ -204,7 +208,7 @@ public final class SharedWaypointSessionHandler {
             if (!environment.enabled()) {
                 return disabled(session, lock.operationId(), peer, environment);
             }
-            return mutation(environment.service().setLocked(
+            return mutation(session, environment.service().setLocked(
                 actor(peer),
                 new SharedWaypointService.LockRequest(
                     lock.operationId(), lock.expectedRevision(), lock.id(), lock.locked()
@@ -282,7 +286,10 @@ public final class SharedWaypointSessionHandler {
         if (session != null) {
             session.operator = peer.operator();
         }
-        return status(peer, environment, true);
+        final int negotiatedMinor = session != null && session.compatible
+            ? session.negotiatedMinor
+            : SharedWaypointProto.PROTO_MINOR;
+        return status(peer, environment, true, negotiatedMinor);
     }
 
     private Session session(final UUID playerId) {
@@ -301,11 +308,12 @@ public final class SharedWaypointSessionHandler {
     private static StatusS2C status(
         final Peer peer,
         final Environment environment,
-        final boolean supported
+        final boolean supported,
+        final int negotiatedMinor
     ) {
         return new StatusS2C(
             SharedWaypointProto.PROTO_MAJOR,
-            SharedWaypointProto.PROTO_MINOR,
+            supported ? negotiatedMinor : SharedWaypointProto.PROTO_MINOR,
             supported,
             supported && environment.enabled(),
             peer.operator(),
@@ -337,7 +345,7 @@ public final class SharedWaypointSessionHandler {
                     SharedWaypointProto.RESULT_STATUS_REJECTED,
                     SharedWaypointProto.RESULT_ERROR_DISABLED
                 ),
-                status(peer, environment, true)
+                status(peer, environment, true, session.negotiatedMinor)
             ),
             null
         );
@@ -347,11 +355,14 @@ public final class SharedWaypointSessionHandler {
         return new SharedWaypointService.Actor(peer.id(), peer.name(), peer.operator());
     }
 
-    private static Dispatch mutation(final SharedWaypointService.MutationResult mutation) {
+    private static Dispatch mutation(
+        final Session session,
+        final SharedWaypointService.MutationResult mutation
+    ) {
         final ResultS2C result = new ResultS2C(
             mutation.operationId(),
             statusCode(mutation.status()),
-            errorCode(mutation.error())
+            errorCode(mutation.error(), session.negotiatedMinor)
         );
         final SharedWaypointMessage delta = switch (mutation.delta().kind()) {
             case UPSERT -> new UpsertS2C(mutation.delta().revision(), mutation.delta().waypoint());
@@ -371,7 +382,7 @@ public final class SharedWaypointSessionHandler {
         };
     }
 
-    static int errorCode(final SharedWaypointService.MutationError error) {
+    static int errorCode(final SharedWaypointService.MutationError error, final int negotiatedMinor) {
         return switch (error) {
             case NONE -> SharedWaypointProto.RESULT_ERROR_NONE;
             case INVALID_REQUEST -> SharedWaypointProto.RESULT_ERROR_INVALID_REQUEST;
@@ -381,7 +392,9 @@ public final class SharedWaypointSessionHandler {
             case WORLD_QUOTA_EXCEEDED -> SharedWaypointProto.RESULT_ERROR_WORLD_QUOTA_EXCEEDED;
             case PLAYER_QUOTA_EXCEEDED -> SharedWaypointProto.RESULT_ERROR_PLAYER_QUOTA_EXCEEDED;
             case RATE_LIMITED -> SharedWaypointProto.RESULT_ERROR_RATE_LIMITED;
-            case DUPLICATE_LOCATION -> SharedWaypointProto.RESULT_ERROR_DUPLICATE_LOCATION;
+            case DUPLICATE_LOCATION -> negotiatedMinor >= 1
+                ? SharedWaypointProto.RESULT_ERROR_DUPLICATE_LOCATION
+                : SharedWaypointProto.RESULT_ERROR_INVALID_REQUEST;
             case PERSISTENCE_FAILED -> SharedWaypointProto.RESULT_ERROR_PERSISTENCE_FAILED;
             case ID_GENERATION_FAILED -> SharedWaypointProto.RESULT_ERROR_ID_GENERATION_FAILED;
         };

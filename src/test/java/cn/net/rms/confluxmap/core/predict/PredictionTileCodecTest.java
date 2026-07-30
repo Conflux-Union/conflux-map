@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 
 class PredictionTileCodecTest {
     @Test
-    void chunkMetadataRoundTripsInVersionSixteen() throws Exception {
+    void chunkMetadataAndSourceProfileRoundTripInVersionSeventeen() throws Exception {
         final int chunks = (16 << 2) * (16 << 2);
         final byte[] generated = new byte[(chunks + 7) / 8];
         generated[0] = 1;
@@ -27,7 +27,9 @@ class PredictionTileCodecTest {
         final PredictionTileCodec.FileData data = new PredictionTileCodec.FileData(
             2, -1, -1, 10L, 1_700_000_123_456L,
             new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(List.of()),
-            generated, revisions, validated
+            generated, revisions, validated,
+            Proto.PATCH_MODE_RESIDUAL,
+            "cb:9afc1038ea5a|shim:9|base:14"
         );
         final byte[] encoded = PredictionTileCodec.encode(data);
         final PredictionTileCodec.FileData decoded = PredictionTileCodec.decode(encoded);
@@ -42,6 +44,30 @@ class PredictionTileCodecTest {
         assertArrayEquals(generated, decoded.generatedChunks());
         assertArrayEquals(revisions, decoded.chunkRevisions());
         assertArrayEquals(validated, decoded.chunkValidatedAtMillis());
+        assertEquals(Proto.PATCH_MODE_RESIDUAL, decoded.patchMode());
+        assertEquals("cb:9afc1038ea5a|shim:9|base:14", decoded.baselineProfile());
+    }
+
+    @Test
+    void rejectsMalformedUtf8SourceProfile() {
+        final PredictionTileCodec.FileData data = new PredictionTileCodec.FileData(
+            0,
+            0,
+            0,
+            1L,
+            1_000L,
+            new byte[Proto.PATCH_PRESENCE_BYTES],
+            new PatchCodec.Patch(List.of()),
+            new byte[0],
+            new long[0],
+            new long[0],
+            Proto.PATCH_MODE_RESIDUAL,
+            "x"
+        );
+        final byte[] encoded = PredictionTileCodec.encode(data);
+        encoded[33] = (byte) 0xC3;
+
+        assertThrows(ProtoException.class, () -> PredictionTileCodec.decode(encoded));
     }
 
     @Test

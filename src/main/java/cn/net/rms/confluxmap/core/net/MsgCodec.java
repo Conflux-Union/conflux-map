@@ -80,6 +80,8 @@ public final class MsgCodec {
                 encodeMapRegionSyncSubscribeC2S(out, m);
             } else if (msg instanceof final MapRegionInvalidateS2C m) {
                 encodeMapRegionInvalidateS2C(out, m);
+            } else if (msg instanceof final MapCompatibilityS2C m) {
+                encodeMapCompatibilityS2C(out, m);
             } else {
                 throw new ProtoException("unknown message type: " + msg.getClass().getName());
             }
@@ -114,12 +116,40 @@ public final class MsgCodec {
             || typeId == Proto.MSG_LOAD_STATE_DELTA_S2C
             || typeId == Proto.MSG_MAP_INVALIDATE_S2C
             || typeId == Proto.MSG_MAP_REGION_PATCH_S2C
-            || typeId == Proto.MSG_MAP_REGION_INVALIDATE_S2C;
+            || typeId == Proto.MSG_MAP_REGION_INVALIDATE_S2C
+            || typeId == Proto.MSG_MAP_COMPATIBILITY_S2C;
     }
 
     private static void encodeHelloC2S(final DataOutputStream out, final HelloC2S m) throws IOException, ProtoException {
         writeUtf(out, m.modVersion());
         writeUtf(out, m.predictorVersion());
+    }
+
+    private static void encodeMapCompatibilityS2C(
+        final DataOutputStream out, final MapCompatibilityS2C m
+    ) throws IOException, ProtoException {
+        if (m.correctionMode() < MapCompatibilityS2C.MODE_RESIDUAL
+            || m.correctionMode() > MapCompatibilityS2C.MODE_DISABLED
+            || m.reasonCode() < MapCompatibilityS2C.REASON_NONE
+            || m.reasonCode() > MapCompatibilityS2C.REASON_NO_COMMON_WIRE) {
+            throw new ProtoException("invalid map compatibility selection");
+        }
+        requireUnsignedByte("negotiation version", m.negotiationVersion());
+        requireUnsignedShort("protocol major", m.protocolMajor());
+        requireUnsignedShort("protocol minor", m.protocolMinor());
+        requireUnsignedByte("patch codec version", m.patchCodecVersion());
+        requireUnsignedByte("region codec version", m.regionCodecVersion());
+        requireUnsignedByte("correction mode", m.correctionMode());
+        requireUnsignedByte("compatibility reason", m.reasonCode());
+        out.writeByte(m.negotiationVersion());
+        writeUtf(out, m.serverModVersion());
+        out.writeShort(m.protocolMajor());
+        out.writeShort(m.protocolMinor());
+        out.writeByte(m.patchCodecVersion());
+        out.writeByte(m.regionCodecVersion());
+        writeUtf(out, m.serverPredictorVersion());
+        out.writeByte(m.correctionMode());
+        out.writeByte(m.reasonCode());
     }
 
     private static void encodeHelloPolicyS2C(final DataOutputStream out, final HelloPolicyS2C m) throws IOException, ProtoException {
@@ -468,6 +498,7 @@ public final class MsgCodec {
                 case Proto.MSG_MAP_REGION_PATCH_S2C -> decodeMapRegionPatchS2C(in);
                 case Proto.MSG_MAP_REGION_SYNC_SUBSCRIBE_C2S -> decodeMapRegionSyncSubscribeC2S(in);
                 case Proto.MSG_MAP_REGION_INVALIDATE_S2C -> decodeMapRegionInvalidateS2C(in);
+                case Proto.MSG_MAP_COMPATIBILITY_S2C -> decodeMapCompatibilityS2C(in);
                 default -> throw new ProtoException("unhandled message type id: 0x" + Integer.toHexString(typeId));
             };
             if (in.available() != 0) {
@@ -487,6 +518,29 @@ public final class MsgCodec {
         final String modVersion = readUtf(in);
         final String predictorVersion = readUtf(in);
         return new HelloC2S(modVersion, predictorVersion);
+    }
+
+    private static MapCompatibilityS2C decodeMapCompatibilityS2C(
+        final DataInputStream in
+    ) throws IOException, ProtoException {
+        final MapCompatibilityS2C message = new MapCompatibilityS2C(
+            in.readUnsignedByte(),
+            readUtf(in),
+            in.readUnsignedShort(),
+            in.readUnsignedShort(),
+            in.readUnsignedByte(),
+            in.readUnsignedByte(),
+            readUtf(in),
+            in.readUnsignedByte(),
+            in.readUnsignedByte()
+        );
+        if (message.correctionMode() < MapCompatibilityS2C.MODE_RESIDUAL
+            || message.correctionMode() > MapCompatibilityS2C.MODE_DISABLED
+            || message.reasonCode() < MapCompatibilityS2C.REASON_NONE
+            || message.reasonCode() > MapCompatibilityS2C.REASON_NO_COMMON_WIRE) {
+            throw new ProtoException("invalid map compatibility selection");
+        }
+        return message;
     }
 
     private static HelloPolicyS2C decodeHelloPolicyS2C(final DataInputStream in) throws IOException, ProtoException {
@@ -960,6 +1014,18 @@ public final class MsgCodec {
     private static void requireLen(final int payloadLen, final int cap) throws ProtoException {
         if (payloadLen > cap) {
             throw new ProtoException("payload of " + payloadLen + " bytes exceeds cap " + cap);
+        }
+    }
+
+    private static void requireUnsignedByte(final String field, final int value) throws ProtoException {
+        if (value < 0 || value > 0xFF) {
+            throw new ProtoException(field + " out of range: " + value);
+        }
+    }
+
+    private static void requireUnsignedShort(final String field, final int value) throws ProtoException {
+        if (value < 0 || value > 0xFFFF) {
+            throw new ProtoException(field + " out of range: " + value);
         }
     }
 }

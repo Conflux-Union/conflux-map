@@ -12,6 +12,53 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CorrectionTileTest {
     @Test
+    void committedSnapshotRetainsItsWireModeAndBaselineProfile() {
+        final CorrectionTile tile = new CorrectionTile();
+        tile.applyPatch(
+            1L,
+            new byte[Proto.PATCH_PRESENCE_BYTES],
+            new PatchCodec.Patch(java.util.List.of()),
+            Proto.PATCH_MODE_RESIDUAL,
+            "cb:9afc1038ea5a|shim:9|base:14",
+            1_000L
+        );
+
+        assertEquals(Proto.PATCH_MODE_RESIDUAL, tile.patchMode());
+        assertEquals("cb:9afc1038ea5a|shim:9|base:14", tile.baselineProfile());
+    }
+
+    @Test
+    void residualsRequireTheirSourceBaselineButAbsolutePatchesDoNot() {
+        final CorrectionTile residual = new CorrectionTile();
+        residual.applyPatch(
+            1L,
+            new byte[Proto.PATCH_PRESENCE_BYTES],
+            new PatchCodec.Patch(java.util.List.of()),
+            Proto.PATCH_MODE_RESIDUAL,
+            "baseline-v1",
+            1_000L
+        );
+        final CorrectionTile absolute = new CorrectionTile();
+        absolute.applyPatch(
+            1L,
+            new byte[Proto.PATCH_PRESENCE_BYTES],
+            new PatchCodec.Patch(java.util.List.of()),
+            Proto.PATCH_MODE_ABSOLUTE,
+            "",
+            1_000L
+        );
+
+        assertTrue(PredictionTileService.supportsCorrectionBaseline(residual, "baseline-v1"));
+        assertFalse(PredictionTileService.supportsCorrectionBaseline(residual, "baseline-v2"));
+        assertTrue(PredictionTileService.supportsCorrectionBaseline(absolute, "baseline-v2"));
+        assertTrue(residual.matchesSource(Proto.PATCH_MODE_RESIDUAL, "baseline-v1"));
+        assertFalse(residual.matchesSource(Proto.PATCH_MODE_RESIDUAL, "baseline-v2"));
+        assertFalse(residual.matchesSource(Proto.PATCH_MODE_ABSOLUTE, ""));
+        assertTrue(absolute.matchesSource(Proto.PATCH_MODE_ABSOLUTE, "ignored"));
+        assertTrue(absolute.matchesSource(Proto.PATCH_MODE_RESIDUAL, "baseline-v1"));
+    }
+
+    @Test
     void croppedLodFourRegionPatchReplacesOnlyCoveredChunks() {
         final CorrectionTile tile = new CorrectionTile(4);
         final PatchCodec.Sample retained = new PatchCodec.Sample(9 * 256 + 252, 1, 70, 1, 1, 0);
@@ -42,6 +89,47 @@ class CorrectionTileTest {
         assertTrue(tile.regionSliceFreshAt(253, 10, 3, 2, 2_500L, 1_000L));
         assertFalse(tile.regionSliceFreshAt(252, 10, 4, 2, 2_500L, 1_000L));
     }
+
+    @Test
+    void absoluteAndResidualRegionPagesCanShareOneTile() {
+        final ChunkPatchCodec.Patch residualPage = new ChunkPatchCodec.Patch(
+            1, 1, 1, new byte[] {1}, new byte[] {1}, java.util.List.of(
+                new PatchCodec.Sample(0, 1, 70, 1, 1, 0)
+            )
+        );
+        final ChunkPatchCodec.Patch absolutePage = new ChunkPatchCodec.Patch(
+            1, 1, 1, new byte[] {1}, new byte[] {1}, java.util.List.of(
+                new PatchCodec.Sample(0, 2, 90, 2, 2, 0)
+            )
+        );
+        final CorrectionTile tile = new CorrectionTile(4);
+
+        tile.applyRegionSlice(
+            0, 0, residualPage, Proto.PATCH_MODE_RESIDUAL, "baseline-v1", 1_000L
+        );
+        tile.applyRegionSlice(
+            1, 0, absolutePage, Proto.PATCH_MODE_ABSOLUTE, "", 2_000L
+        );
+
+        assertEquals(70, tile.sampleAt(0).surfaceY());
+        assertEquals(90, tile.sampleAt(1).surfaceY());
+        assertEquals(Proto.PATCH_MODE_RESIDUAL, tile.patchMode());
+        assertEquals("baseline-v1", tile.baselineProfile());
+
+        final CorrectionTile reverse = new CorrectionTile(4);
+        reverse.applyRegionSlice(
+            1, 0, absolutePage, Proto.PATCH_MODE_ABSOLUTE, "", 1_000L
+        );
+        reverse.applyRegionSlice(
+            0, 0, residualPage, Proto.PATCH_MODE_RESIDUAL, "baseline-v1", 2_000L
+        );
+
+        assertEquals(70, reverse.sampleAt(0).surfaceY());
+        assertEquals(90, reverse.sampleAt(1).surfaceY());
+        assertEquals(Proto.PATCH_MODE_RESIDUAL, reverse.patchMode());
+        assertEquals("baseline-v1", reverse.baselineProfile());
+    }
+
     @Test
     void generatedOnlyVisibilityUsesExactEvaluatedPixelsInsteadOfCoarsePresence() {
         final byte[] presence = new byte[Proto.PATCH_PRESENCE_BYTES];
