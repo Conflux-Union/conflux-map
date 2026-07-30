@@ -6,6 +6,13 @@ import org.junit.jupiter.api.Test;
 
 final class WaypointMarkerRendererTest {
     @Test
+    void usesBlackTextForWhiteWaypoints() {
+        assertEquals(0xFF000000, WaypointMarkerRenderer.textColorFor(0xFFFFFFFF));
+        assertEquals(0xFF000000, WaypointMarkerRenderer.textColorFor(0xFFECF0F1));
+        assertEquals(0xFFFFFFFF, WaypointMarkerRenderer.textColorFor(0xFF3498DB));
+    }
+
+    @Test
     void extractsTheFirstVisibleCompleteCodePoint() {
         assertEquals("B", WaypointMarkerRenderer.initial("Base"));
         assertEquals("\u77ff", WaypointMarkerRenderer.initial("\u77ff\u6d1e"));

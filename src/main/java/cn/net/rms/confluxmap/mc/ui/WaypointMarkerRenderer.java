@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.ui;
 
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
+import cn.net.rms.confluxmap.core.waypoint.WaypointVerticalRelation;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.util.math.MatrixStack;
@@ -11,14 +12,17 @@ import net.minecraft.util.math.MathHelper;
  * VoxelMap-style waypoint marker drawing shared by {@code MinimapHudRenderer} and
  * {@code FullscreenMapScreen} (deliverable D) so both surfaces render identical marker
  * shapes - only their size, alpha and hover handling differ per surface. Every waypoint
- * uses the player-selected color as its plate and a white first-name character, keeping
- * the minimap and fullscreen map visually consistent.
+ * uses the player-selected color as its plate and a contrasting first-name character,
+ * keeping the minimap and fullscreen map visually consistent.
  */
 public final class WaypointMarkerRenderer {
     private static final int OUTER_CONTRAST = 0xFF101010;
     private static final int WHITE_TEXT = 0xFFFFFFFF;
+    private static final int LIGHT_BACKGROUND_LUMINANCE = 186;
     private static final int SHARED_OUTLINE = 0xFF55DDE0;
     private static final int LOCKED_OUTLINE = 0xFFFFD166;
+    private static final int HEIGHT_BADGE_OUTLINE = 0xFF101010;
+    private static final int HEIGHT_BADGE_FILL = 0xFFFFFFFF;
     /** 50% white overlay used to brighten a hovered marker's fill color (fullscreen map only). */
     private static final int HOVER_TINT = 0x80FFFFFF;
 
@@ -41,7 +45,8 @@ public final class WaypointMarkerRenderer {
         final float y,
         final float halfSize,
         final float alpha,
-        final boolean hovered
+        final boolean hovered,
+        final WaypointVerticalRelation verticalRelation
     ) {
         final MatrixStack matrices = draw.matrices();
         final int fill = fillColor(waypoint.colorArgb(), alpha, hovered);
@@ -62,10 +67,11 @@ public final class WaypointMarkerRenderer {
             initial,
             -textWidth / 2f,
             -textRenderer.fontHeight / 2f,
-            withAlpha(WHITE_TEXT, alpha)
+            withAlpha(textColorFor(fill), alpha)
         );
         matrices.pop();
         drawLockIndicator(matrices, waypoint, x, y, halfSize, alpha);
+        drawHeightBadge(matrices, verticalRelation, x, y, halfSize, alpha);
     }
 
     /**
@@ -86,6 +92,13 @@ public final class WaypointMarkerRenderer {
             return "?";
         }
         return new String(visible, 0, 1);
+    }
+
+    /** Select black on light marker plates and white on dark plates. */
+    public static int textColorFor(final int markerColorArgb) {
+        return Argb.luminance(markerColorArgb) >= LIGHT_BACKGROUND_LUMINANCE
+            ? Argb.OPAQUE_BLACK
+            : WHITE_TEXT;
     }
 
     private static int fillColor(final int colorArgb, final float alpha, final boolean hovered) {
@@ -121,6 +134,35 @@ public final class WaypointMarkerRenderer {
         RenderUtil.fillRect(matrices, left + 1f, top, 3f, 4f, outline);
         RenderUtil.fillRect(matrices, left + 1f, top + 3f, 3f, 2f, lock);
         RenderUtil.fillRect(matrices, left + 2f, top + 1f, 1f, 2f, lock);
+    }
+
+    /** Two-tone geometry stays readable over every user-selected waypoint color. */
+    private static void drawHeightBadge(
+        final MatrixStack matrices,
+        final WaypointVerticalRelation relation,
+        final float x,
+        final float y,
+        final float halfSize,
+        final float alpha
+    ) {
+        if (relation == WaypointVerticalRelation.NONE) {
+            return;
+        }
+        final float centerX = x - halfSize;
+        final float centerY = y - halfSize;
+        final int outline = withAlpha(HEIGHT_BADGE_OUTLINE, alpha);
+        final int fill = withAlpha(HEIGHT_BADGE_FILL, alpha);
+        if (relation == WaypointVerticalRelation.LEVEL) {
+            RenderUtil.fillRect(matrices, centerX - 2.5f, centerY - 2.5f, 5f, 5f, outline);
+            RenderUtil.fillRect(matrices, centerX - 1.5f, centerY - 1.5f, 3f, 3f, fill);
+            return;
+        }
+        final float tipY = relation == WaypointVerticalRelation.ABOVE ? centerY - 2.5f : centerY + 2.5f;
+        final float baseY = relation == WaypointVerticalRelation.ABOVE ? centerY + 2f : centerY - 2f;
+        RenderUtil.fillTriangle(matrices, centerX, tipY, centerX - 2.5f, baseY, centerX + 2.5f, baseY, outline);
+        final float innerTipY = relation == WaypointVerticalRelation.ABOVE ? centerY - 1.2f : centerY + 1.2f;
+        final float innerBaseY = relation == WaypointVerticalRelation.ABOVE ? centerY + 1f : centerY - 1f;
+        RenderUtil.fillTriangle(matrices, centerX, innerTipY, centerX - 1.2f, innerBaseY, centerX + 1.2f, innerBaseY, fill);
     }
 
     private static int withAlpha(final int argb, final float alpha) {

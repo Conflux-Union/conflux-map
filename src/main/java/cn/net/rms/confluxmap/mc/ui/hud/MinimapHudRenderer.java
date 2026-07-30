@@ -18,6 +18,7 @@ import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
+import cn.net.rms.confluxmap.core.waypoint.WaypointVerticalRelation;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.radar.RadarBackdrop;
@@ -315,7 +316,7 @@ public final class MinimapHudRenderer {
         final float cos = (float) Math.cos(rad);
         final float sin = (float) Math.sin(rad);
         // Keep the marker plate and its one-pixel outline inside the minimap frame.
-        final float limit = size / 2f - WAYPOINT_MARKER_HALF_SIZE - 2f;
+        final float limit = size / 2f - WAYPOINT_MARKER_HALF_SIZE - 4f;
         final boolean circleFrame = config.minimapShape == ConfluxConfig.Shape.CIRCLE;
         final DimensionId currentDimension = gameBridge.session().dimension();
 
@@ -341,7 +342,8 @@ public final class MinimapHudRenderer {
             if (inRange) {
                 WaypointMarkerRenderer.draw(
                     draw, client.textRenderer, waypoint, centerX + screenOffX, centerY + screenOffY,
-                    WAYPOINT_MARKER_HALF_SIZE, 1f, false
+                    WAYPOINT_MARKER_HALF_SIZE, 1f, false,
+                    WaypointVerticalRelation.between(waypoint.y(), player.y())
                 );
             } else if (config.waypointEdgeIndicatorsEnabled) {
                 final float k = circleFrame
@@ -357,7 +359,8 @@ public final class MinimapHudRenderer {
                     centerY + edgeY,
                     WAYPOINT_MARKER_HALF_SIZE,
                     1f,
-                    false
+                    false,
+                    WaypointVerticalRelation.between(waypoint.y(), player.y())
                 );
             }
         }

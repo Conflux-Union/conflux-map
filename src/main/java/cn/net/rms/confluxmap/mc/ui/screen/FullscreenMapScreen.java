@@ -53,6 +53,7 @@ import cn.net.rms.confluxmap.core.util.ChunkViewport;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
+import cn.net.rms.confluxmap.core.waypoint.WaypointVerticalRelation;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatCodec;
 import cn.net.rms.confluxmap.mc.net.ChunkLoadStateClient;
@@ -1442,7 +1443,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         drawStructures(draw, mouseX, mouseY);
         drawRadar(draw, tickDelta);
 
-        drawWaypoints(draw, mouseX, mouseY);
+        drawWaypoints(draw, mouseX, mouseY, radarObserver);
         drawPlayerMarker(matrices, tickDelta);
         drawDimensionLabel(draw);
         drawLayerLabel(draw);
@@ -2329,7 +2330,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
      * brightened (see {@link WaypointMarkerRenderer}) and has its coordinates shown in the
      * footer by {@link #drawCursorCoords}.
      */
-    private void drawWaypoints(final GuiDraw draw, final int mouseX, final int mouseY) {
+    private void drawWaypoints(
+        final GuiDraw draw,
+        final int mouseX,
+        final int mouseY,
+        final Optional<PlayerView> playerView
+    ) {
         final DimensionId currentDimension = gameBridge.session().dimension();
         final double pxPerBlock = 1.0 / scale;
         final List<ScreenMarker> markers = new ArrayList<>();
@@ -2357,8 +2363,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         for (final ScreenMarker marker : markers) {
             final WaypointRenderEntry waypoint = marker.waypoint();
             final boolean isHovered = waypoint == hoveredWaypoint;
+            final WaypointVerticalRelation relation = playerView
+                .map(player -> WaypointVerticalRelation.between(waypoint.y(), player.y()))
+                .orElse(WaypointVerticalRelation.NONE);
             WaypointMarkerRenderer.draw(
-                draw, this.client.textRenderer, waypoint, marker.screenX(), marker.screenY(), MARKER_HALF_SIZE, 1f, isHovered
+                draw, this.client.textRenderer, waypoint, marker.screenX(), marker.screenY(),
+                MARKER_HALF_SIZE, 1f, isHovered, relation
             );
             if (scale <= NAME_LABEL_MAX_SCALE || isHovered) {
                 draw.drawTextWithShadow(
