@@ -94,6 +94,56 @@ final class WaypointHudProjectionTest {
     //$$     );
     //$$ }
     //$$
+    //#if MC>=260200
+    //$$ @Test
+    //$$ void submittedLabelTextRendersAfterEveryOpaquePlate() throws Exception {
+    //$$     final String source = Files.readString(preprocessedSource());
+    //$$     final String drawLabel = methodBody(source, "\n    private void drawLabel(");
+    //$$
+    //$$     assertTrue(
+    //$$         drawLabel.contains("final FabricOrderedSubmitNodeCollector plates =")
+    //$$             && drawLabel.contains("(FabricOrderedSubmitNodeCollector) submits.order(0)"),
+    //$$         "26.2 must submit panels and marker colors into the earlier order"
+    //$$     );
+    //$$     assertTrue(
+    //$$         drawLabel.contains("final FabricOrderedSubmitNodeCollector text =")
+    //$$             && drawLabel.contains("(FabricOrderedSubmitNodeCollector) submits.order(1)"),
+    //$$         "26.2 must submit marker initials and labels after opaque plates"
+    //$$     );
+    //$$ }
+    //$$
+    //$$ @Test
+    //$$ void submittedHudRendersAfterTheWaterMask() throws Exception {
+    //$$     final String source = Files.readString(preprocessedSource());
+    //$$     final String submitRect = methodBody(source, "\n    private static void submitRect(");
+    //$$     final String submitText = methodBody(source, "\n    private static void submitText(");
+    //$$
+    //$$     assertTrue(
+    //$$         submitRect.contains("SubmitRenderPhases.ALWAYS_ON_TOP"),
+    //$$         "26.2 waypoint plates must render after the water mask phase"
+    //$$     );
+    //$$     assertTrue(
+    //$$         submitText.contains("SubmitRenderPhases.ALWAYS_ON_TOP"),
+    //$$         "26.2 waypoint text must render after the water mask phase"
+    //$$     );
+    //$$ }
+    //$$
+    //$$ @Test
+    //$$ void submittedHudOmitsTheVerticalRelationBadge() throws Exception {
+    //$$     final String source = Files.readString(preprocessedSource());
+    //$$     final String drawIcon = methodBody(source, "\n    private static void drawIcon(");
+    //$$
+    //$$     assertFalse(
+    //$$         drawIcon.contains("WaypointVerticalRelation"),
+    //$$         "the in-world waypoint HUD must not carry vertical-relation decoration state"
+    //$$     );
+    //$$     assertFalse(
+    //$$         drawIcon.contains("submitHeightBadge"),
+    //$$         "the in-world waypoint HUD must not draw the triangular height badge"
+    //$$     );
+    //$$ }
+    //#endif
+    //$$
     //$$ private static float labelQuadSignedArea(final float xScale) {
     //$$     final Vector4f topLeft = new Vector4f(0f, -1f, -10f, 1f);
     //$$     final Vector4f topRight = new Vector4f(xScale, -1f, -10f, 1f);

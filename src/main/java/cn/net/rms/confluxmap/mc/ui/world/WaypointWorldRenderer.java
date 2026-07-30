@@ -9,6 +9,7 @@ import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -29,12 +30,19 @@ import java.util.UUID;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 //#endif
+//#if MC>=260200
+//$$ import net.fabricmc.fabric.api.client.rendering.v1.FabricOrderedSubmitNodeCollector;
+//$$ import net.fabricmc.fabric.api.client.rendering.v1.SubmitRenderPhases;
+//#endif
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 //#if MC>=260200
 //$$ import net.minecraft.client.renderer.SubmitNodeCollector;
+//$$ import net.minecraft.client.renderer.feature.CustomFeatureRenderer;
+//$$ import net.minecraft.client.renderer.feature.TextFeatureRenderer;
 //$$ import net.minecraft.client.renderer.rendertype.RenderTypes;
 //$$ import net.minecraft.network.chat.Component;
+//$$ import org.joml.Matrix4f;
 //$$ import org.joml.Quaternionf;
 //#endif
 import net.minecraft.client.render.Camera;
@@ -544,10 +552,17 @@ public final class WaypointWorldRenderer {
         matrices.scale(-scale, -scale, scale);
         //#endif
 
+        //#if MC>=260200
+        //$$ final FabricOrderedSubmitNodeCollector plates =
+        //$$     (FabricOrderedSubmitNodeCollector) submits.order(0);
+        //$$ final FabricOrderedSubmitNodeCollector text =
+        //$$     (FabricOrderedSubmitNodeCollector) submits.order(1);
+        //#endif
+
         if (panelWidth > 0.5f) {
             //#if MC>=260200
             //$$ submitRect(
-            //$$     submits, matrices, panelX, -LABEL_PANEL_HEIGHT / 2f,
+            //$$     plates, matrices, panelX, -LABEL_PANEL_HEIGHT / 2f,
             //$$     panelWidth, LABEL_PANEL_HEIGHT, withAlpha(LABEL_BACKGROUND_COLOR, nearFade)
             //$$ );
             //#else
@@ -558,9 +573,13 @@ public final class WaypointWorldRenderer {
             //#endif
         }
         //#if MC>=260200
-        //$$ drawIcon(matrices, textRenderer, submits, waypoint, iconHalfSize, nearFade);
+        //$$ drawIcon(
+        //$$     matrices, textRenderer, plates, text, waypoint, iconHalfSize, nearFade
+        //$$ );
         //#else
-        drawIcon(matrices, textRenderer, immediate, waypoint, iconHalfSize, nearFade);
+        drawIcon(
+            matrices, textRenderer, immediate, waypoint, iconHalfSize, nearFade
+        );
         //#endif
 
         final float textReveal = MathHelper.clamp(
@@ -571,11 +590,11 @@ public final class WaypointWorldRenderer {
             final float textAlpha = nearFade * textReveal;
             //#if MC>=260200
             //$$ submitText(
-            //$$     submits, matrices, name, textX, -9f,
+            //$$     text, matrices, name, textX, -9f,
             //$$     withAlpha(LABEL_NAME_COLOR, textAlpha)
             //$$ );
             //$$ submitText(
-            //$$     submits, matrices, distanceText, textX, 1f,
+            //$$     text, matrices, distanceText, textX, 1f,
             //$$     withAlpha(LABEL_DISTANCE_COLOR, textAlpha)
             //$$ );
             //#else
@@ -596,7 +615,8 @@ public final class WaypointWorldRenderer {
     //$$ private static void drawIcon(
     //$$     final PoseStack matrices,
     //$$     final Font textRenderer,
-    //$$     final SubmitNodeCollector submits,
+    //$$     final FabricOrderedSubmitNodeCollector plates,
+    //$$     final FabricOrderedSubmitNodeCollector text,
     //#else
     private static void drawIcon(
         final MatrixStack matrices,
@@ -610,11 +630,11 @@ public final class WaypointWorldRenderer {
         final float size = halfSize * 2f;
         //#if MC>=260200
         //$$ submitRect(
-        //$$     submits, matrices, -halfSize - 1f, -halfSize - 1f, size + 2f, size + 2f,
+        //$$     plates, matrices, -halfSize - 1f, -halfSize - 1f, size + 2f, size + 2f,
         //$$     withAlpha(outlineColor(waypoint), alpha)
         //$$ );
         //$$ submitRect(
-        //$$     submits, matrices, -halfSize, -halfSize, size, size,
+        //$$     plates, matrices, -halfSize, -halfSize, size, size,
         //$$     withAlpha(waypoint.colorArgb() | 0xFF000000, alpha)
         //$$ );
         //#else
@@ -636,13 +656,14 @@ public final class WaypointWorldRenderer {
         matrices.scale(textScale, textScale, 1f);
         //#if MC>=260200
         //$$ submitText(
-        //$$     submits, matrices, initial, -initialWidth / 2f, -textRenderer.lineHeight / 2f,
-        //$$     withAlpha(LABEL_NAME_COLOR, alpha)
+        //$$     text, matrices, initial, -initialWidth / 2f, -textRenderer.lineHeight / 2f,
+        //$$     withAlpha(WaypointMarkerRenderer.textColorFor(waypoint.colorArgb()), alpha)
         //$$ );
         //#else
         RenderUtil.drawSeeThroughText(
             textRenderer, initial, -initialWidth / 2f, -textRenderer.fontHeight / 2f,
-            withAlpha(LABEL_NAME_COLOR, alpha), matrices, immediate, LABEL_LIGHT
+            withAlpha(WaypointMarkerRenderer.textColorFor(waypoint.colorArgb()), alpha),
+            matrices, immediate, LABEL_LIGHT
         );
         //#endif
         matrices.pop();
@@ -650,7 +671,7 @@ public final class WaypointWorldRenderer {
 
     //#if MC>=260200
     //$$ private static void submitRect(
-    //$$     final SubmitNodeCollector submits,
+    //$$     final FabricOrderedSubmitNodeCollector submits,
     //$$     final PoseStack matrices,
     //$$     final float x,
     //$$     final float y,
@@ -658,37 +679,43 @@ public final class WaypointWorldRenderer {
     //$$     final float height,
     //$$     final int color
     //$$ ) {
-    //$$     submits.submitCustomGeometry(
-    //$$         matrices,
-    //$$         RenderTypes.textBackgroundSeeThrough(),
-    //$$         (pose, vertices) -> {
-    //$$             vertices.addVertex(pose, x, y + height, 0f).setColor(color).setLight(LABEL_LIGHT);
-    //$$             vertices.addVertex(pose, x + width, y + height, 0f).setColor(color).setLight(LABEL_LIGHT);
-    //$$             vertices.addVertex(pose, x + width, y, 0f).setColor(color).setLight(LABEL_LIGHT);
-    //$$             vertices.addVertex(pose, x, y, 0f).setColor(color).setLight(LABEL_LIGHT);
-    //$$         }
+    //$$     submits.submitCustom(
+    //$$         SubmitRenderPhases.ALWAYS_ON_TOP,
+    //$$         new CustomFeatureRenderer.Submit(
+    //$$             matrices.last().copy(),
+    //$$             RenderTypes.textBackgroundSeeThrough(),
+    //$$             (pose, vertices) -> {
+    //$$                 vertices.addVertex(pose, x, y + height, 0f).setColor(color).setLight(LABEL_LIGHT);
+    //$$                 vertices.addVertex(pose, x + width, y + height, 0f).setColor(color).setLight(LABEL_LIGHT);
+    //$$                 vertices.addVertex(pose, x + width, y, 0f).setColor(color).setLight(LABEL_LIGHT);
+    //$$                 vertices.addVertex(pose, x, y, 0f).setColor(color).setLight(LABEL_LIGHT);
+    //$$             }
+    //$$         )
     //$$     );
     //$$ }
     //$$
     //$$ private static void submitText(
-    //$$     final SubmitNodeCollector submits,
+    //$$     final FabricOrderedSubmitNodeCollector submits,
     //$$     final PoseStack matrices,
     //$$     final String text,
     //$$     final float x,
     //$$     final float y,
     //$$     final int color
     //$$ ) {
-    //$$     submits.submitText(
-    //$$         matrices,
-    //$$         x,
-    //$$         y,
-    //$$         Component.literal(text).getVisualOrderText(),
-    //$$         false,
-    //$$         Font.DisplayMode.SEE_THROUGH,
-    //$$         LABEL_LIGHT,
-    //$$         color,
-    //$$         0,
-    //$$         0
+    //$$     submits.submitCustom(
+    //$$         SubmitRenderPhases.ALWAYS_ON_TOP,
+    //$$         new TextFeatureRenderer.Submit(
+    //$$             new Matrix4f(matrices.last().pose()),
+    //$$             x,
+    //$$             y,
+    //$$             Component.literal(text).getVisualOrderText(),
+    //$$             false,
+    //$$             Font.DisplayMode.SEE_THROUGH,
+    //$$             LABEL_LIGHT,
+    //$$             color,
+    //$$             0,
+    //$$             0
+    //$$         )
     //$$     );
     //$$ }
     //#endif
