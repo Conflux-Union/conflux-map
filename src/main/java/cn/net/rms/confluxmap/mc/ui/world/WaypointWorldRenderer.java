@@ -214,8 +214,8 @@ public final class WaypointWorldRenderer {
         final MatrixStack matrices = context.matrixStack();
         //#endif
         final double maxDistance = maxVisibleDistance();
-        final double bottomY = 0.0;
-        final double topY = currentDimension.equals(DimensionId.NETHER) ? 128.0 : 256.0;
+        final double bottomY = client.world.getBottomY();
+        final double topY = client.world.getTopY();
         final List<WaypointRenderEntry> waypoints = waypointRenderCatalog.snapshot(currentDimension);
 
         //#if MC<12105
