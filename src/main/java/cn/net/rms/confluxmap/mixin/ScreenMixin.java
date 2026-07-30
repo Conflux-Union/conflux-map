@@ -1,6 +1,8 @@
 package cn.net.rms.confluxmap.mixin;
 
+import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
+import cn.net.rms.confluxmap.core.survey.SurveyReminderClickPayload;
 import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatClickPayload;
 import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatCodec;
 import cn.net.rms.confluxmap.compat.Texts;
@@ -34,13 +36,13 @@ public abstract class ScreenMixin {
     //$$     at = @At("HEAD"),
     //$$     cancellable = true
     //$$ )
-    //$$ private static void confluxmap$handleWaypointImport(
+    //$$ private static void confluxmap$handleReservedClick(
     //$$     final ClickEvent clickEvent,
     //$$     final Minecraft client,
     //$$     final Screen screen,
     //$$     final CallbackInfo ci
     //$$ ) {
-    //$$     if (confluxmap$handleWaypointImport(clickEvent, client, screen)) {
+    //$$     if (confluxmap$handleReservedClick(clickEvent, client, screen)) {
     //$$         ci.cancel();
     //$$     }
     //$$ }
@@ -54,19 +56,19 @@ public abstract class ScreenMixin {
     //$$     at = @At("HEAD"),
     //$$     cancellable = true
     //$$ )
-    //$$ private static void confluxmap$handleWaypointImport(
+    //$$ private static void confluxmap$handleReservedClick(
     //$$     final ClickEvent clickEvent,
     //$$     final MinecraftClient client,
     //$$     final Screen screen,
     //$$     final CallbackInfo ci
     //$$ ) {
-    //$$     if (confluxmap$handleWaypointImport(clickEvent, client, screen)) {
+    //$$     if (confluxmap$handleReservedClick(clickEvent, client, screen)) {
     //$$         ci.cancel();
     //$$     }
     //$$ }
     //#else
     @Inject(method = "handleTextClick", at = @At("HEAD"), cancellable = true)
-    private void confluxmap$handleWaypointImport(
+    private void confluxmap$handleReservedClick(
         final Style style,
         final CallbackInfoReturnable<Boolean> cir
     ) {
@@ -74,7 +76,7 @@ public abstract class ScreenMixin {
             return;
         }
         final ClickEvent clickEvent = style.getClickEvent();
-        if (confluxmap$handleWaypointImport(
+        if (confluxmap$handleReservedClick(
             clickEvent, MinecraftClient.getInstance(), (Screen) (Object) this
         )) {
             cir.setReturnValue(true);
@@ -83,12 +85,21 @@ public abstract class ScreenMixin {
     //#endif
 
     /** Handles Conflux's reserved clipboard payload and reports whether vanilla must be skipped. */
-    private static boolean confluxmap$handleWaypointImport(
+    private static boolean confluxmap$handleReservedClick(
         final ClickEvent clickEvent,
         final MinecraftClient client,
         final Screen parent
     ) {
         final String clickValue = clickEvent == null ? null : Texts.clickValue(clickEvent);
+        if (SurveyReminderClickPayload.isDismiss(clickValue)) {
+            if (clickEvent.getAction() == ClickEvent.Action.COPY_TO_CLIPBOARD) {
+                final ConfluxMapClient confluxMap = ConfluxMapClient.get();
+                if (confluxMap != null) {
+                    confluxMap.dismissSurveyReminder();
+                }
+            }
+            return true;
+        }
         if (clickValue == null || !WaypointChatClickPayload.hasPrivatePrefix(clickValue)) {
             return false;
         }

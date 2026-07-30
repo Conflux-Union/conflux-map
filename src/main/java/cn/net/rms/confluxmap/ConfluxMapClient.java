@@ -37,6 +37,7 @@ import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.render.Mesh;
 import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureService;
+import cn.net.rms.confluxmap.mc.survey.SurveyReminderNotifier;
 import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
 import cn.net.rms.confluxmap.mc.ui.hud.MinimapHudRenderer;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapViewState;
@@ -97,6 +98,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private ChunkLoadStateClient chunkLoadStateClient;
     private UpdateCheckService updateCheck;
     private UpdateNotifier updateNotifier;
+    private SurveyReminderNotifier surveyReminderNotifier;
     private ClientGroundTeleportService groundTeleportService;
 
     public static ConfluxMapClient get() {
@@ -113,6 +115,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
             ConfluxMapMod.LOGGER
         );
         config = configIo.load();
+        surveyReminderNotifier = new SurveyReminderNotifier(client, config, configIo);
         executors = new MapExecutors();
         sessionGuard = new SessionGuard();
         gameBridge = new McGameBridge(client, sessionGuard);
@@ -229,6 +232,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         }
         updateNotifier = new UpdateNotifier(client, updateCheck);
         updateNotifier.register();
+        surveyReminderNotifier.register();
 
         new Keybinds(config, configIo, layerSelector);
         ClientLifecycleEvents.CLIENT_STOPPING.register(client2 -> shutdown());
@@ -239,6 +243,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         // Quitting mid-world fires no session tick, so close the complete session lifecycle here.
         sessionTracker.endSession();
         correctionStore.flush();
+        surveyReminderNotifier.flush();
         configIo.save(config);
         //#if MC>=260200
         //$$ Mesh.close();
@@ -367,6 +372,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public UpdateCheckService updateCheck() {
         return updateCheck;
+    }
+
+    public void dismissSurveyReminder() {
+        surveyReminderNotifier.dismiss();
     }
 
     public ClientGroundTeleportService groundTeleportService() {

@@ -37,6 +37,19 @@ class LanguageResourceTest {
         }
     }
 
+    @Test
+    void chineseSurveyReminderMatchesTheRequestedChatCopy() {
+        final Map<String, String> chinese = translations("zh_cn");
+
+        assertEquals(
+            "想要我们做的更好?[点击此处]填写Conflux Map的调查问卷[不再提示]",
+            chinese.get("confluxmap.survey.chat.intro")
+                + chinese.get("confluxmap.survey.chat.open")
+                + chinese.get("confluxmap.survey.chat.body")
+                + chinese.get("confluxmap.survey.chat.dismiss")
+        );
+    }
+
     private static long placeholderCount(final String value) {
         final Matcher matcher = STRING_PLACEHOLDER.matcher(value);
         long count = 0;

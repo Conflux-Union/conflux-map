@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.core.config;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.core.loadstate.ChunkLoadDetailMode;
 import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
+import cn.net.rms.confluxmap.core.survey.SurveyReminderSchedule;
 
 /**
  * All client settings, serialized as one JSON document.
@@ -130,6 +131,13 @@ public final class ConfluxConfig {
     /** Startup GitHub release probe; drives the chat notice and the fullscreen-map badge. */
     public boolean updateCheckEnabled = true;
 
+    /** Cumulative client-open time used only to schedule the optional survey chat reminder. */
+    public long surveyReminderGameOpenMillis;
+    /** Cumulative client-open time at which the next survey reminder becomes due. */
+    public long surveyReminderNextPromptAtMillis = SurveyReminderSchedule.FIRST_DELAY_MILLIS;
+    /** Permanent local opt-out selected through the survey reminder's chat action. */
+    public boolean surveyReminderDismissed;
+
     public ConfluxConfig copy() {
         final ConfluxConfig c = new ConfluxConfig();
         c.schemaVersion = schemaVersion;
@@ -181,6 +189,9 @@ public final class ConfluxConfig {
             : predictionStructureVisibility.copy();
         c.predictionDebounceMs = predictionDebounceMs;
         c.updateCheckEnabled = updateCheckEnabled;
+        c.surveyReminderGameOpenMillis = surveyReminderGameOpenMillis;
+        c.surveyReminderNextPromptAtMillis = surveyReminderNextPromptAtMillis;
+        c.surveyReminderDismissed = surveyReminderDismissed;
         return c;
     }
 
@@ -229,6 +240,10 @@ public final class ConfluxConfig {
             predictionStructureVisibility.normalize();
         }
         predictionDebounceMs = clamp(predictionDebounceMs, 100, 2000);
+        surveyReminderGameOpenMillis = Math.max(0L, surveyReminderGameOpenMillis);
+        if (surveyReminderNextPromptAtMillis <= 0L) {
+            surveyReminderNextPromptAtMillis = SurveyReminderSchedule.FIRST_DELAY_MILLIS;
+        }
     }
 
     private static int clamp(final int v, final int min, final int max) {

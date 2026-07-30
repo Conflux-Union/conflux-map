@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
+import cn.net.rms.confluxmap.core.survey.SurveyReminderSchedule;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -48,6 +49,12 @@ class ConfigIoTest {
         assertEquals(new ConfluxConfig().fullscreenDisplayMode, loaded.fullscreenDisplayMode);
         assertEquals(new ConfluxConfig().chunkLoadDetailMode, loaded.chunkLoadDetailMode);
         assertEquals(ConfluxConfig.DEFAULT_RADAR_ICON_SIZE, loaded.radarIconSize);
+        assertEquals(0L, loaded.surveyReminderGameOpenMillis);
+        assertEquals(
+            SurveyReminderSchedule.FIRST_DELAY_MILLIS,
+            loaded.surveyReminderNextPromptAtMillis
+        );
+        assertFalse(loaded.surveyReminderDismissed);
         assertEquals(1.0, loaded.minimapPositionX);
         assertEquals(0.0, loaded.minimapPositionY);
         assertEquals(ConfluxConfig.SCHEMA_VERSION, loaded.schemaVersion);
@@ -61,6 +68,9 @@ class ConfigIoTest {
         assertTrue(rewritten.contains("\"fullscreenDisplayMode\""));
         assertTrue(rewritten.contains("\"chunkLoadDetailMode\""));
         assertTrue(rewritten.contains("\"radarIconSize\""));
+        assertTrue(rewritten.contains("\"surveyReminderGameOpenMillis\""));
+        assertTrue(rewritten.contains("\"surveyReminderNextPromptAtMillis\""));
+        assertTrue(rewritten.contains("\"surveyReminderDismissed\""));
         assertTrue(rewritten.contains("\"minimapPositionX\": 1.0"));
         assertTrue(rewritten.contains("\"minimapPositionY\": 0.0"));
         assertTrue(rewritten.contains("\"minimapSize\": 256"));
@@ -116,6 +126,22 @@ class ConfigIoTest {
             StandardCharsets.UTF_8
         );
         assertEquals(ConfluxConfig.MAX_RADAR_ICON_SIZE, io.load().radarIconSize);
+    }
+
+    @Test
+    void surveyReminderStateRoundTrips(@TempDir final Path tmp) {
+        final ConfigIo io = new ConfigIo(tmp.resolve("config.json"), LOGGER);
+        final ConfluxConfig config = new ConfluxConfig();
+        config.surveyReminderGameOpenMillis = 12_345L;
+        config.surveyReminderNextPromptAtMillis = 67_890L;
+        config.surveyReminderDismissed = true;
+
+        io.save(config);
+        final ConfluxConfig loaded = io.load();
+
+        assertEquals(12_345L, loaded.surveyReminderGameOpenMillis);
+        assertEquals(67_890L, loaded.surveyReminderNextPromptAtMillis);
+        assertTrue(loaded.surveyReminderDismissed);
     }
 
     @Test
