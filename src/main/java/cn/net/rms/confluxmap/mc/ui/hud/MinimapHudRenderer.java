@@ -9,6 +9,7 @@ import cn.net.rms.confluxmap.core.annotation.AnnotationProjection;
 import cn.net.rms.confluxmap.core.annotation.AnnotationService;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.config.MinimapPlacement;
+import cn.net.rms.confluxmap.core.config.MinimapHudVisibility;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
@@ -147,7 +148,10 @@ public final class MinimapHudRenderer {
     //#endif
         textures.beginFrame();
         final boolean fullscreenOpen = MinecraftAccess.screen(client) instanceof FullscreenMapScreen;
-        if (!config.minimapEnabled || !gameBridge.session().active() || fullscreenOpen) {
+        final boolean containerOpen = MinecraftAccess.isContainerScreen(MinecraftAccess.screen(client));
+        if (!MinimapHudVisibility.shouldRender(
+            config.minimapEnabled, gameBridge.session().active(), fullscreenOpen, containerOpen
+        )) {
             // FullscreenMapScreen owns radarViewRange while it's open; otherwise the minimap
             // isn't rendering at all, so there's no visible map surface for the radar to scan.
             if (!fullscreenOpen) {
