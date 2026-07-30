@@ -17,6 +17,7 @@ import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
+import cn.net.rms.confluxmap.core.trail.PlayerTrail;
 import cn.net.rms.confluxmap.core.update.GithubReleaseFetcher;
 import cn.net.rms.confluxmap.core.update.UpdateCheckService;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
@@ -42,6 +43,7 @@ import cn.net.rms.confluxmap.mc.render.Mesh;
 import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureService;
 import cn.net.rms.confluxmap.mc.survey.SurveyReminderNotifier;
 import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
+import cn.net.rms.confluxmap.mc.trail.PlayerTrailTracker;
 import cn.net.rms.confluxmap.mc.ui.hud.MinimapHudRenderer;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapViewState;
 import cn.net.rms.confluxmap.mc.update.UpdateNotifier;
@@ -82,6 +84,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private RadarViewRange radarViewRange;
     private EntityRadarScanner radarScanner;
     private EntityIconManager entityIconManager;
+    private PlayerTrail playerTrail;
+    private PlayerTrailTracker playerTrailTracker;
     private MinimapHudRenderer minimapHudRenderer;
     private FullscreenMapViewState fullscreenMapViewState;
     private LayerSelector layerSelector;
@@ -191,6 +195,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
             client, config, radarViewRange, companionSession::entityRadarAllowed
         );
         entityIconManager = new EntityIconManager();
+        playerTrail = new PlayerTrail();
+        playerTrailTracker = new PlayerTrailTracker(client, config, sessionGuard, playerTrail);
         waypointService = new WaypointService(
             FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("waypoints"),
             executors, ConfluxMapMod.LOGGER
@@ -203,7 +209,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         deathWatcher = new DeathWatcher(gameBridge, config, waypointService);
         minimapHudRenderer = new MinimapHudRenderer(
             client, config, gameBridge, tileService, tileTextureManager, radarScanner, entityIconManager,
-            annotationService, layerSelector, waypointRenderCatalog,
+            playerTrail, annotationService, layerSelector, waypointRenderCatalog,
             radarViewRange
         );
         waypointWorldRenderer = new WaypointWorldRenderer(client, config, gameBridge, waypointRenderCatalog);
@@ -215,6 +221,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(chunkCapture::onSessionChanged);
         sessionTracker.addListener(tileService::onSessionChanged);
         sessionTracker.addListener(radarScanner::onSessionChanged);
+        sessionTracker.addListener(playerTrailTracker::onSessionChanged);
         sessionTracker.addListener(fullscreenMapViewState::onSessionChanged);
         sessionTracker.addListener(waypointService::onSessionChanged);
         sessionTracker.addListener(annotationService::onSessionChanged);
@@ -232,6 +239,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
         chunkCapture.register();
         radarScanner.register();
+        playerTrailTracker.register();
         minimapHudRenderer.register();
         waypointWorldRenderer.register();
         deathWatcher.register();
@@ -331,6 +339,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public EntityIconManager entityIconManager() {
         return entityIconManager;
+    }
+
+    public PlayerTrail playerTrail() {
+        return playerTrail;
     }
 
     public TileTextureManager tileTextureManager() {

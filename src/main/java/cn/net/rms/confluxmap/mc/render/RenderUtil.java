@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.render;
 
 import cn.net.rms.confluxmap.core.util.Argb;
 import com.mojang.blaze3d.systems.RenderSystem;
+import java.util.List;
 import net.minecraft.client.MinecraftClient;
 //#if MC<260200
 import net.minecraft.client.font.TextRenderer;
@@ -41,6 +42,11 @@ import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.Window;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
+//#if MC>=12100
+//$$ import org.joml.Matrix4f;
+//#else
+import net.minecraft.util.math.Matrix4f;
+//#endif
 //#if MC>=11900
 //$$ import org.joml.Quaternionf;
 //#else
@@ -600,6 +606,28 @@ public final class RenderUtil {
         fillRect(matrices, x, y, width, height, argbColor, true);
     }
 
+    /** Draws many flat GUI rectangles in one batch. */
+    public static void fillRects(final MatrixStack matrices, final List<ColoredRect> rects) {
+        if (rects.isEmpty()) {
+            return;
+        }
+        //#if MC<12105
+        useColorShader();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        //#endif
+        final var model = matrices.peek().getModel();
+        final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, VertexFormats.POSITION_COLOR);
+        for (final ColoredRect rect : rects) {
+            appendRect(mesh, model, rect.x(), rect.y(), rect.width(), rect.height(), rect.argbColor());
+        }
+        //#if MC>=12105
+        //$$ mesh.drawGui(RenderPipelines.GUI);
+        //#else
+        mesh.draw();
+        //#endif
+    }
+
     /**
      * The same quad as {@link #fillRect}, drawn as world geometry from a {@code WorldRenderEvents}
      * callback (waypoint label plates) rather than as part of the GUI. The distinction only
@@ -624,18 +652,11 @@ public final class RenderUtil {
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         //#endif
-        final float a = Argb.alpha(argbColor) / 255f;
-        final float r = Argb.red(argbColor) / 255f;
-        final float g = Argb.green(argbColor) / 255f;
-        final float b = Argb.blue(argbColor) / 255f;
         final var model = matrices.peek().getModel();
         final Mesh mesh = gui
             ? Mesh.beginGui(Mesh.Mode.QUADS, VertexFormats.POSITION_COLOR)
             : Mesh.begin(Mesh.Mode.QUADS, VertexFormats.POSITION_COLOR);
-        mesh.vertex(model, x, y + height, 0).color(r, g, b, a).next();
-        mesh.vertex(model, x + width, y + height, 0).color(r, g, b, a).next();
-        mesh.vertex(model, x + width, y, 0).color(r, g, b, a).next();
-        mesh.vertex(model, x, y, 0).color(r, g, b, a).next();
+        appendRect(mesh, model, x, y, width, height, argbColor);
         //#if MC>=12105
         //$$ if (gui) {
         //$$     mesh.drawGui(RenderPipelines.GUI);
@@ -645,6 +666,28 @@ public final class RenderUtil {
         //#else
         mesh.draw();
         //#endif
+    }
+
+    private static void appendRect(
+        final Mesh mesh,
+        final Matrix4f model,
+        final float x,
+        final float y,
+        final float width,
+        final float height,
+        final int argbColor
+    ) {
+        final float a = Argb.alpha(argbColor) / 255f;
+        final float r = Argb.red(argbColor) / 255f;
+        final float g = Argb.green(argbColor) / 255f;
+        final float b = Argb.blue(argbColor) / 255f;
+        mesh.vertex(model, x, y + height, 0).color(r, g, b, a).next();
+        mesh.vertex(model, x + width, y + height, 0).color(r, g, b, a).next();
+        mesh.vertex(model, x + width, y, 0).color(r, g, b, a).next();
+        mesh.vertex(model, x, y, 0).color(r, g, b, a).next();
+    }
+
+    public record ColoredRect(float x, float y, float width, float height, int argbColor) {
     }
 
     /*

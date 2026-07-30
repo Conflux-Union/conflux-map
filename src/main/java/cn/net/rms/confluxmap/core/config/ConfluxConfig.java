@@ -19,6 +19,12 @@ public final class ConfluxConfig {
     public static final int MIN_RADAR_ICON_SIZE = 4;
     public static final int MAX_RADAR_ICON_SIZE = 16;
     public static final int DEFAULT_RADAR_ICON_SIZE = 10;
+    public static final int MIN_PLAYER_TRAIL_DURATION_MINUTES = 1;
+    public static final int MAX_PLAYER_TRAIL_DURATION_MINUTES = 30;
+    public static final int DEFAULT_PLAYER_TRAIL_DURATION_MINUTES = 5;
+    public static final int MIN_PLAYER_TRAIL_DOT_SIZE = 1;
+    public static final int MAX_PLAYER_TRAIL_DOT_SIZE = 8;
+    public static final int DEFAULT_PLAYER_TRAIL_DOT_SIZE = 3;
 
     public int schemaVersion = SCHEMA_VERSION;
 
@@ -50,6 +56,12 @@ public final class ConfluxConfig {
     public int minimapZoomIndex = 1;
     public boolean showCoordinates = true;
     public boolean showBiome = true;
+    /** Show recent player movement as fading red dots on both map surfaces. */
+    public boolean playerTrailEnabled = true;
+    /** Wall-clock retention window for player trail samples. */
+    public int playerTrailDurationMinutes = DEFAULT_PLAYER_TRAIL_DURATION_MINUTES;
+    /** Player trail dot diameter in screen pixels. */
+    public int playerTrailDotSize = DEFAULT_PLAYER_TRAIL_DOT_SIZE;
     /** Fullscreen map only: subtle chunk-border grid with a highlight on the hovered chunk. */
     public boolean fullmapChunkGrid = true;
     /** Copy the private annotation layer onto the minimap HUD. Fullscreen annotations remain visible. */
@@ -151,6 +163,9 @@ public final class ConfluxConfig {
         c.minimapZoomIndex = minimapZoomIndex;
         c.showCoordinates = showCoordinates;
         c.showBiome = showBiome;
+        c.playerTrailEnabled = playerTrailEnabled;
+        c.playerTrailDurationMinutes = playerTrailDurationMinutes;
+        c.playerTrailDotSize = playerTrailDotSize;
         c.fullmapChunkGrid = fullmapChunkGrid;
         c.annotationsOnHud = annotationsOnHud;
         c.annotationEraserSize = annotationEraserSize;
@@ -220,6 +235,16 @@ public final class ConfluxConfig {
         }
         minimapSize = clamp(minimapSize, 64, 256);
         minimapZoomIndex = clamp(minimapZoomIndex, 0, 3);
+        playerTrailDurationMinutes = clamp(
+            playerTrailDurationMinutes,
+            MIN_PLAYER_TRAIL_DURATION_MINUTES,
+            MAX_PLAYER_TRAIL_DURATION_MINUTES
+        );
+        playerTrailDotSize = clamp(
+            playerTrailDotSize,
+            MIN_PLAYER_TRAIL_DOT_SIZE,
+            MAX_PLAYER_TRAIL_DOT_SIZE
+        );
         annotationEraserSize = clamp(
             annotationEraserSize, MIN_ANNOTATION_ERASER_SIZE, MAX_ANNOTATION_ERASER_SIZE
         );
