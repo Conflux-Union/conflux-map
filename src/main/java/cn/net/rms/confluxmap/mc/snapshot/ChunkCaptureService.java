@@ -17,6 +17,7 @@ import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.mc.color.BiomeTintResolver;
 import cn.net.rms.confluxmap.mc.color.SpriteColorSampler;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -109,6 +110,39 @@ public final class ChunkCaptureService {
 
     public int pendingDirtyChunks() {
         return dirtyChunks.size();
+    }
+
+    /**
+     * Main-thread, read-only terrain probe used only while the normal map session is suspended.
+     * Captured snapshots are never queued or stored, so an ambiguous upstream cannot contaminate
+     * any candidate profile before recognition succeeds.
+     */
+    public List<ChunkSnapshot> probeNearest(final MapLayer layer, final int limit) {
+        final ClientPlayerEntity player = client.player;
+        if (player == null || client.world == null || limit <= 0) {
+            return List.of();
+        }
+        final int centerX = player.getBlockPos().getX() >> 4;
+        final int centerZ = player.getBlockPos().getZ() >> 4;
+        final int pivotY = layer.type() == MapLayer.Type.NETHER_CEILING ? client.world.getTopY() - 1 : 0;
+        final int radiusLimit = MinecraftAccess.viewDistance(client) + 1;
+        final List<ChunkSnapshot> snapshots = new ArrayList<>(limit);
+        for (int radius = 0; radius <= radiusLimit && snapshots.size() < limit; radius++) {
+            for (int dz = -radius; dz <= radius && snapshots.size() < limit; dz++) {
+                for (int dx = -radius; dx <= radius && snapshots.size() < limit; dx++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
+                        continue;
+                    }
+                    final ChunkSnapshot snapshot = factory.snapshot(
+                        centerX + dx, centerZ + dz, layer, pivotY, 0L
+                    );
+                    if (snapshot != null) {
+                        snapshots.add(snapshot);
+                    }
+                }
+            }
+        }
+        return List.copyOf(snapshots);
     }
 
     /** Marks every chunk in the current view-distance square dirty, so the active layer fills in from scratch. */
