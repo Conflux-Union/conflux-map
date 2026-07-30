@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.compat;
 
+import java.util.function.Consumer;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
@@ -52,6 +53,33 @@ public final class Widgets {
     public static void tick(final TextFieldWidget field) {
         //#if MC<11904
         field.tick();
+        //#endif
+    }
+
+    public static void setText(final TextFieldWidget field, final String text) {
+        //#if MC>=260100
+        //$$ field.setValue(text);
+        //#else
+        field.setText(text);
+        //#endif
+    }
+
+    public static String text(final TextFieldWidget field) {
+        //#if MC>=260100
+        //$$ return field.getValue();
+        //#else
+        return field.getText();
+        //#endif
+    }
+
+    public static void setChangedListener(
+        final TextFieldWidget field,
+        final Consumer<String> listener
+    ) {
+        //#if MC>=260100
+        //$$ field.setResponder(listener);
+        //#else
+        field.setChangedListener(listener);
         //#endif
     }
 }

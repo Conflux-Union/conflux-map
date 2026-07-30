@@ -13,7 +13,9 @@ import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -24,7 +26,6 @@ import java.util.function.Supplier;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.OrderedText;
 import net.minecraft.text.StringVisitable;
@@ -35,7 +36,7 @@ import net.minecraft.text.Text;
  * tabs (Minimap/Layers/Radar/Waypoints/Performance). Built entirely from vanilla
  * widgets, no external config-lib dependency, matching {@link WaypointListScreen}/
  * {@link WaypointEditScreen}'s style: plain {@link ButtonWidget}s that cycle through
- * boolean/enum values on click, and a {@link SliderWidget} subclass for int ranges.
+ * boolean/enum values on click, and paired sliders/numeric fields for int ranges.
  *
  * <p>Every change mutates the shared {@link ConfluxConfig} instance immediately, so
  * every other system (they all hold the same reference) observes it on its very next
@@ -155,6 +156,7 @@ public final class ConfigScreen extends ConfluxScreen {
     private final SharedWaypointClient sharedWaypoints;
     private final GameBridge gameBridge;
     private final PredictionState predictionState;
+    private final List<IntSliderInput> sliderInputs = new ArrayList<>();
 
     private Category category = Category.MINIMAP;
     private int rowWidth = MAX_ROW_WIDTH;
@@ -192,6 +194,9 @@ public final class ConfigScreen extends ConfluxScreen {
     @Override
     public void tick() {
         super.tick();
+        for (final IntSliderInput sliderInput : sliderInputs) {
+            sliderInput.tick();
+        }
         final SharedWaypointAvailability availability = sharedWaypoints.availability();
         if (!availability.equals(sharedAvailability)) {
             sharedAvailability = availability;
@@ -270,6 +275,7 @@ public final class ConfigScreen extends ConfluxScreen {
         sharedAvailability = sharedWaypoints.availability();
         radarAccess = RadarSettingsAccess.from(companionSession.entityRadarAllowed());
         predictionAccess = predictionSettingsAccess();
+        sliderInputs.clear();
         clearChildren();
         addTabs();
         addRows();
@@ -636,11 +642,24 @@ public final class ConfigScreen extends ConfluxScreen {
         final String disabledTooltipKey
     ) {
         if (rowVisible(y)) {
-            final IntSliderWidget slider = addDrawableChild(
-                new IntSliderWidget(rowX(), y, rowWidth, ROW_HEIGHT - 2, min, max, labelKey, getter, setter, valueText)
+            final IntSliderInput sliderInput = new IntSliderInput(
+                this.textRenderer,
+                rowX(),
+                y,
+                rowWidth,
+                ROW_HEIGHT - 2,
+                min,
+                max,
+                getter.getAsInt(),
+                setter,
+                value -> Texts.translatable(labelKey, valueText.apply(value))
             );
-            slider.active = active;
-            setDisabledTooltip(slider, disabledTooltipKey);
+            sliderInput.setActive(active);
+            sliderInputs.add(sliderInput);
+            addDrawableChild(sliderInput.slider());
+            addDrawableChild(sliderInput.input());
+            setDisabledTooltip(sliderInput.slider(), disabledTooltipKey);
+            setDisabledTooltip(sliderInput.input(), disabledTooltipKey);
         }
         return y + ROW_HEIGHT;
     }
@@ -746,57 +765,4 @@ public final class ConfigScreen extends ConfluxScreen {
         }
     }
 
-    /**
-     * Int-ranged setting rendered as a slider whose label is "{@code Label: <value>}",
-     * value formatted by the caller-supplied {@code valueText} (plain number, "Nxpx",
-     * "N blocks", "Unlimited", etc - see the {@code *Text} helpers above). Applies to
-     * the shared config on every drag step, matching a vanilla options slider's feel;
-     * only {@link #onClose()} persists to disk.
-     */
-    private static final class IntSliderWidget extends SliderWidget {
-        private final int min;
-        private final int max;
-        private final String labelKey;
-        private final IntConsumer setter;
-        private final IntFunction<String> valueText;
-
-        IntSliderWidget(
-            final int x,
-            final int y,
-            final int width,
-            final int height,
-            final int min,
-            final int max,
-            final String labelKey,
-            final IntSupplier getter,
-            final IntConsumer setter,
-            final IntFunction<String> valueText
-        ) {
-            super(x, y, width, height, Text.of(""), normalize(getter.getAsInt(), min, max));
-            this.min = min;
-            this.max = max;
-            this.labelKey = labelKey;
-            this.setter = setter;
-            this.valueText = valueText;
-            updateMessage();
-        }
-
-        private static double normalize(final int v, final int min, final int max) {
-            return max == min ? 0.0 : (v - min) / (double) (max - min);
-        }
-
-        private int currentValue() {
-            return min + (int) Math.round(value * (max - min));
-        }
-
-        @Override
-        protected void updateMessage() {
-            setMessage(Texts.translatable(labelKey, valueText.apply(currentValue())));
-        }
-
-        @Override
-        protected void applyValue() {
-            setter.accept(currentValue());
-        }
-    }
 }
