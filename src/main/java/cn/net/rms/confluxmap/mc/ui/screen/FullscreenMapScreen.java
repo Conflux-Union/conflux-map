@@ -47,6 +47,8 @@ import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.BiomeTileKeys;
 import cn.net.rms.confluxmap.core.tile.TileService;
+import cn.net.rms.confluxmap.core.trail.PlayerTrail;
+import cn.net.rms.confluxmap.core.trail.PlayerTrailProjection;
 import cn.net.rms.confluxmap.core.update.UpdateCheckService;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.core.util.TileViewport;
@@ -71,6 +73,7 @@ import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
 import cn.net.rms.confluxmap.mc.ui.DisplayModeIconCatalog;
+import cn.net.rms.confluxmap.mc.ui.PlayerTrailRenderer;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.StructureMarkerRenderer;
 import cn.net.rms.confluxmap.mc.world.ClientChunkLookup;
@@ -225,6 +228,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private final EntityRadarScanner radarScanner;
     private final EntityIconManager radarIconManager;
     private final RadarViewRange radarViewRange;
+    private final PlayerTrail playerTrail;
     private final StructureMarkerService structureMarkers;
     private final UpdateCheckService updateCheck;
     private final ClientGroundTeleportService groundTeleport;
@@ -304,6 +308,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         this.radarScanner = app.radarScanner();
         this.radarIconManager = app.entityIconManager();
         this.radarViewRange = app.radarViewRange();
+        this.playerTrail = app.playerTrail();
         this.structureMarkers = app.structureMarkerService();
         this.updateCheck = app.updateCheck();
         this.groundTeleport = app.groundTeleportService();
@@ -1457,6 +1462,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             drawChunkLoadStateOverlay(draw);
         }
         drawChunkGrid(matrices, mouseX, mouseY);
+        drawPlayerTrail(matrices);
         drawAnnotations(draw, mouseX, mouseY);
         drawStructures(draw, mouseX, mouseY);
         drawRadar(draw, tickDelta);
@@ -1474,6 +1480,21 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         drawCursorCoords(draw, mouseX, mouseY);
         drawUpdateBadge(draw);
         drawLocationMenu(draw);
+    }
+
+    private void drawPlayerTrail(final MatrixStack matrices) {
+        if (!config.playerTrailEnabled) {
+            return;
+        }
+        PlayerTrailRenderer.draw(
+            matrices,
+            playerTrail,
+            new PlayerTrailProjection(
+                centerX, centerZ, width / 2.0, height / 2.0, scale, 0.0, width, height
+            ),
+            config.playerTrailDurationMinutes,
+            config.playerTrailDotSize
+        );
     }
 
     private void drawAnnotations(final GuiDraw draw, final int mouseX, final int mouseY) {

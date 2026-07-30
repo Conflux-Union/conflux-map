@@ -16,6 +16,8 @@ import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.tile.TileService;
+import cn.net.rms.confluxmap.core.trail.PlayerTrail;
+import cn.net.rms.confluxmap.core.trail.PlayerTrailProjection;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
@@ -30,6 +32,7 @@ import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.mc.ui.PlayerTrailRenderer;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
@@ -83,6 +86,7 @@ public final class MinimapHudRenderer {
     private final OffscreenCanvas canvas = new OffscreenCanvas();
     private final EntityRadarScanner radarScanner;
     private final EntityIconManager iconManager;
+    private final PlayerTrail playerTrail;
     private final AnnotationService annotations;
     private final LayerSelector layerSelector;
     private final WaypointRenderCatalog waypointRenderCatalog;
@@ -96,6 +100,7 @@ public final class MinimapHudRenderer {
         final TileTextureManager textures,
         final EntityRadarScanner radarScanner,
         final EntityIconManager iconManager,
+        final PlayerTrail playerTrail,
         final AnnotationService annotations,
         final LayerSelector layerSelector,
         final WaypointRenderCatalog waypointRenderCatalog,
@@ -108,6 +113,7 @@ public final class MinimapHudRenderer {
         this.textures = textures;
         this.radarScanner = radarScanner;
         this.iconManager = iconManager;
+        this.playerTrail = playerTrail;
         this.annotations = annotations;
         this.layerSelector = layerSelector;
         this.waypointRenderCatalog = waypointRenderCatalog;
@@ -213,6 +219,7 @@ public final class MinimapHudRenderer {
             RenderUtil.beginTexturedQuads();
             drawTiles(fbo, size, rotate, player);
             fbo.pop();
+            drawPlayerTrail(fbo, player, size / 2f, size / 2f, size, mapAngle);
             if (!visibleAnnotations.isEmpty()) {
                 AnnotationRenderer.drawGeometry(
                     fbo,
@@ -249,6 +256,7 @@ public final class MinimapHudRenderer {
             }
             drawTiles(matrices, size, rotate, player);
             matrices.pop();
+            drawPlayerTrail(matrices, player, centerX, centerY, size, mapAngle);
             if (!visibleAnnotations.isEmpty()) {
                 final AnnotationProjection annotationProjection = annotationProjection(
                     player, centerX, centerY, size, mapAngle
@@ -275,6 +283,29 @@ public final class MinimapHudRenderer {
         drawWaypointMarkers(draw, centerX, centerY, size, mapAngle, player);
         drawPlayerArrow(matrices, centerX, centerY, rotate ? 0f : player.yawDegrees() + 180f);
         drawInfoText(draw, player, x0, y0, size);
+    }
+
+    private void drawPlayerTrail(
+        final MatrixStack matrices,
+        final PlayerView player,
+        final float centerX,
+        final float centerY,
+        final int size,
+        final float mapAngle
+    ) {
+        if (!config.playerTrailEnabled) {
+            return;
+        }
+        PlayerTrailRenderer.draw(
+            matrices,
+            playerTrail,
+            new PlayerTrailProjection(
+                player.x(), player.z(), centerX, centerY,
+                BLOCKS_PER_PIXEL[config.minimapZoomIndex], mapAngle, size, size
+            ),
+            config.playerTrailDurationMinutes,
+            config.playerTrailDotSize
+        );
     }
 
     private AnnotationProjection annotationProjection(

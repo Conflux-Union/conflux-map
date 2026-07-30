@@ -325,6 +325,26 @@ public final class ConfigScreen extends ConfluxScreen {
                 y = addZoomRow(y);
                 y = addToggleRow(y, "confluxmap.config.minimap.show_coordinates", () -> config.showCoordinates, v -> config.showCoordinates = v);
                 y = addToggleRow(y, "confluxmap.config.minimap.show_biome", () -> config.showBiome, v -> config.showBiome = v);
+                y = addToggleRow(
+                    y, "confluxmap.config.player_trail.enabled",
+                    () -> config.playerTrailEnabled, v -> config.playerTrailEnabled = v
+                );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.player_trail.duration",
+                    ConfluxConfig.MIN_PLAYER_TRAIL_DURATION_MINUTES,
+                    ConfluxConfig.MAX_PLAYER_TRAIL_DURATION_MINUTES,
+                    () -> config.playerTrailDurationMinutes,
+                    v -> config.playerTrailDurationMinutes = v,
+                    ConfigScreen::minutesText
+                );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.player_trail.dot_size",
+                    ConfluxConfig.MIN_PLAYER_TRAIL_DOT_SIZE,
+                    ConfluxConfig.MAX_PLAYER_TRAIL_DOT_SIZE,
+                    () -> config.playerTrailDotSize,
+                    v -> config.playerTrailDotSize = v,
+                    ConfigScreen::pxText
+                );
                 y = addToggleRow(y, "confluxmap.config.fullmap.chunk_grid", () -> config.fullmapChunkGrid, v -> config.fullmapChunkGrid = v);
                 y = addToggleRow(
                     y, "confluxmap.config.minimap.annotations",
@@ -676,6 +696,10 @@ public final class ConfigScreen extends ConfluxScreen {
 
     private static String blocksText(final int value) {
         return Texts.translatable("confluxmap.value.blocks", value).getString();
+    }
+
+    private static String minutesText(final int value) {
+        return Texts.translatable("confluxmap.value.minutes", value).getString();
     }
 
     private static String renderDistanceText(final int value) {
