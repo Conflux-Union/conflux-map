@@ -144,6 +144,22 @@ final class WaypointHudProjectionTest {
     //$$ }
     //#endif
     //$$
+    //#if MC>=260100
+    //$$ @Test
+    //$$ void waypointBeamRendersAfterTranslucentTerrain() throws Exception {
+    //$$     final String source = Files.readString(preprocessedSource());
+    //$$
+    //$$     assertTrue(
+    //$$         source.contains("LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(this::renderBeams);"),
+    //$$         "waypoint beams must not write depth before translucent terrain such as water"
+    //$$     );
+    //$$     assertFalse(
+    //$$         source.contains("LevelRenderEvents.BEFORE_TRANSLUCENT_TERRAIN.register(this::renderBeams);"),
+    //$$         "drawing the depth-writing beam before water reproduces the missing water surface"
+    //$$     );
+    //$$ }
+    //#endif
+    //$$
     //$$ private static float labelQuadSignedArea(final float xScale) {
     //$$     final Vector4f topLeft = new Vector4f(0f, -1f, -10f, 1f);
     //$$     final Vector4f topRight = new Vector4f(xScale, -1f, -10f, 1f);
