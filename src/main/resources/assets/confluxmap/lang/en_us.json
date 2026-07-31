@@ -247,6 +247,8 @@
   "confluxmap.screen.annotation.eraser.prompt": "Set the fullscreen-map eraser diameter",
   "confluxmap.screen.annotation.eraser.size": "Eraser Size: %s px",
   "confluxmap.map.annotation.select.tooltip": "Select or move an annotation; drag empty map space to pan",
+  "confluxmap.map.annotation.toolbar.open.tooltip": "Open drawing tools",
+  "confluxmap.map.annotation.toolbar.close.tooltip": "Close drawing tools",
   "confluxmap.map.annotation.line.tooltip": "Draw lines",
   "confluxmap.map.annotation.circle.tooltip": "Draw circles from center to edge",
   "confluxmap.map.annotation.rectangle.tooltip": "Draw rectangles between opposite corners",

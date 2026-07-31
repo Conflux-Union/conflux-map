@@ -247,6 +247,8 @@
   "confluxmap.screen.annotation.eraser.prompt": "设置全屏地图橡皮擦的直径",
   "confluxmap.screen.annotation.eraser.size": "橡皮擦大小：%s 像素",
   "confluxmap.map.annotation.select.tooltip": "选择或移动标注；拖动地图空白处可平移",
+  "confluxmap.map.annotation.toolbar.open.tooltip": "展开绘图工具",
+  "confluxmap.map.annotation.toolbar.close.tooltip": "收起绘图工具",
   "confluxmap.map.annotation.line.tooltip": "绘制直线",
   "confluxmap.map.annotation.circle.tooltip": "从圆心拖到边缘绘制圆",
   "confluxmap.map.annotation.rectangle.tooltip": "在两个对角之间绘制矩形",
