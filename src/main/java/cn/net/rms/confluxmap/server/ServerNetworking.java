@@ -296,29 +296,11 @@ public final class ServerNetworking {
         final HelloPolicyS2C.Flags configured,
         final MapSyncCompatibility.ServerSelection selection
     ) {
-        final boolean corrections = configured.correctionsEnabled()
-            && selection.correctionsEnabled();
-        return new HelloPolicyS2C.Flags(
-            configured.seedGranted(), corrections, configured.biomeMapForbidden(),
-            configured.chunkLoadStateEnabled(), configured.entityRadarForbidden(),
-            corrections && configured.correctionInvalidationEnabled(),
-            corrections && configured.chunkRangeCorrectionEnabled(),
-            configured.structureSearchForbidden()
-        );
+        return CompanionPolicy.compatibleFlags(configured, selection);
     }
 
     static HelloPolicyS2C.Flags policyFlags(final ServerConfig cfg) {
-        final boolean sharedSeedPolicy = cfg.enabled && cfg.shareSeed;
-        return new HelloPolicyS2C.Flags(
-            sharedSeedPolicy,
-            cfg.enabled && cfg.shareCorrections,
-            sharedSeedPolicy && !cfg.allowBiomeMap,
-            cfg.enabled && cfg.shareChunkLoadState,
-            cfg.enabled && !cfg.allowEntityRadar,
-            cfg.enabled && cfg.shareCorrections,
-            cfg.enabled && cfg.shareCorrections,
-            sharedSeedPolicy && !cfg.allowStructureSearch
-        );
+        return CompanionPolicy.configuredFlags(cfg);
     }
 
     private static List<HelloPolicyS2C.DimDescriptor> buildDimDescriptors(final MinecraftServer server, final boolean shareSeed) {

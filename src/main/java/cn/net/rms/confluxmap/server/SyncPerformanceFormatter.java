@@ -7,11 +7,11 @@ import java.util.Locale;
 import java.util.Map;
 
 /** Produces compact chat lines for the server-side sync performance command. */
-final class SyncPerformanceFormatter {
+public final class SyncPerformanceFormatter {
     private SyncPerformanceFormatter() {
     }
 
-    static List<String> format(
+    public static List<String> format(
         final List<SyncPerformanceMonitor.LodSnapshot> snapshots,
         final int maxLod
     ) {

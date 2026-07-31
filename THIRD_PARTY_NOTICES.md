@@ -17,6 +17,16 @@ Fetched by Gradle during the build; neither is bundled inside the output jar.
 | [Fabric API](https://github.com/FabricMC/fabric-api) | Apache-2.0 | A separate Fabric Loader mod this project depends on (`modImplementation`), for render / tick / keybind / resource-reload hooks. End users must install it alongside this mod; it ships as its own jar. |
 | [preprocessor](https://github.com/ReplayMod/preprocessor) | GPL-3.0 | Gradle plugin (`com.replaymod.preprocess`) that manages the multi-version source layout under `versions/`. Contributes no runtime classes; this repo started from the example-mod template of [Fallen_Breath's fork](https://github.com/Fallen-Breath/preprocessor), since fully replaced, and `settings.gradle` now resolves the plugin from upstream because the fork rejects the unobfuscated 26.1 version node. |
 
+## Paper plugin runtime dependencies
+
+The standalone Paper companion shades these components into `confluxmap-paper` so server
+operators install one plugin jar. They are not added to the Fabric client artifacts.
+
+| Component | License | Role |
+|---|---|---|
+| [querz-nbt](https://github.com/Canary-Prism/querz-nbt) | Apache-2.0 | Parses bounded, decompressed chunk NBT from Anvil region files without loading or generating Bukkit chunks. |
+| [lz4-java](https://github.com/lz4/lz4-java) | Apache-2.0 | Reads the LZ4 chunk-compression variant supported by current Anvil files. |
+
 ## Native code
 
 cubiomes is a git submodule at `native/cubiomes/`; the JNI headers are vendored

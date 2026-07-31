@@ -26,10 +26,10 @@ Conflux Map is a Fabric client-side minimap and world map
   terrain height, and trees for areas you haven't visited, and marks possible
   structure locations you can search by name. Real terrain draws over the
   guess as you explore.
-- **One jar, client first.** Everything works in singleplayer with zero setup.
-  Drop a compatible Conflux Map jar on a server and it can additionally serve real-terrain
-  corrections, shared waypoints, and chunk-load-level overlays, each gated
-  behind an explicit operator opt-in.
+- **Client first, optional server support.** Everything works in singleplayer with zero setup.
+  Fabric servers use the matching mod jar; Paper 1.21.1 through 26.2 uses the standalone
+  `confluxmap-paper` plugin. Either companion can additionally serve real-terrain corrections,
+  shared waypoints, and chunk-load-level overlays, each gated behind an explicit operator opt-in.
 
 ## Features
 
@@ -97,8 +97,9 @@ Conflux Map is a Fabric client-side minimap and world map
 - **Seed preview area modes** — cycle with `P`: *everywhere* (default),
   *generated-only* (preview masked to chunks the server generated), or
   *visited-only* (pure captured map, no preview).
-- **Optional server companion** — the same jar can run a server-side companion
-  that returns compact per-column corrections against the real world; the
+- **Optional server companion** — a Fabric server can use the matching mod jar, while Paper
+  1.21.1 through 26.2 uses one standalone plugin jar. Both return compact per-column corrections
+  against the real world; the
   seed, shared waypoint catalog, chunk load levels, and radar permission are
   shared only when the operator opts in.
 - **Update check** — an optional check on startup that tells you in chat when
@@ -165,6 +166,12 @@ action that opens the local waypoint editor before anything is saved.
 
 ## Server companion policy
 
+Install the matching Fabric mod jar in a Fabric server's `mods/` directory, or install
+`confluxmap-paper-<version>.jar` in a Paper server's `plugins/` directory. The Paper artifact
+targets the Paper API only; Folia, Spigot, and CraftBukkit are not supported. The client remains
+the normal version-specific Fabric jar. See [Paper companion](docs/paper-companion.md) for the
+runtime and storage details.
+
 Client and server versions do not need to be identical. v0.1.0 is the supported
 compatibility floor: matching prediction profiles keep the smallest residual patches,
 different current profiles fall back to complete absolute patches, and an unknown older
@@ -207,10 +214,12 @@ demand.
 
 ```sh
 ./gradlew :1.21.11:build
+./gradlew :paper:build
 ```
 
 Replace `1.21.11` with any supported build above. The jar is written to
-`versions/<minecraft-version>/build/libs/`.
+`versions/<minecraft-version>/build/libs/`. The standalone Paper plugin is written to
+`paper/build/libs/`.
 
 ## License
 
