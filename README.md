@@ -215,11 +215,14 @@ demand.
 ```sh
 ./gradlew :1.21.11:build
 ./gradlew :paper:build
+./gradlew :paper:runServer
 ```
 
 Replace `1.21.11` with any supported build above. The jar is written to
 `versions/<minecraft-version>/build/libs/`. The standalone Paper plugin is written to
-`paper/build/libs/`.
+`paper/build/libs/`. `:paper:runServer` downloads and starts a local Paper 1.21.1 development
+server with the freshly built plugin installed. On the first run, review the Minecraft EULA,
+set `eula=true` in `paper/run/eula.txt`, and run the task again.
 
 ## License
 

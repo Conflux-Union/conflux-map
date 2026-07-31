@@ -13,6 +13,11 @@ compatibility surfaces.
 3. Keep the normal version-specific Conflux Map Fabric jar on each client.
 4. Start the server once to create `config/confluxmap/server.json`, then adjust the opt-in policy.
 
+For local development, run `./gradlew :paper:runServer`. The task builds the plugin, downloads a
+Paper 1.21.1 development server, installs the new jar, and keeps its disposable state under the
+ignored `paper/run/` directory. The first invocation writes `paper/run/eula.txt`; review the
+Minecraft EULA, change that file to `eula=true`, and invoke the task again.
+
 The plugin bytecode targets Java 21 and supports the Paper API only. Run the
 [Java version required by Paper](https://docs.papermc.io/paper/getting-started/): Java 21 for Paper
 through 1.21.11 and Java 25 for Paper 26.x. Folia, Spigot, and CraftBukkit are outside the supported

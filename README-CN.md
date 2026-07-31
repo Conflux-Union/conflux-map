@@ -169,10 +169,13 @@ companion 共享的所有内容都在 `config/confluxmap/server.json` 中控制�
 ```sh
 ./gradlew :1.21.11:build
 ./gradlew :paper:build
+./gradlew :paper:runServer
 ```
 
 可将 `1.21.11` 替换为上面任一受支持的构建。构建产物输出到
 `versions/<minecraft-version>/build/libs/`；独立 Paper 插件输出到 `paper/build/libs/`。
+`:paper:runServer` 会下载并启动本地 Paper 1.21.1 开发服务器，同时安装刚构建的插件。
+首次运行时需要阅读 Minecraft EULA，在 `paper/run/eula.txt` 中设置 `eula=true`，然后再次运行。
 
 ## 许可证
 
