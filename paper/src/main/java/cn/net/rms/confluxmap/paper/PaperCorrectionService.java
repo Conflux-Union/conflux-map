@@ -34,7 +34,6 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
@@ -97,8 +96,8 @@ final class PaperCorrectionService implements AutoCloseable {
     }
 
     private static final class JobSlot {
-        long generation;
         volatile Completed completed;
+        PaperSupersedingTask<Completed> worker;
     }
 
     private static final class PlayerChannel {
@@ -881,7 +880,6 @@ final class PaperCorrectionService implements AutoCloseable {
         final java.util.concurrent.Callable<Completed> job
     ) {
         final JobSlot slot;
-        final long generation;
         synchronized (queue) {
             JobSlot existing = queue.get(key);
             if (existing == null) {
@@ -889,29 +887,17 @@ final class PaperCorrectionService implements AutoCloseable {
                     return false;
                 }
                 existing = new JobSlot();
+                existing.worker = new PaperSupersedingTask<>(workers);
                 queue.put(key, existing);
             }
             slot = existing;
-            generation = ++slot.generation;
             slot.completed = null;
-        }
-        try {
-            workers.execute(() -> {
-                try {
-                    final Completed completed = job.call();
-                    synchronized (queue) {
-                        if (queue.get(key) == slot && slot.generation == generation) {
-                            slot.completed = completed;
-                        }
-                    }
-                } catch (final Exception e) {
-                    logger.warn("Paper correction job failed", e);
-                    removeGeneration(queue, key, slot, generation);
+            if (!slot.worker.submit(job)) {
+                if (queue.get(key) == slot) {
+                    queue.remove(key);
                 }
-            });
-        } catch (final RejectedExecutionException e) {
-            removeGeneration(queue, key, slot, generation);
-            return false;
+                return false;
+            }
         }
         return true;
     }
@@ -930,26 +916,12 @@ final class PaperCorrectionService implements AutoCloseable {
                 slot = new JobSlot();
                 queue.put(key, slot);
             }
-            slot.generation++;
             slot.completed = job.get();
             return true;
         }
     }
 
-    private static <K> void removeGeneration(
-        final Map<K, JobSlot> queue,
-        final K key,
-        final JobSlot slot,
-        final long generation
-    ) {
-        synchronized (queue) {
-            if (queue.get(key) == slot && slot.generation == generation) {
-                queue.remove(key);
-            }
-        }
-    }
-
-    private static <K> void drain(
+    private <K> void drain(
         final PlayerChannel channel,
         final Map<K, JobSlot> queue,
         final MessageSender sender,
@@ -958,7 +930,16 @@ final class PaperCorrectionService implements AutoCloseable {
         synchronized (queue) {
             final Iterator<Map.Entry<K, JobSlot>> iterator = queue.entrySet().iterator();
             while (iterator.hasNext()) {
-                final Completed completed = iterator.next().getValue().completed;
+                final JobSlot slot = iterator.next().getValue();
+                final Exception failure = slot.worker == null ? null : slot.worker.failure();
+                if (failure != null) {
+                    logger.warn("Paper correction job failed", failure);
+                    iterator.remove();
+                    continue;
+                }
+                final Completed completed = slot.completed != null
+                    ? slot.completed
+                    : slot.worker == null ? null : slot.worker.completed();
                 if (completed == null
                     || !channel.budget.allowBytes(completed.payload().length, nowNanos)) {
                     return;
