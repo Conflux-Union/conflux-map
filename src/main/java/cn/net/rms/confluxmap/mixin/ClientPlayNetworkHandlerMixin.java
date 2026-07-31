@@ -14,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(ClientPlayNetworkHandler.class)
 public abstract class ClientPlayNetworkHandlerMixin {
-    @Inject(method = "onGameJoin", at = @At("HEAD"))
+    @Inject(method = "onGameJoin", at = @At("TAIL"))
     private void confluxmap$onGameJoin(final GameJoinS2CPacket packet, final CallbackInfo ci) {
         //#if MC>=12100
         //$$ ClientWorldIdentityHandler.gameJoin(packet.commonPlayerSpawnInfo().seed());
@@ -23,7 +23,7 @@ public abstract class ClientPlayNetworkHandlerMixin {
         //#endif
     }
 
-    @Inject(method = "onPlayerRespawn", at = @At("HEAD"))
+    @Inject(method = "onPlayerRespawn", at = @At("TAIL"))
     private void confluxmap$onPlayerRespawn(final PlayerRespawnS2CPacket packet, final CallbackInfo ci) {
         //#if MC>=12100
         //$$ ClientWorldIdentityHandler.respawn(packet.commonPlayerSpawnInfo().seed());
