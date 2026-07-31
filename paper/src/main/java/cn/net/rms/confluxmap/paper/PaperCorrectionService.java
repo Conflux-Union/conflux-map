@@ -133,7 +133,8 @@ final class PaperCorrectionService implements AutoCloseable {
     private final Map<UUID, PlayerChannel> channels = new ConcurrentHashMap<>();
     private final Map<ProgressiveKey, PaperProgressiveTile> progressiveTiles =
         new LinkedHashMap<>();
-    private ProgressiveKey activeProgressiveKey;
+    private final PaperProgressiveScheduler<ProgressiveKey, PaperProgressiveTile>
+        progressiveScheduler = new PaperProgressiveScheduler<>();
     private final ExecutorService workers = new ThreadPoolExecutor(
         2,
         2,
@@ -800,40 +801,15 @@ final class PaperCorrectionService implements AutoCloseable {
     private void tickProgressive(final long nowNanos) {
         evictProgressive(nowNanos, false);
         if (progressiveTiles.isEmpty()) {
-            activeProgressiveKey = null;
+            progressiveScheduler.clear();
             return;
         }
-        PaperProgressiveTile active = activeProgressiveKey == null
-            ? null : progressiveTiles.get(activeProgressiveKey);
-        final boolean activeWatched = activeProgressiveKey != null
-            && watched(activeProgressiveKey);
-        if (active == null || active.complete()
-            || (!activeWatched && firstIncomplete(true) != null)) {
-            activeProgressiveKey = firstIncomplete(true);
-            if (activeProgressiveKey == null) {
-                activeProgressiveKey = firstIncomplete(false);
-            }
-            active = activeProgressiveKey == null
-                ? null : progressiveTiles.get(activeProgressiveKey);
-        }
-        if (active == null) {
-            return;
-        }
-        active.tick();
-        if (active.complete()) {
-            activeProgressiveKey = null;
-        }
-    }
-
-    private ProgressiveKey firstIncomplete(final boolean watchedOnly) {
-        for (final Map.Entry<ProgressiveKey, PaperProgressiveTile> entry
-            : progressiveTiles.entrySet()) {
-            if (!entry.getValue().complete()
-                && (!watchedOnly || watched(entry.getKey()))) {
-                return entry.getKey();
-            }
-        }
-        return null;
+        progressiveScheduler.tick(
+            progressiveTiles,
+            this::watched,
+            PaperProgressiveTile::complete,
+            PaperProgressiveTile::tick
+        );
     }
 
     private boolean watched(final ProgressiveKey key) {
