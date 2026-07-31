@@ -167,6 +167,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final Identifier ANNOTATION_ERASER_ICON = Ids.of(
         "confluxmap", "textures/gui/annotation_eraser.png"
     );
+    private static final Identifier ANNOTATION_DRAWING_ICON = Ids.of(
+        "confluxmap", "textures/gui/annotation_drawing.png"
+    );
+    private static final Identifier ANNOTATION_COLLAPSE_ICON = Ids.of(
+        "confluxmap", "textures/gui/annotation_collapse.png"
+    );
     private static final int TEXT_COLOR = 0xFFFFFFFF;
     private static final int SYNCING_TEXT_COLOR = 0xFFFFE066;
     private static final int SYNCED_TEXT_COLOR = 0xFF80E080;
@@ -280,6 +286,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private ButtonWidget annotationUndoButton;
     private ButtonWidget annotationRedoButton;
     private FullscreenDisplayMode controlsDisplayMode;
+    private boolean annotationToolbarExpanded;
     private boolean annotationColorMenuOpen;
     private AnnotationTool annotationTool = AnnotationTool.SELECT;
     private AnnotationPersistence newAnnotationPersistence = AnnotationPersistence.PERSISTENT;
@@ -488,11 +495,39 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     private void rebuildAnnotationControls() {
+        final int desiredTop = waypointControlsBottom + CONTROL_GAP;
+        if (!annotationToolbarExpanded) {
+            final int toggleX = width - MARGIN - CONTROL_SIZE;
+            final int toggleY = desiredTop + CONTROL_SIZE <= height - MARGIN
+                ? desiredTop
+                : Math.max(MARGIN, height - MARGIN - CONTROL_SIZE);
+            annotationToolbarBounds = new AnnotationToolbarBounds(
+                toggleX, toggleY, CONTROL_SIZE, CONTROL_SIZE
+            );
+            final MapIconButton toggleButton = addDrawableChild(new MapIconButton(
+                toggleX,
+                toggleY,
+                CONTROL_SIZE,
+                ANNOTATION_DRAWING_ICON,
+                Texts.literal(""),
+                0,
+                ignored -> toggleAnnotationToolbar()
+            ));
+            annotationTooltips.put(
+                toggleButton,
+                "confluxmap.map.annotation.toolbar.open.tooltip"
+            );
+            refreshAnnotationControls();
+            return;
+        }
+
         final int controlCount = AnnotationTool.values().length + 5;
         final int stride = ANNOTATION_CONTROL_SIZE + ANNOTATION_CONTROL_GAP;
-        final int desiredTop = waypointControlsBottom + CONTROL_GAP;
-        final int maxColumns = Math.max(1, (width - MARGIN * 2 + ANNOTATION_CONTROL_GAP) / stride);
-        final int minimumRows = (controlCount + maxColumns - 1) / maxColumns;
+        final int availableToolbarWidth = width - MARGIN * 2 - CONTROL_GAP - CONTROL_SIZE;
+        final int maxToolColumns = Math.max(
+            1, (availableToolbarWidth + ANNOTATION_CONTROL_GAP) / stride
+        );
+        final int minimumRows = (controlCount + maxToolColumns - 1) / maxToolColumns;
         final int availableRows = Math.max(
             1, (height - MARGIN - desiredTop + ANNOTATION_CONTROL_GAP) / stride
         );
@@ -500,8 +535,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             ANNOTATION_MAX_ROWS, Math.max(minimumRows, Math.min(ANNOTATION_MAX_ROWS, availableRows))
         );
         final int columns = (controlCount + rows - 1) / rows;
-        final int toolbarWidth = columns * stride - ANNOTATION_CONTROL_GAP;
-        final int toolbarHeight = Math.min(rows, controlCount) * stride - ANNOTATION_CONTROL_GAP;
+        final int toolGridWidth = columns * stride - ANNOTATION_CONTROL_GAP;
+        final int toolGridHeight = Math.min(rows, controlCount) * stride - ANNOTATION_CONTROL_GAP;
+        final int toolbarWidth = toolGridWidth + CONTROL_GAP + CONTROL_SIZE;
+        final int toolbarHeight = Math.max(toolGridHeight, CONTROL_SIZE);
         final boolean fitsBelowWaypoints = desiredTop + toolbarHeight <= height - MARGIN;
         final int top = fitsBelowWaypoints
             ? desiredTop
@@ -510,6 +547,22 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             ? Math.max(MARGIN, width - MARGIN - toolbarWidth)
             : MARGIN;
         annotationToolbarBounds = new AnnotationToolbarBounds(left, top, toolbarWidth, toolbarHeight);
+
+        final int toggleX = left + toolGridWidth + CONTROL_GAP;
+        final int toggleY = top;
+        final MapIconButton toggleButton = addDrawableChild(new MapIconButton(
+            toggleX,
+            toggleY,
+            CONTROL_SIZE,
+            ANNOTATION_COLLAPSE_ICON,
+            Texts.literal(""),
+            0,
+            ignored -> toggleAnnotationToolbar()
+        ));
+        annotationTooltips.put(
+            toggleButton,
+            "confluxmap.map.annotation.toolbar.close.tooltip"
+        );
 
         int index = 0;
         for (final AnnotationTool tool : AnnotationTool.values()) {
@@ -773,6 +826,16 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             case FREEHAND -> "confluxmap.map.annotation.freehand.tooltip";
             case ERASER -> "confluxmap.map.annotation.eraser.tooltip";
         };
+    }
+
+    private void toggleAnnotationToolbar() {
+        annotationToolbarExpanded = !annotationToolbarExpanded;
+        annotationColorMenuOpen = false;
+        if (!annotationToolbarExpanded) {
+            selectAnnotationTool(AnnotationTool.SELECT);
+            return;
+        }
+        rebuildWaypointControls();
     }
 
     private Optional<Annotation> selectedAnnotation() {
