@@ -334,5 +334,5 @@
   "confluxmap.screen.client_world.create_title": "新建子世界",
   "confluxmap.screen.client_world.rename_title": "重命名子世界",
   "confluxmap.screen.client_world.name": "子世界名称",
-  "confluxmap.client_world.ambiguous_chat": "Conflux Map 无法识别当前所在的世界，已暂停记录地图。按 M 选择子世界。"
+  "confluxmap.client_world.ambiguous_chat": "Conflux Map 无法识别当前所在的世界，已暂停记录地图。按 %s 选择子世界。"
 }

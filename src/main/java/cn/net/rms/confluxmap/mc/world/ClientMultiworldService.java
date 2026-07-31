@@ -25,9 +25,11 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.Executor;
+import java.util.function.Supplier;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
@@ -59,6 +61,7 @@ public final class ClientMultiworldService {
     private boolean terrainAttempted;
     private boolean ambiguityNotified;
     private ChunkCaptureService chunkCapture;
+    private Supplier<String> openMapKeyDisplayName;
 
     public ClientMultiworldService(
         final MinecraftClient client,
@@ -82,6 +85,10 @@ public final class ClientMultiworldService {
 
     public void bindChunkCapture(final ChunkCaptureService service) {
         chunkCapture = service;
+    }
+
+    public void bindOpenMapKeyDisplayName(final Supplier<String> supplier) {
+        openMapKeyDisplayName = Objects.requireNonNull(supplier, "supplier");
     }
 
     public void onGameJoin(final long observedSeedHash) {
@@ -325,11 +332,15 @@ public final class ClientMultiworldService {
         ambiguityNotified = true;
         //#if MC>=260100
         //$$ client.player.sendSystemMessage(
-        //$$     Texts.translatable("confluxmap.client_world.ambiguous_chat").withStyle(ChatFormatting.YELLOW)
+        //$$     Texts.translatable(
+        //$$         "confluxmap.client_world.ambiguous_chat", openMapKeyDisplayName.get()
+        //$$     ).withStyle(ChatFormatting.YELLOW)
         //$$ );
         //#else
         client.player.sendMessage(
-            Texts.translatable("confluxmap.client_world.ambiguous_chat").formatted(Formatting.YELLOW),
+            Texts.translatable(
+                "confluxmap.client_world.ambiguous_chat", openMapKeyDisplayName.get()
+            ).formatted(Formatting.YELLOW),
             false
         );
         //#endif

@@ -92,6 +92,19 @@ public final class Keybinds {
         //#endif
     }
 
+    /** Current player-facing binding for the fullscreen map, from whichever backend owns it. */
+    public String openMapKeyDisplayName() {
+        if (maliLibBackend != null) {
+            return maliLibBackend.openMapKeyDisplayName();
+        }
+        final KeyBinding binding = vanillaBindings.get(KeybindAction.OPEN_MAP);
+        //#if MC>=260100
+        //$$ return binding.getTranslatedKeyMessage().getString();
+        //#else
+        return binding.getBoundKeyLocalizedText().getString();
+        //#endif
+    }
+
     private void poll() {
         if (maliLibBackend != null) {
             if (maliLibHint != null) {

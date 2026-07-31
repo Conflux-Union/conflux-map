@@ -334,5 +334,5 @@
   "confluxmap.screen.client_world.create_title": "Create World Profile",
   "confluxmap.screen.client_world.rename_title": "Rename World Profile",
   "confluxmap.screen.client_world.name": "World name",
-  "confluxmap.client_world.ambiguous_chat": "Conflux Map paused map writes because this upstream world is unknown. Press M to choose a world profile."
+  "confluxmap.client_world.ambiguous_chat": "Conflux Map paused map writes because this upstream world is unknown. Press %s to choose a world profile."
 }

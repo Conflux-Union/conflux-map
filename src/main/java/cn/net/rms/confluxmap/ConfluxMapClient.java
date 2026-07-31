@@ -111,6 +111,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private UpdateNotifier updateNotifier;
     private SurveyReminderNotifier surveyReminderNotifier;
     private ClientGroundTeleportService groundTeleportService;
+    private Keybinds keybinds;
 
     public static ConfluxMapClient get() {
         return instance;
@@ -264,7 +265,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
         updateNotifier.register();
         surveyReminderNotifier.register();
 
-        new Keybinds(config, configIo, layerSelector);
+        keybinds = new Keybinds(config, configIo, layerSelector);
+        clientMultiworldService.bindOpenMapKeyDisplayName(keybinds::openMapKeyDisplayName);
         ClientLifecycleEvents.CLIENT_STOPPING.register(client2 -> shutdown());
         ConfluxMapMod.LOGGER.info("Conflux Map client services started ({} workers)", executors.workerCount());
     }

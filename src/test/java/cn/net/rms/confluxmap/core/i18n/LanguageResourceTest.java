@@ -50,6 +50,21 @@ class LanguageResourceTest {
         );
     }
 
+    @Test
+    void ambiguousWorldPromptAcceptsTheCurrentOpenMapKey() {
+        final Map<String, String> english = translations("en_us");
+        final Map<String, String> chinese = translations("zh_cn");
+
+        assertEquals(
+            "Conflux Map paused map writes because this upstream world is unknown. Press %s to choose a world profile.",
+            english.get("confluxmap.client_world.ambiguous_chat")
+        );
+        assertEquals(
+            "Conflux Map 无法识别当前所在的世界，已暂停记录地图。按 %s 选择子世界。",
+            chinese.get("confluxmap.client_world.ambiguous_chat")
+        );
+    }
+
     private static long placeholderCount(final String value) {
         final Matcher matcher = STRING_PLACEHOLDER.matcher(value);
         long count = 0;

@@ -30,6 +30,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.option.KeyBinding;
 
@@ -40,6 +41,7 @@ final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
 
     private final Path configFile;
     private final IKeybind configScreenKeybind;
+    private final IKeybind openMapKeybind;
     private final List<ConfigHotkey> hotkeys;
     private String configScreenStorageKey = "";
 
@@ -66,11 +68,16 @@ final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
             return true;
         });
         final ArrayList<ConfigHotkey> orderedHotkeys = new ArrayList<>();
+        IKeybind detectedOpenMapKeybind = null;
         for (final KeybindAction action : KeybindAction.values()) {
             final ConfigHotkey hotkey = createHotkey(action);
             hotkey.getKeybind().setCallback((keyAction, keybind) -> actionHandler.trigger(action));
             orderedHotkeys.add(hotkey);
+            if (action == KeybindAction.OPEN_MAP) {
+                detectedOpenMapKeybind = hotkey.getKeybind();
+            }
         }
+        openMapKeybind = Objects.requireNonNull(detectedOpenMapKeybind, "open map hotkey");
         hotkeys = Collections.unmodifiableList(orderedHotkeys);
     }
 
@@ -109,6 +116,10 @@ final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
         //#else
         return true;
         //#endif
+    }
+
+    String openMapKeyDisplayName() {
+        return openMapKeybind.getKeysDisplayString();
     }
 
     void syncConfigScreenKey(final KeyBinding vanillaHint) {
