@@ -23,6 +23,7 @@ import net.minecraft.client.render.model.BakedModel;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.texture.NativeImageBackedTexture;
 import net.minecraft.client.texture.Sprite;
+import net.minecraft.entity.Entity;
 import net.minecraft.item.ItemStack;
 
 /**
@@ -48,9 +49,9 @@ final class ItemIconOutlineTexture {
     //#endif
 
     /** Binds the stack's cached outline mask, building it on first use. */
-    boolean bind(final MinecraftClient client, final ItemStack stack) {
+    boolean bind(final MinecraftClient client, final ItemStack stack, final Entity entity) {
         assert RenderSystem.isOnRenderThread() : "ItemIconOutlineTexture.bind() must run on the render thread";
-        final Sprite sprite = spriteFor(client, stack);
+        final Sprite sprite = spriteFor(client, stack, entity);
         if (sprite == null || failed.contains(sprite)) {
             return false;
         }
@@ -89,10 +90,10 @@ final class ItemIconOutlineTexture {
         failed.clear();
     }
 
-    private Sprite spriteFor(final MinecraftClient client, final ItemStack stack) {
+    private Sprite spriteFor(final MinecraftClient client, final ItemStack stack, final Entity entity) {
         //#if MC>=12104
         //$$ client.getItemModelManager().updateForNonLivingEntity(
-        //$$     renderState, stack, ModelTransformationMode.GUI, null
+        //$$     renderState, stack, ModelTransformationMode.GUI, entity
         //$$ );
         //$$ if (renderState.isSideLit()) {
         //$$     return null;

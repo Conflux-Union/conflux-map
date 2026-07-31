@@ -144,7 +144,7 @@ public final class RadarMarkerRenderer {
                     backdrop, marker.blockX(), marker.blockZ(), blocksPerPixel, config.radarIconSize
                 );
                 drawItemIcon(
-                    draw, client, iconManager, itemIcon, x, y, config.radarIconSize,
+                    draw, client, iconManager, itemIcon, live, x, y, config.radarIconSize,
                     yDelta, alphaScale, contourBase
                 );
                 return true;
@@ -228,6 +228,7 @@ public final class RadarMarkerRenderer {
         final MinecraftClient client,
         final EntityIconManager iconManager,
         final ItemStack stack,
+        final Entity entity,
         final float x,
         final float y,
         final float iconSize,
@@ -237,7 +238,7 @@ public final class RadarMarkerRenderer {
     ) {
         final MatrixStack matrices = draw.matrices();
         final int contour = Argb.scaleAlpha(elevationColor(contourBase, yDelta), alphaScale);
-        if (iconManager.bindItemOutlineTexture(client, stack)) {
+        if (iconManager.bindItemOutlineTexture(client, stack, entity)) {
             final float outlineHalfSize = outlineHalfSize(iconSize);
             RenderUtil.drawTintedQuad(
                 matrices, x - outlineHalfSize, y - outlineHalfSize,

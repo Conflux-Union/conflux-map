@@ -125,8 +125,12 @@ public final class EntityIconManager {
     }
 
     /** Render thread. Binds a cached alpha-tight outline for the stack's flat GUI model. */
-    public boolean bindItemOutlineTexture(final MinecraftClient client, final ItemStack stack) {
-        return itemOutlineTexture.bind(client, stack);
+    public boolean bindItemOutlineTexture(
+        final MinecraftClient client,
+        final ItemStack stack,
+        final Entity entity
+    ) {
+        return itemOutlineTexture.bind(client, stack, entity);
     }
 
     /** Render thread, resource reload: drop entity-sheet and resolved-item outline masks. */
