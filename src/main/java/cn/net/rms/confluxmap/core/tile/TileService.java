@@ -26,6 +26,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CancellationException;
 import java.util.function.Predicate;
 
 /**
@@ -140,6 +142,62 @@ public final class TileService {
             viewportRegionLoadCursor = 0L;
         }
         pump();
+    }
+
+    /**
+     * Returns a fully recomposed CPU tile for non-render consumers such as PNG export. Persistent
+     * backing regions are loaded first, one at a time, so an arbitrarily large export neither
+     * replaces the visible viewport nor floods the bounded disk queue.
+     */
+    public CompletableFuture<int[]> snapshotTile(
+        final TileKey key,
+        final boolean dynamicLighting,
+        final float daylightFactor
+    ) {
+        final MapWorld world = mapWorlds.current();
+        if (world == null
+            || !key.world().equals(world.session().world())
+            || !key.dimension().equals(world.session().dimension())) {
+            return CompletableFuture.failedFuture(new CancellationException("Map session changed"));
+        }
+        final long token = world.session().token();
+        final MapLayer layer = MapLayer.parse(BiomeTileKeys.realLayerId(key.layerId()));
+        final RegionDiskCache cache = regionCache == null ? null : regionCache.current();
+        final CompletableFuture<Void> loaded;
+        if (cache != null && layer.type().persistent()) {
+            final int regionsPerSide = 1 << key.lod();
+            final int baseRegionX = key.tileX() << key.lod();
+            final int baseRegionZ = key.tileZ() << key.lod();
+            loaded = cache.awaitRegionsLoaded(
+                layer.type(), baseRegionX, baseRegionZ, regionsPerSide
+            );
+        } else {
+            loaded = CompletableFuture.completedFuture(null);
+        }
+        final CompletableFuture<int[]> composed = loaded.thenApplyAsync(ignored -> {
+            final TileUpdate update = composeTile(
+                key, token, dynamicLighting, daylightFactor
+            );
+            if (update == null) {
+                throw new CancellationException("Map session changed");
+            }
+            return update.argbPixels();
+        }, executors.workers());
+        final CompletableFuture<int[]> result = new CompletableFuture<>();
+        composed.whenComplete((pixels, error) -> {
+            if (error == null) {
+                result.complete(pixels);
+            } else {
+                result.completeExceptionally(error);
+            }
+        });
+        result.whenComplete((ignored, error) -> {
+            if (result.isCancelled()) {
+                loaded.cancel(true);
+                composed.cancel(true);
+            }
+        });
+        return result;
     }
 
     /**
@@ -457,6 +515,15 @@ public final class TileService {
     }
 
     private TileUpdate composeTile(final TileKey key, final long token) {
+        return composeTile(key, token, config.dynamicLighting, daylightModel.factor());
+    }
+
+    private TileUpdate composeTile(
+        final TileKey key,
+        final long token,
+        final boolean dynamicLighting,
+        final float requestedDaylightFactor
+    ) {
         final MapWorld world = mapWorlds.ifCurrent(token);
         if (world == null) {
             return null;
@@ -475,8 +542,8 @@ public final class TileService {
         // drift, not a per-frame value, so a tile composing mid-bucket-change is harmless.
         final boolean applyDaylight = !biomeMode
             && layer.type() == MapLayer.Type.SURFACE
-            && config.dynamicLighting;
-        final float daylightFactor = applyDaylight ? daylightModel.factor() : 1f;
+            && dynamicLighting;
+        final float daylightFactor = applyDaylight ? requestedDaylightFactor : 1f;
         // SURFACE tiles always carry their re-light inputs, even with dynamic lighting off
         // (compose then leaves pixels undarkened, which is exactly "composed at factor 1.0"),
         // so toggling the setting on relights already-uploaded tiles instead of stranding them.

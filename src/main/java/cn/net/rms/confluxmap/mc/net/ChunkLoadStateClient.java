@@ -1,11 +1,19 @@
 package cn.net.rms.confluxmap.mc.net;
 
+import cn.net.rms.confluxmap.core.export.MapExportLoadState;
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.net.ChunkLoadStateSnapshot;
 import cn.net.rms.confluxmap.core.net.LoadStateDeltaS2C;
 import cn.net.rms.confluxmap.core.net.LoadStateSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.Proto;
+import cn.net.rms.confluxmap.core.util.TileMath;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
+import net.minecraft.client.MinecraftClient;
 
 /** Client subscription lifecycle for the fullscreen server chunk-load-state plane. */
 public final class ChunkLoadStateClient {
@@ -16,6 +24,7 @@ public final class ChunkLoadStateClient {
 
     private final CompanionSession companion;
     private final Sender sender;
+    private final Executor clientThread;
     private final ChunkLoadStateSnapshot snapshot = new ChunkLoadStateSnapshot();
     private int nextSubscriptionId;
     private int requestedDimIndex = -1;
@@ -23,14 +32,28 @@ public final class ChunkLoadStateClient {
     private int requestedMaxX;
     private int requestedMinZ;
     private int requestedMaxZ;
+    private CompletableFuture<MapExportLoadState> exportCompletion;
 
     public ChunkLoadStateClient(final CompanionSession companion, final ClientNetworking networking) {
-        this(companion, networking::sendMessage);
+        this(
+            companion,
+            networking::sendMessage,
+            runnable -> MinecraftClient.getInstance().execute(runnable)
+        );
     }
 
     ChunkLoadStateClient(final CompanionSession companion, final Sender sender) {
+        this(companion, sender, Runnable::run);
+    }
+
+    ChunkLoadStateClient(
+        final CompanionSession companion,
+        final Sender sender,
+        final Executor clientThread
+    ) {
         this.companion = companion;
         this.sender = sender;
+        this.clientThread = clientThread;
     }
 
     public boolean available() {
@@ -47,6 +70,9 @@ public final class ChunkLoadStateClient {
         final int minChunkZ,
         final int maxChunkZ
     ) {
+        if (exportCompletion != null) {
+            return false;
+        }
         if (!available()) {
             reset();
             return false;
@@ -92,17 +118,119 @@ public final class ChunkLoadStateClient {
     }
 
     public void onDelta(final LoadStateDeltaS2C delta) {
-        snapshot.apply(delta);
+        if (!snapshot.apply(delta)) {
+            return;
+        }
+        final CompletableFuture<MapExportLoadState> completion = exportCompletion;
+        if (completion != null && delta.complete()) {
+            exportCompletion = null;
+            final MapExportLoadState page = new MapExportLoadState(snapshot.entries());
+            sender.send(LoadStateSubscribeC2S.cancel(snapshot.subscriptionId()));
+            snapshot.reset();
+            requestedDimIndex = -1;
+            completion.complete(page);
+        }
+    }
+
+    /**
+     * Requests the exact chunk rectangle covered by one export tile. Export rasterization is
+     * serialized, so this pages arbitrarily large ranges without retaining every server entry.
+     */
+    public CompletableFuture<MapExportLoadState> requestExportTile(final TileKey tile) {
+        final CompletableFuture<MapExportLoadState> completion = new CompletableFuture<>();
+        clientThread.execute(() -> beginExportTile(tile, completion));
+        completion.orTimeout(30L, TimeUnit.SECONDS).whenComplete((ignored, error) -> {
+            if (error != null) {
+                clientThread.execute(() -> cancelExport(completion));
+            }
+        });
+        return completion;
+    }
+
+    private void beginExportTile(
+        final TileKey tile,
+        final CompletableFuture<MapExportLoadState> completion
+    ) {
+        if (completion.isDone()) {
+            return;
+        }
+        if (!available()) {
+            completion.completeExceptionally(new IllegalStateException("Chunk load state is unavailable"));
+            return;
+        }
+        if (exportCompletion != null) {
+            completion.completeExceptionally(new IllegalStateException("Another chunk load page is active"));
+            return;
+        }
+        final int dimIndex = dimensionIndex(tile.dimension());
+        if (dimIndex < 0) {
+            completion.completeExceptionally(new IllegalArgumentException("Unsupported export dimension"));
+            return;
+        }
+        final long tileSize = TileMath.blocksPerTile(tile.lod());
+        final long originX = (long) tile.tileX() * tileSize;
+        final long originZ = (long) tile.tileZ() * tileSize;
+        final int minChunkX = (int) Math.floorDiv(Math.max(Integer.MIN_VALUE, originX), 16L);
+        final int minChunkZ = (int) Math.floorDiv(Math.max(Integer.MIN_VALUE, originZ), 16L);
+        final int maxChunkX = (int) Math.floorDiv(
+            Math.min(Integer.MAX_VALUE, originX + tileSize - 1L), 16L
+        );
+        final int maxChunkZ = (int) Math.floorDiv(
+            Math.min(Integer.MAX_VALUE, originZ + tileSize - 1L), 16L
+        );
+        final int subscriptionId = nextSubscriptionId++;
+        final LoadStateSubscribeC2S request = new LoadStateSubscribeC2S(
+            subscriptionId,
+            dimIndex,
+            true,
+            minChunkX,
+            minChunkZ,
+            maxChunkX,
+            maxChunkZ
+        );
+        if (sender.send(request) < 0) {
+            completion.completeExceptionally(new IllegalStateException("Unable to request chunk load state"));
+            return;
+        }
+        requestedDimIndex = dimIndex;
+        requestedMinX = minChunkX;
+        requestedMaxX = maxChunkX;
+        requestedMinZ = minChunkZ;
+        requestedMaxZ = maxChunkZ;
+        snapshot.begin(subscriptionId, dimIndex);
+        exportCompletion = completion;
     }
 
     public void deactivate() {
         if (snapshot.active()) {
             sender.send(LoadStateSubscribeC2S.cancel(snapshot.subscriptionId()));
         }
+        final CompletableFuture<MapExportLoadState> completion = exportCompletion;
+        exportCompletion = null;
+        if (completion != null) {
+            completion.completeExceptionally(new CancellationException("Chunk load export cancelled"));
+        }
         reset();
     }
 
     public void reset() {
+        final CompletableFuture<MapExportLoadState> completion = exportCompletion;
+        exportCompletion = null;
+        if (completion != null) {
+            completion.completeExceptionally(new CancellationException("Chunk load state reset"));
+        }
+        snapshot.reset();
+        requestedDimIndex = -1;
+    }
+
+    private void cancelExport(final CompletableFuture<MapExportLoadState> completion) {
+        if (exportCompletion != completion) {
+            return;
+        }
+        if (snapshot.active()) {
+            sender.send(LoadStateSubscribeC2S.cancel(snapshot.subscriptionId()));
+        }
+        exportCompletion = null;
         snapshot.reset();
         requestedDimIndex = -1;
     }

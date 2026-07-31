@@ -1,7 +1,8 @@
 package cn.net.rms.confluxmap.core.cache;
 
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.color.DaylightModel;
@@ -56,6 +57,43 @@ class RegionCacheViewportLoadTest {
                 cache.ensureRegionLoaded(MapLayer.Type.SURFACE, 0, 0),
                 "an already accepted region is still a successful no-op"
             );
+        } finally {
+            executors.shutdown(1_000L);
+        }
+    }
+
+    @Test
+    void cancellingSequentialRegionLoadStopsSchedulingMoreReads(@TempDir final Path tempDir) {
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final SessionGuard.Session session = new SessionGuard.Session(
+                1L, new WorldIdentity("local", "cancelled-cache-test"), DimensionId.OVERWORLD
+            );
+            final MapWorldService mapWorlds = new MapWorldService();
+            mapWorlds.switchSession(session);
+            final TileService tiles = new TileService(
+                mapWorlds, executors, new ConfluxConfig(), new DaylightModel()
+            );
+            final java.util.ArrayList<Runnable> queued = new java.util.ArrayList<>();
+            final RegionDiskCache cache = new RegionDiskCache(
+                tempDir,
+                session,
+                mapWorlds,
+                queued::add,
+                tiles,
+                LogManager.getLogger("RegionCacheViewportLoadTest")
+            );
+
+            final java.util.concurrent.CompletableFuture<Void> loading = cache.awaitRegionsLoaded(
+                MapLayer.Type.SURFACE, 0, 0, 16
+            );
+            assertEquals(1, queued.size());
+
+            loading.cancel(true);
+            queued.remove(0).run();
+
+            assertEquals(0, queued.size());
+            assertTrue(loading.isCancelled());
         } finally {
             executors.shutdown(1_000L);
         }

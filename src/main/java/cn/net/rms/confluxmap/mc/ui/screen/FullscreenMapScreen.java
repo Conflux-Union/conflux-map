@@ -20,6 +20,11 @@ import cn.net.rms.confluxmap.core.annotation.AnnotationStyle;
 import cn.net.rms.confluxmap.core.annotation.AnnotationTool;
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.export.MapExportBounds;
+import cn.net.rms.confluxmap.core.export.MapExportLoadState;
+import cn.net.rms.confluxmap.core.export.MapExportRequest;
+import cn.net.rms.confluxmap.core.export.MapExportResolution;
+import cn.net.rms.confluxmap.core.export.MapExportSelection;
 import cn.net.rms.confluxmap.core.loadstate.ChunkLoadDetailMode;
 import cn.net.rms.confluxmap.core.loadstate.ChunkLoadOverlayStyle;
 import cn.net.rms.confluxmap.core.loadstate.ChunkScreenRect;
@@ -153,6 +158,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final Identifier STRUCTURE_SEARCH_ICON = Ids.of(
         "confluxmap", "textures/gui/structure_search.png"
     );
+    private static final Identifier MAP_EXPORT_ICON = Ids.of(
+        "confluxmap", "textures/gui/map_export.png"
+    );
     private static final Identifier ANNOTATION_PERSISTENCE_ICON = Ids.of(
         "confluxmap", "textures/gui/annotation_persistence.png"
     );
@@ -253,6 +261,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private MapIconButton manageWaypointsButton;
     private MapIconButton structureSearchButton;
     private MapIconButton displayModeButton;
+    private MapIconButton mapExportButton;
     private ButtonWidget clientWorldButton;
     private int waypointControlsBottom;
     private FullscreenMapLocationMenu.Bounds locationMenuBounds;
@@ -284,6 +293,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private final Set<UUID> erasingAnnotationIds = new LinkedHashSet<>();
     private long lastEraserButtonClickMs = Long.MIN_VALUE;
     private ButtonWidget loadStateDetailButton;
+    private MapExportScreen exportSelectionScreen;
+    private final MapExportSelection exportSelection = new MapExportSelection();
 
     public FullscreenMapScreen(final KeyBinding openMapKey) {
         super(Texts.translatable("confluxmap.screen.map.title"));
@@ -332,7 +343,44 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         locationMenuBounds = null;
         locationMenuTarget = null;
         pendingLocationAction = null;
+        if (exportSelectionScreen != null) {
+            rebuildExportSelectionControls();
+            return;
+        }
         rebuildWaypointControls();
+    }
+
+    private void rebuildExportSelectionControls() {
+        clearChildren();
+        addDrawableChild(Widgets.button(
+            width - MARGIN - 80,
+            MARGIN,
+            80,
+            20,
+            Texts.translatable("confluxmap.screen.map_export.cancel_selection"),
+            ignored -> cancelExportSelection()
+        ));
+        if (exportSelection.bounds().isPresent()) {
+            addDrawableChild(Widgets.button(
+                width / 2 - 104,
+                height - 32,
+                100,
+                20,
+                Texts.translatable("confluxmap.screen.map_export.use_selection"),
+                ignored -> finishExportSelection()
+            ));
+            addDrawableChild(Widgets.button(
+                width / 2 + 4,
+                height - 32,
+                100,
+                20,
+                Texts.translatable("confluxmap.screen.map_export.reset_selection"),
+                ignored -> {
+                    exportSelection.reset();
+                    rebuildExportSelectionControls();
+                }
+            ));
+        }
     }
 
     private void rebuildWaypointControls() {
@@ -355,6 +403,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         annotationToolbarBounds = null;
         annotationColorMenuBounds = null;
         displayModeButton = null;
+        mapExportButton = null;
         clientWorldButton = null;
         controlsDisplayMode = null;
         loadStateDetailButton = null;
@@ -371,6 +420,16 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         ));
         controlsDisplayMode = displayMode();
         refreshDisplayModeButton();
+        y += CONTROL_SIZE + CONTROL_GAP;
+        mapExportButton = addDrawableChild(new MapIconButton(
+            x,
+            y,
+            MAP_EXPORT_ICON,
+            Texts.translatable("confluxmap.screen.map_export.tooltip"),
+            0,
+            ignored -> openMapExport()
+        ));
+        annotationTooltips.put(mapExportButton, "confluxmap.screen.map_export.tooltip");
         y += CONTROL_SIZE + CONTROL_GAP;
         if (clientMultiworld.canManageProfiles()) {
             clientWorldButton = addDrawableChild(Widgets.button(
@@ -851,6 +910,85 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         rebuildWaypointControls();
     }
 
+    private void openMapExport() {
+        final int minX = (int) Math.floor(centerX - width / 2.0 * scale);
+        final int minZ = (int) Math.floor(centerZ - height / 2.0 * scale);
+        final int maxX = (int) Math.ceil(centerX + width / 2.0 * scale) - 1;
+        final int maxZ = (int) Math.ceil(centerZ + height / 2.0 * scale) - 1;
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new MapExportScreen(
+            this,
+            MapExportBounds.between(minX, minZ, maxX, maxZ),
+            MapExportResolution.forLod(currentLod())
+        ));
+    }
+
+    void beginExportSelection(final MapExportScreen screen) {
+        exportSelectionScreen = screen;
+        exportSelection.reset();
+        mapPointerPress = false;
+        annotationPointerPress = false;
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), this);
+    }
+
+    MapExportRequest createExportRequest(
+        final MapExportBounds bounds,
+        final MapExportResolution resolution
+    ) {
+        final SessionGuard.Session session = gameBridge.session();
+        final MapLayer layer = layerSelector.current().layer();
+        final boolean biome = displayMode() == FullscreenDisplayMode.BIOME;
+        final boolean prediction = predictionActive(layer, session);
+        return new MapExportRequest(
+            session,
+            layer,
+            bounds,
+            resolution,
+            displayMode(),
+            prediction,
+            predictionTiles.viewMode(),
+            prediction ? (biome ? 0xFFFFFFFF : predictionTint(layer)) : 0xFFFFFFFF,
+            BACKGROUND_COLOR,
+            config.dynamicLighting,
+            daylightModel.factor(),
+            displayMode() == FullscreenDisplayMode.CHUNK_LOAD_STATE
+                ? new MapExportLoadState(chunkLoadStates.snapshot().entries())
+                : MapExportLoadState.empty()
+        );
+    }
+
+    private void cancelExportSelection() {
+        final MapExportScreen screen = exportSelectionScreen;
+        exportSelectionScreen = null;
+        exportSelection.reset();
+        mapPointerPress = false;
+        if (screen != null) {
+            MinecraftAccess.setScreen(MinecraftClient.getInstance(), screen);
+        }
+    }
+
+    private void selectExportCorner(final double mouseX, final double mouseY) {
+        final int blockX = (int) Math.floor(centerX + (mouseX - width / 2.0) * scale);
+        final int blockZ = (int) Math.floor(centerZ + (mouseY - height / 2.0) * scale);
+        final Optional<MapExportBounds> completed = exportSelection.select(blockX, blockZ);
+        if (completed.isEmpty()) {
+            rebuildExportSelectionControls();
+            return;
+        }
+        rebuildExportSelectionControls();
+    }
+
+    private void finishExportSelection() {
+        final MapExportScreen screen = exportSelectionScreen;
+        final Optional<MapExportBounds> completed = exportSelection.bounds();
+        if (screen == null || completed.isEmpty()) {
+            return;
+        }
+        exportSelectionScreen = null;
+        exportSelection.reset();
+        screen.applySelection(completed.get());
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), screen);
+    }
+
     private void addLocationMenuButtons() {
         final boolean heightKnown = locationMenuTarget.blockY().isPresent();
         final MinecraftClient client = MinecraftClient.getInstance();
@@ -958,6 +1096,17 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     //#else
     public boolean keyPressed(final int keyCode, final int scanCode, final int modifiers) {
     //#endif
+        if (exportSelectionScreen != null) {
+            //#if MC>=12109
+            //$$ if (keyCode == GLFW.GLFW_KEY_ESCAPE || openMapKey != null && openMapKey.matchesKey(input)) {
+            //#else
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE
+                || openMapKey != null && openMapKey.matchesKey(keyCode, scanCode)) {
+            //#endif
+                cancelExportSelection();
+                return true;
+            }
+        }
         final boolean controlDown = (modifiers & (GLFW.GLFW_MOD_CONTROL | GLFW.GLFW_MOD_SUPER)) != 0;
         final boolean shiftDown = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0;
         if (controlDown && keyCode == GLFW.GLFW_KEY_Z) {
@@ -1015,6 +1164,34 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     //#else
     public boolean mouseClicked(final double mouseX, final double mouseY, final int button) {
     //#endif
+        if (exportSelectionScreen != null) {
+            //#if MC>=12109
+            //$$ if (super.mouseClicked(click, doubledClick)) {
+            //#else
+            if (super.mouseClicked(mouseX, mouseY, button)) {
+            //#endif
+                return true;
+            }
+            if (button == 1) {
+                if (exportSelection.first().isEmpty()) {
+                    cancelExportSelection();
+                } else {
+                    exportSelection.reset();
+                    rebuildExportSelectionControls();
+                }
+                return true;
+            }
+            if (button == 0) {
+                if (exportSelection.bounds().isPresent()) {
+                    return true;
+                }
+                leftPressX = mouseX;
+                leftPressY = mouseY;
+                mapPointerPress = true;
+                return true;
+            }
+            return false;
+        }
         if (locationMenuBounds != null) {
             if (locationMenuBounds.contains(mouseX, mouseY)) {
                 //#if MC>=12109
@@ -1268,6 +1445,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     //#else
     public boolean mouseReleased(final double mouseX, final double mouseY, final int button) {
     //#endif
+        if (exportSelectionScreen != null && button == 0 && mapPointerPress) {
+            mapPointerPress = false;
+            if (Math.hypot(mouseX - leftPressX, mouseY - leftPressY) < CLICK_DRAG_TOLERANCE_PX) {
+                selectExportCorner(mouseX, mouseY);
+            }
+            return true;
+        }
         if (button == 0 && annotationPointerPress) {
             commitAnnotationPointer(mouseX, mouseY);
             return true;
@@ -1469,6 +1653,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
         drawWaypoints(draw, mouseX, mouseY, radarObserver);
         drawPlayerMarker(matrices, tickDelta);
+        drawExportSelection(draw, mouseX, mouseY);
         drawDimensionLabel(draw);
         drawLayerLabel(draw);
         drawPredictionLabel(draw);
@@ -1480,6 +1665,49 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         drawCursorCoords(draw, mouseX, mouseY);
         drawUpdateBadge(draw);
         drawLocationMenu(draw);
+    }
+
+    private void drawExportSelection(final GuiDraw draw, final int mouseX, final int mouseY) {
+        if (exportSelectionScreen == null) {
+            return;
+        }
+        final String instruction = Texts.translatable(
+            exportSelection.bounds().isPresent()
+                ? "confluxmap.screen.map_export.selection_ready"
+                : exportSelection.first().isEmpty()
+                    ? "confluxmap.screen.map_export.select_first"
+                    : "confluxmap.screen.map_export.select_second"
+        ).getString();
+        draw.drawTextWithShadow(
+            this.textRenderer,
+            instruction,
+            width / 2f - this.textRenderer.getWidth(instruction) / 2f,
+            MARGIN,
+            TEXT_COLOR
+        );
+        final Optional<MapExportSelection.Point> first = exportSelection.first();
+        if (first.isEmpty()) {
+            return;
+        }
+        final int cursorX = (int) Math.floor(centerX + (mouseX - width / 2.0) * scale);
+        final int cursorZ = (int) Math.floor(centerZ + (mouseY - height / 2.0) * scale);
+        final MapExportBounds preview = exportSelection.bounds().orElseGet(() -> MapExportBounds.between(
+            first.get().x(), first.get().z(), cursorX, cursorZ
+        ));
+        final int minX = preview.minX();
+        final int minZ = preview.minZ();
+        final int maxX = preview.maxX();
+        final int maxZ = preview.maxZ();
+        final float left = (float) (width / 2.0 + (minX - centerX) / scale);
+        final float top = (float) (height / 2.0 + (minZ - centerZ) / scale);
+        final float right = (float) (width / 2.0 + ((long) maxX + 1L - centerX) / scale);
+        final float bottom = (float) (height / 2.0 + ((long) maxZ + 1L - centerZ) / scale);
+        final MatrixStack matrices = draw.matrices();
+        RenderUtil.fillRect(matrices, left, top, right - left, bottom - top, 0x303399FF);
+        RenderUtil.fillRect(matrices, left, top, right - left, 1f, 0xFF66CCFF);
+        RenderUtil.fillRect(matrices, left, bottom - 1f, right - left, 1f, 0xFF66CCFF);
+        RenderUtil.fillRect(matrices, left, top, 1f, bottom - top, 0xFF66CCFF);
+        RenderUtil.fillRect(matrices, right - 1f, top, 1f, bottom - top, 0xFF66CCFF);
     }
 
     private void drawPlayerTrail(final MatrixStack matrices) {

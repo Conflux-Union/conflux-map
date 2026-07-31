@@ -6,6 +6,9 @@ import cn.net.rms.confluxmap.core.cache.RegionCacheService;
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.export.MapExportService;
+import cn.net.rms.confluxmap.core.export.ServiceMapExportTileSource;
+import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfileIo;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfileRegistry;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfileResolver;
@@ -56,6 +59,7 @@ import cn.net.rms.confluxmap.mc.world.WorldSessionTracker;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
@@ -98,6 +102,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private McDaylightTracker daylightTracker;
     private PredictionState predictionState;
     private PredictionTileService predictionTileService;
+    private MapExportService mapExportService;
     private PredictionBootstrap predictionBootstrap;
     private PredictionPaletteBuilder predictionPaletteBuilder;
     private StructureMarkerService structureMarkerService;
@@ -175,6 +180,19 @@ public final class ConfluxMapClient implements ClientModInitializer {
         clientNetworking = new ClientNetworking(companionSession);
         mapSyncClient = new MapSyncClient(companionSession, clientNetworking, correctionStore, predictionTileService, config);
         chunkLoadStateClient = new ChunkLoadStateClient(companionSession, clientNetworking);
+        mapExportService = new MapExportService(
+            confluxRoot.resolve("exports"),
+            sessionGuard,
+            request -> new ServiceMapExportTileSource(
+                tileService,
+                predictionTileService,
+                request,
+                request.displayMode() == FullscreenDisplayMode.CHUNK_LOAD_STATE
+                    ? chunkLoadStateClient::requestExportTile
+                    : ignored -> java.util.concurrent.CompletableFuture.completedFuture(request.loadState())
+            )
+        );
+        ClientTickEvents.END_CLIENT_TICK.register(ignored -> mapExportService.tick());
         clientNetworking.bindMapSync(mapSyncClient);
         clientNetworking.bindChunkLoadStates(chunkLoadStateClient);
         clientNetworking.register();
@@ -274,6 +292,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private void shutdown() {
         // Quitting mid-world fires no session tick, so close the complete session lifecycle here.
         sessionTracker.endSession();
+        mapExportService.close();
         correctionStore.flush();
         surveyReminderNotifier.flush();
         configIo.save(config);
@@ -384,6 +403,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public PredictionTileService predictionTileService() {
         return predictionTileService;
+    }
+
+    public MapExportService mapExportService() {
+        return mapExportService;
     }
 
     public StructureMarkerService structureMarkerService() {

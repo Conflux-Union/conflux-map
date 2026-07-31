@@ -24,6 +24,7 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -70,6 +71,8 @@ public final class RegionDiskCache {
 
     /** Regions {@link #ensureRegionLoaded} has already claimed, per (layer, region), this session. */
     private final Set<RegionSlot> regionLoadTouched = ConcurrentHashMap.newKeySet();
+    /** Completion handles for callers, such as export, that must compose after the disk merge. */
+    private final Map<RegionSlot, CompletableFuture<Void>> regionLoadCompletions = new ConcurrentHashMap<>();
     /** Bounds queued disk reads when a wide coarse viewport covers hundreds of LOD-0 regions. */
     private final AtomicInteger pendingRegionLoads = new AtomicInteger();
     /** Last {@link RegionColumns#version()} successfully written to disk, per (layer, region). */
@@ -116,32 +119,122 @@ public final class RegionDiskCache {
     public synchronized boolean ensureRegionLoaded(
         final MapLayer.Type layerType, final int regionX, final int regionZ
     ) {
+        return ensureRegionLoadedAsync(layerType, regionX, regionZ) != null;
+    }
+
+    /**
+     * Schedules the same bounded region load as {@link #ensureRegionLoaded}, returning a handle
+     * that completes after the disk data has merged into the active {@link MapWorld}. Returns
+     * {@code null} only while the bounded queue is full, allowing viewport callers to retry.
+     */
+    public synchronized CompletableFuture<Void> ensureRegionLoadedAsync(
+        final MapLayer.Type layerType, final int regionX, final int regionZ
+    ) {
         if (!layerType.persistent()) {
-            return true;
+            return CompletableFuture.completedFuture(null);
         }
         final RegionSlot slot = new RegionSlot(layerType, regionX, regionZ);
-        if (regionLoadTouched.contains(slot)) {
-            return true;
+        final CompletableFuture<Void> existing = regionLoadCompletions.get(slot);
+        if (existing != null) {
+            return existing;
         }
         if (pendingRegionLoads.get() >= MAX_PENDING_REGION_LOADS) {
-            return false;
+            return null;
         }
+        final CompletableFuture<Void> completion = new CompletableFuture<>();
         regionLoadTouched.add(slot);
+        regionLoadCompletions.put(slot, completion);
         pendingRegionLoads.incrementAndGet();
         try {
             io.execute(() -> {
                 try {
                     loadRegion(layerType, regionX, regionZ);
+                    completion.complete(null);
+                } catch (final RuntimeException e) {
+                    completion.completeExceptionally(e);
                 } finally {
                     pendingRegionLoads.decrementAndGet();
                 }
             });
-            return true;
+            return completion;
         } catch (final RejectedExecutionException e) {
             pendingRegionLoads.decrementAndGet();
             regionLoadTouched.remove(slot);
-            return false;
+            regionLoadCompletions.remove(slot);
+            completion.completeExceptionally(e);
+            return null;
         }
+    }
+
+    /** Waits for queue capacity when necessary, then completes after this region has loaded. */
+    public CompletableFuture<Void> awaitRegionLoaded(
+        final MapLayer.Type layerType, final int regionX, final int regionZ
+    ) {
+        final CompletableFuture<Void> scheduled;
+        final CompletableFuture<Void> capacity;
+        synchronized (this) {
+            scheduled = ensureRegionLoadedAsync(layerType, regionX, regionZ);
+            if (scheduled != null) {
+                return scheduled;
+            }
+            capacity = regionLoadCompletions.values().stream()
+                .filter(future -> !future.isDone())
+                .findFirst()
+                .orElse(CompletableFuture.completedFuture(null));
+        }
+        return capacity.handle((ignored, error) -> null).thenCompose(
+            ignored -> awaitRegionLoaded(layerType, regionX, regionZ)
+        );
+    }
+
+    /**
+     * Loads a square of regions one at a time. Cancelling the returned future stops scheduling
+     * after the currently active region read, which keeps large non-viewport consumers bounded.
+     */
+    public CompletableFuture<Void> awaitRegionsLoaded(
+        final MapLayer.Type layerType,
+        final int baseRegionX,
+        final int baseRegionZ,
+        final int regionsPerSide
+    ) {
+        if (regionsPerSide <= 0) {
+            throw new IllegalArgumentException("Region square must have a positive edge");
+        }
+        final CompletableFuture<Void> result = new CompletableFuture<>();
+        awaitNextRegion(layerType, baseRegionX, baseRegionZ, regionsPerSide, 0, result);
+        return result;
+    }
+
+    private void awaitNextRegion(
+        final MapLayer.Type layerType,
+        final int baseRegionX,
+        final int baseRegionZ,
+        final int regionsPerSide,
+        final int index,
+        final CompletableFuture<Void> result
+    ) {
+        if (result.isDone()) {
+            return;
+        }
+        final int total = Math.multiplyExact(regionsPerSide, regionsPerSide);
+        if (index >= total) {
+            result.complete(null);
+            return;
+        }
+        final int regionX = baseRegionX + index % regionsPerSide;
+        final int regionZ = baseRegionZ + index / regionsPerSide;
+        awaitRegionLoaded(layerType, regionX, regionZ).whenComplete((ignored, error) -> {
+            if (result.isDone()) {
+                return;
+            }
+            if (error != null) {
+                result.completeExceptionally(error);
+                return;
+            }
+            awaitNextRegion(
+                layerType, baseRegionX, baseRegionZ, regionsPerSide, index + 1, result
+            );
+        });
     }
 
     private void loadRegion(final MapLayer.Type layerType, final int regionX, final int regionZ) {
@@ -246,8 +339,10 @@ public final class RegionDiskCache {
                 flushed += result.written() ? 1 : 0;
                 final boolean farAway = chebyshev(region.regionX, region.regionZ, playerRegionX, playerRegionZ) > EVICT_DISTANCE_REGIONS;
                 if (farAway && result.diskVersion() >= 0 && store.evictIfUnchanged(region, result.diskVersion())) {
-                    flushedVersion.remove(new RegionSlot(type, region.regionX, region.regionZ));
-                    regionLoadTouched.remove(new RegionSlot(type, region.regionX, region.regionZ));
+                    final RegionSlot slot = new RegionSlot(type, region.regionX, region.regionZ);
+                    flushedVersion.remove(slot);
+                    regionLoadTouched.remove(slot);
+                    regionLoadCompletions.remove(slot);
                     evicted++;
                 }
             }

@@ -24,6 +24,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.LongSupplier;
 
 /**
@@ -141,6 +143,29 @@ public final class PredictionTileService {
 
     public PredictionViewMode viewMode() {
         return viewMode;
+    }
+
+    /**
+     * Composes one immutable CPU tile under an explicit view mode without mutating the visible
+     * viewport, GPU upload queue, metadata cache, or the globally selected prediction mode.
+     */
+    public CompletableFuture<int[]> snapshotTile(
+        final TileKey key,
+        final PredictionViewMode mode
+    ) {
+        final SessionGuard.Session session = sessionGuard.current();
+        if (!session.active()
+            || !key.world().equals(session.world())
+            || !key.dimension().equals(session.dimension())) {
+            return CompletableFuture.failedFuture(new CancellationException("Map session changed"));
+        }
+        return CompletableFuture.supplyAsync(() -> {
+            final Composition composition = composeTile(key, session.token(), mode);
+            if (composition == null) {
+                return null;
+            }
+            return composition.update().argbPixels();
+        }, executors.workers());
     }
 
     /** Applies a server patch and queues the affected predicted tile for recomposition. */
@@ -660,6 +685,14 @@ public final class PredictionTileService {
     }
 
     private Composition composeTile(final TileKey key, final long token) {
+        return composeTile(key, token, viewMode);
+    }
+
+    private Composition composeTile(
+        final TileKey key,
+        final long token,
+        final PredictionViewMode requestedMode
+    ) {
         final SessionGuard.Session session = sessionGuard.current();
         if (!sessionGuard.isCurrent(token) || !session.active()
             || !key.world().equals(session.world()) || !key.dimension().equals(session.dimension())
@@ -682,7 +715,9 @@ public final class PredictionTileService {
         final int lod = key.lod();
         final int tileOriginX = key.originBlockX();
         final int tileOriginZ = key.originBlockZ();
-        final PredictionViewMode compositionMode = viewMode;
+        final PredictionViewMode compositionMode = requestedMode == null
+            ? PredictionViewMode.EVERYWHERE
+            : requestedMode;
 
         final PredictionMipCache.Tile lower = mipCache.lowerTile(key, compositionMode);
         final CorrectionStore store = correctionStore;
