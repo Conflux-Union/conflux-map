@@ -29,6 +29,79 @@ class ClientWorldProfileResolverTest {
     }
 
     @Test
+    void proxyJoinWithThePreviousSeedStaysSuspendedUntilTheRealSeedArrives() {
+        final ClientWorldProfileResolver resolver = resolver();
+        resolver.resolve(SERVER, observation(11L, "survival"));
+
+        final ClientWorldResolution transitional = resolver.resolveAfterProxyWorldJoin(
+            SERVER, OptionalLong.of(11L), observation(11L, "survival")
+        );
+
+        assertEquals(ClientWorldResolution.State.AMBIGUOUS, transitional.state());
+    }
+
+    @Test
+    void proxyJoinWithADifferentSeedStillSeparatesAutomatically() {
+        final ClientWorldProfileResolver resolver = resolver();
+        final ClientWorldProfile first = resolver.resolve(SERVER, observation(11L, "survival")).profile();
+
+        final ClientWorldResolution second = resolver.resolveAfterProxyWorldJoin(
+            SERVER, OptionalLong.of(11L), observation(22L, "creative")
+        );
+
+        assertEquals(ClientWorldResolution.State.RESOLVED, second.state());
+        assertNotEquals(first.id(), second.profile().id());
+    }
+
+    @Test
+    void proxyJoinDoesNotGuessBetweenProfilesAlreadyBoundToTheNewSeed() {
+        final ClientWorldProfileRegistry registry = new ClientWorldProfileRegistry();
+        final ClientWorldProfile previous = new ClientWorldProfile("previous", "world", "Previous");
+        final ClientWorldProfile first = new ClientWorldProfile("first", "client-first", "First");
+        final ClientWorldProfile competing = new ClientWorldProfile("competing", "client-competing", "Competing");
+        final ClientWorldObservation firstObservation = seededSignals(22L, "a");
+        final ClientWorldObservation competingObservation = seededSignals(22L, "b");
+        previous.bind(observation(11L, "survival"));
+        first.bind(firstObservation);
+        competing.bind(competingObservation);
+        registry.mutableProfiles(SERVER).addAll(List.of(previous, first, competing));
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(registry, UUID::randomUUID);
+
+        final ClientWorldResolution collision = resolver.resolveAfterProxyWorldJoin(
+            SERVER, OptionalLong.of(11L), competingObservation
+        );
+
+        assertEquals(ClientWorldResolution.State.AMBIGUOUS, collision.state());
+    }
+
+    @Test
+    void manualCorrectionMovesTheObservationToTheSelectedProfile() {
+        final ClientWorldProfileResolver resolver = resolver();
+        final ClientWorldObservation firstWorld = observation(11L, "survival");
+        resolver.resolve(SERVER, firstWorld);
+        final ClientWorldProfile selected = resolver.resolve(SERVER, observation(22L, "creative")).profile();
+
+        resolver.select(SERVER, selected.id(), firstWorld);
+        final ClientWorldResolution revisited = resolver.resolve(SERVER, firstWorld);
+
+        assertEquals(ClientWorldResolution.State.RESOLVED, revisited.state());
+        assertEquals(selected.id(), revisited.profile().id());
+    }
+
+    @Test
+    void manualCreationMovesTheObservationToTheNewProfile() {
+        final ClientWorldProfileResolver resolver = resolver();
+        final ClientWorldObservation observation = observation(11L, "survival");
+        resolver.resolve(SERVER, observation);
+
+        final ClientWorldProfile created = resolver.createAndSelect(SERVER, "Correct world", observation).profile();
+        final ClientWorldResolution revisited = resolver.resolve(SERVER, observation);
+
+        assertEquals(ClientWorldResolution.State.RESOLVED, revisited.state());
+        assertEquals(created.id(), revisited.profile().id());
+    }
+
+    @Test
     void threeLearnedSupportingSignalsCanResolveWhenTheSeedIsUnavailable() {
         final ClientWorldProfileResolver resolver = resolver();
         final ClientWorldProfile first = resolver.resolve(SERVER, observation(11L, "survival")).profile();
@@ -99,6 +172,14 @@ class ClientWorldProfileResolverTest {
 
     private static ClientWorldObservation observation(final long seed, final String brand) {
         return new ClientWorldObservation(OptionalLong.of(seed), Map.of("brand", brand));
+    }
+
+    private static ClientWorldObservation seededSignals(final long seed, final String suffix) {
+        return new ClientWorldObservation(
+            OptionalLong.of(seed),
+            Map.of("brand", "brand-" + suffix, "commands", "commands-" + suffix,
+                "dimensions", "dimensions-" + suffix)
+        );
     }
 
     private static ClientWorldObservation noSeed(

@@ -86,6 +86,10 @@ public final class ClientWorldProfile {
         recognitionDisabled = false;
     }
 
+    boolean unbind(final ClientWorldObservation observation) {
+        return bindings().remove(Binding.from(observation));
+    }
+
     void normalize() {
         id = requireText(id, "id");
         storageId = requireText(storageId, "storageId");

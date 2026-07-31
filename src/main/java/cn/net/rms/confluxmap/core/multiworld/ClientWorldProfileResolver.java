@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.core.multiworld;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -60,12 +61,47 @@ public final class ClientWorldProfileResolver {
         return uniqueSupporting(profiles, observation);
     }
 
+    /**
+     * Resolves the first observation after a proxy replaced its upstream world. The previous
+     * upstream seed is supplied separately so this boundary can reject a transitional/reused seed
+     * before any map session starts.
+     */
+    public ClientWorldResolution resolveAfterProxyWorldJoin(
+        final String serverId,
+        final OptionalLong previousSeedHash,
+        final ClientWorldObservation observation
+    ) {
+        if (previousSeedHash.isPresent() && observation.seedHash().isPresent()
+            && previousSeedHash.getAsLong() == observation.seedHash().getAsLong()) {
+            return ClientWorldResolution.ambiguous();
+        }
+        if (observation.seedHash().isPresent()) {
+            final long seedHash = observation.seedHash().getAsLong();
+            final long matchingProfiles = registry.mutableProfiles(serverId).stream()
+                .filter(profile -> profile.matchesSeed(seedHash))
+                .limit(2)
+                .count();
+            if (matchingProfiles > 1) {
+                return ClientWorldResolution.ambiguous();
+            }
+        }
+        return resolve(serverId, observation);
+    }
+
     public ClientWorldResolution select(
         final String serverId,
         final String profileId,
         final ClientWorldObservation observation
     ) {
-        final ClientWorldProfile profile = requireProfile(serverId, profileId);
+        final List<ClientWorldProfile> profiles = registry.mutableProfiles(serverId);
+        final ClientWorldProfile profile = requireProfile(profiles, profileId);
+        if (observation.seedHash().isPresent()) {
+            for (final ClientWorldProfile other : profiles) {
+                if (other != profile) {
+                    other.unbind(observation);
+                }
+            }
+        }
         profile.bind(observation);
         onChange.run();
         return ClientWorldResolution.resolved(profile);
@@ -76,6 +112,11 @@ public final class ClientWorldProfileResolver {
         final String displayName,
         final ClientWorldObservation observation
     ) {
+        if (observation.seedHash().isPresent()) {
+            for (final ClientWorldProfile profile : registry.mutableProfiles(serverId)) {
+                profile.unbind(observation);
+            }
+        }
         final ClientWorldProfile profile = create(serverId, nextStorageId(), observation);
         profile.rename(displayName);
         onChange.run();
@@ -151,7 +192,14 @@ public final class ClientWorldProfileResolver {
     }
 
     private ClientWorldProfile requireProfile(final String serverId, final String profileId) {
-        return registry.mutableProfiles(serverId).stream()
+        return requireProfile(registry.mutableProfiles(serverId), profileId);
+    }
+
+    private ClientWorldProfile requireProfile(
+        final List<ClientWorldProfile> profiles,
+        final String profileId
+    ) {
+        return profiles.stream()
             .filter(profile -> profile.id().equals(profileId))
             .findFirst()
             .orElseThrow(() -> new IllegalArgumentException("unknown client world profile " + profileId));

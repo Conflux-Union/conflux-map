@@ -52,10 +52,15 @@ public final class ClientMultiworldService {
     private final Executor io;
 
     private OptionalLong seedHash = OptionalLong.empty();
+    private OptionalLong previousSeedHash = OptionalLong.empty();
     private Map<String, String> signals = Map.of();
     private ClientWorldResolution resolution = ClientWorldResolution.collecting();
     private String address;
     private String serverId;
+    private String lockedProfileId;
+    private OptionalLong lockedSeedHash = OptionalLong.empty();
+    private boolean gameJoinObserved;
+    private boolean proxyWorldJoin;
     private int signalTicks;
     private long observationGeneration;
     private boolean terrainAttempted;
@@ -92,14 +97,31 @@ public final class ClientMultiworldService {
     }
 
     public void onGameJoin(final long observedSeedHash) {
+        final OptionalLong departedSeedHash = seedHash;
+        final boolean switchedUpstreamWorld = gameJoinObserved;
         resetObservation();
+        gameJoinObserved = true;
+        previousSeedHash = switchedUpstreamWorld ? departedSeedHash : OptionalLong.empty();
+        proxyWorldJoin = switchedUpstreamWorld;
         seedHash = OptionalLong.of(observedSeedHash);
+        if (switchedUpstreamWorld) {
+            ConfluxMapMod.LOGGER.info(
+                "Client proxy world transition observed (seedChanged={})",
+                departedSeedHash.isEmpty() || departedSeedHash.getAsLong() != observedSeedHash
+            );
+        }
     }
 
     public void onRespawn(final long observedSeedHash) {
+        final boolean seedChanged = seedHash.isEmpty() || seedHash.getAsLong() != observedSeedHash;
+        if (seedChanged) {
+            previousSeedHash = seedHash;
+            proxyWorldJoin = gameJoinObserved;
+            clearProfileLock();
+            resolution = ClientWorldResolution.collecting();
+        }
         seedHash = OptionalLong.of(observedSeedHash);
         signals = Map.of();
-        resolution = ClientWorldResolution.collecting();
         signalTicks = 0;
         terrainAttempted = false;
         ambiguityNotified = false;
@@ -108,23 +130,39 @@ public final class ClientMultiworldService {
 
     /** Resolves only the client-owned fallback. Companion world UUIDs remain authoritative. */
     public Optional<WorldIdentity> resolve(final String currentAddress) {
+        final ClientWorldResolution currentResolution = resolveProfile(currentAddress);
+        if (currentResolution.state() != ClientWorldResolution.State.RESOLVED) {
+            notifyAmbiguity();
+            tryTerrainMatch();
+            return Optional.empty();
+        }
+        return Optional.of(WorldIdentity.multiplayer(
+            currentAddress, currentResolution.profile().storageId()
+        ));
+    }
+
+    /** Applies the profile state machine without triggering UI or terrain fallback side effects. */
+    ClientWorldResolution resolveProfile(final String currentAddress) {
         if (!currentAddress.equals(address)) {
             address = currentAddress;
             serverId = WorldIdentity.multiplayer(currentAddress).serverId();
+            clearProfileLock();
             resolution = ClientWorldResolution.collecting();
             terrainAttempted = false;
             ambiguityNotified = false;
             observationGeneration++;
         }
-        if (resolution.state() != ClientWorldResolution.State.RESOLVED) {
-            resolution = resolver.resolve(serverId, observation());
+        if (lockedProfileId != null && resolution.state() != ClientWorldResolution.State.RESOLVED) {
+            resolution = resolver.select(serverId, lockedProfileId, observation());
+        } else if (resolution.state() != ClientWorldResolution.State.RESOLVED) {
+            resolution = proxyWorldJoin
+                ? resolver.resolveAfterProxyWorldJoin(serverId, previousSeedHash, observation())
+                : resolver.resolve(serverId, observation());
         }
-        if (resolution.state() != ClientWorldResolution.State.RESOLVED) {
-            notifyAmbiguity();
-            tryTerrainMatch();
-            return Optional.empty();
+        if (resolution.state() == ClientWorldResolution.State.RESOLVED) {
+            lockProfile(resolution.profile());
         }
-        return Optional.of(WorldIdentity.multiplayer(currentAddress, resolution.profile().storageId()));
+        return resolution;
     }
 
     public boolean canManageProfiles() {
@@ -148,12 +186,14 @@ public final class ClientMultiworldService {
     public void select(final String profileId) {
         requireConnection();
         resolution = resolver.select(serverId, profileId, observation());
+        lockProfile(resolution.profile());
         observationGeneration++;
     }
 
     public void createAndSelect(final String displayName) {
         requireConnection();
         resolution = resolver.createAndSelect(serverId, displayName, observation());
+        lockProfile(resolution.profile());
         observationGeneration++;
     }
 
@@ -166,6 +206,7 @@ public final class ClientMultiworldService {
         requireConnection();
         resolver.clearBindings(serverId, profileId);
         if (currentProfile().map(ClientWorldProfile::id).filter(profileId::equals).isPresent()) {
+            clearProfileLock();
             resolution = ClientWorldResolution.ambiguous();
             terrainAttempted = false;
             ambiguityNotified = false;
@@ -183,6 +224,11 @@ public final class ClientMultiworldService {
         }
         signalTicks = 0;
         final Map<String, String> observed = collectSignals();
+        observeSignals(observed);
+    }
+
+    /** Applies one completed client-signal sample without changing an already locked visit. */
+    void observeSignals(final Map<String, String> observed) {
         if (observed.equals(signals)) {
             return;
         }
@@ -190,7 +236,16 @@ public final class ClientMultiworldService {
         terrainAttempted = false;
         observationGeneration++;
         if (serverId != null) {
-            resolution = resolver.resolve(serverId, observation());
+            if (lockedProfileId != null && lockedSeedHash.equals(seedHash)) {
+                resolution = resolver.select(serverId, lockedProfileId, observation());
+            } else {
+                resolution = proxyWorldJoin
+                    ? resolver.resolveAfterProxyWorldJoin(serverId, previousSeedHash, observation())
+                    : resolver.resolve(serverId, observation());
+                if (resolution.state() == ClientWorldResolution.State.RESOLVED) {
+                    lockProfile(resolution.profile());
+                }
+            }
             notifyAmbiguity();
             tryTerrainMatch();
         }
@@ -234,7 +289,7 @@ public final class ClientMultiworldService {
 
     private void tryTerrainMatch() {
         final ChunkCaptureService capture = chunkCapture;
-        if (terrainAttempted || capture == null || serverId == null
+        if (terrainAttempted || proxyWorldJoin || capture == null || serverId == null
             || resolution.state() != ClientWorldResolution.State.AMBIGUOUS) {
             return;
         }
@@ -265,6 +320,7 @@ public final class ClientMultiworldService {
                     return;
                 }
                 resolution = resolver.select(serverId, profileId, observation());
+                lockProfile(resolution.profile());
                 observationGeneration++;
                 ConfluxMapMod.LOGGER.info(
                     "Matched client world profile {} from cached terrain (score={}, gap={})",
@@ -354,13 +410,28 @@ public final class ClientMultiworldService {
 
     private void resetObservation() {
         seedHash = OptionalLong.empty();
+        previousSeedHash = OptionalLong.empty();
         signals = Map.of();
         resolution = ClientWorldResolution.collecting();
         address = null;
         serverId = null;
+        clearProfileLock();
+        gameJoinObserved = false;
+        proxyWorldJoin = false;
         signalTicks = 0;
         terrainAttempted = false;
         ambiguityNotified = false;
         observationGeneration++;
+    }
+
+    private void lockProfile(final ClientWorldProfile profile) {
+        lockedProfileId = profile.id();
+        lockedSeedHash = seedHash;
+        proxyWorldJoin = false;
+    }
+
+    private void clearProfileLock() {
+        lockedProfileId = null;
+        lockedSeedHash = OptionalLong.empty();
     }
 }
