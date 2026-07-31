@@ -36,6 +36,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.HandlerList;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerRegisterChannelEvent;
 import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.world.ChunkUnloadEvent;
 import org.bukkit.event.world.WorldLoadEvent;
@@ -81,6 +82,7 @@ final class PaperCompanion implements Listener {
     private SharedWaypointService sharedWaypoints;
     private PaperNetworking networking;
     private PaperSharedWaypointNetworking sharedNetworking;
+    private PaperPluginMessageDispatcher pluginMessages;
     private BukkitTask tickTask;
 
     PaperCompanion(
@@ -132,8 +134,9 @@ final class PaperCompanion implements Listener {
                 info.latestVersion(), info.currentVersion(), info.releaseUrl()
             ));
         }
-        networking = new PaperNetworking(plugin, this);
-        sharedNetworking = new PaperSharedWaypointNetworking(plugin, this);
+        pluginMessages = new PaperPluginMessageDispatcher();
+        networking = new PaperNetworking(plugin, this, pluginMessages);
+        sharedNetworking = new PaperSharedWaypointNetworking(plugin, this, pluginMessages);
         networking.register();
         sharedNetworking.register();
         Bukkit.getPluginManager().registerEvents(this, plugin);
@@ -170,6 +173,10 @@ final class PaperCompanion implements Listener {
         }
         if (sharedNetworking != null) {
             sharedNetworking.unregister();
+        }
+        if (pluginMessages != null) {
+            pluginMessages.clear();
+            pluginMessages = null;
         }
         if (chunkLoadStates != null) {
             chunkLoadStates.clear();
@@ -246,6 +253,15 @@ final class PaperCompanion implements Listener {
         final UUID playerId = event.getPlayer().getUniqueId();
         networking.disconnect(playerId);
         sharedNetworking.disconnect(playerId);
+        pluginMessages.disconnect(playerId);
+    }
+
+    @EventHandler
+    public void onPlayerRegisterChannel(final PlayerRegisterChannelEvent event) {
+        pluginMessages.channelRegistered(
+            PaperPluginMessageDispatcher.recipient(plugin, event.getPlayer()),
+            event.getChannel()
+        );
     }
 
     boolean isEnabled() {

@@ -36,14 +36,20 @@ final class PaperNetworking implements PluginMessageListener {
 
     private final ConfluxMapPaperPlugin plugin;
     private final PaperCompanion companion;
+    private final PaperPluginMessageDispatcher messages;
     private final Map<UUID, Integer> malformedStrikes = new ConcurrentHashMap<>();
     private final Set<UUID> mutedPlayers = ConcurrentHashMap.newKeySet();
     private final Map<UUID, MapSyncCompatibility.ServerSelection> profiles =
         new ConcurrentHashMap<>();
 
-    PaperNetworking(final ConfluxMapPaperPlugin plugin, final PaperCompanion companion) {
+    PaperNetworking(
+        final ConfluxMapPaperPlugin plugin,
+        final PaperCompanion companion,
+        final PaperPluginMessageDispatcher messages
+    ) {
         this.plugin = plugin;
         this.companion = companion;
+        this.messages = messages;
     }
 
     void register() {
@@ -341,6 +347,6 @@ final class PaperNetworking implements PluginMessageListener {
     }
 
     private void send(final Player player, final byte[] payload) {
-        player.sendPluginMessage(plugin, CHANNEL, payload);
+        messages.send(PaperPluginMessageDispatcher.recipient(plugin, player), CHANNEL, payload);
     }
 }

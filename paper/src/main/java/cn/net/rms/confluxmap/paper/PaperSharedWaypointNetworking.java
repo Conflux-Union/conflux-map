@@ -17,14 +17,17 @@ final class PaperSharedWaypointNetworking implements PluginMessageListener {
 
     private final ConfluxMapPaperPlugin plugin;
     private final PaperCompanion companion;
+    private final PaperPluginMessageDispatcher messages;
     private final SharedWaypointSessionHandler sessions = new SharedWaypointSessionHandler();
 
     PaperSharedWaypointNetworking(
         final ConfluxMapPaperPlugin plugin,
-        final PaperCompanion companion
+        final PaperCompanion companion,
+        final PaperPluginMessageDispatcher messages
     ) {
         this.plugin = plugin;
         this.companion = companion;
+        this.messages = messages;
     }
 
     void register() {
@@ -155,11 +158,12 @@ final class PaperSharedWaypointNetworking implements PluginMessageListener {
     }
 
     private void send(final Player player, final SharedWaypointMessage message) {
-        if (!player.getListeningPluginChannels().contains(CHANNEL)) {
-            return;
-        }
         try {
-            player.sendPluginMessage(plugin, CHANNEL, SharedWaypointCodec.encode(message));
+            messages.send(
+                PaperPluginMessageDispatcher.recipient(plugin, player),
+                CHANNEL,
+                SharedWaypointCodec.encode(message)
+            );
         } catch (final SharedWaypointProtocolException | RuntimeException e) {
             plugin.getSLF4JLogger().error(
                 "Failed to encode {} for {}",
