@@ -20,11 +20,11 @@ public final class PlayerTrailRenderer {
         final MatrixStack matrices,
         final PlayerTrail trail,
         final PlayerTrailProjection projection,
-        final int durationMinutes,
+        final int durationSeconds,
         final int dotSize
     ) {
         final long nowNanos = System.nanoTime();
-        final long retentionNanos = TimeUnit.MINUTES.toNanos(durationMinutes);
+        final long retentionNanos = TimeUnit.SECONDS.toNanos(durationSeconds);
         final List<PlayerTrail.Sample> samples = trail.snapshot(nowNanos, retentionNanos);
         final List<RenderUtil.ColoredRect> dots = new ArrayList<>(samples.size());
         for (final PlayerTrail.Sample sample : samples) {

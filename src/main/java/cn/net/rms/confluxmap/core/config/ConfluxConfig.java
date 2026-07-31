@@ -11,7 +11,7 @@ import cn.net.rms.confluxmap.core.survey.SurveyReminderSchedule;
  * {@link #SCHEMA_VERSION} and adding a migration in {@link ConfigIo}.
  */
 public final class ConfluxConfig {
-    public static final int SCHEMA_VERSION = 2;
+    public static final int SCHEMA_VERSION = 3;
     public static final int DEFAULT_MINIMAP_SIZE = 90;
     public static final int MIN_ANNOTATION_ERASER_SIZE = 4;
     public static final int MAX_ANNOTATION_ERASER_SIZE = 64;
@@ -19,9 +19,9 @@ public final class ConfluxConfig {
     public static final int MIN_RADAR_ICON_SIZE = 4;
     public static final int MAX_RADAR_ICON_SIZE = 16;
     public static final int DEFAULT_RADAR_ICON_SIZE = 10;
-    public static final int MIN_PLAYER_TRAIL_DURATION_MINUTES = 1;
-    public static final int MAX_PLAYER_TRAIL_DURATION_MINUTES = 30;
-    public static final int DEFAULT_PLAYER_TRAIL_DURATION_MINUTES = 5;
+    public static final int MIN_PLAYER_TRAIL_DURATION_SECONDS = 1;
+    public static final int MAX_PLAYER_TRAIL_DURATION_SECONDS = 120;
+    public static final int DEFAULT_PLAYER_TRAIL_DURATION_SECONDS = 120;
     public static final int MIN_PLAYER_TRAIL_DOT_SIZE = 1;
     public static final int MAX_PLAYER_TRAIL_DOT_SIZE = 8;
     public static final int DEFAULT_PLAYER_TRAIL_DOT_SIZE = 3;
@@ -58,8 +58,11 @@ public final class ConfluxConfig {
     public boolean showBiome = true;
     /** Show recent player movement as fading red dots on both map surfaces. */
     public boolean playerTrailEnabled = true;
+    /** Serialized only by schema v2; retained so old files can be migrated. */
+    @Deprecated
+    public Integer playerTrailDurationMinutes;
     /** Wall-clock retention window for player trail samples. */
-    public int playerTrailDurationMinutes = DEFAULT_PLAYER_TRAIL_DURATION_MINUTES;
+    public int playerTrailDurationSeconds = DEFAULT_PLAYER_TRAIL_DURATION_SECONDS;
     /** Player trail dot diameter in screen pixels. */
     public int playerTrailDotSize = DEFAULT_PLAYER_TRAIL_DOT_SIZE;
     /** Fullscreen map only: subtle chunk-border grid with a highlight on the hovered chunk. */
@@ -164,7 +167,7 @@ public final class ConfluxConfig {
         c.showCoordinates = showCoordinates;
         c.showBiome = showBiome;
         c.playerTrailEnabled = playerTrailEnabled;
-        c.playerTrailDurationMinutes = playerTrailDurationMinutes;
+        c.playerTrailDurationSeconds = playerTrailDurationSeconds;
         c.playerTrailDotSize = playerTrailDotSize;
         c.fullmapChunkGrid = fullmapChunkGrid;
         c.annotationsOnHud = annotationsOnHud;
@@ -233,12 +236,20 @@ public final class ConfluxConfig {
         if (chunkLoadDetailMode == null) {
             chunkLoadDetailMode = ChunkLoadDetailMode.BANDS;
         }
+        if (schemaVersion < 3 && playerTrailDurationMinutes != null) {
+            final long legacyDurationSeconds = playerTrailDurationMinutes.longValue() * 60L;
+            playerTrailDurationSeconds = (int) Math.max(
+                MIN_PLAYER_TRAIL_DURATION_SECONDS,
+                Math.min(MAX_PLAYER_TRAIL_DURATION_SECONDS, legacyDurationSeconds)
+            );
+        }
+        playerTrailDurationMinutes = null;
         minimapSize = clamp(minimapSize, 64, 256);
         minimapZoomIndex = clamp(minimapZoomIndex, 0, 3);
-        playerTrailDurationMinutes = clamp(
-            playerTrailDurationMinutes,
-            MIN_PLAYER_TRAIL_DURATION_MINUTES,
-            MAX_PLAYER_TRAIL_DURATION_MINUTES
+        playerTrailDurationSeconds = clamp(
+            playerTrailDurationSeconds,
+            MIN_PLAYER_TRAIL_DURATION_SECONDS,
+            MAX_PLAYER_TRAIL_DURATION_SECONDS
         );
         playerTrailDotSize = clamp(
             playerTrailDotSize,

@@ -303,7 +303,7 @@ public final class MinimapHudRenderer {
                 player.x(), player.z(), centerX, centerY,
                 BLOCKS_PER_PIXEL[config.minimapZoomIndex], mapAngle, size, size
             ),
-            config.playerTrailDurationMinutes,
+            config.playerTrailDurationSeconds,
             config.playerTrailDotSize
         );
     }

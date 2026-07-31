@@ -57,7 +57,7 @@ public final class PlayerTrailTracker {
             client.player.getX(),
             client.player.getZ(),
             System.nanoTime(),
-            TimeUnit.MINUTES.toNanos(config.playerTrailDurationMinutes)
+            TimeUnit.SECONDS.toNanos(config.playerTrailDurationSeconds)
         );
     }
 }

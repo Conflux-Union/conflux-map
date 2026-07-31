@@ -317,6 +317,7 @@
   "confluxmap.value.unlimited": "Unlimited",
   "confluxmap.value.blocks": "%s blocks",
   "confluxmap.value.minutes": "%s min",
+  "confluxmap.value.seconds": "%s s",
   "confluxmap.value.px": "%s px",
   "confluxmap.value.zoom_0_5": "0.5x",
   "confluxmap.value.zoom_1": "1x",

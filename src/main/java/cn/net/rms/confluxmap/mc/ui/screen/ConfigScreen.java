@@ -337,11 +337,11 @@ public final class ConfigScreen extends ConfluxScreen {
                 );
                 y = addIntSliderRow(
                     y, "confluxmap.config.player_trail.duration",
-                    ConfluxConfig.MIN_PLAYER_TRAIL_DURATION_MINUTES,
-                    ConfluxConfig.MAX_PLAYER_TRAIL_DURATION_MINUTES,
-                    () -> config.playerTrailDurationMinutes,
-                    v -> config.playerTrailDurationMinutes = v,
-                    ConfigScreen::minutesText
+                    ConfluxConfig.MIN_PLAYER_TRAIL_DURATION_SECONDS,
+                    ConfluxConfig.MAX_PLAYER_TRAIL_DURATION_SECONDS,
+                    () -> config.playerTrailDurationSeconds,
+                    v -> config.playerTrailDurationSeconds = v,
+                    ConfigScreen::secondsText
                 );
                 y = addIntSliderRow(
                     y, "confluxmap.config.player_trail.dot_size",
@@ -717,8 +717,8 @@ public final class ConfigScreen extends ConfluxScreen {
         return Texts.translatable("confluxmap.value.blocks", value).getString();
     }
 
-    private static String minutesText(final int value) {
-        return Texts.translatable("confluxmap.value.minutes", value).getString();
+    private static String secondsText(final int value) {
+        return Texts.translatable("confluxmap.value.seconds", value).getString();
     }
 
     private static String renderDistanceText(final int value) {

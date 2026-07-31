@@ -1492,7 +1492,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             new PlayerTrailProjection(
                 centerX, centerZ, width / 2.0, height / 2.0, scale, 0.0, width, height
             ),
-            config.playerTrailDurationMinutes,
+            config.playerTrailDurationSeconds,
             config.playerTrailDotSize
         );
     }

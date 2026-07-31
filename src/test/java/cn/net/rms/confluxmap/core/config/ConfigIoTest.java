@@ -51,8 +51,8 @@ class ConfigIoTest {
         assertEquals(ConfluxConfig.DEFAULT_RADAR_ICON_SIZE, loaded.radarIconSize);
         assertTrue(loaded.playerTrailEnabled);
         assertEquals(
-            ConfluxConfig.DEFAULT_PLAYER_TRAIL_DURATION_MINUTES,
-            loaded.playerTrailDurationMinutes
+            ConfluxConfig.DEFAULT_PLAYER_TRAIL_DURATION_SECONDS,
+            loaded.playerTrailDurationSeconds
         );
         assertEquals(ConfluxConfig.DEFAULT_PLAYER_TRAIL_DOT_SIZE, loaded.playerTrailDotSize);
         assertEquals(0L, loaded.surveyReminderGameOpenMillis);
@@ -75,7 +75,8 @@ class ConfigIoTest {
         assertTrue(rewritten.contains("\"chunkLoadDetailMode\""));
         assertTrue(rewritten.contains("\"radarIconSize\""));
         assertTrue(rewritten.contains("\"playerTrailEnabled\""));
-        assertTrue(rewritten.contains("\"playerTrailDurationMinutes\""));
+        assertTrue(rewritten.contains("\"playerTrailDurationSeconds\""));
+        assertFalse(rewritten.contains("\"playerTrailDurationMinutes\""));
         assertTrue(rewritten.contains("\"playerTrailDotSize\""));
         assertTrue(rewritten.contains("\"surveyReminderGameOpenMillis\""));
         assertTrue(rewritten.contains("\"surveyReminderNextPromptAtMillis\""));
@@ -143,23 +144,50 @@ class ConfigIoTest {
         final ConfigIo io = new ConfigIo(file, LOGGER);
         final ConfluxConfig config = new ConfluxConfig();
         config.playerTrailEnabled = false;
-        config.playerTrailDurationMinutes = 12;
+        config.playerTrailDurationSeconds = 45;
         config.playerTrailDotSize = 6;
 
         io.save(config);
         final ConfluxConfig loaded = io.load();
         assertFalse(loaded.playerTrailEnabled);
-        assertEquals(12, loaded.playerTrailDurationMinutes);
+        assertEquals(45, loaded.playerTrailDurationSeconds);
         assertEquals(6, loaded.playerTrailDotSize);
+        assertEquals(1, ConfluxConfig.MIN_PLAYER_TRAIL_DURATION_SECONDS);
+        assertEquals(120, ConfluxConfig.MAX_PLAYER_TRAIL_DURATION_SECONDS);
 
         Files.writeString(
             file,
-            "{\"schemaVersion\":2,\"playerTrailDurationMinutes\":100,\"playerTrailDotSize\":100}",
+            "{\"schemaVersion\":3,\"playerTrailDurationSeconds\":1000,\"playerTrailDotSize\":100}",
             StandardCharsets.UTF_8
         );
         final ConfluxConfig clamped = io.load();
-        assertEquals(ConfluxConfig.MAX_PLAYER_TRAIL_DURATION_MINUTES, clamped.playerTrailDurationMinutes);
+        assertEquals(ConfluxConfig.MAX_PLAYER_TRAIL_DURATION_SECONDS, clamped.playerTrailDurationSeconds);
         assertEquals(ConfluxConfig.MAX_PLAYER_TRAIL_DOT_SIZE, clamped.playerTrailDotSize);
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":3,\"playerTrailDurationSeconds\":0}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(ConfluxConfig.MIN_PLAYER_TRAIL_DURATION_SECONDS, io.load().playerTrailDurationSeconds);
+    }
+
+    @Test
+    void loadMigratesPlayerTrailDurationFromMinutesToSeconds(@TempDir final Path tmp) throws IOException {
+        final Path file = tmp.resolve("config.json");
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":2,\"playerTrailDurationMinutes\":1}",
+            StandardCharsets.UTF_8
+        );
+
+        final ConfluxConfig loaded = new ConfigIo(file, LOGGER).load();
+
+        assertEquals(60, loaded.playerTrailDurationSeconds);
+        final String rewritten = Files.readString(file, StandardCharsets.UTF_8);
+        assertTrue(rewritten.contains("\"schemaVersion\": 3"));
+        assertTrue(rewritten.contains("\"playerTrailDurationSeconds\": 60"));
+        assertFalse(rewritten.contains("\"playerTrailDurationMinutes\""));
     }
 
     @Test
