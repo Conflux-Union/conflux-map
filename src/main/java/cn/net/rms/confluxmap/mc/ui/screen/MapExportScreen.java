@@ -12,6 +12,7 @@ import cn.net.rms.confluxmap.core.export.MapExportService;
 import cn.net.rms.confluxmap.core.export.MapExportSizeEstimate;
 import cn.net.rms.confluxmap.core.export.MapExportStatus;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 import net.minecraft.client.MinecraftClient;
@@ -35,6 +36,8 @@ final class MapExportScreen extends ConfluxScreen {
     private TextFieldWidget secondZField;
     private ButtonWidget exportButton;
     private ButtonWidget resolutionButton;
+    private ButtonWidget drawingsButton;
+    private boolean includeDrawings = true;
     private boolean submitted;
     private MapExportStatus.State renderedState;
 
@@ -94,8 +97,16 @@ final class MapExportScreen extends ConfluxScreen {
                 refreshExportButton();
             }
         ));
+        drawingsButton = addDrawableChild(Widgets.button(
+            width / 2 - 98, 156, 95, FIELD_HEIGHT,
+            drawingsLabel(),
+            ignored -> {
+                includeDrawings = !includeDrawings;
+                drawingsButton.setMessage(drawingsLabel());
+            }
+        ));
         addDrawableChild(Widgets.button(
-            width / 2 - 98, 156, 196, FIELD_HEIGHT,
+            width / 2 + 3, 156, 95, FIELD_HEIGHT,
             Texts.translatable("confluxmap.screen.map_export.select_on_map"),
             ignored -> selectOnMap()
         ));
@@ -177,7 +188,11 @@ final class MapExportScreen extends ConfluxScreen {
             return;
         }
         bounds = parsed;
-        exports.start(renderSnapshot.withSelection(bounds, resolution));
+        MapExportRequest request = renderSnapshot.withSelection(bounds, resolution);
+        if (!includeDrawings) {
+            request = request.withAnnotations(List.of());
+        }
+        exports.start(request);
         submitted = true;
         rebuild();
     }
@@ -216,6 +231,15 @@ final class MapExportScreen extends ConfluxScreen {
         return Texts.translatable(
             "confluxmap.screen.map_export.resolution",
             resolution.blocksPerPixel()
+        );
+    }
+
+    private net.minecraft.text.Text drawingsLabel() {
+        return Texts.translatable(
+            "confluxmap.screen.map_export.drawings",
+            Texts.translatable(
+                includeDrawings ? "confluxmap.value.on" : "confluxmap.value.off"
+            ).getString()
         );
     }
 

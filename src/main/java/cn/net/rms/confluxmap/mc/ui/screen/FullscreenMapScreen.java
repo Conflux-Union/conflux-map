@@ -938,6 +938,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final MapLayer layer = layerSelector.current().layer();
         final boolean biome = displayMode() == FullscreenDisplayMode.BIOME;
         final boolean prediction = predictionActive(layer, session);
+        final AnnotationStore annotations = annotationService.current();
         return new MapExportRequest(
             session,
             layer,
@@ -953,6 +954,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             displayMode() == FullscreenDisplayMode.CHUNK_LOAD_STATE
                 ? new MapExportLoadState(chunkLoadStates.snapshot().entries())
                 : MapExportLoadState.empty()
+        ).withAnnotations(
+            annotations == null ? List.of() : annotations.list(session.dimension())
         );
     }
 

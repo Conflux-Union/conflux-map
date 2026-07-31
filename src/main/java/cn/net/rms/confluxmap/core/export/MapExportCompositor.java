@@ -14,6 +14,17 @@ public final class MapExportCompositor {
         final int predictionTint,
         final int overlay
     ) {
+        return compose(background, predicted, real, predictionTint, overlay, 0);
+    }
+
+    public static int compose(
+        final int background,
+        final int predicted,
+        final int real,
+        final int predictionTint,
+        final int overlay,
+        final int drawing
+    ) {
         int color = background;
         if (Argb.alpha(predicted) != 0) {
             color = Argb.over(Argb.multiply(predicted, predictionTint), color);
@@ -23,6 +34,9 @@ public final class MapExportCompositor {
         }
         if (Argb.alpha(overlay) != 0) {
             color = Argb.over(overlay, color);
+        }
+        if (Argb.alpha(drawing) != 0) {
+            color = Argb.over(drawing, color);
         }
         return color;
     }

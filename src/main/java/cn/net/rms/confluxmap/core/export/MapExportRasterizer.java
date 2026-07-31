@@ -106,7 +106,11 @@ public final class MapExportRasterizer {
             tileOriginZ + TileMath.blocksPerTile(lod) - 1L,
             request.bounds().minZ(), blocksPerPixel, request.pixelHeight()
         );
-        final ByteBuffer row = ByteBuffer.allocate((endX - startX + 1) * 4);
+        final int outputTileWidth = endX - startX + 1;
+        final int[] drawings = MapExportAnnotationRasterizer.rasterize(
+            request, startX, startY, endX, endY
+        );
+        final ByteBuffer row = ByteBuffer.allocate(outputTileWidth * 4);
         for (int outputY = startY; outputY <= endY; outputY++) {
             row.clear();
             final int blockZ = (int) (request.bounds().minZ() + (long) outputY * blocksPerPixel);
@@ -119,9 +123,11 @@ public final class MapExportRasterizer {
                 final int overlay = request.displayMode() == FullscreenDisplayMode.CHUNK_LOAD_STATE
                     ? tile.loadState().overlayAt(blockX, blockZ, request.resolution())
                     : 0;
+                final int drawing = drawings == null ? 0
+                    : drawings[(outputY - startY) * outputTileWidth + outputX - startX];
                 row.putInt(MapExportCompositor.compose(
                     request.background(), predicted, tile.real()[tileIndex],
-                    request.predictionTint(), overlay
+                    request.predictionTint(), overlay, drawing
                 ));
             }
             row.flip();

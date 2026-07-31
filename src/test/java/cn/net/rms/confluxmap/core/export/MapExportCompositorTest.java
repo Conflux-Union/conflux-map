@@ -44,4 +44,19 @@ final class MapExportCompositorTest {
             )
         );
     }
+
+    @Test
+    void drawingIsCompositedAfterTheVisibleMapLayers() {
+        final int real = 0xFF204060;
+        final int loadState = 0x7048B85E;
+        final int drawing = 0x80E74C3C;
+        final int visibleMap = Argb.over(loadState, real);
+
+        assertEquals(
+            Argb.over(drawing, visibleMap),
+            MapExportCompositor.compose(
+                BACKGROUND, 0x00000000, real, 0xFFFFFFFF, loadState, drawing
+            )
+        );
+    }
 }

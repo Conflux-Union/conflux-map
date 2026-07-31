@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.core.annotation.Annotation;
 import cn.net.rms.confluxmap.core.annotation.AnnotationGeometry;
 import cn.net.rms.confluxmap.core.annotation.AnnotationPoint;
 import cn.net.rms.confluxmap.core.annotation.AnnotationProjection;
+import cn.net.rms.confluxmap.core.annotation.AnnotationStyle;
 import cn.net.rms.confluxmap.core.annotation.CircleAnnotationGeometry;
 import cn.net.rms.confluxmap.core.annotation.FreehandAnnotationGeometry;
 import cn.net.rms.confluxmap.core.annotation.LineAnnotationGeometry;
@@ -18,7 +19,7 @@ import net.minecraft.client.util.math.MatrixStack;
 public final class AnnotationRenderer {
     public enum ClipShape { RECTANGLE, CIRCLE }
 
-    private static final float STROKE_WIDTH = 2.0f;
+    private static final float STROKE_WIDTH = (float) AnnotationStyle.STROKE_WIDTH_PX;
     private static final float SELECTED_STROKE_WIDTH = 4.0f;
     private static final int SELECTED_OUTLINE = 0xE6FFFFFF;
 
