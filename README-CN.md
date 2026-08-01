@@ -72,8 +72,8 @@ Conflux Map 是一个 Fabric 客户端小地图 / 世界地图模组。
   放置规则的变体会合并显示，例如不同村庄样式和冷暖海底废墟。
 - **种子预览范围模式** —— 按 `P` 切换：*全部*（默认）、*仅已生成*（预览只
   覆盖服务端已生成的区块）、*仅已访问*（纯已捕获地图，不做预览）。
-- **可选服务端 companion** —— 同一个 jar 可作为服务端 companion 运行，将
-  预览与真实世界对比后返回紧凑的按列校正；种子、共享路径点目录、区块加载
+- **可选服务端 companion** —— Fabric 服务端使用对应版本的模组 jar；Paper
+  1.21.1 至 26.2 使用一个独立的插件 jar。两者都能返回紧凑的按列校正；种子、共享路径点目录、区块加载
   等级和雷达权限只有在管理员显式开启时才会共享。
 - **更新检查** —— 可选的启动检查，有新版本时在聊天里提示并附下载链接，同时在地图
   界面显示角标。
@@ -130,6 +130,11 @@ Map 会注册进 MaliLib 的 A+C 配置切换界面。Minecraft 1.17.1 保留一
 
 ## 服务端 companion 策略
 
+Fabric 服务端把对应版本的模组 jar 放入 `mods/`；Paper 服务端把
+`confluxmap-paper-<version>.jar` 放入 `plugins/`。Paper 产物只支持 Paper API，
+不支持 Folia、Spigot 或 CraftBukkit；客户端仍使用对应 Minecraft 版本的 Fabric jar。
+运行方式和存储说明见 [Paper companion](docs/paper-companion.md)。
+
 客户端与服务端版本不必完全一致。受支持的兼容下限是 v0.1.0：预测算法一致时继续
 使用体积最小的差分数据，当前协议一致但预测算法不同时自动退回完整数据；遇到无法
 确认的更老协议时，只关闭地图校正同步。共享路径点会单独协商双方都支持的最高次版本。
@@ -163,10 +168,14 @@ companion 共享的所有内容都在 `config/confluxmap/server.json` 中控制�
 
 ```sh
 ./gradlew :1.21.11:build
+./gradlew :paper:build
+./gradlew :paper:runServer
 ```
 
 可将 `1.21.11` 替换为上面任一受支持的构建。构建产物输出到
-`versions/<minecraft-version>/build/libs/`。
+`versions/<minecraft-version>/build/libs/`；独立 Paper 插件输出到 `paper/build/libs/`。
+`:paper:runServer` 会下载并启动本地 Paper 1.21.1 开发服务器，同时安装刚构建的插件。
+首次运行时需要阅读 Minecraft EULA，在 `paper/run/eula.txt` 中设置 `eula=true`，然后再次运行。
 
 ## 许可证
 

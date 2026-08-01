@@ -79,7 +79,10 @@ class LanguageResourceTest {
                 missing.add(key);
             }
         }
-        assertTrue(missing.isEmpty(), "keys used in src/main/java but missing from the language files: " + missing);
+        assertTrue(
+            missing.isEmpty(),
+            "keys used in main Java sources but missing from the language files: " + missing
+        );
 
         for (final String prefix : source.prefixes()) {
             assertTrue(
@@ -100,7 +103,7 @@ class LanguageResourceTest {
                 unused.add(key);
             }
         }
-        assertTrue(unused.isEmpty(), "translations no longer requested by src/main/java: " + unused);
+        assertTrue(unused.isEmpty(), "translations no longer requested by main Java sources: " + unused);
     }
 
     /**
@@ -302,16 +305,22 @@ class LanguageResourceTest {
     }
 
     /**
-     * Reads the shared sources rather than one version's preprocessed output, so keys that only a
-     * {@code //#if} branch reaches still count as used.
+     * Reads the platform-neutral and shared Fabric sources rather than one version's preprocessed
+     * output, so keys that only a {@code //#if} branch reaches still count as used.
      */
     private static List<Path> sourceFiles() throws IOException, URISyntaxException {
-        try (Stream<Path> paths = Files.walk(sourceRoot())) {
-            return paths.filter(path -> path.getFileName().toString().endsWith(".java")).toList();
+        final List<Path> sources = new ArrayList<>();
+        for (final Path root : sourceRoots()) {
+            try (Stream<Path> paths = Files.walk(root)) {
+                sources.addAll(
+                    paths.filter(path -> path.getFileName().toString().endsWith(".java")).toList()
+                );
+            }
         }
+        return sources;
     }
 
-    private static Path sourceRoot() throws URISyntaxException {
+    private static List<Path> sourceRoots() throws URISyntaxException {
         Path current = Path.of(
             LanguageResourceTest.class.getProtectionDomain().getCodeSource().getLocation().toURI()
         );
@@ -320,11 +329,11 @@ class LanguageResourceTest {
             // Every version subproject declares an empty src/main/java, so the marker class is what
             // distinguishes the repository root from a version directory on the way up.
             if (Files.exists(candidate.resolve("cn/net/rms/confluxmap/ConfluxMapClient.java"))) {
-                return candidate;
+                return List.of(candidate, current.resolve("common/src/main/java"));
             }
             current = current.getParent();
         }
-        throw new IllegalStateException("Could not locate src/main/java from the test classpath");
+        throw new IllegalStateException("Could not locate main Java sources from the test classpath");
     }
 
     private static Map<String, String> translations(final String locale) {

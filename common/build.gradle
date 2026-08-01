@@ -1,0 +1,59 @@
+plugins {
+    id 'java-library'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compileOnly 'com.google.code.gson:gson:2.13.2'
+    compileOnlyApi 'org.apache.logging.log4j:log4j-api:2.25.3'
+    testImplementation 'com.google.code.gson:gson:2.13.2'
+    testImplementation 'org.apache.logging.log4j:log4j-api:2.25.3'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.apache.logging.log4j:log4j-core:2.25.3'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_16
+    targetCompatibility = JavaVersion.VERSION_16
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 16
+}
+
+test {
+    useJUnitPlatform()
+}
+
+processTestResources {
+    from(rootProject.file('native/prebuilt')) {
+        into 'natives'
+    }
+}
+
+tasks.register('checkPlatformIsolation') {
+    group = 'verification'
+    description = 'Rejects platform APIs and version preprocessing from the shared Java module.'
+    doLast {
+        final List<String> violations = []
+        final def forbidden = ~/^import\s+(static\s+)?(com\.mojang|io\.papermc|net\.fabricmc|net\.minecraft|org\.bukkit|org\.lwjgl|org\.spongepowered)/
+        final def preprocessorDirective = ~/^\/\/(#(?:if|elseif|else|endif)|\$\$)/
+        fileTree('src/main/java').matching { include '**/*.java' }.each { final File file ->
+            file.readLines().eachWithIndex { final String line, final int index ->
+                final String trimmed = line.trim()
+                if (trimmed =~ forbidden || trimmed =~ preprocessorDirective) {
+                    violations << "${file}:${index + 1}: ${line.trim()}"
+                }
+            }
+        }
+        if (!violations.empty) {
+            throw new GradleException("Platform isolation violated:\n" + violations.join('\n'))
+        }
+    }
+}
+
+check.dependsOn 'checkPlatformIsolation'
