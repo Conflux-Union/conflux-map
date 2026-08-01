@@ -38,7 +38,9 @@ Conflux Map is a Fabric client-side minimap and world map
   open the placement screen from the settings and drag the map wherever you
   want it (configs saved with the old four-corner option migrate on first
   launch). The info lines show coordinates, the current biome, and the active
-  map layer, and the surface layer can darken at night and in unlit areas.
+  map layer, and the surface layer can darken at night and in unlit areas. The
+  HUD steps aside automatically while an inventory-style screen is open,
+  leaving room for JEI/REI overlays.
 - **Fullscreen world map** — pan and zoom with cursor-anchored zooming over
   multi-resolution tiles, with an optional chunk grid. Right-clicking a spot
   opens a small menu: set a waypoint there, share the coordinates in chat, or
@@ -51,10 +53,16 @@ Conflux Map is a Fabric client-side minimap and world map
 - **Cave / Nether / End layers** — automatic underground detection in the
   Overworld; Nether current-layer / ceiling / manual-Y-slice modes; End
   void-background rendering.
+- **Per-server world profiles** — on servers without the companion, worlds
+  behind the same address (such as proxy networks) are told apart by terrain
+  fingerprint, so one server's map never bleeds into another's. When the
+  upstream world cannot be identified, map writes pause until you choose a
+  profile; profiles are created, renamed, and unbound from the fullscreen map.
 - **Waypoints and death points** — create, edit, color, organize into sets, and
   toggle; death points are automatic (the last five per dimension are kept);
   strict per-dimension rendering; edge-of-minimap direction indicators for
-  out-of-range waypoints.
+  out-of-range waypoints; map markers show whether a point sits above or
+  below you.
 - **In-world waypoint markers** — an optional light beam at each waypoint and a
   floating name and distance above it. Each can be turned off on its own, and
   you can set how far away they still show.
@@ -70,7 +78,11 @@ Conflux Map is a Fabric client-side minimap and world map
   optional text label per shape. Shapes can be moved, recolored, and deleted,
   with undo/redo, and each shape is either kept until disconnect or persisted
   per world and dimension. Drawings can also show on the minimap HUD if you
-  want them there.
+  want them there. The toolbar starts collapsed, so it only takes up space
+  while you are actually drawing.
+- **Recent player trail** — your path over the last two minutes drawn as dots
+  on the minimap and fullscreen map. Trail duration (1 to 120 seconds), dot
+  size, and the whole overlay can be tuned or turned off in the settings.
 - **Shared and chat-shared coordinates** — an optional server-owned shared
   waypoint catalog; on servers without the companion, coordinates shared in
   chat can still be imported with a click.
@@ -97,6 +109,12 @@ Conflux Map is a Fabric client-side minimap and world map
 - **Seed preview area modes** — cycle with `P`: *everywhere* (default),
   *generated-only* (preview masked to chunks the server generated), or
   *visited-only* (pure captured map, no preview).
+- **PNG export** — render any rectangular region of the world map to a PNG.
+  Click two corners on the map or type the coordinates, choose 1 to 16 blocks
+  per pixel with an upfront size estimate, and optionally include your map
+  drawings. The export runs in the background with progress and cancellation,
+  and the file lands in `confluxmap/exports/` under the game directory, named
+  after the world, dimension, and bounds.
 - **Optional server companion** — a Fabric server can use the matching mod jar, while Paper
   1.21.1 through 26.2 uses one standalone plugin jar. Both return compact per-column corrections
   against the real world; the
@@ -106,7 +124,8 @@ Conflux Map is a Fabric client-side minimap and world map
   a newer version is out, with a download link, plus a badge on the map
   screen.
 - **Settings screen** — everything above is exposed in-game and takes effect
-  immediately, no restart. Full English and Simplified Chinese localization.
+  immediately, no restart, and every slider also accepts a directly typed
+  value. Full English and Simplified Chinese localization.
 
 ## Keybinds
 
