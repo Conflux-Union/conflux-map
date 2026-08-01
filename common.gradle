@@ -50,6 +50,8 @@ dependencies {
     }
     autoImpl "net.fabricmc:fabric-loader:$loader_version"
     autoImpl "net.fabricmc.fabric-api:fabric-api:$fabric_api_version"
+    implementation project(':common')
+    include project(':common')
     // Compile the optional adapter against the exact MaliLib line for this Minecraft version.
     // This is deliberately absent from runtime and from the produced jar.
     if (unobfuscated) {
@@ -72,6 +74,7 @@ dependencies {
 }
 test {
     useJUnitPlatform()
+    dependsOn ':common:test'
 }
 loom {
     accessWidenerPath = file "${id}.accesswidener"
@@ -184,28 +187,8 @@ java {
 jar { from '../../LICENSE' }
 tasks.register('checkCoreIsolation') {
     group = 'verification'
-    description = 'Fails if core/bridge/spi packages import Minecraft, Fabric, mixin, or LWJGL classes'
-    doLast {
-        final List<String> violations = []
-        final def forbidden = ~/^import\s+(static\s+)?(net\.minecraft|net\.fabricmc|com\.mojang|org\.spongepowered|org\.lwjgl)/
-        ['core', 'bridge', 'spi', 'nativepredict'].each { final String pkg ->
-            final File dir = rootProject.file("src/main/java/cn/net/rms/confluxmap/$pkg")
-            if (dir.exists()) {
-                dir.eachFileRecurse { final File f ->
-                    if (f.name.endsWith('.java')) {
-                        f.readLines().eachWithIndex { final String line, final int i ->
-                            if (line.trim() =~ forbidden) {
-                                violations << "${f.absolutePath}:${i + 1}: ${line.trim()}"
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if (!violations.empty) {
-            throw new GradleException("Core isolation violated:\n" + violations.join('\n'))
-        }
-    }
+    description = 'Checks the platform-neutral common module.'
+    dependsOn ':common:checkPlatformIsolation'
 }
 apply from: rootProject.file('gradle/version-coverage.gradle')
 check.dependsOn 'checkCoreIsolation'

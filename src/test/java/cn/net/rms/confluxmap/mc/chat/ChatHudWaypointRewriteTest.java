@@ -2,7 +2,6 @@ package cn.net.rms.confluxmap.mc.chat;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatCodec;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -42,7 +41,7 @@ final class ChatHudWaypointRewriteTest {
 
     private static Path preprocessedMixinSource() throws URISyntaxException {
         Path current = Path.of(
-            WaypointChatCodec.class.getProtectionDomain().getCodeSource().getLocation().toURI()
+            ChatHudWaypointRewriteTest.class.getProtectionDomain().getCodeSource().getLocation().toURI()
         );
         while (current != null && !"build".equals(current.getFileName().toString())) {
             current = current.getParent();
