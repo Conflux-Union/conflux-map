@@ -87,8 +87,9 @@ jobs:
             ':(exclude)docs/**'
             ':(exclude)native/README.md'
             ':(exclude)src/test/**'
+            ':(exclude)common/src/test/**'
             ':(exclude)src/gametest/**'
-            ':(exclude)src/main/java/cn/net/rms/confluxmap/core/quality/**'
+            ':(exclude)common/src/main/java/cn/net/rms/confluxmap/core/quality/**'
             ':(exclude)build.gradle'
             ':(exclude)common.gradle'
             ':(exclude)settings.gradle'
@@ -265,6 +266,45 @@ jobs:
           name: build-${{ matrix.minecraft_version }}
           path: versions/${{ matrix.minecraft_version }}/build/libs/*.jar
           if-no-files-found: error
+  Build-Paper:
+    runs-on: ubuntu-24.04
+    needs: Get-Versions
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: true
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v5
+      - name: Setup JDK
+        uses: actions/setup-java@v5
+        with:
+          java-version: '22'
+          distribution: 'temurin'
+      - name: Cache Gradle packages
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-paper-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-paper-
+            ${{ runner.os }}-gradle-
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+      - name: Build Paper companion
+        run: ./gradlew :paper:build
+      - name: Stop Gradle daemon
+        if: always()
+        run: ./gradlew --stop
+      - name: Upload Paper build artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: build-paper
+          path: paper/build/libs/*.jar
+          if-no-files-found: error
   Publish-Modrinth-Matrix:
     if: vars.ENABLE_MODRINTH == 'true'
     runs-on: ubuntu-24.04
@@ -349,9 +389,69 @@ jobs:
             ${{ steps.Game_Versions.outputs.game_versions }}
           dependencies: |-
           # Dependencies here
+  Publish-Paper-Modrinth:
+    if: vars.ENABLE_MODRINTH == 'true'
+    runs-on: ubuntu-24.04
+    needs: [ Build-Paper, Get-Versions ]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Extract version info
+        id: Version_Info
+        run: |
+          MOD_VERSION=$(grep '^version=' gradle.properties | cut -d'=' -f2)
+          case "$MOD_VERSION" in
+            *-alpha*) VERSION_TYPE=alpha ;;
+            *-beta*|*-rc*) VERSION_TYPE=beta ;;
+            *) VERSION_TYPE=release ;;
+          esac
+          echo "mod_version=$MOD_VERSION" >> $GITHUB_OUTPUT
+          echo "version_type=$VERSION_TYPE" >> $GITHUB_OUTPUT
+      - name: Download Paper build artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: build-paper
+          path: paper/build/libs/
+      - name: Download changelog
+        uses: actions/download-artifact@v6
+        with:
+          name: release-changelog
+          path: release-notes/
+      - name: Publish Paper companion to Modrinth
+        uses: Kir-Antipov/mc-publish@v3.3.1
+        with:
+          modrinth-id: ${{ vars.MODRINTH_ID }}
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          files: |
+            paper/build/libs/*.jar
+          name: ${{ format('ConfluxMap Paper companion v{0}',
+            steps.Version_Info.outputs.mod_version) }}
+          version: ${{ format('v{0}-paper',
+            steps.Version_Info.outputs.mod_version) }}
+          version-type: ${{ steps.Version_Info.outputs.version_type }}
+          changelog-file: release-notes/changelog.md
+          loaders: paper
+          game-versions: |
+            1.21.1
+            1.21.2
+            1.21.3
+            1.21.4
+            1.21.5
+            1.21.6
+            1.21.7
+            1.21.8
+            1.21.9
+            1.21.10
+            1.21.11
+            26.1
+            26.2
+          dependencies: |-
+          # Dependencies here
   Github-Release:
     runs-on: ubuntu-24.04
-    needs: [ Build-Matrix, Get-Versions ]
+    needs: [ Build-Matrix, Build-Paper, Get-Versions ]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5

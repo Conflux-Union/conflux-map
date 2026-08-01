@@ -1,0 +1,16 @@
+name: ConfluxMap
+version: '${version}'
+main: cn.net.rms.confluxmap.paper.ConfluxMapPaperPlugin
+description: Paper server companion for Conflux Map clients
+api-version: '1.21'
+authors: [Conflux Union]
+website: https://github.com/Conflux-Union/conflux-map
+load: POSTWORLD
+commands:
+  confluxmap:
+    description: Conflux Map companion administration and diagnostics
+    usage: /confluxmap <waypoints|performance>
+permissions:
+  confluxmap.admin:
+    description: Manage Conflux Map server-owned features
+    default: op

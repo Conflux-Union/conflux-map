@@ -41,6 +41,8 @@ pluginManagement {
 plugins {
     id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
 }
+include ':common'
+include ':paper'
 file('versions').eachDir { final File dir ->
     final String version = ":$dir.name"
     include version

@@ -1,0 +1,102 @@
+plugins {
+    id 'java'
+    id 'xyz.jpenilla.run-paper' version '3.0.2'
+}
+
+configurations {
+    latestPaperApi
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'Paper'
+        url = 'https://repo.papermc.io/repository/maven-public/'
+    }
+}
+
+dependencies {
+    implementation project(':common')
+    compileOnly 'io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT'
+    compileOnly 'org.apache.logging.log4j:log4j-api:2.25.3'
+    implementation 'io.github.canary-prism:querz-nbt:6.2.1'
+    implementation 'org.lz4:lz4-java:1.8.0'
+    latestPaperApi 'io.papermc.paper:paper-api:26.2.build.87-stable'
+    testImplementation 'io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.apache.logging.log4j:log4j-api:2.25.3'
+    testRuntimeOnly 'org.apache.logging.log4j:log4j-core:2.25.3'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+processResources {
+    inputs.property 'version', rootProject.version.toString()
+    filesMatching('plugin.yml') {
+        expand version: rootProject.version.toString()
+    }
+    from(rootProject.file('native/prebuilt')) {
+        into 'natives'
+    }
+}
+
+jar {
+    dependsOn project(':common').tasks.named('jar')
+    archiveBaseName = 'confluxmap-paper'
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    from rootProject.file('LICENSE')
+    from rootProject.file('THIRD_PARTY_NOTICES.md')
+}
+
+test {
+    useJUnitPlatform()
+    final String realRegionDir = System.getProperty('confluxmap.paper.realRegionDir')
+    if (realRegionDir != null) {
+        systemProperty 'confluxmap.paper.realRegionDir', realRegionDir
+    }
+}
+
+tasks.named('runServer') {
+    minecraftVersion('1.21.1')
+}
+
+tasks.register('checkPaperIsolation') {
+    group = 'verification'
+    description = 'Rejects Fabric and Minecraft internals from the Paper adapter.'
+    doLast {
+        final List<String> violations = []
+        final def forbidden = ~/^import\s+(static\s+)?(net\.fabricmc|net\.minecraft|org\.spongepowered)/
+        fileTree('src/main/java').matching { include '**/*.java' }.each { final File file ->
+            file.readLines().eachWithIndex { final String line, final int index ->
+                if (line.trim() =~ forbidden) {
+                    violations << "${file}:${index + 1}: ${line.trim()}"
+                }
+            }
+        }
+        if (!violations.empty) {
+            throw new GradleException("Paper isolation violated:\n" + violations.join('\n'))
+        }
+    }
+}
+
+tasks.register('compileLatestPaperJava', JavaCompile) {
+    group = 'verification'
+    description = 'Compiles the Paper adapter against the newest supported Paper 26.2 API.'
+    source = sourceSets.main.java
+    classpath = configurations.latestPaperApi + configurations.runtimeClasspath
+    destinationDirectory = layout.buildDirectory.dir('classes/java/latestPaper')
+    javaCompiler = javaToolchains.compilerFor {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+    options.release = 21
+}
+
+check.dependsOn 'checkPaperIsolation', 'compileLatestPaperJava', ':common:check'

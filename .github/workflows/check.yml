@@ -152,3 +152,35 @@ jobs:
       - name: Stop Gradle daemon
         if: always()
         run: ./gradlew --stop
+  Build-Paper:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: true
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v5
+      - name: Setup JDK
+        uses: actions/setup-java@v5
+        with:
+          java-version: '22'
+          distribution: 'temurin'
+      - name: Cache Gradle packages
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-paper-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-paper-
+            ${{ runner.os }}-gradle-
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+      - name: Build Paper companion
+        run: ./gradlew :paper:build
+      - name: Stop Gradle daemon
+        if: always()
+        run: ./gradlew --stop
