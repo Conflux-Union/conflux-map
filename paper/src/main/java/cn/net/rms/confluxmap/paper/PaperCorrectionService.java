@@ -31,8 +31,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -98,6 +99,8 @@ final class PaperCorrectionService implements AutoCloseable {
     private static final class JobSlot {
         volatile Completed completed;
         PaperSupersedingTask<Completed> worker;
+        Callable<Completed> asyncJob;
+        Supplier<Completed> immediateJob;
     }
 
     private static final class PlayerChannel {
@@ -779,21 +782,27 @@ final class PaperCorrectionService implements AutoCloseable {
         }
         for (final PlayerChannel channel : channels.values()) {
             synchronized (channel.tiles) {
-                channel.tiles.entrySet().removeIf(entry -> {
+                for (final Map.Entry<TileQueueKey, JobSlot> entry
+                    : channel.tiles.entrySet()) {
                     final TileQueueKey key = entry.getKey();
                     final int regionsPerTile = 1 << key.lod();
-                    return key.dimIndex() == world.index()
+                    if (key.dimIndex() == world.index()
                         && Math.floorDiv(regionX, regionsPerTile) == key.tileX()
-                        && Math.floorDiv(regionZ, regionsPerTile) == key.tileZ();
-                });
+                        && Math.floorDiv(regionZ, regionsPerTile) == key.tileZ()) {
+                        restartAfterLiveChange(entry.getValue());
+                    }
+                }
             }
             synchronized (channel.regions) {
-                channel.regions.entrySet().removeIf(entry -> {
+                for (final Map.Entry<RegionQueueKey, JobSlot> entry
+                    : channel.regions.entrySet()) {
                     final RegionQueueKey key = entry.getKey();
-                    return key.dimIndex() == world.index()
+                    if (key.dimIndex() == world.index()
                         && key.slice().regionX() == regionX
-                        && key.slice().regionZ() == regionZ;
-                });
+                        && key.slice().regionZ() == regionZ) {
+                        restartAfterLiveChange(entry.getValue());
+                    }
+                }
             }
         }
     }
@@ -853,7 +862,7 @@ final class PaperCorrectionService implements AutoCloseable {
     private <K> boolean enqueue(
         final Map<K, JobSlot> queue,
         final K key,
-        final java.util.concurrent.Callable<Completed> job
+        final Callable<Completed> job
     ) {
         final JobSlot slot;
         synchronized (queue) {
@@ -868,6 +877,8 @@ final class PaperCorrectionService implements AutoCloseable {
             }
             slot = existing;
             slot.completed = null;
+            slot.asyncJob = job;
+            slot.immediateJob = null;
             if (!slot.worker.submit(job)) {
                 if (queue.get(key) == slot) {
                     queue.remove(key);
@@ -876,6 +887,18 @@ final class PaperCorrectionService implements AutoCloseable {
             }
         }
         return true;
+    }
+
+    private void restartAfterLiveChange(final JobSlot slot) {
+        if (slot.immediateJob != null) {
+            slot.completed = slot.immediateJob.get();
+            return;
+        }
+        slot.completed = null;
+        if (slot.worker != null && slot.asyncJob != null
+            && !slot.worker.submit(slot.asyncJob)) {
+            logger.warn("Paper correction worker rejected a live-change restart");
+        }
     }
 
     private <K> boolean enqueueCompleted(
@@ -892,6 +915,8 @@ final class PaperCorrectionService implements AutoCloseable {
                 slot = new JobSlot();
                 queue.put(key, slot);
             }
+            slot.asyncJob = null;
+            slot.immediateJob = job;
             slot.completed = job.get();
             return true;
         }

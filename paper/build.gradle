@@ -22,6 +22,7 @@ dependencies {
     implementation 'io.github.canary-prism:querz-nbt:6.2.1'
     implementation 'org.lz4:lz4-java:1.8.0'
     latestPaperApi 'io.papermc.paper:paper-api:26.2.build.87-stable'
+    testImplementation 'io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testRuntimeOnly 'org.apache.logging.log4j:log4j-api:2.25.3'
     testRuntimeOnly 'org.apache.logging.log4j:log4j-core:2.25.3'

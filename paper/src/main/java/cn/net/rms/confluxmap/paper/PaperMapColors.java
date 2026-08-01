@@ -11,6 +11,10 @@ import org.bukkit.block.data.BlockData;
 final class PaperMapColors {
     private final Map<String, Integer> colors;
 
+    PaperMapColors(final Map<String, Integer> colors) {
+        this.colors = Map.copyOf(colors);
+    }
+
     PaperMapColors() {
         if (!Bukkit.isPrimaryThread()) {
             throw new IllegalStateException("Paper map colors must be captured on the primary thread");
