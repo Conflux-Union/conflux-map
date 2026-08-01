@@ -16,15 +16,27 @@ import org.junit.jupiter.api.Test;
 
 final class FullscreenAnnotationToolbarTest {
     private static final Pattern DEFAULT_COLLAPSED_LAYOUT = Pattern.compile(
-        "controlCount\\s*=\\s*annotationToolbarExpanded"
-            + "\\s*\\?\\s*AnnotationTool\\.values\\(\\)\\.length\\s*\\+\\s*6"
-            + "\\s*:\\s*1",
+        "if\\s*\\(\\s*!annotationToolbarExpanded\\s*\\)\\s*\\{"
+            + ".*?new MapIconButton\\(\\s*toggleX\\s*,\\s*toggleY\\s*,"
+            + "\\s*CONTROL_SIZE\\s*,\\s*ANNOTATION_DRAWING_ICON"
+            + "\\s*,\\s*Texts\\.literal\\(\"\"\\)\\s*,\\s*0\\s*,"
+            + ".*?refreshAnnotationControls\\(\\);\\s*return;",
         Pattern.DOTALL
     );
-    private static final Pattern TOGGLE_ACTION = Pattern.compile(
+    private static final Pattern EXPANDED_TOGGLE_USES_MAIN_CONTROL_SIZE = Pattern.compile(
+        "new MapIconButton\\(\\s*toggleX\\s*,\\s*toggleY\\s*,"
+            + "\\s*CONTROL_SIZE\\s*,\\s*ANNOTATION_COLLAPSE_ICON"
+            + "\\s*,\\s*Texts\\.literal\\(\"\"\\)\\s*,\\s*0\\s*,"
+            + "\\s*ignored\\s*->\\s*toggleAnnotationToolbar\\(\\)",
+        Pattern.DOTALL
+    );
+    private static final Pattern COLLAPSE_RESETS_TOOL = Pattern.compile(
         "toggleAnnotationToolbar\\(\\)\\s*\\{"
             + "\\s*annotationToolbarExpanded\\s*=\\s*!annotationToolbarExpanded;"
             + "\\s*annotationColorMenuOpen\\s*=\\s*false;"
+            + "\\s*if\\s*\\(\\s*!annotationToolbarExpanded\\s*\\)\\s*\\{"
+            + "\\s*selectAnnotationTool\\(AnnotationTool\\.SELECT\\);"
+            + "\\s*return;\\s*}"
             + "\\s*rebuildWaypointControls\\(\\);",
         Pattern.DOTALL
     );
@@ -35,6 +47,13 @@ final class FullscreenAnnotationToolbarTest {
         0xFFFFD83D,
         0xFFC79A1E,
         0xFFE4E4E4
+    );
+    private static final Set<Integer> COLLAPSE_ICON_PALETTE = Set.of(
+        0x00000000,
+        0xFF101010,
+        0xFFFFF0A0,
+        0xFFFFD83D,
+        0xFFC79A1E
     );
 
     @Test
@@ -51,31 +70,38 @@ final class FullscreenAnnotationToolbarTest {
         );
         assertTrue(
             DEFAULT_COLLAPSED_LAYOUT.matcher(screen).find(),
-            "the collapsed toolbar must reserve only its toggle button"
-        );
-        assertTrue(
-            TOGGLE_ACTION.matcher(screen).find(),
-            "the toggle must flip the state, close the color menu, and rebuild controls"
-        );
-        assertTrue(
-            screen.contains(
-                "final int toggleIndex = annotationToolbarExpanded ? (columns - 1) * rows : 0;"
-            ),
-            "the expanded toggle must occupy the top-right slot without moving existing tools"
-        );
-        assertTrue(
-            screen.contains("return index >= toggleIndex ? index + 1 : index;"),
-            "existing drawing controls must retain their order around the inserted toggle"
+            "the collapsed toolbar must render only a primary-sized brush toggle"
         );
     }
 
     @Test
-    void collapsedToggleUsesShadedBrushWhileExpandedToggleShowsChevron() throws IOException {
+    void toolbarToggleMatchesPrimaryMapControlSizeInBothStates() throws IOException {
+        final String screen = Files.readString(screenPath());
+        assertTrue(
+            DEFAULT_COLLAPSED_LAYOUT.matcher(screen).find(),
+            "the collapsed brush must use the 22px primary map-control size"
+        );
+        assertTrue(
+            EXPANDED_TOGGLE_USES_MAIN_CONTROL_SIZE.matcher(screen).find(),
+            "the expanded chevron must remain the same 22px size"
+        );
+    }
+
+    @Test
+    void collapsingToolbarReturnsToSelectMoveTool() throws IOException {
+        final String screen = Files.readString(screenPath());
+        assertTrue(
+            COLLAPSE_RESETS_TOOL.matcher(screen).find(),
+            "collapsing must select the default move tool and cancel active drawing state"
+        );
+    }
+
+    @Test
+    void collapsedToggleUsesShadedBrushIcon() throws IOException {
         final String screen = Files.readString(screenPath());
         assertTrue(screen.contains("ANNOTATION_DRAWING_ICON"));
-        assertTrue(screen.contains("Texts.literal(\">\")"));
+        assertTrue(screen.contains("ANNOTATION_COLLAPSE_ICON"));
         assertTrue(screen.contains("confluxmap.map.annotation.toolbar.open.tooltip"));
-        assertTrue(screen.contains("confluxmap.map.annotation.toolbar.close.tooltip"));
 
         final BufferedImage icon = ImageIO.read(findProjectRoot().resolve(
             "src/main/resources/assets/confluxmap/textures/gui/annotation_drawing.png"
@@ -92,6 +118,18 @@ final class FullscreenAnnotationToolbarTest {
         assertEquals(0xFFE4E4E4, logicalPixel(icon, 6, 8), "metal ferrule");
         assertEquals(0xFFFFD83D, logicalPixel(icon, 7, 11), "brush body");
         assertEquals(0xFFC79A1E, logicalPixel(icon, 7, 14), "brush-tip shadow");
+
+        final BufferedImage collapseIcon = ImageIO.read(findProjectRoot().resolve(
+            "src/main/resources/assets/confluxmap/textures/gui/annotation_collapse.png"
+        ).toFile());
+        assertEquals(32, collapseIcon.getWidth());
+        assertEquals(32, collapseIcon.getHeight());
+        assertTrue(collapseIcon.getColorModel().hasAlpha());
+        assertEquals(COLLAPSE_ICON_PALETTE, colors(collapseIcon));
+        assertLogicalPixelsAreSharp(collapseIcon);
+        assertEquals(0xFFFFF0A0, logicalPixel(collapseIcon, 4, 3), "upper highlight");
+        assertEquals(0xFFFFD83D, logicalPixel(collapseIcon, 8, 7), "chevron point");
+        assertEquals(0xFFC79A1E, logicalPixel(collapseIcon, 4, 12), "lower shadow");
     }
 
     private static void assertLogicalPixelsAreSharp(final BufferedImage icon) {
