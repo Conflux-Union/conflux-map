@@ -235,33 +235,38 @@ public final class RegionFileCodec {
         final int[] biomeTint = new int[COLUMN_COUNT];
         final int[] overlayArgb = new int[COLUMN_COUNT];
         final byte[] light = new byte[COLUMN_COUNT];
-        final DataInputStream columns = new DataInputStream(new InflaterInputStream(rawIn, new Inflater(), 8192));
-        final int biomePaletteSize = columns.readInt();
-        if (biomePaletteSize < 0 || biomePaletteSize > MAX_BIOME_PALETTE_SIZE) {
-            throw new RegionFileException("invalid biome palette size " + biomePaletteSize);
-        }
-        final String[] biomePalette = new String[biomePaletteSize + 1];
-        for (int i = 1; i <= biomePaletteSize; i++) {
-            biomePalette[i] = columns.readUTF();
-            if (biomePalette[i].isEmpty()) {
-                throw new RegionFileException("empty biome identifier at palette index " + i);
+        final Inflater inflater = new Inflater();
+        try {
+            final DataInputStream columns = new DataInputStream(new InflaterInputStream(rawIn, inflater, 8192));
+            final int biomePaletteSize = columns.readInt();
+            if (biomePaletteSize < 0 || biomePaletteSize > MAX_BIOME_PALETTE_SIZE) {
+                throw new RegionFileException("invalid biome palette size " + biomePaletteSize);
             }
-        }
-        for (int i = 0; i < COLUMN_COUNT; i++) {
-            surfaceY[i] = columns.readShort();
-            fluidDepth[i] = columns.readByte();
-            kind[i] = columns.readByte();
-            final int biomeIndex = columns.readUnsignedShort();
-            if (biomeIndex > biomePaletteSize) {
-                throw new RegionFileException(
-                    "biome index " + biomeIndex + " exceeds palette size " + biomePaletteSize
-                );
+            final String[] biomePalette = new String[biomePaletteSize + 1];
+            for (int i = 1; i <= biomePaletteSize; i++) {
+                biomePalette[i] = columns.readUTF();
+                if (biomePalette[i].isEmpty()) {
+                    throw new RegionFileException("empty biome identifier at palette index " + i);
+                }
             }
-            biomeId[i] = biomePalette[biomeIndex];
-            baseArgb[i] = columns.readInt();
-            biomeTint[i] = columns.readInt();
-            overlayArgb[i] = columns.readInt();
-            light[i] = columns.readByte();
+            for (int i = 0; i < COLUMN_COUNT; i++) {
+                surfaceY[i] = columns.readShort();
+                fluidDepth[i] = columns.readByte();
+                kind[i] = columns.readByte();
+                final int biomeIndex = columns.readUnsignedShort();
+                if (biomeIndex > biomePaletteSize) {
+                    throw new RegionFileException(
+                        "biome index " + biomeIndex + " exceeds palette size " + biomePaletteSize
+                    );
+                }
+                biomeId[i] = biomePalette[biomeIndex];
+                baseArgb[i] = columns.readInt();
+                biomeTint[i] = columns.readInt();
+                overlayArgb[i] = columns.readInt();
+                light[i] = columns.readByte();
+            }
+        } finally {
+            inflater.end();
         }
 
         return new RegionData(

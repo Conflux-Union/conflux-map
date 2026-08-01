@@ -12,6 +12,7 @@ import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
+import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 
 /** Disk codec for server-side region summaries ({@code .cfs}). */
@@ -387,21 +388,26 @@ public final class SummaryCodec {
         if (expectedMax > MAX_RAW_BYTES) {
             throw new ProtoException("summary body exceeds cap");
         }
-        final InflaterInputStream compressed = new InflaterInputStream(source);
-        final ByteArrayOutputStream raw = new ByteArrayOutputStream(expectedMax);
-        final byte[] buffer = new byte[8192];
-        int total = 0;
-        int read;
-        while ((read = compressed.read(buffer)) != -1) {
-            total += read;
-            if (total > expectedMax) {
-                throw new ProtoException("summary body has more bytes than generated chunks");
+        final Inflater inflater = new Inflater();
+        try {
+            final InflaterInputStream compressed = new InflaterInputStream(source, inflater, 8192);
+            final ByteArrayOutputStream raw = new ByteArrayOutputStream(expectedMax);
+            final byte[] buffer = new byte[8192];
+            int total = 0;
+            int read;
+            while ((read = compressed.read(buffer)) != -1) {
+                total += read;
+                if (total > expectedMax) {
+                    throw new ProtoException("summary body has more bytes than generated chunks");
+                }
+                raw.write(buffer, 0, read);
             }
-            raw.write(buffer, 0, read);
+            if (total != expectedMax) {
+                throw new ProtoException("summary body truncated: expected " + expectedMax + ", got " + total);
+            }
+            return raw.toByteArray();
+        } finally {
+            inflater.end();
         }
-        if (total != expectedMax) {
-            throw new ProtoException("summary body truncated: expected " + expectedMax + ", got " + total);
-        }
-        return raw.toByteArray();
     }
 }
