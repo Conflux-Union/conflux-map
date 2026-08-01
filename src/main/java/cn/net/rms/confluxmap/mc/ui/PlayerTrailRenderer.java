@@ -43,6 +43,6 @@ public final class PlayerTrailRenderer {
                 alpha << 24 | DOT_RGB
             ));
         }
-        RenderUtil.fillRects(matrices, dots);
+        RenderUtil.fillRectsPreservingDestinationAlpha(matrices, dots);
     }
 }

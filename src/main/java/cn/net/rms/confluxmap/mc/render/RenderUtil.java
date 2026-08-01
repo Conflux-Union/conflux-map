@@ -3,6 +3,17 @@ package cn.net.rms.confluxmap.mc.render;
 import cn.net.rms.confluxmap.core.util.Argb;
 import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.List;
+//#if MC>=260100
+//$$ import com.mojang.blaze3d.pipeline.ColorTargetState;
+//#endif
+//#if MC>=12105
+//$$ import com.mojang.blaze3d.pipeline.RenderPipeline;
+//#if MC>=260100 && MC<260200
+//$$ import com.mojang.blaze3d.shaders.UniformType;
+//#elseif MC<260100
+//$$ import net.minecraft.client.gl.UniformType;
+//#endif
+//#endif
 import net.minecraft.client.MinecraftClient;
 //#if MC<260200
 import net.minecraft.client.font.TextRenderer;
@@ -62,6 +73,10 @@ import net.minecraft.util.math.Vec3f;
  * copy across every supported Minecraft version.
  */
 public final class RenderUtil {
+    //#if MC>=12105
+    //$$ private static final RenderPipeline GUI_PRESERVE_DESTINATION_ALPHA =
+    //$$     createGuiPreserveDestinationAlphaPipeline();
+    //#endif
     //#if MC>=12105
     //$$ private static Framebuffer drawTarget;
     //$$ private static boolean scissorEnabled;
@@ -608,13 +623,38 @@ public final class RenderUtil {
 
     /** Draws many flat GUI rectangles in one batch. */
     public static void fillRects(final MatrixStack matrices, final List<ColoredRect> rects) {
+        fillRects(matrices, rects, false);
+    }
+
+    /** Draws translucent GUI rectangles without replacing the target's existing alpha. */
+    public static void fillRectsPreservingDestinationAlpha(
+        final MatrixStack matrices,
+        final List<ColoredRect> rects
+    ) {
+        fillRects(matrices, rects, true);
+    }
+
+    private static void fillRects(
+        final MatrixStack matrices,
+        final List<ColoredRect> rects,
+        final boolean preserveDestinationAlpha
+    ) {
         if (rects.isEmpty()) {
             return;
         }
         //#if MC<12105
         useColorShader();
         RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
+        if (preserveDestinationAlpha) {
+            RenderSystem.blendFuncSeparate(
+                com.mojang.blaze3d.platform.GlStateManager.SrcFactor.SRC_ALPHA,
+                com.mojang.blaze3d.platform.GlStateManager.DstFactor.ONE_MINUS_SRC_ALPHA,
+                com.mojang.blaze3d.platform.GlStateManager.SrcFactor.ZERO,
+                com.mojang.blaze3d.platform.GlStateManager.DstFactor.ONE
+            );
+        } else {
+            RenderSystem.defaultBlendFunc();
+        }
         //#endif
         final var model = matrices.peek().getModel();
         final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, VertexFormats.POSITION_COLOR);
@@ -622,11 +662,68 @@ public final class RenderUtil {
             appendRect(mesh, model, rect.x(), rect.y(), rect.width(), rect.height(), rect.argbColor());
         }
         //#if MC>=12105
-        //$$ mesh.drawGui(RenderPipelines.GUI);
+        //$$ mesh.drawGui(
+        //$$     preserveDestinationAlpha ? GUI_PRESERVE_DESTINATION_ALPHA : RenderPipelines.GUI
+        //$$ );
         //#else
         mesh.draw();
+        if (preserveDestinationAlpha) {
+            RenderSystem.defaultBlendFunc();
+        }
         //#endif
     }
+
+    //#if MC>=12105
+    //$$ private static RenderPipeline createGuiPreserveDestinationAlphaPipeline() {
+    //$$     final RenderPipeline gui = RenderPipelines.GUI;
+    //#if MC>=260200
+    //$$     final RenderPipeline.Builder builder = RenderPipeline.builder()
+    //$$         .withLocation("pipeline/confluxmap_gui_preserve_destination_alpha")
+    //$$         .withVertexShader(gui.getVertexShader())
+    //$$         .withFragmentShader(gui.getFragmentShader())
+    //$$         .withCull(gui.isCull())
+    //$$         .withColorTargetState(new ColorTargetState(
+    //$$             gui.getColorTargetState().blendFunction(),
+    //$$             gui.getColorTargetState().format(),
+    //$$             ColorTargetState.WRITE_COLOR
+    //$$         ))
+    //$$         .withVertexBinding(0, gui.getVertexFormatBinding(0))
+    //$$         .withPrimitiveTopology(gui.getPrimitiveTopology());
+    //$$     for (final var bindGroupLayout : gui.getBindGroupLayouts()) {
+    //$$         builder.withBindGroupLayout(bindGroupLayout);
+    //$$     }
+    //#else
+    //$$     final RenderPipeline.Builder builder = RenderPipeline.builder()
+    //$$         .withLocation("pipeline/confluxmap_gui_preserve_destination_alpha")
+    //$$         .withVertexShader(gui.getVertexShader())
+    //$$         .withFragmentShader(gui.getFragmentShader())
+    //$$         .withVertexFormat(gui.getVertexFormat(), gui.getVertexFormatMode());
+    //#if MC>=260100
+    //$$     builder
+    //$$         .withCull(gui.isCull())
+    //$$         .withColorTargetState(new ColorTargetState(
+    //$$             gui.getColorTargetState().blendFunction(),
+    //$$             ColorTargetState.WRITE_COLOR
+    //$$         ));
+    //#else
+    //$$     builder
+    //$$         .withBlend(gui.getBlendFunction().orElseThrow())
+    //$$         .withColorWrite(true, false);
+    //#endif
+    //#if MC>=12108
+    //$$     builder
+    //$$         .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
+    //$$         .withUniform("Projection", UniformType.UNIFORM_BUFFER);
+    //#else
+    //$$     builder
+    //$$         .withUniform("ModelViewMat", UniformType.MATRIX4X4)
+    //$$         .withUniform("ProjMat", UniformType.MATRIX4X4)
+    //$$         .withUniform("ColorModulator", UniformType.VEC4);
+    //#endif
+    //#endif
+    //$$     return builder.build();
+    //$$ }
+    //#endif
 
     /**
      * The same quad as {@link #fillRect}, drawn as world geometry from a {@code WorldRenderEvents}
