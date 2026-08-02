@@ -81,6 +81,8 @@ public final class MinimapHudRenderer {
     private static final int TEXT_COLOR = 0xFFFFFFFF;
     private static final int ARROW_OUTLINE = 0xFF101010;
     private static final int ARROW_FILL = 0xFFFFFFFF;
+    private static final int INFO_TEXT_GAP = 3;
+    private static final int INFO_TEXT_LINE_HEIGHT = 10;
     private static final float[] BLOCKS_PER_PIXEL = {0.5f, 1f, 2f, 4f};
     /** Half of the ~7px-across VoxelMap-style diamond/cross marker (deliverable B). */
     private static final float WAYPOINT_MARKER_HALF_SIZE = 3.5f;
@@ -303,7 +305,7 @@ public final class MinimapHudRenderer {
         final int screenHeight,
         final MinimapPlacement.Layout configuredPlacement
     ) {
-        if (client.player == null) {
+        if (!config.minimapHudAvoidance || client.player == null) {
             return configuredPlacement;
         }
 
@@ -347,9 +349,25 @@ public final class MinimapHudRenderer {
             screenWidth,
             screenHeight,
             configuredPlacement,
+            minimapInformationHeight(),
             MinimapStatusEffectAvoidance.visibleBounds(screenWidth, beneficial, harmful),
             ScoreboardHudBounds.current()
         );
+    }
+
+    /** Height reserved for the optional information text rendered outside the minimap frame. */
+    private int minimapInformationHeight() {
+        int lines = 0;
+        if (config.showCoordinates) {
+            lines++;
+        }
+        if (config.showBiome) {
+            lines++;
+        }
+        if (config.showLayerIndicator) {
+            lines++;
+        }
+        return lines == 0 ? 0 : INFO_TEXT_GAP + lines * INFO_TEXT_LINE_HEIGHT;
     }
 
     private void drawPlayerTrail(
@@ -601,7 +619,7 @@ public final class MinimapHudRenderer {
         if (!config.showCoordinates && !config.showBiome && !config.showLayerIndicator) {
             return;
         }
-        final int lineHeight = 10;
+        final int lineHeight = INFO_TEXT_LINE_HEIGHT;
         int lines = 0;
         if (config.showCoordinates) {
             lines++;
@@ -612,11 +630,11 @@ public final class MinimapHudRenderer {
         if (config.showLayerIndicator) {
             lines++;
         }
-        final float belowY = y0 + size + 3;
+        final float belowY = y0 + size + INFO_TEXT_GAP;
         final float yAfterBelowLines = belowY + lines * lineHeight;
         float y = yAfterBelowLines <= client.getWindow().getScaledHeight()
             ? belowY
-            : Math.max(0, y0 - lines * lineHeight - 3);
+            : Math.max(0, y0 - lines * lineHeight - INFO_TEXT_GAP);
         final float centerX = x0 + size / 2f;
 
         if (config.showCoordinates) {

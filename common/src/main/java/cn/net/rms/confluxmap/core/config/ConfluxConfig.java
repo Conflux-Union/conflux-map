@@ -62,6 +62,8 @@ public final class ConfluxConfig {
     public double minimapPositionX = 1.0;
     /** Top-left origin as a fraction of the available vertical HUD travel. */
     public double minimapPositionY = 0.0;
+    /** Temporarily moves only the minimap to keep it clear of vanilla HUD elements. */
+    public boolean minimapHudAvoidance = true;
     public Shape minimapShape = Shape.SQUARE;
     public int minimapSize = DEFAULT_MINIMAP_SIZE;
     public boolean minimapRotate = true;
@@ -186,6 +188,7 @@ public final class ConfluxConfig {
         c.minimapCorner = minimapCorner;
         c.minimapPositionX = minimapPositionX;
         c.minimapPositionY = minimapPositionY;
+        c.minimapHudAvoidance = minimapHudAvoidance;
         c.minimapShape = minimapShape;
         c.minimapSize = minimapSize;
         c.minimapRotate = minimapRotate;

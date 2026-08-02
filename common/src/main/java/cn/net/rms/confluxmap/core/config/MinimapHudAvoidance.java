@@ -20,10 +20,28 @@ public final class MinimapHudAvoidance {
         final MinimapPlacement.Layout configuredLayout,
         final Bounds... obstacles
     ) {
+        return resolve(screenWidth, screenHeight, configuredLayout, 0, obstacles);
+    }
+
+    /**
+     * Resolves a position while reserving the minimap information text as part of the visual
+     * footprint. When there is no room below the map, Minecraft draws that text above it instead;
+     * candidate checks mirror that behavior so small viewports do not reserve the wrong side.
+     *
+     * @param informationHeight height below (or, when needed, above) the map, including its gap
+     */
+    public static MinimapPlacement.Layout resolve(
+        final int screenWidth,
+        final int screenHeight,
+        final MinimapPlacement.Layout configuredLayout,
+        final int informationHeight,
+        final Bounds... obstacles
+    ) {
         if (configuredLayout == null) {
             throw new IllegalArgumentException("configuredLayout must not be null");
         }
-        if (!intersectsAny(bounds(configuredLayout), obstacles)) {
+        final int safeInformationHeight = Math.max(0, informationHeight);
+        if (!intersectsAny(bounds(configuredLayout, screenHeight, safeInformationHeight), obstacles)) {
             return configuredLayout;
         }
 
@@ -38,14 +56,18 @@ public final class MinimapHudAvoidance {
         final int[] xCandidates = candidates(
             configuredLayout.x(), minimum.x(), maximum.x(), configuredLayout.size(), obstacles, true
         );
-        final int[] yCandidates = candidates(
-            configuredLayout.y(), minimum.y(), maximum.y(), configuredLayout.size(), obstacles, false
+        final int[] yCandidates = verticalCandidates(
+            configuredLayout.y(), minimum.y(), maximum.y(), configuredLayout.size(),
+            safeInformationHeight, obstacles
         );
 
         Candidate best = null;
         for (final int y : yCandidates) {
             for (final int x : xCandidates) {
-                best = choose(best, configuredLayout, x, y, minimum, maximum, obstacles);
+                best = choose(
+                    best, configuredLayout, x, y, minimum, maximum,
+                    screenHeight, safeInformationHeight, obstacles
+                );
             }
         }
         return best == null ? configuredLayout : best.layout();
@@ -84,6 +106,46 @@ public final class MinimapHudAvoidance {
         return candidates;
     }
 
+    private static int[] verticalCandidates(
+        final int configured,
+        final int minimum,
+        final int maximum,
+        final int size,
+        final int informationHeight,
+        final Bounds[] obstacles
+    ) {
+        int count = 3;
+        if (obstacles != null) {
+            for (final Bounds obstacle : obstacles) {
+                if (obstacle != null) {
+                    count += informationHeight == 0 ? 2 : 4;
+                }
+            }
+        }
+        final int[] candidates = new int[count];
+        candidates[0] = configured;
+        candidates[1] = minimum;
+        candidates[2] = maximum;
+        int index = 3;
+        if (obstacles != null) {
+            for (final Bounds obstacle : obstacles) {
+                if (obstacle == null) {
+                    continue;
+                }
+                // Information text may appear below the map when room permits.
+                candidates[index++] = obstacle.top() - GAP - size - informationHeight;
+                candidates[index++] = obstacle.bottom() + GAP;
+                if (informationHeight != 0) {
+                    // Otherwise it appears above the map; keep both layouts available so
+                    // changing GUI scale or window height cannot strand the map.
+                    candidates[index++] = obstacle.top() - GAP - size;
+                    candidates[index++] = obstacle.bottom() + GAP + informationHeight;
+                }
+            }
+        }
+        return candidates;
+    }
+
     private static Candidate choose(
         final Candidate current,
         final MinimapPlacement.Layout configured,
@@ -91,13 +153,15 @@ public final class MinimapHudAvoidance {
         final int y,
         final MinimapPlacement.Layout minimum,
         final MinimapPlacement.Layout maximum,
+        final int screenHeight,
+        final int informationHeight,
         final Bounds[] obstacles
     ) {
         if (x < minimum.x() || x > maximum.x() || y < minimum.y() || y > maximum.y()) {
             return current;
         }
         final MinimapPlacement.Layout layout = new MinimapPlacement.Layout(x, y, configured.size());
-        if (intersectsAny(bounds(layout), obstacles)) {
+        if (intersectsAny(bounds(layout, screenHeight, informationHeight), obstacles)) {
             return current;
         }
         final long deltaX = (long) x - configured.x();
@@ -125,8 +189,22 @@ public final class MinimapHudAvoidance {
         return false;
     }
 
-    private static Bounds bounds(final MinimapPlacement.Layout layout) {
-        return new Bounds(layout.x(), layout.y(), layout.x() + layout.size(), layout.y() + layout.size());
+    private static Bounds bounds(
+        final MinimapPlacement.Layout layout,
+        final int screenHeight,
+        final int informationHeight
+    ) {
+        if (informationHeight == 0) {
+            return new Bounds(layout.x(), layout.y(), layout.x() + layout.size(), layout.y() + layout.size());
+        }
+        final int belowBottom = layout.y() + layout.size() + informationHeight;
+        if (belowBottom <= screenHeight) {
+            return new Bounds(layout.x(), layout.y(), layout.x() + layout.size(), belowBottom);
+        }
+        return new Bounds(
+            layout.x(), Math.max(0, layout.y() - informationHeight),
+            layout.x() + layout.size(), layout.y() + layout.size()
+        );
     }
 
     private record Candidate(MinimapPlacement.Layout layout, long distanceSquared, long horizontalDistance) {

@@ -31,7 +31,9 @@ class ConfigIoTest {
         assertEquals(90, ConfluxConfig.DEFAULT_MINIMAP_SIZE);
         assertEquals(ConfluxConfig.DEFAULT_MINIMAP_SIZE, loaded.minimapSize);
         assertEquals(ConfluxConfig.DEFAULT_RADAR_ICON_SIZE, loaded.radarIconSize);
+        assertTrue(loaded.minimapHudAvoidance);
         assertTrue(Files.readString(file, StandardCharsets.UTF_8).contains("\"minimapSize\": 90"));
+        assertTrue(Files.readString(file, StandardCharsets.UTF_8).contains("\"minimapHudAvoidance\": true"));
         assertTrue(Files.readString(file, StandardCharsets.UTF_8).contains("\"radarIconSize\": 10"));
     }
 
@@ -67,6 +69,7 @@ class ConfigIoTest {
         assertFalse(loaded.surveyReminderDismissed);
         assertEquals(1.0, loaded.minimapPositionX);
         assertEquals(0.0, loaded.minimapPositionY);
+        assertTrue(loaded.minimapHudAvoidance);
         assertEquals(ConfluxConfig.SCHEMA_VERSION, loaded.schemaVersion);
         assertEquals(256, loaded.minimapSize);
         // The upgrade is persisted so the on-disk file now carries the full schema.
@@ -90,6 +93,7 @@ class ConfigIoTest {
         assertTrue(rewritten.contains("\"surveyReminderDismissed\""));
         assertTrue(rewritten.contains("\"minimapPositionX\": 1.0"));
         assertTrue(rewritten.contains("\"minimapPositionY\": 0.0"));
+        assertTrue(rewritten.contains("\"minimapHudAvoidance\": true"));
         assertTrue(rewritten.contains("\"minimapSize\": 256"));
     }
 

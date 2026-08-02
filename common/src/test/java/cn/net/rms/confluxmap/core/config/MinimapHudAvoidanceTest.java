@@ -51,4 +51,20 @@ class MinimapHudAvoidanceTest {
             )
         );
     }
+
+    @Test
+    void keepsMinimapInformationTextClearOfTheScoreboard() {
+        final MinimapPlacement.Layout configured = MinimapPlacement.resolve(640, 360, 128, 1.0, 0.0);
+
+        assertEquals(
+            new MinimapPlacement.Layout(370, 4, 128),
+            MinimapHudAvoidance.resolve(
+                640,
+                360,
+                configured,
+                33,
+                new MinimapHudAvoidance.Bounds(500, 140, 639, 300)
+            )
+        );
+    }
 }
