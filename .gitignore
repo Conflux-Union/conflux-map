@@ -35,6 +35,10 @@ versions/*/run-*/
 versions/*/logs/
 artifacts/
 
+# worktrees
+
+.worktrees/
+
 # java
 
 hs_err_*.log
