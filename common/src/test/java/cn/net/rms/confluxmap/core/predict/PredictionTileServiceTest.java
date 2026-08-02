@@ -137,7 +137,7 @@ class PredictionTileServiceTest {
             final int expected = ShadingPipeline.applyBrightnessMultiplier(
                 ShadingPipeline.applyShade(
                     MapColorTable.argb(11),
-                    ShadingPipeline.heightShade(3, ShadingPipeline.REFERENCE_HEIGHT, true)
+                    ShadingPipeline.detailedHeightShade(3, ShadingPipeline.REFERENCE_HEIGHT)
                 ),
                 1.0
             );

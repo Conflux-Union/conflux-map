@@ -558,6 +558,34 @@ maximum-depth cutoff specific to water beyond that.
   composite on top of the fully-resolved pixel color from everything above
   and don't feed back into any of the sampling/tinting/shading math.
 
+## 7. Conflux Map detail extensions
+
+Conflux Map deliberately keeps the surface selection, texture color, biome
+tint, transparency, and lighting contracts above while replacing three visual
+parts of the observed reference behavior:
+
+- Each exact block state caches a 4×4 luminance profile in addition to its
+  alpha-weighted average color. A stable world-coordinate hash selects one
+  profile cell per captured column. Only brightness changes: hue, alpha, and
+  the average resource-pack color stay intact. Contrast is capped at ±8%, or
+  ±4% for fluids, ice, and snow. Old disk colors are not invalidated; their
+  material detail updates when live capture revisits and overwrites the column.
+- The fixed one-neighbor ±1/8 slope step is replaced by two three-sample
+  shoulders facing southwest and northeast. Their mean height difference is
+  normalized by blocks per pixel and produces a bounded 0.70–1.30 brightness
+  multiplier. The absolute-height curve remains, at 65% of its combined-mode
+  strength. Missing stencil samples yield neutral relief.
+- Water and ice use the recorded floor height (`surfaceY - fluidDepth`) for a
+  separate relief pass. The floor is additionally darkened by
+  `max(0.25, 1 - depth / 48)` before the unchanged water-alpha composite. This
+  gives both captured and predicted water visible bathymetry without altering
+  surface opacity.
+
+These extensions are shared by minimap, fullscreen map, prediction, and PNG
+export composition. Cave, Nether, and End layers retain their existing surface
+selection and light sampling, then receive the same local relief. The Nether
+ceiling omits absolute-height tint but retains symmetric local relief.
+
 ## Confidence notes
 
 - The exact real-world trigger for "resolved surface block is lava, but the

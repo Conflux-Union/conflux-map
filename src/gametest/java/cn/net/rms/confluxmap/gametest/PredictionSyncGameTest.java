@@ -209,7 +209,7 @@ public final class PredictionSyncGameTest implements FabricGameTest {
             );
             final int expectedStoneArgb = ShadingPipeline.applyShade(
                 MapColorTable.argb(11),
-                ShadingPipeline.heightShade(floorY, ShadingPipeline.REFERENCE_HEIGHT, true)
+                ShadingPipeline.detailedHeightShade(floorY, ShadingPipeline.REFERENCE_HEIGHT)
             );
 
             for (int z = 0; z < FLOOR_SIZE; z++) {
@@ -226,9 +226,9 @@ public final class PredictionSyncGameTest implements FabricGameTest {
                     );
                     require(context, sample.kind() == SurfaceKind.LAND.ordinal(), "stone floor was not classified as land");
                     require(context, sample.mapColorId() == 11, "stone floor used the wrong map color");
-                    // Edge pixels legitimately receive slope shading from predicted terrain just
-                    // outside the corrected floor. The interior has both diagonal slope samples
-                    // on the flat stone surface and must reconstruct the exact map color.
+                    // Edge pixels legitimately receive relief shading from predicted terrain just
+                    // outside the corrected floor. The interior has all relief samples on the flat
+                    // stone surface and must reconstruct the exact shaded map color.
                     if (x > 0 && x < FLOOR_SIZE - 1 && z > 0 && z < FLOOR_SIZE - 1
                         && clientPixels[pixel] != expectedStoneArgb) {
                         // The shade comes from the (x-1, z+1) neighbor, so report that pixel too:

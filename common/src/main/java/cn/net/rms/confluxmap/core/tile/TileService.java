@@ -201,14 +201,10 @@ public final class TileService {
     }
 
     /**
-     * Called by the capture pipeline after a chunk was newly stored. Marks the LOD-0
-     * tile covering that chunk dirty, and - when the chunk sits on the tile's east or
-     * north edge - also marks the neighboring tile whose opposite edge depends on
-     * this chunk's data for slope shading (see {@link #edgeNeighbor}). Also marks the
-     * covering tile at every higher LOD (1-{@link TileMath#MAX_LOD}) dirty, so an
-     * already-composed zoomed-out tile refreshes to include this chunk's data next
-     * time it's viewed; the {@link #dirty} map dedupes cheaply since each LOD is a
-     * distinct {@link TileKey}.
+     * Called by the capture pipeline after a chunk was newly stored. Marks the tile covering
+     * that chunk dirty at every LOD. When the chunk touches a tile edge, every
+     * adjacent tile whose symmetric one-pixel relief stencil consumes that edge is included too.
+     * Interior chunks still invalidate exactly one tile per LOD.
      */
     public void markChunkStored(
         final long token,
@@ -221,29 +217,19 @@ public final class TileService {
         if (world == null) {
             return;
         }
-        final TileKey key = TileKey.ofChunk(world.session().world(), dimensionId, layer, chunkX, chunkZ);
-        markDirty(key, token);
-        markBiomeDirtyIfRequested(BiomeTileKeys.toBiome(key), token);
-        final TileKey edge = edgeNeighbor(key, chunkX, chunkZ);
-        if (edge != null) {
-            markDirty(edge, token);
-            markBiomeDirtyIfRequested(BiomeTileKeys.toBiome(edge), token);
-        }
-        final int blockX = chunkX << 4;
-        final int blockZ = chunkZ << 4;
-        for (int lod = 1; lod <= TileMath.MAX_LOD; lod++) {
-            final TileKey coarse = TileKey.ofBlock(
-                world.session().world(), dimensionId, layer, lod, blockX, blockZ
+        final SessionGuard.Session session = world.session();
+        for (int lod = 0; lod <= TileMath.MAX_LOD; lod++) {
+            markReliefConsumers(
+                session, dimensionId, layer, lod, chunkX, chunkZ, 16 << lod, token
             );
-            markDirty(coarse, token);
-            markBiomeDirtyIfRequested(BiomeTileKeys.toBiome(coarse), token);
         }
     }
 
     /**
      * Disk-cache counterpart of {@link #markChunkStored}: one region read may merge up to 256
      * chunks, so invalidate its affected tiles once instead of issuing the same parent keys 256
-     * times. The east and north neighbors consume this region's boundary columns for slope shade.
+     * times. A LOD-0 region fills a complete tile and therefore touches all eight neighbors;
+     * coarser LODs only include the parent edges that this region actually reaches.
      */
     public void markRegionStored(
         final long token,
@@ -258,36 +244,42 @@ public final class TileService {
         }
         final SessionGuard.Session session = world.session();
         for (int lod = 0; lod <= TileMath.MAX_LOD; lod++) {
-            markDirty(new TileKey(
-                session.world(), dimensionId, layer.cacheId(), lod, regionX >> lod, regionZ >> lod
-            ), token);
-            markDirty(new TileKey(
-                session.world(), dimensionId, layer.cacheId(), lod, (regionX + 1) >> lod, regionZ >> lod
-            ), token);
-            markDirty(new TileKey(
-                session.world(), dimensionId, layer.cacheId(), lod, regionX >> lod, (regionZ - 1) >> lod
-            ), token);
+            markReliefConsumers(
+                session, dimensionId, layer, lod, regionX, regionZ, 1 << lod, token
+            );
         }
     }
 
-    /**
-     * The §4 slope term always compares a column against its (x-1, z+1) neighbor.
-     * A column on a tile's local x==15 (east) edge is that neighbor for some column
-     * on the local x==0 edge of the tile one to the east; symmetrically for z==0
-     * (north) feeding the tile one to the north's z==255 (south) edge. Only those
-     * two directions ever need healing - the opposite two edges consume data that
-     * is already inside their own tile.
-     */
-    private static TileKey edgeNeighbor(final TileKey key, final int chunkX, final int chunkZ) {
-        final int localX = chunkX & 15;
-        final int localZ = chunkZ & 15;
-        if (localX == 15) {
-            return new TileKey(key.world(), key.dimension(), key.layerId(), key.lod(), key.tileX() + 1, key.tileZ());
+    private void markReliefConsumers(
+        final SessionGuard.Session session,
+        final DimensionId dimensionId,
+        final MapLayer layer,
+        final int lod,
+        final int unitX,
+        final int unitZ,
+        final int unitsPerTile,
+        final long token
+    ) {
+        final int tileX = Math.floorDiv(unitX, unitsPerTile);
+        final int tileZ = Math.floorDiv(unitZ, unitsPerTile);
+        final int localX = Math.floorMod(unitX, unitsPerTile);
+        final int localZ = Math.floorMod(unitZ, unitsPerTile);
+        final int minDx = localX == 0 ? -1 : 0;
+        final int maxDx = localX == unitsPerTile - 1 ? 1 : 0;
+        final int minDz = localZ == 0 ? -1 : 0;
+        final int maxDz = localZ == unitsPerTile - 1 ? 1 : 0;
+        for (int dz = minDz; dz <= maxDz; dz++) {
+            for (int dx = minDx; dx <= maxDx; dx++) {
+                final TileKey key = new TileKey(
+                    session.world(), dimensionId, layer.cacheId(), lod, tileX + dx, tileZ + dz
+                );
+                markDirty(key, token);
+                if (dx == 0 && dz == 0) {
+                    // Biome mode is a flat colour plane and has no cross-tile relief stencil.
+                    markBiomeDirtyIfRequested(BiomeTileKeys.toBiome(key), token);
+                }
+            }
         }
-        if (localZ == 0) {
-            return new TileKey(key.world(), key.dimension(), key.layerId(), key.lod(), key.tileX(), key.tileZ() - 1);
-        }
-        return null;
     }
 
     /**
@@ -531,11 +523,10 @@ public final class TileService {
         final boolean biomeMode = BiomeTileKeys.isBiome(key);
         final MapLayer layer = MapLayer.parse(BiomeTileKeys.realLayerId(key.layerId()));
         final ColumnStore store = world.store(layer);
-        // The roof view is a block-accurate top-down layer. Directional relief compares each
-        // pixel with its southwest neighbor, which paints an isolated raised block's northeast
-        // neighbor and looks like a displaced translucent copy. Its fixed Y=80 height term also
-        // washes the entire bedrock roof toward white, so neither geometric shade belongs here.
-        final boolean applyTerrainShading = layer.type() != MapLayer.Type.NETHER_CEILING;
+        // The roof view is block-accurate and lives around one almost-flat Y. Keep the shared,
+        // symmetric local relief there, but omit the fixed Y=80 absolute-height wash that used to
+        // turn the whole bedrock roof pale.
+        final boolean applyAbsoluteHeight = layer.type() != MapLayer.Type.NETHER_CEILING;
         // Dynamic lighting only ever touches the live SURFACE layer (never CAVE/NETHER/END, which
         // already bake their light at snapshot time - see ChunkSnapshot#light's javadoc). Reading
         // the model's factor once per tile compose (rather than per-column) is fine: it's a slow
@@ -557,7 +548,7 @@ public final class TileService {
         final int[] pixels;
         if (key.lod() == 0) {
             pixels = composeLod0(
-                store, key.tileX(), key.tileZ(), biomeMode, applyTerrainShading,
+                store, key.tileX(), key.tileZ(), biomeMode, applyAbsoluteHeight,
                 applyDaylight, daylightFactor, lightPlane
             );
             if (store.region(key.tileX(), key.tileZ()) != null) {
@@ -565,7 +556,7 @@ public final class TileService {
             }
         } else {
             pixels = composeLodN(
-                store, key, biomeMode, applyTerrainShading,
+                store, key, biomeMode, applyAbsoluteHeight,
                 applyDaylight, daylightFactor, lightPlane, changed
             );
         }
@@ -585,7 +576,7 @@ public final class TileService {
         final int regionX,
         final int regionZ,
         final boolean biomeMode,
-        final boolean applyTerrainShading,
+        final boolean applyAbsoluteHeight,
         final boolean applyDaylight,
         final float daylightFactor,
         final byte[] outLight
@@ -593,12 +584,20 @@ public final class TileService {
         final int[] pixels = new int[RegionColumns.SIZE * RegionColumns.SIZE];
         final RegionColumns region = store.region(regionX, regionZ);
         if (region != null) {
-            final RegionColumns west = store.region(regionX - 1, regionZ);
-            final RegionColumns south = store.region(regionX, regionZ + 1);
-            final RegionColumns southWest = store.region(regionX - 1, regionZ + 1);
+            final RegionNeighborhood neighborhood = new RegionNeighborhood(
+                region,
+                store.region(regionX, regionZ - 1),
+                store.region(regionX + 1, regionZ - 1),
+                store.region(regionX + 1, regionZ),
+                store.region(regionX + 1, regionZ + 1),
+                store.region(regionX, regionZ + 1),
+                store.region(regionX - 1, regionZ + 1),
+                store.region(regionX - 1, regionZ),
+                store.region(regionX - 1, regionZ - 1)
+            );
             composeRegion(
-                region, west, south, southWest, pixels,
-                biomeMode, applyTerrainShading, applyDaylight, daylightFactor, outLight
+                neighborhood, pixels,
+                biomeMode, applyAbsoluteHeight, applyDaylight, daylightFactor, outLight
             );
         }
         return pixels;
@@ -620,7 +619,7 @@ public final class TileService {
         final ColumnStore store,
         final TileKey key,
         final boolean biomeMode,
-        final boolean applyTerrainShading,
+        final boolean applyAbsoluteHeight,
         final boolean applyDaylight,
         final float daylightFactor,
         final byte[] outLight,
@@ -642,7 +641,7 @@ public final class TileService {
                 }
                 final byte[] fullLight = outLight == null ? null : new byte[size * size];
                 final int[] full = composeLod0(
-                    store, regionX, regionZ, biomeMode, applyTerrainShading,
+                    store, regionX, regionZ, biomeMode, applyAbsoluteHeight,
                     applyDaylight, daylightFactor, fullLight
                 );
                 final int[] downsampled = downsample(full, size, lod);
@@ -726,13 +725,10 @@ public final class TileService {
     }
 
     private static void composeRegion(
-        final RegionColumns region,
-        final RegionColumns west,
-        final RegionColumns south,
-        final RegionColumns southWest,
+        final RegionNeighborhood neighborhood,
         final int[] outPixels,
         final boolean biomeMode,
-        final boolean applyTerrainShading,
+        final boolean applyAbsoluteHeight,
         final boolean applyDaylight,
         final float daylightFactor,
         final byte[] outLight
@@ -746,7 +742,7 @@ public final class TileService {
         final int[] overlayArgb = new int[size * size];
         final byte[] kind = new byte[size * size];
         final byte[] light = new byte[size * size];
-        region.copyChunkRows(
+        neighborhood.center().copyChunkRows(
             0, size, surfaceY, biomeId, fluidDepth,
             baseArgb, tintArgb, overlayArgb, kind, light
         );
@@ -766,20 +762,35 @@ public final class TileService {
                     outPixels[idx] = BiomeColorPalette.color(biomeId[idx]);
                     continue;
                 }
-                final double shade;
-                if (applyTerrainShading) {
-                    final Integer neighborHeight = neighborHeight(x, z, surfaceY, region, west, south, southWest);
-                    shade = ShadingPipeline.combinedShade(
-                        true, true, surfaceY[idx], ShadingPipeline.REFERENCE_HEIGHT, neighborHeight
-                    );
-                } else {
-                    shade = 0.0;
-                }
-                final int shadedBase = ShadingPipeline.applyShade(Argb.multiply(baseArgb[idx], tintArgb[idx]), shade);
-                final int shadedOverlay = overlayArgb[idx] == Argb.TRANSPARENT
+                final double surfaceHeightShade = applyAbsoluteHeight
+                    ? ShadingPipeline.detailedHeightShade(surfaceY[idx], ShadingPipeline.REFERENCE_HEIGHT)
+                    : 0.0;
+                final double surfaceRelief = reliefMultiplier(
+                    x, z, false, surfaceY, fluidDepth, kind, neighborhood
+                );
+                final int shadedBase = ShadingPipeline.applyBrightnessMultiplier(
+                    ShadingPipeline.applyShade(Argb.multiply(baseArgb[idx], tintArgb[idx]), surfaceHeightShade),
+                    surfaceRelief
+                );
+                final boolean waterOrIce = k == SurfaceKind.WATER.ordinal() || k == SurfaceKind.ICE.ordinal();
+                final int floorY = surfaceY[idx] - (fluidDepth[idx] & 0xFF);
+                final double overlayHeightShade = waterOrIce && applyAbsoluteHeight
+                    ? ShadingPipeline.detailedHeightShade(floorY, ShadingPipeline.REFERENCE_HEIGHT)
+                    : surfaceHeightShade;
+                final double overlayRelief = waterOrIce
+                    ? reliefMultiplier(x, z, true, surfaceY, fluidDepth, kind, neighborhood)
+                    : surfaceRelief;
+                int shadedOverlay = overlayArgb[idx] == Argb.TRANSPARENT
                     ? Argb.TRANSPARENT
-                    : ShadingPipeline.applyShade(overlayArgb[idx], shade);
-                int composed = k == SurfaceKind.WATER.ordinal() || k == SurfaceKind.ICE.ordinal()
+                    : ShadingPipeline.applyBrightnessMultiplier(
+                        ShadingPipeline.applyShade(overlayArgb[idx], overlayHeightShade), overlayRelief
+                    );
+                if (waterOrIce && shadedOverlay != Argb.TRANSPARENT) {
+                    shadedOverlay = ShadingPipeline.applyBrightnessMultiplier(
+                        shadedOverlay, ShadingPipeline.seafloorBrightness(fluidDepth[idx] & 0xFF)
+                    );
+                }
+                int composed = waterOrIce
                     ? ShadingPipeline.compositeOver(shadedBase, shadedOverlay)
                     : ShadingPipeline.compositeOver(shadedOverlay, shadedBase);
                 if (applyDaylight) {
@@ -790,36 +801,98 @@ public final class TileService {
         }
     }
 
-    /**
-     * §4's fixed diagonal neighbor is (x-1, z+1). Reads it from the already-copied
-     * local rows when inside this tile, else from the relevant adjacent region's edge
-     * (west for x underflow, south for z overflow, south-west for both at once). A
-     * missing region, or a neighbor column that was never captured (still holding the
-     * {@link ChunkSnapshot#NO_SURFACE} sentinel), leaves the term flat per the spec's
-     * "missing neighbor -> unshaded" rule.
-     */
-    private static Integer neighborHeight(
+    private static double reliefMultiplier(
         final int x,
         final int z,
+        final boolean bathymetry,
         final short[] localSurfaceY,
-        final RegionColumns region,
-        final RegionColumns west,
-        final RegionColumns south,
-        final RegionColumns southWest
+        final byte[] localFluidDepth,
+        final byte[] localKind,
+        final RegionNeighborhood neighborhood
     ) {
-        final int nx = x - 1;
-        final int nz = z + 1;
-        final short value;
-        if (nx < 0 && nz > 255) {
-            value = southWest == null ? ChunkSnapshot.NO_SURFACE : southWest.surfaceYAt(255, 0);
-        } else if (nx < 0) {
-            value = west == null ? ChunkSnapshot.NO_SURFACE : west.surfaceYAt(255, nz);
-        } else if (nz > 255) {
-            value = south == null ? ChunkSnapshot.NO_SURFACE : south.surfaceYAt(nx, 0);
-        } else {
-            value = localSurfaceY[nz * RegionColumns.SIZE + nx];
+        return ShadingPipeline.directionalReliefMultiplier(
+            reliefHeight(x - 1, z, bathymetry, localSurfaceY, localFluidDepth, localKind, neighborhood),
+            reliefHeight(x, z + 1, bathymetry, localSurfaceY, localFluidDepth, localKind, neighborhood),
+            reliefHeight(x - 1, z + 1, bathymetry, localSurfaceY, localFluidDepth, localKind, neighborhood),
+            reliefHeight(x + 1, z, bathymetry, localSurfaceY, localFluidDepth, localKind, neighborhood),
+            reliefHeight(x, z - 1, bathymetry, localSurfaceY, localFluidDepth, localKind, neighborhood),
+            reliefHeight(x + 1, z - 1, bathymetry, localSurfaceY, localFluidDepth, localKind, neighborhood),
+            1
+        );
+    }
+
+    private static Integer reliefHeight(
+        final int x,
+        final int z,
+        final boolean bathymetry,
+        final short[] localSurfaceY,
+        final byte[] localFluidDepth,
+        final byte[] localKind,
+        final RegionNeighborhood neighborhood
+    ) {
+        if (x >= 0 && x < RegionColumns.SIZE && z >= 0 && z < RegionColumns.SIZE) {
+            final int index = z * RegionColumns.SIZE + x;
+            final short value = localSurfaceY[index];
+            if (value == ChunkSnapshot.NO_SURFACE) {
+                return null;
+            }
+            if (!bathymetry
+                || (localKind[index] != SurfaceKind.WATER.ordinal()
+                    && localKind[index] != SurfaceKind.ICE.ordinal())) {
+                return (int) value;
+            }
+            return (int) value - (localFluidDepth[index] & 0xFF);
         }
+        final int regionDx = x < 0 ? -1 : x >= RegionColumns.SIZE ? 1 : 0;
+        final int regionDz = z < 0 ? -1 : z >= RegionColumns.SIZE ? 1 : 0;
+        final RegionColumns region = neighborhood.at(regionDx, regionDz);
+        if (region == null) {
+            return null;
+        }
+        final int localX = Math.floorMod(x, RegionColumns.SIZE);
+        final int localZ = Math.floorMod(z, RegionColumns.SIZE);
+        final short value = region.reliefYAt(localX, localZ, bathymetry);
         return value == ChunkSnapshot.NO_SURFACE ? null : (int) value;
+    }
+
+    private record RegionNeighborhood(
+        RegionColumns center,
+        RegionColumns north,
+        RegionColumns northEast,
+        RegionColumns east,
+        RegionColumns southEast,
+        RegionColumns south,
+        RegionColumns southWest,
+        RegionColumns west,
+        RegionColumns northWest
+    ) {
+        RegionColumns at(final int dx, final int dz) {
+            if (dx == 0 && dz == 0) {
+                return center;
+            }
+            if (dx == 0 && dz < 0) {
+                return north;
+            }
+            if (dx > 0 && dz < 0) {
+                return northEast;
+            }
+            if (dx > 0 && dz == 0) {
+                return east;
+            }
+            if (dx > 0) {
+                return southEast;
+            }
+            if (dx == 0) {
+                return south;
+            }
+            if (dz > 0) {
+                return southWest;
+            }
+            if (dz == 0) {
+                return west;
+            }
+            return northWest;
+        }
     }
 
     private void pushUpload(final TileUpdate update) {

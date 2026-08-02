@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.core.color.MaterialDetailProfile;
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
@@ -12,6 +13,7 @@ import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -123,14 +125,14 @@ class PredictedTileComposerTest {
         assertEquals(
             ShadingPipeline.applyShade(
                 paletteColor,
-                ShadingPipeline.heightShade(48, ShadingPipeline.REFERENCE_HEIGHT, true)
+                ShadingPipeline.detailedHeightShade(48, ShadingPipeline.REFERENCE_HEIGHT)
             ),
             lowPlateau
         );
         assertEquals(
             ShadingPipeline.applyShade(
                 paletteColor,
-                ShadingPipeline.heightShade(160, ShadingPipeline.REFERENCE_HEIGHT, true)
+                ShadingPipeline.detailedHeightShade(160, ShadingPipeline.REFERENCE_HEIGHT)
             ),
             highPlateau
         );
@@ -169,7 +171,33 @@ class PredictedTileComposerTest {
     }
 
     @Test
-    void lod0ReliefDoesNotBleedAcrossABlockEdge() {
+    void predictionUsesTheResourceMaterialProfileAcrossFlatTerrain() {
+        final BaselineGrid grid = new BaselineGrid();
+        final DerivedGrid derived = new DerivedGrid();
+        Arrays.fill(grid.biomeId, 1);
+        Arrays.fill(derived.kind, (byte) SurfaceKind.LAND.ordinal());
+        Arrays.fill(derived.surfaceY, ShadingPipeline.REFERENCE_HEIGHT);
+        final MaterialDetailProfile detail = MaterialDetailProfile.fromLuminance(
+            new int[] {92, 108, 94, 106, 96, 104, 98, 102, 102, 98, 104, 96, 106, 94, 108, 92},
+            0.08
+        );
+        final PredictionPalette palette = PredictionPalette.fromSamples(
+            Map.of(), Map.of(SurfaceKind.LAND, detail)
+        );
+
+        final int[] pixels = PredictedTileComposer.compose(derived, grid, palette);
+        final HashSet<Integer> colors = new HashSet<>();
+        for (int z = 0; z < 16; z++) {
+            for (int x = 0; x < 16; x++) {
+                colors.add(pixels[z * 256 + x]);
+            }
+        }
+
+        assertTrue(colors.size() > 2, "a resource-derived profile should break up a flat predicted colour");
+    }
+
+    @Test
+    void lod0ReliefShapesBothSidesOfABlockEdge() {
         final BaselineGrid grid = new BaselineGrid();
         final DerivedGrid derived = new DerivedGrid();
         Arrays.fill(grid.biomeId, 1);
@@ -189,8 +217,8 @@ class PredictedTileComposerTest {
         final int lowEdge = pixels[z * BaselineGrid.PIXELS + 127];
         final int highEdge = pixels[z * BaselineGrid.PIXELS + 128];
 
-        assertEquals(flatLow, lowEdge, "LOD0 relief must not soften the block before a height boundary");
-        assertNotEquals(lowEdge, highEdge, "the height boundary itself must remain visible");
+        assertNotEquals(flatLow, lowEdge, "the low shoulder should darken before the height boundary");
+        assertNotEquals(lowEdge, highEdge, "the raised shoulder must remain distinct from the low side");
     }
 
     private static int composeReliefPlanePixel(final int centerHeight, final int risePerBlock, final int lod) {
@@ -334,6 +362,36 @@ class PredictedTileComposerTest {
     }
 
     @Test
+    void predictedWaterShowsReliefFromTheFloorBelowAFlatSurface() {
+        final BaselineGrid grid = new BaselineGrid();
+        final DerivedGrid flat = new DerivedGrid();
+        Arrays.fill(grid.biomeId, 0);
+        Arrays.fill(flat.kind, (byte) SurfaceKind.WATER.ordinal());
+        Arrays.fill(flat.surfaceY, BaselineDeriver.WATER_LEVEL);
+        Arrays.fill(flat.fluidDepth, 10);
+        final int center = BaselineGrid.index(10, 10);
+        final int flatPixel = PredictedTileComposer.compose(flat, grid, PredictionPalette.defaults())[10 * 256 + 10];
+
+        final DerivedGrid sloped = new DerivedGrid();
+        System.arraycopy(flat.kind, 0, sloped.kind, 0, flat.kind.length);
+        System.arraycopy(flat.surfaceY, 0, sloped.surfaceY, 0, flat.surfaceY.length);
+        System.arraycopy(flat.fluidDepth, 0, sloped.fluidDepth, 0, flat.fluidDepth.length);
+        sloped.fluidDepth[BaselineGrid.index(9, 10)] = 8;
+        sloped.fluidDepth[BaselineGrid.index(10, 11)] = 8;
+        sloped.fluidDepth[BaselineGrid.index(9, 11)] = 8;
+        sloped.fluidDepth[BaselineGrid.index(11, 10)] = 12;
+        sloped.fluidDepth[BaselineGrid.index(10, 9)] = 12;
+        sloped.fluidDepth[BaselineGrid.index(11, 9)] = 12;
+
+        final int slopedPixel = PredictedTileComposer.compose(
+            sloped, grid, PredictionPalette.defaults()
+        )[10 * 256 + 10];
+
+        assertEquals(10, sloped.fluidDepth[center]);
+        assertNotEquals(flatPixel, slopedPixel, "floor shape should remain visible through a flat water surface");
+    }
+
+    @Test
     void authoritativeFoliageCorrectionReplacesThePredictedGroundPixel() {
         final BaselineGrid grid = new BaselineGrid();
         final DerivedGrid derived = new DerivedGrid();
@@ -366,12 +424,16 @@ class PredictedTileComposerTest {
         Arrays.fill(derived.kind, (byte) SurfaceKind.FOLIAGE.ordinal());
         Arrays.fill(derived.surfaceY, 73);
         final int pixel = 31 * 256 + 21;
-        final int southwestNeighbor = 32 * 256 + 20;
 
         final CorrectionTile corrections = new CorrectionTile();
         corrections.applyPatch(1L, new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(java.util.List.of(
             new PatchCodec.Sample(pixel, 35, 79, SurfaceKind.LAND.ordinal(), 11, 0),
-            new PatchCodec.Sample(southwestNeighbor, 35, 79, SurfaceKind.LAND.ordinal(), 11, 0)
+            new PatchCodec.Sample(31 * 256 + 20, 35, 79, SurfaceKind.LAND.ordinal(), 11, 0),
+            new PatchCodec.Sample(32 * 256 + 21, 35, 79, SurfaceKind.LAND.ordinal(), 11, 0),
+            new PatchCodec.Sample(32 * 256 + 20, 35, 79, SurfaceKind.LAND.ordinal(), 11, 0),
+            new PatchCodec.Sample(31 * 256 + 22, 35, 79, SurfaceKind.LAND.ordinal(), 11, 0),
+            new PatchCodec.Sample(30 * 256 + 21, 35, 79, SurfaceKind.LAND.ordinal(), 11, 0),
+            new PatchCodec.Sample(30 * 256 + 22, 35, 79, SurfaceKind.LAND.ordinal(), 11, 0)
         )));
         final int[] corrected = PredictedTileComposer.compose(
             derived, grid, PredictionPalette.defaults(), corrections, PredictionViewMode.EVERYWHERE, 0
@@ -380,7 +442,7 @@ class PredictedTileComposerTest {
         assertEquals(
             ShadingPipeline.applyShade(
                 MapColorTable.argb(11),
-                ShadingPipeline.heightShade(79, ShadingPipeline.REFERENCE_HEIGHT, true)
+                ShadingPipeline.detailedHeightShade(79, ShadingPipeline.REFERENCE_HEIGHT)
             ),
             corrected[pixel],
             "player-built stone must remain visible through predicted canopy"
@@ -402,7 +464,7 @@ class PredictedTileComposerTest {
         assertEquals(
             ShadingPipeline.applyShade(
                 palette.groundColor(plains),
-                ShadingPipeline.heightShade(surfaceY, ShadingPipeline.REFERENCE_HEIGHT, true)
+                ShadingPipeline.detailedHeightShade(surfaceY, ShadingPipeline.REFERENCE_HEIGHT)
             ),
             pixels[10 * 256 + 10]
         );
@@ -418,7 +480,7 @@ class PredictedTileComposerTest {
         assertEquals(
             ShadingPipeline.applyShade(
                 MapColorTable.argb(stoneMapColor),
-                ShadingPipeline.heightShade(surfaceY, ShadingPipeline.REFERENCE_HEIGHT, true)
+                ShadingPipeline.detailedHeightShade(surfaceY, ShadingPipeline.REFERENCE_HEIGHT)
             ),
             pixels[10 * 256 + 10],
             "a non-tinted block's map color remains the best stand-in for it"

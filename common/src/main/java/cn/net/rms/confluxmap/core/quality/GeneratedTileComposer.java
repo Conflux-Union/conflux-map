@@ -51,17 +51,17 @@ public final class GeneratedTileComposer {
                     pixels[index] = Argb.TRANSPARENT;
                     continue;
                 }
-                final Integer neighborHeight = x > 0 && z + 1 < grid.height()
-                    ? (int) grid.surfaceY()[(z + 1) * grid.width() + x - 1]
-                    : null;
-                final double shade = ShadingPipeline.combinedShade(
-                    true,
-                    true,
-                    grid.surfaceY()[index],
-                    ShadingPipeline.REFERENCE_HEIGHT,
-                    neighborHeight
+                final double heightShade = ShadingPipeline.detailedHeightShade(
+                    grid.surfaceY()[index], ShadingPipeline.REFERENCE_HEIGHT
                 );
-                pixels[index] = ShadingPipeline.applyShade(baseColor(grid, palette, kind, index), shade);
+                final double relief = ShadingPipeline.directionalReliefMultiplier(
+                    sampleHeight(grid, x - 1, z), sampleHeight(grid, x, z + 1),
+                    sampleHeight(grid, x - 1, z + 1), sampleHeight(grid, x + 1, z),
+                    sampleHeight(grid, x, z - 1), sampleHeight(grid, x + 1, z - 1), 1
+                );
+                pixels[index] = ShadingPipeline.applyBrightnessMultiplier(
+                    ShadingPipeline.applyShade(baseColor(grid, palette, kind, index), heightShade), relief
+                );
             }
         }
         return new PredictionQualityEvaluator.TileData(
@@ -72,6 +72,17 @@ public final class GeneratedTileComposer {
             visibleKind,
             grid.fluidDepth().clone()
         );
+    }
+
+    private static Integer sampleHeight(final Grid grid, final int x, final int z) {
+        if (x < 0 || x >= grid.width() || z < 0 || z >= grid.height()) {
+            return null;
+        }
+        final int index = z * grid.width() + x;
+        final SurfaceKind kind = visibleKind(grid, index);
+        return kind == SurfaceKind.UNKNOWN || kind == SurfaceKind.VOID
+            ? null
+            : (int) grid.surfaceY()[index];
     }
 
     private static SurfaceKind visibleKind(final Grid grid, final int index) {

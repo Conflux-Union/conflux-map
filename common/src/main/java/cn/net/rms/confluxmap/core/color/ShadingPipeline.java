@@ -3,9 +3,10 @@ package cn.net.rms.confluxmap.core.color;
 import cn.net.rms.confluxmap.core.util.Argb;
 
 /**
- * Pure-int implementation of surface-color-sampling.md §4 (height/slope shading)
- * and §5 (water/ice compositing). No Minecraft types; every input is a plain
- * color, height, or neighbor height already resolved by the caller.
+ * Pure-int implementation of surface-color-sampling.md §4/§5 plus the bounded
+ * material, continuous-relief, and bathymetry extensions in §7. No Minecraft
+ * types; every input is a plain color, height, or neighbor height already
+ * resolved by the caller.
  *
  * <p>This slice only implements the cached/world-map pass's fixed height
  * reference (§4: "cached/world-map pass ... always uses the fixed constant 80").
@@ -38,6 +39,10 @@ public final class ShadingPipeline {
     private static final double K_WITH_SLOPE = 3.0;
     private static final double SLOPE_STEP = 1.0 / 8.0;
     private static final double BLOCKS_PER_FULL_SLOPE = 8.0;
+    private static final double DETAILED_HEIGHT_STRENGTH = 0.65;
+    private static final double RELIEF_CONTRAST = 0.30;
+    private static final float SEAFLOOR_DARKEN_RANGE_BLOCKS = 48f;
+    private static final float SEAFLOOR_MIN_BRIGHTNESS = 0.25f;
 
     private ShadingPipeline() {
     }
@@ -48,6 +53,49 @@ public final class ShadingPipeline {
         final double k = slopeAlsoActive ? K_WITH_SLOPE : K_ALONE;
         final double shade = Math.log10(Math.abs(diff) / HEIGHT_STEP + 1.0) / k;
         return diff < 0 ? -shade : shade;
+    }
+
+    /**
+     * The absolute-height component used by the detailed terrain renderer. Continuous relief
+     * supplies most of the local shape, so the existing combined height curve is deliberately
+     * reduced to keep high terrain from washing out its block and biome colours.
+     */
+    public static double detailedHeightShade(final int columnHeight, final int referenceHeight) {
+        return heightShade(columnHeight, referenceHeight, true) * DETAILED_HEIGHT_STRENGTH;
+    }
+
+    /**
+     * LOD-normalized directional relief from two three-sample shoulders around a pixel. The
+     * west/south/south-west shoulder is the lit side, preserving the map's established light
+     * direction; east/north/north-east is the dark side. A rise of one block per horizontal
+     * block reaches the bounded medium-contrast range {@code 0.70..1.30}.
+     */
+    public static double directionalReliefMultiplier(
+        final Integer litWest,
+        final Integer litSouth,
+        final Integer litDiagonal,
+        final Integer darkEast,
+        final Integer darkNorth,
+        final Integer darkDiagonal,
+        final int blocksPerPixel
+    ) {
+        if (litWest == null || litSouth == null || litDiagonal == null
+            || darkEast == null || darkNorth == null || darkDiagonal == null) {
+            return 1.0;
+        }
+        if (blocksPerPixel <= 0) {
+            throw new IllegalArgumentException("blocksPerPixel must be positive");
+        }
+        final double litMean = (litWest + litSouth + litDiagonal) / 3.0;
+        final double darkMean = (darkEast + darkNorth + darkDiagonal) / 3.0;
+        final double risePerBlock = (litMean - darkMean) / (2.0 * blocksPerPixel);
+        final double normalized = Math.max(-1.0, Math.min(1.0, risePerBlock));
+        return 1.0 + RELIEF_CONTRAST * normalized;
+    }
+
+    /** Depth-based readability curve shared by captured and predicted seafloors. */
+    public static float seafloorBrightness(final int fluidDepth) {
+        return Math.max(SEAFLOOR_MIN_BRIGHTNESS, 1f - Math.max(0, fluidDepth) / SEAFLOOR_DARKEN_RANGE_BLOCKS);
     }
 
     /**

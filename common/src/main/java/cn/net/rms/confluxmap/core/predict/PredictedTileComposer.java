@@ -25,9 +25,6 @@ import java.util.Arrays;
 public final class PredictedTileComposer {
     /** Opaque sand/dirt-like stand-in for an unseen seafloor, darkened by {@link #seafloorColor}. */
     private static final int SEAFLOOR_BASE = 0xFFC2A876;
-    private static final float SEAFLOOR_DARKEN_RANGE_BLOCKS = 48f;
-    private static final float SEAFLOOR_MIN_BRIGHTNESS = 0.25f;
-    private static final double RELIEF_CONTRAST = 0.36;
     /** Vanilla map colour GRASS: what a grass block reports regardless of the biome tinting it. */
     private static final int GRASS_MAP_COLOR = 1;
     /** Vanilla map colour PLANT: leaves and ground plants, likewise biome-tinted in the world. */
@@ -158,6 +155,12 @@ public final class PredictedTileComposer {
                 corrected[pixel] = true;
             }
         }
+        final int[] floorSurface = surface.clone();
+        for (int i = 0; i < floorSurface.length; i++) {
+            if (SurfaceKind.byOrdinal(kinds[i]) == SurfaceKind.WATER) {
+                floorSurface[i] -= fluids[i] & 0xFF;
+            }
+        }
         for (int z = 0; z < size; z++) {
             for (int x = 0; x < size; x++) {
                 final int idx = BaselineGrid.index(x, z);
@@ -172,23 +175,44 @@ public final class PredictedTileComposer {
                     continue;
                 }
 
-                final double reliefMultiplier = directionalReliefMultiplier(
-                    surface, kinds, x, z, TileMath.blocksPerPixel(lod)
+                final double reliefMultiplier = ShadingPipeline.directionalReliefMultiplier(
+                    slopeSampleHeight(surface, kinds, x - 1, z),
+                    slopeSampleHeight(surface, kinds, x, z + 1),
+                    slopeSampleHeight(surface, kinds, x - 1, z + 1),
+                    slopeSampleHeight(surface, kinds, x + 1, z),
+                    slopeSampleHeight(surface, kinds, x, z - 1),
+                    slopeSampleHeight(surface, kinds, x + 1, z - 1),
+                    TileMath.blocksPerPixel(lod)
                 );
+                final double floorReliefMultiplier = kind == SurfaceKind.WATER
+                    ? ShadingPipeline.directionalReliefMultiplier(
+                        slopeSampleHeight(floorSurface, kinds, x - 1, z),
+                        slopeSampleHeight(floorSurface, kinds, x, z + 1),
+                        slopeSampleHeight(floorSurface, kinds, x - 1, z + 1),
+                        slopeSampleHeight(floorSurface, kinds, x + 1, z),
+                        slopeSampleHeight(floorSurface, kinds, x, z - 1),
+                        slopeSampleHeight(floorSurface, kinds, x + 1, z - 1),
+                        TileMath.blocksPerPixel(lod)
+                    )
+                    : 1.0;
                 // slopeAlsoActive: the directional relief above is this plane's slope term, so the
                 // height curve takes the spec's gentler combined K - the same one the captured map
                 // uses, since it always runs height and slope together. Predating the relief term,
                 // this used to pass false, which left the underlay on the steeper height-only curve:
                 // invisible near the Y=80 reference, but at a superflat's Y=-61 it darkened the
                 // predicted plane to roughly half the brightness of the captured map beside it.
-                final double heightShade = ShadingPipeline.heightShade(
-                    surface[idx], ShadingPipeline.REFERENCE_HEIGHT, true
+                final double heightShade = ShadingPipeline.detailedHeightShade(
+                    surface[idx], ShadingPipeline.REFERENCE_HEIGHT
                 );
                 final int composed = corrected[outIdx] || !grid.supersampled()
                     ? baseColor(kind, biomes[idx], fluids[idx], palette,
-                        corrected[outIdx], colors[outIdx], floorColors[outIdx], baselineMapColorId)
+                        corrected[outIdx], colors[outIdx], floorColors[outIdx], baselineMapColorId,
+                        floorReliefMultiplier)
                     : averagedSubColor(derived, grid, palette, idx, baselineMapColorId);
-                final int heightShaded = ShadingPipeline.applyShade(composed, heightShade);
+                final int materialDetailed = palette.applyMaterialDetail(
+                    kind, composed, grid.blockX(x), grid.blockZ(z)
+                );
+                final int heightShaded = ShadingPipeline.applyShade(materialDetailed, heightShade);
                 out[outIdx] = ShadingPipeline.applyBrightnessMultiplier(heightShaded, reliefMultiplier);
             }
         }
@@ -204,7 +228,8 @@ public final class PredictedTileComposer {
         final boolean corrected,
         final int correctedMapColorId,
         final int correctedFloorMapColorId,
-        final int baselineMapColorId
+        final int baselineMapColorId,
+        final double floorReliefMultiplier
     ) {
         if (kind == SurfaceKind.WATER) {
             // Keep ocean/river water unified: cubiomes' coarse biome grid otherwise fractures
@@ -217,7 +242,12 @@ public final class PredictedTileComposer {
             final int floor = corrected && paintsFromMapColor(correctedFloorMapColorId)
                 ? MapColorTable.argb(correctedFloorMapColorId)
                 : SEAFLOOR_BASE;
-            return ShadingPipeline.compositeOver(water, seafloorColor(fluidDepth, floor));
+            return ShadingPipeline.compositeOver(
+                water,
+                ShadingPipeline.applyBrightnessMultiplier(
+                    seafloorColor(fluidDepth, floor), floorReliefMultiplier
+                )
+            );
         }
         if (corrected && paintsFromMapColor(correctedMapColorId)) {
             return MapColorTable.argb(correctedMapColorId);
@@ -255,7 +285,7 @@ public final class PredictedTileComposer {
                 final int color = baseColor(
                     SurfaceKind.byOrdinal(derived.subKind[s]), grid.subBiomeId[s],
                     derived.subFluidDepth[s], palette, false, Proto.MAP_COLOR_NONE,
-                    MapPixel.MAP_COLOR_NONE, baselineMapColorId
+                    MapPixel.MAP_COLOR_NONE, baselineMapColorId, 1.0
                 );
                 a += Argb.alpha(color);
                 r += Argb.red(color);
@@ -264,61 +294,6 @@ public final class PredictedTileComposer {
             }
         }
         return Argb.pack(a / count, r / count, g / count, b / count);
-    }
-
-    /**
-     * Directional relief from two three-sample shoulders around the output pixel. Averaging the
-     * axial and diagonal samples suppresses single-cell height noise, while the fixed southwest
-     * light direction keeps adjacent tiles visually coherent. A one-block-per-axis diagonal rise
-     * reaches full contrast; steeper terrain is clamped instead of washing out its biome colour.
-     */
-    private static double directionalReliefMultiplier(
-        final int[] surface,
-        final byte[] kinds,
-        final int x,
-        final int z,
-        final int blocksPerPixel
-    ) {
-        if (blocksPerPixel == 1) {
-            return blockAlignedReliefMultiplier(surface, kinds, x, z);
-        }
-        final Integer litWest = slopeSampleHeight(surface, kinds, x - 1, z);
-        final Integer litSouth = slopeSampleHeight(surface, kinds, x, z + 1);
-        final Integer litDiagonal = slopeSampleHeight(surface, kinds, x - 1, z + 1);
-        final Integer darkEast = slopeSampleHeight(surface, kinds, x + 1, z);
-        final Integer darkNorth = slopeSampleHeight(surface, kinds, x, z - 1);
-        final Integer darkDiagonal = slopeSampleHeight(surface, kinds, x + 1, z - 1);
-        if (litWest == null || litSouth == null || litDiagonal == null
-            || darkEast == null || darkNorth == null || darkDiagonal == null) {
-            return 1.0;
-        }
-
-        final double litMean = (litWest + litSouth + litDiagonal) / 3.0;
-        final double darkMean = (darkEast + darkNorth + darkDiagonal) / 3.0;
-        final double risePerBlock = (litMean - darkMean) / (2.0 * blocksPerPixel);
-        final double normalized = Math.max(-1.0, Math.min(1.0, risePerBlock));
-        return 1.0 + RELIEF_CONTRAST * normalized;
-    }
-
-    /**
-     * LOD0 has one output texel per block, so its relief follows the captured map's fixed
-     * southwest neighbor instead of sampling across both sides of an edge. The magnitude remains
-     * continuous to avoid turning every one-block interpolation step into a full contour band.
-     */
-    private static double blockAlignedReliefMultiplier(
-        final int[] surface,
-        final byte[] kinds,
-        final int x,
-        final int z
-    ) {
-        final Integer litDiagonal = slopeSampleHeight(surface, kinds, x - 1, z + 1);
-        if (litDiagonal == null) {
-            return 1.0;
-        }
-        final int center = surface[BaselineGrid.index(x, z)];
-        final double risePerBlock = (litDiagonal - center) / 2.0;
-        final double normalized = Math.max(-1.0, Math.min(1.0, risePerBlock));
-        return 1.0 + RELIEF_CONTRAST * normalized;
     }
 
     /**
@@ -358,8 +333,7 @@ public final class PredictedTileComposer {
 
     /** Depth-darkened stand-in for a seafloor cubiomes never actually tells us about. */
     private static int seafloorColor(final int fluidDepth, final int floorColor) {
-        final float brightness = Math.max(SEAFLOOR_MIN_BRIGHTNESS, 1f - fluidDepth / SEAFLOOR_DARKEN_RANGE_BLOCKS);
-        return Argb.scale(floorColor, brightness);
+        return Argb.scale(floorColor, ShadingPipeline.seafloorBrightness(fluidDepth));
     }
 
     /** Height at one slope sample, with void/unknown boundaries treated as unavailable. */

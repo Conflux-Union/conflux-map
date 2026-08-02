@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.core.store;
 
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
 import cn.net.rms.confluxmap.core.model.SampleSource;
+import cn.net.rms.confluxmap.core.model.SurfaceKind;
 
 /**
  * 256x256 columns of map samples covering 16x16 chunks. Column arrays are
@@ -121,6 +122,25 @@ public final class RegionColumns {
     /** Surface height at one column, for cross-tile edge shading. {@link ChunkSnapshot#NO_SURFACE} if unset. */
     public synchronized short surfaceYAt(final int localX, final int localZ) {
         return surfaceY[localZ * SIZE + localX];
+    }
+
+    /**
+     * Terrain height used by the detailed relief stencil. Land always uses its visible surface;
+     * water/ice optionally expose the recorded floor so bathymetry can shade independently below
+     * a flat water surface. {@link ChunkSnapshot#NO_SURFACE} remains the missing-data sentinel.
+     */
+    public synchronized short reliefYAt(final int localX, final int localZ, final boolean bathymetry) {
+        final int index = localZ * SIZE + localX;
+        final short y = surfaceY[index];
+        if (y == ChunkSnapshot.NO_SURFACE || !bathymetry) {
+            return y;
+        }
+        final byte surfaceKind = kind[index];
+        if (surfaceKind != SurfaceKind.WATER.ordinal() && surfaceKind != SurfaceKind.ICE.ordinal()) {
+            return y;
+        }
+        final int floorY = y - (fluidDepth[index] & 0xFF);
+        return floorY <= ChunkSnapshot.NO_SURFACE ? ChunkSnapshot.NO_SURFACE + 1 : (short) floorY;
     }
 
     /**

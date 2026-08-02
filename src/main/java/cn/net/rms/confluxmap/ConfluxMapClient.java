@@ -176,7 +176,6 @@ public final class ConfluxMapClient implements ClientModInitializer {
         );
         predictionTileService.bindCorrectionStore(correctionStore);
         predictionBootstrap = new PredictionBootstrap(client, predictionState, companionSession);
-        predictionPaletteBuilder = new PredictionPaletteBuilder(client, predictionState);
         clientNetworking = new ClientNetworking(companionSession);
         mapSyncClient = new MapSyncClient(companionSession, clientNetworking, correctionStore, predictionTileService, config);
         chunkLoadStateClient = new ChunkLoadStateClient(companionSession, clientNetworking);
@@ -201,6 +200,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         groundTeleportService = new ClientGroundTeleportService(client);
 
         spriteColorSampler = new SpriteColorSampler(client);
+        predictionPaletteBuilder = new PredictionPaletteBuilder(client, predictionState, spriteColorSampler);
         biomeTintResolver = new BiomeTintResolver(client);
         tileTextureManager = new TileTextureManager(config, tileService, predictionTileService, daylightModel);
         layerSelector = new LayerSelector(client, config);
@@ -265,7 +265,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
         daylightTracker.register();
         groundTeleportService.register();
         ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
-            new ColorReloadListener(spriteColorSampler)
+            new ColorReloadListener(client, spriteColorSampler, () -> {
+                predictionPaletteBuilder.refreshCurrentWorld();
+                reloadPredictionTiles();
+            })
         );
         ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
             new EntityIconReloadListener(entityIconManager)

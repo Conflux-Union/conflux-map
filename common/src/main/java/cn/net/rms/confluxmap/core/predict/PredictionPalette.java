@@ -1,6 +1,9 @@
 package cn.net.rms.confluxmap.core.predict;
 
+import cn.net.rms.confluxmap.core.color.MaterialDetailProfile;
+import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.util.Argb;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -28,19 +31,36 @@ public final class PredictionPalette {
 
     /** biomeId -> {grassTint, foliageTint, waterTint}, opaque ARGB each. */
     private final Map<Integer, int[]> tints;
+    private final Map<SurfaceKind, MaterialDetailProfile> materialDetail;
 
-    private PredictionPalette(final Map<Integer, int[]> tints) {
+    private PredictionPalette(
+        final Map<Integer, int[]> tints,
+        final Map<SurfaceKind, MaterialDetailProfile> materialDetail
+    ) {
         this.tints = tints;
+        this.materialDetail = materialDetail;
     }
 
     /** Compiled-in {@link BiomeTable} fallbacks only - no live registry sample. */
     public static PredictionPalette defaults() {
-        return new PredictionPalette(Map.of());
+        return new PredictionPalette(Map.of(), Map.of());
     }
 
     /** One immutable snapshot of every biome id the live client registry could resolve this session. */
     public static PredictionPalette fromSamples(final Map<Integer, int[]> sampledTints) {
-        return new PredictionPalette(new HashMap<>(sampledTints));
+        return fromSamples(sampledTints, Map.of());
+    }
+
+    /** Live biome tint and representative resource-material samples for one immutable session. */
+    public static PredictionPalette fromSamples(
+        final Map<Integer, int[]> sampledTints,
+        final Map<SurfaceKind, MaterialDetailProfile> sampledMaterialDetail
+    ) {
+        final EnumMap<SurfaceKind, MaterialDetailProfile> materialDetail = new EnumMap<>(SurfaceKind.class);
+        materialDetail.putAll(sampledMaterialDetail);
+        return new PredictionPalette(
+            new HashMap<>(sampledTints), materialDetail
+        );
     }
 
     public int grassTint(final int biomeId) {
@@ -72,5 +92,16 @@ public final class PredictionPalette {
     public int waterTint(final int biomeId) {
         final int[] sampled = tints.get(biomeId);
         return sampled != null ? sampled[2] : BiomeTable.get(biomeId).waterTint();
+    }
+
+    /** Applies the representative resource texture for a predicted surface category. */
+    public int applyMaterialDetail(
+        final SurfaceKind kind,
+        final int argb,
+        final int worldX,
+        final int worldZ
+    ) {
+        final MaterialDetailProfile profile = materialDetail.get(kind);
+        return profile == null ? argb : profile.apply(argb, worldX, worldZ, kind.ordinal());
     }
 }
