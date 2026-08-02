@@ -11,6 +11,7 @@ import cn.net.rms.confluxmap.core.multiworld.ClientWorldPolicy;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
+import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
@@ -564,6 +565,14 @@ public final class ConfigScreen extends ConfluxScreen {
                     () -> config.predictionShowStructures, v -> config.predictionShowStructures = v,
                     structureReason == null, structureReason
                 );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.prediction.structure_icon_detail_limit",
+                    0, TileMath.MAX_LOD,
+                    () -> config.predictionStructureMaxLod,
+                    v -> config.predictionStructureMaxLod = v,
+                    ConfigScreen::structureIconDetailLimitText,
+                    structureReason == null, structureReason
+                );
                 y = addEnumRow(
                     y, "confluxmap.config.prediction.view_mode", PredictionViewMode.values(),
                     () -> config.predictionViewMode,
@@ -789,6 +798,12 @@ public final class ConfigScreen extends ConfluxScreen {
 
     private static String renderDistanceText(final int value) {
         return value == 0 ? resolvedText("confluxmap.value.unlimited") : blocksText(value);
+    }
+
+    private static String structureIconDetailLimitText(final int lod) {
+        return Texts.translatable(
+            "confluxmap.value.blocks_per_pixel", TileMath.blocksPerPixel(lod)
+        ).getString();
     }
 
     private PredictionSettingsAccess predictionSettingsAccess() {

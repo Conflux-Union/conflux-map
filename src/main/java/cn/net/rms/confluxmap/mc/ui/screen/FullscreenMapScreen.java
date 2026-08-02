@@ -407,7 +407,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         clearChildren();
         addDrawableChild(Widgets.button(
             width - MARGIN - 80,
-            MARGIN,
+            height - 32,
             80,
             20,
             Texts.translatable("confluxmap.screen.map_export.cancel_selection"),
@@ -1104,11 +1104,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final int minZ = (int) Math.floor(centerZ - height / 2.0 * scale);
         final int maxX = (int) Math.ceil(centerX + width / 2.0 * scale) - 1;
         final int maxZ = (int) Math.ceil(centerZ + height / 2.0 * scale) - 1;
-        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new MapExportScreen(
+        final MapExportScreen screen = new MapExportScreen(
             this,
             MapExportBounds.between(minX, minZ, maxX, maxZ),
             MapExportResolution.forLod(currentLod())
-        ));
+        );
+        beginExportSelection(screen);
     }
 
     void beginExportSelection(final MapExportScreen screen) {
@@ -1149,13 +1150,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     private void cancelExportSelection() {
-        final MapExportScreen screen = exportSelectionScreen;
         exportSelectionScreen = null;
         exportSelection.reset();
         mapPointerPress = false;
-        if (screen != null) {
-            MinecraftAccess.setScreen(MinecraftClient.getInstance(), screen);
-        }
+        rebuildWaypointControls();
     }
 
     private void selectExportCorner(final double mouseX, final double mouseY) {
@@ -1373,12 +1371,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 return true;
             }
             if (button == 1) {
-                if (exportSelection.first().isEmpty()) {
-                    cancelExportSelection();
-                } else {
-                    exportSelection.reset();
-                    rebuildExportSelectionControls();
-                }
+                cancelExportSelection();
                 return true;
             }
             if (button == 0) {
@@ -2631,7 +2624,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private void drawStructures(final GuiDraw draw, final int mouseX, final int mouseY) {
         hoveredStructure = null;
         if (!companion.structureSearchAllowed() || !config.predictionShowStructures
-            || currentLod() > 2 || !predictionState.seedKnown()) {
+            || currentLod() > config.predictionStructureMaxLod || !predictionState.seedKnown()) {
             return;
         }
         final int minX = (int) Math.floor(centerX - width / 2.0 * scale);

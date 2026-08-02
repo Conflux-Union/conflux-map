@@ -17,18 +17,17 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
-/** Localized structure-type picker that centers the fullscreen map on the nearest candidate. */
+/** Localized structure-type picker with visibility controls and bounded candidate lookup. */
 final class StructureSearchScreen extends ConfluxScreen {
     private static final int FIELD_WIDTH = 240;
     private static final int FIELD_HEIGHT = 20;
     private static final int MASTER_TOP = 62;
-    private static final int LIST_TOP = 100;
+    private static final int LIST_TOP = 116;
     private static final int ROW_HEIGHT = 24;
     private static final int ICON_SIZE = 16;
     private static final int TOGGLE_WIDTH = 58;
@@ -163,18 +162,9 @@ final class StructureSearchScreen extends ConfluxScreen {
         if (!companion.structureSearchAllowed()) {
             return;
         }
-        statusKey = "confluxmap.screen.structure_search.not_found";
-        statusArgs = new Object[] {localizedName(type), SEARCH_RADIUS};
-        final Optional<StructureIndex.Marker> marker = structures.findNearest(
-            type,
-            parent.centerBlockX(),
-            parent.centerBlockZ(),
-            SEARCH_RADIUS
-        );
-        if (marker.isPresent()) {
-            parent.focusStructure(marker.get());
-            MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
-        }
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new StructureCandidateScreen(
+            this, parent, structures, dimension, type
+        ));
     }
 
     private void toggleMasterVisibility() {
@@ -333,6 +323,28 @@ final class StructureSearchScreen extends ConfluxScreen {
         );
         final List<StructureIndex.StructureType> filtered = filteredTypes();
         final int end = Math.min(filtered.size(), scrollOffset + visibleRows());
+        StructureSearchScrollBar.drawListSurface(
+            draw,
+            rowX - 4,
+            LIST_TOP - 2,
+            rowWidth + StructureSearchScrollBar.trackWidth() + 10,
+            visibleRows() * ROW_HEIGHT + 2,
+            ROW_HEIGHT
+        );
+        if (filteredCount > visibleRows()) {
+            final String hint = Texts.translatable(
+                "confluxmap.screen.structure_search.scroll_hint",
+                Math.min(visibleRows(), filteredCount),
+                filteredCount
+            ).getString();
+            draw.drawTextWithShadow(
+                this.textRenderer,
+                hint,
+                width / 2f - this.textRenderer.getWidth(hint) / 2f,
+                LIST_TOP - 14,
+                0xFFD0D0D0
+            );
+        }
         for (int index = scrollOffset; index < end; index++) {
             final StructureIndex.StructureType type = filtered.get(index);
             final int rowY = LIST_TOP + (index - scrollOffset) * ROW_HEIGHT;
@@ -379,6 +391,35 @@ final class StructureSearchScreen extends ConfluxScreen {
                 0xFFFF7777
             );
         }
+    }
+
+    @Override
+    protected void renderAfterWidgets(
+        final GuiDraw draw,
+        final int mouseX,
+        final int mouseY,
+        final float tickDelta
+    ) {
+        final int listHeight = visibleRows() * ROW_HEIGHT;
+        StructureSearchScrollBar.drawOverflowCues(
+            draw,
+            rowX - 4,
+            LIST_TOP - 2,
+            rowWidth + StructureSearchScrollBar.trackWidth() + 10,
+            listHeight + 2,
+            filteredCount,
+            visibleRows(),
+            scrollOffset
+        );
+        StructureSearchScrollBar.draw(
+            draw,
+            rowX + rowWidth + 2,
+            LIST_TOP,
+            listHeight - 4,
+            filteredCount,
+            visibleRows(),
+            scrollOffset
+        );
     }
 
     private static String localizedName(final StructureIndex.StructureType type) {

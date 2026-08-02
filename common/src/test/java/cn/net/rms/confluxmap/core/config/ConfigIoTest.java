@@ -44,6 +44,10 @@ class ConfigIoTest {
 
         // Absent fields keep their defaults; out-of-range values are clamped.
         assertEquals(new ConfluxConfig().predictionDebounceMs, loaded.predictionDebounceMs);
+        assertEquals(
+            ConfluxConfig.DEFAULT_PREDICTION_STRUCTURE_MAX_LOD,
+            loaded.predictionStructureMaxLod
+        );
         assertTrue(loaded.annotationsOnHud);
         assertEquals(ConfluxConfig.DEFAULT_ANNOTATION_ERASER_SIZE, loaded.annotationEraserSize);
         assertEquals(new ConfluxConfig().fullscreenDisplayMode, loaded.fullscreenDisplayMode);
@@ -68,6 +72,7 @@ class ConfigIoTest {
         // The upgrade is persisted so the on-disk file now carries the full schema.
         final String rewritten = Files.readString(file, StandardCharsets.UTF_8);
         assertTrue(rewritten.contains("\"predictionDebounceMs\""));
+        assertTrue(rewritten.contains("\"predictionStructureMaxLod\""));
         assertTrue(rewritten.contains("\"predictionStructureVisibility\""));
         assertTrue(rewritten.contains("\"annotationsOnHud\""));
         assertTrue(rewritten.contains("\"annotationEraserSize\""));
@@ -224,6 +229,31 @@ class ConfigIoTest {
         assertTrue(loaded.predictionStructureVisibility.isVisible(
             30, DimensionId.OVERWORLD, StructureIndex.StructureType.VILLAGE
         ));
+    }
+
+    @Test
+    void structureIconDetailLimitRoundTripsAndClampsInvalidValues(@TempDir final Path tmp) throws IOException {
+        final Path file = tmp.resolve("config.json");
+        final ConfigIo io = new ConfigIo(file, LOGGER);
+        final ConfluxConfig config = new ConfluxConfig();
+        config.predictionStructureMaxLod = 1;
+
+        io.save(config);
+        assertEquals(1, io.load().predictionStructureMaxLod);
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":3,\"predictionStructureMaxLod\":99}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(4, io.load().predictionStructureMaxLod);
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":3,\"predictionStructureMaxLod\":-4}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(0, io.load().predictionStructureMaxLod);
     }
 
     @Test

@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.core.loadstate.ChunkLoadDetailMode;
 import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldPolicy;
 import cn.net.rms.confluxmap.core.survey.SurveyReminderSchedule;
+import cn.net.rms.confluxmap.core.util.TileMath;
 
 /**
  * All client settings, serialized as one JSON document.
@@ -26,6 +27,8 @@ public final class ConfluxConfig {
     public static final int MIN_PLAYER_TRAIL_DOT_SIZE = 1;
     public static final int MAX_PLAYER_TRAIL_DOT_SIZE = 8;
     public static final int DEFAULT_PLAYER_TRAIL_DOT_SIZE = 3;
+    /** Default detail threshold for structure markers on the fullscreen map. */
+    public static final int DEFAULT_PREDICTION_STRUCTURE_MAX_LOD = 3;
 
     public int schemaVersion = SCHEMA_VERSION;
 
@@ -145,6 +148,11 @@ public final class ConfluxConfig {
     /** View filter for the predicted plane; EVERYWHERE is the honest default. */
     public PredictionViewMode predictionViewMode = PredictionViewMode.EVERYWHERE;
     public boolean predictionShowStructures = true;
+    /**
+     * Coarsest fullscreen-map detail level at which structure markers stay visible. Values map to
+     * 1, 2, 4, 8, and 16 blocks per screen pixel; larger values show markers farther out.
+     */
+    public int predictionStructureMaxLod = DEFAULT_PREDICTION_STRUCTURE_MAX_LOD;
     /** Per-version and per-dimension structure-type visibility profiles. */
     public StructureVisibilityConfig predictionStructureVisibility = new StructureVisibilityConfig();
     /** Pan-settle debounce, clamped to 100..2000 ms. */
@@ -214,6 +222,7 @@ public final class ConfluxConfig {
         c.predictionNetworkSync = predictionNetworkSync;
         c.predictionViewMode = predictionViewMode;
         c.predictionShowStructures = predictionShowStructures;
+        c.predictionStructureMaxLod = predictionStructureMaxLod;
         c.predictionStructureVisibility = predictionStructureVisibility == null
             ? new StructureVisibilityConfig()
             : predictionStructureVisibility.copy();
@@ -288,6 +297,7 @@ public final class ConfluxConfig {
         if (predictionViewMode == null) {
             predictionViewMode = PredictionViewMode.EVERYWHERE;
         }
+        predictionStructureMaxLod = clamp(predictionStructureMaxLod, 0, TileMath.MAX_LOD);
         if (predictionStructureVisibility == null) {
             predictionStructureVisibility = new StructureVisibilityConfig();
         } else {

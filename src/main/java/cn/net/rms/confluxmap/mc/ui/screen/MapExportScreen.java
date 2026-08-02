@@ -11,6 +11,7 @@ import cn.net.rms.confluxmap.core.export.MapExportRequest;
 import cn.net.rms.confluxmap.core.export.MapExportService;
 import cn.net.rms.confluxmap.core.export.MapExportSizeEstimate;
 import cn.net.rms.confluxmap.core.export.MapExportStatus;
+import cn.net.rms.confluxmap.mc.export.MapExportFileActions;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import java.util.EnumMap;
 import java.util.Map;
@@ -43,6 +44,8 @@ final class MapExportScreen extends ConfluxScreen {
     private boolean includeDrawings = true;
     private boolean submitted;
     private MapExportStatus.State renderedState;
+    private boolean clipboardCopyAttempted;
+    private String fileActionStatusKey;
 
     MapExportScreen(
         final FullscreenMapScreen parent,
@@ -71,8 +74,10 @@ final class MapExportScreen extends ConfluxScreen {
     private void rebuild() {
         clearChildren();
         clearEnterAction();
-        renderedState = exports.status().state();
-        if (submitted || exports.status().active()) {
+        final MapExportStatus status = exports.status();
+        copyCompletedImageToClipboard(status);
+        renderedState = status.state();
+        if (submitted || status.active()) {
             addStatusControls();
         } else {
             addFormControls();
@@ -152,6 +157,7 @@ final class MapExportScreen extends ConfluxScreen {
             Texts.translatable("confluxmap.screen.map_export.new_export"),
             ignored -> {
                 submitted = false;
+                fileActionStatusKey = null;
                 rebuild();
             }
         ));
@@ -160,6 +166,13 @@ final class MapExportScreen extends ConfluxScreen {
             Texts.translatable("confluxmap.screen.map_export.back_to_map"),
             ignored -> returnToMap()
         ));
+        if (status.state() == MapExportStatus.State.COMPLETED && status.output() != null) {
+            addDrawableChild(Widgets.button(
+                width / 2 - 98, height - 58, 196, FIELD_HEIGHT,
+                Texts.translatable("confluxmap.screen.map_export.open_directory"),
+                ignored -> openOutputDirectory(status.output())
+            ));
+        }
     }
 
     private TextFieldWidget numericField(final int x, final int y, final int value) {
@@ -208,6 +221,8 @@ final class MapExportScreen extends ConfluxScreen {
         }
         exports.start(request);
         submitted = true;
+        clipboardCopyAttempted = false;
+        fileActionStatusKey = null;
         rebuild();
     }
 
@@ -276,7 +291,9 @@ final class MapExportScreen extends ConfluxScreen {
         }
         if (renderedState != exports.status().state()) {
             rebuild();
+            return;
         }
+        copyCompletedImageToClipboard(exports.status());
     }
 
     @Override
@@ -370,6 +387,36 @@ final class MapExportScreen extends ConfluxScreen {
                 status.error(), Math.max(40, width - 32)
             ), 108, 0xFFFF7777);
         }
+        if (fileActionStatusKey != null) {
+            drawCentered(
+                draw,
+                Texts.translatable(fileActionStatusKey).getString(),
+                height - 82,
+                fileActionStatusKey.endsWith("failed") ? 0xFFFF7777 : 0xFF80E080
+            );
+        }
+    }
+
+    private void copyCompletedImageToClipboard(final MapExportStatus status) {
+        if (clipboardCopyAttempted || status.state() != MapExportStatus.State.COMPLETED
+            || status.output() == null) {
+            return;
+        }
+        clipboardCopyAttempted = true;
+        final MapExportFileActions.ClipboardCopyResult result = MapExportFileActions.copyPngToClipboard(status.output());
+        if (result == MapExportFileActions.ClipboardCopyResult.IMAGE) {
+            fileActionStatusKey = "confluxmap.screen.map_export.clipboard_copied";
+        } else if (result == MapExportFileActions.ClipboardCopyResult.PATH) {
+            fileActionStatusKey = "confluxmap.screen.map_export.clipboard_path_copied";
+        } else {
+            fileActionStatusKey = "confluxmap.screen.map_export.clipboard_copy_failed";
+        }
+    }
+
+    private void openOutputDirectory(final java.nio.file.Path output) {
+        fileActionStatusKey = MapExportFileActions.openContainingDirectory(output)
+            ? "confluxmap.screen.map_export.directory_opened"
+            : "confluxmap.screen.map_export.directory_open_failed";
     }
 
     private String fitToWidth(final String text, final int maxWidth) {

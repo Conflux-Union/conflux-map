@@ -34,28 +34,28 @@ public final class StructureIndex {
     private static final String CACHE_PREFIX = "structures_v3_mc";
 
     public enum StructureType {
-        DESERT_PYRAMID(1, "desert_pyramid", "DP", 32, 32, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
-        JUNGLE_TEMPLE(2, "jungle_temple", "JT", 32, 32, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
-        SWAMP_HUT(3, "swamp_hut", "SH", 32, 32, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
-        IGLOO(4, "igloo", "IG", 32, 32, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
-        VILLAGE(5, "village", "VI", 32, 34, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
-        OCEAN_RUIN(6, "ocean_ruin", "OR", 20, 20, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
-        SHIPWRECK(7, "shipwreck", "SW", 24, 24, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
-        OCEAN_MONUMENT(8, "ocean_monument", "OM", 32, 32, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
-        WOODLAND_MANSION(9, "woodland_mansion", "WM", 80, 80, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
-        PILLAGER_OUTPOST(10, "pillager_outpost", "PO", 32, 32, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
-        RUINED_PORTAL(11, "ruined_portal", "RP", 40, 40, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
-        RUINED_PORTAL_NETHER(12, "ruined_portal_nether", "RP", 25, 40, DimensionId.NETHER, MC_1_17_1, 4.0),
-        ANCIENT_CITY(13, "ancient_city", "AC", 24, 24, DimensionId.OVERWORLD, 23, 4.0),
+        DESERT_PYRAMID(1, "desert_pyramid", "DP", 32, 32, DimensionId.OVERWORLD, MC_1_17_1, 8.0),
+        JUNGLE_TEMPLE(2, "jungle_temple", "JT", 32, 32, DimensionId.OVERWORLD, MC_1_17_1, 8.0),
+        SWAMP_HUT(3, "swamp_hut", "SH", 32, 32, DimensionId.OVERWORLD, MC_1_17_1, 8.0),
+        IGLOO(4, "igloo", "IG", 32, 32, DimensionId.OVERWORLD, MC_1_17_1, 8.0),
+        VILLAGE(5, "village", "VI", 32, 34, DimensionId.OVERWORLD, MC_1_17_1, 8.0),
+        OCEAN_RUIN(6, "ocean_ruin", "OR", 20, 20, DimensionId.OVERWORLD, MC_1_17_1, 8.0),
+        SHIPWRECK(7, "shipwreck", "SW", 24, 24, DimensionId.OVERWORLD, MC_1_17_1, 8.0),
+        OCEAN_MONUMENT(8, "ocean_monument", "OM", 32, 32, DimensionId.OVERWORLD, MC_1_17_1, 8.0),
+        WOODLAND_MANSION(9, "woodland_mansion", "WM", 80, 80, DimensionId.OVERWORLD, MC_1_17_1, 8.0),
+        PILLAGER_OUTPOST(10, "pillager_outpost", "PO", 32, 32, DimensionId.OVERWORLD, MC_1_17_1, 8.0),
+        RUINED_PORTAL(11, "ruined_portal", "RP", 40, 40, DimensionId.OVERWORLD, MC_1_17_1, 8.0),
+        RUINED_PORTAL_NETHER(12, "ruined_portal_nether", "RP", 25, 40, DimensionId.NETHER, MC_1_17_1, 8.0),
+        ANCIENT_CITY(13, "ancient_city", "AC", 24, 24, DimensionId.OVERWORLD, 23, 8.0),
         BURIED_TREASURE(14, "buried_treasure", "BT", 1, 1, DimensionId.OVERWORLD, MC_1_17_1, 1.0),
         MINESHAFT(15, "mineshaft", "MS", 1, 1, DimensionId.OVERWORLD, MC_1_17_1, 1.0),
-        FORTRESS(18, "fortress", "FO", 27, 27, DimensionId.NETHER, MC_1_17_1, 4.0),
-        BASTION_REMNANT(19, "bastion_remnant", "BA", 27, 27, DimensionId.NETHER, MC_1_17_1, 4.0),
-        END_CITY(20, "end_city", "EC", 20, 20, DimensionId.END, MC_1_17_1, 4.0),
-        TRAIL_RUINS(23, "trail_ruins", "TR", 34, 34, DimensionId.OVERWORLD, 25, 4.0),
-        TRIAL_CHAMBERS(24, "trial_chambers", "TC", 34, 34, DimensionId.OVERWORLD, 26, 4.0),
-        STRONGHOLD(25, "stronghold", "ST", 0, 0, DimensionId.OVERWORLD, MC_1_17_1, 4.0),
-        NETHER_FOSSIL(26, "nether_fossil", "NF", 2, 2, DimensionId.NETHER, MC_1_17_1, 2.0);
+        FORTRESS(18, "fortress", "FO", 27, 27, DimensionId.NETHER, MC_1_17_1, 8.0),
+        BASTION_REMNANT(19, "bastion_remnant", "BA", 27, 27, DimensionId.NETHER, MC_1_17_1, 8.0),
+        END_CITY(20, "end_city", "EC", 20, 20, DimensionId.END, MC_1_17_1, 8.0),
+        TRAIL_RUINS(23, "trail_ruins", "TR", 34, 34, DimensionId.OVERWORLD, 25, 8.0),
+        TRIAL_CHAMBERS(24, "trial_chambers", "TC", 34, 34, DimensionId.OVERWORLD, 26, 8.0),
+        STRONGHOLD(25, "stronghold", "ST", 0, 0, DimensionId.OVERWORLD, MC_1_17_1, 8.0),
+        NETHER_FOSSIL(26, "nether_fossil", "NF", 2, 2, DimensionId.NETHER, MC_1_17_1, 4.0);
 
         private final int nativeId;
         private final String id;
@@ -320,6 +320,51 @@ public final class StructureIndex {
         return Optional.ofNullable(nearest);
     }
 
+    /**
+     * Loads a deliberately small square of candidate regions and returns the nearest markers.
+     * The UI caps {@code maxCandidates} at 32; the multiplier leaves room for placements that
+     * cubiomes rejects while keeping the native batch bounded to a few hundred regions.
+     */
+    public synchronized List<Marker> findNearestCandidates(
+        final StructureType type,
+        final int blockX,
+        final int blockZ,
+        final int maxCandidates
+    ) {
+        if (provider == null || maxCandidates <= 0 || !type.supports(mcVersion, dimension)) {
+            return List.of();
+        }
+        final int boundedLimit = Math.min(maxCandidates, 32);
+        final List<Marker> candidates;
+        if (type.globalPlacement()) {
+            candidates = query(
+                Integer.MIN_VALUE,
+                Integer.MAX_VALUE,
+                Integer.MIN_VALUE,
+                Integer.MAX_VALUE,
+                EnumSet.of(type)
+            );
+        } else {
+            final int regionSize = type.regionSizeBlocks(mcVersion);
+            final int side = (int) Math.ceil(Math.sqrt(boundedLimit * 4.0));
+            final int radiusRegions = Math.max(1, (side - 1) / 2 + 1);
+            final long extent = (long) radiusRegions * regionSize;
+            final int minBlockX = clampBlockCoordinate(blockX - extent);
+            final int maxBlockX = clampBlockCoordinate(blockX + extent);
+            final int minBlockZ = clampBlockCoordinate(blockZ - extent);
+            final int maxBlockZ = clampBlockCoordinate(blockZ + extent);
+            prefetchCandidateArea(type, minBlockX, maxBlockX, minBlockZ, maxBlockZ);
+            candidates = query(minBlockX, maxBlockX, minBlockZ, maxBlockZ, EnumSet.of(type));
+        }
+        candidates.sort(Comparator
+            .comparingDouble((Marker marker) -> distance(marker, blockX, blockZ))
+            .thenComparingInt(Marker::blockX)
+            .thenComparingInt(Marker::blockZ));
+        return candidates.size() <= boundedLimit
+            ? List.copyOf(candidates)
+            : List.copyOf(candidates.subList(0, boundedLimit));
+    }
+
     public synchronized void verify(final StructureType type, final int blockX, final int blockZ, final boolean exists) {
         final String key = key(type, blockX, blockZ);
         if (markers.containsKey(key)) {
@@ -399,6 +444,52 @@ public final class StructureIndex {
 
     private static String key(final StructureType type, final int x, final int z) {
         return type.id() + ":" + x + ":" + z;
+    }
+
+    /**
+     * Candidate searches stay small, so loading the requested rectangle again as one batch is
+     * cheaper than letting {@link #query} invoke the native provider once for every uncached
+     * region after a player changes the search center.
+     */
+    private void prefetchCandidateArea(
+        final StructureType type,
+        final int minBlockX,
+        final int maxBlockX,
+        final int minBlockZ,
+        final int maxBlockZ
+    ) {
+        final int regionSize = type.regionSizeBlocks(mcVersion);
+        final int minRegionX = Math.floorDiv(minBlockX, regionSize);
+        final int maxRegionX = Math.floorDiv(maxBlockX, regionSize);
+        final int minRegionZ = Math.floorDiv(minBlockZ, regionSize);
+        final int maxRegionZ = Math.floorDiv(maxBlockZ, regionSize);
+        final Set<Long> covered = queriedRegions.get(type);
+        boolean missing = false;
+        for (int regionZ = minRegionZ; regionZ <= maxRegionZ && !missing; regionZ++) {
+            for (int regionX = minRegionX; regionX <= maxRegionX; regionX++) {
+                if (!covered.contains(packRegion(regionX, regionZ))) {
+                    missing = true;
+                    break;
+                }
+            }
+        }
+        if (!missing) {
+            return;
+        }
+        addCandidates(type, provider.candidates(type, minRegionX, minRegionZ, maxRegionX, maxRegionZ));
+        markCovered(covered, minRegionX, minRegionZ, maxRegionX, maxRegionZ);
+    }
+
+    private static int clampBlockCoordinate(final long coordinate) {
+        return coordinate < Integer.MIN_VALUE
+            ? Integer.MIN_VALUE
+            : coordinate > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) coordinate;
+    }
+
+    private static double distance(final Marker marker, final int blockX, final int blockZ) {
+        final long dx = marker.blockX() - (long) blockX;
+        final long dz = marker.blockZ() - (long) blockZ;
+        return Math.hypot(dx, dz);
     }
 
     private static long packRegion(final int x, final int z) {
