@@ -22,7 +22,7 @@ Conflux Map is a Fabric client-side minimap and world map
 - **Full-map sync and public waypoints.** Eliminate blank map tiles. New players
   can see the live server-wide map as soon as they join, and find coordinates
   for farms and builds through public waypoints instead of adding each one manually.
-- **Extremely low bandwidth use.** A predicted map plus an authoritative map,
+- **Extremely low bandwidth usage.** A predicted map plus an authoritative map,
   tiled storage, incremental updates, and more compact data structures keep each
   map sync between a few hundred bytes and a few hundred kilobytes.
 - **One client JAR for the complete map experience.** There is no need to install
@@ -61,9 +61,9 @@ Conflux Map is a Fabric client-side minimap and world map
   server address, including proxy networks, in separate map records. Profiles can
   be created, renamed, and unbound from the fullscreen map.
 - **Public waypoints and chat sharing:** A server can maintain a public waypoint list
-  for every connected Conflux Map client. Chat coordinates remain available on every
-  server, preview both Conflux Map and Xaero formats before sending, and can be
-  imported with one click.
+  for every connected Conflux Map client. Chat coordinates are available on every
+  server. Before sending, you can preview both Conflux Map and Xaero formats;
+  received coordinates can be imported with one click.
 - **Local waypoints and death points:** Waypoints support names, colors, sets, and
   visibility controls, while each dimension keeps the five most recent death points.
   The Overworld and Nether can optionally show linked waypoints with the 8:1 coordinate
@@ -92,7 +92,7 @@ Conflux Map is a Fabric client-side minimap and world map
   include map drawings, runs in the background, reports progress, and supports
   cancellation.
 - **Optional server components:** Fabric servers use the matching mod JAR, while
-  Paper 1.21.1 through 26.2 uses the standalone plugin. Operators can centrally
+  Paper versions 1.21.1 through 26.2 use the standalone plugin. Operators can centrally
   control the world seed, real-terrain corrections, public waypoints, chunk-load
   state, and entity-radar permission.
 - **Update checks:** The optional startup check provides a download link in chat and
