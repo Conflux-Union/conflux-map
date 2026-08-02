@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.stream.Stream;
 
 /**
@@ -22,6 +23,8 @@ import java.util.stream.Stream;
  */
 public final class WorldIdentity {
     private static final int SAVE_ID_PREFIX_MAX_LENGTH = 80;
+    private static final int SERVER_ID_PREFIX_MAX_LENGTH = 80;
+    private static final int SERVER_ID_HASH_LENGTH = 16;
     private static final char[] HEX = "0123456789abcdef".toCharArray();
 
     public static final WorldIdentity NONE = new WorldIdentity("none", "none");
@@ -58,7 +61,7 @@ public final class WorldIdentity {
      * instead with the UUID the server advertised.
      */
     public static WorldIdentity multiplayer(final String address) {
-        return new WorldIdentity(sanitize(address), "world");
+        return new WorldIdentity(serverId(address), "world");
     }
 
     /**
@@ -66,7 +69,15 @@ public final class WorldIdentity {
      * profiles use this factory and must not implicitly claim the old default-world cache.
      */
     public static WorldIdentity multiplayer(final String address, final String worldId) {
-        return new WorldIdentity(sanitize(address), sanitizeWorldId(worldId));
+        return new WorldIdentity(serverId(address), sanitizeWorldId(worldId));
+    }
+
+    /** Companion-only form; unlike the legacy overload it rejects untrusted non-UUID namespaces. */
+    public static WorldIdentity companionMultiplayer(final String address, final String worldId) {
+        if (!isCanonicalUuid(worldId)) {
+            throw new IllegalArgumentException("companion worldId must be a canonical UUID");
+        }
+        return new WorldIdentity(serverId(address), worldId);
     }
 
     /**
@@ -120,11 +131,40 @@ public final class WorldIdentity {
         return cleaned.isEmpty() ? "unknown" : cleaned;
     }
 
+    /**
+     * Preserves the historical directory for ordinary DNS/IPv4 addresses while adding a digest
+     * to inputs whose punctuation, Unicode or IPv6 syntax would collide under replacement-only
+     * sanitization. Unsafe prefixes are bounded so an untrusted address cannot exceed path limits.
+     */
+    private static String serverId(final String address) {
+        final String canonical = Objects.requireNonNull(address, "address").trim().toLowerCase(Locale.ROOT);
+        if (canonical.matches("[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[0-9]{1,5})?")) {
+            return sanitize(canonical);
+        }
+        final String sanitized = sanitize(canonical);
+        final String prefix = sanitized.length() <= SERVER_ID_PREFIX_MAX_LENGTH
+            ? sanitized
+            : sanitized.substring(0, SERVER_ID_PREFIX_MAX_LENGTH);
+        return prefix + "--" + sha256(canonical).substring(0, SERVER_ID_HASH_LENGTH);
+    }
+
     private static String sanitizeWorldId(final String s) {
         final String cleaned = sanitize(s);
         // Neutralize a leading dot run so values such as ".." cannot be interpreted as a parent
         // directory by any cache path consumer.
         return cleaned.replaceFirst("^\\.+", "_");
+    }
+
+    /** Returns true only for the lowercase hyphenated UUID representation used on the wire. */
+    public static boolean isCanonicalUuid(final String value) {
+        if (value == null) {
+            return false;
+        }
+        try {
+            return UUID.fromString(value).toString().equals(value);
+        } catch (final IllegalArgumentException error) {
+            return false;
+        }
     }
 
     private static String sha256(final String value) {

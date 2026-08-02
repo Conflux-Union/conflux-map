@@ -15,9 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
+import java.util.concurrent.ConcurrentHashMap;
 import org.apache.logging.log4j.Logger;
 
 /**
@@ -64,6 +62,8 @@ public final class WaypointService implements WaypointDataView {
     private final Logger logger;
 
     private volatile WaypointStore current;
+    /** Keeps a just-written outgoing state available while its IO task is still queued. */
+    private final Map<WorldIdentity, WaypointStore.State> pendingOutgoing = new ConcurrentHashMap<>();
 
     public WaypointService(final Path baseDir, final MapExecutors executors, final Logger logger) {
         this.baseDir = baseDir;
@@ -79,15 +79,23 @@ public final class WaypointService implements WaypointDataView {
             return;
         }
         if (current != null) {
-            saveOutgoingSnapshot(current.world(), current.state());
+            final WorldIdentity outgoingWorld = current.world();
+            final WaypointStore.State outgoingState = current.state();
+            pendingOutgoing.put(outgoingWorld, outgoingState);
+            saveOutgoingSnapshot(outgoingWorld, outgoingState);
         }
         if (newWorld == null) {
             current = null;
             return;
         }
         final Path file = WorldStorageMigration.file(baseDir, newWorld, ".json", logger);
-        final WaypointStore.State loaded = WaypointIo.loadState(file, logger);
-        current = createStore(newWorld, loaded);
+        final WaypointStore.State pendingState = pendingOutgoing.remove(newWorld);
+        final WaypointStore.State loaded = pendingState != null
+            ? pendingState
+            : WaypointIo.loadState(file, logger);
+        final WaypointStore store = new WaypointStore(newWorld, loaded);
+        store.addListener(waypoints -> saveSnapshot(newWorld, store.state()));
+        current = store;
     }
 
     /** The active store, or {@code null} between sessions. */
@@ -163,22 +171,24 @@ public final class WaypointService implements WaypointDataView {
 
     private void saveOutgoingSnapshot(final WorldIdentity world, final WaypointStore.State snapshot) {
         final Path file = fileFor(world);
-        final Future<?> save = executors.io().submit(() -> WaypointIo.save(file, snapshot, logger));
-        boolean interrupted = false;
-        while (true) {
-            try {
-                save.get();
-                break;
-            } catch (final InterruptedException e) {
-                interrupted = true;
-            } catch (final ExecutionException e) {
-                logger.error("Failed to save outgoing waypoints for {}", world, e.getCause());
-                break;
-            }
+        try {
+            executors.io().execute(() -> {
+                try {
+                    WaypointIo.save(file, snapshot, logger);
+                } catch (final RuntimeException error) {
+                    logger.error("Failed to save outgoing waypoints for {}", world, error);
+                } finally {
+                    pendingOutgoing.remove(world, snapshot);
+                }
+            });
+        } catch (final RuntimeException error) {
+            pendingOutgoing.remove(world, snapshot);
+            logger.error("Failed to schedule outgoing waypoint save for {}", world, error);
         }
-        if (interrupted) {
-            Thread.currentThread().interrupt();
-        }
+    }
+
+    int pendingOutgoingCount() {
+        return pendingOutgoing.size();
     }
 
     private Path fileFor(final WorldIdentity world) {

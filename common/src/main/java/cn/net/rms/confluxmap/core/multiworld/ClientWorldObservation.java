@@ -6,7 +6,18 @@ import java.util.Objects;
 import java.util.OptionalLong;
 
 /** Stable, privacy-safe evidence observed for one upstream server visit. */
-public record ClientWorldObservation(OptionalLong seedHash, Map<String, String> signals) {
+public record ClientWorldObservation(
+    OptionalLong seedHash,
+    Map<String, String> signals,
+    String dimensionId,
+    String gameMode,
+    ClientWorldPosition position,
+    ClientWorldTerrainFingerprint terrainFingerprint
+) {
+    public ClientWorldObservation(final OptionalLong seedHash, final Map<String, String> signals) {
+        this(seedHash, signals, null, null, null, null);
+    }
+
     public ClientWorldObservation {
         seedHash = Objects.requireNonNull(seedHash, "seedHash");
         final Map<String, String> normalized = new LinkedHashMap<>();
@@ -17,5 +28,11 @@ public record ClientWorldObservation(OptionalLong seedHash, Map<String, String> 
             }
         }
         signals = Map.copyOf(normalized);
+        dimensionId = normalizeText(dimensionId);
+        gameMode = normalizeText(gameMode);
+    }
+
+    private static String normalizeText(final String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 }

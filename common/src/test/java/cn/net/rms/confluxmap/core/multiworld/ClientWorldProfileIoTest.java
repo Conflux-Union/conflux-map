@@ -57,7 +57,12 @@ class ClientWorldProfileIoTest {
         final ClientWorldProfileRegistry loaded = io.load();
 
         assertTrue(loaded.profiles("example.net_25565").isEmpty());
-        assertTrue(Files.exists(file.resolveSibling("client_worlds.json.bad")));
+        assertTrue(Files.exists(file.resolveSibling("client_worlds.json.blocked")));
+        try (var files = Files.list(tempDir)) {
+            assertTrue(files.anyMatch(path -> path.getFileName().toString().startsWith(
+                "client_worlds.json.bad."
+            )));
+        }
     }
 
     @Test

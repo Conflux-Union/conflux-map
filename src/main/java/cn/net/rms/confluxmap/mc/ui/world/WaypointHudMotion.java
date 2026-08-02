@@ -9,6 +9,7 @@ final class WaypointHudMotion {
     private static final double BASE_TARGET_CONE_DEGREES = 2.0;
     private static final double MAX_EXTRA_TARGET_CONE_DEGREES = 4.0;
     private static final double TARGET_CONE_DISTANCE_FACTOR = 16.0;
+    private static final double LABEL_EYE_CLEARANCE = 0.5;
 
     private WaypointHudMotion() {
     }
@@ -39,6 +40,14 @@ final class WaypointHudMotion {
             TARGET_CONE_DISTANCE_FACTOR / Math.max(1.0, distance)
         );
         return alignment >= Math.cos(Math.toRadians(coneDegrees));
+    }
+
+    /**
+     * Keeps distant labels out of the ground below the player's view while retaining a waypoint
+     * that is already above eye level at its actual vertical location.
+     */
+    static double labelAnchorY(final double waypointY, final double cameraY, final double waypointOffset) {
+        return Math.max(waypointY + waypointOffset, cameraY + LABEL_EYE_CLEARANCE);
     }
 
     static float advance(final float current, final boolean targeted, final float deltaSeconds) {

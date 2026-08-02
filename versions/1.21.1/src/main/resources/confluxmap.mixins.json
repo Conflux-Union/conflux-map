@@ -6,6 +6,7 @@
     "WorldChunkMixin"
   ],
   "client": [
+    "ChatScreenMixin",
     "ChatHudMixin",
     "ClientChunkManagerMixin",
     "ClientPlayNetworkHandlerMixin",

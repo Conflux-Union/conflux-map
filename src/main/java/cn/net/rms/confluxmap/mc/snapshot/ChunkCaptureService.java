@@ -18,6 +18,7 @@ import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.util.ChunkViewport;
 import cn.net.rms.confluxmap.mc.color.BiomeTintResolver;
 import cn.net.rms.confluxmap.mc.color.SpriteColorSampler;
+import cn.net.rms.confluxmap.mc.world.ClientMultiworldService;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import java.util.ArrayList;
 import java.util.List;
@@ -56,9 +57,7 @@ public final class ChunkCaptureService {
     private long lastLoggedSnapshots = -1;
     private int tickCounter;
     private LayerSelector.Decision lastDecision;
-    private int lastPlayerChunkX = Integer.MIN_VALUE;
-    private int lastPlayerChunkZ = Integer.MIN_VALUE;
-    private int lastServerViewDistance = Integer.MIN_VALUE;
+    private ClientMultiworldService pendingSnapshotBuffer;
 
     public ChunkCaptureService(
         final MinecraftClient client,
@@ -90,6 +89,11 @@ public final class ChunkCaptureService {
         ClientTickEvents.END_CLIENT_TICK.register(c -> tick());
     }
 
+    /** Binds the client-only recognition buffer after both services have been constructed. */
+    public void bindPendingSnapshotBuffer(final ClientMultiworldService service) {
+        pendingSnapshotBuffer = service;
+    }
+
     /**
      * Main thread, from the session tracker. The initial spawn-area chunk batch
      * arrives before the first session tick, so marks made during the loading
@@ -112,6 +116,14 @@ public final class ChunkCaptureService {
             return;
         }
         reseedViewport(player.getBlockPos().getX() >> 4, player.getBlockPos().getZ() >> 4);
+        final ClientMultiworldService buffer = pendingSnapshotBuffer;
+        if (buffer != null) {
+            for (final ClientMultiworldService.PendingSnapshot pending : buffer.drainPendingSnapshots()) {
+                final ChunkSnapshot snapshot = withSessionToken(pending.snapshot(), session.token());
+                final MapLayer layer = pending.layer();
+                executors.workers().execute(() -> storeSnapshot(snapshot, layer));
+            }
+        }
     }
 
     /** Main thread, from packet mixins. */
@@ -160,7 +172,30 @@ public final class ChunkCaptureService {
         return List.copyOf(snapshots);
     }
 
-    /** Marks every chunk in the current server send-distance square dirty. */
+    /** Main-thread read-only 3x3 probe used as world identity evidence. */
+    public List<ChunkSnapshot> probeSquare(final MapLayer layer) {
+        final ClientPlayerEntity player = client.player;
+        if (player == null || client.world == null) {
+            return List.of();
+        }
+        final int centerX = player.getBlockPos().getX() >> 4;
+        final int centerZ = player.getBlockPos().getZ() >> 4;
+        final int pivotY = layer.type() == MapLayer.Type.NETHER_CEILING ? client.world.getTopY() - 1 : 0;
+        final List<ChunkSnapshot> snapshots = new ArrayList<>(9);
+        for (int offsetZ = -1; offsetZ <= 1; offsetZ++) {
+            for (int offsetX = -1; offsetX <= 1; offsetX++) {
+                final ChunkSnapshot snapshot = factory.snapshotIdentity(
+                    centerX + offsetX, centerZ + offsetZ, layer, pivotY, 0L
+                );
+                if (snapshot != null) {
+                    snapshots.add(snapshot);
+                }
+            }
+        }
+        return List.copyOf(snapshots);
+    }
+
+    /** Marks every chunk in the current view-distance square dirty, so the active layer fills in from scratch. */
     private void reseedViewport(final int centerChunkX, final int centerChunkZ) {
         final int radius = captureViewDistance() + 1;
         for (int dz = -radius; dz <= radius; dz++) {
@@ -173,7 +208,11 @@ public final class ChunkCaptureService {
     private void tick() {
         final MapWorld world = worlds.current();
         final ClientPlayerEntity player = client.player;
-        if (world == null || player == null) {
+        if (player == null) {
+            return;
+        }
+        if (world == null) {
+            capturePendingSnapshots(player);
             return;
         }
         final long token = world.session().token();
@@ -217,17 +256,33 @@ public final class ChunkCaptureService {
         logPeriodically(world);
     }
 
-    private int captureViewDistance() {
-        return captureViewDistance(
-            MinecraftAccess.viewDistance(client), serverViewDistance.getAsInt()
+    private void capturePendingSnapshots(final ClientPlayerEntity player) {
+        final ClientMultiworldService buffer = pendingSnapshotBuffer;
+        if (buffer == null || !buffer.shouldBufferSnapshots()) {
+            return;
+        }
+        final LayerSelector.Decision decision = layerSelector.tick();
+        final int playerChunkX = player.getBlockPos().getX() >> 4;
+        final int playerChunkZ = player.getBlockPos().getZ() >> 4;
+        final List<long[]> batch = dirtyChunks.drainNearest(
+            config.snapshotBudgetPerTick, playerChunkX, playerChunkZ
         );
+        for (final long[] chunkPos : batch) {
+            final ChunkSnapshot snapshot = factory.snapshot(
+                (int) chunkPos[0], (int) chunkPos[1], decision.layer(), decision.pivotY(), 0L
+            );
+            if (snapshot != null) {
+                buffer.bufferSnapshot(snapshot, decision.layer());
+            }
+        }
     }
 
-    static int captureViewDistance(
-        final int clientViewDistance, final int advertisedServerViewDistance
-    ) {
-        return advertisedServerViewDistance >= 0
-            ? advertisedServerViewDistance : clientViewDistance;
+    private static ChunkSnapshot withSessionToken(final ChunkSnapshot snapshot, final long token) {
+        return new ChunkSnapshot(
+            snapshot.chunkX, snapshot.chunkZ, token,
+            snapshot.surfaceY, snapshot.biomeId, snapshot.fluidDepth,
+            snapshot.baseArgb, snapshot.tintArgb, snapshot.overlayArgb, snapshot.kind, snapshot.light
+        );
     }
 
     private void storeSnapshot(final ChunkSnapshot snapshot, final MapLayer layer) {
