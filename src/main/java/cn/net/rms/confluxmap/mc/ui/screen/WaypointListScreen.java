@@ -35,6 +35,7 @@ import net.minecraft.client.MinecraftClient;
 //#endif
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.MathHelper;
@@ -44,9 +45,10 @@ public final class WaypointListScreen extends ConfluxScreen {
     public enum Tab { LOCAL, PUBLIC, LOCKED }
 
     private static final int ROW_HEIGHT = 28;
-    private static final int SHARED_LIST_TOP = 56;
-    private static final int LOCAL_IDLE_LIST_TOP = 80;
-    private static final int LOCAL_LIST_TOP = 104;
+    private static final int SEARCH_Y = 52;
+    private static final int SHARED_LIST_TOP = 80;
+    private static final int LOCAL_IDLE_LIST_TOP = 104;
+    private static final int LOCAL_LIST_TOP = 128;
     private static final int BOTTOM_MARGIN = 34;
     private static final int MIN_SIDE_MARGIN = 16;
     private static final int MAX_CONTENT_WIDTH = 880;
@@ -58,7 +60,7 @@ public final class WaypointListScreen extends ConfluxScreen {
     private static final int DIM_WIDTH = 66;
     private static final int DIST_WIDTH = 58;
     private static final int GAP = 4;
-    private static final int TOOLBAR_Y = 52;
+    private static final int TOOLBAR_Y = 76;
     private static final int TOOLBAR_HEIGHT = 20;
     private static final int NARROW_TOOLBAR_WIDTH = 248;
     private static final int NARROW_ROW_WIDTH = 254;
@@ -159,6 +161,9 @@ public final class WaypointListScreen extends ConfluxScreen {
     private int moveDropdownY;
     private int moveDropdownWidth;
     private List<RowInfo> rows = new ArrayList<>();
+    private int totalRowCount;
+    private TextFieldWidget searchField;
+    private String observedSearch = "";
     private List<UUID> filteredLocalIds = List.of();
     private long lastSharedRevision = Long.MIN_VALUE;
     private SharedWaypointClientState.State lastSharedState;
@@ -197,11 +202,31 @@ public final class WaypointListScreen extends ConfluxScreen {
 
     @Override
     protected void init() {
+        final int searchWidth = Math.min(260, Math.max(120, width - MIN_SIDE_MARGIN * 2));
+        searchField = new TextFieldWidget(
+            this.textRenderer,
+            width / 2 - searchWidth / 2,
+            SEARCH_Y,
+            searchWidth,
+            20,
+            Texts.translatable("confluxmap.screen.waypoints.search")
+        );
+        searchField.setMaxLength(64);
+        searchField.setText(observedSearch);
         rebuild();
+        setInitialFocus(searchField);
     }
 
     @Override
     public void tick() {
+        Widgets.tick(searchField);
+        final String currentSearch = searchField == null ? "" : searchField.getText();
+        if (!currentSearch.equals(observedSearch)) {
+            observedSearch = currentSearch;
+            scrollOffset = 0;
+            rebuild();
+            return;
+        }
         final SharedWaypointAvailability availability = sharedWaypoints.availability();
         if (!availability.enabled() && tab != Tab.LOCAL) {
             selectTab(Tab.LOCAL);
@@ -227,6 +252,9 @@ public final class WaypointListScreen extends ConfluxScreen {
 
     private void rebuild() {
         clearChildren();
+        if (searchField != null) {
+            addDrawableChild(searchField);
+        }
         rows.clear();
         filterDropdownWidth = 0;
         moveDropdownWidth = 0;
@@ -240,6 +268,8 @@ public final class WaypointListScreen extends ConfluxScreen {
         final double pz = playerView.map(PlayerView::z).orElse(0.0);
 
         final List<RowInfo> sorted = buildRows(currentDimension, px, py, pz);
+        sorted.removeIf(row -> !matchesSearch(row, observedSearch));
+        totalRowCount = sorted.size();
         sorted.sort((a, b) -> Double.compare(a.distance(), b.distance()));
         filteredLocalIds = tab == Tab.LOCAL
             ? sorted.stream().map(RowInfo::id).toList()
@@ -272,6 +302,15 @@ public final class WaypointListScreen extends ConfluxScreen {
 
         addBottomButtons(store);
         snapshotObservedState(store);
+    }
+
+    private static boolean matchesSearch(final RowInfo row, final String query) {
+        final double x = row.local() != null ? row.local().x : row.shared().x();
+        final double y = row.local() != null ? row.local().y : row.shared().y();
+        final double z = row.local() != null ? row.local().z : row.shared().z();
+        return WaypointSearch.matches(
+            query, row.name(), row.secondaryText(), row.dimensionText(), x, y, z
+        );
     }
 
     private void addBottomButtons(final WaypointStore store) {
@@ -336,15 +375,16 @@ public final class WaypointListScreen extends ConfluxScreen {
         final int totalWidth = tabWidth * tabs.size() + GAP * (tabs.size() - 1);
         int x = width / 2 - totalWidth / 2;
         for (final Tab candidate : tabs) {
+            final Text label = Texts.translatable(tabKey(candidate));
             final ButtonWidget button = addDrawableChild(Widgets.button(
                 x,
                 28,
                 tabWidth,
                 20,
-                Texts.translatable(tabKey(candidate)),
+                candidate == tab ? Texts.literal("[" + label.getString() + "]") : label,
                 ignored -> selectTab(candidate)
             ));
-            button.active = candidate != tab && (candidate == Tab.LOCAL || availability.enabled());
+            button.active = candidate == Tab.LOCAL || availability.enabled();
             if (candidate != Tab.LOCAL && availability.disabledByServer()) {
                 setDisabledTooltip(button, "confluxmap.shared_waypoints.disabled_by_server");
             }
@@ -668,7 +708,9 @@ public final class WaypointListScreen extends ConfluxScreen {
         if (renderedStore != waypointService.current()) {
             return;
         }
-        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WaypointShareMenuScreen(this, waypoint));
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WaypointShareConfirmScreen(
+            this, waypoint, WaypointShareConfirmScreen.Target.CHAT
+        ));
     }
 
     private void openSharedChat(final SharedWaypoint waypoint) {
@@ -998,7 +1040,9 @@ public final class WaypointListScreen extends ConfluxScreen {
             );
             return true;
         }
-        if (amount != 0) {
+        final boolean overList = mouseX >= contentLeft() && mouseX <= contentRight() + 6
+            && mouseY >= listTop() && mouseY <= height - BOTTOM_MARGIN;
+        if (amount != 0 && overList) {
             scrollOffset -= (int) Math.signum(amount);
             rebuild();
             return true;
@@ -1282,6 +1326,16 @@ public final class WaypointListScreen extends ConfluxScreen {
                 this.textRenderer, empty, width / 2f - this.textRenderer.getWidth(empty) / 2f, listTop() + 6, 0xFFAAAAAA
             );
         }
+        final int visibleRowCount = Math.max(1, (height - BOTTOM_MARGIN - listTop()) / ROW_HEIGHT);
+        drawListScrollbar(
+            draw,
+            contentRight() + 3,
+            listTop(),
+            visibleRowCount * ROW_HEIGHT - 4,
+            totalRowCount,
+            visibleRowCount,
+            scrollOffset
+        );
         final WaypointStore store = waypointService.current();
         if (tab == Tab.LOCAL && store != null && !store.persistenceWritable()) {
             final String readOnly = this.textRenderer.trimToWidth(

@@ -28,6 +28,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
     private int scrollOffset;
     private int profileCount;
     private boolean waitingToOpenMap;
+    private String pendingForgetId;
 
     public ClientWorldSelectScreen(
         final Screen parent,
@@ -78,7 +79,11 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
             ));
             final ButtonWidget forget = addDrawableChild(Widgets.button(
                 rowX + selectWidth + GAP + RENAME_WIDTH + GAP, y, FORGET_WIDTH, 20,
-                Texts.translatable("confluxmap.screen.client_world.forget"),
+                Texts.translatable(
+                    profile.id().equals(pendingForgetId)
+                        ? "confluxmap.screen.client_world.confirm_forget"
+                        : "confluxmap.screen.client_world.forget"
+                ),
                 ignored -> forget(profile.id())
             ));
             forget.active = profile.bindingCount() > 0;
@@ -111,16 +116,24 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
     }
 
     private void select(final String profileId) {
+        pendingForgetId = null;
         worlds.select(profileId);
         finishSelection();
     }
 
     private void forget(final String profileId) {
+        if (!profileId.equals(pendingForgetId)) {
+            pendingForgetId = profileId;
+            rebuild();
+            return;
+        }
+        pendingForgetId = null;
         worlds.clearBindings(profileId);
         rebuild();
     }
 
     private void openNameEditor(final ClientWorldProfile profile) {
+        pendingForgetId = null;
         MinecraftAccess.setScreen(MinecraftClient.getInstance(), new ClientWorldNameScreen(
             this,
             profile == null ? null : profile.displayName(),
@@ -162,7 +175,11 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
     //#else
     public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
     //#endif
-        if (amount != 0 && profileCount > visibleRows()) {
+        final int rowWidth = Math.min(440, Math.max(250, width - 24));
+        final boolean overList = mouseX >= width / 2 - rowWidth / 2
+            && mouseX <= width / 2 + rowWidth / 2 + 6
+            && mouseY >= LIST_TOP && mouseY <= LIST_TOP + visibleRows() * ROW_HEIGHT;
+        if (amount != 0 && overList && profileCount > visibleRows()) {
             scrollOffset -= (int) Math.signum(amount);
             rebuild();
             return true;
@@ -191,6 +208,16 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         if (profileCount == 0) {
             drawCentered(draw, Texts.translatable("confluxmap.screen.client_world.empty").getString(), 70, 0xFFBBBBBB);
         }
+        final int rowWidth = Math.min(440, Math.max(250, width - 24));
+        drawListScrollbar(
+            draw,
+            width / 2 + rowWidth / 2 + 3,
+            LIST_TOP,
+            visibleRows() * ROW_HEIGHT - 4,
+            profileCount,
+            visibleRows(),
+            scrollOffset
+        );
     }
 
     private void drawCentered(final GuiDraw draw, final String text, final float y, final int color) {

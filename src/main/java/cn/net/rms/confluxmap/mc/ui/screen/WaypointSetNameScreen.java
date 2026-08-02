@@ -83,6 +83,7 @@ final class WaypointSetNameScreen extends ConfluxScreen {
             Texts.translatable("confluxmap.screen.waypoint.cancel"),
             button -> onClose()
         ));
+        setEnterAction(() -> doneButton != null && doneButton.active, this::submit);
         refreshDoneButton();
     }
 

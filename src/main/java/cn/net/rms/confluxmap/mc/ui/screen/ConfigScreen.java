@@ -38,11 +38,8 @@ import net.minecraft.text.Text;
  * {@link WaypointEditScreen}'s style: plain {@link ButtonWidget}s that cycle through
  * boolean/enum values on click, and paired sliders/numeric fields for int ranges.
  *
- * <p>Every change mutates the shared {@link ConfluxConfig} instance immediately, so
- * every other system (they all hold the same reference) observes it on its very next
- * read - there is no separate "apply" step. Disk persistence is batched instead: this
- * screen calls {@link ConfigIo#save} in {@link #onClose()}, and its minimap-placement
- * child saves when returning here, so dragging controls never writes once per pixel.
+ * <p>Every change mutates and saves the shared {@link ConfluxConfig} immediately, so
+ * every other system observes the same value without a separate apply step.
  *
  * <p>Opened only via the {@code key.confluxmap.open_config} keybind (comma by
  * default, see {@code mc.input.Keybinds}) - there is no in-screen entry point, and no
@@ -136,7 +133,6 @@ public final class ConfigScreen extends ConfluxScreen {
     private static final int TAB_Y = 24;
     private static final int TAB_HEIGHT = 20;
     private static final int TAB_GAP = 4;
-    private static final int ROW_TOP = 52;
     private static final int ROW_HEIGHT = 22;
     private static final int MAX_ROW_WIDTH = 280;
     private static final int BOTTOM_MARGIN = 30;
@@ -231,9 +227,10 @@ public final class ConfigScreen extends ConfluxScreen {
     }
 
     private int rowsTop() {
+        final int baseRowsTop = tabLayout().contentTop();
         return category == Category.RADAR && radarAccess.noticeKey() != null
-            ? ROW_TOP + radarNoticeHeight()
-            : ROW_TOP;
+            ? baseRowsTop + radarNoticeHeight()
+            : baseRowsTop;
     }
 
     private int radarNoticeHeight() {
@@ -255,13 +252,25 @@ public final class ConfigScreen extends ConfluxScreen {
     //#else
     public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
     //#endif
-        final int maxScroll = Math.max(0, contentHeight - viewportHeight());
-        final int next = Math.max(0, Math.min(maxScroll, scrollOffset - (int) Math.signum(amount) * ROW_HEIGHT));
-        if (next != scrollOffset) {
-            scrollOffset = next;
-            rebuild();
+        final boolean overRows = mouseX >= rowX() && mouseX <= rowX() + rowWidth + 8
+            && mouseY >= rowsTop() && mouseY <= height - BOTTOM_MARGIN;
+        if (amount != 0 && overRows) {
+            final int maxScroll = Math.max(0, contentHeight - viewportHeight());
+            final int next = Math.max(
+                0,
+                Math.min(maxScroll, scrollOffset - (int) Math.signum(amount) * ROW_HEIGHT)
+            );
+            if (next != scrollOffset) {
+                scrollOffset = next;
+                rebuild();
+            }
+            return true;
         }
-        return true;
+        //#if MC>=12002
+        //$$ return super.mouseScrolled(mouseX, mouseY, horizontalAmount, amount);
+        //#else
+        return super.mouseScrolled(mouseX, mouseY, amount);
+        //#endif
     }
 
     /** Funnel point for every close path (ESC via the default {@code keyPressed}, or the Done button below). */
@@ -287,19 +296,29 @@ public final class ConfigScreen extends ConfluxScreen {
 
     private void addTabs() {
         final Category[] categories = Category.values();
-        final int tabWidth = Math.min(110, (width - MARGIN * 2 - TAB_GAP * (categories.length - 1)) / categories.length);
-        final int totalWidth = tabWidth * categories.length + TAB_GAP * (categories.length - 1);
-        int x = width / 2 - totalWidth / 2;
-        for (final Category c : categories) {
+        final ConfigTabLayout layout = tabLayout();
+        final int startX = width / 2 - layout.totalWidth() / 2;
+        for (int index = 0; index < categories.length; index++) {
+            final Category c = categories[index];
+            final Text label = c == category
+                ? Texts.literal("[" + Texts.translatable(c.labelKey).getString() + "]")
+                : Texts.translatable(c.labelKey);
             final ButtonWidget tab = Widgets.button(
-                x, TAB_Y, tabWidth, TAB_HEIGHT, Texts.translatable(c.labelKey), b -> selectCategory(c)
+                startX + index % layout.columns() * (layout.tabWidth() + TAB_GAP),
+                TAB_Y + index / layout.columns() * (TAB_HEIGHT + TAB_GAP),
+                layout.tabWidth(),
+                TAB_HEIGHT,
+                label,
+                b -> selectCategory(c)
             );
-            // Disabling the current tab both marks it visually (dimmed, per vanilla button
-            // convention) and makes re-clicking it a harmless no-op.
-            tab.active = c != category;
             addDrawableChild(tab);
-            x += tabWidth + TAB_GAP;
         }
+    }
+
+    private ConfigTabLayout tabLayout() {
+        return ConfigTabLayout.fit(
+            width, Category.values().length, MARGIN, TAB_GAP, TAB_Y, TAB_HEIGHT
+        );
     }
 
     private void selectCategory(final Category c) {
@@ -557,6 +576,7 @@ public final class ConfigScreen extends ConfluxScreen {
                 b -> {
                     final boolean next = !getter.getAsBoolean();
                     setter.accept(next);
+                    configIo.save(config);
                     b.setMessage(boolLabel(labelKey, next));
                 }
             ));
@@ -593,6 +613,7 @@ public final class ConfigScreen extends ConfluxScreen {
                 b -> {
                     final T next = nextValue(values, getter.get());
                     setter.accept(next);
+                    configIo.save(config);
                     b.setMessage(enumLabel(labelKey, next, valueKeyFn));
                 }
             ));
@@ -609,6 +630,7 @@ public final class ConfigScreen extends ConfluxScreen {
                 b -> {
                     final int next = (config.minimapZoomIndex + 1) % ZOOM_VALUE_KEYS.length;
                     config.minimapZoomIndex = next;
+                    configIo.save(config);
                     b.setMessage(zoomLabel(next));
                 }
             ));
@@ -671,7 +693,10 @@ public final class ConfigScreen extends ConfluxScreen {
                 min,
                 max,
                 getter.getAsInt(),
-                setter,
+                value -> {
+                    setter.accept(value);
+                    configIo.save(config);
+                },
                 value -> Texts.translatable(labelKey, valueText.apply(value))
             );
             sliderInput.setActive(active);
@@ -773,11 +798,28 @@ public final class ConfigScreen extends ConfluxScreen {
         if (category == Category.RADAR && radarAccess.noticeKey() != null) {
             drawRadarPolicyNotice(draw);
         }
+        drawScrollbar(draw);
+    }
+
+    private void drawScrollbar(final GuiDraw draw) {
+        final int viewport = viewportHeight();
+        final int maxScroll = Math.max(0, contentHeight - viewport);
+        if (maxScroll <= 0) {
+            return;
+        }
+        final int top = rowsTop();
+        final int trackHeight = viewport;
+        final int thumbHeight = Math.max(12, trackHeight * viewport / contentHeight);
+        final int thumbTravel = Math.max(1, trackHeight - thumbHeight);
+        final int thumbY = top + (int) Math.round(thumbTravel * (scrollOffset / (double) maxScroll));
+        final int x = rowX() + rowWidth + 4;
+        draw.fill(x, top, x + 2, top + trackHeight, 0xFF3A3A3A);
+        draw.fill(x, thumbY, x + 2, thumbY + thumbHeight, 0xFFFFFFFF);
     }
 
     private void drawRadarPolicyNotice(final GuiDraw draw) {
         final String notice = Texts.translatable(radarAccess.noticeKey()).getString();
-        int y = ROW_TOP + 2;
+        int y = tabLayout().contentTop() + 2;
         for (final OrderedText line : this.textRenderer.wrapLines(
             StringVisitable.plain(notice), Math.max(40, rowWidth)
         )) {

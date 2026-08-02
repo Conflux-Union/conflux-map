@@ -298,7 +298,9 @@ final class StructureSearchScreen extends ConfluxScreen {
     //#else
     public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
     //#endif
-        if (amount != 0 && filteredCount > visibleRows()) {
+        final boolean overList = mouseX >= rowX && mouseX <= rowX + rowWidth + 6
+            && mouseY >= LIST_TOP && mouseY <= LIST_TOP + visibleRows() * ROW_HEIGHT;
+        if (amount != 0 && overList && filteredCount > visibleRows()) {
             scrollOffset -= (int) Math.signum(amount);
             updateRows();
             return true;
@@ -358,6 +360,15 @@ final class StructureSearchScreen extends ConfluxScreen {
                 0xFFAAAAAA
             );
         }
+        drawListScrollbar(
+            draw,
+            rowX + rowWidth + 3,
+            LIST_TOP,
+            visibleRows() * ROW_HEIGHT - 4,
+            filteredCount,
+            visibleRows(),
+            scrollOffset
+        );
         if (statusKey != null) {
             final String status = Texts.translatable(statusKey, statusArgs).getString();
             draw.drawTextWithShadow(

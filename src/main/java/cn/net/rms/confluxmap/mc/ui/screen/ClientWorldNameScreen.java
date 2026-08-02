@@ -57,6 +57,7 @@ final class ClientWorldNameScreen extends ConfluxScreen {
             Texts.translatable("confluxmap.screen.waypoint.cancel"),
             ignored -> onClose()
         ));
+        setEnterAction(() -> doneButton != null && doneButton.active, this::submit);
         refreshDone();
     }
 

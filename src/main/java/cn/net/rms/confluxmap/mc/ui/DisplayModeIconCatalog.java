@@ -8,8 +8,7 @@ import net.minecraft.util.Identifier;
 public final class DisplayModeIconCatalog {
     private static final Identifier TERRAIN = projectTexture("map_terrain.png");
     private static final Identifier CHUNK_LOAD_STATE = projectTexture("chunk_load_state.png");
-    // The vanilla oak-sapling item model uses this block sprite directly.
-    private static final Identifier BIOME = Ids.of("minecraft", "textures/block/oak_sapling.png");
+    private static final Identifier BIOME = projectTexture("map_biome.png");
 
     private DisplayModeIconCatalog() {
     }
