@@ -9,17 +9,17 @@ import org.junit.jupiter.api.Test;
 
 final class StructureCandidatePreviewTest {
     @Test
-    void projectsCandidatesWithMinecraftNorthAtTheTopOfThePreview() {
+    void projectsCandidatesWithTheSameNorthUpOrientationAsTheFullscreenMap() {
         final List<StructureIndex.Marker> candidates = List.of(
             marker(-100, -100),
             marker(100, 100)
         );
         final StructureCandidatePreview.Layout layout = StructureCandidatePreview.layout(
-            0, 0, 160, 120, 0, 0, candidates
+            0, 0, 160, 120, 0, 0, 0, 0, candidates
         );
 
-        assertTrue(layout.centerScreenX(-100) < layout.centerScreenX(100));
-        assertTrue(layout.centerScreenY(100) < layout.centerScreenY(-100));
+        assertTrue(layout.screenX(-100) < layout.screenX(100));
+        assertTrue(layout.screenY(-100) < layout.screenY(100));
     }
 
     @Test
@@ -29,13 +29,25 @@ final class StructureCandidatePreviewTest {
             marker(100, 0)
         );
         final StructureCandidatePreview.Layout layout = StructureCandidatePreview.layout(
-            10, 20, 160, 120, 0, 0, candidates
+            10, 20, 160, 120, 0, 0, 0, 0, candidates
         );
 
         assertEquals(
             1,
-            layout.candidateAt(candidates, layout.centerScreenX(100), layout.centerScreenY(0), 7)
+            layout.candidateAt(candidates, layout.screenX(100), layout.screenY(0), 7)
         );
+    }
+
+    @Test
+    void keepsThePlayerInsideTheTerrainPreview() {
+        final StructureCandidatePreview.Layout layout = StructureCandidatePreview.layout(
+            10, 20, 160, 120, 0, 0, 500, -300, List.of(marker(100, 100))
+        );
+
+        assertTrue(layout.screenX(500) >= layout.x());
+        assertTrue(layout.screenX(500) < layout.x() + layout.width());
+        assertTrue(layout.screenY(-300) >= layout.y());
+        assertTrue(layout.screenY(-300) < layout.y() + layout.height());
     }
 
     private static StructureIndex.Marker marker(final int x, final int z) {

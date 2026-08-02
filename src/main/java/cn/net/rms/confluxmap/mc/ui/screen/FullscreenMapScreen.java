@@ -2477,6 +2477,48 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     /**
+     * Renders the terrain and player arrow for the structure-candidate dialog with the same tile
+     * renderer the fullscreen map uses. The dialog owns the viewport while it is visible, so tile
+     * loading and server map synchronization follow the preview rather than the hidden map's last
+     * camera position. The fullscreen camera state itself is restored before returning.
+     */
+    void drawStructureCandidatePreview(
+        final GuiDraw draw,
+        final StructureCandidatePreview.Layout preview,
+        final float tickDelta
+    ) {
+        final int previousWidth = width;
+        final int previousHeight = height;
+        final double previousCenterX = centerX;
+        final double previousCenterZ = centerZ;
+        final double previousScale = scale;
+        final MatrixStack matrices = draw.matrices();
+
+        width = preview.width();
+        height = preview.height();
+        centerX = preview.centerBlockX();
+        centerZ = preview.centerBlockZ();
+        scale = preview.blocksPerPixel();
+        RenderUtil.enableScissor(MinecraftClient.getInstance(), preview.x(), preview.y(), width, height);
+        matrices.push();
+        try {
+            matrices.translate(preview.x(), preview.y(), 0);
+            tiles.setViewpoint((int) Math.floor(centerX), (int) Math.floor(centerZ));
+            predictionTiles.setViewpoint((int) Math.floor(centerX), (int) Math.floor(centerZ));
+            drawTiles(matrices);
+            drawPlayerMarker(matrices, tickDelta);
+        } finally {
+            matrices.pop();
+            RenderUtil.disableScissor();
+            width = previousWidth;
+            height = previousHeight;
+            centerX = previousCenterX;
+            centerZ = previousCenterZ;
+            scale = previousScale;
+        }
+    }
+
+    /**
      * Draws the real tile grid, and - when a seed-predicted underlay is available for the
      * current dimension+layer (only {@link MapLayer.Type#SURFACE} in the Overworld and {@link
      * MapLayer.Type#END_SURFACE} in the End; never a cave/nether layer, which cubiomes can't

@@ -19,7 +19,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 
-/** Bounded nearest-candidate finder with a clickable X/Z relationship preview. */
+/** Bounded nearest-candidate finder with a clickable fullscreen-map-backed preview. */
 final class StructureCandidateScreen extends ConfluxScreen {
     private static final Pattern INTEGER = Pattern.compile("-?[0-9]*");
     private static final Pattern POSITIVE_INTEGER = Pattern.compile("[0-9]*");
@@ -346,14 +346,14 @@ final class StructureCandidateScreen extends ConfluxScreen {
         drawCentered(draw, getTitle().getString(), 14, 0xFFFFFFFF);
         drawCentered(draw, Texts.translatable("confluxmap.screen.structure_candidates.center").getString(), 31, 0xFFBBBBBB);
         drawCentered(draw, Texts.translatable("confluxmap.screen.structure_candidates.count").getString(), 70, 0xFFBBBBBB);
-        drawPreview(draw);
+        drawPreview(draw, tickDelta);
         drawCandidateList(draw);
         if (statusKey != null) {
             drawCentered(draw, Texts.translatable(statusKey, statusArgs).getString(), height - 42, statusColor);
         }
     }
 
-    private void drawPreview(final GuiDraw draw) {
+    private void drawPreview(final GuiDraw draw, final float tickDelta) {
         StructureSearchScrollBar.drawListSurface(draw, previewX, previewY, previewWidth, previewHeight, previewHeight);
         final String title = Texts.translatable("confluxmap.screen.structure_candidates.preview").getString();
         draw.drawTextWithShadow(
@@ -375,17 +375,17 @@ final class StructureCandidateScreen extends ConfluxScreen {
             return;
         }
         final StructureCandidatePreview.Layout preview = previewLayout();
-        draw.fill(preview.x(), preview.y(), preview.x() + preview.width(), preview.y() + preview.height(), 0x2D000000);
-        final int centerX = preview.centerScreenX(searchCenterX());
-        final int centerY = preview.centerScreenY(searchCenterZ());
+        map.drawStructureCandidatePreview(draw, preview, tickDelta);
+        final int centerX = preview.screenX(searchCenterX());
+        final int centerY = preview.screenY(searchCenterZ());
         draw.fill(centerX - 1, preview.y(), centerX + 1, preview.y() + preview.height(), 0x5588BBDD);
         draw.fill(preview.x(), centerY - 1, preview.x() + preview.width(), centerY + 1, 0x5588BBDD);
         draw.fill(centerX - 3, centerY - 1, centerX + 4, centerY + 1, 0xFF9ED6FF);
         draw.fill(centerX - 1, centerY - 3, centerX + 1, centerY + 4, 0xFF9ED6FF);
         for (int index = 0; index < candidates.size(); index++) {
             final StructureIndex.Marker marker = candidates.get(index);
-            final int markerX = preview.centerScreenX(marker.blockX());
-            final int markerY = preview.centerScreenY(marker.blockZ());
+            final int markerX = preview.screenX(marker.blockX());
+            final int markerY = preview.screenY(marker.blockZ());
             final int color = index == selectedCandidateIndex ? 0xFFFFE070
                 : marker.state() == StructureIndex.State.VERIFIED ? 0xFF82E58A : 0xFFFFAA55;
             if (index == selectedCandidateIndex) {
@@ -484,8 +484,22 @@ final class StructureCandidateScreen extends ConfluxScreen {
             Math.max(1, previewHeight - LIST_HEADER_HEIGHT - 2),
             searchCenterX(),
             searchCenterZ(),
+            previewPlayerX(),
+            previewPlayerZ(),
             candidates
         );
+    }
+
+    private double previewPlayerX() {
+        return MinecraftClient.getInstance().player == null
+            ? searchCenterX()
+            : MinecraftClient.getInstance().player.getX();
+    }
+
+    private double previewPlayerZ() {
+        return MinecraftClient.getInstance().player == null
+            ? searchCenterZ()
+            : MinecraftClient.getInstance().player.getZ();
     }
 
     private int searchCenterX() {

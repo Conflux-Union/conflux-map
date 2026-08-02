@@ -802,7 +802,7 @@ public final class ConfigScreen extends ConfluxScreen {
 
     private static String structureIconDetailLimitText(final int lod) {
         return Texts.translatable(
-            "confluxmap.value.blocks_per_pixel", TileMath.blocksPerPixel(lod)
+            "confluxmap.value.zoom_multiplier", 1 << lod
         ).getString();
     }
 

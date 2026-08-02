@@ -3,7 +3,11 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
 import java.util.List;
 
-/** Projects a candidate search's real X/Z coordinates into the compact clickable preview. */
+/**
+ * Describes the camera shared by the fullscreen-map-backed candidate preview and its clickable
+ * candidate overlays. Keeping the projection here ensures the markers, hit targets, player arrow,
+ * and terrain all use the same north-up X/Z coordinates.
+ */
 final class StructureCandidatePreview {
     private static final int PADDING = 10;
     private static final double MIN_WORLD_SPAN = 64.0;
@@ -18,30 +22,34 @@ final class StructureCandidatePreview {
         final int height,
         final int centerX,
         final int centerZ,
+        final double playerX,
+        final double playerZ,
         final List<StructureIndex.Marker> candidates
     ) {
-        long minX = centerX;
-        long maxX = centerX;
-        long minZ = centerZ;
-        long maxZ = centerZ;
+        double minX = Math.min(centerX, playerX);
+        double maxX = Math.max(centerX, playerX);
+        double minZ = Math.min(centerZ, playerZ);
+        double maxZ = Math.max(centerZ, playerZ);
         for (final StructureIndex.Marker marker : candidates) {
             minX = Math.min(minX, marker.blockX());
             maxX = Math.max(maxX, marker.blockX());
             minZ = Math.min(minZ, marker.blockZ());
             maxZ = Math.max(maxZ, marker.blockZ());
         }
-        final double span = Math.max(
-            MIN_WORLD_SPAN,
-            Math.max(maxX - minX, maxZ - minZ) * 1.20
+        final int contentWidth = Math.max(1, width - PADDING * 2);
+        final int contentHeight = Math.max(1, height - PADDING * 2);
+        final double blocksPerPixel = Math.max(
+            MIN_WORLD_SPAN / Math.min(contentWidth, contentHeight),
+            Math.max((maxX - minX) / contentWidth, (maxZ - minZ) / contentHeight) * 1.20
         );
         return new Layout(
             x + PADDING,
             y + PADDING,
-            Math.max(1, width - PADDING * 2),
-            Math.max(1, height - PADDING * 2),
+            contentWidth,
+            contentHeight,
             (minX + maxX) / 2.0,
             (minZ + maxZ) / 2.0,
-            span
+            blocksPerPixel
         );
     }
 
@@ -52,7 +60,7 @@ final class StructureCandidatePreview {
         private final int height;
         private final double centerX;
         private final double centerZ;
-        private final double span;
+        private final double blocksPerPixel;
 
         private Layout(
             final int x,
@@ -61,7 +69,7 @@ final class StructureCandidatePreview {
             final int height,
             final double centerX,
             final double centerZ,
-            final double span
+            final double blocksPerPixel
         ) {
             this.x = x;
             this.y = y;
@@ -69,15 +77,27 @@ final class StructureCandidatePreview {
             this.height = height;
             this.centerX = centerX;
             this.centerZ = centerZ;
-            this.span = span;
+            this.blocksPerPixel = blocksPerPixel;
         }
 
-        int centerScreenX(final int blockX) {
+        int screenX(final double blockX) {
             return projectX(blockX);
         }
 
-        int centerScreenY(final int blockZ) {
+        int screenY(final double blockZ) {
             return projectY(blockZ);
+        }
+
+        double centerBlockX() {
+            return centerX;
+        }
+
+        double centerBlockZ() {
+            return centerZ;
+        }
+
+        double blocksPerPixel() {
+            return blocksPerPixel;
         }
 
         int candidateAt(
@@ -91,8 +111,8 @@ final class StructureCandidatePreview {
             double closestDistanceSquared = radiusSquared + 1.0;
             for (int index = 0; index < candidates.size(); index++) {
                 final StructureIndex.Marker marker = candidates.get(index);
-                final double dx = mouseX - projectX(marker.blockX());
-                final double dy = mouseY - projectY(marker.blockZ());
+                final double dx = mouseX - screenX(marker.blockX());
+                final double dy = mouseY - screenY(marker.blockZ());
                 final double distanceSquared = dx * dx + dy * dy;
                 if (distanceSquared <= radiusSquared && distanceSquared < closestDistanceSquared) {
                     closest = index;
@@ -118,12 +138,12 @@ final class StructureCandidatePreview {
             return height;
         }
 
-        private int projectX(final int blockX) {
-            return x + (int) Math.round(width / 2.0 + (blockX - centerX) * width / span);
+        private int projectX(final double blockX) {
+            return x + (int) Math.round(width / 2.0 + (blockX - centerX) / blocksPerPixel);
         }
 
-        private int projectY(final int blockZ) {
-            return y + (int) Math.round(height / 2.0 - (blockZ - centerZ) * height / span);
+        private int projectY(final double blockZ) {
+            return y + (int) Math.round(height / 2.0 + (blockZ - centerZ) / blocksPerPixel);
         }
     }
 }
