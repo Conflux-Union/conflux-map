@@ -330,7 +330,7 @@
   "confluxmap.config.shape.circle": "Circle",
   "confluxmap.config.layer_override.auto": "Auto",
   "confluxmap.config.layer_override.force_surface": "Surface",
-  "confluxmap.config.layer_override.force_underground": "Underground",
+  "confluxmap.config.layer_override.force_underground": "Overworld Cave / Nether Roof",
   "confluxmap.value.on": "On",
   "confluxmap.value.off": "Off",
   "confluxmap.value.unlimited": "Unlimited",
