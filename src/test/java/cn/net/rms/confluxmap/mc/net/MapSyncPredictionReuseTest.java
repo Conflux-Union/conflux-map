@@ -147,10 +147,12 @@ class MapSyncPredictionReuseTest {
         assertEquals(expected, actual, "lower-LOD coverage did not reach the expected terminal state");
     }
 
-    private static void awaitRequest(
-        final MapSyncClient client,
-        final List<MapViewReqC2S> sent
-    ) throws InterruptedException {
+    /**
+     * The client normally polls the stable viewport every render tick. Keep that production cadence
+     * in the test while waiting for the asynchronous coverage reducer to publish its final result.
+     */
+    private static void awaitRequest(final MapSyncClient client, final List<MapViewReqC2S> sent)
+        throws InterruptedException {
         final long deadline = System.currentTimeMillis() + 5_000L;
         while (sent.isEmpty() && System.currentTimeMillis() < deadline) {
             client.reportViewport(DIM, 1, 0, 0, 0, 0);
