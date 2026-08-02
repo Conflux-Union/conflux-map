@@ -1,6 +1,6 @@
 # MaliLib config-screen API integration
 
-Research date: 2026-07-27.
+Research date: 2026-07-27. Updated 2026-08-02 for runtime capability detection.
 
 ## Question
 
@@ -35,12 +35,16 @@ were inspected with `javap`:
 - Minecraft 1.21.1 through 26.1.2 provide `Registry.CONFIG_SCREEN`,
   `ConfigScreenRegistry.registerConfigScreenFactory(ModInfo)`, the three-argument
   `ModInfo` constructor, and the `GuiModConfigs` list constructor.
-- Minecraft 1.17.1 provides `GuiModConfigs` but not the config-screen registry.
+- The repository's pinned Minecraft 1.17.1 MaliLib provides `GuiModConfigs` but
+  not the config-screen registry. A compatible runtime build can nevertheless
+  backport the later registry and switcher API under the same class and method
+  names.
 
 Therefore Conflux Map registers a dedicated config screen in the A+C switcher
-on 1.21.1 and newer and does not add a vanilla config shortcut there. The
-1.17.1 build retains one unbound vanilla compatibility shortcut because its
-MaliLib API has no registry through which A+C could discover the page.
+directly on 1.21.1 and newer. On 1.17.1 it detects the registry at runtime and
+registers reflectively when the installed MaliLib exposes it. The vanilla
+compatibility shortcut is retained only when that registration API is absent
+or incompatible, preserving support for the pinned legacy dependency.
 
 ## Sources
 
