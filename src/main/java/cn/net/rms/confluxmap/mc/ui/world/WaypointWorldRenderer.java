@@ -349,12 +349,13 @@ public final class WaypointWorldRenderer {
                     //#if MC>=260200
                     //$$ drawLabel(
                     //$$     matrices, context.submitNodeCollector(), cameraState.orientation,
-                    //$$     cameraPos, waypoint.x(), waypoint.y(), waypoint.z(), waypoint,
+                    //$$     cameraPos, waypoint.x(), labelAnchorY(waypoint.y(), cameraPos.y), waypoint.z(), waypoint,
                     //$$     distance3d, progress
                     //$$ );
                     //#else
                     drawLabel(
-                        matrices, immediate, camera, cameraPos, waypoint.x(), waypoint.y(), waypoint.z(),
+                        matrices, immediate, camera, cameraPos, waypoint.x(),
+                        labelAnchorY(waypoint.y(), cameraPos.y), waypoint.z(),
                         waypoint, distance3d, progress
                     );
                     //#endif
@@ -401,7 +402,7 @@ public final class WaypointWorldRenderer {
         double bestDistance = Double.POSITIVE_INFINITY;
         for (final WaypointRenderEntry waypoint : waypoints) {
             final double dx = waypoint.x() - cameraPos.x;
-            final double dy = waypoint.y() + LABEL_Y_OFFSET - cameraPos.y;
+            final double dy = labelAnchorY(waypoint.y(), cameraPos.y) - cameraPos.y;
             final double dz = waypoint.z() - cameraPos.z;
             final double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
             if (distance <= 0.001 || distance > maxDistance) {
@@ -420,6 +421,10 @@ public final class WaypointWorldRenderer {
             }
         }
         return best;
+    }
+
+    private static double labelAnchorY(final double waypointY, final double cameraY) {
+        return WaypointHudMotion.labelAnchorY(waypointY, cameraY, LABEL_Y_OFFSET);
     }
 
     private float animationDeltaSeconds() {
@@ -542,7 +547,7 @@ public final class WaypointWorldRenderer {
         final float panelWidth = panelFullWidth * panelReveal;
 
         matrices.push();
-        matrices.translate(worldX - cameraPos.x, worldY + LABEL_Y_OFFSET - cameraPos.y, worldZ - cameraPos.z);
+        matrices.translate(worldX - cameraPos.x, worldY - cameraPos.y, worldZ - cameraPos.z);
         //#if MC>=260200
         //$$ matrices.mulPose(cameraRotation);
         //#else
