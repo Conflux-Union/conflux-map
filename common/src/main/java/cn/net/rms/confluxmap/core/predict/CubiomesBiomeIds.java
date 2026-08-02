@@ -21,6 +21,8 @@ import java.util.OptionalInt;
  * BiomeTable} itself never needs a name, only the id cubiomes hands back from a query.
  */
 public final class CubiomesBiomeIds {
+    public static final int SMALL_END_ISLANDS = 40;
+
     private static final Map<String, Integer> BY_NAME = new HashMap<>();
     private static final Map<Integer, String> BY_ID = new HashMap<>();
     private static final Map<Integer, List<String>> NAMES_BY_ID = new HashMap<>();
@@ -99,7 +101,7 @@ public final class CubiomesBiomeIds {
         put(37, "badlands");
         put(38, "wooded_badlands_plateau");
         put(39, "badlands_plateau");
-        put(40, "small_end_islands");
+        put(SMALL_END_ISLANDS, "small_end_islands");
         put(41, "end_midlands");
         put(42, "end_highlands");
         put(43, "end_barrens");

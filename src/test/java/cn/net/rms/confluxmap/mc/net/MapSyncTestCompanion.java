@@ -6,6 +6,7 @@ import cn.net.rms.confluxmap.core.net.MapCompatibilityS2C;
 import cn.net.rms.confluxmap.core.net.MapSyncCompatibility;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
+import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 
 /** Activates a test session as a current negotiation-aware companion. */
 final class MapSyncTestCompanion {
@@ -24,7 +25,7 @@ final class MapSyncTestCompanion {
             Proto.PROTO_MINOR,
             PatchCodec.FORMAT_VERSION,
             ChunkPatchCodec.FORMAT_VERSION,
-            MapSyncCompatibility.STABLE_PREDICTOR,
+            PredictorVersion.full(),
             MapCompatibilityS2C.MODE_RESIDUAL,
             MapCompatibilityS2C.REASON_NONE
         ));

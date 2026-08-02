@@ -6,7 +6,7 @@ overlays it; predictions never enter the `.cfr` column cache.
 ## Determinism
 
 The wire baseline is `{biomeId u8, surfaceY i16, kind u8, fluidDepth u8}`. The predictor version
-is `cb:9afc1038ea5a|shim:9|base:14`; palette colours are local and never sent. Synthetic canopy stays
+is `cb:9afc1038ea5a|shim:9|base:15`; palette colours are local and never sent. Synthetic canopy stays
 on the predicted plane instead of becoming a generated-chunk correction, so generated frontiers
 cannot introduce foliage-colour seams. Other height differences up to 2 blocks are tolerated, and
 fluid depth compares in buckets `0`, `1-3`, `4-9`, `10+`. A real map colour outside the biome's
@@ -57,7 +57,11 @@ every output pixel. Exact anchors provide water confidence, which is bilinearly 
 being combined with the corrected terrain floor and final ocean/river biome. The categorical flag
 is never copied from the nearest anchor because that would quantize swamp pools and shorelines into
 rectangles whose world size changes at every LOD. End terrain keeps its separate dimension-specific
-height sampler.
+height sampler. LOD3 pools the native four-block grid into two-by-two samples per output pixel.
+LOD4 uses globally aligned 32-block height cells and never bilinearly interpolates a land height
+through a void cell. Its final 16-block biome layer may extend a non-small-islands edge by one
+output pixel only when an adjacent height cell already proves land; the refinement reads an
+immutable copy of the coarse plane so it cannot grow repeatedly across a biome region.
 
 Canopy uses one seed-deterministic overview on every Minecraft version. At LOD0-1, jittered blob
 anchors form sparse crowns while dense jungle uses the inverse field as irregular clearings; at

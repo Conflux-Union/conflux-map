@@ -6,7 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.model.MapLayer;
+import cn.net.rms.confluxmap.core.model.SampleSource;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
@@ -21,7 +24,9 @@ import cn.net.rms.confluxmap.core.tile.TileUpdate;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
+import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.HashMap;
@@ -84,7 +89,10 @@ class PredictionTileServiceTest {
                 new CorrectionStore.Key(DIM.toString(), 2, 0, 0),
                 1L,
                 new byte[Proto.PATCH_PRESENCE_BYTES],
-                new PatchCodec.Patch(List.of(correction))
+                new PatchCodec.Patch(List.of(correction)),
+                Proto.PATCH_MODE_RESIDUAL,
+                PredictorVersion.full(),
+                System.currentTimeMillis()
             ));
             awaitIdle(predictionTiles, 10_000L);
             assertEquals(4, predictionTiles.predictedBiomeAt(DIM, 2, 0, 0).orElse(-1));
@@ -107,6 +115,119 @@ class PredictionTileServiceTest {
         } finally {
             executors.shutdown(2000);
         }
+    }
+
+    @Test
+    void capturedEndVoidClearsAnAlreadyUploadedPrediction() throws InterruptedException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final SessionGuard sessionGuard = new SessionGuard();
+        final SessionGuard.Session session = sessionGuard.begin(WORLD, DimensionId.END);
+        final MapWorldService worlds = new MapWorldService();
+        worlds.switchSession(session);
+        final MapExecutors executors = new MapExecutors();
+        final TileService uploads = new TileService(
+            worlds, executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.DEFAULT, WorldPreset.DEFAULT);
+        state.setSeed(146008555L, McVersions.toCubiomes("1.17").orElseThrow());
+        final PredictionTileService predictionTiles = newService(
+            sessionGuard, state, executors, uploads
+        );
+        final TileKey key = new TileKey(
+            WORLD, DimensionId.END, "end!pred", 0, 0, 0
+        );
+
+        try {
+            predictionTiles.setViewport(DimensionId.END, 0, 0, 0, 0, 0);
+            predictionTiles.requestTile(key);
+            awaitIdle(predictionTiles, 10_000L);
+            final TileUpdate initial = uploads.drainUploads(8).stream()
+                .filter(update -> update.key().equals(key))
+                .findFirst()
+                .orElseThrow();
+            assertTrue(
+                initial.argbPixels()[8 * 256 + 8] != Argb.TRANSPARENT,
+                "the central End island must provide a visible prediction before capture"
+            );
+
+            assertTrue(worlds.current().put(
+                MapLayer.END_SURFACE, voidSnapshot(session.token()), SampleSource.REAL_LIVE
+            ));
+            uploads.markChunkStored(
+                session.token(), DimensionId.END, MapLayer.END_SURFACE, 0, 0
+            );
+            awaitIdle(predictionTiles, 10_000L);
+
+            final TileUpdate refreshed = uploads.drainUploads(64).stream()
+                .filter(update -> update.key().equals(key))
+                .reduce((first, second) -> second)
+                .orElseThrow(() -> new AssertionError(
+                    "captured End coverage must refresh the already-uploaded prediction"
+                ));
+            assertEquals(
+                Argb.TRANSPARENT,
+                refreshed.argbPixels()[8 * 256 + 8],
+                "authoritative void must erase the false predicted island below the real map"
+            );
+            assertTrue(
+                refreshed.argbPixels()[8 * 256 + 24] != Argb.TRANSPARENT,
+                "the adjacent uncaptured chunk must keep its prediction"
+            );
+
+            predictionTiles.setViewport(DimensionId.END, 0, 1, 1, 0, 0);
+            assertTrue(worlds.current().put(
+                MapLayer.END_SURFACE, voidSnapshot(1, 0, session.token()), SampleSource.REAL_LIVE
+            ));
+            uploads.markChunkStored(
+                session.token(), DimensionId.END, MapLayer.END_SURFACE, 1, 0
+            );
+            awaitIdle(predictionTiles, 10_000L);
+            assertTrue(
+                uploads.drainUploads(64).stream().noneMatch(update -> update.key().equals(key)),
+                "off-screen real coverage should wait until the prediction re-enters the viewport"
+            );
+
+            predictionTiles.setViewport(DimensionId.END, 0, 0, 0, 0, 0);
+            awaitIdle(predictionTiles, 10_000L);
+            final TileUpdate reentered = uploads.drainUploads(64).stream()
+                .filter(update -> update.key().equals(key))
+                .reduce((first, second) -> second)
+                .orElseThrow();
+            assertEquals(
+                Argb.TRANSPARENT,
+                reentered.argbPixels()[8 * 256 + 24],
+                "deferred real coverage must clear the prediction when the tile re-enters"
+            );
+        } finally {
+            executors.shutdown(2000);
+        }
+    }
+
+    private static ChunkSnapshot voidSnapshot(final long token) {
+        return voidSnapshot(0, 0, token);
+    }
+
+    private static ChunkSnapshot voidSnapshot(
+        final int chunkX,
+        final int chunkZ,
+        final long token
+    ) {
+        final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
+        Arrays.fill(surfaceY, (short) 65);
+        final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
+        Arrays.fill(kind, (byte) SurfaceKind.VOID.ordinal());
+        return new ChunkSnapshot(
+            chunkX, chunkZ, token,
+            surfaceY,
+            new String[ChunkSnapshot.COLUMNS],
+            new byte[ChunkSnapshot.COLUMNS],
+            new int[ChunkSnapshot.COLUMNS],
+            new int[ChunkSnapshot.COLUMNS],
+            new int[ChunkSnapshot.COLUMNS],
+            kind,
+            new byte[ChunkSnapshot.COLUMNS]
+        );
     }
 
     /**
@@ -255,6 +376,8 @@ class PredictionTileServiceTest {
                         1L,
                         new byte[Proto.PATCH_PRESENCE_BYTES],
                         new PatchCodec.Patch(samples),
+                        Proto.PATCH_MODE_RESIDUAL,
+                        PredictorVersion.full(),
                         validatedAt
                     ));
                 }
@@ -304,6 +427,8 @@ class PredictionTileServiceTest {
                 new PatchCodec.Patch(List.of(new PatchCodec.Sample(
                     0, 8, 95, SurfaceKind.LAND.ordinal(), 18, 0
                 ))),
+                Proto.PATCH_MODE_RESIDUAL,
+                PredictorVersion.full(),
                 validatedAt + 1L
             ));
             awaitIdle(predictionTiles, 10_000L);
@@ -354,6 +479,8 @@ class PredictionTileServiceTest {
                     1L,
                     new byte[Proto.PATCH_PRESENCE_BYTES],
                     new PatchCodec.Patch(List.of()),
+                    Proto.PATCH_MODE_RESIDUAL,
+                    PredictorVersion.full(),
                     nowMillis
                 ));
             }

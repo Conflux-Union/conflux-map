@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
 import cn.net.rms.confluxmap.core.model.SampleSource;
+import cn.net.rms.confluxmap.core.model.SurfaceKind;
+import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 
 class ColumnStoreTest {
@@ -47,11 +49,52 @@ class ColumnStoreTest {
         assertTrue(store.surfaceYAt(256, 256).isEmpty());
     }
 
+    @Test
+    void knownVoidDoesNotProvideATeleportSurfaceHeight() {
+        final ColumnStore store = new ColumnStore();
+        final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
+        Arrays.fill(surfaceY, (short) 65);
+        final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
+        Arrays.fill(kind, (byte) SurfaceKind.VOID.ordinal());
+        store.put(snapshot(0, 0, surfaceY, kind), SampleSource.REAL_LIVE);
+
+        assertTrue(
+            store.surfaceYAt(8, 8).isEmpty(),
+            "the End's void placeholder Y must not be offered as a teleport estimate"
+        );
+    }
+
+    @Test
+    void surfaceLookupDistinguishesKnownVoidFromUnknownTerrain() {
+        final ColumnStore store = new ColumnStore();
+        final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
+        Arrays.fill(surfaceY, (short) 65);
+        final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
+        Arrays.fill(kind, (byte) SurfaceKind.VOID.ordinal());
+        store.put(snapshot(0, 0, surfaceY, kind), SampleSource.REAL_LIVE);
+
+        final ColumnStore.SurfaceLookup knownVoid = store.surfaceAt(8, 8);
+        assertTrue(knownVoid.known());
+        assertTrue(knownVoid.surfaceY().isEmpty());
+        assertFalse(store.surfaceAt(24, 8).known());
+    }
+
     private static ChunkSnapshot snapshot(final int chunkX, final int chunkZ) {
         return snapshot(chunkX, chunkZ, new short[ChunkSnapshot.COLUMNS]);
     }
 
     private static ChunkSnapshot snapshot(final int chunkX, final int chunkZ, final short[] surfaceY) {
+        final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
+        Arrays.fill(kind, (byte) SurfaceKind.LAND.ordinal());
+        return snapshot(chunkX, chunkZ, surfaceY, kind);
+    }
+
+    private static ChunkSnapshot snapshot(
+        final int chunkX,
+        final int chunkZ,
+        final short[] surfaceY,
+        final byte[] kind
+    ) {
         return new ChunkSnapshot(
             chunkX,
             chunkZ,
@@ -62,7 +105,7 @@ class ColumnStoreTest {
             new int[ChunkSnapshot.COLUMNS],
             new int[ChunkSnapshot.COLUMNS],
             new int[ChunkSnapshot.COLUMNS],
-            new byte[ChunkSnapshot.COLUMNS],
+            kind,
             new byte[ChunkSnapshot.COLUMNS]
         );
     }

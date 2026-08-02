@@ -53,7 +53,7 @@ class MapSyncChunkViewportTest {
             corrections.onSessionChanged(sessions.current());
             predictions.bindCorrectionStore(corrections);
             final CompanionSession companion = new CompanionSession();
-            companion.onPolicy(new HelloPolicyS2C(
+            MapSyncTestCompanion.activate(companion, new HelloPolicyS2C(
                 new HelloPolicyS2C.Flags(false, true, false, false, false, true, true),
                 "chunk-viewport-world",
                 "1.17",

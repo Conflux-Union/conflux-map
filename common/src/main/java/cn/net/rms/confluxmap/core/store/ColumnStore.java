@@ -15,6 +15,14 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * Thread-safe: region cells are guarded by the region monitor.
  */
 public final class ColumnStore {
+    public record SurfaceLookup(boolean known, OptionalInt surfaceY) {
+        private static final SurfaceLookup UNKNOWN = new SurfaceLookup(false, OptionalInt.empty());
+
+        public SurfaceLookup {
+            surfaceY = surfaceY == null ? OptionalInt.empty() : surfaceY;
+        }
+    }
+
     private final ConcurrentHashMap<Long, RegionColumns> regions = new ConcurrentHashMap<>();
     private final ReentrantReadWriteLock lifecycle = new ReentrantReadWriteLock();
 
@@ -50,16 +58,41 @@ public final class ColumnStore {
         return regions.size();
     }
 
+    /** Whether this chunk has authoritative cached or live map data in memory. */
+    public boolean hasRealChunk(final int chunkX, final int chunkZ) {
+        final RegionColumns region = region(chunkX >> 4, chunkZ >> 4);
+        return region != null
+            && region.chunkSource(chunkX & 15, chunkZ & 15).priority()
+                >= SampleSource.REAL_CACHED.priority();
+    }
+
     /** Highest sampled surface block at one world column, or empty when that column is unknown. */
     public OptionalInt surfaceYAt(final int blockX, final int blockZ) {
+        return surfaceAt(blockX, blockZ).surfaceY();
+    }
+
+    /**
+     * Distinguishes an uncaptured column from an authoritative void column. Both have no surface
+     * height, but only the former may fall back to seed prediction in map location actions.
+     */
+    public SurfaceLookup surfaceAt(final int blockX, final int blockZ) {
         final RegionColumns region = region(TileMath.blockToTile(blockX), TileMath.blockToTile(blockZ));
         if (region == null) {
-            return OptionalInt.empty();
+            return SurfaceLookup.UNKNOWN;
+        }
+        final int chunkLocalX = Math.floorMod(TileMath.blockToChunk(blockX), RegionColumns.CHUNKS);
+        final int chunkLocalZ = Math.floorMod(TileMath.blockToChunk(blockZ), RegionColumns.CHUNKS);
+        if (region.chunkSource(chunkLocalX, chunkLocalZ).priority()
+            < SampleSource.REAL_CACHED.priority()) {
+            return SurfaceLookup.UNKNOWN;
         }
         final short surfaceY = region.surfaceYAt(
             TileMath.blockInTile(blockX), TileMath.blockInTile(blockZ)
         );
-        return surfaceY == ChunkSnapshot.NO_SURFACE ? OptionalInt.empty() : OptionalInt.of(surfaceY);
+        return new SurfaceLookup(
+            true,
+            surfaceY == ChunkSnapshot.NO_SURFACE ? OptionalInt.empty() : OptionalInt.of(surfaceY)
+        );
     }
 
     /**

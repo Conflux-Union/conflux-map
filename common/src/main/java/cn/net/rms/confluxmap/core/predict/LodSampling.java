@@ -110,6 +110,9 @@ public final class LodSampling {
             || !sampleBiomes(sampler, lod, tileOriginX, tileOriginZ, grid)) {
             return null;
         }
+        if (lod == 4) {
+            refineEndLod4Coverage(grid);
+        }
         for (int i = 0; i < grid.terrainY.length; i++) {
             grid.baseSurfaceY[i] = grid.terrainY[i];
         }
@@ -582,9 +585,12 @@ public final class LodSampling {
             case 3:
                 return sampleEndHeightsMeanPool(sampler, tileOriginX, tileOriginZ, grid);
             case 4:
-                // The End path uses a 64-block grid and interpolates to 16-block pixels to avoid
-                // calculating full-resolution heights for a heavily downsampled tile.
-                return sampleEndHeightsBilinearCoarse(sampler, tileOriginX, tileOriginZ, grid, 4);
+                // Double the old 64-block grid's outline resolution without paying the cost of a
+                // full 16-block surface-noise map. Nearest expansion keeps void categorical: one
+                // land anchor owns one 32-block cell and cannot bleed into adjacent cells.
+                return sampleEndHeightsNearestCoarse(
+                    sampler, tileOriginX, tileOriginZ, grid, 2
+                );
             default:
                 return false;
         }
@@ -645,57 +651,6 @@ public final class LodSampling {
         return true;
     }
 
-    /**
-     * Samples one height every {@code pixelsPerSample} output pixels, then fixed-point bilinearly
-     * interpolates between those anchors. Used by LOD4, where one output pixel is 16 blocks and
-     * a four-pixel anchor interval is therefore a 64-block terrain grid.
-     */
-    private static boolean sampleEndHeightsBilinearCoarse(
-        final BaselineSampler sampler, final int tileOriginX, final int tileOriginZ,
-        final BaselineGrid grid, final int pixelsPerSample
-    ) {
-        final int nativeStride = pixelsPerSample * 4; // 16 blocks/pixel divided by native 4-block cells
-        final int sMin = Math.floorDiv(P_MIN, pixelsPerSample);
-        final int sMax = Math.floorDiv(P_MAX, pixelsPerSample) + 1;
-        final int sw = sMax - sMin + 1;
-        final int x4Origin = Math.floorDiv(tileOriginX, 4) + sMin * nativeStride;
-        final int z4Origin = Math.floorDiv(tileOriginZ, 4) + sMin * nativeStride;
-        final int[] raw = new int[sw * sw];
-        final boolean sampled = sampler.endHeightsStrided(
-            x4Origin, z4Origin, sw, sw, nativeStride, raw
-        );
-        if (!sampled) {
-            return false;
-        }
-        for (int pz = P_MIN; pz <= P_MAX; pz++) {
-            final int baseZ = Math.floorDiv(pz, pixelsPerSample);
-            final int fz = pz - baseZ * pixelsPerSample;
-            final int sz0 = baseZ - sMin;
-            final int sz1 = sz0 + 1;
-            for (int px = P_MIN; px <= P_MAX; px++) {
-                final int baseX = Math.floorDiv(px, pixelsPerSample);
-                final int fx = px - baseX * pixelsPerSample;
-                final int sx0 = baseX - sMin;
-                final int sx1 = sx0 + 1;
-                final int h00 = raw[sz0 * sw + sx0];
-                final int h10 = raw[sz0 * sw + sx1];
-                final int h01 = raw[sz1 * sw + sx0];
-                final int h11 = raw[sz1 * sw + sx1];
-                final int value;
-                if (h00 == 0 && h10 == 0 && h01 == 0 && h11 == 0) {
-                    value = BaselineGrid.NO_SURFACE;
-                } else {
-                    final int top = h00 + Math.floorDiv((h10 - h00) * fx, pixelsPerSample);
-                    final int bottom = h01 + Math.floorDiv((h11 - h01) * fx, pixelsPerSample);
-                    final int interpolated = top + Math.floorDiv((bottom - top) * fz, pixelsPerSample);
-                    value = interpolated;
-                }
-                grid.terrainY[BaselineGrid.index(px, pz)] = value;
-            }
-        }
-        return true;
-    }
-
     /** 4-block native samples selected at {@code nativeStride} cells per output pixel. */
     private static boolean sampleEndHeightsNearest(
         final BaselineSampler sampler, final int tileOriginX, final int tileOriginZ,
@@ -720,9 +675,91 @@ public final class LodSampling {
         return true;
     }
 
-    /** LOD3: 4-block native samples at 2x this LOD's pixel resolution, 2x2-integer-mean pooled down. */
+    /**
+     * Samples one anchor for each square of {@code pixelsPerSample} output pixels and expands it
+     * without interpolation. This is the bounded high-LOD path: terrain edges may step at the
+     * sampling-cell boundary, but an End void value can never turn into synthetic land.
+     */
+    private static boolean sampleEndHeightsNearestCoarse(
+        final BaselineSampler sampler,
+        final int tileOriginX,
+        final int tileOriginZ,
+        final BaselineGrid grid,
+        final int pixelsPerSample
+    ) {
+        final int sMin = Math.floorDiv(P_MIN, pixelsPerSample);
+        final int sMax = Math.floorDiv(P_MAX, pixelsPerSample);
+        final int sw = sMax - sMin + 1;
+        final int nativeStride = pixelsPerSample * 4;
+        final int x4Origin = Math.floorDiv(tileOriginX, 4) + sMin * nativeStride;
+        final int z4Origin = Math.floorDiv(tileOriginZ, 4) + sMin * nativeStride;
+        final int[] raw = new int[sw * sw];
+        if (!sampler.endHeightsStrided(
+            x4Origin, z4Origin, sw, sw, nativeStride, raw
+        )) {
+            return false;
+        }
+        for (int pz = P_MIN; pz <= P_MAX; pz++) {
+            final int sourceZ = Math.floorDiv(pz, pixelsPerSample) - sMin;
+            for (int px = P_MIN; px <= P_MAX; px++) {
+                final int sourceX = Math.floorDiv(px, pixelsPerSample) - sMin;
+                final int rawY = raw[sourceZ * sw + sourceX];
+                grid.terrainY[BaselineGrid.index(px, pz)] = rawY == 0
+                    ? BaselineGrid.NO_SURFACE
+                    : rawY;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Uses the per-output-pixel End biome layer to sharpen the 32-block height cells. A non-small-
+     * islands biome may extend land by one pixel only when an exact coarse cell already proves
+     * terrain immediately beside it; the copied source plane prevents the refinement itself from
+     * growing repeatedly through a large biome region.
+     */
+    private static void refineEndLod4Coverage(final BaselineGrid grid) {
+        final int[] coarse = grid.terrainY.clone();
+        for (int pz = P_MIN; pz <= P_MAX; pz++) {
+            for (int px = P_MIN; px <= P_MAX; px++) {
+                final int index = BaselineGrid.index(px, pz);
+                if (coarse[index] != BaselineGrid.NO_SURFACE
+                    || grid.biomeId[index] == CubiomesBiomeIds.SMALL_END_ISLANDS) {
+                    continue;
+                }
+                int nearestHeight = BaselineGrid.NO_SURFACE;
+                int nearestDistance = Integer.MAX_VALUE;
+                for (int dz = -1; dz <= 1; dz++) {
+                    final int nearbyZ = pz + dz;
+                    if (nearbyZ < P_MIN || nearbyZ > P_MAX) {
+                        continue;
+                    }
+                    for (int dx = -1; dx <= 1; dx++) {
+                        final int nearbyX = px + dx;
+                        if (nearbyX < P_MIN || nearbyX > P_MAX) {
+                            continue;
+                        }
+                        final int height = coarse[BaselineGrid.index(nearbyX, nearbyZ)];
+                        final int distance = dx * dx + dz * dz;
+                        if (height != BaselineGrid.NO_SURFACE && distance < nearestDistance) {
+                            nearestHeight = height;
+                            nearestDistance = distance;
+                        }
+                    }
+                }
+                if (nearestHeight != BaselineGrid.NO_SURFACE) {
+                    grid.terrainY[index] = nearestHeight;
+                }
+            }
+        }
+    }
+
+    /** Two native 4-block samples per LOD3 output-pixel axis, integer-mean pooled down. */
     private static boolean sampleEndHeightsMeanPool(
-        final BaselineSampler sampler, final int tileOriginX, final int tileOriginZ, final BaselineGrid grid
+        final BaselineSampler sampler,
+        final int tileOriginX,
+        final int tileOriginZ,
+        final BaselineGrid grid
     ) {
         final int subMin = 2 * P_MIN;
         final int subMax = 2 * P_MAX + 1;

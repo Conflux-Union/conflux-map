@@ -93,6 +93,60 @@ class PredictionNativeIntegrationTest {
     }
 
     @Test
+    void endLod4CoverageTracksTheMatchingLod3Tiles() {
+        final NativeBaselineSampler sampler = new NativeBaselineSampler(
+            mc17(), SEED, PredictionDimensions.END, 0
+        );
+        final BaselineGrid lod4 = LodSampling.sample(sampler, true, 4, 0, 0);
+        assertNotNull(lod4);
+        final BaselineGrid[] lod3 = {
+            LodSampling.sample(sampler, true, 3, 0, 0),
+            LodSampling.sample(sampler, true, 3, 2048, 0),
+            LodSampling.sample(sampler, true, 3, 0, 2048),
+            LodSampling.sample(sampler, true, 3, 2048, 2048)
+        };
+        for (final BaselineGrid child : lod3) {
+            assertNotNull(child);
+        }
+
+        int intersection = 0;
+        int union = 0;
+        int falseLand = 0;
+        int expectedLand = 0;
+        for (int z = 0; z < BaselineGrid.PIXELS; z++) {
+            for (int x = 0; x < BaselineGrid.PIXELS; x++) {
+                final int lod4Index = BaselineGrid.index(x, z);
+                final boolean actual = lod4.terrainY[lod4Index]
+                    != BaselineGrid.NO_SURFACE;
+                boolean expected = false;
+                for (int dz = 0; dz < 2; dz++) {
+                    for (int dx = 0; dx < 2; dx++) {
+                        final int fineX = x * 2 + dx;
+                        final int fineZ = z * 2 + dz;
+                        final BaselineGrid child = lod3[(fineZ >>> 8) * 2 + (fineX >>> 8)];
+                        expected |= child.terrainY[BaselineGrid.index(fineX & 255, fineZ & 255)]
+                            != BaselineGrid.NO_SURFACE;
+                    }
+                }
+                intersection += actual && expected ? 1 : 0;
+                union += actual || expected ? 1 : 0;
+                falseLand += actual && !expected ? 1 : 0;
+                expectedLand += expected ? 1 : 0;
+            }
+        }
+        final double coverageIou = intersection / (double) union;
+        assertTrue(
+            coverageIou >= 0.80,
+            "LOD4 End land/void coverage diverged from LOD3 downsampling: IoU=" + coverageIou
+        );
+        assertTrue(
+            falseLand <= expectedLand / 6,
+            "LOD4 End sampling invented too much land over LOD3 void: "
+                + falseLand + " false pixels for " + expectedLand + " expected land pixels"
+        );
+    }
+
+    @Test
     void reportedOceanCoordinatesKeepTheirVanillaWaterArea() {
         final long reportedSeed = 6512112982729996127L;
         final int blockX = -2819;
