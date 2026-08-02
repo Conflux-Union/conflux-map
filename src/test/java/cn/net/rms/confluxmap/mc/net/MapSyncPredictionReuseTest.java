@@ -110,7 +110,7 @@ class MapSyncPredictionReuseTest {
             client.reportViewport(DIM, 1, 0, 0, 0, 0);
             awaitIdle(predictions);
             nowMillis[0] += 400L;
-            client.reportViewport(DIM, 1, 0, 0, 0, 0);
+            awaitRequest(client, sent);
             assertEquals(1, sent.size(), "expired lower-LOD validation must make the parent plannable again");
             assertEquals(1, sent.get(0).lod());
             assertEquals(
@@ -128,5 +128,16 @@ class MapSyncPredictionReuseTest {
             Thread.sleep(10L);
         }
         assertTrue(service.isIdleForTest(), "prediction tile service did not drain");
+    }
+
+    private static void awaitRequest(
+        final MapSyncClient client,
+        final List<MapViewReqC2S> sent
+    ) throws InterruptedException {
+        final long deadline = System.currentTimeMillis() + 5_000L;
+        while (sent.isEmpty() && System.currentTimeMillis() < deadline) {
+            client.reportViewport(DIM, 1, 0, 0, 0, 0);
+            Thread.sleep(10L);
+        }
     }
 }

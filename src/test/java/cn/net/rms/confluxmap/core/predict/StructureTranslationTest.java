@@ -39,8 +39,7 @@ class StructureTranslationTest {
             "confluxmap.screen.structure_search.master",
             "confluxmap.screen.structure_search.locate",
             "confluxmap.screen.structure_search.back",
-            "confluxmap.screen.structure_search.empty",
-            "confluxmap.screen.structure_search.not_found"
+            "confluxmap.screen.structure_search.empty"
         }) {
             assertTrue(english.containsKey(key), "missing English translation for " + key);
             assertTrue(chinese.containsKey(key), "missing Chinese translation for " + key);

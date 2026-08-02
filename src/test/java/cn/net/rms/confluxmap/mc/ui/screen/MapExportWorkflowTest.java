@@ -11,9 +11,7 @@ import org.junit.jupiter.api.Test;
 final class MapExportWorkflowTest {
     @Test
     void exportStartsMapSelectionBeforeOpeningTheSettingsForm() throws IOException {
-        final String source = Files.readString(projectRoot().resolve(
-            "src/main/java/cn/net/rms/confluxmap/mc/ui/screen/FullscreenMapScreen.java"
-        ));
+        final String source = source("src/main/java/cn/net/rms/confluxmap/mc/ui/screen/FullscreenMapScreen.java");
         final int start = source.indexOf("private void openMapExport()");
         final int end = source.indexOf("    void beginExportSelection", start);
 
@@ -26,9 +24,7 @@ final class MapExportWorkflowTest {
 
     @Test
     void completedExportCopiesItsImageAndOffersItsContainingFolder() throws IOException {
-        final String source = Files.readString(projectRoot().resolve(
-            "src/main/java/cn/net/rms/confluxmap/mc/ui/screen/MapExportScreen.java"
-        ));
+        final String source = source("src/main/java/cn/net/rms/confluxmap/mc/ui/screen/MapExportScreen.java");
 
         assertTrue(source.contains("MapExportFileActions.copyPngToClipboard(status.output())"));
         assertTrue(source.contains("clipboard_path_copied"));
@@ -44,9 +40,7 @@ final class MapExportWorkflowTest {
 
     @Test
     void exportSelectionControlsAvoidMapStatusLabels() throws IOException {
-        final String source = Files.readString(projectRoot().resolve(
-            "src/main/java/cn/net/rms/confluxmap/mc/ui/screen/FullscreenMapScreen.java"
-        ));
+        final String source = source("src/main/java/cn/net/rms/confluxmap/mc/ui/screen/FullscreenMapScreen.java");
         final int controlsStart = source.indexOf("private void rebuildExportSelectionControls()");
         final int controlsEnd = source.indexOf("    private void rebuildWaypointControls", controlsStart);
 
@@ -61,9 +55,7 @@ final class MapExportWorkflowTest {
 
     @Test
     void cancellingExportSelectionReturnsToTheMapInsteadOfTheExportForm() throws IOException {
-        final String source = Files.readString(projectRoot().resolve(
-            "src/main/java/cn/net/rms/confluxmap/mc/ui/screen/FullscreenMapScreen.java"
-        ));
+        final String source = source("src/main/java/cn/net/rms/confluxmap/mc/ui/screen/FullscreenMapScreen.java");
         final int cancelStart = source.indexOf("private void cancelExportSelection()");
         final int cancelEnd = source.indexOf("    private void finishExportSelection", cancelStart);
 
@@ -78,9 +70,7 @@ final class MapExportWorkflowTest {
 
     @Test
     void rightClickCancelsTheEntireExportSelection() throws IOException {
-        final String source = Files.readString(projectRoot().resolve(
-            "src/main/java/cn/net/rms/confluxmap/mc/ui/screen/FullscreenMapScreen.java"
-        ));
+        final String source = source("src/main/java/cn/net/rms/confluxmap/mc/ui/screen/FullscreenMapScreen.java");
         final int mouseClickedStart = source.indexOf("public boolean mouseClicked");
         final int selectionStart = source.indexOf("if (exportSelectionScreen != null) {", mouseClickedStart);
         final int selectionEnd = source.indexOf("            if (button == 0)", selectionStart);
@@ -105,5 +95,9 @@ final class MapExportWorkflowTest {
             current = current.getParent();
         }
         throw new IllegalStateException("Could not locate the Conflux Map project root");
+    }
+
+    private static String source(final String relativePath) throws IOException {
+        return Files.readString(projectRoot().resolve(relativePath)).replace("\r\n", "\n");
     }
 }

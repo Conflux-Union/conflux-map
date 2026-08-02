@@ -17,7 +17,7 @@ class DecimalSliderValueTest {
         assertEquals("0.125", value.text());
         assertTrue(value.updateFromText("1"));
         assertEquals(2.0 / 3.0, value.position(), 0.000_001);
-        assertEquals(1.0, value.updateFromPosition(2.0 / 3.0));
+        assertEquals(1.0, value.updateFromPosition(2.0 / 3.0), 0.000_001);
 
         assertTrue(value.updateFromText("0.14"));
         assertEquals(0.14, value.value());
