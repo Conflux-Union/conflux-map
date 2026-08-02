@@ -15,7 +15,6 @@ import cn.net.rms.confluxmap.compat.Widgets;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import net.minecraft.client.MinecraftClient;
@@ -114,22 +113,6 @@ public final class WaypointEditScreen extends ConfluxScreen {
         final Screen parent, final DimensionId dimensionId, final double x, final double y, final double z
     ) {
         return forCreate(parent, dimensionId, x, y, z, WaypointSet.DEFAULT_NAME);
-    }
-
-    /** Structure candidate form; a missing sampled surface leaves Y blank for the player. */
-    public static WaypointEditScreen forCreate(
-        final Screen parent,
-        final DimensionId dimensionId,
-        final String name,
-        final double x,
-        final OptionalInt y,
-        final double z
-    ) {
-        return new WaypointEditScreen(
-            parent, null, dimensionId, Waypoint.Type.NORMAL, System.currentTimeMillis(),
-            name, x, y.isPresent() ? y.getAsInt() : Double.NaN,
-            z, PRESET_COLORS[5], "", true, CreateTarget.LOCAL
-        );
     }
 
     /** Local create form preselecting one of the current world's waypoint sets. */

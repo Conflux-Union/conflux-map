@@ -1,11 +1,7 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
 import java.awt.Desktop;
-import java.awt.Image;
 import java.awt.Toolkit;
-import java.awt.datatransfer.DataFlavor;
-import java.awt.datatransfer.Transferable;
-import java.awt.datatransfer.UnsupportedFlavorException;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Objects;
@@ -13,7 +9,6 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
-import javax.imageio.ImageIO;
 
 /** Non-fatal desktop integration used after a PNG export completes. */
 final class MapExportDesktopActions {
@@ -52,7 +47,7 @@ final class MapExportDesktopActions {
 
     static MapExportDesktopActions system() {
         return new MapExportDesktopActions(
-            new SystemDesktopBridge(),
+            withFallback(new AwtDesktopBridge(), new SystemCommandDesktopBridge()),
             ForkJoinPool.commonPool(),
             () -> {
                 final Runtime runtime = Runtime.getRuntime();
@@ -61,6 +56,43 @@ final class MapExportDesktopActions {
                 );
             }
         );
+    }
+
+    static DesktopBridge withFallback(
+        final DesktopBridge primary,
+        final DesktopBridge fallback
+    ) {
+        Objects.requireNonNull(primary, "primary");
+        Objects.requireNonNull(fallback, "fallback");
+        return new DesktopBridge() {
+            @Override
+            public void copyImage(final Path path) throws Exception {
+                try {
+                    primary.copyImage(path);
+                } catch (final Exception | LinkageError | java.awt.AWTError primaryFault) {
+                    try {
+                        fallback.copyImage(path);
+                    } catch (final Exception | LinkageError | java.awt.AWTError fallbackFault) {
+                        fallbackFault.addSuppressed(primaryFault);
+                        throw fallbackFault;
+                    }
+                }
+            }
+
+            @Override
+            public void openDirectory(final Path path) throws Exception {
+                try {
+                    primary.openDirectory(path);
+                } catch (final Exception | LinkageError | java.awt.AWTError primaryFault) {
+                    try {
+                        fallback.openDirectory(path);
+                    } catch (final Exception | LinkageError | java.awt.AWTError fallbackFault) {
+                        fallbackFault.addSuppressed(primaryFault);
+                        throw fallbackFault;
+                    }
+                }
+            }
+        };
     }
 
     void copyImage(final Path output, final int width, final int height) {
@@ -89,7 +121,7 @@ final class MapExportDesktopActions {
                     if (copyGeneration.get() == generation) {
                         copyState = CopyState.COPIED;
                     }
-                } catch (final Exception | LinkageError e) {
+                } catch (final Exception | LinkageError | java.awt.AWTError e) {
                     if (copyGeneration.get() == generation) {
                         copyError = message(e);
                         copyState = CopyState.FAILED;
@@ -119,7 +151,7 @@ final class MapExportDesktopActions {
                     if (openGeneration.get() == generation) {
                         openState = OpenState.OPENED;
                     }
-                } catch (final Exception | LinkageError e) {
+                } catch (final Exception | LinkageError | java.awt.AWTError e) {
                     if (openGeneration.get() == generation) {
                         openError = message(e);
                         openState = OpenState.FAILED;
@@ -178,15 +210,11 @@ final class MapExportDesktopActions {
         return fault.getMessage() == null ? fault.getClass().getSimpleName() : fault.getMessage();
     }
 
-    private static final class SystemDesktopBridge implements DesktopBridge {
+    private static final class AwtDesktopBridge implements DesktopBridge {
         @Override
         public void copyImage(final Path path) throws IOException {
-            final Image image = ImageIO.read(path.toFile());
-            if (image == null) {
-                throw new IOException("export is not a readable image");
-            }
             Toolkit.getDefaultToolkit().getSystemClipboard().setContents(
-                new ImageTransferable(image), null
+                MapExportClipboardImage.read(path), null
             );
         }
 
@@ -200,23 +228,54 @@ final class MapExportDesktopActions {
         }
     }
 
-    private record ImageTransferable(Image image) implements Transferable {
+    private static final class SystemCommandDesktopBridge implements DesktopBridge {
         @Override
-        public DataFlavor[] getTransferDataFlavors() {
-            return new DataFlavor[] {DataFlavor.imageFlavor};
+        public void copyImage(final Path path) throws Exception {
+            MapExportClipboardProcess.copy(path);
         }
 
         @Override
-        public boolean isDataFlavorSupported(final DataFlavor flavor) {
-            return DataFlavor.imageFlavor.equals(flavor);
-        }
-
-        @Override
-        public Object getTransferData(final DataFlavor flavor) throws UnsupportedFlavorException {
-            if (!isDataFlavorSupported(flavor)) {
-                throw new UnsupportedFlavorException(flavor);
+        public void openDirectory(final Path path) throws IOException, InterruptedException {
+            final String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+            if (os.contains("win")) {
+                runCommand("explorer.exe", path.toString());
+                return;
             }
-            return image;
+            if (os.contains("mac")) {
+                runCommand("open", path.toString());
+                return;
+            }
+            IOException firstFault = null;
+            try {
+                runCommand("xdg-open", path.toString());
+                return;
+            } catch (final IOException e) {
+                firstFault = e;
+            }
+            try {
+                runCommand("gio", "open", path.toString());
+            } catch (final IOException e) {
+                e.addSuppressed(firstFault);
+                throw e;
+            }
+        }
+
+        private static void runCommand(final String... command)
+            throws IOException, InterruptedException {
+            final Process process = new ProcessBuilder(command)
+                .redirectErrorStream(true)
+                .start();
+            if (!process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                return;
+            }
+            if (process.exitValue() != 0) {
+                final byte[] error = process.getInputStream().readNBytes(1024);
+                final String detail = new String(error, java.nio.charset.StandardCharsets.UTF_8).trim();
+                throw new IOException(detail.isEmpty()
+                    ? command[0] + " exited with " + process.exitValue()
+                    : detail);
+            }
         }
     }
+
 }

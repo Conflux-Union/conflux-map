@@ -28,8 +28,9 @@ final class StructureCandidateScreen extends ConfluxScreen {
     private static final int MAX_LIMIT = 100;
     private static final int FIELD_WIDTH = 92;
     private static final int FIELD_HEIGHT = 20;
-    private static final int LIST_TOP = 132;
-    private static final int ROW_HEIGHT = 24;
+    private static final int LIST_TOP = 112;
+    private static final int ROW_HEIGHT = 22;
+    private static final int LIST_BOTTOM_SPACE = 32;
     private static final int MAP_WIDTH = 50;
     private static final int WAYPOINT_WIDTH = 76;
     private static final int GAP = 4;
@@ -100,16 +101,16 @@ final class StructureCandidateScreen extends ConfluxScreen {
         waypointButtons.clear();
         final int left = width / 2 - FIELD_WIDTH - 6;
         final int right = width / 2 + 6;
-        centerXField = integerField(left, 42, centerX, false);
-        centerZField = integerField(right, 42, centerZ, false);
-        radiusField = integerField(left, 78, radius, true);
-        limitField = integerField(right, 78, limit, true);
+        centerXField = integerField(left, 32, centerX, false);
+        centerZField = integerField(right, 32, centerZ, false);
+        radiusField = integerField(left, 64, radius, true);
+        limitField = integerField(right, 64, limit, true);
         addDrawableChild(centerXField);
         addDrawableChild(centerZField);
         addDrawableChild(radiusField);
         addDrawableChild(limitField);
         searchButton = addDrawableChild(Widgets.button(
-            width / 2 - 50, 106, 100, FIELD_HEIGHT,
+            width / 2 - 50, 88, 100, FIELD_HEIGHT,
             Texts.translatable("confluxmap.screen.structure_candidates.search"),
             ignored -> search()
         ));
@@ -139,7 +140,7 @@ final class StructureCandidateScreen extends ConfluxScreen {
         }
         addDrawableChild(Widgets.button(
             width / 2 - 50,
-            height - 28,
+            height - 24,
             100,
             20,
             Texts.translatable("confluxmap.screen.structure_search.back"),
@@ -198,7 +199,11 @@ final class StructureCandidateScreen extends ConfluxScreen {
     }
 
     private int visibleRows() {
-        return Math.max(1, (height - LIST_TOP - 38) / ROW_HEIGHT);
+        return visibleRowsForHeight(height);
+    }
+
+    static int visibleRowsForHeight(final int screenHeight) {
+        return Math.max(1, (screenHeight - LIST_TOP - LIST_BOTTOM_SPACE) / ROW_HEIGHT);
     }
 
     private int rowWidth() {
@@ -374,9 +379,9 @@ final class StructureCandidateScreen extends ConfluxScreen {
         final float tickDelta
     ) {
         draw.renderBackground(this, mouseX, mouseY, tickDelta);
-        drawCentered(draw, getTitle().getString(), 14, 0xFFFFFFFF);
-        drawCentered(draw, Texts.translatable("confluxmap.screen.structure_candidates.center").getString(), 30, 0xFFBBBBBB);
-        drawCentered(draw, Texts.translatable("confluxmap.screen.structure_candidates.bounds").getString(), 66, 0xFFBBBBBB);
+        drawCentered(draw, getTitle().getString(), 8, 0xFFFFFFFF);
+        drawCentered(draw, Texts.translatable("confluxmap.screen.structure_candidates.center").getString(), 20, 0xFFBBBBBB);
+        drawCentered(draw, Texts.translatable("confluxmap.screen.structure_candidates.bounds").getString(), 52, 0xFFBBBBBB);
         final int rowWidth = rowWidth();
         final int rowX = rowX();
         final int end = Math.min(results.size(), scrollOffset + visibleRows());
@@ -398,7 +403,7 @@ final class StructureCandidateScreen extends ConfluxScreen {
             );
         }
         if (statusKey != null) {
-            drawCentered(draw, Texts.translatable(statusKey).getString(), height - 42, 0xFFFF7777);
+            drawCentered(draw, Texts.translatable(statusKey).getString(), height - 36, 0xFFFF7777);
         }
         final ScrollBarModel bar = scrollBar();
         if (bar.visible()) {

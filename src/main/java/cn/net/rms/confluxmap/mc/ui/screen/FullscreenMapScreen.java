@@ -135,6 +135,7 @@ import org.lwjgl.glfw.GLFW;
  * javadoc on {@code MinimapHudRenderer.render} for why that would double it up.
  */
 public final class FullscreenMapScreen extends ConfluxScreen {
+    private static final int DEFAULT_CANDIDATE_WAYPOINT_Y = 64;
     private static final double MIN_SCALE = 0.25;
     private static final double MAX_SCALE = 16.0;
     private static final double DEFAULT_SCALE = 2.0;
@@ -3019,13 +3020,24 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final StructureIndex.Marker marker,
         final Screen returnScreen
     ) {
+        final Optional<PlayerView> player = gameBridge.player();
+        final OptionalInt playerY = player.isPresent()
+            ? OptionalInt.of(player.get().blockY())
+            : OptionalInt.empty();
         MinecraftAccess.setScreen(MinecraftClient.getInstance(), WaypointEditScreen.forCreate(
             returnScreen,
             gameBridge.session().dimension(),
             Texts.translatable(marker.type().translationKey()).getString(),
             marker.blockX(),
-            surfaceYAt(marker.blockX(), marker.blockZ()),
+            candidateWaypointY(surfaceYAt(marker.blockX(), marker.blockZ()), playerY),
             marker.blockZ()
         ));
+    }
+
+    static int candidateWaypointY(
+        final OptionalInt surfaceY,
+        final OptionalInt playerY
+    ) {
+        return surfaceY.orElseGet(() -> playerY.orElse(DEFAULT_CANDIDATE_WAYPOINT_Y));
     }
 }
