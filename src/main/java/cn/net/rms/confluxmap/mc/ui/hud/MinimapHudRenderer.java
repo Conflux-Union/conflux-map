@@ -10,6 +10,8 @@ import cn.net.rms.confluxmap.core.annotation.AnnotationService;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.config.MinimapPlacement;
 import cn.net.rms.confluxmap.core.config.MinimapHudVisibility;
+import cn.net.rms.confluxmap.core.config.MinimapHudAvoidance;
+import cn.net.rms.confluxmap.core.config.MinimapStatusEffectAvoidance;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
@@ -45,6 +47,11 @@ import java.util.Optional;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 //#endif
 import net.minecraft.client.MinecraftClient;
+//#if MC>=260100
+//$$ import net.minecraft.world.effect.MobEffectInstance;
+//#else
+import net.minecraft.entity.effect.StatusEffectInstance;
+//#endif
 //#if MC>=12100
 //$$ import net.minecraft.client.gui.DrawContext;
 //$$ import net.minecraft.client.render.RenderTickCounter;
@@ -74,6 +81,8 @@ public final class MinimapHudRenderer {
     private static final int TEXT_COLOR = 0xFFFFFFFF;
     private static final int ARROW_OUTLINE = 0xFF101010;
     private static final int ARROW_FILL = 0xFFFFFFFF;
+    private static final int INFO_TEXT_GAP = 3;
+    private static final int INFO_TEXT_LINE_HEIGHT = 10;
     private static final float[] BLOCKS_PER_PIXEL = {0.5f, 1f, 2f, 4f};
     /** Half of the ~7px-across VoxelMap-style diamond/cross marker (deliverable B). */
     private static final float WAYPOINT_MARKER_HALF_SIZE = 3.5f;
@@ -176,12 +185,17 @@ public final class MinimapHudRenderer {
 
         tiles.setViewpoint(player.blockX(), player.blockZ());
 
-        final MinimapPlacement.Layout placement = MinimapPlacement.resolve(
-            client.getWindow().getScaledWidth(),
-            client.getWindow().getScaledHeight(),
+        final int screenWidth = client.getWindow().getScaledWidth();
+        final int screenHeight = client.getWindow().getScaledHeight();
+        final MinimapPlacement.Layout configuredPlacement = MinimapPlacement.resolve(
+            screenWidth,
+            screenHeight,
             config.minimapSize,
             config.minimapPositionX,
             config.minimapPositionY
+        );
+        final MinimapPlacement.Layout placement = avoidHudOverlap(
+            screenWidth, screenHeight, configuredPlacement
         );
         final int size = placement.size();
         final int x0 = placement.x();
@@ -283,6 +297,77 @@ public final class MinimapHudRenderer {
         drawWaypointMarkers(draw, centerX, centerY, size, mapAngle, player);
         drawPlayerArrow(matrices, centerX, centerY, rotate ? 0f : player.yawDegrees() + 180f);
         drawInfoText(draw, player, x0, y0, size);
+    }
+
+    /** Applies a render-only translation around measured vanilla HUD bounds without changing saved placement. */
+    private MinimapPlacement.Layout avoidHudOverlap(
+        final int screenWidth,
+        final int screenHeight,
+        final MinimapPlacement.Layout configuredPlacement
+    ) {
+        if (!config.minimapHudAvoidance || client.player == null) {
+            return configuredPlacement;
+        }
+
+        int beneficial = 0;
+        int harmful = 0;
+        //#if MC>=260100
+        //$$ for (final MobEffectInstance effect : client.player.getActiveEffects()) {
+        //$$     if (!effect.showIcon()) {
+        //$$         continue;
+        //$$     }
+        //$$     if (effect.getEffect().value().isBeneficial()) {
+        //$$         beneficial++;
+        //$$     } else {
+        //$$         harmful++;
+        //$$     }
+        //$$ }
+        //#elseif MC>=11903
+        //$$ for (final StatusEffectInstance effect : client.player.getStatusEffects()) {
+        //$$     if (!effect.shouldShowIcon()) {
+        //$$         continue;
+        //$$     }
+        //$$     if (effect.getEffectType().value().isBeneficial()) {
+        //$$         beneficial++;
+        //$$     } else {
+        //$$         harmful++;
+        //$$     }
+        //$$ }
+        //#else
+        for (final StatusEffectInstance effect : client.player.getStatusEffects()) {
+            if (!effect.shouldShowIcon()) {
+                continue;
+            }
+            if (effect.getEffectType().isBeneficial()) {
+                beneficial++;
+            } else {
+                harmful++;
+            }
+        }
+        //#endif
+        return MinimapHudAvoidance.resolve(
+            screenWidth,
+            screenHeight,
+            configuredPlacement,
+            minimapInformationHeight(),
+            MinimapStatusEffectAvoidance.visibleBounds(screenWidth, beneficial, harmful),
+            ScoreboardHudBounds.current()
+        );
+    }
+
+    /** Height reserved for the optional information text rendered outside the minimap frame. */
+    private int minimapInformationHeight() {
+        int lines = 0;
+        if (config.showCoordinates) {
+            lines++;
+        }
+        if (config.showBiome) {
+            lines++;
+        }
+        if (config.showLayerIndicator) {
+            lines++;
+        }
+        return lines == 0 ? 0 : INFO_TEXT_GAP + lines * INFO_TEXT_LINE_HEIGHT;
     }
 
     private void drawPlayerTrail(
@@ -534,7 +619,7 @@ public final class MinimapHudRenderer {
         if (!config.showCoordinates && !config.showBiome && !config.showLayerIndicator) {
             return;
         }
-        final int lineHeight = 10;
+        final int lineHeight = INFO_TEXT_LINE_HEIGHT;
         int lines = 0;
         if (config.showCoordinates) {
             lines++;
@@ -545,11 +630,11 @@ public final class MinimapHudRenderer {
         if (config.showLayerIndicator) {
             lines++;
         }
-        final float belowY = y0 + size + 3;
+        final float belowY = y0 + size + INFO_TEXT_GAP;
         final float yAfterBelowLines = belowY + lines * lineHeight;
         float y = yAfterBelowLines <= client.getWindow().getScaledHeight()
             ? belowY
-            : Math.max(0, y0 - lines * lineHeight - 3);
+            : Math.max(0, y0 - lines * lineHeight - INFO_TEXT_GAP);
         final float centerX = x0 + size / 2f;
 
         if (config.showCoordinates) {

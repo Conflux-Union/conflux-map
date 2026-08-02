@@ -228,6 +228,7 @@
   "confluxmap.screen.config.category.prediction": "种子预览",
   "confluxmap.config.minimap.enabled": "小地图：%s",
   "confluxmap.config.minimap.position": "调整小地图位置……",
+  "confluxmap.config.minimap.hud_avoidance": "自动避让 HUD：%s",
   "confluxmap.config.minimap.shape": "形状：%s",
   "confluxmap.config.minimap.size": "大小：%s",
   "confluxmap.config.minimap.rotate": "跟随视角旋转：%s",

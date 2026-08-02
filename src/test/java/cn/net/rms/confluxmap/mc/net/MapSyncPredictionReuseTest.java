@@ -21,9 +21,11 @@ import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
+import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -35,7 +37,7 @@ class MapSyncPredictionReuseTest {
     void freshLodZeroCoverageIsRecheckedOnlyAfterAnExpiredViewportReentry(
         @TempDir final Path tempDir
     ) throws InterruptedException {
-        final long[] nowMillis = {10_000L};
+        final AtomicLong nowMillis = new AtomicLong(10_000L);
         final SessionGuard sessions = new SessionGuard();
         sessions.begin(WORLD, DIM);
         final MapExecutors executors = new MapExecutors();
@@ -46,7 +48,7 @@ class MapSyncPredictionReuseTest {
         state.setPresets(WorldPreset.FLAT, WorldPreset.DEFAULT);
         state.setFlatBaseline(new FlatBaseline(1, 63, SurfaceKind.LAND.ordinal(), 11, 0));
         final PredictionTileService predictions = new PredictionTileService(
-            sessions, state, executors, uploads, () -> nowMillis[0]
+            sessions, state, executors, uploads, nowMillis::get
         );
         final CorrectionStore corrections = new CorrectionStore(tempDir);
         corrections.onSessionChanged(sessions.current());
@@ -72,44 +74,50 @@ class MapSyncPredictionReuseTest {
             corrections,
             predictions,
             new ConfluxConfig(),
-            () -> nowMillis[0]
+            nowMillis::get
         );
 
         try {
             for (int z = 0; z < 2; z++) {
                 for (int x = 0; x < 2; x++) {
-                    assertTrue(predictions.applyCorrection(
+                    // This test exercises persisted lower-LOD reuse, not tile rendering. Writing
+                    // directly avoids unrelated recomposition work delaying the reducer under test.
+                    assertTrue(corrections.apply(
                         new CorrectionStore.Key(DIM.toString(), 0, x, z),
                         1L,
                         new byte[Proto.PATCH_PRESENCE_BYTES],
                         new PatchCodec.Patch(List.of()),
-                        nowMillis[0]
+                        Proto.PATCH_MODE_RESIDUAL,
+                        PredictorVersion.full(),
+                        nowMillis.get()
                     ));
                 }
             }
-            awaitIdle(predictions);
+            awaitLowerCoverage(predictions, nowMillis.get(), PredictionTileService.LowerCoverageState.READY);
 
             client.reportViewport(DIM, 1, 0, 0, 0, 0);
-            nowMillis[0] += 400L;
+            nowMillis.addAndGet(400L);
             client.reportViewport(DIM, 1, 0, 0, 0, 0);
             assertTrue(sent.isEmpty(), "fresh lower-LOD coverage must avoid a server request");
 
-            nowMillis[0] += 5_001L;
+            nowMillis.addAndGet(5_001L);
             client.clearViewport();
             client.reportViewport(DIM, 1, 0, 0, 0, 0);
-            awaitIdle(predictions);
-            nowMillis[0] += 400L;
+            awaitLowerCoverage(predictions, nowMillis.get(), PredictionTileService.LowerCoverageState.READY);
+            nowMillis.addAndGet(400L);
             client.reportViewport(DIM, 1, 0, 0, 0, 0);
             assertTrue(sent.isEmpty(), "a short revisit must keep using the completed cache");
 
-            nowMillis[0] += PredictionTileService.CORRECTION_REUSE_TTL_MS;
+            nowMillis.addAndGet(PredictionTileService.CORRECTION_REUSE_TTL_MS);
             client.reportViewport(DIM, 1, 0, 0, 0, 0);
             assertTrue(sent.isEmpty(), "expiry must not start polling an unchanged viewport");
 
             client.clearViewport();
             client.reportViewport(DIM, 1, 0, 0, 0, 0);
-            awaitIdle(predictions);
-            nowMillis[0] += 400L;
+            awaitLowerCoverage(
+                predictions, nowMillis.get(), PredictionTileService.LowerCoverageState.MISSING_OR_STALE
+            );
+            nowMillis.addAndGet(400L);
             awaitRequest(client, sent);
             assertEquals(1, sent.size(), "expired lower-LOD validation must make the parent plannable again");
             assertEquals(1, sent.get(0).lod());
@@ -122,18 +130,34 @@ class MapSyncPredictionReuseTest {
         }
     }
 
-    private static void awaitIdle(final PredictionTileService service) throws InterruptedException {
+    /**
+     * Waits for the exact lower-LOD coverage state used by the next viewport poll. Queue idleness
+     * alone is only an implementation detail; this test must synchronize on the observable
+     * READY/MISSING decision that MapSyncClient consumes.
+     */
+    private static void awaitLowerCoverage(
+        final PredictionTileService service,
+        final long nowMillis,
+        final PredictionTileService.LowerCoverageState expected
+    ) throws InterruptedException {
         final long deadline = System.currentTimeMillis() + 5_000L;
-        while (!service.isIdleForTest() && System.currentTimeMillis() < deadline) {
+        PredictionTileService.LowerCoverageState actual;
+        do {
+            actual = service.prepareFreshLowerCoverage(DIM, 1, 0, 0, nowMillis);
+            if (actual == expected) {
+                return;
+            }
             Thread.sleep(10L);
-        }
-        assertTrue(service.isIdleForTest(), "prediction tile service did not drain");
+        } while (System.currentTimeMillis() < deadline);
+        assertEquals(expected, actual, "lower-LOD coverage did not reach the expected terminal state");
     }
 
-    private static void awaitRequest(
-        final MapSyncClient client,
-        final List<MapViewReqC2S> sent
-    ) throws InterruptedException {
+    /**
+     * The client normally polls the stable viewport every render tick. Keep that production cadence
+     * in the test while waiting for the asynchronous coverage reducer to publish its final result.
+     */
+    private static void awaitRequest(final MapSyncClient client, final List<MapViewReqC2S> sent)
+        throws InterruptedException {
         final long deadline = System.currentTimeMillis() + 5_000L;
         while (sent.isEmpty() && System.currentTimeMillis() < deadline) {
             client.reportViewport(DIM, 1, 0, 0, 0, 0);

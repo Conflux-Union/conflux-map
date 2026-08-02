@@ -347,6 +347,12 @@ public final class ConfigScreen extends ConfluxScreen {
                     "confluxmap.config.minimap.position",
                     () -> MinecraftAccess.setScreen(MinecraftClient.getInstance(), new MinimapPositionScreen(this, config, configIo))
                 );
+                y = addToggleRow(
+                    y,
+                    "confluxmap.config.minimap.hud_avoidance",
+                    () -> config.minimapHudAvoidance,
+                    v -> config.minimapHudAvoidance = v
+                );
                 y = addEnumRow(
                     y, "confluxmap.config.minimap.shape", ConfluxConfig.Shape.values(),
                     () -> config.minimapShape, v -> config.minimapShape = v, ConfigScreen::shapeKey

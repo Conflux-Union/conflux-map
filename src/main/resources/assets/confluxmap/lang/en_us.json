@@ -295,6 +295,7 @@
   "confluxmap.screen.config.category.prediction": "Seed Preview",
   "confluxmap.config.minimap.enabled": "Minimap: %s",
   "confluxmap.config.minimap.position": "Adjust Minimap Position...",
+  "confluxmap.config.minimap.hud_avoidance": "Avoid HUD Overlap: %s",
   "confluxmap.config.minimap.shape": "Shape: %s",
   "confluxmap.config.minimap.size": "Size: %s",
   "confluxmap.config.minimap.rotate": "Rotate With Player: %s",
