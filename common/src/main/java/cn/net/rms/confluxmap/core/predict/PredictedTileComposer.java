@@ -175,25 +175,11 @@ public final class PredictedTileComposer {
                     continue;
                 }
 
-                final double reliefMultiplier = ShadingPipeline.directionalReliefMultiplier(
-                    slopeSampleHeight(surface, kinds, x - 1, z),
-                    slopeSampleHeight(surface, kinds, x, z + 1),
-                    slopeSampleHeight(surface, kinds, x - 1, z + 1),
-                    slopeSampleHeight(surface, kinds, x + 1, z),
-                    slopeSampleHeight(surface, kinds, x, z - 1),
-                    slopeSampleHeight(surface, kinds, x + 1, z - 1),
-                    TileMath.blocksPerPixel(lod)
+                final double reliefMultiplier = directionalReliefMultiplier(
+                    surface, kinds, x, z, lod
                 );
                 final double floorReliefMultiplier = kind == SurfaceKind.WATER
-                    ? ShadingPipeline.directionalReliefMultiplier(
-                        slopeSampleHeight(floorSurface, kinds, x - 1, z),
-                        slopeSampleHeight(floorSurface, kinds, x, z + 1),
-                        slopeSampleHeight(floorSurface, kinds, x - 1, z + 1),
-                        slopeSampleHeight(floorSurface, kinds, x + 1, z),
-                        slopeSampleHeight(floorSurface, kinds, x, z - 1),
-                        slopeSampleHeight(floorSurface, kinds, x + 1, z - 1),
-                        TileMath.blocksPerPixel(lod)
-                    )
+                    ? directionalReliefMultiplier(floorSurface, kinds, x, z, lod)
                     : 1.0;
                 // slopeAlsoActive: the directional relief above is this plane's slope term, so the
                 // height curve takes the spec's gentler combined K - the same one the captured map
@@ -210,7 +196,7 @@ public final class PredictedTileComposer {
                         floorReliefMultiplier)
                     : averagedSubColor(derived, grid, palette, idx, baselineMapColorId);
                 final int materialDetailed = palette.applyMaterialDetail(
-                    kind, composed, grid.blockX(x), grid.blockZ(z)
+                    kind, biomes[idx], composed, grid.blockX(x), grid.blockZ(z)
                 );
                 final int heightShaded = ShadingPipeline.applyShade(materialDetailed, heightShade);
                 out[outIdx] = ShadingPipeline.applyBrightnessMultiplier(heightShaded, reliefMultiplier);
@@ -294,6 +280,38 @@ public final class PredictedTileComposer {
             }
         }
         return Argb.pack(a / count, r / count, g / count, b / count);
+    }
+
+    /**
+     * LOD0 keeps relief aligned to the current block and its southwest neighbor. Coarser LODs
+     * average both shoulders because each output pixel already represents multiple blocks.
+     */
+    private static double directionalReliefMultiplier(
+        final int[] surface,
+        final byte[] kinds,
+        final int x,
+        final int z,
+        final int lod
+    ) {
+        final int blocksPerPixel = TileMath.blocksPerPixel(lod);
+        if (blocksPerPixel == 1) {
+            final Integer litDiagonal = slopeSampleHeight(surface, kinds, x - 1, z + 1);
+            final Integer center = slopeSampleHeight(surface, kinds, x, z);
+            return ShadingPipeline.directionalReliefMultiplier(
+                litDiagonal, litDiagonal, litDiagonal,
+                center, center, center,
+                blocksPerPixel
+            );
+        }
+        return ShadingPipeline.directionalReliefMultiplier(
+            slopeSampleHeight(surface, kinds, x - 1, z),
+            slopeSampleHeight(surface, kinds, x, z + 1),
+            slopeSampleHeight(surface, kinds, x - 1, z + 1),
+            slopeSampleHeight(surface, kinds, x + 1, z),
+            slopeSampleHeight(surface, kinds, x, z - 1),
+            slopeSampleHeight(surface, kinds, x + 1, z - 1),
+            blocksPerPixel
+        );
     }
 
     /**

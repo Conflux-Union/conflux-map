@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.mc.predict;
 import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.core.color.MaterialDetailProfile;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
+import cn.net.rms.confluxmap.core.predict.BiomeTable;
 import cn.net.rms.confluxmap.core.predict.CubiomesBiomeIds;
 import cn.net.rms.confluxmap.core.predict.PredictionPalette;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
@@ -104,6 +105,15 @@ public final class PredictionPaletteBuilder {
         materials.put(
             SurfaceKind.LAVA, sampler.detailProfileFor(Blocks.LAVA.getDefaultState(), world, reference)
         );
-        state.setPalette(PredictionPalette.fromSamples(sampled, materials));
+        final MaterialDetailProfile endStone = sampler.detailProfileFor(
+            Blocks.END_STONE.getDefaultState(), world, reference
+        );
+        final Map<Integer, MaterialDetailProfile> groundMaterials = new HashMap<>();
+        for (final int biomeId : BiomeTable.knownIds()) {
+            if (BiomeTable.isEnd(biomeId)) {
+                groundMaterials.put(biomeId, endStone);
+            }
+        }
+        state.setPalette(PredictionPalette.fromSamples(sampled, materials, groundMaterials));
     }
 }

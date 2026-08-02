@@ -1422,9 +1422,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             : FullscreenMapLocationMenu.topSurfaceLayer(LayerSelector.classify(world.getDimension()));
         final MapWorld mapWorld = mapWorlds.current();
         if (mapWorld != null) {
-            final OptionalInt captured = mapWorld.store(surfaceLayer).surfaceYAt(blockX, blockZ);
-            if (captured.isPresent()) {
-                return captured;
+            final var captured = mapWorld.store(surfaceLayer).surfaceAt(blockX, blockZ);
+            if (captured.known()) {
+                return captured.surfaceY();
             }
         }
         final SessionGuard.Session session = gameBridge.session();

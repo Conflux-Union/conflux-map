@@ -669,6 +669,86 @@ class LodSamplingTest {
     }
 
     @org.junit.jupiter.api.Test
+    void lod4EndSamplingDoesNotSpreadLandBeyondItsSamplingCell() {
+        final BaselineSampler isolatedLand = new BaselineSampler() {
+            @Override
+            public boolean biomes(
+                final int scale,
+                final int x,
+                final int z,
+                final int w,
+                final int h,
+                final int[] out
+            ) {
+                java.util.Arrays.fill(out, CubiomesBiomeIds.SMALL_END_ISLANDS);
+                return true;
+            }
+
+            @Override
+            public boolean heights(
+                final int x4,
+                final int z4,
+                final int w,
+                final int h,
+                final int[] outY
+            ) {
+                return false;
+            }
+
+            @Override
+            public boolean endHeights(
+                final int x4,
+                final int z4,
+                final int w,
+                final int h,
+                final int[] outY
+            ) {
+                for (int dz = 0; dz < h; dz++) {
+                    for (int dx = 0; dx < w; dx++) {
+                        outY[dz * w + dx] = x4 + dx == 0 && z4 + dz == 0 ? 64 : 0;
+                    }
+                }
+                return true;
+            }
+        };
+
+        final BaselineGrid grid = LodSampling.sample(isolatedLand, true, 4, 0, 0);
+        assertNotNull(grid);
+        assertNotEquals(BaselineGrid.NO_SURFACE, grid.terrainY[BaselineGrid.index(0, 0)]);
+        assertNotEquals(BaselineGrid.NO_SURFACE, grid.terrainY[BaselineGrid.index(1, 0)]);
+        assertNotEquals(BaselineGrid.NO_SURFACE, grid.terrainY[BaselineGrid.index(0, 1)]);
+        assertEquals(BaselineGrid.NO_SURFACE, grid.terrainY[BaselineGrid.index(2, 0)]);
+        assertEquals(BaselineGrid.NO_SURFACE, grid.terrainY[BaselineGrid.index(0, 2)]);
+        assertEquals(BaselineGrid.NO_SURFACE, grid.terrainY[BaselineGrid.index(-1, 0)]);
+        assertEquals(BaselineGrid.NO_SURFACE, grid.terrainY[BaselineGrid.index(0, -1)]);
+    }
+
+    @org.junit.jupiter.api.Test
+    void lod4EndRefinementMatchesTheSouthNeighborsNorthEdge() {
+        final int blocksPerTile = 256 << 4;
+        final PositionBasedFakeSampler edgeSampler = new PositionBasedFakeSampler(blocksPerTile);
+        final BaselineGrid here = LodSampling.sample(edgeSampler, true, 4, 0, 0);
+        final BaselineGrid south = LodSampling.sample(
+            edgeSampler, true, 4, 0, blocksPerTile
+        );
+        assertNotNull(here);
+        assertNotNull(south);
+
+        for (int x = 0; x < BaselineGrid.PIXELS; x++) {
+            assertEquals(
+                here.terrainY[BaselineGrid.index(x, 256)],
+                south.terrainY[BaselineGrid.index(x, 0)],
+                "height mismatch at x=" + x
+            );
+            assertEquals(
+                here.biomeId[BaselineGrid.index(x, 256)],
+                south.biomeId[BaselineGrid.index(x, 0)],
+                "biome mismatch at x=" + x
+            );
+        }
+    }
+
+    @org.junit.jupiter.api.Test
     void lod4UsesCoarseHeightsForWaterClassification() {
         final BaselineGrid grid = LodSampling.sample(SAMPLER, false, 4, 12345, -6789);
         assertNotNull(grid);

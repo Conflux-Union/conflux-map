@@ -32,18 +32,21 @@ public final class PredictionPalette {
     /** biomeId -> {grassTint, foliageTint, waterTint}, opaque ARGB each. */
     private final Map<Integer, int[]> tints;
     private final Map<SurfaceKind, MaterialDetailProfile> materialDetail;
+    private final Map<Integer, MaterialDetailProfile> groundMaterialDetail;
 
     private PredictionPalette(
         final Map<Integer, int[]> tints,
-        final Map<SurfaceKind, MaterialDetailProfile> materialDetail
+        final Map<SurfaceKind, MaterialDetailProfile> materialDetail,
+        final Map<Integer, MaterialDetailProfile> groundMaterialDetail
     ) {
         this.tints = tints;
         this.materialDetail = materialDetail;
+        this.groundMaterialDetail = groundMaterialDetail;
     }
 
     /** Compiled-in {@link BiomeTable} fallbacks only - no live registry sample. */
     public static PredictionPalette defaults() {
-        return new PredictionPalette(Map.of(), Map.of());
+        return new PredictionPalette(Map.of(), Map.of(), Map.of());
     }
 
     /** One immutable snapshot of every biome id the live client registry could resolve this session. */
@@ -56,10 +59,21 @@ public final class PredictionPalette {
         final Map<Integer, int[]> sampledTints,
         final Map<SurfaceKind, MaterialDetailProfile> sampledMaterialDetail
     ) {
+        return fromSamples(sampledTints, sampledMaterialDetail, Map.of());
+    }
+
+    /** Live biome tint, generic surface detail, and biome-specific ground-material samples. */
+    public static PredictionPalette fromSamples(
+        final Map<Integer, int[]> sampledTints,
+        final Map<SurfaceKind, MaterialDetailProfile> sampledMaterialDetail,
+        final Map<Integer, MaterialDetailProfile> sampledGroundMaterialDetail
+    ) {
         final EnumMap<SurfaceKind, MaterialDetailProfile> materialDetail = new EnumMap<>(SurfaceKind.class);
         materialDetail.putAll(sampledMaterialDetail);
         return new PredictionPalette(
-            new HashMap<>(sampledTints), materialDetail
+            new HashMap<>(sampledTints),
+            materialDetail,
+            new HashMap<>(sampledGroundMaterialDetail)
         );
     }
 
@@ -97,11 +111,14 @@ public final class PredictionPalette {
     /** Applies the representative resource texture for a predicted surface category. */
     public int applyMaterialDetail(
         final SurfaceKind kind,
+        final int biomeId,
         final int argb,
         final int worldX,
         final int worldZ
     ) {
-        final MaterialDetailProfile profile = materialDetail.get(kind);
+        final MaterialDetailProfile profile = kind == SurfaceKind.LAND
+            ? groundMaterialDetail.getOrDefault(biomeId, materialDetail.get(kind))
+            : materialDetail.get(kind);
         return profile == null ? argb : profile.apply(argb, worldX, worldZ, kind.ordinal());
     }
 }

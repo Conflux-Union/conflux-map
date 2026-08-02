@@ -119,9 +119,15 @@ public final class RegionColumns {
         System.arraycopy(light, from, outLight, 0, length);
     }
 
-    /** Surface height at one column, for cross-tile edge shading. {@link ChunkSnapshot#NO_SURFACE} if unset. */
+    /** Highest real surface at one column, or {@link ChunkSnapshot#NO_SURFACE} for unknown/void. */
     public synchronized short surfaceYAt(final int localX, final int localZ) {
-        return surfaceY[localZ * SIZE + localX];
+        final int index = localZ * SIZE + localX;
+        final byte surfaceKind = kind[index];
+        return surfaceY[index] == ChunkSnapshot.NO_SURFACE
+            || surfaceKind == SurfaceKind.UNKNOWN.ordinal()
+            || surfaceKind == SurfaceKind.VOID.ordinal()
+            ? ChunkSnapshot.NO_SURFACE
+            : surfaceY[index];
     }
 
     /**

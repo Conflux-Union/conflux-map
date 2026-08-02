@@ -12,6 +12,7 @@ import cn.net.rms.confluxmap.core.net.MapSyncCompatibility;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
+import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -52,7 +53,7 @@ class CompanionSessionTest {
             MapCompatibilityS2C.REASON_NONE
         ));
 
-        assertEquals(MapSyncCompatibility.STABLE_PREDICTOR, session.mapSyncBaselineProfile());
+        assertEquals(PredictorVersion.full(), session.mapSyncBaselineProfile());
     }
 
     @Test
@@ -97,13 +98,13 @@ class CompanionSessionTest {
     }
 
     @Test
-    void releasedPolicyFingerprintSelectsLegacyResidualWithoutANewReply() {
+    void releasedPolicyFingerprintIsRejectedWhenItsBaselineCannotBeReproduced() {
         final CompanionSession session = new CompanionSession();
         session.onHelloSent();
         session.onPolicy(policyWithCorrections(true));
 
-        assertEquals(MapSyncCompatibility.ClientMode.LEGACY_RESIDUAL, session.mapSyncMode());
-        assertTrue(session.policy().flags().correctionsEnabled());
+        assertEquals(MapSyncCompatibility.ClientMode.INCOMPATIBLE, session.mapSyncMode());
+        assertFalse(session.policy().flags().correctionsEnabled());
     }
 
     @Test
@@ -246,7 +247,7 @@ class CompanionSessionTest {
             Proto.PROTO_MINOR,
             PatchCodec.FORMAT_VERSION,
             ChunkPatchCodec.FORMAT_VERSION,
-            MapSyncCompatibility.STABLE_PREDICTOR,
+            PredictorVersion.full(),
             mode,
             mode == MapCompatibilityS2C.MODE_RESIDUAL
                 ? MapCompatibilityS2C.REASON_NONE

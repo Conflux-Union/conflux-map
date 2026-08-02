@@ -20,6 +20,7 @@ import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -28,6 +29,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CancellationException;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /**
@@ -76,6 +78,7 @@ public final class TileService {
      * after constructing both.
      */
     private volatile RegionCacheService regionCache;
+    private volatile Consumer<TileKey> realCoverageListener = ignored -> { };
 
     public TileService(
         final MapWorldService mapWorlds,
@@ -92,6 +95,11 @@ public final class TileService {
 
     public void bindRegionCache(final RegionCacheService regionCache) {
         this.regionCache = regionCache;
+    }
+
+    /** Registers the prediction-plane invalidator for newly available real-map coverage. */
+    public void bindRealCoverageListener(final Consumer<TileKey> listener) {
+        realCoverageListener = listener == null ? ignored -> { } : listener;
     }
 
     /** Main thread, from the session tracker: forget every queued/in-flight tile and pending upload. */
@@ -222,6 +230,10 @@ public final class TileService {
             markReliefConsumers(
                 session, dimensionId, layer, lod, chunkX, chunkZ, 16 << lod, token
             );
+            realCoverageListener.accept(new TileKey(
+                session.world(), dimensionId, layer.cacheId(), lod,
+                Math.floorDiv(chunkX, 16 << lod), Math.floorDiv(chunkZ, 16 << lod)
+            ));
         }
     }
 
@@ -247,6 +259,50 @@ public final class TileService {
             markReliefConsumers(
                 session, dimensionId, layer, lod, regionX, regionZ, 1 << lod, token
             );
+            realCoverageListener.accept(new TileKey(
+                session.world(), dimensionId, layer.cacheId(), lod,
+                Math.floorDiv(regionX, 1 << lod), Math.floorDiv(regionZ, 1 << lod)
+            ));
+        }
+    }
+
+    /**
+     * Clears predicted pixels whose exact block footprint belongs to a real cached/live chunk.
+     * Every supported LOD remains chunk-aligned: LOD0 has 16 pixels per chunk and LOD4 has one.
+     */
+    public void maskKnownRealPixels(final TileKey realKey, final int[] predictedPixels) {
+        if (predictedPixels.length != RegionColumns.SIZE * RegionColumns.SIZE) {
+            throw new IllegalArgumentException("predictedPixels must contain one 256x256 tile");
+        }
+        final MapWorld world = mapWorlds.current();
+        if (world == null
+            || !realKey.world().equals(world.session().world())
+            || !realKey.dimension().equals(world.session().dimension())) {
+            return;
+        }
+        final MapLayer layer = MapLayer.parse(BiomeTileKeys.realLayerId(realKey.layerId()));
+        final ColumnStore store = world.store(layer);
+        final int chunksPerTile = 16 << realKey.lod();
+        final int pixelsPerChunk = 16 >> realKey.lod();
+        final int baseChunkX = realKey.tileX() * chunksPerTile;
+        final int baseChunkZ = realKey.tileZ() * chunksPerTile;
+        for (int chunkDz = 0; chunkDz < chunksPerTile; chunkDz++) {
+            for (int chunkDx = 0; chunkDx < chunksPerTile; chunkDx++) {
+                if (!store.hasRealChunk(baseChunkX + chunkDx, baseChunkZ + chunkDz)) {
+                    continue;
+                }
+                final int pixelX = chunkDx * pixelsPerChunk;
+                final int pixelZ = chunkDz * pixelsPerChunk;
+                for (int dz = 0; dz < pixelsPerChunk; dz++) {
+                    final int row = (pixelZ + dz) * RegionColumns.SIZE;
+                    Arrays.fill(
+                        predictedPixels,
+                        row + pixelX,
+                        row + pixelX + pixelsPerChunk,
+                        Argb.TRANSPARENT
+                    );
+                }
+            }
         }
     }
 

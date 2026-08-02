@@ -197,7 +197,35 @@ class PredictedTileComposerTest {
     }
 
     @Test
-    void lod0ReliefShapesBothSidesOfABlockEdge() {
+    void endLandUsesItsDedicatedEndStoneMaterialProfile() {
+        final BaselineGrid grid = new BaselineGrid();
+        final DerivedGrid derived = new DerivedGrid();
+        Arrays.fill(grid.biomeId, 9);
+        Arrays.fill(derived.kind, (byte) SurfaceKind.LAND.ordinal());
+        Arrays.fill(derived.surfaceY, ShadingPipeline.REFERENCE_HEIGHT);
+        final MaterialDetailProfile endStone = MaterialDetailProfile.fromLuminance(
+            new int[] {78, 122, 82, 118, 86, 114, 90, 110, 110, 90, 114, 86, 118, 82, 122, 78},
+            0.12
+        );
+        final PredictionPalette palette = PredictionPalette.fromSamples(
+            Map.of(),
+            Map.of(SurfaceKind.LAND, MaterialDetailProfile.flat()),
+            Map.of(9, endStone)
+        );
+
+        final int[] pixels = PredictedTileComposer.compose(derived, grid, palette);
+        final HashSet<Integer> colors = new HashSet<>();
+        for (int z = 0; z < 16; z++) {
+            for (int x = 0; x < 16; x++) {
+                colors.add(pixels[z * 256 + x]);
+            }
+        }
+
+        assertTrue(colors.size() > 2, "End land should retain end-stone texture detail");
+    }
+
+    @Test
+    void lod0ReliefDoesNotBleedAcrossABlockEdge() {
         final BaselineGrid grid = new BaselineGrid();
         final DerivedGrid derived = new DerivedGrid();
         Arrays.fill(grid.biomeId, 1);
@@ -217,8 +245,8 @@ class PredictedTileComposerTest {
         final int lowEdge = pixels[z * BaselineGrid.PIXELS + 127];
         final int highEdge = pixels[z * BaselineGrid.PIXELS + 128];
 
-        assertNotEquals(flatLow, lowEdge, "the low shoulder should darken before the height boundary");
-        assertNotEquals(lowEdge, highEdge, "the raised shoulder must remain distinct from the low side");
+        assertEquals(flatLow, lowEdge, "LOD0 relief must not soften the block before a height boundary");
+        assertNotEquals(lowEdge, highEdge, "the height boundary itself must remain visible");
     }
 
     private static int composeReliefPlanePixel(final int centerHeight, final int risePerBlock, final int lod) {

@@ -73,6 +73,8 @@ public final class PredictionTileService {
     private final Set<TileKey> requestedTiles = new HashSet<>();
     /** Tracked textures that were last composed under an older view mode. */
     private final Set<TileKey> staleViewModeTiles = new HashSet<>();
+    /** Tracked textures whose local real-map coverage changed while they were off-screen. */
+    private final Set<TileKey> staleRealCoverageTiles = new HashSet<>();
     /** Guarded by {@code this}: output-pixel metadata retained for fullscreen cursor/actions. */
     private final Map<TileKey, TileMetadata> metadataTiles = new HashMap<>();
     /** Recent CPU results used to build a coarser tile without resampling. */
@@ -113,6 +115,43 @@ public final class PredictionTileService {
         this.uploads = uploads;
         this.millisClock = millisClock;
         this.maxConcurrentCompositions = Math.max(1, executors.workerCount());
+        uploads.bindRealCoverageListener(this::onRealCoverageChanged);
+    }
+
+    private void onRealCoverageChanged(final TileKey realKey) {
+        final SessionGuard.Session session = sessionGuard.current();
+        final MapLayer layer;
+        try {
+            layer = MapLayer.parse(BiomeTileKeys.realLayerId(realKey.layerId()));
+        } catch (final IllegalArgumentException e) {
+            return;
+        }
+        if (!session.active()
+            || !realKey.world().equals(session.world())
+            || !realKey.dimension().equals(session.dimension())
+            || (layer.type() != MapLayer.Type.SURFACE
+                && layer.type() != MapLayer.Type.END_SURFACE)) {
+            return;
+        }
+        synchronized (this) {
+            queueRealCoverageRefresh(PredictedTileKeys.toPredicted(realKey), session.token());
+            queueRealCoverageRefresh(
+                PredictedTileKeys.toPredicted(BiomeTileKeys.toBiome(realKey)), session.token()
+            );
+        }
+        pump();
+    }
+
+    /** Caller must hold the monitor. */
+    private void queueRealCoverageRefresh(final TileKey key, final long token) {
+        invalidateCachedTileAndAncestors(key);
+        metadataTiles.remove(key);
+        if (requestedTiles.contains(key)) {
+            staleRealCoverageTiles.add(key);
+            if (viewport != null && viewport.contains(key)) {
+                dirty.put(key, token);
+            }
+        }
     }
 
     public void bindCorrectionStore(final CorrectionStore store) {
@@ -397,6 +436,7 @@ public final class PredictionTileService {
             dirty.clear();
             requestedTiles.clear();
             staleViewModeTiles.clear();
+            staleRealCoverageTiles.clear();
             metadataTiles.clear();
             mipCache.clear();
             lowerCoverageQueue.clear();
@@ -417,6 +457,7 @@ public final class PredictionTileService {
             lowerCoverageGeneration++;
             dirty.clear();
             staleViewModeTiles.clear();
+            staleRealCoverageTiles.clear();
             metadataTiles.clear();
             mipCache.clear();
             lowerCoverageQueue.clear();
@@ -476,6 +517,12 @@ public final class PredictionTileService {
             }
             if (changed && session.active() && dimension.equals(session.dimension())) {
                 for (final TileKey key : staleViewModeTiles) {
+                    if (rect.contains(key)) {
+                        metadataTiles.remove(key);
+                        dirty.put(key, session.token());
+                    }
+                }
+                for (final TileKey key : staleRealCoverageTiles) {
                     if (rect.contains(key)) {
                         metadataTiles.remove(key);
                         dirty.put(key, session.token());
@@ -675,6 +722,7 @@ public final class PredictionTileService {
                         composition.serverCoverageValidatedAtMillis()
                     ));
                     staleViewModeTiles.remove(key);
+                    staleRealCoverageTiles.remove(key);
                     invalidateCachedAncestorsAndQueueVisible(key, token);
                     uploads.submitUpload(composition.update());
                 }
@@ -738,7 +786,7 @@ public final class PredictionTileService {
         if (lowerFresh && (!directHasServerState
             || directValidatedAt == 0L
             || lower.freshnessValidatedAtMillis() >= directValidatedAt)) {
-            return new Composition(
+            final Composition composition = new Composition(
                 TileUpdate.fullTile(key, lower.pixels()),
                 new TileMetadata(lower.biomes(), lower.surfaces()),
                 lower.mode(),
@@ -746,6 +794,8 @@ public final class PredictionTileService {
                 lower.freshnessValidatedAtMillis(),
                 lower.serverCoverageValidatedAtMillis()
             );
+            maskKnownRealPixels(key, composition.update().argbPixels());
+            return composition;
         }
 
         final BaselineGrid grid;
@@ -779,6 +829,7 @@ public final class PredictionTileService {
                 derived, grid, state.palette(), directCorrections, compositionMode, lod,
                 baselineMapColorId, derived, grid, baselineMapColorId
             );
+        maskKnownRealPixels(key, pixels);
         return new Composition(
             TileUpdate.fullTile(key, pixels),
             new TileMetadata(
@@ -789,6 +840,20 @@ public final class PredictionTileService {
             directHasServerState,
             directValidatedAt,
             directHasServerState ? directValidatedAt : 0L
+        );
+    }
+
+    private void maskKnownRealPixels(final TileKey predictedKey, final int[] pixels) {
+        uploads.maskKnownRealPixels(
+            new TileKey(
+                predictedKey.world(),
+                predictedKey.dimension(),
+                PredictedTileKeys.realLayerId(predictedKey.layerId()),
+                predictedKey.lod(),
+                predictedKey.tileX(),
+                predictedKey.tileZ()
+            ),
+            pixels
         );
     }
 
