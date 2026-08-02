@@ -22,16 +22,19 @@ import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.util.Identifier;
 
 /**
  * Client-side wiring for the {@code confluxmap:map_sync} companion channel. Owns one global
  * receiver; on every S2C message it decodes the payload and dispatches to {@link CompanionSession}
  * (HELLO_POLICY), to the correction sync loop (MAP_PATCH), or logs
- * (POLICY_UPDATE / ERROR). On {@link ClientPlayConnectionEvents#JOIN} it sends a HELLO_C2S
- * immediately (fabric-api's JOIN fires at the RETURN of {@code onGameJoin} with the channel
- * ready - see the research report); on {@link ClientPlayConnectionEvents#DISCONNECT} it resets
- * the session.
+ * (POLICY_UPDATE / ERROR). Network callbacks are decoded off-thread, then state changes are
+ * marshalled to the client thread. On {@link ClientPlayConnectionEvents#JOIN} it sends a
+ * HELLO_C2S immediately (fabric-api's JOIN fires at the RETURN of {@code onGameJoin} with the
+ * channel ready - see the research report); on {@link ClientPlayConnectionEvents#DISCONNECT} it
+ * resets the session on that same client thread.
  */
 public final class ClientNetworking {
     public static final Identifier CHANNEL = Ids.of(Proto.CHANNEL_ID);
@@ -47,7 +50,88 @@ public final class ClientNetworking {
     public void register() {
         PlayNetworking.registerClient(CHANNEL, this::onReceive);
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> sendHello());
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+        ClientPlayConnectionEvents.DISCONNECT.register(this::onDisconnect);
+    }
+
+    public void bindMapSync(final MapSyncClient mapSync) {
+        this.mapSync = mapSync;
+    }
+
+    public void bindChunkLoadStates(final ChunkLoadStateClient chunkLoadStates) {
+        this.chunkLoadStates = chunkLoadStates;
+    }
+
+    private void onReceive(
+        final MinecraftClient client,
+        final ClientPlayNetworkHandler handler,
+        final byte[] payload
+    ) {
+        try {
+            validatePayload(payload);
+        } catch (final ProtoException e) {
+            ConfluxMapMod.LOGGER.warn("companion: dropping malformed S2C payload ({})", e.getMessage());
+            return;
+        }
+        final Message msg;
+        try {
+            msg = MsgCodec.decode(payload);
+        } catch (final ProtoException e) {
+            ConfluxMapMod.LOGGER.warn("companion: undecodable S2C payload ({} bytes): {}", payload.length, e.getMessage());
+            return;
+        }
+        executeForConnection(client, handler, () -> dispatch(msg, payload.length));
+    }
+
+    private void dispatch(final Message msg, final int payloadBytes) {
+        if (msg instanceof final HelloPolicyS2C p) {
+            session.onPolicy(p);
+        } else if (msg instanceof final MapCompatibilityS2C compatibility) {
+            session.onCompatibility(compatibility);
+        } else if (msg instanceof final FlatBaselineS2C f) {
+            session.onFlatBaselines(f);
+        } else if (msg instanceof final PolicyUpdateS2C u) {
+            onPolicyUpdate(u);
+        } else if (msg instanceof final MapPatchS2C p) {
+            onMapPatch(p, payloadBytes);
+        } else if (msg instanceof final MapInvalidateS2C invalidation) {
+            final MapSyncClient sync = mapSync;
+            if (sync != null) {
+                sync.onInvalidation(invalidation);
+            }
+        } else if (msg instanceof final MapRegionPatchS2C patch) {
+            final MapSyncClient sync = mapSync;
+            if (sync != null) {
+                sync.onRegionPatch(patch, payloadBytes);
+            }
+        } else if (msg instanceof final MapRegionInvalidateS2C invalidation) {
+            final MapSyncClient sync = mapSync;
+            if (sync != null) {
+                sync.onRegionInvalidation(invalidation);
+            }
+        } else if (msg instanceof final LoadStateDeltaS2C delta) {
+            final ChunkLoadStateClient loadStates = chunkLoadStates;
+            if (loadStates != null) {
+                loadStates.onDelta(delta);
+            }
+        } else if (msg instanceof final ErrorS2C e) {
+            onError(e, payloadBytes);
+        } else {
+            ConfluxMapMod.LOGGER.warn(
+                "companion: unexpected S2C {} from server",
+                msg.getClass().getSimpleName()
+            );
+        }
+    }
+
+    private void onDisconnect(
+        final ClientPlayNetworkHandler handler,
+        final MinecraftClient client
+    ) {
+        client.execute(() -> {
+            final ClientPlayNetworkHandler current = client.getNetworkHandler();
+            if (current != null && current != handler) {
+                return;
+            }
             session.reset();
             final MapSyncClient sync = mapSync;
             if (sync != null) {
@@ -60,68 +144,16 @@ public final class ClientNetworking {
         });
     }
 
-    public void bindMapSync(final MapSyncClient mapSync) {
-        this.mapSync = mapSync;
-    }
-
-    public void bindChunkLoadStates(final ChunkLoadStateClient chunkLoadStates) {
-        this.chunkLoadStates = chunkLoadStates;
-    }
-
-    private void onReceive(
-        final net.minecraft.client.MinecraftClient client,
-        final net.minecraft.client.network.ClientPlayNetworkHandler handler,
-        final byte[] payload
+    private static void executeForConnection(
+        final MinecraftClient client,
+        final ClientPlayNetworkHandler handler,
+        final Runnable task
     ) {
-        try {
-            validatePayload(payload);
-        } catch (final ProtoException e) {
-            ConfluxMapMod.LOGGER.warn("companion: dropping malformed S2C payload ({})", e.getMessage());
-            return;
-        }
-        try {
-            final Message msg = MsgCodec.decode(payload);
-            if (msg instanceof final HelloPolicyS2C p) {
-                session.onPolicy(p);
-            } else if (msg instanceof final MapCompatibilityS2C compatibility) {
-                session.onCompatibility(compatibility);
-            } else if (msg instanceof final FlatBaselineS2C f) {
-                session.onFlatBaselines(f);
-            } else if (msg instanceof final PolicyUpdateS2C u) {
-                onPolicyUpdate(u);
-            } else if (msg instanceof final MapPatchS2C p) {
-                onMapPatch(p, payload.length);
-            } else if (msg instanceof final MapInvalidateS2C invalidation) {
-                final MapSyncClient sync = mapSync;
-                if (sync != null) {
-                    sync.onInvalidation(invalidation);
-                }
-            } else if (msg instanceof final MapRegionPatchS2C patch) {
-                final MapSyncClient sync = mapSync;
-                if (sync != null) {
-                    sync.onRegionPatch(patch, payload.length);
-                }
-            } else if (msg instanceof final MapRegionInvalidateS2C invalidation) {
-                final MapSyncClient sync = mapSync;
-                if (sync != null) {
-                    sync.onRegionInvalidation(invalidation);
-                }
-            } else if (msg instanceof final LoadStateDeltaS2C delta) {
-                final ChunkLoadStateClient loadStates = chunkLoadStates;
-                if (loadStates != null) {
-                    loadStates.onDelta(delta);
-                }
-            } else if (msg instanceof final ErrorS2C e) {
-                onError(e, payload.length);
-            } else {
-                ConfluxMapMod.LOGGER.warn(
-                    "companion: unexpected S2C {} from server",
-                    msg.getClass().getSimpleName()
-                );
+        client.execute(() -> {
+            if (client.getNetworkHandler() == handler) {
+                task.run();
             }
-        } catch (final ProtoException e) {
-            ConfluxMapMod.LOGGER.warn("companion: undecodable S2C payload ({} bytes): {}", payload.length, e.getMessage());
-        }
+        });
     }
 
     /** Constructs and sends HELLO_C2S; called from JOIN and config-driven re-handshakes. */

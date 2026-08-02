@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/** Client-side ephemeral state for the one active load-state subscription. */
+/** Thread-safe client state for the one active load-state subscription. */
 public final class ChunkLoadStateSnapshot {
     private final Map<ChunkKey, LoadStateDeltaS2C.Entry> entries = new LinkedHashMap<>();
     private int subscriptionId;
@@ -13,7 +13,7 @@ public final class ChunkLoadStateSnapshot {
     private boolean active;
     private boolean complete;
 
-    public void begin(final int subscriptionId, final int dimIndex) {
+    public synchronized void begin(final int subscriptionId, final int dimIndex) {
         this.subscriptionId = subscriptionId;
         this.dimIndex = dimIndex;
         active = true;
@@ -21,7 +21,7 @@ public final class ChunkLoadStateSnapshot {
         entries.clear();
     }
 
-    public boolean apply(final LoadStateDeltaS2C delta) {
+    public synchronized boolean apply(final LoadStateDeltaS2C delta) {
         if (!active || delta.subscriptionId() != subscriptionId) {
             return false;
         }
@@ -43,31 +43,31 @@ public final class ChunkLoadStateSnapshot {
         return true;
     }
 
-    public Optional<LoadStateDeltaS2C.Entry> get(final int chunkX, final int chunkZ) {
+    public synchronized Optional<LoadStateDeltaS2C.Entry> get(final int chunkX, final int chunkZ) {
         return Optional.ofNullable(entries.get(new ChunkKey(chunkX, chunkZ)));
     }
 
-    public List<LoadStateDeltaS2C.Entry> entries() {
+    public synchronized List<LoadStateDeltaS2C.Entry> entries() {
         return List.copyOf(entries.values());
     }
 
-    public boolean complete() {
+    public synchronized boolean complete() {
         return complete;
     }
 
-    public boolean active() {
+    public synchronized boolean active() {
         return active;
     }
 
-    public int subscriptionId() {
+    public synchronized int subscriptionId() {
         return subscriptionId;
     }
 
-    public int dimIndex() {
+    public synchronized int dimIndex() {
         return dimIndex;
     }
 
-    public void reset() {
+    public synchronized void reset() {
         entries.clear();
         active = false;
         complete = false;

@@ -33,6 +33,7 @@ import java.util.function.Supplier;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.Formatting;
 
@@ -85,7 +86,7 @@ public final class ClientMultiworldService {
     public void register() {
         ClientWorldIdentityHandler.bind(this);
         ClientTickEvents.END_CLIENT_TICK.register(ignored -> tickSignals());
-        ClientPlayConnectionEvents.DISCONNECT.register((handler, ignored) -> resetObservation());
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, ignored) -> onDisconnect(handler));
     }
 
     public void bindChunkCapture(final ChunkCaptureService service) {
@@ -422,6 +423,15 @@ public final class ClientMultiworldService {
         terrainAttempted = false;
         ambiguityNotified = false;
         observationGeneration++;
+    }
+
+    private void onDisconnect(final ClientPlayNetworkHandler handler) {
+        client.execute(() -> {
+            final ClientPlayNetworkHandler current = client.getNetworkHandler();
+            if (current == null || current == handler) {
+                resetObservation();
+            }
+        });
     }
 
     private void lockProfile(final ClientWorldProfile profile) {

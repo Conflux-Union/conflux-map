@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 
 class ChunkLoadStateSnapshotTest {
@@ -32,5 +35,47 @@ class ChunkLoadStateSnapshotTest {
         )));
         assertTrue(snapshot.get(1, 2).isEmpty());
         assertTrue(snapshot.complete());
+    }
+
+    @Test
+    void allowsRenderingSnapshotsWhileNetworkDeltasArrive() throws InterruptedException {
+        final ChunkLoadStateSnapshot snapshot = new ChunkLoadStateSnapshot();
+        snapshot.begin(8, 0);
+        final List<LoadStateDeltaS2C.Entry> loadedEntries = IntStream.range(0, 4_096)
+            .mapToObj(index -> new LoadStateDeltaS2C.Entry(
+                index, 0, 31, ChunkLoadBand.ENTITY_TICKING
+            ))
+            .toList();
+        final LoadStateDeltaS2C loaded = new LoadStateDeltaS2C(
+            8, true, false, loadedEntries
+        );
+        final LoadStateDeltaS2C cleared = new LoadStateDeltaS2C(
+            8, true, false, List.of()
+        );
+        final CountDownLatch writerStarted = new CountDownLatch(1);
+        final AtomicBoolean stop = new AtomicBoolean();
+        final AtomicBoolean writerDone = new AtomicBoolean();
+        final Thread writer = new Thread(() -> {
+            writerStarted.countDown();
+            try {
+                for (int attempt = 0; attempt < 5_000 && !stop.get(); attempt++) {
+                    snapshot.apply(loaded);
+                    snapshot.apply(cleared);
+                }
+            } finally {
+                writerDone.set(true);
+            }
+        }, "load-state-network-writer");
+        writer.start();
+        writerStarted.await();
+
+        try {
+            do {
+                snapshot.entries();
+            } while (!writerDone.get());
+        } finally {
+            stop.set(true);
+            writer.join();
+        }
     }
 }
