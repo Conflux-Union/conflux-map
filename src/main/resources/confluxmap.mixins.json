@@ -10,6 +10,7 @@
     "ClientChunkManagerMixin",
     "ClientPlayNetworkHandlerMixin",
     "ScreenMixin",
+    "StatusEffectHudMixin",
     "WorldRendererMixin"
   ],
   "injectors": {
