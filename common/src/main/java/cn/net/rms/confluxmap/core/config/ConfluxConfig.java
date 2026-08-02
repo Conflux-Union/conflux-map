@@ -13,7 +13,7 @@ import cn.net.rms.confluxmap.core.util.TileMath;
  * {@link #SCHEMA_VERSION} and adding a migration in {@link ConfigIo}.
  */
 public final class ConfluxConfig {
-    public static final int SCHEMA_VERSION = 3;
+    public static final int SCHEMA_VERSION = 4;
     public static final int DEFAULT_MINIMAP_SIZE = 90;
     public static final int MIN_ANNOTATION_ERASER_SIZE = 4;
     public static final int MAX_ANNOTATION_ERASER_SIZE = 64;
@@ -27,8 +27,12 @@ public final class ConfluxConfig {
     public static final int MIN_PLAYER_TRAIL_DOT_SIZE = 1;
     public static final int MAX_PLAYER_TRAIL_DOT_SIZE = 8;
     public static final int DEFAULT_PLAYER_TRAIL_DOT_SIZE = 3;
-    /** Default detail threshold for structure markers on the fullscreen map. */
-    public static final int DEFAULT_PREDICTION_STRUCTURE_MAX_LOD = 3;
+    /** Smallest usable map scale (blocks per screen pixel) for structure-icon hiding. */
+    public static final double MIN_PREDICTION_STRUCTURE_ICON_HIDE_SCALE = 0.25;
+    /** Largest usable map scale (blocks per screen pixel) for structure-icon hiding. */
+    public static final double MAX_PREDICTION_STRUCTURE_ICON_HIDE_SCALE = 16.0;
+    /** Default structure-icon hiding threshold: hide once the map is farther out than 8x. */
+    public static final double DEFAULT_PREDICTION_STRUCTURE_ICON_HIDE_SCALE = 8.0;
 
     public int schemaVersion = SCHEMA_VERSION;
 
@@ -148,11 +152,11 @@ public final class ConfluxConfig {
     /** View filter for the predicted plane; EVERYWHERE is the honest default. */
     public PredictionViewMode predictionViewMode = PredictionViewMode.EVERYWHERE;
     public boolean predictionShowStructures = true;
-    /**
-     * Coarsest fullscreen-map detail level at which structure markers stay visible. Values map to
-     * 1, 2, 4, 8, and 16 blocks per screen pixel; larger values show markers farther out.
-     */
-    public int predictionStructureMaxLod = DEFAULT_PREDICTION_STRUCTURE_MAX_LOD;
+    /** Hide fullscreen-map structure markers once the map scale is farther out than this value. */
+    public double predictionStructureIconHideScale = DEFAULT_PREDICTION_STRUCTURE_ICON_HIDE_SCALE;
+    /** Schema-v3 setting retained solely to migrate old discrete LOD values. */
+    @Deprecated
+    public Integer predictionStructureMaxLod;
     /** Per-version and per-dimension structure-type visibility profiles. */
     public StructureVisibilityConfig predictionStructureVisibility = new StructureVisibilityConfig();
     /** Pan-settle debounce, clamped to 100..2000 ms. */
@@ -222,7 +226,7 @@ public final class ConfluxConfig {
         c.predictionNetworkSync = predictionNetworkSync;
         c.predictionViewMode = predictionViewMode;
         c.predictionShowStructures = predictionShowStructures;
-        c.predictionStructureMaxLod = predictionStructureMaxLod;
+        c.predictionStructureIconHideScale = predictionStructureIconHideScale;
         c.predictionStructureVisibility = predictionStructureVisibility == null
             ? new StructureVisibilityConfig()
             : predictionStructureVisibility.copy();
@@ -297,7 +301,17 @@ public final class ConfluxConfig {
         if (predictionViewMode == null) {
             predictionViewMode = PredictionViewMode.EVERYWHERE;
         }
-        predictionStructureMaxLod = clamp(predictionStructureMaxLod, 0, TileMath.MAX_LOD);
+        if (schemaVersion < 4 && predictionStructureMaxLod != null) {
+            predictionStructureIconHideScale = TileMath.blocksPerPixel(
+                clamp(predictionStructureMaxLod, 0, TileMath.MAX_LOD)
+            );
+        }
+        predictionStructureMaxLod = null;
+        predictionStructureIconHideScale = clamp(
+            predictionStructureIconHideScale,
+            MIN_PREDICTION_STRUCTURE_ICON_HIDE_SCALE,
+            MAX_PREDICTION_STRUCTURE_ICON_HIDE_SCALE
+        );
         if (predictionStructureVisibility == null) {
             predictionStructureVisibility = new StructureVisibilityConfig();
         } else {
@@ -312,6 +326,10 @@ public final class ConfluxConfig {
 
     private static int clamp(final int v, final int min, final int max) {
         return Math.max(min, Math.min(max, v));
+    }
+
+    private static double clamp(final double value, final double min, final double max) {
+        return Double.isFinite(value) ? Math.max(min, Math.min(max, value)) : min;
     }
 
     /** Returns a normalized snapshot so live config edits cannot bypass recognition safety caps. */

@@ -19,8 +19,8 @@ final class FullscreenStructureIconDetailLimitTest {
 
         assertTrue(start >= 0 && end > start, "structure renderer must be present");
         final String renderer = source.substring(start, end);
-        assertTrue(renderer.contains("currentLod() > config.predictionStructureMaxLod"));
-        assertFalse(renderer.contains("currentLod() > 3"));
+        assertTrue(renderer.contains("scale > config.predictionStructureIconHideScale"));
+        assertFalse(renderer.contains("predictionStructureMaxLod"));
     }
 
     private static Path projectRoot() {

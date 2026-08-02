@@ -45,8 +45,8 @@ class ConfigIoTest {
         // Absent fields keep their defaults; out-of-range values are clamped.
         assertEquals(new ConfluxConfig().predictionDebounceMs, loaded.predictionDebounceMs);
         assertEquals(
-            ConfluxConfig.DEFAULT_PREDICTION_STRUCTURE_MAX_LOD,
-            loaded.predictionStructureMaxLod
+            ConfluxConfig.DEFAULT_PREDICTION_STRUCTURE_ICON_HIDE_SCALE,
+            loaded.predictionStructureIconHideScale
         );
         assertTrue(loaded.annotationsOnHud);
         assertEquals(ConfluxConfig.DEFAULT_ANNOTATION_ERASER_SIZE, loaded.annotationEraserSize);
@@ -72,7 +72,8 @@ class ConfigIoTest {
         // The upgrade is persisted so the on-disk file now carries the full schema.
         final String rewritten = Files.readString(file, StandardCharsets.UTF_8);
         assertTrue(rewritten.contains("\"predictionDebounceMs\""));
-        assertTrue(rewritten.contains("\"predictionStructureMaxLod\""));
+        assertTrue(rewritten.contains("\"predictionStructureIconHideScale\""));
+        assertFalse(rewritten.contains("\"predictionStructureMaxLod\""));
         assertTrue(rewritten.contains("\"predictionStructureVisibility\""));
         assertTrue(rewritten.contains("\"annotationsOnHud\""));
         assertTrue(rewritten.contains("\"annotationEraserSize\""));
@@ -190,7 +191,7 @@ class ConfigIoTest {
 
         assertEquals(60, loaded.playerTrailDurationSeconds);
         final String rewritten = Files.readString(file, StandardCharsets.UTF_8);
-        assertTrue(rewritten.contains("\"schemaVersion\": 3"));
+        assertTrue(rewritten.contains("\"schemaVersion\": " + ConfluxConfig.SCHEMA_VERSION));
         assertTrue(rewritten.contains("\"playerTrailDurationSeconds\": 60"));
         assertFalse(rewritten.contains("\"playerTrailDurationMinutes\""));
     }
@@ -232,28 +233,41 @@ class ConfigIoTest {
     }
 
     @Test
-    void structureIconDetailLimitRoundTripsAndClampsInvalidValues(@TempDir final Path tmp) throws IOException {
+    void structureIconHideScaleRoundTripsMigratesAndClampsInvalidValues(@TempDir final Path tmp) throws IOException {
         final Path file = tmp.resolve("config.json");
         final ConfigIo io = new ConfigIo(file, LOGGER);
         final ConfluxConfig config = new ConfluxConfig();
-        config.predictionStructureMaxLod = 1;
+        config.predictionStructureIconHideScale = 0.5;
 
         io.save(config);
-        assertEquals(1, io.load().predictionStructureMaxLod);
+        assertEquals(0.5, io.load().predictionStructureIconHideScale);
 
         Files.writeString(
             file,
-            "{\"schemaVersion\":3,\"predictionStructureMaxLod\":99}",
+            "{\"schemaVersion\":3,\"predictionStructureMaxLod\":1}",
             StandardCharsets.UTF_8
         );
-        assertEquals(4, io.load().predictionStructureMaxLod);
+        assertEquals(2.0, io.load().predictionStructureIconHideScale);
 
         Files.writeString(
             file,
-            "{\"schemaVersion\":3,\"predictionStructureMaxLod\":-4}",
+            "{\"schemaVersion\":4,\"predictionStructureIconHideScale\":99}",
             StandardCharsets.UTF_8
         );
-        assertEquals(0, io.load().predictionStructureMaxLod);
+        assertEquals(
+            ConfluxConfig.MAX_PREDICTION_STRUCTURE_ICON_HIDE_SCALE,
+            io.load().predictionStructureIconHideScale
+        );
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":4,\"predictionStructureIconHideScale\":0}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(
+            ConfluxConfig.MIN_PREDICTION_STRUCTURE_ICON_HIDE_SCALE,
+            io.load().predictionStructureIconHideScale
+        );
     }
 
     @Test

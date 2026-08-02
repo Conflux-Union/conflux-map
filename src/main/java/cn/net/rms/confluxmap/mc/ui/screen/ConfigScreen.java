@@ -11,7 +11,6 @@ import cn.net.rms.confluxmap.core.multiworld.ClientWorldPolicy;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
-import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
@@ -21,6 +20,9 @@ import java.util.List;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.DoubleConsumer;
+import java.util.function.DoubleFunction;
+import java.util.function.DoubleSupplier;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
 import java.util.function.IntSupplier;
@@ -155,6 +157,7 @@ public final class ConfigScreen extends ConfluxScreen {
     private final GameBridge gameBridge;
     private final PredictionState predictionState;
     private final List<IntSliderInput> sliderInputs = new ArrayList<>();
+    private final List<DecimalSliderInput> decimalSliderInputs = new ArrayList<>();
 
     private Category category = Category.MINIMAP;
     private int rowWidth = MAX_ROW_WIDTH;
@@ -193,6 +196,9 @@ public final class ConfigScreen extends ConfluxScreen {
     public void tick() {
         super.tick();
         for (final IntSliderInput sliderInput : sliderInputs) {
+            sliderInput.tick();
+        }
+        for (final DecimalSliderInput sliderInput : decimalSliderInputs) {
             sliderInput.tick();
         }
         final SharedWaypointAvailability availability = sharedWaypoints.availability();
@@ -287,6 +293,7 @@ public final class ConfigScreen extends ConfluxScreen {
         radarAccess = RadarSettingsAccess.from(companionSession.entityRadarAllowed());
         predictionAccess = predictionSettingsAccess();
         sliderInputs.clear();
+        decimalSliderInputs.clear();
         clearChildren();
         addTabs();
         addRows();
@@ -565,11 +572,12 @@ public final class ConfigScreen extends ConfluxScreen {
                     () -> config.predictionShowStructures, v -> config.predictionShowStructures = v,
                     structureReason == null, structureReason
                 );
-                y = addIntSliderRow(
+                y = addDecimalSliderRow(
                     y, "confluxmap.config.prediction.structure_icon_detail_limit",
-                    0, TileMath.MAX_LOD,
-                    () -> config.predictionStructureMaxLod,
-                    v -> config.predictionStructureMaxLod = v,
+                    ConfluxConfig.MIN_PREDICTION_STRUCTURE_ICON_HIDE_SCALE,
+                    ConfluxConfig.MAX_PREDICTION_STRUCTURE_ICON_HIDE_SCALE,
+                    () -> config.predictionStructureIconHideScale,
+                    v -> config.predictionStructureIconHideScale = v,
                     ConfigScreen::structureIconDetailLimitText,
                     structureReason == null, structureReason
                 );
@@ -759,6 +767,43 @@ public final class ConfigScreen extends ConfluxScreen {
         return y + ROW_HEIGHT;
     }
 
+    private int addDecimalSliderRow(
+        final int y,
+        final String labelKey,
+        final double min,
+        final double max,
+        final DoubleSupplier getter,
+        final DoubleConsumer setter,
+        final DoubleFunction<String> valueText,
+        final boolean active,
+        final String disabledTooltipKey
+    ) {
+        if (rowVisible(y)) {
+            final DecimalSliderInput sliderInput = new DecimalSliderInput(
+                this.textRenderer,
+                rowX(),
+                y,
+                rowWidth,
+                ROW_HEIGHT - 2,
+                min,
+                max,
+                getter.getAsDouble(),
+                value -> {
+                    setter.accept(value);
+                    configIo.save(config);
+                },
+                value -> Texts.translatable(labelKey, valueText.apply(value))
+            );
+            sliderInput.setActive(active);
+            decimalSliderInputs.add(sliderInput);
+            addDrawableChild(sliderInput.slider());
+            addDrawableChild(sliderInput.input());
+            setDisabledTooltip(sliderInput.slider(), disabledTooltipKey);
+            setDisabledTooltip(sliderInput.input(), disabledTooltipKey);
+        }
+        return y + ROW_HEIGHT;
+    }
+
     private static <T> T nextValue(final T[] values, final T current) {
         final int index = Arrays.asList(values).indexOf(current);
         return values[(index + 1) % values.length];
@@ -800,9 +845,9 @@ public final class ConfigScreen extends ConfluxScreen {
         return value == 0 ? resolvedText("confluxmap.value.unlimited") : blocksText(value);
     }
 
-    private static String structureIconDetailLimitText(final int lod) {
+    private static String structureIconDetailLimitText(final double scale) {
         return Texts.translatable(
-            "confluxmap.value.zoom_multiplier", 1 << lod
+            "confluxmap.value.zoom_multiplier", DecimalSliderInput.format(scale)
         ).getString();
     }
 
