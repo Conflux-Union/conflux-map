@@ -10,6 +10,7 @@ import cn.net.rms.confluxmap.core.annotation.AnnotationService;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.config.MinimapPlacement;
 import cn.net.rms.confluxmap.core.config.MinimapHudVisibility;
+import cn.net.rms.confluxmap.core.config.MinimapHudAvoidance;
 import cn.net.rms.confluxmap.core.config.MinimapStatusEffectAvoidance;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
@@ -191,7 +192,7 @@ public final class MinimapHudRenderer {
             config.minimapPositionX,
             config.minimapPositionY
         );
-        final MinimapPlacement.Layout placement = avoidStatusEffectOverlap(
+        final MinimapPlacement.Layout placement = avoidHudOverlap(
             screenWidth, screenHeight, configuredPlacement
         );
         final int size = placement.size();
@@ -296,12 +297,8 @@ public final class MinimapHudRenderer {
         drawInfoText(draw, player, x0, y0, size);
     }
 
-    /**
-     * Applies a render-only minimap translation when it would cover vanilla's effect rows. The
-     * saved drag position remains untouched, so resizing the window or changing GUI scale always
-     * starts from the user's configured placement.
-     */
-    private MinimapPlacement.Layout avoidStatusEffectOverlap(
+    /** Applies a render-only translation around measured vanilla HUD bounds without changing saved placement. */
+    private MinimapPlacement.Layout avoidHudOverlap(
         final int screenWidth,
         final int screenHeight,
         final MinimapPlacement.Layout configuredPlacement
@@ -346,8 +343,12 @@ public final class MinimapHudRenderer {
             }
         }
         //#endif
-        return MinimapStatusEffectAvoidance.resolve(
-            screenWidth, screenHeight, configuredPlacement, beneficial, harmful
+        return MinimapHudAvoidance.resolve(
+            screenWidth,
+            screenHeight,
+            configuredPlacement,
+            MinimapStatusEffectAvoidance.visibleBounds(screenWidth, beneficial, harmful),
+            ScoreboardHudBounds.current()
         );
     }
 
