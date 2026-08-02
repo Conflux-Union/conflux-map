@@ -10,6 +10,7 @@ import cn.net.rms.confluxmap.core.annotation.AnnotationService;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.config.MinimapPlacement;
 import cn.net.rms.confluxmap.core.config.MinimapHudVisibility;
+import cn.net.rms.confluxmap.core.config.MinimapStatusEffectAvoidance;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
@@ -45,6 +46,11 @@ import java.util.Optional;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 //#endif
 import net.minecraft.client.MinecraftClient;
+//#if MC>=260100
+//$$ import net.minecraft.world.effect.MobEffectInstance;
+//#else
+import net.minecraft.entity.effect.StatusEffectInstance;
+//#endif
 //#if MC>=12100
 //$$ import net.minecraft.client.gui.DrawContext;
 //$$ import net.minecraft.client.render.RenderTickCounter;
@@ -176,12 +182,17 @@ public final class MinimapHudRenderer {
 
         tiles.setViewpoint(player.blockX(), player.blockZ());
 
-        final MinimapPlacement.Layout placement = MinimapPlacement.resolve(
-            client.getWindow().getScaledWidth(),
-            client.getWindow().getScaledHeight(),
+        final int screenWidth = client.getWindow().getScaledWidth();
+        final int screenHeight = client.getWindow().getScaledHeight();
+        final MinimapPlacement.Layout configuredPlacement = MinimapPlacement.resolve(
+            screenWidth,
+            screenHeight,
             config.minimapSize,
             config.minimapPositionX,
             config.minimapPositionY
+        );
+        final MinimapPlacement.Layout placement = avoidStatusEffectOverlap(
+            screenWidth, screenHeight, configuredPlacement
         );
         final int size = placement.size();
         final int x0 = placement.x();
@@ -283,6 +294,61 @@ public final class MinimapHudRenderer {
         drawWaypointMarkers(draw, centerX, centerY, size, mapAngle, player);
         drawPlayerArrow(matrices, centerX, centerY, rotate ? 0f : player.yawDegrees() + 180f);
         drawInfoText(draw, player, x0, y0, size);
+    }
+
+    /**
+     * Applies a render-only minimap translation when it would cover vanilla's effect rows. The
+     * saved drag position remains untouched, so resizing the window or changing GUI scale always
+     * starts from the user's configured placement.
+     */
+    private MinimapPlacement.Layout avoidStatusEffectOverlap(
+        final int screenWidth,
+        final int screenHeight,
+        final MinimapPlacement.Layout configuredPlacement
+    ) {
+        if (client.player == null) {
+            return configuredPlacement;
+        }
+
+        int beneficial = 0;
+        int harmful = 0;
+        //#if MC>=260100
+        //$$ for (final MobEffectInstance effect : client.player.getActiveEffects()) {
+        //$$     if (!effect.showIcon()) {
+        //$$         continue;
+        //$$     }
+        //$$     if (effect.getEffect().value().isBeneficial()) {
+        //$$         beneficial++;
+        //$$     } else {
+        //$$         harmful++;
+        //$$     }
+        //$$ }
+        //#elseif MC>=11903
+        //$$ for (final StatusEffectInstance effect : client.player.getStatusEffects()) {
+        //$$     if (!effect.shouldShowIcon()) {
+        //$$         continue;
+        //$$     }
+        //$$     if (effect.getEffectType().value().isBeneficial()) {
+        //$$         beneficial++;
+        //$$     } else {
+        //$$         harmful++;
+        //$$     }
+        //$$ }
+        //#else
+        for (final StatusEffectInstance effect : client.player.getStatusEffects()) {
+            if (!effect.shouldShowIcon()) {
+                continue;
+            }
+            if (effect.getEffectType().isBeneficial()) {
+                beneficial++;
+            } else {
+                harmful++;
+            }
+        }
+        //#endif
+        return MinimapStatusEffectAvoidance.resolve(
+            screenWidth, screenHeight, configuredPlacement, beneficial, harmful
+        );
     }
 
     private void drawPlayerTrail(
