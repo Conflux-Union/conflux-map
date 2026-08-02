@@ -7,6 +7,7 @@ import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.multiworld.ClientWorldPolicy;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
@@ -473,6 +474,46 @@ public final class ConfigScreen extends ConfluxScreen {
                 y = addIntSliderRow(
                     y, "confluxmap.config.performance.gpu_tile_cache_limit", 16, 2048,
                     () -> config.gpuTileCacheLimit, v -> config.gpuTileCacheLimit = v, ConfigScreen::plainText
+                );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.performance.client_world_profile_limit",
+                    ClientWorldPolicy.MIN_MAX_PROFILES_PER_SERVER,
+                    ClientWorldPolicy.MAX_MAX_PROFILES_PER_SERVER,
+                    () -> config.clientWorldMaxProfilesPerServer,
+                    v -> config.clientWorldMaxProfilesPerServer = v,
+                    ConfigScreen::plainText
+                );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.performance.client_world_binding_limit",
+                    ClientWorldPolicy.MIN_MAX_BINDINGS_PER_PROFILE,
+                    ClientWorldPolicy.MAX_MAX_BINDINGS_PER_PROFILE,
+                    () -> config.clientWorldMaxBindingsPerProfile,
+                    v -> config.clientWorldMaxBindingsPerProfile = v,
+                    ConfigScreen::plainText
+                );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.performance.client_world_command_timeout",
+                    ClientWorldPolicy.MIN_COMMAND_CONFIRMATION_SECONDS,
+                    ClientWorldPolicy.MAX_COMMAND_CONFIRMATION_SECONDS,
+                    () -> config.clientWorldCommandConfirmationSeconds,
+                    v -> config.clientWorldCommandConfirmationSeconds = v,
+                    ConfigScreen::plainText
+                );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.performance.client_world_visit_refresh",
+                    ClientWorldPolicy.MIN_VISIT_REFRESH_SECONDS,
+                    ClientWorldPolicy.MAX_VISIT_REFRESH_SECONDS,
+                    () -> config.clientWorldVisitRefreshSeconds,
+                    v -> config.clientWorldVisitRefreshSeconds = v,
+                    ConfigScreen::plainText
+                );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.performance.client_world_visit_distance",
+                    ClientWorldPolicy.MIN_VISIT_REFRESH_DISTANCE,
+                    ClientWorldPolicy.MAX_VISIT_REFRESH_DISTANCE,
+                    () -> config.clientWorldVisitRefreshDistance,
+                    v -> config.clientWorldVisitRefreshDistance = v,
+                    ConfigScreen::plainText
                 );
                 y = addToggleRow(
                     y, "confluxmap.config.performance.update_check",
