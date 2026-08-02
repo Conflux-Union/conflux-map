@@ -331,7 +331,7 @@
   "confluxmap.config.shape.circle": "圆形",
   "confluxmap.config.layer_override.auto": "自动",
   "confluxmap.config.layer_override.force_surface": "地表",
-  "confluxmap.config.layer_override.force_underground": "地下",
+  "confluxmap.config.layer_override.force_underground": "主世界洞穴 / 下界顶层",
   "confluxmap.value.on": "开启",
   "confluxmap.value.off": "关闭",
   "confluxmap.value.unlimited": "无限制",
