@@ -17,10 +17,6 @@ import fi.dy.masa.malilib.hotkeys.IKeybindProvider;
 import fi.dy.masa.malilib.hotkeys.KeyAction;
 import fi.dy.masa.malilib.hotkeys.KeybindMulti;
 import fi.dy.masa.malilib.hotkeys.KeybindSettings;
-//#if MC>=12101
-//$$ import fi.dy.masa.malilib.registry.Registry;
-//$$ import fi.dy.masa.malilib.util.data.ModInfo;
-//#endif
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -43,6 +39,7 @@ final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
     private final IKeybind configScreenKeybind;
     private final IKeybind openMapKeybind;
     private final List<ConfigHotkey> hotkeys;
+    private boolean configScreenRegistered;
     private String configScreenStorageKey = "";
 
     static MaliLibKeybindBackend register(final KeybindActionHandler actionHandler) {
@@ -50,11 +47,7 @@ final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
         ConfigManager.getInstance().registerConfigHandler(ConfluxMapMod.ID, backend);
         backend.load();
         InputEventHandler.getKeybindManager().registerKeybindProvider(backend);
-        //#if MC>=12101
-        //$$ Registry.CONFIG_SCREEN.registerConfigScreenFactory(
-        //$$     new ModInfo(ConfluxMapMod.ID, "Conflux Map", backend::createHotkeyScreen)
-        //$$ );
-        //#endif
+        backend.configScreenRegistered = MaliLibConfigScreenRegistrar.register(backend::createHotkeyScreen);
         return backend;
     }
 
@@ -111,11 +104,7 @@ final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
     }
 
     boolean requiresVanillaConfigShortcut() {
-        //#if MC>=12101
-        //$$ return false;
-        //#else
-        return true;
-        //#endif
+        return !configScreenRegistered;
     }
 
     String openMapKeyDisplayName() {

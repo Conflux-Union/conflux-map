@@ -141,10 +141,11 @@ registry and one handler. Without MaliLib they retain their existing vanilla
 bindings and defaults. With MaliLib they are registered as a dedicated Conflux
 Map config screen, stored in a separate Conflux Map hotkey file, and may use
 multi-key combinations. Minecraft 1.21.1 and newer expose that screen through
-MaliLib's A+C config switcher without adding a vanilla keybind; 1.17.1 retains
-an unbound compatibility shortcut because its MaliLib API has no config-screen
-registry. MaliLib remains a compile-only suggested dependency and is not bundled
-or required at runtime.
+MaliLib's A+C config switcher without adding a vanilla keybind. On 1.17.1 the
+integration detects a backported config-screen registry at runtime and uses the
+same switcher when available; otherwise it retains an unbound compatibility
+shortcut for legacy MaliLib builds. MaliLib remains a compile-only suggested
+dependency and is not bundled or required at runtime.
 
 ### 8. Structure icon layer and per-type filters — completed
 
