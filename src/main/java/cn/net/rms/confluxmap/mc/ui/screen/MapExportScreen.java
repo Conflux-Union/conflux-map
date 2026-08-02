@@ -27,6 +27,7 @@ final class MapExportScreen extends ConfluxScreen {
 
     private final FullscreenMapScreen parent;
     private final MapExportService exports;
+    private final MapExportDesktopActions desktopActions = MapExportDesktopActions.system();
     private MapExportRequest renderSnapshot;
     private MapExportBounds bounds;
     private MapExportResolution resolution;
@@ -40,6 +41,8 @@ final class MapExportScreen extends ConfluxScreen {
     private boolean includeDrawings = true;
     private boolean submitted;
     private MapExportStatus.State renderedState;
+    private MapExportRequest submittedRequest;
+    private java.nio.file.Path clipboardRequestedOutput;
 
     MapExportScreen(
         final FullscreenMapScreen parent,
@@ -134,15 +137,28 @@ final class MapExportScreen extends ConfluxScreen {
             return;
         }
         addDrawableChild(Widgets.button(
-            width / 2 - 104, height - 32, 100, FIELD_HEIGHT,
+            status.state() == MapExportStatus.State.COMPLETED ? width / 2 - 148 : width / 2 - 104,
+            height - 32,
+            status.state() == MapExportStatus.State.COMPLETED ? 94 : 100,
+            FIELD_HEIGHT,
             Texts.translatable("confluxmap.screen.map_export.new_export"),
             ignored -> {
                 submitted = false;
-                rebuild();
+                parent.beginExportSelection(this);
             }
         ));
+        if (status.state() == MapExportStatus.State.COMPLETED && status.output() != null) {
+            addDrawableChild(Widgets.button(
+                width / 2 - 47, height - 32, 94, FIELD_HEIGHT,
+                Texts.translatable("confluxmap.screen.map_export.open_folder"),
+                ignored -> desktopActions.openDirectory(status.output())
+            ));
+        }
         addDrawableChild(Widgets.button(
-            width / 2 + 4, height - 32, 100, FIELD_HEIGHT,
+            status.state() == MapExportStatus.State.COMPLETED ? width / 2 + 54 : width / 2 + 4,
+            height - 32,
+            status.state() == MapExportStatus.State.COMPLETED ? 94 : 100,
+            FIELD_HEIGHT,
             Texts.translatable("confluxmap.screen.map_export.back_to_map"),
             ignored -> returnToMap()
         ));
@@ -192,7 +208,10 @@ final class MapExportScreen extends ConfluxScreen {
         if (!includeDrawings) {
             request = request.withAnnotations(List.of());
         }
+        clipboardRequestedOutput = null;
+        desktopActions.resetForExport();
         exports.start(request);
+        submittedRequest = request;
         submitted = true;
         rebuild();
     }
@@ -254,7 +273,17 @@ final class MapExportScreen extends ConfluxScreen {
             refreshExportButton();
             return;
         }
-        if (renderedState != exports.status().state()) {
+        final MapExportStatus status = exports.status();
+        if (status.state() == MapExportStatus.State.COMPLETED
+            && status.output() != null
+            && submittedRequest != null
+            && !status.output().equals(clipboardRequestedOutput)) {
+            clipboardRequestedOutput = status.output();
+            desktopActions.copyImage(
+                status.output(), submittedRequest.pixelWidth(), submittedRequest.pixelHeight()
+            );
+        }
+        if (renderedState != status.state()) {
             rebuild();
         }
     }
@@ -339,6 +368,34 @@ final class MapExportScreen extends ConfluxScreen {
             drawCentered(draw, fitToWidth(
                 status.error(), Math.max(40, width - 32)
             ), 108, 0xFFFF7777);
+        }
+        drawDesktopStatus(draw);
+    }
+
+    private void drawDesktopStatus(final GuiDraw draw) {
+        final String key = switch (desktopActions.copyState()) {
+            case COPYING -> "confluxmap.screen.map_export.clipboard.copying";
+            case COPIED -> "confluxmap.screen.map_export.clipboard.copied";
+            case SKIPPED -> "confluxmap.screen.map_export.clipboard.skipped";
+            case FAILED -> "confluxmap.screen.map_export.clipboard.failed";
+            default -> null;
+        };
+        if (key != null) {
+            drawCentered(draw, Texts.translatable(key).getString(), 152,
+                desktopActions.copyState() == MapExportDesktopActions.CopyState.COPIED
+                    ? 0xFF77DD88 : 0xFFFFAA66);
+        }
+        if (desktopActions.openState() == MapExportDesktopActions.OpenState.FAILED) {
+            drawCentered(
+                draw,
+                fitToWidth(
+                    Texts.translatable("confluxmap.screen.map_export.open_folder_failed").getString()
+                        + ": " + desktopActions.openError(),
+                    Math.max(40, width - 32)
+                ),
+                166,
+                0xFFFF7777
+            );
         }
     }
 

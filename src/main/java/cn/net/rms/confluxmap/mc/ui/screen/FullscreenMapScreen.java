@@ -301,6 +301,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private long lastEraserButtonClickMs = Long.MIN_VALUE;
     private ButtonWidget loadStateDetailButton;
     private MapExportScreen exportSelectionScreen;
+    private boolean exportSelectionReturnsToForm;
     private final MapExportSelection exportSelection = new MapExportSelection();
 
     public FullscreenMapScreen(final KeyBinding openMapKey) {
@@ -978,15 +979,24 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final int minZ = (int) Math.floor(centerZ - height / 2.0 * scale);
         final int maxX = (int) Math.ceil(centerX + width / 2.0 * scale) - 1;
         final int maxZ = (int) Math.ceil(centerZ + height / 2.0 * scale) - 1;
-        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new MapExportScreen(
+        final MapExportScreen screen = new MapExportScreen(
             this,
             MapExportBounds.between(minX, minZ, maxX, maxZ),
             MapExportResolution.forLod(currentLod())
-        ));
+        );
+        beginExportSelection(screen, false);
     }
 
     void beginExportSelection(final MapExportScreen screen) {
+        beginExportSelection(screen, true);
+    }
+
+    private void beginExportSelection(
+        final MapExportScreen screen,
+        final boolean returnsToForm
+    ) {
         exportSelectionScreen = screen;
+        exportSelectionReturnsToForm = returnsToForm;
         exportSelection.reset();
         mapPointerPress = false;
         annotationPointerPress = false;
@@ -1025,10 +1035,14 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private void cancelExportSelection() {
         final MapExportScreen screen = exportSelectionScreen;
         exportSelectionScreen = null;
+        final boolean returnsToForm = exportSelectionReturnsToForm;
+        exportSelectionReturnsToForm = false;
         exportSelection.reset();
         mapPointerPress = false;
-        if (screen != null) {
+        if (screen != null && returnsToForm) {
             MinecraftAccess.setScreen(MinecraftClient.getInstance(), screen);
+        } else {
+            rebuildWaypointControls();
         }
     }
 
@@ -1050,6 +1064,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             return;
         }
         exportSelectionScreen = null;
+        exportSelectionReturnsToForm = false;
         exportSelection.reset();
         screen.applySelection(completed.get());
         MinecraftAccess.setScreen(MinecraftClient.getInstance(), screen);
