@@ -21,6 +21,7 @@ import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
+import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -79,11 +80,15 @@ class MapSyncPredictionReuseTest {
         try {
             for (int z = 0; z < 2; z++) {
                 for (int x = 0; x < 2; x++) {
-                    assertTrue(predictions.applyCorrection(
+                    // This test exercises persisted lower-LOD reuse, not tile rendering. Writing
+                    // directly avoids unrelated recomposition work delaying the reducer under test.
+                    assertTrue(corrections.apply(
                         new CorrectionStore.Key(DIM.toString(), 0, x, z),
                         1L,
                         new byte[Proto.PATCH_PRESENCE_BYTES],
                         new PatchCodec.Patch(List.of()),
+                        Proto.PATCH_MODE_RESIDUAL,
+                        PredictorVersion.full(),
                         nowMillis.get()
                     ));
                 }
