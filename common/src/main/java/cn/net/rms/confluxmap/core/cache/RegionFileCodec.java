@@ -106,6 +106,24 @@ public final class RegionFileCodec {
     }
 
     /**
+     * Header and chunk-table data that can be read without inflating the 65,536-column body.
+     * This is used by lightweight history previews to discover the actually explored chunk
+     * bounds before choosing a render scale.
+     */
+    public record RegionMetadata(
+        int rx,
+        int rz,
+        long lastWriteEpochMs,
+        byte[] chunkSourceOrdinal,
+        int[] chunkUpdateEpochSeconds
+    ) {
+        public RegionMetadata {
+            RegionData.requireLength("chunkSourceOrdinal", chunkSourceOrdinal.length, CHUNK_TABLE_ENTRIES);
+            RegionData.requireLength("chunkUpdateEpochSeconds", chunkUpdateEpochSeconds.length, CHUNK_TABLE_ENTRIES);
+        }
+    }
+
+    /**
      * Writes header + chunk table (raw) then the Deflate-compressed column body to {@code rawOut}.
      * Does not close {@code rawOut} - the caller (which owns the tmp-file/force/atomic-move dance)
      * keeps control of the stream's lifecycle.
@@ -182,7 +200,7 @@ public final class RegionFileCodec {
      * (typically {@link java.io.EOFException}); callers already treat both the same way (quarantine
      * and continue empty), so this only wraps validation-logic mismatches in the typed exception.
      */
-    public static RegionData decode(
+    public static RegionMetadata decodeMetadata(
         final InputStream rawIn,
         final int expectedRx,
         final int expectedRz,
@@ -227,6 +245,17 @@ public final class RegionFileCodec {
             chunkUpdateEpochSeconds[i] = header.readInt();
         }
 
+        return new RegionMetadata(rx, rz, lastWriteEpochMs, chunkSourceOrdinal, chunkUpdateEpochSeconds);
+    }
+
+    public static RegionData decode(
+        final InputStream rawIn,
+        final int expectedRx,
+        final int expectedRz,
+        final int expectedLayerOrdinal
+    ) throws IOException, RegionFileException {
+        final RegionMetadata metadata = decodeMetadata(rawIn, expectedRx, expectedRz, expectedLayerOrdinal);
+
         final short[] surfaceY = new short[COLUMN_COUNT];
         final byte[] fluidDepth = new byte[COLUMN_COUNT];
         final byte[] kind = new byte[COLUMN_COUNT];
@@ -270,7 +299,8 @@ public final class RegionFileCodec {
         }
 
         return new RegionData(
-            rx, rz, lastWriteEpochMs, chunkSourceOrdinal, chunkUpdateEpochSeconds,
+            metadata.rx(), metadata.rz(), metadata.lastWriteEpochMs(),
+            metadata.chunkSourceOrdinal(), metadata.chunkUpdateEpochSeconds(),
             surfaceY, fluidDepth, kind, biomeId, baseArgb, biomeTint, overlayArgb, light
         );
     }

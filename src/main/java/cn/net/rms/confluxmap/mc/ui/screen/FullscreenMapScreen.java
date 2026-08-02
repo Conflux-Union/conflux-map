@@ -407,7 +407,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         clearChildren();
         addDrawableChild(Widgets.button(
             width - MARGIN - 80,
-            MARGIN,
+            height - 32,
             80,
             20,
             Texts.translatable("confluxmap.screen.map_export.cancel_selection"),
@@ -1104,11 +1104,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final int minZ = (int) Math.floor(centerZ - height / 2.0 * scale);
         final int maxX = (int) Math.ceil(centerX + width / 2.0 * scale) - 1;
         final int maxZ = (int) Math.ceil(centerZ + height / 2.0 * scale) - 1;
-        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new MapExportScreen(
+        final MapExportScreen screen = new MapExportScreen(
             this,
             MapExportBounds.between(minX, minZ, maxX, maxZ),
             MapExportResolution.forLod(currentLod())
-        ));
+        );
+        beginExportSelection(screen);
     }
 
     void beginExportSelection(final MapExportScreen screen) {
@@ -1149,13 +1150,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     private void cancelExportSelection() {
-        final MapExportScreen screen = exportSelectionScreen;
         exportSelectionScreen = null;
         exportSelection.reset();
         mapPointerPress = false;
-        if (screen != null) {
-            MinecraftAccess.setScreen(MinecraftClient.getInstance(), screen);
-        }
+        rebuildWaypointControls();
     }
 
     private void selectExportCorner(final double mouseX, final double mouseY) {
@@ -1373,12 +1371,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 return true;
             }
             if (button == 1) {
-                if (exportSelection.first().isEmpty()) {
-                    cancelExportSelection();
-                } else {
-                    exportSelection.reset();
-                    rebuildExportSelectionControls();
-                }
+                cancelExportSelection();
                 return true;
             }
             if (button == 0) {
@@ -1851,6 +1844,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         drawPlayerMarker(matrices, tickDelta);
         drawExportSelection(draw, mouseX, mouseY);
         drawDimensionLabel(draw);
+        drawWorldProfileLabel(draw);
         drawLayerLabel(draw);
         drawPredictionLabel(draw);
         drawServerSyncLabel(draw);
@@ -2483,6 +2477,48 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     /**
+     * Renders the terrain and player arrow for the structure-candidate dialog with the same tile
+     * renderer the fullscreen map uses. The dialog owns the viewport while it is visible, so tile
+     * loading and server map synchronization follow the preview rather than the hidden map's last
+     * camera position. The fullscreen camera state itself is restored before returning.
+     */
+    void drawStructureCandidatePreview(
+        final GuiDraw draw,
+        final StructureCandidatePreview.Layout preview,
+        final float tickDelta
+    ) {
+        final int previousWidth = width;
+        final int previousHeight = height;
+        final double previousCenterX = centerX;
+        final double previousCenterZ = centerZ;
+        final double previousScale = scale;
+        final MatrixStack matrices = draw.matrices();
+
+        width = preview.width();
+        height = preview.height();
+        centerX = preview.centerBlockX();
+        centerZ = preview.centerBlockZ();
+        scale = preview.blocksPerPixel();
+        RenderUtil.enableScissor(MinecraftClient.getInstance(), preview.x(), preview.y(), width, height);
+        matrices.push();
+        try {
+            matrices.translate(preview.x(), preview.y(), 0);
+            tiles.setViewpoint((int) Math.floor(centerX), (int) Math.floor(centerZ));
+            predictionTiles.setViewpoint((int) Math.floor(centerX), (int) Math.floor(centerZ));
+            drawTiles(matrices);
+            drawPlayerMarker(matrices, tickDelta);
+        } finally {
+            matrices.pop();
+            RenderUtil.disableScissor();
+            width = previousWidth;
+            height = previousHeight;
+            centerX = previousCenterX;
+            centerZ = previousCenterZ;
+            scale = previousScale;
+        }
+    }
+
+    /**
      * Draws the real tile grid, and - when a seed-predicted underlay is available for the
      * current dimension+layer (only {@link MapLayer.Type#SURFACE} in the Overworld and {@link
      * MapLayer.Type#END_SURFACE} in the End; never a cave/nether layer, which cubiomes can't
@@ -2630,7 +2666,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private void drawStructures(final GuiDraw draw, final int mouseX, final int mouseY) {
         hoveredStructure = null;
         if (!companion.structureSearchAllowed() || !config.predictionShowStructures
-            || currentLod() > 2 || !predictionState.seedKnown()) {
+            || FullscreenZoomLabel.isAtOrBelow(scale, config.predictionStructureIconHideZoom)
+            || !predictionState.seedKnown()) {
             return;
         }
         final int minX = (int) Math.floor(centerX - width / 2.0 * scale);
@@ -2858,12 +2895,36 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         draw.drawTextWithShadow(this.textRenderer, text, MARGIN, MARGIN, TEXT_COLOR);
     }
 
+    private void drawWorldProfileLabel(final GuiDraw draw) {
+        final Optional<ClientWorldProfile> profile = ConfluxMapClient.get().clientMultiworldService().currentProfile();
+        if (profile.isEmpty()) {
+            return;
+        }
+        final String name = Texts.translatable(
+            "confluxmap.map.client_world.current", profile.get().displayName()
+        ).getString();
+        draw.drawTextWithShadow(
+            this.textRenderer, name, MARGIN,
+            MARGIN + this.textRenderer.fontHeight + 2, 0xFFFFE066
+        );
+        final String id = Texts.translatable(
+            "confluxmap.map.client_world.id", shortProfileId(profile.get().id())
+        ).getString();
+        draw.drawTextWithShadow(
+            this.textRenderer, id, MARGIN,
+            MARGIN + (this.textRenderer.fontHeight + 2) * 2, 0xFFBBBBBB
+        );
+    }
+
     /** Deliverable D: the fullscreen map shows the active layer for the current dimension. */
     private void drawLayerLabel(final GuiDraw draw) {
         final String text = Texts.translatable(
             "confluxmap.layer." + layerSelector.current().layer().type().id()
         ).getString();
-        draw.drawTextWithShadow(this.textRenderer, text, MARGIN, MARGIN + this.textRenderer.fontHeight + 2, TEXT_COLOR);
+        draw.drawTextWithShadow(
+            this.textRenderer, text, MARGIN,
+            MARGIN + mapInfoRows() * (this.textRenderer.fontHeight + 2), TEXT_COLOR
+        );
     }
 
     private void drawPredictionLabel(final GuiDraw draw) {
@@ -2889,7 +2950,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 : modeLine;
         }
         draw.drawTextWithShadow(
-            this.textRenderer, text, MARGIN, MARGIN + this.textRenderer.fontHeight * 2 + 4, TEXT_COLOR
+            this.textRenderer, text, MARGIN,
+            MARGIN + (mapInfoRows() + 1) * (this.textRenderer.fontHeight + 2), TEXT_COLOR
         );
     }
 
@@ -2935,8 +2997,16 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 return;
             }
         }
-        final int row = predictionLabelVisible() ? 3 : 2;
+        final int row = (predictionLabelVisible() ? 3 : 2) + mapInfoRows() - 1;
         draw.drawTextWithShadow(this.textRenderer, text, MARGIN, MARGIN + row * (this.textRenderer.fontHeight + 2), color);
+    }
+
+    private int mapInfoRows() {
+        return ConfluxMapClient.get().clientMultiworldService().currentProfile().isPresent() ? 3 : 1;
+    }
+
+    private static String shortProfileId(final String id) {
+        return id.length() <= 12 ? id : id.substring(0, 8) + "..." + id.substring(id.length() - 4);
     }
 
     private static String formatSyncDuration(final long durationNanos) {

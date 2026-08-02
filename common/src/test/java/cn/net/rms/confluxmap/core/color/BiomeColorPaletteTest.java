@@ -27,4 +27,13 @@ class BiomeColorPaletteTest {
         assertNotEquals(plains, BiomeColorPalette.color("example:plains"));
         assertEquals(Argb.TRANSPARENT, BiomeColorPalette.color(null));
     }
+
+    @Test
+    void vanillaBiomesUseTerrainOrientedColorsInsteadOfAHashRainbow() {
+        assertEquals(0xFF8FB95B, BiomeColorPalette.color("minecraft:plains"));
+        assertEquals(0xFF6FA45A, BiomeColorPalette.color("minecraft:forest"));
+        assertEquals(0xFF4B85B7, BiomeColorPalette.color("minecraft:ocean"));
+        assertEquals(0xFFD8C17A, BiomeColorPalette.color("minecraft:desert"));
+        assertEquals(0xFFE5EEF2, BiomeColorPalette.color("minecraft:snowy_plains"));
+    }
 }

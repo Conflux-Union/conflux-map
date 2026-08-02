@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.core.net;
 
 import cn.net.rms.confluxmap.core.predict.FlatBaseline;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
+import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -153,6 +154,9 @@ public final class MsgCodec {
     }
 
     private static void encodeHelloPolicyS2C(final DataOutputStream out, final HelloPolicyS2C m) throws IOException, ProtoException {
+        if (!WorldIdentity.isCanonicalUuid(m.worldId())) {
+            throw new ProtoException("HELLO_POLICY worldId is not a canonical UUID");
+        }
         final HelloPolicyS2C.Flags f = m.flags();
         int flagBits = 0;
         if (f.seedGranted()) {
@@ -556,6 +560,9 @@ public final class MsgCodec {
             (flagBits & 128) != 0
         );
         final String worldId = readUtf(in);
+        if (!WorldIdentity.isCanonicalUuid(worldId)) {
+            throw new ProtoException("HELLO_POLICY worldId is not a canonical UUID");
+        }
         final String worldgenVersion = readUtf(in);
         final int maxBytesPerSec = in.readInt();
         final int maxTilesPerReq = in.readUnsignedShort();

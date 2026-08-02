@@ -290,6 +290,75 @@ class StructureIndexTest {
         assertEquals(-800, marker.blockZ());
     }
 
+    @Test
+    void candidateSearchReturnsNearestMarkersInDistanceOrderAndCapsTheResult() {
+        final List<String> batchRequests = new ArrayList<>();
+        final StructureIndex index = new StructureIndex(
+            tempDir.resolve("cache"),
+            WorldIdentity.singleplayer("candidate-world"),
+            DimensionId.OVERWORLD,
+            new StructureIndex.CandidateProvider() {
+                @Override
+                public long[] candidates(
+                    final StructureIndex.StructureType type,
+                    final int regionX,
+                    final int regionZ
+                ) {
+                    throw new AssertionError("candidate finder must use the bounded batch lookup");
+                }
+
+                @Override
+                public long[] candidates(
+                    final StructureIndex.StructureType type,
+                    final int minRegionX,
+                    final int minRegionZ,
+                    final int maxRegionX,
+                    final int maxRegionZ
+                ) {
+                    batchRequests.add(minRegionX + "," + minRegionZ + ":" + maxRegionX + "," + maxRegionZ);
+                    final List<Long> positions = new ArrayList<>();
+                    for (int regionZ = minRegionZ; regionZ <= maxRegionZ; regionZ++) {
+                        for (int regionX = minRegionX; regionX <= maxRegionX; regionX++) {
+                            positions.add(pack(regionX * 512, regionZ * 512));
+                        }
+                    }
+                    final long[] packed = new long[positions.size()];
+                    for (int index = 0; index < positions.size(); index++) {
+                        packed[index] = positions.get(index);
+                    }
+                    return packed;
+                }
+            }
+        );
+
+        final List<StructureIndex.Marker> nearest = index.findNearestCandidates(
+            StructureIndex.StructureType.VILLAGE, 0, 0, 3
+        );
+
+        assertEquals(3, nearest.size());
+        assertEquals(0, nearest.get(0).blockX());
+        assertEquals(0, nearest.get(0).blockZ());
+        assertTrue(distanceSquared(nearest.get(0)) <= distanceSquared(nearest.get(1)));
+        assertTrue(distanceSquared(nearest.get(1)) <= distanceSquared(nearest.get(2)));
+        final List<StructureIndex.Marker> maximum = index.findNearestCandidates(
+            StructureIndex.StructureType.VILLAGE, 0, 0, 100
+        );
+        assertEquals(32, maximum.size());
+        assertEquals(2, batchRequests.size(), "each candidate rectangle needs one native batch");
+    }
+
+    @Test
+    void normalStructureLabelsRemainVisibleAtPointOneTwoFiveZoom() {
+        assertTrue(StructureIndex.StructureType.VILLAGE.displaysAt(8.0));
+        assertFalse(StructureIndex.StructureType.VILLAGE.displaysAt(8.01));
+        assertTrue(StructureIndex.StructureType.NETHER_FOSSIL.displaysAt(4.0));
+        assertFalse(StructureIndex.StructureType.NETHER_FOSSIL.displaysAt(4.01));
+    }
+
+    private static long distanceSquared(final StructureIndex.Marker marker) {
+        return (long) marker.blockX() * marker.blockX() + (long) marker.blockZ() * marker.blockZ();
+    }
+
     private static long pack(final int x, final int z) {
         return ((long) x << 32) | (z & 0xFFFF_FFFFL);
     }
