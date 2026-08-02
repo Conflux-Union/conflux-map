@@ -71,6 +71,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
     private List<String> setNames = List.of(WaypointSet.DEFAULT_NAME);
     private int selectedSetIndex;
     private int selectedColor;
+    private String errorKey;
 
     private WaypointEditScreen(
         final Screen parent,
@@ -204,6 +205,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         nameField.setMaxLength(64);
         nameField.setText(initialName);
         addDrawableChild(nameField);
+        setInitialFocus(nameField);
 
         final int coordWidth = 62;
         final int coordGap = 7;
@@ -300,6 +302,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         addDrawableChild(Widgets.button(
             centerX + 4, height - 32, 100, FIELD_HEIGHT, Texts.translatable("confluxmap.screen.waypoint.cancel"), b -> onCancel()
         ));
+        setEnterAction(() -> doneButton != null && doneButton.active, this::onDone);
     }
 
     private TextFieldWidget numericField(final int x, final int y, final int w, final String initial) {
@@ -393,19 +396,23 @@ public final class WaypointEditScreen extends ConfluxScreen {
         if (createTarget == CreateTarget.PUBLIC && !sharedWaypoints.availability().ready()) {
             return;
         }
-        final String name = nameField.getText().trim();
-        if (name.isEmpty()) {
+        final var validationError = WaypointFormValidation.error(
+            nameField.getText(), xField.getText(), yField.getText(), zField.getText()
+        );
+        if (validationError.isPresent()) {
+            errorKey = validationError.get() == WaypointFormValidation.Error.NAME_REQUIRED
+                ? "confluxmap.screen.waypoint.error.name_required"
+                : "confluxmap.screen.waypoint.error.invalid_coordinates";
             return;
         }
-        final double x = parseOr(xField.getText(), initialX);
-        final double y = parseOr(yField.getText(), initialY);
-        final double z = parseOr(zField.getText(), initialZ);
-        if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) {
-            return;
-        }
+        errorKey = null;
+        final WaypointFormValidation.Values values = WaypointFormValidation.values(
+            nameField.getText(), xField.getText(), yField.getText(), zField.getText()
+        );
         final Waypoint waypoint = new Waypoint(
             editingId == null ? UUID.randomUUID() : editingId,
-            name, dimensionId, x, y, z, selectedColor, selectedSetName(),
+            values.name(), dimensionId, values.x(), values.y(), values.z(),
+            selectedColor, selectedSetName(),
             initialVisible, type, createdAtEpochMs
         );
         if (editingId == null && createTarget != CreateTarget.LOCAL) {
@@ -446,6 +453,20 @@ public final class WaypointEditScreen extends ConfluxScreen {
             }
             updatePublicDoneButton();
         }
+        refreshDoneButton();
+    }
+
+    private void refreshDoneButton() {
+        if (doneButton == null || nameField == null || xField == null || yField == null || zField == null) {
+            return;
+        }
+        final boolean localAvailable = createTarget != CreateTarget.LOCAL
+            || boundLocalStore != null && boundLocalStore.persistenceWritable();
+        final boolean publicAvailable = createTarget != CreateTarget.PUBLIC
+            || sharedWaypoints.availability().ready();
+        doneButton.active = localAvailable && publicAvailable && WaypointFormValidation.error(
+            nameField.getText(), xField.getText(), yField.getText(), zField.getText()
+        ).isEmpty();
     }
 
     private void updatePublicDoneButton() {
@@ -459,14 +480,6 @@ public final class WaypointEditScreen extends ConfluxScreen {
         );
     }
 
-    private static double parseOr(final String text, final double fallback) {
-        try {
-            return Double.parseDouble(text);
-        } catch (final NumberFormatException e) {
-            return fallback;
-        }
-    }
-
     @Override
     protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
         draw.renderBackground(this, mouseX, mouseY, tickDelta);
@@ -477,6 +490,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
             drawCenteredLabel(draw, Texts.translatable("confluxmap.screen.waypoint.set").getString(), 104);
         }
         drawCenteredLabel(draw, Texts.translatable("confluxmap.screen.waypoint.color").getString(), 140);
+        if (errorKey != null) {
+            drawCenteredLabel(draw, Texts.translatable(errorKey).getString(), height - 50);
+        }
     }
 
     private void drawCenteredLabel(final GuiDraw draw, final String text, final int y) {

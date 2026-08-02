@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.compat;
 
+import cn.net.rms.confluxmap.mc.ui.widget.ConfluxTextButton;
 import java.util.function.Consumer;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.ClickableWidget;
@@ -19,11 +20,7 @@ public final class Widgets {
         final Text message,
         final ButtonWidget.PressAction onPress
     ) {
-        //#if MC>=11904
-        //$$ return ButtonWidget.builder(message, onPress).dimensions(x, y, width, height).build();
-        //#else
-        return new ButtonWidget(x, y, width, height, message, onPress);
-        //#endif
+        return new ConfluxTextButton(x, y, width, height, message, onPress);
     }
 
     public static int x(final ClickableWidget widget) {

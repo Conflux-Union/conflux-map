@@ -4,18 +4,25 @@ import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.compat.Texts;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.function.BooleanSupplier;
 //#if MC>=12000
 //$$ import net.minecraft.client.gui.DrawContext;
 //#else
 import net.minecraft.client.util.math.MatrixStack;
 //#endif
+//#if MC>=12109
+//$$ import net.minecraft.client.input.KeyInput;
+//#endif
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.text.Text;
+import org.lwjgl.glfw.GLFW;
 
 /** Screen base that keeps the MatrixStack-to-DrawContext rewrite at one lifecycle seam. */
 public abstract class ConfluxScreen extends Screen {
     private final Map<ClickableWidget, String> disabledTooltipKeys = new IdentityHashMap<>();
+    private Runnable enterAction;
+    private BooleanSupplier enterActionEnabled = () -> false;
     //#if MC>=12000
     //$$ /**
     //$$  * Screen.render owns the widget loop, but its implicit background must not cover
@@ -130,12 +137,67 @@ public abstract class ConfluxScreen extends Screen {
 
     protected abstract void renderContents(GuiDraw draw, int mouseX, int mouseY, float tickDelta);
 
+    /** Makes Enter activate the screen's visible primary action when it is available. */
+    protected final void setEnterAction(
+        final BooleanSupplier enabled,
+        final Runnable action
+    ) {
+        enterActionEnabled = enabled;
+        enterAction = action;
+    }
+
+    /** Removes an Enter binding when a rebuilt screen no longer exposes that action. */
+    protected final void clearEnterAction() {
+        enterActionEnabled = () -> false;
+        enterAction = null;
+    }
+
+    @Override
+    //#if MC>=12109
+    //$$ public boolean keyPressed(final KeyInput input) {
+    //$$     final int keyCode = input.key();
+    //#else
+    public boolean keyPressed(final int keyCode, final int scanCode, final int modifiers) {
+    //#endif
+        if ((keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER)
+            && enterAction != null && enterActionEnabled.getAsBoolean()) {
+            enterAction.run();
+            return true;
+        }
+        //#if MC>=12109
+        //$$ return super.keyPressed(input);
+        //#else
+        return super.keyPressed(keyCode, scanCode, modifiers);
+        //#endif
+    }
+
     protected void renderAfterWidgets(
         final GuiDraw draw,
         final int mouseX,
         final int mouseY,
         final float tickDelta
     ) {
+    }
+
+    /** Draws a stable monochrome scrollbar for a row-based viewport. */
+    protected final void drawListScrollbar(
+        final GuiDraw draw,
+        final int x,
+        final int top,
+        final int height,
+        final int totalRows,
+        final int visibleRows,
+        final int offset
+    ) {
+        if (totalRows <= visibleRows || visibleRows <= 0 || height <= 0) {
+            return;
+        }
+        final int thumbHeight = Math.max(10, height * visibleRows / totalRows);
+        final int maxOffset = totalRows - visibleRows;
+        final int travel = Math.max(1, height - thumbHeight);
+        final int thumbY = top + Math.round(travel * (offset / (float) maxOffset));
+        draw.fill(x, top, x + 2, top + height, 0xFF3A3A3A);
+        draw.fill(x, thumbY, x + 2, thumbY + thumbHeight, 0xFFFFFFFF);
     }
 
     /** Associates one inactive control with the translated reason it cannot be used. */
