@@ -87,7 +87,7 @@ class MapSyncPredictionReuseTest {
                     ));
                 }
             }
-            awaitIdle(predictions);
+            awaitLowerCoverage(predictions, nowMillis[0], PredictionTileService.LowerCoverageState.READY);
 
             client.reportViewport(DIM, 1, 0, 0, 0, 0);
             nowMillis[0] += 400L;
@@ -97,7 +97,7 @@ class MapSyncPredictionReuseTest {
             nowMillis[0] += 5_001L;
             client.clearViewport();
             client.reportViewport(DIM, 1, 0, 0, 0, 0);
-            awaitIdle(predictions);
+            awaitLowerCoverage(predictions, nowMillis[0], PredictionTileService.LowerCoverageState.READY);
             nowMillis[0] += 400L;
             client.reportViewport(DIM, 1, 0, 0, 0, 0);
             assertTrue(sent.isEmpty(), "a short revisit must keep using the completed cache");
@@ -108,7 +108,9 @@ class MapSyncPredictionReuseTest {
 
             client.clearViewport();
             client.reportViewport(DIM, 1, 0, 0, 0, 0);
-            awaitIdle(predictions);
+            awaitLowerCoverage(
+                predictions, nowMillis[0], PredictionTileService.LowerCoverageState.MISSING_OR_STALE
+            );
             nowMillis[0] += 400L;
             awaitRequest(client, sent);
             assertEquals(1, sent.size(), "expired lower-LOD validation must make the parent plannable again");
@@ -122,12 +124,26 @@ class MapSyncPredictionReuseTest {
         }
     }
 
-    private static void awaitIdle(final PredictionTileService service) throws InterruptedException {
+    /**
+     * Waits for the exact lower-LOD coverage state used by the next viewport poll. Queue idleness
+     * alone is only an implementation detail; this test must synchronize on the observable
+     * READY/MISSING decision that MapSyncClient consumes.
+     */
+    private static void awaitLowerCoverage(
+        final PredictionTileService service,
+        final long nowMillis,
+        final PredictionTileService.LowerCoverageState expected
+    ) throws InterruptedException {
         final long deadline = System.currentTimeMillis() + 5_000L;
-        while (!service.isIdleForTest() && System.currentTimeMillis() < deadline) {
+        PredictionTileService.LowerCoverageState actual;
+        do {
+            actual = service.prepareFreshLowerCoverage(DIM, 1, 0, 0, nowMillis);
+            if (actual == expected) {
+                return;
+            }
             Thread.sleep(10L);
-        }
-        assertTrue(service.isIdleForTest(), "prediction tile service did not drain");
+        } while (System.currentTimeMillis() < deadline);
+        assertEquals(expected, actual, "lower-LOD coverage did not reach the expected terminal state");
     }
 
     private static void awaitRequest(
