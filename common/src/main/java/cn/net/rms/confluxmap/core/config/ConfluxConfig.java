@@ -138,6 +138,8 @@ public final class ConfluxConfig {
     /** View filter for the predicted plane; EVERYWHERE is the honest default. */
     public PredictionViewMode predictionViewMode = PredictionViewMode.EVERYWHERE;
     public boolean predictionShowStructures = true;
+    /** Smallest fullscreen-map zoom at which ordinary predicted structures remain visible. */
+    public StructureMarkerZoom structureMarkerZoom = StructureMarkerZoom.ZOOM_0_125;
     /** Per-version and per-dimension structure-type visibility profiles. */
     public StructureVisibilityConfig predictionStructureVisibility = new StructureVisibilityConfig();
     /** Pan-settle debounce, clamped to 100..2000 ms. */
@@ -202,6 +204,7 @@ public final class ConfluxConfig {
         c.predictionNetworkSync = predictionNetworkSync;
         c.predictionViewMode = predictionViewMode;
         c.predictionShowStructures = predictionShowStructures;
+        c.structureMarkerZoom = structureMarkerZoom;
         c.predictionStructureVisibility = predictionStructureVisibility == null
             ? new StructureVisibilityConfig()
             : predictionStructureVisibility.copy();
@@ -274,6 +277,9 @@ public final class ConfluxConfig {
             predictionStructureVisibility = new StructureVisibilityConfig();
         } else {
             predictionStructureVisibility.normalize();
+        }
+        if (structureMarkerZoom == null) {
+            structureMarkerZoom = StructureMarkerZoom.ZOOM_0_125;
         }
         predictionDebounceMs = clamp(predictionDebounceMs, 100, 2000);
         surveyReminderGameOpenMillis = Math.max(0L, surveyReminderGameOpenMillis);

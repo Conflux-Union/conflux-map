@@ -2515,7 +2515,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private void drawStructures(final GuiDraw draw, final int mouseX, final int mouseY) {
         hoveredStructure = null;
         if (!companion.structureSearchAllowed() || !config.predictionShowStructures
-            || currentLod() > 2 || !predictionState.seedKnown()) {
+            || !config.structureMarkerZoom.displaysAt(scale) || !predictionState.seedKnown()) {
             return;
         }
         final int minX = (int) Math.floor(centerX - width / 2.0 * scale);

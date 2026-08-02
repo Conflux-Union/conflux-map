@@ -7,6 +7,7 @@ import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.config.StructureMarkerZoom;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
@@ -505,6 +506,12 @@ public final class ConfigScreen extends ConfluxScreen {
                     structureReason == null, structureReason
                 );
                 y = addEnumRow(
+                    y, "confluxmap.config.prediction.structure_zoom", StructureMarkerZoom.values(),
+                    () -> config.structureMarkerZoom, v -> config.structureMarkerZoom = v,
+                    ConfigScreen::structureMarkerZoomKey,
+                    structureReason == null, structureReason
+                );
+                y = addEnumRow(
                     y, "confluxmap.config.prediction.view_mode", PredictionViewMode.values(),
                     () -> config.predictionViewMode,
                     v -> {
@@ -763,6 +770,11 @@ public final class ConfigScreen extends ConfluxScreen {
             default:
                 return "confluxmap.config.prediction.mode.everywhere";
         }
+    }
+
+    private static String structureMarkerZoomKey(final StructureMarkerZoom zoom) {
+        return "confluxmap.config.prediction.structure_zoom."
+            + zoom.name().toLowerCase(java.util.Locale.ROOT);
     }
 
     @Override

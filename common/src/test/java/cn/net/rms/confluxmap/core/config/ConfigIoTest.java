@@ -44,6 +44,7 @@ class ConfigIoTest {
 
         // Absent fields keep their defaults; out-of-range values are clamped.
         assertEquals(new ConfluxConfig().predictionDebounceMs, loaded.predictionDebounceMs);
+        assertEquals(StructureMarkerZoom.ZOOM_0_125, loaded.structureMarkerZoom);
         assertTrue(loaded.annotationsOnHud);
         assertEquals(ConfluxConfig.DEFAULT_ANNOTATION_ERASER_SIZE, loaded.annotationEraserSize);
         assertEquals(new ConfluxConfig().fullscreenDisplayMode, loaded.fullscreenDisplayMode);
@@ -69,6 +70,7 @@ class ConfigIoTest {
         final String rewritten = Files.readString(file, StandardCharsets.UTF_8);
         assertTrue(rewritten.contains("\"predictionDebounceMs\""));
         assertTrue(rewritten.contains("\"predictionStructureVisibility\""));
+        assertTrue(rewritten.contains("\"structureMarkerZoom\": \"ZOOM_0_125\""));
         assertTrue(rewritten.contains("\"annotationsOnHud\""));
         assertTrue(rewritten.contains("\"annotationEraserSize\""));
         assertTrue(rewritten.contains("\"fullscreenDisplayMode\""));
