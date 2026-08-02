@@ -4,128 +4,102 @@
 
 Conflux Map is a Fabric client-side minimap and world map
 
-| Build      | Loads on               |
-|------------|------------------------|
-| `1.17.1`   | 1.17.1                 |
-| `1.21.1`   | 1.21, 1.21.1           |
-| `1.21.3`   | 1.21.2, 1.21.3         |
-| `1.21.4`   | 1.21.4                 |
-| `1.21.5`   | 1.21.5                 |
-| `1.21.8`   | 1.21.6, 1.21.7, 1.21.8 |
-| `1.21.9`   | 1.21.9, 1.21.10        |
-| `1.21.11`  | 1.21.11                |
-| `26.1.2`   | 26.1, 26.1.1, 26.1.2   |
-| `26.2`     | 26.2                   |
+| Build      | Loads on                | Fabric | Paper plugin |
+|------------|-------------------------|:------:|:------------:|
+| `1.17.1`   | 1.17.1                  | ✓      | —            |
+| `1.21.1`   | 1.21, 1.21.1            | ✓      | ✓            |
+| `1.21.3`   | 1.21.2, 1.21.3          | ✓      | ✓            |
+| `1.21.4`   | 1.21.4                  | ✓      | ✓            |
+| `1.21.5`   | 1.21.5                  | ✓      | ✓            |
+| `1.21.8`   | 1.21.6, 1.21.7, 1.21.8  | ✓      | ✓            |
+| `1.21.9`   | 1.21.9, 1.21.10         | ✓      | ✓            |
+| `1.21.11`  | 1.21.11                 | ✓      | ✓            |
+| `26.1.2`   | 26.1, 26.1.1, 26.1.2    | ✓      | ✓            |
+| `26.2`     | 26.2                    | ✓      | ✓            |
 
 ## Highlights
 
-- **The map remembers where you've been.** Explored terrain is cached on disk
-  per world, server, dimension, and layer, so coming back never means starting
-  from a blank map.
-- **Unexplored doesn't mean empty.** A seed-based preview sketches biomes,
-  terrain height, and trees for areas you haven't visited, and marks possible
-  structure locations you can search by name. Real terrain draws over the
-  guess as you explore.
-- **Client first, optional server support.** Everything works in singleplayer with zero setup.
-  Fabric servers use the matching mod jar; Paper 1.21.1 through 26.2 uses the standalone
-  `confluxmap-paper` plugin. Either companion can additionally serve real-terrain corrections,
-  shared waypoints, and chunk-load-level overlays, each gated behind an explicit operator opt-in.
+- **Full-map sync and public waypoints.** Eliminate blank map tiles. New players
+  can see the live server-wide map as soon as they join, and find coordinates
+  for farms and builds through public waypoints instead of adding each one manually.
+- **Extremely low bandwidth use.** A predicted map plus an authoritative map,
+  tiled storage, incremental updates, and more compact data structures keep each
+  map sync between a few hundred bytes and a few hundred kilobytes.
+- **One client JAR for the complete map experience.** There is no need to install
+  separate mods for a minimap, world map, biome preview, chunk-load-state map,
+  map sync, and waypoint sync. One Conflux Map client JAR covers most of the
+  features players normally assemble from multiple map mods.
 
 ## Features
 
-- **Minimap HUD** — square or round frame, any size from 64 to 256 px, four
-  zoom levels, optional rotation with your facing. Placement is free-form:
-  open the placement screen from the settings and drag the map wherever you
-  want it (configs saved with the old four-corner option migrate on first
-  launch). The info lines show coordinates, the current biome, and the active
-  map layer, and the surface layer can darken at night and in unlit areas. The
-  HUD steps aside automatically while an inventory-style screen is open,
-  leaving room for JEI/REI overlays.
-- **Fullscreen world map** — pan and zoom with cursor-anchored zooming over
-  multi-resolution tiles, with an optional chunk grid. Right-clicking a spot
-  opens a small menu: set a waypoint there, share the coordinates in chat, or
-  teleport there if you have the permission.
-- **Three fullscreen base layers** — normal terrain, biome colors, and server
-  chunk load levels. The biome layer paints each biome in one stable color.
-  The load-level layer shows which chunks the server currently keeps loaded,
-  either as readable bands or as exact ticket levels, and only appears when
-  the server companion explicitly allows it.
-- **Cave / Nether / End layers** — automatic underground detection in the
-  Overworld; Nether current-layer / ceiling / manual-Y-slice modes; End
-  void-background rendering.
-- **Per-server world profiles** — on servers without the companion, worlds
-  behind the same address (such as proxy networks) are told apart by terrain
-  fingerprint, so one server's map never bleeds into another's. When the
-  upstream world cannot be identified, map writes pause until you choose a
-  profile; profiles are created, renamed, and unbound from the fullscreen map.
-- **Waypoints and death points** — create, edit, color, organize into sets, and
-  toggle; death points are automatic (the last five per dimension are kept);
-  strict per-dimension rendering; edge-of-minimap direction indicators for
-  out-of-range waypoints; map markers show whether a point sits above or
-  below you.
-- **In-world waypoint markers** — an optional light beam at each waypoint and a
-  floating name and distance above it. Each can be turned off on its own, and
-  you can set how far away they still show.
-- **Waypoint set management** — create, rename, and delete local sets; select
-  multiple points (or every point in the current filter) and move them to
-  another set in one operation. Deleting a set permanently deletes every
-  waypoint it contains.
-- **Import from other mods** — bring your existing Xaero's Minimap and VoxelMap
-  waypoints for the current world over in one click. Locations you already
-  have are skipped, and your original files are left untouched.
-- **Map drawings** — a private annotation layer on the fullscreen map: lines,
-  circles, rectangles, a freehand brush, and an eraser, in any color, with an
-  optional text label per shape. Shapes can be moved, recolored, and deleted,
-  with undo/redo, and each shape is either kept until disconnect or persisted
-  per world and dimension. Drawings can also show on the minimap HUD if you
-  want them there. The toolbar starts collapsed, so it only takes up space
-  while you are actually drawing.
-- **Recent player trail** — your path over the last two minutes drawn as dots
-  on the minimap and fullscreen map. Trail duration (1 to 120 seconds), dot
-  size, and the whole overlay can be tuned or turned off in the settings.
-- **Shared and chat-shared coordinates** — an optional server-owned shared
-  waypoint catalog; on servers without the companion, coordinates shared in
-  chat can still be imported with a click.
-- **Entity radar** — players, hostile mobs, passive mobs, and everything else
-  (dropped items, vehicles, projectiles) as separate toggles, plus optional
-  player names and a shared entity cap. Icons use real entity heads and item
-  forms at an adjustable size; crowded markers collapse into counted clusters,
-  with players always kept separate. A server can disallow the radar for
-  cooperating clients, in which case the settings page says so instead of
-  pretending the toggles work.
-- **Seed preview** — panning into unexplored Overworld or End terrain shows an
-  instant seed-based guess at the biomes, terrain height, and trees, which the
-  real map draws over as you explore it. Superflat worlds are recognized and
-  previewed too. Backed by a bundled
-  [cubiomes](https://github.com/Cubitect/cubiomes) native build.
-- **Structure layer and search** — every vanilla structure set available in
-  the running game version is covered across the Overworld, Nether, and End.
-  Each type gets a recognizable icon drawn from the game's own item and block
-  textures, a per-type visibility filter (remembered per game version and
-  dimension), and distinct frames for seed-derived candidates versus
-  server-confirmed locations. A search box jumps to the nearest candidate.
-  Variants that share one placement set, such as village styles and warm/cold
-  ocean ruins, are grouped together.
-- **Seed preview area modes** — cycle with `P`: *everywhere* (default),
-  *generated-only* (preview masked to chunks the server generated), or
-  *visited-only* (pure captured map, no preview).
-- **PNG export** — render any rectangular region of the world map to a PNG.
-  Click two corners on the map or type the coordinates, choose 1 to 16 blocks
-  per pixel with an upfront size estimate, and optionally include your map
-  drawings. The export runs in the background with progress and cancellation,
-  and the file lands in `confluxmap/exports/` under the game directory, named
-  after the world, dimension, and bounds.
-- **Optional server companion** — a Fabric server can use the matching mod jar, while Paper
-  1.21.1 through 26.2 uses one standalone plugin jar. Both return compact per-column corrections
-  against the real world; the
-  seed, shared waypoint catalog, chunk load levels, and radar permission are
-  shared only when the operator opts in.
-- **Update check** — an optional check on startup that tells you in chat when
-  a newer version is out, with a download link, plus a badge on the map
-  screen.
-- **Settings screen** — everything above is exposed in-game and takes effect
-  immediately, no restart, and every slider also accepts a directly typed
-  value. Full English and Simplified Chinese localization.
+- **Minimap HUD:** Choose a square or round frame, a size from 64 to 256 px,
+  four zoom levels, free placement, and rotation with the player's view. Info lines
+  can show coordinates, biome, and active layer. The minimap automatically leaves
+  room for inventory screens and JEI/REI overlays.
+- **Fullscreen map:** Multi-resolution tiles provide continuous zoom, panning, a
+  chunk grid, and cursor-anchored scaling. Right-click anywhere to create a waypoint,
+  share coordinates, or teleport when permission is available.
+- **Three base layers:** Switch between normal terrain, stable biome colors, and
+  server chunk-load state. Chunk loading can be shown as readable bands or exact
+  ticket levels.
+- **Dimension layers:** The Overworld automatically switches between surface and
+  cave views, the Nether provides current-level and bedrock-roof views, and the End
+  uses a background designed for the void. Surface maps also respond to time of day
+  and local lighting.
+- **Seed preview:** When the world seed is available, unexplored Overworld and End
+  areas immediately show predicted biomes, terrain height, and trees. Captured terrain
+  and server corrections progressively replace the prediction, and Superflat worlds
+  are supported as well.
+- **Structure filters and search:** Every vanilla structure set available in the
+  running game version is covered across the Overworld, Nether, and End. Each type
+  has its own icon and visibility toggle, predicted and server-confirmed positions
+  use different frames, and search jumps directly to the nearest candidate.
+- **Seed preview coverage:** Press `P` to switch between everywhere,
+  server-generated areas, and player-visited areas. The visited-only mode provides
+  a purely authoritative map without unexplored-area predictions.
+- **Per-server world profiles:** Terrain fingerprints keep worlds behind the same
+  server address, including proxy networks, in separate map records. Profiles can
+  be created, renamed, and unbound from the fullscreen map.
+- **Public waypoints and chat sharing:** A server can maintain a public waypoint list
+  for every connected Conflux Map client. Chat coordinates remain available on every
+  server, preview both Conflux Map and Xaero formats before sending, and can be
+  imported with one click.
+- **Local waypoints and death points:** Waypoints support names, colors, sets, and
+  visibility controls, while each dimension keeps the five most recent death points.
+  The Overworld and Nether can optionally show linked waypoints with the 8:1 coordinate
+  conversion applied.
+- **In-world waypoint markers:** Waypoints can appear as beams, names, and distances.
+  Edge indicators point toward targets outside the minimap, and map markers show
+  whether a waypoint is above or below the player. Display ranges are configurable.
+- **Waypoint set management:** Sets can be created, renamed, and deleted. Multiple
+  waypoints, or every result in the current filter, can be moved to another set in
+  one operation.
+- **Import from other mods:** Migrate Xaero's Minimap and VoxelMap waypoints in one
+  click. Duplicate coordinates are skipped automatically, and the original waypoint
+  files remain unchanged.
+- **Map drawing:** Draw lines, circles, rectangles, freehand paths, and text labels,
+  with an adjustable eraser. Shapes can be moved, recolored, deleted, undone, and
+  redone. Each drawing can last until disconnect or persist by world and dimension,
+  and drawings can also appear on the minimap.
+- **Recent player trail:** The last 1 to 120 seconds of movement can be drawn as dots
+  on both maps. Trail duration, dot size, and visibility are configurable.
+- **Entity radar:** Players, hostile mobs, passive and neutral mobs, dropped items,
+  vehicles, and projectiles have separate controls. Markers use matching entity heads
+  or item forms, crowded targets collapse into counted clusters, and players always
+  remain separate.
+- **PNG export:** Select any rectangular map area or enter its coordinates, then
+  export at 1 to 16 blocks per pixel. The exporter estimates the output size, can
+  include map drawings, runs in the background, reports progress, and supports
+  cancellation.
+- **Optional server components:** Fabric servers use the matching mod JAR, while
+  Paper 1.21.1 through 26.2 uses the standalone plugin. Operators can centrally
+  control the world seed, real-terrain corrections, public waypoints, chunk-load
+  state, and entity-radar permission.
+- **Update checks:** The optional startup check provides a download link in chat and
+  a map-screen badge when a new version is available.
+- **In-game settings:** Client settings apply immediately, and every slider also
+  accepts a directly typed value. With MaliLib installed, controls can use key
+  combinations and Conflux Map appears in the A+C configuration screen.
 
 ## Keybinds
 
