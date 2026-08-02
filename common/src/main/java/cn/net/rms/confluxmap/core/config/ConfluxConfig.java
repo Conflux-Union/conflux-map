@@ -13,7 +13,7 @@ import cn.net.rms.confluxmap.core.util.TileMath;
  * {@link #SCHEMA_VERSION} and adding a migration in {@link ConfigIo}.
  */
 public final class ConfluxConfig {
-    public static final int SCHEMA_VERSION = 4;
+    public static final int SCHEMA_VERSION = 5;
     public static final int DEFAULT_MINIMAP_SIZE = 90;
     public static final int MIN_ANNOTATION_ERASER_SIZE = 4;
     public static final int MAX_ANNOTATION_ERASER_SIZE = 64;
@@ -27,12 +27,18 @@ public final class ConfluxConfig {
     public static final int MIN_PLAYER_TRAIL_DOT_SIZE = 1;
     public static final int MAX_PLAYER_TRAIL_DOT_SIZE = 8;
     public static final int DEFAULT_PLAYER_TRAIL_DOT_SIZE = 3;
-    /** Smallest usable map scale (blocks per screen pixel) for structure-icon hiding. */
-    public static final double MIN_PREDICTION_STRUCTURE_ICON_HIDE_SCALE = 0.25;
-    /** Largest usable map scale (blocks per screen pixel) for structure-icon hiding. */
-    public static final double MAX_PREDICTION_STRUCTURE_ICON_HIDE_SCALE = 16.0;
-    /** Default structure-icon hiding threshold: hide once the map is farther out than 8x. */
-    public static final double DEFAULT_PREDICTION_STRUCTURE_ICON_HIDE_SCALE = 8.0;
+    /** Zero disables automatic structure-icon hiding. */
+    public static final double MIN_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM = 0.0;
+    /** Largest configurable displayed fullscreen-map zoom multiplier. */
+    public static final double MAX_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM = 16.0;
+    /** Slider granularity for displayed fullscreen-map zoom multipliers. */
+    public static final double PREDICTION_STRUCTURE_ICON_HIDE_ZOOM_STEP = 0.0625;
+    /** Preserve the old default: hide only at the furthest 0.0625x zoom. */
+    public static final double DEFAULT_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM = 0.0625;
+    /** Schema-v4 lower bound for the now-retired blocks-per-pixel setting. */
+    private static final double LEGACY_MIN_PREDICTION_STRUCTURE_ICON_HIDE_SCALE = 0.25;
+    /** Schema-v4 upper bound for the now-retired blocks-per-pixel setting. */
+    private static final double LEGACY_MAX_PREDICTION_STRUCTURE_ICON_HIDE_SCALE = 16.0;
 
     public int schemaVersion = SCHEMA_VERSION;
 
@@ -152,8 +158,11 @@ public final class ConfluxConfig {
     /** View filter for the predicted plane; EVERYWHERE is the honest default. */
     public PredictionViewMode predictionViewMode = PredictionViewMode.EVERYWHERE;
     public boolean predictionShowStructures = true;
-    /** Hide fullscreen-map structure markers once the map scale is farther out than this value. */
-    public double predictionStructureIconHideScale = DEFAULT_PREDICTION_STRUCTURE_ICON_HIDE_SCALE;
+    /** Hide fullscreen-map structure markers at or below this displayed zoom multiplier. */
+    public double predictionStructureIconHideZoom = DEFAULT_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM;
+    /** Schema-v4 setting retained solely to migrate the incorrectly exposed blocks-per-pixel value. */
+    @Deprecated
+    public Double predictionStructureIconHideScale;
     /** Schema-v3 setting retained solely to migrate old discrete LOD values. */
     @Deprecated
     public Integer predictionStructureMaxLod;
@@ -226,7 +235,7 @@ public final class ConfluxConfig {
         c.predictionNetworkSync = predictionNetworkSync;
         c.predictionViewMode = predictionViewMode;
         c.predictionShowStructures = predictionShowStructures;
-        c.predictionStructureIconHideScale = predictionStructureIconHideScale;
+        c.predictionStructureIconHideZoom = predictionStructureIconHideZoom;
         c.predictionStructureVisibility = predictionStructureVisibility == null
             ? new StructureVisibilityConfig()
             : predictionStructureVisibility.copy();
@@ -302,15 +311,28 @@ public final class ConfluxConfig {
             predictionViewMode = PredictionViewMode.EVERYWHERE;
         }
         if (schemaVersion < 4 && predictionStructureMaxLod != null) {
-            predictionStructureIconHideScale = TileMath.blocksPerPixel(
-                clamp(predictionStructureMaxLod, 0, TileMath.MAX_LOD)
+            final int legacyLod = clamp(predictionStructureMaxLod, 0, TileMath.MAX_LOD);
+            predictionStructureIconHideZoom = legacyLod == TileMath.MAX_LOD
+                ? 0.0
+                : 1.0 / TileMath.blocksPerPixel(legacyLod + 1);
+        } else if (schemaVersion < 5 && predictionStructureIconHideScale != null) {
+            // Schema v4 stored blocks per pixel and normalized this value before use.
+            // Clamp first so hand-edited v4 files retain their old effective behavior.
+            final double legacyScale = clamp(
+                predictionStructureIconHideScale,
+                LEGACY_MIN_PREDICTION_STRUCTURE_ICON_HIDE_SCALE,
+                LEGACY_MAX_PREDICTION_STRUCTURE_ICON_HIDE_SCALE
             );
+            predictionStructureIconHideZoom = 1.0 / legacyScale;
         }
         predictionStructureMaxLod = null;
-        predictionStructureIconHideScale = clamp(
-            predictionStructureIconHideScale,
-            MIN_PREDICTION_STRUCTURE_ICON_HIDE_SCALE,
-            MAX_PREDICTION_STRUCTURE_ICON_HIDE_SCALE
+        predictionStructureIconHideScale = null;
+        predictionStructureIconHideZoom = roundStructureIconHideZoom(
+            clamp(
+                predictionStructureIconHideZoom,
+                MIN_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM,
+                MAX_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM
+            )
         );
         if (predictionStructureVisibility == null) {
             predictionStructureVisibility = new StructureVisibilityConfig();
@@ -330,6 +352,12 @@ public final class ConfluxConfig {
 
     private static double clamp(final double value, final double min, final double max) {
         return Double.isFinite(value) ? Math.max(min, Math.min(max, value)) : min;
+    }
+
+    /** Keep persisted thresholds identical to the values selectable in the settings UI. */
+    private static double roundStructureIconHideZoom(final double value) {
+        return Math.round(value / PREDICTION_STRUCTURE_ICON_HIDE_ZOOM_STEP)
+            * PREDICTION_STRUCTURE_ICON_HIDE_ZOOM_STEP;
     }
 
     /** Returns a normalized snapshot so live config edits cannot bypass recognition safety caps. */

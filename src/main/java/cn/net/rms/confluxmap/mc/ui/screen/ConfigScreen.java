@@ -574,10 +574,11 @@ public final class ConfigScreen extends ConfluxScreen {
                 );
                 y = addDecimalSliderRow(
                     y, "confluxmap.config.prediction.structure_icon_detail_limit",
-                    ConfluxConfig.MIN_PREDICTION_STRUCTURE_ICON_HIDE_SCALE,
-                    ConfluxConfig.MAX_PREDICTION_STRUCTURE_ICON_HIDE_SCALE,
-                    () -> config.predictionStructureIconHideScale,
-                    v -> config.predictionStructureIconHideScale = v,
+                    ConfluxConfig.MIN_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM,
+                    ConfluxConfig.MAX_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM,
+                    ConfluxConfig.PREDICTION_STRUCTURE_ICON_HIDE_ZOOM_STEP,
+                    () -> config.predictionStructureIconHideZoom,
+                    v -> config.predictionStructureIconHideZoom = v,
                     ConfigScreen::structureIconDetailLimitText,
                     structureReason == null, structureReason
                 );
@@ -772,6 +773,7 @@ public final class ConfigScreen extends ConfluxScreen {
         final String labelKey,
         final double min,
         final double max,
+        final double step,
         final DoubleSupplier getter,
         final DoubleConsumer setter,
         final DoubleFunction<String> valueText,
@@ -787,6 +789,7 @@ public final class ConfigScreen extends ConfluxScreen {
                 ROW_HEIGHT - 2,
                 min,
                 max,
+                step,
                 getter.getAsDouble(),
                 value -> {
                     setter.accept(value);

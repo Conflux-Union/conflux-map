@@ -360,7 +360,7 @@
   "confluxmap.config.prediction.enabled": "Seed Preview: %s",
   "confluxmap.config.prediction.network_sync": "Improve Preview with Server Map: %s",
   "confluxmap.config.prediction.show_structures": "Show Possible Structures: %s",
-  "confluxmap.config.prediction.structure_icon_detail_limit": "Structure Icon Hide Zoom: hide beyond %s (larger values keep icons visible farther out)",
+  "confluxmap.config.prediction.structure_icon_detail_limit": "Structure Icon Hide Zoom: hide at or below %s (0x never hides automatically)",
   "confluxmap.screen.config.prediction.seed_disabled_by_server": "This server does not share its world seed",
   "confluxmap.screen.config.prediction.sync_disabled_by_server": "Map sync is disabled by this server",
   "confluxmap.screen.config.prediction.sync_incompatible_server": "This server's Conflux Map version is not compatible with safe map sync",

@@ -293,7 +293,7 @@
   "confluxmap.config.prediction.enabled": "种子预览：%s",
   "confluxmap.config.prediction.network_sync": "使用服务器地图改善预览：%s",
   "confluxmap.config.prediction.show_structures": "显示可能存在的结构：%s",
-  "confluxmap.config.prediction.structure_icon_detail_limit": "结构图标隐藏缩放：超过 %s 时隐藏（数值越大，缩得越远才隐藏）",
+  "confluxmap.config.prediction.structure_icon_detail_limit": "结构图标隐藏缩放：缩小到 %s 及以下时隐藏（0× 为不自动隐藏）",
   "confluxmap.screen.config.prediction.seed_disabled_by_server": "此服务器未共享世界种子",
   "confluxmap.screen.config.prediction.sync_disabled_by_server": "此服务器已禁用地图同步",
   "confluxmap.screen.config.prediction.sync_incompatible_server": "此服务器的 Conflux Map 版本不兼容，无法安全同步地图",

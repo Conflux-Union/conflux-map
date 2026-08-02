@@ -45,8 +45,8 @@ class ConfigIoTest {
         // Absent fields keep their defaults; out-of-range values are clamped.
         assertEquals(new ConfluxConfig().predictionDebounceMs, loaded.predictionDebounceMs);
         assertEquals(
-            ConfluxConfig.DEFAULT_PREDICTION_STRUCTURE_ICON_HIDE_SCALE,
-            loaded.predictionStructureIconHideScale
+            ConfluxConfig.DEFAULT_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM,
+            loaded.predictionStructureIconHideZoom
         );
         assertTrue(loaded.annotationsOnHud);
         assertEquals(ConfluxConfig.DEFAULT_ANNOTATION_ERASER_SIZE, loaded.annotationEraserSize);
@@ -72,7 +72,8 @@ class ConfigIoTest {
         // The upgrade is persisted so the on-disk file now carries the full schema.
         final String rewritten = Files.readString(file, StandardCharsets.UTF_8);
         assertTrue(rewritten.contains("\"predictionDebounceMs\""));
-        assertTrue(rewritten.contains("\"predictionStructureIconHideScale\""));
+        assertTrue(rewritten.contains("\"predictionStructureIconHideZoom\""));
+        assertFalse(rewritten.contains("\"predictionStructureIconHideScale\""));
         assertFalse(rewritten.contains("\"predictionStructureMaxLod\""));
         assertTrue(rewritten.contains("\"predictionStructureVisibility\""));
         assertTrue(rewritten.contains("\"annotationsOnHud\""));
@@ -233,40 +234,68 @@ class ConfigIoTest {
     }
 
     @Test
-    void structureIconHideScaleRoundTripsMigratesAndClampsInvalidValues(@TempDir final Path tmp) throws IOException {
+    void structureIconHideZoomRoundTripsMigratesAndClampsInvalidValues(@TempDir final Path tmp) throws IOException {
         final Path file = tmp.resolve("config.json");
         final ConfigIo io = new ConfigIo(file, LOGGER);
         final ConfluxConfig config = new ConfluxConfig();
-        config.predictionStructureIconHideScale = 0.5;
+        config.predictionStructureIconHideZoom = 0.125;
 
         io.save(config);
-        assertEquals(0.5, io.load().predictionStructureIconHideScale);
+        assertEquals(0.125, io.load().predictionStructureIconHideZoom);
 
         Files.writeString(
             file,
             "{\"schemaVersion\":3,\"predictionStructureMaxLod\":1}",
             StandardCharsets.UTF_8
         );
-        assertEquals(2.0, io.load().predictionStructureIconHideScale);
+        assertEquals(0.25, io.load().predictionStructureIconHideZoom);
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":4,\"predictionStructureIconHideScale\":0.25}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(4.0, io.load().predictionStructureIconHideZoom);
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":4,\"predictionStructureIconHideScale\":9.75}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(0.125, io.load().predictionStructureIconHideZoom);
 
         Files.writeString(
             file,
             "{\"schemaVersion\":4,\"predictionStructureIconHideScale\":99}",
             StandardCharsets.UTF_8
         );
-        assertEquals(
-            ConfluxConfig.MAX_PREDICTION_STRUCTURE_ICON_HIDE_SCALE,
-            io.load().predictionStructureIconHideScale
-        );
+        assertEquals(0.0625, io.load().predictionStructureIconHideZoom);
 
         Files.writeString(
             file,
             "{\"schemaVersion\":4,\"predictionStructureIconHideScale\":0}",
             StandardCharsets.UTF_8
         );
+        assertEquals(4.0, io.load().predictionStructureIconHideZoom);
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":5,\"predictionStructureIconHideZoom\":99}",
+            StandardCharsets.UTF_8
+        );
         assertEquals(
-            ConfluxConfig.MIN_PREDICTION_STRUCTURE_ICON_HIDE_SCALE,
-            io.load().predictionStructureIconHideScale
+            ConfluxConfig.MAX_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM,
+            io.load().predictionStructureIconHideZoom
+        );
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":5,\"predictionStructureIconHideZoom\":-1}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(
+            ConfluxConfig.MIN_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM,
+            io.load().predictionStructureIconHideZoom
         );
     }
 
