@@ -1721,6 +1721,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         drawPlayerMarker(matrices, tickDelta);
         drawExportSelection(draw, mouseX, mouseY);
         drawDimensionLabel(draw);
+        drawWorldProfileLabel(draw);
         drawLayerLabel(draw);
         drawPredictionLabel(draw);
         drawServerSyncLabel(draw);
@@ -2728,12 +2729,36 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         draw.drawTextWithShadow(this.textRenderer, text, MARGIN, MARGIN, TEXT_COLOR);
     }
 
+    private void drawWorldProfileLabel(final GuiDraw draw) {
+        final Optional<ClientWorldProfile> profile = ConfluxMapClient.get().clientMultiworldService().currentProfile();
+        if (profile.isEmpty()) {
+            return;
+        }
+        final String name = Texts.translatable(
+            "confluxmap.map.client_world.current", profile.get().displayName()
+        ).getString();
+        draw.drawTextWithShadow(
+            this.textRenderer, name, MARGIN,
+            MARGIN + this.textRenderer.fontHeight + 2, 0xFFFFE066
+        );
+        final String id = Texts.translatable(
+            "confluxmap.map.client_world.id", shortProfileId(profile.get().id())
+        ).getString();
+        draw.drawTextWithShadow(
+            this.textRenderer, id, MARGIN,
+            MARGIN + (this.textRenderer.fontHeight + 2) * 2, 0xFFBBBBBB
+        );
+    }
+
     /** Deliverable D: the fullscreen map shows the active layer for the current dimension. */
     private void drawLayerLabel(final GuiDraw draw) {
         final String text = Texts.translatable(
             "confluxmap.layer." + layerSelector.current().layer().type().id()
         ).getString();
-        draw.drawTextWithShadow(this.textRenderer, text, MARGIN, MARGIN + this.textRenderer.fontHeight + 2, TEXT_COLOR);
+        draw.drawTextWithShadow(
+            this.textRenderer, text, MARGIN,
+            MARGIN + mapInfoRows() * (this.textRenderer.fontHeight + 2), TEXT_COLOR
+        );
     }
 
     private void drawPredictionLabel(final GuiDraw draw) {
@@ -2759,7 +2784,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 : modeLine;
         }
         draw.drawTextWithShadow(
-            this.textRenderer, text, MARGIN, MARGIN + this.textRenderer.fontHeight * 2 + 4, TEXT_COLOR
+            this.textRenderer, text, MARGIN,
+            MARGIN + (mapInfoRows() + 1) * (this.textRenderer.fontHeight + 2), TEXT_COLOR
         );
     }
 
@@ -2805,8 +2831,16 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 return;
             }
         }
-        final int row = predictionLabelVisible() ? 3 : 2;
+        final int row = (predictionLabelVisible() ? 3 : 2) + mapInfoRows() - 1;
         draw.drawTextWithShadow(this.textRenderer, text, MARGIN, MARGIN + row * (this.textRenderer.fontHeight + 2), color);
+    }
+
+    private int mapInfoRows() {
+        return ConfluxMapClient.get().clientMultiworldService().currentProfile().isPresent() ? 3 : 1;
+    }
+
+    private static String shortProfileId(final String id) {
+        return id.length() <= 12 ? id : id.substring(0, 8) + "..." + id.substring(id.length() - 4);
     }
 
     private static String formatSyncDuration(final long durationNanos) {

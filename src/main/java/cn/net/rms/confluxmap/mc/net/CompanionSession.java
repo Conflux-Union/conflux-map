@@ -177,7 +177,7 @@ public final class CompanionSession {
         }
         final HelloPolicyS2C currentPolicy = policy;
         if (current == State.ACTIVE && currentPolicy != null) {
-            return Optional.of(WorldIdentity.multiplayer(address, currentPolicy.worldId()));
+            return Optional.of(WorldIdentity.companionMultiplayer(address, currentPolicy.worldId()));
         }
         return Optional.of(WorldIdentity.multiplayer(address));
     }
