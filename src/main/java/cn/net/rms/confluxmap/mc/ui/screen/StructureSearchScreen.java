@@ -17,13 +17,15 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
 import net.minecraft.client.MinecraftClient;
+//#if MC>=12109
+//$$ import net.minecraft.client.gui.Click;
+//#endif
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
-/** Localized structure-type picker that centers the fullscreen map on the nearest candidate. */
+/** Localized structure-type picker with visibility controls and candidate browsing. */
 final class StructureSearchScreen extends ConfluxScreen {
     private static final int FIELD_WIDTH = 240;
     private static final int FIELD_HEIGHT = 20;
@@ -34,7 +36,8 @@ final class StructureSearchScreen extends ConfluxScreen {
     private static final int TOGGLE_WIDTH = 58;
     private static final int LOCATE_WIDTH = 62;
     private static final int BUTTON_GAP = 3;
-    private static final int SEARCH_RADIUS = 100_000;
+    private static final int SCROLLBAR_WIDTH = 6;
+    private static final int SCROLLBAR_GAP = 4;
 
     private final FullscreenMapScreen parent;
     private final StructureMarkerService structures;
@@ -54,8 +57,8 @@ final class StructureSearchScreen extends ConfluxScreen {
     private int filteredCount;
     private int rowX;
     private int rowWidth;
-    private String statusKey;
-    private Object[] statusArgs = new Object[0];
+    private boolean draggingScrollBar;
+    private double scrollBarGrabOffset;
 
     StructureSearchScreen(
         final FullscreenMapScreen parent,
@@ -149,7 +152,6 @@ final class StructureSearchScreen extends ConfluxScreen {
         if (!query.equals(observedQuery)) {
             observedQuery = query;
             scrollOffset = 0;
-            statusKey = null;
             updateRows();
         }
     }
@@ -163,18 +165,10 @@ final class StructureSearchScreen extends ConfluxScreen {
         if (!companion.structureSearchAllowed()) {
             return;
         }
-        statusKey = "confluxmap.screen.structure_search.not_found";
-        statusArgs = new Object[] {localizedName(type), SEARCH_RADIUS};
-        final Optional<StructureIndex.Marker> marker = structures.findNearest(
-            type,
-            parent.centerBlockX(),
-            parent.centerBlockZ(),
-            SEARCH_RADIUS
+        MinecraftAccess.setScreen(
+            MinecraftClient.getInstance(),
+            new StructureCandidateScreen(this, parent, structures, dimension, type)
         );
-        if (marker.isPresent()) {
-            parent.focusStructure(marker.get());
-            MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
-        }
     }
 
     private void toggleMasterVisibility() {
@@ -287,6 +281,20 @@ final class StructureSearchScreen extends ConfluxScreen {
         return Math.max(1, (height - LIST_TOP - 38) / ROW_HEIGHT);
     }
 
+    private ScrollBarModel scrollBar() {
+        return ScrollBarModel.of(
+            LIST_TOP,
+            visibleRows() * ROW_HEIGHT - 4,
+            filteredCount,
+            visibleRows(),
+            scrollOffset
+        );
+    }
+
+    private int scrollBarX() {
+        return rowX + rowWidth + SCROLLBAR_GAP;
+    }
+
     @Override
     //#if MC>=12002
     //$$ public boolean mouseScrolled(
@@ -308,6 +316,82 @@ final class StructureSearchScreen extends ConfluxScreen {
         //#else
         return super.mouseScrolled(mouseX, mouseY, amount);
         //#endif
+    }
+
+    @Override
+    //#if MC>=12109
+    //$$ public boolean mouseClicked(final Click click, final boolean doubledClick) {
+    //$$     final double mouseX = click.x();
+    //$$     final double mouseY = click.y();
+    //$$     final int button = click.button();
+    //#else
+    public boolean mouseClicked(final double mouseX, final double mouseY, final int button) {
+    //#endif
+        final ScrollBarModel bar = scrollBar();
+        if (button == 0 && bar.visible()
+            && mouseX >= scrollBarX() && mouseX < scrollBarX() + SCROLLBAR_WIDTH
+            && mouseY >= bar.trackTop() && mouseY < bar.trackTop() + bar.trackHeight()) {
+            draggingScrollBar = true;
+            scrollBarGrabOffset = mouseY >= bar.thumbTop()
+                && mouseY < bar.thumbTop() + bar.thumbHeight()
+                ? mouseY - bar.thumbTop()
+                : bar.thumbHeight() / 2.0;
+            updateScrollFromMouse(mouseY);
+            return true;
+        }
+        //#if MC>=12109
+        //$$ return super.mouseClicked(click, doubledClick);
+        //#else
+        return super.mouseClicked(mouseX, mouseY, button);
+        //#endif
+    }
+
+    @Override
+    //#if MC>=12109
+    //$$ public boolean mouseDragged(final Click click, final double deltaX, final double deltaY) {
+    //$$     final double mouseY = click.y();
+    //$$     final int button = click.button();
+    //#else
+    public boolean mouseDragged(
+        final double mouseX,
+        final double mouseY,
+        final int button,
+        final double deltaX,
+        final double deltaY
+    ) {
+    //#endif
+        if (button == 0 && draggingScrollBar) {
+            updateScrollFromMouse(mouseY);
+            return true;
+        }
+        //#if MC>=12109
+        //$$ return super.mouseDragged(click, deltaX, deltaY);
+        //#else
+        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+        //#endif
+    }
+
+    @Override
+    //#if MC>=12109
+    //$$ public boolean mouseReleased(final Click click) {
+    //$$     final int button = click.button();
+    //#else
+    public boolean mouseReleased(final double mouseX, final double mouseY, final int button) {
+    //#endif
+        if (button == 0 && draggingScrollBar) {
+            draggingScrollBar = false;
+            return true;
+        }
+        //#if MC>=12109
+        //$$ return super.mouseReleased(click);
+        //#else
+        return super.mouseReleased(mouseX, mouseY, button);
+        //#endif
+    }
+
+    private void updateScrollFromMouse(final double mouseY) {
+        scrollOffset = scrollBar().offsetForThumbTop(mouseY - scrollBarGrabOffset);
+        updateRows();
     }
 
     @Override
@@ -358,14 +442,17 @@ final class StructureSearchScreen extends ConfluxScreen {
                 0xFFAAAAAA
             );
         }
-        if (statusKey != null) {
-            final String status = Texts.translatable(statusKey, statusArgs).getString();
-            draw.drawTextWithShadow(
-                this.textRenderer,
-                status,
-                width / 2f - this.textRenderer.getWidth(status) / 2f,
-                height - 42,
-                0xFFFF7777
+        final ScrollBarModel bar = scrollBar();
+        if (bar.visible()) {
+            draw.fill(
+                scrollBarX(), bar.trackTop(),
+                scrollBarX() + SCROLLBAR_WIDTH, bar.trackTop() + bar.trackHeight(),
+                0x66333333
+            );
+            draw.fill(
+                scrollBarX(), bar.thumbTop(),
+                scrollBarX() + SCROLLBAR_WIDTH, bar.thumbTop() + bar.thumbHeight(),
+                0xFFAAAAAA
             );
         }
     }

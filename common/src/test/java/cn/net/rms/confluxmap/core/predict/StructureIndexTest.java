@@ -290,6 +290,112 @@ class StructureIndexTest {
         assertEquals(-800, marker.blockZ());
     }
 
+    @Test
+    void candidateSearchFiltersByRadiusSortsByDistanceAndHonorsLimit() {
+        final List<String> ranges = new ArrayList<>();
+        final StructureIndex index = new StructureIndex(
+            tempDir.resolve("cache"),
+            WorldIdentity.singleplayer("candidate-world"),
+            DimensionId.OVERWORLD,
+            new StructureIndex.CandidateProvider() {
+                @Override
+                public long[] candidates(
+                    final StructureIndex.StructureType type,
+                    final int regionX,
+                    final int regionZ
+                ) {
+                    return new long[0];
+                }
+
+                @Override
+                public long[] candidates(
+                    final StructureIndex.StructureType type,
+                    final int minRegionX,
+                    final int minRegionZ,
+                    final int maxRegionX,
+                    final int maxRegionZ
+                ) {
+                    ranges.add(minRegionX + ":" + minRegionZ + ":" + maxRegionX + ":" + maxRegionZ);
+                    return new long[] {
+                        pack(30, 40),
+                        pack(-6, 8),
+                        pack(300, 400),
+                        pack(10, 0)
+                    };
+                }
+            }
+        );
+
+        final List<StructureIndex.Marker> candidates = index.findCandidates(
+            StructureIndex.StructureType.VILLAGE,
+            0,
+            0,
+            100,
+            2
+        );
+        index.findCandidates(
+            StructureIndex.StructureType.VILLAGE,
+            0,
+            0,
+            100,
+            2
+        );
+
+        assertEquals(1, ranges.size());
+        assertEquals(List.of(
+            pack(-6, 8),
+            pack(10, 0)
+        ), candidates.stream().map(marker -> pack(marker.blockX(), marker.blockZ())).toList());
+    }
+
+    @Test
+    void candidateSearchDoesNotStopAtFarCornersOfTheCurrentRegionSquare() {
+        final List<Integer> calls = new ArrayList<>();
+        final StructureIndex index = new StructureIndex(
+            tempDir.resolve("cache"),
+            WorldIdentity.singleplayer("candidate-expansion-world"),
+            DimensionId.OVERWORLD,
+            new StructureIndex.CandidateProvider() {
+                @Override
+                public long[] candidates(
+                    final StructureIndex.StructureType type,
+                    final int regionX,
+                    final int regionZ
+                ) {
+                    return new long[0];
+                }
+
+                @Override
+                public long[] candidates(
+                    final StructureIndex.StructureType type,
+                    final int minRegionX,
+                    final int minRegionZ,
+                    final int maxRegionX,
+                    final int maxRegionZ
+                ) {
+                    calls.add(maxRegionX - minRegionX + 1);
+                    return calls.size() == 1
+                        ? new long[] {pack(900, 900), pack(1000, 1000)}
+                        : new long[] {pack(1100, 0), pack(0, 1200)};
+                }
+            }
+        );
+
+        final List<StructureIndex.Marker> candidates = index.findCandidates(
+            StructureIndex.StructureType.VILLAGE,
+            0,
+            0,
+            3000,
+            2
+        );
+
+        assertEquals(2, calls.size());
+        assertEquals(List.of(
+            pack(1100, 0),
+            pack(0, 1200)
+        ), candidates.stream().map(marker -> pack(marker.blockX(), marker.blockZ())).toList());
+    }
+
     private static long pack(final int x, final int z) {
         return ((long) x << 32) | (z & 0xFFFF_FFFFL);
     }

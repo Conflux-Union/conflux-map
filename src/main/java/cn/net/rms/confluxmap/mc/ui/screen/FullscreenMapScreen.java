@@ -3014,4 +3014,18 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         centerZ = marker.blockZ();
         scale = Math.min(scale, DEFAULT_SCALE);
     }
+
+    void createWaypointForStructure(
+        final StructureIndex.Marker marker,
+        final Screen returnScreen
+    ) {
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), WaypointEditScreen.forCreate(
+            returnScreen,
+            gameBridge.session().dimension(),
+            Texts.translatable(marker.type().translationKey()).getString(),
+            marker.blockX(),
+            surfaceYAt(marker.blockX(), marker.blockZ()),
+            marker.blockZ()
+        ));
+    }
 }

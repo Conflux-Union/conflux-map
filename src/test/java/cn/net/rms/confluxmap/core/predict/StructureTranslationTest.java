@@ -40,7 +40,14 @@ class StructureTranslationTest {
             "confluxmap.screen.structure_search.locate",
             "confluxmap.screen.structure_search.back",
             "confluxmap.screen.structure_search.empty",
-            "confluxmap.screen.structure_search.not_found"
+            "confluxmap.screen.structure_candidates.title",
+            "confluxmap.screen.structure_candidates.center",
+            "confluxmap.screen.structure_candidates.bounds",
+            "confluxmap.screen.structure_candidates.search",
+            "confluxmap.screen.structure_candidates.map",
+            "confluxmap.screen.structure_candidates.waypoint",
+            "confluxmap.screen.structure_candidates.invalid",
+            "confluxmap.screen.structure_candidates.not_found"
         }) {
             assertTrue(english.containsKey(key), "missing English translation for " + key);
             assertTrue(chinese.containsKey(key), "missing Chinese translation for " + key);

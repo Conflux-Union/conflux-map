@@ -159,6 +159,18 @@ public final class StructureMarkerService {
             : current.findNearest(type, blockX, blockZ, maxRadius);
     }
 
+    public synchronized List<StructureIndex.Marker> findCandidates(
+        final StructureIndex.StructureType type,
+        final int blockX,
+        final int blockZ,
+        final int maxRadius,
+        final int limit
+    ) {
+        return current == null || !structureSearchAllowed.getAsBoolean()
+            ? List.of()
+            : current.findCandidates(type, blockX, blockZ, maxRadius, limit);
+    }
+
     public synchronized void flush() {
         if (current != null) {
             current.save();
