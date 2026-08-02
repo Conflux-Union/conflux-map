@@ -31,8 +31,6 @@ public final class ConfluxConfig {
     public static final double MIN_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM = 0.0625;
     /** Largest fullscreen-map zoom multiplier the renderer can display. */
     public static final double MAX_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM = 4.0;
-    /** Slider granularity for displayed fullscreen-map zoom multipliers. */
-    public static final double PREDICTION_STRUCTURE_ICON_HIDE_ZOOM_STEP = 0.0625;
     /** Preserve the old default: hide only at the furthest 0.0625x zoom. */
     public static final double DEFAULT_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM = 0.0625;
     /** Schema-v4 lower bound for the now-retired blocks-per-pixel setting. */
@@ -327,12 +325,10 @@ public final class ConfluxConfig {
         }
         predictionStructureMaxLod = null;
         predictionStructureIconHideScale = null;
-        predictionStructureIconHideZoom = roundStructureIconHideZoom(
-            clamp(
-                predictionStructureIconHideZoom,
-                MIN_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM,
-                MAX_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM
-            )
+        predictionStructureIconHideZoom = clamp(
+            predictionStructureIconHideZoom,
+            MIN_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM,
+            MAX_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM
         );
         if (predictionStructureVisibility == null) {
             predictionStructureVisibility = new StructureVisibilityConfig();
@@ -352,12 +348,6 @@ public final class ConfluxConfig {
 
     private static double clamp(final double value, final double min, final double max) {
         return Double.isFinite(value) ? Math.max(min, Math.min(max, value)) : min;
-    }
-
-    /** Keep persisted thresholds identical to the values selectable in the settings UI. */
-    private static double roundStructureIconHideZoom(final double value) {
-        return Math.round(value / PREDICTION_STRUCTURE_ICON_HIDE_ZOOM_STEP)
-            * PREDICTION_STRUCTURE_ICON_HIDE_ZOOM_STEP;
     }
 
     /** Returns a normalized snapshot so live config edits cannot bypass recognition safety caps. */

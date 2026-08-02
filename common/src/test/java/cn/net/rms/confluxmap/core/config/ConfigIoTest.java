@@ -238,10 +238,10 @@ class ConfigIoTest {
         final Path file = tmp.resolve("config.json");
         final ConfigIo io = new ConfigIo(file, LOGGER);
         final ConfluxConfig config = new ConfluxConfig();
-        config.predictionStructureIconHideZoom = 0.125;
+        config.predictionStructureIconHideZoom = 0.14;
 
         io.save(config);
-        assertEquals(0.125, io.load().predictionStructureIconHideZoom);
+        assertEquals(0.14, io.load().predictionStructureIconHideZoom);
 
         Files.writeString(
             file,
@@ -262,7 +262,7 @@ class ConfigIoTest {
             "{\"schemaVersion\":4,\"predictionStructureIconHideScale\":9.75}",
             StandardCharsets.UTF_8
         );
-        assertEquals(0.125, io.load().predictionStructureIconHideZoom);
+        assertEquals(1.0 / 9.75, io.load().predictionStructureIconHideZoom);
 
         Files.writeString(
             file,

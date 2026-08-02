@@ -1,9 +1,12 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
-/** Minecraft-free stepped decimal mapping shared by a slider and numeric input. */
+/** Minecraft-free decimal mapping shared by a slider and numeric input. */
 final class DecimalSliderValue {
+    static final double CONTINUOUS = 0.0;
+
     private final double min;
     private final double max;
     private final double step;
@@ -11,7 +14,7 @@ final class DecimalSliderValue {
 
     DecimalSliderValue(final double min, final double max, final double step, final double initialValue) {
         if (!Double.isFinite(min) || !Double.isFinite(max) || !Double.isFinite(step)
-            || min > max || step <= 0.0) {
+            || min > max || step < CONTINUOUS) {
             throw new IllegalArgumentException("min, max, and step must be finite and ordered");
         }
         this.min = min;
@@ -63,14 +66,18 @@ final class DecimalSliderValue {
     }
 
     static String format(final double value) {
-        return BigDecimal.valueOf(value).stripTrailingZeros().toPlainString();
+        return BigDecimal.valueOf(value).setScale(4, RoundingMode.HALF_UP)
+            .stripTrailingZeros().toPlainString();
     }
 
     private double clampAndRound(final double candidate) {
         if (!Double.isFinite(candidate)) {
             return min;
         }
-        final double rounded = min + Math.round((candidate - min) / step) * step;
-        return Math.max(min, Math.min(max, rounded));
+        final double clamped = Math.max(min, Math.min(max, candidate));
+        if (step == CONTINUOUS) {
+            return clamped;
+        }
+        return Math.max(min, Math.min(max, min + Math.round((clamped - min) / step) * step));
     }
 }

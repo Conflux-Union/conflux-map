@@ -576,7 +576,7 @@ public final class ConfigScreen extends ConfluxScreen {
                     y, "confluxmap.config.prediction.structure_icon_detail_limit",
                     ConfluxConfig.MIN_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM,
                     ConfluxConfig.MAX_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM,
-                    ConfluxConfig.PREDICTION_STRUCTURE_ICON_HIDE_ZOOM_STEP,
+                    DecimalSliderValue.CONTINUOUS,
                     () -> config.predictionStructureIconHideZoom,
                     v -> config.predictionStructureIconHideZoom = v,
                     ConfigScreen::structureIconDetailLimitText,

@@ -10,7 +10,7 @@ import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
-/** A stepped decimal slider and numeric field backed by one range-checked map scale. */
+/** A decimal slider and numeric field backed by one range-checked map scale. */
 final class DecimalSliderInput {
     private static final Pattern DECIMAL_TEXT = Pattern.compile("[+-]?(?:\\d+)?(?:\\.\\d*)?");
     private static final int CONTROL_GAP = 4;
