@@ -13,7 +13,7 @@ import cn.net.rms.confluxmap.core.util.TileMath;
  * {@link #SCHEMA_VERSION} and adding a migration in {@link ConfigIo}.
  */
 public final class ConfluxConfig {
-    public static final int SCHEMA_VERSION = 5;
+    public static final int SCHEMA_VERSION = 6;
     public static final int DEFAULT_MINIMAP_SIZE = 90;
     public static final int MIN_ANNOTATION_ERASER_SIZE = 4;
     public static final int MAX_ANNOTATION_ERASER_SIZE = 64;
@@ -27,10 +27,10 @@ public final class ConfluxConfig {
     public static final int MIN_PLAYER_TRAIL_DOT_SIZE = 1;
     public static final int MAX_PLAYER_TRAIL_DOT_SIZE = 8;
     public static final int DEFAULT_PLAYER_TRAIL_DOT_SIZE = 3;
-    /** Zero disables automatic structure-icon hiding. */
-    public static final double MIN_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM = 0.0;
-    /** Largest configurable displayed fullscreen-map zoom multiplier. */
-    public static final double MAX_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM = 16.0;
+    /** Always hide structure icons at the furthest fullscreen-map zoom. */
+    public static final double MIN_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM = 0.0625;
+    /** Largest fullscreen-map zoom multiplier the renderer can display. */
+    public static final double MAX_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM = 4.0;
     /** Slider granularity for displayed fullscreen-map zoom multipliers. */
     public static final double PREDICTION_STRUCTURE_ICON_HIDE_ZOOM_STEP = 0.0625;
     /** Preserve the old default: hide only at the furthest 0.0625x zoom. */

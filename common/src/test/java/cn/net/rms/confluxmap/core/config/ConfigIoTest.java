@@ -290,7 +290,7 @@ class ConfigIoTest {
 
         Files.writeString(
             file,
-            "{\"schemaVersion\":5,\"predictionStructureIconHideZoom\":-1}",
+            "{\"schemaVersion\":5,\"predictionStructureIconHideZoom\":0}",
             StandardCharsets.UTF_8
         );
         assertEquals(

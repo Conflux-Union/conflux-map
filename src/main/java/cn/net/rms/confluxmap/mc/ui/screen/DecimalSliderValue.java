@@ -26,12 +26,22 @@ final class DecimalSliderValue {
 
     double position() {
         final double span = max - min;
-        return span == 0.0 ? 0.0 : (value - min) / span;
+        if (span == 0.0) {
+            return 0.0;
+        }
+        if (min <= 0.0) {
+            return (value - min) / span;
+        }
+        // Zoom multipliers form a ratio: reserve more slider travel for the common low range.
+        return Math.log(value / min) / Math.log(max / min);
     }
 
     double updateFromPosition(final double position) {
         final double bounded = Double.isNaN(position) ? 0.0 : Math.max(0.0, Math.min(1.0, position));
-        value = clampAndRound(min + bounded * (max - min));
+        final double candidate = min <= 0.0
+            ? min + bounded * (max - min)
+            : min * Math.pow(max / min, bounded);
+        value = clampAndRound(candidate);
         return value;
     }
 

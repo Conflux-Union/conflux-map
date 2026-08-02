@@ -9,29 +9,32 @@ import org.junit.jupiter.api.Test;
 
 class DecimalSliderValueTest {
     @Test
-    void acceptsSubQuarterThresholdsAndQuantizesToTheConfiguredStep() {
-        final DecimalSliderValue value = new DecimalSliderValue(0.0, 16.0, 0.0625, 0.125);
+    void favorsCommonLowZoomThresholdsWithALogarithmicSlider() {
+        final DecimalSliderValue value = new DecimalSliderValue(0.0625, 4.0, 0.0625, 0.125);
 
         assertTrue(value.updateFromText("0.125"));
         assertEquals(0.125, value.value());
         assertEquals("0.125", value.text());
+        assertTrue(value.updateFromText("1"));
+        assertEquals(2.0 / 3.0, value.position(), 0.000_001);
+        assertEquals(1.0, value.updateFromPosition(2.0 / 3.0));
 
         assertTrue(value.updateFromText("0.14"));
         assertEquals(0.125, value.value());
-        assertEquals(0.0, value.updateFromPosition(0.0));
+        assertEquals(0.0625, value.updateFromPosition(0.0));
     }
 
     @Test
     void clampsValuesAndKeepsIncompleteTextOutOfTheConfiguration() {
-        final DecimalSliderValue value = new DecimalSliderValue(0.0, 16.0, 0.0625, 0.125);
+        final DecimalSliderValue value = new DecimalSliderValue(0.0625, 4.0, 0.0625, 0.125);
 
         assertTrue(value.updateFromText("0"));
-        assertEquals(0.0, value.value());
+        assertEquals(0.0625, value.value());
         assertTrue(value.updateFromText("99"));
-        assertEquals(16.0, value.value());
+        assertEquals(4.0, value.value());
         assertFalse(value.updateFromText("."));
         assertFalse(value.updateFromText("not-a-scale"));
-        assertEquals(16.0, value.value());
+        assertEquals(4.0, value.value());
     }
 
     @Test
