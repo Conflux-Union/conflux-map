@@ -27,11 +27,17 @@ final class StructureCandidateScreen extends ConfluxScreen {
     private static final int FIELD_WIDTH = 72;
     private static final int FIELD_HEIGHT = 20;
     private static final int CONTENT_TOP = 114;
-    private static final int CONTENT_BOTTOM_MARGIN = 42;
+    /** Leaves a gap for the status text and the fixed bottom action bar. */
+    private static final int CONTENT_BOTTOM_MARGIN = 48;
     private static final int ROW_HEIGHT = 24;
     private static final int ICON_SIZE = 16;
     private static final int PANEL_GAP = 10;
     private static final int LIST_HEADER_HEIGHT = 18;
+    private static final int MIN_COMPACT_SIDE_BY_SIDE_WIDTH = 260;
+    private static final int WIDE_SIDE_BY_SIDE_WIDTH = 520;
+    private static final int MIN_STACKED_CONTENT_HEIGHT = 150;
+    private static final int MIN_COMPACT_PREVIEW_WIDTH = 110;
+    private static final int MIN_COMPACT_LIST_WIDTH = 120;
 
     private final StructureSearchScreen parent;
     private final FullscreenMapScreen map;
@@ -122,10 +128,13 @@ final class StructureCandidateScreen extends ConfluxScreen {
         final int contentHeight = contentBottom - CONTENT_TOP;
         final int contentWidth = Math.min(680, Math.max(180, width - 32));
         final int contentLeft = width / 2 - contentWidth / 2;
-        if (width >= 560 && contentWidth >= 520) {
+        if (prefersSideBySideLayout(contentWidth, contentHeight)) {
             previewX = contentLeft;
             previewY = CONTENT_TOP;
-            previewWidth = Math.min(260, Math.max(190, contentWidth * 2 / 5));
+            previewWidth = Math.min(
+                Math.min(260, contentWidth - PANEL_GAP - MIN_COMPACT_LIST_WIDTH),
+                Math.max(MIN_COMPACT_PREVIEW_WIDTH, contentWidth * 2 / 5)
+            );
             previewHeight = contentHeight;
             listX = previewX + previewWidth + PANEL_GAP;
             listY = CONTENT_TOP;
@@ -143,6 +152,12 @@ final class StructureCandidateScreen extends ConfluxScreen {
         }
         listRowsTop = listY + LIST_HEADER_HEIGHT;
         listRowsHeight = Math.max(1, listHeight - LIST_HEADER_HEIGHT);
+    }
+
+    /** Use columns when stacking would push the candidate list into the fixed action bar. */
+    static boolean prefersSideBySideLayout(final int contentWidth, final int contentHeight) {
+        return contentWidth >= MIN_COMPACT_SIDE_BY_SIDE_WIDTH
+            && (contentWidth >= WIDE_SIDE_BY_SIDE_WIDTH || contentHeight < MIN_STACKED_CONTENT_HEIGHT);
     }
 
     private TextFieldWidget numericField(
