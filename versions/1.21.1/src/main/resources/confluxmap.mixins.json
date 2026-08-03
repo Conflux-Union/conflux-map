@@ -8,7 +8,8 @@
     "ClientChunkManagerMixin",
     "ClientPlayNetworkHandlerMixin",
     "ScreenMixin",
-    "StatusEffectHudMixin"
+    "StatusEffectHudMixin",
+    "ToastHudMixin"
   ],
   "injectors": {
     "defaultRequire": 1
