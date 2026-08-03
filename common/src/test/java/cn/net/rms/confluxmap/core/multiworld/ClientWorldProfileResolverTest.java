@@ -57,12 +57,8 @@ class ClientWorldProfileResolverTest {
     void proxyJoinDoesNotGuessBetweenProfilesAlreadyBoundToTheNewSeed() {
         final ClientWorldProfileRegistry registry = new ClientWorldProfileRegistry();
         final ClientWorldProfile previous = new ClientWorldProfile("previous", "world", "Previous");
-        final ClientWorldProfile first = new ClientWorldProfile(
-            "first", "client-00000000-0000-0000-0000-000000000001", "First"
-        );
-        final ClientWorldProfile competing = new ClientWorldProfile(
-            "competing", "client-00000000-0000-0000-0000-000000000002", "Competing"
-        );
+        final ClientWorldProfile first = new ClientWorldProfile("first", "client-first", "First");
+        final ClientWorldProfile competing = new ClientWorldProfile("competing", "client-competing", "Competing");
         final ClientWorldObservation firstObservation = seededSignals(22L, "a");
         final ClientWorldObservation competingObservation = seededSignals(22L, "b");
         previous.bind(observation(11L, "survival"));

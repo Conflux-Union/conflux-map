@@ -145,12 +145,11 @@ public final class ConfluxMapClient implements ClientModInitializer {
         );
         final ClientWorldProfileRegistry clientWorldProfiles = clientWorldProfileIo.load();
         final ClientWorldProfileResolver clientWorldResolver = new ClientWorldProfileResolver(
-            clientWorldProfiles, UUID::randomUUID, clientWorldProfileIo::save, config::clientWorldPolicy
+            clientWorldProfiles, UUID::randomUUID, () -> clientWorldProfileIo.save(clientWorldProfiles)
         );
         clientMultiworldService = new ClientMultiworldService(
-            client, companionSession, clientWorldResolver, cacheRoot, config::clientWorldPolicy
+            client, companionSession, clientWorldResolver, cacheRoot, executors.io()
         );
-        clientMultiworldService.bindProfileRegistryLoader(clientWorldProfileIo::load);
         sessionTracker = new WorldSessionTracker(sessionGuard, companionSession, clientMultiworldService);
         mapWorlds = new MapWorldService();
         daylightModel = new DaylightModel();
@@ -160,9 +159,6 @@ public final class ConfluxMapClient implements ClientModInitializer {
             mapWorlds, executors, tileService, ConfluxMapMod.LOGGER
         );
         tileService.bindRegionCache(regionCache);
-        clientMultiworldService.bindProfileFlushBarrier(
-            world -> regionCache.awaitFlush(world)
-        );
 
         // Beside (not inside) the cache/waypoints directories above, same confluxmap/ root; a
         // failed load just leaves NativeLib.available() false and prediction permanently disabled.

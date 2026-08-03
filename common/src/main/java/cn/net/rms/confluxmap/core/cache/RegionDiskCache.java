@@ -23,8 +23,8 @@ import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -377,32 +377,21 @@ public final class RegionDiskCache {
      * already return null (the new session has rotated in), so this deliberately does not use
      * that check and instead trusts the world it was handed.
      */
-    CompletableFuture<Void> flushAllOnSessionEnd(final MapWorld world) {
-        final CompletableFuture<Void> completed = new CompletableFuture<>();
-        try {
-            io.execute(() -> {
-                try {
-                    int flushed = 0;
-                    for (final MapLayer.Type type : PERSISTENT_LAYER_TYPES) {
-                        final ColumnStore store = world.store(new MapLayer(type, 0));
-                        for (final RegionColumns region : store.allRegions()) {
-                            if (writeRegion(region, type) >= 0) {
-                                flushed++;
-                            }
-                        }
+    void flushAllOnSessionEnd(final MapWorld world) {
+        io.execute(() -> {
+            int flushed = 0;
+            for (final MapLayer.Type type : PERSISTENT_LAYER_TYPES) {
+                final ColumnStore store = world.store(new MapLayer(type, 0));
+                for (final RegionColumns region : store.allRegions()) {
+                    if (writeRegion(region, type) >= 0) {
+                        flushed++;
                     }
-                    if (flushed > 0) {
-                        logger.info("cache: flushed {} regions", flushed);
-                    }
-                    completed.complete(null);
-                } catch (final RuntimeException error) {
-                    completed.completeExceptionally(error);
                 }
-            });
-        } catch (final RuntimeException error) {
-            completed.completeExceptionally(error);
-        }
-        return completed;
+            }
+            if (flushed > 0) {
+                logger.info("cache: flushed {} regions", flushed);
+            }
+        });
     }
 
     private int writeRegion(final RegionColumns region, final MapLayer.Type type) {

@@ -2,13 +2,11 @@ package cn.net.rms.confluxmap.mixin;
 
 import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureHandler;
 import cn.net.rms.confluxmap.mc.world.ClientWorldIdentityHandler;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.network.packet.s2c.play.BlockUpdateS2CPacket;
 import net.minecraft.network.packet.s2c.play.ChunkDeltaUpdateS2CPacket;
 import net.minecraft.network.packet.s2c.play.GameJoinS2CPacket;
 import net.minecraft.network.packet.s2c.play.PlayerRespawnS2CPacket;
-import net.minecraft.network.packet.s2c.play.PlayerSpawnPositionS2CPacket;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -18,9 +16,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class ClientPlayNetworkHandlerMixin {
     @Inject(method = "onGameJoin", at = @At("TAIL"))
     private void confluxmap$onGameJoin(final GameJoinS2CPacket packet, final CallbackInfo ci) {
-        if (!MinecraftClient.getInstance().isOnThread()) {
-            return;
-        }
         //#if MC>=12100
         //$$ ClientWorldIdentityHandler.gameJoin(packet.commonPlayerSpawnInfo().seed());
         //#else
@@ -30,33 +25,10 @@ public abstract class ClientPlayNetworkHandlerMixin {
 
     @Inject(method = "onPlayerRespawn", at = @At("TAIL"))
     private void confluxmap$onPlayerRespawn(final PlayerRespawnS2CPacket packet, final CallbackInfo ci) {
-        if (!MinecraftClient.getInstance().isOnThread()) {
-            return;
-        }
         //#if MC>=12100
         //$$ ClientWorldIdentityHandler.respawn(packet.commonPlayerSpawnInfo().seed());
         //#else
         ClientWorldIdentityHandler.respawn(packet.getSha256Seed());
-        //#endif
-    }
-
-    @Inject(method = "onPlayerSpawnPosition", at = @At("HEAD"))
-    private void confluxmap$onPlayerSpawnPosition(
-        final PlayerSpawnPositionS2CPacket packet,
-        final CallbackInfo ci
-    ) {
-        if (!MinecraftClient.getInstance().isOnThread()) {
-            return;
-        }
-        //#if MC>=12109
-        //$$ ClientWorldIdentityHandler.spawnPosition(
-        //$$     packet.respawnData().getPos().getX(), packet.respawnData().getPos().getY(),
-        //$$     packet.respawnData().getPos().getZ(), packet.respawnData().yaw()
-        //$$ );
-        //#else
-        ClientWorldIdentityHandler.spawnPosition(
-            packet.getPos().getX(), packet.getPos().getY(), packet.getPos().getZ(), packet.getAngle()
-        );
         //#endif
     }
 

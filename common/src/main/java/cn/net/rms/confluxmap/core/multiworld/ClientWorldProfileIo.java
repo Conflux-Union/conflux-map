@@ -16,24 +16,15 @@ public final class ClientWorldProfileIo {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
     private final Path file;
-    private final Path blockedMarker;
     private final Logger logger;
-    private int consecutiveSaveFailures;
-    private long nextFailureLogAt;
 
     public ClientWorldProfileIo(final Path file, final Logger logger) {
         this.file = file;
-        this.blockedMarker = file.resolveSibling(file.getFileName() + ".blocked");
         this.logger = logger;
     }
 
     public ClientWorldProfileRegistry load() {
         if (!Files.exists(file)) {
-            if (Files.exists(blockedMarker)) {
-                return ClientWorldProfileRegistry.unavailable(
-                    "client world registry is quarantined; restore or remove the blocked marker explicitly"
-                );
-            }
             return new ClientWorldProfileRegistry();
         }
         try {
@@ -44,60 +35,23 @@ public final class ClientWorldProfileIo {
             if (registry == null) {
                 throw new JsonParseException("empty client world registry");
             }
-            for (final ClientWorldProfileRegistry.CommandConflict conflict : registry.normalize()) {
-                logger.warn(
-                    "Discarded duplicate client-world command on server {} from profile {} (commandHash={})",
-                    conflict.serverId(),
-                    conflict.profileId(),
-                    ClientWorldSignalHasher.hash(conflict.command()).substring(0, 12)
-                );
-            }
-            for (final ClientWorldProfileRegistry.ProfileIssue issue : registry.invalidProfiles()) {
-                logger.warn(
-                    "Discarded invalid client-world profile on server {} (profileId={}, reason={})",
-                    issue.serverId(), issue.profileId(), issue.reason()
-                );
-            }
-            clearBlockedMarker();
+            registry.normalize();
             return registry;
         } catch (final IOException | JsonParseException | IllegalArgumentException e) {
             logger.warn("Client world registry {} unreadable ({}), quarantining", file, e.toString());
-            quarantine(e.toString());
-            return ClientWorldProfileRegistry.unavailable(
-                "client world registry unavailable: " + e
-            );
+            quarantine();
+            return new ClientWorldProfileRegistry();
         }
     }
 
-    public SaveResult save(final ClientWorldProfileRegistry registry) {
-        Path temporary = null;
+    public void save(final ClientWorldProfileRegistry registry) {
         try {
-            if (file.getParent() != null) {
-                Files.createDirectories(file.getParent());
-            }
-            temporary = file.resolveSibling(file.getFileName() + ".tmp");
+            Files.createDirectories(file.getParent());
+            final Path temporary = file.resolveSibling(file.getFileName() + ".tmp");
             Files.writeString(temporary, GSON.toJson(registry), StandardCharsets.UTF_8);
             move(temporary);
-            clearBlockedMarker();
-            consecutiveSaveFailures = 0;
-            nextFailureLogAt = 0L;
-            return SaveResult.success();
         } catch (final IOException e) {
-            if (temporary != null) {
-                try {
-                    Files.deleteIfExists(temporary);
-                } catch (final IOException cleanupError) {
-                    logger.warn("Could not remove temporary client world registry {}", temporary, cleanupError);
-                }
-            }
-            final long now = System.currentTimeMillis();
-            consecutiveSaveFailures++;
-            if (now >= nextFailureLogAt) {
-                logger.error("Failed to save client world registry (attempt {}): {}", consecutiveSaveFailures, e.toString());
-                final long delay = Math.min(60_000L, 1_000L << Math.min(6, consecutiveSaveFailures - 1));
-                nextFailureLogAt = now + delay;
-            }
-            return SaveResult.failure(e.toString());
+            logger.error("Failed to save client world registry to {}", file, e);
         }
     }
 
@@ -109,45 +63,11 @@ public final class ClientWorldProfileIo {
         }
     }
 
-    private void quarantine(final String reason) {
+    private void quarantine() {
         try {
-            if (blockedMarker.getParent() != null) {
-                Files.createDirectories(blockedMarker.getParent());
-            }
-            Files.writeString(blockedMarker, reason, StandardCharsets.UTF_8);
-            final Path backup = nextBackupFile();
-            Files.move(file, backup);
+            Files.move(file, file.resolveSibling(file.getFileName() + ".bad"), StandardCopyOption.REPLACE_EXISTING);
         } catch (final IOException e) {
             logger.warn("Could not quarantine client world registry {}", file, e);
-        }
-    }
-
-    private void clearBlockedMarker() {
-        try {
-            Files.deleteIfExists(blockedMarker);
-        } catch (final IOException error) {
-            logger.warn("Could not clear client world registry blocked marker {}", blockedMarker, error);
-        }
-    }
-
-    private Path nextBackupFile() {
-        final String prefix = file.getFileName() + ".bad." + System.currentTimeMillis();
-        Path candidate = file.resolveSibling(prefix);
-        int suffix = 1;
-        while (Files.exists(candidate)) {
-            candidate = file.resolveSibling(prefix + "." + suffix++);
-        }
-        return candidate;
-    }
-
-    /** The result returned to profile mutations so UI actions never report an unsaved change as successful. */
-    public record SaveResult(boolean saved, String error) {
-        public static SaveResult success() {
-            return new SaveResult(true, null);
-        }
-
-        public static SaveResult failure(final String error) {
-            return new SaveResult(false, error);
         }
     }
 }

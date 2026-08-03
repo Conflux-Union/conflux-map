@@ -38,7 +38,6 @@ public final class McChunkSnapshotFactory {
     private static final float CROSS_SECTION_DARKEN = 0.4f;
     /** cave-nether-layers.md §2.1: the upward branch's fixed search window above the pivot. */
     private static final int UPWARD_SCAN_CAP = 10;
-    private static final int[] IDENTITY_SAMPLE_OFFSETS = {0, 5, 10, 15};
 
     private final MinecraftClient client;
     private final SpriteColorSampler sampler;
@@ -61,28 +60,6 @@ public final class McChunkSnapshotFactory {
      * for how callers derive it (debounced player Y, a slice's fixed Y, or the nether-roof pivot).
      */
     public ChunkSnapshot snapshot(final int chunkX, final int chunkZ, final MapLayer layer, final int pivotY, final long sessionToken) {
-        return snapshot(chunkX, chunkZ, layer, pivotY, sessionToken, false);
-    }
-
-    /** Captures only the 4x4 columns used by the identity fingerprint. */
-    public ChunkSnapshot snapshotIdentity(
-        final int chunkX,
-        final int chunkZ,
-        final MapLayer layer,
-        final int pivotY,
-        final long sessionToken
-    ) {
-        return snapshot(chunkX, chunkZ, layer, pivotY, sessionToken, true);
-    }
-
-    private ChunkSnapshot snapshot(
-        final int chunkX,
-        final int chunkZ,
-        final MapLayer layer,
-        final int pivotY,
-        final long sessionToken,
-        final boolean identityOnly
-    ) {
         final ClientWorld world = client.world;
         if (world == null) {
             return null;
@@ -111,11 +88,8 @@ public final class McChunkSnapshotFactory {
             final Heightmap heightmap = chunk.getHeightmap(Heightmap.Type.MOTION_BLOCKING);
             final int bottomY = world.getBottomY();
             final int topY = world.getTopY();
-            final int coordinateStep = identityOnly ? IDENTITY_SAMPLE_OFFSETS.length : 16;
-            for (int zIndex = 0; zIndex < coordinateStep; zIndex++) {
-                final int z = identityOnly ? IDENTITY_SAMPLE_OFFSETS[zIndex] : zIndex;
-                for (int xIndex = 0; xIndex < coordinateStep; xIndex++) {
-                    final int x = identityOnly ? IDENTITY_SAMPLE_OFFSETS[xIndex] : xIndex;
+            for (int z = 0; z < 16; z++) {
+                for (int x = 0; x < 16; x++) {
                     sampleColumn(
                         chunk, world, pos, baseX, baseZ, x, z, bottomY, topY, playerY, heightmap, z * 16 + x,
                         surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light
@@ -126,11 +100,8 @@ public final class McChunkSnapshotFactory {
             final boolean netherAmbient = isNetherLayer(layer.type());
             final int worldMinY = world.getBottomY();
             final int worldMaxY = world.getTopY();
-            final int coordinateStep = identityOnly ? IDENTITY_SAMPLE_OFFSETS.length : 16;
-            for (int zIndex = 0; zIndex < coordinateStep; zIndex++) {
-                final int z = identityOnly ? IDENTITY_SAMPLE_OFFSETS[zIndex] : zIndex;
-                for (int xIndex = 0; xIndex < coordinateStep; xIndex++) {
-                    final int x = identityOnly ? IDENTITY_SAMPLE_OFFSETS[xIndex] : xIndex;
+            for (int z = 0; z < 16; z++) {
+                for (int x = 0; x < 16; x++) {
                     sampleFloorColumn(
                         chunk, world, pos, baseX, baseZ, x, z, pivotY, worldMinY, worldMaxY, netherAmbient, z * 16 + x,
                         surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light
@@ -138,7 +109,7 @@ public final class McChunkSnapshotFactory {
                 }
             }
         }
-        BiomeIdentityCapture.capture(world, pos, baseX, baseZ, surfaceY, biomeId, identityOnly);
+        BiomeIdentityCapture.capture(world, pos, baseX, baseZ, surfaceY, biomeId);
         return new ChunkSnapshot(
             chunkX, chunkZ, sessionToken, surfaceY, biomeId, fluidDepth,
             baseArgb, tintArgb, overlayArgb, kind, light

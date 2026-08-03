@@ -24,12 +24,6 @@ final class WaypointHudMotionTest {
     }
 
     @Test
-    void labelAnchorKeepsLowWaypointsAtEyeLevel() {
-        assertEquals(80.5, WaypointHudMotion.labelAnchorY(64.0, 80.0, 1.5), EPSILON);
-        assertEquals(101.5, WaypointHudMotion.labelAnchorY(100.0, 80.0, 1.5), EPSILON);
-    }
-
-    @Test
     void animationCanReverseFromItsCurrentProgress() {
         final float collapsing = WaypointHudMotion.advance(0.6f, false, 0.011f);
         assertEquals(0.5f, collapsing, 0.0001f);

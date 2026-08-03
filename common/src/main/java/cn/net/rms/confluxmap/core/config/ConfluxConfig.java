@@ -3,7 +3,6 @@ package cn.net.rms.confluxmap.core.config;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.core.loadstate.ChunkLoadDetailMode;
 import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
-import cn.net.rms.confluxmap.core.multiworld.ClientWorldPolicy;
 import cn.net.rms.confluxmap.core.survey.SurveyReminderSchedule;
 import cn.net.rms.confluxmap.core.util.TileMath;
 
@@ -106,12 +105,6 @@ public final class ConfluxConfig {
 
     public int snapshotBudgetPerTick = 8;
     public int gpuTileCacheLimit = 256;
-    /** Advanced client-only proxy world recognition limits; all values are safety-clamped. */
-    public int clientWorldMaxProfilesPerServer = ClientWorldPolicy.DEFAULT_MAX_PROFILES_PER_SERVER;
-    public int clientWorldMaxBindingsPerProfile = ClientWorldPolicy.DEFAULT_MAX_BINDINGS_PER_PROFILE;
-    public int clientWorldCommandConfirmationSeconds = ClientWorldPolicy.DEFAULT_COMMAND_CONFIRMATION_SECONDS;
-    public int clientWorldVisitRefreshSeconds = ClientWorldPolicy.DEFAULT_VISIT_REFRESH_SECONDS;
-    public int clientWorldVisitRefreshDistance = ClientWorldPolicy.DEFAULT_VISIT_REFRESH_DISTANCE;
 
     /** Master toggle for the whole entity-radar overlay (docs/reference-specs/radar-icons.md sec 4). */
     public boolean radarEnabled = true;
@@ -210,11 +203,6 @@ public final class ConfluxConfig {
         c.dynamicLighting = dynamicLighting;
         c.snapshotBudgetPerTick = snapshotBudgetPerTick;
         c.gpuTileCacheLimit = gpuTileCacheLimit;
-        c.clientWorldMaxProfilesPerServer = clientWorldMaxProfilesPerServer;
-        c.clientWorldMaxBindingsPerProfile = clientWorldMaxBindingsPerProfile;
-        c.clientWorldCommandConfirmationSeconds = clientWorldCommandConfirmationSeconds;
-        c.clientWorldVisitRefreshSeconds = clientWorldVisitRefreshSeconds;
-        c.clientWorldVisitRefreshDistance = clientWorldVisitRefreshDistance;
         c.radarEnabled = radarEnabled;
         c.radarShowPlayers = radarShowPlayers;
         c.radarShowHostile = radarShowHostile;
@@ -298,12 +286,6 @@ public final class ConfluxConfig {
         netherSliceY = clamp(netherSliceY, 0, 127);
         snapshotBudgetPerTick = clamp(snapshotBudgetPerTick, 1, 64);
         gpuTileCacheLimit = clamp(gpuTileCacheLimit, 16, 2048);
-        final ClientWorldPolicy clientWorldPolicy = clientWorldPolicy();
-        clientWorldMaxProfilesPerServer = clientWorldPolicy.maxProfilesPerServer();
-        clientWorldMaxBindingsPerProfile = clientWorldPolicy.maxBindingsPerProfile();
-        clientWorldCommandConfirmationSeconds = clientWorldPolicy.commandConfirmationSeconds();
-        clientWorldVisitRefreshSeconds = clientWorldPolicy.visitRefreshSeconds();
-        clientWorldVisitRefreshDistance = clientWorldPolicy.visitRefreshDistance();
         radarMaxEntities = clamp(radarMaxEntities, 1, 500);
         radarIconSize = clamp(radarIconSize, MIN_RADAR_ICON_SIZE, MAX_RADAR_ICON_SIZE);
         waypointRenderDistance = clamp(waypointRenderDistance, 0, 100_000);
@@ -348,19 +330,7 @@ public final class ConfluxConfig {
     private static int clamp(final int v, final int min, final int max) {
         return Math.max(min, Math.min(max, v));
     }
-
     private static double clamp(final double value, final double min, final double max) {
         return Double.isFinite(value) ? Math.max(min, Math.min(max, value)) : min;
-    }
-
-    /** Returns a normalized snapshot so live config edits cannot bypass recognition safety caps. */
-    public ClientWorldPolicy clientWorldPolicy() {
-        return new ClientWorldPolicy(
-            clientWorldMaxProfilesPerServer,
-            clientWorldMaxBindingsPerProfile,
-            clientWorldCommandConfirmationSeconds,
-            clientWorldVisitRefreshSeconds,
-            clientWorldVisitRefreshDistance
-        );
     }
 }
