@@ -27,9 +27,12 @@ class ClientWorldProfileIoTest {
             registry,
             () -> UUID.fromString("00000000-0000-0000-0000-000000000001")
         );
-        final ClientWorldProfile original = resolver.resolve(
+        final ClientWorldProfile original = resolver.resolveVelocityServer(
             "example.net_25565",
-            new ClientWorldObservation(OptionalLong.of(42L), Map.of("brand", "hashed-brand"))
+            "Survival",
+            new ClientWorldObservation(OptionalLong.of(42L), Map.of("brand", "hashed-brand")),
+            null,
+            false
         ).profile();
         resolver.rename("example.net_25565", original.id(), "Survival");
 
@@ -40,6 +43,7 @@ class ClientWorldProfileIoTest {
         assertEquals("world", restored.storageId());
         assertEquals("Survival", restored.displayName());
         assertEquals(1, restored.bindingCount());
+        assertEquals("survival", restored.velocityServerName().orElseThrow());
     }
 
     @Test

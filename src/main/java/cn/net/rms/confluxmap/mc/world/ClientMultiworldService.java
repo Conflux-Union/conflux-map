@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.mc.world;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.core.cache.RegionFileCodec;
@@ -24,6 +25,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -38,19 +40,24 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.Formatting;
 
 /**
- * Client-only upstream world resolver for proxy addresses. The server seed hash is strong evidence;
- * hashed registry/command/brand metadata provides conservative fallback evidence, and existing
- * terrain cache is consulted last. Ambiguous observations intentionally return no identity so the
- * normal session lifecycle suspends every map writer until the user makes a choice.
+ * Client-only upstream world resolver for proxy addresses. A structurally verified Velocity
+ * /server response provides an exact registered-server identity. Otherwise, the seed hash,
+ * hashed registry/command/brand metadata and existing terrain cache form a conservative fallback.
+ * Ambiguous observations intentionally return no identity so the normal session lifecycle
+ * suspends every map writer until the user makes a choice.
  */
 public final class ClientMultiworldService {
     private static final int SIGNAL_REFRESH_TICKS = 20;
+    private static final int VELOCITY_QUERY_TIMEOUT_TICKS = 40;
 
     private final MinecraftClient client;
     private final CompanionSession companion;
     private final ClientWorldProfileResolver resolver;
     private final Path cacheRoot;
     private final Executor io;
+    private final VelocityServerIdentityQuery velocityQuery = new VelocityServerIdentityQuery(
+        VELOCITY_QUERY_TIMEOUT_TICKS
+    );
 
     private OptionalLong seedHash = OptionalLong.empty();
     private OptionalLong previousSeedHash = OptionalLong.empty();
@@ -60,9 +67,11 @@ public final class ClientMultiworldService {
     private String serverId;
     private String lockedProfileId;
     private OptionalLong lockedSeedHash = OptionalLong.empty();
+    private String velocityLegacyProfileId;
     private boolean gameJoinObserved;
     private boolean proxyWorldJoin;
     private int signalTicks;
+    private long clientTick;
     private long observationGeneration;
     private boolean terrainAttempted;
     private boolean ambiguityNotified;
@@ -105,6 +114,7 @@ public final class ClientMultiworldService {
         previousSeedHash = switchedUpstreamWorld ? departedSeedHash : OptionalLong.empty();
         proxyWorldJoin = switchedUpstreamWorld;
         seedHash = OptionalLong.of(observedSeedHash);
+        velocityQuery.arm(!switchedUpstreamWorld);
         if (switchedUpstreamWorld) {
             ConfluxMapMod.LOGGER.info(
                 "Client proxy world transition observed (seedChanged={})",
@@ -131,6 +141,10 @@ public final class ClientMultiworldService {
 
     /** Resolves only the client-owned fallback. Companion world UUIDs remain authoritative. */
     public Optional<WorldIdentity> resolve(final String currentAddress) {
+        observeAddress(currentAddress);
+        if (shouldAwaitVelocityIdentity()) {
+            return Optional.empty();
+        }
         final ClientWorldResolution currentResolution = resolveProfile(currentAddress);
         if (currentResolution.state() != ClientWorldResolution.State.RESOLVED) {
             notifyAmbiguity();
@@ -144,14 +158,10 @@ public final class ClientMultiworldService {
 
     /** Applies the profile state machine without triggering UI or terrain fallback side effects. */
     ClientWorldResolution resolveProfile(final String currentAddress) {
-        if (!currentAddress.equals(address)) {
-            address = currentAddress;
-            serverId = WorldIdentity.multiplayer(currentAddress).serverId();
-            clearProfileLock();
+        observeAddress(currentAddress);
+        if (velocityQuery.blocksFallback() && supportsVelocityServerQuery()) {
             resolution = ClientWorldResolution.collecting();
-            terrainAttempted = false;
-            ambiguityNotified = false;
-            observationGeneration++;
+            return resolution;
         }
         if (lockedProfileId != null && resolution.state() != ClientWorldResolution.State.RESOLVED) {
             resolution = resolver.select(serverId, lockedProfileId, observation());
@@ -217,6 +227,7 @@ public final class ClientMultiworldService {
     }
 
     private void tickSignals() {
+        clientTick++;
         if (client.world == null || client.player == null || client.getNetworkHandler() == null || client.isInSingleplayer()) {
             return;
         }
@@ -237,6 +248,10 @@ public final class ClientMultiworldService {
         terrainAttempted = false;
         observationGeneration++;
         if (serverId != null) {
+            if (velocityQuery.blocksFallback() && supportsVelocityServerQuery()) {
+                resolution = ClientWorldResolution.collecting();
+                return;
+            }
             if (lockedProfileId != null && lockedSeedHash.equals(seedHash)) {
                 resolution = resolver.select(serverId, lockedProfileId, observation());
             } else {
@@ -250,6 +265,32 @@ public final class ClientMultiworldService {
             notifyAmbiguity();
             tryTerrainMatch();
         }
+    }
+
+    /** Accepts only a response from the currently pending client-issued Velocity query. */
+    void onVelocityServerIdentified(final String velocityServerName) {
+        velocityQuery.accept(velocityServerName).ifPresent(match -> {
+            if (serverId == null) {
+                return;
+            }
+            resolution = resolver.resolveVelocityServer(
+                serverId,
+                match.serverName(),
+                observation(),
+                velocityLegacyProfileId,
+                match.mayAdoptLegacyProfile()
+            );
+            velocityLegacyProfileId = null;
+            terrainAttempted = false;
+            ambiguityNotified = false;
+            observationGeneration++;
+            if (resolution.state() == ClientWorldResolution.State.RESOLVED) {
+                lockProfile(resolution.profile());
+            } else {
+                notifyAmbiguity();
+                tryTerrainMatch();
+            }
+        });
     }
 
     private Map<String, String> collectSignals() {
@@ -417,6 +458,8 @@ public final class ClientMultiworldService {
         address = null;
         serverId = null;
         clearProfileLock();
+        velocityQuery.disarm();
+        velocityLegacyProfileId = null;
         gameJoinObserved = false;
         proxyWorldJoin = false;
         signalTicks = 0;
@@ -443,5 +486,57 @@ public final class ClientMultiworldService {
     private void clearProfileLock() {
         lockedProfileId = null;
         lockedSeedHash = OptionalLong.empty();
+    }
+
+    private void observeAddress(final String currentAddress) {
+        if (currentAddress.equals(address)) {
+            return;
+        }
+        address = currentAddress;
+        serverId = WorldIdentity.multiplayer(currentAddress).serverId();
+        clearProfileLock();
+        resolution = ClientWorldResolution.collecting();
+        terrainAttempted = false;
+        ambiguityNotified = false;
+        velocityLegacyProfileId = null;
+        observationGeneration++;
+    }
+
+    private boolean shouldAwaitVelocityIdentity() {
+        if (companion.state() == CompanionSession.State.ACTIVE) {
+            velocityQuery.disarm();
+            velocityLegacyProfileId = null;
+            return false;
+        }
+        if (velocityQuery.ready()) {
+            velocityLegacyProfileId = velocityQuery.mayAdoptLegacyProfile()
+                && resolution.state() == ClientWorldResolution.State.RESOLVED
+                ? resolution.profile().id()
+                : null;
+        }
+        return velocityQuery.shouldAwait(
+            clientTick,
+            supportsVelocityServerQuery(),
+            () -> MinecraftAccess.sendCommand(client, "server")
+        );
+    }
+
+    private boolean supportsVelocityServerQuery() {
+        if (client == null || client.player == null || client.getNetworkHandler() == null) {
+            return false;
+        }
+        //#if MC>=260100
+        //$$ final String brand = client.getConnection().serverBrand();
+        //$$ final boolean hasServerCommand = client.getConnection().getCommands().getRoot().getChild("server") != null;
+        //#elseif MC>=12100
+        //$$ final String brand = client.getNetworkHandler().getBrand();
+        //$$ final boolean hasServerCommand = client.getNetworkHandler()
+        //$$     .getCommandDispatcher().getRoot().getChild("server") != null;
+        //#else
+        final String brand = client.player.getServerBrand();
+        final boolean hasServerCommand = client.getNetworkHandler()
+            .getCommandDispatcher().getRoot().getChild("server") != null;
+        //#endif
+        return brand != null && brand.toLowerCase(Locale.ROOT).contains("velocity") && hasServerCommand;
     }
 }

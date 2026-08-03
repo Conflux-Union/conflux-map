@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.OptionalLong;
 
 /** One client-owned logical world namespace beneath a multiplayer address. */
@@ -14,6 +15,7 @@ public final class ClientWorldProfile {
     private String displayName;
     private List<Binding> bindings;
     private boolean recognitionDisabled;
+    private String velocityServerName;
 
     ClientWorldProfile() {
         // Gson
@@ -42,17 +44,31 @@ public final class ClientWorldProfile {
         return bindings == null ? 0 : bindings.size();
     }
 
+    public Optional<String> velocityServerName() {
+        return Optional.ofNullable(velocityServerName);
+    }
+
     void rename(final String name) {
         displayName = requireText(name, "name");
     }
 
     void clearBindings() {
         bindings().clear();
+        velocityServerName = null;
         recognitionDisabled = true;
     }
 
     boolean recognitionDisabled() {
         return recognitionDisabled;
+    }
+
+    boolean matchesVelocityServer(final String serverName) {
+        return Objects.equals(velocityServerName, serverName);
+    }
+
+    void bindVelocityServer(final String serverName) {
+        velocityServerName = requireText(serverName, "serverName");
+        recognitionDisabled = false;
     }
 
     boolean matchesSeed(final long seedHash) {
@@ -94,6 +110,9 @@ public final class ClientWorldProfile {
         id = requireText(id, "id");
         storageId = requireText(storageId, "storageId");
         displayName = requireText(displayName, "displayName");
+        if (velocityServerName != null) {
+            velocityServerName = requireText(velocityServerName, "velocityServerName");
+        }
         final List<Binding> valid = new ArrayList<>();
         if (bindings != null) {
             for (final Binding binding : bindings) {

@@ -59,6 +59,14 @@ public final class Texts {
         //#endif
     }
 
+    public static ClickEvent runCommand(final String command) {
+        //#if MC>=12105
+        //$$ return new ClickEvent.RunCommand(command);
+        //#else
+        return new ClickEvent(ClickEvent.Action.RUN_COMMAND, command);
+        //#endif
+    }
+
     public static HoverEvent showText(final Text value) {
         //#if MC>=12105
         //$$ return new HoverEvent.ShowText(value);
@@ -73,6 +81,18 @@ public final class Texts {
         //$$ return event instanceof ClickEvent.CopyToClipboard copy ? copy.value() : null;
         //#else
         return event.getValue();
+        //#endif
+    }
+
+    /** Run-command payload carried by a click event, or null for every other action. */
+    public static String runCommandValue(final ClickEvent event) {
+        if (event == null) {
+            return null;
+        }
+        //#if MC>=12105
+        //$$ return event instanceof ClickEvent.RunCommand run ? run.command() : null;
+        //#else
+        return event.getAction() == ClickEvent.Action.RUN_COMMAND ? event.getValue() : null;
         //#endif
     }
 }

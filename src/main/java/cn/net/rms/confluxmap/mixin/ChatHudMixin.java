@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mixin;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.mc.chat.WaypointChatMessageRewriter;
+import cn.net.rms.confluxmap.mc.world.ClientWorldIdentityHandler;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.hud.ChatHud;
 import net.minecraft.text.Text;
@@ -30,6 +31,7 @@ public abstract class ChatHudMixin {
         argsOnly = true
     )
     private Text confluxmap$rewriteWaypointMessage(final Text original) {
+        ClientWorldIdentityHandler.chatMessage(original);
         final MinecraftClient client = MinecraftClient.getInstance();
         if (client.world == null) {
             return original;
