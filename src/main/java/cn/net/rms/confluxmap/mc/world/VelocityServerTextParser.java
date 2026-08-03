@@ -11,6 +11,11 @@ import net.minecraft.text.TextColor;
 
 /** Adapts Minecraft's rendered text tree to the platform-neutral Velocity list parser. */
 public final class VelocityServerTextParser {
+    private static final VelocityServerCurrentMessageMatcher CURRENT_SERVER_MESSAGES =
+        VelocityServerCurrentMessageMatcher.load();
+    private static final VelocityServerAvailablePrefixMatcher AVAILABLE_SERVER_PREFIXES =
+        VelocityServerAvailablePrefixMatcher.load();
+
     private VelocityServerTextParser() {
     }
 
@@ -20,11 +25,16 @@ public final class VelocityServerTextParser {
             segments.add(new VelocityServerListParser.Segment(
                 text,
                 color(style),
-                Texts.runCommandValue(style.getClickEvent())
+                Texts.runCommandValue(style.getClickEvent()),
+                AVAILABLE_SERVER_PREFIXES.matches(text)
             ));
             return Optional.empty();
         }, Style.EMPTY);
         return VelocityServerListParser.parse(segments);
+    }
+
+    public static boolean isCurrentServerNotice(final Text message) {
+        return message != null && CURRENT_SERVER_MESSAGES.matches(message.getString());
     }
 
     private static Integer color(final Style style) {
