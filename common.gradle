@@ -184,6 +184,13 @@ java {
         toolchain { languageVersion = JavaLanguageVersion.of(25) }
     }
 }
+// Minecraft 1.17.1's Mixin runtime cannot inspect classes emitted by newer JDKs. Keep compile
+// compatibility unchanged, but run each Loom launch task on the Java level required by the target.
+tasks.withType(JavaExec).configureEach {
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(javaCompatibility.getMajorVersion())
+    }
+}
 jar { from '../../LICENSE' }
 tasks.register('checkCoreIsolation') {
     group = 'verification'
