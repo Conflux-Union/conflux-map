@@ -9,6 +9,22 @@ import org.junit.jupiter.api.Test;
 
 final class ChatHudWaypointRewriteTest {
     @Test
+    void chatHudHidesTheVelocityResponseConsumedByWorldDetection() throws Exception {
+        final String source = Files.readString(preprocessedMixinSource());
+
+        assertTrue(
+            source.contains("confluxmap$hideVelocityProbeResponse"),
+            "the chat queue must intercept the world-detection response before displaying it"
+        );
+        assertTrue(
+            source.contains("ClientWorldIdentityHandler.chatMessage(message)")
+                && source.contains("cancellable = true")
+                && source.contains("callback.cancel()"),
+            "a consumed Velocity response must be removed from the chat queue"
+        );
+    }
+
+    @Test
     void chatHudRewritesModernPlayerAndSystemMessagesAtTheirSharedQueueBoundary() throws Exception {
         final String source = Files.readString(preprocessedMixinSource());
 

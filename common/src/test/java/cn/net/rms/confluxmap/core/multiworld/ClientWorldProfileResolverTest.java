@@ -174,7 +174,20 @@ class ClientWorldProfileResolverTest {
 
         assertEquals(legacy.id(), resolved.profile().id());
         assertEquals("survival", resolved.profile().velocityServerName().orElseThrow());
+        assertEquals("survival", resolved.profile().displayName());
         assertEquals(1, resolver.profiles(SERVER).size());
+    }
+
+    @Test
+    void velocityServerNameBecomesTheManagedWorldName() {
+        final ClientWorldProfileResolver resolver = resolver();
+        final ClientWorldObservation observation = observation(11L, "velocity");
+
+        final ClientWorldProfile profile = resolver.resolveVelocityServer(
+            SERVER, "survival", observation, null, false
+        ).profile();
+
+        assertEquals("survival", profile.displayName());
     }
 
     @Test

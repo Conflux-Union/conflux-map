@@ -27,11 +27,11 @@ public final class ClientWorldIdentityHandler {
         }
     }
 
-    /** Observes rendered chat structure without changing whether the message is displayed. */
-    public static void chatMessage(final Text message) {
+    /** Returns whether a pending world-detection query consumed this rendered chat message. */
+    public static boolean chatMessage(final Text message) {
         final ClientMultiworldService current = service;
-        if (current != null) {
-            VelocityServerTextParser.parse(message).ifPresent(current::onVelocityServerIdentified);
-        }
+        return current != null && VelocityServerTextParser.parse(message)
+            .map(current::onVelocityServerIdentified)
+            .orElse(false);
     }
 }

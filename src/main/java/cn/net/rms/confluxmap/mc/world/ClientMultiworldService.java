@@ -268,8 +268,11 @@ public final class ClientMultiworldService {
     }
 
     /** Accepts only a response from the currently pending client-issued Velocity query. */
-    void onVelocityServerIdentified(final String velocityServerName) {
-        velocityQuery.accept(velocityServerName).ifPresent(match -> {
+    boolean onVelocityServerIdentified(final String velocityServerName) {
+        final Optional<VelocityServerIdentityQuery.Match> accepted = velocityQuery.accept(
+            velocityServerName
+        );
+        accepted.ifPresent(match -> {
             if (serverId == null) {
                 return;
             }
@@ -291,6 +294,7 @@ public final class ClientMultiworldService {
                 tryTerrainMatch();
             }
         });
+        return accepted.isPresent();
     }
 
     private Map<String, String> collectSignals() {
