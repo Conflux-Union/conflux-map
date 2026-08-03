@@ -1,6 +1,5 @@
 package cn.net.rms.confluxmap.mixin;
 
-//#if MC<12000
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -19,10 +18,16 @@ import org.objectweb.asm.Opcodes;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
 final class InGameHudMixinTargetTest {
-    private static final String IN_GAME_HUD = "net/minecraft/client/gui/hud/InGameHud";
+    //#if MC>=260200
+    //$$ private static final String HUD_CLASS = "net/minecraft/client/gui/Hud";
+    //#elseif MC>=260100
+    //$$ private static final String HUD_CLASS = "net/minecraft/client/gui/Gui";
+    //#else
+    private static final String HUD_CLASS = "net/minecraft/client/gui/hud/InGameHud";
+    //#endif
 
     @Test
-    void legacyScoreboardRedirectMatchesTheVanillaFillInvocation() throws IOException {
+    void scoreboardRedirectMatchesTheVanillaFillInvocation() throws IOException {
         final Method redirector = Arrays.stream(InGameHudMixin.class.getDeclaredMethods())
             .filter(method -> method.getName().equals("confluxmap$captureScoreboardFill"))
             .findFirst()
@@ -36,7 +41,7 @@ final class InGameHudMixinTargetTest {
         final AtomicBoolean targetMethodStatic = new AtomicBoolean();
         final AtomicBoolean invocationFound = new AtomicBoolean();
 
-        try (InputStream input = minecraftClass(IN_GAME_HUD)) {
+        try (InputStream input = minecraftClass(HUD_CLASS)) {
             new ClassReader(input).accept(new ClassVisitor(Opcodes.ASM9) {
                 @Override
                 public MethodVisitor visitMethod(
@@ -123,4 +128,3 @@ final class InGameHudMixinTargetTest {
         }
     }
 }
-//#endif

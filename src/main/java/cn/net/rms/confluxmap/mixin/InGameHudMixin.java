@@ -70,8 +70,13 @@ public abstract class InGameHudMixin {
     //$$ }
     //#elseif MC>=12000
     //$$ @Redirect(
-    //$$     method = "renderScoreboardSidebar(Lnet/minecraft/client/gui/DrawContext;"
-    //$$         + "Lnet/minecraft/scoreboard/ScoreboardObjective;)V",
+        //#if MC>=12101 && MC<12103
+        //$$ method = "method_55440([Lnet/minecraft/client/gui/hud/InGameHud$SidebarEntry;"
+        //$$     + "Lnet/minecraft/client/gui/DrawContext;ILnet/minecraft/text/Text;I)V",
+        //#else
+        //$$ method = "renderScoreboardSidebar(Lnet/minecraft/client/gui/DrawContext;"
+        //$$     + "Lnet/minecraft/scoreboard/ScoreboardObjective;)V",
+        //#endif
     //$$     at = @At(
     //$$         value = "INVOKE",
     //$$         target = "Lnet/minecraft/client/gui/DrawContext;fill(IIIII)V"
