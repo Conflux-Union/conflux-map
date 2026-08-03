@@ -267,12 +267,16 @@ public final class ClientMultiworldService {
         }
     }
 
-    /** Accepts only a response from the currently pending client-issued Velocity query. */
-    boolean onVelocityServerIdentified(final String velocityServerName) {
-        final Optional<VelocityServerIdentityQuery.Match> accepted = velocityQuery.accept(
-            velocityServerName
+    /** Consumes only the response sequence from the currently pending client-issued query. */
+    boolean onVelocityServerMessage(
+        final Optional<String> velocityServerName,
+        final boolean currentServerNotice
+    ) {
+        final VelocityServerIdentityQuery.Response response = velocityQuery.observe(
+            velocityServerName,
+            currentServerNotice
         );
-        accepted.ifPresent(match -> {
+        response.match().ifPresent(match -> {
             if (serverId == null) {
                 return;
             }
@@ -294,7 +298,7 @@ public final class ClientMultiworldService {
                 tryTerrainMatch();
             }
         });
-        return accepted.isPresent();
+        return response.consumed();
     }
 
     private Map<String, String> collectSignals() {

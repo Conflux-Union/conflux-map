@@ -14,16 +14,16 @@ class VelocityServerListParserTest {
     @Test
     void identifiesTheCurrentServerWithoutReadingTheLocalizedPrefix() {
         assertEquals("survival", VelocityServerListParser.parse(List.of(
-            segment("当前可用的服务器：", YELLOW, null),
+            prefix("可用的服务器："),
             segment("survival", GREEN, null),
-            segment(" ", null, null),
+            segment(", ", GRAY, null),
             segment("creative", GRAY, "/server creative")
         )).orElseThrow());
 
         assertEquals("survival", VelocityServerListParser.parse(List.of(
-            segment("Available servers: ", YELLOW, null),
+            prefix("Available servers:"),
             segment("survival", GREEN, null),
-            segment(" ", null, null),
+            segment(", ", GRAY, null),
             segment("creative", GRAY, "/server creative")
         )).orElseThrow());
     }
@@ -31,7 +31,7 @@ class VelocityServerListParserTest {
     @Test
     void acceptsAStandardListContainingOnlyTheCurrentServer() {
         assertEquals("lobby", VelocityServerListParser.parse(List.of(
-            segment("利用可能なサーバー: ", YELLOW, null),
+            prefix("利用可能なサーバー:"),
             segment("lobby", GREEN, null)
         )).orElseThrow());
     }
@@ -42,15 +42,40 @@ class VelocityServerListParserTest {
             segment("survival", GREEN, null)
         )).isEmpty());
         assertTrue(VelocityServerListParser.parse(List.of(
-            segment("Servers: ", YELLOW, null),
+            prefix("Available servers:"),
             segment("survival", GREEN, null),
+            segment(", ", GRAY, null),
             segment("creative", GRAY, "/warp creative")
         )).isEmpty());
         assertTrue(VelocityServerListParser.parse(List.of(
-            segment("Servers: ", YELLOW, null),
+            prefix("Available servers:"),
             segment("survival", GREEN, null),
+            segment(", ", GRAY, null),
             segment("creative", GREEN, null)
         )).isEmpty());
+    }
+
+    @Test
+    void rejectsAMotdThatOnlyResemblesTheVelocityServerList() {
+        assertTrue(VelocityServerListParser.parse(List.of(
+            segment("Welcome", YELLOW, null),
+            segment("lobby", GREEN, null),
+            segment("creative", GRAY, "/server creative")
+        )).isEmpty());
+    }
+
+    @Test
+    void rejectsAMotdWithTheOfficialPrefixButANonVelocityLayout() {
+        assertTrue(VelocityServerListParser.parse(List.of(
+            prefix("Available servers:"),
+            segment("lobby", GREEN, null),
+            segment(" | ", GRAY, null),
+            segment("creative", GRAY, "/server creative")
+        )).isEmpty());
+    }
+
+    private static VelocityServerListParser.Segment prefix(final String text) {
+        return new VelocityServerListParser.Segment(text, YELLOW, null, true);
     }
 
     private static VelocityServerListParser.Segment segment(

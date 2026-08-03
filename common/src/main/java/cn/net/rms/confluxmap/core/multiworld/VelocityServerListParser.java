@@ -10,46 +10,47 @@ public final class VelocityServerListParser {
     private static final int GRAY = 0xAAAAAA;
     private static final int YELLOW = 0xFFFF55;
     private static final String SERVER_COMMAND_PREFIX = "/server ";
+    private static final String SERVER_SEPARATOR = ", ";
     private static final int MAX_SERVER_NAME_LENGTH = 256;
 
     private VelocityServerListParser() {
     }
 
-    /**
-     * The localized prefix is deliberately ignored. Velocity identifies the current server with
-     * green text and every other server with a gray /server click action.
-     */
+    /** Extracts the current server from a list whose prefix was authenticated by the adapter. */
     public static Optional<String> parse(final List<Segment> segments) {
         if (segments == null || segments.isEmpty()) {
             return Optional.empty();
         }
+        final List<Segment> visible = segments.stream()
+            .filter(segment -> segment != null && segment.text() != null
+                && !segment.text().isBlank())
+            .toList();
+        if (visible.size() < 2 || !isVelocityPrefix(visible.get(0))) {
+            return Optional.empty();
+        }
         String current = null;
-        boolean velocityPrefix = false;
-        for (final Segment segment : segments) {
-            if (segment == null || segment.text() == null || segment.text().isBlank()) {
+        boolean expectServer = true;
+        for (int index = 1; index < visible.size(); index++) {
+            final Segment segment = visible.get(index);
+            if (!expectServer) {
+                if (!isServerSeparator(segment)) {
+                    return Optional.empty();
+                }
+                expectServer = true;
                 continue;
             }
             final String text;
             try {
                 text = normalizeServerName(segment.text());
             } catch (final IllegalArgumentException ignored) {
-                if (segment.runCommand() != null || Integer.valueOf(GREEN).equals(segment.colorRgb())) {
-                    return Optional.empty();
-                }
-                continue;
-            }
-            if (Integer.valueOf(YELLOW).equals(segment.colorRgb()) && segment.runCommand() == null) {
-                velocityPrefix = true;
-                continue;
+                return Optional.empty();
             }
             if (Integer.valueOf(GREEN).equals(segment.colorRgb()) && segment.runCommand() == null) {
                 if (current != null) {
                     return Optional.empty();
                 }
                 current = text;
-                continue;
-            }
-            if (segment.runCommand() != null) {
+            } else if (segment.runCommand() != null) {
                 if (!Integer.valueOf(GRAY).equals(segment.colorRgb())) {
                     return Optional.empty();
                 }
@@ -57,9 +58,24 @@ public final class VelocityServerListParser {
                 if (target.isEmpty() || !target.get().equals(text)) {
                     return Optional.empty();
                 }
+            } else {
+                return Optional.empty();
             }
+            expectServer = false;
         }
-        return velocityPrefix && current != null ? Optional.of(current) : Optional.empty();
+        return !expectServer && current != null ? Optional.of(current) : Optional.empty();
+    }
+
+    private static boolean isVelocityPrefix(final Segment segment) {
+        return segment.velocityAvailablePrefix()
+            && Integer.valueOf(YELLOW).equals(segment.colorRgb())
+            && segment.runCommand() == null;
+    }
+
+    private static boolean isServerSeparator(final Segment segment) {
+        return SERVER_SEPARATOR.equals(segment.text())
+            && Integer.valueOf(GRAY).equals(segment.colorRgb())
+            && segment.runCommand() == null;
     }
 
     static String normalizeServerName(final String value) {
@@ -85,7 +101,15 @@ public final class VelocityServerListParser {
         }
     }
 
-    /** One flattened text fragment with its effective RGB color and optional run-command action. */
-    public record Segment(String text, Integer colorRgb, String runCommand) {
+    /** One flattened text fragment with its effective style and authenticated prefix marker. */
+    public record Segment(
+        String text,
+        Integer colorRgb,
+        String runCommand,
+        boolean velocityAvailablePrefix
+    ) {
+        public Segment(final String text, final Integer colorRgb, final String runCommand) {
+            this(text, colorRgb, runCommand, false);
+        }
     }
 }
