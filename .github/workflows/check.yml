@@ -21,6 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     needs: Get-Versions
     strategy:
+      fail-fast: true
       matrix:
         minecraft_version: ${{ fromJson(needs.Get-Versions.outputs.versions) }}
     steps:
@@ -51,6 +52,142 @@ jobs:
       - name: Build for ${{ matrix.minecraft_version }}
         id: build
         run: ./gradlew :${{ matrix.minecraft_version }}:build
+      - name: Connect client to server for ${{ matrix.minecraft_version }}
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          MINECRAFT_VERSION: ${{ matrix.minecraft_version }}
+        run: |
+          set -Eeuo pipefail
+
+          minecraft_version="$MINECRAFT_VERSION"
+          if [[ ! "$minecraft_version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "::error::Invalid matrix Minecraft version: $minecraft_version"
+            exit 1
+          fi
+
+          smoke_root="versions/$minecraft_version/build/connection-smoke"
+          server_dir="$smoke_root/server"
+          client_dir="$smoke_root/client"
+          server_output="$smoke_root/server-output.log"
+          client_output="$smoke_root/client-output.log"
+          server_pid=""
+          client_pid=""
+
+          stop_process_group() {
+            local process_id="$1"
+            if [[ -z "$process_id" ]] || ! kill -0 -- "-$process_id" 2>/dev/null; then
+              return
+            fi
+
+            kill -TERM -- "-$process_id" 2>/dev/null || true
+            for _ in {1..10}; do
+              if ! kill -0 -- "-$process_id" 2>/dev/null; then
+                return
+              fi
+              sleep 1
+            done
+            kill -KILL -- "-$process_id" 2>/dev/null || true
+          }
+
+          finish() {
+            local status=$?
+            trap - EXIT
+            set +e
+            stop_process_group "$client_pid"
+            stop_process_group "$server_pid"
+            [[ -z "$client_pid" ]] || wait "$client_pid" 2>/dev/null
+            [[ -z "$server_pid" ]] || wait "$server_pid" 2>/dev/null
+
+            if (( status != 0 )); then
+              echo "::group::Server output"
+              [[ ! -f "$server_output" ]] || tail -n 200 "$server_output"
+              echo "::endgroup::"
+              echo "::group::Client output"
+              [[ ! -f "$client_output" ]] || tail -n 200 "$client_output"
+              echo "::endgroup::"
+            fi
+            exit "$status"
+          }
+          trap finish EXIT
+
+          wait_for_server() {
+            local deadline=$((SECONDS + 300))
+            while (( SECONDS < deadline )); do
+              if grep -Eq 'Done \([0-9.]+s\)! For help, type "help"' "$server_output" 2>/dev/null; then
+                return
+              fi
+              if ! kill -0 "$server_pid" 2>/dev/null; then
+                echo "::error::runServer exited before the server became ready"
+                return 1
+              fi
+              sleep 2
+            done
+            echo "::error::Timed out waiting for runServer to become ready"
+            return 1
+          }
+
+          wait_for_client_login() {
+            local deadline=$((SECONDS + 300))
+            while (( SECONDS < deadline )); do
+              if grep -Eq 'logged in with entity id [0-9]+ at|joined the game' "$server_output" 2>/dev/null; then
+                return
+              fi
+              if ! kill -0 "$server_pid" 2>/dev/null; then
+                echo "::error::runServer exited before the client connected"
+                return 1
+              fi
+              if ! kill -0 "$client_pid" 2>/dev/null; then
+                echo "::error::runClient exited before connecting to the server"
+                return 1
+              fi
+              sleep 2
+            done
+            echo "::error::Timed out waiting for the client to connect"
+            return 1
+          }
+
+          mkdir -p "$server_dir" "$client_dir"
+          rm -f "$server_output" "$client_output"
+          printf '%s\n' 'eula=true' > "$server_dir/eula.txt"
+          printf '%s\n' \
+            'online-mode=false' \
+            'server-ip=127.0.0.1' \
+            'server-port=25565' \
+            'max-tick-time=0' \
+            'spawn-protection=0' \
+            'sync-chunk-writes=true' \
+            'view-distance=2' > "$server_dir/server.properties"
+
+          ./gradlew ":$minecraft_version:configureClientLaunch" ":$minecraft_version:downloadAssets" \
+            --no-daemon --console=plain
+
+          echo "Starting Minecraft $minecraft_version server"
+          setsid ./gradlew ":$minecraft_version:runServer" -PconnectionSmoke \
+            --no-daemon --console=plain > "$server_output" 2>&1 &
+          server_pid=$!
+          wait_for_server
+
+          echo "Starting Minecraft $minecraft_version client under Xvfb"
+          setsid xvfb-run -a -s '-screen 0 1280x720x24' \
+            ./gradlew ":$minecraft_version:runClient" -PconnectionSmoke -PautoServer \
+            --no-daemon --console=plain > "$client_output" 2>&1 &
+          client_pid=$!
+          wait_for_client_login
+
+          grep -Em1 'logged in with entity id [0-9]+ at|joined the game' "$server_output"
+          echo "Client-server connection smoke test passed for Minecraft $minecraft_version"
+      - name: Upload connection smoke logs for ${{ matrix.minecraft_version }}
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: client-server-smoke-logs-${{ matrix.minecraft_version }}
+          path: |
+            versions/${{ matrix.minecraft_version }}/build/connection-smoke/server-output.log
+            versions/${{ matrix.minecraft_version }}/build/connection-smoke/client-output.log
+            versions/${{ matrix.minecraft_version }}/build/connection-smoke/server/logs/latest.log
+            versions/${{ matrix.minecraft_version }}/build/connection-smoke/client/logs/latest.log
+          if-no-files-found: warn
+          retention-days: 7
       - name: Publish prediction quality summary
         if: always()
         env:
@@ -181,172 +318,6 @@ jobs:
         run: chmod +x ./gradlew
       - name: Build Paper companion
         run: ./gradlew :paper:build
-      - name: Stop Gradle daemon
-        if: always()
-        run: ./gradlew --stop
-  Client-Server-Smoke:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          submodules: true
-      - name: Validate Gradle wrapper
-        uses: gradle/actions/wrapper-validation@v5
-      - name: Setup JDK
-        uses: actions/setup-java@v5
-        with:
-          java-version: '22'
-          distribution: 'temurin'
-      - name: Cache Gradle packages
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-connection-smoke-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-connection-smoke-
-            ${{ runner.os }}-gradle-
-      - name: Make Gradle wrapper executable
-        run: chmod +x ./gradlew
-      - name: Connect client to server
-        env:
-          LIBGL_ALWAYS_SOFTWARE: '1'
-        run: |
-          set -Eeuo pipefail
-
-          minecraft_version="$(tr -d '[:space:]' < versions/mainProject)"
-          if [[ ! "$minecraft_version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
-            echo "::error::Invalid Minecraft version in versions/mainProject: $minecraft_version"
-            exit 1
-          fi
-
-          smoke_root="versions/$minecraft_version/build/connection-smoke"
-          server_dir="$smoke_root/server"
-          client_dir="$smoke_root/client"
-          server_output="$smoke_root/server-output.log"
-          client_output="$smoke_root/client-output.log"
-          server_pid=""
-          client_pid=""
-
-          stop_process_group() {
-            local process_id="$1"
-            if [[ -z "$process_id" ]] || ! kill -0 -- "-$process_id" 2>/dev/null; then
-              return
-            fi
-
-            kill -TERM -- "-$process_id" 2>/dev/null || true
-            for _ in {1..10}; do
-              if ! kill -0 -- "-$process_id" 2>/dev/null; then
-                return
-              fi
-              sleep 1
-            done
-            kill -KILL -- "-$process_id" 2>/dev/null || true
-          }
-
-          finish() {
-            local status=$?
-            trap - EXIT
-            set +e
-            stop_process_group "$client_pid"
-            stop_process_group "$server_pid"
-            [[ -z "$client_pid" ]] || wait "$client_pid" 2>/dev/null
-            [[ -z "$server_pid" ]] || wait "$server_pid" 2>/dev/null
-
-            if (( status != 0 )); then
-              echo "::group::Server output"
-              [[ ! -f "$server_output" ]] || tail -n 200 "$server_output"
-              echo "::endgroup::"
-              echo "::group::Client output"
-              [[ ! -f "$client_output" ]] || tail -n 200 "$client_output"
-              echo "::endgroup::"
-            fi
-            exit "$status"
-          }
-          trap finish EXIT
-
-          wait_for_server() {
-            local deadline=$((SECONDS + 300))
-            while (( SECONDS < deadline )); do
-              if grep -Eq 'Done \([0-9.]+s\)! For help, type "help"' "$server_output" 2>/dev/null; then
-                return
-              fi
-              if ! kill -0 "$server_pid" 2>/dev/null; then
-                echo "::error::runServer exited before the server became ready"
-                return 1
-              fi
-              sleep 2
-            done
-            echo "::error::Timed out waiting for runServer to become ready"
-            return 1
-          }
-
-          wait_for_client_login() {
-            local deadline=$((SECONDS + 300))
-            while (( SECONDS < deadline )); do
-              if grep -Eq 'logged in with entity id [0-9]+ at|joined the game' "$server_output" 2>/dev/null; then
-                return
-              fi
-              if ! kill -0 "$server_pid" 2>/dev/null; then
-                echo "::error::runServer exited before the client connected"
-                return 1
-              fi
-              if ! kill -0 "$client_pid" 2>/dev/null; then
-                echo "::error::runClient exited before connecting to the server"
-                return 1
-              fi
-              sleep 2
-            done
-            echo "::error::Timed out waiting for the client to connect"
-            return 1
-          }
-
-          mkdir -p "$server_dir" "$client_dir"
-          rm -f "$server_output" "$client_output"
-          printf '%s\n' 'eula=true' > "$server_dir/eula.txt"
-          printf '%s\n' \
-            'online-mode=false' \
-            'server-ip=127.0.0.1' \
-            'server-port=25565' \
-            'max-tick-time=0' \
-            'spawn-protection=0' \
-            'sync-chunk-writes=true' \
-            'view-distance=2' > "$server_dir/server.properties"
-
-          ./gradlew ":$minecraft_version:classes" ":$minecraft_version:configureClientLaunch" \
-            ":$minecraft_version:downloadAssets" --no-daemon --console=plain
-
-          echo "Starting Minecraft $minecraft_version server"
-          setsid ./gradlew ":$minecraft_version:runServer" -PconnectionSmoke \
-            --no-daemon --console=plain > "$server_output" 2>&1 &
-          server_pid=$!
-          wait_for_server
-
-          echo "Starting Minecraft $minecraft_version client under Xvfb"
-          setsid xvfb-run -a -s '-screen 0 1280x720x24' \
-            ./gradlew ":$minecraft_version:runClient" -PconnectionSmoke -PautoServer \
-            --no-daemon --console=plain > "$client_output" 2>&1 &
-          client_pid=$!
-          wait_for_client_login
-
-          grep -Em1 'logged in with entity id [0-9]+ at|joined the game' "$server_output"
-          echo "Client-server connection smoke test passed"
-      - name: Upload connection smoke logs
-        if: always()
-        uses: actions/upload-artifact@v5
-        with:
-          name: client-server-smoke-logs
-          path: |
-            versions/*/build/connection-smoke/server-output.log
-            versions/*/build/connection-smoke/client-output.log
-            versions/*/build/connection-smoke/server/logs/latest.log
-            versions/*/build/connection-smoke/client/logs/latest.log
-          if-no-files-found: warn
-          retention-days: 7
       - name: Stop Gradle daemon
         if: always()
         run: ./gradlew --stop
