@@ -94,11 +94,11 @@ public abstract class InGameHudMixin {
             + "Lnet/minecraft/scoreboard/ScoreboardObjective;)V",
         at = @At(
             value = "INVOKE",
-            target = "Lnet/minecraft/client/gui/DrawableHelper;"
+            target = "Lnet/minecraft/client/gui/hud/InGameHud;"
                 + "fill(Lnet/minecraft/client/util/math/MatrixStack;IIIII)V"
         )
     )
-    private static void confluxmap$captureScoreboardFill(
+    private void confluxmap$captureScoreboardFill(
         final MatrixStack matrices,
         final int x1,
         final int y1,
