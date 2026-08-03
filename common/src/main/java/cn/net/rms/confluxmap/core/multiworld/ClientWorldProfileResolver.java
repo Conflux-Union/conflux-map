@@ -152,6 +152,73 @@ public final class ClientWorldProfileResolver {
         return resolve(serverId, observation);
     }
 
+    /**
+     * Resolves a profile from Velocity's exact registered-server name. An optional legacy profile
+     * may adopt the first learned name, but a new unseen name otherwise always gets isolated
+     * storage even when it shares every vanilla signal and seed with another backend.
+     */
+    public ClientWorldResolution resolveVelocityServer(
+        final String serverId,
+        final String serverName,
+        final ClientWorldObservation observation,
+        final String legacyProfileId,
+        final boolean mayAdoptUnresolvedLegacyProfile
+    ) {
+        if (!registry.available()) {
+            return ClientWorldResolution.persistenceFailed(registry.loadFailure());
+        }
+        final String normalized = VelocityServerListParser.normalizeServerName(serverName);
+        final List<ClientWorldProfile> profiles = registry.mutableProfiles(serverId);
+        final List<ClientWorldProfile> exact = profiles.stream()
+            .filter(profile -> profile.matchesVelocityServer(normalized))
+            .limit(2L)
+            .toList();
+        if (exact.size() > 1) {
+            return ClientWorldResolution.ambiguous();
+        }
+        if (exact.size() == 1) {
+            return resolvedAndLearn(serverId, exact.get(0), observation);
+        }
+
+        ClientWorldProfile legacy = legacyProfileId == null ? null : profiles.stream()
+            .filter(profile -> profile.id().equals(legacyProfileId))
+            .filter(profile -> profile.velocityServerName().isEmpty())
+            .findFirst()
+            .orElse(null);
+        if (legacy == null && mayAdoptUnresolvedLegacyProfile && observation.seedHash().isPresent()) {
+            final long observedSeedHash = observation.seedHash().getAsLong();
+            final List<ClientWorldProfile> legacySeedMatches = profiles.stream()
+                .filter(profile -> profile.velocityServerName().isEmpty())
+                .filter(profile -> profile.matchesSeed(observedSeedHash))
+                .filter(profile -> !profile.hasSignalConflict(observation))
+                .limit(2L)
+                .toList();
+            if (legacySeedMatches.size() == 1) {
+                legacy = legacySeedMatches.get(0);
+            }
+        }
+        if (legacy != null) {
+            final String adoptedProfileId = legacy.id();
+            final Mutation<String> mutation = mutate(copy -> {
+                final ClientWorldProfile target = requireProfile(copy.mutableProfiles(serverId), adoptedProfileId);
+                target.bindVelocityServer(normalized);
+                target.bind(observation, policy().maxBindingsPerProfile());
+                return target.id();
+            });
+            return resolvedMutation(serverId, mutation);
+        }
+        if (profiles.size() >= policy().maxProfilesPerServer()) {
+            return ClientWorldResolution.persistenceFailed("client world profile limit reached");
+        }
+        final String storageId = profiles.isEmpty() ? "world" : nextStorageId();
+        final Mutation<String> mutation = mutate(copy -> {
+            final ClientWorldProfile profile = create(copy.mutableProfiles(serverId), storageId, observation);
+            profile.bindVelocityServer(normalized);
+            return profile.id();
+        });
+        return resolvedMutation(serverId, mutation);
+    }
+
     public ClientWorldResolution select(
         final String serverId,
         final String profileId,

@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.OptionalLong;
 
 /** One client-owned logical world namespace beneath a multiplayer address. */
@@ -15,6 +16,7 @@ public final class ClientWorldProfile {
     private String displayName;
     private List<Binding> bindings;
     private List<String> switchCommands;
+    private String velocityServerName;
     private Map<String, ClientWorldVisit> visits;
     private boolean recognitionDisabled;
 
@@ -61,6 +63,11 @@ public final class ClientWorldProfile {
         return List.copyOf(mutableSwitchCommands());
     }
 
+    /** Exact normalized Velocity registered-server name, when learned from the /server response. */
+    public Optional<String> velocityServerName() {
+        return Optional.ofNullable(velocityServerName);
+    }
+
     /** Per-dimension last-visit data used for conservative client-only matching and UI details. */
     public List<ClientWorldVisit> visits() {
         return List.copyOf(mutableVisits().values());
@@ -76,6 +83,7 @@ public final class ClientWorldProfile {
 
     void clearBindings() {
         bindings().clear();
+        velocityServerName = null;
         recognitionDisabled = true;
     }
 
@@ -206,6 +214,15 @@ public final class ClientWorldProfile {
         return mutableSwitchCommands().remove(normalizedCommand);
     }
 
+    boolean matchesVelocityServer(final String normalizedServerName) {
+        return Objects.equals(velocityServerName, normalizedServerName);
+    }
+
+    void bindVelocityServer(final String normalizedServerName) {
+        velocityServerName = VelocityServerListParser.normalizeServerName(normalizedServerName);
+        recognitionDisabled = false;
+    }
+
     List<String> retainUnclaimedSwitchCommands(final java.util.Set<String> claimedCommands) {
         final List<String> discarded = new ArrayList<>();
         final List<String> retained = new ArrayList<>();
@@ -252,6 +269,13 @@ public final class ClientWorldProfile {
             }
         }
         switchCommands = normalizedCommands;
+        if (velocityServerName != null) {
+            try {
+                velocityServerName = VelocityServerListParser.normalizeServerName(velocityServerName);
+            } catch (final IllegalArgumentException ignored) {
+                velocityServerName = null;
+            }
+        }
         final Map<String, ClientWorldVisit> normalizedVisits = new LinkedHashMap<>();
         if (visits != null) {
             for (final ClientWorldVisit visit : visits.values()) {
@@ -279,6 +303,7 @@ public final class ClientWorldProfile {
             copy.bindings.add(binding.copy());
         }
         copy.switchCommands = new ArrayList<>(mutableSwitchCommands());
+        copy.velocityServerName = velocityServerName;
         copy.visits = new LinkedHashMap<>();
         for (final Map.Entry<String, ClientWorldVisit> entry : mutableVisits().entrySet()) {
             copy.visits.put(entry.getKey(), entry.getValue().copy());
@@ -294,6 +319,7 @@ public final class ClientWorldProfile {
         displayName = copy.displayName;
         bindings = copy.bindings;
         switchCommands = copy.switchCommands;
+        velocityServerName = copy.velocityServerName;
         visits = copy.visits;
         recognitionDisabled = copy.recognitionDisabled;
     }

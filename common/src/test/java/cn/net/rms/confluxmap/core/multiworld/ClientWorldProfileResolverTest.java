@@ -147,6 +147,41 @@ class ClientWorldProfileResolverTest {
     }
 
     @Test
+    void velocityServerNameSeparatesAndRevisitsSameSeedBackends() {
+        final ClientWorldProfileResolver resolver = resolver();
+        final ClientWorldObservation shared = observation(11L, "velocity");
+
+        final ClientWorldProfile survival = resolver.resolveVelocityServer(
+            SERVER, "Survival", shared, null, false
+        ).profile();
+        final ClientWorldProfile creative = resolver.resolveVelocityServer(
+            SERVER, "Creative", shared, null, false
+        ).profile();
+
+        assertNotEquals(survival.id(), creative.id());
+        assertEquals("survival", survival.velocityServerName().orElseThrow());
+        assertEquals("creative", creative.velocityServerName().orElseThrow());
+        assertEquals(survival.id(), resolver.resolveVelocityServer(
+            SERVER, "SURVIVAL", shared, null, false
+        ).profile().id());
+    }
+
+    @Test
+    void firstVelocityQueryCanAttachToTheUniqueSeedBoundLegacyProfile() {
+        final ClientWorldProfileResolver resolver = resolver();
+        final ClientWorldObservation observation = observation(11L, "velocity");
+        final ClientWorldProfile legacy = resolver.resolve(SERVER, observation).profile();
+
+        final ClientWorldResolution resolved = resolver.resolveVelocityServer(
+            SERVER, "survival", observation, null, true
+        );
+
+        assertEquals(legacy.id(), resolved.profile().id());
+        assertEquals("survival", resolved.profile().velocityServerName().orElseThrow());
+        assertEquals(1, resolver.profiles(SERVER).size());
+    }
+
+    @Test
     void manualProfilesCanBeRenamedAndUnboundWithoutDeletingStorage() {
         final ClientWorldProfileResolver resolver = resolver();
         final ClientWorldObservation observation = observation(11L, "survival");
