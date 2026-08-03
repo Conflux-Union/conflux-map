@@ -22,6 +22,7 @@ final class MonochromeUiIconTest {
         "group_view.png",
         "group_waypoints.png",
         "group_actions.png",
+        "map_settings.png",
         "world_profile.png",
         "map_terrain.png",
         "map_biome.png",

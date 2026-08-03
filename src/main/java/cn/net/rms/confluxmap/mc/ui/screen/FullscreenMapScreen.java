@@ -177,6 +177,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final Identifier MAP_EXPORT_ICON = Ids.of(
         "confluxmap", "textures/gui/map_export.png"
     );
+    private static final Identifier MAP_SETTINGS_ICON = Ids.of(
+        "confluxmap", "textures/gui/map_settings.png"
+    );
     private static final Identifier WORLD_PROFILE_ICON = Ids.of(
         "confluxmap", "textures/gui/world_profile.png"
     );
@@ -488,6 +491,17 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             x, y, ACTIONS_GROUP_ICON, "confluxmap.map.tools.actions",
             FullscreenMapToolPanel.Group.ACTIONS
         );
+        y += CONTROL_SIZE + CONTROL_GAP;
+        final MapIconButton settingsButton = addDrawableChild(new MapIconButton(
+            x,
+            y,
+            MAP_SETTINGS_ICON,
+            Texts.translatable("confluxmap.screen.config.title"),
+            ignored -> MinecraftAccess.setScreen(
+                MinecraftClient.getInstance(), new ConfigScreen(this)
+            )
+        ));
+        annotationTooltips.put(settingsButton, "confluxmap.screen.config.title");
         waypointControlsBottom = y + CONTROL_SIZE;
         controlsDisplayMode = displayMode();
 

@@ -44,9 +44,9 @@ import net.minecraft.text.Text;
  * <p>Every change mutates and saves the shared {@link ConfluxConfig} immediately, so
  * every other system observes the same value without a separate apply step.
  *
- * <p>Opened only via the {@code key.confluxmap.open_config} keybind (comma by
- * default, see {@code mc.input.Keybinds}) - there is no in-screen entry point, and no
- * ModMenu integration in M1.
+ * <p>Opened via the {@code key.confluxmap.open_config} keybind (comma by default,
+ * see {@code mc.input.Keybinds}) or the fullscreen map's settings button. The latter
+ * supplies a parent screen so closing settings returns to the map.
  */
 public final class ConfigScreen extends ConfluxScreen {
     private enum Category {
@@ -149,6 +149,7 @@ public final class ConfigScreen extends ConfluxScreen {
         "confluxmap.value.zoom_4"
     };
 
+    private final Screen parent;
     private final ConfluxConfig config;
     private final ConfigIo configIo;
     private final CompanionSession companionSession;
@@ -168,7 +169,12 @@ public final class ConfigScreen extends ConfluxScreen {
     private PredictionSettingsAccess predictionAccess;
 
     public ConfigScreen() {
+        this(null);
+    }
+
+    public ConfigScreen(final Screen parent) {
         super(Texts.translatable("confluxmap.screen.config.title"));
+        this.parent = parent;
         final ConfluxMapClient app = ConfluxMapClient.get();
         this.config = app.config();
         this.configIo = app.configIo();
@@ -284,7 +290,11 @@ public final class ConfigScreen extends ConfluxScreen {
     @Override
     public void onClose() {
         configIo.save(config);
-        super.onClose();
+        if (parent == null) {
+            super.onClose();
+        } else {
+            MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
+        }
     }
 
     private void rebuild() {
