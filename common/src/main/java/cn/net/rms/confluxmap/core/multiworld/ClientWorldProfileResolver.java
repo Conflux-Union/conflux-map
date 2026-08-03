@@ -130,6 +130,7 @@ public final class ClientWorldProfileResolver {
             }
         }
         if (legacy != null) {
+            legacy.rename(normalized);
             legacy.bindVelocityServer(normalized);
             legacy.bind(observation);
             onChange.run();
@@ -138,7 +139,7 @@ public final class ClientWorldProfileResolver {
         final String storageId = profiles.isEmpty() ? "world" : nextStorageId();
         final UUID id = ids.get();
         final ClientWorldProfile profile = new ClientWorldProfile(
-            id.toString(), storageId, "World " + (profiles.size() + 1)
+            id.toString(), storageId, normalized
         );
         profile.bind(observation);
         profile.bindVelocityServer(normalized);
