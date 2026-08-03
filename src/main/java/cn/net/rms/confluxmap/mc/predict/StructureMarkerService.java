@@ -43,7 +43,9 @@ public final class StructureMarkerService {
         currentDimension = session.active() ? session.dimension() : null;
         current = session.active()
             ? new StructureIndex(
-                cacheRoot,
+                prediction.manualSeed()
+                    ? cacheRoot.resolve("manual-seeds").resolve(Long.toUnsignedString(prediction.seed(), 16))
+                    : cacheRoot,
                 session.world(),
                 session.dimension(),
                 prediction.mcVersion(),

@@ -36,6 +36,7 @@ import cn.net.rms.confluxmap.mc.net.ChunkLoadStateClient;
 import cn.net.rms.confluxmap.mc.net.MapSyncClient;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.predict.PredictionBootstrap;
+import cn.net.rms.confluxmap.mc.predict.ManualSeedService;
 import cn.net.rms.confluxmap.mc.predict.PredictionPaletteBuilder;
 import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
@@ -104,6 +105,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private PredictionTileService predictionTileService;
     private MapExportService mapExportService;
     private PredictionBootstrap predictionBootstrap;
+    private ManualSeedService manualSeedService;
     private PredictionPaletteBuilder predictionPaletteBuilder;
     private StructureMarkerService structureMarkerService;
     private CompanionSession companionSession;
@@ -175,7 +177,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
             cacheRoot.resolve("prediction")
         );
         predictionTileService.bindCorrectionStore(correctionStore);
-        predictionBootstrap = new PredictionBootstrap(client, predictionState, companionSession);
+        predictionBootstrap = new PredictionBootstrap(
+            client, predictionState, companionSession, config.predictionManualSeeds
+        );
         clientNetworking = new ClientNetworking(companionSession);
         mapSyncClient = new MapSyncClient(companionSession, clientNetworking, correctionStore, predictionTileService, config);
         chunkLoadStateClient = new ChunkLoadStateClient(companionSession, clientNetworking);
@@ -203,6 +207,14 @@ public final class ConfluxMapClient implements ClientModInitializer {
         predictionPaletteBuilder = new PredictionPaletteBuilder(client, predictionState, spriteColorSampler);
         biomeTintResolver = new BiomeTintResolver(client);
         tileTextureManager = new TileTextureManager(config, tileService, predictionTileService, daylightModel);
+        manualSeedService = new ManualSeedService(
+            config,
+            configIo,
+            sessionGuard,
+            client::isInSingleplayer,
+            companionSession::isActive,
+            this::refreshPredictionSource
+        );
         layerSelector = new LayerSelector(client, config);
 
         chunkCapture = new ChunkCaptureService(
@@ -380,6 +392,16 @@ public final class ConfluxMapClient implements ClientModInitializer {
         ConfluxMapMod.LOGGER.info("Prediction tiles force-reloaded");
     }
 
+    /** Re-resolves the active session's seed source after a local seed setting changes. */
+    private void refreshPredictionSource() {
+        final SessionGuard.Session session = sessionGuard.current();
+        predictionBootstrap.onSessionChanged(session);
+        predictionPaletteBuilder.onSessionChanged(session);
+        predictionTileService.reloadAll();
+        structureMarkerService.onSessionChanged(session);
+        gameBridge.runOnRenderThread(tileTextureManager::releasePredicted);
+    }
+
     public FullscreenMapViewState fullscreenMapViewState() {
         return fullscreenMapViewState;
     }
@@ -414,6 +436,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public StructureMarkerService structureMarkerService() {
         return structureMarkerService;
+    }
+
+    public ManualSeedService manualSeedService() {
+        return manualSeedService;
     }
 
     public CompanionSession companionSession() {

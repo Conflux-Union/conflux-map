@@ -60,6 +60,22 @@ class PredictionStateTest {
         assertEquals(WorldPreset.DEFAULT, state.preset(DimensionId.END));
         assertEquals(null, state.flatBaseline(DimensionId.OVERWORLD));
         assertFalse(state.predictable(DimensionId.OVERWORLD));
+        assertFalse(state.manualSeed());
+    }
+
+    @Test
+    void manualSeedSourceDoesNotSurviveARegularSeedOrSessionClear() {
+        final PredictionState state = new PredictionState();
+        state.setManualSeed(SEED, McVersions.toCubiomes("1.17").orElseThrow());
+        assertTrue(state.manualSeed());
+
+        state.setSeed(SEED + 1L, McVersions.toCubiomes("1.18").orElseThrow());
+        assertFalse(state.manualSeed());
+
+        state.setManualSeed(SEED, McVersions.toCubiomes("1.17").orElseThrow());
+        state.clear();
+        assertFalse(state.manualSeed());
+        assertFalse(state.seedKnown());
     }
 
     @Test

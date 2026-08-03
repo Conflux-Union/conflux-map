@@ -6,7 +6,8 @@ import cn.net.rms.confluxmap.nativepredict.NativeLib;
 /**
  * Everything M2 prediction needs to know about the current session, published by {@code
  * mc.predict.PredictionBootstrap} on session change: the recognized {@link WorldPreset} per
- * predicted dimension, the world seed when one is known (singleplayer, or a granting companion),
+ * predicted dimension, the world seed when one is known (singleplayer, a granting companion, or
+ * a client-entered multiplayer seed),
  * and - for a superflat overworld - the uniform {@link FlatBaseline} that replaces cubiomes
  * entirely. The three are independent: a superflat overworld predicts from its flat baseline
  * with no seed and no native library, while the End of that same world still needs the seeded
@@ -15,6 +16,7 @@ import cn.net.rms.confluxmap.nativepredict.NativeLib;
  */
 public final class PredictionState {
     private volatile boolean seedKnown;
+    private volatile boolean manualSeed;
     private volatile long seed;
     private volatile int mcVersion = -1;
     private volatile WorldPreset overworldPreset = WorldPreset.DEFAULT;
@@ -28,11 +30,18 @@ public final class PredictionState {
         this.endPreset = endPreset;
     }
 
-    /** Main thread: a seed became known for the current session (singleplayer join, or the companion handshake). */
+    /** Main thread: a trusted seed became known from singleplayer or the companion handshake. */
     public void setSeed(final long seed, final int mcVersion) {
+        this.manualSeed = false;
         this.seed = seed;
         this.mcVersion = mcVersion;
         this.seedKnown = true;
+    }
+
+    /** Main thread: use a client-entered seed, which must never consume persisted server corrections. */
+    public void setManualSeed(final long seed, final int mcVersion) {
+        setSeed(seed, mcVersion);
+        manualSeed = true;
     }
 
     /** Main thread: the overworld is superflat with this uniform surface (seed-independent). */
@@ -43,6 +52,8 @@ public final class PredictionState {
     /** Main thread: nothing is known for the current session (multiplayer without a companion, or session end). */
     public void clear() {
         seedKnown = false;
+        manualSeed = false;
+        seed = 0L;
         mcVersion = -1;
         overworldPreset = WorldPreset.DEFAULT;
         endPreset = WorldPreset.DEFAULT;
@@ -65,6 +76,10 @@ public final class PredictionState {
 
     public int mcVersion() {
         return mcVersion;
+    }
+
+    public boolean manualSeed() {
+        return manualSeed;
     }
 
     public PredictionPalette palette() {

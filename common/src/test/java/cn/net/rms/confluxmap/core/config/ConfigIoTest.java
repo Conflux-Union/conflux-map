@@ -79,6 +79,7 @@ class ConfigIoTest {
         assertFalse(rewritten.contains("\"predictionStructureIconHideScale\""));
         assertFalse(rewritten.contains("\"predictionStructureMaxLod\""));
         assertTrue(rewritten.contains("\"predictionStructureVisibility\""));
+        assertTrue(rewritten.contains("\"predictionManualSeeds\""));
         assertTrue(rewritten.contains("\"annotationsOnHud\""));
         assertTrue(rewritten.contains("\"annotationEraserSize\""));
         assertTrue(rewritten.contains("\"fullscreenDisplayMode\""));
@@ -235,6 +236,23 @@ class ConfigIoTest {
         assertTrue(loaded.predictionStructureVisibility.isVisible(
             30, DimensionId.OVERWORLD, StructureIndex.StructureType.VILLAGE
         ));
+    }
+
+    @Test
+    void manualSeedProfilesRoundTripByWorldIdentity(@TempDir final Path tmp) {
+        final Path file = tmp.resolve("config.json");
+        final ConfigIo io = new ConfigIo(file, LOGGER);
+        final ConfluxConfig config = new ConfluxConfig();
+        final cn.net.rms.confluxmap.core.model.WorldIdentity world =
+            cn.net.rms.confluxmap.core.model.WorldIdentity.multiplayer("play.example.net", "survival");
+        config.predictionManualSeeds.set(world, "Conflux Map", "1.21.1");
+
+        io.save(config);
+        final ManualSeedConfig.Entry loaded = io.load().predictionManualSeeds.get(world).orElseThrow();
+
+        assertEquals("Conflux Map", loaded.seedInput());
+        assertEquals(474293735L, loaded.seed());
+        assertEquals("1.21.1", loaded.worldgenVersion());
     }
 
     @Test

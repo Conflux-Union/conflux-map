@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.mc.predict;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
+import cn.net.rms.confluxmap.core.config.ManualSeedConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.predict.FlatBaseline;
@@ -32,7 +33,8 @@ import net.minecraft.world.World;
  *   <li>Multiplayer with an ACTIVE companion: presets/flat surface from the handshake
  *       (HELLO_POLICY dim entries + FLAT_BASELINE), seed from the overworld dim entry when
  *       granted. A pre-preset companion advertises defaults, matching its old behavior.</li>
- *   <li>Multiplayer without a companion: state stays cleared - we never fabricate a seed.</li>
+ *   <li>Multiplayer without a companion: an optional client-entered seed and target version are
+ *       read from the current world identity. Without that explicit setting, state stays cleared.</li>
  * </ul>
  *
  * <p>The worldgen-version string ("1.17.1" for this subproject) is mapped to the cubiomes
@@ -46,11 +48,18 @@ public final class PredictionBootstrap {
     private final MinecraftClient client;
     private final PredictionState state;
     private final CompanionSession companion;
+    private final ManualSeedConfig manualSeeds;
 
-    public PredictionBootstrap(final MinecraftClient client, final PredictionState state, final CompanionSession companion) {
+    public PredictionBootstrap(
+        final MinecraftClient client,
+        final PredictionState state,
+        final CompanionSession companion,
+        final ManualSeedConfig manualSeeds
+    ) {
         this.client = client;
         this.state = state;
         this.companion = companion;
+        this.manualSeeds = manualSeeds;
     }
 
     /** Main thread, from the session tracker. */
@@ -65,6 +74,7 @@ public final class PredictionBootstrap {
         final WorldPreset overworldPreset;
         final WorldPreset endPreset;
         final Optional<FlatBaseline> flatBaseline;
+        final boolean manual;
         if (singleplayer) {
             //#if MC>=260100
             //$$ // 26.1 dropped WorldData.getGeneratorOptions; the seed now hangs off the level itself.
@@ -77,6 +87,7 @@ public final class PredictionBootstrap {
             overworldPreset = detectLocal(World.OVERWORLD);
             endPreset = detectLocal(World.END);
             flatBaseline = overworldPreset == WorldPreset.FLAT ? localFlatBaseline() : Optional.empty();
+            manual = false;
         } else if (companion.isActive()) {
             // The companion publishes the same vanilla seed for every dim (research R6 confirms
             // vanilla threads one long through every dimension); read it from the overworld entry.
@@ -89,15 +100,30 @@ public final class PredictionBootstrap {
             flatBaseline = overworldPreset == WorldPreset.FLAT
                 ? companion.flatBaselineFor(PredictionDimensions.OVERWORLD)
                 : Optional.empty();
+            manual = false;
         } else {
-            return;
+            final Optional<ManualSeedConfig.Entry> configured = manualSeeds.get(session.world());
+            if (configured.isEmpty()) {
+                return;
+            }
+            final ManualSeedConfig.Entry entry = configured.get();
+            seedOpt = OptionalLong.of(entry.seed());
+            worldgenVersion = entry.worldgenVersion();
+            overworldPreset = WorldPreset.DEFAULT;
+            endPreset = WorldPreset.DEFAULT;
+            flatBaseline = Optional.empty();
+            manual = true;
         }
         state.setPresets(overworldPreset, endPreset);
         flatBaseline.ifPresent(state::setFlatBaseline);
         if (seedOpt.isPresent()) {
             final java.util.OptionalInt mcVersion = McVersions.toCubiomes(worldgenVersion);
             if (mcVersion.isPresent()) {
-                state.setSeed(seedOpt.getAsLong(), mcVersion.getAsInt());
+                if (manual) {
+                    state.setManualSeed(seedOpt.getAsLong(), mcVersion.getAsInt());
+                } else {
+                    state.setSeed(seedOpt.getAsLong(), mcVersion.getAsInt());
+                }
             } else {
                 ConfluxMapMod.LOGGER.warn(
                     "prediction: server advertised unmappable worldgen version '{}', seeded prediction disabled",
@@ -107,7 +133,8 @@ public final class PredictionBootstrap {
         }
         ConfluxMapMod.LOGGER.debug(
             "prediction: session bootstrapped (source={} worldgen={} overworld={} end={} seed={} flat={})",
-            singleplayer ? "singleplayer" : "companion", worldgenVersion, overworldPreset, endPreset,
+            singleplayer ? "singleplayer" : manual ? "manual" : "companion",
+            worldgenVersion, overworldPreset, endPreset,
             state.seedKnown() ? "known" : "none", flatBaseline.isPresent()
         );
         if (overworldPreset == WorldPreset.FLAT) {

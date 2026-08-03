@@ -273,6 +273,48 @@ class PredictionTileServiceTest {
     }
 
     @Test
+    void manualSeedPreviewIgnoresPersistedServerCorrections(
+        @TempDir final Path tempDir
+    ) throws InterruptedException {
+        final SessionGuard sessionGuard = new SessionGuard();
+        final MapExecutors executors = new MapExecutors();
+        final TileService uploads = new TileService(
+            new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.FLAT, WorldPreset.DEFAULT);
+        state.setFlatBaseline(new FlatBaseline(1, 63, SurfaceKind.LAND.ordinal(), 11, 0));
+        state.setManualSeed(42L, McVersions.toCubiomes("1.17").orElseThrow());
+        final CorrectionStore corrections = new CorrectionStore(tempDir);
+        corrections.apply(
+            new CorrectionStore.Key(DIM.toString(), 2, 0, 0),
+            1L,
+            new byte[Proto.PATCH_PRESENCE_BYTES],
+            new PatchCodec.Patch(List.of(new PatchCodec.Sample(
+                0, 4, 80, SurfaceKind.LAND.ordinal(), Proto.MAP_COLOR_NONE, 0
+            ))),
+            Proto.PATCH_MODE_RESIDUAL,
+            PredictorVersion.full(),
+            System.currentTimeMillis()
+        );
+        final PredictionTileService predictionTiles = newService(
+            sessionGuard, state, executors, uploads
+        );
+        predictionTiles.bindCorrectionStore(corrections);
+        sessionGuard.begin(WORLD, DIM);
+
+        try {
+            predictionTiles.requestTile(new TileKey(WORLD, DIM, "surface!pred", 2, 0, 0));
+            awaitIdle(predictionTiles, 10_000L);
+
+            assertEquals(1, predictionTiles.predictedBiomeAt(DIM, 2, 0, 0).orElse(-1));
+            assertEquals(63, predictionTiles.predictedSurfaceYAt(DIM, 2, 0, 0).orElseThrow());
+        } finally {
+            executors.shutdown(2000);
+        }
+    }
+
+    @Test
     void changingViewModeRefreshesCurrentAndReenteredTiles(
         @TempDir final Path tempDir
     ) throws InterruptedException {

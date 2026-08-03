@@ -12,6 +12,7 @@ import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.mc.predict.ManualSeedService;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -155,6 +156,7 @@ public final class ConfigScreen extends ConfluxScreen {
     private final SharedWaypointClient sharedWaypoints;
     private final GameBridge gameBridge;
     private final PredictionState predictionState;
+    private final ManualSeedService manualSeedService;
     private final List<IntSliderInput> sliderInputs = new ArrayList<>();
     private final List<DecimalSliderInput> decimalSliderInputs = new ArrayList<>();
 
@@ -176,6 +178,7 @@ public final class ConfigScreen extends ConfluxScreen {
         this.sharedWaypoints = app.sharedWaypoints();
         this.gameBridge = app.gameBridge();
         this.predictionState = app.predictionState();
+        this.manualSeedService = app.manualSeedService();
     }
 
     /** Keep the world (and this session's capture pipeline) running while the screen is open. */
@@ -522,6 +525,15 @@ public final class ConfigScreen extends ConfluxScreen {
                 final String structureReason = predictionAccess.disabledReasonKey(
                     PredictionControl.STRUCTURES
                 );
+                if (manualSeedService.available()) {
+                    y = addActionRow(
+                        y,
+                        "confluxmap.config.prediction.manual_seed",
+                        () -> MinecraftAccess.setScreen(
+                            MinecraftClient.getInstance(), new ManualSeedScreen(this)
+                        )
+                    );
+                }
                 y = addToggleRow(
                     y, "confluxmap.config.prediction.enabled",
                     () -> config.predictionEnabled, v -> config.predictionEnabled = v,

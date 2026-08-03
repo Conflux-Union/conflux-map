@@ -238,7 +238,7 @@ public final class PredictionTileService {
         final String baselineProfile,
         final long validatedAtMillis
     ) {
-        final CorrectionStore store = correctionStore;
+        final CorrectionStore store = state.manualSeed() ? null : correctionStore;
         if (store == null || !store.applyRegionSlice(
             dimension, lod, slice, patch, patchMode, baselineProfile, validatedAtMillis
         )) {
@@ -255,7 +255,7 @@ public final class PredictionTileService {
         final long revision,
         final long validatedAtMillis
     ) {
-        final CorrectionStore store = correctionStore;
+        final CorrectionStore store = state.manualSeed() ? null : correctionStore;
         if (store == null || !store.validateRegionSlice(
             dimension, lod, slice, revision, validatedAtMillis
         )) {
@@ -268,7 +268,7 @@ public final class PredictionTileService {
     public boolean invalidateRegionCorrection(
         final String dimension, final int lod, final ChunkRegionSlice slice
     ) {
-        final CorrectionStore store = correctionStore;
+        final CorrectionStore store = state.manualSeed() ? null : correctionStore;
         if (store == null || !store.invalidateRegionSlice(dimension, lod, slice)) {
             return false;
         }
@@ -314,7 +314,7 @@ public final class PredictionTileService {
         final String baselineProfile,
         final long validatedAtMillis
     ) {
-        final CorrectionStore store = correctionStore;
+        final CorrectionStore store = state.manualSeed() ? null : correctionStore;
         if (store == null || !store.apply(
             key, revision, presence, patch, patchMode, baselineProfile, validatedAtMillis
         )) {
@@ -768,7 +768,7 @@ public final class PredictionTileService {
             : requestedMode;
 
         final PredictionMipCache.Tile lower = mipCache.lowerTile(key, compositionMode);
-        final CorrectionStore store = correctionStore;
+        final CorrectionStore store = state.manualSeed() ? null : correctionStore;
         final CorrectionTile storedCorrections = store == null
             ? null
             : store.get(key.dimension(), lod, key.tileX(), key.tileZ());
@@ -1219,7 +1219,7 @@ public final class PredictionTileService {
         final int pixelX = TileMath.blockToPixelInTile(blockX, lod);
         final int pixelZ = TileMath.blockToPixelInTile(blockZ, lod);
         final int pixel = pixelZ * TileMath.TILE_SIZE + pixelX;
-        final CorrectionStore store = correctionStore;
+        final CorrectionStore store = state.manualSeed() ? null : correctionStore;
         final CorrectionTile corrections = store == null ? null : store.get(dimension, lod, tileX, tileZ);
         if (!viewMode.showsPredictedPixels(corrections, pixel, lod)) {
             return null;

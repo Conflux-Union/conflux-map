@@ -139,7 +139,7 @@ public final class ConfluxConfig {
     /** In-world floating name/distance label above each visible waypoint. */
     public boolean waypointLabelsEnabled = true;
 
-    /** Master toggle for the M2 seed-predicted fullscreen-map underlay (singleplayer only this slice). */
+    /** Master toggle for the seed-predicted fullscreen-map underlay. */
     public boolean predictionEnabled = true;
     /**
      * Client-side opt-out for the companion handshake / correction sync. When false the client
@@ -161,6 +161,8 @@ public final class ConfluxConfig {
     public Integer predictionStructureMaxLod;
     /** Per-version and per-dimension structure-type visibility profiles. */
     public StructureVisibilityConfig predictionStructureVisibility = new StructureVisibilityConfig();
+    /** Client-only multiplayer seed choices, isolated by the current world identity. */
+    public ManualSeedConfig predictionManualSeeds = new ManualSeedConfig();
     /** Pan-settle debounce, clamped to 100..2000 ms. */
     public int predictionDebounceMs = 300;
 
@@ -228,6 +230,9 @@ public final class ConfluxConfig {
         c.predictionStructureVisibility = predictionStructureVisibility == null
             ? new StructureVisibilityConfig()
             : predictionStructureVisibility.copy();
+        c.predictionManualSeeds = predictionManualSeeds == null
+            ? new ManualSeedConfig()
+            : predictionManualSeeds.copy();
         c.predictionDebounceMs = predictionDebounceMs;
         c.updateCheckEnabled = updateCheckEnabled;
         c.surveyReminderGameOpenMillis = surveyReminderGameOpenMillis;
@@ -319,6 +324,11 @@ public final class ConfluxConfig {
             predictionStructureVisibility = new StructureVisibilityConfig();
         } else {
             predictionStructureVisibility.normalize();
+        }
+        if (predictionManualSeeds == null) {
+            predictionManualSeeds = new ManualSeedConfig();
+        } else {
+            predictionManualSeeds.normalize();
         }
         predictionDebounceMs = clamp(predictionDebounceMs, 100, 2000);
         surveyReminderGameOpenMillis = Math.max(0L, surveyReminderGameOpenMillis);
