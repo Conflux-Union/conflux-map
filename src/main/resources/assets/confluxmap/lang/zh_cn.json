@@ -335,7 +335,7 @@
   "confluxmap.screen.structure_candidates.center": "搜索中心：X / Z",
   "confluxmap.screen.structure_candidates.bounds": "搜索半径 / 结果数量",
   "confluxmap.screen.structure_candidates.search": "搜索",
-  "confluxmap.screen.structure_candidates.map": "地图",
+  "confluxmap.screen.structure_candidates.map": "定位",
   "confluxmap.screen.structure_candidates.waypoint": "路径点",
   "confluxmap.screen.structure_candidates.invalid": "请输入有效的搜索参数",
   "confluxmap.screen.structure_candidates.not_found": "该范围内没有找到可能存在的结构",

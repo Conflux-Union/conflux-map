@@ -1691,17 +1691,67 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         if (amount == 0) {
             return false;
         }
+        return zoomAt(mouseX, mouseY, width / 2.0, height / 2.0, amount);
+    }
+
+    private boolean zoomAt(
+        final double mouseX,
+        final double mouseY,
+        final double viewportCenterX,
+        final double viewportCenterY,
+        final double amount
+    ) {
         final double oldScale = scale;
         final double newScale = MathHelper.clamp(oldScale * (amount > 0 ? 1.0 / ZOOM_STEP : ZOOM_STEP), MIN_SCALE, MAX_SCALE);
         if (newScale != oldScale) {
             // Cursor-anchored: keep the world point under the cursor fixed on screen.
-            final double cursorWorldX = centerX + (mouseX - width / 2.0) * oldScale;
-            final double cursorWorldZ = centerZ + (mouseY - height / 2.0) * oldScale;
-            centerX = cursorWorldX - (mouseX - width / 2.0) * newScale;
-            centerZ = cursorWorldZ - (mouseY - height / 2.0) * newScale;
+            final double cursorWorldX = centerX + (mouseX - viewportCenterX) * oldScale;
+            final double cursorWorldZ = centerZ + (mouseY - viewportCenterY) * oldScale;
+            centerX = cursorWorldX - (mouseX - viewportCenterX) * newScale;
+            centerZ = cursorWorldZ - (mouseY - viewportCenterY) * newScale;
             scale = newScale;
         }
         return true;
+    }
+
+    void renderEmbedded(
+        final GuiDraw draw,
+        final int mouseX,
+        final int mouseY,
+        final float tickDelta,
+        final SplitMapLayout layout
+    ) {
+        final int previousWidth = width;
+        final int previousHeight = height;
+        width = layout.mapWidth();
+        height = layout.mapHeight();
+        final boolean pointerInside = layout.containsMap(mouseX, mouseY);
+        final int mapMouseX = pointerInside ? mouseX : (int) layout.mapCenterX();
+        final int mapMouseY = pointerInside ? mouseY : (int) layout.mapCenterY();
+        RenderUtil.enableScissor(MinecraftClient.getInstance(), 0, 0, width, height);
+        try {
+            renderContents(draw, mapMouseX, mapMouseY, tickDelta);
+        } finally {
+            RenderUtil.disableScissor();
+            width = previousWidth;
+            height = previousHeight;
+        }
+    }
+
+    void panEmbedded(final double deltaX, final double deltaY) {
+        centerX -= deltaX * scale;
+        centerZ -= deltaY * scale;
+    }
+
+    boolean zoomEmbedded(
+        final double mouseX,
+        final double mouseY,
+        final double amount,
+        final SplitMapLayout layout
+    ) {
+        return zoomAt(
+            mouseX, mouseY, layout.mapCenterX(), layout.mapCenterY(), amount
+        );
     }
 
     @Override

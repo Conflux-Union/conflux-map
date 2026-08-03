@@ -335,7 +335,7 @@
   "confluxmap.screen.structure_candidates.center": "Search center: X / Z",
   "confluxmap.screen.structure_candidates.bounds": "Radius / result count",
   "confluxmap.screen.structure_candidates.search": "Search",
-  "confluxmap.screen.structure_candidates.map": "Map",
+  "confluxmap.screen.structure_candidates.map": "Locate",
   "confluxmap.screen.structure_candidates.waypoint": "Waypoint",
   "confluxmap.screen.structure_candidates.invalid": "Enter valid search values",
   "confluxmap.screen.structure_candidates.not_found": "No possible structures found in this area",

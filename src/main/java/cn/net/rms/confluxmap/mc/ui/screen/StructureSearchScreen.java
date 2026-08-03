@@ -45,6 +45,7 @@ final class StructureSearchScreen extends ConfluxScreen {
     private final ConfluxConfig config;
     private final CompanionSession companion;
     private final List<StructureIndex.StructureType> available;
+    private final SplitMapPane mapPane;
     private final Map<StructureIndex.StructureType, ButtonWidget> visibilityButtons =
         new EnumMap<>(StructureIndex.StructureType.class);
     private final Map<StructureIndex.StructureType, ButtonWidget> locateButtons =
@@ -57,6 +58,8 @@ final class StructureSearchScreen extends ConfluxScreen {
     private int filteredCount;
     private int rowX;
     private int rowWidth;
+    private int toggleWidth;
+    private int locateWidth;
     private boolean draggingScrollBar;
     private double scrollBarGrabOffset;
 
@@ -73,6 +76,7 @@ final class StructureSearchScreen extends ConfluxScreen {
         final ConfluxMapClient app = ConfluxMapClient.get();
         this.config = app.config();
         this.companion = app.companionSession();
+        this.mapPane = new SplitMapPane(parent);
         this.available = new ArrayList<>(available);
         this.available.sort(Comparator.comparing(StructureSearchScreen::localizedName));
     }
@@ -86,10 +90,11 @@ final class StructureSearchScreen extends ConfluxScreen {
     protected void init() {
         visibilityButtons.clear();
         locateButtons.clear();
-        final int fieldWidth = Math.min(FIELD_WIDTH, Math.max(100, width - 32));
+        final SplitMapLayout layout = splitLayout();
+        final int fieldWidth = Math.min(FIELD_WIDTH, layout.panelContentWidth());
         searchField = new TextFieldWidget(
             this.textRenderer,
-            width / 2 - fieldWidth / 2,
+            layout.panelCenterX() - fieldWidth / 2,
             38,
             fieldWidth,
             FIELD_HEIGHT,
@@ -100,9 +105,9 @@ final class StructureSearchScreen extends ConfluxScreen {
         addDrawableChild(searchField);
         setInitialFocus(searchField);
 
-        final int masterWidth = Math.min(240, Math.max(140, width - 32));
+        final int masterWidth = Math.min(240, layout.panelContentWidth());
         masterButton = addDrawableChild(Widgets.button(
-            width / 2 - masterWidth / 2,
+            layout.panelCenterX() - masterWidth / 2,
             MASTER_TOP,
             masterWidth,
             20,
@@ -110,38 +115,54 @@ final class StructureSearchScreen extends ConfluxScreen {
             ignored -> toggleMasterVisibility()
         ));
 
-        rowWidth = Math.min(420, Math.max(180, width - 24));
-        rowX = width / 2 - rowWidth / 2;
+        final int listWidth = Math.max(
+            1, layout.panelContentWidth() - SCROLLBAR_GAP - SCROLLBAR_WIDTH
+        );
+        rowWidth = Math.min(420, listWidth);
+        rowX = layout.panelContentLeft() + (listWidth - rowWidth) / 2;
+        updateActionWidths();
         for (final StructureIndex.StructureType type : available) {
             final ButtonWidget visibility = addDrawableChild(Widgets.button(
-                rowX + rowWidth - LOCATE_WIDTH - BUTTON_GAP - TOGGLE_WIDTH,
+                rowX + rowWidth - locateWidth - BUTTON_GAP - toggleWidth,
                 LIST_TOP,
-                TOGGLE_WIDTH,
+                toggleWidth,
                 20,
                 visibilityLabel(type),
                 ignored -> toggleTypeVisibility(type)
             ));
             visibilityButtons.put(type, visibility);
             final ButtonWidget locate = addDrawableChild(Widgets.button(
-                rowX + rowWidth - LOCATE_WIDTH,
+                rowX + rowWidth - locateWidth,
                 LIST_TOP,
-                LOCATE_WIDTH,
+                locateWidth,
                 20,
                 Texts.translatable("confluxmap.screen.structure_search.locate"),
                 ignored -> locate(type)
             ));
             locateButtons.put(type, locate);
         }
+        final int backWidth = Math.min(100, layout.panelContentWidth());
         addDrawableChild(Widgets.button(
-            width / 2 - 50,
+            layout.panelCenterX() - backWidth / 2,
             height - 28,
-            100,
+            backWidth,
             20,
             Texts.translatable("confluxmap.screen.structure_search.back"),
             ignored -> onClose()
         ));
         updatePolicyAccess();
         updateRows();
+    }
+
+    private void updateActionWidths() {
+        final int labelAndSpacing = ICON_SIZE + BUTTON_GAP * 3 + 16;
+        final int available = Math.max(2, rowWidth - labelAndSpacing);
+        locateWidth = Math.min(LOCATE_WIDTH, Math.max(1, (available + 1) / 2));
+        toggleWidth = Math.min(TOGGLE_WIDTH, Math.max(1, available - locateWidth));
+    }
+
+    private SplitMapLayout splitLayout() {
+        return new SplitMapLayout(width, height);
     }
 
     @Override
@@ -306,9 +327,14 @@ final class StructureSearchScreen extends ConfluxScreen {
     //#else
     public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
     //#endif
-        if (amount != 0 && filteredCount > visibleRows()) {
+        final SplitMapLayout layout = splitLayout();
+        if (amount != 0 && layout.containsPanel(mouseX, mouseY)
+            && filteredCount > visibleRows()) {
             scrollOffset -= (int) Math.signum(amount);
             updateRows();
+            return true;
+        }
+        if (mapPane.mouseScrolled(mouseX, mouseY, amount, layout)) {
             return true;
         }
         //#if MC>=12002
@@ -340,10 +366,13 @@ final class StructureSearchScreen extends ConfluxScreen {
             return true;
         }
         //#if MC>=12109
-        //$$ return super.mouseClicked(click, doubledClick);
+        //$$ if (super.mouseClicked(click, doubledClick)) {
         //#else
-        return super.mouseClicked(mouseX, mouseY, button);
+        if (super.mouseClicked(mouseX, mouseY, button)) {
         //#endif
+            return true;
+        }
+        return mapPane.mouseClicked(mouseX, mouseY, button, splitLayout());
     }
 
     @Override
@@ -364,6 +393,9 @@ final class StructureSearchScreen extends ConfluxScreen {
             updateScrollFromMouse(mouseY);
             return true;
         }
+        if (mapPane.mouseDragged(button, deltaX, deltaY)) {
+            return true;
+        }
         //#if MC>=12109
         //$$ return super.mouseDragged(click, deltaX, deltaY);
         //#else
@@ -382,6 +414,9 @@ final class StructureSearchScreen extends ConfluxScreen {
             draggingScrollBar = false;
             return true;
         }
+        if (mapPane.mouseReleased(button)) {
+            return true;
+        }
         //#if MC>=12109
         //$$ return super.mouseReleased(click);
         //#else
@@ -396,23 +431,11 @@ final class StructureSearchScreen extends ConfluxScreen {
 
     @Override
     protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
-        draw.renderBackground(this, mouseX, mouseY, tickDelta);
-        final String title = getTitle().getString();
-        draw.drawTextWithShadow(
-            this.textRenderer,
-            title,
-            width / 2f - this.textRenderer.getWidth(title) / 2f,
-            12,
-            0xFFFFFFFF
-        );
+        final SplitMapLayout layout = splitLayout();
+        mapPane.render(draw, mouseX, mouseY, tickDelta, layout);
+        drawPanelCentered(draw, getTitle().getString(), 12, 0xFFFFFFFF, layout);
         final String prompt = Texts.translatable("confluxmap.screen.structure_search.prompt").getString();
-        draw.drawTextWithShadow(
-            this.textRenderer,
-            prompt,
-            width / 2f - this.textRenderer.getWidth(prompt) / 2f,
-            87,
-            0xFFBBBBBB
-        );
+        drawPanelCentered(draw, prompt, 87, 0xFFBBBBBB, layout);
         final List<StructureIndex.StructureType> filtered = filteredTypes();
         final int end = Math.min(filtered.size(), scrollOffset + visibleRows());
         for (int index = scrollOffset; index < end; index++) {
@@ -421,7 +444,7 @@ final class StructureSearchScreen extends ConfluxScreen {
             StructureIconCatalog.draw(draw, type, rowX, rowY + 2, ICON_SIZE, 0xFFFFFFFF);
             final int labelWidth = Math.max(
                 8,
-                rowWidth - ICON_SIZE - TOGGLE_WIDTH - LOCATE_WIDTH - BUTTON_GAP * 3
+                rowWidth - ICON_SIZE - toggleWidth - locateWidth - BUTTON_GAP * 3
             );
             final String name = this.textRenderer.trimToWidth(localizedName(type), labelWidth);
             draw.drawTextWithShadow(
@@ -434,13 +457,7 @@ final class StructureSearchScreen extends ConfluxScreen {
         }
         if (filteredCount == 0) {
             final String empty = Texts.translatable("confluxmap.screen.structure_search.empty").getString();
-            draw.drawTextWithShadow(
-                this.textRenderer,
-                empty,
-                width / 2f - this.textRenderer.getWidth(empty) / 2f,
-                LIST_TOP + 6,
-                0xFFAAAAAA
-            );
+            drawPanelCentered(draw, empty, LIST_TOP + 6, 0xFFAAAAAA, layout);
         }
         final ScrollBarModel bar = scrollBar();
         if (bar.visible()) {
@@ -455,6 +472,31 @@ final class StructureSearchScreen extends ConfluxScreen {
                 0xFFAAAAAA
             );
         }
+    }
+
+    private void drawPanelCentered(
+        final GuiDraw draw,
+        final String text,
+        final int y,
+        final int color,
+        final SplitMapLayout layout
+    ) {
+        final String visibleText = fitToWidth(text, layout.panelContentWidth());
+        draw.drawTextWithShadow(
+            this.textRenderer,
+            visibleText,
+            layout.panelCenterX() - this.textRenderer.getWidth(visibleText) / 2f,
+            y,
+            color
+        );
+    }
+
+    private String fitToWidth(final String text, final int maxWidth) {
+        //#if MC>=260100
+        //$$ return this.font.plainSubstrByWidth(text, maxWidth);
+        //#else
+        return this.textRenderer.trimToWidth(text, maxWidth);
+        //#endif
     }
 
     private static String localizedName(final StructureIndex.StructureType type) {
