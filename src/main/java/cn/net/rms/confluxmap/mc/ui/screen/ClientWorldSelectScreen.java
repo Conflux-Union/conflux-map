@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfile;
+import cn.net.rms.confluxmap.mc.predict.ManualSeedService;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.world.ClientMultiworldService;
 import java.util.List;
@@ -25,6 +26,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
     private final KeyBinding openMapKey;
     private final boolean openMapAfterSelection;
     private final ClientMultiworldService worlds;
+    private final ManualSeedService manualSeedService;
     private int scrollOffset;
     private int profileCount;
     private boolean waitingToOpenMap;
@@ -36,10 +38,12 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         final boolean openMapAfterSelection
     ) {
         super(Texts.translatable("confluxmap.screen.client_world.title"));
+        final ConfluxMapClient app = ConfluxMapClient.get();
         this.parent = parent;
         this.openMapKey = openMapKey;
         this.openMapAfterSelection = openMapAfterSelection;
-        this.worlds = ConfluxMapClient.get().clientMultiworldService();
+        this.worlds = app.clientMultiworldService();
+        this.manualSeedService = app.manualSeedService();
     }
 
     @Override
@@ -89,18 +93,32 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
             forget.active = profile.bindingCount() > 0;
         }
 
+        final int footerWidth = Math.min(340, rowWidth);
+        final int footerButtonWidth = (footerWidth - GAP * 2) / 3;
+        final int footerX = width / 2 - footerWidth / 2;
         addDrawableChild(Widgets.button(
-            width / 2 - 104,
+            footerX,
             height - 28,
-            100,
+            footerButtonWidth,
             20,
             Texts.translatable("confluxmap.screen.client_world.create"),
             ignored -> openNameEditor(null)
         ));
-        addDrawableChild(Widgets.button(
-            width / 2 + 4,
+        final ButtonWidget seedPreview = addDrawableChild(Widgets.button(
+            footerX + footerButtonWidth + GAP,
             height - 28,
-            100,
+            footerButtonWidth,
+            20,
+            Texts.translatable("confluxmap.screen.client_world.seed_preview"),
+            ignored -> MinecraftAccess.setScreen(
+                MinecraftClient.getInstance(), new ManualSeedScreen(this)
+            )
+        ));
+        seedPreview.active = currentId != null && manualSeedService.available();
+        addDrawableChild(Widgets.button(
+            footerX + (footerButtonWidth + GAP) * 2,
+            height - 28,
+            footerWidth - footerButtonWidth * 2 - GAP * 2,
             20,
             Texts.translatable("confluxmap.screen.client_world.back"),
             ignored -> onClose()
