@@ -32,9 +32,8 @@ public final class ConfluxMapMod implements ModInitializer {
         name = metadata.getName();
         version = metadata.getVersion().getFriendlyString();
 
-        // The same jar runs on dedicated + integrated servers via this entrypoint. The companion
-        // is safe to construct unconditionally: it only registers Fabric-API global receivers,
-        // which are inert until a player connects on the physical server.
+        // Global callbacks must exist before an integrated world can be published to LAN. The
+        // companion itself stays inactive in local singleplayer and starts on demand after publish.
         final ConfluxMapCompanion companion = new ConfluxMapCompanion(
             ServerConfigIo.atDefault(FabricLoader.getInstance().getConfigDir())
         );

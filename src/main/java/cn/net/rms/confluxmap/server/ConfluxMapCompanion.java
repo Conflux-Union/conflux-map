@@ -28,9 +28,9 @@ import net.minecraft.util.WorldSavePath;
  * per-player correction budgets for the {@code confluxmap:map_sync} channel.
  *
  * <p>State is started/stopped on {@link ServerLifecycleEvents#SERVER_STARTED} / {@link
- * ServerLifecycleEvents#SERVER_STOPPING}. The companion is safe to construct on either side
- * (dedicated or integrated) because {@link ServerNetworking} registers only Fabric-API global
- * receivers, which are inert until a player connects.
+ * ServerLifecycleEvents#SERVER_STOPPING}. Dedicated servers activate immediately; integrated
+ * servers stay inert until the world is published to LAN. The global Fabric-API receivers remain
+ * registered so a running singleplayer world can activate without restarting.
  */
 public final class ConfluxMapCompanion {
     private final ServerConfigIo configIo;
@@ -38,6 +38,7 @@ public final class ConfluxMapCompanion {
     private final ServerNetworking networking;
     private final SharedWaypointNetworking sharedWaypointNetworking;
     private final UpdateCheckService updateCheck;
+    private final CompanionRuntimeState runtime = new CompanionRuntimeState();
     private volatile ServerConfig config;
     private volatile RegionSummaryService summaries;
     private volatile ChunkLoadStateService chunkLoadStates;
@@ -72,7 +73,7 @@ public final class ConfluxMapCompanion {
         ServerChunkEvents.CHUNK_LOAD.register((world, chunk) -> {
         //#endif
             final RegionSummaryService current = summaries;
-            if (current != null && config.enabled) {
+            if (current != null && isEnabled()) {
                 current.onChunkLoad(world, chunk);
             }
             final ChunkLoadStateService loadStates = chunkLoadStates;
@@ -82,7 +83,7 @@ public final class ConfluxMapCompanion {
         });
         ServerChunkEvents.CHUNK_UNLOAD.register((world, chunk) -> {
             final RegionSummaryService current = summaries;
-            if (current != null && config.enabled) {
+            if (current != null && isEnabled()) {
                 current.onChunkUnload(world, chunk);
             }
             final ChunkLoadStateService loadStates = chunkLoadStates;
@@ -94,8 +95,9 @@ public final class ConfluxMapCompanion {
     }
 
     private void onServerTick(final MinecraftServer server) {
+        activateIfNeeded(server);
         final RegionSummaryService current = summaries;
-        if (current != null && config.enabled) {
+        if (current != null && isEnabled()) {
             current.tick(server);
         }
         final ChunkLoadStateService loadStates = chunkLoadStates;
@@ -106,10 +108,9 @@ public final class ConfluxMapCompanion {
 
     private void onServerStarting(final MinecraftServer server) {
         config = configIo.load();
-        summaries = config.enabled ? new RegionSummaryService(config) : null;
-        chunkLoadStates = config.enabled && config.shareChunkLoadState
-            ? new ChunkLoadStateService()
-            : null;
+        runtime.deactivate();
+        summaries = null;
+        chunkLoadStates = null;
         sharedWaypoints = null;
     }
 
@@ -126,22 +127,19 @@ public final class ConfluxMapCompanion {
             ConfluxMapMod.LOGGER.info("companion disabled by server.json (enabled=false); no HELLO replies");
             return;
         }
-        // Corrections can use the same predictor as the client when a bundled native exists;
-        // failure is non-fatal and RegionSummaryService falls back to absolute samples.
-        NativeLib.init(server.getSavePath(WorldSavePath.ROOT).resolve("confluxmap"));
-        if (config.shareWaypoints) {
-            sharedWaypoints = loadSharedWaypoints(server);
+        activateIfNeeded(server);
+        if (!runtime.isActive()) {
+            ConfluxMapMod.LOGGER.info(
+                "companion inactive in local singleplayer; publishing to LAN will activate it"
+            );
         }
-        ConfluxMapMod.LOGGER.info(
-            "companion ready (shareSeed={} allowBiomeMap={} allowStructureSearch={} shareCorrections={} shareChunkLoadState={} allowEntityRadar={} shareWaypoints={} maxTilesPerRequest={})",
-            config.shareSeed, config.allowBiomeMap, config.allowStructureSearch,
-            config.shareCorrections, chunkLoadStates != null, config.allowEntityRadar,
-            sharedWaypoints != null, config.maxTilesPerRequest
-        );
     }
 
     private void onServerStopping(final MinecraftServer server) {
         sharedWaypointNetworking.onServerStopping();
+        if (!runtime.isActive()) {
+            return;
+        }
         final RegionSummaryService current = summaries;
         if (current != null) {
             current.prepareStop();
@@ -155,18 +153,23 @@ public final class ConfluxMapCompanion {
     }
 
     private void onServerStopped(final MinecraftServer server) {
+        final boolean wasActive = runtime.isActive();
         final RegionSummaryService current = summaries;
-        if (current != null) {
+        if (wasActive && current != null) {
             current.close(server);
         }
         summaries = null;
         chunkLoadStates = null;
-        worldIds.forget(server);
-        ConfluxMapMod.LOGGER.info("companion stopped");
+        sharedWaypoints = null;
+        runtime.deactivate();
+        if (wasActive) {
+            worldIds.forget(server);
+            ConfluxMapMod.LOGGER.info("companion stopped");
+        }
     }
 
     public boolean isEnabled() {
-        return config.enabled;
+        return config.enabled && runtime.isActive();
     }
 
     public ServerConfig config() {
@@ -178,12 +181,7 @@ public final class ConfluxMapCompanion {
     }
 
     public RegionSummaryService summaries() {
-        RegionSummaryService current = summaries;
-        if (current == null) {
-            current = new RegionSummaryService(config);
-            summaries = current;
-        }
-        return current;
+        return summaries;
     }
 
     public ChunkLoadStateService chunkLoadStates() {
@@ -191,7 +189,7 @@ public final class ConfluxMapCompanion {
     }
 
     public boolean chunkLoadStatesEnabled() {
-        return config.enabled && config.shareChunkLoadState && chunkLoadStates != null;
+        return isEnabled() && config.shareChunkLoadState && chunkLoadStates != null;
     }
 
     /** Returns loaded world state, retained across runtime disable/enable for idempotent retries. */
@@ -201,7 +199,7 @@ public final class ConfluxMapCompanion {
 
     /** Effective capability: both configuration gates are on and world state loaded successfully. */
     public boolean sharedWaypointsEnabled() {
-        return config.enabled && config.shareWaypoints && sharedWaypoints != null;
+        return isEnabled() && config.shareWaypoints && sharedWaypoints != null;
     }
 
     public enum SharedWaypointToggleResult {
@@ -217,7 +215,7 @@ public final class ConfluxMapCompanion {
 
     /** Enables sharing only after world state loads and the atomic config save succeeds. */
     public synchronized SharedWaypointToggleResult enableSharedWaypoints(final MinecraftServer server) {
-        if (!config.enabled) {
+        if (!isEnabled()) {
             return SharedWaypointToggleResult.MASTER_DISABLED;
         }
         if (sharedWaypointsEnabled()) {
@@ -299,5 +297,25 @@ public final class ConfluxMapCompanion {
             ConfluxMapMod.LOGGER.error("Shared waypoints disabled: could not initialize {}", io.file(), e);
         }
         return null;
+    }
+
+    private void activateIfNeeded(final MinecraftServer server) {
+        if (!runtime.activateIfAllowed(config.enabled, server.isDedicated(), server.getServerPort())) {
+            return;
+        }
+        summaries = new RegionSummaryService(config);
+        chunkLoadStates = config.shareChunkLoadState ? new ChunkLoadStateService() : null;
+        // Corrections can use the same predictor as the client when a bundled native exists;
+        // failure is non-fatal and RegionSummaryService falls back to absolute samples.
+        NativeLib.init(server.getSavePath(WorldSavePath.ROOT).resolve("confluxmap"));
+        if (config.shareWaypoints) {
+            sharedWaypoints = loadSharedWaypoints(server);
+        }
+        ConfluxMapMod.LOGGER.info(
+            "companion ready (shareSeed={} allowBiomeMap={} allowStructureSearch={} shareCorrections={} shareChunkLoadState={} allowEntityRadar={} shareWaypoints={} maxTilesPerRequest={})",
+            config.shareSeed, config.allowBiomeMap, config.allowStructureSearch,
+            config.shareCorrections, chunkLoadStates != null, config.allowEntityRadar,
+            sharedWaypoints != null, config.maxTilesPerRequest
+        );
     }
 }

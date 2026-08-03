@@ -71,7 +71,10 @@ public final class ServerNetworking {
             malformedStrikes.remove(uuid);
             mutedPlayers.remove(uuid);
             peerProfiles.remove(uuid);
-            companion.summaries().remove(uuid);
+            final RegionSummaryService summaries = companion.summaries();
+            if (summaries != null) {
+                summaries.remove(uuid);
+            }
             final ChunkLoadStateService loadStates = companion.chunkLoadStates();
             if (loadStates != null) {
                 loadStates.remove(uuid);
