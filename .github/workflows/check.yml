@@ -53,6 +53,7 @@ jobs:
         id: build
         run: ./gradlew :${{ matrix.minecraft_version }}:build
       - name: Connect client to server for ${{ matrix.minecraft_version }}
+        timeout-minutes: 12
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
           MINECRAFT_VERSION: ${{ matrix.minecraft_version }}
@@ -63,6 +64,19 @@ jobs:
           if [[ ! "$minecraft_version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
             echo "::error::Invalid matrix Minecraft version: $minecraft_version"
             exit 1
+          fi
+
+          IFS=. read -r major minor patch <<< "$minecraft_version"
+          minecraft_version_number=$((10#$major * 10000 + 10#$minor * 100 + 10#${patch:-0}))
+
+          if (( minecraft_version_number >= 12104 )); then
+            echo "Running controlled client connection GameTest for Minecraft $minecraft_version"
+            timeout --signal=TERM --kill-after=15s 240s \
+              xvfb-run -a -s '-screen 0 1280x720x24' \
+              ./gradlew ":$minecraft_version:runClientGameTest" \
+              --no-daemon --no-parallel --console=plain
+            echo "Client-server connection GameTest passed for Minecraft $minecraft_version"
+            exit 0
           fi
 
           smoke_root="versions/$minecraft_version/build/connection-smoke"
@@ -186,6 +200,8 @@ jobs:
             versions/${{ matrix.minecraft_version }}/build/connection-smoke/client-output.log
             versions/${{ matrix.minecraft_version }}/build/connection-smoke/server/logs/latest.log
             versions/${{ matrix.minecraft_version }}/build/connection-smoke/client/logs/latest.log
+            versions/${{ matrix.minecraft_version }}/build/client-gametest/logs/latest.log
+            versions/${{ matrix.minecraft_version }}/build/client-gametest/crash-reports/
           if-no-files-found: warn
           retention-days: 7
       - name: Publish prediction quality summary

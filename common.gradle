@@ -112,6 +112,22 @@ loom {
                 vmArg "-Xmx1G"
             }
         }
+        if (mcVersion >= 12104) {
+            clientGameTest {
+                client()
+                name "Client Game Test"
+                source sourceSets.gametest
+                vmArg "-Dfabric.client.gametest"
+                vmArg "-Dfabric.client.gametest.modid=confluxmap-gametest"
+                // Fabric documents a GitHub Actions race in its deterministic packet scheduler.
+                // This smoke test only needs normal networking to prove that both companions load
+                // and complete a real login, so the scheduler would add risk without adding coverage.
+                vmArg "-Dfabric.client.gametest.disableNetworkSynchronizer=true"
+                vmArg "-Xms256m"
+                vmArg "-Xmx1G"
+                runDir "build/client-gametest"
+            }
+        }
         gametest {
             server()
             name "Game Test"
@@ -232,5 +248,15 @@ online-mode=false
 sync-chunk-writes=true
 view-distance=2
 '''
+    }
+}
+if (mcVersion >= 12104) {
+    tasks.named('runClientGameTest') {
+        doFirst {
+            final File runDirectory = project.file("${project.buildDir}/client-gametest")
+            delete runDirectory
+            runDirectory.mkdirs()
+            new File(runDirectory, 'eula.txt').text = 'eula=true\n'
+        }
     }
 }

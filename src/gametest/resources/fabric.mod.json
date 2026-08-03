@@ -3,9 +3,12 @@
   "id": "confluxmap-gametest",
   "version": "1.0.0",
   "name": "Conflux Map Game Tests",
-  "environment": "server",
+  "environment": "*",
   "mixins": [
-    "confluxmap-gametest.mixins.json"
+    {
+      "config": "confluxmap-gametest.mixins.json",
+      "environment": "server"
+    }
   ],
   "entrypoints": {
     "fabric-gametest": [
@@ -14,6 +17,9 @@
       "cn.net.rms.confluxmap.nativepredict.EndCityStructureGameTest",
       "cn.net.rms.confluxmap.mc.snapshot.McChunkSnapshotFactoryGameTest",
       "cn.net.rms.confluxmap.server.ChunkLoadStateGameTest"
+    ],
+    "fabric-client-gametest": [
+      "cn.net.rms.confluxmap.gametest.ClientConnectionGameTest"
     ]
   },
   "depends": {
