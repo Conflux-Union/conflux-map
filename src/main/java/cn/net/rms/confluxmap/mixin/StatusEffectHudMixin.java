@@ -145,6 +145,9 @@ public abstract class StatusEffectHudMixin {
             return 0;
         }
         final ConfluxConfig config = app.config();
+        if (!config.minimapHudAvoidance) {
+            return 0;
+        }
         final var screen = MinecraftAccess.screen(client);
         if (!MinimapHudVisibility.shouldRender(
             config.minimapEnabled,

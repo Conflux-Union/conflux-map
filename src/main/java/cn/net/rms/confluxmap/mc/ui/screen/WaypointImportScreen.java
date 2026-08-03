@@ -49,6 +49,7 @@ final class WaypointImportScreen extends ConfluxScreen {
     private ButtonWidget importButton;
     private WaypointImporter.Result result;
     private String errorKey;
+    private int scrollOffset;
 
     WaypointImportScreen(final Screen parent, final WaypointStore boundStore) {
         super(Texts.translatable("confluxmap.screen.waypoint_import.title"));
@@ -88,14 +89,17 @@ final class WaypointImportScreen extends ConfluxScreen {
     }
 
     private void buildWidgets() {
+        clearEnterAction();
         final int centerX = width / 2;
         final int rowWidth = rowWidth();
         final int rowLeft = centerX - rowWidth / 2;
-        for (int i = 0; i < sources.size(); i++) {
+        scrollOffset = Math.max(0, Math.min(scrollOffset, Math.max(0, sources.size() - visibleRows())));
+        final int end = Math.min(sources.size(), scrollOffset + visibleRows());
+        for (int i = scrollOffset; i < end; i++) {
             final int index = i;
             final ButtonWidget toggle = addDrawableChild(Widgets.button(
                 rowLeft,
-                LIST_TOP + i * ROW_HEIGHT,
+                LIST_TOP + (i - scrollOffset) * ROW_HEIGHT,
                 20,
                 20,
                 Text.of(excludedSources.contains(index) ? "" : "✓"),
@@ -113,6 +117,9 @@ final class WaypointImportScreen extends ConfluxScreen {
             button -> runImport()
         ));
         importButton.active = result == null && selectedWaypointCount() > 0 && availabilityErrorKey() == null;
+        if (result == null) {
+            setEnterAction(() -> importButton != null && importButton.active, this::runImport);
+        }
         addDrawableChild(Widgets.button(
             centerX + 4,
             height - 32,
@@ -168,6 +175,40 @@ final class WaypointImportScreen extends ConfluxScreen {
         return count;
     }
 
+    private int visibleRows() {
+        return Math.max(1, (height - LIST_TOP - 42) / ROW_HEIGHT);
+    }
+
+    @Override
+    //#if MC>=12002
+    //$$ public boolean mouseScrolled(
+    //$$     final double mouseX,
+    //$$     final double mouseY,
+    //$$     final double horizontalAmount,
+    //$$     final double amount
+    //$$ ) {
+    //#else
+    public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
+    //#endif
+        final int left = width / 2 - rowWidth() / 2;
+        final boolean overList = mouseX >= left && mouseX <= left + rowWidth() + 6
+            && mouseY >= LIST_TOP && mouseY <= LIST_TOP + visibleRows() * ROW_HEIGHT;
+        if (amount != 0 && overList && sources.size() > visibleRows()) {
+            final int max = sources.size() - visibleRows();
+            final int next = Math.max(0, Math.min(max, scrollOffset - (int) Math.signum(amount)));
+            if (next != scrollOffset) {
+                scrollOffset = next;
+                rebuild();
+            }
+            return true;
+        }
+        //#if MC>=12002
+        //$$ return super.mouseScrolled(mouseX, mouseY, horizontalAmount, amount);
+        //#else
+        return super.mouseScrolled(mouseX, mouseY, amount);
+        //#endif
+    }
+
     private String availabilityErrorKey() {
         final WaypointStore currentStore = ConfluxMapClient.get().waypointService().current();
         if (currentStore == null || currentStore != boundStore) {
@@ -217,7 +258,8 @@ final class WaypointImportScreen extends ConfluxScreen {
                 MUTED_TEXT_COLOR
             );
             final int rowLeft = width / 2 - rowWidth() / 2;
-            for (int i = 0; i < sources.size(); i++) {
+            final int end = Math.min(sources.size(), scrollOffset + visibleRows());
+            for (int i = scrollOffset; i < end; i++) {
                 final MigrationSource source = sources.get(i);
                 final String label = Texts.translatable(
                     "confluxmap.screen.waypoint_import.source",
@@ -227,10 +269,20 @@ final class WaypointImportScreen extends ConfluxScreen {
                 ).getString();
                 final String fitted = this.textRenderer.trimToWidth(label, rowWidth() - 26);
                 draw.drawTextWithShadow(
-                    this.textRenderer, fitted, rowLeft + 26, LIST_TOP + i * ROW_HEIGHT + 6,
+                    this.textRenderer, fitted, rowLeft + 26,
+                    LIST_TOP + (i - scrollOffset) * ROW_HEIGHT + 6,
                     excludedSources.contains(i) ? MUTED_TEXT_COLOR : TEXT_COLOR
                 );
             }
+            drawListScrollbar(
+                draw,
+                rowLeft + rowWidth() + 3,
+                LIST_TOP,
+                visibleRows() * ROW_HEIGHT - 4,
+                sources.size(),
+                visibleRows(),
+                scrollOffset
+            );
         }
         if (result != null) {
             drawCentered(draw, Texts.translatable(

@@ -64,6 +64,7 @@ public final class AnnotationLabelScreen extends ConfluxScreen {
             Texts.translatable("confluxmap.screen.waypoint.done"),
             ignored -> saveAndReturn()
         ));
+        setEnterAction(() -> true, this::saveAndReturn);
         addDrawableChild(Widgets.button(
             width / 2 + 4,
             104,
@@ -95,6 +96,7 @@ public final class AnnotationLabelScreen extends ConfluxScreen {
         final int mouseY,
         final float tickDelta
     ) {
+        draw.renderBackground(this, mouseX, mouseY, tickDelta);
         draw.drawTextWithShadow(
             this.textRenderer,
             Texts.translatable("confluxmap.screen.annotation.label.prompt"),

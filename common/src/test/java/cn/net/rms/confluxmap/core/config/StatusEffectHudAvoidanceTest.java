@@ -32,4 +32,11 @@ class StatusEffectHudAvoidanceTest {
 
         assertEquals(0, StatusEffectHudAvoidance.horizontalShift(300, 1, 0, 0, minimap));
     }
+
+    @Test
+    void leavesEffectsVisibleWhenNoInBoundsShiftExists() {
+        final MinimapPlacement.Layout minimap = new MinimapPlacement.Layout(4, 4, 292);
+
+        assertEquals(0, StatusEffectHudAvoidance.horizontalShift(300, 1, 2, 1, minimap));
+    }
 }

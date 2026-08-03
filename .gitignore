@@ -4,6 +4,7 @@
 build/
 out/
 classes/
+tools/
 
 # eclipse
 
@@ -48,3 +49,4 @@ replay_*.log
 
 CLAUDE.md
 AGENTS.md
+GOAL.md

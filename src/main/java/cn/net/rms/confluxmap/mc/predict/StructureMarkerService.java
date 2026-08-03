@@ -159,6 +159,19 @@ public final class StructureMarkerService {
             : current.findNearest(type, blockX, blockZ, maxRadius);
     }
 
+    /** Returns at most 32 nearest candidates from a bounded native lookup area. */
+    public synchronized List<StructureIndex.Marker> findNearestCandidates(
+        final StructureIndex.StructureType type,
+        final int blockX,
+        final int blockZ,
+        final int maxCandidates
+    ) {
+        return current == null || !structureSearchAllowed.getAsBoolean()
+            ? List.of()
+            : current.findNearestCandidates(type, blockX, blockZ, maxCandidates);
+    }
+
+    /** Returns candidates inside the requested radius without exceeding the index query budget. */
     public synchronized List<StructureIndex.Marker> findCandidates(
         final StructureIndex.StructureType type,
         final int blockX,

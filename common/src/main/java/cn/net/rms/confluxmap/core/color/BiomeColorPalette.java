@@ -3,7 +3,11 @@ package cn.net.rms.confluxmap.core.color;
 import cn.net.rms.confluxmap.core.predict.CubiomesBiomeIds;
 import cn.net.rms.confluxmap.core.util.Argb;
 
-/** Stable natural map palette keyed by biome identity. */
+/**
+ * Stable natural terrain palette keyed by biome resource identifier. Captured and predicted
+ * copies of the same biome use the same color without relying on Minecraft's
+ * position-dependent grass and foliage tinting.
+ */
 public final class BiomeColorPalette {
     private BiomeColorPalette() {
     }
@@ -27,6 +31,7 @@ public final class BiomeColorPalette {
             if (natural != Argb.TRANSPARENT) {
                 return natural;
             }
+            return fallbackColor(paletteKey);
         }
         return fallbackColor(paletteKey);
     }
@@ -93,7 +98,6 @@ public final class BiomeColorPalette {
             default -> Argb.TRANSPARENT;
         };
     }
-
     private static int hsv(final float hue, final float saturation, final float value) {
         final float scaled = hue * 6.0f;
         final int sector = (int) Math.floor(scaled);

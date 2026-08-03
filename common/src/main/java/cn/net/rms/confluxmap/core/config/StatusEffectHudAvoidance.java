@@ -33,7 +33,10 @@ public final class StatusEffectHudAvoidance {
         if (!overlapsBeneficial && !overlapsHarmful) {
             return 0;
         }
-        return Math.min(0, minimap.x() - GAP - screenWidth);
+        final int shift = Math.min(0, minimap.x() - GAP - screenWidth);
+        final int longestRow = Math.max(Math.max(0, beneficialCount), Math.max(0, harmfulCount));
+        final long leftAfterShift = (long) screenWidth - (long) ICON_STEP * longestRow + shift;
+        return leftAfterShift < 0 ? 0 : shift;
     }
 
     private static boolean overlapsRow(

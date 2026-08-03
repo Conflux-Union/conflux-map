@@ -7,7 +7,7 @@ import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
-import cn.net.rms.confluxmap.core.config.StructureMarkerZoom;
+import cn.net.rms.confluxmap.core.multiworld.ClientWorldPolicy;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
@@ -20,6 +20,9 @@ import java.util.List;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.DoubleConsumer;
+import java.util.function.DoubleFunction;
+import java.util.function.DoubleSupplier;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
 import java.util.function.IntSupplier;
@@ -39,11 +42,8 @@ import net.minecraft.text.Text;
  * {@link WaypointEditScreen}'s style: plain {@link ButtonWidget}s that cycle through
  * boolean/enum values on click, and paired sliders/numeric fields for int ranges.
  *
- * <p>Every change mutates the shared {@link ConfluxConfig} instance immediately, so
- * every other system (they all hold the same reference) observes it on its very next
- * read - there is no separate "apply" step. Disk persistence is batched instead: this
- * screen calls {@link ConfigIo#save} in {@link #onClose()}, and its minimap-placement
- * child saves when returning here, so dragging controls never writes once per pixel.
+ * <p>Every change mutates and saves the shared {@link ConfluxConfig} immediately, so
+ * every other system observes the same value without a separate apply step.
  *
  * <p>Opened only via the {@code key.confluxmap.open_config} keybind (comma by
  * default, see {@code mc.input.Keybinds}) - there is no in-screen entry point, and no
@@ -137,7 +137,6 @@ public final class ConfigScreen extends ConfluxScreen {
     private static final int TAB_Y = 24;
     private static final int TAB_HEIGHT = 20;
     private static final int TAB_GAP = 4;
-    private static final int ROW_TOP = 52;
     private static final int ROW_HEIGHT = 22;
     private static final int MAX_ROW_WIDTH = 280;
     private static final int BOTTOM_MARGIN = 30;
@@ -158,6 +157,7 @@ public final class ConfigScreen extends ConfluxScreen {
     private final GameBridge gameBridge;
     private final PredictionState predictionState;
     private final List<IntSliderInput> sliderInputs = new ArrayList<>();
+    private final List<DecimalSliderInput> decimalSliderInputs = new ArrayList<>();
 
     private Category category = Category.MINIMAP;
     private int rowWidth = MAX_ROW_WIDTH;
@@ -198,6 +198,9 @@ public final class ConfigScreen extends ConfluxScreen {
         for (final IntSliderInput sliderInput : sliderInputs) {
             sliderInput.tick();
         }
+        for (final DecimalSliderInput sliderInput : decimalSliderInputs) {
+            sliderInput.tick();
+        }
         final SharedWaypointAvailability availability = sharedWaypoints.availability();
         if (!availability.equals(sharedAvailability)) {
             sharedAvailability = availability;
@@ -232,9 +235,10 @@ public final class ConfigScreen extends ConfluxScreen {
     }
 
     private int rowsTop() {
+        final int baseRowsTop = tabLayout().contentTop();
         return category == Category.RADAR && radarAccess.noticeKey() != null
-            ? ROW_TOP + radarNoticeHeight()
-            : ROW_TOP;
+            ? baseRowsTop + radarNoticeHeight()
+            : baseRowsTop;
     }
 
     private int radarNoticeHeight() {
@@ -256,13 +260,25 @@ public final class ConfigScreen extends ConfluxScreen {
     //#else
     public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
     //#endif
-        final int maxScroll = Math.max(0, contentHeight - viewportHeight());
-        final int next = Math.max(0, Math.min(maxScroll, scrollOffset - (int) Math.signum(amount) * ROW_HEIGHT));
-        if (next != scrollOffset) {
-            scrollOffset = next;
-            rebuild();
+        final boolean overRows = mouseX >= rowX() && mouseX <= rowX() + rowWidth + 8
+            && mouseY >= rowsTop() && mouseY <= height - BOTTOM_MARGIN;
+        if (amount != 0 && overRows) {
+            final int maxScroll = Math.max(0, contentHeight - viewportHeight());
+            final int next = Math.max(
+                0,
+                Math.min(maxScroll, scrollOffset - (int) Math.signum(amount) * ROW_HEIGHT)
+            );
+            if (next != scrollOffset) {
+                scrollOffset = next;
+                rebuild();
+            }
+            return true;
         }
-        return true;
+        //#if MC>=12002
+        //$$ return super.mouseScrolled(mouseX, mouseY, horizontalAmount, amount);
+        //#else
+        return super.mouseScrolled(mouseX, mouseY, amount);
+        //#endif
     }
 
     /** Funnel point for every close path (ESC via the default {@code keyPressed}, or the Done button below). */
@@ -277,6 +293,7 @@ public final class ConfigScreen extends ConfluxScreen {
         radarAccess = RadarSettingsAccess.from(companionSession.entityRadarAllowed());
         predictionAccess = predictionSettingsAccess();
         sliderInputs.clear();
+        decimalSliderInputs.clear();
         clearChildren();
         addTabs();
         addRows();
@@ -288,19 +305,29 @@ public final class ConfigScreen extends ConfluxScreen {
 
     private void addTabs() {
         final Category[] categories = Category.values();
-        final int tabWidth = Math.min(110, (width - MARGIN * 2 - TAB_GAP * (categories.length - 1)) / categories.length);
-        final int totalWidth = tabWidth * categories.length + TAB_GAP * (categories.length - 1);
-        int x = width / 2 - totalWidth / 2;
-        for (final Category c : categories) {
+        final ConfigTabLayout layout = tabLayout();
+        final int startX = width / 2 - layout.totalWidth() / 2;
+        for (int index = 0; index < categories.length; index++) {
+            final Category c = categories[index];
+            final Text label = c == category
+                ? Texts.literal("[" + Texts.translatable(c.labelKey).getString() + "]")
+                : Texts.translatable(c.labelKey);
             final ButtonWidget tab = Widgets.button(
-                x, TAB_Y, tabWidth, TAB_HEIGHT, Texts.translatable(c.labelKey), b -> selectCategory(c)
+                startX + index % layout.columns() * (layout.tabWidth() + TAB_GAP),
+                TAB_Y + index / layout.columns() * (TAB_HEIGHT + TAB_GAP),
+                layout.tabWidth(),
+                TAB_HEIGHT,
+                label,
+                b -> selectCategory(c)
             );
-            // Disabling the current tab both marks it visually (dimmed, per vanilla button
-            // convention) and makes re-clicking it a harmless no-op.
-            tab.active = c != category;
             addDrawableChild(tab);
-            x += tabWidth + TAB_GAP;
         }
+    }
+
+    private ConfigTabLayout tabLayout() {
+        return ConfigTabLayout.fit(
+            width, Category.values().length, MARGIN, TAB_GAP, TAB_Y, TAB_HEIGHT
+        );
     }
 
     private void selectCategory(final Category c) {
@@ -319,6 +346,12 @@ public final class ConfigScreen extends ConfluxScreen {
                     y,
                     "confluxmap.config.minimap.position",
                     () -> MinecraftAccess.setScreen(MinecraftClient.getInstance(), new MinimapPositionScreen(this, config, configIo))
+                );
+                y = addToggleRow(
+                    y,
+                    "confluxmap.config.minimap.hud_avoidance",
+                    () -> config.minimapHudAvoidance,
+                    v -> config.minimapHudAvoidance = v
                 );
                 y = addEnumRow(
                     y, "confluxmap.config.minimap.shape", ConfluxConfig.Shape.values(),
@@ -475,6 +508,46 @@ public final class ConfigScreen extends ConfluxScreen {
                     y, "confluxmap.config.performance.gpu_tile_cache_limit", 16, 2048,
                     () -> config.gpuTileCacheLimit, v -> config.gpuTileCacheLimit = v, ConfigScreen::plainText
                 );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.performance.client_world_profile_limit",
+                    ClientWorldPolicy.MIN_MAX_PROFILES_PER_SERVER,
+                    ClientWorldPolicy.MAX_MAX_PROFILES_PER_SERVER,
+                    () -> config.clientWorldMaxProfilesPerServer,
+                    v -> config.clientWorldMaxProfilesPerServer = v,
+                    ConfigScreen::plainText
+                );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.performance.client_world_binding_limit",
+                    ClientWorldPolicy.MIN_MAX_BINDINGS_PER_PROFILE,
+                    ClientWorldPolicy.MAX_MAX_BINDINGS_PER_PROFILE,
+                    () -> config.clientWorldMaxBindingsPerProfile,
+                    v -> config.clientWorldMaxBindingsPerProfile = v,
+                    ConfigScreen::plainText
+                );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.performance.client_world_command_timeout",
+                    ClientWorldPolicy.MIN_COMMAND_CONFIRMATION_SECONDS,
+                    ClientWorldPolicy.MAX_COMMAND_CONFIRMATION_SECONDS,
+                    () -> config.clientWorldCommandConfirmationSeconds,
+                    v -> config.clientWorldCommandConfirmationSeconds = v,
+                    ConfigScreen::plainText
+                );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.performance.client_world_visit_refresh",
+                    ClientWorldPolicy.MIN_VISIT_REFRESH_SECONDS,
+                    ClientWorldPolicy.MAX_VISIT_REFRESH_SECONDS,
+                    () -> config.clientWorldVisitRefreshSeconds,
+                    v -> config.clientWorldVisitRefreshSeconds = v,
+                    ConfigScreen::plainText
+                );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.performance.client_world_visit_distance",
+                    ClientWorldPolicy.MIN_VISIT_REFRESH_DISTANCE,
+                    ClientWorldPolicy.MAX_VISIT_REFRESH_DISTANCE,
+                    () -> config.clientWorldVisitRefreshDistance,
+                    v -> config.clientWorldVisitRefreshDistance = v,
+                    ConfigScreen::plainText
+                );
                 y = addToggleRow(
                     y, "confluxmap.config.performance.update_check",
                     () -> config.updateCheckEnabled, v -> config.updateCheckEnabled = v
@@ -505,10 +578,14 @@ public final class ConfigScreen extends ConfluxScreen {
                     () -> config.predictionShowStructures, v -> config.predictionShowStructures = v,
                     structureReason == null, structureReason
                 );
-                y = addEnumRow(
-                    y, "confluxmap.config.prediction.structure_zoom", StructureMarkerZoom.values(),
-                    () -> config.structureMarkerZoom, v -> config.structureMarkerZoom = v,
-                    ConfigScreen::structureMarkerZoomKey,
+                y = addDecimalSliderRow(
+                    y, "confluxmap.config.prediction.structure_icon_detail_limit",
+                    ConfluxConfig.MIN_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM,
+                    ConfluxConfig.MAX_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM,
+                    DecimalSliderValue.CONTINUOUS,
+                    () -> config.predictionStructureIconHideZoom,
+                    v -> config.predictionStructureIconHideZoom = v,
+                    ConfigScreen::structureIconDetailLimitText,
                     structureReason == null, structureReason
                 );
                 y = addEnumRow(
@@ -564,6 +641,7 @@ public final class ConfigScreen extends ConfluxScreen {
                 b -> {
                     final boolean next = !getter.getAsBoolean();
                     setter.accept(next);
+                    configIo.save(config);
                     b.setMessage(boolLabel(labelKey, next));
                 }
             ));
@@ -600,6 +678,7 @@ public final class ConfigScreen extends ConfluxScreen {
                 b -> {
                     final T next = nextValue(values, getter.get());
                     setter.accept(next);
+                    configIo.save(config);
                     b.setMessage(enumLabel(labelKey, next, valueKeyFn));
                 }
             ));
@@ -616,6 +695,7 @@ public final class ConfigScreen extends ConfluxScreen {
                 b -> {
                     final int next = (config.minimapZoomIndex + 1) % ZOOM_VALUE_KEYS.length;
                     config.minimapZoomIndex = next;
+                    configIo.save(config);
                     b.setMessage(zoomLabel(next));
                 }
             ));
@@ -678,11 +758,53 @@ public final class ConfigScreen extends ConfluxScreen {
                 min,
                 max,
                 getter.getAsInt(),
-                setter,
+                value -> {
+                    setter.accept(value);
+                    configIo.save(config);
+                },
                 value -> Texts.translatable(labelKey, valueText.apply(value))
             );
             sliderInput.setActive(active);
             sliderInputs.add(sliderInput);
+            addDrawableChild(sliderInput.slider());
+            addDrawableChild(sliderInput.input());
+            setDisabledTooltip(sliderInput.slider(), disabledTooltipKey);
+            setDisabledTooltip(sliderInput.input(), disabledTooltipKey);
+        }
+        return y + ROW_HEIGHT;
+    }
+
+    private int addDecimalSliderRow(
+        final int y,
+        final String labelKey,
+        final double min,
+        final double max,
+        final double step,
+        final DoubleSupplier getter,
+        final DoubleConsumer setter,
+        final DoubleFunction<String> valueText,
+        final boolean active,
+        final String disabledTooltipKey
+    ) {
+        if (rowVisible(y)) {
+            final DecimalSliderInput sliderInput = new DecimalSliderInput(
+                this.textRenderer,
+                rowX(),
+                y,
+                rowWidth,
+                ROW_HEIGHT - 2,
+                min,
+                max,
+                step,
+                getter.getAsDouble(),
+                value -> {
+                    setter.accept(value);
+                    configIo.save(config);
+                },
+                value -> Texts.translatable(labelKey, valueText.apply(value))
+            );
+            sliderInput.setActive(active);
+            decimalSliderInputs.add(sliderInput);
             addDrawableChild(sliderInput.slider());
             addDrawableChild(sliderInput.input());
             setDisabledTooltip(sliderInput.slider(), disabledTooltipKey);
@@ -732,6 +854,12 @@ public final class ConfigScreen extends ConfluxScreen {
         return value == 0 ? resolvedText("confluxmap.value.unlimited") : blocksText(value);
     }
 
+    private static String structureIconDetailLimitText(final double scale) {
+        return Texts.translatable(
+            "confluxmap.value.zoom_multiplier", DecimalSliderInput.format(scale)
+        ).getString();
+    }
+
     private PredictionSettingsAccess predictionSettingsAccess() {
         final boolean singleplayer = MinecraftClient.getInstance().isInSingleplayer();
         final boolean seedIndependentUnderlay = predictionState.flatBaseline(
@@ -772,11 +900,6 @@ public final class ConfigScreen extends ConfluxScreen {
         }
     }
 
-    private static String structureMarkerZoomKey(final StructureMarkerZoom zoom) {
-        return "confluxmap.config.prediction.structure_zoom."
-            + zoom.name().toLowerCase(java.util.Locale.ROOT);
-    }
-
     @Override
     protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
         draw.renderBackground(this, mouseX, mouseY, tickDelta);
@@ -785,11 +908,28 @@ public final class ConfigScreen extends ConfluxScreen {
         if (category == Category.RADAR && radarAccess.noticeKey() != null) {
             drawRadarPolicyNotice(draw);
         }
+        drawScrollbar(draw);
+    }
+
+    private void drawScrollbar(final GuiDraw draw) {
+        final int viewport = viewportHeight();
+        final int maxScroll = Math.max(0, contentHeight - viewport);
+        if (maxScroll <= 0) {
+            return;
+        }
+        final int top = rowsTop();
+        final int trackHeight = viewport;
+        final int thumbHeight = Math.max(12, trackHeight * viewport / contentHeight);
+        final int thumbTravel = Math.max(1, trackHeight - thumbHeight);
+        final int thumbY = top + (int) Math.round(thumbTravel * (scrollOffset / (double) maxScroll));
+        final int x = rowX() + rowWidth + 4;
+        draw.fill(x, top, x + 2, top + trackHeight, 0xFF3A3A3A);
+        draw.fill(x, thumbY, x + 2, thumbY + thumbHeight, 0xFFFFFFFF);
     }
 
     private void drawRadarPolicyNotice(final GuiDraw draw) {
         final String notice = Texts.translatable(radarAccess.noticeKey()).getString();
-        int y = ROW_TOP + 2;
+        int y = tabLayout().contentTop() + 2;
         for (final OrderedText line : this.textRenderer.wrapLines(
             StringVisitable.plain(notice), Math.max(40, rowWidth)
         )) {

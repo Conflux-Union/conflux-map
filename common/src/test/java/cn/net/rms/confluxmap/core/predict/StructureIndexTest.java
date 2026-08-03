@@ -291,8 +291,8 @@ class StructureIndexTest {
     }
 
     @Test
-    void candidateSearchFiltersByRadiusSortsByDistanceAndHonorsLimit() {
-        final List<String> ranges = new ArrayList<>();
+    void candidateSearchReturnsNearestMarkersInDistanceOrderAndCapsTheResult() {
+        final List<String> batchRequests = new ArrayList<>();
         final StructureIndex index = new StructureIndex(
             tempDir.resolve("cache"),
             WorldIdentity.singleplayer("candidate-world"),
@@ -304,7 +304,7 @@ class StructureIndexTest {
                     final int regionX,
                     final int regionZ
                 ) {
-                    return new long[0];
+                    throw new AssertionError("candidate finder must use the bounded batch lookup");
                 }
 
                 @Override
@@ -315,45 +315,95 @@ class StructureIndexTest {
                     final int maxRegionX,
                     final int maxRegionZ
                 ) {
-                    ranges.add(minRegionX + ":" + minRegionZ + ":" + maxRegionX + ":" + maxRegionZ);
-                    return new long[] {
-                        pack(30, 40),
-                        pack(-6, 8),
-                        pack(300, 400),
-                        pack(10, 0)
-                    };
+                    batchRequests.add(minRegionX + "," + minRegionZ + ":" + maxRegionX + "," + maxRegionZ);
+                    final List<Long> positions = new ArrayList<>();
+                    for (int regionZ = minRegionZ; regionZ <= maxRegionZ; regionZ++) {
+                        for (int regionX = minRegionX; regionX <= maxRegionX; regionX++) {
+                            positions.add(pack(regionX * 512, regionZ * 512));
+                        }
+                    }
+                    final long[] packed = new long[positions.size()];
+                    for (int index = 0; index < positions.size(); index++) {
+                        packed[index] = positions.get(index);
+                    }
+                    return packed;
                 }
             }
         );
 
-        final List<StructureIndex.Marker> candidates = index.findCandidates(
-            StructureIndex.StructureType.VILLAGE,
-            0,
-            0,
-            100,
-            2
-        );
-        index.findCandidates(
-            StructureIndex.StructureType.VILLAGE,
-            0,
-            0,
-            100,
-            2
+        final List<StructureIndex.Marker> nearest = index.findNearestCandidates(
+            StructureIndex.StructureType.VILLAGE, 0, 0, 3
         );
 
-        assertEquals(1, ranges.size());
-        assertEquals(List.of(
-            pack(-6, 8),
-            pack(10, 0)
-        ), candidates.stream().map(marker -> pack(marker.blockX(), marker.blockZ())).toList());
+        assertEquals(3, nearest.size());
+        assertEquals(0, nearest.get(0).blockX());
+        assertEquals(0, nearest.get(0).blockZ());
+        assertTrue(distanceSquared(nearest.get(0)) <= distanceSquared(nearest.get(1)));
+        assertTrue(distanceSquared(nearest.get(1)) <= distanceSquared(nearest.get(2)));
+        final List<StructureIndex.Marker> maximum = index.findNearestCandidates(
+            StructureIndex.StructureType.VILLAGE, 0, 0, 100
+        );
+        assertEquals(32, maximum.size());
+        assertEquals(2, batchRequests.size(), "each candidate rectangle needs one native batch");
     }
 
     @Test
-    void candidateSearchDoesNotStopAtFarCornersOfTheCurrentRegionSquare() {
-        final List<Integer> calls = new ArrayList<>();
+    void normalStructureLabelsRemainVisibleAtPointOneTwoFiveZoom() {
+        assertTrue(StructureIndex.StructureType.VILLAGE.displaysAt(16.0));
+        assertFalse(StructureIndex.StructureType.VILLAGE.displaysAt(16.01));
+        assertTrue(StructureIndex.StructureType.NETHER_FOSSIL.displaysAt(4.0));
+        assertFalse(StructureIndex.StructureType.NETHER_FOSSIL.displaysAt(4.01));
+    }
+
+    @Test
+    void radiusCandidateSearchKeepsNativeBatchesBounded() {
+        final List<Long> requestedCells = new ArrayList<>();
         final StructureIndex index = new StructureIndex(
             tempDir.resolve("cache"),
-            WorldIdentity.singleplayer("candidate-expansion-world"),
+            WorldIdentity.singleplayer("bounded-radius-world"),
+            DimensionId.OVERWORLD,
+            new StructureIndex.CandidateProvider() {
+                @Override
+                public long[] candidates(
+                    final StructureIndex.StructureType type,
+                    final int regionX,
+                    final int regionZ
+                ) {
+                    throw new AssertionError("radius finder must use batch lookup");
+                }
+
+                @Override
+                public long[] candidates(
+                    final StructureIndex.StructureType type,
+                    final int minRegionX,
+                    final int minRegionZ,
+                    final int maxRegionX,
+                    final int maxRegionZ
+                ) {
+                    requestedCells.add(
+                        ((long) maxRegionX - minRegionX + 1L)
+                            * ((long) maxRegionZ - minRegionZ + 1L)
+                    );
+                    return new long[] {pack(128, 128), pack(4_096, 4_096)};
+                }
+            }
+        );
+
+        final List<StructureIndex.Marker> result = index.findCandidates(
+            StructureIndex.StructureType.VILLAGE, 0, 0, 100_000, 100
+        );
+
+        assertEquals(2, result.size());
+        assertEquals(128, result.get(0).blockX());
+        assertTrue(requestedCells.stream().allMatch(cells -> cells <= 1_024L));
+        assertEquals(1, requestedCells.size(), "oversized expansion must stop before native lookup");
+    }
+
+    @Test
+    void radiusCandidateSearchHandlesExtremeCoordinatesWithoutOverflow() {
+        final StructureIndex index = new StructureIndex(
+            tempDir.resolve("cache"),
+            WorldIdentity.singleplayer("extreme-coordinate-world"),
             DimensionId.OVERWORLD,
             new StructureIndex.CandidateProvider() {
                 @Override
@@ -373,27 +423,26 @@ class StructureIndexTest {
                     final int maxRegionX,
                     final int maxRegionZ
                 ) {
-                    calls.add(maxRegionX - minRegionX + 1);
-                    return calls.size() == 1
-                        ? new long[] {pack(900, 900), pack(1000, 1000)}
-                        : new long[] {pack(1100, 0), pack(0, 1200)};
+                    return new long[] {pack(Integer.MAX_VALUE - 8, Integer.MIN_VALUE + 8)};
                 }
             }
         );
 
-        final List<StructureIndex.Marker> candidates = index.findCandidates(
+        final List<StructureIndex.Marker> result = index.findCandidates(
             StructureIndex.StructureType.VILLAGE,
-            0,
-            0,
-            3000,
-            2
+            Integer.MAX_VALUE,
+            Integer.MIN_VALUE,
+            32,
+            1
         );
 
-        assertEquals(2, calls.size());
-        assertEquals(List.of(
-            pack(1100, 0),
-            pack(0, 1200)
-        ), candidates.stream().map(marker -> pack(marker.blockX(), marker.blockZ())).toList());
+        assertEquals(1, result.size());
+        assertEquals(Integer.MAX_VALUE - 8, result.get(0).blockX());
+        assertEquals(Integer.MIN_VALUE + 8, result.get(0).blockZ());
+    }
+
+    private static long distanceSquared(final StructureIndex.Marker marker) {
+        return (long) marker.blockX() * marker.blockX() + (long) marker.blockZ() * marker.blockZ();
     }
 
     private static long pack(final int x, final int z) {

@@ -460,6 +460,14 @@ final class StructureCandidateScreen extends ConfluxScreen {
         final int rowWidth = rowWidth();
         final int rowX = rowX();
         final int end = Math.min(results.size(), scrollOffset + visibleRows());
+        StructureSearchScrollBar.drawListSurface(
+            draw,
+            rowX - 4,
+            LIST_TOP - 2,
+            rowWidth + StructureSearchScrollBar.trackWidth() + 10,
+            visibleRows() * ROW_HEIGHT + 2,
+            ROW_HEIGHT
+        );
         for (int index = scrollOffset; index < end; index++) {
             final StructureIndex.Marker marker = results.get(index);
             final long dx = marker.blockX() - (long) centerX;
@@ -467,7 +475,7 @@ final class StructureCandidateScreen extends ConfluxScreen {
             final String text = String.format(
                 Locale.ROOT,
                 "%d, %d · %.0f",
-                marker.blockX(), marker.blockZ(), Math.sqrt(dx * dx + dz * dz)
+                marker.blockX(), marker.blockZ(), Math.hypot(dx, dz)
             );
             draw.drawTextWithShadow(
                 this.textRenderer,
@@ -493,6 +501,25 @@ final class StructureCandidateScreen extends ConfluxScreen {
                 0xFFAAAAAA
             );
         }
+    }
+
+    @Override
+    protected void renderAfterWidgets(
+        final GuiDraw draw,
+        final int mouseX,
+        final int mouseY,
+        final float tickDelta
+    ) {
+        StructureSearchScrollBar.drawOverflowCues(
+            draw,
+            rowX() - 4,
+            LIST_TOP - 2,
+            rowWidth() + StructureSearchScrollBar.trackWidth() + 10,
+            visibleRows() * ROW_HEIGHT + 2,
+            results.size(),
+            visibleRows(),
+            scrollOffset
+        );
     }
 
     private void drawCentered(final GuiDraw draw, final String text, final int y, final int color) {

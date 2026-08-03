@@ -42,7 +42,10 @@ public final class AnnotationEraserSettingsScreen extends ConfluxScreen {
             ConfluxConfig.MIN_ANNOTATION_ERASER_SIZE,
             ConfluxConfig.MAX_ANNOTATION_ERASER_SIZE,
             config.annotationEraserSize,
-            value -> config.annotationEraserSize = value,
+            value -> {
+                config.annotationEraserSize = value;
+                ConfluxMapClient.get().configIo().save(config);
+            },
             value -> Texts.translatable("confluxmap.screen.annotation.eraser.size", value)
         );
         addDrawableChild(eraserSizeInput.slider());
@@ -55,6 +58,7 @@ public final class AnnotationEraserSettingsScreen extends ConfluxScreen {
             Texts.translatable("confluxmap.screen.waypoint.done"),
             ignored -> saveAndReturn()
         ));
+        setEnterAction(() -> true, this::saveAndReturn);
     }
 
     private void saveAndReturn() {

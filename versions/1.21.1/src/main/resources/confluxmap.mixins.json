@@ -4,9 +4,11 @@
   "compatibilityLevel": "JAVA_$java_version",
   "mixins": [],
   "client": [
+    "ChatScreenMixin",
     "ChatHudMixin",
     "ClientChunkManagerMixin",
     "ClientPlayNetworkHandlerMixin",
+    "InGameHudMixin",
     "ScreenMixin",
     "StatusEffectHudMixin",
     "ToastHudMixin"

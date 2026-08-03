@@ -20,7 +20,7 @@ public final class MinimapPositionScreen extends ConfluxScreen {
     private static final int BUTTON_WIDTH = 120;
     private static final int BUTTON_GAP = 6;
     private static final int BUTTON_HEIGHT = 20;
-    private static final int OUTLINE_COLOR = 0xFFFFD83D;
+    private static final int OUTLINE_COLOR = 0xFFFFFFFF;
     private static final int OUTLINE_SHADOW = 0xB0000000;
 
     private final Screen parent;
@@ -67,6 +67,7 @@ public final class MinimapPositionScreen extends ConfluxScreen {
             Texts.translatable("confluxmap.screen.waypoint.done"),
             button -> onClose()
         ));
+        setEnterAction(() -> true, this::onClose);
     }
 
     @Override
@@ -222,6 +223,7 @@ public final class MinimapPositionScreen extends ConfluxScreen {
     private void applyPosition(final MinimapPlacement.Position position) {
         config.minimapPositionX = position.x();
         config.minimapPositionY = position.y();
+        configIo.save(config);
     }
 
     private void resetPosition() {

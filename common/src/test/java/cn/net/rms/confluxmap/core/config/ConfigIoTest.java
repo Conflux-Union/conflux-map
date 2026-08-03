@@ -31,7 +31,9 @@ class ConfigIoTest {
         assertEquals(90, ConfluxConfig.DEFAULT_MINIMAP_SIZE);
         assertEquals(ConfluxConfig.DEFAULT_MINIMAP_SIZE, loaded.minimapSize);
         assertEquals(ConfluxConfig.DEFAULT_RADAR_ICON_SIZE, loaded.radarIconSize);
+        assertTrue(loaded.minimapHudAvoidance);
         assertTrue(Files.readString(file, StandardCharsets.UTF_8).contains("\"minimapSize\": 90"));
+        assertTrue(Files.readString(file, StandardCharsets.UTF_8).contains("\"minimapHudAvoidance\": true"));
         assertTrue(Files.readString(file, StandardCharsets.UTF_8).contains("\"radarIconSize\": 10"));
     }
 
@@ -44,7 +46,10 @@ class ConfigIoTest {
 
         // Absent fields keep their defaults; out-of-range values are clamped.
         assertEquals(new ConfluxConfig().predictionDebounceMs, loaded.predictionDebounceMs);
-        assertEquals(StructureMarkerZoom.ZOOM_0_125, loaded.structureMarkerZoom);
+        assertEquals(
+            ConfluxConfig.DEFAULT_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM,
+            loaded.predictionStructureIconHideZoom
+        );
         assertTrue(loaded.annotationsOnHud);
         assertEquals(ConfluxConfig.DEFAULT_ANNOTATION_ERASER_SIZE, loaded.annotationEraserSize);
         assertEquals(new ConfluxConfig().fullscreenDisplayMode, loaded.fullscreenDisplayMode);
@@ -64,13 +69,16 @@ class ConfigIoTest {
         assertFalse(loaded.surveyReminderDismissed);
         assertEquals(1.0, loaded.minimapPositionX);
         assertEquals(0.0, loaded.minimapPositionY);
+        assertTrue(loaded.minimapHudAvoidance);
         assertEquals(ConfluxConfig.SCHEMA_VERSION, loaded.schemaVersion);
         assertEquals(256, loaded.minimapSize);
         // The upgrade is persisted so the on-disk file now carries the full schema.
         final String rewritten = Files.readString(file, StandardCharsets.UTF_8);
         assertTrue(rewritten.contains("\"predictionDebounceMs\""));
+        assertTrue(rewritten.contains("\"predictionStructureIconHideZoom\""));
+        assertFalse(rewritten.contains("\"predictionStructureIconHideScale\""));
+        assertFalse(rewritten.contains("\"predictionStructureMaxLod\""));
         assertTrue(rewritten.contains("\"predictionStructureVisibility\""));
-        assertTrue(rewritten.contains("\"structureMarkerZoom\": \"ZOOM_0_125\""));
         assertTrue(rewritten.contains("\"annotationsOnHud\""));
         assertTrue(rewritten.contains("\"annotationEraserSize\""));
         assertTrue(rewritten.contains("\"fullscreenDisplayMode\""));
@@ -85,6 +93,7 @@ class ConfigIoTest {
         assertTrue(rewritten.contains("\"surveyReminderDismissed\""));
         assertTrue(rewritten.contains("\"minimapPositionX\": 1.0"));
         assertTrue(rewritten.contains("\"minimapPositionY\": 0.0"));
+        assertTrue(rewritten.contains("\"minimapHudAvoidance\": true"));
         assertTrue(rewritten.contains("\"minimapSize\": 256"));
     }
 
@@ -187,7 +196,7 @@ class ConfigIoTest {
 
         assertEquals(60, loaded.playerTrailDurationSeconds);
         final String rewritten = Files.readString(file, StandardCharsets.UTF_8);
-        assertTrue(rewritten.contains("\"schemaVersion\": 3"));
+        assertTrue(rewritten.contains("\"schemaVersion\": " + ConfluxConfig.SCHEMA_VERSION));
         assertTrue(rewritten.contains("\"playerTrailDurationSeconds\": 60"));
         assertFalse(rewritten.contains("\"playerTrailDurationMinutes\""));
     }
@@ -226,6 +235,72 @@ class ConfigIoTest {
         assertTrue(loaded.predictionStructureVisibility.isVisible(
             30, DimensionId.OVERWORLD, StructureIndex.StructureType.VILLAGE
         ));
+    }
+
+    @Test
+    void structureIconHideZoomRoundTripsMigratesAndClampsInvalidValues(@TempDir final Path tmp) throws IOException {
+        final Path file = tmp.resolve("config.json");
+        final ConfigIo io = new ConfigIo(file, LOGGER);
+        final ConfluxConfig config = new ConfluxConfig();
+        config.predictionStructureIconHideZoom = 0.14;
+
+        io.save(config);
+        assertEquals(0.14, io.load().predictionStructureIconHideZoom);
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":3,\"predictionStructureMaxLod\":1}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(0.25, io.load().predictionStructureIconHideZoom);
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":4,\"predictionStructureIconHideScale\":0.25}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(4.0, io.load().predictionStructureIconHideZoom);
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":4,\"predictionStructureIconHideScale\":9.75}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(1.0 / 9.75, io.load().predictionStructureIconHideZoom);
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":4,\"predictionStructureIconHideScale\":99}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(0.0625, io.load().predictionStructureIconHideZoom);
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":4,\"predictionStructureIconHideScale\":0}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(4.0, io.load().predictionStructureIconHideZoom);
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":5,\"predictionStructureIconHideZoom\":99}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(
+            ConfluxConfig.MAX_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM,
+            io.load().predictionStructureIconHideZoom
+        );
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":5,\"predictionStructureIconHideZoom\":0}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(
+            ConfluxConfig.MIN_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM,
+            io.load().predictionStructureIconHideZoom
+        );
     }
 
     @Test

@@ -12,6 +12,8 @@ import cn.net.rms.confluxmap.core.export.MapExportService;
 import cn.net.rms.confluxmap.core.export.MapExportSizeEstimate;
 import cn.net.rms.confluxmap.core.export.MapExportStatus;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import java.util.EnumMap;
+import java.util.Map;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -36,7 +38,8 @@ final class MapExportScreen extends ConfluxScreen {
     private TextFieldWidget secondXField;
     private TextFieldWidget secondZField;
     private ButtonWidget exportButton;
-    private ButtonWidget resolutionButton;
+    private final Map<MapExportResolution, ButtonWidget> resolutionButtons =
+        new EnumMap<>(MapExportResolution.class);
     private ButtonWidget drawingsButton;
     private boolean includeDrawings = true;
     private boolean submitted;
@@ -70,8 +73,10 @@ final class MapExportScreen extends ConfluxScreen {
 
     private void rebuild() {
         clearChildren();
-        renderedState = exports.status().state();
-        if (submitted || exports.status().active()) {
+        clearEnterAction();
+        final MapExportStatus status = exports.status();
+        renderedState = status.state();
+        if (submitted || status.active()) {
             addStatusControls();
         } else {
             addFormControls();
@@ -79,6 +84,7 @@ final class MapExportScreen extends ConfluxScreen {
     }
 
     private void addFormControls() {
+        resolutionButtons.clear();
         final int left = width / 2 - FIELD_WIDTH - 6;
         final int right = width / 2 + 6;
         firstXField = numericField(left, 58, bounds.minX());
@@ -90,16 +96,24 @@ final class MapExportScreen extends ConfluxScreen {
         addDrawableChild(secondXField);
         addDrawableChild(secondZField);
 
-        resolutionButton = addDrawableChild(Widgets.button(
-            width / 2 - 98, 130, 196, FIELD_HEIGHT,
-            resolutionLabel(),
-            ignored -> {
-                final MapExportResolution[] values = MapExportResolution.values();
-                resolution = values[(resolution.ordinal() + 1) % values.length];
-                resolutionButton.setMessage(resolutionLabel());
-                refreshExportButton();
-            }
-        ));
+        final MapExportResolution[] resolutions = MapExportResolution.values();
+        final int resolutionGap = 3;
+        final int resolutionRowWidth = Math.min(280, Math.max(196, width - 24));
+        final int resolutionWidth = (resolutionRowWidth - resolutionGap * (resolutions.length - 1))
+            / resolutions.length;
+        int resolutionX = width / 2 - resolutionRowWidth / 2;
+        for (final MapExportResolution candidate : resolutions) {
+            final ButtonWidget button = addDrawableChild(Widgets.button(
+                resolutionX,
+                130,
+                resolutionWidth,
+                FIELD_HEIGHT,
+                resolutionOptionLabel(candidate),
+                ignored -> selectResolution(candidate)
+            ));
+            resolutionButtons.put(candidate, button);
+            resolutionX += resolutionWidth + resolutionGap;
+        }
         drawingsButton = addDrawableChild(Widgets.button(
             width / 2 - 98, 156, 95, FIELD_HEIGHT,
             drawingsLabel(),
@@ -123,6 +137,7 @@ final class MapExportScreen extends ConfluxScreen {
             Texts.translatable("confluxmap.screen.waypoint.cancel"),
             ignored -> onClose()
         ));
+        setEnterAction(() -> exportButton != null && exportButton.active, this::submit);
         refreshExportButton();
     }
 
@@ -246,11 +261,17 @@ final class MapExportScreen extends ConfluxScreen {
         }
     }
 
-    private net.minecraft.text.Text resolutionLabel() {
-        return Texts.translatable(
-            "confluxmap.screen.map_export.resolution",
-            resolution.blocksPerPixel()
-        );
+    private net.minecraft.text.Text resolutionOptionLabel(final MapExportResolution candidate) {
+        final String value = MapExportQuality.fraction(candidate);
+        return Texts.literal(candidate == resolution ? "[" + value + "]" : value);
+    }
+
+    private void selectResolution(final MapExportResolution selected) {
+        resolution = selected;
+        for (final Map.Entry<MapExportResolution, ButtonWidget> entry : resolutionButtons.entrySet()) {
+            entry.getValue().setMessage(resolutionOptionLabel(entry.getKey()));
+        }
+        refreshExportButton();
     }
 
     private net.minecraft.text.Text drawingsLabel() {
@@ -312,8 +333,21 @@ final class MapExportScreen extends ConfluxScreen {
         if (!submitted) {
             drawCentered(draw, Texts.translatable("confluxmap.screen.map_export.first_corner").getString(), 44, 0xFFBBBBBB);
             drawCentered(draw, Texts.translatable("confluxmap.screen.map_export.second_corner").getString(), 80, 0xFFBBBBBB);
+            drawCentered(
+                draw,
+                Texts.translatable("confluxmap.screen.map_export.quality").getString(),
+                116,
+                0xFFBBBBBB
+            );
             final MapExportBounds parsed = parsedBounds();
-            if (parsed != null) {
+            if (parsed == null) {
+                drawCentered(
+                    draw,
+                    Texts.translatable("confluxmap.screen.map_export.invalid_coordinates").getString(),
+                    184,
+                    0xFFFF7777
+                );
+            } else {
                 try {
                     final int pixelWidth = parsed.pixelWidth(resolution);
                     final int pixelHeight = parsed.pixelHeight(resolution);
@@ -381,9 +415,13 @@ final class MapExportScreen extends ConfluxScreen {
             default -> null;
         };
         if (key != null) {
-            drawCentered(draw, Texts.translatable(key).getString(), 152,
+            drawCentered(
+                draw,
+                Texts.translatable(key).getString(),
+                152,
                 desktopActions.copyState() == MapExportDesktopActions.CopyState.COPIED
-                    ? 0xFF77DD88 : 0xFFFFAA66);
+                    ? 0xFF77DD88 : 0xFFFFAA66
+            );
         }
         if (desktopActions.openState() == MapExportDesktopActions.OpenState.FAILED) {
             drawCentered(

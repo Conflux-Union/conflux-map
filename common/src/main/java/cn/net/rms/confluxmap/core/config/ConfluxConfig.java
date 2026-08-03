@@ -3,7 +3,9 @@ package cn.net.rms.confluxmap.core.config;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.core.loadstate.ChunkLoadDetailMode;
 import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
+import cn.net.rms.confluxmap.core.multiworld.ClientWorldPolicy;
 import cn.net.rms.confluxmap.core.survey.SurveyReminderSchedule;
+import cn.net.rms.confluxmap.core.util.TileMath;
 
 /**
  * All client settings, serialized as one JSON document.
@@ -11,7 +13,7 @@ import cn.net.rms.confluxmap.core.survey.SurveyReminderSchedule;
  * {@link #SCHEMA_VERSION} and adding a migration in {@link ConfigIo}.
  */
 public final class ConfluxConfig {
-    public static final int SCHEMA_VERSION = 3;
+    public static final int SCHEMA_VERSION = 6;
     public static final int DEFAULT_MINIMAP_SIZE = 90;
     public static final int MIN_ANNOTATION_ERASER_SIZE = 4;
     public static final int MAX_ANNOTATION_ERASER_SIZE = 64;
@@ -25,6 +27,16 @@ public final class ConfluxConfig {
     public static final int MIN_PLAYER_TRAIL_DOT_SIZE = 1;
     public static final int MAX_PLAYER_TRAIL_DOT_SIZE = 8;
     public static final int DEFAULT_PLAYER_TRAIL_DOT_SIZE = 3;
+    /** Always hide structure icons at the furthest fullscreen-map zoom. */
+    public static final double MIN_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM = 0.0625;
+    /** Largest fullscreen-map zoom multiplier the renderer can display. */
+    public static final double MAX_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM = 4.0;
+    /** Preserve the old default: hide only at the furthest 0.0625x zoom. */
+    public static final double DEFAULT_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM = 0.0625;
+    /** Schema-v4 lower bound for the now-retired blocks-per-pixel setting. */
+    private static final double LEGACY_MIN_PREDICTION_STRUCTURE_ICON_HIDE_SCALE = 0.25;
+    /** Schema-v4 upper bound for the now-retired blocks-per-pixel setting. */
+    private static final double LEGACY_MAX_PREDICTION_STRUCTURE_ICON_HIDE_SCALE = 16.0;
 
     public int schemaVersion = SCHEMA_VERSION;
 
@@ -50,6 +62,8 @@ public final class ConfluxConfig {
     public double minimapPositionX = 1.0;
     /** Top-left origin as a fraction of the available vertical HUD travel. */
     public double minimapPositionY = 0.0;
+    /** Temporarily moves only the minimap to keep it clear of vanilla HUD elements. */
+    public boolean minimapHudAvoidance = true;
     public Shape minimapShape = Shape.SQUARE;
     public int minimapSize = DEFAULT_MINIMAP_SIZE;
     public boolean minimapRotate = true;
@@ -92,6 +106,12 @@ public final class ConfluxConfig {
 
     public int snapshotBudgetPerTick = 8;
     public int gpuTileCacheLimit = 256;
+    /** Advanced client-only proxy world recognition limits; all values are safety-clamped. */
+    public int clientWorldMaxProfilesPerServer = ClientWorldPolicy.DEFAULT_MAX_PROFILES_PER_SERVER;
+    public int clientWorldMaxBindingsPerProfile = ClientWorldPolicy.DEFAULT_MAX_BINDINGS_PER_PROFILE;
+    public int clientWorldCommandConfirmationSeconds = ClientWorldPolicy.DEFAULT_COMMAND_CONFIRMATION_SECONDS;
+    public int clientWorldVisitRefreshSeconds = ClientWorldPolicy.DEFAULT_VISIT_REFRESH_SECONDS;
+    public int clientWorldVisitRefreshDistance = ClientWorldPolicy.DEFAULT_VISIT_REFRESH_DISTANCE;
 
     /** Master toggle for the whole entity-radar overlay (docs/reference-specs/radar-icons.md sec 4). */
     public boolean radarEnabled = true;
@@ -138,8 +158,14 @@ public final class ConfluxConfig {
     /** View filter for the predicted plane; EVERYWHERE is the honest default. */
     public PredictionViewMode predictionViewMode = PredictionViewMode.EVERYWHERE;
     public boolean predictionShowStructures = true;
-    /** Smallest fullscreen-map zoom at which ordinary predicted structures remain visible. */
-    public StructureMarkerZoom structureMarkerZoom = StructureMarkerZoom.ZOOM_0_125;
+    /** Hide fullscreen-map structure markers at or below this displayed zoom multiplier. */
+    public double predictionStructureIconHideZoom = DEFAULT_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM;
+    /** Schema-v4 setting retained solely to migrate the incorrectly exposed blocks-per-pixel value. */
+    @Deprecated
+    public Double predictionStructureIconHideScale;
+    /** Schema-v3 setting retained solely to migrate old discrete LOD values. */
+    @Deprecated
+    public Integer predictionStructureMaxLod;
     /** Per-version and per-dimension structure-type visibility profiles. */
     public StructureVisibilityConfig predictionStructureVisibility = new StructureVisibilityConfig();
     /** Pan-settle debounce, clamped to 100..2000 ms. */
@@ -162,6 +188,7 @@ public final class ConfluxConfig {
         c.minimapCorner = minimapCorner;
         c.minimapPositionX = minimapPositionX;
         c.minimapPositionY = minimapPositionY;
+        c.minimapHudAvoidance = minimapHudAvoidance;
         c.minimapShape = minimapShape;
         c.minimapSize = minimapSize;
         c.minimapRotate = minimapRotate;
@@ -183,6 +210,11 @@ public final class ConfluxConfig {
         c.dynamicLighting = dynamicLighting;
         c.snapshotBudgetPerTick = snapshotBudgetPerTick;
         c.gpuTileCacheLimit = gpuTileCacheLimit;
+        c.clientWorldMaxProfilesPerServer = clientWorldMaxProfilesPerServer;
+        c.clientWorldMaxBindingsPerProfile = clientWorldMaxBindingsPerProfile;
+        c.clientWorldCommandConfirmationSeconds = clientWorldCommandConfirmationSeconds;
+        c.clientWorldVisitRefreshSeconds = clientWorldVisitRefreshSeconds;
+        c.clientWorldVisitRefreshDistance = clientWorldVisitRefreshDistance;
         c.radarEnabled = radarEnabled;
         c.radarShowPlayers = radarShowPlayers;
         c.radarShowHostile = radarShowHostile;
@@ -204,7 +236,7 @@ public final class ConfluxConfig {
         c.predictionNetworkSync = predictionNetworkSync;
         c.predictionViewMode = predictionViewMode;
         c.predictionShowStructures = predictionShowStructures;
-        c.structureMarkerZoom = structureMarkerZoom;
+        c.predictionStructureIconHideZoom = predictionStructureIconHideZoom;
         c.predictionStructureVisibility = predictionStructureVisibility == null
             ? new StructureVisibilityConfig()
             : predictionStructureVisibility.copy();
@@ -266,6 +298,12 @@ public final class ConfluxConfig {
         netherSliceY = clamp(netherSliceY, 0, 127);
         snapshotBudgetPerTick = clamp(snapshotBudgetPerTick, 1, 64);
         gpuTileCacheLimit = clamp(gpuTileCacheLimit, 16, 2048);
+        final ClientWorldPolicy clientWorldPolicy = clientWorldPolicy();
+        clientWorldMaxProfilesPerServer = clientWorldPolicy.maxProfilesPerServer();
+        clientWorldMaxBindingsPerProfile = clientWorldPolicy.maxBindingsPerProfile();
+        clientWorldCommandConfirmationSeconds = clientWorldPolicy.commandConfirmationSeconds();
+        clientWorldVisitRefreshSeconds = clientWorldPolicy.visitRefreshSeconds();
+        clientWorldVisitRefreshDistance = clientWorldPolicy.visitRefreshDistance();
         radarMaxEntities = clamp(radarMaxEntities, 1, 500);
         radarIconSize = clamp(radarIconSize, MIN_RADAR_ICON_SIZE, MAX_RADAR_ICON_SIZE);
         waypointRenderDistance = clamp(waypointRenderDistance, 0, 100_000);
@@ -273,13 +311,32 @@ public final class ConfluxConfig {
         if (predictionViewMode == null) {
             predictionViewMode = PredictionViewMode.EVERYWHERE;
         }
+        if (schemaVersion < 4 && predictionStructureMaxLod != null) {
+            final int legacyLod = clamp(predictionStructureMaxLod, 0, TileMath.MAX_LOD);
+            predictionStructureIconHideZoom = legacyLod == TileMath.MAX_LOD
+                ? 0.0
+                : 1.0 / TileMath.blocksPerPixel(legacyLod + 1);
+        } else if (schemaVersion < 5 && predictionStructureIconHideScale != null) {
+            // Schema v4 stored blocks per pixel and normalized this value before use.
+            // Clamp first so hand-edited v4 files retain their old effective behavior.
+            final double legacyScale = clamp(
+                predictionStructureIconHideScale,
+                LEGACY_MIN_PREDICTION_STRUCTURE_ICON_HIDE_SCALE,
+                LEGACY_MAX_PREDICTION_STRUCTURE_ICON_HIDE_SCALE
+            );
+            predictionStructureIconHideZoom = 1.0 / legacyScale;
+        }
+        predictionStructureMaxLod = null;
+        predictionStructureIconHideScale = null;
+        predictionStructureIconHideZoom = clamp(
+            predictionStructureIconHideZoom,
+            MIN_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM,
+            MAX_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM
+        );
         if (predictionStructureVisibility == null) {
             predictionStructureVisibility = new StructureVisibilityConfig();
         } else {
             predictionStructureVisibility.normalize();
-        }
-        if (structureMarkerZoom == null) {
-            structureMarkerZoom = StructureMarkerZoom.ZOOM_0_125;
         }
         predictionDebounceMs = clamp(predictionDebounceMs, 100, 2000);
         surveyReminderGameOpenMillis = Math.max(0L, surveyReminderGameOpenMillis);
@@ -290,5 +347,20 @@ public final class ConfluxConfig {
 
     private static int clamp(final int v, final int min, final int max) {
         return Math.max(min, Math.min(max, v));
+    }
+
+    private static double clamp(final double value, final double min, final double max) {
+        return Double.isFinite(value) ? Math.max(min, Math.min(max, value)) : min;
+    }
+
+    /** Returns a normalized snapshot so live config edits cannot bypass recognition safety caps. */
+    public ClientWorldPolicy clientWorldPolicy() {
+        return new ClientWorldPolicy(
+            clientWorldMaxProfilesPerServer,
+            clientWorldMaxBindingsPerProfile,
+            clientWorldCommandConfirmationSeconds,
+            clientWorldVisitRefreshSeconds,
+            clientWorldVisitRefreshDistance
+        );
     }
 }

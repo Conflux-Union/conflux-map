@@ -438,6 +438,14 @@ final class StructureSearchScreen extends ConfluxScreen {
         drawPanelCentered(draw, prompt, 87, 0xFFBBBBBB, layout);
         final List<StructureIndex.StructureType> filtered = filteredTypes();
         final int end = Math.min(filtered.size(), scrollOffset + visibleRows());
+        StructureSearchScrollBar.drawListSurface(
+            draw,
+            rowX - 4,
+            LIST_TOP - 2,
+            rowWidth + StructureSearchScrollBar.trackWidth() + 10,
+            visibleRows() * ROW_HEIGHT + 2,
+            ROW_HEIGHT
+        );
         for (int index = scrollOffset; index < end; index++) {
             final StructureIndex.StructureType type = filtered.get(index);
             final int rowY = LIST_TOP + (index - scrollOffset) * ROW_HEIGHT;
@@ -472,6 +480,25 @@ final class StructureSearchScreen extends ConfluxScreen {
                 0xFFAAAAAA
             );
         }
+    }
+
+    @Override
+    protected void renderAfterWidgets(
+        final GuiDraw draw,
+        final int mouseX,
+        final int mouseY,
+        final float tickDelta
+    ) {
+        StructureSearchScrollBar.drawOverflowCues(
+            draw,
+            rowX - 4,
+            LIST_TOP - 2,
+            rowWidth + StructureSearchScrollBar.trackWidth() + 10,
+            visibleRows() * ROW_HEIGHT + 2,
+            filteredCount,
+            visibleRows(),
+            scrollOffset
+        );
     }
 
     private void drawPanelCentered(

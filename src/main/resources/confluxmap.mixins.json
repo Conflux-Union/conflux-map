@@ -6,9 +6,11 @@
     "VanillaLayeredBiomeSourceAccessor"
   ],
   "client": [
+    "ChatScreenMixin",
     "ChatHudMixin",
     "ClientChunkManagerMixin",
     "ClientPlayNetworkHandlerMixin",
+    "InGameHudMixin",
     "ScreenMixin",
     "StatusEffectHudMixin",
     "ToastHudMixin",
