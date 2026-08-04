@@ -250,6 +250,18 @@ view-distance=2
 '''
     }
 }
+if (project.hasProperty('connectionSmoke') && mcVersion >= 12100) {
+    tasks.named('runClient') {
+        doFirst {
+            final File runDirectory = project.file("${project.buildDir}/connection-smoke/client")
+            delete runDirectory
+            runDirectory.mkdirs()
+            // Fresh 1.21 clients show accessibility onboarding before Quick Play.
+            // The smoke test has no UI driver, so complete that one-time choice up front.
+            new File(runDirectory, 'options.txt').text = 'onboardAccessibility:false\n'
+        }
+    }
+}
 if (mcVersion >= 12104) {
     tasks.named('runClientGameTest') {
         doFirst {
