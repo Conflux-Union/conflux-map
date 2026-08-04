@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
+import cn.net.rms.confluxmap.core.task.MapExecutors;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
@@ -17,17 +18,22 @@ class StructureMarkerServicePolicyTest {
         final AtomicBoolean allowed = new AtomicBoolean(true);
         final PredictionState prediction = new PredictionState();
         prediction.setSeed(42L, 21);
-        final StructureMarkerService service = new StructureMarkerService(
-            cacheRoot, prediction, allowed::get
-        );
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final StructureMarkerService service = new StructureMarkerService(
+                cacheRoot, prediction, allowed::get, executors
+            );
 
-        assertFalse(service.availableTypes(DimensionId.OVERWORLD).isEmpty());
+            assertFalse(service.availableTypes(DimensionId.OVERWORLD).isEmpty());
 
-        allowed.set(false);
-        assertTrue(service.availableTypes(DimensionId.OVERWORLD).isEmpty());
-        assertTrue(service.query(-1_000, 1_000, -1_000, 1_000).isEmpty());
-        assertTrue(service.findNearest(
-            StructureIndex.StructureType.VILLAGE, 0, 0, 100_000
-        ).isEmpty());
+            allowed.set(false);
+            assertTrue(service.availableTypes(DimensionId.OVERWORLD).isEmpty());
+            assertTrue(service.query(-1_000, 1_000, -1_000, 1_000).isEmpty());
+            assertTrue(service.findNearest(
+                StructureIndex.StructureType.VILLAGE, 0, 0, 100_000
+            ).isEmpty());
+        } finally {
+            executors.shutdown(1_000L);
+        }
     }
 }

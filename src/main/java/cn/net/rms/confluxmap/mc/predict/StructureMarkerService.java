@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
+import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.nativepredict.CubiomesContext;
 import cn.net.rms.confluxmap.nativepredict.CubiomesContexts;
@@ -25,21 +26,39 @@ public final class StructureMarkerService {
     private final Path cacheRoot;
     private final PredictionState prediction;
     private final BooleanSupplier structureSearchAllowed;
+    private final MapExecutors executors;
+    private final StructureViewportQuery viewportQueries;
     private StructureIndex current;
     private DimensionId currentDimension;
+    private long generation;
 
     public StructureMarkerService(
         final Path cacheRoot,
         final PredictionState prediction,
-        final BooleanSupplier structureSearchAllowed
+        final BooleanSupplier structureSearchAllowed,
+        final MapExecutors executors
     ) {
         this.cacheRoot = cacheRoot;
         this.prediction = prediction;
         this.structureSearchAllowed = structureSearchAllowed;
+        this.executors = executors;
+        viewportQueries = new StructureViewportQuery(
+            executors.workers(),
+            request -> request.index().query(
+                request.minBlockX(),
+                request.maxBlockX(),
+                request.minBlockZ(),
+                request.maxBlockZ(),
+                request.includedTypes()
+            ),
+            request -> executors.io().execute(request.index()::save)
+        );
     }
 
     public synchronized void onSessionChanged(final SessionGuard.Session session) {
-        flush();
+        final StructureIndex ending = current;
+        generation++;
+        viewportQueries.clear();
         currentDimension = session.active() ? session.dimension() : null;
         current = session.active()
             ? new StructureIndex(
@@ -88,6 +107,9 @@ public final class StructureMarkerService {
                 }
             )
             : null;
+        if (ending != null) {
+            executors.io().execute(ending::save);
+        }
     }
 
     public synchronized List<StructureIndex.Marker> query(
@@ -140,6 +162,44 @@ public final class StructureMarkerService {
         return current.query(minBlockX, maxBlockX, minBlockZ, maxBlockZ, visible);
     }
 
+    /**
+     * Render-thread viewport seam. A new native lookup is queued on a map worker and this call
+     * returns an empty list until the newest requested rectangle has completed.
+     */
+    public synchronized List<StructureIndex.Marker> queryViewport(
+        final int minBlockX,
+        final int maxBlockX,
+        final int minBlockZ,
+        final int maxBlockZ,
+        final double blocksPerPixel,
+        final Set<StructureIndex.StructureType> includedTypes
+    ) {
+        if (current == null || currentDimension == null || includedTypes.isEmpty()
+            || !structureSearchAllowed.getAsBoolean()) {
+            viewportQueries.clear();
+            return List.of();
+        }
+        final EnumSet<StructureIndex.StructureType> visible =
+            EnumSet.noneOf(StructureIndex.StructureType.class);
+        visible.addAll(includedTypes);
+        visible.retainAll(availableTypes(currentDimension));
+        visible.removeIf(type -> !type.displaysAt(blocksPerPixel));
+        if (visible.isEmpty()) {
+            viewportQueries.clear();
+            return List.of();
+        }
+        return viewportQueries.request(new StructureViewportQuery.Request(
+            generation,
+            current,
+            minBlockX,
+            maxBlockX,
+            minBlockZ,
+            maxBlockZ,
+            blocksPerPixel,
+            visible
+        ));
+    }
+
     public synchronized EnumSet<StructureIndex.StructureType> availableTypes(final DimensionId dimension) {
         return structureSearchAllowed.getAsBoolean()
             ? StructureIndex.StructureType.availableIn(prediction.mcVersion(), dimension)
@@ -187,8 +247,9 @@ public final class StructureMarkerService {
     }
 
     public synchronized void flush() {
-        if (current != null) {
-            current.save();
+        final StructureIndex snapshot = current;
+        if (snapshot != null) {
+            executors.io().execute(snapshot::save);
         }
     }
 

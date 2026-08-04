@@ -2719,8 +2719,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 dimension,
                 structureMarkers.availableTypes(dimension)
             );
-        final List<StructureIndex.Marker> markers = structureMarkers.query(
-            minX, maxX, minZ, maxZ, scale, visibleTypes
+        final List<StructureIndex.Marker> markers = new ArrayList<>(
+            structureMarkers.queryViewport(minX, maxX, minZ, maxZ, scale, visibleTypes)
         );
         markers.sort(java.util.Comparator.comparingLong(marker -> {
             final long dx = marker.blockX() - (long) centerX;

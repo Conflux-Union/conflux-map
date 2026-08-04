@@ -169,7 +169,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
         structureMarkerService = new StructureMarkerService(
             cacheRoot,
             predictionState,
-            companionSession::structureSearchAllowed
+            companionSession::structureSearchAllowed,
+            executors
         );
         predictionTileService = new PredictionTileService(sessionGuard, predictionState, executors, tileService);
         predictionTileService.setViewMode(config.predictionViewMode);
