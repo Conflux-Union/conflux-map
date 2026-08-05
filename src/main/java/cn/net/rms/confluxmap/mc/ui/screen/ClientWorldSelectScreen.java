@@ -4,7 +4,9 @@ import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
+import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfile;
+import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.mc.predict.ManualSeedService;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.world.ClientMultiworldService;
@@ -27,10 +29,13 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
     private final boolean openMapAfterSelection;
     private final ClientMultiworldService worlds;
     private final ManualSeedService manualSeedService;
+    private final WaypointService waypoints;
     private int scrollOffset;
     private int profileCount;
     private boolean waitingToOpenMap;
+    private boolean assigningLegacyWaypoints;
     private String pendingForgetId;
+    private String migrationMessage;
 
     public ClientWorldSelectScreen(
         final Screen parent,
@@ -44,6 +49,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         this.openMapAfterSelection = openMapAfterSelection;
         this.worlds = app.clientMultiworldService();
         this.manualSeedService = app.manualSeedService();
+        this.waypoints = app.waypointService();
     }
 
     @Override
@@ -70,6 +76,18 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         for (int index = scrollOffset; index < end; index++) {
             final ClientWorldProfile profile = profiles.get(index);
             final int y = LIST_TOP + (index - scrollOffset) * ROW_HEIGHT;
+            if (assigningLegacyWaypoints) {
+                final WorldIdentity target = worlds.worldIdentity(profile);
+                final ButtonWidget assign = addDrawableChild(Widgets.button(
+                    rowX, y, rowWidth, 20,
+                    Texts.translatable(
+                        "confluxmap.screen.client_world.migrate_target", profile.displayName()
+                    ),
+                    ignored -> assignLegacyWaypoints(profile)
+                ));
+                assign.active = !"world".equals(target.worldId());
+                continue;
+            }
             final String prefix = profile.id().equals(currentId) ? "✓ " : "";
             addDrawableChild(Widgets.button(
                 rowX, y, selectWidth, 20,
@@ -93,19 +111,53 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
             forget.active = profile.bindingCount() > 0;
         }
 
-        final int footerWidth = Math.min(340, rowWidth);
-        final int footerButtonWidth = (footerWidth - GAP * 2) / 3;
+        final int footerWidth = Math.min(440, rowWidth);
         final int footerX = width / 2 - footerWidth / 2;
+        if (assigningLegacyWaypoints) {
+            addDrawableChild(Widgets.button(
+                footerX + footerWidth / 2 - 70,
+                height - 28,
+                140,
+                20,
+                Texts.translatable("confluxmap.screen.client_world.migrate_cancel"),
+                ignored -> {
+                    assigningLegacyWaypoints = false;
+                    migrationMessage = null;
+                    rebuild();
+                }
+            ));
+            return;
+        }
+
+        final boolean canMigrate = canMigrateLegacyWaypoints(profiles);
+        final int footerButtonCount = canMigrate ? 4 : 3;
+        final int footerButtonWidth = (footerWidth - GAP * (footerButtonCount - 1))
+            / footerButtonCount;
+        int footerIndex = 0;
         addDrawableChild(Widgets.button(
-            footerX,
+            footerX + footerIndex++ * (footerButtonWidth + GAP),
             height - 28,
             footerButtonWidth,
             20,
             Texts.translatable("confluxmap.screen.client_world.create"),
             ignored -> openNameEditor(null)
         ));
+        if (canMigrate) {
+            addDrawableChild(Widgets.button(
+                footerX + footerIndex++ * (footerButtonWidth + GAP),
+                height - 28,
+                footerButtonWidth,
+                20,
+                Texts.translatable("confluxmap.screen.client_world.migrate"),
+                ignored -> {
+                    assigningLegacyWaypoints = true;
+                    migrationMessage = null;
+                    rebuild();
+                }
+            ));
+        }
         final ButtonWidget seedPreview = addDrawableChild(Widgets.button(
-            footerX + footerButtonWidth + GAP,
+            footerX + footerIndex++ * (footerButtonWidth + GAP),
             height - 28,
             footerButtonWidth,
             20,
@@ -116,13 +168,54 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         ));
         seedPreview.active = currentId != null && manualSeedService.available();
         addDrawableChild(Widgets.button(
-            footerX + (footerButtonWidth + GAP) * 2,
+            footerX + footerIndex * (footerButtonWidth + GAP),
             height - 28,
-            footerWidth - footerButtonWidth * 2 - GAP * 2,
+            footerWidth - footerButtonWidth * footerIndex - GAP * footerIndex,
             20,
             Texts.translatable("confluxmap.screen.client_world.back"),
             ignored -> onClose()
         ));
+    }
+
+    private boolean canMigrateLegacyWaypoints(final List<ClientWorldProfile> profiles) {
+        for (final ClientWorldProfile profile : profiles) {
+            final WorldIdentity target = worlds.worldIdentity(profile);
+            if (!"world".equals(target.worldId())
+                && waypoints.hasLegacyMultiplayerWaypoints(target.serverId())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void assignLegacyWaypoints(final ClientWorldProfile profile) {
+        final WaypointService.LegacyMigrationResult result =
+            waypoints.migrateLegacyMultiplayerWaypoints(worlds.worldIdentity(profile));
+        if (result.status() == WaypointService.LegacyMigrationStatus.APPLIED) {
+            assigningLegacyWaypoints = false;
+            migrationMessage = Texts.translatable(
+                "confluxmap.screen.client_world.migrate_success",
+                result.migratedWaypoints(),
+                profile.displayName(),
+                result.skippedDuplicates()
+            ).getString();
+        } else {
+            migrationMessage = Texts.translatable(migrationFailureKey(result.status())).getString();
+        }
+        rebuild();
+    }
+
+    private static String migrationFailureKey(
+        final WaypointService.LegacyMigrationStatus status
+    ) {
+        return switch (status) {
+            case SOURCE_NOT_FOUND -> "confluxmap.screen.client_world.migrate_source_missing";
+            case SOURCE_IS_TARGET -> "confluxmap.screen.client_world.migrate_same_world";
+            case SOURCE_READ_ONLY -> "confluxmap.screen.client_world.migrate_source_read_only";
+            case TARGET_READ_ONLY -> "confluxmap.screen.client_world.migrate_target_read_only";
+            case FAILED -> "confluxmap.screen.client_world.migrate_failed";
+            case APPLIED -> throw new IllegalArgumentException("applied migration is not a failure");
+        };
     }
 
     @Override
@@ -218,12 +311,23 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
     protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
         draw.renderBackground(this, mouseX, mouseY, tickDelta);
         drawCentered(draw, getTitle().getString(), 14, 0xFFFFFFFF);
-        final String promptKey = worlds.needsSelection()
-            ? "confluxmap.screen.client_world.ambiguous"
-            : "confluxmap.screen.client_world.prompt";
-        drawCentered(draw, Texts.translatable(promptKey).getString(), 34,
-            worlds.needsSelection() ? 0xFFFFCC55 : 0xFFBBBBBB);
-        if (profileCount == 0) {
+        final String prompt;
+        final int promptColor;
+        if (migrationMessage != null) {
+            prompt = migrationMessage;
+            promptColor = assigningLegacyWaypoints ? 0xFFFF7777 : 0xFF77FF77;
+        } else if (assigningLegacyWaypoints) {
+            prompt = Texts.translatable("confluxmap.screen.client_world.migrate_prompt").getString();
+            promptColor = 0xFFFFCC55;
+        } else {
+            final String promptKey = worlds.needsSelection()
+                ? "confluxmap.screen.client_world.ambiguous"
+                : "confluxmap.screen.client_world.prompt";
+            prompt = Texts.translatable(promptKey).getString();
+            promptColor = worlds.needsSelection() ? 0xFFFFCC55 : 0xFFBBBBBB;
+        }
+        drawCentered(draw, prompt, 34, promptColor);
+        if (profileCount == 0 && !assigningLegacyWaypoints) {
             drawCentered(draw, Texts.translatable("confluxmap.screen.client_world.empty").getString(), 70, 0xFFBBBBBB);
         }
         final int rowWidth = Math.min(440, Math.max(250, width - 24));

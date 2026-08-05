@@ -124,24 +124,32 @@ public final class WaypointIo {
             return;
         }
         try {
-            Files.createDirectories(file.getParent());
-            final FileShape shape = new FileShape();
-            for (final WaypointSet set : state.sets()) {
-                if (!set.isDefault()) {
-                    final SetEntry entry = new SetEntry();
-                    entry.name = set.name();
-                    shape.sets.add(entry);
-                }
-            }
-            for (final Waypoint waypoint : state.waypoints()) {
-                shape.waypoints.add(toEntry(waypoint));
-            }
-            final Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-            Files.writeString(tmp, GSON.toJson(shape), StandardCharsets.UTF_8);
-            move(tmp, file);
+            saveChecked(file, state);
         } catch (final IOException e) {
             logger.error("Failed to save waypoints to {}", file, e);
         }
+    }
+
+    /** Package seam for multi-file migrations that must observe a failed atomic save. */
+    static void saveChecked(final Path file, final WaypointStore.State state) throws IOException {
+        if (!state.persistenceWritable()) {
+            throw new IOException("waypoint state is read-only");
+        }
+        Files.createDirectories(file.getParent());
+        final FileShape shape = new FileShape();
+        for (final WaypointSet set : state.sets()) {
+            if (!set.isDefault()) {
+                final SetEntry entry = new SetEntry();
+                entry.name = set.name();
+                shape.sets.add(entry);
+            }
+        }
+        for (final Waypoint waypoint : state.waypoints()) {
+            shape.waypoints.add(toEntry(waypoint));
+        }
+        final Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Files.writeString(tmp, GSON.toJson(shape), StandardCharsets.UTF_8);
+        move(tmp, file);
     }
 
     private static Waypoint toWaypoint(final Entry entry, final Logger logger) {

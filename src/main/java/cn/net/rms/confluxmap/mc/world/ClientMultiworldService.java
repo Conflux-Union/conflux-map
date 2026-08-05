@@ -188,6 +188,15 @@ public final class ClientMultiworldService {
         return serverId == null ? List.of() : resolver.profiles(serverId);
     }
 
+    /** Storage identity owned by one profile shown in the current server's profile manager. */
+    public WorldIdentity worldIdentity(final ClientWorldProfile profile) {
+        requireConnection();
+        if (profiles().stream().noneMatch(candidate -> candidate.id().equals(profile.id()))) {
+            throw new IllegalArgumentException("profile does not belong to the current server");
+        }
+        return WorldIdentity.multiplayer(address, profile.storageId());
+    }
+
     public Optional<ClientWorldProfile> currentProfile() {
         return resolution.state() == ClientWorldResolution.State.RESOLVED
             ? Optional.of(resolution.profile())
