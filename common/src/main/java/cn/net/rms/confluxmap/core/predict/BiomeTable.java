@@ -21,7 +21,7 @@ import java.util.Set;
  * <p>Ids and dimension/existence rules were read directly off the vendored {@code
  * native/cubiomes/biomes.c} ({@code biomeExists}/{@code isOverworld}/{@code getDimension}/{@code
  * isOceanic}), not guessed from changelogs. Every id generated in the Overworld by any supported
- * version, plus the End ids, has an entry here (see {@code BiomeTableTest} for the frozen parity
+ * version, plus the Nether and End ids, has an entry here (see {@code BiomeTableTest} for the frozen parity
  * list). Aliases introduced by biome renames reuse their older numeric ids.
  *
  * <p>{@code // tuning data, not behavior}: treeCover values and the exact fallback colors below
@@ -154,6 +154,21 @@ public final class BiomeTable {
         );
     }
 
+    private static Entry netherRoof(final int groundColor) {
+        return new Entry(
+            SurfaceKind.BEDROCK_CEILING,
+            false,
+            0.0,
+            groundColor,
+            false,
+            NEUTRAL_TINT,
+            FOLIAGE_BASE,
+            true,
+            DEFAULT_FOLIAGE_TINT,
+            DEFAULT_WATER_TINT
+        );
+    }
+
     private static Entry water(final boolean waterBiome, final int waterTint) {
         return new Entry(
             SurfaceKind.LAND,
@@ -187,6 +202,7 @@ public final class BiomeTable {
     static {
         // cubiomes biome ids, see native/cubiomes/biomes.h.
         final int ocean = 0, plains = 1, desert = 2, mountains = 3, forest = 4, taiga = 5, swamp = 6, river = 7;
+        final int nether_wastes = 8;
         final int the_end = 9, frozen_ocean = 10, frozen_river = 11, snowy_tundra = 12, snowy_mountains = 13;
         final int mushroom_fields = 14, mushroom_field_shore = 15, beach = 16, desert_hills = 17, wooded_hills = 18;
         final int taiga_hills = 19, jungle = 21, jungle_hills = 22, jungle_edge = 23, deep_ocean = 24;
@@ -204,6 +220,7 @@ public final class BiomeTable {
         final int giant_spruce_taiga_hills = 161, modified_gravelly_mountains = 162, shattered_savanna = 163;
         final int shattered_savanna_plateau = 164, eroded_badlands = 165, modified_wooded_badlands_plateau = 166;
         final int modified_badlands_plateau = 167, bamboo_jungle = 168, bamboo_jungle_hills = 169;
+        final int soul_sand_valley = 170, crimson_forest = 171, warped_forest = 172, basalt_deltas = 173;
         final int dripstone_caves = 174, lush_caves = 175, meadow = 177, grove = 178;
         final int snowy_slopes = 179, jagged_peaks = 180, frozen_peaks = 181, stony_peaks = 182;
         final int deep_dark = 183, mangrove_swamp = 184, cherry_grove = 185, pale_garden = 186;
@@ -330,6 +347,15 @@ public final class BiomeTable {
             SurfaceKind.LAND, false, 0.45, LAND_BASE, true, 0xFF77816E,
             0xFF747972, false, 0xFF747972, DEFAULT_WATER_TINT
         ), pale_garden);
+
+        // Nether roof prediction uses biome-coloured terrain as a navigational proxy until real
+        // bedrock or player construction data replaces it. These are fixed block-material colours,
+        // never Overworld grass tints, and carry no synthetic canopy.
+        put(netherRoof(0xFF8C463B), nether_wastes);
+        put(netherRoof(0xFF67564A), soul_sand_valley);
+        put(netherRoof(0xFF8F3543), crimson_forest);
+        put(netherRoof(0xFF397B73), warped_forest);
+        put(netherRoof(0xFF555158), basalt_deltas);
 
         // The End: pale end-stone look, no vegetation, never water.
         put(new Entry(

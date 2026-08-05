@@ -2,6 +2,8 @@ package cn.net.rms.confluxmap.core.predict;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import cn.net.rms.confluxmap.core.color.MaterialDetailProfile;
+import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.util.Argb;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -53,6 +55,30 @@ class PredictionPaletteTest {
             Map.of(erodedBadlands, new int[] {0xFF90814D, 0xFF9E814D, 0xFF3F76E4})
         );
         assertEquals(BiomeTable.get(erodedBadlands).groundBase(), palette.groundColor(erodedBadlands));
+    }
+
+    @Test
+    void sampledSurfaceMaterialOverridesItsProtocolFallbackColor() {
+        final int sampledBedrock = 0xFF383838;
+        final PredictionPalette palette = PredictionPalette.fromSamples(
+            Map.of(),
+            Map.of(SurfaceKind.BEDROCK_CEILING, MaterialDetailProfile.flat()),
+            Map.of(),
+            Map.of(SurfaceKind.BEDROCK_CEILING, sampledBedrock)
+        );
+
+        assertEquals(
+            sampledBedrock,
+            palette.materialBaseColor(
+                SurfaceKind.BEDROCK_CEILING,
+                MapColorTable.argb(PredictionDimensions.NETHER_ROOF_MAP_COLOR_ID)
+            )
+        );
+        assertEquals(
+            0xFF123456,
+            palette.materialBaseColor(SurfaceKind.LAND, 0xFF123456),
+            "unsampled surface kinds must keep their existing fallback"
+        );
     }
 
     @Test

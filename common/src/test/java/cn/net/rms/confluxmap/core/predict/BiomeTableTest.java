@@ -43,6 +43,8 @@ class BiomeTableTest {
         6, 134,
         // Modern Overworld biomes with distinct numeric ids.
         174, 175, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186,
+        // The Nether.
+        8, 170, 171, 172, 173,
         // The End.
         9, 40, 41, 42, 43
     );
@@ -72,8 +74,8 @@ class BiomeTableTest {
 
     @Test
     void expectedIdCountMatchesTheDocumentedTotal() {
-        // 78 distinct Overworld ids across supported versions + 5 End ids.
-        assertEquals(83, EXPECTED_IDS.size());
+        // 78 distinct Overworld ids across supported versions + 5 Nether + 5 End ids.
+        assertEquals(88, EXPECTED_IDS.size());
     }
 
     @Test

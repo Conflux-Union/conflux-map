@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.core.predict;
 
+import cn.net.rms.confluxmap.core.color.LightTint;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
@@ -129,8 +130,7 @@ public final class PredictionTileService {
         if (!session.active()
             || !realKey.world().equals(session.world())
             || !realKey.dimension().equals(session.dimension())
-            || (layer.type() != MapLayer.Type.SURFACE
-                && layer.type() != MapLayer.Type.END_SURFACE)) {
+            || !layer.equals(PredictionDimensions.layer(session.dimension()))) {
             return;
         }
         synchronized (this) {
@@ -274,13 +274,10 @@ public final class PredictionTileService {
         }
         final CorrectionStore.Key key = regionKey(dimension, lod, slice);
         final SessionGuard.Session session = sessionGuard.current();
-        final DimensionId patchDimension = DimensionId.parse(dimension);
-        final String realLayer = PredictionDimensions.isEnd(patchDimension)
-            ? MapLayer.END_SURFACE.cacheId() : MapLayer.SURFACE.cacheId();
-        final TileKey tile = new TileKey(
-            session.world(), session.dimension(), realLayer + PredictedTileKeys.SUFFIX,
-            key.lod(), key.tileX(), key.tileZ()
-        );
+        final TileKey tile = correctionTile(session, key);
+        if (tile == null) {
+            return true;
+        }
         synchronized (this) {
             lowerCoverageGeneration++;
             missingLowerCoverage.clear();
@@ -350,13 +347,10 @@ public final class PredictionTileService {
             return false;
         }
         final SessionGuard.Session session = sessionGuard.current();
-        final DimensionId patchDimension = DimensionId.parse(key.dimension());
-        final String realLayer = PredictionDimensions.isEnd(patchDimension)
-            ? MapLayer.END_SURFACE.cacheId() : MapLayer.SURFACE.cacheId();
-        final TileKey tile = new TileKey(
-            session.world(), session.dimension(), realLayer + PredictedTileKeys.SUFFIX,
-            key.lod(), key.tileX(), key.tileZ()
-        );
+        final TileKey tile = correctionTile(session, key);
+        if (tile == null) {
+            return true;
+        }
         synchronized (this) {
             mipCache.removeCoverage(tile);
         }
@@ -383,13 +377,10 @@ public final class PredictionTileService {
                 if (key == null) {
                     continue;
                 }
-                final DimensionId patchDimension = DimensionId.parse(key.dimension());
-                final String realLayer = PredictionDimensions.isEnd(patchDimension)
-                    ? MapLayer.END_SURFACE.cacheId() : MapLayer.SURFACE.cacheId();
-                final TileKey tile = new TileKey(
-                    session.world(), session.dimension(), realLayer + PredictedTileKeys.SUFFIX,
-                    key.lod(), key.tileX(), key.tileZ()
-                );
+                final TileKey tile = correctionTile(session, key);
+                if (tile == null) {
+                    continue;
+                }
                 mipCache.removeCoverage(tile);
                 metadataTiles.remove(tile);
             }
@@ -399,12 +390,10 @@ public final class PredictionTileService {
 
     private void markCorrectionDirty(final CorrectionStore.Key key) {
         final SessionGuard.Session session = sessionGuard.current();
-        final DimensionId patchDimension = DimensionId.parse(key.dimension());
-        final String realLayer = PredictionDimensions.isEnd(patchDimension)
-            ? MapLayer.END_SURFACE.cacheId() : MapLayer.SURFACE.cacheId();
-        final TileKey tile = new TileKey(
-            session.world(), session.dimension(), realLayer + PredictedTileKeys.SUFFIX, key.lod(), key.tileX(), key.tileZ()
-        );
+        final TileKey tile = correctionTile(session, key);
+        if (tile == null) {
+            return;
+        }
         synchronized (this) {
             lowerCoverageGeneration++;
             missingLowerCoverage.clear();
@@ -425,6 +414,20 @@ public final class PredictionTileService {
             lod,
             Math.floorDiv(slice.minChunkX(), chunksPerTile),
             Math.floorDiv(slice.minChunkZ(), chunksPerTile)
+        );
+    }
+
+    private static TileKey correctionTile(
+        final SessionGuard.Session session, final CorrectionStore.Key key
+    ) {
+        final DimensionId dimension = DimensionId.parse(key.dimension());
+        final MapLayer layer = PredictionDimensions.layer(dimension);
+        if (!session.active() || layer == null || !dimension.equals(session.dimension())) {
+            return null;
+        }
+        return new TileKey(
+            session.world(), dimension, layer.cacheId() + PredictedTileKeys.SUFFIX,
+            key.lod(), key.tileX(), key.tileZ()
         );
     }
 
@@ -499,9 +502,11 @@ public final class PredictionTileService {
             dirty.keySet().removeIf(key -> !rect.containsPadded(key));
             metadataTiles.keySet().removeIf(key -> !rect.containsPadded(key));
             if (changed && session.active() && dimension.equals(session.dimension()) && lod > 0) {
-                final String layer = PredictionDimensions.isEnd(dimension)
-                    ? MapLayer.END_SURFACE.cacheId()
-                    : MapLayer.SURFACE.cacheId();
+                final MapLayer predictedLayer = PredictionDimensions.layer(dimension);
+                if (predictedLayer == null) {
+                    return;
+                }
+                final String layer = predictedLayer.cacheId();
                 for (int tileZ = minTileZ; tileZ <= maxTileZ; tileZ++) {
                     for (int tileX = minTileX; tileX <= maxTileX; tileX++) {
                         final TileKey key = new TileKey(
@@ -748,13 +753,17 @@ public final class PredictionTileService {
             return null;
         }
         final int nativeDim = PredictionDimensions.nativeDim(key.dimension());
-        if (nativeDim < 0) {
+        if (nativeDim == Integer.MIN_VALUE) {
             return null;
         }
+        final MapLayer expectedLayer = PredictionDimensions.layer(key.dimension());
         try {
-            MapLayer.parse(BiomeTileKeys.realLayerId(
+            final MapLayer requestedLayer = MapLayer.parse(BiomeTileKeys.realLayerId(
                 PredictedTileKeys.realLayerId(key.layerId())
             ));
+            if (!requestedLayer.equals(expectedLayer)) {
+                return null;
+            }
         } catch (final IllegalArgumentException e) {
             return null;
         }
@@ -812,13 +821,19 @@ public final class PredictionTileService {
             final BaselineSampler sampler = new NativeBaselineSampler(
                 state.mcVersion(), seed, nativeDim, state.cubiomesFlags(key.dimension())
             );
-            grid = LodSampling.sample(sampler, end, lod, tileOriginX, tileOriginZ);
+            grid = key.dimension().equals(DimensionId.NETHER)
+                ? LodSampling.sampleNetherRoof(sampler, lod, tileOriginX, tileOriginZ)
+                : LodSampling.sample(sampler, end, lod, tileOriginX, tileOriginZ);
             if (grid == null) {
                 return null;
             }
             derived = BaselineDeriver.derive(grid);
             CanopyStylizer.apply(derived, grid, seed, lod, tileOriginX, tileOriginZ);
-            baselineMapColorId = Proto.MAP_COLOR_NONE;
+            // Terrain mode owns the roof material, while the separate biome composer below owns
+            // biome identity. Treat the fixed Nether plane like a uniform bedrock superflat.
+            baselineMapColorId = key.dimension().equals(DimensionId.NETHER)
+                ? PredictionDimensions.NETHER_ROOF_MAP_COLOR_ID
+                : Proto.MAP_COLOR_NONE;
         }
 
         final int[] pixels = BiomeTileKeys.isBiome(key)
@@ -827,7 +842,11 @@ public final class PredictionTileService {
             )
             : PredictedTileComposer.compose(
                 derived, grid, state.palette(), directCorrections, compositionMode, lod,
-                baselineMapColorId, derived, grid, baselineMapColorId
+                baselineMapColorId, derived, grid, baselineMapColorId,
+                !key.dimension().equals(DimensionId.NETHER),
+                key.dimension().equals(DimensionId.NETHER)
+                    ? LightTint.multiplier(0, 0, true)
+                    : 0xFFFFFFFF
             );
         maskKnownRealPixels(key, pixels);
         return new Composition(
@@ -874,9 +893,11 @@ public final class PredictionTileService {
             || !dimension.equals(session.dimension())) {
             return false;
         }
-        final String layer = PredictionDimensions.isEnd(dimension)
-            ? MapLayer.END_SURFACE.cacheId()
-            : MapLayer.SURFACE.cacheId();
+        final MapLayer predictedLayer = PredictionDimensions.layer(dimension);
+        if (predictedLayer == null) {
+            return false;
+        }
+        final String layer = predictedLayer.cacheId();
         final TileKey parent = new TileKey(
             session.world(), dimension, layer + PredictedTileKeys.SUFFIX, lod, tileX, tileZ
         );
@@ -908,9 +929,11 @@ public final class PredictionTileService {
             || !dimension.equals(session.dimension())) {
             return LowerCoverageState.MISSING_OR_STALE;
         }
-        final String layer = PredictionDimensions.isEnd(dimension)
-            ? MapLayer.END_SURFACE.cacheId()
-            : MapLayer.SURFACE.cacheId();
+        final MapLayer predictedLayer = PredictionDimensions.layer(dimension);
+        if (predictedLayer == null) {
+            return LowerCoverageState.MISSING_OR_STALE;
+        }
+        final String layer = predictedLayer.cacheId();
         final TileKey parent = new TileKey(
             session.world(), dimension, layer + PredictedTileKeys.SUFFIX, lod, tileX, tileZ
         );
@@ -1224,9 +1247,11 @@ public final class PredictionTileService {
         if (!viewMode.showsPredictedPixels(corrections, pixel, lod)) {
             return null;
         }
-        final String layer = PredictionDimensions.isEnd(dimension)
-            ? MapLayer.END_SURFACE.cacheId()
-            : MapLayer.SURFACE.cacheId();
+        final MapLayer predictedLayer = PredictionDimensions.layer(dimension);
+        if (predictedLayer == null) {
+            return null;
+        }
+        final String layer = predictedLayer.cacheId();
         return new PixelLookup(new TileKey(
             session.world(), dimension, layer + PredictedTileKeys.SUFFIX, lod, tileX, tileZ
         ), pixel);

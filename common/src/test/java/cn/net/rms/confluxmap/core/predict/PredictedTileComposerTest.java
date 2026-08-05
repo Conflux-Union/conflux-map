@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.core.color.LightTint;
 import cn.net.rms.confluxmap.core.color.MaterialDetailProfile;
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
@@ -135,6 +136,35 @@ class PredictedTileComposerTest {
                 ShadingPipeline.detailedHeightShade(160, ShadingPipeline.REFERENCE_HEIGHT)
             ),
             highPlateau
+        );
+    }
+
+    @Test
+    void netherRoofUsesTheSampledBedrockMaterialWithoutHeightShading() {
+        final int netherWastes = CubiomesBiomeIds.NETHER_WASTES;
+        final BaselineGrid grid = flatGrid(netherWastes);
+        final DerivedGrid derived = new DerivedGrid();
+        Arrays.fill(derived.surfaceY, PredictionDimensions.NETHER_ROOF_Y);
+        Arrays.fill(derived.kind, (byte) SurfaceKind.BEDROCK_CEILING.ordinal());
+        final int sampledBedrock = 0xFF383838;
+        final PredictionPalette palette = PredictionPalette.fromSamples(
+            Map.of(),
+            Map.of(SurfaceKind.BEDROCK_CEILING, MaterialDetailProfile.flat()),
+            Map.of(),
+            Map.of(SurfaceKind.BEDROCK_CEILING, sampledBedrock)
+        );
+
+        final int[] pixels = PredictedTileComposer.compose(
+            derived, grid, palette, null, PredictionViewMode.EVERYWHERE, 0,
+            PredictionDimensions.NETHER_ROOF_MAP_COLOR_ID, derived, grid,
+            PredictionDimensions.NETHER_ROOF_MAP_COLOR_ID, false,
+            LightTint.multiplier(0, 0, true)
+        );
+
+        assertEquals(
+            Argb.multiply(sampledBedrock, LightTint.multiplier(0, 0, true)),
+            pixels[10 * 256 + 10],
+            "the predicted roof must apply the unlit Nether ambient tint used by captured tiles"
         );
     }
 

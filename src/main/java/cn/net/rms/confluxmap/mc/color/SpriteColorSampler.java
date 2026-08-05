@@ -80,6 +80,12 @@ public final class SpriteColorSampler {
         return material.detail().apply(material.argb(), pos.getX(), pos.getZ(), material.patternSalt());
     }
 
+    /** Resource-derived base color before the stable world-position detail profile is applied. */
+    public int baseColorFor(final BlockState state, final BlockView world, final BlockPos pos) {
+        final int id = Block.getRawIdFromState(state);
+        return materialFor(state, world, pos, id).argb();
+    }
+
     /** Resource-derived luminance profile for prediction's representative material palette. */
     public MaterialDetailProfile detailProfileFor(final BlockState state, final BlockView world, final BlockPos pos) {
         final int id = Block.getRawIdFromState(state);

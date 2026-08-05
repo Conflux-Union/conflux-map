@@ -16,7 +16,8 @@
       "cn.net.rms.confluxmap.gametest.PredictionQualityGameTest",
       "cn.net.rms.confluxmap.nativepredict.EndCityStructureGameTest",
       "cn.net.rms.confluxmap.mc.snapshot.McChunkSnapshotFactoryGameTest",
-      "cn.net.rms.confluxmap.server.ChunkLoadStateGameTest"
+      "cn.net.rms.confluxmap.server.ChunkLoadStateGameTest",
+      "cn.net.rms.confluxmap.server.WorldPresetDetectorGameTest"
     ],
     "fabric-client-gametest": [
       "cn.net.rms.confluxmap.gametest.ClientConnectionGameTest"

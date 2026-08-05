@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.predict.FlatBaseline;
+import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
@@ -18,6 +19,18 @@ import org.junit.jupiter.api.io.TempDir;
 class PaperWorldMetadataTest {
     @TempDir
     Path temporary;
+
+    @Test
+    void recognizesOnlyVanillaNetherNoiseSettingsAsPredictable() {
+        final CompoundTag generator = new CompoundTag();
+        generator.putString("type", "minecraft:noise");
+        generator.putString("settings", "minecraft:nether");
+
+        assertEquals(WorldPreset.DEFAULT, PaperWorldMetadata.presetFromGenerator(generator));
+
+        generator.putString("settings", "example:custom_nether");
+        assertEquals(WorldPreset.CUSTOM, PaperWorldMetadata.presetFromGenerator(generator));
+    }
 
     @Test
     void derivesTheSameAbsoluteFlatSurfaceAsTheFabricCompanion() throws IOException {

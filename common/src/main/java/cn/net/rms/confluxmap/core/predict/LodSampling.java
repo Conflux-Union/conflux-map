@@ -1,5 +1,7 @@
 package cn.net.rms.confluxmap.core.predict;
 
+import cn.net.rms.confluxmap.core.model.DimensionId;
+
 /**
  * Fills a {@link BaselineGrid} for one predicted tile. Every Overworld version follows the same
  * two-level layout: a cheap terrain overview at every output pixel, corrected by a globally
@@ -115,6 +117,96 @@ public final class LodSampling {
         }
         for (int i = 0; i < grid.terrainY.length; i++) {
             grid.baseSurfaceY[i] = grid.terrainY[i];
+        }
+        return grid;
+    }
+
+    /** Samples the baseline owned by one supported vanilla dimension. */
+    public static BaselineGrid sample(
+        final BaselineSampler sampler,
+        final DimensionId dimension,
+        final int lod,
+        final int tileOriginX,
+        final int tileOriginZ
+    ) {
+        if (dimension.equals(DimensionId.NETHER)) {
+            return sampleNetherRoof(sampler, lod, tileOriginX, tileOriginZ);
+        }
+        if (dimension.equals(DimensionId.OVERWORLD) || dimension.equals(DimensionId.END)) {
+            return sample(
+                sampler, dimension.equals(DimensionId.END), lod, tileOriginX, tileOriginZ
+            );
+        }
+        return null;
+    }
+
+    /**
+     * Samples the vanilla Nether's bedrock-roof plane. Cubiomes owns the 3D biome lookup at roof
+     * height, while the terrain plane is fixed because cubiomes does not model Nether density
+     * columns. Server corrections and captured chunks replace this approximation wherever real
+     * roof blocks are known.
+     */
+    public static BaselineGrid sampleNetherRoof(
+        final BaselineSampler sampler,
+        final int lod,
+        final int tileOriginX,
+        final int tileOriginZ
+    ) {
+        final BaselineGrid grid = new BaselineGrid(
+            lod, tileOriginX, tileOriginZ, BIOME_SUB_PER_AXIS[lod]
+        );
+        if (!sampleBiomes(sampler, lod, tileOriginX, tileOriginZ, grid)) {
+            return null;
+        }
+        java.util.Arrays.fill(grid.terrainY, PredictionDimensions.NETHER_ROOF_Y);
+        java.util.Arrays.fill(grid.baseSurfaceY, PredictionDimensions.NETHER_ROOF_Y);
+        if (grid.supersampled()) {
+            sampleRawSubBiomes(sampler, lod, tileOriginX, tileOriginZ, grid);
+            java.util.Arrays.fill(grid.subBaseSurfaceY, PredictionDimensions.NETHER_ROOF_Y);
+        }
+        return grid;
+    }
+
+    /** Samples only one output-pixel window of the fixed Nether roof baseline. */
+    public static BaselineGrid sampleNetherRoofWindow(
+        final BaselineSampler sampler,
+        final int lod,
+        final int tileOriginX,
+        final int tileOriginZ,
+        final int minPixelX,
+        final int minPixelZ,
+        final int maxPixelX,
+        final int maxPixelZ
+    ) {
+        if (sampler == null || lod < 0 || lod > 4
+            || minPixelX < 0 || minPixelZ < 0
+            || maxPixelX >= PIXELS || maxPixelZ >= PIXELS
+            || minPixelX > maxPixelX || minPixelZ > maxPixelZ) {
+            throw new IllegalArgumentException("invalid Nether roof baseline window");
+        }
+        final BaselineGrid grid = new BaselineGrid(
+            lod, tileOriginX, tileOriginZ, BIOME_SUB_PER_AXIS[lod]
+        );
+        final int scale = BIOME_SCALE[lod];
+        final int stride = BIOME_STRIDE[lod];
+        final int width = maxPixelX - minPixelX + 1;
+        final int height = maxPixelZ - minPixelZ + 1;
+        final int nativeX = Math.floorDiv(tileOriginX, scale) + minPixelX * stride;
+        final int nativeZ = Math.floorDiv(tileOriginZ, scale) + minPixelZ * stride;
+        final int[] biomes = new int[width * height];
+        if (!sampler.biomesStrided(
+            scale, nativeX, nativeZ, width, height, stride, biomes
+        )) {
+            return null;
+        }
+        for (int z = minPixelZ; z <= maxPixelZ; z++) {
+            for (int x = minPixelX; x <= maxPixelX; x++) {
+                final int source = (z - minPixelZ) * width + x - minPixelX;
+                final int target = BaselineGrid.index(x, z);
+                grid.biomeId[target] = biomes[source];
+                grid.terrainY[target] = PredictionDimensions.NETHER_ROOF_Y;
+                grid.baseSurfaceY[target] = PredictionDimensions.NETHER_ROOF_Y;
+            }
         }
         return grid;
     }
@@ -567,6 +659,36 @@ public final class LodSampling {
         }
         System.arraycopy(raw, 0, grid.biomeId, 0, raw.length);
         return true;
+    }
+
+    /** Coarse Nether pixels use raw 3D-biome samples rather than Overworld surface-biome queries. */
+    private static void sampleRawSubBiomes(
+        final BaselineSampler sampler,
+        final int lod,
+        final int tileOriginX,
+        final int tileOriginZ,
+        final BaselineGrid grid
+    ) {
+        final int sub = grid.subPerAxis;
+        final int blocksPerPixel = 1 << lod;
+        final int blockStride = blocksPerPixel / sub;
+        final int scale = blockStride < 4 ? 1 : 4;
+        final int stride = blockStride / scale;
+        final int width = BaselineGrid.SIZE * sub;
+        final int nativeX = Math.floorDiv(tileOriginX + P_MIN * blocksPerPixel, scale);
+        final int nativeZ = Math.floorDiv(tileOriginZ + P_MIN * blocksPerPixel, scale);
+        final int[] raw = new int[width * width];
+        final boolean sampled = sampler.biomesStrided(
+            scale, nativeX, nativeZ, width, width, stride, raw
+        );
+        for (int z = 0; z < width; z++) {
+            for (int x = 0; x < width; x++) {
+                final int pixel = (z / sub) * BaselineGrid.SIZE + x / sub;
+                grid.subBiomeId[grid.subIndex(pixel, x % sub, z % sub)] = sampled
+                    ? raw[z * width + x]
+                    : grid.biomeId[pixel];
+            }
+        }
     }
 
     private static boolean sampleEndHeights(

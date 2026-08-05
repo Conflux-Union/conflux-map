@@ -84,6 +84,7 @@ public final class PredictionPaletteBuilder {
         }
         final BlockPos reference = client.player == null ? BlockPos.ORIGIN : client.player.getBlockPos();
         final Map<SurfaceKind, MaterialDetailProfile> materials = new EnumMap<>(SurfaceKind.class);
+        final Map<SurfaceKind, Integer> materialBaseColors = new EnumMap<>(SurfaceKind.class);
         materials.put(
             SurfaceKind.LAND, sampler.detailProfileFor(Blocks.GRASS_BLOCK.getDefaultState(), world, reference)
         );
@@ -105,15 +106,45 @@ public final class PredictionPaletteBuilder {
         materials.put(
             SurfaceKind.LAVA, sampler.detailProfileFor(Blocks.LAVA.getDefaultState(), world, reference)
         );
+        materials.put(
+            SurfaceKind.BEDROCK_CEILING,
+            sampler.detailProfileFor(Blocks.BEDROCK.getDefaultState(), world, reference)
+        );
+        materialBaseColors.put(
+            SurfaceKind.BEDROCK_CEILING,
+            sampler.baseColorFor(Blocks.BEDROCK.getDefaultState(), world, reference)
+        );
         final MaterialDetailProfile endStone = sampler.detailProfileFor(
             Blocks.END_STONE.getDefaultState(), world, reference
         );
         final Map<Integer, MaterialDetailProfile> groundMaterials = new HashMap<>();
+        groundMaterials.put(
+            CubiomesBiomeIds.NETHER_WASTES,
+            sampler.detailProfileFor(Blocks.NETHERRACK.getDefaultState(), world, reference)
+        );
+        groundMaterials.put(
+            CubiomesBiomeIds.SOUL_SAND_VALLEY,
+            sampler.detailProfileFor(Blocks.SOUL_SAND.getDefaultState(), world, reference)
+        );
+        groundMaterials.put(
+            CubiomesBiomeIds.CRIMSON_FOREST,
+            sampler.detailProfileFor(Blocks.CRIMSON_NYLIUM.getDefaultState(), world, reference)
+        );
+        groundMaterials.put(
+            CubiomesBiomeIds.WARPED_FOREST,
+            sampler.detailProfileFor(Blocks.WARPED_NYLIUM.getDefaultState(), world, reference)
+        );
+        groundMaterials.put(
+            CubiomesBiomeIds.BASALT_DELTAS,
+            sampler.detailProfileFor(Blocks.BASALT.getDefaultState(), world, reference)
+        );
         for (final int biomeId : BiomeTable.knownIds()) {
             if (BiomeTable.isEnd(biomeId)) {
                 groundMaterials.put(biomeId, endStone);
             }
         }
-        state.setPalette(PredictionPalette.fromSamples(sampled, materials, groundMaterials));
+        state.setPalette(PredictionPalette.fromSamples(
+            sampled, materials, groundMaterials, materialBaseColors
+        ));
     }
 }

@@ -92,6 +92,48 @@ public final class PredictedTileComposer {
         final BaselineGrid correctionGrid,
         final int correctionBaselineMapColorId
     ) {
+        return compose(
+            derived, grid, palette, corrections, viewMode, lod, baselineMapColorId,
+            correctionDerived, correctionGrid, correctionBaselineMapColorId, true
+        );
+    }
+
+    /** Full form with control over the absolute-height wash used by non-roof layers. */
+    public static int[] compose(
+        final DerivedGrid derived,
+        final BaselineGrid grid,
+        final PredictionPalette palette,
+        final CorrectionTile corrections,
+        final PredictionViewMode viewMode,
+        final int lod,
+        final int baselineMapColorId,
+        final DerivedGrid correctionDerived,
+        final BaselineGrid correctionGrid,
+        final int correctionBaselineMapColorId,
+        final boolean applyAbsoluteHeight
+    ) {
+        return compose(
+            derived, grid, palette, corrections, viewMode, lod, baselineMapColorId,
+            correctionDerived, correctionGrid, correctionBaselineMapColorId,
+            applyAbsoluteHeight, 0xFFFFFFFF
+        );
+    }
+
+    /** Full form with an ambient-light tint applied before height and relief shading. */
+    public static int[] compose(
+        final DerivedGrid derived,
+        final BaselineGrid grid,
+        final PredictionPalette palette,
+        final CorrectionTile corrections,
+        final PredictionViewMode viewMode,
+        final int lod,
+        final int baselineMapColorId,
+        final DerivedGrid correctionDerived,
+        final BaselineGrid correctionGrid,
+        final int correctionBaselineMapColorId,
+        final boolean applyAbsoluteHeight,
+        final int ambientLightTint
+    ) {
         final int size = BaselineGrid.PIXELS;
         final int[] out = new int[size * size];
         final int[] surface = derived.surfaceY.clone();
@@ -187,9 +229,11 @@ public final class PredictedTileComposer {
                 // this used to pass false, which left the underlay on the steeper height-only curve:
                 // invisible near the Y=80 reference, but at a superflat's Y=-61 it darkened the
                 // predicted plane to roughly half the brightness of the captured map beside it.
-                final double heightShade = ShadingPipeline.detailedHeightShade(
-                    surface[idx], ShadingPipeline.REFERENCE_HEIGHT
-                );
+                final double heightShade = applyAbsoluteHeight
+                    ? ShadingPipeline.detailedHeightShade(
+                        surface[idx], ShadingPipeline.REFERENCE_HEIGHT
+                    )
+                    : 0.0;
                 final int composed = corrected[outIdx] || !grid.supersampled()
                     ? baseColor(kind, biomes[idx], fluids[idx], palette,
                         corrected[outIdx], colors[outIdx], floorColors[outIdx], baselineMapColorId,
@@ -198,7 +242,8 @@ public final class PredictedTileComposer {
                 final int materialDetailed = palette.applyMaterialDetail(
                     kind, biomes[idx], composed, grid.blockX(x), grid.blockZ(z)
                 );
-                final int heightShaded = ShadingPipeline.applyShade(materialDetailed, heightShade);
+                final int ambientLit = Argb.multiply(materialDetailed, ambientLightTint);
+                final int heightShaded = ShadingPipeline.applyShade(ambientLit, heightShade);
                 out[outIdx] = ShadingPipeline.applyBrightnessMultiplier(heightShaded, reliefMultiplier);
             }
         }
@@ -236,10 +281,10 @@ public final class PredictedTileComposer {
             );
         }
         if (corrected && paintsFromMapColor(correctedMapColorId)) {
-            return MapColorTable.argb(correctedMapColorId);
+            return palette.materialBaseColor(kind, MapColorTable.argb(correctedMapColorId));
         }
         if (!corrected && paintsFromMapColor(baselineMapColorId)) {
-            return MapColorTable.argb(baselineMapColorId);
+            return palette.materialBaseColor(kind, MapColorTable.argb(baselineMapColorId));
         }
         return colorFor(kind, biomeId, palette);
     }
@@ -343,6 +388,8 @@ public final class PredictedTileComposer {
                 return palette.iceBase;
             case FOLIAGE:
                 return palette.canopyColor(biomeId);
+            case BEDROCK_CEILING:
+                return palette.materialBaseColor(kind, palette.groundColor(biomeId));
             case LAND:
             default:
                 return palette.groundColor(biomeId);

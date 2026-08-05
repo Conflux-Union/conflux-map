@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
@@ -108,12 +109,35 @@ class PredictionStateTest {
     }
 
     @Test
-    void unsupportedDimensionsStayUnpredictableRegardlessOfPreset() {
+    void vanillaNetherSupportsRoofPredictionAndStructures() {
         Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
         final PredictionState state = seeded(WorldPreset.DEFAULT, WorldPreset.DEFAULT);
-        assertFalse(state.predictable(DimensionId.NETHER));
+        assertTrue(state.predictable(DimensionId.NETHER));
+        assertEquals(PredictionDimensions.NETHER, PredictionDimensions.nativeDim(DimensionId.NETHER));
+        assertEquals(MapLayer.NETHER_CEILING, PredictionDimensions.layer(DimensionId.NETHER));
         assertTrue(state.structuresCubiomesBacked(DimensionId.NETHER));
         assertEquals(PredictionDimensions.NETHER, PredictionDimensions.nativeStructureDim(DimensionId.NETHER));
+    }
+
+    @Test
+    void customDimensionsHaveNoPredictionLayerOrNativeDimension() {
+        final DimensionId custom = DimensionId.of("example", "the_nether");
+
+        assertFalse(PredictionDimensions.supported(custom));
+        assertEquals(null, PredictionDimensions.layer(custom));
+        assertEquals(Integer.MIN_VALUE, PredictionDimensions.nativeDim(custom));
+    }
+
+    @Test
+    void customNetherPresetDisablesOnlyNetherTerrainPrediction() {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.DEFAULT, WorldPreset.CUSTOM, WorldPreset.DEFAULT);
+        state.setSeed(SEED, McVersions.toCubiomes("1.17").orElseThrow());
+
+        assertTrue(state.predictable(DimensionId.OVERWORLD));
+        assertFalse(state.predictable(DimensionId.NETHER));
+        assertTrue(state.predictable(DimensionId.END));
     }
 
     @Test

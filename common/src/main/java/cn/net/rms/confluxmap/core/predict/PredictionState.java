@@ -20,13 +20,24 @@ public final class PredictionState {
     private volatile long seed;
     private volatile int mcVersion = -1;
     private volatile WorldPreset overworldPreset = WorldPreset.DEFAULT;
+    private volatile WorldPreset netherPreset = WorldPreset.DEFAULT;
     private volatile WorldPreset endPreset = WorldPreset.DEFAULT;
     private volatile FlatBaseline overworldFlatBaseline;
     private volatile PredictionPalette palette = PredictionPalette.defaults();
 
     /** Main thread, on session start: the recognized generator preset per predicted dimension. */
     public void setPresets(final WorldPreset overworldPreset, final WorldPreset endPreset) {
+        setPresets(overworldPreset, WorldPreset.DEFAULT, endPreset);
+    }
+
+    /** Main thread, on session start: the recognized generator preset for all predicted dimensions. */
+    public void setPresets(
+        final WorldPreset overworldPreset,
+        final WorldPreset netherPreset,
+        final WorldPreset endPreset
+    ) {
         this.overworldPreset = overworldPreset;
+        this.netherPreset = netherPreset;
         this.endPreset = endPreset;
     }
 
@@ -56,6 +67,7 @@ public final class PredictionState {
         seed = 0L;
         mcVersion = -1;
         overworldPreset = WorldPreset.DEFAULT;
+        netherPreset = WorldPreset.DEFAULT;
         endPreset = WorldPreset.DEFAULT;
         overworldFlatBaseline = null;
         palette = PredictionPalette.defaults();
@@ -90,6 +102,9 @@ public final class PredictionState {
     public WorldPreset preset(final DimensionId dimension) {
         if (dimension.equals(DimensionId.OVERWORLD)) {
             return overworldPreset;
+        }
+        if (dimension.equals(DimensionId.NETHER)) {
+            return netherPreset;
         }
         return PredictionDimensions.isEnd(dimension) ? endPreset : WorldPreset.DEFAULT;
     }

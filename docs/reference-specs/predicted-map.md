@@ -6,11 +6,18 @@ overlays it; predictions never enter the `.cfr` column cache.
 ## Determinism
 
 The wire baseline is `{biomeId u8, surfaceY i16, kind u8, fluidDepth u8}`. The predictor version
-is `cb:9afc1038ea5a|shim:9|base:15`; palette colours are local and never sent. Synthetic canopy stays
+is `cb:9afc1038ea5a|shim:10|base:16`; palette colours are local and never sent. Synthetic canopy stays
 on the predicted plane instead of becoming a generated-chunk correction, so generated frontiers
 cannot introduce foliage-colour seams. Other height differences up to 2 blocks are tolerated, and
 fluid depth compares in buckets `0`, `1-3`, `4-9`, `10+`. A real map colour outside the biome's
 expected set is retained as a correction so player builds are visible.
+
+The Nether prediction owns only the bedrock-roof layer. It samples cubiomes' three-dimensional
+biome field at Y=127 and paints a fixed-height biome proxy without pretending to predict Nether
+density columns. The companion residual baseline uses the same biome and height with
+`BEDROCK_CEILING` and bedrock map colour 11, so an untouched roof needs no difference records;
+holes, builds, and other real columns remain authoritative corrections. Captured roof data masks
+the proxy through the same real-tile precedence used by the Overworld and End.
 
 Predicted tile textures contain time-independent terrain colours. Dynamic day/night brightness is
 applied as one render-time tint across the whole predicted plane, so composition order cannot leave

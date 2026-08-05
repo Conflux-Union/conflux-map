@@ -517,7 +517,7 @@ final class PaperCorrectionService implements AutoCloseable {
                     world.preset(),
                     worldgenVersion,
                     worldSeed,
-                    world.nativeDimension()
+                    world.parsedDimensionId()
                 ),
                 patchBuilder,
                 workers,
@@ -661,7 +661,7 @@ final class PaperCorrectionService implements AutoCloseable {
             world.preset(),
             worldgenVersion,
             worldSeed,
-            world.nativeDimension()
+            world.parsedDimensionId()
         );
     }
 

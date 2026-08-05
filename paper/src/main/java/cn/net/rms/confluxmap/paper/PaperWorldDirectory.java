@@ -18,8 +18,7 @@ final class PaperWorldDirectory {
         String dimensionId,
         String dimensionType,
         WorldPreset preset,
-        Path regionDirectory,
-        int nativeDimension
+        Path regionDirectory
     ) {
         DimensionId parsedDimensionId() {
             return DimensionId.parse(dimensionId);
@@ -40,8 +39,7 @@ final class PaperWorldDirectory {
             dimensionId,
             world.getKey().getKey(),
             PaperWorldMetadata.detectPreset(world),
-            resolveRegionDirectory(world),
-            nativeDimension(dimensionId)
+            resolveRegionDirectory(world)
         );
         entries.add(entry);
         byWorld.put(world, entry);
@@ -57,16 +55,6 @@ final class PaperWorldDirectory {
 
     synchronized List<Entry> entries() {
         return List.copyOf(entries);
-    }
-
-    static int nativeDimension(final String dimensionId) {
-        if ("minecraft:overworld".equals(dimensionId)) {
-            return 0;
-        }
-        if ("minecraft:the_end".equals(dimensionId)) {
-            return 1;
-        }
-        return -1;
     }
 
     static Path resolveRegionDirectory(final World world) {

@@ -2557,9 +2557,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     /**
      * Draws the real tile grid, and - when a seed-predicted underlay is available for the
-     * current dimension+layer (only {@link MapLayer.Type#SURFACE} in the Overworld and {@link
-     * MapLayer.Type#END_SURFACE} in the End; never a cave/nether layer, which cubiomes can't
-     * predict at all) - the matching predicted tile drawn first underneath each real one. Real
+     * current dimension+layer ({@link MapLayer.Type#SURFACE} in the Overworld, {@link
+     * MapLayer.Type#NETHER_CEILING} in the Nether, or {@link MapLayer.Type#END_SURFACE} in the End) -
+     * the matching predicted tile drawn first underneath each real one. Real
      * tiles already render {@code UNKNOWN}/unexplored pixels as fully transparent (see {@code
      * TileService#composeRegion}), and both texture passes enable alpha blending, so the predicted
      * layer simply shows through wherever the real tile has nothing yet.
@@ -2628,10 +2628,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
     }
 
-    /** Only Overworld SURFACE / End END_SURFACE layers have a seed-predicted underlay (see {@link #drawTiles}). */
+    /** Only the dimension's canonical top layer has a seed-predicted underlay (see {@link #drawTiles}). */
     private boolean predictionActive(final MapLayer layer, final SessionGuard.Session session) {
-        final boolean eligibleLayer = layer.type() == MapLayer.Type.SURFACE || layer.type() == MapLayer.Type.END_SURFACE;
-        return config.predictionEnabled && eligibleLayer && predictionState.predictable(session.dimension());
+        return config.predictionEnabled
+            && layer.equals(PredictionDimensions.layer(session.dimension()))
+            && predictionState.predictable(session.dimension());
     }
 
     private int predictionTint(final MapLayer layer) {

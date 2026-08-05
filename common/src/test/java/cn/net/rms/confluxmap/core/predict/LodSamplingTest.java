@@ -23,6 +23,74 @@ class LodSamplingTest {
     private static final PositionBasedFakeSampler SAMPLER = new PositionBasedFakeSampler();
 
     @ParameterizedTest
+    @ValueSource(ints = {0, 1, 2, 3, 4})
+    void netherRoofSamplesBiomesOnAFixedCeilingWithoutTerrainQueries(final int lod) {
+        final BaselineSampler sampler = new BaselineSampler() {
+            @Override
+            public boolean biomes(
+                final int scale, final int x, final int z, final int w, final int h,
+                final int[] out
+            ) {
+                java.util.Arrays.fill(out, 171);
+                return true;
+            }
+
+            @Override
+            public boolean heights(
+                final int x4, final int z4, final int w, final int h, final int[] outY
+            ) {
+                throw new AssertionError("Nether roof prediction must not query Overworld heights");
+            }
+
+            @Override
+            public boolean endHeights(
+                final int x4, final int z4, final int w, final int h, final int[] outY
+            ) {
+                throw new AssertionError("Nether roof prediction must not query End heights");
+            }
+        };
+
+        final BaselineGrid grid = LodSampling.sampleNetherRoof(sampler, lod, -8192, 4096);
+
+        assertNotNull(grid);
+        final int center = BaselineGrid.index(128, 128);
+        assertEquals(171, grid.biomeId[center]);
+        assertEquals(PredictionDimensions.NETHER_ROOF_Y, grid.terrainY[center]);
+        assertEquals(PredictionDimensions.NETHER_ROOF_Y, grid.baseSurfaceY[center]);
+        final DerivedGrid derived = BaselineDeriver.derive(grid);
+        assertEquals(SurfaceKind.BEDROCK_CEILING.ordinal(), derived.kind[center]);
+        assertEquals(PredictionDimensions.NETHER_ROOF_Y, derived.surfaceY[center]);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {2, 3, 4})
+    void netherRoofWindowMatchesTheFullBaseline(final int lod) {
+        final int minX = 29;
+        final int minZ = 83;
+        final int maxX = 41;
+        final int maxZ = 97;
+        final int originX = -32_768;
+        final int originZ = 16_384;
+        final BaselineGrid full = LodSampling.sampleNetherRoof(
+            SAMPLER, lod, originX, originZ
+        );
+        final BaselineGrid window = LodSampling.sampleNetherRoofWindow(
+            SAMPLER, lod, originX, originZ, minX, minZ, maxX, maxZ
+        );
+
+        assertNotNull(full);
+        assertNotNull(window);
+        for (int z = minZ; z <= maxZ; z++) {
+            for (int x = minX; x <= maxX; x++) {
+                final int index = BaselineGrid.index(x, z);
+                assertEquals(full.biomeId[index], window.biomeId[index]);
+                assertEquals(full.terrainY[index], window.terrainY[index]);
+                assertEquals(full.baseSurfaceY[index], window.baseSurfaceY[index]);
+            }
+        }
+    }
+
+    @ParameterizedTest
     @ValueSource(ints = {2, 3, 4})
     void coarseWindowMatchesTheFullTileAtEveryRequestedPixel(final int lod) {
         final int minX = 113;

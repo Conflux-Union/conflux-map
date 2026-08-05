@@ -17,6 +17,7 @@ import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
+import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import cn.net.rms.confluxmap.server.CompanionPolicy;
 import cn.net.rms.confluxmap.server.ServerConfig;
@@ -255,7 +256,8 @@ final class PaperNetworking implements PluginMessageListener {
             dimensions.add(new HelloPolicyS2C.DimDescriptor(
                 entry.dimensionId(),
                 entry.dimensionType(),
-                entry.nativeDimension() >= 0 && entry.preset().predictable(),
+                PredictionDimensions.supported(entry.parsedDimensionId())
+                    && entry.preset().predictable(),
                 seed,
                 seed ? companion.worldSeed() : 0L,
                 entry.preset()

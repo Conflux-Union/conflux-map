@@ -1078,26 +1078,26 @@ public final class RegionSummaryService {
             }
         }
         if (NativeLib.available() && preset.predictable()) {
-            final int nativeDim = PredictionDimensions.isEnd(
+            final cn.net.rms.confluxmap.core.model.DimensionId dimension =
                 cn.net.rms.confluxmap.core.model.DimensionId.of(
                     world.getRegistryKey().getValue().getNamespace(),
                     world.getRegistryKey().getValue().getPath()
-                )
-            ) ? 1 : 0;
+                );
+            final int nativeDim = PredictionDimensions.nativeDim(dimension);
             final java.util.OptionalInt version = McVersions.toCubiomes(MinecraftVersion.current());
-            if (version.isPresent()) {
+            if (nativeDim != Integer.MIN_VALUE && version.isPresent()) {
                 final long seed = world.getSeed();
                 final NativeBaselineSampler sampler = new NativeBaselineSampler(
                     version.getAsInt(), seed, nativeDim, preset.cubiomesFlags()
                 );
                 if (window != null) {
                     return summary -> patchBuilder.prepareFromSamplerWindow(
-                        summary, sampler, nativeDim == 1, seed, false,
+                        summary, sampler, dimension, seed, false,
                         window.minX(), window.minZ(), window.maxX(), window.maxZ()
                     );
                 }
                 return summary -> patchBuilder.prepareFromSampler(
-                    summary, sampler, nativeDim == 1, seed, false
+                    summary, sampler, dimension, seed, false
                 );
             }
         }
@@ -1242,17 +1242,18 @@ public final class RegionSummaryService {
             }
         }
         if (NativeLib.available() && preset.predictable()) {
-            final int nativeDim = PredictionDimensions.isEnd(
+            final cn.net.rms.confluxmap.core.model.DimensionId dimension =
                 cn.net.rms.confluxmap.core.model.DimensionId.of(
-                    world.getRegistryKey().getValue().getNamespace(), world.getRegistryKey().getValue().getPath()
-                )
-            ) ? 1 : 0;
+                    world.getRegistryKey().getValue().getNamespace(),
+                    world.getRegistryKey().getValue().getPath()
+                );
+            final int nativeDim = PredictionDimensions.nativeDim(dimension);
             final java.util.OptionalInt version = McVersions.toCubiomes(MinecraftVersion.current());
-            if (version.isPresent()) {
+            if (nativeDim != Integer.MIN_VALUE && version.isPresent()) {
                 final PatchBuilder.Result residual = patchBuilder.buildFromSampler(
                     summary, sinceRevision,
                     new NativeBaselineSampler(version.getAsInt(), world.getSeed(), nativeDim, preset.cubiomesFlags()),
-                    nativeDim == 1,
+                    dimension,
                     world.getSeed(), false
                 );
                 if (residual.mode() != Proto.PATCH_MODE_UNAVAILABLE) {

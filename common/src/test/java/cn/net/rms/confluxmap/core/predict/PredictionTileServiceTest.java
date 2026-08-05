@@ -1,9 +1,12 @@
 package cn.net.rms.confluxmap.core.predict;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.core.color.BiomeColorPalette;
 import cn.net.rms.confluxmap.core.color.DaylightModel;
+import cn.net.rms.confluxmap.core.color.LightTint;
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
@@ -19,6 +22,7 @@ import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
+import cn.net.rms.confluxmap.core.tile.BiomeTileKeys;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.tile.TileUpdate;
 import cn.net.rms.confluxmap.core.util.Argb;
@@ -112,6 +116,122 @@ class PredictionTileServiceTest {
             awaitIdle(predictionTiles, 10_000L);
             assertEquals(4, predictionTiles.predictedBiomeAt(DIM, 2, 0, 0).orElse(-1));
             assertEquals(80, predictionTiles.predictedSurfaceYAt(DIM, 2, 0, 0).orElseThrow());
+        } finally {
+            executors.shutdown(2000);
+        }
+    }
+
+    @Test
+    void netherCorrectionsComposeAndRefreshTheRoofLayer(@TempDir final Path tempDir) throws InterruptedException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final SessionGuard sessionGuard = new SessionGuard();
+        final SessionGuard.Session session = sessionGuard.begin(WORLD, DimensionId.NETHER);
+        final MapWorldService worlds = new MapWorldService();
+        worlds.switchSession(session);
+        final MapExecutors executors = new MapExecutors();
+        final TileService uploads = new TileService(
+            worlds, executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.DEFAULT, WorldPreset.DEFAULT);
+        state.setSeed(146008555L, McVersions.toCubiomes("1.17").orElseThrow());
+        final PredictionTileService predictionTiles = newService(
+            sessionGuard, state, executors, uploads
+        );
+        predictionTiles.bindCorrectionStore(new CorrectionStore(tempDir));
+        final TileKey roof = new TileKey(
+            WORLD, DimensionId.NETHER,
+            MapLayer.NETHER_CEILING.cacheId() + PredictedTileKeys.SUFFIX,
+            2, 0, 0
+        );
+
+        try {
+            predictionTiles.requestTile(roof);
+            awaitIdle(predictionTiles, 10_000L);
+
+            final TileUpdate initialRoof = uploads.drainUploads(8).stream()
+                .filter(update -> update.key().equals(roof))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                    "the Nether prediction must upload to the bedrock-roof layer"
+                ));
+            assertTrue(
+                Arrays.stream(initialRoof.argbPixels()).allMatch(
+                    color -> color == Argb.multiply(
+                        MapColorTable.argb(PredictionDimensions.NETHER_ROOF_MAP_COLOR_ID),
+                        LightTint.multiplier(0, 0, true)
+                    )
+                ),
+                "terrain mode must render uniform bedrock with the captured map's Nether ambient light"
+            );
+            assertEquals(
+                PredictionDimensions.NETHER_ROOF_Y,
+                predictionTiles.predictedSurfaceYAt(DimensionId.NETHER, 2, 0, 0).orElseThrow()
+            );
+
+            final TileKey biomeRoof = BiomeTileKeys.toBiome(roof);
+            predictionTiles.requestTile(biomeRoof);
+            awaitIdle(predictionTiles, 10_000L);
+            final TileUpdate initialBiomeRoof = uploads.drainUploads(8).stream()
+                .filter(update -> update.key().equals(biomeRoof))
+                .findFirst()
+                .orElseThrow();
+            final int predictedBiome = predictionTiles.predictedBiomeAt(
+                DimensionId.NETHER, 2, 0, 0
+            ).orElseThrow();
+            assertEquals(
+                BiomeColorPalette.colorForCubiomes(predictedBiome),
+                initialBiomeRoof.argbPixels()[0],
+                "biome mode must keep rendering the predicted Nether biome identity"
+            );
+            assertNotEquals(
+                initialRoof.argbPixels()[0], initialBiomeRoof.argbPixels()[0],
+                "terrain and biome modes must not share the fixed bedrock color"
+            );
+
+            assertTrue(predictionTiles.applyCorrection(
+                new CorrectionStore.Key(DimensionId.NETHER.toString(), 2, 0, 0),
+                1L,
+                new byte[Proto.PATCH_PRESENCE_BYTES],
+                new PatchCodec.Patch(List.of(new PatchCodec.Sample(
+                    0, 172, 140, SurfaceKind.LAND.ordinal(), 11, 0
+                ))),
+                Proto.PATCH_MODE_RESIDUAL,
+                PredictorVersion.full(),
+                System.currentTimeMillis()
+            ));
+            awaitIdle(predictionTiles, 10_000L);
+
+            assertTrue(
+                uploads.drainUploads(8).stream().anyMatch(update -> update.key().equals(roof)),
+                "a Nether correction must refresh the roof tile, not the surface layer"
+            );
+            assertEquals(
+                172,
+                predictionTiles.predictedBiomeAt(DimensionId.NETHER, 2, 0, 0).orElseThrow()
+            );
+            assertEquals(
+                140,
+                predictionTiles.predictedSurfaceYAt(DimensionId.NETHER, 2, 0, 0).orElseThrow()
+            );
+
+            predictionTiles.setViewport(DimensionId.NETHER, 2, 0, 0, 0, 0);
+            assertTrue(worlds.current().put(
+                MapLayer.NETHER_CEILING, voidSnapshot(session.token()), SampleSource.REAL_LIVE
+            ));
+            uploads.markChunkStored(
+                session.token(), DimensionId.NETHER, MapLayer.NETHER_CEILING, 0, 0
+            );
+            awaitIdle(predictionTiles, 10_000L);
+            final TileUpdate covered = uploads.drainUploads(64).stream()
+                .filter(update -> update.key().equals(roof))
+                .reduce((first, second) -> second)
+                .orElseThrow();
+            assertEquals(
+                Argb.TRANSPARENT,
+                covered.argbPixels()[0],
+                "captured roof coverage must replace the predicted Nether pixel"
+            );
         } finally {
             executors.shutdown(2000);
         }

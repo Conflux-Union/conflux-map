@@ -34,7 +34,8 @@
 #include "finders.h"
 #include "terrain_features.h"
 
-#define CFX_ABI 9
+#define CFX_ABI 10
+#define CFX_NETHER_ROOF_Y 127
 
 #define CFX_OK              0
 #define CFX_ERR_BAD_HANDLE  1
@@ -71,6 +72,12 @@ static int cfxValidScale(jint scale) {
 }
 
 static int cfxGenerateBiomes(CfxContext *ctx, int *out, Range r) {
+    if (ctx->dim == DIM_NETHER) {
+        /* The predicted Nether layer represents the top of the bedrock roof. Nether biomes are
+         * three-dimensional: scale 1 takes block coordinates, while every coarser supported scale
+         * addresses the underlying 1:4 noise lattice on Y. */
+        r.y = r.scale == 1 ? CFX_NETHER_ROOF_Y : CFX_NETHER_ROOF_Y / 4;
+    }
     if (ctx->dim == DIM_OVERWORLD && ctx->mc >= MC_1_18
         && (r.scale == 1 || r.scale == 4)) {
         return mapOverworldSurfaceBiome(

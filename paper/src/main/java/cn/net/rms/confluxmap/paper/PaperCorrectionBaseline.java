@@ -1,7 +1,9 @@
 package cn.net.rms.confluxmap.paper;
 
+import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.predict.FlatBaseline;
 import cn.net.rms.confluxmap.core.predict.NativeBaselineSampler;
+import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
@@ -23,7 +25,7 @@ final class PaperCorrectionBaseline {
         final WorldPreset preset,
         final String worldgenVersion,
         final long seed,
-        final int nativeDimension
+        final DimensionId dimension
     ) {
         if (forceAbsolute) {
             return PatchBuilder.PreparedBaseline.absoluteOnly();
@@ -35,17 +37,17 @@ final class PaperCorrectionBaseline {
             return prepared == null ? PatchBuilder.PreparedBaseline.absoluteOnly() : prepared;
         }
         final java.util.OptionalInt version = McVersions.toCubiomes(worldgenVersion);
-        if (nativeDimension < 0 || !preset.predictable()
+        final int nativeDimension = PredictionDimensions.nativeDim(dimension);
+        if (nativeDimension == Integer.MIN_VALUE || !preset.predictable()
             || !NativeLib.available() || version.isEmpty()) {
             return PatchBuilder.PreparedBaseline.absoluteOnly();
         }
-        final boolean end = nativeDimension == 1;
         final NativeBaselineSampler sampler = new NativeBaselineSampler(
             version.getAsInt(), seed, nativeDimension, preset.cubiomesFlags()
         );
         final PatchBuilder.PreparedBaseline prepared;
         if (slice == null) {
-            prepared = patchBuilder.prepareFromSampler(summary, sampler, end, seed, false);
+            prepared = patchBuilder.prepareFromSampler(summary, sampler, dimension, seed, false);
         } else {
             final int chunksPerTile = 16 << summary.lod();
             final int samplesPerChunk = 16 >> summary.lod();
@@ -54,7 +56,7 @@ final class PaperCorrectionBaseline {
             prepared = patchBuilder.prepareFromSamplerWindow(
                 summary,
                 sampler,
-                end,
+                dimension,
                 seed,
                 false,
                 minX,

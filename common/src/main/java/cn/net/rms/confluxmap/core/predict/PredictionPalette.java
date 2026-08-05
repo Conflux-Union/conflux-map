@@ -33,20 +33,23 @@ public final class PredictionPalette {
     private final Map<Integer, int[]> tints;
     private final Map<SurfaceKind, MaterialDetailProfile> materialDetail;
     private final Map<Integer, MaterialDetailProfile> groundMaterialDetail;
+    private final Map<SurfaceKind, Integer> materialBaseColors;
 
     private PredictionPalette(
         final Map<Integer, int[]> tints,
         final Map<SurfaceKind, MaterialDetailProfile> materialDetail,
-        final Map<Integer, MaterialDetailProfile> groundMaterialDetail
+        final Map<Integer, MaterialDetailProfile> groundMaterialDetail,
+        final Map<SurfaceKind, Integer> materialBaseColors
     ) {
         this.tints = tints;
         this.materialDetail = materialDetail;
         this.groundMaterialDetail = groundMaterialDetail;
+        this.materialBaseColors = materialBaseColors;
     }
 
     /** Compiled-in {@link BiomeTable} fallbacks only - no live registry sample. */
     public static PredictionPalette defaults() {
-        return new PredictionPalette(Map.of(), Map.of(), Map.of());
+        return new PredictionPalette(Map.of(), Map.of(), Map.of(), Map.of());
     }
 
     /** One immutable snapshot of every biome id the live client registry could resolve this session. */
@@ -68,13 +71,33 @@ public final class PredictionPalette {
         final Map<SurfaceKind, MaterialDetailProfile> sampledMaterialDetail,
         final Map<Integer, MaterialDetailProfile> sampledGroundMaterialDetail
     ) {
+        return fromSamples(
+            sampledTints, sampledMaterialDetail, sampledGroundMaterialDetail, Map.of()
+        );
+    }
+
+    /** Live biome tints plus resource-derived surface base colors and detail profiles. */
+    public static PredictionPalette fromSamples(
+        final Map<Integer, int[]> sampledTints,
+        final Map<SurfaceKind, MaterialDetailProfile> sampledMaterialDetail,
+        final Map<Integer, MaterialDetailProfile> sampledGroundMaterialDetail,
+        final Map<SurfaceKind, Integer> sampledMaterialBaseColors
+    ) {
         final EnumMap<SurfaceKind, MaterialDetailProfile> materialDetail = new EnumMap<>(SurfaceKind.class);
         materialDetail.putAll(sampledMaterialDetail);
+        final EnumMap<SurfaceKind, Integer> materialBaseColors = new EnumMap<>(SurfaceKind.class);
+        materialBaseColors.putAll(sampledMaterialBaseColors);
         return new PredictionPalette(
             new HashMap<>(sampledTints),
             materialDetail,
-            new HashMap<>(sampledGroundMaterialDetail)
+            new HashMap<>(sampledGroundMaterialDetail),
+            materialBaseColors
         );
+    }
+
+    /** Uses a live resource material color when one was sampled, otherwise the protocol fallback. */
+    public int materialBaseColor(final SurfaceKind kind, final int fallback) {
+        return materialBaseColors.getOrDefault(kind, fallback);
     }
 
     public int grassTint(final int biomeId) {

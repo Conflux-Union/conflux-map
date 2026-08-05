@@ -46,10 +46,10 @@ Conflux Map is a Fabric client-side minimap and world map
   cave views, the Nether provides current-level and bedrock-roof views, and the End
   uses a background designed for the void. Surface maps also respond to time of day
   and local lighting.
-- **Seed preview:** When the world seed is available, unexplored Overworld and End
-  areas immediately show predicted biomes, terrain height, and trees. Captured terrain
-  and server corrections progressively replace the prediction, and Superflat worlds
-  are supported as well.
+- **Seed preview:** When the world seed is available, unexplored Overworld, Nether roof, and End
+  areas immediately show predicted biomes and terrain. The Nether roof uses a fixed-height biome
+  proxy, while the Overworld also approximates trees. Captured terrain and server corrections
+  progressively replace the prediction, and Superflat worlds are supported as well.
 - **Structure filters and search:** Every vanilla structure set available in the
   running game version is covered across the Overworld, Nether, and End. Each type
   has its own icon and visibility toggle, predicted and server-confirmed positions

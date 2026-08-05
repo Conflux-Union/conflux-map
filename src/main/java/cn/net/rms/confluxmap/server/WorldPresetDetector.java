@@ -6,9 +6,9 @@ import cn.net.rms.confluxmap.mixin.VanillaLayeredBiomeSourceAccessor;
 //#endif
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.world.biome.source.BiomeSource;
+import net.minecraft.world.biome.source.MultiNoiseBiomeSource;
 import net.minecraft.world.biome.source.TheEndBiomeSource;
 //#if MC>=11800
-//$$ import net.minecraft.world.biome.source.MultiNoiseBiomeSource;
 //$$ import net.minecraft.world.biome.source.MultiNoiseBiomeSourceParameterLists;
 //#else
 import net.minecraft.world.biome.source.VanillaLayeredBiomeSource;
@@ -29,9 +29,9 @@ import net.minecraft.world.gen.chunk.NoiseChunkGenerator;
  * layered biome source is enough to call the layout predictable, and {@code matchesSettings}
  * (an identity check against the builtin registry) is used only to <em>positively</em> identify
  * Amplified - if it false-negatives on an exotic registry copy, the world degrades to
- * {@code DEFAULT}/{@code LARGE_BIOMES}, which matches pre-preset behavior. Anything without a
- * vanilla layered/End biome source (single-biome buffet, datapack or modded sources, the
- * Nether's multi-noise) is {@code CUSTOM} and therefore unpredictable.
+ * {@code DEFAULT}/{@code LARGE_BIOMES}, which matches pre-preset behavior. Vanilla Nether
+ * multi-noise is recognized through its builtin preset identity; direct/custom multi-noise,
+ * single-biome buffet, datapack, and modded sources remain {@code CUSTOM}.
  */
 public final class WorldPresetDetector {
     private WorldPresetDetector() {
@@ -50,16 +50,24 @@ public final class WorldPresetDetector {
         }
         final BiomeSource source = generator.getBiomeSource();
         //#if MC>=11800
-        //$$ if (source instanceof final MultiNoiseBiomeSource multiNoise
-        //$$     && multiNoise.matchesInstance(MultiNoiseBiomeSourceParameterLists.OVERWORLD)) {
-        //$$     if (noise.matchesSettings(ChunkGeneratorSettings.AMPLIFIED)) {
-        //$$         return WorldPreset.AMPLIFIED;
+        //$$ if (source instanceof final MultiNoiseBiomeSource multiNoise) {
+        //$$     if (multiNoise.matchesInstance(MultiNoiseBiomeSourceParameterLists.NETHER)) {
+        //$$         return WorldPreset.DEFAULT;
         //$$     }
-        //$$     return noise.matchesSettings(ChunkGeneratorSettings.LARGE_BIOMES)
-        //$$         ? WorldPreset.LARGE_BIOMES
-        //$$         : WorldPreset.DEFAULT;
+        //$$     if (multiNoise.matchesInstance(MultiNoiseBiomeSourceParameterLists.OVERWORLD)) {
+        //$$         if (noise.matchesSettings(ChunkGeneratorSettings.AMPLIFIED)) {
+        //$$             return WorldPreset.AMPLIFIED;
+        //$$         }
+        //$$         return noise.matchesSettings(ChunkGeneratorSettings.LARGE_BIOMES)
+        //$$             ? WorldPreset.LARGE_BIOMES
+        //$$             : WorldPreset.DEFAULT;
+        //$$     }
         //$$ }
         //#else
+        if (source instanceof final MultiNoiseBiomeSource multiNoise
+            && multiNoise.matchesInstance(world.getSeed())) {
+            return WorldPreset.DEFAULT;
+        }
         if (source instanceof VanillaLayeredBiomeSource) {
             final boolean largeBiomes =
                 ((VanillaLayeredBiomeSourceAccessor) (Object) source).confluxmap$isLargeBiomes();

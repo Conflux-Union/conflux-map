@@ -72,6 +72,7 @@ public final class PredictionBootstrap {
         final OptionalLong seedOpt;
         final String worldgenVersion;
         final WorldPreset overworldPreset;
+        final WorldPreset netherPreset;
         final WorldPreset endPreset;
         final Optional<FlatBaseline> flatBaseline;
         final boolean manual;
@@ -85,6 +86,7 @@ public final class PredictionBootstrap {
             // The client jar's own worldgen is the only worldgen an integrated server can run.
             worldgenVersion = MC_VERSION_STRING;
             overworldPreset = detectLocal(World.OVERWORLD);
+            netherPreset = detectLocal(World.NETHER);
             endPreset = detectLocal(World.END);
             flatBaseline = overworldPreset == WorldPreset.FLAT ? localFlatBaseline() : Optional.empty();
             manual = false;
@@ -96,6 +98,7 @@ public final class PredictionBootstrap {
             // a different-version server's seed uses cubiomes' params for the server's version.
             worldgenVersion = companion.policy() != null ? companion.policy().worldgenVersion() : MC_VERSION_STRING;
             overworldPreset = advertisedPreset(DimensionId.OVERWORLD);
+            netherPreset = advertisedPreset(DimensionId.NETHER);
             endPreset = advertisedPreset(DimensionId.END);
             flatBaseline = overworldPreset == WorldPreset.FLAT
                 ? companion.flatBaselineFor(PredictionDimensions.OVERWORLD)
@@ -110,11 +113,12 @@ public final class PredictionBootstrap {
             seedOpt = OptionalLong.of(entry.seed());
             worldgenVersion = entry.worldgenVersion();
             overworldPreset = WorldPreset.DEFAULT;
+            netherPreset = WorldPreset.DEFAULT;
             endPreset = WorldPreset.DEFAULT;
             flatBaseline = Optional.empty();
             manual = true;
         }
-        state.setPresets(overworldPreset, endPreset);
+        state.setPresets(overworldPreset, netherPreset, endPreset);
         flatBaseline.ifPresent(state::setFlatBaseline);
         if (seedOpt.isPresent()) {
             final java.util.OptionalInt mcVersion = McVersions.toCubiomes(worldgenVersion);
@@ -132,9 +136,9 @@ public final class PredictionBootstrap {
             }
         }
         ConfluxMapMod.LOGGER.debug(
-            "prediction: session bootstrapped (source={} worldgen={} overworld={} end={} seed={} flat={})",
+            "prediction: session bootstrapped (source={} worldgen={} overworld={} nether={} end={} seed={} flat={})",
             singleplayer ? "singleplayer" : manual ? "manual" : "companion",
-            worldgenVersion, overworldPreset, endPreset,
+            worldgenVersion, overworldPreset, netherPreset, endPreset,
             state.seedKnown() ? "known" : "none", flatBaseline.isPresent()
         );
         if (overworldPreset == WorldPreset.FLAT) {

@@ -28,29 +28,35 @@ final class PaperWorldMetadata {
         }
         final CompoundTag generator = generator(world).orElse(null);
         if (generator != null) {
-            final String type = string(generator, "type");
-            if ("minecraft:flat".equals(type)) {
-                return WorldPreset.FLAT;
-            }
-            if ("minecraft:debug".equals(type)) {
-                return WorldPreset.DEBUG;
-            }
-            if (!"minecraft:noise".equals(type)) {
-                return WorldPreset.CUSTOM;
-            }
-            final String settings = string(generator, "settings");
-            if ("minecraft:amplified".equals(settings)) {
-                return WorldPreset.AMPLIFIED;
-            }
-            if ("minecraft:large_biomes".equals(settings)) {
-                return WorldPreset.LARGE_BIOMES;
-            }
-            if ("minecraft:overworld".equals(settings) || "minecraft:end".equals(settings)) {
-                return WorldPreset.DEFAULT;
-            }
-            return WorldPreset.CUSTOM;
+            return presetFromGenerator(generator);
         }
         return fallbackPreset(world.getWorldType());
+    }
+
+    static WorldPreset presetFromGenerator(final CompoundTag generator) {
+        final String type = string(generator, "type");
+        if ("minecraft:flat".equals(type)) {
+            return WorldPreset.FLAT;
+        }
+        if ("minecraft:debug".equals(type)) {
+            return WorldPreset.DEBUG;
+        }
+        if (!"minecraft:noise".equals(type)) {
+            return WorldPreset.CUSTOM;
+        }
+        final String settings = string(generator, "settings");
+        if ("minecraft:amplified".equals(settings)) {
+            return WorldPreset.AMPLIFIED;
+        }
+        if ("minecraft:large_biomes".equals(settings)) {
+            return WorldPreset.LARGE_BIOMES;
+        }
+        if ("minecraft:overworld".equals(settings)
+            || "minecraft:nether".equals(settings)
+            || "minecraft:end".equals(settings)) {
+            return WorldPreset.DEFAULT;
+        }
+        return WorldPreset.CUSTOM;
     }
 
     static Optional<FlatBaseline> flatBaseline(

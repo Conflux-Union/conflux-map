@@ -1,10 +1,11 @@
 package cn.net.rms.confluxmap.server;
 
+import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapPixel;
+import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
-import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.predict.BaselineDeriver;
 import cn.net.rms.confluxmap.core.predict.BaselineGrid;
 import cn.net.rms.confluxmap.core.predict.BaselineSampler;
@@ -12,6 +13,7 @@ import cn.net.rms.confluxmap.core.predict.CanopyStylizer;
 import cn.net.rms.confluxmap.core.predict.DerivedGrid;
 import cn.net.rms.confluxmap.core.predict.FlatBaseline;
 import cn.net.rms.confluxmap.core.predict.LodSampling;
+import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.ArrayList;
 import java.util.List;
@@ -158,6 +160,20 @@ public final class PatchBuilder {
         return prepared == null ? unavailable() : buildPrepared(summary, sinceRevision, prepared);
     }
 
+    public Result buildFromSampler(
+        final SummaryView summary,
+        final long sinceRevision,
+        final BaselineSampler sampler,
+        final DimensionId dimension,
+        final long seed,
+        final boolean absolute
+    ) {
+        final PreparedBaseline prepared = prepareFromSampler(
+            summary, sampler, dimension, seed, absolute
+        );
+        return prepared == null ? unavailable() : buildPrepared(summary, sinceRevision, prepared);
+    }
+
     public PreparedBaseline prepareFromSampler(
         final SummaryView summary,
         final BaselineSampler sampler,
@@ -183,6 +199,37 @@ public final class PatchBuilder {
         final DerivedGrid derived = BaselineDeriver.derive(baseline);
         CanopyStylizer.apply(derived, baseline, seed, summary.lod(), (int) originX, (int) originZ);
         return new PreparedBaseline(baseline, derived, Proto.MAP_COLOR_NONE, absolute);
+    }
+
+    /** Prepares the matching Overworld, Nether-roof, or End residual baseline. */
+    public PreparedBaseline prepareFromSampler(
+        final SummaryView summary,
+        final BaselineSampler sampler,
+        final DimensionId dimension,
+        final long seed,
+        final boolean absolute
+    ) {
+        if (!supported(summary) || sampler == null || !PredictionDimensions.supported(dimension)) {
+            return null;
+        }
+        final long originX = summary.originBlockX();
+        final long originZ = summary.originBlockZ();
+        if (originX < Integer.MIN_VALUE || originX > Integer.MAX_VALUE
+            || originZ < Integer.MIN_VALUE || originZ > Integer.MAX_VALUE) {
+            return null;
+        }
+        final BaselineGrid baseline = LodSampling.sample(
+            sampler, dimension, summary.lod(), (int) originX, (int) originZ
+        );
+        if (baseline == null) {
+            return null;
+        }
+        final DerivedGrid derived = BaselineDeriver.derive(baseline);
+        CanopyStylizer.apply(derived, baseline, seed, summary.lod(), (int) originX, (int) originZ);
+        final int mapColorId = dimension.equals(DimensionId.NETHER)
+            ? PredictionDimensions.NETHER_ROOF_MAP_COLOR_ID
+            : Proto.MAP_COLOR_NONE;
+        return new PreparedBaseline(baseline, derived, mapColorId, absolute);
     }
 
     /** Prepares only the coarse output pixels owned by one cropped region page. */
@@ -226,6 +273,55 @@ public final class PatchBuilder {
             minPixelX, minPixelZ, maxPixelX, maxPixelZ
         );
         return new PreparedBaseline(baseline, derived, Proto.MAP_COLOR_NONE, absolute);
+    }
+
+    /** Prepares one cropped region page for a supported dimension baseline. */
+    public PreparedBaseline prepareFromSamplerWindow(
+        final SummaryView summary,
+        final BaselineSampler sampler,
+        final DimensionId dimension,
+        final long seed,
+        final boolean absolute,
+        final int minPixelX,
+        final int minPixelZ,
+        final int maxPixelX,
+        final int maxPixelZ
+    ) {
+        if (!supported(summary) || sampler == null || !PredictionDimensions.supported(dimension)) {
+            return null;
+        }
+        if (dimension.equals(DimensionId.END) || summary.lod() < 2) {
+            return PreparedBaseline.absoluteOnly();
+        }
+        final long originX = summary.originBlockX();
+        final long originZ = summary.originBlockZ();
+        if (originX < Integer.MIN_VALUE || originX > Integer.MAX_VALUE
+            || originZ < Integer.MIN_VALUE || originZ > Integer.MAX_VALUE) {
+            return null;
+        }
+        final BaselineGrid baseline = dimension.equals(DimensionId.NETHER)
+            ? LodSampling.sampleNetherRoofWindow(
+                sampler, summary.lod(), (int) originX, (int) originZ,
+                minPixelX, minPixelZ, maxPixelX, maxPixelZ
+            )
+            : LodSampling.sampleOverworldWindow(
+                sampler, summary.lod(), (int) originX, (int) originZ,
+                minPixelX, minPixelZ, maxPixelX, maxPixelZ
+            );
+        if (baseline == null) {
+            return null;
+        }
+        final DerivedGrid derived = BaselineDeriver.deriveWindow(
+            baseline, minPixelX, minPixelZ, maxPixelX, maxPixelZ
+        );
+        CanopyStylizer.applyWindow(
+            derived, baseline, seed, summary.lod(), (int) originX, (int) originZ,
+            minPixelX, minPixelZ, maxPixelX, maxPixelZ
+        );
+        final int mapColorId = dimension.equals(DimensionId.NETHER)
+            ? PredictionDimensions.NETHER_ROOF_MAP_COLOR_ID
+            : Proto.MAP_COLOR_NONE;
+        return new PreparedBaseline(baseline, derived, mapColorId, absolute);
     }
 
     /**

@@ -93,6 +93,33 @@ class PredictionNativeIntegrationTest {
     }
 
     @Test
+    void netherRoofUsesNativeBiomesAtTheFixedRoofHeight() {
+        final NativeBaselineSampler sampler = new NativeBaselineSampler(
+            mc17(), SEED, PredictionDimensions.NETHER, 0
+        );
+        final BaselineGrid grid = LodSampling.sampleNetherRoof(sampler, 4, 0, 0);
+
+        assertNotNull(grid);
+        final java.util.Set<Integer> netherBiomes = java.util.Set.of(
+            CubiomesBiomeIds.NETHER_WASTES,
+            CubiomesBiomeIds.SOUL_SAND_VALLEY,
+            CubiomesBiomeIds.CRIMSON_FOREST,
+            CubiomesBiomeIds.WARPED_FOREST,
+            CubiomesBiomeIds.BASALT_DELTAS
+        );
+        final java.util.Set<Integer> sampled = new java.util.HashSet<>();
+        for (int z = 0; z < BaselineGrid.PIXELS; z++) {
+            for (int x = 0; x < BaselineGrid.PIXELS; x++) {
+                final int index = BaselineGrid.index(x, z);
+                assertTrue(netherBiomes.contains(grid.biomeId[index]));
+                assertEquals(PredictionDimensions.NETHER_ROOF_Y, grid.terrainY[index]);
+                sampled.add(grid.biomeId[index]);
+            }
+        }
+        assertTrue(sampled.size() > 1, "a 4096-block roof tile should contain multiple Nether biomes");
+    }
+
+    @Test
     void endLod4CoverageTracksTheMatchingLod3Tiles() {
         final NativeBaselineSampler sampler = new NativeBaselineSampler(
             mc17(), SEED, PredictionDimensions.END, 0

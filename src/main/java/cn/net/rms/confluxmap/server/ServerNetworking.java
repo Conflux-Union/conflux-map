@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.compat.MinecraftVersion;
 import cn.net.rms.confluxmap.compat.PlayNetworking;
+import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
 import cn.net.rms.confluxmap.core.net.ErrorS2C;
 import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
@@ -22,6 +23,7 @@ import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
+import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import java.util.ArrayList;
@@ -35,7 +37,6 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Identifier;
-import net.minecraft.util.registry.RegistryKey;
 import net.minecraft.world.World;
 
 /**
@@ -311,23 +312,19 @@ public final class ServerNetworking {
         final long seed = server.getOverworld().getSeed();
         final List<HelloPolicyS2C.DimDescriptor> dims = new ArrayList<>(2);
         for (final ServerWorld sw : server.getWorlds()) {
-            final RegistryKey<World> key = sw.getRegistryKey();
-            final String dimId = key.getValue().toString();
-            final String dimType = key.getValue().getPath();
+            final String dimId = sw.getRegistryKey().getValue().toString();
+            final String dimType = sw.getRegistryKey().getValue().getPath();
             final WorldPreset preset = WorldPresetDetector.detect(sw);
             // predictable=false also withholds the seed on pre-preset clients (their seedFor
             // checks it), so superflat/custom dims degrade correctly across versions.
-            final boolean predictable = isPredictable(key) && preset.predictable();
+            final boolean predictable = PredictionDimensions.supported(DimensionId.parse(dimId))
+                && preset.predictable();
             // The server always knows the seed; we just don't always share it.
             final boolean hasSeed = shareSeed;
             final long seedToSend = shareSeed ? seed : 0L;
             dims.add(new HelloPolicyS2C.DimDescriptor(dimId, dimType, predictable, hasSeed, seedToSend, preset));
         }
         return dims;
-    }
-
-    private static boolean isPredictable(final RegistryKey<World> key) {
-        return World.OVERWORLD.equals(key) || World.END.equals(key);
     }
 
     /** One entry per superflat dimension, indexed like {@link #buildDimDescriptors}'s list. */
