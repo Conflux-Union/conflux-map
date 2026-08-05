@@ -6,6 +6,11 @@ import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.network.packet.s2c.play.BlockUpdateS2CPacket;
 import net.minecraft.network.packet.s2c.play.ChunkDeltaUpdateS2CPacket;
 import net.minecraft.network.packet.s2c.play.GameJoinS2CPacket;
+//#if MC>=12100
+//$$ import net.minecraft.network.packet.s2c.play.LightData;
+//#else
+import net.minecraft.network.packet.s2c.play.LightUpdateS2CPacket;
+//#endif
 import net.minecraft.network.packet.s2c.play.PlayerRespawnS2CPacket;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -41,4 +46,32 @@ public abstract class ClientPlayNetworkHandlerMixin {
     private void confluxmap$onChunkDeltaUpdate(final ChunkDeltaUpdateS2CPacket packet, final CallbackInfo ci) {
         packet.visitUpdates((pos, state) -> ChunkCaptureHandler.blockDirty(pos.getX(), pos.getZ()));
     }
+
+    //#if MC>=12103
+    //$$ @Inject(method = "readLightData", at = @At("TAIL"))
+    //$$ private void confluxmap$afterLightDataApplied(
+    //$$     final int chunkX,
+    //$$     final int chunkZ,
+    //$$     final LightData lightData,
+    //$$     final boolean trustEdges,
+    //$$     final CallbackInfo ci
+    //$$ ) {
+    //$$     ChunkCaptureHandler.chunkDirty(chunkX, chunkZ);
+    //$$ }
+    //#elseif MC>=12100
+    //$$ @Inject(method = "readLightData", at = @At("TAIL"))
+    //$$ private void confluxmap$afterLightDataApplied(
+    //$$     final int chunkX,
+    //$$     final int chunkZ,
+    //$$     final LightData lightData,
+    //$$     final CallbackInfo ci
+    //$$ ) {
+    //$$     ChunkCaptureHandler.chunkDirty(chunkX, chunkZ);
+    //$$ }
+    //#else
+    @Inject(method = "onLightUpdate", at = @At("TAIL"))
+    private void confluxmap$afterLightDataApplied(final LightUpdateS2CPacket packet, final CallbackInfo ci) {
+        ChunkCaptureHandler.chunkDirty(packet.getChunkX(), packet.getChunkZ());
+    }
+    //#endif
 }
