@@ -6,6 +6,10 @@ repositories {
     mavenCentral()
 }
 
+configurations {
+    webMapAssets
+}
+
 dependencies {
     compileOnly 'com.google.code.gson:gson:2.13.2'
     compileOnlyApi 'org.apache.logging.log4j:log4j-api:2.25.3'
@@ -14,6 +18,7 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testRuntimeOnly 'org.apache.logging.log4j:log4j-core:2.25.3'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    webMapAssets 'org.webjars.npm:leaflet:1.9.4'
 }
 
 java {
@@ -32,6 +37,19 @@ test {
 processTestResources {
     from(rootProject.file('native/prebuilt')) {
         into 'natives'
+    }
+}
+
+processResources {
+    from({ configurations.webMapAssets.collect { zipTree(it) } }) {
+        include 'META-INF/resources/webjars/leaflet/1.9.4/dist/leaflet.css'
+        include 'META-INF/resources/webjars/leaflet/1.9.4/dist/leaflet.js'
+        include 'META-INF/resources/webjars/leaflet/1.9.4/LICENSE'
+        eachFile { details ->
+            details.path = 'webmap/vendor/' + (details.name == 'LICENSE'
+                ? 'leaflet-LICENSE.txt' : details.name)
+        }
+        includeEmptyDirs = false
     }
 }
 

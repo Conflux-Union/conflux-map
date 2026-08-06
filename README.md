@@ -186,6 +186,13 @@ Everything the companion shares is controlled in `config/confluxmap/server.json`
   may scan and render their entity radar.
 - `shareCorrections` (default `true`) serves real-terrain map corrections.
 - `shareWaypoints` (default `false`) enables the shared waypoint catalog.
+- `webMap.enabled` (default `false`) starts the bundled 2D browser map. It binds to
+  `127.0.0.1:8123` by default and should be published through an HTTPS reverse proxy;
+  direct non-loopback binding is rejected unless `webMap.allowInsecureRemote=true`.
+- `webMap.sharePlayers` (default `false`) adds the optional two-second player radar.
+  Players can persistently opt out with `/confluxmap webmap hide` and opt back in with
+  `/confluxmap webmap show`. Spectator and invisible players are shown translucent when sharing
+  is enabled.
 
 These settings are client policy, not anti-cheat. Once a server shares its
 seed, a modified client or an external tool can derive the same biome and
@@ -198,6 +205,14 @@ Per-player rate limits and bandwidth budgets for map sync
 `maxChunkSummariesPerSecond`) live in the same file. Any player can run
 `/confluxmap performance` in game to see timing and volume stats for their
 own connection's map sync.
+
+The browser requests the existing compressed region-summary protocol in batches of at most eight
+regions, keeps revision identifiers, and accepts `UNCHANGED` responses instead of downloading the
+same terrain again. Static Leaflet assets are bundled in the jar, so normal page loads do not use a
+CDN. The current browser build exposes authoritative generated terrain at LOD 0-4 and never sends
+the world seed. Its manifest reports browser prediction unavailable until the matching cubiomes
+WASM artifact is present; the UI consequently disables the prediction-only “all regions” mode
+rather than silently leaking the seed or pretending residual patches are complete terrain.
 
 ## Building
 

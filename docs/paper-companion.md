@@ -58,6 +58,7 @@ tile and exact-region invalidations. LOD 3/4 legacy tile requests scan progressi
 - Policy: `<server-root>/config/confluxmap/server.json`, using the same schema as Fabric.
 - Stable world ID: `<primary-world>/confluxmap/world_uuid.json`.
 - Shared waypoints: `<primary-world>/confluxmap/shared_waypoints.json`.
+- Web-map player opt-outs: `<primary-world>/confluxmap/webmap-hidden.txt`.
 - Terrain source: each Bukkit world's resolved `region/` directory. Standard Nether and End
   `DIM-1/region` and `DIM1/region` layouts and Paper 26.x namespaced
   `dimensions/<namespace>/<dimension>/region` layouts are recognized when present.
@@ -68,6 +69,7 @@ for the plugin lifetime so a late world load cannot change an index already sent
 ## Commands
 
 - `/confluxmap performance` shows the current player's completed correction-sync averages.
+- `/confluxmap webmap hide|show` controls whether that player appears on the optional public radar.
 - `/confluxmap waypoints status` shows the effective shared-waypoint state and quotas.
 - `/confluxmap waypoints enable` loads storage, atomically persists the setting, then advertises it.
 - `/confluxmap waypoints disable` blocks mutations immediately and persists the setting.

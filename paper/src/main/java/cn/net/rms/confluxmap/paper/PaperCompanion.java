@@ -11,6 +11,8 @@ import cn.net.rms.confluxmap.core.update.GithubReleaseFetcher;
 import cn.net.rms.confluxmap.core.update.UpdateCheckService;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import cn.net.rms.confluxmap.server.ServerConfig;
+import cn.net.rms.confluxmap.server.web.WebMapServer;
+import cn.net.rms.confluxmap.server.web.WebMapPrivacyStore;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointIo;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointService;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointStore;
@@ -84,6 +86,11 @@ final class PaperCompanion implements Listener {
     private PaperSharedWaypointNetworking sharedNetworking;
     private PaperPluginMessageDispatcher pluginMessages;
     private BukkitTask tickTask;
+    private WebMapServer webMap;
+    private PaperWebMapBackend webMapBackend;
+    private long webPlayerRevision;
+    private int webPlayerTicks;
+    private WebMapPrivacyStore webMapPrivacy;
 
     PaperCompanion(
         final ConfluxMapPaperPlugin plugin,
@@ -105,6 +112,14 @@ final class PaperCompanion implements Listener {
         primaryWorldRoot = primary.getWorldFolder().toPath();
         worldId = WorldIdStore.loadOrCreate(primaryWorldRoot);
         worldSeed = primary.getSeed();
+        webMapPrivacy = new WebMapPrivacyStore(
+            primaryWorldRoot.resolve("confluxmap/webmap-hidden.txt")
+        );
+        try {
+            webMapPrivacy.load();
+        } catch (final IOException e) {
+            plugin.getSLF4JLogger().error("Could not load web-map privacy preferences", e);
+        }
         mapColors = new PaperMapColors();
         initializeFlatBaselines(mapColors);
         corrections = new PaperCorrectionService(
@@ -155,6 +170,19 @@ final class PaperCompanion implements Listener {
             }
         }
         tickTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 1L, 1L);
+        if (config.enabled && config.webMap.enabled) {
+            try {
+                webMapBackend = new PaperWebMapBackend(plugin, this);
+                webMap = WebMapServer.start(config.webMap, webMapBackend);
+                plugin.getSLF4JLogger().info(
+                    "Web map listening on {}:{}",
+                    config.webMap.bindAddress, config.webMap.port
+                );
+            } catch (final IOException e) {
+                webMapBackend = null;
+                plugin.getSLF4JLogger().error("Web map failed to start", e);
+            }
+        }
         plugin.getSLF4JLogger().info(
             "Paper companion ready (enabled={}, seed={}, corrections={}, loadState={}, waypoints={})",
             config.enabled, config.shareSeed, config.shareCorrections,
@@ -163,6 +191,11 @@ final class PaperCompanion implements Listener {
     }
 
     void disable() {
+        if (webMap != null) {
+            webMap.close();
+            webMap = null;
+            webMapBackend = null;
+        }
         if (tickTask != null) {
             tickTask.cancel();
             tickTask = null;
@@ -192,6 +225,7 @@ final class PaperCompanion implements Listener {
         flatBaselines.clear();
         flatCandidates.clear();
         mapColors = null;
+        webMapPrivacy = null;
     }
 
     @EventHandler
@@ -266,6 +300,21 @@ final class PaperCompanion implements Listener {
 
     boolean isEnabled() {
         return config != null && config.enabled;
+    }
+
+    boolean webMapHidden(final UUID playerId) {
+        return webMapPrivacy != null && webMapPrivacy.hidden(playerId);
+    }
+
+    boolean setWebMapHidden(final UUID playerId, final boolean hidden) {
+        if (webMapPrivacy == null) return false;
+        try {
+            webMapPrivacy.setHidden(playerId, hidden);
+            return true;
+        } catch (final IOException e) {
+            plugin.getSLF4JLogger().error("Could not persist web-map privacy preference", e);
+            return false;
+        }
     }
 
     ServerConfig config() {
@@ -363,6 +412,11 @@ final class PaperCompanion implements Listener {
             chunkLoadStates.tick();
         }
         sharedNetworking.tick();
+        if (webMapBackend != null && config.webMap.sharePlayers
+            && ++webPlayerTicks >= 40) {
+            webPlayerTicks = 0;
+            webMapBackend.updatePlayers(++webPlayerRevision);
+        }
     }
 
     private void trackLoaded(

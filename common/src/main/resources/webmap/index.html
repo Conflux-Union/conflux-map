@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Conflux Map</title>
+  <link rel="stylesheet" href="/vendor/leaflet.css">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <main id="map" aria-label="World map"></main>
+  <section class="controls" aria-label="Map controls">
+    <strong>Conflux Map</strong>
+    <label>Dimension <select id="dimension"></select></label>
+    <label>Mode
+      <select id="mode">
+        <option value="all">All regions</option>
+        <option value="generated">Generated regions</option>
+        <option value="authoritative">Authoritative only</option>
+      </select>
+    </label>
+    <span id="status" role="status">Connecting…</span>
+  </section>
+  <script src="/vendor/leaflet.js"></script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

@@ -45,7 +45,11 @@ final class PaperCommands implements CommandExecutor, TabCompleter {
                 default -> false;
             };
         }
-        sender.sendMessage("Usage: /confluxmap <performance|waypoints status|enable|disable>");
+        if (args.length == 2 && "webmap".equalsIgnoreCase(args[0])
+            && ("hide".equalsIgnoreCase(args[1]) || "show".equalsIgnoreCase(args[1]))) {
+            return webMapPrivacy(sender, "hide".equalsIgnoreCase(args[1]));
+        }
+        sender.sendMessage("Usage: /confluxmap <performance|webmap hide|show|waypoints status|enable|disable>");
         return true;
     }
 
@@ -57,11 +61,14 @@ final class PaperCommands implements CommandExecutor, TabCompleter {
         final String[] args
     ) {
         if (args.length == 1) {
-            return prefix(args[0], List.of("performance", "waypoints"));
+            return prefix(args[0], List.of("performance", "webmap", "waypoints"));
         }
         if (args.length == 2 && "waypoints".equalsIgnoreCase(args[0])
             && sender.hasPermission("confluxmap.admin")) {
             return prefix(args[1], List.of("status", "enable", "disable"));
+        }
+        if (args.length == 2 && "webmap".equalsIgnoreCase(args[0])) {
+            return prefix(args[1], List.of("hide", "show"));
         }
         return List.of();
     }
@@ -80,6 +87,21 @@ final class PaperCommands implements CommandExecutor, TabCompleter {
         )) {
             sender.sendMessage(line);
         }
+        return true;
+    }
+
+    private boolean webMapPrivacy(final CommandSender sender, final boolean hidden) {
+        if (!(sender instanceof final Player player)) {
+            sender.sendMessage("This command must be run by a player.");
+            return true;
+        }
+        if (!companion.setWebMapHidden(player.getUniqueId(), hidden)) {
+            sender.sendMessage("Could not save the web-map privacy preference.");
+            return true;
+        }
+        sender.sendMessage(hidden
+            ? "You are hidden from the public web map."
+            : "You are visible on the public web map when player sharing is enabled.");
         return true;
     }
 

@@ -47,6 +47,14 @@ final class ConfluxMapCommands {
                 .then(literal("performance")
                     .requires(source -> source.getEntity() instanceof ServerPlayerEntity)
                     .executes(context -> performance(companion, context.getSource())))
+                .then(literal("webmap")
+                    .requires(source -> source.getEntity() instanceof ServerPlayerEntity)
+                    .then(literal("hide").executes(context -> webMapPrivacy(
+                        companion, context.getSource(), true
+                    )))
+                    .then(literal("show").executes(context -> webMapPrivacy(
+                        companion, context.getSource(), false
+                    ))))
         ));
     }
 
@@ -67,6 +75,22 @@ final class ConfluxMapCommands {
             MinecraftAccess.sendFeedback(source, Texts.literal(line), false);
         }
         return 1;
+    }
+
+    private static int webMapPrivacy(
+        final ConfluxMapCompanion companion,
+        final ServerCommandSource source,
+        final boolean hidden
+    ) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        final ServerPlayerEntity player = source.getPlayer();
+        if (!companion.setWebMapHidden(player.getUuid(), hidden)) {
+            return error(source, "Could not save the web-map privacy preference.");
+        }
+        return feedback(
+            source,
+            hidden ? "You are hidden from the public web map."
+                : "You are visible on the public web map when player sharing is enabled."
+        );
     }
 
     private static int status(
