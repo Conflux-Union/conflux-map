@@ -858,13 +858,28 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         //$$         renderAnnotationColorButton(GuiDraw.of(context), this, color, opensMenu);
         //$$     }
         //$$ });
-        //#elseif MC>=11904
+        //#elseif MC>=12002
         //$$ final ButtonWidget button = addDrawableChild(new ButtonWidget(
         //$$     x, y, ANNOTATION_CONTROL_SIZE, ANNOTATION_CONTROL_SIZE, Texts.literal(""),
         //$$     ignored -> activateAnnotationColorButton(color, opensMenu), narration -> narration.get()
         //$$ ) {
         //$$     @Override
         //$$     protected void renderWidget(
+        //$$         final DrawContext context,
+        //$$         final int mouseX,
+        //$$         final int mouseY,
+        //$$         final float delta
+        //$$     ) {
+        //$$         renderAnnotationColorButton(GuiDraw.of(context), this, color, opensMenu);
+        //$$     }
+        //$$ });
+        //#elseif MC>=12000
+        //$$ final ButtonWidget button = addDrawableChild(new ButtonWidget(
+        //$$     x, y, ANNOTATION_CONTROL_SIZE, ANNOTATION_CONTROL_SIZE, Texts.literal(""),
+        //$$     ignored -> activateAnnotationColorButton(color, opensMenu), narration -> narration.get()
+        //$$ ) {
+        //$$     @Override
+        //$$     protected void renderButton(
         //$$         final DrawContext context,
         //$$         final int mouseX,
         //$$         final int mouseY,
@@ -2472,7 +2487,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         //$$     context.draw();
         //$$     drawContents(GuiDraw.of(context), x, y);
         //$$ }
-        //#elseif MC>=12000
+        //#elseif MC>=12002
         //$$ protected void renderWidget(
         //$$     final DrawContext context,
         //$$     final int mouseX,
@@ -2486,6 +2501,32 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         //$$         : isHovered() ? Ids.of("widget/button_highlighted") : Ids.of("widget/button");
         //$$     context.setShaderColor(1.0f, 1.0f, 1.0f, alpha);
         //$$     context.drawGuiTexture(background, x, y, getWidth(), getHeight());
+        //$$     context.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+        //$$     context.draw();
+        //$$     drawContents(GuiDraw.of(context), x, y);
+        //$$ }
+        //#elseif MC>=12000
+        //$$ protected void renderButton(
+        //$$     final DrawContext context,
+        //$$     final int mouseX,
+        //$$     final int mouseY,
+        //$$     final float delta
+        //$$ ) {
+        //$$     context.setShaderColor(1.0f, 1.0f, 1.0f, alpha);
+        //$$     final int v = 46 + (!active ? 0 : isHovered() ? 2 : 1) * 20;
+        //$$     final int x = Widgets.x(this);
+        //$$     final int y = Widgets.y(this);
+        //$$     final int leftW = getWidth() / 2;
+        //$$     final int rightW = getWidth() - leftW;
+        //$$     final int topH = getHeight() / 2;
+        //$$     final int bottomH = getHeight() - topH;
+        //$$     context.drawTexture(WIDGETS_TEXTURE, x, y, 0, v, leftW, topH);
+        //$$     context.drawTexture(WIDGETS_TEXTURE, x + leftW, y, 200 - rightW, v, rightW, topH);
+        //$$     context.drawTexture(WIDGETS_TEXTURE, x, y + topH, 0, v + 20 - bottomH, leftW, bottomH);
+        //$$     context.drawTexture(
+        //$$         WIDGETS_TEXTURE, x + leftW, y + topH,
+        //$$         200 - rightW, v + 20 - bottomH, rightW, bottomH
+        //$$     );
         //$$     context.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
         //$$     context.draw();
         //$$     drawContents(GuiDraw.of(context), x, y);

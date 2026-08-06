@@ -56,8 +56,17 @@ public final class ConfluxTextButton extends ButtonWidget {
     //$$ ) {
     //$$     drawContents(GuiDraw.of(context));
     //$$ }
-    //#elseif MC>=11904
+    //#elseif MC>=12002
     //$$ protected void renderWidget(
+    //$$     final DrawContext context,
+    //$$     final int mouseX,
+    //$$     final int mouseY,
+    //$$     final float delta
+    //$$ ) {
+    //$$     drawContents(GuiDraw.of(context));
+    //$$ }
+    //#elseif MC>=12000
+    //$$ protected void renderButton(
     //$$     final DrawContext context,
     //$$     final int mouseX,
     //$$     final int mouseY,

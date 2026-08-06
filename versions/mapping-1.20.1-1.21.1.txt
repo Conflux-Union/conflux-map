@@ -1,0 +1,2 @@
+# Mapping file for version 1.20.1 to 1.21.1.
+# Pure renames are resolved through intermediary; API-shape changes use source branches.

@@ -24,9 +24,9 @@ import org.junit.jupiter.api.io.TempDir;
 class ProgressiveRegionPatchTest {
     @BeforeAll
     static void bootstrapMinecraftRegistries() {
-        //#if MC>=12100
+        //#if MC>=11800
         //$$ Assumptions.abort(
-        //$$     "Yarn's named 1.21 test jar cannot bootstrap ChunkPos dependencies outside Fabric Loader"
+        //$$     "Yarn's named 1.18+ test jars cannot bootstrap ChunkPos dependencies outside Fabric Loader"
         //$$ );
         //#else
         SharedConstants.createGameVersion();

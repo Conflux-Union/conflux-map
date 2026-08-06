@@ -99,6 +99,7 @@ public abstract class ConfluxScreen extends Screen {
     //$$     renderDisabledTooltip(draw, mouseX, mouseY);
     //$$ }
     //$$
+    //#if MC>=12002
     //$$ @Override
     //$$ public final void renderBackground(
     //$$     final DrawContext context,
@@ -119,6 +120,18 @@ public abstract class ConfluxScreen extends Screen {
     //$$ ) {
     //$$     super.renderBackground(context, mouseX, mouseY, tickDelta);
     //$$ }
+    //#else
+    //$$ @Override
+    //$$ public final void renderBackground(final DrawContext context) {
+    //$$     if (!renderingVanillaWidgets) {
+    //$$         renderVanillaBackground(context);
+    //$$     }
+    //$$ }
+    //$$
+    //$$ protected void renderVanillaBackground(final DrawContext context) {
+    //$$     super.renderBackground(context);
+    //$$ }
+    //#endif
     //#else
     @Override
     public final void render(

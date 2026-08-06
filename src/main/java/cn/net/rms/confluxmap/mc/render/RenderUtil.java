@@ -53,7 +53,7 @@ import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.Window;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
-//#if MC>=12100
+//#if MC>=11904
 //$$ import org.joml.Matrix4f;
 //#else
 import net.minecraft.util.math.Matrix4f;
@@ -255,7 +255,7 @@ public final class RenderUtil {
         final VertexConsumerProvider.Immediate immediate,
         final int light
     ) {
-        //#if MC>=12100
+        //#if MC>=12000
         //$$ textRenderer.draw(
         //$$     text, x, y, color, false, matrices.peek().getPositionMatrix(), immediate,
         //$$     TextRenderer.TextLayerType.SEE_THROUGH, 0, light
@@ -797,7 +797,7 @@ public final class RenderUtil {
         //$$ // Pipeline selection happens at draw time.
         //#elseif MC>=12103
         //$$ RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX);
-        //#elseif MC>=12100
+        //#elseif MC>=12000
         //$$ RenderSystem.setShader(GameRenderer::getPositionTexProgram);
         //#else
         RenderSystem.setShader(GameRenderer::getPositionTexShader);
@@ -809,7 +809,7 @@ public final class RenderUtil {
         //$$ // Pipeline selection happens at draw time.
         //#elseif MC>=12103
         //$$ RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
-        //#elseif MC>=12100
+        //#elseif MC>=12000
         //$$ RenderSystem.setShader(GameRenderer::getPositionColorProgram);
         //#else
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
@@ -823,6 +823,8 @@ public final class RenderUtil {
         //$$ RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
         //#elseif MC>=12100
         //$$ RenderSystem.setShader(GameRenderer::getPositionTexColorProgram);
+        //#elseif MC>=12000
+        //$$ RenderSystem.setShader(GameRenderer::getPositionColorTexProgram);
         //#else
         RenderSystem.setShader(GameRenderer::getPositionColorTexShader);
         //#endif
