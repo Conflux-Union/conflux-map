@@ -23,8 +23,9 @@ import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -40,6 +41,7 @@ public final class WebMapServer implements AutoCloseable {
     private final ConcurrentHashMap<String, AddressBudget> addressBudgets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Long> sessions = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, StaticAsset> assets = new ConcurrentHashMap<>();
+    private final Semaphore eventStreams;
 
     private record StaticAsset(byte[] body, String contentType, String etag) {
     }
@@ -66,6 +68,7 @@ public final class WebMapServer implements AutoCloseable {
         this.executor = executor;
         this.backend = backend;
         this.config = config;
+        this.eventStreams = new Semaphore(config.maxConnections);
     }
 
     public static WebMapServer start(
@@ -83,9 +86,10 @@ public final class WebMapServer implements AutoCloseable {
             new InetSocketAddress(requestedConfig.bindAddress, requestedConfig.port),
             Math.max(16, requestedConfig.maxConnections * 2)
         );
+        final int workerCount = requestedConfig.maxConnections + 4;
         final ThreadPoolExecutor workers = new ThreadPoolExecutor(
-            1,
-            requestedConfig.maxConnections,
+            workerCount,
+            workerCount,
             30L,
             TimeUnit.SECONDS,
             new ArrayBlockingQueue<>(Math.max(32, requestedConfig.maxConnections * 4)),
@@ -303,33 +307,41 @@ public final class WebMapServer implements AutoCloseable {
             methodNotAllowed(exchange, "GET");
             return;
         }
-        final Headers headers = exchange.getResponseHeaders();
-        headers.set("content-type", "text/event-stream; charset=utf-8");
-        headers.set("cache-control", "no-cache, no-transform");
-        headers.set("X-Accel-Buffering", "no");
-        headers.set("X-Content-Type-Options", "nosniff");
-        exchange.sendResponseHeaders(200, 0);
-        long lastRevision = Long.MIN_VALUE;
-        try (exchange; OutputStream out = exchange.getResponseBody()) {
-            while (!Thread.currentThread().isInterrupted()) {
-                final WebPlayerSnapshot snapshot = backend.players();
-                if (snapshot.revision() != lastRevision) {
-                    final String event = "id: " + snapshot.revision() + "\n"
-                        + "event: players\ndata: " + snapshot.toJson() + "\n\n";
-                    out.write(event.getBytes(StandardCharsets.UTF_8));
-                    lastRevision = snapshot.revision();
-                } else {
-                    out.write(": keepalive\n\n".getBytes(StandardCharsets.UTF_8));
+        if (!eventStreams.tryAcquire()) {
+            sendText(exchange, 503, "too many event streams");
+            return;
+        }
+        try {
+            final Headers headers = exchange.getResponseHeaders();
+            headers.set("content-type", "text/event-stream; charset=utf-8");
+            headers.set("cache-control", "no-cache, no-transform");
+            headers.set("X-Accel-Buffering", "no");
+            headers.set("X-Content-Type-Options", "nosniff");
+            exchange.sendResponseHeaders(200, 0);
+            long lastRevision = Long.MIN_VALUE;
+            try (exchange; OutputStream out = exchange.getResponseBody()) {
+                while (!Thread.currentThread().isInterrupted()) {
+                    final WebPlayerSnapshot snapshot = backend.players();
+                    if (snapshot.revision() != lastRevision) {
+                        final String event = "id: " + snapshot.revision() + "\n"
+                            + "event: players\ndata: " + snapshot.toJson() + "\n\n";
+                        out.write(event.getBytes(StandardCharsets.UTF_8));
+                        lastRevision = snapshot.revision();
+                    } else {
+                        out.write(": keepalive\n\n".getBytes(StandardCharsets.UTF_8));
+                    }
+                    out.flush();
+                    try {
+                        Thread.sleep(2_000L);
+                    } catch (final InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
                 }
-                out.flush();
-                try {
-                    Thread.sleep(2_000L);
-                } catch (final InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
+            } catch (final IOException ignored) {
+                // Browsers normally close the stream while panning away or reloading.
             }
-        } catch (final IOException ignored) {
-            // Browsers normally close the stream while panning away or reloading.
+        } finally {
+            eventStreams.release();
         }
     }
 
@@ -337,6 +349,7 @@ public final class WebMapServer implements AutoCloseable {
         if (path.endsWith(".html")) return "text/html; charset=utf-8";
         if (path.endsWith(".css")) return "text/css; charset=utf-8";
         if (path.endsWith(".js")) return "text/javascript; charset=utf-8";
+        if (path.endsWith(".json")) return "application/json; charset=utf-8";
         if (path.endsWith(".wasm")) return "application/wasm";
         if (path.endsWith(".png")) return "image/png";
         return "application/octet-stream";

@@ -1,6 +1,26 @@
 const status = document.querySelector('#status');
 const dimension = document.querySelector('#dimension');
 const mode = document.querySelector('#mode');
+const language = document.querySelector('#language');
+const supportedLocales = ['en', 'zh-CN'];
+let messages = {
+  connecting: 'Connecting…',
+  loadError: 'Map loading failed'
+};
+window.addEventListener('unhandledrejection', () => showLoadError());
+window.addEventListener('error', () => showLoadError());
+const locale = selectLocale();
+messages = await fetch(`/locales/${locale}.json`).then(response => {
+  if (!response.ok) throw new Error(`locale ${response.status}`);
+  return response.json();
+});
+document.documentElement.lang = locale;
+language.value = locale;
+translatePage();
+language.addEventListener('change', () => {
+  localStorage.setItem('conflux-map-locale', language.value);
+  location.reload();
+});
 const manifest = await fetch('/api/v1/manifest', {cache: 'no-store'}).then(r => {
   if (!r.ok) throw new Error(`manifest ${r.status}`);
   return r.json();
@@ -12,10 +32,7 @@ for (const item of manifest.dimensions) {
   option.textContent = item.id;
   dimension.append(option);
 }
-if (!manifest.predictionAvailable) {
-  mode.querySelector('[value="all"]').disabled = true;
-  mode.value = 'generated';
-}
+syncModeAvailability();
 
 const map = L.map('map', {
   crs: L.CRS.Simple,
@@ -25,6 +42,7 @@ const map = L.map('map', {
   attributionControl: true
 }).setView([0, 0], -2);
 map.attributionControl.addAttribution('Conflux Map · Leaflet');
+localizeZoomControl();
 
 const playerMarkers = new Map();
 const events = new EventSource('/api/v1/events');
@@ -79,8 +97,17 @@ class RegionLayer extends L.GridLayer {
   }
 }
 
-let layer = new RegionLayer({tileSize: 256, noWrap: true, updateWhenIdle: true}).addTo(map);
-dimension.addEventListener('change', refresh);
+let layer = new RegionLayer({
+  tileSize: 256,
+  minZoom: -4,
+  maxZoom: 0,
+  noWrap: true,
+  updateWhenIdle: true
+}).addTo(map);
+dimension.addEventListener('change', () => {
+  syncModeAvailability();
+  refresh();
+});
 mode.addEventListener('change', refresh);
 function refresh() {
   revisions.clear();
@@ -121,7 +148,9 @@ async function renderTile(canvas, tileX, tileZ, lod) {
       loaded++;
     }
   }
-  status.textContent = `${loaded}/${regions.length} regions · LOD ${lod}`;
+  status.textContent = message('regionsLoaded', {
+    loaded, total: regions.length, lod
+  });
 }
 
 async function requestRegions(regions, lod) {
@@ -239,6 +268,45 @@ function playerIcon(player) {
   fallback.textContent = player.name.slice(0, 1).toUpperCase();
   root.append(image, fallback);
   return L.divIcon({className: '', html: root, iconSize: [28, 28], iconAnchor: [14, 14]});
+}
+
+function selectLocale() {
+  const saved = localStorage.getItem('conflux-map-locale');
+  if (supportedLocales.includes(saved)) return saved;
+  return navigator.languages?.some(candidate => candidate.toLowerCase().startsWith('zh'))
+    ? 'zh-CN' : 'en';
+}
+function message(key, values = {}) {
+  return Object.entries(values).reduce(
+    (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
+    messages[key] ?? key
+  );
+}
+function translatePage() {
+  document.querySelectorAll('[data-i18n]').forEach(element => {
+    element.textContent = message(element.dataset.i18n);
+  });
+  document.querySelector('#map').setAttribute('aria-label', message('worldMap'));
+  document.querySelector('.controls').setAttribute('aria-label', message('mapControls'));
+  status.textContent = message('connecting');
+}
+function localizeZoomControl() {
+  const zoomIn = map.zoomControl._zoomInButton;
+  const zoomOut = map.zoomControl._zoomOutButton;
+  zoomIn.title = message('zoomIn');
+  zoomIn.setAttribute('aria-label', message('zoomIn'));
+  zoomOut.title = message('zoomOut');
+  zoomOut.setAttribute('aria-label', message('zoomOut'));
+}
+function syncModeAvailability() {
+  const selected = manifest.dimensions.find(item => item.index === Number(dimension.value));
+  const all = mode.querySelector('[value="all"]');
+  all.disabled = !manifest.predictionAvailable || !selected?.predictable;
+  if (all.disabled) mode.value = 'generated';
+}
+function showLoadError() {
+  status.textContent = message('loadError');
+  status.classList.add('error');
 }
 
 function openDatabase() {

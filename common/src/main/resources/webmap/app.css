@@ -1,6 +1,7 @@
 html,body,#map{height:100%;margin:0;background:#171a1d;color:#edf2f4;font:14px system-ui,sans-serif}
 .controls{position:fixed;z-index:1000;top:12px;left:50px;display:flex;gap:12px;align-items:center;padding:10px 14px;border:1px solid #3b4248;border-radius:8px;background:#20252bd9;box-shadow:0 4px 20px #0008;backdrop-filter:blur(8px)}
 .controls label{display:flex;gap:6px;align-items:center}.controls select{color:inherit;background:#111518;border:1px solid #515a62;border-radius:4px;padding:4px}#status{color:#a8d5ba}
+#status.error{color:#ff9b9b}
 .leaflet-container{background:#171a1d}.leaflet-control-attribution{background:#20252bdd!important;color:#b9c0c5!important}.leaflet-control-attribution a{color:#8ac6e8}
 @media(max-width:700px){.controls{left:8px;right:8px;top:8px;flex-wrap:wrap}.controls strong{width:100%}}
 .web-player{position:relative;display:grid;place-items:center;width:28px;height:28px;overflow:hidden;border:2px solid #fff;border-radius:50%;background:#397b58;color:#fff;font-weight:700;box-shadow:0 2px 8px #000b;transition:transform 2s linear}.web-player.translucent{opacity:.5}.web-player img{display:none;width:100%;height:100%;image-rendering:pixelated}.web-player.skin-loaded img{display:block}.web-player.skin-loaded span{display:none}.web-player span{pointer-events:none}
