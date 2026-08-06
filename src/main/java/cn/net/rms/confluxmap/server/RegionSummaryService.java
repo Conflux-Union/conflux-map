@@ -117,7 +117,11 @@ public final class RegionSummaryService {
     }
 
     private record RegionPageKey(
-        ServerWorld world, int lod, ChunkRegionSlice slice, boolean forceAbsolute
+        ServerWorld world,
+        int lod,
+        ChunkRegionSlice slice,
+        boolean forceAbsolute,
+        boolean enhancedProfile
     ) {
     }
 
@@ -208,7 +212,8 @@ public final class RegionSummaryService {
         MapRegionViewReqC2S.RegionReq request,
         long receivedAtNanos,
         int requestBytes,
-        boolean forceAbsolute
+        boolean forceAbsolute,
+        boolean enhancedProfile
     ) {
     }
 
@@ -344,6 +349,20 @@ public final class RegionSummaryService {
         final boolean forceAbsolute,
         final MessageSender sender
     ) {
+        requestRegions(
+            server, player, request, requestPayloadBytes, forceAbsolute, true, sender
+        );
+    }
+
+    public void requestRegions(
+        final MinecraftServer server,
+        final ServerPlayerEntity player,
+        final MapRegionViewReqC2S request,
+        final int requestPayloadBytes,
+        final boolean forceAbsolute,
+        final boolean enhancedProfile,
+        final MessageSender sender
+    ) {
         final long now = System.nanoTime();
         final PlayerChannel channel = channels.computeIfAbsent(
             player.getUuid(), ignored -> newPlayerChannel()
@@ -369,7 +388,7 @@ public final class RegionSummaryService {
                     + (remainingBytes-- > 0 ? 1 : 0);
                 final RegionJob job = new RegionJob(
                     request.reqId(), request.dimIndex(), request.lod(), region,
-                    now, regionRequestBytes, forceAbsolute
+                    now, regionRequestBytes, forceAbsolute, enhancedProfile
                 );
                 final RegionJobKey key = new RegionJobKey(
                     request.dimIndex(), request.lod(), region.slice()
@@ -645,7 +664,8 @@ public final class RegionSummaryService {
             return unavailableRegionResult();
         }
         final RegionPageKey key = new RegionPageKey(
-            world, job.lod(), job.request().slice(), job.forceAbsolute()
+            world, job.lod(), job.request().slice(), job.forceAbsolute(),
+            job.enhancedProfile()
         );
         final RegionPageTask task;
         synchronized (regionPageTasks) {
@@ -663,7 +683,8 @@ public final class RegionSummaryService {
                     () -> {
                         work.start();
                         return buildRegionPage(
-                            world, disk, job.lod(), job.request().slice(), baseline, work
+                            world, disk, job.lod(), job.request().slice(), baseline,
+                            job.enhancedProfile(), work
                         );
                     },
                     progressiveScanWorker
@@ -702,6 +723,7 @@ public final class RegionSummaryService {
         final int lod,
         final ChunkRegionSlice slice,
         final RegionBaselineTask baselineTask,
+        final boolean enhancedProfile,
         final RegionPageWork work
     ) {
         final String dimension = world.getRegistryKey().getValue().toString();
@@ -762,7 +784,9 @@ public final class RegionSummaryService {
         final RegionPatchBuilder.Result built;
         started = System.nanoTime();
         try {
-            built = regionPatchBuilder.build(lod, slice, region, Long.MIN_VALUE, prepared);
+            built = regionPatchBuilder.build(
+                lod, slice, region, Long.MIN_VALUE, prepared, enhancedProfile
+            );
         } finally {
             work.addCompute(System.nanoTime() - started);
         }

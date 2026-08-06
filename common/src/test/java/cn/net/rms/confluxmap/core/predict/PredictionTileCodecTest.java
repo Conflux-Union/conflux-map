@@ -71,18 +71,25 @@ class PredictionTileCodecTest {
     }
 
     @Test
-    void versionFifteenRemainsDrawableButHasNoTrustedChunkMetadata() throws Exception {
+    void versionFifteenIsRejectedAfterNativeLightCacheMigration() throws Exception {
         final byte[] encoded = encodeVersionFifteen(new PredictionTileCodec.FileData(
             2, -1, -1, 10L, 1_700_000_123_456L,
             new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(List.of())
         ));
 
-        final PredictionTileCodec.FileData decoded = PredictionTileCodec.decode(encoded);
+        assertThrows(ProtoException.class, () -> PredictionTileCodec.decode(encoded));
+    }
 
-        assertEquals(10L, decoded.revision());
-        assertEquals(1_700_000_123_456L, decoded.validatedAtMillis());
-        assertEquals(0, decoded.patch().size());
-        assertTrue(!decoded.hasChunkMetadata());
+    @Test
+    void versionEighteenIsRejectedBecauseItMayContainDroppedNativeLight() throws Exception {
+        final PredictionTileCodec.FileData data = new PredictionTileCodec.FileData(
+            0, 0, 0, 10L, 1_700_000_123_456L,
+            new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(List.of())
+        );
+        final byte[] encoded = PredictionTileCodec.encode(data);
+        encoded[4] = 18;
+
+        assertThrows(ProtoException.class, () -> PredictionTileCodec.decode(encoded));
     }
 
     @Test

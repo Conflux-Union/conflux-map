@@ -13,6 +13,7 @@ import net.minecraft.tag.FluidTags;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.Heightmap;
+import net.minecraft.world.LightType;
 import net.minecraft.world.chunk.WorldChunk;
 
 /** Main-thread adapter that exposes one loaded {@link WorldChunk} through {@link ChunkColumnSource}. */
@@ -97,6 +98,16 @@ final class WorldChunkColumnSource implements ChunkColumnSource {
             return SurfaceKind.LAVA;
         }
         return SurfaceKind.UNKNOWN;
+    }
+
+    @Override
+    public int blockLightAbove(final int x, final int surfaceY, final int z) {
+        pos.set(startX + x, Math.min(surfaceY + 1, world.getTopY() - 1), startZ + z);
+        //#if MC>=260100
+        //$$ return world.getBrightness(net.minecraft.world.level.LightLayer.BLOCK, pos);
+        //#else
+        return world.getLightLevel(LightType.BLOCK, pos);
+        //#endif
     }
 
     @Override

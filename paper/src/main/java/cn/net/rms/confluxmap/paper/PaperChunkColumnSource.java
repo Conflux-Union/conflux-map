@@ -76,6 +76,11 @@ final class PaperChunkColumnSource implements ChunkColumnSource {
     }
 
     @Override
+    public int blockLightAbove(final int x, final int surfaceY, final int z) {
+        return snapshot.getBlockEmittedLight(x, Math.min(surfaceY + 1, maxHeight - 1), z);
+    }
+
+    @Override
     public String blockNameAt(final int x, final int y, final int z) {
         if (y < minHeight || y >= maxHeight) {
             return "minecraft:air";

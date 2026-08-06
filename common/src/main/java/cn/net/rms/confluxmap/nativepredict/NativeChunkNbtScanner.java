@@ -12,6 +12,7 @@ public final class NativeChunkNbtScanner {
         int surfaceY,
         int fluidKind,
         int fluidDepth,
+        int blockLight,
         String surfaceBlock,
         String floorBlock
     ) {
@@ -41,7 +42,8 @@ public final class NativeChunkNbtScanner {
         final int samplesPerSide = 16 / sampleStride;
         final int sampleCount = samplesPerSide * samplesPerSide;
         final long[] revision = new long[1];
-        final int[] numeric = new int[NUMERIC_HEADER + sampleCount * NUMERIC_FIELDS];
+        final int lightOffset = NUMERIC_HEADER + sampleCount * NUMERIC_FIELDS;
+        final int[] numeric = new int[lightOffset + sampleCount];
         final String[] strings = new String[sampleCount * STRING_FIELDS];
         final int status;
         try {
@@ -67,6 +69,7 @@ public final class NativeChunkNbtScanner {
                 numeric[n + 1],
                 numeric[n + 2],
                 numeric[n + 3],
+                numeric[lightOffset + i],
                 strings[s + 1],
                 strings[s + 2]
             );

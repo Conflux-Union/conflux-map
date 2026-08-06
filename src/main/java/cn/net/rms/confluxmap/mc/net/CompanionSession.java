@@ -9,6 +9,7 @@ import cn.net.rms.confluxmap.core.net.MapCompatibilityS2C;
 import cn.net.rms.confluxmap.core.net.MapSyncCompatibility;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
+import cn.net.rms.confluxmap.core.net.ServerViewDistanceS2C;
 import cn.net.rms.confluxmap.core.predict.FlatBaseline;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import java.util.Optional;
@@ -50,6 +51,7 @@ public final class CompanionSession {
     private volatile HelloPolicyS2C policy;
     private volatile FlatBaselineS2C flatBaselines;
     private volatile MapCompatibilityS2C pendingCompatibility;
+    private volatile int serverViewDistance = -1;
     private volatile MapSyncCompatibility.ClientMode mapSyncMode =
         MapSyncCompatibility.ClientMode.INCOMPATIBLE;
     private int ticksSinceHello;
@@ -60,6 +62,7 @@ public final class CompanionSession {
         policy = null;
         flatBaselines = null;
         pendingCompatibility = null;
+        serverViewDistance = -1;
         mapSyncMode = MapSyncCompatibility.ClientMode.INCOMPATIBLE;
         ticksSinceHello = 0;
     }
@@ -68,6 +71,13 @@ public final class CompanionSession {
     public void onCompatibility(final MapCompatibilityS2C compatibility) {
         if (state.get() == State.HELLO_SENT) {
             pendingCompatibility = compatibility;
+        }
+    }
+
+    /** Stores the server's effective chunk-send radius before policy activates the session. */
+    public void onServerViewDistance(final ServerViewDistanceS2C viewDistance) {
+        if (state.get() == State.HELLO_SENT && viewDistance != null) {
+            serverViewDistance = viewDistance.chunks();
         }
     }
 
@@ -100,8 +110,9 @@ public final class CompanionSession {
             compatibility.negotiationVersion() == MapSyncCompatibility.NEGOTIATION_VERSION
             && compatibility.protocolMajor() == Proto.PROTO_MAJOR
             && compatibility.protocolMinor() == Proto.PROTO_MINOR
-            && compatibility.patchCodecVersion() == PatchCodec.FORMAT_VERSION
-            && compatibility.regionCodecVersion() == ChunkPatchCodec.FORMAT_VERSION;
+            && MapSyncCompatibility.supportedProfile(
+                compatibility.patchCodecVersion(), compatibility.regionCodecVersion()
+            );
         if (!wireMatches || compatibility.correctionMode() == MapCompatibilityS2C.MODE_DISABLED) {
             return MapSyncCompatibility.ClientMode.INCOMPATIBLE;
         }
@@ -140,6 +151,7 @@ public final class CompanionSession {
         policy = null;
         flatBaselines = null;
         pendingCompatibility = null;
+        serverViewDistance = -1;
         mapSyncMode = MapSyncCompatibility.ClientMode.INCOMPATIBLE;
         ticksSinceHello = 0;
     }
@@ -243,6 +255,11 @@ public final class CompanionSession {
         return mapSyncMode;
     }
 
+    /** Effective server chunk-send radius, or {@code -1} when an older server did not advertise it. */
+    public int serverViewDistance() {
+        return serverViewDistance;
+    }
+
     public String mapSyncBaselineProfile() {
         if (mapSyncMode == MapSyncCompatibility.ClientMode.LEGACY_RESIDUAL) {
             return MapSyncCompatibility.STABLE_PREDICTOR;
@@ -253,6 +270,14 @@ public final class CompanionSession {
             return compatibility.serverPredictorVersion();
         }
         return "";
+    }
+
+    /** Whether this connection selected the source-revision and block-light wire profile. */
+    public boolean enhancedMapSyncProfile() {
+        final MapCompatibilityS2C compatibility = pendingCompatibility;
+        return compatibility != null
+            && compatibility.patchCodecVersion() == PatchCodec.FORMAT_VERSION
+            && compatibility.regionCodecVersion() == ChunkPatchCodec.FORMAT_VERSION;
     }
 
     /** Player-facing reason for a disabled sync control, or {@code null} while usable. */

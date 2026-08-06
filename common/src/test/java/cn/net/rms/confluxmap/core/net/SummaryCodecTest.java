@@ -19,7 +19,7 @@ class SummaryCodecTest {
         final SummaryCodec.Chunk[] chunks = new SummaryCodec.Chunk[SummaryCodec.CHUNKS];
         Arrays.fill(chunks, SummaryCodec.Chunk.empty());
         final SummaryCodec.Column[] columns = new SummaryCodec.Column[SummaryCodec.COLUMNS];
-        Arrays.fill(columns, new SummaryCodec.Column(1, 64, 1, 1, 0));
+        Arrays.fill(columns, new SummaryCodec.Column(1, 64, 1, 1, 0, 255, 12));
         chunks[17] = new SummaryCodec.Chunk(true, 99L, columns);
         final SummaryCodec.Region input = new SummaryCodec.Region(2, -3, 1234L, chunks);
         final SummaryCodec.Region output = SummaryCodec.decode(SummaryCodec.encode(input));
@@ -27,7 +27,10 @@ class SummaryCodecTest {
         assertEquals(-3, output.rz());
         assertEquals(1234L, output.sourceMcaMtimeMs());
         assertEquals(99L, output.chunks()[17].revision());
-        assertEquals(new SummaryCodec.Column(1, 64, 1, 1, 0), output.chunks()[17].columns()[0]);
+        assertEquals(
+            new SummaryCodec.Column(1, 64, 1, 1, 0, 255, 12),
+            output.chunks()[17].columns()[0]
+        );
     }
 
     /**

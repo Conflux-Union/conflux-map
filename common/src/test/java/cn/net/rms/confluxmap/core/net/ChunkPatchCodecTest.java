@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.core.net;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -93,6 +94,48 @@ class ChunkPatchCodecTest {
         assertTrue(decoded.generatedAt(0));
         assertTrue(decoded.evaluatedAt(0));
         assertEquals(null, decoded.sampleAt(0));
+    }
+
+    @Test
+    void enhancedRegionCarriesChunkRevisionAndPixelBlockLight() throws Exception {
+        final ChunkPatchCodec.Patch decoded = ChunkPatchCodec.decode(
+            ChunkPatchCodec.encode(new ChunkPatchCodec.Patch(
+                1, 1, 1, new byte[] {1}, new byte[] {1}, List.of(),
+                new long[] {9_876L}, new byte[] {14}
+            ))
+        );
+
+        assertEquals(9_876L, decoded.sourceRevisionAt(0));
+        assertEquals(14, decoded.blockLightAt(0));
+    }
+
+    @Test
+    void legacyRegionMarksSourceRevisionUnknown() throws Exception {
+        final ChunkPatchCodec.Patch decoded = ChunkPatchCodec.decode(
+            ChunkPatchCodec.encodeLegacy(new ChunkPatchCodec.Patch(
+                1, 1, 1, new byte[] {1}, new byte[] {1}, List.of()
+            ))
+        );
+
+        assertEquals(Long.MIN_VALUE, decoded.sourceRevisionAt(0));
+        assertEquals(0, decoded.blockLightAt(0));
+    }
+
+    @Test
+    void chunkFingerprintChangesWhenOnlySourceRevisionChanges() {
+        final ChunkPatchCodec.Patch older = new ChunkPatchCodec.Patch(
+            1, 1, 1, new byte[] {1}, new byte[] {1}, List.of(),
+            new long[] {100L}, new byte[] {7}
+        );
+        final ChunkPatchCodec.Patch newer = new ChunkPatchCodec.Patch(
+            1, 1, 1, new byte[] {1}, new byte[] {1}, List.of(),
+            new long[] {101L}, new byte[] {7}
+        );
+
+        assertNotEquals(
+            ChunkPatchCodec.chunkRevisions(older)[0],
+            ChunkPatchCodec.chunkRevisions(newer)[0]
+        );
     }
 
     @Test

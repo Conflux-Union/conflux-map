@@ -149,6 +149,9 @@ class AnvilMcaScannerTest {
         final NbtCompound section = new NbtCompound();
         section.putByte("Y", (byte) 0);
         section.put("Palette", palette);
+        final byte[] blockLight = new byte[2_048];
+        Arrays.fill(blockLight, (byte) 0xCC);
+        section.putByteArray("BlockLight", blockLight);
         final NbtList sections = new NbtList();
         sections.add(section);
         level.put("Sections", sections);

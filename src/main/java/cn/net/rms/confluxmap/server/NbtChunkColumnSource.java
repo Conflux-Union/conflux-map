@@ -107,6 +107,13 @@ final class NbtChunkColumnSource implements ChunkColumnSource {
         return 1;
     }
 
+    @Override
+    public int blockLightAbove(final int x, final int surfaceY, final int z) {
+        final int y = surfaceY + 1;
+        final Section section = sectionAt(y);
+        return section == null ? 0 : nibble(section.blockLight, x, y, z);
+    }
+
     private static List<Section> parseSections(final NbtList list) {
         final List<Section> result = new ArrayList<>(list.size());
         for (int i = 0; i < list.size(); i++) {
@@ -148,7 +155,8 @@ final class NbtChunkColumnSource implements ChunkColumnSource {
                 bits,
                 biomeIds,
                 biomeData,
-                Math.max(1, bitsFor(biomeIds.length))
+                Math.max(1, bitsFor(biomeIds.length)),
+                Nbts.byteArray(section, "BlockLight")
             ));
         }
         return result;
@@ -202,6 +210,15 @@ final class NbtChunkColumnSource implements ChunkColumnSource {
         return bits;
     }
 
+    private static int nibble(final byte[] values, final int x, final int y, final int z) {
+        final int index = (Math.floorMod(y, 16) * 16 + z) * 16 + x;
+        final int byteIndex = index >>> 1;
+        if (byteIndex >= values.length) {
+            return 0;
+        }
+        return (values[byteIndex] >>> ((index & 1) * 4)) & 0xF;
+    }
+
     private record Section(
         int y,
         String[] names,
@@ -210,7 +227,8 @@ final class NbtChunkColumnSource implements ChunkColumnSource {
         int bits,
         int[] biomeIds,
         long[] biomeData,
-        int biomeBits
+        int biomeBits,
+        byte[] blockLight
     ) {
     }
 }

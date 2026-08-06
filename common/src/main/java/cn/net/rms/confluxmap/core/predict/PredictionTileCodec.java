@@ -34,11 +34,13 @@ public final class PredictionTileCodec {
      * revision, and validation metadata for cropped summary-region pages. Version 15 remains
      * drawable, but its tile-wide validation cannot prove that an exact chunk range is fresh.
      * Version 17 records the wire patch mode and predictor baseline that omitted residual pixels
-     * reconstruct from.
+     * reconstruct from. Version 18 stores enhanced patch bodies with source revisions and light.
+     * Version 19 discards corrections that may have been produced by the light-dropping native
+     * Anvil scanner.
      */
-    public static final int FORMAT_VERSION = 17;
-    private static final int LEGACY_FORMAT_VERSION = 16;
-    private static final int OLDEST_READABLE_FORMAT_VERSION = 15;
+    public static final int FORMAT_VERSION = 19;
+    private static final int SOURCE_PROFILE_VERSION = 17;
+    private static final int OLDEST_READABLE_FORMAT_VERSION = 19;
     private static final int CHUNK_METADATA_VERSION = 1;
     private static final int MAX_CHUNK_METADATA_RAW_BYTES = 1_250_000;
     private static final int MAX_CHUNK_METADATA_COMPRESSED_BYTES = 1_250_000;
@@ -178,8 +180,7 @@ public final class PredictionTileCodec {
                 throw new ProtoException("invalid correction header");
             }
             final int formatVersion = in.readUnsignedByte();
-            if (formatVersion != FORMAT_VERSION && formatVersion != LEGACY_FORMAT_VERSION
-                && formatVersion != OLDEST_READABLE_FORMAT_VERSION) {
+            if (formatVersion < OLDEST_READABLE_FORMAT_VERSION || formatVersion > FORMAT_VERSION) {
                 throw new ProtoException("unsupported correction version " + formatVersion);
             }
             final int lod = in.readUnsignedByte();
@@ -190,9 +191,9 @@ public final class PredictionTileCodec {
             final int tileZ = in.readInt();
             final long revision = in.readLong();
             final long validatedAtMillis = in.readLong();
-            final int patchMode = formatVersion >= FORMAT_VERSION
+            final int patchMode = formatVersion >= SOURCE_PROFILE_VERSION
                 ? in.readUnsignedByte() : Proto.PATCH_MODE_RESIDUAL;
-            final String baselineProfile = formatVersion >= FORMAT_VERSION
+            final String baselineProfile = formatVersion >= SOURCE_PROFILE_VERSION
                 ? readBoundedUtf(in) : MapSyncCompatibility.STABLE_PREDICTOR;
             final byte[] presence = new byte[Proto.PATCH_PRESENCE_BYTES];
             in.readFully(presence);
@@ -203,15 +204,6 @@ public final class PredictionTileCodec {
             final byte[] body = new byte[bodyLength];
             in.readFully(body);
             final PatchCodec.Patch patch = PatchCodec.decode(body);
-            if (formatVersion == OLDEST_READABLE_FORMAT_VERSION) {
-                if (in.available() != 0) {
-                    throw new ProtoException("trailing legacy correction bytes");
-                }
-                return new FileData(
-                    lod, tileX, tileZ, revision, validatedAtMillis, presence, patch,
-                    new byte[0], new long[0], new long[0], patchMode, baselineProfile
-                );
-            }
             final int metadataLength = in.readInt();
             if (metadataLength < 0 || metadataLength > MAX_CHUNK_METADATA_COMPRESSED_BYTES
                 || metadataLength > in.available()) {

@@ -33,7 +33,8 @@ public final class Proto {
      * Minor 5 added event-driven correction invalidation subscriptions (0x0A/0x0B).
      * Minor 6 added chunk-range correction pages (0x0C-0x0F), capability-gated in policy flags.
      * Negotiation-aware peers select this wire profile explicitly with 0x10 while released peers
-     * continue to use the unchanged HELLO frame and policy fingerprint.
+     * continue to use the unchanged HELLO frame and policy fingerprint. Capability-aware clients
+     * receive the server chunk-send radius in 0x11.
      */
     public static final int PROTO_MAJOR = 4;
     public static final int PROTO_MINOR = 0;
@@ -72,11 +73,13 @@ public final class Proto {
     public static final int MSG_MAP_REGION_INVALIDATE_S2C = 0x0F;
     /** S2C: selected wire/baseline profile, sent only to negotiation-aware clients. */
     public static final int MSG_MAP_COMPATIBILITY_S2C = 0x10;
+    /** S2C: effective server chunk-send radius, sent only to clients advertising support. */
+    public static final int MSG_SERVER_VIEW_DISTANCE_S2C = 0x11;
 
     /** First valid message id; used to range-check the type byte. */
     public static final int MSG_MIN = MSG_HELLO_C2S;
     /** Last valid message id for this proto major version. */
-    public static final int MSG_MAX = MSG_MAP_COMPATIBILITY_S2C;
+    public static final int MSG_MAX = MSG_SERVER_VIEW_DISTANCE_S2C;
 
     // ---- Hard caps (enforced everywhere untrusted bytes cross a boundary) ----
 
@@ -115,6 +118,8 @@ public final class Proto {
     public static final int MAX_REGION_INVALIDATIONS = 256;
     /** Maximum exact correction viewport width or height in chunks. */
     public static final int MAX_REGION_SYNC_SPAN_CHUNKS = 4_096;
+    /** Bounds client reseed work while remaining above vanilla's maximum chunk-send radius. */
+    public static final int MAX_SERVER_VIEW_DISTANCE = 64;
     /** Maximum requested viewport width or height, in chunks. */
     public static final int MAX_LOAD_STATE_SPAN = 4_096;
     /** Wire sentinel for a chunk that left the server's loaded set. */

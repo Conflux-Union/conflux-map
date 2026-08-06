@@ -29,12 +29,14 @@ public final class RegionColumns {
     private final byte[] light = new byte[SIZE * SIZE];
     private final byte[] chunkSource = new byte[CHUNKS * CHUNKS];
     private final int[] chunkUpdateSeconds = new int[CHUNKS * CHUNKS];
+    private final long[] chunkSourceRevision = new long[CHUNKS * CHUNKS];
     private volatile int version;
 
     public RegionColumns(final int regionX, final int regionZ) {
         this.regionX = regionX;
         this.regionZ = regionZ;
         java.util.Arrays.fill(surfaceY, ChunkSnapshot.NO_SURFACE);
+        java.util.Arrays.fill(chunkSourceRevision, Long.MIN_VALUE);
     }
 
     /** Monotonic change counter; bumps on every accepted write. */
@@ -66,6 +68,7 @@ public final class RegionColumns {
         }
         chunkSource[chunkIndex] = (byte) source.ordinal();
         chunkUpdateSeconds[chunkIndex] = (int) (System.currentTimeMillis() / 1000L);
+        chunkSourceRevision[chunkIndex] = snapshot.sourceRevision;
         version++;
         return true;
     }
@@ -76,6 +79,10 @@ public final class RegionColumns {
 
     public synchronized int chunkUpdateSeconds(final int chunkLocalX, final int chunkLocalZ) {
         return chunkUpdateSeconds[chunkLocalZ * CHUNKS + chunkLocalX];
+    }
+
+    public synchronized long chunkSourceRevision(final int chunkLocalX, final int chunkLocalZ) {
+        return chunkSourceRevision[chunkLocalZ * CHUNKS + chunkLocalX];
     }
 
     /** Count of chunks whose source priority is at least {@code min}. */
@@ -165,7 +172,8 @@ public final class RegionColumns {
         final byte[] outKind,
         final byte[] outLight,
         final byte[] outChunkSource,
-        final int[] outChunkUpdateSeconds
+        final int[] outChunkUpdateSeconds,
+        final long[] outChunkSourceRevision
     ) {
         copyChunkRows(
             0, SIZE, outSurfaceY, outBiomeId, outFluidDepth,
@@ -173,6 +181,7 @@ public final class RegionColumns {
         );
         System.arraycopy(chunkSource, 0, outChunkSource, 0, chunkSource.length);
         System.arraycopy(chunkUpdateSeconds, 0, outChunkUpdateSeconds, 0, chunkUpdateSeconds.length);
+        System.arraycopy(chunkSourceRevision, 0, outChunkSourceRevision, 0, chunkSourceRevision.length);
         return version;
     }
 }

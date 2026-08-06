@@ -134,4 +134,67 @@ class MapSyncChunkViewportTest {
             executors.shutdown(2_000L);
         }
     }
+
+
+    @Test
+    void chunkCapableCompanionDoesNotRequestPlayerViewDistance(
+        @TempDir final Path tempDir
+    ) {
+        final DimensionId dimension = DimensionId.OVERWORLD;
+        final SessionGuard sessions = new SessionGuard();
+        sessions.begin(WorldIdentity.singleplayer("excluded-player-view"), dimension);
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final ConfluxConfig config = new ConfluxConfig();
+            config.predictionDebounceMs = 100;
+            final PredictionTileService predictions = new PredictionTileService(
+                sessions,
+                new PredictionState(),
+                executors,
+                new TileService(new MapWorldService(), executors, config, new DaylightModel())
+            );
+            final CorrectionStore corrections = new CorrectionStore(tempDir);
+            corrections.onSessionChanged(sessions.current());
+            predictions.bindCorrectionStore(corrections);
+            final CompanionSession companion = new CompanionSession();
+            MapSyncTestCompanion.activate(companion, new HelloPolicyS2C(
+                new HelloPolicyS2C.Flags(false, true, false, false, false, true, true),
+                "excluded-player-view-world",
+                "1.17",
+                new HelloPolicyS2C.Budgets(256 * 1024, 8, 0, 4),
+                List.of(new HelloPolicyS2C.DimDescriptor(
+                    dimension.toString(), "overworld", true, false, 0L, WorldPreset.DEFAULT
+                ))
+            ));
+            final List<Message> sent = new ArrayList<>();
+            final long[] now = {1_000L};
+            final MapSyncClient client = new MapSyncClient(
+                companion,
+                message -> {
+                    sent.add(message);
+                    return 1;
+                },
+                corrections,
+                predictions,
+                config,
+                () -> now[0]
+            );
+            final ChunkViewport chunks = new ChunkViewport(14, 18, 2, 6);
+            final ChunkViewport playerView = new ChunkViewport(15, 17, 3, 5);
+
+            client.reportViewport(dimension, 0, 0, 1, 0, 0, chunks, playerView);
+            now[0] += 150L;
+            client.reportViewport(dimension, 0, 0, 1, 0, 0, chunks, playerView);
+
+            final MapRegionViewReqC2S request = assertInstanceOf(
+                MapRegionViewReqC2S.class, sent.get(1)
+            );
+            assertEquals(
+                16L,
+                request.regions().stream().mapToLong(region -> region.slice().chunkCount()).sum()
+            );
+        } finally {
+            executors.shutdown(2_000L);
+        }
+    }
 }

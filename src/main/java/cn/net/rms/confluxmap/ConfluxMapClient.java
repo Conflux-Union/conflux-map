@@ -173,6 +173,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
             executors
         );
         predictionTileService = new PredictionTileService(sessionGuard, predictionState, executors, tileService);
+        predictionTileService.bindDaylightModel(daylightModel);
         predictionTileService.setViewMode(config.predictionViewMode);
         correctionStore = new CorrectionStore(
             cacheRoot.resolve("prediction")
@@ -219,7 +220,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
         layerSelector = new LayerSelector(client, config);
 
         chunkCapture = new ChunkCaptureService(
-            client, config, mapWorlds, executors, tileService, regionCache, spriteColorSampler, biomeTintResolver, layerSelector
+            client, config, mapWorlds, executors, tileService, predictionTileService,
+            companionSession::serverViewDistance,
+            regionCache, spriteColorSampler, biomeTintResolver, layerSelector
         );
         clientMultiworldService.bindChunkCapture(chunkCapture);
         radarViewRange = new RadarViewRange();

@@ -12,8 +12,8 @@ import cn.net.rms.confluxmap.mc.render.TileTextureManager;
  * Per-frame lookup of the map color a rendering surface just drew beneath a world position, so
  * radar marker contours can flip between black and white for contrast. Reads the render-thread
  * CPU copies of the same tile textures the surface binds ({@link TileTextureManager#sampleArgb}),
- * composed the way the surface composes them: real tile over (optional) tinted predicted
- * underlay over the surface's own background fill. Each surface constructs one per radar pass
+ * composed the way the surface composes them: selected predicted/synchronized tile over the real
+ * tile and the surface's own background fill. Each surface constructs one per radar pass
  * with its current layer/LOD/prediction state. Render thread only.
  */
 public final class RadarBackdrop {
@@ -56,13 +56,13 @@ public final class RadarBackdrop {
         );
         final int px = TileMath.blockToPixelInTile(bx, lod);
         final int py = TileMath.blockToPixelInTile(bz, lod);
-        int under = backgroundArgb;
+        int color = Argb.over(textures.sampleArgb(key, px, py), backgroundArgb);
         if (predictionActive) {
             final int predicted = textures.sampleArgb(PredictedTileKeys.toPredicted(key), px, py);
             if (Argb.alpha(predicted) != 0) {
-                under = Argb.over(Argb.multiply(predicted, predictionTint), under);
+                color = Argb.over(Argb.multiply(predicted, predictionTint), color);
             }
         }
-        return Argb.over(textures.sampleArgb(key, px, py), under);
+        return color;
     }
 }

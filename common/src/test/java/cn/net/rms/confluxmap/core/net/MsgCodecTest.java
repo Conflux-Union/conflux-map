@@ -57,6 +57,18 @@ class MsgCodecTest {
     }
 
     @Test
+    void serverViewDistanceRoundTrips() throws ProtoException {
+        final ServerViewDistanceS2C original = new ServerViewDistanceS2C(12);
+
+        final ServerViewDistanceS2C decoded = (ServerViewDistanceS2C) MsgCodec.decode(
+            MsgCodec.encode(original)
+        );
+
+        assertEquals(12, decoded.chunks());
+        assertEquals(Proto.MSG_SERVER_VIEW_DISTANCE_S2C, decoded.typeId());
+    }
+
+    @Test
     void mapCompatibilityRejectsUnknownSelections() {
         final MapCompatibilityS2C invalid = new MapCompatibilityS2C(
             MapSyncCompatibility.NEGOTIATION_VERSION,

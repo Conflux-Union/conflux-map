@@ -74,7 +74,8 @@ public final class ChunkSummarizer {
                 surface.kind.ordinal(),
                 surface.mapColorId,
                 clamp(sample.fluidDepth()),
-                floorMapColorId
+                floorMapColorId,
+                Math.max(0, Math.min(15, sample.blockLight()))
             );
         }
         return new SummaryCodec.SampledChunk(

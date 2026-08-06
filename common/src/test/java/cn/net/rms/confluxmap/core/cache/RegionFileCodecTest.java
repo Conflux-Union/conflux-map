@@ -15,9 +15,11 @@ class RegionFileCodecTest {
     private static RegionFileCodec.RegionData sampleData(final int rx, final int rz) {
         final byte[] chunkSourceOrdinal = new byte[RegionFileCodec.CHUNK_TABLE_ENTRIES];
         final int[] chunkUpdateEpochSeconds = new int[RegionFileCodec.CHUNK_TABLE_ENTRIES];
+        final long[] chunkSourceRevision = new long[RegionFileCodec.CHUNK_TABLE_ENTRIES];
         for (int i = 0; i < RegionFileCodec.CHUNK_TABLE_ENTRIES; i++) {
             chunkSourceOrdinal[i] = (byte) (i % 4);
             chunkUpdateEpochSeconds[i] = 1_700_000_000 + i;
+            chunkSourceRevision[i] = 90_000L + i;
         }
 
         final short[] surfaceY = new short[RegionFileCodec.COLUMN_COUNT];
@@ -46,7 +48,7 @@ class RegionFileCodecTest {
 
         return new RegionFileCodec.RegionData(
             rx, rz, 1_700_000_123_456L,
-            chunkSourceOrdinal, chunkUpdateEpochSeconds,
+            chunkSourceOrdinal, chunkUpdateEpochSeconds, chunkSourceRevision,
             surfaceY, fluidDepth, kind, biomeId, baseArgb, biomeTint, overlayArgb, light
         );
     }
@@ -70,6 +72,7 @@ class RegionFileCodecTest {
         assertEquals(original.lastWriteEpochMs(), decoded.lastWriteEpochMs());
         assertArrayEquals(original.chunkSourceOrdinal(), decoded.chunkSourceOrdinal());
         assertArrayEquals(original.chunkUpdateEpochSeconds(), decoded.chunkUpdateEpochSeconds());
+        assertArrayEquals(original.chunkSourceRevision(), decoded.chunkSourceRevision());
         assertArrayEquals(original.surfaceY(), decoded.surfaceY());
         assertArrayEquals(original.fluidDepth(), decoded.fluidDepth());
         assertArrayEquals(original.kind(), decoded.kind());
@@ -88,11 +91,48 @@ class RegionFileCodecTest {
         final ByteArrayOutputStream out = new ByteArrayOutputStream();
         RegionFileCodec.encode(out, layerOrdinal, sampleData(rx, rz));
         final byte[] bytes = out.toByteArray();
-        bytes[5] = (byte) (RegionFileCodec.SCHEMA_VERSION - 1);
+        bytes[5] = 2;
 
         assertThrows(RegionFileCodec.RegionFileException.class, () ->
             RegionFileCodec.decode(new ByteArrayInputStream(bytes), rx, rz, layerOrdinal)
         );
+    }
+
+    @Test
+    void schemaThreeCacheLoadsWithUnknownSourceRevisions() throws Exception {
+        final RegionFileCodec.RegionData original = sampleData(4, -8);
+        final ByteArrayOutputStream currentOut = new ByteArrayOutputStream();
+        RegionFileCodec.encode(currentOut, 0, original);
+        final byte[] current = currentOut.toByteArray();
+        final ByteArrayOutputStream legacyOut = new ByteArrayOutputStream();
+        legacyOut.write(current, 0, RegionFileCodec.HEADER_SIZE);
+        final byte[] legacy = legacyOut.toByteArray();
+        legacy[5] = 3;
+        legacyOut.reset();
+        legacyOut.write(legacy);
+        final int currentEntryBytes = 13;
+        final int legacyEntryBytes = 5;
+        for (int chunk = 0; chunk < RegionFileCodec.CHUNK_TABLE_ENTRIES; chunk++) {
+            legacyOut.write(
+                current,
+                RegionFileCodec.HEADER_SIZE + chunk * currentEntryBytes,
+                legacyEntryBytes
+            );
+        }
+        legacyOut.write(
+            current,
+            RegionFileCodec.HEADER_SIZE + RegionFileCodec.CHUNK_TABLE_SIZE,
+            current.length - RegionFileCodec.HEADER_SIZE - RegionFileCodec.CHUNK_TABLE_SIZE
+        );
+
+        final RegionFileCodec.RegionData decoded = RegionFileCodec.decode(
+            new ByteArrayInputStream(legacyOut.toByteArray()), 4, -8, 0
+        );
+
+        final long[] unknown = new long[RegionFileCodec.CHUNK_TABLE_ENTRIES];
+        java.util.Arrays.fill(unknown, Long.MIN_VALUE);
+        assertArrayEquals(unknown, decoded.chunkSourceRevision());
+        assertArrayEquals(original.surfaceY(), decoded.surfaceY());
     }
 
     @Test

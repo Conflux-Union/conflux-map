@@ -44,6 +44,36 @@ class PatchCodecTest {
     }
 
     @Test
+    void enhancedRoundTripCarriesSourceRevisionAndBlockLightForEqualBaselinePixels() throws Exception {
+        final byte[] evaluated = new byte[PatchCodec.MASK_BYTES];
+        PatchCodec.setEvaluated(evaluated, 42);
+        final long[] revisions = new long[PatchCodec.PIXELS];
+        Arrays.fill(revisions, Long.MIN_VALUE);
+        revisions[42] = 12_345L;
+        final byte[] light = new byte[PatchCodec.PIXELS];
+        light[42] = 13;
+
+        final PatchCodec.Patch decoded = PatchCodec.decode(PatchCodec.encode(
+            new PatchCodec.Patch(evaluated, List.of(), revisions, light)
+        ));
+
+        assertEquals(12_345L, decoded.sourceRevisionAt(42));
+        assertEquals(13, decoded.blockLightAt(42));
+        assertEquals(null, decoded.sampleAt(42));
+    }
+
+    @Test
+    void legacyRoundTripPreservesTerrainAndMarksNewMetadataUnknown() throws Exception {
+        final PatchCodec.Patch decoded = PatchCodec.decode(PatchCodec.encodeLegacy(
+            new PatchCodec.Patch(List.of(new PatchCodec.Sample(7, 1, 64, 1, 1, 0)))
+        ));
+
+        assertEquals(Long.MIN_VALUE, decoded.sourceRevisionAt(7));
+        assertEquals(0, decoded.blockLightAt(7));
+        assertEquals(64, decoded.sampleAt(7).surfaceY());
+    }
+
+    @Test
     void floorColoursAndExtremeHeightsRoundTrip() throws Exception {
         final PatchCodec.Patch patch = new PatchCodec.Patch(List.of(
             new PatchCodec.Sample(77, 3, 64, 1, 9, 0),

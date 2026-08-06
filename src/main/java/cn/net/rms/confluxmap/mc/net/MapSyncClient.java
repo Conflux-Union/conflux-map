@@ -94,6 +94,7 @@ public final class MapSyncClient {
     private final Set<RegionStamp> settledRegions = new HashSet<>();
     private final Set<RegionStamp> invalidatedRegions = new HashSet<>();
     private ChunkViewport lastChunkViewport;
+    private ChunkViewport lastExcludedChunkViewport;
 
     private record TileStamp(String dimension, int lod, int tileX, int tileZ) {
     }
@@ -284,16 +285,35 @@ public final class MapSyncClient {
         final int maxTileZ,
         final ChunkViewport chunks
     ) {
+        reportViewport(
+            dimension, lod, minTileX, maxTileX, minTileZ, maxTileZ, chunks, null
+        );
+    }
+
+    /** Chunk-aware path with a player-view rectangle that stays locally authoritative. */
+    public synchronized void reportViewport(
+        final DimensionId dimension,
+        final int lod,
+        final int minTileX,
+        final int maxTileX,
+        final int minTileZ,
+        final int maxTileZ,
+        final ChunkViewport chunks,
+        final ChunkViewport excludedChunks
+    ) {
         final HelloPolicyS2C policy = companion.policy();
         if (chunks == null || policy == null || !policy.flags().chunkRangeCorrectionEnabled()) {
             reportViewport(dimension, lod, minTileX, maxTileX, minTileZ, maxTileZ);
             return;
         }
-        reportRegionViewport(dimension, lod, chunks);
+        reportRegionViewport(dimension, lod, chunks, excludedChunks);
     }
 
     private void reportRegionViewport(
-        final DimensionId dimension, final int lod, final ChunkViewport chunks
+        final DimensionId dimension,
+        final int lod,
+        final ChunkViewport chunks,
+        final ChunkViewport excludedChunks
     ) {
         if (!config.predictionNetworkSync || !companion.isActive()
             || !companion.policy().flags().correctionsEnabled()
@@ -305,7 +325,8 @@ public final class MapSyncClient {
         expireStalledRegionRequests(now);
         final String dimensionId = dimension.toString();
         final boolean changed = !dimensionId.equals(lastDimension)
-            || lod != lastLod || !chunks.equals(lastChunkViewport);
+            || lod != lastLod || !chunks.equals(lastChunkViewport)
+            || !java.util.Objects.equals(excludedChunks, lastExcludedChunkViewport);
         final int dimIndex = dimensionIndex(dimension);
         if (dimIndex < 0) {
             return;
@@ -318,7 +339,10 @@ public final class MapSyncClient {
             lastDimension = dimensionId;
             lastLod = lod;
             lastChunkViewport = chunks;
-            final Set<ChunkRegionSlice> visible = new HashSet<>(chunks.regionSlices());
+            lastExcludedChunkViewport = excludedChunks;
+            final Set<ChunkRegionSlice> visible = new HashSet<>(visibleRegionSlices(
+                chunks, excludedChunks
+            ));
             settledRegions.removeIf(stamp -> !stamp.dimension().equals(dimensionId)
                 || stamp.lod() != lod || !visible.contains(stamp.slice()));
             invalidatedRegions.removeIf(stamp -> !stamp.dimension().equals(dimensionId)
@@ -336,7 +360,7 @@ public final class MapSyncClient {
             return;
         }
         final List<ChunkRegionSlice> candidates = new ArrayList<>();
-        for (final ChunkRegionSlice slice : chunks.regionSlices()) {
+        for (final ChunkRegionSlice slice : visibleRegionSlices(chunks, excludedChunks)) {
             final RegionStamp stamp = new RegionStamp(dimensionId, lod, slice);
             if (settledRegions.contains(stamp) || regionInFlightStamps.contains(stamp)) {
                 continue;
@@ -455,7 +479,9 @@ public final class MapSyncClient {
             || patch.mode() == Proto.PATCH_MODE_ABSOLUTE) {
             try {
                 final ChunkPatchCodec.Patch decoded = ChunkPatchCodec.decode(patch.body());
-                if (ChunkPatchCodec.regionRevision(patch.lod(), patch.slice(), decoded)
+                if (ChunkPatchCodec.regionRevision(
+                    patch.lod(), patch.slice(), decoded, companion.enhancedMapSyncProfile()
+                )
                     == patch.regionRevision()) {
                     accepted = predictionTiles.applyRegionCorrection(
                         request.dimension, patch.lod(), patch.slice(), decoded,
@@ -586,19 +612,27 @@ public final class MapSyncClient {
             return;
         }
         final String dimension = policy.dims().get(invalidation.dimIndex()).dimId();
-        final Map<Long, ChunkRegionSlice> visible = new HashMap<>();
-        for (final ChunkRegionSlice slice : lastChunkViewport.regionSlices()) {
-            visible.put(regionKey(slice.regionX(), slice.regionZ()), slice);
+        final Map<Long, List<ChunkRegionSlice>> visible = new HashMap<>();
+        for (final ChunkRegionSlice slice : visibleRegionSlices(
+            lastChunkViewport, lastExcludedChunkViewport
+        )) {
+            visible.computeIfAbsent(
+                regionKey(slice.regionX(), slice.regionZ()), ignored -> new ArrayList<>()
+            ).add(slice);
         }
         for (final MapRegionInvalidateS2C.Region region : invalidation.regions()) {
-            final ChunkRegionSlice slice = visible.get(regionKey(region.regionX(), region.regionZ()));
-            if (slice == null) {
+            final List<ChunkRegionSlice> slices = visible.get(
+                regionKey(region.regionX(), region.regionZ())
+            );
+            if (slices == null) {
                 continue;
             }
-            final RegionStamp stamp = new RegionStamp(dimension, invalidation.lod(), slice);
-            settledRegions.remove(stamp);
-            invalidatedRegions.add(stamp);
-            predictionTiles.invalidateRegionCorrection(dimension, invalidation.lod(), slice);
+            for (final ChunkRegionSlice slice : slices) {
+                final RegionStamp stamp = new RegionStamp(dimension, invalidation.lod(), slice);
+                settledRegions.remove(stamp);
+                invalidatedRegions.add(stamp);
+                predictionTiles.invalidateRegionCorrection(dimension, invalidation.lod(), slice);
+            }
         }
     }
 
@@ -625,6 +659,7 @@ public final class MapSyncClient {
         regionInFlightStamps.clear();
         regionInFlightRequests.clear();
         lastChunkViewport = null;
+        lastExcludedChunkViewport = null;
         lastDimension = null;
         lastDimIndex = -1;
         lastLod = -1;
@@ -710,6 +745,7 @@ public final class MapSyncClient {
         settledRegions.clear();
         invalidatedRegions.clear();
         lastChunkViewport = null;
+        lastExcludedChunkViewport = null;
         stableSince = Long.MIN_VALUE;
         batchPrepared = false;
         lastSent = 0L;
@@ -718,6 +754,12 @@ public final class MapSyncClient {
         lastDimension = null;
         lastDimIndex = -1;
         progress.reset();
+    }
+
+    private static List<ChunkRegionSlice> visibleRegionSlices(
+        final ChunkViewport chunks, final ChunkViewport excludedChunks
+    ) {
+        return chunks.regionSlicesExcluding(excludedChunks);
     }
 
     public MapSyncProgress.Snapshot status() {

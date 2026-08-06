@@ -33,6 +33,11 @@ class ChunkViewportTest {
     }
 
     @Test
+    void centeredViewportUsesTheAdvertisedServerRadius() {
+        assertEquals(new ChunkViewport(-7, 17, -15, 9), ChunkViewport.centered(5, -3, 12));
+    }
+
+    @Test
     void negativeCoordinatesUseFloorSemantics() {
         final ChunkViewport viewport = ChunkViewport.covering(
             -16.0, -16.0, 1, 1, 1.0
@@ -58,5 +63,26 @@ class ChunkViewportTest {
             viewport.chunkCount(),
             slices.stream().mapToLong(ChunkRegionSlice::chunkCount).sum()
         );
+    }
+
+    @Test
+    void regionSlicesCanExcludePlayerViewDistanceWithoutDroppingOuterChunks() {
+        final ChunkViewport viewport = new ChunkViewport(14, 18, 2, 6);
+        final ChunkViewport playerView = new ChunkViewport(15, 17, 3, 5);
+
+        final List<ChunkRegionSlice> slices = viewport.regionSlicesExcluding(playerView);
+
+        assertEquals(16L, slices.stream().mapToLong(ChunkRegionSlice::chunkCount).sum());
+        for (final ChunkRegionSlice slice : slices) {
+            for (int chunkZ = slice.minChunkZ(); chunkZ <= slice.maxChunkZ(); chunkZ++) {
+                for (int chunkX = slice.minChunkX(); chunkX <= slice.maxChunkX(); chunkX++) {
+                    assertEquals(
+                        false,
+                        chunkX >= playerView.minChunkX() && chunkX <= playerView.maxChunkX()
+                            && chunkZ >= playerView.minChunkZ() && chunkZ <= playerView.maxChunkZ()
+                    );
+                }
+            }
+        }
     }
 }

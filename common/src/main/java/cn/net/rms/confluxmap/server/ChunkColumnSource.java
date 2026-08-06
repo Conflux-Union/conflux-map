@@ -48,4 +48,9 @@ public interface ChunkColumnSource {
     }
 
     int biomeIdAt(int x, int y, int z);
+
+    /** Block light at the air block directly above the selected surface. */
+    default int blockLightAbove(final int x, final int surfaceY, final int z) {
+        return 0;
+    }
 }

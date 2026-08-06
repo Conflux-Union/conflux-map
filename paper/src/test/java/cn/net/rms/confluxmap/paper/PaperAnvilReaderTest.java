@@ -44,6 +44,7 @@ class PaperAnvilReaderTest {
         assertEquals(1, region.chunks()[0].columns().length);
         assertEquals(SurfaceKind.LAND.ordinal(), region.chunks()[0].columns()[0].kind());
         assertEquals(11, region.chunks()[0].columns()[0].mapColorId());
+        assertEquals(13, region.chunks()[0].columns()[0].blockLight());
     }
 
     @Test
@@ -135,6 +136,9 @@ class PaperAnvilReaderTest {
         final CompoundTag section = new CompoundTag();
         section.putByte("Y", (byte) 0);
         section.put("Palette", palette);
+        final byte[] blockLight = new byte[2_048];
+        Arrays.fill(blockLight, (byte) 0xDD);
+        section.putByteArray("BlockLight", blockLight);
         final ListTag<CompoundTag> sections = new ListTag<>(CompoundTag.class);
         sections.add(section);
         level.put("Sections", sections);

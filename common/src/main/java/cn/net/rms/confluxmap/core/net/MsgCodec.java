@@ -82,6 +82,8 @@ public final class MsgCodec {
                 encodeMapRegionInvalidateS2C(out, m);
             } else if (msg instanceof final MapCompatibilityS2C m) {
                 encodeMapCompatibilityS2C(out, m);
+            } else if (msg instanceof final ServerViewDistanceS2C m) {
+                out.writeShort(m.chunks());
             } else {
                 throw new ProtoException("unknown message type: " + msg.getClass().getName());
             }
@@ -117,7 +119,8 @@ public final class MsgCodec {
             || typeId == Proto.MSG_MAP_INVALIDATE_S2C
             || typeId == Proto.MSG_MAP_REGION_PATCH_S2C
             || typeId == Proto.MSG_MAP_REGION_INVALIDATE_S2C
-            || typeId == Proto.MSG_MAP_COMPATIBILITY_S2C;
+            || typeId == Proto.MSG_MAP_COMPATIBILITY_S2C
+            || typeId == Proto.MSG_SERVER_VIEW_DISTANCE_S2C;
     }
 
     private static void encodeHelloC2S(final DataOutputStream out, final HelloC2S m) throws IOException, ProtoException {
@@ -499,6 +502,7 @@ public final class MsgCodec {
                 case Proto.MSG_MAP_REGION_SYNC_SUBSCRIBE_C2S -> decodeMapRegionSyncSubscribeC2S(in);
                 case Proto.MSG_MAP_REGION_INVALIDATE_S2C -> decodeMapRegionInvalidateS2C(in);
                 case Proto.MSG_MAP_COMPATIBILITY_S2C -> decodeMapCompatibilityS2C(in);
+                case Proto.MSG_SERVER_VIEW_DISTANCE_S2C -> decodeServerViewDistanceS2C(in);
                 default -> throw new ProtoException("unhandled message type id: 0x" + Integer.toHexString(typeId));
             };
             if (in.available() != 0) {
@@ -518,6 +522,16 @@ public final class MsgCodec {
         final String modVersion = readUtf(in);
         final String predictorVersion = readUtf(in);
         return new HelloC2S(modVersion, predictorVersion);
+    }
+
+    private static ServerViewDistanceS2C decodeServerViewDistanceS2C(
+        final DataInputStream in
+    ) throws IOException, ProtoException {
+        final int chunks = in.readUnsignedShort();
+        if (chunks > Proto.MAX_SERVER_VIEW_DISTANCE) {
+            throw new ProtoException("server view distance above cap: " + chunks);
+        }
+        return new ServerViewDistanceS2C(chunks);
     }
 
     private static MapCompatibilityS2C decodeMapCompatibilityS2C(

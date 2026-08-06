@@ -26,6 +26,7 @@ import cn.net.rms.confluxmap.core.tile.BiomeTileKeys;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.tile.TileUpdate;
 import cn.net.rms.confluxmap.core.util.Argb;
+import cn.net.rms.confluxmap.core.util.ChunkViewport;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
@@ -63,6 +64,54 @@ class PredictionTileServiceTest {
         final TileService uploads
     ) {
         return new PredictionTileService(sessionGuard, state, executors, uploads);
+    }
+
+    @Test
+    void localAuthorityBoundaryRefreshesAnAlreadyUploadedSelectedSource(
+        @TempDir final Path tempDir
+    ) throws InterruptedException {
+        final SessionGuard sessionGuard = new SessionGuard();
+        final SessionGuard.Session session = sessionGuard.begin(WORLD, DIM);
+        final MapWorldService worlds = new MapWorldService();
+        worlds.switchSession(session);
+        final MapExecutors executors = new MapExecutors();
+        final TileService uploads = new TileService(
+            worlds, executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.FLAT, WorldPreset.DEFAULT);
+        state.setFlatBaseline(new FlatBaseline(1, 63, SurfaceKind.LAND.ordinal(), 11, 0));
+        final PredictionTileService predictionTiles = newService(
+            sessionGuard, state, executors, uploads
+        );
+        predictionTiles.bindCorrectionStore(new CorrectionStore(tempDir));
+        final TileKey key = new TileKey(WORLD, DIM, "surface!pred", 0, 0, 0);
+
+        try {
+            predictionTiles.setViewport(DIM, 0, 0, 0, 0, 0);
+            predictionTiles.requestTile(key);
+            awaitIdle(predictionTiles);
+            assertTrue(latestUpdate(uploads, key).argbPixels()[8 * 256 + 8] != Argb.TRANSPARENT);
+
+            uploads.setLocalAuthorityViewport(new ChunkViewport(0, 0, 0, 0));
+            predictionTiles.refreshLiveCoverage();
+            awaitIdle(predictionTiles);
+            assertEquals(
+                Argb.TRANSPARENT,
+                latestUpdate(uploads, key).argbPixels()[8 * 256 + 8],
+                "the player-view chunk must hide sync and prediction without comparing revisions"
+            );
+
+            uploads.setLocalAuthorityViewport(new ChunkViewport(1, 1, 0, 0));
+            predictionTiles.refreshLiveCoverage();
+            awaitIdle(predictionTiles);
+            assertTrue(
+                latestUpdate(uploads, key).argbPixels()[8 * 256 + 8] != Argb.TRANSPARENT,
+                "leaving player view must restore the timestamp-selected outer source"
+            );
+        } finally {
+            executors.shutdown(2000L);
+        }
     }
 
     @Test
@@ -435,6 +484,59 @@ class PredictionTileServiceTest {
     }
 
     @Test
+    void synchronizedSurfaceUsesPerPixelBlockLightAtNight(@TempDir final Path tempDir) {
+        final SessionGuard sessionGuard = new SessionGuard();
+        final MapExecutors executors = new MapExecutors();
+        final DaylightModel daylight = new DaylightModel();
+        daylight.update(0f);
+        final TileService uploads = new TileService(
+            new MapWorldService(), executors, new ConfluxConfig(), daylight
+        );
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.FLAT, WorldPreset.DEFAULT);
+        state.setFlatBaseline(new FlatBaseline(1, 63, SurfaceKind.LAND.ordinal(), 11, 0));
+        final PredictionTileService predictionTiles = newService(
+            sessionGuard, state, executors, uploads
+        );
+        predictionTiles.bindDaylightModel(daylight);
+        final CorrectionStore corrections = new CorrectionStore(tempDir);
+        predictionTiles.bindCorrectionStore(corrections);
+        sessionGuard.begin(WORLD, DIM);
+        corrections.onSessionChanged(sessionGuard.current());
+
+        try {
+            final byte[] evaluated = new byte[PatchCodec.MASK_BYTES];
+            PatchCodec.setEvaluated(evaluated, 0);
+            PatchCodec.setEvaluated(evaluated, 1);
+            final long[] revisions = new long[PatchCodec.PIXELS];
+            Arrays.fill(revisions, Long.MIN_VALUE);
+            revisions[0] = 100L;
+            revisions[1] = 100L;
+            final byte[] light = new byte[PatchCodec.PIXELS];
+            light[0] = 15;
+            assertTrue(predictionTiles.applyCorrection(
+                new CorrectionStore.Key(DIM.toString(), 0, 0, 0),
+                1L,
+                new byte[Proto.PATCH_PRESENCE_BYTES],
+                new PatchCodec.Patch(evaluated, List.of(), revisions, light),
+                Proto.PATCH_MODE_RESIDUAL,
+                PredictorVersion.full(),
+                System.currentTimeMillis()
+            ));
+
+            final int[] pixels = predictionTiles.snapshotTile(
+                new TileKey(WORLD, DIM, "surface!pred", 0, 0, 0),
+                PredictionViewMode.EVERYWHERE
+            ).join();
+
+            assertTrue(Argb.red(pixels[0]) > Argb.red(pixels[1]));
+            assertTrue(Argb.green(pixels[0]) > Argb.green(pixels[1]));
+        } finally {
+            executors.shutdown(2000);
+        }
+    }
+
+    @Test
     void changingViewModeRefreshesCurrentAndReenteredTiles(
         @TempDir final Path tempDir
     ) throws InterruptedException {
@@ -780,6 +882,13 @@ class PredictionTileServiceTest {
             release.countDown();
             executors.shutdown(2000);
         }
+    }
+
+    private static TileUpdate latestUpdate(final TileService uploads, final TileKey key) {
+        return uploads.drainUploads(64).stream()
+            .filter(update -> update.key().equals(key))
+            .reduce((first, second) -> second)
+            .orElseThrow();
     }
 
     private static void awaitIdle(final PredictionTileService service) throws InterruptedException {

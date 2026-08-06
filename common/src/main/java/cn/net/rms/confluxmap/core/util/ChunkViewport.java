@@ -35,8 +35,25 @@ public record ChunkViewport(int minChunkX, int maxChunkX, int minChunkZ, int max
         );
     }
 
+    public static ChunkViewport centered(
+        final int centerChunkX, final int centerChunkZ, final int radius
+    ) {
+        if (radius < 0) {
+            throw new IllegalArgumentException("negative chunk viewport radius");
+        }
+        return new ChunkViewport(
+            Math.subtractExact(centerChunkX, radius), Math.addExact(centerChunkX, radius),
+            Math.subtractExact(centerChunkZ, radius), Math.addExact(centerChunkZ, radius)
+        );
+    }
+
     public long chunkCount() {
         return ((long) maxChunkX - minChunkX + 1L) * ((long) maxChunkZ - minChunkZ + 1L);
+    }
+
+    public boolean contains(final int chunkX, final int chunkZ) {
+        return chunkX >= minChunkX && chunkX <= maxChunkX
+            && chunkZ >= minChunkZ && chunkZ <= maxChunkZ;
     }
 
     public List<ChunkRegionSlice> regionSlices() {
@@ -62,6 +79,18 @@ public record ChunkViewport(int minChunkX, int maxChunkX, int minChunkZ, int max
                     Math.min(ChunkRegionSlice.REGION_CHUNKS - 1, maxChunkZ - regionMinChunkZ)
                 ));
             }
+        }
+        return List.copyOf(slices);
+    }
+
+    /** Region slices covering this viewport except for the player's local-authority rectangle. */
+    public List<ChunkRegionSlice> regionSlicesExcluding(final ChunkViewport excluded) {
+        if (excluded == null) {
+            return regionSlices();
+        }
+        final List<ChunkRegionSlice> slices = new ArrayList<>();
+        for (final ChunkRegionSlice slice : regionSlices()) {
+            slices.addAll(slice.excluding(excluded));
         }
         return List.copyOf(slices);
     }

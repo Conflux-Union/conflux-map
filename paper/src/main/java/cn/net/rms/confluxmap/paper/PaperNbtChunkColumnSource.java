@@ -112,6 +112,13 @@ final class PaperNbtChunkColumnSource implements ChunkColumnSource {
         return 1;
     }
 
+    @Override
+    public int blockLightAbove(final int x, final int surfaceY, final int z) {
+        final int y = surfaceY + 1;
+        final Section section = sectionAt(y);
+        return section == null ? 0 : nibble(section.blockLight, x, y, z);
+    }
+
     private static List<Section> parseSections(final ListTag<CompoundTag> list) {
         final List<Section> result = new ArrayList<>(list.size());
         for (final CompoundTag section : list) {
@@ -152,7 +159,8 @@ final class PaperNbtChunkColumnSource implements ChunkColumnSource {
                 Math.max(4, bitsFor(names.length)),
                 biomeIds,
                 longs(biomeContainer, "data"),
-                Math.max(1, bitsFor(biomeIds.length))
+                Math.max(1, bitsFor(biomeIds.length)),
+                bytes(section, "BlockLight")
             ));
         }
         return result;
@@ -220,6 +228,10 @@ final class PaperNbtChunkColumnSource implements ChunkColumnSource {
         return tag == null ? new int[0] : tag.getIntArray(key).orElseGet(() -> new int[0]);
     }
 
+    private static byte[] bytes(final CompoundTag tag, final String key) {
+        return tag == null ? new byte[0] : tag.getByteArray(key).orElseGet(() -> new byte[0]);
+    }
+
     private static ListTag<CompoundTag> compoundList(final CompoundTag tag, final String key) {
         final ListTag<?> list = tag == null ? null : tag.getListTag(key);
         if (list == null || !CompoundTag.class.equals(list.getTypeClass())) {
@@ -252,6 +264,15 @@ final class PaperNbtChunkColumnSource implements ChunkColumnSource {
         return bits;
     }
 
+    private static int nibble(final byte[] values, final int x, final int y, final int z) {
+        final int index = (Math.floorMod(y, 16) * 16 + z) * 16 + x;
+        final int byteIndex = index >>> 1;
+        if (byteIndex >= values.length) {
+            return 0;
+        }
+        return (values[byteIndex] >>> ((index & 1) * 4)) & 0xF;
+    }
+
     private record Section(
         int y,
         String[] names,
@@ -260,7 +281,8 @@ final class PaperNbtChunkColumnSource implements ChunkColumnSource {
         int bits,
         int[] biomeIds,
         long[] biomeData,
-        int biomeBits
+        int biomeBits,
+        byte[] blockLight
     ) {
     }
 }

@@ -3,8 +3,8 @@
  *
  * The Java side has already read and decompressed one chunk. This parser deliberately keeps no
  * generic NBT tree: it retains only status/revision, two heightmaps, section palettes/packed data,
- * and biomes, then emits the one or four centered columns required by LOD 4/3. Entity, structure,
- * tick and lighting payloads are skipped in-place.
+ * biomes and block light, then emits the centered columns required by the requested LOD. Entity,
+ * structure and tick payloads are skipped in-place.
  */
 
 #include <jni.h>
@@ -59,6 +59,11 @@ typedef struct {
 } CfxIntArray;
 
 typedef struct {
+    uint8_t *values;
+    int count;
+} CfxByteArray;
+
+typedef struct {
     char *name;
     int fluid;
 } CfxBlockEntry;
@@ -72,6 +77,7 @@ typedef struct {
     char **biomes;
     int biome_count;
     CfxLongArray biome_data;
+    CfxByteArray block_light;
 } CfxSection;
 
 typedef struct {
@@ -91,6 +97,7 @@ typedef struct {
     int surface_y;
     int fluid;
     int fluid_depth;
+    int block_light;
     const char *surface_name;
     const char *floor_name;
 } CfxSample;
@@ -250,6 +257,12 @@ static void cfxFreeIntArray(CfxIntArray *array) {
     array->count = 0;
 }
 
+static void cfxFreeByteArray(CfxByteArray *array) {
+    free(array->values);
+    array->values = NULL;
+    array->count = 0;
+}
+
 static void cfxFreeBlocks(CfxBlockEntry *blocks, int count) {
     if (blocks == NULL)
         return;
@@ -271,6 +284,7 @@ static void cfxFreeSection(CfxSection *section) {
     cfxFreeLongArray(&section->block_states);
     cfxFreeBiomes(section->biomes, section->biome_count);
     cfxFreeLongArray(&section->biome_data);
+    cfxFreeByteArray(&section->block_light);
     memset(section, 0, sizeof(*section));
 }
 
@@ -323,6 +337,24 @@ static int cfxReadIntArray(CfxNbtReader *reader, CfxIntArray *target) {
         return 0;
     }
     cfxFreeIntArray(target);
+    target->values = values;
+    target->count = count;
+    return 1;
+}
+
+static int cfxReadByteArray(CfxNbtReader *reader, CfxByteArray *target) {
+    const int count = cfxNbtCount(reader);
+    if (reader->failed || !cfxNbtNeed(reader, (size_t) count))
+        return 0;
+    uint8_t *values = count == 0 ? NULL : malloc((size_t) count);
+    if (count != 0 && values == NULL) {
+        reader->failed = 1;
+        return 0;
+    }
+    if (count != 0)
+        memcpy(values, reader->data + reader->pos, (size_t) count);
+    reader->pos += (size_t) count;
+    cfxFreeByteArray(target);
     target->values = values;
     target->count = count;
     return 1;
@@ -496,6 +528,8 @@ static int cfxParseSection(CfxNbtReader *reader, CfxSection *section) {
             cfxParseBlockStates(reader, section);
         } else if (type == NBT_COMPOUND && cfxSliceEquals(name, "biomes")) {
             cfxParseBiomes(reader, section);
+        } else if (type == NBT_BYTE_ARRAY && cfxSliceEquals(name, "BlockLight")) {
+            cfxReadByteArray(reader, &section->block_light);
         } else {
             cfxNbtSkip(reader, type, 1);
         }
@@ -673,6 +707,20 @@ static const CfxBlockEntry *cfxBlockAt(const CfxChunkNbt *chunk, int x, int y, i
     return &section->blocks[palette];
 }
 
+static int cfxBlockLightAt(const CfxChunkNbt *chunk, int x, int y, int z) {
+    const CfxSection *section = cfxSectionAt(chunk, y);
+    if (section == NULL || section->block_light.count == 0)
+        return 0;
+    int local_y = y % 16;
+    if (local_y < 0)
+        local_y += 16;
+    const int index = (local_y * 16 + z) * 16 + x;
+    const int byte_index = index >> 1;
+    if (byte_index < 0 || byte_index >= section->block_light.count)
+        return 0;
+    return (section->block_light.values[byte_index] >> ((index & 1) * 4)) & 0xF;
+}
+
 static int cfxContains(const char *name, const char *needle) {
     return name != NULL && strstr(name, needle) != NULL;
 }
@@ -774,6 +822,7 @@ static int cfxSummarizeSample(
     sample->surface_name = surface->name;
     sample->fluid = surface->fluid;
     sample->fluid_depth = 0;
+    sample->block_light = cfxBlockLightAt(chunk, x, surface_y + 1, z);
     sample->floor_name = NULL;
 
     const int has_fluid = fluid_surface->fluid == 1 || cfxIsIce(fluid_surface->name);
@@ -837,7 +886,9 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     const int stride = 1 << lod;
     const int side = 16 / stride;
     const int sample_count = side * side;
-    if ((*env)->GetArrayLength(env, out_numeric) < 1 + sample_count * 4
+    const int base_numeric_count = 1 + sample_count * 4;
+    const int numeric_capacity = (*env)->GetArrayLength(env, out_numeric);
+    if (numeric_capacity < base_numeric_count
         || (*env)->GetArrayLength(env, out_strings) < sample_count * 3) {
         return CFX_SCAN_BAD_ARGS;
     }
@@ -896,6 +947,22 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     const jlong revision = generated ? (jlong) chunk.revision : 0;
     (*env)->SetLongArrayRegion(env, out_revision, 0, 1, &revision);
     (*env)->SetIntArrayRegion(env, out_numeric, 0, 1 + sample_count * 4, numeric);
+    if (!(*env)->ExceptionCheck(env)
+        && numeric_capacity >= base_numeric_count + sample_count) {
+        jint *lights = sample_count == 0 ? NULL : malloc(sizeof(jint) * (size_t) sample_count);
+        if (sample_count != 0 && lights == NULL) {
+            free(numeric);
+            free(samples);
+            cfxFreeChunk(&chunk);
+            return CFX_SCAN_ALLOC;
+        }
+        for (int i = 0; i < sample_count; i++)
+            lights[i] = samples[i].block_light;
+        (*env)->SetIntArrayRegion(
+            env, out_numeric, base_numeric_count, sample_count, lights
+        );
+        free(lights);
+    }
     if (!(*env)->ExceptionCheck(env) && generated) {
         for (int i = 0; i < sample_count && !(*env)->ExceptionCheck(env); i++) {
             cfxSetString(env, out_strings, i * 3, samples[i].biome_name);

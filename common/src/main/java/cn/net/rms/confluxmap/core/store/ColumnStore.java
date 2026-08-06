@@ -66,6 +66,17 @@ public final class ColumnStore {
                 >= SampleSource.REAL_CACHED.priority();
     }
 
+    /** Comparable Minecraft world revision, or {@link Long#MIN_VALUE} for legacy cached chunks. */
+    public long realChunkSourceRevision(final int chunkX, final int chunkZ) {
+        final RegionColumns region = region(chunkX >> 4, chunkZ >> 4);
+        if (region == null
+            || region.chunkSource(chunkX & 15, chunkZ & 15).priority()
+                < SampleSource.REAL_CACHED.priority()) {
+            return Long.MIN_VALUE;
+        }
+        return region.chunkSourceRevision(chunkX & 15, chunkZ & 15);
+    }
+
     /** Highest sampled surface block at one world column, or empty when that column is unknown. */
     public OptionalInt surfaceYAt(final int blockX, final int blockZ) {
         return surfaceAt(blockX, blockZ).surfaceY();

@@ -20,6 +20,7 @@ import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.PolicyUpdateS2C;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
+import cn.net.rms.confluxmap.core.net.ServerViewDistanceS2C;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
@@ -87,6 +88,8 @@ public final class ClientNetworking {
             session.onPolicy(p);
         } else if (msg instanceof final MapCompatibilityS2C compatibility) {
             session.onCompatibility(compatibility);
+        } else if (msg instanceof final ServerViewDistanceS2C viewDistance) {
+            session.onServerViewDistance(viewDistance);
         } else if (msg instanceof final FlatBaselineS2C f) {
             session.onFlatBaselines(f);
         } else if (msg instanceof final PolicyUpdateS2C u) {

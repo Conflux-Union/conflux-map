@@ -23,6 +23,7 @@ import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
+import cn.net.rms.confluxmap.core.net.ServerViewDistanceS2C;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
@@ -159,6 +160,11 @@ public final class ServerNetworking {
         if (!flatEntries.isEmpty()) {
             send(player, new FlatBaselineS2C(flatEntries));
         }
+        if (clientHello.supportsServerViewDistance()) {
+            send(player, ServerViewDistanceS2C.bounded(
+                server.getPlayerManager().getViewDistance()
+            ));
+        }
         final HelloPolicyS2C policy = buildPolicy(server, selection);
         send(player, policy);
         ConfluxMapMod.LOGGER.info(
@@ -185,8 +191,8 @@ public final class ServerNetworking {
             ConfluxMapMod.getVersion(),
             Proto.PROTO_MAJOR,
             Proto.PROTO_MINOR,
-            PatchCodec.FORMAT_VERSION,
-            ChunkPatchCodec.FORMAT_VERSION,
+            selection.patchCodecVersion(),
+            selection.regionCodecVersion(),
             PredictorVersion.full(),
             mode,
             reason
@@ -205,7 +211,8 @@ public final class ServerNetworking {
             return;
         }
         companion.summaries().request(
-            server, player, req, payloadBytes, profile.forceAbsolute(), senderFor(player)
+            server, player, req, payloadBytes, profile.forceAbsolute(),
+            senderFor(player, profile.enhancedProfile())
         );
     }
 
@@ -221,7 +228,9 @@ public final class ServerNetworking {
             return;
         }
         companion.summaries().requestRegions(
-            server, player, request, payloadBytes, profile.forceAbsolute(), senderFor(player)
+            server, player, request, payloadBytes, profile.forceAbsolute(),
+            profile.enhancedProfile(),
+            senderFor(player, profile.enhancedProfile())
         );
     }
 
@@ -250,7 +259,8 @@ public final class ServerNetworking {
             return;
         }
         if (!companion.summaries().subscribe(
-            server, player.getUuid(), request, senderFor(player)
+            server, player.getUuid(), request,
+            senderFor(player, peerProfile(player).enhancedProfile())
         )) {
             send(player, new ErrorS2C(ErrorS2C.ERR_MALFORMED_REQUEST, "invalid map-sync viewport"));
         }
@@ -266,7 +276,8 @@ public final class ServerNetworking {
             return;
         }
         if (!companion.summaries().subscribeRegions(
-            server, player.getUuid(), request, senderFor(player)
+            server, player.getUuid(), request,
+            senderFor(player, peerProfile(player).enhancedProfile())
         )) {
             send(player, new ErrorS2C(ErrorS2C.ERR_MALFORMED_REQUEST, "invalid region-sync viewport"));
         }
@@ -358,16 +369,38 @@ public final class ServerNetworking {
         PlayNetworking.sendServer(player, CHANNEL, payload);
     }
 
-    private static RegionSummaryService.MessageSender senderFor(final ServerPlayerEntity player) {
+    private static RegionSummaryService.MessageSender senderFor(
+        final ServerPlayerEntity player,
+        final boolean enhancedProfile
+    ) {
         return new RegionSummaryService.MessageSender() {
             @Override
             public void send(final Message message) {
-                ServerNetworking.send(player, message);
+                ServerNetworking.send(player, wireMessage(message));
             }
 
             @Override
             public void sendEncoded(final Message message, final byte[] payload) {
-                ServerNetworking.send(player, payload);
+                if (enhancedProfile) {
+                    ServerNetworking.send(player, payload);
+                } else {
+                    ServerNetworking.send(player, wireMessage(message));
+                }
+            }
+
+            private Message wireMessage(final Message message) {
+                if (enhancedProfile) {
+                    return message;
+                }
+                try {
+                    return cn.net.rms.confluxmap.core.net.MapSyncWireProfiles.legacy(message);
+                } catch (final ProtoException e) {
+                    ConfluxMapMod.LOGGER.warn(
+                        "companion: could not downgrade {} ({})",
+                        message.getClass().getSimpleName(), e.getMessage()
+                    );
+                    return new ErrorS2C(ErrorS2C.ERR_MALFORMED_REQUEST, "could not encode legacy correction");
+                }
             }
         };
     }

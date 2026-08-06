@@ -17,6 +17,7 @@ import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
+import cn.net.rms.confluxmap.core.net.ServerViewDistanceS2C;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import cn.net.rms.confluxmap.server.CompanionPolicy;
@@ -150,6 +151,13 @@ final class PaperNetworking implements PluginMessageListener {
         if (!flat.isEmpty()) {
             send(player, new FlatBaselineS2C(flat));
         }
+        if (clientHello.supportsServerViewDistance()) {
+            final int playerSendDistance = player.getSendViewDistance();
+            send(player, ServerViewDistanceS2C.bounded(
+                playerSendDistance >= 0
+                    ? playerSendDistance : plugin.getServer().getViewDistance()
+            ));
+        }
         final HelloPolicyS2C policy = policy(selection);
         send(player, policy);
         plugin.getSLF4JLogger().info(
@@ -193,6 +201,7 @@ final class PaperNetworking implements PluginMessageListener {
         }
         companion.corrections().requestRegions(
             player.getUniqueId(), request, requestBytes, profile.forceAbsolute(),
+            profile.enhancedProfile(),
             sender(player.getUniqueId())
         );
     }
@@ -295,8 +304,8 @@ final class PaperNetworking implements PluginMessageListener {
             plugin.getPluginMeta().getVersion(),
             Proto.PROTO_MAJOR,
             Proto.PROTO_MINOR,
-            PatchCodec.FORMAT_VERSION,
-            ChunkPatchCodec.FORMAT_VERSION,
+            selection.patchCodecVersion(),
+            selection.regionCodecVersion(),
             PredictorVersion.full(),
             mode,
             reason
@@ -309,7 +318,7 @@ final class PaperNetworking implements PluginMessageListener {
             public void send(final Message message) {
                 final Player current = Bukkit.getPlayer(playerId);
                 if (current != null && current.isOnline()) {
-                    PaperNetworking.this.send(current, message);
+                    PaperNetworking.this.send(current, wireMessage(message));
                 }
             }
 
@@ -317,7 +326,34 @@ final class PaperNetworking implements PluginMessageListener {
             public void sendEncoded(final Message message, final byte[] payload) {
                 final Player current = Bukkit.getPlayer(playerId);
                 if (current != null && current.isOnline()) {
-                    PaperNetworking.this.send(current, payload);
+                    if (enhancedProfile()) {
+                        PaperNetworking.this.send(current, payload);
+                    } else {
+                        PaperNetworking.this.send(current, wireMessage(message));
+                    }
+                }
+            }
+
+            private boolean enhancedProfile() {
+                final MapSyncCompatibility.ServerSelection selection = profiles.get(playerId);
+                return selection == null || selection.enhancedProfile();
+            }
+
+            private Message wireMessage(final Message message) {
+                if (enhancedProfile()) {
+                    return message;
+                }
+                try {
+                    return cn.net.rms.confluxmap.core.net.MapSyncWireProfiles.legacy(message);
+                } catch (final ProtoException e) {
+                    plugin.getSLF4JLogger().warn(
+                        "Could not downgrade {} for legacy peer: {}",
+                        message.getClass().getSimpleName(), e.getMessage()
+                    );
+                    return new ErrorS2C(
+                        ErrorS2C.ERR_MALFORMED_REQUEST,
+                        "could not encode legacy correction"
+                    );
                 }
             }
         };

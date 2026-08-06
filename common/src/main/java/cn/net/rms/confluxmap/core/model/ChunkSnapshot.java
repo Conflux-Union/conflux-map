@@ -13,6 +13,8 @@ public final class ChunkSnapshot {
     public final int chunkX;
     public final int chunkZ;
     public final long sessionToken;
+    /** Comparable Minecraft world revision; {@link Long#MIN_VALUE} means legacy/unknown. */
+    public final long sourceRevision;
     public final short[] surfaceY;
     /** Stable registry identifier per captured column, for example {@code minecraft:plains}. */
     public final String[] biomeId;
@@ -35,6 +37,7 @@ public final class ChunkSnapshot {
         final int chunkX,
         final int chunkZ,
         final long sessionToken,
+        final long sourceRevision,
         final short[] surfaceY,
         final String[] biomeId,
         final byte[] fluidDepth,
@@ -52,6 +55,7 @@ public final class ChunkSnapshot {
         this.chunkX = chunkX;
         this.chunkZ = chunkZ;
         this.sessionToken = sessionToken;
+        this.sourceRevision = sourceRevision;
         this.surfaceY = surfaceY;
         this.biomeId = biomeId;
         this.fluidDepth = fluidDepth;
@@ -60,5 +64,24 @@ public final class ChunkSnapshot {
         this.overlayArgb = overlayArgb;
         this.kind = kind;
         this.light = light;
+    }
+
+    public ChunkSnapshot(
+        final int chunkX,
+        final int chunkZ,
+        final long sessionToken,
+        final short[] surfaceY,
+        final String[] biomeId,
+        final byte[] fluidDepth,
+        final int[] baseArgb,
+        final int[] tintArgb,
+        final int[] overlayArgb,
+        final byte[] kind,
+        final byte[] light
+    ) {
+        this(
+            chunkX, chunkZ, sessionToken, Long.MIN_VALUE, surfaceY, biomeId, fluidDepth,
+            baseArgb, tintArgb, overlayArgb, kind, light
+        );
     }
 }

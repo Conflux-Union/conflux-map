@@ -9,7 +9,7 @@ final class MapExportCompositorTest {
     private static final int BACKGROUND = 0xFF101018;
 
     @Test
-    void realPixelCoversTintedPredictionOverMapBackground() {
+    void selectedSynchronizedPixelCoversOlderRealPixel() {
         final int predicted = 0xFF80A060;
         final int tint = 0xFF808080;
         final int translucentReal = 0x800000FF;
@@ -18,8 +18,7 @@ final class MapExportCompositorTest {
             BACKGROUND, predicted, translucentReal, tint, 0x00000000
         );
 
-        final int expectedPrediction = 0xFF405030;
-        assertEquals(Argb.over(translucentReal, expectedPrediction), result);
+        assertEquals(0xFF405030, result);
     }
 
     @Test

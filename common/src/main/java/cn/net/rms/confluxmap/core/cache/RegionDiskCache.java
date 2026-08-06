@@ -306,7 +306,9 @@ public final class RegionDiskCache {
         final int chunkX = (data.rx() << 4) + chunkLocalX;
         final int chunkZ = (data.rz() << 4) + chunkLocalZ;
         return new ChunkSnapshot(
-            chunkX, chunkZ, token, surfaceY, biomeId, fluidDepth,
+            chunkX, chunkZ, token,
+            data.chunkSourceRevision()[chunkLocalZ * RegionColumns.CHUNKS + chunkLocalX],
+            surfaceY, biomeId, fluidDepth,
             baseArgb, tintArgb, overlayArgb, kind, light
         );
     }
@@ -406,6 +408,7 @@ public final class RegionDiskCache {
         final byte[] light = new byte[size * size];
         final byte[] chunkSource = new byte[RegionFileCodec.CHUNK_TABLE_ENTRIES];
         final int[] chunkUpdateSeconds = new int[RegionFileCodec.CHUNK_TABLE_ENTRIES];
+        final long[] chunkSourceRevision = new long[RegionFileCodec.CHUNK_TABLE_ENTRIES];
         final int copiedVersion = region.copyForFlush(
             surfaceY,
             biomeId,
@@ -416,12 +419,14 @@ public final class RegionDiskCache {
             kind,
             light,
             chunkSource,
-            chunkUpdateSeconds
+            chunkUpdateSeconds,
+            chunkSourceRevision
         );
 
         final RegionFileCodec.RegionData data = new RegionFileCodec.RegionData(
             region.regionX, region.regionZ, System.currentTimeMillis(),
-            chunkSource, chunkUpdateSeconds, surfaceY, fluidDepth, kind, biomeId,
+            chunkSource, chunkUpdateSeconds, chunkSourceRevision,
+            surfaceY, fluidDepth, kind, biomeId,
             baseArgb, tintArgb, overlayArgb, light
         );
         return writeAtomic(regionFile(type, region.regionX, region.regionZ), data, type.ordinal()) ? copiedVersion : -1;

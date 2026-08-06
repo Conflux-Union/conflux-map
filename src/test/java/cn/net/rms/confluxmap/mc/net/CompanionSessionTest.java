@@ -12,6 +12,7 @@ import cn.net.rms.confluxmap.core.net.MapSyncCompatibility;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
+import cn.net.rms.confluxmap.core.net.ServerViewDistanceS2C;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -32,6 +33,28 @@ class CompanionSessionTest {
         absolute.onPolicy(policyWithCorrections(true));
         assertEquals(MapSyncCompatibility.ClientMode.COMPATIBLE_ABSOLUTE, absolute.mapSyncMode());
         assertTrue(absolute.policy().flags().correctionsEnabled());
+        assertTrue(residual.enhancedMapSyncProfile());
+        assertTrue(absolute.enhancedMapSyncProfile());
+    }
+
+    @Test
+    void serverViewDistanceIsIndependentFromClientSettings() {
+        final CompanionSession session = new CompanionSession();
+        session.onHelloSent();
+        session.onServerViewDistance(new ServerViewDistanceS2C(12));
+        session.onCompatibility(compatibility(MapCompatibilityS2C.MODE_RESIDUAL));
+        session.onPolicy(policyWithCorrections(true));
+
+        assertEquals(12, session.serverViewDistance());
+    }
+
+    @Test
+    void releasedFallbackUsesLegacyRegionRevisionProfile() {
+        final CompanionSession session = new CompanionSession();
+        session.onHelloSent();
+        session.onPolicy(policyWithCorrections(true));
+
+        assertFalse(session.enhancedMapSyncProfile());
     }
 
     @Test

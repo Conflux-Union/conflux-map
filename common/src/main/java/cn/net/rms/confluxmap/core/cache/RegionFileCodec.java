@@ -28,9 +28,9 @@ import java.util.zip.InflaterInputStream;
  * <p>The compressed body starts with a UTF biome-identifier dictionary, followed by fixed-width
  * column records: {@code i16 surfaceY, u8 fluidDepth, u8 kind, u16 biomeIndex, i32 baseArgb,
  * i32 biomeTint, i32 overlayArgb, u8 light}. Biome index 0 means unknown; other values are
- * one-based dictionary indexes. Schema 3 introduced this stable identity plane. Older schemas
- * are rejected so {@link RegionDiskCache} quarantines and safely recaptures them rather than
- * guessing biome identity from a tint colour.
+ * one-based dictionary indexes. Schema 3 introduced this stable identity plane; schema 4 adds
+ * each chunk's world source revision to the uncompressed table. Schema 3 remains readable with
+ * unknown source revisions so existing caches keep their old local-first fallback behavior.
  *
  * <p>All multi-byte integers are big-endian (plain {@link DataOutputStream}/
  * {@link DataInputStream} semantics). This class only encodes/decodes streams; file
@@ -39,7 +39,8 @@ import java.util.zip.InflaterInputStream;
 public final class RegionFileCodec {
     public static final byte[] MAGIC = {'C', 'F', 'R', 'M'};
     public static final int FORMAT_VERSION = 1;
-    public static final int SCHEMA_VERSION = 3;
+    public static final int SCHEMA_VERSION = 4;
+    private static final int LEGACY_SCHEMA_VERSION = 3;
     /** Discriminates the on-disk record family; 0 = the fixed-width column layout described above. */
     public static final int SOURCE_CLASS = 0;
 
@@ -48,7 +49,7 @@ public final class RegionFileCodec {
     private static final int HEADER_RESERVED_SIZE = HEADER_SIZE - HEADER_PAYLOAD_SIZE;
 
     public static final int CHUNK_TABLE_ENTRIES = RegionColumns.CHUNKS * RegionColumns.CHUNKS;
-    private static final int CHUNK_TABLE_ENTRY_SIZE = 1 + 4; // u8 sourceOrdinal + u32 lastUpdateEpochSeconds
+    private static final int CHUNK_TABLE_ENTRY_SIZE = 1 + 4 + 8;
     public static final int CHUNK_TABLE_SIZE = CHUNK_TABLE_ENTRIES * CHUNK_TABLE_ENTRY_SIZE;
 
     public static final int COLUMN_COUNT = RegionColumns.SIZE * RegionColumns.SIZE;
@@ -76,6 +77,7 @@ public final class RegionFileCodec {
         long lastWriteEpochMs,
         byte[] chunkSourceOrdinal,
         int[] chunkUpdateEpochSeconds,
+        long[] chunkSourceRevision,
         short[] surfaceY,
         byte[] fluidDepth,
         byte[] kind,
@@ -88,6 +90,7 @@ public final class RegionFileCodec {
         public RegionData {
             requireLength("chunkSourceOrdinal", chunkSourceOrdinal.length, CHUNK_TABLE_ENTRIES);
             requireLength("chunkUpdateEpochSeconds", chunkUpdateEpochSeconds.length, CHUNK_TABLE_ENTRIES);
+            requireLength("chunkSourceRevision", chunkSourceRevision.length, CHUNK_TABLE_ENTRIES);
             requireLength("surfaceY", surfaceY.length, COLUMN_COUNT);
             requireLength("fluidDepth", fluidDepth.length, COLUMN_COUNT);
             requireLength("kind", kind.length, COLUMN_COUNT);
@@ -96,6 +99,28 @@ public final class RegionFileCodec {
             requireLength("biomeTint", biomeTint.length, COLUMN_COUNT);
             requireLength("overlayArgb", overlayArgb.length, COLUMN_COUNT);
             requireLength("light", light.length, COLUMN_COUNT);
+        }
+
+        public RegionData(
+            final int rx,
+            final int rz,
+            final long lastWriteEpochMs,
+            final byte[] chunkSourceOrdinal,
+            final int[] chunkUpdateEpochSeconds,
+            final short[] surfaceY,
+            final byte[] fluidDepth,
+            final byte[] kind,
+            final String[] biomeId,
+            final int[] baseArgb,
+            final int[] biomeTint,
+            final int[] overlayArgb,
+            final byte[] light
+        ) {
+            this(
+                rx, rz, lastWriteEpochMs, chunkSourceOrdinal, chunkUpdateEpochSeconds,
+                unknownRevisions(), surfaceY, fluidDepth, kind, biomeId,
+                baseArgb, biomeTint, overlayArgb, light
+            );
         }
 
         private static void requireLength(final String name, final int actual, final int expected) {
@@ -125,6 +150,7 @@ public final class RegionFileCodec {
         for (int i = 0; i < CHUNK_TABLE_ENTRIES; i++) {
             header.writeByte(data.chunkSourceOrdinal()[i]);
             header.writeInt(data.chunkUpdateEpochSeconds()[i]);
+            header.writeLong(data.chunkSourceRevision()[i]);
         }
         header.flush();
 
@@ -199,7 +225,7 @@ public final class RegionFileCodec {
             throw new RegionFileException("unsupported format version " + formatVersion);
         }
         final int schemaVersion = header.readUnsignedByte();
-        if (schemaVersion != SCHEMA_VERSION) {
+        if (schemaVersion != SCHEMA_VERSION && schemaVersion != LEGACY_SCHEMA_VERSION) {
             throw new RegionFileException("unsupported schema version " + schemaVersion);
         }
         final int sourceClass = header.readUnsignedByte();
@@ -222,9 +248,13 @@ public final class RegionFileCodec {
 
         final byte[] chunkSourceOrdinal = new byte[CHUNK_TABLE_ENTRIES];
         final int[] chunkUpdateEpochSeconds = new int[CHUNK_TABLE_ENTRIES];
+        final long[] chunkSourceRevision = unknownRevisions();
         for (int i = 0; i < CHUNK_TABLE_ENTRIES; i++) {
             chunkSourceOrdinal[i] = header.readByte();
             chunkUpdateEpochSeconds[i] = header.readInt();
+            if (schemaVersion >= SCHEMA_VERSION) {
+                chunkSourceRevision[i] = header.readLong();
+            }
         }
 
         final short[] surfaceY = new short[COLUMN_COUNT];
@@ -270,8 +300,14 @@ public final class RegionFileCodec {
         }
 
         return new RegionData(
-            rx, rz, lastWriteEpochMs, chunkSourceOrdinal, chunkUpdateEpochSeconds,
+            rx, rz, lastWriteEpochMs, chunkSourceOrdinal, chunkUpdateEpochSeconds, chunkSourceRevision,
             surfaceY, fluidDepth, kind, biomeId, baseArgb, biomeTint, overlayArgb, light
         );
+    }
+
+    private static long[] unknownRevisions() {
+        final long[] revisions = new long[CHUNK_TABLE_ENTRIES];
+        Arrays.fill(revisions, Long.MIN_VALUE);
+        return revisions;
     }
 }

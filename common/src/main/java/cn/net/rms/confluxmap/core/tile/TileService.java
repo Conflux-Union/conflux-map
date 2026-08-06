@@ -11,6 +11,9 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.model.TileKey;
+import cn.net.rms.confluxmap.core.net.PatchCodec;
+import cn.net.rms.confluxmap.core.predict.CorrectionTile;
+import cn.net.rms.confluxmap.core.predict.MapSourceSelector;
 import cn.net.rms.confluxmap.core.store.ColumnStore;
 import cn.net.rms.confluxmap.core.store.MapWorld;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
@@ -18,6 +21,7 @@ import cn.net.rms.confluxmap.core.store.RegionColumns;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.util.Argb;
+import cn.net.rms.confluxmap.core.util.ChunkViewport;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -79,6 +83,7 @@ public final class TileService {
      */
     private volatile RegionCacheService regionCache;
     private volatile Consumer<TileKey> realCoverageListener = ignored -> { };
+    private volatile ChunkViewport localAuthorityViewport;
 
     public TileService(
         final MapWorldService mapWorlds,
@@ -102,6 +107,11 @@ public final class TileService {
         realCoverageListener = listener == null ? ignored -> { } : listener;
     }
 
+    /** Publishes the server send-distance snapshot used for local source authority. */
+    public void setLocalAuthorityViewport(final ChunkViewport viewport) {
+        localAuthorityViewport = viewport;
+    }
+
     /** Main thread, from the session tracker: forget every queued/in-flight tile and pending upload. */
     public void onSessionChanged(final SessionGuard.Session session) {
         synchronized (this) {
@@ -112,6 +122,7 @@ public final class TileService {
             viewport = null;
             viewportRegionLoadCursor = 0L;
         }
+        localAuthorityViewport = null;
     }
 
     /** Where the viewer currently is, for dirty-tile composition priority. */
@@ -271,8 +282,41 @@ public final class TileService {
      * Every supported LOD remains chunk-aligned: LOD0 has 16 pixels per chunk and LOD4 has one.
      */
     public void maskKnownRealPixels(final TileKey realKey, final int[] predictedPixels) {
+        maskPredictedPixels(realKey, predictedPixels, null, false);
+    }
+
+    /** Keeps prediction below both real sources while allowing newer synchronized chunks through. */
+    public void maskPredictedPixels(
+        final TileKey realKey,
+        final int[] predictedPixels,
+        final CorrectionTile corrections,
+        final boolean enhancedProfile
+    ) {
+        maskPredictedPixels(
+            realKey,
+            predictedPixels,
+            corrections == null ? null : corrections.copyEvaluated(),
+            corrections == null ? null : corrections.copyPixelSourceRevisions(),
+            enhancedProfile
+        );
+    }
+
+    public void maskPredictedPixels(
+        final TileKey realKey,
+        final int[] predictedPixels,
+        final byte[] syncEvaluated,
+        final long[] syncSourceRevisions,
+        final boolean enhancedProfile
+    ) {
         if (predictedPixels.length != RegionColumns.SIZE * RegionColumns.SIZE) {
             throw new IllegalArgumentException("predictedPixels must contain one 256x256 tile");
+        }
+        if (syncEvaluated != null && syncEvaluated.length != PatchCodec.MASK_BYTES) {
+            throw new IllegalArgumentException("sync evaluated mask has the wrong length");
+        }
+        if (syncSourceRevisions != null
+            && syncSourceRevisions.length != RegionColumns.SIZE * RegionColumns.SIZE) {
+            throw new IllegalArgumentException("sync source revisions have the wrong length");
         }
         final MapWorld world = mapWorlds.current();
         if (world == null
@@ -288,19 +332,35 @@ public final class TileService {
         final int baseChunkZ = realKey.tileZ() * chunksPerTile;
         for (int chunkDz = 0; chunkDz < chunksPerTile; chunkDz++) {
             for (int chunkDx = 0; chunkDx < chunksPerTile; chunkDx++) {
-                if (!store.hasRealChunk(baseChunkX + chunkDx, baseChunkZ + chunkDz)) {
+                final int chunkX = baseChunkX + chunkDx;
+                final int chunkZ = baseChunkZ + chunkDz;
+                final ChunkViewport localViewport = localAuthorityViewport;
+                final boolean locallyAuthoritative = localViewport != null
+                    && localViewport.contains(chunkX, chunkZ);
+                final boolean localPresent = store.hasRealChunk(chunkX, chunkZ);
+                if (!locallyAuthoritative && !localPresent) {
                     continue;
                 }
+                final long localRevision = localPresent
+                    ? store.realChunkSourceRevision(chunkX, chunkZ)
+                    : MapSourceSelector.UNKNOWN_REVISION;
                 final int pixelX = chunkDx * pixelsPerChunk;
                 final int pixelZ = chunkDz * pixelsPerChunk;
                 for (int dz = 0; dz < pixelsPerChunk; dz++) {
                     final int row = (pixelZ + dz) * RegionColumns.SIZE;
-                    Arrays.fill(
-                        predictedPixels,
-                        row + pixelX,
-                        row + pixelX + pixelsPerChunk,
-                        Argb.TRANSPARENT
-                    );
+                    for (int dx = 0; dx < pixelsPerChunk; dx++) {
+                        final int pixel = row + pixelX + dx;
+                        final boolean syncPresent = syncEvaluated != null
+                            && (syncEvaluated[pixel >>> 3] & (1 << (pixel & 7))) != 0;
+                        final long syncRevision = syncPresent && syncSourceRevisions != null
+                            ? syncSourceRevisions[pixel]
+                            : MapSourceSelector.UNKNOWN_REVISION;
+                        if (locallyAuthoritative || !MapSourceSelector.syncWins(
+                            localPresent, localRevision, syncPresent, syncRevision, enhancedProfile
+                        )) {
+                            predictedPixels[pixel] = Argb.TRANSPARENT;
+                        }
+                    }
                 }
             }
         }
