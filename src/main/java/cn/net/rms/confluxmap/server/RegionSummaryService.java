@@ -1371,6 +1371,12 @@ public final class RegionSummaryService {
         //$$ } catch (final CompletionException e) {
         //$$     throw new IOException("failed to read chunk " + pos, e.getCause());
         //$$ }
+        //#elseif MC>=12000
+        //$$ try {
+        //$$     return world.getChunkManager().threadedAnvilChunkStorage.getNbt(pos).join().orElse(null);
+        //$$ } catch (final CompletionException e) {
+        //$$     throw new IOException("failed to read chunk " + pos, e.getCause());
+        //$$ }
         //#else
         return world.getChunkManager().threadedAnvilChunkStorage.getNbt(pos);
         //#endif

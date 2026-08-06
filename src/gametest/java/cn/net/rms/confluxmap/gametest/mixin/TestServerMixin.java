@@ -1,13 +1,15 @@
 package cn.net.rms.confluxmap.gametest.mixin;
 
 import java.util.Collection;
-//#if MC<12100
+//#if MC<11903
+import net.minecraft.util.registry.DynamicRegistryManager;
+import net.minecraft.util.registry.Registry;
+//#endif
+//#if MC<11800
 import net.minecraft.resource.ResourcePackManager;
 import net.minecraft.resource.ServerResourceManager;
 import net.minecraft.test.GameTestBatch;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.registry.DynamicRegistryManager;
-import net.minecraft.util.registry.Registry;
 import net.minecraft.util.registry.SimpleRegistry;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.dimension.DimensionOptions;
@@ -16,12 +18,19 @@ import net.minecraft.world.level.storage.LevelStorage;
 import net.minecraft.world.gen.GeneratorOptions;
 import net.minecraft.world.gen.chunk.ChunkGenerator;
 import net.minecraft.world.gen.chunk.NoiseChunkGenerator;
+//#elseif MC<11903
+//$$ import net.minecraft.world.dimension.DimensionOptions;
+//$$ import net.minecraft.world.dimension.DimensionType;
+//$$ import net.minecraft.world.gen.GeneratorOptions;
+//$$ import net.minecraft.world.gen.chunk.ChunkGenerator;
 //#else
 //$$ import net.minecraft.registry.RegistryKey;
-//$$ import net.minecraft.util.math.random.Random;
 //$$ import net.minecraft.world.gen.WorldPreset;
 //$$ import net.minecraft.world.gen.WorldPresets;
 //$$ import org.objectweb.asm.Opcodes;
+//#endif
+//#if MC>=12100
+//$$ import net.minecraft.util.math.random.Random;
 //#endif
 import net.minecraft.test.TestServer;
 import org.spongepowered.asm.mixin.Mixin;
@@ -39,15 +48,7 @@ abstract class TestServerMixin {
     //$$  */
     //$$ private static final int FIXED_TEST_POS_XZ = 1_048_576;
     //$$
-    //$$ /**
-    //$$  * Pins the batch position. Vanilla draws a random x/z from {@code world.random} across
-    //$$  * {@code TEST_POS_XZ_RANGE} (+-14999992), so every run faced different generated terrain and
-    //$$  * anything asserted about a predicted or generated surface was a lottery - the same code
-    //$$  * passed one CI run and failed the next. The seed is already fixed; this fixes the place.
-    //$$  *
-    //$$  * <p>The redirect carries no {@code ordinal}, so it covers both the x and the z draw.
-    //$$  * 1.17.1 needs no counterpart: its {@code runTestBatches} uses a constant {@code (0, 4, 0)}.
-    //$$  */
+    //$$ /** Pins the otherwise random GameTest batch position for deterministic terrain assertions. */
     //$$ @Redirect(
     //$$     method = "runTestBatches",
     //$$     at = @At(
@@ -58,11 +59,11 @@ abstract class TestServerMixin {
     //$$ private int useFixedTestPosition(final Random random, final int min, final int max) {
     //$$     return FIXED_TEST_POS_XZ;
     //$$ }
-    //$$
-    //$$ // The dimensions of the test world are built inside a synthetic lambda, which no mapping
-    //$$ // names: yarn leaves the intermediary name in place, while an unobfuscated build ships
-    //$$ // javac's own. The preprocessor can translate the descriptor but not the name, so each
-    //$$ // side has to spell its own - in official names on 26.1, which carries no refMap.
+    //#endif
+
+    //#if MC>=11903
+    //$$ // The dimensions of the test world are built inside a synthetic lambda. Replacing its
+    //$$ // FLAT preset keeps the normal Overworld without duplicating the data-loading path.
     //#if MC>=260100
     //$$ @Redirect(
     //$$     method = "lambda$create$1("
@@ -89,6 +90,30 @@ abstract class TestServerMixin {
     //#endif
     //$$ private static RegistryKey<WorldPreset> useNormalOverworldPreset() {
     //$$     return WorldPresets.DEFAULT;
+    //$$ }
+    //#elseif MC>=11800
+    //$$ @Redirect(
+    //$$     method = "method_40377",
+    //$$     at = @At(
+    //$$         value = "INVOKE",
+    //$$         target = "Lnet/minecraft/world/gen/GeneratorOptions;getRegistryWithReplacedOverworldGenerator("
+    //$$             + "Lnet/minecraft/util/registry/Registry;"
+    //$$             + "Lnet/minecraft/util/registry/Registry;"
+    //$$             + "Lnet/minecraft/world/gen/chunk/ChunkGenerator;"
+    //$$             + ")Lnet/minecraft/util/registry/Registry;"
+    //$$     )
+    //$$ )
+    //$$ private static Registry<DimensionOptions> useNormalOverworld(
+    //$$     final Registry<DimensionType> dimensionTypes,
+    //$$     final Registry<DimensionOptions> defaultDimensions,
+    //$$     final ChunkGenerator ignoredFlatGenerator
+    //$$ ) {
+    //$$     final DynamicRegistryManager registryManager = DynamicRegistryManager.BUILTIN.get();
+    //$$     return GeneratorOptions.getRegistryWithReplacedOverworldGenerator(
+    //$$         dimensionTypes,
+    //$$         defaultDimensions,
+    //$$         GeneratorOptions.createOverworldGenerator(registryManager, 0L)
+    //$$     );
     //$$ }
     //#else
     @Redirect(

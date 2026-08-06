@@ -78,7 +78,7 @@ public final class PredictionSyncGameTest implements FabricGameTest {
 
     //#if MC>=12105
     //$$ @GameTest(maxTicks = 400)
-    //#elseif MC>=12100
+    //#elseif MC>=12000
     //$$ @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = 400)
     //#else
     @GameTest(structureName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = 400)
@@ -117,7 +117,7 @@ public final class PredictionSyncGameTest implements FabricGameTest {
 
     //#if MC>=12105
     //$$ @GameTest(maxTicks = 400)
-    //#elseif MC>=12100
+    //#elseif MC>=12000
     //$$ @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = 400)
     //#else
     @GameTest(structureName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = 400)

@@ -99,8 +99,8 @@ loom {
             // Automated smoke tests: -PautoServer makes the client join a local
             // offline server on launch. CI supplies a virtual display for the client.
             if (project.hasProperty('autoServer')) {
-                // Minecraft 1.21+ no longer registers the legacy server/port options.
-                if (mcVersion >= 12100) {
+                // Minecraft 1.20.1+ uses Quick Play instead of the legacy server/port options.
+                if (mcVersion >= 12001) {
                     programArgs '--quickPlayMultiplayer', '127.0.0.1:25565'
                 } else {
                     programArgs '--server', '127.0.0.1', '--port', '25565'
@@ -250,13 +250,13 @@ view-distance=2
 '''
     }
 }
-if (project.hasProperty('connectionSmoke') && mcVersion >= 12100) {
+if (project.hasProperty('connectionSmoke') && mcVersion >= 12001) {
     tasks.named('runClient') {
         doFirst {
             final File runDirectory = project.file("${project.buildDir}/connection-smoke/client")
             delete runDirectory
             runDirectory.mkdirs()
-            // Fresh 1.21 clients show accessibility onboarding before Quick Play.
+            // Fresh 1.20.1+ clients show accessibility onboarding before Quick Play.
             // The smoke test has no UI driver, so complete that one-time choice up front.
             new File(runDirectory, 'options.txt').text = 'onboardAccessibility:false\n'
         }

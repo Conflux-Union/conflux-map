@@ -46,8 +46,10 @@ import java.util.Optional;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 //#endif
 import net.minecraft.client.MinecraftClient;
-//#if MC>=12100
+//#if MC>=12000
 //$$ import net.minecraft.client.gui.DrawContext;
+//#endif
+//#if MC>=12100
 //$$ import net.minecraft.client.render.RenderTickCounter;
 //#endif
 import net.minecraft.client.util.math.MatrixStack;
@@ -146,11 +148,15 @@ public final class MinimapHudRenderer {
     //$$     final GuiDraw draw = GuiDraw.of(context);
     //$$     final PoseStack matrices = draw.matrices();
     //$$     final float tickDelta = tickCounter.getGameTimeDeltaPartialTick(false);
-    //#elseif MC>=12000
+    //#elseif MC>=12100
     //$$ private void render(final DrawContext context, final RenderTickCounter tickCounter) {
     //$$     final GuiDraw draw = GuiDraw.of(context);
     //$$     final MatrixStack matrices = draw.matrices();
     //$$     final float tickDelta = tickCounter.getTickDelta(false);
+    //#elseif MC>=12000
+    //$$ private void render(final DrawContext context, final float tickDelta) {
+    //$$     final GuiDraw draw = GuiDraw.of(context);
+    //$$     final MatrixStack matrices = draw.matrices();
     //#else
     private void render(final MatrixStack matrices, final float tickDelta) {
         final GuiDraw draw = GuiDraw.of(matrices);

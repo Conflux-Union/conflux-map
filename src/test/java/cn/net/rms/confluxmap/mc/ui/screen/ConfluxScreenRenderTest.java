@@ -134,6 +134,7 @@ final class ConfluxScreenRenderTest {
     //$$         events.add("after");
     //$$     }
     //$$
+    //#if MC>=12002
     //$$     @Override
     //$$     protected void renderVanillaBackground(
     //$$         final DrawContext context,
@@ -141,6 +142,10 @@ final class ConfluxScreenRenderTest {
     //$$         final int mouseY,
     //$$         final float tickDelta
     //$$     ) {
+    //#else
+    //$$     @Override
+    //$$     protected void renderVanillaBackground(final DrawContext context) {
+    //#endif
     //$$         backgrounds++;
     //$$         events.add("background");
     //$$     }

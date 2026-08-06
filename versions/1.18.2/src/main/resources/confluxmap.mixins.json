@@ -1,0 +1,19 @@
+{
+  "required": true,
+  "package": "cn.net.rms.confluxmap.mixin",
+  "compatibilityLevel": "JAVA_$java_version",
+  "mixins": [],
+  "client": [
+    "ChatHudMixin",
+    "ClientChunkManagerMixin",
+    "ClientPlayNetworkHandlerMixin",
+    "InGameHudMixin",
+    "ScreenMixin",
+    "StatusEffectHudMixin",
+    "ToastHudMixin",
+    "WorldRendererMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

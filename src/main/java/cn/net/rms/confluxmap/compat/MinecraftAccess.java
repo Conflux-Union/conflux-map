@@ -24,7 +24,7 @@ public final class MinecraftAccess {
     }
 
     public static int viewDistance(final MinecraftClient client) {
-        //#if MC>=12100
+        //#if MC>=12000
         //$$ return client.options.getViewDistance().getValue();
         //#else
         return client.options.viewDistance;
@@ -59,7 +59,7 @@ public final class MinecraftAccess {
     }
 
     public static void sendChatMessage(final MinecraftClient client, final String message) {
-        //#if MC>=12100
+        //#if MC>=12000
         //$$ if (client.getNetworkHandler() != null) {
         //$$     client.getNetworkHandler().sendChatMessage(message);
         //$$ }
@@ -85,7 +85,7 @@ public final class MinecraftAccess {
 
     /** Sends one command without the leading slash through the version-appropriate chat path. */
     public static void sendCommand(final MinecraftClient client, final String command) {
-        //#if MC>=12100
+        //#if MC>=12000
         //$$ if (client.getNetworkHandler() != null) {
         //$$     client.getNetworkHandler().sendChatCommand(command);
         //$$ }
@@ -105,7 +105,7 @@ public final class MinecraftAccess {
     }
 
     public static InputStream openResource(final MinecraftClient client, final Identifier id) throws IOException {
-        //#if MC>=12100
+        //#if MC>=12000
         //$$ return client.getResourceManager().getResource(id)
         //$$     .orElseThrow(() -> new IOException("missing resource: " + id))
         //$$     .getInputStream();
@@ -119,7 +119,7 @@ public final class MinecraftAccess {
         final Text message,
         final boolean broadcastToOps
     ) {
-        //#if MC>=12100
+        //#if MC>=12000
         //$$ source.sendFeedback(() -> message, broadcastToOps);
         //#else
         source.sendFeedback(message, broadcastToOps);

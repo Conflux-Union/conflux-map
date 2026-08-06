@@ -17,10 +17,10 @@ import net.minecraft.client.util.Window;
 //#elseif MC>=12108
 //$$ import net.minecraft.client.render.RawProjectionMatrix;
 //#endif
-//#elseif MC>=12100
+//#elseif MC>=12000
 //$$ import com.mojang.blaze3d.systems.VertexSorter;
 //#endif
-//#if MC>=12100
+//#if MC>=11904
 //$$ import org.joml.Matrix4f;
 //#else
 import net.minecraft.util.math.Matrix4f;
@@ -90,7 +90,7 @@ public final class OffscreenCanvas {
         //#if MC<12105
         framebuffer.beginWrite(true);
         //#endif
-        //#if MC>=12100
+        //#if MC>=12000
         //$$ RenderSystem.backupProjectionMatrix();
         //#endif
         //#if MC>=12108
@@ -104,7 +104,7 @@ public final class OffscreenCanvas {
 
     /** Modern GUI rendering culls map quads unless the canvas uses the same downward Y axis. */
     private static Matrix4f canvasProjection(final int sizePx) {
-        //#if MC>=12100
+        //#if MC>=12000
         //$$ return ortho(0f, sizePx, sizePx, 0f);
         //#else
         return ortho(0f, sizePx, 0f, sizePx);
@@ -122,7 +122,7 @@ public final class OffscreenCanvas {
         //$$ // The canvas installs its own identity model-view, so the depth range only has to cover
         //$$ // the z=0 plane every canvas quad sits on.
         //$$ return new Matrix4f().setOrtho(left, right, bottom, top, -1000f, 1000f);
-        //#elseif MC>=12100
+        //#elseif MC>=11904
         //$$ return new Matrix4f().setOrtho(left, right, bottom, top, 1000f, 21000f);
         //#else
         return Matrix4f.projectionMatrix(left, right, bottom, top, 1000f, 3000f);
@@ -137,7 +137,7 @@ public final class OffscreenCanvas {
         //$$ RenderSystem.setProjectionMatrix(projectionMatrix.set(projection), ProjectionType.ORTHOGRAPHIC);
         //#elseif MC>=12103
         //$$ RenderSystem.setProjectionMatrix(projection, ProjectionType.ORTHOGRAPHIC);
-        //#elseif MC>=12100
+        //#elseif MC>=12000
         //$$ RenderSystem.setProjectionMatrix(projection, VertexSorter.BY_Z);
         //#else
         RenderSystem.setProjectionMatrix(projection);
@@ -155,7 +155,7 @@ public final class OffscreenCanvas {
         //#if MC>=12108
         //$$ RenderSystem.getModelViewStack().popMatrix();
         //#endif
-        //#if MC>=12100
+        //#if MC>=12000
         //$$ RenderSystem.restoreProjectionMatrix();
         //#else
         final Window window = client.getWindow();

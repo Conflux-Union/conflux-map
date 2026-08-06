@@ -1,0 +1,2 @@
+# Mapping file for version 1.17.1 to 1.18.2.
+# Pure renames are resolved through intermediary; API-shape changes use source branches.

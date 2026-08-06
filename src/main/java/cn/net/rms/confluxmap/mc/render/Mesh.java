@@ -50,7 +50,7 @@ import net.minecraft.client.render.VertexFormats;
 //$$ import org.joml.Vector3f;
 //$$ import org.joml.Vector4f;
 //#endif
-//#elseif MC>=12100
+//#elseif MC>=11904
 //$$ import net.minecraft.client.render.BufferRenderer;
 //$$ import org.joml.Matrix4f;
 //#else

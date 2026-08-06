@@ -1,0 +1,9 @@
+# Extra mappings applied when deriving the 1.20.1 sources from 1.18.2.
+#
+# Only pure class relocations belong here. API-shape changes use source branches.
+
+# 1.19.3 moved the registry classes out of net.minecraft.util.registry.
+net.minecraft.util.registry.RegistryKey net.minecraft.registry.RegistryKey
+
+# 1.19.3 moved the tag classes under net.minecraft.registry.tag.
+net.minecraft.tag.FluidTags net.minecraft.registry.tag.FluidTags

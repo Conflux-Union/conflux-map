@@ -23,6 +23,9 @@ import net.minecraft.entity.passive.StriderEntity;
 import net.minecraft.entity.passive.VillagerEntity;
 import net.minecraft.entity.passive.WolfEntity;
 import net.minecraft.item.ItemStack;
+//#if MC>=12000 && MC<12100
+//$$ import net.minecraft.registry.Registries;
+//#endif
 import net.minecraft.util.Identifier;
 
 /**
@@ -211,7 +214,7 @@ public final class EntityIconManager {
     }
 
     private static String mooshroomVariant(final Entity entity) {
-        //#if MC>=12100
+        //#if MC>=12000
         //$$ return ((MooshroomEntity) entity).getVariant().asString();
         //#else
         return ((MooshroomEntity) entity).getMooshroomType().name().toLowerCase(Locale.ROOT);
@@ -224,6 +227,9 @@ public final class EntityIconManager {
         //$$ return ((CatEntity) entity).getVariant().getKey()
         //$$     .map(key -> key.getValue().getPath())
         //$$     .orElse(null);
+        //#elseif MC>=12000
+        //$$ final Identifier id = Registries.CAT_VARIANT.getId(((CatEntity) entity).getVariant());
+        //$$ return id == null ? null : id.getPath();
         //#else
         final int type = ((CatEntity) entity).getCatType();
         return type >= 0 && type < CAT_TYPE_NAMES.length ? CAT_TYPE_NAMES[type] : null;
@@ -231,7 +237,7 @@ public final class EntityIconManager {
     }
 
     private static String foxVariant(final Entity entity) {
-        //#if MC>=12100
+        //#if MC>=12000
         //$$ return ((FoxEntity) entity).getVariant().asString();
         //#else
         return ((FoxEntity) entity).getFoxType().name().toLowerCase(Locale.ROOT);
@@ -239,7 +245,7 @@ public final class EntityIconManager {
     }
 
     private static String parrotVariant(final Entity entity) {
-        //#if MC>=12100
+        //#if MC>=12000
         //$$ return String.valueOf(((ParrotEntity) entity).getVariant().getId());
         //#else
         return String.valueOf(((ParrotEntity) entity).getVariant());
@@ -248,7 +254,7 @@ public final class EntityIconManager {
 
     /** Shared by llama and trader_llama - TraderLlamaEntity extends LlamaEntity and inherits getVariant(). */
     private static String llamaVariant(final Entity entity) {
-        //#if MC>=12100
+        //#if MC>=12000
         //$$ return String.valueOf(((LlamaEntity) entity).getVariant().ordinal());
         //#else
         return String.valueOf(((LlamaEntity) entity).getVariant());
@@ -256,7 +262,7 @@ public final class EntityIconManager {
     }
 
     private static String rabbitVariant(final Entity entity) {
-        //#if MC>=12100
+        //#if MC>=12000
         //$$ return String.valueOf(((RabbitEntity) entity).getVariant().getId());
         //#else
         return String.valueOf(((RabbitEntity) entity).getRabbitType());
@@ -290,7 +296,7 @@ public final class EntityIconManager {
         //$$ return ((VillagerEntity) entity).getVillagerData().profession().getKey()
         //$$     .map(key -> key.getValue().getPath())
         //$$     .orElse("");
-        //#elseif MC>=12100
+        //#elseif MC>=12000
         //$$ return ((VillagerEntity) entity).getVillagerData().getProfession().id();
         //#else
         return ((VillagerEntity) entity).getVillagerData().getProfession().getId();

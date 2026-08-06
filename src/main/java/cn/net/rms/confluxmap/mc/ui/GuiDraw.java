@@ -118,8 +118,10 @@ public final class GuiDraw {
         //#if MC>=12106
         //$$ // 1.21.6 hoisted the background out of Screen.render into Screen.renderWithTooltip,
         //$$ // which already ran it before renderContents; drawing it again doubles applyBlur.
-        //#elseif MC>=12000
+        //#elseif MC>=12002
         //$$ screen.renderBackground(context, mouseX, mouseY, tickDelta);
+        //#elseif MC>=12000
+        //$$ screen.renderBackground(context);
         //#else
         screen.renderBackground(matrices);
         //#endif

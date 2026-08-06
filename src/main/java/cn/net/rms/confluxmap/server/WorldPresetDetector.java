@@ -8,9 +8,9 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.world.biome.source.BiomeSource;
 import net.minecraft.world.biome.source.MultiNoiseBiomeSource;
 import net.minecraft.world.biome.source.TheEndBiomeSource;
-//#if MC>=11800
+//#if MC>=11903
 //$$ import net.minecraft.world.biome.source.MultiNoiseBiomeSourceParameterLists;
-//#else
+//#elseif MC<11800
 import net.minecraft.world.biome.source.VanillaLayeredBiomeSource;
 //#endif
 import net.minecraft.world.gen.chunk.ChunkGenerator;
@@ -49,7 +49,7 @@ public final class WorldPresetDetector {
             return WorldPreset.CUSTOM;
         }
         final BiomeSource source = generator.getBiomeSource();
-        //#if MC>=11800
+        //#if MC>=11903
         //$$ if (source instanceof final MultiNoiseBiomeSource multiNoise) {
         //$$     if (multiNoise.matchesInstance(MultiNoiseBiomeSourceParameterLists.NETHER)) {
         //$$         return WorldPreset.DEFAULT;
@@ -59,6 +59,20 @@ public final class WorldPresetDetector {
         //$$             return WorldPreset.AMPLIFIED;
         //$$         }
         //$$         return noise.matchesSettings(ChunkGeneratorSettings.LARGE_BIOMES)
+        //$$             ? WorldPreset.LARGE_BIOMES
+        //$$             : WorldPreset.DEFAULT;
+        //$$     }
+        //$$ }
+        //#elseif MC>=11800
+        //$$ if (source instanceof final MultiNoiseBiomeSource multiNoise) {
+        //$$     if (multiNoise.matchesInstance(MultiNoiseBiomeSource.Preset.NETHER)) {
+        //$$         return WorldPreset.DEFAULT;
+        //$$     }
+        //$$     if (multiNoise.matchesInstance(MultiNoiseBiomeSource.Preset.OVERWORLD)) {
+        //$$         if (noise.matchesSettings(world.getSeed(), ChunkGeneratorSettings.AMPLIFIED)) {
+        //$$             return WorldPreset.AMPLIFIED;
+        //$$         }
+        //$$         return noise.matchesSettings(world.getSeed(), ChunkGeneratorSettings.LARGE_BIOMES)
         //$$             ? WorldPreset.LARGE_BIOMES
         //$$             : WorldPreset.DEFAULT;
         //$$     }
