@@ -26,10 +26,11 @@ public final class ChunkSnapshot {
     public final byte[] kind;
     /**
      * Block-light level (0-15) at the air block above the sampled surface position. Captured
-     * for every layer (cheap, one extra light query per column) but only consumed by the SURFACE
-     * layer's dynamic day/night shading ({@code core.color.ShadingPipeline#applyDaylight}) -
-     * CAVE/NETHER/END layers already bake their light into {@link #baseArgb} at snapshot time
-     * (see {@code McChunkSnapshotFactory}'s class javadoc) and ignore this field entirely.
+     * for every layer (cheap, one extra light query per column). SURFACE consumes it for dynamic
+     * day/night shading ({@code core.color.ShadingPipeline#applyDaylight}); NETHER_CEILING uses it
+     * to replace the ambient tint during tile composition so authoritative and synchronized roof
+     * pixels share the same light path. Other CAVE/NETHER/END layers bake light into
+     * {@link #baseArgb} at snapshot time.
      */
     public final byte[] light;
 

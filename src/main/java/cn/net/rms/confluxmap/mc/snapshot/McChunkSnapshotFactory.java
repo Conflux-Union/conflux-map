@@ -98,12 +98,14 @@ public final class McChunkSnapshotFactory {
             }
         } else {
             final boolean netherAmbient = isNetherLayer(layer.type());
+            final boolean deferBlockLight = layer.type() == MapLayer.Type.NETHER_CEILING;
             final int worldMinY = world.getBottomY();
             final int worldMaxY = world.getTopY();
             for (int z = 0; z < 16; z++) {
                 for (int x = 0; x < 16; x++) {
                     sampleFloorColumn(
-                        chunk, world, pos, baseX, baseZ, x, z, pivotY, worldMinY, worldMaxY, netherAmbient, z * 16 + x,
+                        chunk, world, pos, baseX, baseZ, x, z, pivotY, worldMinY, worldMaxY,
+                        netherAmbient, deferBlockLight, z * 16 + x,
                         surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light
                     );
                 }
@@ -359,6 +361,7 @@ public final class McChunkSnapshotFactory {
         final int worldMinY,
         final int worldMaxY,
         final boolean netherAmbient,
+        final boolean deferBlockLight,
         final int index,
         final short[] surfaceY,
         final byte[] fluidDepth,
@@ -409,9 +412,14 @@ public final class McChunkSnapshotFactory {
                 final BlockState rockState = collapse(chunk.getBlockState(pos));
                 final int rockBase = sampler.colorFor(rockState, world, pos);
                 final int rockTint = tintResolver.resolve(rockState, world, pos);
+                final int crossSection = Argb.scale(
+                    Argb.multiply(rockBase, rockTint), CROSS_SECTION_DARKEN
+                );
                 surfaceY[index] = clampSurfaceY(clampedPivot);
                 kind[index] = (byte) SurfaceKind.LAND.ordinal();
-                baseArgb[index] = Argb.scale(Argb.multiply(rockBase, rockTint), CROSS_SECTION_DARKEN);
+                baseArgb[index] = deferBlockLight
+                    ? applyAmbientLight(crossSection, netherAmbient)
+                    : crossSection;
                 tintArgb[index] = 0xFFFFFFFF;
                 overlayArgb[index] = Argb.TRANSPARENT;
                 fluidDepth[index] = 0;
@@ -435,13 +443,23 @@ public final class McChunkSnapshotFactory {
 
         final int solidBase = sampler.colorFor(solidState, world, pos);
         final int solidTint = tintResolver.resolve(solidState, world, pos);
-        // This layer's own visible light is baked directly into baseArgb (tintArgb left neutral)
-        // rather than read back from the light[] plane below - see this class's javadoc and the S7
-        // report for why. light[] is still filled here (cheap - one extra lookup) purely so every
-        // layer produces a uniform ChunkSnapshot; SURFACE is the only layer that ever reads it back
-        // (core.color.ShadingPipeline#applyDaylight), for its dynamic day/night shading.
-        final int litColor = applyLight(Argb.multiply(solidBase, solidTint), pos, world, solidBlock, netherAmbient);
-        light[index] = sampleBlockLightAbove(world, pos, worldX, solidY, worldZ, worldMaxY);
+        // Floor layers normally bake visible light directly into baseArgb. NETHER_CEILING keeps
+        // only the zero-light Nether ambient tint here and applies light[] during composition;
+        // synchronized roof pixels use that same representation and calculation.
+        final int litColor;
+        if (deferBlockLight) {
+            litColor = applyAmbientLight(Argb.multiply(solidBase, solidTint), netherAmbient);
+            light[index] = sampleBlockLightAbove(
+                world, pos, worldX, solidY, worldZ, worldMaxY
+            );
+        } else {
+            litColor = applyLight(
+                Argb.multiply(solidBase, solidTint), pos, world, solidBlock, netherAmbient
+            );
+            light[index] = sampleBlockLightAbove(
+                world, pos, worldX, solidY, worldZ, worldMaxY
+            );
+        }
 
         int overlayColor = Argb.TRANSPARENT;
         if (solidY + 1 < worldMaxY) {
@@ -450,7 +468,9 @@ public final class McChunkSnapshotFactory {
             if (isFloorOverlayCandidate(above)) {
                 final int overlayBase = sampler.colorFor(above, world, pos);
                 final int overlayTint = tintResolver.resolve(above, world, pos);
-                overlayColor = applyLight(Argb.multiply(overlayBase, overlayTint), pos, world, above.getBlock(), netherAmbient);
+                overlayColor = deferBlockLight
+                    ? applyAmbientLight(Argb.multiply(overlayBase, overlayTint), netherAmbient)
+                    : applyLight(Argb.multiply(overlayBase, overlayTint), pos, world, above.getBlock(), netherAmbient);
             }
         }
 
@@ -521,6 +541,10 @@ public final class McChunkSnapshotFactory {
             : world.getLightLevel(LightType.BLOCK, pos);
         //#endif
         return Argb.multiply(argb, LightTint.multiplier(blockLevel, skyLevel, netherAmbient));
+    }
+
+    private static int applyAmbientLight(final int argb, final boolean netherAmbient) {
+        return Argb.multiply(argb, LightTint.multiplier(0, 0, netherAmbient));
     }
 
     /** Whether {@code type} is one of the Nether's floor-scan layers, for §5.2's ambient-light floor. */

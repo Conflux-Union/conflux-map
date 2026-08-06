@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.core.cache.RegionCacheService;
 import cn.net.rms.confluxmap.core.cache.RegionDiskCache;
 import cn.net.rms.confluxmap.core.color.BiomeColorPalette;
 import cn.net.rms.confluxmap.core.color.DaylightModel;
+import cn.net.rms.confluxmap.core.color.LightTint;
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
@@ -643,10 +644,9 @@ public final class TileService {
         // symmetric local relief there, but omit the fixed Y=80 absolute-height wash that used to
         // turn the whole bedrock roof pale.
         final boolean applyAbsoluteHeight = layer.type() != MapLayer.Type.NETHER_CEILING;
-        // Dynamic lighting only ever touches the live SURFACE layer (never CAVE/NETHER/END, which
-        // already bake their light at snapshot time - see ChunkSnapshot#light's javadoc). Reading
-        // the model's factor once per tile compose (rather than per-column) is fine: it's a slow
-        // drift, not a per-frame value, so a tile composing mid-bucket-change is harmless.
+        final boolean applyNetherCeilingLight = layer.type() == MapLayer.Type.NETHER_CEILING;
+        // Dynamic daylight only touches SURFACE. NETHER_CEILING has no sky cycle, but its static
+        // per-column block light is applied separately below from ChunkSnapshot#light.
         final boolean applyDaylight = !biomeMode
             && layer.type() == MapLayer.Type.SURFACE
             && dynamicLighting;
@@ -665,7 +665,7 @@ public final class TileService {
         if (key.lod() == 0) {
             pixels = composeLod0(
                 store, key.tileX(), key.tileZ(), biomeMode, applyAbsoluteHeight,
-                applyDaylight, daylightFactor, lightPlane
+                applyNetherCeilingLight, applyDaylight, daylightFactor, lightPlane
             );
             if (store.region(key.tileX(), key.tileZ()) != null) {
                 changed.add(new TileUpdate.Rect(0, 0, RegionColumns.SIZE, RegionColumns.SIZE));
@@ -673,7 +673,7 @@ public final class TileService {
         } else {
             pixels = composeLodN(
                 store, key, biomeMode, applyAbsoluteHeight,
-                applyDaylight, daylightFactor, lightPlane, changed
+                applyNetherCeilingLight, applyDaylight, daylightFactor, lightPlane, changed
             );
         }
         final TileUpdate.Relight relight = lightPlane == null
@@ -693,6 +693,7 @@ public final class TileService {
         final int regionZ,
         final boolean biomeMode,
         final boolean applyAbsoluteHeight,
+        final boolean applyNetherCeilingLight,
         final boolean applyDaylight,
         final float daylightFactor,
         final byte[] outLight
@@ -713,7 +714,8 @@ public final class TileService {
             );
             composeRegion(
                 neighborhood, pixels,
-                biomeMode, applyAbsoluteHeight, applyDaylight, daylightFactor, outLight
+                biomeMode, applyAbsoluteHeight, applyNetherCeilingLight,
+                applyDaylight, daylightFactor, outLight
             );
         }
         return pixels;
@@ -736,6 +738,7 @@ public final class TileService {
         final TileKey key,
         final boolean biomeMode,
         final boolean applyAbsoluteHeight,
+        final boolean applyNetherCeilingLight,
         final boolean applyDaylight,
         final float daylightFactor,
         final byte[] outLight,
@@ -758,7 +761,7 @@ public final class TileService {
                 final byte[] fullLight = outLight == null ? null : new byte[size * size];
                 final int[] full = composeLod0(
                     store, regionX, regionZ, biomeMode, applyAbsoluteHeight,
-                    applyDaylight, daylightFactor, fullLight
+                    applyNetherCeilingLight, applyDaylight, daylightFactor, fullLight
                 );
                 final int[] downsampled = downsample(full, size, lod);
                 stitch(downsampled, subSize, outPixels, dx * subSize, dz * subSize);
@@ -845,6 +848,7 @@ public final class TileService {
         final int[] outPixels,
         final boolean biomeMode,
         final boolean applyAbsoluteHeight,
+        final boolean applyNetherCeilingLight,
         final boolean applyDaylight,
         final float daylightFactor,
         final byte[] outLight
@@ -911,6 +915,10 @@ public final class TileService {
                     : ShadingPipeline.compositeOver(shadedOverlay, shadedBase);
                 if (applyDaylight) {
                     composed = ShadingPipeline.applyDaylight(composed, daylightFactor, light[idx]);
+                } else if (applyNetherCeilingLight) {
+                    composed = LightTint.applyBlockLightOverAmbient(
+                        composed, light[idx] & 0xFF, true
+                    );
                 }
                 outPixels[idx] = composed;
             }

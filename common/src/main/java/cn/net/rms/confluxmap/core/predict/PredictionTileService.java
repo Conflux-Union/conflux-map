@@ -191,19 +191,31 @@ public final class PredictionTileService {
         return viewMode;
     }
 
-    private float applySurfaceLighting(
+    private float applyLayerLighting(
         final TileKey key,
         final int[] pixels,
         final byte[] blockLight
     ) {
-        final DaylightModel model = daylightModel;
-        if (model == null || BiomeTileKeys.isBiome(key)) {
+        if (BiomeTileKeys.isBiome(key)) {
             return Float.NaN;
         }
         final String realLayer = BiomeTileKeys.realLayerId(
             PredictedTileKeys.realLayerId(key.layerId())
         );
-        if (MapLayer.parse(realLayer).type() != MapLayer.Type.SURFACE) {
+        final MapLayer.Type layer = MapLayer.parse(realLayer).type();
+        if (layer == MapLayer.Type.NETHER_CEILING) {
+            for (int pixel = 0; pixel < pixels.length; pixel++) {
+                pixels[pixel] = LightTint.applyBlockLightOverAmbient(
+                    pixels[pixel], blockLight[pixel] & 0xFF, true
+                );
+            }
+            return Float.NaN;
+        }
+        if (layer != MapLayer.Type.SURFACE) {
+            return Float.NaN;
+        }
+        final DaylightModel model = daylightModel;
+        if (model == null) {
             return Float.NaN;
         }
         final float factor = model.factor();
@@ -946,7 +958,7 @@ public final class PredictionTileService {
             realKey(key), pixels, syncEvaluated, syncSourceRevisions,
             directCorrections != null && directCorrections.hasSourceRevisionMetadata()
         );
-        final float composedDaylight = applySurfaceLighting(key, pixels, blockLight);
+        final float composedDaylight = applyLayerLighting(key, pixels, blockLight);
         return new Composition(
             tileUpdate(key, pixels, blockLight, composedDaylight),
             new TileMetadata(

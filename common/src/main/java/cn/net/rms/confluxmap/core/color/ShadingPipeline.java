@@ -19,8 +19,8 @@ import cn.net.rms.confluxmap.core.util.Argb;
  * not reproduce the full reference curve (per-pixel torch flicker, gamma-setting
  * response, night-vision ramp, the ice-specific extra seafloor darkening, or the
  * cached-pass "recolor with today's palette" rule) - those remain unimplemented. Cave/
- * Nether/End layers never call this; they keep baking light into their colors at
- * snapshot time via {@link LightTint} instead (see {@code McChunkSnapshotFactory}).
+ * Nether/End layers never call this; they use {@link LightTint} instead. Most bake it at
+ * snapshot time, while NETHER_CEILING applies its stored block-light plane during composition.
  */
 public final class ShadingPipeline {
     /** §4: the cached/world-map pass's fixed height-shading reference. */

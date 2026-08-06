@@ -57,6 +57,34 @@ public final class LightTint {
         return table[block * LEVELS + sky];
     }
 
+    /**
+     * Replaces the zero-light ambient tint already baked into {@code argb} with the tint for
+     * {@code blockLevel}. Nether-roof authoritative snapshots and synchronized corrections share
+     * this representation, so both can apply the same per-column light plane during composition.
+     */
+    public static int applyBlockLightOverAmbient(
+        final int argb,
+        final int blockLevel,
+        final boolean netherAmbient
+    ) {
+        final int level = clampLevel(blockLevel);
+        if (level == 0) {
+            return argb;
+        }
+        final int ambient = multiplier(0, 0, netherAmbient);
+        final int lit = multiplier(level, 0, netherAmbient);
+        return Argb.pack(
+            Argb.alpha(argb),
+            replaceTint(Argb.red(argb), Argb.red(ambient), Argb.red(lit)),
+            replaceTint(Argb.green(argb), Argb.green(ambient), Argb.green(lit)),
+            replaceTint(Argb.blue(argb), Argb.blue(ambient), Argb.blue(lit))
+        );
+    }
+
+    private static int replaceTint(final int channel, final int ambient, final int lit) {
+        return Math.min(255, Math.round(channel * (lit / (float) ambient)));
+    }
+
     private static int[] build(final float ambientFloor) {
         final int[] table = new int[LEVELS * LEVELS];
         for (int block = 0; block < LEVELS; block++) {

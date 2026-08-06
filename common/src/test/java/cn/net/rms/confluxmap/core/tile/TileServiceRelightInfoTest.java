@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.core.tile;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
@@ -10,12 +11,15 @@ import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SampleSource;
+import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.store.MapWorld;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
+import cn.net.rms.confluxmap.core.util.Argb;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -71,6 +75,34 @@ class TileServiceRelightInfoTest {
         }
     }
 
+    @Test
+    void netherCeilingUsesStoredBlockLight() throws InterruptedException {
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final MapWorldService mapWorlds = new MapWorldService();
+            final SessionGuard.Session session = new SessionGuard.Session(
+                1L, new WorldIdentity("local", "world"), DimensionId.NETHER
+            );
+            mapWorlds.switchSession(session);
+            mapWorlds.current().put(
+                MapLayer.NETHER_CEILING, roofSnapshot(), SampleSource.REAL_LIVE
+            );
+            final TileService tiles = new TileService(
+                mapWorlds, executors, new ConfluxConfig(), new DaylightModel()
+            );
+            final TileKey roof = key(session, MapLayer.NETHER_CEILING, 0);
+
+            tiles.requestTile(roof);
+            final TileUpdate update = drain(tiles, 1).get(roof);
+
+            assertTrue(Argb.red(update.argbPixels()[0]) > Argb.red(update.argbPixels()[1]));
+            assertTrue(Argb.green(update.argbPixels()[0]) > Argb.green(update.argbPixels()[1]));
+            assertNull(update.relight(), "Nether roof light is static until the chunk is recaptured");
+        } finally {
+            executors.shutdown(1000L);
+        }
+    }
+
     private static Map<TileKey, TileUpdate> drain(final TileService tiles, final int expected) throws InterruptedException {
         final Map<TileKey, TileUpdate> updates = new HashMap<>();
         final long deadline = System.nanoTime() + 5_000_000_000L;
@@ -106,6 +138,30 @@ class TileServiceRelightInfoTest {
             new int[ChunkSnapshot.COLUMNS],
             new int[ChunkSnapshot.COLUMNS],
             new byte[ChunkSnapshot.COLUMNS],
+            light
+        );
+    }
+
+    private static ChunkSnapshot roofSnapshot() {
+        final byte[] light = new byte[ChunkSnapshot.COLUMNS];
+        light[0] = 15;
+        final int[] base = new int[ChunkSnapshot.COLUMNS];
+        final int[] tint = new int[ChunkSnapshot.COLUMNS];
+        final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
+        Arrays.fill(base, 0xFF303030);
+        Arrays.fill(tint, 0xFFFFFFFF);
+        Arrays.fill(kind, (byte) SurfaceKind.BEDROCK_CEILING.ordinal());
+        return new ChunkSnapshot(
+            0,
+            0,
+            1L,
+            new short[ChunkSnapshot.COLUMNS],
+            new String[ChunkSnapshot.COLUMNS],
+            new byte[ChunkSnapshot.COLUMNS],
+            base,
+            tint,
+            new int[ChunkSnapshot.COLUMNS],
+            kind,
             light
         );
     }

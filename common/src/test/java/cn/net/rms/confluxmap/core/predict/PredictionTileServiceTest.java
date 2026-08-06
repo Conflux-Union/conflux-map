@@ -537,6 +537,61 @@ class PredictionTileServiceTest {
     }
 
     @Test
+    void synchronizedNetherRoofUsesPerPixelBlockLight(@TempDir final Path tempDir) {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final SessionGuard sessionGuard = new SessionGuard();
+        final MapExecutors executors = new MapExecutors();
+        final TileService uploads = new TileService(
+            new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.DEFAULT, WorldPreset.DEFAULT);
+        state.setSeed(146008555L, McVersions.toCubiomes("1.17").orElseThrow());
+        final PredictionTileService predictionTiles = newService(
+            sessionGuard, state, executors, uploads
+        );
+        final CorrectionStore corrections = new CorrectionStore(tempDir);
+        predictionTiles.bindCorrectionStore(corrections);
+        sessionGuard.begin(WORLD, DimensionId.NETHER);
+        corrections.onSessionChanged(sessionGuard.current());
+
+        try {
+            final byte[] evaluated = new byte[PatchCodec.MASK_BYTES];
+            PatchCodec.setEvaluated(evaluated, 0);
+            PatchCodec.setEvaluated(evaluated, 1);
+            final long[] revisions = new long[PatchCodec.PIXELS];
+            Arrays.fill(revisions, Long.MIN_VALUE);
+            revisions[0] = 100L;
+            revisions[1] = 100L;
+            final byte[] light = new byte[PatchCodec.PIXELS];
+            light[0] = 15;
+            assertTrue(predictionTiles.applyCorrection(
+                new CorrectionStore.Key(DimensionId.NETHER.toString(), 0, 0, 0),
+                1L,
+                new byte[Proto.PATCH_PRESENCE_BYTES],
+                new PatchCodec.Patch(evaluated, List.of(), revisions, light),
+                Proto.PATCH_MODE_RESIDUAL,
+                PredictorVersion.full(),
+                System.currentTimeMillis()
+            ));
+
+            final int[] pixels = predictionTiles.snapshotTile(
+                new TileKey(
+                    WORLD, DimensionId.NETHER,
+                    MapLayer.NETHER_CEILING.cacheId() + PredictedTileKeys.SUFFIX,
+                    0, 0, 0
+                ),
+                PredictionViewMode.EVERYWHERE
+            ).join();
+
+            assertTrue(Argb.red(pixels[0]) > Argb.red(pixels[1]));
+            assertTrue(Argb.green(pixels[0]) > Argb.green(pixels[1]));
+        } finally {
+            executors.shutdown(2000);
+        }
+    }
+
+    @Test
     void changingViewModeRefreshesCurrentAndReenteredTiles(
         @TempDir final Path tempDir
     ) throws InterruptedException {
