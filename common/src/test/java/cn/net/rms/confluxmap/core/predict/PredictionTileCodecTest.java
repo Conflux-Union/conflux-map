@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.net.PatchCodec;
+import cn.net.rms.confluxmap.core.net.CorrectionProfile;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
 import java.io.ByteArrayOutputStream;
@@ -14,6 +15,20 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class PredictionTileCodecTest {
+    @Test
+    void negotiatedCorrectionProfileRoundTrips() throws Exception {
+        final PredictionTileCodec.FileData data = new PredictionTileCodec.FileData(
+            0, 1, 2, 3L, 4L,
+            new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(List.of()),
+            new byte[0], new long[0], new long[0],
+            Proto.PATCH_MODE_RESIDUAL, "baseline", CorrectionProfile.LEGACY_V1
+        );
+
+        assertEquals(
+            CorrectionProfile.LEGACY_V1,
+            PredictionTileCodec.decode(PredictionTileCodec.encode(data)).correctionProfile()
+        );
+    }
     @Test
     void chunkMetadataAndSourceProfileRoundTripInVersionSeventeen() throws Exception {
         final int chunks = (16 << 2) * (16 << 2);
@@ -90,6 +105,29 @@ class PredictionTileCodecTest {
         encoded[4] = 18;
 
         assertThrows(ProtoException.class, () -> PredictionTileCodec.decode(encoded));
+    }
+
+    @Test
+    void versionNineteenWithoutAnExplicitProfileUsesSourceLightSemantics() throws Exception {
+        final PredictionTileCodec.FileData data = new PredictionTileCodec.FileData(
+            0, 0, 0, 10L, 1_700_000_123_456L,
+            new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(List.of())
+        );
+        final byte[] current = PredictionTileCodec.encode(data);
+        final int profileOffset = 33 + data.baselineProfile()
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        final byte[] versionNineteen = new byte[current.length - 1];
+        System.arraycopy(current, 0, versionNineteen, 0, profileOffset);
+        System.arraycopy(
+            current, profileOffset + 1, versionNineteen, profileOffset,
+            current.length - profileOffset - 1
+        );
+        versionNineteen[4] = 19;
+
+        assertEquals(
+            CorrectionProfile.SOURCE_LIGHT_V2,
+            PredictionTileCodec.decode(versionNineteen).correctionProfile()
+        );
     }
 
     @Test

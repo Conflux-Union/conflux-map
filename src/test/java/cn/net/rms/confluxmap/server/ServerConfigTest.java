@@ -6,12 +6,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
-import cn.net.rms.confluxmap.core.net.MapSyncCompatibility;
+import cn.net.rms.confluxmap.core.net.CorrectionProfile;
+import cn.net.rms.confluxmap.core.net.MapSyncCapability;
+import cn.net.rms.confluxmap.core.net.NegotiatedMapSync;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProto;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.Test;
@@ -95,7 +98,12 @@ class ServerConfigTest {
         final HelloPolicyS2C.Flags configured = ServerNetworking.policyFlags(config);
         final HelloPolicyS2C.Flags masked = ServerNetworking.compatibleFlags(
             configured,
-            new MapSyncCompatibility.ServerSelection(false, false, false, "")
+            NegotiatedMapSync.server(
+                CorrectionProfile.SOURCE_LIGHT_V2,
+                NegotiatedMapSync.CorrectionMode.DISABLED,
+                "",
+                MapSyncCapability.all()
+            )
         );
 
         assertFalse(masked.correctionsEnabled());
@@ -104,6 +112,22 @@ class ServerConfigTest {
         assertTrue(masked.seedGranted());
         assertTrue(masked.chunkLoadStateEnabled());
         assertTrue(masked.entityRadarForbidden());
+    }
+
+    @Test
+    void regionPolicyRequiresBothRequestAndInvalidationCapabilities() {
+        final HelloPolicyS2C.Flags configured = ServerNetworking.policyFlags(new ServerConfig());
+        final NegotiatedMapSync requestOnly = NegotiatedMapSync.server(
+            CorrectionProfile.SOURCE_LIGHT_V2,
+            NegotiatedMapSync.CorrectionMode.RESIDUAL,
+            "baseline",
+            Map.of(MapSyncCapability.REGION_CORRECTION, 1)
+        );
+
+        assertFalse(
+            ServerNetworking.compatibleFlags(configured, requestOnly)
+                .chunkRangeCorrectionEnabled()
+        );
     }
 
     @Test

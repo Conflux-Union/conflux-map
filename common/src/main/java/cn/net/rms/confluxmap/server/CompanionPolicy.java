@@ -1,7 +1,8 @@
 package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
-import cn.net.rms.confluxmap.core.net.MapSyncCompatibility;
+import cn.net.rms.confluxmap.core.net.MapSyncCapability;
+import cn.net.rms.confluxmap.core.net.NegotiatedMapSync;
 
 /** Platform-neutral policy projection shared by the Fabric and Paper transports. */
 public final class CompanionPolicy {
@@ -24,18 +25,22 @@ public final class CompanionPolicy {
 
     public static HelloPolicyS2C.Flags compatibleFlags(
         final HelloPolicyS2C.Flags configured,
-        final MapSyncCompatibility.ServerSelection selection
+        final NegotiatedMapSync session
     ) {
         final boolean corrections = configured.correctionsEnabled()
-            && selection.correctionsEnabled();
+            && session.correctionsEnabled();
         return new HelloPolicyS2C.Flags(
             configured.seedGranted(),
             corrections,
             configured.biomeMapForbidden(),
-            configured.chunkLoadStateEnabled(),
+            configured.chunkLoadStateEnabled()
+                && session.supports(MapSyncCapability.LOAD_STATE),
             configured.entityRadarForbidden(),
-            corrections && configured.correctionInvalidationEnabled(),
-            corrections && configured.chunkRangeCorrectionEnabled(),
+            corrections && configured.correctionInvalidationEnabled()
+                && session.supports(MapSyncCapability.MAP_INVALIDATION),
+            corrections && configured.chunkRangeCorrectionEnabled()
+                && session.supports(MapSyncCapability.REGION_CORRECTION)
+                && session.supports(MapSyncCapability.REGION_INVALIDATION),
             configured.structureSearchForbidden()
         );
     }

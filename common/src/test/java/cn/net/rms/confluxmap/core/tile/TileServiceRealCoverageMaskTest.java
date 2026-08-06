@@ -11,6 +11,7 @@ import cn.net.rms.confluxmap.core.model.SampleSource;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
+import cn.net.rms.confluxmap.core.net.CorrectionProfile;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.predict.CorrectionTile;
@@ -132,7 +133,10 @@ class TileServiceRealCoverageMaskTest {
     ) {
         final int[] pixels = new int[TileMath.TILE_SIZE * TileMath.TILE_SIZE];
         Arrays.fill(pixels, PREDICTED);
-        tiles.maskPredictedPixels(key, pixels, correction, true);
+        tiles.maskPredictedPixels(
+            key, pixels, correction,
+            CorrectionProfile.SOURCE_LIGHT_V2
+        );
         return pixels[0];
     }
 

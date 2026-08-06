@@ -9,14 +9,14 @@ import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
 import cn.net.rms.confluxmap.core.net.HelloC2S;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.LoadStateDeltaS2C;
+import cn.net.rms.confluxmap.core.net.MapCapabilitiesS2C;
 import cn.net.rms.confluxmap.core.net.MapCompatibilityS2C;
 import cn.net.rms.confluxmap.core.net.MapInvalidateS2C;
 import cn.net.rms.confluxmap.core.net.MapPatchS2C;
 import cn.net.rms.confluxmap.core.net.MapRegionInvalidateS2C;
 import cn.net.rms.confluxmap.core.net.MapRegionPatchS2C;
-import cn.net.rms.confluxmap.core.net.MapSyncCompatibility;
+import cn.net.rms.confluxmap.core.net.MapSyncProtocol;
 import cn.net.rms.confluxmap.core.net.Message;
-import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.PolicyUpdateS2C;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
@@ -75,7 +75,7 @@ public final class ClientNetworking {
         }
         final Message msg;
         try {
-            msg = MsgCodec.decode(payload);
+            msg = session.decodeInbound(payload);
         } catch (final ProtoException e) {
             ConfluxMapMod.LOGGER.warn("companion: undecodable S2C payload ({} bytes): {}", payload.length, e.getMessage());
             return;
@@ -86,8 +86,8 @@ public final class ClientNetworking {
     private void dispatch(final Message msg, final int payloadBytes) {
         if (msg instanceof final HelloPolicyS2C p) {
             session.onPolicy(p);
-        } else if (msg instanceof final MapCompatibilityS2C compatibility) {
-            session.onCompatibility(compatibility);
+        } else if (msg instanceof MapCompatibilityS2C || msg instanceof MapCapabilitiesS2C) {
+            session.onSelection(msg);
         } else if (msg instanceof final ServerViewDistanceS2C viewDistance) {
             session.onServerViewDistance(viewDistance);
         } else if (msg instanceof final FlatBaselineS2C f) {
@@ -161,9 +161,8 @@ public final class ClientNetworking {
 
     /** Constructs and sends HELLO_C2S; called from JOIN and config-driven re-handshakes. */
     public void sendHello() {
-        final HelloC2S hello = new HelloC2S(
-            ConfluxMapMod.getVersion(),
-            MapSyncCompatibility.advertise(PredictorVersion.full())
+        final HelloC2S hello = MapSyncProtocol.clientHello(
+            ConfluxMapMod.getVersion(), PredictorVersion.full()
         );
         if (sendMessage(hello) < 0) {
             return;
@@ -178,7 +177,7 @@ public final class ClientNetworking {
     int sendMessage(final Message msg) {
         final byte[] payload;
         try {
-            payload = MsgCodec.encode(msg);
+            payload = session.encodeOutbound(msg);
         } catch (final ProtoException e) {
             ConfluxMapMod.LOGGER.error("companion: failed to serialize {}: {}", msg.getClass().getSimpleName(), e.getMessage());
             return -1;

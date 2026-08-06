@@ -1,20 +1,20 @@
 package cn.net.rms.confluxmap.paper;
 
-import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
+import cn.net.rms.confluxmap.core.net.CorrectionProfile;
 import cn.net.rms.confluxmap.core.net.ErrorS2C;
 import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
 import cn.net.rms.confluxmap.core.net.HelloC2S;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.LoadStateSubscribeC2S;
-import cn.net.rms.confluxmap.core.net.MapCompatibilityS2C;
+import cn.net.rms.confluxmap.core.net.MapSyncCapability;
 import cn.net.rms.confluxmap.core.net.MapRegionSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapRegionViewReqC2S;
-import cn.net.rms.confluxmap.core.net.MapSyncCompatibility;
+import cn.net.rms.confluxmap.core.net.MapSyncProtocol;
 import cn.net.rms.confluxmap.core.net.MapSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.MsgCodec;
-import cn.net.rms.confluxmap.core.net.PatchCodec;
+import cn.net.rms.confluxmap.core.net.NegotiatedMapSync;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.net.ServerViewDistanceS2C;
@@ -41,7 +41,7 @@ final class PaperNetworking implements PluginMessageListener {
     private final PaperPluginMessageDispatcher messages;
     private final Map<UUID, Integer> malformedStrikes = new ConcurrentHashMap<>();
     private final Set<UUID> mutedPlayers = ConcurrentHashMap.newKeySet();
-    private final Map<UUID, MapSyncCompatibility.ServerSelection> profiles =
+    private final Map<UUID, NegotiatedMapSync> sessions =
         new ConcurrentHashMap<>();
 
     PaperNetworking(
@@ -64,7 +64,7 @@ final class PaperNetworking implements PluginMessageListener {
         plugin.getServer().getMessenger().unregisterOutgoingPluginChannel(plugin, CHANNEL);
         malformedStrikes.clear();
         mutedPlayers.clear();
-        profiles.clear();
+        sessions.clear();
     }
 
     @Override
@@ -91,7 +91,7 @@ final class PaperNetworking implements PluginMessageListener {
     void disconnect(final UUID playerId) {
         malformedStrikes.remove(playerId);
         mutedPlayers.remove(playerId);
-        profiles.remove(playerId);
+        sessions.remove(playerId);
         companion.corrections().remove(playerId);
         final PaperChunkLoadStateService loadStates = companion.chunkLoadStates();
         if (loadStates != null) {
@@ -109,7 +109,10 @@ final class PaperNetworking implements PluginMessageListener {
             return;
         }
         try {
-            final Message message = MsgCodec.decode(payload);
+            final NegotiatedMapSync session = sessions.get(player.getUniqueId());
+            final Message message = session == null
+                ? MapSyncProtocol.decodeServerbound(payload)
+                : session.decodeInbound(payload);
             if (message instanceof final HelloC2S hello) {
                 hello(player, hello);
             } else if (message instanceof final MapViewReqC2S request) {
@@ -138,32 +141,33 @@ final class PaperNetworking implements PluginMessageListener {
     }
 
     private void hello(final Player player, final HelloC2S hello) {
-        final MapSyncCompatibility.ClientHello clientHello =
-            MapSyncCompatibility.parseClientHello(hello.predictorVersion());
-        final MapSyncCompatibility.ServerSelection selection =
-            MapSyncCompatibility.selectServer(clientHello, PredictorVersion.full());
-        profiles.put(player.getUniqueId(), selection);
+        final MapSyncProtocol.ServerHandshake handshake = MapSyncProtocol.acceptClient(
+            hello, plugin.getPluginMeta().getVersion(), PredictorVersion.full()
+        );
+        final NegotiatedMapSync session = handshake.session();
+        sessions.put(player.getUniqueId(), session);
         companion.corrections().remove(player.getUniqueId());
-        if (selection.sendCompatibility()) {
-            send(player, compatibility(selection));
+        if (handshake.selection() != null) {
+            send(player, handshake.selection());
         }
         final List<FlatBaselineS2C.Entry> flat = companion.flatBaselines();
-        if (!flat.isEmpty()) {
-            send(player, new FlatBaselineS2C(flat));
+        if (!flat.isEmpty()
+            && session.supports(MapSyncCapability.FLAT_BASELINE)) {
+            sendNegotiated(player, session, new FlatBaselineS2C(flat));
         }
-        if (clientHello.supportsServerViewDistance()) {
+        if (session.supports(MapSyncCapability.SERVER_VIEW_DISTANCE)) {
             final int playerSendDistance = player.getSendViewDistance();
-            send(player, ServerViewDistanceS2C.bounded(
+            sendNegotiated(player, session, ServerViewDistanceS2C.bounded(
                 playerSendDistance >= 0
                     ? playerSendDistance : plugin.getServer().getViewDistance()
             ));
         }
-        final HelloPolicyS2C policy = policy(selection);
+        final HelloPolicyS2C policy = policy(session);
         send(player, policy);
         plugin.getSLF4JLogger().info(
             "Replied to Conflux Map hello from {} (client={}, corrections={}, absolute={}, seed={})",
             player.getName(), hello.modVersion(), policy.flags().correctionsEnabled(),
-            selection.forceAbsolute(), policy.flags().seedGranted()
+            session.forceAbsolute(), policy.flags().seedGranted()
         );
     }
 
@@ -172,8 +176,8 @@ final class PaperNetworking implements PluginMessageListener {
         final MapViewReqC2S request,
         final int requestBytes
     ) {
-        final MapSyncCompatibility.ServerSelection profile = profile(player);
-        if (!companion.config().shareCorrections || !profile.correctionsEnabled()) {
+        final NegotiatedMapSync session = session(player);
+        if (!companion.config().shareCorrections || !session.correctionsEnabled()) {
             send(player, new ErrorS2C(
                 ErrorS2C.ERR_COMPANION_DISABLED,
                 "map corrections are disabled"
@@ -181,7 +185,7 @@ final class PaperNetworking implements PluginMessageListener {
             return;
         }
         companion.corrections().requestTiles(
-            player.getUniqueId(), request, requestBytes, profile.forceAbsolute(),
+            player.getUniqueId(), request, requestBytes, session.forceAbsolute(),
             sender(player.getUniqueId())
         );
     }
@@ -191,8 +195,8 @@ final class PaperNetworking implements PluginMessageListener {
         final MapRegionViewReqC2S request,
         final int requestBytes
     ) {
-        final MapSyncCompatibility.ServerSelection profile = profile(player);
-        if (!companion.config().shareCorrections || !profile.correctionsEnabled()) {
+        final NegotiatedMapSync session = session(player);
+        if (!companion.config().shareCorrections || !session.correctionsEnabled()) {
             send(player, new ErrorS2C(
                 ErrorS2C.ERR_COMPANION_DISABLED,
                 "map corrections are disabled"
@@ -200,15 +204,15 @@ final class PaperNetworking implements PluginMessageListener {
             return;
         }
         companion.corrections().requestRegions(
-            player.getUniqueId(), request, requestBytes, profile.forceAbsolute(),
-            profile.enhancedProfile(),
+            player.getUniqueId(), request, requestBytes, session.forceAbsolute(),
+            session.correctionProfile(),
             sender(player.getUniqueId())
         );
     }
 
     private void subscribe(final Player player, final MapSyncSubscribeC2S request) {
-        final MapSyncCompatibility.ServerSelection profile = profile(player);
-        if (!companion.config().shareCorrections || !profile.correctionsEnabled()) {
+        final NegotiatedMapSync session = session(player);
+        if (!companion.config().shareCorrections || !session.correctionsEnabled()) {
             send(player, new ErrorS2C(ErrorS2C.ERR_COMPANION_DISABLED, "map corrections are disabled"));
             return;
         }
@@ -223,8 +227,8 @@ final class PaperNetworking implements PluginMessageListener {
         final Player player,
         final MapRegionSyncSubscribeC2S request
     ) {
-        final MapSyncCompatibility.ServerSelection profile = profile(player);
-        if (!companion.config().shareCorrections || !profile.correctionsEnabled()) {
+        final NegotiatedMapSync session = session(player);
+        if (!companion.config().shareCorrections || !session.correctionsEnabled()) {
             send(player, new ErrorS2C(ErrorS2C.ERR_COMPANION_DISABLED, "map corrections are disabled"));
             return;
         }
@@ -242,16 +246,17 @@ final class PaperNetworking implements PluginMessageListener {
             return;
         }
         if (!service.subscribe(
-            player.getUniqueId(), request, companion.worlds(), delta -> send(player, delta)
+            player.getUniqueId(), request, companion.worlds(),
+            delta -> sendNegotiated(player, session(player), delta)
         )) {
             send(player, new ErrorS2C(ErrorS2C.ERR_MALFORMED_REQUEST, "invalid load-state dimension"));
         }
     }
 
-    private HelloPolicyS2C policy(final MapSyncCompatibility.ServerSelection selection) {
+    private HelloPolicyS2C policy(final NegotiatedMapSync session) {
         final ServerConfig config = companion.config();
         final HelloPolicyS2C.Flags flags = CompanionPolicy.compatibleFlags(
-            CompanionPolicy.configuredFlags(config), selection
+            CompanionPolicy.configuredFlags(config), session
         );
         final boolean seed = flags.seedGranted();
         final HelloPolicyS2C.Budgets budgets = new HelloPolicyS2C.Budgets(
@@ -281,35 +286,8 @@ final class PaperNetworking implements PluginMessageListener {
         );
     }
 
-    private MapSyncCompatibility.ServerSelection profile(final Player player) {
-        return profiles.getOrDefault(
-            player.getUniqueId(),
-            new MapSyncCompatibility.ServerSelection(false, false, false, "")
-        );
-    }
-
-    private MapCompatibilityS2C compatibility(
-        final MapSyncCompatibility.ServerSelection selection
-    ) {
-        final int mode = !selection.correctionsEnabled()
-            ? MapCompatibilityS2C.MODE_DISABLED
-            : selection.forceAbsolute()
-                ? MapCompatibilityS2C.MODE_ABSOLUTE : MapCompatibilityS2C.MODE_RESIDUAL;
-        final int reason = !selection.correctionsEnabled()
-            ? MapCompatibilityS2C.REASON_NO_COMMON_WIRE
-            : selection.forceAbsolute()
-                ? MapCompatibilityS2C.REASON_BASELINE_MISMATCH : MapCompatibilityS2C.REASON_NONE;
-        return new MapCompatibilityS2C(
-            MapSyncCompatibility.NEGOTIATION_VERSION,
-            plugin.getPluginMeta().getVersion(),
-            Proto.PROTO_MAJOR,
-            Proto.PROTO_MINOR,
-            selection.patchCodecVersion(),
-            selection.regionCodecVersion(),
-            PredictorVersion.full(),
-            mode,
-            reason
-        );
+    private NegotiatedMapSync session(final Player player) {
+        return sessions.getOrDefault(player.getUniqueId(), disabledSession());
     }
 
     private PaperCorrectionService.MessageSender sender(final UUID playerId) {
@@ -318,7 +296,7 @@ final class PaperNetworking implements PluginMessageListener {
             public void send(final Message message) {
                 final Player current = Bukkit.getPlayer(playerId);
                 if (current != null && current.isOnline()) {
-                    PaperNetworking.this.send(current, wireMessage(message));
+                    PaperNetworking.this.sendNegotiated(current, session(), message);
                 }
             }
 
@@ -326,37 +304,28 @@ final class PaperNetworking implements PluginMessageListener {
             public void sendEncoded(final Message message, final byte[] payload) {
                 final Player current = Bukkit.getPlayer(playerId);
                 if (current != null && current.isOnline()) {
-                    if (enhancedProfile()) {
+                    if (session().correctionProfile().carriesSourceMetadata()) {
                         PaperNetworking.this.send(current, payload);
                     } else {
-                        PaperNetworking.this.send(current, wireMessage(message));
+                        PaperNetworking.this.sendNegotiated(current, session(), message);
                     }
                 }
             }
 
-            private boolean enhancedProfile() {
-                final MapSyncCompatibility.ServerSelection selection = profiles.get(playerId);
-                return selection == null || selection.enhancedProfile();
+            private NegotiatedMapSync session() {
+                return sessions.getOrDefault(playerId, disabledSession());
             }
 
-            private Message wireMessage(final Message message) {
-                if (enhancedProfile()) {
-                    return message;
-                }
-                try {
-                    return cn.net.rms.confluxmap.core.net.MapSyncWireProfiles.legacy(message);
-                } catch (final ProtoException e) {
-                    plugin.getSLF4JLogger().warn(
-                        "Could not downgrade {} for legacy peer: {}",
-                        message.getClass().getSimpleName(), e.getMessage()
-                    );
-                    return new ErrorS2C(
-                        ErrorS2C.ERR_MALFORMED_REQUEST,
-                        "could not encode legacy correction"
-                    );
-                }
-            }
         };
+    }
+
+    private static NegotiatedMapSync disabledSession() {
+        return NegotiatedMapSync.server(
+            CorrectionProfile.SOURCE_LIGHT_V2,
+            NegotiatedMapSync.CorrectionMode.DISABLED,
+            "",
+            Map.of()
+        );
     }
 
     private void malformed(final Player player, final String reason) {
@@ -386,5 +355,20 @@ final class PaperNetworking implements PluginMessageListener {
 
     private void send(final Player player, final byte[] payload) {
         messages.send(PaperPluginMessageDispatcher.recipient(plugin, player), CHANNEL, payload);
+    }
+
+    private void sendNegotiated(
+        final Player player,
+        final NegotiatedMapSync session,
+        final Message message
+    ) {
+        try {
+            send(player, session.encodeOutbound(message));
+        } catch (final ProtoException e) {
+            plugin.getSLF4JLogger().warn(
+                "Could not encode {} for negotiated peer: {}",
+                message.getClass().getSimpleName(), e.getMessage()
+            );
+        }
     }
 }

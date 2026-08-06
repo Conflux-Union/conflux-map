@@ -7,8 +7,10 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.model.TileKey;
-import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
+import cn.net.rms.confluxmap.core.net.CorrectionProfile;
+import cn.net.rms.confluxmap.core.net.MapSyncCompatibility;
+import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
@@ -246,15 +248,6 @@ public final class PredictionTileService {
         return revisions;
     }
 
-    private static boolean hasKnownRevision(final long[] revisions) {
-        for (final long revision : revisions) {
-            if (revision != Long.MIN_VALUE) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     /**
      * Composes one immutable CPU tile under an explicit view mode without mutating the visible
      * viewport, GPU upload queue, metadata cache, or the globally selected prediction mode.
@@ -280,7 +273,8 @@ public final class PredictionTileService {
 
     /** Applies a server patch and queues the affected predicted tile for recomposition. */
     public boolean applyCorrection(
-        final CorrectionStore.Key key, final long revision, final byte[] presence, final cn.net.rms.confluxmap.core.net.PatchCodec.Patch patch
+        final CorrectionStore.Key key, final long revision, final byte[] presence,
+        final PatchCodec.Patch patch
     ) {
         return applyCorrection(key, revision, presence, patch, System.currentTimeMillis());
     }
@@ -294,8 +288,8 @@ public final class PredictionTileService {
     ) {
         return applyRegionCorrection(
             dimension, lod, slice, patch,
-            cn.net.rms.confluxmap.core.net.Proto.PATCH_MODE_RESIDUAL,
-            cn.net.rms.confluxmap.core.net.MapSyncCompatibility.STABLE_PREDICTOR,
+            Proto.PATCH_MODE_RESIDUAL,
+            MapSyncCompatibility.STABLE_PREDICTOR,
             validatedAtMillis
         );
     }
@@ -309,9 +303,26 @@ public final class PredictionTileService {
         final String baselineProfile,
         final long validatedAtMillis
     ) {
+        return applyRegionCorrection(
+            dimension, lod, slice, patch, patchMode, baselineProfile, validatedAtMillis,
+            CorrectionProfile.SOURCE_LIGHT_V2
+        );
+    }
+
+    public boolean applyRegionCorrection(
+        final String dimension,
+        final int lod,
+        final ChunkRegionSlice slice,
+        final ChunkPatchCodec.Patch patch,
+        final int patchMode,
+        final String baselineProfile,
+        final long validatedAtMillis,
+        final CorrectionProfile correctionProfile
+    ) {
         final CorrectionStore store = state.manualSeed() ? null : correctionStore;
         if (store == null || !store.applyRegionSlice(
-            dimension, lod, slice, patch, patchMode, baselineProfile, validatedAtMillis
+            dimension, lod, slice, patch, patchMode, baselineProfile, validatedAtMillis,
+            correctionProfile
         )) {
             return false;
         }
@@ -326,9 +337,23 @@ public final class PredictionTileService {
         final long revision,
         final long validatedAtMillis
     ) {
+        return validateRegionCorrection(
+            dimension, lod, slice, revision, validatedAtMillis,
+            CorrectionProfile.SOURCE_LIGHT_V2
+        );
+    }
+
+    public boolean validateRegionCorrection(
+        final String dimension,
+        final int lod,
+        final ChunkRegionSlice slice,
+        final long revision,
+        final long validatedAtMillis,
+        final CorrectionProfile correctionProfile
+    ) {
         final CorrectionStore store = state.manualSeed() ? null : correctionStore;
         if (store == null || !store.validateRegionSlice(
-            dimension, lod, slice, revision, validatedAtMillis
+            dimension, lod, slice, revision, validatedAtMillis, correctionProfile
         )) {
             return false;
         }
@@ -362,13 +387,13 @@ public final class PredictionTileService {
         final CorrectionStore.Key key,
         final long revision,
         final byte[] presence,
-        final cn.net.rms.confluxmap.core.net.PatchCodec.Patch patch,
+        final PatchCodec.Patch patch,
         final long validatedAtMillis
     ) {
         return applyCorrection(
             key, revision, presence, patch,
-            cn.net.rms.confluxmap.core.net.Proto.PATCH_MODE_RESIDUAL,
-            cn.net.rms.confluxmap.core.net.MapSyncCompatibility.STABLE_PREDICTOR,
+            Proto.PATCH_MODE_RESIDUAL,
+            MapSyncCompatibility.STABLE_PREDICTOR,
             validatedAtMillis
         );
     }
@@ -377,14 +402,31 @@ public final class PredictionTileService {
         final CorrectionStore.Key key,
         final long revision,
         final byte[] presence,
-        final cn.net.rms.confluxmap.core.net.PatchCodec.Patch patch,
+        final PatchCodec.Patch patch,
         final int patchMode,
         final String baselineProfile,
         final long validatedAtMillis
     ) {
+        return applyCorrection(
+            key, revision, presence, patch, patchMode, baselineProfile, validatedAtMillis,
+            CorrectionProfile.SOURCE_LIGHT_V2
+        );
+    }
+
+    public boolean applyCorrection(
+        final CorrectionStore.Key key,
+        final long revision,
+        final byte[] presence,
+        final PatchCodec.Patch patch,
+        final int patchMode,
+        final String baselineProfile,
+        final long validatedAtMillis,
+        final CorrectionProfile correctionProfile
+    ) {
         final CorrectionStore store = state.manualSeed() ? null : correctionStore;
         if (store == null || !store.apply(
-            key, revision, presence, patch, patchMode, baselineProfile, validatedAtMillis
+            key, revision, presence, patch, patchMode, baselineProfile, validatedAtMillis,
+            correctionProfile
         )) {
             return false;
         }
@@ -399,8 +441,23 @@ public final class PredictionTileService {
         final byte[] presence,
         final long validatedAtMillis
     ) {
+        return validateCorrection(
+            key, revision, presence, validatedAtMillis,
+            CorrectionProfile.SOURCE_LIGHT_V2
+        );
+    }
+
+    public boolean validateCorrection(
+        final CorrectionStore.Key key,
+        final long revision,
+        final byte[] presence,
+        final long validatedAtMillis,
+        final CorrectionProfile correctionProfile
+    ) {
         final CorrectionStore store = correctionStore;
-        if (store == null || !store.validate(key, revision, presence, validatedAtMillis)) {
+        if (store == null || !store.validate(
+            key, revision, presence, validatedAtMillis, correctionProfile
+        )) {
             return false;
         }
         markCorrectionDirty(key);
@@ -411,7 +468,7 @@ public final class PredictionTileService {
     public boolean applyPartialCorrection(
         final CorrectionStore.Key key,
         final byte[] presence,
-        final cn.net.rms.confluxmap.core.net.PatchCodec.Patch patch
+        final PatchCodec.Patch patch
     ) {
         final CorrectionStore store = correctionStore;
         if (store == null || !store.applyPartial(key, presence, patch)) {
@@ -816,7 +873,8 @@ public final class PredictionTileService {
                         composition.mode(),
                         composition.hasServerState(),
                         composition.freshnessValidatedAtMillis(),
-                        composition.serverCoverageValidatedAtMillis()
+                        composition.serverCoverageValidatedAtMillis(),
+                        composition.correctionProfile()
                     ));
                     staleViewModeTiles.remove(key);
                     staleRealCoverageTiles.remove(key);
@@ -897,12 +955,13 @@ public final class PredictionTileService {
                 lower.mode(),
                 lower.hasServerState(),
                 lower.freshnessValidatedAtMillis(),
-                lower.serverCoverageValidatedAtMillis()
+                lower.serverCoverageValidatedAtMillis(),
+                lower.correctionProfile()
             );
             uploads.maskPredictedPixels(
                 realKey(key), composition.update().argbPixels(),
                 lower.syncEvaluated(), lower.syncSourceRevisions(),
-                hasKnownRevision(lower.syncSourceRevisions())
+                lower.correctionProfile()
             );
             return composition;
         }
@@ -956,7 +1015,8 @@ public final class PredictionTileService {
             ? new byte[PatchCodec.PIXELS] : directCorrections.copyBlockLight();
         uploads.maskPredictedPixels(
             realKey(key), pixels, syncEvaluated, syncSourceRevisions,
-            directCorrections != null && directCorrections.hasSourceRevisionMetadata()
+            directCorrections == null
+                ? CorrectionProfile.LEGACY_V1 : directCorrections.correctionProfile()
         );
         final float composedDaylight = applyLayerLighting(key, pixels, blockLight);
         return new Composition(
@@ -972,7 +1032,9 @@ public final class PredictionTileService {
             compositionMode,
             directHasServerState,
             directValidatedAt,
-            directHasServerState ? directValidatedAt : 0L
+            directHasServerState ? directValidatedAt : 0L,
+            directCorrections == null
+                ? CorrectionProfile.LEGACY_V1 : directCorrections.correctionProfile()
         );
     }
 
@@ -1211,7 +1273,8 @@ public final class PredictionTileService {
             composition.mode(),
             composition.hasServerState(),
             composition.freshnessValidatedAtMillis(),
-            composition.serverCoverageValidatedAtMillis()
+            composition.serverCoverageValidatedAtMillis(),
+            composition.correctionProfile()
         );
     }
 
@@ -1379,7 +1442,8 @@ public final class PredictionTileService {
         PredictionViewMode mode,
         boolean hasServerState,
         long freshnessValidatedAtMillis,
-        long serverCoverageValidatedAtMillis
+        long serverCoverageValidatedAtMillis,
+        CorrectionProfile correctionProfile
     ) {
     }
 

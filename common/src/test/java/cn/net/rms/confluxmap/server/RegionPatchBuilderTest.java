@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
+import cn.net.rms.confluxmap.core.net.CorrectionProfile;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
 import cn.net.rms.confluxmap.core.predict.FlatBaseline;
@@ -82,10 +83,10 @@ class RegionPatchBuilderTest {
         final PatchBuilder.PreparedBaseline baseline = PatchBuilder.PreparedBaseline.absoluteOnly();
 
         final RegionPatchBuilder.Result enhanced = new RegionPatchBuilder().build(
-            4, slice, region, Long.MIN_VALUE, baseline, true
+            4, slice, region, Long.MIN_VALUE, baseline, CorrectionProfile.SOURCE_LIGHT_V2
         );
         final RegionPatchBuilder.Result legacy = new RegionPatchBuilder().build(
-            4, slice, region, Long.MIN_VALUE, baseline, false
+            4, slice, region, Long.MIN_VALUE, baseline, CorrectionProfile.LEGACY_V1
         );
         final ChunkPatchCodec.Patch decodedLegacy = ChunkPatchCodec.decode(legacy.body());
 
@@ -93,7 +94,7 @@ class RegionPatchBuilderTest {
         assertEquals(Long.MIN_VALUE, decodedLegacy.sourceRevisionAt(0));
         assertEquals(0, decodedLegacy.blockLightAt(0));
         final RegionPatchBuilder.Result unchanged = new RegionPatchBuilder().build(
-            4, slice, region, legacy.revision(), baseline, false
+            4, slice, region, legacy.revision(), baseline, CorrectionProfile.LEGACY_V1
         );
         assertEquals(Proto.PATCH_MODE_UNCHANGED, unchanged.mode());
         assertEquals(0, unchanged.body().length);

@@ -86,6 +86,35 @@ class MsgCodecTest {
     }
 
     @Test
+    void mapCapabilitiesRoundTripsAndRejectsDuplicateIds() throws ProtoException {
+        final MapCapabilitiesS2C original = new MapCapabilitiesS2C(
+            MapSyncProtocol.NEGOTIATION_VERSION,
+            "0.2.0",
+            MapSyncCompatibility.STABLE_PREDICTOR,
+            MapCompatibilityS2C.MODE_RESIDUAL,
+            MapCompatibilityS2C.REASON_NONE,
+            CorrectionProfile.SOURCE_LIGHT_V2.id(),
+            List.of(
+                new MapCapabilitiesS2C.Entry(MapSyncCapability.LOAD_STATE.id(), 1),
+                new MapCapabilitiesS2C.Entry(MapSyncCapability.REGION_CORRECTION.id(), 1)
+            )
+        );
+
+        assertEquals(original, MsgCodec.decode(MsgCodec.encode(original)));
+
+        final MapCapabilitiesS2C duplicate = new MapCapabilitiesS2C(
+            original.negotiationVersion(), original.serverModVersion(),
+            original.serverPredictorVersion(), original.correctionMode(),
+            original.reasonCode(), original.correctionProfileId(),
+            List.of(
+                new MapCapabilitiesS2C.Entry(1, 1),
+                new MapCapabilitiesS2C.Entry(1, 1)
+            )
+        );
+        assertThrows(ProtoException.class, () -> MsgCodec.encode(duplicate));
+    }
+
+    @Test
     void helloPolicyRoundTripsWithSeed() throws ProtoException {
         final HelloPolicyS2C original = new HelloPolicyS2C(
             new HelloPolicyS2C.Flags(true, true, true, true, true, true, true, true),

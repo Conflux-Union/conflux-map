@@ -84,6 +84,8 @@ public final class MsgCodec {
                 encodeMapCompatibilityS2C(out, m);
             } else if (msg instanceof final ServerViewDistanceS2C m) {
                 out.writeShort(m.chunks());
+            } else if (msg instanceof final MapCapabilitiesS2C m) {
+                encodeMapCapabilitiesS2C(out, m);
             } else {
                 throw new ProtoException("unknown message type: " + msg.getClass().getName());
             }
@@ -120,7 +122,8 @@ public final class MsgCodec {
             || typeId == Proto.MSG_MAP_REGION_PATCH_S2C
             || typeId == Proto.MSG_MAP_REGION_INVALIDATE_S2C
             || typeId == Proto.MSG_MAP_COMPATIBILITY_S2C
-            || typeId == Proto.MSG_SERVER_VIEW_DISTANCE_S2C;
+            || typeId == Proto.MSG_SERVER_VIEW_DISTANCE_S2C
+            || typeId == Proto.MSG_MAP_CAPABILITIES_S2C;
     }
 
     private static void encodeHelloC2S(final DataOutputStream out, final HelloC2S m) throws IOException, ProtoException {
@@ -153,6 +156,40 @@ public final class MsgCodec {
         writeUtf(out, m.serverPredictorVersion());
         out.writeByte(m.correctionMode());
         out.writeByte(m.reasonCode());
+    }
+
+    private static void encodeMapCapabilitiesS2C(
+        final DataOutputStream out, final MapCapabilitiesS2C m
+    ) throws IOException, ProtoException {
+        requireUnsignedByte("negotiation version", m.negotiationVersion());
+        requireUnsignedByte("correction profile", m.correctionProfileId());
+        if (m.correctionMode() < MapCompatibilityS2C.MODE_RESIDUAL
+            || m.correctionMode() > MapCompatibilityS2C.MODE_DISABLED
+            || m.reasonCode() < MapCompatibilityS2C.REASON_NONE
+            || m.reasonCode() > MapCompatibilityS2C.REASON_NO_COMMON_WIRE) {
+            throw new ProtoException("invalid map capability selection");
+        }
+        if (m.capabilities().size() > MapSyncProtocol.MAX_CAPABILITIES) {
+            throw new ProtoException("too many selected map-sync capabilities");
+        }
+        out.writeByte(m.negotiationVersion());
+        writeUtf(out, m.serverModVersion());
+        writeUtf(out, m.serverPredictorVersion());
+        out.writeByte(m.correctionMode());
+        out.writeByte(m.reasonCode());
+        out.writeByte(m.correctionProfileId());
+        out.writeByte(m.capabilities().size());
+        final boolean[] seen = new boolean[256];
+        for (final MapCapabilitiesS2C.Entry entry : m.capabilities()) {
+            requireUnsignedByte("capability id", entry.capabilityId());
+            requireUnsignedByte("capability version", entry.version());
+            if (entry.version() == 0 || seen[entry.capabilityId()]) {
+                throw new ProtoException("invalid or duplicate map-sync capability");
+            }
+            seen[entry.capabilityId()] = true;
+            out.writeByte(entry.capabilityId());
+            out.writeByte(entry.version());
+        }
     }
 
     private static void encodeHelloPolicyS2C(final DataOutputStream out, final HelloPolicyS2C m) throws IOException, ProtoException {
@@ -503,6 +540,7 @@ public final class MsgCodec {
                 case Proto.MSG_MAP_REGION_INVALIDATE_S2C -> decodeMapRegionInvalidateS2C(in);
                 case Proto.MSG_MAP_COMPATIBILITY_S2C -> decodeMapCompatibilityS2C(in);
                 case Proto.MSG_SERVER_VIEW_DISTANCE_S2C -> decodeServerViewDistanceS2C(in);
+                case Proto.MSG_MAP_CAPABILITIES_S2C -> decodeMapCapabilitiesS2C(in);
                 default -> throw new ProtoException("unhandled message type id: 0x" + Integer.toHexString(typeId));
             };
             if (in.available() != 0) {
@@ -555,6 +593,47 @@ public final class MsgCodec {
             throw new ProtoException("invalid map compatibility selection");
         }
         return message;
+    }
+
+    private static MapCapabilitiesS2C decodeMapCapabilitiesS2C(
+        final DataInputStream in
+    ) throws IOException, ProtoException {
+        final int negotiationVersion = in.readUnsignedByte();
+        final String serverModVersion = readUtf(in);
+        final String serverPredictorVersion = readUtf(in);
+        final int correctionMode = in.readUnsignedByte();
+        final int reasonCode = in.readUnsignedByte();
+        final int correctionProfileId = in.readUnsignedByte();
+        final int capabilityCount = in.readUnsignedByte();
+        if (capabilityCount > MapSyncProtocol.MAX_CAPABILITIES) {
+            throw new ProtoException("too many selected map-sync capabilities");
+        }
+        if (correctionMode < MapCompatibilityS2C.MODE_RESIDUAL
+            || correctionMode > MapCompatibilityS2C.MODE_DISABLED
+            || reasonCode < MapCompatibilityS2C.REASON_NONE
+            || reasonCode > MapCompatibilityS2C.REASON_NO_COMMON_WIRE) {
+            throw new ProtoException("invalid map capability selection");
+        }
+        final List<MapCapabilitiesS2C.Entry> capabilities = new ArrayList<>(capabilityCount);
+        final boolean[] seen = new boolean[256];
+        for (int i = 0; i < capabilityCount; i++) {
+            final int capabilityId = in.readUnsignedByte();
+            final int version = in.readUnsignedByte();
+            if (version == 0 || seen[capabilityId]) {
+                throw new ProtoException("invalid or duplicate map-sync capability");
+            }
+            seen[capabilityId] = true;
+            capabilities.add(new MapCapabilitiesS2C.Entry(capabilityId, version));
+        }
+        return new MapCapabilitiesS2C(
+            negotiationVersion,
+            serverModVersion,
+            serverPredictorVersion,
+            correctionMode,
+            reasonCode,
+            correctionProfileId,
+            capabilities
+        );
     }
 
     private static HelloPolicyS2C decodeHelloPolicyS2C(final DataInputStream in) throws IOException, ProtoException {
