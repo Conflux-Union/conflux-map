@@ -31,6 +31,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 
 /** Client-side viewport debounce, request planning, and correction application. */
@@ -62,6 +63,7 @@ public final class MapSyncClient {
     private final PredictionTileService predictionTiles;
     private final ConfluxConfig config;
     private final LongSupplier millisClock;
+    private final Consumer<Iterable<PatchCodec.Sample>> materialRegistrar;
     private final MapSyncProgress progress = new MapSyncProgress();
     private int nextReqId;
     private long stableSince = Long.MIN_VALUE;
@@ -140,7 +142,24 @@ public final class MapSyncClient {
         final PredictionTileService predictionTiles,
         final ConfluxConfig config
     ) {
-        this(companion, networking::sendMessage, corrections, predictionTiles, config, System::currentTimeMillis);
+        this(
+            companion, networking::sendMessage, corrections, predictionTiles, config,
+            System::currentTimeMillis, ignored -> { }
+        );
+    }
+
+    public MapSyncClient(
+        final CompanionSession companion,
+        final ClientNetworking networking,
+        final CorrectionStore corrections,
+        final PredictionTileService predictionTiles,
+        final ConfluxConfig config,
+        final Consumer<Iterable<PatchCodec.Sample>> materialRegistrar
+    ) {
+        this(
+            companion, networking::sendMessage, corrections, predictionTiles, config,
+            System::currentTimeMillis, materialRegistrar
+        );
     }
 
     MapSyncClient(
@@ -151,12 +170,28 @@ public final class MapSyncClient {
         final ConfluxConfig config,
         final LongSupplier millisClock
     ) {
+        this(
+            companion, sender, corrections, predictionTiles, config, millisClock,
+            ignored -> { }
+        );
+    }
+
+    MapSyncClient(
+        final CompanionSession companion,
+        final Sender sender,
+        final CorrectionStore corrections,
+        final PredictionTileService predictionTiles,
+        final ConfluxConfig config,
+        final LongSupplier millisClock,
+        final Consumer<Iterable<PatchCodec.Sample>> materialRegistrar
+    ) {
         this.companion = companion;
         this.sender = sender;
         this.corrections = corrections;
         this.predictionTiles = predictionTiles;
         this.config = config;
         this.millisClock = millisClock;
+        this.materialRegistrar = materialRegistrar == null ? ignored -> { } : materialRegistrar;
     }
 
     /** Requests every map LOD; high LOD corrections arrive as bounded progressive patches. */
@@ -227,6 +262,7 @@ public final class MapSyncClient {
                 }
                 final CorrectionStore.Key key = new CorrectionStore.Key(dimensionId, lod, x, z);
                 final cn.net.rms.confluxmap.core.predict.CorrectionTile tile = corrections.get(key);
+                materialRegistrar.accept(tile.copyPatch().samples());
                 final byte[] presence = tile.presence();
                 boolean empty = true;
                 for (final byte value : presence) {
@@ -484,6 +520,7 @@ public final class MapSyncClient {
             || patch.mode() == Proto.PATCH_MODE_ABSOLUTE) {
             try {
                 final ChunkPatchCodec.Patch decoded = ChunkPatchCodec.decode(patch.body());
+                materialRegistrar.accept(decoded.samples());
                 if (ChunkPatchCodec.regionRevision(
                     patch.lod(), patch.slice(), decoded, activeCorrectionProfile()
                 )
@@ -524,6 +561,7 @@ public final class MapSyncClient {
         }
         try {
             final PatchCodec.Patch decoded = PatchCodec.decode(patch.body());
+            materialRegistrar.accept(decoded.samples());
             final CorrectionStore.Key key = keyFor(patch);
             if (key == null) {
                 return false;
@@ -706,6 +744,7 @@ public final class MapSyncClient {
                 final cn.net.rms.confluxmap.core.predict.CorrectionTile tile = corrections.get(
                     new CorrectionStore.Key(dimensionId, lod, x, z)
                 );
+                materialRegistrar.accept(tile.copyPatch().samples());
                 final boolean directFresh = tile.matchesSource(
                     activePatchMode(), activeBaselineProfile(), activeCorrectionProfile()
                 ) && tile.isFreshAt(now, PredictionTileService.CORRECTION_REUSE_TTL_MS);

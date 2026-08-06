@@ -26,6 +26,12 @@ public interface ChunkColumnSource {
 
     String blockNameAt(int x, int y, int z);
 
+    /** Stable registry material identity used by clients to sample their active resource pack. */
+    default String materialIdAt(final int x, final int y, final int z) {
+        final String name = blockNameAt(x, y, z);
+        return name == null ? "" : name;
+    }
+
     /**
      * Fluid occupying this block state, independent of its registry name. Implementations backed by
      * live chunks must read {@code FluidState}; serialized implementations must retain the palette

@@ -20,6 +20,8 @@ class ChunkColumnSummarizerTest {
         assertEquals(3, column.mapColorId());
         assertEquals(1, column.biomeId());
         assertEquals(12, column.blockLight());
+        assertEquals("minecraft:snow", column.materialId());
+        assertEquals("", column.floorMaterialId());
     }
 
     private static final class StoneWithSnowColumn implements ChunkColumnSource {

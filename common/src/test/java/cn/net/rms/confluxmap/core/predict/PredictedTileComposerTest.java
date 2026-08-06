@@ -96,6 +96,43 @@ class PredictedTileComposerTest {
     }
 
     @Test
+    void correctedMaterialUsesTheClientResourceSampleInsteadOfMapColor() {
+        final BaselineGrid grid = flatGrid(1);
+        final DerivedGrid derived = flatDerived(ShadingPipeline.REFERENCE_HEIGHT);
+        final int pixel = 10 * 256 + 10;
+        final CorrectionTile corrections = new CorrectionTile();
+        corrections.applyPatch(
+            1L,
+            new byte[Proto.PATCH_PRESENCE_BYTES],
+            new PatchCodec.Patch(java.util.List.of(new PatchCodec.Sample(
+                pixel, 1, ShadingPipeline.REFERENCE_HEIGHT, SurfaceKind.LAND.ordinal(),
+                4, 0, 255, "minecraft:glowstone", ""
+            ))),
+            Proto.PATCH_MODE_ABSOLUTE,
+            "",
+            1_000L
+        );
+        final SyncedMaterialPalette materials = new SyncedMaterialPalette();
+        final int sampledGlowstone = 0xFFFFD95A;
+        materials.put("minecraft:glowstone", new SyncedMaterialPalette.Sample(
+            sampledGlowstone,
+            MaterialDetailProfile.flat(),
+            SyncedMaterialPalette.Tint.NONE,
+            0xFFFFFFFF,
+            1
+        ));
+
+        final int[] composed = PredictedTileComposer.compose(
+            derived, grid, PredictionPalette.defaults(), corrections,
+            PredictionViewMode.EVERYWHERE, 0, Proto.MAP_COLOR_NONE,
+            derived, grid, Proto.MAP_COLOR_NONE, true, 0xFFFFFFFF, materials
+        );
+
+        assertEquals(sampledGlowstone, composed[pixel]);
+        assertNotEquals(MapColorTable.argb(4), composed[pixel]);
+    }
+
+    @Test
     void producesAFullyOpaqueTileForOrdinaryTerrain() {
         // The fake sampler never returns a VOID/UNKNOWN kind, and even a translucent water pixel
         // composites to fully opaque here since its synthesized seafloor base is itself opaque

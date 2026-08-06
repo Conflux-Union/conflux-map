@@ -110,6 +110,22 @@ class ChunkPatchCodecTest {
     }
 
     @Test
+    void materialRegionRoundTripsRegistryIds() throws Exception {
+        final PatchCodec.Sample sample = new PatchCodec.Sample(
+            0, 1, 72, 1, 18, 0, 255, "minecraft:glowstone", ""
+        );
+        final ChunkPatchCodec.Patch patch = new ChunkPatchCodec.Patch(
+            1, 1, 1, new byte[] {1}, new byte[] {1}, List.of(sample)
+        );
+
+        final ChunkPatchCodec.Patch decoded = ChunkPatchCodec.decode(
+            ChunkPatchCodec.encode(patch)
+        );
+
+        assertEquals("minecraft:glowstone", decoded.sampleAt(0).materialId());
+    }
+
+    @Test
     void legacyRegionMarksSourceRevisionUnknown() throws Exception {
         final ChunkPatchCodec.Patch decoded = ChunkPatchCodec.decode(
             ChunkPatchCodec.encodeLegacy(new ChunkPatchCodec.Patch(

@@ -14,7 +14,9 @@ public record MapPixel(
     int kind,
     int mapColorId,
     int fluidDepth,
-    int floorMapColorId
+    int floorMapColorId,
+    String materialId,
+    String floorMaterialId
 ) {
     public static final int MAP_COLOR_NONE = 255;
 
@@ -25,6 +27,24 @@ public record MapPixel(
             || surfaceY < Short.MIN_VALUE || surfaceY > Short.MAX_VALUE) {
             throw new IllegalArgumentException("map pixel field outside wire range");
         }
+        materialId = materialId == null ? "" : materialId;
+        floorMaterialId = floorMaterialId == null ? "" : floorMaterialId;
+        if (materialId.length() > 256 || floorMaterialId.length() > 256) {
+            throw new IllegalArgumentException("map pixel material id is too long");
+        }
+    }
+
+    public MapPixel(
+        final int biomeId,
+        final int surfaceY,
+        final int kind,
+        final int mapColorId,
+        final int fluidDepth,
+        final int floorMapColorId
+    ) {
+        this(
+            biomeId, surfaceY, kind, mapColorId, fluidDepth, floorMapColorId, "", ""
+        );
     }
 
     public MapPixel(
@@ -34,6 +54,17 @@ public record MapPixel(
         final int mapColorId,
         final int fluidDepth
     ) {
-        this(biomeId, surfaceY, kind, mapColorId, fluidDepth, MAP_COLOR_NONE);
+        this(biomeId, surfaceY, kind, mapColorId, fluidDepth, MAP_COLOR_NONE, "", "");
+    }
+
+    /** Legacy residual equality; material identity affects color, not predicted terrain shape. */
+    public boolean sameTerrainSemantics(final MapPixel other) {
+        return other != null
+            && biomeId == other.biomeId
+            && surfaceY == other.surfaceY
+            && kind == other.kind
+            && mapColorId == other.mapColorId
+            && fluidDepth == other.fluidDepth
+            && floorMapColorId == other.floorMapColorId;
     }
 }

@@ -86,7 +86,7 @@ public final class RegionPatchBuilder {
                         ChunkPatchCodec.setBit(evaluated, patchPixel);
                         blockLight[patchPixel] = (byte) column.blockLight();
                         final boolean differs = !absolute && (uniformPixel != null
-                            ? !uniformPixel.equals(column.pixel())
+                            ? !uniformPixel.sameTerrainSemantics(column.pixel())
                             : differsFromBaseline(
                                 column, baseline, derived, prepared.mapColorId(),
                                 tileChunkX * samplesPerChunk + sampleX,
@@ -138,6 +138,6 @@ public final class RegionPatchBuilder {
             derived.fluidDepth[index],
             MapPixel.MAP_COLOR_NONE
         );
-        return !expected.equals(actual.pixel());
+        return !expected.sameTerrainSemantics(actual.pixel());
     }
 }

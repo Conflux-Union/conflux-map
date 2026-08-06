@@ -162,6 +162,8 @@ class ChunkSummarizerTest {
         assertEquals(13, column.fluidDepth());
         assertEquals(11, column.floorMapColorId());
         assertEquals(12, column.blockLight());
+        assertEquals("minecraft:water", column.materialId());
+        assertEquals("minecraft:stone", column.floorMaterialId());
 
         assertExactSeafloorCorrection(chunk);
         assertModernRootAndPalettedContainersAreSummarized();

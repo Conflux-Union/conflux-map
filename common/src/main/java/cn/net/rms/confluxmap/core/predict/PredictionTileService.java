@@ -85,6 +85,7 @@ public final class PredictionTileService {
     private final Map<TileKey, TileMetadata> metadataTiles = new HashMap<>();
     /** Recent CPU results used to build a coarser tile without resampling. */
     private final PredictionMipCache mipCache = new PredictionMipCache(REUSABLE_TILE_LIMIT);
+    private final SyncedMaterialPalette syncedMaterials = new SyncedMaterialPalette();
     /** Parent tiles waiting for one bounded disk-backed lower-LOD reduction. */
     private final LinkedHashMap<TileKey, Long> lowerCoverageQueue = new LinkedHashMap<>();
     private final Set<TileKey> lowerCoverageInFlight = new HashSet<>();
@@ -165,6 +166,10 @@ public final class PredictionTileService {
 
     public void bindDaylightModel(final DaylightModel model) {
         this.daylightModel = model;
+    }
+
+    public SyncedMaterialPalette syncedMaterials() {
+        return syncedMaterials;
     }
 
     public void setViewMode(final PredictionViewMode mode) {
@@ -1005,7 +1010,8 @@ public final class PredictionTileService {
                 !key.dimension().equals(DimensionId.NETHER),
                 key.dimension().equals(DimensionId.NETHER)
                     ? LightTint.multiplier(0, 0, true)
-                    : 0xFFFFFFFF
+                    : 0xFFFFFFFF,
+                syncedMaterials
             );
         final byte[] syncEvaluated = directCorrections == null
             ? new byte[PatchCodec.MASK_BYTES] : directCorrections.copyEvaluated();

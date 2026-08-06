@@ -34,8 +34,8 @@ class CompanionSessionTest {
         absolute.onPolicy(policyWithCorrections(true));
         assertEquals(MapSyncCompatibility.ClientMode.COMPATIBLE_ABSOLUTE, absolute.mapSyncMode());
         assertTrue(absolute.policy().flags().correctionsEnabled());
-        assertEquals(CorrectionProfile.SOURCE_LIGHT_V2, residual.mapSyncCorrectionProfile());
-        assertEquals(CorrectionProfile.SOURCE_LIGHT_V2, absolute.mapSyncCorrectionProfile());
+        assertEquals(CorrectionProfile.MATERIAL_COLOR_V3, residual.mapSyncCorrectionProfile());
+        assertEquals(CorrectionProfile.MATERIAL_COLOR_V3, absolute.mapSyncCorrectionProfile());
     }
 
     @Test

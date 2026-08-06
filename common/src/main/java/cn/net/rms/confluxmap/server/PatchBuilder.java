@@ -134,7 +134,7 @@ public final class PatchBuilder {
                         MapPixel.MAP_COLOR_NONE
                     );
                 }
-                if (absolute || !expected.equals(column.pixel())) {
+                if (absolute || !expected.sameTerrainSemantics(column.pixel())) {
                     records.add(toSample(x, z, column));
                 }
             }
@@ -503,6 +503,8 @@ public final class PatchBuilder {
             hash = fnv1a(hash, sample.mapColorId());
             hash = fnv1a(hash, sample.fluidDepth());
             hash = fnv1a(hash, sample.floorMapColorId());
+            hash = fnv1aString(hash, sample.materialId());
+            hash = fnv1aString(hash, sample.floorMaterialId());
         }
         return hash == Long.MIN_VALUE ? Long.MAX_VALUE : hash;
     }
@@ -519,6 +521,14 @@ public final class PatchBuilder {
             hash = fnv1a(hash, (int) (value >>> shift));
         }
         return hash;
+    }
+
+    private static long fnv1aString(long hash, final String value) {
+        final byte[] bytes = value.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        for (final byte b : bytes) {
+            hash = fnv1a(hash, b);
+        }
+        return fnv1a(hash, 0);
     }
 
     private static long fnv1a(final long hash, final int value) {

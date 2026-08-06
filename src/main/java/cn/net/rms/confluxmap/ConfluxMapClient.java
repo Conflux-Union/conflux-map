@@ -29,6 +29,7 @@ import cn.net.rms.confluxmap.mc.McGameBridge;
 import cn.net.rms.confluxmap.mc.color.BiomeTintResolver;
 import cn.net.rms.confluxmap.mc.color.ColorReloadListener;
 import cn.net.rms.confluxmap.mc.color.SpriteColorSampler;
+import cn.net.rms.confluxmap.mc.color.SyncedMaterialResolver;
 import cn.net.rms.confluxmap.mc.input.Keybinds;
 import cn.net.rms.confluxmap.mc.net.ClientNetworking;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
@@ -84,6 +85,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private RegionCacheService regionCache;
     private SpriteColorSampler spriteColorSampler;
     private BiomeTintResolver biomeTintResolver;
+    private SyncedMaterialResolver syncedMaterialResolver;
     private TileTextureManager tileTextureManager;
     private ChunkCaptureService chunkCapture;
     private RadarViewRange radarViewRange;
@@ -166,6 +168,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
         // failed load just leaves NativeLib.available() false and prediction permanently disabled.
         NativeLib.init(confluxRoot);
         predictionState = new PredictionState();
+        spriteColorSampler = new SpriteColorSampler(client);
+        biomeTintResolver = new BiomeTintResolver(client);
         structureMarkerService = new StructureMarkerService(
             cacheRoot,
             predictionState,
@@ -183,7 +187,14 @@ public final class ConfluxMapClient implements ClientModInitializer {
             client, predictionState, companionSession, config.predictionManualSeeds
         );
         clientNetworking = new ClientNetworking(companionSession);
-        mapSyncClient = new MapSyncClient(companionSession, clientNetworking, correctionStore, predictionTileService, config);
+        syncedMaterialResolver = new SyncedMaterialResolver(
+            client, spriteColorSampler, biomeTintResolver,
+            predictionTileService.syncedMaterials()
+        );
+        mapSyncClient = new MapSyncClient(
+            companionSession, clientNetworking, correctionStore, predictionTileService,
+            config, syncedMaterialResolver::register
+        );
         chunkLoadStateClient = new ChunkLoadStateClient(companionSession, clientNetworking);
         mapExportService = new MapExportService(
             confluxRoot.resolve("exports"),
@@ -205,9 +216,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sharedWaypoints.register();
         groundTeleportService = new ClientGroundTeleportService(client);
 
-        spriteColorSampler = new SpriteColorSampler(client);
         predictionPaletteBuilder = new PredictionPaletteBuilder(client, predictionState, spriteColorSampler);
-        biomeTintResolver = new BiomeTintResolver(client);
         tileTextureManager = new TileTextureManager(config, tileService, predictionTileService, daylightModel);
         manualSeedService = new ManualSeedService(
             config,
@@ -283,6 +292,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
             new ColorReloadListener(client, spriteColorSampler, () -> {
                 predictionPaletteBuilder.refreshCurrentWorld();
+                syncedMaterialResolver.refresh();
                 reloadPredictionTiles();
             })
         );

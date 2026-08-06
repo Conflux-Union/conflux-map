@@ -6,11 +6,14 @@ overlays it; predictions never enter the `.cfr` column cache.
 ## Determinism
 
 The wire baseline is `{biomeId u8, surfaceY i16, kind u8, fluidDepth u8}`. The predictor version
-is `cb:9afc1038ea5a|shim:10|base:16`; palette colours are local and never sent. Synthetic canopy stays
-on the predicted plane instead of becoming a generated-chunk correction, so generated frontiers
-cannot introduce foliage-colour seams. Other height differences up to 2 blocks are tolerated, and
-fluid depth compares in buckets `0`, `1-3`, `4-9`, `10+`. A real map colour outside the biome's
-expected set is retained as a correction so player builds are visible.
+is `cb:9afc1038ea5a|shim:10|base:16`. Pixel colours remain local: current correction profiles send
+the authoritative surface and submerged-floor block registry ids, and the client samples those
+materials through the same active resource atlas used by captured chunks. Older profiles omit the
+ids and retain the map-colour fallback. Synthetic canopy stays on the predicted plane instead of
+becoming a generated-chunk correction, so generated frontiers cannot introduce foliage-colour
+seams. Other height differences up to 2 blocks are tolerated, and fluid depth compares in buckets
+`0`, `1-3`, `4-9`, `10+`. A real map colour outside the biome's expected set is retained as a
+correction so player builds are visible.
 
 The Nether prediction owns only the bedrock-roof layer. It samples cubiomes' three-dimensional
 biome field at Y=127 and paints a fixed-height biome proxy without pretending to predict Nether
@@ -141,13 +144,17 @@ only its owned output pixels, leaving adjacent cached corrections intact.
 Each patch carries a 16x16 diagnostic presence bitmap plus a raw `PatchCodec` body. The body starts
 with separate two-level sparse masks for evaluated pixels and pixels that differ from the shared
 deterministic baseline. Difference samples then use homogeneous value planes for biome, signed
-surface Y, surface kind, top map colour, fluid depth, and floor map colour (seven bytes per sample).
-All fields are compared exactly. An evaluated pixel without a difference sample reconstructs from
+surface Y, surface kind, top map colour, fluid depth, floor map colour, and dictionary-indexed
+surface/floor material ids. Material ids colour an existing residual sample but do not by
+themselves expand the residual mask. The terrain fields are compared exactly. An evaluated pixel
+without a difference sample reconstructs from
 the baseline; a difference sample is the server's absolute actual value. Returning to the baseline
 therefore needs no removal marker—the next complete snapshot simply omits that sample.
 
-`PatchCodec` writes the evaluated and difference sparse masks, then homogeneous value planes.
-Surface heights are zigzag-varint deltas in pixel order; categorical fields remain grouped for
+`PatchCodec` writes the evaluated and difference sparse masks, then homogeneous value planes. The
+material-colour profile adds a bounded UTF-8 dictionary and two material-index planes; negotiated
+source/light and legacy peers receive their original body versions without those planes. Surface
+heights are zigzag-varint deltas in pixel order; categorical fields remain grouped for
 long terrain runs. Each body is Deflate-compressed with bounded inflation before `MAP_PATCH` is
 framed, so client traffic accounting reflects the compact payload instead of the pre-compression
 field planes. A missing or mismatched predictor uses a complete absolute snapshot, never a false

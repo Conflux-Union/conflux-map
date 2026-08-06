@@ -110,7 +110,10 @@ class MapSyncChunkViewportTest {
                         List.of(new PatchCodec.Sample(0, 1, 88, 1, 1, 0))
                     );
                     body = ChunkPatchCodec.encode(page);
-                    revision = ChunkPatchCodec.regionRevision(request.lod(), region.slice(), page);
+                    revision = ChunkPatchCodec.regionRevision(
+                        request.lod(), region.slice(), page,
+                        companion.mapSyncCorrectionProfile()
+                    );
                     mode = Proto.PATCH_MODE_ABSOLUTE;
                 } else {
                     body = new byte[0];

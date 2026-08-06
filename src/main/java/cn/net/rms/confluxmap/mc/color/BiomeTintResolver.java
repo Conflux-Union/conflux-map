@@ -12,6 +12,7 @@ import net.minecraft.client.color.world.FoliageColors;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.tag.FluidTags;
 import net.minecraft.util.math.BlockPos;
+import cn.net.rms.confluxmap.core.predict.SyncedMaterialPalette;
 
 /**
  * Live per-position biome tint resolution, per surface-color-sampling.md §3's
@@ -71,6 +72,34 @@ public final class BiomeTintResolver {
         final int color = client.getBlockColors().getColor(state, world, pos, 0);
         //#endif
         return color == -1 ? NO_TINT : (0xFF000000 | color);
+    }
+
+    /** Tint category retained when a synchronized material is sampled away from its source chunk. */
+    public SyncedMaterialPalette.Tint syncedTint(final BlockState state) {
+        final Block block = state.getBlock();
+        if (block == Blocks.SPRUCE_LEAVES || block == Blocks.BIRCH_LEAVES) {
+            return SyncedMaterialPalette.Tint.FIXED;
+        }
+        if (isWater(state)) {
+            return SyncedMaterialPalette.Tint.WATER;
+        }
+        if (isFoliageTinted(block)) {
+            return SyncedMaterialPalette.Tint.FOLIAGE;
+        }
+        if (isGrassTinted(block)) {
+            return SyncedMaterialPalette.Tint.GRASS;
+        }
+        return SyncedMaterialPalette.Tint.NONE;
+    }
+
+    public int fixedSyncedTint(final BlockState state) {
+        if (state.getBlock() == Blocks.SPRUCE_LEAVES) {
+            return SPRUCE_LEAVES_ARGB;
+        }
+        if (state.getBlock() == Blocks.BIRCH_LEAVES) {
+            return BIRCH_LEAVES_ARGB;
+        }
+        return NO_TINT;
     }
 
     private static boolean isWater(final BlockState state) {

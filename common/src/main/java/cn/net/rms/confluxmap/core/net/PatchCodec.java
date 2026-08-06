@@ -7,8 +7,11 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.zip.DataFormatException;
 import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
@@ -24,7 +27,8 @@ import java.util.zip.Inflater;
  * read; {@code difference[pixel]} is implicit in the sample mask.
  */
 public final class PatchCodec {
-    public static final int FORMAT_VERSION = 4;
+    public static final int FORMAT_VERSION = 5;
+    public static final int SOURCE_LIGHT_FORMAT_VERSION = 4;
     public static final int LEGACY_FORMAT_VERSION = 3;
     public static final int PIXELS = 256 * 256;
     public static final int MASK_BYTES = PIXELS / 8;
@@ -32,9 +36,13 @@ public final class PatchCodec {
     public static final int FINE_MASK_BYTES = 32;
     public static final int MAX_SPARSE_MASK_BYTES = COARSE_MASK_BYTES + 256 * FINE_MASK_BYTES;
     public static final int RECORD_BYTES = 7;
+    public static final int MAX_MATERIALS = 4_096;
+    public static final int MAX_MATERIAL_BYTES = 256;
     private static final int MAX_DELTA_HEIGHT_BYTES = 3;
     public static final int MAX_RAW_BYTES =
-        1 + MAX_SPARSE_MASK_BYTES * 2 + PIXELS * (RECORD_BYTES - 2 + MAX_DELTA_HEIGHT_BYTES + 11);
+        1 + MAX_SPARSE_MASK_BYTES * 2
+            + PIXELS * (RECORD_BYTES - 2 + MAX_DELTA_HEIGHT_BYTES + 15)
+            + MAX_MATERIALS * (2 + MAX_MATERIAL_BYTES) + 2;
     public static final int MAX_COMPRESSED_BYTES = 576 * 1024;
 
     private PatchCodec() {
@@ -76,6 +84,23 @@ public final class PatchCodec {
             ));
         }
 
+        public Sample(
+            final int pixelIndex,
+            final int biomeId,
+            final int surfaceY,
+            final int kind,
+            final int mapColorId,
+            final int fluidDepth,
+            final int floorMapColorId,
+            final String materialId,
+            final String floorMaterialId
+        ) {
+            this(pixelIndex, new MapPixel(
+                biomeId, surfaceY, kind, mapColorId, fluidDepth, floorMapColorId,
+                materialId, floorMaterialId
+            ));
+        }
+
         public int biomeId() {
             return pixel.biomeId();
         }
@@ -98,6 +123,14 @@ public final class PatchCodec {
 
         public int floorMapColorId() {
             return pixel.floorMapColorId();
+        }
+
+        public String materialId() {
+            return pixel.materialId();
+        }
+
+        public String floorMaterialId() {
+            return pixel.floorMaterialId();
         }
     }
 
@@ -215,6 +248,10 @@ public final class PatchCodec {
         return encode(patch, LEGACY_FORMAT_VERSION);
     }
 
+    public static byte[] encodeSourceLight(final Patch patch) {
+        return encode(patch, SOURCE_LIGHT_FORMAT_VERSION);
+    }
+
     private static byte[] encode(final Patch patch, final int formatVersion) {
         if (patch == null) {
             throw new IllegalArgumentException("patch is null");
@@ -260,6 +297,19 @@ public final class PatchCodec {
                 out.writeByte(sample.floorMapColorId());
             }
             if (formatVersion >= FORMAT_VERSION) {
+                final Map<String, Integer> materials = materialTable(ordered);
+                out.writeShort(materials.size());
+                for (final String material : materials.keySet()) {
+                    writeMaterial(out, material);
+                }
+                for (final Sample sample : ordered) {
+                    out.writeShort(materials.get(sample.materialId()));
+                }
+                for (final Sample sample : ordered) {
+                    out.writeShort(materials.get(sample.floorMaterialId()));
+                }
+            }
+            if (formatVersion >= SOURCE_LIGHT_FORMAT_VERSION) {
                 long previousRevision = 0L;
                 for (int pixel = 0; pixel < PIXELS; pixel++) {
                     if (!patch.evaluatedAt(pixel)) {
@@ -306,7 +356,8 @@ public final class PatchCodec {
         try {
             final DataInputStream in = new DataInputStream(new ByteArrayInputStream(raw));
             final int version = in.readUnsignedByte();
-            if (version != FORMAT_VERSION && version != LEGACY_FORMAT_VERSION) {
+            if (version != FORMAT_VERSION && version != SOURCE_LIGHT_FORMAT_VERSION
+                && version != LEGACY_FORMAT_VERSION) {
                 throw new ProtoException("unsupported patch body version " + version);
             }
             final byte[] evaluated = readSparseMask(in);
@@ -339,9 +390,18 @@ public final class PatchCodec {
             final int[] mapColors = readUnsignedBytePlane(in, count);
             final int[] fluidDepths = readUnsignedBytePlane(in, count);
             final int[] floorMapColors = readUnsignedBytePlane(in, count);
+            final String[] materialIds = new String[count];
+            final String[] floorMaterialIds = new String[count];
+            java.util.Arrays.fill(materialIds, "");
+            java.util.Arrays.fill(floorMaterialIds, "");
+            if (version >= FORMAT_VERSION) {
+                final String[] materials = readMaterialTable(in);
+                readMaterialPlane(in, materials, materialIds);
+                readMaterialPlane(in, materials, floorMaterialIds);
+            }
             final long[] sourceRevisions = unknownRevisions();
             final byte[] blockLight = new byte[PIXELS];
-            if (version >= FORMAT_VERSION) {
+            if (version >= SOURCE_LIGHT_FORMAT_VERSION) {
                 long previousRevision = 0L;
                 for (int pixel = 0; pixel < PIXELS; pixel++) {
                     if (!hasBit(evaluated, pixel)) {
@@ -373,7 +433,9 @@ public final class PatchCodec {
                     kinds[i],
                     mapColors[i],
                     fluidDepths[i],
-                    floorMapColors[i]
+                    floorMapColors[i],
+                    materialIds[i],
+                    floorMaterialIds[i]
                 ));
             }
             return new Patch(evaluated, samples, sourceRevisions, blockLight);
@@ -399,6 +461,74 @@ public final class PatchCodec {
             throw new IllegalArgumentException("patch body exceeds compressed cap: " + result.length);
         }
         return result;
+    }
+
+    private static Map<String, Integer> materialTable(final List<Sample> samples) {
+        final Map<String, Integer> result = new LinkedHashMap<>();
+        result.put("", 0);
+        for (final Sample sample : samples) {
+            addMaterial(result, sample.materialId());
+            addMaterial(result, sample.floorMaterialId());
+        }
+        return result;
+    }
+
+    private static void addMaterial(final Map<String, Integer> materials, final String value) {
+        final String material = value == null ? "" : value;
+        if (!materials.containsKey(material)) {
+            if (materials.size() >= MAX_MATERIALS) {
+                throw new IllegalArgumentException("patch material table exceeds cap");
+            }
+            materials.put(material, materials.size());
+        }
+    }
+
+    private static void writeMaterial(
+        final DataOutputStream out, final String material
+    ) throws IOException {
+        final byte[] bytes = material.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length > MAX_MATERIAL_BYTES) {
+            throw new IllegalArgumentException("patch material id exceeds UTF-8 cap");
+        }
+        out.writeShort(bytes.length);
+        out.write(bytes);
+    }
+
+    private static String[] readMaterialTable(
+        final DataInputStream in
+    ) throws IOException, ProtoException {
+        final int count = in.readUnsignedShort();
+        if (count < 1 || count > MAX_MATERIALS) {
+            throw new ProtoException("invalid patch material count " + count);
+        }
+        final String[] result = new String[count];
+        for (int i = 0; i < count; i++) {
+            final int length = in.readUnsignedShort();
+            if (length > MAX_MATERIAL_BYTES) {
+                throw new ProtoException("patch material id exceeds UTF-8 cap");
+            }
+            final byte[] bytes = new byte[length];
+            in.readFully(bytes);
+            result[i] = new String(bytes, StandardCharsets.UTF_8);
+        }
+        if (!result[0].isEmpty()) {
+            throw new ProtoException("patch material table must start with empty fallback");
+        }
+        return result;
+    }
+
+    private static void readMaterialPlane(
+        final DataInputStream in,
+        final String[] materials,
+        final String[] output
+    ) throws IOException, ProtoException {
+        for (int i = 0; i < output.length; i++) {
+            final int index = in.readUnsignedShort();
+            if (index >= materials.length) {
+                throw new ProtoException("patch material index outside table: " + index);
+            }
+            output[i] = materials[index];
+        }
     }
 
     private static byte[] inflate(final byte[] body) throws ProtoException {

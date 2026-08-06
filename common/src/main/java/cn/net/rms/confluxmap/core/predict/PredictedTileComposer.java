@@ -134,6 +134,29 @@ public final class PredictedTileComposer {
         final boolean applyAbsoluteHeight,
         final int ambientLightTint
     ) {
+        return compose(
+            derived, grid, palette, corrections, viewMode, lod, baselineMapColorId,
+            correctionDerived, correctionGrid, correctionBaselineMapColorId,
+            applyAbsoluteHeight, ambientLightTint, null
+        );
+    }
+
+    /** Full form with client-resource samples for synchronized authoritative materials. */
+    public static int[] compose(
+        final DerivedGrid derived,
+        final BaselineGrid grid,
+        final PredictionPalette palette,
+        final CorrectionTile corrections,
+        final PredictionViewMode viewMode,
+        final int lod,
+        final int baselineMapColorId,
+        final DerivedGrid correctionDerived,
+        final BaselineGrid correctionGrid,
+        final int correctionBaselineMapColorId,
+        final boolean applyAbsoluteHeight,
+        final int ambientLightTint,
+        final SyncedMaterialPalette syncedMaterials
+    ) {
         final int size = BaselineGrid.PIXELS;
         final int[] out = new int[size * size];
         final int[] surface = derived.surfaceY.clone();
@@ -142,6 +165,10 @@ public final class PredictedTileComposer {
         final int[] biomes = grid.biomeId.clone();
         final int[] colors = new int[size * size];
         final int[] floorColors = new int[size * size];
+        final String[] materials = new String[size * size];
+        final String[] floorMaterials = new String[size * size];
+        Arrays.fill(materials, "");
+        Arrays.fill(floorMaterials, "");
         Arrays.fill(floorColors, MapPixel.MAP_COLOR_NONE);
         final boolean[] corrected = new boolean[size * size];
         if (corrections != null) {
@@ -184,6 +211,8 @@ public final class PredictedTileComposer {
                     biomes[gridIndex] = grid.biomeId[gridIndex];
                     colors[pixel] = MapPixel.MAP_COLOR_NONE;
                     floorColors[pixel] = MapPixel.MAP_COLOR_NONE;
+                    materials[pixel] = "";
+                    floorMaterials[pixel] = "";
                     corrected[pixel] = false;
                     continue;
                 }
@@ -194,6 +223,8 @@ public final class PredictedTileComposer {
                 biomes[gridIndex] = sample.biomeId();
                 colors[pixel] = sample.mapColorId();
                 floorColors[pixel] = sample.floorMapColorId();
+                materials[pixel] = sample.materialId();
+                floorMaterials[pixel] = sample.floorMaterialId();
                 corrected[pixel] = true;
             }
         }
@@ -235,13 +266,18 @@ public final class PredictedTileComposer {
                     )
                     : 0.0;
                 final int composed = corrected[outIdx] || !grid.supersampled()
-                    ? baseColor(kind, biomes[idx], fluids[idx], palette,
+                    ? baseColor(kind, biomes[idx], fluids[idx], palette, syncedMaterials,
                         corrected[outIdx], colors[outIdx], floorColors[outIdx], baselineMapColorId,
-                        floorReliefMultiplier)
+                        floorReliefMultiplier, materials[outIdx], floorMaterials[outIdx],
+                        grid.blockX(x), grid.blockZ(z))
                     : averagedSubColor(derived, grid, palette, idx, baselineMapColorId);
-                final int materialDetailed = palette.applyMaterialDetail(
-                    kind, biomes[idx], composed, grid.blockX(x), grid.blockZ(z)
-                );
+                final boolean synchronizedMaterial = corrected[outIdx]
+                    && syncedMaterials != null
+                    && syncedMaterials.contains(materials[outIdx]);
+                final int materialDetailed = synchronizedMaterial ? composed
+                    : palette.applyMaterialDetail(
+                        kind, biomes[idx], composed, grid.blockX(x), grid.blockZ(z)
+                    );
                 final int ambientLit = Argb.multiply(materialDetailed, ambientLightTint);
                 final int heightShaded = ShadingPipeline.applyShade(ambientLit, heightShade);
                 out[outIdx] = ShadingPipeline.applyBrightnessMultiplier(heightShaded, reliefMultiplier);
@@ -256,11 +292,16 @@ public final class PredictedTileComposer {
         final int biomeId,
         final int fluidDepth,
         final PredictionPalette palette,
+        final SyncedMaterialPalette syncedMaterials,
         final boolean corrected,
         final int correctedMapColorId,
         final int correctedFloorMapColorId,
         final int baselineMapColorId,
-        final double floorReliefMultiplier
+        final double floorReliefMultiplier,
+        final String materialId,
+        final String floorMaterialId,
+        final int worldX,
+        final int worldZ
     ) {
         if (kind == SurfaceKind.WATER) {
             // Keep ocean/river water unified: cubiomes' coarse biome grid otherwise fractures
@@ -269,10 +310,18 @@ public final class PredictedTileComposer {
             final int waterTint = BiomeTable.get(biomeId).waterBiome()
                 ? BiomeTable.DEFAULT_WATER_TINT
                 : palette.waterTint(biomeId);
-            final int water = Argb.multiply(palette.waterBase, waterTint);
-            final int floor = corrected && paintsFromMapColor(correctedFloorMapColorId)
+            final int fallbackWater = Argb.multiply(palette.waterBase, waterTint);
+            final int water = corrected && syncedMaterials != null
+                ? syncedMaterials.color(
+                    materialId, biomeId, fallbackWater, worldX, worldZ, palette
+                ) : fallbackWater;
+            final int fallbackFloor = corrected && paintsFromMapColor(correctedFloorMapColorId)
                 ? MapColorTable.argb(correctedFloorMapColorId)
                 : SEAFLOOR_BASE;
+            final int floor = corrected && syncedMaterials != null
+                ? syncedMaterials.color(
+                    floorMaterialId, biomeId, fallbackFloor, worldX, worldZ, palette
+                ) : fallbackFloor;
             return ShadingPipeline.compositeOver(
                 water,
                 ShadingPipeline.applyBrightnessMultiplier(
@@ -281,7 +330,12 @@ public final class PredictedTileComposer {
             );
         }
         if (corrected && paintsFromMapColor(correctedMapColorId)) {
-            return palette.materialBaseColor(kind, MapColorTable.argb(correctedMapColorId));
+            final int fallback = palette.materialBaseColor(
+                kind, MapColorTable.argb(correctedMapColorId)
+            );
+            return syncedMaterials == null ? fallback : syncedMaterials.color(
+                materialId, biomeId, fallback, worldX, worldZ, palette
+            );
         }
         if (!corrected && paintsFromMapColor(baselineMapColorId)) {
             return palette.materialBaseColor(kind, MapColorTable.argb(baselineMapColorId));
@@ -315,8 +369,9 @@ public final class PredictedTileComposer {
                 final int s = grid.subIndex(idx, sx, sz);
                 final int color = baseColor(
                     SurfaceKind.byOrdinal(derived.subKind[s]), grid.subBiomeId[s],
-                    derived.subFluidDepth[s], palette, false, Proto.MAP_COLOR_NONE,
-                    MapPixel.MAP_COLOR_NONE, baselineMapColorId, 1.0
+                    derived.subFluidDepth[s], palette, null, false,
+                    Proto.MAP_COLOR_NONE, MapPixel.MAP_COLOR_NONE,
+                    baselineMapColorId, 1.0, "", "", 0, 0
                 );
                 a += Argb.alpha(color);
                 r += Argb.red(color);

@@ -2,24 +2,37 @@ package cn.net.rms.confluxmap.core.net;
 
 /** One cohesive correction-body format and its cache/source-selection semantics. */
 public enum CorrectionProfile {
-    LEGACY_V1(1, PatchCodec.LEGACY_FORMAT_VERSION, ChunkPatchCodec.LEGACY_FORMAT_VERSION, false),
-    SOURCE_LIGHT_V2(2, PatchCodec.FORMAT_VERSION, ChunkPatchCodec.FORMAT_VERSION, true);
+    LEGACY_V1(
+        1, PatchCodec.LEGACY_FORMAT_VERSION, ChunkPatchCodec.LEGACY_FORMAT_VERSION,
+        false, false
+    ),
+    SOURCE_LIGHT_V2(
+        2, PatchCodec.SOURCE_LIGHT_FORMAT_VERSION, ChunkPatchCodec.SOURCE_LIGHT_FORMAT_VERSION,
+        true, false
+    ),
+    MATERIAL_COLOR_V3(
+        3, PatchCodec.FORMAT_VERSION, ChunkPatchCodec.FORMAT_VERSION,
+        true, true
+    );
 
     private final int id;
     private final int patchCodecVersion;
     private final int regionCodecVersion;
     private final boolean sourceMetadata;
+    private final boolean materialIdentity;
 
     CorrectionProfile(
         final int id,
         final int patchCodecVersion,
         final int regionCodecVersion,
-        final boolean sourceMetadata
+        final boolean sourceMetadata,
+        final boolean materialIdentity
     ) {
         this.id = id;
         this.patchCodecVersion = patchCodecVersion;
         this.regionCodecVersion = regionCodecVersion;
         this.sourceMetadata = sourceMetadata;
+        this.materialIdentity = materialIdentity;
     }
 
     public int id() {
@@ -38,16 +51,24 @@ public enum CorrectionProfile {
         return sourceMetadata;
     }
 
+    public boolean carriesMaterialIdentity() {
+        return materialIdentity;
+    }
+
     public byte[] encode(final PatchCodec.Patch patch) {
-        return sourceMetadata ? PatchCodec.encode(patch) : PatchCodec.encodeLegacy(patch);
+        return materialIdentity ? PatchCodec.encode(patch)
+            : sourceMetadata ? PatchCodec.encodeSourceLight(patch)
+            : PatchCodec.encodeLegacy(patch);
     }
 
     public byte[] encode(final ChunkPatchCodec.Patch patch) {
-        return sourceMetadata ? ChunkPatchCodec.encode(patch) : ChunkPatchCodec.encodeLegacy(patch);
+        return materialIdentity ? ChunkPatchCodec.encode(patch)
+            : sourceMetadata ? ChunkPatchCodec.encodeSourceLight(patch)
+            : ChunkPatchCodec.encodeLegacy(patch);
     }
 
     public Message prepareOutbound(final Message message) throws ProtoException {
-        if (sourceMetadata) {
+        if (materialIdentity) {
             return message;
         }
         if (message instanceof final MapPatchS2C patch && hasBody(patch.mode())) {

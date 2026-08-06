@@ -63,6 +63,48 @@ class PatchCodecTest {
     }
 
     @Test
+    void materialProfileRoundTripsSurfaceAndFloorRegistryIds() throws Exception {
+        final PatchCodec.Sample sample = new PatchCodec.Sample(
+            42, 1, 64, 1, 18, 3, 11,
+            "minecraft:glowstone", "minecraft:magma_block"
+        );
+
+        final PatchCodec.Patch decoded = PatchCodec.decode(PatchCodec.encode(
+            new PatchCodec.Patch(List.of(sample))
+        ));
+
+        assertEquals("minecraft:glowstone", decoded.sampleAt(42).materialId());
+        assertEquals("minecraft:magma_block", decoded.sampleAt(42).floorMaterialId());
+    }
+
+    @Test
+    void sourceLightProfileDropsMaterialIdsButKeepsLighting() throws Exception {
+        final byte[] evaluated = new byte[PatchCodec.MASK_BYTES];
+        PatchCodec.setEvaluated(evaluated, 42);
+        final long[] revisions = new long[PatchCodec.PIXELS];
+        Arrays.fill(revisions, Long.MIN_VALUE);
+        revisions[42] = 9L;
+        final byte[] light = new byte[PatchCodec.PIXELS];
+        light[42] = 14;
+        final PatchCodec.Patch patch = new PatchCodec.Patch(
+            evaluated,
+            List.of(new PatchCodec.Sample(
+                42, 1, 64, 1, 18, 0, 255, "minecraft:glowstone", ""
+            )),
+            revisions,
+            light
+        );
+
+        final PatchCodec.Patch decoded = PatchCodec.decode(
+            PatchCodec.encodeSourceLight(patch)
+        );
+
+        assertEquals("", decoded.sampleAt(42).materialId());
+        assertEquals(14, decoded.blockLightAt(42));
+        assertEquals(9L, decoded.sourceRevisionAt(42));
+    }
+
+    @Test
     void legacyRoundTripPreservesTerrainAndMarksNewMetadataUnknown() throws Exception {
         final PatchCodec.Patch decoded = PatchCodec.decode(PatchCodec.encodeLegacy(
             new PatchCodec.Patch(List.of(new PatchCodec.Sample(7, 1, 64, 1, 1, 0)))

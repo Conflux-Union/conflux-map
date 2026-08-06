@@ -75,7 +75,11 @@ public final class ChunkSummarizer {
                 surface.mapColorId,
                 clamp(sample.fluidDepth()),
                 floorMapColorId,
-                Math.max(0, Math.min(15, sample.blockLight()))
+                Math.max(0, Math.min(15, sample.blockLight())),
+                surface.kind == SurfaceKind.WATER ? "minecraft:water"
+                    : surface.kind == SurfaceKind.LAVA ? "minecraft:lava"
+                    : sample.surfaceBlock(),
+                sample.fluidDepth() == 0 ? "" : sample.floorBlock()
             );
         }
         return new SummaryCodec.SampledChunk(

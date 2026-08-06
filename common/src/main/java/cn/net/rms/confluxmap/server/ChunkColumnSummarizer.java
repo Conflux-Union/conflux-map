@@ -92,9 +92,11 @@ public final class ChunkColumnSummarizer {
             || fluidSurface.kind == SurfaceKind.ICE;
         final int fluidDepth;
         final int floorColor;
+        final String floorMaterial;
         if (!hasFluid) {
             fluidDepth = 0;
             floorColor = MAP_COLOR_NONE;
+            floorMaterial = "";
         } else {
             final int oceanFloor = fluidSurface.kind == SurfaceKind.WATER && !promotedFluidCover
                 ? source.oceanFloorHeight(x, z) : ChunkColumnSource.NO_HEIGHT;
@@ -106,6 +108,7 @@ public final class ChunkColumnSummarizer {
             floorColor = fluidDepth == 0
                 ? MAP_COLOR_NONE
                 : classify(source.blockNameAt(x, floorY, z), mapColors).mapColorId;
+            floorMaterial = fluidDepth == 0 ? "" : source.materialIdAt(x, floorY, z);
         }
         return new SummaryCodec.Column(
             biome & 255,
@@ -114,8 +117,20 @@ public final class ChunkColumnSummarizer {
             surface.mapColorId,
             fluidDepth,
             floorColor,
-            clampLight(source.blockLightAbove(x, surfaceY, z))
+            clampLight(source.blockLightAbove(x, surfaceY, z)),
+            materialId(surface.kind, source.materialIdAt(x, surfaceY, z)),
+            floorMaterial
         );
+    }
+
+    private static String materialId(final SurfaceKind kind, final String fallback) {
+        if (kind == SurfaceKind.WATER) {
+            return "minecraft:water";
+        }
+        if (kind == SurfaceKind.LAVA) {
+            return "minecraft:lava";
+        }
+        return fallback == null ? "" : fallback;
     }
 
     private static int clampLight(final int light) {

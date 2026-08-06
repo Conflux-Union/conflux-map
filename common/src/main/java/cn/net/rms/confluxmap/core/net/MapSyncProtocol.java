@@ -322,9 +322,9 @@ public final class MapSyncProtocol {
                 sync = true;
             } else if (token.equals("wire:" + Proto.PROTO_MAJOR + "." + Proto.PROTO_MINOR)) {
                 wire = true;
-            } else if (token.equals("patch:" + PatchCodec.FORMAT_VERSION)) {
+            } else if (token.equals("patch:" + PatchCodec.SOURCE_LIGHT_FORMAT_VERSION)) {
                 patchCurrent = true;
-            } else if (token.equals("region:" + ChunkPatchCodec.FORMAT_VERSION)) {
+            } else if (token.equals("region:" + ChunkPatchCodec.SOURCE_LIGHT_FORMAT_VERSION)) {
                 regionCurrent = true;
             } else if (token.equals("patch:" + PatchCodec.LEGACY_FORMAT_VERSION)) {
                 patchLegacy = true;

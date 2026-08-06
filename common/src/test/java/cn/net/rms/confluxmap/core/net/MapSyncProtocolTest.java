@@ -23,7 +23,7 @@ class MapSyncProtocolTest {
         final MapSyncProtocol.ServerHandshake handshake =
             MapSyncProtocol.acceptClient(hello, "0.2.0", PREDICTOR);
 
-        assertEquals(CorrectionProfile.SOURCE_LIGHT_V2, handshake.session().correctionProfile());
+        assertEquals(CorrectionProfile.MATERIAL_COLOR_V3, handshake.session().correctionProfile());
         assertEquals(NegotiatedMapSync.CorrectionMode.RESIDUAL, handshake.session().correctionMode());
         assertTrue(handshake.session().supports(MapSyncCapability.REGION_CORRECTION));
         assertTrue(handshake.session().supports(MapSyncCapability.SERVER_VIEW_DISTANCE));
@@ -37,7 +37,7 @@ class MapSyncProtocolTest {
         final MapSyncProtocol.ServerHandshake handshake =
             MapSyncProtocol.acceptClient(hello, "0.2.0", PREDICTOR);
 
-        assertEquals(CorrectionProfile.SOURCE_LIGHT_V2, handshake.session().correctionProfile());
+        assertEquals(CorrectionProfile.MATERIAL_COLOR_V3, handshake.session().correctionProfile());
         assertEquals(NegotiatedMapSync.CorrectionMode.ABSOLUTE, handshake.session().correctionMode());
     }
 
@@ -148,6 +148,22 @@ class MapSyncProtocolTest {
     }
 
     @Test
+    void sourceLightLegacyAdvertisementStillSelectsItsPublishedProfile() {
+        final MapSyncProtocol.ServerHandshake handshake = MapSyncProtocol.acceptClient(
+            new HelloC2S(
+                "0.1.1",
+                PREDICTOR + "|sync:1|wire:4.0|patch:4|region:2|source-light:1"
+            ),
+            "0.2.0",
+            PREDICTOR
+        );
+
+        assertEquals(CorrectionProfile.SOURCE_LIGHT_V2, handshake.session().correctionProfile());
+        assertEquals(NegotiatedMapSync.CorrectionMode.RESIDUAL, handshake.session().correctionMode());
+        assertInstanceOf(MapCompatibilityS2C.class, handshake.selection());
+    }
+
+    @Test
     void unknownPlainHelloDisablesOnlyCorrections() {
         final MapSyncProtocol.ServerHandshake handshake = MapSyncProtocol.acceptClient(
             new HelloC2S("beta.1", "cb:unknown|shim:1|base:1"), "0.2.0", PREDICTOR
@@ -206,6 +222,44 @@ class MapSyncProtocolTest {
 
         assertEquals(Long.MIN_VALUE, body.sourceRevisionAt(0));
         assertEquals(0, body.blockLightAt(0));
+    }
+
+    @Test
+    void sourceLightSessionDropsOnlyMaterialIdentity() throws Exception {
+        final byte[] evaluated = new byte[PatchCodec.MASK_BYTES];
+        PatchCodec.setEvaluated(evaluated, 0);
+        final long[] revisions = new long[PatchCodec.PIXELS];
+        Arrays.fill(revisions, Long.MIN_VALUE);
+        revisions[0] = 42L;
+        final byte[] light = new byte[PatchCodec.PIXELS];
+        light[0] = 12;
+        final MapPatchS2C material = new MapPatchS2C(
+            1, 0, 0, 0, 0, Proto.PATCH_MODE_ABSOLUTE, 7L,
+            new byte[Proto.PATCH_PRESENCE_BYTES],
+            PatchCodec.encode(new PatchCodec.Patch(
+                evaluated,
+                List.of(new PatchCodec.Sample(
+                    0, 1, 64, 1, 18, 0, 255, "minecraft:glowstone", ""
+                )),
+                revisions,
+                light
+            ))
+        );
+        final NegotiatedMapSync sourceLight = NegotiatedMapSync.server(
+            CorrectionProfile.SOURCE_LIGHT_V2,
+            NegotiatedMapSync.CorrectionMode.RESIDUAL,
+            PREDICTOR,
+            MapSyncCapability.all()
+        );
+
+        final MapPatchS2C decoded = (MapPatchS2C) MsgCodec.decode(
+            sourceLight.encodeOutbound(material)
+        );
+        final PatchCodec.Patch body = PatchCodec.decode(decoded.body());
+
+        assertEquals("", body.sampleAt(0).materialId());
+        assertEquals(42L, body.sourceRevisionAt(0));
+        assertEquals(12, body.blockLightAt(0));
     }
 
     @Test

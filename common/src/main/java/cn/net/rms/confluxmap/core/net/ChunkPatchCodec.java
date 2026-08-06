@@ -7,8 +7,11 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.zip.DataFormatException;
 import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
@@ -16,11 +19,12 @@ import java.util.zip.Inflater;
 
 /** Variable-size authoritative correction codec for one cropped 16x16-chunk region page. */
 public final class ChunkPatchCodec {
-    public static final int FORMAT_VERSION = 2;
+    public static final int FORMAT_VERSION = 3;
+    public static final int SOURCE_LIGHT_FORMAT_VERSION = 2;
     public static final int LEGACY_FORMAT_VERSION = 1;
     public static final int MAX_CHUNKS_PER_SIDE = 16;
     public static final int MAX_PIXELS = 256 * 256;
-    public static final int MAX_RAW_BYTES = 640 * 1024;
+    public static final int MAX_RAW_BYTES = 896 * 1024;
     public static final int MAX_COMPRESSED_BYTES = 576 * 1024;
     private static final int MASK_DENSE = 0;
     private static final int MASK_RUNS = 1;
@@ -196,6 +200,10 @@ public final class ChunkPatchCodec {
         return encode(patch, LEGACY_FORMAT_VERSION);
     }
 
+    public static byte[] encodeSourceLight(final Patch patch) {
+        return encode(patch, SOURCE_LIGHT_FORMAT_VERSION);
+    }
+
     private static byte[] encode(final Patch patch, final int formatVersion) {
         if (patch == null) {
             throw new IllegalArgumentException("chunk patch is null");
@@ -243,6 +251,19 @@ public final class ChunkPatchCodec {
                 out.writeByte(sample.floorMapColorId());
             }
             if (formatVersion >= FORMAT_VERSION) {
+                final Map<String, Integer> materials = materialTable(ordered);
+                out.writeShort(materials.size());
+                for (final String material : materials.keySet()) {
+                    writeMaterial(out, material);
+                }
+                for (final PatchCodec.Sample sample : ordered) {
+                    out.writeShort(materials.get(sample.materialId()));
+                }
+                for (final PatchCodec.Sample sample : ordered) {
+                    out.writeShort(materials.get(sample.floorMaterialId()));
+                }
+            }
+            if (formatVersion >= SOURCE_LIGHT_FORMAT_VERSION) {
                 long previousRevision = 0L;
                 for (final long revision : patch.sourceRevisions) {
                     writeZigzagVarLong(out, revision - previousRevision);
@@ -304,6 +325,10 @@ public final class ChunkPatchCodec {
                         hash = fnv1a(hash, sample == null ? 0 : 1);
                         if (sample != null) {
                             hash = hashSample(hash, sample);
+                            if (profile.carriesMaterialIdentity()) {
+                                hash = fnv1aString(hash, sample.materialId());
+                                hash = fnv1aString(hash, sample.floorMaterialId());
+                            }
                         }
                     }
                 }
@@ -362,7 +387,8 @@ public final class ChunkPatchCodec {
         try {
             final DataInputStream in = new DataInputStream(new ByteArrayInputStream(raw));
             final int version = in.readUnsignedByte();
-            if (version != FORMAT_VERSION && version != LEGACY_FORMAT_VERSION) {
+            if (version != FORMAT_VERSION && version != SOURCE_LIGHT_FORMAT_VERSION
+                && version != LEGACY_FORMAT_VERSION) {
                 throw new ProtoException("unsupported chunk patch version " + version);
             }
             final int chunkWidth = in.readUnsignedByte();
@@ -407,9 +433,18 @@ public final class ChunkPatchCodec {
             final int[] mapColors = readUnsignedBytePlane(in, count);
             final int[] fluidDepths = readUnsignedBytePlane(in, count);
             final int[] floorMapColors = readUnsignedBytePlane(in, count);
+            final String[] materialIds = new String[count];
+            final String[] floorMaterialIds = new String[count];
+            java.util.Arrays.fill(materialIds, "");
+            java.util.Arrays.fill(floorMaterialIds, "");
+            if (version >= FORMAT_VERSION) {
+                final String[] materials = readMaterialTable(in);
+                readMaterialPlane(in, materials, materialIds);
+                readMaterialPlane(in, materials, floorMaterialIds);
+            }
             final long[] sourceRevisions = unknownRevisions(chunks);
             final byte[] blockLight = new byte[pixels];
-            if (version >= FORMAT_VERSION) {
+            if (version >= SOURCE_LIGHT_FORMAT_VERSION) {
                 long previousRevision = 0L;
                 for (int chunk = 0; chunk < chunks; chunk++) {
                     previousRevision += readZigzagVarLong(in);
@@ -432,7 +467,8 @@ public final class ChunkPatchCodec {
             final List<PatchCodec.Sample> samples = new ArrayList<>(count);
             for (int i = 0; i < count; i++) {
                 samples.add(new PatchCodec.Sample(
-                    pixelIndexes[i], biomes[i], surfaceYs[i], kinds[i], mapColors[i], fluidDepths[i], floorMapColors[i]
+                    pixelIndexes[i], biomes[i], surfaceYs[i], kinds[i], mapColors[i],
+                    fluidDepths[i], floorMapColors[i], materialIds[i], floorMaterialIds[i]
                 ));
             }
             return new Patch(
@@ -445,6 +481,76 @@ public final class ChunkPatchCodec {
             throw new ProtoException("malformed chunk patch: " + e.getMessage(), e);
         } catch (final IOException e) {
             throw new ProtoException("malformed chunk patch", e);
+        }
+    }
+
+    private static Map<String, Integer> materialTable(
+        final List<PatchCodec.Sample> samples
+    ) {
+        final Map<String, Integer> result = new LinkedHashMap<>();
+        result.put("", 0);
+        for (final PatchCodec.Sample sample : samples) {
+            addMaterial(result, sample.materialId());
+            addMaterial(result, sample.floorMaterialId());
+        }
+        return result;
+    }
+
+    private static void addMaterial(final Map<String, Integer> materials, final String value) {
+        final String material = value == null ? "" : value;
+        if (!materials.containsKey(material)) {
+            if (materials.size() >= PatchCodec.MAX_MATERIALS) {
+                throw new IllegalArgumentException("chunk patch material table exceeds cap");
+            }
+            materials.put(material, materials.size());
+        }
+    }
+
+    private static void writeMaterial(
+        final DataOutputStream out, final String material
+    ) throws IOException {
+        final byte[] bytes = material.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length > PatchCodec.MAX_MATERIAL_BYTES) {
+            throw new IllegalArgumentException("chunk patch material id exceeds UTF-8 cap");
+        }
+        out.writeShort(bytes.length);
+        out.write(bytes);
+    }
+
+    private static String[] readMaterialTable(
+        final DataInputStream in
+    ) throws IOException, ProtoException {
+        final int count = in.readUnsignedShort();
+        if (count < 1 || count > PatchCodec.MAX_MATERIALS) {
+            throw new ProtoException("invalid chunk patch material count " + count);
+        }
+        final String[] result = new String[count];
+        for (int i = 0; i < count; i++) {
+            final int length = in.readUnsignedShort();
+            if (length > PatchCodec.MAX_MATERIAL_BYTES) {
+                throw new ProtoException("chunk patch material id exceeds UTF-8 cap");
+            }
+            final byte[] bytes = new byte[length];
+            in.readFully(bytes);
+            result[i] = new String(bytes, StandardCharsets.UTF_8);
+        }
+        if (!result[0].isEmpty()) {
+            throw new ProtoException("chunk patch material table must start empty");
+        }
+        return result;
+    }
+
+    private static void readMaterialPlane(
+        final DataInputStream in,
+        final String[] materials,
+        final String[] output
+    ) throws IOException, ProtoException {
+        for (int i = 0; i < output.length; i++) {
+            final int index = in.readUnsignedShort();
+            if (index >= materials.length) {
+                throw new ProtoException("chunk patch material index outside table: " + index);
+            }
+            output[i] = materials[index];
         }
     }
 
@@ -700,6 +806,13 @@ public final class ChunkPatchCodec {
             hash = fnv1a(hash, (int) (value >>> shift));
         }
         return hash;
+    }
+
+    private static long fnv1aString(long hash, final String value) {
+        for (final byte b : value.getBytes(StandardCharsets.UTF_8)) {
+            hash = fnv1a(hash, b);
+        }
+        return fnv1a(hash, 0);
     }
 
     private static long fnv1a(final long hash, final int value) {
