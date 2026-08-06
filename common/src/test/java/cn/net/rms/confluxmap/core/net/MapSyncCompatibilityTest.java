@@ -22,6 +22,30 @@ class MapSyncCompatibilityTest {
         assertEquals(PREDICTOR, hello.predictorVersion());
         assertTrue(hello.negotiationSupported());
         assertTrue(hello.supportsCurrentWire());
+        assertTrue(hello.supportsLegacyWire());
+    }
+
+    @Test
+    void newServerSelectsLegacyBodiesForReleasedNegotiationAwareClient() {
+        final MapSyncCompatibility.ClientHello oldClient =
+            MapSyncCompatibility.parseClientHello(
+                PREDICTOR + "|sync:1|wire:4.0|patch:3|region:1"
+            );
+
+        final MapSyncCompatibility.ServerSelection selected =
+            MapSyncCompatibility.selectServer(oldClient, PREDICTOR);
+
+        assertTrue(selected.correctionsEnabled());
+        assertFalse(selected.enhancedProfile());
+        assertEquals(3, selected.patchCodecVersion());
+        assertEquals(1, selected.regionCodecVersion());
+    }
+
+    @Test
+    void newClientAcceptsBothSelectedCodecProfiles() {
+        assertTrue(MapSyncCompatibility.supportedProfile(4, 2));
+        assertTrue(MapSyncCompatibility.supportedProfile(3, 1));
+        assertFalse(MapSyncCompatibility.supportedProfile(4, 1));
     }
 
     @Test

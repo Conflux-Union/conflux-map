@@ -24,12 +24,12 @@ public final class SummaryCodec {
      * summarize as the green land beneath) and reports ice fluid depth from the ground under the
      * cover, with land-borne ice carrying no fluid column. Version 7 keeps the submerged floor's
      * map colour separate from the water/ice surface. Version 8 invalidates live-chunk summaries
-     * created with inclusive top-block Y values.
+     * created with inclusive top-block Y values. Version 9 adds the surface block-light plane.
      */
-    public static final int FORMAT_VERSION = 8;
+    public static final int FORMAT_VERSION = 9;
     public static final int CHUNKS = 256;
     public static final int COLUMNS = 256;
-    public static final int RECORD_BYTES = 7;
+    public static final int RECORD_BYTES = 8;
     public static final int MAX_RAW_BYTES = CHUNKS * COLUMNS * RECORD_BYTES;
 
     private SummaryCodec() {
@@ -41,10 +41,25 @@ public final class SummaryCodec {
         int kind,
         int mapColorId,
         int fluidDepth,
-        int floorMapColorId
+        int floorMapColorId,
+        int blockLight
     ) {
         public Column {
             new MapPixel(biomeId, surfaceY, kind, mapColorId, fluidDepth, floorMapColorId);
+            if (blockLight < 0 || blockLight > 15) {
+                throw new IllegalArgumentException("block light outside 0..15: " + blockLight);
+            }
+        }
+
+        public Column(
+            final int biomeId,
+            final int surfaceY,
+            final int kind,
+            final int mapColorId,
+            final int fluidDepth,
+            final int floorMapColorId
+        ) {
+            this(biomeId, surfaceY, kind, mapColorId, fluidDepth, floorMapColorId, 0);
         }
 
         public Column(
@@ -54,7 +69,7 @@ public final class SummaryCodec {
             final int mapColorId,
             final int fluidDepth
         ) {
-            this(biomeId, surfaceY, kind, mapColorId, fluidDepth, MapPixel.MAP_COLOR_NONE);
+            this(biomeId, surfaceY, kind, mapColorId, fluidDepth, MapPixel.MAP_COLOR_NONE, 0);
         }
 
         public MapPixel pixel() {
@@ -203,6 +218,7 @@ public final class SummaryCodec {
                 columns.writeByte(column.mapColorId());
                 columns.writeByte(column.fluidDepth());
                 columns.writeByte(column.floorMapColorId());
+                columns.writeByte(column.blockLight());
             }
         }
         columns.flush();
@@ -244,7 +260,8 @@ public final class SummaryCodec {
             if (generated[chunkIndex]) {
                 for (int column = 0; column < COLUMNS; column++) {
                     values[column] = new Column(columns.readUnsignedByte(), columns.readShort(), columns.readUnsignedByte(),
-                        columns.readUnsignedByte(), columns.readUnsignedByte(), columns.readUnsignedByte());
+                        columns.readUnsignedByte(), columns.readUnsignedByte(), columns.readUnsignedByte(),
+                        columns.readUnsignedByte());
                 }
             }
             chunks[chunkIndex] = new Chunk(generated[chunkIndex], revisions[chunkIndex], values);
@@ -346,7 +363,8 @@ public final class SummaryCodec {
             raw[offset + 3] & 255,
             raw[offset + 4] & 255,
             raw[offset + 5] & 255,
-            raw[offset + 6] & 255
+            raw[offset + 6] & 255,
+            raw[offset + 7] & 255
         );
     }
 

@@ -100,8 +100,9 @@ public final class CompanionSession {
             compatibility.negotiationVersion() == MapSyncCompatibility.NEGOTIATION_VERSION
             && compatibility.protocolMajor() == Proto.PROTO_MAJOR
             && compatibility.protocolMinor() == Proto.PROTO_MINOR
-            && compatibility.patchCodecVersion() == PatchCodec.FORMAT_VERSION
-            && compatibility.regionCodecVersion() == ChunkPatchCodec.FORMAT_VERSION;
+            && MapSyncCompatibility.supportedProfile(
+                compatibility.patchCodecVersion(), compatibility.regionCodecVersion()
+            );
         if (!wireMatches || compatibility.correctionMode() == MapCompatibilityS2C.MODE_DISABLED) {
             return MapSyncCompatibility.ClientMode.INCOMPATIBLE;
         }

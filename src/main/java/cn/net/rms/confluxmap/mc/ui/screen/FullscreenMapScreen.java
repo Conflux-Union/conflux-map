@@ -40,7 +40,6 @@ import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.predict.CubiomesBiomeIds;
 import cn.net.rms.confluxmap.core.predict.PredictedTileKeys;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
-import cn.net.rms.confluxmap.core.predict.PredictionLighting;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionTileService;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
@@ -1161,7 +1160,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             displayMode(),
             prediction,
             predictionTiles.viewMode(),
-            prediction ? (biome ? 0xFFFFFFFF : predictionTint(layer)) : 0xFFFFFFFF,
+            0xFFFFFFFF,
             BACKGROUND_COLOR,
             config.dynamicLighting,
             daylightModel.factor(),
@@ -2556,13 +2555,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     /**
-     * Draws the real tile grid, and - when a seed-predicted underlay is available for the
+     * Draws the real tile grid, and - when a seed-predicted/synchronized plane is available for the
      * current dimension+layer ({@link MapLayer.Type#SURFACE} in the Overworld, {@link
      * MapLayer.Type#NETHER_CEILING} in the Nether, or {@link MapLayer.Type#END_SURFACE} in the End) -
-     * the matching predicted tile drawn first underneath each real one. Real
-     * tiles already render {@code UNKNOWN}/unexplored pixels as fully transparent (see {@code
-     * TileService#composeRegion}), and both texture passes enable alpha blending, so the predicted
-     * layer simply shows through wherever the real tile has nothing yet.
+     * the matching selected-source tile drawn afterward. That texture is transparent where local
+     * authoritative data is newer, contains synchronized pixels where the server is newer, and
+     * falls back to prediction only where neither real source has coverage.
      */
     private void drawTiles(final MatrixStack matrices) {
         final int lod = currentLod();
@@ -2591,8 +2589,26 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             ConfluxMapClient.get().mapSyncClient().clearViewport();
         }
 
+        RenderUtil.beginTexturedQuads();
+        for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
+            for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
+                final TileKey terrainKey = new TileKey(
+                    session.world(), session.dimension(), layerId, lod, tileX, tileZ
+                );
+                final TileKey key = biomeMode ? BiomeTileKeys.toBiome(terrainKey) : terrainKey;
+                if (textures.bind(key)) {
+                    final float screenX = (float) (width / 2.0 + (key.originBlockX() - centerX) * pxPerBlock);
+                    final float screenY = (float) (height / 2.0 + (key.originBlockZ() - centerZ) * pxPerBlock);
+                    final float quadSize = (float) (blocksPerTile * pxPerBlock);
+                    RenderUtil.drawQuad(matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f);
+                }
+            }
+        }
+
+        // The predicted texture is already transparent wherever local real data wins. Drawing it
+        // last lets a newer synchronized chunk cover an older local capture without a third texture.
         if (predictionActive) {
-            final int predictionTint = biomeMode ? 0xFFFFFFFF : predictionTint(layer);
+            final int predictionTint = 0xFFFFFFFF;
             for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
                 for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
                     final TileKey terrainKey = new TileKey(
@@ -2610,36 +2626,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 }
             }
         }
-
-        RenderUtil.beginTexturedQuads();
-        for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
-            for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
-                final TileKey terrainKey = new TileKey(
-                    session.world(), session.dimension(), layerId, lod, tileX, tileZ
-                );
-                final TileKey key = biomeMode ? BiomeTileKeys.toBiome(terrainKey) : terrainKey;
-                if (textures.bind(key)) {
-                    final float screenX = (float) (width / 2.0 + (key.originBlockX() - centerX) * pxPerBlock);
-                    final float screenY = (float) (height / 2.0 + (key.originBlockZ() - centerZ) * pxPerBlock);
-                    final float quadSize = (float) (blocksPerTile * pxPerBlock);
-                    RenderUtil.drawQuad(matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f);
-                }
-            }
-        }
     }
 
-    /** Only the dimension's canonical top layer has a seed-predicted underlay (see {@link #drawTiles}). */
+    /** Only the dimension's canonical top layer has a predicted/synchronized plane (see {@link #drawTiles}). */
     private boolean predictionActive(final MapLayer layer, final SessionGuard.Session session) {
         return config.predictionEnabled
             && layer.equals(PredictionDimensions.layer(session.dimension()))
             && predictionState.predictable(session.dimension());
-    }
-
-    private int predictionTint(final MapLayer layer) {
-        return PredictionLighting.renderTint(
-            config.dynamicLighting && layer.type() == MapLayer.Type.SURFACE,
-            daylightModel.factor()
-        );
     }
 
     /**
@@ -2670,7 +2663,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final RadarBackdrop backdrop = new RadarBackdrop(
             textures, session.world(), session.dimension(), layerId, currentLod(),
             predictionActive,
-            predictionActive ? (biomeMode ? 0xFFFFFFFF : predictionTint(layer)) : 0,
+            predictionActive ? 0xFFFFFFFF : 0,
             BACKGROUND_COLOR
         );
 

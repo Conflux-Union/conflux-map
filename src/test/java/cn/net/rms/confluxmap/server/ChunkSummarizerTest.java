@@ -161,6 +161,7 @@ class ChunkSummarizerTest {
         assertEquals(SurfaceKind.WATER.ordinal(), column.kind());
         assertEquals(13, column.fluidDepth());
         assertEquals(11, column.floorMapColorId());
+        assertEquals(12, column.blockLight());
 
         assertExactSeafloorCorrection(chunk);
         assertModernRootAndPalettedContainersAreSummarized();
@@ -377,6 +378,9 @@ class ChunkSummarizerTest {
             }
             return localY == 15 ? 2 : 0;
         }));
+        final byte[] blockLight = new byte[2_048];
+        Arrays.fill(blockLight, (byte) 0xCC);
+        section.putByteArray("BlockLight", blockLight);
         final NbtList sections = new NbtList();
         sections.add(section);
         level.put("Sections", sections);

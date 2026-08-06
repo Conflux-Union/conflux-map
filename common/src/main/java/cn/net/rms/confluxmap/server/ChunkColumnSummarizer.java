@@ -113,8 +113,13 @@ public final class ChunkColumnSummarizer {
             surface.kind.ordinal(),
             surface.mapColorId,
             fluidDepth,
-            floorColor
+            floorColor,
+            clampLight(source.blockLightAbove(x, surfaceY, z))
         );
+    }
+
+    private static int clampLight(final int light) {
+        return Math.max(0, Math.min(15, light));
     }
 
     private BlockInfo blockAt(

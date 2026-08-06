@@ -19,6 +19,7 @@ class ChunkColumnSummarizerTest {
         assertEquals(SurfaceKind.SNOW.ordinal(), column.kind());
         assertEquals(3, column.mapColorId());
         assertEquals(1, column.biomeId());
+        assertEquals(12, column.blockLight());
     }
 
     private static final class StoneWithSnowColumn implements ChunkColumnSource {
@@ -63,6 +64,11 @@ class ChunkColumnSummarizerTest {
         @Override
         public int biomeIdAt(final int x, final int y, final int z) {
             return 1;
+        }
+
+        @Override
+        public int blockLightAbove(final int x, final int surfaceY, final int z) {
+            return 12;
         }
     }
 }

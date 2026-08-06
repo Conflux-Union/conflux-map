@@ -278,6 +278,19 @@ final class PaperCorrectionService implements AutoCloseable {
         final boolean forceAbsolute,
         final MessageSender sender
     ) {
+        requestRegions(
+            playerId, request, requestBytes, forceAbsolute, true, sender
+        );
+    }
+
+    void requestRegions(
+        final UUID playerId,
+        final MapRegionViewReqC2S request,
+        final int requestBytes,
+        final boolean forceAbsolute,
+        final boolean enhancedProfile,
+        final MessageSender sender
+    ) {
         final PlayerChannel channel = channel(playerId, sender);
         final long now = System.nanoTime();
         if (request == null) {
@@ -309,7 +322,9 @@ final class PaperCorrectionService implements AutoCloseable {
             );
             if (!enqueue(channel.regions, key, () -> {
                 try {
-                    return buildRegion(request, region, now, itemBytes, forceAbsolute);
+                    return buildRegion(
+                        request, region, now, itemBytes, forceAbsolute, enhancedProfile
+                    );
                 } catch (final RuntimeException e) {
                     logger.warn(
                         "Paper correction region {},{} at LOD {} failed",
@@ -589,7 +604,8 @@ final class PaperCorrectionService implements AutoCloseable {
         final MapRegionViewReqC2S.RegionReq regionRequest,
         final long receivedNanos,
         final int requestBytes,
-        final boolean forceAbsolute
+        final boolean forceAbsolute,
+        final boolean enhancedProfile
     ) {
         final PaperWorldDirectory.Entry world = worlds.at(request.dimIndex());
         final ChunkRegionSlice slice = regionRequest.slice();
@@ -618,7 +634,8 @@ final class PaperCorrectionService implements AutoCloseable {
                 slice,
                 summary,
                 regionRequest.sinceRevision(),
-                baseline(world, tileSummary, slice, forceAbsolute)
+                baseline(world, tileSummary, slice, forceAbsolute),
+                enhancedProfile
             );
         final MapRegionPatchS2C response = new MapRegionPatchS2C(
             request.reqId(), request.dimIndex(), request.lod(),

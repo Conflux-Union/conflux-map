@@ -4,7 +4,10 @@ package cn.net.rms.confluxmap.core.net;
 public final class MapSyncCompatibility {
     public static final int NEGOTIATION_VERSION = 1;
     public static final String STABLE_PREDICTOR = "cb:9afc1038ea5a|shim:9|base:14";
-    private static final String ADVERTISEMENT = "|sync:1|wire:4.0|patch:3|region:1";
+    public static final int LEGACY_PATCH_VERSION = 3;
+    public static final int LEGACY_REGION_VERSION = 1;
+    private static final String ADVERTISEMENT =
+        "|sync:1|wire:4.0|patch:3|region:1|patch:4|region:2|source-light:1";
 
     public enum ClientMode {
         OPTIMAL_RESIDUAL,
@@ -17,17 +20,45 @@ public final class MapSyncCompatibility {
     public record ClientHello(
         String predictorVersion,
         boolean negotiationSupported,
-        boolean supportsCurrentWire
+        boolean supportsCurrentWire,
+        boolean supportsLegacyWire
     ) {
+        public ClientHello(
+            final String predictorVersion,
+            final boolean negotiationSupported,
+            final boolean supportsCurrentWire
+        ) {
+            this(predictorVersion, negotiationSupported, supportsCurrentWire, supportsCurrentWire);
+        }
     }
 
     public record ServerSelection(
         boolean correctionsEnabled,
         boolean forceAbsolute,
         boolean sendCompatibility,
-        String baselinePredictorVersion
+        String baselinePredictorVersion,
+        int patchCodecVersion,
+        int regionCodecVersion
     ) {
+        public ServerSelection(
+            final boolean correctionsEnabled,
+            final boolean forceAbsolute,
+            final boolean sendCompatibility,
+            final String baselinePredictorVersion
+        ) {
+            this(
+                correctionsEnabled, forceAbsolute, sendCompatibility, baselinePredictorVersion,
+                FORMAT_PATCH, FORMAT_REGION
+            );
+        }
+
+        public boolean enhancedProfile() {
+            return patchCodecVersion == FORMAT_PATCH && regionCodecVersion == FORMAT_REGION;
+        }
     }
+
+    private static final int FORMAT_PATCH = PatchCodec.FORMAT_VERSION;
+    private static final int FORMAT_REGION = ChunkPatchCodec.FORMAT_VERSION;
 
     private MapSyncCompatibility() {
     }
@@ -43,30 +74,44 @@ public final class MapSyncCompatibility {
     /** Parses both the released plain predictor and the negotiation-aware extension. */
     public static ClientHello parseClientHello(final String field) {
         if (field == null) {
-            return new ClientHello("", false, false);
+            return new ClientHello("", false, false, false);
         }
         final int marker = field.indexOf("|sync:");
         if (marker < 0) {
-            return new ClientHello(field, false, false);
+            return new ClientHello(field, false, false, false);
         }
         final String predictor = field.substring(0, marker);
         final String suffix = field.substring(marker + 1);
         boolean sync = false;
         boolean wire = false;
-        boolean patch = false;
-        boolean region = false;
+        boolean patchCurrent = false;
+        boolean regionCurrent = false;
+        boolean patchLegacy = false;
+        boolean regionLegacy = false;
+        boolean sourceLight = false;
         for (final String token : suffix.split("\\|")) {
             if (token.equals("sync:" + NEGOTIATION_VERSION)) {
                 sync = true;
             } else if (token.equals("wire:" + Proto.PROTO_MAJOR + "." + Proto.PROTO_MINOR)) {
                 wire = true;
-            } else if (token.equals("patch:" + PatchCodec.FORMAT_VERSION)) {
-                patch = true;
-            } else if (token.equals("region:" + ChunkPatchCodec.FORMAT_VERSION)) {
-                region = true;
+            } else if (token.equals("patch:" + FORMAT_PATCH)) {
+                patchCurrent = true;
+            } else if (token.equals("region:" + FORMAT_REGION)) {
+                regionCurrent = true;
+            } else if (token.equals("patch:" + LEGACY_PATCH_VERSION)) {
+                patchLegacy = true;
+            } else if (token.equals("region:" + LEGACY_REGION_VERSION)) {
+                regionLegacy = true;
+            } else if (token.equals("source-light:1")) {
+                sourceLight = true;
             }
         }
-        return new ClientHello(predictor, sync, sync && wire && patch && region);
+        return new ClientHello(
+            predictor,
+            sync,
+            sync && wire && patchCurrent && regionCurrent && sourceLight,
+            sync && wire && patchLegacy && regionLegacy
+        );
     }
 
     public static boolean isStableLegacyPredictor(final String predictorVersion) {
@@ -106,24 +151,42 @@ public final class MapSyncCompatibility {
         final String currentPredictorVersion
     ) {
         if (hello == null || currentPredictorVersion == null) {
-            return new ServerSelection(false, false, false, "");
+            return new ServerSelection(false, false, false, "", FORMAT_PATCH, FORMAT_REGION);
         }
         if (hello.negotiationSupported()) {
-            if (!hello.supportsCurrentWire()) {
-                return new ServerSelection(false, false, true, "");
+            final int patchVersion;
+            final int regionVersion;
+            if (hello.supportsCurrentWire()) {
+                patchVersion = FORMAT_PATCH;
+                regionVersion = FORMAT_REGION;
+            } else if (hello.supportsLegacyWire()) {
+                patchVersion = LEGACY_PATCH_VERSION;
+                regionVersion = LEGACY_REGION_VERSION;
+            } else {
+                return new ServerSelection(false, false, true, "", FORMAT_PATCH, FORMAT_REGION);
             }
             final boolean sameBaseline = currentPredictorVersion.equals(hello.predictorVersion());
             return new ServerSelection(
                 true,
                 !sameBaseline,
                 true,
-                sameBaseline ? currentPredictorVersion : ""
+                sameBaseline ? currentPredictorVersion : "",
+                patchVersion,
+                regionVersion
             );
         }
         if (isStableLegacyPredictor(hello.predictorVersion())
             && STABLE_PREDICTOR.equals(currentPredictorVersion)) {
-            return new ServerSelection(true, false, false, STABLE_PREDICTOR);
+            return new ServerSelection(
+                true, false, false, STABLE_PREDICTOR,
+                LEGACY_PATCH_VERSION, LEGACY_REGION_VERSION
+            );
         }
-        return new ServerSelection(false, false, false, "");
+        return new ServerSelection(false, false, false, "", FORMAT_PATCH, FORMAT_REGION);
+    }
+
+    public static boolean supportedProfile(final int patchVersion, final int regionVersion) {
+        return patchVersion == FORMAT_PATCH && regionVersion == FORMAT_REGION
+            || patchVersion == LEGACY_PATCH_VERSION && regionVersion == LEGACY_REGION_VERSION;
     }
 }

@@ -1,6 +1,6 @@
 package cn.net.rms.confluxmap.core.export;
 
-/** One real map tile, its optional predicted underlay, and matching load-state plane. */
+/** One real map tile, its optional selected prediction/sync plane, and matching load-state plane. */
 public record MapExportTile(int[] real, int[] predicted, MapExportLoadState loadState) {
     private static final int PIXELS = 256 * 256;
 

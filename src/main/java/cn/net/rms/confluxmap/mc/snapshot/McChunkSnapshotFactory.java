@@ -111,7 +111,7 @@ public final class McChunkSnapshotFactory {
         }
         BiomeIdentityCapture.capture(world, pos, baseX, baseZ, surfaceY, biomeId);
         return new ChunkSnapshot(
-            chunkX, chunkZ, sessionToken, surfaceY, biomeId, fluidDepth,
+            chunkX, chunkZ, sessionToken, world.getTime(), surfaceY, biomeId, fluidDepth,
             baseArgb, tintArgb, overlayArgb, kind, light
         );
     }

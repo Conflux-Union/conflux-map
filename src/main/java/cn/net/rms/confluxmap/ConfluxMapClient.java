@@ -173,6 +173,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
             executors
         );
         predictionTileService = new PredictionTileService(sessionGuard, predictionState, executors, tileService);
+        predictionTileService.bindDaylightModel(daylightModel);
         predictionTileService.setViewMode(config.predictionViewMode);
         correctionStore = new CorrectionStore(
             cacheRoot.resolve("prediction")

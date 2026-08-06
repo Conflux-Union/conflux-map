@@ -34,10 +34,10 @@ public final class PredictionTileCodec {
      * revision, and validation metadata for cropped summary-region pages. Version 15 remains
      * drawable, but its tile-wide validation cannot prove that an exact chunk range is fresh.
      * Version 17 records the wire patch mode and predictor baseline that omitted residual pixels
-     * reconstruct from.
+     * reconstruct from. Version 18 stores enhanced patch bodies with source revisions and light.
      */
-    public static final int FORMAT_VERSION = 17;
-    private static final int LEGACY_FORMAT_VERSION = 16;
+    public static final int FORMAT_VERSION = 18;
+    private static final int SOURCE_PROFILE_VERSION = 17;
     private static final int OLDEST_READABLE_FORMAT_VERSION = 15;
     private static final int CHUNK_METADATA_VERSION = 1;
     private static final int MAX_CHUNK_METADATA_RAW_BYTES = 1_250_000;
@@ -178,8 +178,7 @@ public final class PredictionTileCodec {
                 throw new ProtoException("invalid correction header");
             }
             final int formatVersion = in.readUnsignedByte();
-            if (formatVersion != FORMAT_VERSION && formatVersion != LEGACY_FORMAT_VERSION
-                && formatVersion != OLDEST_READABLE_FORMAT_VERSION) {
+            if (formatVersion < OLDEST_READABLE_FORMAT_VERSION || formatVersion > FORMAT_VERSION) {
                 throw new ProtoException("unsupported correction version " + formatVersion);
             }
             final int lod = in.readUnsignedByte();
@@ -190,9 +189,9 @@ public final class PredictionTileCodec {
             final int tileZ = in.readInt();
             final long revision = in.readLong();
             final long validatedAtMillis = in.readLong();
-            final int patchMode = formatVersion >= FORMAT_VERSION
+            final int patchMode = formatVersion >= SOURCE_PROFILE_VERSION
                 ? in.readUnsignedByte() : Proto.PATCH_MODE_RESIDUAL;
-            final String baselineProfile = formatVersion >= FORMAT_VERSION
+            final String baselineProfile = formatVersion >= SOURCE_PROFILE_VERSION
                 ? readBoundedUtf(in) : MapSyncCompatibility.STABLE_PREDICTOR;
             final byte[] presence = new byte[Proto.PATCH_PRESENCE_BYTES];
             in.readFully(presence);

@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.predict;
 
 import cn.net.rms.confluxmap.core.model.TileKey;
+import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.Iterator;
@@ -14,6 +15,10 @@ final class PredictionMipCache {
         int[] pixels,
         byte[] biomes,
         int[] surfaces,
+        byte[] syncEvaluated,
+        long[] syncSourceRevisions,
+        byte[] blockLight,
+        float composedDaylight,
         PredictionViewMode mode,
         boolean hasServerState,
         long freshnessValidatedAtMillis,
@@ -24,6 +29,9 @@ final class PredictionMipCache {
             if (pixels == null || pixels.length != expected
                 || biomes == null || biomes.length != expected
                 || surfaces == null || surfaces.length != expected
+                || syncEvaluated == null || syncEvaluated.length != PatchCodec.MASK_BYTES
+                || syncSourceRevisions == null || syncSourceRevisions.length != expected
+                || blockLight == null || blockLight.length != expected
                 || mode == null) {
                 throw new IllegalArgumentException("invalid prediction mip tile");
             }
@@ -167,6 +175,11 @@ final class PredictionMipCache {
         final int[] pixels = new int[BaselineGrid.PIXELS * BaselineGrid.PIXELS];
         final byte[] biomes = new byte[pixels.length];
         final int[] surfaces = new int[pixels.length];
+        final byte[] syncEvaluated = new byte[PatchCodec.MASK_BYTES];
+        final long[] syncSourceRevisions = new long[pixels.length];
+        java.util.Arrays.fill(syncSourceRevisions, Long.MIN_VALUE);
+        final byte[] blockLight = new byte[pixels.length];
+        final float composedDaylight = children[0].composedDaylight();
         for (int z = 0; z < BaselineGrid.PIXELS; z++) {
             for (int x = 0; x < BaselineGrid.PIXELS; x++) {
                 final int sourceX = x * 2;
@@ -190,6 +203,19 @@ final class PredictionMipCache {
                     child.surfaces()[i0], child.surfaces()[i1],
                     child.surfaces()[i2], child.surfaces()[i3]
                 );
+                final boolean allSync = evaluated(child, i0) && evaluated(child, i1)
+                    && evaluated(child, i2) && evaluated(child, i3);
+                if (allSync) {
+                    PatchCodec.setEvaluated(syncEvaluated, out);
+                    syncSourceRevisions[out] = maxKnown(
+                        child.syncSourceRevisions()[i0], child.syncSourceRevisions()[i1],
+                        child.syncSourceRevisions()[i2], child.syncSourceRevisions()[i3]
+                    );
+                }
+                blockLight[out] = (byte) (((child.blockLight()[i0] & 0xFF)
+                    + (child.blockLight()[i1] & 0xFF)
+                    + (child.blockLight()[i2] & 0xFF)
+                    + (child.blockLight()[i3] & 0xFF)) / 4);
             }
         }
         boolean hasServerState = false;
@@ -210,11 +236,29 @@ final class PredictionMipCache {
             pixels,
             biomes,
             surfaces,
+            syncEvaluated,
+            syncSourceRevisions,
+            blockLight,
+            composedDaylight,
             mode,
             hasServerState,
             freshnessValidatedAt == Long.MAX_VALUE ? 0L : freshnessValidatedAt,
             serverCoverageValidatedAt == Long.MAX_VALUE ? 0L : serverCoverageValidatedAt
         );
+    }
+
+    private static boolean evaluated(final Tile tile, final int pixel) {
+        return (tile.syncEvaluated()[pixel >>> 3] & (1 << (pixel & 7))) != 0;
+    }
+
+    private static long maxKnown(final long a, final long b, final long c, final long d) {
+        long result = Long.MIN_VALUE;
+        for (final long value : new long[] {a, b, c, d}) {
+            if (value != Long.MIN_VALUE && (result == Long.MIN_VALUE || value > result)) {
+                result = value;
+            }
+        }
+        return result;
     }
 
     /** Deterministic four-value mode; ties retain the north-west sample. */

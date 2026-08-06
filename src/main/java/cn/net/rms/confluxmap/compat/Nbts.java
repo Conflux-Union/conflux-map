@@ -72,6 +72,14 @@ public final class Nbts {
         //#endif
     }
 
+    public static byte[] byteArray(final NbtCompound compound, final String key) {
+        //#if MC>=12105
+        //$$ return compound.getByteArray(key).orElseGet(() -> new byte[0]);
+        //#else
+        return compound.getByteArray(key);
+        //#endif
+    }
+
     public static NbtList list(final NbtCompound compound, final String key, final int elementType) {
         //#if MC>=12105
         //$$ return compound.getList(key).orElseGet(NbtList::new);

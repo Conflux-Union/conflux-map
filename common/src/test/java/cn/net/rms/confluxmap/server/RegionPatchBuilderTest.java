@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -36,6 +37,8 @@ class RegionPatchBuilderTest {
         assertEquals(Proto.PATCH_MODE_RESIDUAL, result.mode());
         assertEquals(0, result.recordCount());
         assertTrue(patch.evaluatedAt(0));
+        assertEquals(70L, patch.sourceRevisionAt(0));
+        assertEquals(15, patch.blockLightAt(0));
         assertNull(patch.sampleAt(0));
     }
 
@@ -68,6 +71,34 @@ class RegionPatchBuilderTest {
         assertEquals(0, unchanged.body().length);
     }
 
+    @Test
+    void legacyProfileUsesItsOwnStableRevisionAndDropsEnhancedMetadata() throws Exception {
+        final SummaryCodec.SampledChunk[] chunks = emptyChunks(16);
+        chunks[0] = generatedChunk(16, 70);
+        final SummaryCodec.SampledRegion region = new SummaryCodec.SampledRegion(
+            0, 0, 1L, 16, chunks
+        );
+        final ChunkRegionSlice slice = new ChunkRegionSlice(0, 0, 0, 0, 0, 0);
+        final PatchBuilder.PreparedBaseline baseline = PatchBuilder.PreparedBaseline.absoluteOnly();
+
+        final RegionPatchBuilder.Result enhanced = new RegionPatchBuilder().build(
+            4, slice, region, Long.MIN_VALUE, baseline, true
+        );
+        final RegionPatchBuilder.Result legacy = new RegionPatchBuilder().build(
+            4, slice, region, Long.MIN_VALUE, baseline, false
+        );
+        final ChunkPatchCodec.Patch decodedLegacy = ChunkPatchCodec.decode(legacy.body());
+
+        assertNotEquals(enhanced.revision(), legacy.revision());
+        assertEquals(Long.MIN_VALUE, decodedLegacy.sourceRevisionAt(0));
+        assertEquals(0, decodedLegacy.blockLightAt(0));
+        final RegionPatchBuilder.Result unchanged = new RegionPatchBuilder().build(
+            4, slice, region, legacy.revision(), baseline, false
+        );
+        assertEquals(Proto.PATCH_MODE_UNCHANGED, unchanged.mode());
+        assertEquals(0, unchanged.body().length);
+    }
+
     private static SummaryCodec.SampledChunk[] emptyChunks(final int stride) {
         final SummaryCodec.SampledChunk[] chunks = new SummaryCodec.SampledChunk[SummaryCodec.CHUNKS];
         Arrays.fill(chunks, SummaryCodec.SampledChunk.empty(stride));
@@ -78,7 +109,7 @@ class RegionPatchBuilderTest {
         final int side = 16 / stride;
         final SummaryCodec.Column[] columns = new SummaryCodec.Column[side * side];
         Arrays.fill(columns, new SummaryCodec.Column(
-            1, surfaceY, SurfaceKind.LAND.ordinal(), 1, 0, 255
+            1, surfaceY, SurfaceKind.LAND.ordinal(), 1, 0, 255, 15
         ));
         return new SummaryCodec.SampledChunk(true, surfaceY, stride, columns);
     }

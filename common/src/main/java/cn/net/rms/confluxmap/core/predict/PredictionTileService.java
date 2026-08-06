@@ -1,6 +1,8 @@
 package cn.net.rms.confluxmap.core.predict;
 
+import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.color.LightTint;
+import cn.net.rms.confluxmap.core.color.ShadingPipeline;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
@@ -64,6 +66,7 @@ public final class PredictionTileService {
      */
     private static final int VISIBLE_CONCURRENCY = 6;
     private volatile CorrectionStore correctionStore;
+    private volatile DaylightModel daylightModel;
     private volatile PredictionViewMode viewMode = PredictionViewMode.EVERYWHERE;
 
     /** Guarded by {@code this}: tiles waiting to be composed, with the session token that requested them. */
@@ -158,6 +161,10 @@ public final class PredictionTileService {
         this.correctionStore = store;
     }
 
+    public void bindDaylightModel(final DaylightModel model) {
+        this.daylightModel = model;
+    }
+
     public void setViewMode(final PredictionViewMode mode) {
         final PredictionViewMode nextMode = mode == null ? PredictionViewMode.EVERYWHERE : mode;
         final SessionGuard.Session session = sessionGuard.current();
@@ -182,6 +189,58 @@ public final class PredictionTileService {
 
     public PredictionViewMode viewMode() {
         return viewMode;
+    }
+
+    private float applySurfaceLighting(
+        final TileKey key,
+        final int[] pixels,
+        final byte[] blockLight
+    ) {
+        final DaylightModel model = daylightModel;
+        if (model == null || BiomeTileKeys.isBiome(key)) {
+            return Float.NaN;
+        }
+        final String realLayer = BiomeTileKeys.realLayerId(
+            PredictedTileKeys.realLayerId(key.layerId())
+        );
+        if (MapLayer.parse(realLayer).type() != MapLayer.Type.SURFACE) {
+            return Float.NaN;
+        }
+        final float factor = model.factor();
+        for (int pixel = 0; pixel < pixels.length; pixel++) {
+            pixels[pixel] = ShadingPipeline.applyDaylight(
+                pixels[pixel], factor, blockLight[pixel] & 0xFF
+            );
+        }
+        return factor;
+    }
+
+    private static TileUpdate tileUpdate(
+        final TileKey key,
+        final int[] pixels,
+        final byte[] blockLight,
+        final float composedDaylight
+    ) {
+        return Float.isNaN(composedDaylight)
+            ? TileUpdate.fullTile(key, pixels)
+            : TileUpdate.fullTile(
+                key, pixels, new TileUpdate.Relight(composedDaylight, blockLight)
+            );
+    }
+
+    private static long[] unknownPixelRevisions() {
+        final long[] revisions = new long[PatchCodec.PIXELS];
+        java.util.Arrays.fill(revisions, Long.MIN_VALUE);
+        return revisions;
+    }
+
+    private static boolean hasKnownRevision(final long[] revisions) {
+        for (final long revision : revisions) {
+            if (revision != Long.MIN_VALUE) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -721,6 +780,10 @@ public final class PredictionTileService {
                         composition.update().argbPixels(),
                         composition.metadata().biomes(),
                         composition.metadata().surfaces(),
+                        composition.syncEvaluated(),
+                        composition.syncSourceRevisions(),
+                        composition.blockLight(),
+                        composition.composedDaylight(),
                         composition.mode(),
                         composition.hasServerState(),
                         composition.freshnessValidatedAtMillis(),
@@ -796,14 +859,22 @@ public final class PredictionTileService {
             || directValidatedAt == 0L
             || lower.freshnessValidatedAtMillis() >= directValidatedAt)) {
             final Composition composition = new Composition(
-                TileUpdate.fullTile(key, lower.pixels()),
+                tileUpdate(key, lower.pixels(), lower.blockLight(), lower.composedDaylight()),
                 new TileMetadata(lower.biomes(), lower.surfaces()),
+                lower.syncEvaluated(),
+                lower.syncSourceRevisions(),
+                lower.blockLight(),
+                lower.composedDaylight(),
                 lower.mode(),
                 lower.hasServerState(),
                 lower.freshnessValidatedAtMillis(),
                 lower.serverCoverageValidatedAtMillis()
             );
-            maskKnownRealPixels(key, composition.update().argbPixels());
+            uploads.maskPredictedPixels(
+                realKey(key), composition.update().argbPixels(),
+                lower.syncEvaluated(), lower.syncSourceRevisions(),
+                hasKnownRevision(lower.syncSourceRevisions())
+            );
             return composition;
         }
 
@@ -848,13 +919,27 @@ public final class PredictionTileService {
                     ? LightTint.multiplier(0, 0, true)
                     : 0xFFFFFFFF
             );
-        maskKnownRealPixels(key, pixels);
+        final byte[] syncEvaluated = directCorrections == null
+            ? new byte[PatchCodec.MASK_BYTES] : directCorrections.copyEvaluated();
+        final long[] syncSourceRevisions = directCorrections == null
+            ? unknownPixelRevisions() : directCorrections.copyPixelSourceRevisions();
+        final byte[] blockLight = directCorrections == null
+            ? new byte[PatchCodec.PIXELS] : directCorrections.copyBlockLight();
+        uploads.maskPredictedPixels(
+            realKey(key), pixels, syncEvaluated, syncSourceRevisions,
+            directCorrections != null && directCorrections.hasSourceRevisionMetadata()
+        );
+        final float composedDaylight = applySurfaceLighting(key, pixels, blockLight);
         return new Composition(
-            TileUpdate.fullTile(key, pixels),
+            tileUpdate(key, pixels, blockLight, composedDaylight),
             new TileMetadata(
                 biomeIds(grid, directCorrections, grid),
                 surfaceYs(derived, directCorrections, derived)
             ),
+            syncEvaluated,
+            syncSourceRevisions,
+            blockLight,
+            composedDaylight,
             compositionMode,
             directHasServerState,
             directValidatedAt,
@@ -862,17 +947,11 @@ public final class PredictionTileService {
         );
     }
 
-    private void maskKnownRealPixels(final TileKey predictedKey, final int[] pixels) {
-        uploads.maskKnownRealPixels(
-            new TileKey(
-                predictedKey.world(),
-                predictedKey.dimension(),
-                PredictedTileKeys.realLayerId(predictedKey.layerId()),
-                predictedKey.lod(),
-                predictedKey.tileX(),
-                predictedKey.tileZ()
-            ),
-            pixels
+    private static TileKey realKey(final TileKey predictedKey) {
+        return new TileKey(
+            predictedKey.world(), predictedKey.dimension(),
+            PredictedTileKeys.realLayerId(predictedKey.layerId()),
+            predictedKey.lod(), predictedKey.tileX(), predictedKey.tileZ()
         );
     }
 
@@ -1096,6 +1175,10 @@ public final class PredictionTileService {
             composition.update().argbPixels(),
             composition.metadata().biomes(),
             composition.metadata().surfaces(),
+            composition.syncEvaluated(),
+            composition.syncSourceRevisions(),
+            composition.blockLight(),
+            composition.composedDaylight(),
             composition.mode(),
             composition.hasServerState(),
             composition.freshnessValidatedAtMillis(),
@@ -1260,6 +1343,10 @@ public final class PredictionTileService {
     private record Composition(
         TileUpdate update,
         TileMetadata metadata,
+        byte[] syncEvaluated,
+        long[] syncSourceRevisions,
+        byte[] blockLight,
+        float composedDaylight,
         PredictionViewMode mode,
         boolean hasServerState,
         long freshnessValidatedAtMillis,

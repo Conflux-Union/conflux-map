@@ -8,7 +8,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
-/** Binds the export tile seam to the existing real and predicted composition modules. */
+/** Binds export to the local-real plane and the selected prediction/sync composition plane. */
 public final class ServiceMapExportTileSource implements MapExportTileSource {
     private final TileService realTiles;
     private final PredictionTileService predictedTiles;

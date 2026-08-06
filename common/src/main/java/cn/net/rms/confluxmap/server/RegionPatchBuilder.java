@@ -25,6 +25,17 @@ public final class RegionPatchBuilder {
         final long sinceRevision,
         final PatchBuilder.PreparedBaseline prepared
     ) {
+        return build(lod, slice, region, sinceRevision, prepared, true);
+    }
+
+    public Result build(
+        final int lod,
+        final ChunkRegionSlice slice,
+        final SummaryCodec.SampledRegion region,
+        final long sinceRevision,
+        final PatchBuilder.PreparedBaseline prepared,
+        final boolean enhancedProfile
+    ) {
         if (lod < 0 || lod > TileMath.MAX_LOD || slice == null || region == null || prepared == null
             || region.rx() != slice.regionX() || region.rz() != slice.regionZ()
             || region.sampleStride() != 1 << lod) {
@@ -35,6 +46,9 @@ public final class RegionPatchBuilder {
         final int sampleHeight = slice.height() * samplesPerChunk;
         final byte[] generated = new byte[ChunkPatchCodec.maskBytes(slice.width() * slice.height())];
         final byte[] evaluated = new byte[ChunkPatchCodec.maskBytes(sampleWidth * sampleHeight)];
+        final long[] sourceRevisions = new long[slice.width() * slice.height()];
+        java.util.Arrays.fill(sourceRevisions, Long.MIN_VALUE);
+        final byte[] blockLight = new byte[sampleWidth * sampleHeight];
         final List<PatchCodec.Sample> records = new ArrayList<>();
         final BaselineGrid baseline = prepared.baseline();
         final DerivedGrid derived = prepared.derived();
@@ -48,6 +62,7 @@ public final class RegionPatchBuilder {
                 final int regionLocalZ = slice.minLocalChunkZ() + chunkZ;
                 final SummaryCodec.SampledChunk chunk = region.chunks()[regionLocalZ * 16 + regionLocalX];
                 final int patchChunk = chunkZ * slice.width() + chunkX;
+                sourceRevisions[patchChunk] = chunk.revision();
                 if (!chunk.generated()) {
                     continue;
                 }
@@ -66,6 +81,7 @@ public final class RegionPatchBuilder {
                         final int patchZ = chunkZ * samplesPerChunk + sampleZ;
                         final int patchPixel = patchZ * sampleWidth + patchX;
                         ChunkPatchCodec.setBit(evaluated, patchPixel);
+                        blockLight[patchPixel] = (byte) column.blockLight();
                         final boolean differs = !absolute && (uniformPixel != null
                             ? !uniformPixel.equals(column.pixel())
                             : differsFromBaseline(
@@ -81,16 +97,21 @@ public final class RegionPatchBuilder {
             }
         }
         final ChunkPatchCodec.Patch patch = new ChunkPatchCodec.Patch(
-            slice.width(), slice.height(), samplesPerChunk, generated, evaluated, records
+            slice.width(), slice.height(), samplesPerChunk, generated, evaluated, records,
+            sourceRevisions, blockLight
         );
-        final long revision = ChunkPatchCodec.regionRevision(lod, slice, patch);
+        final long revision = ChunkPatchCodec.regionRevision(
+            lod, slice, patch, enhancedProfile
+        );
         if (sinceRevision != Long.MIN_VALUE && sinceRevision == revision) {
             return new Result(Proto.PATCH_MODE_UNCHANGED, revision, new byte[0], 0);
         }
         return new Result(
             absolute ? Proto.PATCH_MODE_ABSOLUTE : Proto.PATCH_MODE_RESIDUAL,
             revision,
-            ChunkPatchCodec.encode(patch),
+            enhancedProfile
+                ? ChunkPatchCodec.encode(patch)
+                : ChunkPatchCodec.encodeLegacy(patch),
             records.size()
         );
     }

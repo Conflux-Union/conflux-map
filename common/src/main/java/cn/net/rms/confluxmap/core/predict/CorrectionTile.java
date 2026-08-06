@@ -14,6 +14,7 @@ public final class CorrectionTile {
     private final int samplesPerChunk;
     private final PatchCodec.Sample[] samples = new PatchCodec.Sample[PIXELS];
     private final byte[] evaluated = new byte[PatchCodec.MASK_BYTES];
+    private final byte[] blockLight = new byte[PIXELS];
     private final byte[] presence = new byte[Proto.PATCH_PRESENCE_BYTES];
     /** Cumulative revision-0 scan result, replaced on every progressive server update. */
     private final PatchCodec.Sample[] progressSamples = new PatchCodec.Sample[PIXELS];
@@ -22,6 +23,7 @@ public final class CorrectionTile {
     private boolean progressActive;
     private final boolean[] generatedChunks;
     private final long[] chunkRevisions;
+    private final long[] chunkSourceRevisions;
     private final long[] chunkValidatedAtMillis;
     private long revision = Long.MIN_VALUE;
     /** Client wall-clock time of the newest committed server validation; zero means unvalidated. */
@@ -43,8 +45,10 @@ public final class CorrectionTile {
         final int chunks = chunksPerSide * chunksPerSide;
         this.generatedChunks = new boolean[chunks];
         this.chunkRevisions = new long[chunks];
+        this.chunkSourceRevisions = new long[chunks];
         this.chunkValidatedAtMillis = new long[chunks];
         Arrays.fill(chunkRevisions, Long.MIN_VALUE);
+        Arrays.fill(chunkSourceRevisions, Long.MIN_VALUE);
     }
 
     public synchronized boolean applyPatch(final long patchRevision, final byte[] newPresence, final PatchCodec.Patch patch) {
@@ -79,15 +83,31 @@ public final class CorrectionTile {
         clearProgress();
         Arrays.fill(samples, null);
         Arrays.fill(evaluated, (byte) 0);
+        Arrays.fill(blockLight, (byte) 0);
         final byte[] patchEvaluated = patch.evaluated();
         System.arraycopy(patchEvaluated, 0, evaluated, 0, evaluated.length);
         for (final PatchCodec.Sample sample : patch.samples()) {
             samples[sample.pixelIndex()] = sample;
         }
+        final byte[] patchLight = patch.blockLight();
+        System.arraycopy(patchLight, 0, blockLight, 0, blockLight.length);
         System.arraycopy(newPresence, 0, presence, 0, presence.length);
         Arrays.fill(generatedChunks, false);
         restoreGeneratedChunksFromPresence(newPresence);
         Arrays.fill(chunkRevisions, Long.MIN_VALUE);
+        Arrays.fill(chunkSourceRevisions, Long.MIN_VALUE);
+        final long[] patchSourceRevisions = patch.sourceRevisions();
+        for (int pixel = 0; pixel < PIXELS; pixel++) {
+            if (!patch.evaluatedAt(pixel)) {
+                continue;
+            }
+            final int chunkX = (pixel & 255) / samplesPerChunk;
+            final int chunkZ = (pixel >>> 8) / samplesPerChunk;
+            final int chunk = chunkZ * chunksPerSide + chunkX;
+            chunkSourceRevisions[chunk] = maxKnown(
+                chunkSourceRevisions[chunk], patchSourceRevisions[pixel]
+            );
+        }
         Arrays.fill(chunkValidatedAtMillis, 0L);
         revision = patchRevision;
         validatedAtMillis = Math.max(0L, patchValidatedAtMillis);
@@ -153,8 +173,10 @@ public final class CorrectionTile {
                         final int targetPixel = targetZ * 256 + targetX;
                         samples[targetPixel] = null;
                         clearBit(evaluated, targetPixel);
+                        blockLight[targetPixel] = 0;
                         if (patch.evaluatedAt(sourcePixel)) {
                             setBit(evaluated, targetPixel);
+                            blockLight[targetPixel] = (byte) patch.blockLightAt(sourcePixel);
                         }
                         final PatchCodec.Sample source = sourceSamples[sourcePixel];
                         if (source != null) {
@@ -171,6 +193,7 @@ public final class CorrectionTile {
                 final int targetChunk = (minTileChunkZ + chunkZ) * chunksPerSide + minTileChunkX + chunkX;
                 generatedChunks[targetChunk] = patch.generatedAt(sourceChunk);
                 chunkRevisions[targetChunk] = revisions[sourceChunk];
+                chunkSourceRevisions[targetChunk] = patch.sourceRevisionAt(sourceChunk);
                 chunkValidatedAtMillis[targetChunk] = patchValidatedAtMillis;
             }
         }
@@ -377,6 +400,47 @@ public final class CorrectionTile {
         return samples[pixelIndex];
     }
 
+    public synchronized byte[] copyEvaluated() {
+        return evaluated.clone();
+    }
+
+    public synchronized byte[] copyBlockLight() {
+        return blockLight.clone();
+    }
+
+    public synchronized long[] copyPixelSourceRevisions() {
+        final long[] revisions = new long[PIXELS];
+        Arrays.fill(revisions, Long.MIN_VALUE);
+        for (int pixel = 0; pixel < PIXELS; pixel++) {
+            if ((evaluated[pixel >>> 3] & (1 << (pixel & 7))) != 0) {
+                revisions[pixel] = sourceRevisionForPixel(pixel);
+            }
+        }
+        return revisions;
+    }
+
+    public synchronized int blockLightAt(final int pixelIndex) {
+        return blockLight[pixelIndex] & 0xFF;
+    }
+
+    public synchronized long sourceRevisionForPixel(final int pixelIndex) {
+        if (pixelIndex < 0 || pixelIndex >= PIXELS) {
+            throw new IndexOutOfBoundsException("pixel index outside correction tile");
+        }
+        final int chunkX = (pixelIndex & 255) / samplesPerChunk;
+        final int chunkZ = (pixelIndex >>> 8) / samplesPerChunk;
+        return chunkSourceRevisions[chunkZ * chunksPerSide + chunkX];
+    }
+
+    public synchronized boolean hasSourceRevisionMetadata() {
+        for (final long sourceRevision : chunkSourceRevisions) {
+            if (sourceRevision != Long.MIN_VALUE) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public synchronized int patchMode() {
         return patchMode;
     }
@@ -406,7 +470,14 @@ public final class CorrectionTile {
                 copy.add(sample);
             }
         }
-        return new PatchCodec.Patch(evaluated, copy);
+        final long[] pixelSourceRevisions = new long[PIXELS];
+        Arrays.fill(pixelSourceRevisions, Long.MIN_VALUE);
+        for (int pixel = 0; pixel < PIXELS; pixel++) {
+            if ((evaluated[pixel >>> 3] & (1 << (pixel & 7))) != 0) {
+                pixelSourceRevisions[pixel] = sourceRevisionForPixel(pixel);
+            }
+        }
+        return new PatchCodec.Patch(evaluated, copy, pixelSourceRevisions, blockLight);
     }
 
     public synchronized byte[] copyGeneratedChunkMask() {
@@ -421,6 +492,10 @@ public final class CorrectionTile {
 
     public synchronized long[] copyChunkRevisions() {
         return chunkRevisions.clone();
+    }
+
+    public synchronized long[] copyChunkSourceRevisions() {
+        return chunkSourceRevisions.clone();
     }
 
     public synchronized long[] copyChunkValidatedAtMillis() {
@@ -441,8 +516,20 @@ public final class CorrectionTile {
         final long[] revisions,
         final long[] validated
     ) {
+        restoreChunkMetadata(
+            generated, revisions, chunkSourceRevisions.clone(), validated
+        );
+    }
+
+    public synchronized void restoreChunkMetadata(
+        final byte[] generated,
+        final long[] revisions,
+        final long[] sourceRevisions,
+        final long[] validated
+    ) {
         if (generated == null || generated.length != ChunkPatchCodec.maskBytes(generatedChunks.length)
             || revisions == null || revisions.length != chunkRevisions.length
+            || sourceRevisions == null || sourceRevisions.length != chunkSourceRevisions.length
             || validated == null || validated.length != chunkValidatedAtMillis.length) {
             throw new IllegalArgumentException("chunk correction metadata has the wrong length");
         }
@@ -450,6 +537,7 @@ public final class CorrectionTile {
         for (int chunk = 0; chunk < generatedChunks.length; chunk++) {
             generatedChunks[chunk] = (generated[chunk >>> 3] & (1 << (chunk & 7))) != 0;
             chunkRevisions[chunk] = revisions[chunk];
+            chunkSourceRevisions[chunk] = sourceRevisions[chunk];
             chunkValidatedAtMillis[chunk] = validated[chunk];
             hasKnownChunk |= revisions[chunk] != Long.MIN_VALUE;
         }
@@ -471,9 +559,11 @@ public final class CorrectionTile {
         clearProgress();
         Arrays.fill(samples, null);
         Arrays.fill(evaluated, (byte) 0);
+        Arrays.fill(blockLight, (byte) 0);
         Arrays.fill(presence, (byte) 0);
         Arrays.fill(generatedChunks, false);
         Arrays.fill(chunkRevisions, Long.MIN_VALUE);
+        Arrays.fill(chunkSourceRevisions, Long.MIN_VALUE);
         Arrays.fill(chunkValidatedAtMillis, 0L);
         revision = Long.MIN_VALUE;
         validatedAtMillis = 0L;
@@ -501,12 +591,14 @@ public final class CorrectionTile {
     public synchronized void clear() {
         Arrays.fill(samples, null);
         Arrays.fill(evaluated, (byte) 0);
+        Arrays.fill(blockLight, (byte) 0);
         Arrays.fill(presence, (byte) 0);
         clearProgress();
         revision = Long.MIN_VALUE;
         validatedAtMillis = 0L;
         Arrays.fill(generatedChunks, false);
         Arrays.fill(chunkRevisions, Long.MIN_VALUE);
+        Arrays.fill(chunkSourceRevisions, Long.MIN_VALUE);
         Arrays.fill(chunkValidatedAtMillis, 0L);
     }
 
@@ -618,5 +710,21 @@ public final class CorrectionTile {
 
     private static void clearBit(final byte[] bits, final int index) {
         bits[index >>> 3] &= (byte) ~(1 << (index & 7));
+    }
+
+    private static long maxKnown(final long first, final long second) {
+        if (first == Long.MIN_VALUE) {
+            return second;
+        }
+        if (second == Long.MIN_VALUE) {
+            return first;
+        }
+        return Math.max(first, second);
+    }
+
+    private static long[] unknownRevisions(final int count) {
+        final long[] revisions = new long[count];
+        Arrays.fill(revisions, Long.MIN_VALUE);
+        return revisions;
     }
 }

@@ -434,7 +434,22 @@ public final class PatchBuilder {
         final int mode
     ) {
         final byte[] presence = summary.presence();
-        final long revision = snapshotRevision(mode, presence, evaluated, records);
+        final long[] sourceRevisions = new long[PatchCodec.PIXELS];
+        java.util.Arrays.fill(sourceRevisions, Long.MIN_VALUE);
+        final byte[] blockLight = new byte[PatchCodec.PIXELS];
+        for (int pixel = 0; pixel < PatchCodec.PIXELS; pixel++) {
+            if ((evaluated[pixel >>> 3] & (1 << (pixel & 7))) == 0) {
+                continue;
+            }
+            final SummaryView.Pixel source = summary.pixel(pixel & 255, pixel >>> 8);
+            if (source != null && source.column() != null) {
+                sourceRevisions[pixel] = source.revision();
+                blockLight[pixel] = (byte) source.column().blockLight();
+            }
+        }
+        final long revision = snapshotRevision(
+            mode, presence, evaluated, records, sourceRevisions, blockLight
+        );
         if (sinceRevision != Long.MIN_VALUE && sinceRevision == revision) {
             return new Result(
                 Proto.PATCH_MODE_UNCHANGED,
@@ -444,7 +459,9 @@ public final class PatchBuilder {
                 0
             );
         }
-        final byte[] body = PatchCodec.encode(new PatchCodec.Patch(evaluated, records));
+        final byte[] body = PatchCodec.encode(new PatchCodec.Patch(
+            evaluated, records, sourceRevisions, blockLight
+        ));
         return new Result(
             mode,
             revision,
@@ -459,7 +476,9 @@ public final class PatchBuilder {
         final int mode,
         final byte[] presence,
         final byte[] evaluated,
-        final List<PatchCodec.Sample> records
+        final List<PatchCodec.Sample> records,
+        final long[] sourceRevisions,
+        final byte[] blockLight
     ) {
         long hash = 0xcbf29ce484222325L;
         hash = fnv1a(hash, mode);
@@ -468,6 +487,13 @@ public final class PatchBuilder {
         }
         for (final byte value : evaluated) {
             hash = fnv1a(hash, value);
+        }
+        for (int pixel = 0; pixel < PatchCodec.PIXELS; pixel++) {
+            if ((evaluated[pixel >>> 3] & (1 << (pixel & 7))) == 0) {
+                continue;
+            }
+            hash = fnv1aLong(hash, sourceRevisions[pixel]);
+            hash = fnv1a(hash, blockLight[pixel]);
         }
         for (final PatchCodec.Sample sample : records) {
             hash = fnv1aInt(hash, sample.pixelIndex());
@@ -484,6 +510,13 @@ public final class PatchBuilder {
     private static long fnv1aInt(long hash, final int value) {
         for (int shift = 0; shift < Integer.SIZE; shift += Byte.SIZE) {
             hash = fnv1a(hash, value >>> shift);
+        }
+        return hash;
+    }
+
+    private static long fnv1aLong(long hash, final long value) {
+        for (int shift = 0; shift < Long.SIZE; shift += Byte.SIZE) {
+            hash = fnv1a(hash, (int) (value >>> shift));
         }
         return hash;
     }

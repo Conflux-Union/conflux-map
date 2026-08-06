@@ -24,7 +24,8 @@ import java.util.zip.Inflater;
  * read; {@code difference[pixel]} is implicit in the sample mask.
  */
 public final class PatchCodec {
-    public static final int FORMAT_VERSION = 3;
+    public static final int FORMAT_VERSION = 4;
+    public static final int LEGACY_FORMAT_VERSION = 3;
     public static final int PIXELS = 256 * 256;
     public static final int MASK_BYTES = PIXELS / 8;
     public static final int COARSE_MASK_BYTES = 32;
@@ -33,7 +34,7 @@ public final class PatchCodec {
     public static final int RECORD_BYTES = 7;
     private static final int MAX_DELTA_HEIGHT_BYTES = 3;
     public static final int MAX_RAW_BYTES =
-        1 + MAX_SPARSE_MASK_BYTES * 2 + PIXELS * (RECORD_BYTES - 2 + MAX_DELTA_HEIGHT_BYTES);
+        1 + MAX_SPARSE_MASK_BYTES * 2 + PIXELS * (RECORD_BYTES - 2 + MAX_DELTA_HEIGHT_BYTES + 11);
     public static final int MAX_COMPRESSED_BYTES = 576 * 1024;
 
     private PatchCodec() {
@@ -101,7 +102,12 @@ public final class PatchCodec {
     }
 
     /** Evaluated coverage plus absolute residual samples, sorted by pixel on the wire. */
-    public record Patch(byte[] evaluated, List<Sample> samples) {
+    public record Patch(
+        byte[] evaluated,
+        List<Sample> samples,
+        long[] sourceRevisions,
+        byte[] blockLight
+    ) {
         public Patch {
             if (evaluated == null || evaluated.length != MASK_BYTES) {
                 throw new IllegalArgumentException("evaluated mask must contain " + MASK_BYTES + " bytes");
@@ -111,6 +117,14 @@ public final class PatchCodec {
             }
             evaluated = evaluated.clone();
             samples = List.copyOf(samples);
+            if (sourceRevisions == null || sourceRevisions.length != PIXELS) {
+                throw new IllegalArgumentException("source revisions must contain " + PIXELS + " entries");
+            }
+            if (blockLight == null || blockLight.length != PIXELS) {
+                throw new IllegalArgumentException("block light must contain " + PIXELS + " entries");
+            }
+            sourceRevisions = sourceRevisions.clone();
+            blockLight = blockLight.clone();
             final boolean[] seen = new boolean[PIXELS];
             for (final Sample sample : samples) {
                 if (sample == null || seen[sample.pixelIndex()]) {
@@ -123,16 +137,50 @@ public final class PatchCodec {
                 }
                 seen[sample.pixelIndex()] = true;
             }
+            for (int pixel = 0; pixel < PIXELS; pixel++) {
+                final int light = blockLight[pixel] & 0xFF;
+                if (light > 15) {
+                    throw new IllegalArgumentException("block light outside 0..15 at pixel " + pixel);
+                }
+                if (!hasBit(evaluated, pixel)
+                    && (sourceRevisions[pixel] != Long.MIN_VALUE || light != 0)) {
+                    throw new IllegalArgumentException("metadata exists for unevaluated pixel " + pixel);
+                }
+            }
+        }
+
+        public Patch(final byte[] evaluated, final List<Sample> samples) {
+            this(evaluated, samples, unknownRevisions(), new byte[PIXELS]);
         }
 
         /** Compatibility constructor: handcrafted samples are evaluated exactly where they differ. */
         public Patch(final List<Sample> samples) {
-            this(evaluatedFrom(samples), samples);
+            this(evaluatedFrom(samples), samples, unknownRevisions(), new byte[PIXELS]);
         }
 
         @Override
         public byte[] evaluated() {
             return evaluated.clone();
+        }
+
+        @Override
+        public long[] sourceRevisions() {
+            return sourceRevisions.clone();
+        }
+
+        @Override
+        public byte[] blockLight() {
+            return blockLight.clone();
+        }
+
+        public long sourceRevisionAt(final int pixelIndex) {
+            checkPixel(pixelIndex);
+            return sourceRevisions[pixelIndex];
+        }
+
+        public int blockLightAt(final int pixelIndex) {
+            checkPixel(pixelIndex);
+            return blockLight[pixelIndex] & 0xFF;
         }
 
         public int size() {
@@ -160,6 +208,14 @@ public final class PatchCodec {
     }
 
     public static byte[] encode(final Patch patch) {
+        return encode(patch, FORMAT_VERSION);
+    }
+
+    public static byte[] encodeLegacy(final Patch patch) {
+        return encode(patch, LEGACY_FORMAT_VERSION);
+    }
+
+    private static byte[] encode(final Patch patch, final int formatVersion) {
         if (patch == null) {
             throw new IllegalArgumentException("patch is null");
         }
@@ -180,7 +236,7 @@ public final class PatchCodec {
                 1 + COARSE_MASK_BYTES * 2 + ordered.size() * RECORD_BYTES
             );
             final DataOutputStream out = new DataOutputStream(rawBytes);
-            out.writeByte(FORMAT_VERSION);
+            out.writeByte(formatVersion);
             writeSparseMask(out, patch.evaluated());
             writeSparseMask(out, difference);
             for (final Sample sample : ordered) {
@@ -202,6 +258,22 @@ public final class PatchCodec {
             }
             for (final Sample sample : ordered) {
                 out.writeByte(sample.floorMapColorId());
+            }
+            if (formatVersion >= FORMAT_VERSION) {
+                long previousRevision = 0L;
+                for (int pixel = 0; pixel < PIXELS; pixel++) {
+                    if (!patch.evaluatedAt(pixel)) {
+                        continue;
+                    }
+                    final long revision = patch.sourceRevisions[pixel];
+                    writeZigzagVarLong(out, revision - previousRevision);
+                    previousRevision = revision;
+                }
+                for (int pixel = 0; pixel < PIXELS; pixel++) {
+                    if (patch.evaluatedAt(pixel)) {
+                        out.writeByte(patch.blockLight[pixel]);
+                    }
+                }
             }
             out.flush();
             final byte[] raw = rawBytes.toByteArray();
@@ -234,7 +306,7 @@ public final class PatchCodec {
         try {
             final DataInputStream in = new DataInputStream(new ByteArrayInputStream(raw));
             final int version = in.readUnsignedByte();
-            if (version != FORMAT_VERSION) {
+            if (version != FORMAT_VERSION && version != LEGACY_FORMAT_VERSION) {
                 throw new ProtoException("unsupported patch body version " + version);
             }
             final byte[] evaluated = readSparseMask(in);
@@ -267,6 +339,28 @@ public final class PatchCodec {
             final int[] mapColors = readUnsignedBytePlane(in, count);
             final int[] fluidDepths = readUnsignedBytePlane(in, count);
             final int[] floorMapColors = readUnsignedBytePlane(in, count);
+            final long[] sourceRevisions = unknownRevisions();
+            final byte[] blockLight = new byte[PIXELS];
+            if (version >= FORMAT_VERSION) {
+                long previousRevision = 0L;
+                for (int pixel = 0; pixel < PIXELS; pixel++) {
+                    if (!hasBit(evaluated, pixel)) {
+                        continue;
+                    }
+                    previousRevision += readZigzagVarLong(in);
+                    sourceRevisions[pixel] = previousRevision;
+                }
+                for (int pixel = 0; pixel < PIXELS; pixel++) {
+                    if (!hasBit(evaluated, pixel)) {
+                        continue;
+                    }
+                    final int light = in.readUnsignedByte();
+                    if (light > 15) {
+                        throw new ProtoException("block light outside 0..15: " + light);
+                    }
+                    blockLight[pixel] = (byte) light;
+                }
+            }
             if (in.available() != 0) {
                 throw new ProtoException("trailing bytes in patch body: " + in.available());
             }
@@ -282,7 +376,7 @@ public final class PatchCodec {
                     floorMapColors[i]
                 ));
             }
-            return new Patch(evaluated, samples);
+            return new Patch(evaluated, samples, sourceRevisions, blockLight);
         } catch (final EOFException | IllegalArgumentException e) {
             throw new ProtoException("malformed patch body: " + e.getMessage(), e);
         } catch (final IOException e) {
@@ -416,6 +510,36 @@ public final class PatchCodec {
             values[i] = in.readUnsignedByte();
         }
         return values;
+    }
+
+    private static long[] unknownRevisions() {
+        final long[] revisions = new long[PIXELS];
+        java.util.Arrays.fill(revisions, Long.MIN_VALUE);
+        return revisions;
+    }
+
+    private static void writeZigzagVarLong(final DataOutputStream out, final long value) throws IOException {
+        long encoded = (value << 1) ^ (value >> 63);
+        while ((encoded & ~0x7FL) != 0L) {
+            out.writeByte((int) (encoded & 0x7F) | 0x80);
+            encoded >>>= 7;
+        }
+        out.writeByte((int) encoded);
+    }
+
+    private static long readZigzagVarLong(final DataInputStream in) throws IOException, ProtoException {
+        long encoded = 0L;
+        for (int shift = 0; shift < 70; shift += 7) {
+            final int next = in.readUnsignedByte();
+            if (shift == 63 && (next & 0xFE) != 0) {
+                throw new ProtoException("overlong source revision delta");
+            }
+            encoded |= (long) (next & 0x7F) << shift;
+            if ((next & 0x80) == 0) {
+                return (encoded >>> 1) ^ -(encoded & 1L);
+            }
+        }
+        throw new ProtoException("overlong source revision delta");
     }
 
     private static void writeZigzagVarint(final DataOutputStream out, final int value) throws IOException {

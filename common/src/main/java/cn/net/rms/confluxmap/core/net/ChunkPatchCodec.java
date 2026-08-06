@@ -16,7 +16,8 @@ import java.util.zip.Inflater;
 
 /** Variable-size authoritative correction codec for one cropped 16x16-chunk region page. */
 public final class ChunkPatchCodec {
-    public static final int FORMAT_VERSION = 1;
+    public static final int FORMAT_VERSION = 2;
+    public static final int LEGACY_FORMAT_VERSION = 1;
     public static final int MAX_CHUNKS_PER_SIDE = 16;
     public static final int MAX_PIXELS = 256 * 256;
     public static final int MAX_RAW_BYTES = 640 * 1024;
@@ -34,7 +35,9 @@ public final class ChunkPatchCodec {
         int samplesPerChunk,
         byte[] generated,
         byte[] evaluated,
-        List<PatchCodec.Sample> samples
+        List<PatchCodec.Sample> samples,
+        long[] sourceRevisions,
+        byte[] blockLight
     ) {
         public Patch {
             if (chunkWidth < 1 || chunkWidth > MAX_CHUNKS_PER_SIDE
@@ -59,9 +62,17 @@ public final class ChunkPatchCodec {
             if (samples == null) {
                 throw new IllegalArgumentException("chunk patch samples are null");
             }
+            if (sourceRevisions == null || sourceRevisions.length != chunkCount) {
+                throw new IllegalArgumentException("chunk source revisions have the wrong length");
+            }
+            if (blockLight == null || blockLight.length != pixelCount) {
+                throw new IllegalArgumentException("chunk patch block light has the wrong length");
+            }
             generated = generated.clone();
             evaluated = evaluated.clone();
             samples = List.copyOf(samples);
+            sourceRevisions = sourceRevisions.clone();
+            blockLight = blockLight.clone();
             final boolean[] seen = new boolean[pixelCount];
             for (final PatchCodec.Sample sample : samples) {
                 if (sample == null || sample.pixelIndex() >= pixelCount || seen[sample.pixelIndex()]) {
@@ -74,6 +85,30 @@ public final class ChunkPatchCodec {
                 }
                 seen[sample.pixelIndex()] = true;
             }
+            for (int pixel = 0; pixel < pixelCount; pixel++) {
+                final int light = blockLight[pixel] & 0xFF;
+                if (light > 15) {
+                    throw new IllegalArgumentException("block light outside 0..15 at pixel " + pixel);
+                }
+                if (!hasBit(evaluated, pixel) && light != 0) {
+                    throw new IllegalArgumentException("block light exists for unevaluated pixel " + pixel);
+                }
+            }
+        }
+
+        public Patch(
+            final int chunkWidth,
+            final int chunkHeight,
+            final int samplesPerChunk,
+            final byte[] generated,
+            final byte[] evaluated,
+            final List<PatchCodec.Sample> samples
+        ) {
+            this(
+                chunkWidth, chunkHeight, samplesPerChunk, generated, evaluated, samples,
+                unknownRevisions(chunkWidth * chunkHeight),
+                new byte[chunkWidth * samplesPerChunk * chunkHeight * samplesPerChunk]
+            );
         }
 
         @Override
@@ -84,6 +119,16 @@ public final class ChunkPatchCodec {
         @Override
         public byte[] evaluated() {
             return evaluated.clone();
+        }
+
+        @Override
+        public long[] sourceRevisions() {
+            return sourceRevisions.clone();
+        }
+
+        @Override
+        public byte[] blockLight() {
+            return blockLight.clone();
         }
 
         public int sampleWidth() {
@@ -106,6 +151,16 @@ public final class ChunkPatchCodec {
         public boolean evaluatedAt(final int pixelIndex) {
             checkIndex(pixelIndex, pixelCount(), "pixel");
             return hasBit(evaluated, pixelIndex);
+        }
+
+        public long sourceRevisionAt(final int chunkIndex) {
+            checkIndex(chunkIndex, chunkWidth * chunkHeight, "chunk");
+            return sourceRevisions[chunkIndex];
+        }
+
+        public int blockLightAt(final int pixelIndex) {
+            checkIndex(pixelIndex, pixelCount(), "pixel");
+            return blockLight[pixelIndex] & 0xFF;
         }
 
         public PatchCodec.Sample sampleAt(final int pixelIndex) {
@@ -134,6 +189,14 @@ public final class ChunkPatchCodec {
     }
 
     public static byte[] encode(final Patch patch) {
+        return encode(patch, FORMAT_VERSION);
+    }
+
+    public static byte[] encodeLegacy(final Patch patch) {
+        return encode(patch, LEGACY_FORMAT_VERSION);
+    }
+
+    private static byte[] encode(final Patch patch, final int formatVersion) {
         if (patch == null) {
             throw new IllegalArgumentException("chunk patch is null");
         }
@@ -152,7 +215,7 @@ public final class ChunkPatchCodec {
         try {
             final ByteArrayOutputStream rawBytes = new ByteArrayOutputStream();
             final DataOutputStream out = new DataOutputStream(rawBytes);
-            out.writeByte(FORMAT_VERSION);
+            out.writeByte(formatVersion);
             out.writeByte(patch.chunkWidth());
             out.writeByte(patch.chunkHeight());
             out.writeByte(patch.samplesPerChunk());
@@ -179,6 +242,18 @@ public final class ChunkPatchCodec {
             for (final PatchCodec.Sample sample : ordered) {
                 out.writeByte(sample.floorMapColorId());
             }
+            if (formatVersion >= FORMAT_VERSION) {
+                long previousRevision = 0L;
+                for (final long revision : patch.sourceRevisions) {
+                    writeZigzagVarLong(out, revision - previousRevision);
+                    previousRevision = revision;
+                }
+                for (int pixel = 0; pixel < patch.pixelCount(); pixel++) {
+                    if (patch.evaluatedAt(pixel)) {
+                        out.writeByte(patch.blockLight[pixel]);
+                    }
+                }
+            }
             out.flush();
             final byte[] raw = rawBytes.toByteArray();
             if (raw.length > MAX_RAW_BYTES) {
@@ -192,6 +267,11 @@ public final class ChunkPatchCodec {
 
     /** Stable content fingerprints for each chunk in row-major patch order. */
     public static long[] chunkRevisions(final Patch patch) {
+        return chunkRevisions(patch, true);
+    }
+
+    /** Profile-specific fingerprints so released peers retain their original cache identity. */
+    public static long[] chunkRevisions(final Patch patch, final boolean enhancedProfile) {
         if (patch == null) {
             throw new IllegalArgumentException("chunk patch is null");
         }
@@ -207,11 +287,17 @@ public final class ChunkPatchCodec {
                 final int chunkIndex = chunkZ * patch.chunkWidth() + chunkX;
                 long hash = 0xcbf29ce484222325L;
                 hash = fnv1a(hash, patch.generatedAt(chunkIndex) ? 1 : 0);
+                if (enhancedProfile) {
+                    hash = fnv1aLong(hash, patch.sourceRevisionAt(chunkIndex));
+                }
                 for (int sampleZ = 0; sampleZ < samplesPerChunk; sampleZ++) {
                     for (int sampleX = 0; sampleX < samplesPerChunk; sampleX++) {
                         final int pixel = (chunkZ * samplesPerChunk + sampleZ) * sampleWidth
                             + chunkX * samplesPerChunk + sampleX;
                         hash = fnv1a(hash, patch.evaluatedAt(pixel) ? 1 : 0);
+                        if (enhancedProfile) {
+                            hash = fnv1a(hash, patch.blockLightAt(pixel));
+                        }
                         final PatchCodec.Sample sample = byPixel[pixel];
                         hash = fnv1a(hash, sample == null ? 0 : 1);
                         if (sample != null) {
@@ -229,11 +315,20 @@ public final class ChunkPatchCodec {
     public static long regionRevision(
         final int lod, final ChunkRegionSlice slice, final Patch patch
     ) {
+        return regionRevision(lod, slice, patch, true);
+    }
+
+    public static long regionRevision(
+        final int lod,
+        final ChunkRegionSlice slice,
+        final Patch patch,
+        final boolean enhancedProfile
+    ) {
         if (slice == null || patch == null
             || slice.width() != patch.chunkWidth() || slice.height() != patch.chunkHeight()) {
             throw new IllegalArgumentException("region slice and patch dimensions disagree");
         }
-        return regionRevision(lod, slice, chunkRevisions(patch));
+        return regionRevision(lod, slice, chunkRevisions(patch, enhancedProfile));
     }
 
     public static long regionRevision(
@@ -265,7 +360,7 @@ public final class ChunkPatchCodec {
         try {
             final DataInputStream in = new DataInputStream(new ByteArrayInputStream(raw));
             final int version = in.readUnsignedByte();
-            if (version != FORMAT_VERSION) {
+            if (version != FORMAT_VERSION && version != LEGACY_FORMAT_VERSION) {
                 throw new ProtoException("unsupported chunk patch version " + version);
             }
             final int chunkWidth = in.readUnsignedByte();
@@ -310,6 +405,25 @@ public final class ChunkPatchCodec {
             final int[] mapColors = readUnsignedBytePlane(in, count);
             final int[] fluidDepths = readUnsignedBytePlane(in, count);
             final int[] floorMapColors = readUnsignedBytePlane(in, count);
+            final long[] sourceRevisions = unknownRevisions(chunks);
+            final byte[] blockLight = new byte[pixels];
+            if (version >= FORMAT_VERSION) {
+                long previousRevision = 0L;
+                for (int chunk = 0; chunk < chunks; chunk++) {
+                    previousRevision += readZigzagVarLong(in);
+                    sourceRevisions[chunk] = previousRevision;
+                }
+                for (int pixel = 0; pixel < pixels; pixel++) {
+                    if (!hasBit(evaluated, pixel)) {
+                        continue;
+                    }
+                    final int light = in.readUnsignedByte();
+                    if (light > 15) {
+                        throw new ProtoException("block light outside 0..15: " + light);
+                    }
+                    blockLight[pixel] = (byte) light;
+                }
+            }
             if (in.available() != 0) {
                 throw new ProtoException("trailing chunk patch bytes: " + in.available());
             }
@@ -319,7 +433,10 @@ public final class ChunkPatchCodec {
                     pixelIndexes[i], biomes[i], surfaceYs[i], kinds[i], mapColors[i], fluidDepths[i], floorMapColors[i]
                 ));
             }
-            return new Patch(chunkWidth, chunkHeight, samplesPerChunk, generated, evaluated, samples);
+            return new Patch(
+                chunkWidth, chunkHeight, samplesPerChunk, generated, evaluated, samples,
+                sourceRevisions, blockLight
+            );
         } catch (final ProtoException e) {
             throw e;
         } catch (final EOFException | IllegalArgumentException e) {
@@ -464,6 +581,36 @@ public final class ChunkPatchCodec {
             values[i] = in.readUnsignedByte();
         }
         return values;
+    }
+
+    private static long[] unknownRevisions(final int count) {
+        final long[] revisions = new long[count];
+        java.util.Arrays.fill(revisions, Long.MIN_VALUE);
+        return revisions;
+    }
+
+    private static void writeZigzagVarLong(final DataOutputStream out, final long value) throws IOException {
+        long encoded = (value << 1) ^ (value >> 63);
+        while ((encoded & ~0x7FL) != 0L) {
+            out.writeByte((int) (encoded & 0x7F) | 0x80);
+            encoded >>>= 7;
+        }
+        out.writeByte((int) encoded);
+    }
+
+    private static long readZigzagVarLong(final DataInputStream in) throws IOException, ProtoException {
+        long encoded = 0L;
+        for (int shift = 0; shift < 70; shift += 7) {
+            final int next = in.readUnsignedByte();
+            if (shift == 63 && (next & 0xFE) != 0) {
+                throw new ProtoException("overlong source revision delta");
+            }
+            encoded |= (long) (next & 0x7F) << shift;
+            if ((next & 0x80) == 0) {
+                return (encoded >>> 1) ^ -(encoded & 1L);
+            }
+        }
+        throw new ProtoException("overlong source revision delta");
     }
 
     private static void writeZigzagVarint(final DataOutputStream out, final int value) throws IOException {
