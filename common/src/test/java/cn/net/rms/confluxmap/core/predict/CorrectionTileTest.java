@@ -2,7 +2,10 @@ package cn.net.rms.confluxmap.core.predict;
 
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
+import cn.net.rms.confluxmap.core.net.CorrectionProfile;
 import cn.net.rms.confluxmap.core.net.Proto;
+import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -11,6 +14,48 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CorrectionTileTest {
+    @Test
+    void regionRevisionUsesTheNegotiatedCorrectionProfile() {
+        final CorrectionTile tile = new CorrectionTile(4);
+        final ChunkRegionSlice slice = new ChunkRegionSlice(0, 0, 0, 0, 0, 0);
+        final ChunkPatchCodec.Patch patch = new ChunkPatchCodec.Patch(
+            1, 1, 1, new byte[] {1}, new byte[] {1}, List.of(),
+            new long[] {42L}, new byte[] {12}
+        );
+
+        tile.applyRegionSlice(
+            0, 0, patch, Proto.PATCH_MODE_RESIDUAL, "baseline", 1L,
+            CorrectionProfile.LEGACY_V1
+        );
+
+        assertEquals(
+            ChunkPatchCodec.regionRevision(4, slice, patch, CorrectionProfile.LEGACY_V1),
+            tile.regionSliceRevision(0, 0, slice)
+        );
+    }
+
+    @Test
+    void changingCorrectionProfileClearsTheOldRegionSourceMode() {
+        final CorrectionTile tile = new CorrectionTile(4);
+        final ChunkPatchCodec.Patch patch = new ChunkPatchCodec.Patch(
+            1, 1, 1, new byte[] {1}, new byte[] {1}, List.of()
+        );
+
+        tile.applyRegionSlice(
+            0, 0, patch, Proto.PATCH_MODE_RESIDUAL, "baseline", 1L,
+            CorrectionProfile.SOURCE_LIGHT_V2
+        );
+        tile.applyRegionSlice(
+            1, 0, patch, Proto.PATCH_MODE_ABSOLUTE, "", 2L,
+            CorrectionProfile.LEGACY_V1
+        );
+
+        assertEquals(Proto.PATCH_MODE_ABSOLUTE, tile.patchMode());
+        assertEquals("", tile.baselineProfile());
+        assertEquals(CorrectionProfile.LEGACY_V1, tile.correctionProfile());
+        assertNull(tile.sampleAt(0));
+    }
+
     @Test
     void committedSnapshotRetainsItsWireModeAndBaselineProfile() {
         final CorrectionTile tile = new CorrectionTile();

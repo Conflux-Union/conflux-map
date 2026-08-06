@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.net.PatchCodec;
+import cn.net.rms.confluxmap.core.net.CorrectionProfile;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
 import java.io.ByteArrayOutputStream;
@@ -14,6 +15,20 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class PredictionTileCodecTest {
+    @Test
+    void negotiatedCorrectionProfileRoundTrips() throws Exception {
+        final PredictionTileCodec.FileData data = new PredictionTileCodec.FileData(
+            0, 1, 2, 3L, 4L,
+            new byte[Proto.PATCH_PRESENCE_BYTES], new PatchCodec.Patch(List.of()),
+            new byte[0], new long[0], new long[0],
+            Proto.PATCH_MODE_RESIDUAL, "baseline", CorrectionProfile.LEGACY_V1
+        );
+
+        assertEquals(
+            CorrectionProfile.LEGACY_V1,
+            PredictionTileCodec.decode(PredictionTileCodec.encode(data)).correctionProfile()
+        );
+    }
     @Test
     void chunkMetadataAndSourceProfileRoundTripInVersionSeventeen() throws Exception {
         final int chunks = (16 << 2) * (16 << 2);

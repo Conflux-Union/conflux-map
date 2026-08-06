@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.predict;
 
 import cn.net.rms.confluxmap.core.model.TileKey;
+import cn.net.rms.confluxmap.core.net.CorrectionProfile;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.TileMath;
@@ -22,7 +23,8 @@ final class PredictionMipCache {
         PredictionViewMode mode,
         boolean hasServerState,
         long freshnessValidatedAtMillis,
-        long serverCoverageValidatedAtMillis
+        long serverCoverageValidatedAtMillis,
+        CorrectionProfile correctionProfile
     ) {
         Tile {
             final int expected = BaselineGrid.PIXELS * BaselineGrid.PIXELS;
@@ -32,7 +34,7 @@ final class PredictionMipCache {
                 || syncEvaluated == null || syncEvaluated.length != PatchCodec.MASK_BYTES
                 || syncSourceRevisions == null || syncSourceRevisions.length != expected
                 || blockLight == null || blockLight.length != expected
-                || mode == null) {
+                || mode == null || correctionProfile == null) {
                 throw new IllegalArgumentException("invalid prediction mip tile");
             }
         }
@@ -221,6 +223,7 @@ final class PredictionMipCache {
         boolean hasServerState = false;
         long freshnessValidatedAt = Long.MAX_VALUE;
         long serverCoverageValidatedAt = Long.MAX_VALUE;
+        CorrectionProfile correctionProfile = children[0].correctionProfile();
         for (final Tile child : children) {
             if (child.hasServerState()) {
                 hasServerState = true;
@@ -231,6 +234,9 @@ final class PredictionMipCache {
             serverCoverageValidatedAt = Math.min(
                 serverCoverageValidatedAt, child.serverCoverageValidatedAtMillis()
             );
+            if (child.correctionProfile().id() < correctionProfile.id()) {
+                correctionProfile = child.correctionProfile();
+            }
         }
         return new Tile(
             pixels,
@@ -243,7 +249,8 @@ final class PredictionMipCache {
             mode,
             hasServerState,
             freshnessValidatedAt == Long.MAX_VALUE ? 0L : freshnessValidatedAt,
-            serverCoverageValidatedAt == Long.MAX_VALUE ? 0L : serverCoverageValidatedAt
+            serverCoverageValidatedAt == Long.MAX_VALUE ? 0L : serverCoverageValidatedAt,
+            correctionProfile
         );
     }
 

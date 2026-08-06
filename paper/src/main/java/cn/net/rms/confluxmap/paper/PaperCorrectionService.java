@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.paper;
 
+import cn.net.rms.confluxmap.core.net.CorrectionProfile;
 import cn.net.rms.confluxmap.core.net.ErrorS2C;
 import cn.net.rms.confluxmap.core.net.MapInvalidateS2C;
 import cn.net.rms.confluxmap.core.net.MapInvalidationPublisher;
@@ -279,7 +280,8 @@ final class PaperCorrectionService implements AutoCloseable {
         final MessageSender sender
     ) {
         requestRegions(
-            playerId, request, requestBytes, forceAbsolute, true, sender
+            playerId, request, requestBytes, forceAbsolute,
+            CorrectionProfile.SOURCE_LIGHT_V2, sender
         );
     }
 
@@ -288,7 +290,7 @@ final class PaperCorrectionService implements AutoCloseable {
         final MapRegionViewReqC2S request,
         final int requestBytes,
         final boolean forceAbsolute,
-        final boolean enhancedProfile,
+        final CorrectionProfile correctionProfile,
         final MessageSender sender
     ) {
         final PlayerChannel channel = channel(playerId, sender);
@@ -323,7 +325,7 @@ final class PaperCorrectionService implements AutoCloseable {
             if (!enqueue(channel.regions, key, () -> {
                 try {
                     return buildRegion(
-                        request, region, now, itemBytes, forceAbsolute, enhancedProfile
+                        request, region, now, itemBytes, forceAbsolute, correctionProfile
                     );
                 } catch (final RuntimeException e) {
                     logger.warn(
@@ -605,7 +607,7 @@ final class PaperCorrectionService implements AutoCloseable {
         final long receivedNanos,
         final int requestBytes,
         final boolean forceAbsolute,
-        final boolean enhancedProfile
+        final CorrectionProfile correctionProfile
     ) {
         final PaperWorldDirectory.Entry world = worlds.at(request.dimIndex());
         final ChunkRegionSlice slice = regionRequest.slice();
@@ -635,7 +637,7 @@ final class PaperCorrectionService implements AutoCloseable {
                 summary,
                 regionRequest.sinceRevision(),
                 baseline(world, tileSummary, slice, forceAbsolute),
-                enhancedProfile
+                correctionProfile
             );
         final MapRegionPatchS2C response = new MapRegionPatchS2C(
             request.reqId(), request.dimIndex(), request.lod(),

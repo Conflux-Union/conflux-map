@@ -32,8 +32,9 @@ public final class Proto {
      * Minor 4 added the server entity-radar policy and progressive coarse correction patches.
      * Minor 5 added event-driven correction invalidation subscriptions (0x0A/0x0B).
      * Minor 6 added chunk-range correction pages (0x0C-0x0F), capability-gated in policy flags.
-     * Negotiation-aware peers select this wire profile explicitly with 0x10 while released peers
-     * continue to use the unchanged HELLO frame and policy fingerprint.
+     * Negotiation-aware peers select released wire profiles with 0x10. Current peers advertise
+     * independent capabilities in the unchanged HELLO frame and receive the extensible 0x11
+     * selection, while released peers continue to use their existing policy fingerprint.
      */
     public static final int PROTO_MAJOR = 4;
     public static final int PROTO_MINOR = 0;
@@ -72,11 +73,13 @@ public final class Proto {
     public static final int MSG_MAP_REGION_INVALIDATE_S2C = 0x0F;
     /** S2C: selected wire/baseline profile, sent only to negotiation-aware clients. */
     public static final int MSG_MAP_COMPATIBILITY_S2C = 0x10;
+    /** S2C: extensible profile/capability selection for clients advertising caps2. */
+    public static final int MSG_MAP_CAPABILITIES_S2C = 0x11;
 
     /** First valid message id; used to range-check the type byte. */
     public static final int MSG_MIN = MSG_HELLO_C2S;
     /** Last valid message id for this proto major version. */
-    public static final int MSG_MAX = MSG_MAP_COMPATIBILITY_S2C;
+    public static final int MSG_MAX = MSG_MAP_CAPABILITIES_S2C;
 
     // ---- Hard caps (enforced everywhere untrusted bytes cross a boundary) ----
 

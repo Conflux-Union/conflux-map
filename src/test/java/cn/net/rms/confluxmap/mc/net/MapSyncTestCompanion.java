@@ -18,7 +18,7 @@ final class MapSyncTestCompanion {
         final HelloPolicyS2C policy
     ) {
         session.onHelloSent();
-        session.onCompatibility(new MapCompatibilityS2C(
+        session.onSelection(new MapCompatibilityS2C(
             MapSyncCompatibility.NEGOTIATION_VERSION,
             "test",
             Proto.PROTO_MAJOR,

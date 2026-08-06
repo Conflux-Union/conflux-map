@@ -21,14 +21,14 @@ class CompanionSessionTest {
     void explicitCompatibilitySelectsResidualOrAbsoluteBeforePolicy() {
         final CompanionSession residual = new CompanionSession();
         residual.onHelloSent();
-        residual.onCompatibility(compatibility(MapCompatibilityS2C.MODE_RESIDUAL));
+        residual.onSelection(compatibility(MapCompatibilityS2C.MODE_RESIDUAL));
         residual.onPolicy(policyWithCorrections(true));
         assertEquals(MapSyncCompatibility.ClientMode.OPTIMAL_RESIDUAL, residual.mapSyncMode());
         assertTrue(residual.policy().flags().correctionsEnabled());
 
         final CompanionSession absolute = new CompanionSession();
         absolute.onHelloSent();
-        absolute.onCompatibility(compatibility(MapCompatibilityS2C.MODE_ABSOLUTE));
+        absolute.onSelection(compatibility(MapCompatibilityS2C.MODE_ABSOLUTE));
         absolute.onPolicy(policyWithCorrections(true));
         assertEquals(MapSyncCompatibility.ClientMode.COMPATIBLE_ABSOLUTE, absolute.mapSyncMode());
         assertTrue(absolute.policy().flags().correctionsEnabled());
@@ -38,10 +38,10 @@ class CompanionSessionTest {
     void compatibilitySelectionIsFrozenWhenThePolicyActivatesTheSession() {
         final CompanionSession session = new CompanionSession();
         session.onHelloSent();
-        session.onCompatibility(compatibility(MapCompatibilityS2C.MODE_RESIDUAL));
+        session.onSelection(compatibility(MapCompatibilityS2C.MODE_RESIDUAL));
         session.onPolicy(policyWithCorrections(true));
 
-        session.onCompatibility(new MapCompatibilityS2C(
+        session.onSelection(new MapCompatibilityS2C(
             MapSyncCompatibility.NEGOTIATION_VERSION,
             "future",
             Proto.PROTO_MAJOR,
@@ -60,7 +60,7 @@ class CompanionSessionTest {
     void explicitResidualIsRejectedWhenItsBaselineCannotBeReproduced() {
         final CompanionSession session = new CompanionSession();
         session.onHelloSent();
-        session.onCompatibility(new MapCompatibilityS2C(
+        session.onSelection(new MapCompatibilityS2C(
             MapSyncCompatibility.NEGOTIATION_VERSION,
             "future",
             Proto.PROTO_MAJOR,
@@ -81,7 +81,7 @@ class CompanionSessionTest {
     void explicitNoCommonWireKeepsTheIncompatibleReasonWhenPolicyMasksCorrections() {
         final CompanionSession session = new CompanionSession();
         session.onHelloSent();
-        session.onCompatibility(compatibility(MapCompatibilityS2C.MODE_DISABLED));
+        session.onSelection(compatibility(MapCompatibilityS2C.MODE_DISABLED));
         session.onPolicy(new HelloPolicyS2C(
             new HelloPolicyS2C.Flags(false, false, false, false),
             "11111111-2222-3333-4444-555555555555",
@@ -93,6 +93,26 @@ class CompanionSessionTest {
         assertEquals(MapSyncCompatibility.ClientMode.INCOMPATIBLE, session.mapSyncMode());
         assertEquals(
             "confluxmap.screen.config.prediction.sync_incompatible_server",
+            session.mapCorrectionDisabledReasonKey()
+        );
+    }
+
+    @Test
+    void compatibleSelectionReportsServerDisabledWhenPolicyTurnsCorrectionsOff() {
+        final CompanionSession session = new CompanionSession();
+        session.onHelloSent();
+        session.onSelection(compatibility(MapCompatibilityS2C.MODE_RESIDUAL));
+        session.onPolicy(new HelloPolicyS2C(
+            new HelloPolicyS2C.Flags(false, false, false, false),
+            "11111111-2222-3333-4444-555555555555",
+            "1.17.1",
+            new HelloPolicyS2C.Budgets(65_536, 8, 300, 2),
+            List.of()
+        ));
+
+        assertEquals(MapSyncCompatibility.ClientMode.SERVER_DISABLED, session.mapSyncMode());
+        assertEquals(
+            "confluxmap.screen.config.prediction.sync_disabled_by_server",
             session.mapCorrectionDisabledReasonKey()
         );
     }

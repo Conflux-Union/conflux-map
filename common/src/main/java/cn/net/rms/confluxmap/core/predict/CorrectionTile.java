@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.predict;
 
 import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
+import cn.net.rms.confluxmap.core.net.CorrectionProfile;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.MapSyncCompatibility;
@@ -30,6 +31,7 @@ public final class CorrectionTile {
     private long validatedAtMillis;
     private int patchMode = Proto.PATCH_MODE_RESIDUAL;
     private String baselineProfile = MapSyncCompatibility.STABLE_PREDICTOR;
+    private CorrectionProfile correctionProfile = CorrectionProfile.LEGACY_V1;
 
     public CorrectionTile() {
         this(0);
@@ -76,7 +78,23 @@ public final class CorrectionTile {
         final String newBaselineProfile,
         final long patchValidatedAtMillis
     ) {
-        if (newPresence == null || newPresence.length != Proto.PATCH_PRESENCE_BYTES || patch == null) {
+        return applyPatch(
+            patchRevision, newPresence, patch, newPatchMode, newBaselineProfile,
+            patchValidatedAtMillis, CorrectionProfile.SOURCE_LIGHT_V2
+        );
+    }
+
+    public synchronized boolean applyPatch(
+        final long patchRevision,
+        final byte[] newPresence,
+        final PatchCodec.Patch patch,
+        final int newPatchMode,
+        final String newBaselineProfile,
+        final long patchValidatedAtMillis,
+        final CorrectionProfile newCorrectionProfile
+    ) {
+        if (newPresence == null || newPresence.length != Proto.PATCH_PRESENCE_BYTES
+            || patch == null || newCorrectionProfile == null) {
             throw new IllegalArgumentException("invalid correction patch");
         }
         checkSource(newPatchMode, newBaselineProfile);
@@ -113,6 +131,7 @@ public final class CorrectionTile {
         validatedAtMillis = Math.max(0L, patchValidatedAtMillis);
         patchMode = newPatchMode;
         baselineProfile = newBaselineProfile;
+        correctionProfile = newCorrectionProfile;
         return true;
     }
 
@@ -138,13 +157,31 @@ public final class CorrectionTile {
         final String newBaselineProfile,
         final long patchValidatedAtMillis
     ) {
+        return applyRegionSlice(
+            minTileChunkX, minTileChunkZ, patch, newPatchMode, newBaselineProfile,
+            patchValidatedAtMillis, CorrectionProfile.SOURCE_LIGHT_V2
+        );
+    }
+
+    public synchronized boolean applyRegionSlice(
+        final int minTileChunkX,
+        final int minTileChunkZ,
+        final ChunkPatchCodec.Patch patch,
+        final int newPatchMode,
+        final String newBaselineProfile,
+        final long patchValidatedAtMillis,
+        final CorrectionProfile newCorrectionProfile
+    ) {
         checkRegionSlice(minTileChunkX, minTileChunkZ, patch.chunkWidth(), patch.chunkHeight());
         if (patch.samplesPerChunk() != samplesPerChunk || patchValidatedAtMillis <= 0L) {
             throw new IllegalArgumentException("region patch does not match correction tile LOD");
         }
         checkSource(newPatchMode, newBaselineProfile);
-        final boolean hadCommittedState = hasCommittedState();
-        if (hadCommittedState
+        boolean hadCommittedState = hasCommittedState();
+        if (hadCommittedState && correctionProfile != newCorrectionProfile) {
+            clearCommitted();
+            hadCommittedState = false;
+        } else if (hadCommittedState
             && patchMode == Proto.PATCH_MODE_RESIDUAL
             && newPatchMode == Proto.PATCH_MODE_RESIDUAL
             && !baselineProfile.equals(newBaselineProfile)) {
@@ -156,6 +193,7 @@ public final class CorrectionTile {
             patchMode = newPatchMode;
             baselineProfile = newBaselineProfile;
         }
+        correctionProfile = newCorrectionProfile;
         clearProgress();
         final PatchCodec.Sample[] sourceSamples = new PatchCodec.Sample[patch.pixelCount()];
         for (final PatchCodec.Sample sample : patch.samples()) {
@@ -186,7 +224,7 @@ public final class CorrectionTile {
                 }
             }
         }
-        final long[] revisions = ChunkPatchCodec.chunkRevisions(patch);
+        final long[] revisions = ChunkPatchCodec.chunkRevisions(patch, correctionProfile);
         for (int chunkZ = 0; chunkZ < patch.chunkHeight(); chunkZ++) {
             for (int chunkX = 0; chunkX < patch.chunkWidth(); chunkX++) {
                 final int sourceChunk = chunkZ * patch.chunkWidth() + chunkX;
@@ -432,15 +470,6 @@ public final class CorrectionTile {
         return chunkSourceRevisions[chunkZ * chunksPerSide + chunkX];
     }
 
-    public synchronized boolean hasSourceRevisionMetadata() {
-        for (final long sourceRevision : chunkSourceRevisions) {
-            if (sourceRevision != Long.MIN_VALUE) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     public synchronized int patchMode() {
         return patchMode;
     }
@@ -449,11 +478,26 @@ public final class CorrectionTile {
         return baselineProfile;
     }
 
+    public synchronized CorrectionProfile correctionProfile() {
+        return correctionProfile;
+    }
+
     /** Absolute snapshots are baseline-independent; residual snapshots require an exact profile. */
     public synchronized boolean matchesSource(
         final int expectedPatchMode,
         final String expectedBaselineProfile
     ) {
+        return matchesSource(expectedPatchMode, expectedBaselineProfile, correctionProfile);
+    }
+
+    public synchronized boolean matchesSource(
+        final int expectedPatchMode,
+        final String expectedBaselineProfile,
+        final CorrectionProfile expectedCorrectionProfile
+    ) {
+        if (correctionProfile != expectedCorrectionProfile) {
+            return false;
+        }
         if (patchMode == Proto.PATCH_MODE_ABSOLUTE) {
             return expectedPatchMode == Proto.PATCH_MODE_RESIDUAL
                 || expectedPatchMode == Proto.PATCH_MODE_ABSOLUTE;

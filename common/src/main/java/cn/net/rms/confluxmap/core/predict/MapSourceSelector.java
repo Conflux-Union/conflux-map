@@ -1,5 +1,7 @@
 package cn.net.rms.confluxmap.core.predict;
 
+import cn.net.rms.confluxmap.core.net.CorrectionProfile;
+
 /** Chooses the visible source for one chunk without confusing source time with cache validation. */
 public final class MapSourceSelector {
     public static final long UNKNOWN_REVISION = Long.MIN_VALUE;
@@ -17,7 +19,7 @@ public final class MapSourceSelector {
         final long localRevision,
         final boolean syncEvaluated,
         final long syncRevision,
-        final boolean enhancedProfile
+        final CorrectionProfile profile
     ) {
         if (!syncEvaluated) {
             return false;
@@ -25,7 +27,7 @@ public final class MapSourceSelector {
         if (!localPresent) {
             return true;
         }
-        if (!enhancedProfile) {
+        if (!profile.carriesSourceMetadata()) {
             return false;
         }
         final boolean localKnown = localRevision != UNKNOWN_REVISION;

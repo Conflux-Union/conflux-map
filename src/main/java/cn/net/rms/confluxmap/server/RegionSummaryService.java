@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
+import cn.net.rms.confluxmap.core.net.CorrectionProfile;
 import cn.net.rms.confluxmap.core.net.ErrorS2C;
 import cn.net.rms.confluxmap.core.net.MapPatchS2C;
 import cn.net.rms.confluxmap.core.net.MapInvalidationPublisher;
@@ -121,7 +122,7 @@ public final class RegionSummaryService {
         int lod,
         ChunkRegionSlice slice,
         boolean forceAbsolute,
-        boolean enhancedProfile
+        CorrectionProfile correctionProfile
     ) {
     }
 
@@ -213,7 +214,7 @@ public final class RegionSummaryService {
         long receivedAtNanos,
         int requestBytes,
         boolean forceAbsolute,
-        boolean enhancedProfile
+        CorrectionProfile correctionProfile
     ) {
     }
 
@@ -350,7 +351,8 @@ public final class RegionSummaryService {
         final MessageSender sender
     ) {
         requestRegions(
-            server, player, request, requestPayloadBytes, forceAbsolute, true, sender
+            server, player, request, requestPayloadBytes, forceAbsolute,
+            CorrectionProfile.SOURCE_LIGHT_V2, sender
         );
     }
 
@@ -360,7 +362,7 @@ public final class RegionSummaryService {
         final MapRegionViewReqC2S request,
         final int requestPayloadBytes,
         final boolean forceAbsolute,
-        final boolean enhancedProfile,
+        final CorrectionProfile correctionProfile,
         final MessageSender sender
     ) {
         final long now = System.nanoTime();
@@ -388,7 +390,7 @@ public final class RegionSummaryService {
                     + (remainingBytes-- > 0 ? 1 : 0);
                 final RegionJob job = new RegionJob(
                     request.reqId(), request.dimIndex(), request.lod(), region,
-                    now, regionRequestBytes, forceAbsolute, enhancedProfile
+                    now, regionRequestBytes, forceAbsolute, correctionProfile
                 );
                 final RegionJobKey key = new RegionJobKey(
                     request.dimIndex(), request.lod(), region.slice()
@@ -665,7 +667,7 @@ public final class RegionSummaryService {
         }
         final RegionPageKey key = new RegionPageKey(
             world, job.lod(), job.request().slice(), job.forceAbsolute(),
-            job.enhancedProfile()
+            job.correctionProfile()
         );
         final RegionPageTask task;
         synchronized (regionPageTasks) {
@@ -684,7 +686,7 @@ public final class RegionSummaryService {
                         work.start();
                         return buildRegionPage(
                             world, disk, job.lod(), job.request().slice(), baseline,
-                            job.enhancedProfile(), work
+                            job.correctionProfile(), work
                         );
                     },
                     progressiveScanWorker
@@ -723,7 +725,7 @@ public final class RegionSummaryService {
         final int lod,
         final ChunkRegionSlice slice,
         final RegionBaselineTask baselineTask,
-        final boolean enhancedProfile,
+        final CorrectionProfile correctionProfile,
         final RegionPageWork work
     ) {
         final String dimension = world.getRegistryKey().getValue().toString();
@@ -785,7 +787,7 @@ public final class RegionSummaryService {
         started = System.nanoTime();
         try {
             built = regionPatchBuilder.build(
-                lod, slice, region, Long.MIN_VALUE, prepared, enhancedProfile
+                lod, slice, region, Long.MIN_VALUE, prepared, correctionProfile
             );
         } finally {
             work.addCompute(System.nanoTime() - started);

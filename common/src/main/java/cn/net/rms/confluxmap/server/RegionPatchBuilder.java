@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.server;
 import cn.net.rms.confluxmap.core.model.MapPixel;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
+import cn.net.rms.confluxmap.core.net.CorrectionProfile;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
@@ -25,7 +26,9 @@ public final class RegionPatchBuilder {
         final long sinceRevision,
         final PatchBuilder.PreparedBaseline prepared
     ) {
-        return build(lod, slice, region, sinceRevision, prepared, true);
+        return build(
+            lod, slice, region, sinceRevision, prepared, CorrectionProfile.SOURCE_LIGHT_V2
+        );
     }
 
     public Result build(
@@ -34,7 +37,7 @@ public final class RegionPatchBuilder {
         final SummaryCodec.SampledRegion region,
         final long sinceRevision,
         final PatchBuilder.PreparedBaseline prepared,
-        final boolean enhancedProfile
+        final CorrectionProfile profile
     ) {
         if (lod < 0 || lod > TileMath.MAX_LOD || slice == null || region == null || prepared == null
             || region.rx() != slice.regionX() || region.rz() != slice.regionZ()
@@ -101,7 +104,7 @@ public final class RegionPatchBuilder {
             sourceRevisions, blockLight
         );
         final long revision = ChunkPatchCodec.regionRevision(
-            lod, slice, patch, enhancedProfile
+            lod, slice, patch, profile
         );
         if (sinceRevision != Long.MIN_VALUE && sinceRevision == revision) {
             return new Result(Proto.PATCH_MODE_UNCHANGED, revision, new byte[0], 0);
@@ -109,9 +112,7 @@ public final class RegionPatchBuilder {
         return new Result(
             absolute ? Proto.PATCH_MODE_ABSOLUTE : Proto.PATCH_MODE_RESIDUAL,
             revision,
-            enhancedProfile
-                ? ChunkPatchCodec.encode(patch)
-                : ChunkPatchCodec.encodeLegacy(patch),
+            profile.encode(patch),
             records.size()
         );
     }

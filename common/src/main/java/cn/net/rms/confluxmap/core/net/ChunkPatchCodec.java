@@ -267,11 +267,13 @@ public final class ChunkPatchCodec {
 
     /** Stable content fingerprints for each chunk in row-major patch order. */
     public static long[] chunkRevisions(final Patch patch) {
-        return chunkRevisions(patch, true);
+        return chunkRevisions(patch, CorrectionProfile.SOURCE_LIGHT_V2);
     }
 
     /** Profile-specific fingerprints so released peers retain their original cache identity. */
-    public static long[] chunkRevisions(final Patch patch, final boolean enhancedProfile) {
+    public static long[] chunkRevisions(
+        final Patch patch, final CorrectionProfile profile
+    ) {
         if (patch == null) {
             throw new IllegalArgumentException("chunk patch is null");
         }
@@ -287,7 +289,7 @@ public final class ChunkPatchCodec {
                 final int chunkIndex = chunkZ * patch.chunkWidth() + chunkX;
                 long hash = 0xcbf29ce484222325L;
                 hash = fnv1a(hash, patch.generatedAt(chunkIndex) ? 1 : 0);
-                if (enhancedProfile) {
+                if (profile.carriesSourceMetadata()) {
                     hash = fnv1aLong(hash, patch.sourceRevisionAt(chunkIndex));
                 }
                 for (int sampleZ = 0; sampleZ < samplesPerChunk; sampleZ++) {
@@ -295,7 +297,7 @@ public final class ChunkPatchCodec {
                         final int pixel = (chunkZ * samplesPerChunk + sampleZ) * sampleWidth
                             + chunkX * samplesPerChunk + sampleX;
                         hash = fnv1a(hash, patch.evaluatedAt(pixel) ? 1 : 0);
-                        if (enhancedProfile) {
+                        if (profile.carriesSourceMetadata()) {
                             hash = fnv1a(hash, patch.blockLightAt(pixel));
                         }
                         final PatchCodec.Sample sample = byPixel[pixel];
@@ -315,20 +317,20 @@ public final class ChunkPatchCodec {
     public static long regionRevision(
         final int lod, final ChunkRegionSlice slice, final Patch patch
     ) {
-        return regionRevision(lod, slice, patch, true);
+        return regionRevision(lod, slice, patch, CorrectionProfile.SOURCE_LIGHT_V2);
     }
 
     public static long regionRevision(
         final int lod,
         final ChunkRegionSlice slice,
         final Patch patch,
-        final boolean enhancedProfile
+        final CorrectionProfile profile
     ) {
         if (slice == null || patch == null
             || slice.width() != patch.chunkWidth() || slice.height() != patch.chunkHeight()) {
             throw new IllegalArgumentException("region slice and patch dimensions disagree");
         }
-        return regionRevision(lod, slice, chunkRevisions(patch, enhancedProfile));
+        return regionRevision(lod, slice, chunkRevisions(patch, profile));
     }
 
     public static long regionRevision(

@@ -60,7 +60,7 @@ class MapSyncSourceProfileTest {
 
             final CompanionSession companion = new CompanionSession();
             companion.onHelloSent();
-            companion.onCompatibility(new MapCompatibilityS2C(
+            companion.onSelection(new MapCompatibilityS2C(
                 MapSyncCompatibility.NEGOTIATION_VERSION,
                 "future-server",
                 Proto.PROTO_MAJOR,

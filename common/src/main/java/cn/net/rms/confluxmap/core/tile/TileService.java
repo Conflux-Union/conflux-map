@@ -12,6 +12,7 @@ import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
+import cn.net.rms.confluxmap.core.net.CorrectionProfile;
 import cn.net.rms.confluxmap.core.predict.CorrectionTile;
 import cn.net.rms.confluxmap.core.predict.MapSourceSelector;
 import cn.net.rms.confluxmap.core.store.ColumnStore;
@@ -274,7 +275,9 @@ public final class TileService {
      * Every supported LOD remains chunk-aligned: LOD0 has 16 pixels per chunk and LOD4 has one.
      */
     public void maskKnownRealPixels(final TileKey realKey, final int[] predictedPixels) {
-        maskPredictedPixels(realKey, predictedPixels, null, false);
+        maskPredictedPixels(
+            realKey, predictedPixels, null, CorrectionProfile.LEGACY_V1
+        );
     }
 
     /** Keeps prediction below both real sources while allowing newer synchronized chunks through. */
@@ -282,14 +285,14 @@ public final class TileService {
         final TileKey realKey,
         final int[] predictedPixels,
         final CorrectionTile corrections,
-        final boolean enhancedProfile
+        final CorrectionProfile profile
     ) {
         maskPredictedPixels(
             realKey,
             predictedPixels,
             corrections == null ? null : corrections.copyEvaluated(),
             corrections == null ? null : corrections.copyPixelSourceRevisions(),
-            enhancedProfile
+            profile
         );
     }
 
@@ -298,7 +301,7 @@ public final class TileService {
         final int[] predictedPixels,
         final byte[] syncEvaluated,
         final long[] syncSourceRevisions,
-        final boolean enhancedProfile
+        final CorrectionProfile profile
     ) {
         if (predictedPixels.length != RegionColumns.SIZE * RegionColumns.SIZE) {
             throw new IllegalArgumentException("predictedPixels must contain one 256x256 tile");
@@ -342,7 +345,7 @@ public final class TileService {
                             ? syncSourceRevisions[pixel]
                             : MapSourceSelector.UNKNOWN_REVISION;
                         if (!MapSourceSelector.syncWins(
-                            true, localRevision, syncPresent, syncRevision, enhancedProfile
+                            true, localRevision, syncPresent, syncRevision, profile
                         )) {
                             predictedPixels[pixel] = Argb.TRANSPARENT;
                         }

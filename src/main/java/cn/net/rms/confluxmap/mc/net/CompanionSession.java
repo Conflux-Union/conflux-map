@@ -2,13 +2,17 @@ package cn.net.rms.confluxmap.mc.net;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
-import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
+import cn.net.rms.confluxmap.core.net.CorrectionProfile;
 import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
+import cn.net.rms.confluxmap.core.net.MapCapabilitiesS2C;
 import cn.net.rms.confluxmap.core.net.MapCompatibilityS2C;
+import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.MapSyncCompatibility;
-import cn.net.rms.confluxmap.core.net.PatchCodec;
-import cn.net.rms.confluxmap.core.net.Proto;
+import cn.net.rms.confluxmap.core.net.MapSyncProtocol;
+import cn.net.rms.confluxmap.core.net.MsgCodec;
+import cn.net.rms.confluxmap.core.net.NegotiatedMapSync;
+import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.predict.FlatBaseline;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import java.util.Optional;
@@ -49,7 +53,8 @@ public final class CompanionSession {
     private final AtomicReference<State> state = new AtomicReference<>(State.NONE);
     private volatile HelloPolicyS2C policy;
     private volatile FlatBaselineS2C flatBaselines;
-    private volatile MapCompatibilityS2C pendingCompatibility;
+    private volatile Message pendingSelection;
+    private volatile NegotiatedMapSync negotiatedMapSync;
     private volatile MapSyncCompatibility.ClientMode mapSyncMode =
         MapSyncCompatibility.ClientMode.INCOMPATIBLE;
     private int ticksSinceHello;
@@ -59,15 +64,16 @@ public final class CompanionSession {
         state.set(State.HELLO_SENT);
         policy = null;
         flatBaselines = null;
-        pendingCompatibility = null;
+        pendingSelection = null;
+        negotiatedMapSync = null;
         mapSyncMode = MapSyncCompatibility.ClientMode.INCOMPATIBLE;
         ticksSinceHello = 0;
     }
 
     /** Stores an explicit profile selection; HELLO_POLICY still owns session activation. */
-    public void onCompatibility(final MapCompatibilityS2C compatibility) {
+    public void onSelection(final Message selection) {
         if (state.get() == State.HELLO_SENT) {
-            pendingCompatibility = compatibility;
+            pendingSelection = selection;
         }
     }
 
@@ -88,34 +94,33 @@ public final class CompanionSession {
     }
 
     private MapSyncCompatibility.ClientMode selectMapSyncMode(final HelloPolicyS2C received) {
-        final MapCompatibilityS2C compatibility = pendingCompatibility;
-        if (compatibility == null) {
-            return MapSyncCompatibility.fallbackClientMode(
-                received.flags().correctionsEnabled(),
-                received.flags().chunkRangeCorrectionEnabled(),
-                PredictorVersion.full()
-            );
-        }
-        final boolean wireMatches =
-            compatibility.negotiationVersion() == MapSyncCompatibility.NEGOTIATION_VERSION
-            && compatibility.protocolMajor() == Proto.PROTO_MAJOR
-            && compatibility.protocolMinor() == Proto.PROTO_MINOR
-            && MapSyncCompatibility.supportedProfile(
-                compatibility.patchCodecVersion(), compatibility.regionCodecVersion()
-            );
-        if (!wireMatches || compatibility.correctionMode() == MapCompatibilityS2C.MODE_DISABLED) {
+        final NegotiatedMapSync negotiated = MapSyncProtocol.acceptServer(
+            pendingSelection, received, PredictorVersion.full()
+        );
+        negotiatedMapSync = negotiated;
+        if (negotiated.correctionMode() == NegotiatedMapSync.CorrectionMode.DISABLED) {
+            if (!received.flags().correctionsEnabled() && !selectionDisablesCorrections()) {
+                return MapSyncCompatibility.ClientMode.SERVER_DISABLED;
+            }
             return MapSyncCompatibility.ClientMode.INCOMPATIBLE;
         }
-        if (!received.flags().correctionsEnabled()) {
-            return MapSyncCompatibility.ClientMode.SERVER_DISABLED;
+        if (negotiated.correctionMode() == NegotiatedMapSync.CorrectionMode.ABSOLUTE) {
+            return MapSyncCompatibility.ClientMode.COMPATIBLE_ABSOLUTE;
         }
-        if (compatibility.correctionMode() == MapCompatibilityS2C.MODE_RESIDUAL
-            && !PredictorVersion.full().equals(compatibility.serverPredictorVersion())) {
-            return MapSyncCompatibility.ClientMode.INCOMPATIBLE;
+        return negotiated.correctionProfile()
+            == CorrectionProfile.LEGACY_V1
+                ? MapSyncCompatibility.ClientMode.LEGACY_RESIDUAL
+                : MapSyncCompatibility.ClientMode.OPTIMAL_RESIDUAL;
+    }
+
+    private boolean selectionDisablesCorrections() {
+        if (pendingSelection instanceof final MapCompatibilityS2C selection) {
+            return selection.correctionMode() == MapCompatibilityS2C.MODE_DISABLED;
         }
-        return compatibility.correctionMode() == MapCompatibilityS2C.MODE_RESIDUAL
-            ? MapSyncCompatibility.ClientMode.OPTIMAL_RESIDUAL
-            : MapSyncCompatibility.ClientMode.COMPATIBLE_ABSOLUTE;
+        if (pendingSelection instanceof final MapCapabilitiesS2C selection) {
+            return selection.correctionMode() == MapCompatibilityS2C.MODE_DISABLED;
+        }
+        return false;
     }
 
     private static HelloPolicyS2C withoutCorrections(final HelloPolicyS2C source) {
@@ -140,7 +145,8 @@ public final class CompanionSession {
         state.set(State.NONE);
         policy = null;
         flatBaselines = null;
-        pendingCompatibility = null;
+        pendingSelection = null;
+        negotiatedMapSync = null;
         mapSyncMode = MapSyncCompatibility.ClientMode.INCOMPATIBLE;
         ticksSinceHello = 0;
     }
@@ -245,15 +251,27 @@ public final class CompanionSession {
     }
 
     public String mapSyncBaselineProfile() {
-        if (mapSyncMode == MapSyncCompatibility.ClientMode.LEGACY_RESIDUAL) {
-            return MapSyncCompatibility.STABLE_PREDICTOR;
-        }
-        final MapCompatibilityS2C compatibility = pendingCompatibility;
-        if (mapSyncMode == MapSyncCompatibility.ClientMode.OPTIMAL_RESIDUAL
-            && compatibility != null) {
-            return compatibility.serverPredictorVersion();
-        }
-        return "";
+        final NegotiatedMapSync negotiated = negotiatedMapSync;
+        return negotiated == null ? "" : negotiated.baselinePredictorVersion();
+    }
+
+    public CorrectionProfile mapSyncCorrectionProfile() {
+        final NegotiatedMapSync negotiated = negotiatedMapSync;
+        return negotiated == null
+            ? CorrectionProfile.LEGACY_V1
+            : negotiated.correctionProfile();
+    }
+
+    Message decodeInbound(final byte[] payload) throws ProtoException {
+        final NegotiatedMapSync negotiated = negotiatedMapSync;
+        return negotiated == null
+            ? MapSyncProtocol.decodeClientbound(payload)
+            : negotiated.decodeInbound(payload);
+    }
+
+    byte[] encodeOutbound(final Message message) throws ProtoException {
+        final NegotiatedMapSync negotiated = negotiatedMapSync;
+        return negotiated == null ? MsgCodec.encode(message) : negotiated.encodeOutbound(message);
     }
 
     /** Player-facing reason for a disabled sync control, or {@code null} while usable. */
