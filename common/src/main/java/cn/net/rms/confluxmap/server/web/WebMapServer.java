@@ -13,12 +13,12 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.io.OutputStream;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -37,11 +37,23 @@ public final class WebMapServer implements AutoCloseable {
     private final ExecutorService executor;
     private final WebMapBackend backend;
     private final WebMapConfig config;
-    private final ConcurrentHashMap<String, PlayerBudget> addressBudgets = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, AddressBudget> addressBudgets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, Long> sessions = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, StaticAsset> assets = new ConcurrentHashMap<>();
 
     private record StaticAsset(byte[] body, String contentType, String etag) {
+    }
+
+    private static final class AddressBudget {
+        final PlayerBudget budget;
+        volatile long lastSeen;
+
+        AddressBudget(final WebMapConfig config, final long now) {
+            budget = new PlayerBudget(
+                config.maxBytesPerSecondPerAddress, config.minRequestIntervalMs
+            );
+            lastSeen = now;
+        }
     }
 
     private WebMapServer(
@@ -117,12 +129,14 @@ public final class WebMapServer implements AutoCloseable {
             methodNotAllowed(exchange, "POST");
             return;
         }
-        final PlayerBudget addressBudget = addressBudgets.computeIfAbsent(
-            clientAddress(exchange), ignored -> new PlayerBudget(
-                config.maxBytesPerSecondPerAddress, config.minRequestIntervalMs
-            )
+        final long requestTime = System.nanoTime();
+        final String address = clientAddress(exchange);
+        evictAddressIfFull(address);
+        final AddressBudget addressEntry = addressBudgets.computeIfAbsent(
+            address, ignored -> new AddressBudget(config, requestTime)
         );
-        if (!addressBudget.beginRequest(System.nanoTime())) {
+        addressEntry.lastSeen = requestTime;
+        if (!addressEntry.budget.beginRequest(requestTime)) {
             sendText(exchange, 429, "map request is rate limited");
             return;
         }
@@ -155,7 +169,7 @@ public final class WebMapServer implements AutoCloseable {
                 out.write(frame);
             }
             out.flush();
-            if (!addressBudget.allowBytes(bytes.size(), System.nanoTime())) {
+            if (!addressEntry.budget.allowBytes(bytes.size(), System.nanoTime())) {
                 sendText(exchange, 429, "map response exceeds the address bandwidth budget");
                 return;
             }
@@ -177,6 +191,20 @@ public final class WebMapServer implements AutoCloseable {
         if (forwarded == null) return direct;
         final String first = forwarded.split(",", 2)[0].trim();
         return first.matches("[0-9A-Fa-f:.]{3,45}") ? first : direct;
+    }
+
+    private void evictAddressIfFull(final String incoming) {
+        if (addressBudgets.containsKey(incoming)
+            || addressBudgets.size() < config.maxConnections * 16) return;
+        String oldest = null;
+        long oldestSeen = Long.MAX_VALUE;
+        for (final var entry : addressBudgets.entrySet()) {
+            if (entry.getValue().lastSeen < oldestSeen) {
+                oldest = entry.getKey();
+                oldestSeen = entry.getValue().lastSeen;
+            }
+        }
+        if (oldest != null) addressBudgets.remove(oldest);
     }
 
     private void staticAsset(final HttpExchange exchange) throws IOException {

@@ -38,7 +38,12 @@ public final class WebMapPrivacyStore {
     public synchronized boolean setHidden(final UUID playerId, final boolean value) throws IOException {
         final boolean changed = value ? hidden.add(playerId) : hidden.remove(playerId);
         if (!changed) return false;
-        persist();
+        try {
+            persist();
+        } catch (final IOException | RuntimeException e) {
+            if (value) hidden.remove(playerId); else hidden.add(playerId);
+            throw e;
+        }
         return true;
     }
 
