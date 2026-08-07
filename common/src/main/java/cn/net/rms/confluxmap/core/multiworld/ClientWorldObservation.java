@@ -12,10 +12,22 @@ public record ClientWorldObservation(
     String dimensionId,
     String gameMode,
     ClientWorldPosition position,
-    ClientWorldTerrainFingerprint terrainFingerprint
+    ClientWorldTerrainFingerprint terrainFingerprint,
+    Map<String, ClientWorldTerrainFingerprint> terrainFingerprintsByProfileId
 ) {
     public ClientWorldObservation(final OptionalLong seedHash, final Map<String, String> signals) {
-        this(seedHash, signals, null, null, null, null);
+        this(seedHash, signals, null, null, null, null, Map.of());
+    }
+
+    public ClientWorldObservation(
+        final OptionalLong seedHash,
+        final Map<String, String> signals,
+        final String dimensionId,
+        final String gameMode,
+        final ClientWorldPosition position,
+        final ClientWorldTerrainFingerprint terrainFingerprint
+    ) {
+        this(seedHash, signals, dimensionId, gameMode, position, terrainFingerprint, Map.of());
     }
 
     public ClientWorldObservation {
@@ -30,6 +42,20 @@ public record ClientWorldObservation(
         signals = Map.copyOf(normalized);
         dimensionId = normalizeText(dimensionId);
         gameMode = normalizeText(gameMode);
+        final Map<String, ClientWorldTerrainFingerprint> terrainByProfile = new LinkedHashMap<>();
+        for (final Map.Entry<String, ClientWorldTerrainFingerprint> entry : Objects.requireNonNull(
+            terrainFingerprintsByProfileId, "terrainFingerprintsByProfileId"
+        ).entrySet()) {
+            if (entry.getKey() != null && !entry.getKey().isBlank() && entry.getValue() != null) {
+                terrainByProfile.put(entry.getKey(), entry.getValue());
+            }
+        }
+        terrainFingerprintsByProfileId = Map.copyOf(terrainByProfile);
+    }
+
+    public ClientWorldTerrainFingerprint terrainFingerprintFor(final String profileId) {
+        final ClientWorldTerrainFingerprint candidate = terrainFingerprintsByProfileId.get(profileId);
+        return candidate == null ? terrainFingerprint : candidate;
     }
 
     private static String normalizeText(final String value) {

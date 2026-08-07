@@ -99,20 +99,6 @@ public final class ClientWorldProfile {
         return false;
     }
 
-    int bestSignalMatch(final ClientWorldObservation observation) {
-        int best = 0;
-        for (final Binding binding : bindings()) {
-            int matches = 0;
-            for (final Map.Entry<String, String> signal : observation.signals().entrySet()) {
-                if (signal.getValue().equals(binding.signals.get(signal.getKey()))) {
-                    matches++;
-                }
-            }
-            best = Math.max(best, matches);
-        }
-        return best;
-    }
-
     /**
      * Returns true only when every stored binding disagrees with at least one signal it also
      * knows about. A seed collision must not silently absorb a world whose observable metadata
@@ -175,18 +161,36 @@ public final class ClientWorldProfile {
     void rememberVisit(final ClientWorldObservation observation) {
         if (observation.dimensionId() != null) {
             final ClientWorldVisit previous = mutableVisits().get(observation.dimensionId());
+            final ClientWorldTerrainFingerprint observedTerrain = observation.terrainFingerprint();
+            final boolean usableTerrain = observedTerrain != null
+                && observedTerrain.complete() && observedTerrain.hasCenter()
+                && terrainCenterMatchesPosition(observedTerrain, observation.position());
+            final boolean retainingHistoricalTerrain = !usableTerrain
+                && previous != null && previous.terrainFingerprint() != null;
             mutableVisits().put(observation.dimensionId(), new ClientWorldVisit(
                 observation.dimensionId(),
                 observation.gameMode() == null && previous != null ? previous.gameMode() : observation.gameMode(),
-                observation.position() == null && previous != null ? previous.lastPosition() : observation.position(),
+                observation.position() == null || retainingHistoricalTerrain
+                    ? previous == null ? null : previous.lastPosition() : observation.position(),
                 System.currentTimeMillis(),
-                observation.terrainFingerprint() == null && previous != null
-                    ? previous.terrainFingerprint() : observation.terrainFingerprint(),
+                usableTerrain ? observedTerrain : previous == null ? null : previous.terrainFingerprint(),
                 ClientWorldVisit.mergeContextSignals(
                     previous == null ? Map.of() : previous.contextSignals(), observation.signals()
                 )
             ));
         }
+    }
+
+    /** A persisted visit must pair its position with a fingerprint captured at that same chunk. */
+    private static boolean terrainCenterMatchesPosition(
+        final ClientWorldTerrainFingerprint terrain,
+        final ClientWorldPosition position
+    ) {
+        if (position == null) {
+            return true;
+        }
+        return (position.x() >> 4) == terrain.centerChunkX()
+            && (position.z() >> 4) == terrain.centerChunkZ();
     }
 
     boolean unbind(final ClientWorldObservation observation) {

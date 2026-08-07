@@ -18,6 +18,7 @@ import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.util.ChunkViewport;
 import cn.net.rms.confluxmap.mc.color.BiomeTintResolver;
 import cn.net.rms.confluxmap.mc.color.SpriteColorSampler;
+import cn.net.rms.confluxmap.mc.world.ClientChunkLookup;
 import cn.net.rms.confluxmap.mc.world.ClientMultiworldService;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import java.util.ArrayList;
@@ -178,14 +179,37 @@ public final class ChunkCaptureService {
         if (player == null || client.world == null) {
             return List.of();
         }
-        final int centerX = player.getBlockPos().getX() >> 4;
-        final int centerZ = player.getBlockPos().getZ() >> 4;
+        return probeSquareAt(
+            layer,
+            player.getBlockPos().getX() >> 4,
+            player.getBlockPos().getZ() >> 4
+        );
+    }
+
+    /**
+     * Main-thread read-only probe at a saved fingerprint center. The factory uses
+     * {@code getChunk(..., false)}, so a missing historical 3x3 sample never triggers a load.
+     */
+    public List<ChunkSnapshot> probeSquareAt(
+        final MapLayer layer,
+        final int centerChunkX,
+        final int centerChunkZ
+    ) {
+        if (client.world == null) {
+            return List.of();
+        }
+        // Check the complete saved footprint before reading any chunk. This makes the
+        // "loaded 3x3" rule explicit and prevents a partial historical probe from being
+        // mistaken for evidence when the client has only loaded part of the square.
+        if (!ClientChunkLookup.isSquareLoaded(client.world, centerChunkX, centerChunkZ)) {
+            return List.of();
+        }
         final int pivotY = layer.type() == MapLayer.Type.NETHER_CEILING ? client.world.getTopY() - 1 : 0;
         final List<ChunkSnapshot> snapshots = new ArrayList<>(9);
         for (int offsetZ = -1; offsetZ <= 1; offsetZ++) {
             for (int offsetX = -1; offsetX <= 1; offsetX++) {
                 final ChunkSnapshot snapshot = factory.snapshotIdentity(
-                    centerX + offsetX, centerZ + offsetZ, layer, pivotY, 0L
+                    centerChunkX + offsetX, centerChunkZ + offsetZ, layer, pivotY, 0L
                 );
                 if (snapshot != null) {
                     snapshots.add(snapshot);
