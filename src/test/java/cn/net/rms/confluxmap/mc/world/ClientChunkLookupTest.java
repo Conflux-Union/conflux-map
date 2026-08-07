@@ -30,4 +30,12 @@ class ClientChunkLookupTest {
         assertEquals(-1, requestedChunk[0]);
         assertEquals(-2, requestedChunk[1]);
     }
+
+    @Test
+    void terrainFingerprintSquareRequiresAllNineChunksToBeLoaded() {
+        assertTrue(ClientChunkLookup.isSquareLoaded(20, -4, (chunkX, chunkZ) -> true));
+        assertFalse(ClientChunkLookup.isSquareLoaded(
+            20, -4, (chunkX, chunkZ) -> chunkX != 21 || chunkZ != -3
+        ));
+    }
 }

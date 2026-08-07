@@ -19,6 +19,7 @@ import cn.net.rms.confluxmap.core.multiworld.ClientWorldResolution;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldPosition;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldSignalHasher;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldTerrainFingerprint;
+import cn.net.rms.confluxmap.core.multiworld.ClientWorldVisit;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureService;
 import com.mojang.brigadier.tree.CommandNode;
@@ -94,6 +95,8 @@ public final class ClientMultiworldService {
     private long persistenceRetryAfterTick;
     private boolean persistenceFailureLatched;
     private ClientWorldTerrainFingerprint terrainFingerprint;
+    /** Candidate-specific samples captured only when their saved 3x3 is already loaded. */
+    private final Map<String, ClientWorldTerrainFingerprint> terrainFingerprintsByProfileId = new LinkedHashMap<>();
     private final ClientWorldTerrainProbePolicy terrainProbePolicy = new ClientWorldTerrainProbePolicy();
     private final ClientWorldChangeDetector worldChangeDetector = new ClientWorldChangeDetector();
     private final Deque<PendingSnapshot> pendingSnapshots = new ArrayDeque<>();
@@ -245,6 +248,7 @@ public final class ClientMultiworldService {
             signalsCollected = false;
             signalTicks = 0;
             terrainFingerprint = null;
+            terrainFingerprintsByProfileId.clear();
             terrainProbePolicy.reset();
             worldChangeDetector.reset();
             pendingSnapshots.clear();
@@ -310,6 +314,7 @@ public final class ClientMultiworldService {
             resolution = ClientWorldResolution.collecting();
             detectionState = ClientWorldDetectionState.PROBING;
             terrainFingerprint = null;
+            terrainFingerprintsByProfileId.clear();
             terrainProbePolicy.reset();
             worldChangeDetector.reset();
             pendingSnapshots.clear();
@@ -321,10 +326,10 @@ public final class ClientMultiworldService {
             observationGeneration++;
             resetPersistenceBackoff();
         }
-        refreshTerrainFingerprint();
         if (applyPendingCommand()) {
             return resolution;
         }
+        refreshTerrainFingerprint();
         if (persistenceRetryBlocked()) {
             return resolution;
         }
@@ -372,7 +377,18 @@ public final class ClientMultiworldService {
     }
 
     public boolean needsSelection() {
-        return canManageProfiles() && detectionState == ClientWorldDetectionState.WAITING_FOR_USER;
+        return canManageProfiles() && manualSelectionAvailable(
+            detectionState, resolution.state(), signalsCollected
+        );
+    }
+
+    static boolean manualSelectionAvailable(
+        final ClientWorldDetectionState state,
+        final ClientWorldResolution.State resolutionState,
+        final boolean ignoredSignalsCollected
+    ) {
+        return state == ClientWorldDetectionState.WAITING_FOR_USER
+            || resolutionState == ClientWorldResolution.State.AMBIGUOUS;
     }
 
     public ClientWorldDetectionState detectionState() {
@@ -736,7 +752,10 @@ public final class ClientMultiworldService {
                 gameMode = String.valueOf(client.interactionManager.getCurrentGameMode());
             }
         }
-        return new ClientWorldObservation(seedHash, signals, dimension, gameMode, position, terrainFingerprint);
+        return new ClientWorldObservation(
+            seedHash, signals, dimension, gameMode, position, terrainFingerprint,
+            terrainFingerprintsByProfileId
+        );
     }
 
     private void notifyAmbiguity() {
@@ -834,6 +853,7 @@ public final class ClientMultiworldService {
         serverId = null;
         spawnPosition = null;
         terrainFingerprint = null;
+        terrainFingerprintsByProfileId.clear();
         terrainProbePolicy.reset();
         worldChangeDetector.reset();
         pendingSnapshots.clear();
@@ -896,6 +916,7 @@ public final class ClientMultiworldService {
         signals = Map.of();
         signalsCollected = false;
         terrainFingerprint = null;
+        terrainFingerprintsByProfileId.clear();
         terrainProbePolicy.reset();
         worldChangeDetector.reset();
         pendingSnapshots.clear();
@@ -992,28 +1013,97 @@ public final class ClientMultiworldService {
     }
 
     private void refreshTerrainFingerprint() {
-        if (terrainFingerprint != null || chunkCapture == null || client == null
+        if (chunkCapture == null || client == null
             || client.world == null || client.player == null) {
+            return;
+        }
+        final int centerChunkX = client.player.getBlockPos().getX() >> 4;
+        final int centerChunkZ = client.player.getBlockPos().getZ() >> 4;
+        if (terrainFingerprint != null && (!terrainFingerprint.hasCenter()
+            || terrainFingerprint.centerChunkX() != centerChunkX
+            || terrainFingerprint.centerChunkZ() != centerChunkZ)) {
+            terrainFingerprint = null;
+            terrainFingerprintsByProfileId.clear();
+            terrainProbePolicy.reset();
+        }
+        final List<ClientWorldProfile> profiles = serverId == null ? List.of() : resolver.profiles(serverId);
+        final String dimensionId = currentDimensionId();
+        if (!hasPendingTerrainEvidence(profiles, dimensionId)) {
             return;
         }
         if (!terrainProbePolicy.shouldProbe(clientTick)) {
             return;
         }
         terrainProbePolicy.recordAttempt(clientTick);
-        final List<ChunkSnapshot> probes = chunkCapture.probeSquare(terrainProbeLayer());
-        if (probes.size() != 9) {
-            return;
+        final MapLayer layer = terrainProbeLayer();
+        if (terrainFingerprint == null) {
+            final List<ChunkSnapshot> probes = chunkCapture.probeSquareAt(layer, centerChunkX, centerChunkZ);
+            if (probes.size() == 9) {
+                final ClientWorldTerrainFingerprint captured = ClientWorldTerrainFingerprint.from(
+                    probes, centerChunkX, centerChunkZ
+                );
+                if (captured.complete()) {
+                    terrainFingerprint = captured;
+                }
+            }
         }
-        terrainFingerprint = ClientWorldTerrainFingerprint.from(
-            probes,
-            client.player.getBlockPos().getX() >> 4,
-            client.player.getBlockPos().getZ() >> 4
-        );
+        for (final ClientWorldProfile profile : profiles) {
+            final ClientWorldVisit visit = profile.visit(dimensionId);
+            final ClientWorldTerrainFingerprint saved = visit == null ? null : visit.terrainFingerprint();
+            if (saved == null || !saved.hasCenter() || terrainFingerprintsByProfileId.containsKey(profile.id())) {
+                continue;
+            }
+            if (terrainFingerprint != null && terrainFingerprint.sameCenter(saved)) {
+                terrainFingerprintsByProfileId.put(profile.id(), terrainFingerprint);
+                continue;
+            }
+            final List<ChunkSnapshot> probes = chunkCapture.probeSquareAt(
+                layer, saved.centerChunkX(), saved.centerChunkZ()
+            );
+            if (probes.size() == 9) {
+                final ClientWorldTerrainFingerprint captured = ClientWorldTerrainFingerprint.from(
+                    probes, saved.centerChunkX(), saved.centerChunkZ()
+                );
+                if (captured.complete()) {
+                    terrainFingerprintsByProfileId.put(profile.id(), captured);
+                }
+            }
+        }
         rememberStableVisit();
     }
 
     private boolean shouldRetryTerrainProbe() {
-        return chunkCapture != null && terrainFingerprint == null && !terrainProbePolicy.exhausted();
+        if (chunkCapture == null || terrainProbePolicy.exhausted()) {
+            return false;
+        }
+        return hasPendingTerrainEvidence(
+            serverId == null ? List.of() : resolver.profiles(serverId), currentDimensionId()
+        );
+    }
+
+    private boolean hasPendingTerrainEvidence(
+        final List<ClientWorldProfile> profiles,
+        final String dimensionId
+    ) {
+        if (terrainFingerprint == null) {
+            return true;
+        }
+        for (final ClientWorldProfile profile : profiles) {
+            final ClientWorldVisit visit = profile.visit(dimensionId);
+            final ClientWorldTerrainFingerprint saved = visit == null ? null : visit.terrainFingerprint();
+            if (saved != null && saved.hasCenter() && !terrainFingerprintsByProfileId.containsKey(profile.id())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String currentDimensionId() {
+        if (client == null || client.world == null) {
+            return observedDimension;
+        }
+        final Identifier id = client.world.getRegistryKey().getValue();
+        return DimensionId.of(id.getNamespace(), id.getPath()).fileName();
     }
 
     private void rememberStableVisit() {

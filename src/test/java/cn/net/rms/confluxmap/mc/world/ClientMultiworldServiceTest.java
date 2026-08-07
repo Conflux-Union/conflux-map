@@ -201,6 +201,19 @@ class ClientMultiworldServiceTest {
     }
 
     @Test
+    void manualSelectionIsAvailableWhileTerrainEvidenceIsStillRetrying() {
+        assertTrue(ClientMultiworldService.manualSelectionAvailable(
+            ClientWorldDetectionState.PROBING, ClientWorldResolution.State.AMBIGUOUS, true
+        ));
+        assertFalse(ClientMultiworldService.manualSelectionAvailable(
+            ClientWorldDetectionState.PROBING, ClientWorldResolution.State.COLLECTING, true
+        ));
+        assertTrue(ClientMultiworldService.manualSelectionAvailable(
+            ClientWorldDetectionState.PROBING, ClientWorldResolution.State.AMBIGUOUS, false
+        ));
+    }
+
+    @Test
     void stableVisitRefreshRequiresMeaningfulMovementOrTheMaximumInterval() {
         final ClientWorldObservation previous = visitObservation(0, 0);
 
@@ -401,7 +414,7 @@ class ClientMultiworldServiceTest {
     }
 
     @Test
-    void commandSelectionLearnsTheNewWorldBeforeTheCommandIsRemoved() {
+    void commandSelectionLearnsTheNewWorldButIncompleteRevisitStillWaits() {
         final ClientWorldProfileRegistry registry = new ClientWorldProfileRegistry();
         final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(registry, ids());
         final ClientMultiworldService service = service(resolver);
@@ -425,7 +438,8 @@ class ClientMultiworldServiceTest {
         nextVisit.onGameJoin(22L);
         nextVisit.observeSignals(signals("creative"));
 
-        assertEquals(target.storageId(), nextVisit.resolve(ADDRESS).orElseThrow().worldId());
+        assertTrue(nextVisit.resolve(ADDRESS).isEmpty());
+        assertEquals(1, target.bindingCount());
     }
 
     @Test

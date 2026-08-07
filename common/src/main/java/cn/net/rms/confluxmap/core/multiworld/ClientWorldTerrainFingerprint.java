@@ -3,8 +3,10 @@ package cn.net.rms.confluxmap.core.multiworld;
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * A compact, persistence-safe 3x3 terrain sample. It deliberately retains only stable terrain
@@ -17,13 +19,26 @@ public final class ClientWorldTerrainFingerprint {
     private static final int SAMPLES_PER_CHUNK = SAMPLE_OFFSETS.length * SAMPLE_OFFSETS.length;
 
     private List<Chunk> chunks;
+    /** Null for fingerprints persisted before center coordinates were introduced. */
+    private Integer centerChunkX;
+    private Integer centerChunkZ;
 
     ClientWorldTerrainFingerprint() {
         // Gson
     }
 
     private ClientWorldTerrainFingerprint(final List<Chunk> chunks) {
+        this(chunks, null, null);
+    }
+
+    private ClientWorldTerrainFingerprint(
+        final List<Chunk> chunks,
+        final Integer centerChunkX,
+        final Integer centerChunkZ
+    ) {
         this.chunks = List.copyOf(chunks);
+        this.centerChunkX = centerChunkX;
+        this.centerChunkZ = centerChunkZ;
     }
 
     public static ClientWorldTerrainFingerprint from(
@@ -42,12 +57,60 @@ public final class ClientWorldTerrainFingerprint {
         }
         samples.sort(Comparator.comparingInt((Chunk chunk) -> chunk.offsetZ)
             .thenComparingInt(chunk -> chunk.offsetX));
-        return new ClientWorldTerrainFingerprint(samples);
+        return new ClientWorldTerrainFingerprint(samples, centerChunkX, centerChunkZ);
     }
 
     public boolean complete() {
-        return chunks != null && chunks.size() == EXPECTED_CHUNKS
-            && chunks.stream().allMatch(chunk -> chunk.complete());
+        if (chunks == null || chunks.size() != EXPECTED_CHUNKS) {
+            return false;
+        }
+        final Set<Long> positions = new HashSet<>();
+        for (final Chunk chunk : chunks) {
+            if (chunk == null || !chunk.complete()
+                || Math.abs(chunk.offsetX) > 1 || Math.abs(chunk.offsetZ) > 1
+                || !positions.add(chunk.positionKey())) {
+                return false;
+            }
+        }
+        return positions.size() == EXPECTED_CHUNKS;
+    }
+
+    public boolean hasCenter() {
+        return centerChunkX != null && centerChunkZ != null;
+    }
+
+    public int centerChunkX() {
+        if (!hasCenter()) {
+            throw new IllegalStateException("terrain fingerprint center is unavailable");
+        }
+        return centerChunkX;
+    }
+
+    public int centerChunkZ() {
+        if (!hasCenter()) {
+            throw new IllegalStateException("terrain fingerprint center is unavailable");
+        }
+        return centerChunkZ;
+    }
+
+    public boolean sameCenter(final ClientWorldTerrainFingerprint other) {
+        return other != null && hasCenter() && other.hasCenter()
+            && centerChunkX.equals(other.centerChunkX)
+            && centerChunkZ.equals(other.centerChunkZ);
+    }
+
+    /** Exact sampled terrain evidence, independent of its persisted center coordinate. */
+    boolean sameEvidence(final ClientWorldTerrainFingerprint other) {
+        if (other == null || !complete() || !other.complete()) {
+            return false;
+        }
+        for (final Chunk chunk : chunks) {
+            final Chunk candidate = other.find(chunk.offsetX, chunk.offsetZ);
+            if (candidate == null || !chunk.sameEvidence(candidate)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public int capturedChunks() {
@@ -103,7 +166,7 @@ public final class ClientWorldTerrainFingerprint {
                 }
             }
         }
-        return new ClientWorldTerrainFingerprint(copied);
+        return new ClientWorldTerrainFingerprint(copied, centerChunkX, centerChunkZ);
     }
 
     public record Match(double score, int comparableChunks, boolean available) {
@@ -160,6 +223,10 @@ public final class ClientWorldTerrainFingerprint {
             return offsetX == other.offsetX && offsetZ == other.offsetZ;
         }
 
+        long positionKey() {
+            return ((long) offsetX << 32) ^ (offsetZ & 0xFFFFFFFFL);
+        }
+
         double similarity(final Chunk other) {
             if (!complete() || !other.complete()) {
                 return -1.0D;
@@ -169,6 +236,18 @@ public final class ClientWorldTerrainFingerprint {
                 total += columns.get(index).similarity(other.columns.get(index));
             }
             return total / SAMPLES_PER_CHUNK;
+        }
+
+        boolean sameEvidence(final Chunk other) {
+            if (!complete() || other == null || !other.complete()) {
+                return false;
+            }
+            for (int index = 0; index < SAMPLES_PER_CHUNK; index++) {
+                if (!columns.get(index).sameEvidence(other.columns.get(index))) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         void normalize() {
@@ -240,6 +319,13 @@ public final class ClientWorldTerrainFingerprint {
                 score += 0.05D;
             }
             return score;
+        }
+
+        boolean sameEvidence(final Column other) {
+            return other != null && surfaceY == other.surfaceY
+                && Objects.equals(biomeId, other.biomeId)
+                && kind == other.kind
+                && fluidDepth == other.fluidDepth;
         }
 
         void normalize() {

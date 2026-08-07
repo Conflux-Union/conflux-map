@@ -12,17 +12,19 @@ import java.util.function.Supplier;
 
 /** Conservative matcher: strong unique evidence wins; weak or duplicated evidence never guesses. */
 public final class ClientWorldProfileResolver {
-    public static final int MIN_SUPPORTING_SIGNALS = 3;
     public static final int MAX_PROFILES_PER_SERVER = ClientWorldPolicy.DEFAULT_MAX_PROFILES_PER_SERVER;
     private static final double AUTO_SELECT_MIN_CONFIDENCE = 0.60D;
     /** Scores within three percentage points are indistinguishable and require a manual choice. */
     private static final double AUTO_SELECT_ERROR_MARGIN = 0.03D;
+    private static final double AUXILIARY_WEIGHT = 0.60D;
+    private static final double TERRAIN_WEIGHT = 0.40D;
     private static final double GAME_MODE_WEIGHT = 0.40D;
     private static final double POSITION_WEIGHT = 0.40D;
-    private static final double TERRAIN_WEIGHT = 0.20D;
     private static final double VISIT_CONTEXT_WEIGHT = 0.20D;
-    private static final double POSITION_NO_MATCH_DISTANCE = 2_048.0D;
-    private static final double TERRAIN_DISCRIMINATOR_MIN_SCORE = 0.85D;
+    private static final double OVERWORLD_POSITION_RADIUS = 48.0D;
+    private static final double NETHER_POSITION_RADIUS = 6.0D;
+    private static final double POSITION_CONFIDENCE_CUTOFF_DISTANCE = 1_024.0D;
+    private static final double TERRAIN_MATCH_MIN_SCORE = 0.85D;
     private static final double TERRAIN_DISCRIMINATOR_MIN_GAP = 0.10D;
 
     private final ClientWorldProfileRegistry registry;
@@ -108,14 +110,6 @@ public final class ClientWorldProfileResolver {
                 }
                 return create(serverId, nextStorageId(), observation);
             }
-            if (seedMatches.size() == 1) {
-                final ClientWorldProfile only = seedMatches.get(0);
-                // A unique seed identifies the logical world across dimensions. Dimension
-                // metadata is retained as visit evidence and is intentionally not a conflict.
-                return only.hasSignalConflict(observation)
-                    ? ClientWorldResolution.ambiguous()
-                    : resolvedAndLearn(serverId, only, observation);
-            }
             return resolveCandidates(serverId, seedMatches, observation);
         }
 
@@ -163,6 +157,9 @@ public final class ClientWorldProfileResolver {
             // An explicit manual correction moves this seeded observation to the selected
             // profile. Unseeded evidence remains additive and can still be ambiguous.
             moveSeedBinding(profiles, profile, observation);
+            // Candidate-specific historical terrain is match-only evidence. A manual selection
+            // must learn the current player-centered sample, never relabel the visit to a saved
+            // historical center.
             profile.bind(observation, policy().maxBindingsPerProfile());
             return profile.id();
         });
@@ -351,6 +348,9 @@ public final class ClientWorldProfileResolver {
             return MutationResult.success();
         }
         return mutate(copy -> {
+            // Stable movement refreshes the active visit with the current player-centered sample.
+            // Candidate-specific historical probes are only for matching/selection and must not
+            // relabel the active profile's new terrain center.
             requireProfile(copy.mutableProfiles(serverId), profileId).rememberVisit(observation);
             return profileId;
         }).result();
@@ -401,50 +401,20 @@ public final class ClientWorldProfileResolver {
         ClientWorldProfileIo.SaveResult save(ClientWorldProfileRegistry registry);
     }
 
-    private ClientWorldResolution uniqueSupporting(
-        final String serverId,
-        final List<ClientWorldProfile> candidates,
-        final ClientWorldObservation observation
-    ) {
-        int best = MIN_SUPPORTING_SIGNALS - 1;
-        ClientWorldProfile winner = null;
-        boolean tied = false;
-        for (final ClientWorldProfile profile : candidates) {
-            if (profile.hasSignalConflict(observation)) {
-                continue;
-            }
-            final int score = profile.bestSignalMatch(observation);
-            if (score > best) {
-                best = score;
-                winner = profile;
-                tied = false;
-            } else if (score == best && score >= MIN_SUPPORTING_SIGNALS) {
-                tied = true;
-            }
-        }
-        return winner != null && !tied
-            ? resolvedAndLearn(serverId, winner, observation)
-            : ClientWorldResolution.ambiguous();
-    }
-
     private ClientWorldResolution resolveCandidates(
         final String serverId,
         final List<ClientWorldProfile> candidates,
         final ClientWorldObservation observation
     ) {
-        if (candidates.size() == 1 && observation.dimensionId() != null
-            && candidates.get(0).visit(observation.dimensionId()) == null
-            && !candidates.get(0).hasSignalConflict(observation)
-            && candidates.get(0).bestSignalMatch(observation) >= MIN_SUPPORTING_SIGNALS) {
-            return resolvedAndLearn(serverId, candidates.get(0), observation);
-        }
         final ClientWorldResolution scored = scoreCandidates(serverId, candidates, observation);
-        return scored != null ? scored : uniqueSupporting(serverId, candidates, observation);
+        return scored != null
+            ? scored
+            : ClientWorldResolution.ambiguous(displayInsufficientObservation(candidates, observation));
     }
 
     /**
-     * Scores v2 per-dimension visit evidence. Null means this is a legacy observation and should
-     * retain the signal-only resolver path; an empty candidate list is still an explicit result.
+     * Scores per-dimension visit evidence. A null result means the observation cannot enter the
+     * dimension/coordinate/terrain queues yet and must remain manual or collecting.
      */
     private ClientWorldResolution scoreCandidates(
         final String serverId,
@@ -453,10 +423,12 @@ public final class ClientWorldProfileResolver {
     ) {
         if (observation.dimensionId() == null
             || observation.gameMode() == null && observation.position() == null
-                && observation.terrainFingerprint() == null) {
+                && observation.terrainFingerprint() == null
+                && observation.terrainFingerprintsByProfileId().isEmpty()) {
             return null;
         }
         final List<CandidateScore> scores = new ArrayList<>();
+        final List<TerrainCacheEntry> terrainCache = new ArrayList<>();
         for (final ClientWorldProfile profile : profiles) {
             final ClientWorldVisit visit = profile.visit(observation.dimensionId());
             if (visit == null) {
@@ -469,62 +441,159 @@ public final class ClientWorldProfileResolver {
             if (observation.seedHash().isPresent()) {
                 reasons.add("seed_match");
             }
-            double weighted = 0.0D;
-            double availableWeight = 0.0D;
+            double auxiliary = 0.0D;
+            double availableAuxiliaryWeight = 0.0D;
             if (observation.gameMode() != null && visit.gameMode() != null) {
                 final boolean matches = observation.gameMode().equals(visit.gameMode());
-                weighted += matches ? GAME_MODE_WEIGHT : 0.0D;
-                availableWeight += GAME_MODE_WEIGHT;
+                auxiliary += matches ? GAME_MODE_WEIGHT : 0.0D;
+                availableAuxiliaryWeight += GAME_MODE_WEIGHT;
                 reasons.add(matches ? "game_mode_match" : "game_mode_mismatch");
             }
+            int queue = 2;
             if (observation.position() != null && visit.lastPosition() != null) {
                 final double distance = observation.position().horizontalDistanceTo(visit.lastPosition());
-                weighted += POSITION_WEIGHT * Math.max(0.0D, 1.0D - distance / POSITION_NO_MATCH_DISTANCE);
-                availableWeight += POSITION_WEIGHT;
-                reasons.add(distance <= 64.0D ? "position_near" : "position_far");
+                final double radius = positionRadius(observation.dimensionId());
+                if (distance <= radius) {
+                    queue = 1;
+                    reasons.add("position_near");
+                } else {
+                    queue = 3;
+                    reasons.add("position_far");
+                }
+                auxiliary += POSITION_WEIGHT * positionConfidence(distance);
+                availableAuxiliaryWeight += POSITION_WEIGHT;
             }
-            if (observation.terrainFingerprint() != null && visit.terrainFingerprint() != null) {
-                final ClientWorldTerrainFingerprint.Match terrain = observation.terrainFingerprint()
-                    .match(visit.terrainFingerprint());
+            final ClientWorldTerrainFingerprint observedTerrain = observation.terrainFingerprintFor(profile.id());
+            if (observedTerrain != null && visit.terrainFingerprint() != null
+                && observedTerrain.sameCenter(visit.terrainFingerprint())) {
+                final ClientWorldTerrainFingerprint.Match terrain = cachedTerrainMatch(
+                    terrainCache, observation.dimensionId(), visit.lastPosition(),
+                    observedTerrain, visit.terrainFingerprint()
+                );
                 if (terrain.available()) {
-                    weighted += TERRAIN_WEIGHT * terrain.score();
-                    availableWeight += TERRAIN_WEIGHT;
                     terrainScore = terrain.score();
                     reasons.add("terrain_" + terrain.comparableChunks() + "_of_9");
+                    if (terrainScore < TERRAIN_MATCH_MIN_SCORE && queue == 1) {
+                        queue = 2;
+                        reasons.add("terrain_below_threshold");
+                    }
                 } else {
                     reasons.add("terrain_unavailable");
+                    if (queue == 1) {
+                        queue = 2;
+                    }
+                }
+            } else {
+                reasons.add("terrain_unavailable");
+                if (queue == 1) {
+                    queue = 2;
                 }
             }
             if (context.shared() > 0) {
-                weighted += VISIT_CONTEXT_WEIGHT * context.score();
-                availableWeight += VISIT_CONTEXT_WEIGHT;
+                auxiliary += VISIT_CONTEXT_WEIGHT * context.score();
+                availableAuxiliaryWeight += VISIT_CONTEXT_WEIGHT;
                 reasons.add("visit_context_" + context.matches() + "_of_" + context.shared());
             }
             final boolean conflicted = profile.hasSignalConflict(observation) || context.hasStableConflict();
             if (conflicted) {
                 reasons.add(context.hasStableConflict() ? "visit_context_conflict" : "signal_conflict");
             }
-            scores.add(new CandidateScore(
-                profile, availableWeight == 0.0D ? 0.0D : weighted / availableWeight,
-                reasons, conflicted, terrainScore
-            ));
+            final double auxiliaryScore = availableAuxiliaryWeight == 0.0D
+                ? 0.0D : auxiliary / availableAuxiliaryWeight;
+            final double score = hasTerrainScore(terrainScore)
+                ? AUXILIARY_WEIGHT * auxiliaryScore + TERRAIN_WEIGHT * terrainScore
+                : auxiliaryScore;
+            scores.add(new CandidateScore(profile, score, reasons, conflicted, terrainScore, queue));
         }
         if (scores.isEmpty()) {
             return ClientWorldResolution.ambiguous();
         }
-        scores.sort(Comparator.comparingDouble(CandidateScore::score).reversed());
-        final CandidateScore best = scores.get(0);
-        final double runnerUp = scores.size() > 1 ? scores.get(1).score() : 0.0D;
+        scores.sort(Comparator.comparingInt(CandidateScore::queue)
+            .thenComparing(Comparator.comparingDouble(CandidateScore::score).reversed()));
+        final int bestQueue = scores.stream()
+            .filter(candidate -> !candidate.conflicted())
+            .mapToInt(CandidateScore::queue)
+            .min()
+            .orElse(Integer.MAX_VALUE);
+        final List<CandidateScore> eligible = scores.stream()
+            .filter(candidate -> !candidate.conflicted() && candidate.queue() == bestQueue)
+            .sorted(Comparator.comparingDouble(CandidateScore::score).reversed())
+            .toList();
+        if (eligible.isEmpty()) {
+            return ClientWorldResolution.ambiguous(scores.stream().map(CandidateScore::display).toList());
+        }
+        final CandidateScore best = eligible.get(0);
+        final double runnerUp = eligible.size() > 1 ? eligible.get(1).score() : 0.0D;
         final List<ClientWorldResolution.Candidate> display = scores.stream()
             .map(CandidateScore::display)
             .toList();
-        if (!best.conflicted() && best.score() >= AUTO_SELECT_MIN_CONFIDENCE
+        if (best.queue() == 1 && !best.conflicted() && best.score() >= AUTO_SELECT_MIN_CONFIDENCE
             && best.score() - runnerUp > AUTO_SELECT_ERROR_MARGIN
             && (!observation.seedHash().isPresent() || profiles.size() == 1
                 || hasTerrainDiscriminator(best, scores))) {
             return resolvedAndLearn(serverId, best.profile(), observation);
         }
         return ClientWorldResolution.ambiguous(display);
+    }
+
+    private static ClientWorldTerrainFingerprint.Match cachedTerrainMatch(
+        final List<TerrainCacheEntry> cache,
+        final String dimensionId,
+        final ClientWorldPosition candidatePosition,
+        final ClientWorldTerrainFingerprint observed,
+        final ClientWorldTerrainFingerprint candidate
+    ) {
+        for (final TerrainCacheEntry entry : cache) {
+            if (!terrainCacheCompatible(
+                entry.dimensionId(), entry.candidatePosition(), entry.observed(), entry.candidate(),
+                dimensionId, candidatePosition, observed, candidate
+            )) {
+                continue;
+            }
+            return entry.match();
+        }
+        final ClientWorldTerrainFingerprint.Match match = observed.match(candidate);
+        cache.add(new TerrainCacheEntry(dimensionId, candidatePosition, observed, candidate, match));
+        return match;
+    }
+
+    static boolean terrainCacheCompatible(
+        final String cachedDimensionId,
+        final ClientWorldPosition cachedCandidatePosition,
+        final ClientWorldTerrainFingerprint cachedObserved,
+        final ClientWorldTerrainFingerprint cachedCandidate,
+        final String dimensionId,
+        final ClientWorldPosition candidatePosition,
+        final ClientWorldTerrainFingerprint observed,
+        final ClientWorldTerrainFingerprint candidate
+    ) {
+        return Objects.equals(cachedDimensionId, dimensionId)
+            && cachedCandidatePosition != null && candidatePosition != null
+            && cachedCandidatePosition.horizontalDistanceTo(candidatePosition) <= 1.5D
+            && cachedObserved.sameEvidence(observed)
+            && cachedCandidate.sameEvidence(candidate);
+    }
+
+    private static boolean hasTerrainScore(final double score) {
+        return !Double.isNaN(score);
+    }
+
+    private static double positionRadius(final String dimensionId) {
+        return "minecraft_the_nether".equals(dimensionId)
+            ? NETHER_POSITION_RADIUS : OVERWORLD_POSITION_RADIUS;
+    }
+
+    static double positionConfidence(final double distance) {
+        if (distance <= 0.0D) {
+            return 1.0D;
+        }
+        if (distance >= POSITION_CONFIDENCE_CUTOFF_DISTANCE) {
+            return 0.0D;
+        }
+        // A steep exponential keeps nearby visits useful while rapidly rejecting stale positions.
+        final double boundary = Math.exp(-4.0D);
+        return (Math.exp(-4.0D * distance / POSITION_CONFIDENCE_CUTOFF_DISTANCE) - boundary)
+            / (1.0D - boundary);
     }
 
     /**
@@ -547,13 +616,26 @@ public final class ClientWorldProfileResolver {
                 continue;
             }
             if (!best.hasTerrainScore() || !candidate.hasTerrainScore()
-                || best.terrainScore() < TERRAIN_DISCRIMINATOR_MIN_SCORE
+                || best.terrainScore() < TERRAIN_MATCH_MIN_SCORE
                 || best.terrainScore() - candidate.terrainScore() < TERRAIN_DISCRIMINATOR_MIN_GAP) {
                 return false;
             }
         }
         return compatibleProfiles < 2 || best.hasTerrainScore()
-            && best.terrainScore() >= TERRAIN_DISCRIMINATOR_MIN_SCORE;
+            && best.terrainScore() >= TERRAIN_MATCH_MIN_SCORE;
+    }
+
+    private static List<ClientWorldResolution.Candidate> displayInsufficientObservation(
+        final List<ClientWorldProfile> candidates,
+        final ClientWorldObservation observation
+    ) {
+        final String reason = observation.dimensionId() == null
+            ? "dimension_unavailable" : "observation_incomplete";
+        return candidates.stream()
+            .map(profile -> new ClientWorldResolution.Candidate(
+                profile.id(), 0, List.of(reason), profile.hasSignalConflict(observation)
+            ))
+            .toList();
     }
 
     private ClientWorldResolution resolvedAndLearn(
@@ -563,6 +645,8 @@ public final class ClientWorldProfileResolver {
     ) {
         final Mutation<String> mutation = mutate(copy -> {
             final ClientWorldProfile candidate = requireProfile(copy.mutableProfiles(serverId), profile.id());
+            // Historical candidate probes are not stable visit evidence. Persist only the
+            // current observation, whose terrain center (if any) is player-centered.
             candidate.bind(observation, policy().maxBindingsPerProfile());
             return candidate.id();
         });
@@ -667,14 +751,17 @@ public final class ClientWorldProfileResolver {
         double score,
         List<String> reasons,
         boolean conflicted,
-        double terrainScore
+        double terrainScore,
+        int queue
     ) {
         private CandidateScore {
             reasons = List.copyOf(reasons);
         }
 
         static CandidateScore legacy(final ClientWorldProfile profile, final boolean conflicted) {
-            return new CandidateScore(profile, 0.0D, List.of("legacy_profile"), conflicted, Double.NaN);
+            return new CandidateScore(
+                profile, 0.0D, List.of("legacy_profile"), conflicted, Double.NaN, 3
+            );
         }
 
         boolean hasTerrainScore() {
@@ -687,4 +774,12 @@ public final class ClientWorldProfileResolver {
             );
         }
     }
+
+    private record TerrainCacheEntry(
+        String dimensionId,
+        ClientWorldPosition candidatePosition,
+        ClientWorldTerrainFingerprint observed,
+        ClientWorldTerrainFingerprint candidate,
+        ClientWorldTerrainFingerprint.Match match
+    ) { }
 }
