@@ -46,7 +46,7 @@ Conflux Map is a Fabric client-side minimap and world map
   cave views, the Nether provides current-level and bedrock-roof views, and the End
   uses a background designed for the void. Surface maps also respond to time of day
   and local lighting.
-- **Seed preview:** When the world seed is available, unexplored Overworld, Nether roof, and End
+- **Map autofill:** When the world seed is available, unexplored Overworld, Nether roof, and End
   areas immediately show predicted biomes and terrain. The Nether roof uses a fixed-height biome
   proxy, while the Overworld also approximates trees. Captured terrain and server corrections
   progressively replace the prediction, and Superflat worlds are supported as well.
@@ -54,11 +54,11 @@ Conflux Map is a Fabric client-side minimap and world map
   running game version is covered across the Overworld, Nether, and End. Each type
   has its own icon and visibility toggle, predicted and server-confirmed positions
   use different frames, and search jumps directly to the nearest candidate.
-- **Seed preview coverage:** Press `P` to switch between everywhere,
-  server-generated areas, and player-visited areas. The visited-only mode provides
-  a purely authoritative map without unexplored-area predictions.
-- **Per-server world profiles:** Terrain fingerprints keep worlds behind the same
-  server address, including proxy networks, in separate map records. Profiles can
+- **Map autofill coverage:** Press `P` to switch between everywhere,
+  server-generated areas, and off. Turning autofill off provides a purely
+  authoritative map limited to explored areas.
+- **Per-server sub-worlds:** Terrain fingerprints keep worlds behind the same
+  server address, including proxy networks, in separate map records. Sub-worlds can
   be created, renamed, and unbound from the fullscreen map.
 - **Public waypoints and chat sharing:** A server can maintain a public waypoint list
   for every connected Conflux Map client. Chat coordinates are available on every
@@ -120,8 +120,8 @@ shortcut because its MaliLib version predates the config-screen registry API.
 | `B` | New waypoint at your position |
 | `J` | Toggle local waypoints |
 | `,` | Open the settings screen |
-| `P` | Cycle seed preview area (everywhere / generated-only / visited-only) |
-| `F9` | Refresh seed preview tiles |
+| `P` | Cycle map autofill area (everywhere / generated-only / off) |
+| `F9` | Refresh map autofill tiles |
 
 ## Waypoint management
 
