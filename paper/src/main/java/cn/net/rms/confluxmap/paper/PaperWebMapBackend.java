@@ -1,13 +1,15 @@
 package cn.net.rms.confluxmap.paper;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
-import cn.net.rms.confluxmap.core.net.CorrectionProfile;
-import cn.net.rms.confluxmap.core.net.MapRegionViewReqC2S;
+import cn.net.rms.confluxmap.core.net.MapRegionSyncSubscribeC2S;
+import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import cn.net.rms.confluxmap.core.net.Message;
+import cn.net.rms.confluxmap.core.net.MsgCodec;
+import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
+import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.server.web.WebMapBackend;
 import cn.net.rms.confluxmap.server.web.WebMapManifest;
-import cn.net.rms.confluxmap.server.web.WebRegionResponseCollector;
 import cn.net.rms.confluxmap.server.web.WebPlayerSnapshot;
 import cn.net.rms.confluxmap.server.web.WebAvatarCache;
 import java.net.URI;
@@ -18,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.entity.Player;
@@ -43,8 +46,16 @@ final class PaperWebMapBackend implements WebMapBackend {
                 entry.preset()
             ));
         }
+        final String worldgenVersion = Bukkit.getMinecraftVersion();
+        final java.util.OptionalInt predictionVersion = McVersions.toCubiomes(worldgenVersion);
+        final boolean sharePrediction = companion.config().shareSeed
+            && companion.config().allowBiomeMap
+            && predictionVersion.isPresent();
         manifest = new WebMapManifest(
-            companion.worldId().toString(), Bukkit.getMinecraftVersion(), false, dimensions
+            companion.worldId().toString(), worldgenVersion,
+            sharePrediction ? companion.worldSeed() : null,
+            sharePrediction ? predictionVersion.getAsInt() : -1,
+            dimensions
         );
     }
 
@@ -54,29 +65,26 @@ final class PaperWebMapBackend implements WebMapBackend {
     }
 
     @Override
-    public CompletableFuture<List<byte[]>> requestRegions(
+    public void requestTiles(
         final UUID clientId,
-        final MapRegionViewReqC2S request,
-        final int requestBytes
+        final MapViewReqC2S request,
+        final int requestBytes,
+        final Consumer<byte[]> response
     ) {
-        final WebRegionResponseCollector collector = new WebRegionResponseCollector(
-            request.regions().size()
-        );
-        Bukkit.getScheduler().runTask(plugin, () -> companion.corrections().requestRegions(
-            clientId, request, requestBytes, true, CorrectionProfile.SOURCE_LIGHT_V2,
-            new PaperCorrectionService.MessageSender() {
-                @Override
-                public void send(final Message message) {
-                    collector.send(message);
-                }
-
-                @Override
-                public void sendEncoded(final Message message, final byte[] payload) {
-                    collector.sendEncoded(message, payload);
-                }
-            }
+        Bukkit.getScheduler().runTask(plugin, () -> companion.corrections().requestTiles(
+            clientId, request, requestBytes, true, sender(response)
         ));
-        return collector.future();
+    }
+
+    @Override
+    public void subscribeRegions(
+        final UUID clientId,
+        final MapRegionSyncSubscribeC2S request,
+        final Consumer<byte[]> response
+    ) {
+        Bukkit.getScheduler().runTask(plugin, () -> companion.corrections().subscribeRegions(
+            clientId, request, sender(response)
+        ));
     }
 
     @Override
@@ -92,6 +100,26 @@ final class PaperWebMapBackend implements WebMapBackend {
     @Override
     public CompletableFuture<byte[]> avatar(final UUID playerId) {
         return avatars.face(skinUrls.get(playerId));
+    }
+
+    private static PaperCorrectionService.MessageSender sender(
+        final Consumer<byte[]> response
+    ) {
+        return new PaperCorrectionService.MessageSender() {
+            @Override
+            public void send(final Message message) {
+                try {
+                    response.accept(MsgCodec.encode(message));
+                } catch (final ProtoException ignored) {
+                    // Every server-originated message is validated before it reaches this seam.
+                }
+            }
+
+            @Override
+            public void sendEncoded(final Message message, final byte[] payload) {
+                response.accept(payload);
+            }
+        };
     }
 
     void updatePlayers(final long revision) {

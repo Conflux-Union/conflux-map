@@ -1,13 +1,19 @@
 package cn.net.rms.confluxmap.server.web;
 
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
+import cn.net.rms.confluxmap.core.model.SurfaceKind;
+import cn.net.rms.confluxmap.core.predict.BiomeTable;
+import cn.net.rms.confluxmap.core.predict.PredictionPalette;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /** Stable public metadata needed before a browser requests prediction or authoritative regions. */
 public record WebMapManifest(
     String worldId,
     String worldgenVersion,
-    boolean predictionAvailable,
+    Long seed,
+    int predictionVersion,
     List<Dimension> dimensions
 ) {
     public record Dimension(
@@ -31,15 +37,28 @@ public record WebMapManifest(
             throw new IllegalArgumentException("worldId cannot be blank");
         }
         worldgenVersion = worldgenVersion == null ? "unknown" : worldgenVersion;
+        if ((seed == null) != (predictionVersion < 0)) {
+            throw new IllegalArgumentException("prediction seed and version must be available together");
+        }
         dimensions = dimensions == null ? List.of() : List.copyOf(dimensions);
+    }
+
+    public boolean predictionAvailable() {
+        return seed != null;
     }
 
     public String toJson() {
         final StringBuilder result = new StringBuilder(256);
         result.append("{\"worldId\":\"").append(json(worldId))
             .append("\",\"worldgenVersion\":\"").append(json(worldgenVersion))
-            .append("\",\"predictionAvailable\":").append(predictionAvailable)
-            .append(",\"dimensions\":[");
+            .append("\",\"predictionAvailable\":").append(predictionAvailable());
+        if (predictionAvailable()) {
+            result.append(",\"seed\":\"").append(seed).append('"')
+                .append(",\"predictionVersion\":").append(predictionVersion)
+                .append(",\"predictionBiomes\":");
+            appendPredictionBiomes(result);
+        }
+        result.append(",\"dimensions\":[");
         for (int i = 0; i < dimensions.size(); i++) {
             if (i > 0) {
                 result.append(',');
@@ -47,6 +66,42 @@ public record WebMapManifest(
             result.append(dimensions.get(i).toJson());
         }
         return result.append("]}").toString();
+    }
+
+    private static void appendPredictionBiomes(final StringBuilder result) {
+        final PredictionPalette palette = PredictionPalette.defaults();
+        final List<Integer> ids = new ArrayList<>(BiomeTable.knownIds());
+        ids.sort(Comparator.naturalOrder());
+        result.append('[');
+        for (int i = 0; i <= ids.size(); i++) {
+            final int id = i == ids.size() ? -1 : ids.get(i);
+            final BiomeTable.Entry entry = BiomeTable.get(id);
+            if (i > 0) {
+                result.append(',');
+            }
+            result.append("{\"id\":").append(id)
+                .append(",\"kind\":\"").append(entry.kind().name()).append('"')
+                .append(",\"waterBiome\":").append(entry.waterBiome())
+                .append(",\"surfaceColor\":").append(surfaceColor(entry.kind(), id, palette))
+                .append(",\"canopyColor\":").append(palette.canopyColor(id) & 0xFFFFFF)
+                .append(",\"waterTint\":").append(palette.waterTint(id) & 0xFFFFFF)
+                .append('}');
+        }
+        result.append(']');
+    }
+
+    private static int surfaceColor(
+        final SurfaceKind kind,
+        final int biomeId,
+        final PredictionPalette palette
+    ) {
+        return switch (kind) {
+            case SAND -> palette.sandBase & 0xFFFFFF;
+            case SNOW -> palette.snowBase & 0xFFFFFF;
+            case ICE -> palette.iceBase & 0xFFFFFF;
+            case FOLIAGE -> palette.canopyColor(biomeId) & 0xFFFFFF;
+            default -> palette.groundColor(biomeId) & 0xFFFFFF;
+        };
     }
 
     private static String json(final String input) {

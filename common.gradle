@@ -52,6 +52,10 @@ dependencies {
     autoImpl "net.fabricmc.fabric-api:fabric-api:$fabric_api_version"
     implementation project(':common')
     include project(':common')
+    implementation 'org.nanohttpd:nanohttpd:2.3.1'
+    implementation 'org.nanohttpd:nanohttpd-websocket:2.3.1'
+    include 'org.nanohttpd:nanohttpd:2.3.1'
+    include 'org.nanohttpd:nanohttpd-websocket:2.3.1'
     // Compile the optional adapter against the exact MaliLib line for this Minecraft version.
     // This is deliberately absent from runtime and from the produced jar.
     if (unobfuscated) {

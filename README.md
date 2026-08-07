@@ -206,13 +206,18 @@ Per-player rate limits and bandwidth budgets for map sync
 `/confluxmap performance` in game to see timing and volume stats for their
 own connection's map sync.
 
-The browser requests the existing compressed region-summary protocol in batches of at most eight
-regions, keeps revision identifiers, and accepts `UNCHANGED` responses instead of downloading the
-same terrain again. Static Leaflet assets are bundled in the jar, so normal page loads do not use a
-CDN. The current browser build exposes authoritative generated terrain at LOD 0-4 and never sends
-the world seed. Its manifest reports browser prediction unavailable until the matching cubiomes
-WASM artifact is present; the UI consequently disables the prediction-only “all regions” mode
-rather than silently leaking the seed or pretending residual patches are complete terrain.
+The browser uses one binary WebSocket for region pages, invalidations, and optional player radar.
+It requests the existing compressed region-summary protocol in batches of at most eight regions,
+keeps revision identifiers in IndexedDB, revalidates them once per browser session, and then
+refreshes only regions invalidated by the server. Static Leaflet assets and the cubiomes WASM
+predictor are bundled in the jar, so normal page loads do not use a CDN.
+
+When `shareSeed=true` and `allowBiomeMap=true`, the manifest explicitly publishes the seed and
+enables the browser's “all regions” biome prediction for supported dimensions; generated server
+regions are drawn over that local prediction. An anonymous browser that can predict from the seed can also read that seed,
+so this setting is a disclosure policy, not a way to keep the seed secret. With seed sharing off,
+only “generated regions” is available. The web zoom range, default scale, and 1.26 zoom step match
+the in-game fullscreen map (`0.25` to `16` blocks per screen pixel).
 
 ## Building
 

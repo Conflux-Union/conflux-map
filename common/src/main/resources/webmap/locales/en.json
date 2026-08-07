@@ -7,8 +7,9 @@
   "modeGenerated": "Generated regions",
   "language": "Language",
   "connecting": "Connecting…",
-  "regionsLoaded": "{loaded}/{total} regions · LOD {lod}",
+  "tilesLoaded": "{loaded}/{total} tiles synced · LOD {lod}",
   "loadError": "Map loading failed",
   "zoomIn": "Zoom in",
-  "zoomOut": "Zoom out"
+  "zoomOut": "Zoom out",
+  "scale": "Scale: {scale}"
 }

@@ -7,8 +7,9 @@
   "modeGenerated": "已生成区域",
   "language": "语言",
   "connecting": "正在连接…",
-  "regionsLoaded": "已加载 {loaded}/{total} 个区域 · LOD {lod}",
+  "tilesLoaded": "已同步 {loaded}/{total} 张瓦片 · LOD {lod}",
   "loadError": "地图加载失败",
   "zoomIn": "放大",
-  "zoomOut": "缩小"
+  "zoomOut": "缩小",
+  "scale": "缩放：{scale}"
 }

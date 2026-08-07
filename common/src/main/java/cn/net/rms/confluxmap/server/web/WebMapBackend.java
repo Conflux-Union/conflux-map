@@ -1,18 +1,26 @@
 package cn.net.rms.confluxmap.server.web;
 
-import cn.net.rms.confluxmap.core.net.MapRegionViewReqC2S;
-import java.util.List;
+import cn.net.rms.confluxmap.core.net.MapRegionSyncSubscribeC2S;
+import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 /** Platform adapter consumed by the transport-only web server. */
 public interface WebMapBackend {
     WebMapManifest manifest();
 
-    CompletableFuture<List<byte[]>> requestRegions(
+    void requestTiles(
         UUID clientId,
-        MapRegionViewReqC2S request,
-        int requestBytes
+        MapViewReqC2S request,
+        int requestBytes,
+        Consumer<byte[]> response
+    );
+
+    void subscribeRegions(
+        UUID clientId,
+        MapRegionSyncSubscribeC2S request,
+        Consumer<byte[]> response
     );
 
     default void removeClient(final UUID clientId) {

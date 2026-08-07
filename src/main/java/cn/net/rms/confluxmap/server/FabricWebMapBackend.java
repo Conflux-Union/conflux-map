@@ -2,13 +2,16 @@ package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.compat.MinecraftVersion;
 import cn.net.rms.confluxmap.core.model.DimensionId;
-import cn.net.rms.confluxmap.core.net.CorrectionProfile;
-import cn.net.rms.confluxmap.core.net.MapRegionViewReqC2S;
+import cn.net.rms.confluxmap.core.net.MapRegionSyncSubscribeC2S;
+import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
+import cn.net.rms.confluxmap.core.net.Message;
+import cn.net.rms.confluxmap.core.net.MsgCodec;
+import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
+import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.server.web.WebMapBackend;
 import cn.net.rms.confluxmap.server.web.WebMapManifest;
-import cn.net.rms.confluxmap.server.web.WebRegionResponseCollector;
 import cn.net.rms.confluxmap.server.web.WebPlayerSnapshot;
 import cn.net.rms.confluxmap.server.web.WebAvatarCache;
 import cn.net.rms.confluxmap.server.web.WebSkinTexture;
@@ -20,6 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -45,6 +49,11 @@ final class FabricWebMapBackend implements WebMapBackend {
     }
 
     private WebMapManifest buildManifest() {
+        final String worldgenVersion = MinecraftVersion.current();
+        final java.util.OptionalInt predictionVersion = McVersions.toCubiomes(worldgenVersion);
+        final boolean sharePrediction = companion.config().shareSeed
+            && companion.config().allowBiomeMap
+            && predictionVersion.isPresent();
         final List<WebMapManifest.Dimension> dimensions = new ArrayList<>();
         int index = 0;
         for (final ServerWorld world : server.getWorlds()) {
@@ -57,25 +66,34 @@ final class FabricWebMapBackend implements WebMapBackend {
             ));
         }
         return new WebMapManifest(
-            companion.worldIds().get(server).toString(), MinecraftVersion.current(), false,
+            companion.worldIds().get(server).toString(), worldgenVersion,
+            sharePrediction ? server.getOverworld().getSeed() : null,
+            sharePrediction ? predictionVersion.getAsInt() : -1,
             dimensions
         );
     }
 
     @Override
-    public CompletableFuture<List<byte[]>> requestRegions(
+    public void requestTiles(
         final UUID clientId,
-        final MapRegionViewReqC2S request,
-        final int requestBytes
+        final MapViewReqC2S request,
+        final int requestBytes,
+        final Consumer<byte[]> response
     ) {
-        final WebRegionResponseCollector collector = new WebRegionResponseCollector(
-            request.regions().size()
-        );
-        server.execute(() -> companion.summaries().requestRegions(
-            server, clientId, request, requestBytes, true,
-            CorrectionProfile.SOURCE_LIGHT_V2, collector::send
+        server.execute(() -> companion.summaries().request(
+            server, clientId, request, requestBytes, true, sender(response)
         ));
-        return collector.future();
+    }
+
+    @Override
+    public void subscribeRegions(
+        final UUID clientId,
+        final MapRegionSyncSubscribeC2S request,
+        final Consumer<byte[]> response
+    ) {
+        server.execute(() -> companion.summaries().subscribeRegions(
+            server, clientId, request, sender(response)
+        ));
     }
 
     @Override
@@ -91,6 +109,26 @@ final class FabricWebMapBackend implements WebMapBackend {
     @Override
     public CompletableFuture<byte[]> avatar(final UUID playerId) {
         return avatars.face(skinUrls.get(playerId));
+    }
+
+    private static RegionSummaryService.MessageSender sender(
+        final Consumer<byte[]> response
+    ) {
+        return new RegionSummaryService.MessageSender() {
+            @Override
+            public void send(final Message message) {
+                try {
+                    response.accept(MsgCodec.encode(message));
+                } catch (final ProtoException ignored) {
+                    // Every server-originated message is validated before it reaches this seam.
+                }
+            }
+
+            @Override
+            public void sendEncoded(final Message message, final byte[] payload) {
+                response.accept(payload);
+            }
+        };
     }
 
     void updatePlayers(final long revision) {

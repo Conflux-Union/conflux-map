@@ -289,8 +289,22 @@ public final class RegionSummaryService {
         final boolean forceAbsolute,
         final MessageSender sender
     ) {
+        request(
+            server, player.getUuid(), request, requestPayloadBytes, forceAbsolute, sender
+        );
+    }
+
+    /** Platform-neutral client identity seam used by the HTTP map transport. */
+    public void request(
+        final MinecraftServer server,
+        final UUID clientId,
+        final MapViewReqC2S request,
+        final int requestPayloadBytes,
+        final boolean forceAbsolute,
+        final MessageSender sender
+    ) {
         final long now = System.nanoTime();
-        final PlayerChannel channel = channels.computeIfAbsent(player.getUuid(), ignored -> newPlayerChannel());
+        final PlayerChannel channel = channels.computeIfAbsent(clientId, ignored -> newPlayerChannel());
         channel.sender = sender;
         if (request.lod() > lodCeiling() || request.tiles().size() > config.maxTilesPerRequest
             || request.dimIndex() < 0 || !channel.dispatcher.budget().beginRequest(now)) {
@@ -312,7 +326,7 @@ public final class RegionSummaryService {
         if (overflow > 0) {
             sender.send(new ErrorS2C(ErrorS2C.ERR_RATE_LIMITED, "map correction queue is full"));
         }
-        invalidations.acknowledge(player.getUuid(), request);
+        invalidations.acknowledge(clientId, request);
         liveChunks.nominate(request, now);
         drain(server, channel, now);
     }

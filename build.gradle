@@ -57,6 +57,37 @@ final List<String> nativeCflags = [
     '-Inative/jni', '-Inative/cubiomes',
 ]
 
+final List<String> webPredictorSources = [
+    'native/web/confluxpredict.c',
+    'native/cubiomes/biomenoise.c',
+    'native/cubiomes/biomes.c',
+    'native/cubiomes/generator.c',
+    'native/cubiomes/layers.c',
+    'native/cubiomes/noise.c',
+]
+
+tasks.register('buildWebPredictor', Exec) {
+    group = 'build'
+    description = 'Compiles the browser cubiomes predictor into the committed web-map WASM asset.'
+    final File outFile = rootProject.file('common/src/main/resources/webmap/predictor.wasm')
+    inputs.files(webPredictorSources.collect { final String src -> rootProject.file(src) })
+    inputs.dir rootProject.file('native/cubiomes/tables')
+    outputs.file outFile
+    workingDir rootProject.projectDir
+    commandLine([
+        'zig', 'cc', '-target', 'wasm32-wasi', '-O3', '-g0', '-fno-fast-math',
+        '-ffp-contract=off', '-fvisibility=hidden', '-ffunction-sections',
+        '-fdata-sections', '-msimd128', '-Inative/cubiomes', '-Wl,--no-entry',
+        '-Wl,--gc-sections', '-Wl,--export=cfxWebInit',
+        '-Wl,--export=cfxWebGenerateTile', '-Wl,--export=cfxWebBiomeData',
+        '-Wl,--export=cfxWebHeightData', '-Wl,--export=cfxWebSurfaceData',
+        '-Wl,--export=cfxWebCanopyData',
+        '-Wl,--export=cfxWebSubBiomeData', '-Wl,--export=cfxWebSubSurfaceData',
+        '-Wl,--export=cfxWebSubCanopyData',
+        '-Wl,--export-memory', '-o', outFile.absolutePath,
+    ] + webPredictorSources + ['-lm'])
+}
+
 tasks.register('buildNativesHost', Exec) {
     group = 'build'
     description = 'Compiles the cubiomes+shim native library for this host (linux-x86_64) into native/prebuilt/.'
