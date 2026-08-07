@@ -14,7 +14,8 @@ public record WebMapManifest(
     String worldgenVersion,
     Long seed,
     int predictionVersion,
-    List<Dimension> dimensions
+    List<Dimension> dimensions,
+    List<Material> materials
 ) {
     public record Dimension(
         int index,
@@ -32,6 +33,52 @@ public record WebMapManifest(
         }
     }
 
+    public record Material(
+        String id,
+        int baseArgb,
+        double[] detailOffsets,
+        String tint,
+        int fixedTintArgb,
+        int patternSalt
+    ) {
+        public Material {
+            if (id == null || id.isBlank() || detailOffsets == null
+                || detailOffsets.length != 16 || tint == null || tint.isBlank()) {
+                throw new IllegalArgumentException("invalid web material sample");
+            }
+            detailOffsets = detailOffsets.clone();
+        }
+
+        @Override
+        public double[] detailOffsets() {
+            return detailOffsets.clone();
+        }
+
+        public String toJson() {
+            final StringBuilder result = new StringBuilder(256)
+                .append("{\"id\":\"").append(json(id))
+                .append("\",\"baseArgb\":").append(Integer.toUnsignedLong(baseArgb))
+                .append(",\"detailOffsets\":[");
+            for (int i = 0; i < detailOffsets.length; i++) {
+                if (i > 0) result.append(',');
+                result.append(detailOffsets[i]);
+            }
+            return result.append("],\"tint\":\"").append(json(tint))
+                .append("\",\"fixedTintArgb\":").append(Integer.toUnsignedLong(fixedTintArgb))
+                .append(",\"patternSalt\":").append(patternSalt).append('}').toString();
+        }
+    }
+
+    public WebMapManifest(
+        final String worldId,
+        final String worldgenVersion,
+        final Long seed,
+        final int predictionVersion,
+        final List<Dimension> dimensions
+    ) {
+        this(worldId, worldgenVersion, seed, predictionVersion, dimensions, List.of());
+    }
+
     public WebMapManifest {
         if (worldId == null || worldId.isBlank()) {
             throw new IllegalArgumentException("worldId cannot be blank");
@@ -41,6 +88,7 @@ public record WebMapManifest(
             throw new IllegalArgumentException("prediction seed and version must be available together");
         }
         dimensions = dimensions == null ? List.of() : List.copyOf(dimensions);
+        materials = materials == null ? List.of() : List.copyOf(materials);
     }
 
     public boolean predictionAvailable() {
@@ -65,6 +113,11 @@ public record WebMapManifest(
             }
             result.append(dimensions.get(i).toJson());
         }
+        result.append("],\"materials\":[");
+        for (int i = 0; i < materials.size(); i++) {
+            if (i > 0) result.append(',');
+            result.append(materials.get(i).toJson());
+        }
         return result.append("]}").toString();
     }
 
@@ -81,7 +134,17 @@ public record WebMapManifest(
             }
             result.append("{\"id\":").append(id)
                 .append(",\"kind\":\"").append(entry.kind().name()).append('"')
+                .append(",\"snowLine\":");
+            final java.util.OptionalInt snowLine = BiomeTable.altitudeSnowLine(id);
+            if (snowLine.isPresent()) {
+                result.append(snowLine.getAsInt());
+            } else {
+                result.append("null");
+            }
+            result
                 .append(",\"waterBiome\":").append(entry.waterBiome())
+                .append(",\"grassTint\":").append(palette.grassTint(id) & 0xFFFFFF)
+                .append(",\"foliageTint\":").append(palette.foliageTint(id) & 0xFFFFFF)
                 .append(",\"surfaceColor\":").append(surfaceColor(entry.kind(), id, palette))
                 .append(",\"canopyColor\":").append(palette.canopyColor(id) & 0xFFFFFF)
                 .append(",\"waterTint\":").append(palette.waterTint(id) & 0xFFFFFF)

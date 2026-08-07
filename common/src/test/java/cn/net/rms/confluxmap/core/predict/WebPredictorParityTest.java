@@ -41,6 +41,10 @@ class WebPredictorParityTest {
         for (int lod = 3; lod <= 4; lod++) {
             assertParity(current, PredictionDimensions.OVERWORLD, lod, wasm, dumpScript);
         }
+        assertParity(
+            current, PredictionDimensions.OVERWORLD, 4, -65_536, -65_536,
+            wasm, dumpScript
+        );
     }
 
     private static void assertParity(
@@ -50,21 +54,33 @@ class WebPredictorParityTest {
         final Path wasm,
         final Path dumpScript
     ) throws Exception {
+        assertParity(version, dimension, lod, 0, 0, wasm, dumpScript);
+    }
+
+    private static void assertParity(
+        final int version,
+        final int dimension,
+        final int lod,
+        final int blockX,
+        final int blockZ,
+        final Path wasm,
+        final Path dumpScript
+    ) throws Exception {
         final BaselineGrid javaGrid = LodSampling.sample(
             new NativeBaselineSampler(
                 version, SEED, dimension, 0
             ),
-            dimension == PredictionDimensions.END, lod, 0, 0
+            dimension == PredictionDimensions.END, lod, blockX, blockZ
         );
         assertNotNull(javaGrid, "Java baseline LOD" + lod);
         final DerivedGrid derived = BaselineDeriver.derive(javaGrid);
         final int[] beforeCanopy = derived.surfaceY.clone();
         final int[] beforeSubCanopy = derived.subSurfaceY.clone();
-        CanopyStylizer.apply(derived, javaGrid, SEED, lod, 0, 0);
+        CanopyStylizer.apply(derived, javaGrid, SEED, lod, blockX, blockZ);
         final Process process = new ProcessBuilder(
             "node", dumpScript.toString(), wasm.toString(),
             Integer.toString(version), Long.toString(SEED), Integer.toString(lod),
-            Integer.toString(dimension)
+            Integer.toString(dimension), Integer.toString(blockX), Integer.toString(blockZ)
         ).redirectErrorStream(true).start();
         int index = 0;
         try (BufferedReader reader = new BufferedReader(

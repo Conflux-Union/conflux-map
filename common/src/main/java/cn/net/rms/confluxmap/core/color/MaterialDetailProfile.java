@@ -75,6 +75,11 @@ public final class MaterialDetailProfile {
         return ShadingPipeline.applyBrightnessMultiplier(argb, 1.0 + offsets[cell]);
     }
 
+    /** Serializable immutable snapshot used by non-Minecraft renderers. */
+    public double[] offsets() {
+        return offsets.clone();
+    }
+
     private static int mix(final int x, final int z, final int salt) {
         int value = salt * 0x9E3779B9;
         value ^= x * 0x85EBCA6B;

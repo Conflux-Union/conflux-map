@@ -1,0 +1,19 @@
+{
+  "worldMap": "World map",
+  "mapControls": "Map controls",
+  "dimension": "Dimension",
+  "mode": "Mode",
+  "modeAll": "All regions",
+  "modeGenerated": "Generated regions",
+  "language": "Language",
+  "connecting": "Connecting…",
+  "connected": "Connected",
+  "loadError": "Map loading failed",
+  "zoomIn": "Zoom in",
+  "zoomOut": "Zoom out",
+  "scale": "Scale: {scale}",
+  "entityPanel": "Players and waypoints",
+  "players": "Players",
+  "noOnlinePlayers": "No online players",
+  "goToPlayer": "Go to {player}"
+}

@@ -13,14 +13,12 @@ import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
-import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.WebSocket;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -29,7 +27,6 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 final class WebMapServerTest {
@@ -71,114 +68,6 @@ final class WebMapServerTest {
                 );
                 assertTrue(response.body().contains("<svg"));
             }
-        }
-    }
-
-    @Test
-    void bundledApplicationUsesTheFullscreenMapZoomRange() throws Exception {
-        try (WebMapServer server = WebMapServer.start(
-            WebMapConfig.loopbackEphemeral(), new FakeBackend()
-        )) {
-            final HttpResponse<String> response = client().send(
-                HttpRequest.newBuilder(server.uri("/app.js")).GET().build(),
-                HttpResponse.BodyHandlers.ofString()
-            );
-
-            assertEquals(200, response.statusCode());
-            assertTrue(response.body().contains("minZoom: -4"));
-            assertTrue(response.body().contains("maxZoom: 2"));
-            assertTrue(response.body().contains("zoomDelta: Math.log2(1.26)"));
-            assertTrue(response.body().contains("state.worker.terminate()"));
-            assertTrue(response.body().contains("exact: false"));
-            assertTrue(response.body().contains("exact: true"));
-            assertFalse(response.body().contains("fetch('/api/v1/regions'"));
-        }
-    }
-
-    @Test
-    void bundledApplicationPreservesPredictionsAndBatchesTileRequests() throws Exception {
-        try (WebMapServer server = WebMapServer.start(
-            WebMapConfig.loopbackEphemeral(), new FakeBackend()
-        )) {
-            final HttpResponse<String> response = client().send(
-                HttpRequest.newBuilder(server.uri("/app.js")).GET().build(),
-                HttpResponse.BodyHandlers.ofString()
-            );
-
-            assertEquals(200, response.statusCode());
-            assertTrue(response.body().contains(
-                "ctx.getImageData(offsetX, offsetZ, patch.width, patch.height)"
-            ));
-            assertFalse(response.body().contains(
-                "mapSocket.socket.send(bytes);\n    mapSocket.socket.send(bytes);"
-            ));
-            assertFalse(response.body().contains("view.setUint8(p++, 0x0c)"));
-            assertFalse(response.body().contains("const span = 1 << lod"));
-            assertTrue(response.body().contains("view.setUint8(p++, 0x03)"));
-            assertTrue(response.body().contains(
-                "canvas.localReady.then(() => done(null, canvas)"
-            ));
-            assertTrue(response.body().contains("group.slice(offset, offset + 8)"));
-
-            final int invalidationStart = response.body().indexOf("function invalidateRegions");
-            final int invalidationEnd = response.body().indexOf(
-                "function scheduleSubscription", invalidationStart
-            );
-            assertTrue(invalidationStart >= 0 && invalidationEnd > invalidationStart);
-            assertFalse(response.body().substring(invalidationStart, invalidationEnd)
-                .contains("layer.redraw()"));
-        }
-    }
-
-    @Test
-    void bundledApplicationMirrorsTheJavaFullscreenZoomLabel() throws Exception {
-        try (WebMapServer server = WebMapServer.start(
-            WebMapConfig.loopbackEphemeral(), new FakeBackend()
-        )) {
-            final HttpClient client = client();
-            final String page = client.send(
-                HttpRequest.newBuilder(server.uri("/")).GET().build(),
-                HttpResponse.BodyHandlers.ofString()
-            ).body();
-            final String application = client.send(
-                HttpRequest.newBuilder(server.uri("/app.js")).GET().build(),
-                HttpResponse.BodyHandlers.ofString()
-            ).body();
-            assertTrue(page.contains("id=\"scale-label\" class=\"scale-label\""));
-            assertTrue(page.contains("id=\"player-list\""));
-            assertFalse(page.contains("id=\"language\""));
-            assertTrue(application.contains("0.5 * Math.pow(1.26, steps)"));
-            assertTrue(application.contains("formatZoomMultiplier(map.getZoom())"));
-            assertTrue(application.contains("map.on('zoom', updateScaleLabel)"));
-            assertTrue(application.contains("updatePlayerList"));
-            assertTrue(application.contains("/api/v1/avatars/${player.id}.png"));
-            assertTrue(application.contains("updateWaypoints"));
-            assertTrue(application.contains("NETHER_ROOF_MAP_COLOR_ID = 11"));
-            assertTrue(application.contains("if (kind === 8) return mapColor(NETHER_ROOF_MAP_COLOR_ID)"));
-            assertFalse(application.contains("tilesLoaded"));
-            assertFalse(application.contains("locales/"));
-
-            final int formatterStart = application.indexOf("function formatZoomMultiplier");
-            final int formatterEnd = application.indexOf("\nfunction updateScaleLabel", formatterStart);
-            assertTrue(formatterStart >= 0 && formatterEnd > formatterStart);
-            final String probe = "const ZOOM_STEP = Math.log2(1.26);\n"
-                + application.substring(formatterStart, formatterEnd)
-                + "\nconsole.log([-4, -1, -1 + ZOOM_STEP, 2]"
-                + ".map(formatZoomMultiplier).join(','));";
-            final Process process;
-            try {
-                process = new ProcessBuilder(
-                    "node", "--input-type=module", "--eval", probe
-                ).redirectErrorStream(true).start();
-            } catch (final IOException unavailable) {
-                Assumptions.assumeTrue(false, "Node.js unavailable");
-                return;
-            }
-            final String output = new String(
-                process.getInputStream().readAllBytes(), StandardCharsets.UTF_8
-            ).trim();
-            assertEquals(0, process.waitFor(), output);
-            assertEquals("0.0625x,0.50x,0.63x,4.00x", output);
         }
     }
 

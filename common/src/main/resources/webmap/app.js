@@ -1,10 +1,24 @@
+import {
+  CACHE_SCHEMA_VERSION,
+  PATCH_MODE_UNCHANGED,
+  cacheTileKey,
+  formatZoomMultiplier,
+  lodForLeafletZoom,
+  localeForPreferences,
+  mapErrorAction,
+  tileZoomForLeafletZoom,
+  patchAction
+} from '/map-core.js';
+import {createMapRenderer} from '/map-renderer.js';
+
 const status = document.querySelector('#status');
 const dimension = document.querySelector('#dimension');
 const mode = document.querySelector('#mode');
+const language = document.querySelector('#language');
 const playerList = document.querySelector('#player-list');
 const playerCount = document.querySelector('#player-count');
 const scaleLabel = document.querySelector('#scale-label');
-const messages = {
+let messages = {
   connecting: 'Connecting…',
   loadError: 'Map loading failed',
   connected: 'Connected',
@@ -14,10 +28,26 @@ const messages = {
 };
 window.addEventListener('unhandledrejection', () => showLoadError());
 window.addEventListener('error', () => showLoadError());
+const locale = localeForPreferences(
+  localStorage.getItem('conflux-map-locale'),
+  navigator.languages ?? [navigator.language]
+);
+messages = await fetch(`/locales/${locale}.json`).then(response => {
+  if (!response.ok) throw new Error(`locale ${response.status}`);
+  return response.json();
+});
+document.documentElement.lang = locale;
+language.value = locale;
+translatePage();
+language.addEventListener('change', () => {
+  localStorage.setItem('conflux-map-locale', language.value);
+  location.reload();
+});
 const manifest = await fetch('/api/v1/manifest', {cache: 'no-store'}).then(response => {
   if (!response.ok) throw new Error(`manifest ${response.status}`);
   return response.json();
 });
+const mapRenderer = createMapRenderer(manifest);
 
 for (const item of manifest.dimensions) {
   const option = document.createElement('option');
@@ -61,30 +91,33 @@ const queuedTileRequests = new Map();
 const inFlightTiles = new Map();
 let tileBatchTimer;
 const database = openDatabase();
-const palette = [
-  '#000000','#7fb238','#f7e9a3','#c7c7c7','#ff0000','#a0a0ff','#a7a7a7','#007c00',
-  '#ffffff','#a4a8b8','#976d4d','#707070','#4040ff','#8f7748','#fffcf5','#d87f33',
-  '#b24cd8','#6699d8','#e5e533','#7fcc19','#f27fa5','#4c4c4c','#999999','#4c7f99',
-  '#7f3fb2','#334cb2','#664c33','#667f33','#993333','#191919','#faee4d','#5cdbd5',
-  '#4a80ff','#00d93a','#815631','#700200','#d1b1a1','#9f5224','#95576c','#706c8a',
-  '#ba8524','#677535','#a04d4e','#392923','#876b62','#575c5c','#7a4958','#4c3e5c',
-  '#4c3223','#4c522a','#8e3c2e','#251610','#bd3031','#943f61','#5c191d','#167e86',
-  '#3a8e8c','#562c3e','#14b485','#646464','#d8af93','#7fa796'
-];
-const NETHER_ROOF_MAP_COLOR_ID = 11;
-const predictionBiomes = new Map(
-  (manifest.predictionBiomes ?? []).map(entry => [entry.id, entry])
-);
-const fallbackPredictionBiome = predictionBiomes.get(-1) ?? {
-  kind: 'LAND', waterBiome: false, surfaceColor: 0x49763b,
-  canopyColor: 0x2f6d1b, waterTint: 0x3f76e4
-};
 
 class RegionLayer extends L.GridLayer {
+  _setView(center, zoom, noPrune, noUpdate) {
+    let tileZoom = tileZoomForLeafletZoom(zoom);
+    if ((this.options.maxZoom !== undefined && tileZoom > this.options.maxZoom)
+      || (this.options.minZoom !== undefined && tileZoom < this.options.minZoom)) {
+      tileZoom = undefined;
+    } else {
+      tileZoom = this._clampZoom(tileZoom);
+    }
+    const tileZoomChanged = this.options.updateWhenZooming && tileZoom !== this._tileZoom;
+    if (!noUpdate || tileZoomChanged) {
+      this._tileZoom = tileZoom;
+      this._abortLoading?.();
+      this._updateLevels();
+      this._resetGrid();
+      if (tileZoom !== undefined) this._update(center);
+      if (!noPrune) this._pruneTiles();
+      this._noPrune = Boolean(noPrune);
+    }
+    this._setZoomTransforms(center, zoom);
+  }
+
   createTile(coords, done) {
     const canvas = L.DomUtil.create('canvas', 'leaflet-tile map-tile');
     canvas.width = canvas.height = 256;
-    const lod = Math.max(0, Math.min(4, -coords.z));
+    const lod = lodForLeafletZoom(coords.z);
     const generation = predictionGeneration;
     canvas.mapTile = {dim: Number(dimension.value), lod, x: coords.x, z: coords.y, generation};
     canvas.localReady = renderTile(canvas, coords.x, coords.y, lod, generation);
@@ -146,7 +179,7 @@ async function renderTile(canvas, tileX, tileZ, lod, generation) {
   }
   await cached;
   if (!tileStillCurrent(canvas, renderDimension, lod, tileX, tileZ, generation)) return;
-  await drawCachedTile(ctx, cacheKey, lod, renderDimension);
+  await drawCachedTile(canvas, cacheKey, lod, renderDimension);
 }
 
 async function syncTile(canvas, tileX, tileZ, lod, generation, force = false) {
@@ -159,31 +192,52 @@ async function syncTile(canvas, tileX, tileZ, lod, generation, force = false) {
   await canvas.localReady;
   const patch = await patchPromise;
   if (!tileStillCurrent(canvas, dimIndex, lod, tileX, tileZ, generation)) return;
-  if (patch.mode === 3) {
-    await discardRegion(cacheKey);
-    validated.add(cacheKey);
+  const action = patchAction(patch.mode, mode.value);
+  if (action.retry) {
+    setTimeout(() => {
+      if (!tileStillCurrent(canvas, dimIndex, lod, tileX, tileZ, generation)) return;
+      syncTile(canvas, tileX, tileZ, lod, generation, true).catch(error => {
+        console.warn('Map correction retry failed', error);
+        if (error.retry !== false) scheduleVisibleTileSync();
+      });
+    }, 500);
     return;
   }
-  const compressed = patch.mode === 0 ? compressedCache.get(cacheKey) : patch.body;
-  const decoded = compressed ? await decodeTilePatch(compressed) : null;
-  if (decoded) {
-    patchCache.set(cacheKey, decoded);
-    drawPatch(
-      canvas.getContext('2d'), decoded, 0, 0, lod, isNetherDimension(dimIndex)
-    );
+  if (action.discardAuthority) {
+    await discardRegion(cacheKey);
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (action.replacement === 'prediction') {
+      await drawPrediction(canvas, ctx, tileX, tileZ, lod, dimIndex, generation);
+    }
+    if (action.validate) validated.add(cacheKey);
+    return;
   }
-  revisions.set(cacheKey, patch.revision);
-  if (patch.mode !== 0 && patch.body.length) {
+  if (action.applyBody) {
+    const compressed = patch.mode === PATCH_MODE_UNCHANGED
+      ? compressedCache.get(cacheKey) : patch.body;
+    const decoded = compressed ? await mapRenderer.decodeTilePatch(compressed) : null;
+    if (decoded) {
+      patchCache.set(cacheKey, decoded);
+      const span = 256 << lod;
+      mapRenderer.drawCorrectedTile(
+        canvas.getContext('2d'), canvas.predicted ?? null, decoded, lod,
+        isNetherDimension(dimIndex), tileX * span, tileZ * span
+      );
+    }
+  }
+  if (action.commitRevision) revisions.set(cacheKey, patch.revision);
+  if (action.persistBody && patch.body.length) {
     compressedCache.set(cacheKey, patch.body);
     persistRegion(cacheKey, patch.revision, patch.body);
   }
-  validated.add(cacheKey);
+  if (action.validate) validated.add(cacheKey);
 }
 
 function scheduleVisibleTileSync() {
   clearTimeout(visibleTileSyncTimer);
   visibleTileSyncTimer = setTimeout(() => {
-    const activeLod = Math.max(0, Math.min(4, -Math.round(map.getZoom())));
+    const activeLod = lodForLeafletZoom(map.getZoom());
     for (const canvas of layer.getContainer().querySelectorAll('canvas.map-tile')) {
       const tile = canvas.mapTile;
       if (!tile || tile.lod !== activeLod || !tileStillCurrent(
@@ -191,23 +245,28 @@ function scheduleVisibleTileSync() {
       )) continue;
       syncTile(canvas, tile.x, tile.z, tile.lod, tile.generation).catch(error => {
         console.warn('Map correction sync failed', error);
-        scheduleVisibleTileSync();
+        if (error.retry !== false) scheduleVisibleTileSync();
       });
     }
   }, 500);
 }
 
-async function drawCachedTile(ctx, cacheKey, lod, dimIndex) {
+async function drawCachedTile(canvas, cacheKey, lod, dimIndex) {
   let decoded = patchCache.get(cacheKey);
   if (!decoded) {
     const compressed = compressedCache.get(cacheKey);
     if (compressed) {
-      decoded = await decodeTilePatch(compressed);
+      decoded = await mapRenderer.decodeTilePatch(compressed);
       patchCache.set(cacheKey, decoded);
     }
   }
   if (!decoded) return false;
-  drawPatch(ctx, decoded, 0, 0, lod, isNetherDimension(dimIndex));
+  const tile = canvas.mapTile;
+  const span = 256 << lod;
+  mapRenderer.drawCorrectedTile(
+    canvas.getContext('2d'), canvas.predicted ?? null, decoded, lod,
+    isNetherDimension(dimIndex), tile.x * span, tile.z * span
+  );
   return true;
 }
 
@@ -335,13 +394,18 @@ function handleMapFrame(bytes) {
   } else if (type === 0x0f) {
     invalidateRegions(frame);
   } else if (type === 0x06) {
-    const error = new Error('map request was rejected');
+    const code = frame.u8();
+    const detail = new TextDecoder().decode(frame.bytes(frame.u16()));
+    const action = mapErrorAction(code);
+    const error = new Error(detail || 'map request was rejected');
+    error.retry = action.retry;
     for (const pending of pendingRequests.values()) {
       clearTimeout(pending.timer);
       pending.reject(error);
     }
     pendingRequests.clear();
-    showLoadError();
+    if (action.showLoadError) showLoadError();
+    if (action.retry) scheduleVisibleTileSync();
   }
 }
 
@@ -379,7 +443,7 @@ function invalidateRegions(frame) {
     if (!tile || !invalidTiles.has(tileKey(tile.dim, tile.lod, tile.x, tile.z))) continue;
     syncTile(canvas, tile.x, tile.z, tile.lod, tile.generation, true).catch(error => {
       console.warn('Map correction refresh failed', error);
-      scheduleVisibleTileSync();
+      if (error.retry !== false) scheduleVisibleTileSync();
     });
   }
 }
@@ -397,7 +461,7 @@ async function sendSubscription() {
   const minChunkZ = Math.floor(-bounds.getNorth() / 16);
   const maxChunkZ = Math.floor(-bounds.getSouth() / 16);
   if (maxChunkX - minChunkX >= 4096 || maxChunkZ - minChunkZ >= 4096) return;
-  const lod = Math.max(0, Math.min(4, -Math.round(map.getZoom())));
+  const lod = lodForLeafletZoom(map.getZoom());
   const bytes = new Uint8Array(20);
   const view = new DataView(bytes.buffer);
   let p = 0;
@@ -457,7 +521,7 @@ function updatePlayerList(players) {
   if (!players.length) {
     const empty = document.createElement('p');
     empty.className = 'empty-state';
-    empty.textContent = 'No online players';
+    empty.textContent = message('noOnlinePlayers');
     playerList.append(empty);
     return;
   }
@@ -465,7 +529,7 @@ function updatePlayerList(players) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'player-row';
-    button.title = `Go to ${player.name}`;
+    button.title = message('goToPlayer', {player: player.name});
     button.addEventListener('click', () => focusLocation(player));
     const avatar = document.createElement('span');
     avatar.className = 'player-list-avatar';
@@ -710,368 +774,29 @@ async function drawPrediction(canvas, ctx, tileX, tileZ, lod, dimIndex, generati
   };
   let predicted = await predictor.request({...request, exact: false}, generation, canvas);
   if (!predicted || !canvas.isConnected || generation !== predictionGeneration) return false;
-  drawPredictedTile(ctx, predicted, lod, isNetherDimension(dimIndex));
+  canvas.predicted = predicted;
+  mapRenderer.drawPredictedTile(
+    ctx, predicted, lod, isNetherDimension(dimIndex), tileX * span, tileZ * span
+  );
   if ((nativeDimension === 0 && lod <= 1) || nativeDimension === 1) {
     predicted = await predictor.request({...request, exact: true}, generation, canvas);
     if (!predicted || !canvas.isConnected || generation !== predictionGeneration) return false;
-    drawPredictedTile(ctx, predicted, lod, isNetherDimension(dimIndex));
+    canvas.predicted = predicted;
+    mapRenderer.drawPredictedTile(
+      ctx, predicted, lod, isNetherDimension(dimIndex), tileX * span, tileZ * span
+    );
   }
   return true;
 }
-
-function drawPredictedTile(ctx, predicted, lod, netherRoof) {
-  const image = ctx.createImageData(256, 256);
-  const size = 258;
-  for (let z = 0; z < 256; z++) for (let x = 0; x < 256; x++) {
-    const gridIndex = (z + 1) * size + x + 1;
-    const color = predictedColor(predicted, gridIndex, lod, netherRoof);
-    const pixel = (z * 256 + x) * 4;
-    if (color < 0) {
-      image.data[pixel + 3] = 0;
-      continue;
-    }
-    image.data[pixel] = color >> 16;
-    image.data[pixel + 1] = (color >> 8) & 255;
-    image.data[pixel + 2] = color & 255;
-    image.data[pixel + 3] = 255;
-  }
-  ctx.putImageData(image, 0, 0);
-}
-
-function predictedColor(predicted, index, lod, netherRoof) {
-  if (netherRoof) return applyNetherLight(mapColor(NETHER_ROOF_MAP_COLOR_ID), 0);
-  if ((predicted.surfaces[index] & 2) !== 0) return -1;
-  const biome = predictionBiomes.get(predicted.biomes[index]) ?? fallbackPredictionBiome;
-  const water = (predicted.surfaces[index] & 1) !== 0;
-  const depth = predicted.surfaces[index] >>> 8;
-  const surfaceHeight = water ? 62 : predicted.heights[index] + predicted.canopies[index];
-  let color = predicted.subBiomes.length
-    ? averagedSubColor(predicted, index)
-    : water ? predictedWaterColor(biome, depth, predicted, index, lod)
-      : predicted.canopies[index] > 0 ? biome.canopyColor : biome.surfaceColor;
-  color = applyHeightShade(color, surfaceHeight);
-  return applyBrightness(color, reliefMultiplier(predicted, index, lod, false));
-}
-
-function averagedSubColor(predicted, index) {
-  let red = 0, green = 0, blue = 0;
-  for (let sample = 0; sample < 4; sample++) {
-    const subIndex = index * 4 + sample;
-    const biome = predictionBiomes.get(predicted.subBiomes[subIndex])
-      ?? fallbackPredictionBiome;
-    const surface = predicted.subSurfaces[subIndex];
-    const color = (surface & 1) !== 0
-      ? predictedWaterBaseColor(biome, surface >>> 8, 1)
-      : predicted.subCanopies[subIndex] > 0 ? biome.canopyColor : biome.surfaceColor;
-    red += color >> 16;
-    green += (color >> 8) & 255;
-    blue += color & 255;
-  }
-  return Math.floor(red / 4) << 16 | Math.floor(green / 4) << 8
-    | Math.floor(blue / 4);
-}
-
-function predictedWaterColor(biome, depth, predicted, index, lod) {
-  const floorRelief = reliefMultiplier(predicted, index, lod, true);
-  return predictedWaterBaseColor(biome, depth, floorRelief);
-}
-
-function predictedWaterBaseColor(biome, depth, floorRelief) {
-  const tint = biome.waterBiome ? 0x3f76e4 : biome.waterTint;
-  const water = multiplyColor(0xcfe0f2, tint);
-  const floorBrightness = Math.max(0.25, 1 - depth / 48) * floorRelief;
-  const floor = applyBrightness(0xc2a876, floorBrightness);
-  return blendOver(floor, water, 0xcc);
-}
-
-function reliefMultiplier(predicted, index, lod, floorPlane) {
-  if (lod === 0) {
-    if (predictionVoid(predicted, index + 257) || predictionVoid(predicted, index)) return 1;
-    const lit = predictionHeight(predicted, index + 257, floorPlane);
-    const center = predictionHeight(predicted, index, floorPlane);
-    const rise = (lit - center) / 2;
-    return 1 + 0.3 * Math.max(-1, Math.min(1, rise));
-  }
-  const neighbors = [index - 1, index + 258, index + 257,
-    index + 1, index - 258, index - 257];
-  if (neighbors.some(neighbor => predictionVoid(predicted, neighbor))) return 1;
-  const lit = (
-    predictionHeight(predicted, index - 1, floorPlane)
-    + predictionHeight(predicted, index + 258, floorPlane)
-    + predictionHeight(predicted, index + 257, floorPlane)
-  ) / 3;
-  const dark = (
-    predictionHeight(predicted, index + 1, floorPlane)
-    + predictionHeight(predicted, index - 258, floorPlane)
-    + predictionHeight(predicted, index - 257, floorPlane)
-  ) / 3;
-  const rise = (lit - dark) / (2 * (1 << lod));
-  return 1 + 0.3 * Math.max(-1, Math.min(1, rise));
-}
-
-function predictionVoid(predicted, index) {
-  return (predicted.surfaces[index] & 2) !== 0;
-}
-
-function predictionHeight(predicted, index, floorPlane) {
-  const water = (predicted.surfaces[index] & 1) !== 0;
-  if (water) return floorPlane ? predicted.heights[index] : 62;
-  return predicted.heights[index] + predicted.canopies[index];
-}
-
-function applyHeightShade(color, height) {
-  const difference = height - 80;
-  const shade = Math.log10(Math.abs(difference) / 8 + 1) / 3 * 0.65;
-  return applyShade(color, difference < 0 ? -shade : shade);
-}
-
-function applyShade(color, shade) {
-  return shadeColor(
-    color >> 16, shade
-  ) << 16 | shadeColor((color >> 8) & 255, shade) << 8
-    | shadeColor(color & 255, shade);
-}
-
-function shadeColor(channel, shade) {
-  return clampColor(Math.round(shade > 0
-    ? channel + shade * (255 - channel) : channel * (1 + shade)));
-}
-
-function applyBrightness(color, factor) {
-  return clampColor(Math.round((color >> 16) * factor)) << 16
-    | clampColor(Math.round(((color >> 8) & 255) * factor)) << 8
-    | clampColor(Math.round((color & 255) * factor));
-}
-
-function multiplyColor(base, tint) {
-  return Math.floor((base >> 16) * (tint >> 16) / 255) << 16
-    | Math.floor(((base >> 8) & 255) * ((tint >> 8) & 255) / 255) << 8
-    | Math.floor((base & 255) * (tint & 255) / 255);
-}
-
-function blendOver(bottom, top, alpha) {
-  const inverse = 255 - alpha;
-  return Math.floor(((top >> 16) * alpha + (bottom >> 16) * inverse) / 255) << 16
-    | Math.floor((((top >> 8) & 255) * alpha + ((bottom >> 8) & 255) * inverse) / 255) << 8
-    | Math.floor(((top & 255) * alpha + (bottom & 255) * inverse) / 255);
-}
-
-function clampColor(channel) {
-  return Math.max(0, Math.min(255, channel));
-}
-
-async function decodeTilePatch(compressed) {
-  const stream = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('deflate'));
-  const raw = new Uint8Array(await new Response(stream).arrayBuffer());
-  const r = new Reader(raw);
-  const version = r.u8();
-  if (version < 3 || version > 5) throw new Error(`unsupported tile codec ${version}`);
-  const evaluated = readSparseTileMask(r);
-  const difference = readSparseTileMask(r);
-  const indexes = bits(difference);
-  const count = indexes.length;
-  const biomes = r.bytes(count);
-  const heights = new Int32Array(count);
-  let height = 0;
-  for (let i = 0; i < count; i++) { height += r.zigzag(); heights[i] = height; }
-  const kinds = r.bytes(count), colors = r.bytes(count), fluids = r.bytes(count);
-  const floorColors = r.bytes(count);
-  const materialIds = new Array(count).fill('');
-  const floorMaterialIds = new Array(count).fill('');
-  if (version >= 5) {
-    const decoder = new TextDecoder();
-    const materials = new Array(r.u16());
-    for (let i = 0; i < materials.length; i++) {
-      materials[i] = decoder.decode(r.bytes(r.u16()));
-    }
-    readMaterialPlane(r, materials, materialIds);
-    readMaterialPlane(r, materials, floorMaterialIds);
-  }
-  const lights = new Uint8Array(evaluated.length * 8);
-  if (version >= 4) {
-    const evaluatedIndexes = bits(evaluated);
-    for (let i = 0; i < evaluatedIndexes.length; i++) r.zigzagLong();
-    for (const index of evaluatedIndexes) lights[index] = r.u8();
-  }
-  return {
-    width: 256, height: 256, indexes, biomes, heights, kinds, colors, fluids,
-    floorColors, materialIds, floorMaterialIds, lights
-  };
-}
-
-function readMaterialPlane(r, materials, output) {
-  for (let i = 0; i < output.length; i++) {
-    const index = r.u16();
-    if (index >= materials.length) throw new Error(`material index ${index} out of range`);
-    output[i] = materials[index];
-  }
-}
-
-function drawPatch(ctx, patch, offsetX, offsetZ, lod = 0, nether = false) {
-  const image = ctx.getImageData(offsetX, offsetZ, patch.width, patch.height);
-  const pixels = patch.width * patch.height;
-  const biomes = new Uint8Array(pixels);
-  const heights = new Int32Array(pixels);
-  const kinds = new Uint8Array(pixels);
-  const colors = new Uint8Array(pixels).fill(255);
-  const fluids = new Uint8Array(pixels);
-  const floorColors = new Uint8Array(pixels).fill(255);
-  const present = new Uint8Array(pixels);
-  for (let i = 0; i < patch.indexes.length; i++) {
-    const pixel = patch.indexes[i];
-    biomes[pixel] = patch.biomes[i];
-    heights[pixel] = patch.heights[i];
-    kinds[pixel] = patch.kinds[i];
-    colors[pixel] = patch.colors[i];
-    fluids[pixel] = patch.fluids[i];
-    floorColors[pixel] = patch.floorColors?.[i] ?? 255;
-    present[pixel] = 1;
-  }
-  const planes = {
-    width: patch.width, height: patch.height, biomes, heights, kinds, colors,
-    fluids, floorColors, present
-  };
-  for (const pixel of patch.indexes) {
-    const kind = kinds[pixel];
-    if (kind === 0 || kind === 9) continue;
-    let color = authoritativeBaseColor(planes, pixel, lod);
-    if (!nether) color = applyHeightShade(color, heights[pixel]);
-    color = applyBrightness(color, authoritativeRelief(planes, pixel, lod, false));
-    if (nether) color = applyNetherLight(color, patch.lights[pixel]);
-    image.data[pixel * 4] = color >> 16;
-    image.data[pixel * 4 + 1] = (color >> 8) & 255;
-    image.data[pixel * 4 + 2] = color & 255;
-    image.data[pixel * 4 + 3] = 255;
-  }
-  ctx.putImageData(image, offsetX, offsetZ);
-}
-
-function authoritativeBaseColor(planes, pixel, lod) {
-  const biome = predictionBiomes.get(planes.biomes[pixel]) ?? fallbackPredictionBiome;
-  if (planes.kinds[pixel] === 2) {
-    const tint = biome.waterBiome ? 0x3f76e4 : biome.waterTint;
-    const water = multiplyColor(0xcfe0f2, tint);
-    const floorId = planes.floorColors[pixel];
-    const floorBase = paintsLiteralMapColor(floorId)
-      ? mapColor(floorId) : 0xc2a876;
-    const depthBrightness = Math.max(0.25, 1 - planes.fluids[pixel] / 48);
-    const floor = applyBrightness(
-      scaleColor(floorBase, depthBrightness),
-      authoritativeRelief(planes, pixel, lod, true)
-    );
-    return blendOver(floor, water, 0xcc);
-  }
-  const mapColorId = planes.colors[pixel];
-  if (paintsLiteralMapColor(mapColorId)) return mapColor(mapColorId);
-  return authoritativeKindColor(planes.kinds[pixel], biome);
-}
-
-function authoritativeKindColor(kind, biome) {
-  if (kind === 8) return mapColor(NETHER_ROOF_MAP_COLOR_ID);
-  if (kind === 4) return biome.canopyColor;
-  if (kind === 5) return 0xf7faff;
-  if (kind === 6) return 0xa4c6e8;
-  if (kind === 7) return 0xddce9b;
-  return biome.surfaceColor;
-}
-
-function authoritativeRelief(planes, pixel, lod, floorPlane) {
-  const x = pixel % planes.width;
-  const z = Math.floor(pixel / planes.width);
-  if (lod === 0) {
-    const lit = authoritativeHeight(planes, x - 1, z + 1, floorPlane);
-    const center = authoritativeHeight(planes, x, z, floorPlane);
-    if (lit === null || center === null) return 1;
-    return 1 + 0.3 * Math.max(-1, Math.min(1, (lit - center) / 2));
-  }
-  const lit = [
-    authoritativeHeight(planes, x - 1, z, floorPlane),
-    authoritativeHeight(planes, x, z + 1, floorPlane),
-    authoritativeHeight(planes, x - 1, z + 1, floorPlane)
-  ];
-  const dark = [
-    authoritativeHeight(planes, x + 1, z, floorPlane),
-    authoritativeHeight(planes, x, z - 1, floorPlane),
-    authoritativeHeight(planes, x + 1, z - 1, floorPlane)
-  ];
-  if ([...lit, ...dark].some(height => height === null)) return 1;
-  const litMean = (lit[0] + lit[1] + lit[2]) / 3;
-  const darkMean = (dark[0] + dark[1] + dark[2]) / 3;
-  const rise = (litMean - darkMean) / (2 * (1 << lod));
-  return 1 + 0.3 * Math.max(-1, Math.min(1, rise));
-}
-
-function authoritativeHeight(planes, x, z, floorPlane) {
-  if (x < 0 || x >= planes.width || z < 0 || z >= planes.height) return null;
-  const pixel = z * planes.width + x;
-  const kind = planes.kinds[pixel];
-  if (!planes.present[pixel] || kind === 0 || kind === 9) return null;
-  return planes.heights[pixel] - (floorPlane && kind === 2 ? planes.fluids[pixel] : 0);
-}
-
-function paintsLiteralMapColor(id) { return id !== 255 && id !== 1 && id !== 7; }
-function mapColor(id) {
-  const value = palette[id];
-  return value ? parseInt(value.slice(1), 16) : 0x969696;
-}
-
-function scaleColor(color, factor) {
-  return Math.floor((color >> 16) * factor) << 16
-    | Math.floor(((color >> 8) & 255) * factor) << 8
-    | Math.floor((color & 255) * factor);
-}
-
-function applyNetherLight(color, blockLevel) {
-  const ambient = netherLightTint(0);
-  const base = multiplyColor(color, ambient);
-  if (!blockLevel) return base;
-  const lit = netherLightTint(blockLevel);
-  return Math.min(255, Math.round((base >> 16) * ((lit >> 16) / (ambient >> 16)))) << 16
-    | Math.min(255, Math.round(((base >> 8) & 255) * (((lit >> 8) & 255) / ((ambient >> 8) & 255)))) << 8
-    | Math.min(255, Math.round((base & 255) * ((lit & 255) / (ambient & 255))));
-}
-
-function netherLightTint(blockLevel) {
-  const strength = (blockLevel / 15) / (4 - 3 * (blockLevel / 15)) * 1.5;
-  let red = strength;
-  let green = strength * ((strength * 0.6 + 0.4) * 0.6 + 0.4);
-  let blue = strength * (strength * strength * 0.6 + 0.4);
-  red = mix(red, 1, 0.1);
-  green = mix(green, 1, 0.1);
-  blue = mix(blue, 1, 0.1);
-  red = mix(0.3 + red * 0.7, 0.75, 0.04);
-  green = mix(0.3 + green * 0.7, 0.75, 0.04);
-  blue = mix(0.3 + blue * 0.7, 0.75, 0.04);
-  return clampColor(Math.round(Math.min(1, red) * 255)) << 16
-    | clampColor(Math.round(Math.min(1, green) * 255)) << 8
-    | clampColor(Math.round(Math.min(1, blue) * 255));
-}
-
-function mix(value, target, amount) { return value + (target - value) * amount; }
 
 function isNetherDimension(dimIndex) {
   return manifest.dimensions.find(item => item.index === dimIndex)?.id
     === 'minecraft:the_nether';
 }
 
-function readSparseTileMask(r) {
-  const coarse = r.bytes(32);
-  const out = new Uint8Array(8192);
-  for (let coarseIndex = 0; coarseIndex < 256; coarseIndex++) {
-    if (!(coarse[coarseIndex >> 3] & (1 << (coarseIndex & 7)))) continue;
-    const fine = r.bytes(32);
-    for (let fineIndex = 0; fineIndex < 256; fineIndex++) {
-      if (!(fine[fineIndex >> 3] & (1 << (fineIndex & 7)))) continue;
-      const x = ((coarseIndex & 15) << 4) | (fineIndex & 15);
-      const z = ((coarseIndex >> 4) << 4) | (fineIndex >> 4);
-      const pixel = (z << 8) | x;
-      out[pixel >> 3] |= 1 << (pixel & 7);
-    }
-  }
-  return out;
+function tileKey(dim,lod,tileX,tileZ) {
+  return cacheTileKey(manifest, dim, lod, tileX, tileZ);
 }
-function bits(mask) { const out=[]; for(let i=0;i<mask.length*8;i++) if(mask[i>>3]&(1<<(i&7))) out.push(i); return out; }
-function tileKey(dim,lod,tileX,tileZ) { return `tile:${dim}:${lod}:${tileX}:${tileZ}`; }
 function tileStillCurrent(canvas, dim, lod, tileX, tileZ, generation) {
   const tile = canvas.mapTile;
   return canvas.isConnected && generation === predictionGeneration
@@ -1100,6 +825,14 @@ function message(key, values = {}) {
     messages[key] ?? key
   );
 }
+function translatePage() {
+  for (const element of document.querySelectorAll('[data-i18n]')) {
+    element.textContent = message(element.dataset.i18n);
+  }
+  for (const element of document.querySelectorAll('[data-i18n-aria-label]')) {
+    element.setAttribute('aria-label', message(element.dataset.i18nAriaLabel));
+  }
+}
 function localizeZoomControl() {
   const zoomIn = map.zoomControl._zoomInButton;
   const zoomOut = map.zoomControl._zoomOutButton;
@@ -1107,15 +840,6 @@ function localizeZoomControl() {
   zoomIn.setAttribute('aria-label', message('zoomIn'));
   zoomOut.title = message('zoomOut');
   zoomOut.setAttribute('aria-label', message('zoomOut'));
-}
-function formatZoomMultiplier(leafletZoom) {
-  const steps = Math.round((leafletZoom + 1) / ZOOM_STEP);
-  const multiplier = Math.max(0.0625, Math.min(4, 0.5 * Math.pow(1.26, steps)));
-  const fixedPrecision = multiplier.toFixed(4);
-  const minimumLength = fixedPrecision.indexOf('.') + 3;
-  let length = fixedPrecision.length;
-  while (length > minimumLength && fixedPrecision.charAt(length - 1) === '0') length--;
-  return `${fixedPrecision.slice(0, length)}x`;
 }
 function updateScaleLabel() {
   scaleLabel.textContent = message('scale', {
@@ -1135,7 +859,9 @@ function showLoadError() {
 
 function openDatabase() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(`conflux-map-${manifest.worldId}`, 1);
+    const request = indexedDB.open(
+      `conflux-map-${manifest.worldId}-v${CACHE_SCHEMA_VERSION}`, 1
+    );
     request.onupgradeneeded = () => request.result.createObjectStore('regions');
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);

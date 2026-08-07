@@ -40,15 +40,13 @@ final class LiveChunkSummaryTracker {
     private final Map<LoadedKey, WorldChunk> loadedChunks = new HashMap<>();
     private final ArrayDeque<LoadedKey> refreshQueue = new ArrayDeque<>();
     private final Set<LoadedKey> queuedForRefresh = new HashSet<>();
-    private final ArrayDeque<LoadedKey> dirtyQueue = new ArrayDeque<>();
-    private final Set<LoadedKey> queuedDirty = new HashSet<>();
+    private final LiveDirtyQueue<LoadedKey> dirtyChunks = new LiveDirtyQueue<>();
     private final Set<LiveKey> activeChunks = new HashSet<>();
     private final Map<PendingRegionKey, Map<Integer, PendingChunk>> pendingRegions = new LinkedHashMap<>();
     private final ConcurrentLinkedQueue<LiveDemand> incomingDemands = new ConcurrentLinkedQueue<>();
     private final List<LiveDemand> activeDemands = new ArrayList<>();
     private final Map<UUID, LiveDemand> watchedDemands = new HashMap<>();
     private final Map<ServerWorld, Integer> dimensionIndices = new HashMap<>();
-    private volatile boolean acceptsDirtySignals;
 
     private record LoadedKey(ServerWorld world, long chunkPos) {
     }
@@ -106,13 +104,8 @@ final class LiveChunkSummaryTracker {
     }
 
     void onChunkDirty(final ServerWorld world, final WorldChunk chunk) {
-        if (!acceptsDirtySignals) {
-            return;
-        }
         final LoadedKey loaded = trackLoaded(world, chunk);
-        if (queuedDirty.add(loaded)) {
-            dirtyQueue.addFirst(loaded);
-        }
+        dirtyChunks.mark(loaded);
     }
 
     void onChunkUnload(final ServerWorld world, final WorldChunk chunk) {
@@ -122,7 +115,7 @@ final class LiveChunkSummaryTracker {
         capture(world, chunk);
         final LoadedKey loaded = new LoadedKey(world, chunkLong(pos));
         loadedChunks.remove(loaded);
-        queuedDirty.remove(loaded);
+        dirtyChunks.remove(loaded);
         final String dimension = dimension(world);
         activeChunks.remove(new LiveKey(dimension, chunkX, chunkZ));
         final SummaryCodec.Chunk summary = summaries.get(dimension, chunkX, chunkZ);
@@ -132,7 +125,6 @@ final class LiveChunkSummaryTracker {
     }
 
     void nominate(final MapViewReqC2S request, final long nowNanos) {
-        acceptsDirtySignals = true;
         final long chunksPerTile = 16L << request.lod();
         final long expiresAt = nowNanos + LIVE_DEMAND_TTL_NANOS;
         for (final MapViewReqC2S.TileReq tile : request.tiles()) {
@@ -151,7 +143,6 @@ final class LiveChunkSummaryTracker {
     }
 
     void nominate(final MapRegionViewReqC2S request, final long nowNanos) {
-        acceptsDirtySignals = true;
         final long expiresAt = nowNanos + LIVE_DEMAND_TTL_NANOS;
         for (final MapRegionViewReqC2S.RegionReq region : request.regions()) {
             final cn.net.rms.confluxmap.core.util.ChunkRegionSlice slice = region.slice();
@@ -170,7 +161,6 @@ final class LiveChunkSummaryTracker {
             watchedDemands.remove(player);
             return true;
         }
-        acceptsDirtySignals = true;
         final long chunksPerTile = 16L << request.lod();
         final long minX = (long) request.minTileX() * chunksPerTile;
         final long minZ = (long) request.minTileZ() * chunksPerTile;
@@ -191,7 +181,6 @@ final class LiveChunkSummaryTracker {
             watchedDemands.remove(player);
             return true;
         }
-        acceptsDirtySignals = true;
         watchedDemands.put(player, new LiveDemand(
             request.dimIndex(),
             request.minChunkX(), request.minChunkZ(),
@@ -248,15 +237,13 @@ final class LiveChunkSummaryTracker {
         loadedChunks.clear();
         refreshQueue.clear();
         queuedForRefresh.clear();
-        dirtyQueue.clear();
-        queuedDirty.clear();
+        dirtyChunks.clear();
         activeChunks.clear();
         pendingRegions.clear();
         incomingDemands.clear();
         activeDemands.clear();
         watchedDemands.clear();
         dimensionIndices.clear();
-        acceptsDirtySignals = false;
         summaries.clear();
     }
 
@@ -267,7 +254,6 @@ final class LiveChunkSummaryTracker {
         }
         activeDemands.removeIf(demand -> nowNanos >= demand.expiresAtNanos());
         if (activeDemands.isEmpty() && watchedDemands.isEmpty()) {
-            acceptsDirtySignals = false;
             return;
         }
         final int available = refreshQueue.size();
@@ -302,27 +288,32 @@ final class LiveChunkSummaryTracker {
     }
 
     private int refreshDirtyChunks(final long nowNanos, final int budget) {
-        final int available = dirtyQueue.size();
-        final int inspectionBudget = Math.min(available, MAX_LIVE_INSPECTIONS_PER_TICK);
         int captured = 0;
-        for (int inspected = 0; inspected < inspectionBudget && captured < budget; inspected++) {
-            final LoadedKey key = dirtyQueue.removeFirst();
+        while (captured < budget) {
+            final LoadedKey key = dirtyChunks.pollMatching(candidate -> {
+                final WorldChunk candidateChunk = loadedChunks.get(candidate);
+                if (candidateChunk == null) {
+                    return true;
+                }
+                final Integer candidateDimension = dimensionIndices.get(candidate.world());
+                if (candidateDimension == null) {
+                    return false;
+                }
+                final ChunkPos candidatePos = candidateChunk.getPos();
+                return isDemanded(
+                    candidateDimension,
+                    chunkX(candidatePos),
+                    chunkZ(candidatePos),
+                    nowNanos
+                );
+            }, MAX_LIVE_INSPECTIONS_PER_TICK);
+            if (key == null) {
+                break;
+            }
             final WorldChunk chunk = loadedChunks.get(key);
-            if (chunk == null || !queuedDirty.contains(key)) {
-                queuedDirty.remove(key);
+            if (chunk == null) {
                 continue;
             }
-            final Integer dimensionIndex = dimensionIndices.get(key.world());
-            if (dimensionIndex == null) {
-                dirtyQueue.addLast(key);
-                continue;
-            }
-            final ChunkPos pos = chunk.getPos();
-            if (!isDemanded(dimensionIndex, chunkX(pos), chunkZ(pos), nowNanos)) {
-                dirtyQueue.addLast(key);
-                continue;
-            }
-            queuedDirty.remove(key);
             capture(key.world(), chunk);
             captured++;
         }

@@ -9,26 +9,32 @@
   <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-  <main id="map" aria-label="World map"></main>
-  <section class="controls" aria-label="Map controls">
+  <main id="map" aria-label="World map" data-i18n-aria-label="worldMap"></main>
+  <section class="controls" aria-label="Map controls" data-i18n-aria-label="mapControls">
     <strong>Conflux Map</strong>
-    <label>Dimension <select id="dimension"></select></label>
-    <label>Mode
+    <label><span data-i18n="dimension">Dimension</span> <select id="dimension"></select></label>
+    <label><span data-i18n="mode">Mode</span>
       <select id="mode">
-        <option value="all">All regions</option>
-        <option value="generated">Generated regions</option>
+        <option value="all" data-i18n="modeAll">All regions</option>
+        <option value="generated" data-i18n="modeGenerated">Generated regions</option>
       </select>
     </label>
-    <span id="status" role="status">Connecting…</span>
+    <label><span data-i18n="language">Language</span>
+      <select id="language">
+        <option value="en">English</option>
+        <option value="zh-CN">简体中文</option>
+      </select>
+    </label>
+    <span id="status" role="status" data-i18n="connecting">Connecting…</span>
   </section>
-  <aside id="entity-panel" class="entity-panel" aria-label="Players and waypoints">
+  <aside id="entity-panel" class="entity-panel" aria-label="Players and waypoints" data-i18n-aria-label="entityPanel">
     <div class="panel-header">
-      <strong>Players</strong>
+      <strong data-i18n="players">Players</strong>
       <span id="player-count" class="panel-count">0</span>
     </div>
     <div id="player-list" class="player-list" aria-live="polite"></div>
   </aside>
-  <output id="scale-label" class="scale-label">Scale: 0.50x</output>
+  <output id="scale-label" class="scale-label" data-i18n="scale">Scale: 0.50x</output>
   <script src="/vendor/leaflet.js"></script>
   <script type="module" src="/app.js"></script>
 </body>

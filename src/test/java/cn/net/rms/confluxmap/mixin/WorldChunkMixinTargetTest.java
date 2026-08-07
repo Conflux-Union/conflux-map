@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import cn.net.rms.confluxmap.server.ServerChunkDirtyHandler;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -84,6 +85,16 @@ final class WorldChunkMixinTargetTest {
             }, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
         }
         assertTrue(marksDirty.get());
+    }
+
+    @Test
+    void packagedServerMixinConfigurationEnablesTheWorldChunkDirtyHook() throws IOException {
+        try (InputStream input = WorldChunkMixinTargetTest.class.getClassLoader()
+            .getResourceAsStream("confluxmap.mixins.json")) {
+            assertNotNull(input, "packaged mixin configuration");
+            final String configuration = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+            assertTrue(configuration.contains("\"WorldChunkMixin\""), configuration);
+        }
     }
 
     private static InputStream mixinClass() {

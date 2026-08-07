@@ -7,10 +7,12 @@ const version = Number(process.argv[3]);
 const seed = BigInt(process.argv[4]);
 const lod = Number(process.argv[5]);
 const dimension = Number(process.argv[6]);
+const blockX = Number(process.argv[7] ?? 0);
+const blockZ = Number(process.argv[8] ?? 0);
 if (instance.exports.cfxWebInit(version, seed, dimension, 0) !== 0) {
   throw new Error('predictor initialization failed');
 }
-if (instance.exports.cfxWebGenerateTile(0, 0, lod, 1) !== 0) {
+if (instance.exports.cfxWebGenerateTile(blockX, blockZ, lod, 1) !== 0) {
   throw new Error('tile prediction failed');
 }
 const cells = 258 * 258;
