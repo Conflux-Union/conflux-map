@@ -1,0 +1,43 @@
+package cn.net.rms.confluxmap.mc.radar;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import org.junit.jupiter.api.Test;
+
+final class RadarIconBorderPolicyTest {
+    @Test
+    void radarIconsHaveNoGeneratedOrDrawTimeBorder() throws IOException {
+        final Path root = findProjectRoot();
+        final Path radar = root.resolve("src/main/java/cn/net/rms/confluxmap/mc/radar");
+        final String renderer = Files.readString(radar.resolve("RadarMarkerRenderer.java"));
+        final String manager = Files.readString(radar.resolve("EntityIconManager.java"));
+
+        assertFalse(renderer.contains("bindItemOutlineTexture"));
+        assertFalse(renderer.contains("bindOutlineTexture"));
+        assertFalse(renderer.contains("contourBase("));
+        assertFalse(renderer.contains("outlineHalfSize("));
+        assertFalse(manager.contains("ItemIconOutlineTexture"));
+        assertFalse(manager.contains("EntityIconOutlineTexture"));
+        assertFalse(Files.exists(radar.resolve("ItemIconOutlineTexture.java")));
+        assertFalse(Files.exists(radar.resolve("EntityIconOutlineTexture.java")));
+        assertFalse(Files.exists(radar.resolve("RadarBackdrop.java")));
+        assertFalse(Files.exists(root.resolve(
+            "common/src/main/java/cn/net/rms/confluxmap/core/radar/IconOutliner.java"
+        )));
+    }
+
+    private static Path findProjectRoot() {
+        Path current = Path.of("").toAbsolutePath().normalize();
+        while (current != null) {
+            if (Files.isRegularFile(current.resolve("common.gradle"))
+                && Files.isDirectory(current.resolve("src/main/java"))) {
+                return current;
+            }
+            current = current.getParent();
+        }
+        throw new IllegalStateException("Could not locate the Conflux Map project root");
+    }
+}

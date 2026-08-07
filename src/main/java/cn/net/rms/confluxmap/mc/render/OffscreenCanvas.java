@@ -39,6 +39,7 @@ import net.minecraft.util.math.Matrix4f;
  */
 public final class OffscreenCanvas {
     private Framebuffer framebuffer;
+    private int sizePx;
     //#if MC>=260100
     //$$ private ProjectionMatrixBuffer projectionMatrix;
     //#elseif MC>=12108
@@ -47,6 +48,16 @@ public final class OffscreenCanvas {
 
     /** Bind + clear to transparent; sets an ortho projection in canvas pixel units. */
     public void begin(final int sizePx) {
+        beginInternal(sizePx, true);
+    }
+
+    /** Binds the canvas without clearing it, for persistent texture-atlas updates. */
+    public void beginPreserving(final int sizePx) {
+        beginInternal(sizePx, false);
+    }
+
+    private void beginInternal(final int sizePx, final boolean clear) {
+        final boolean created = framebuffer == null || framebuffer.textureWidth != sizePx;
         if (framebuffer == null || framebuffer.textureWidth != sizePx) {
             close();
             //#if MC>=260200
@@ -60,6 +71,7 @@ public final class OffscreenCanvas {
             //#else
             framebuffer = new SimpleFramebuffer(sizePx, sizePx, false, MinecraftClient.IS_SYSTEM_MAC);
             //#endif
+            this.sizePx = sizePx;
         }
         //#if MC>=260100
         //$$ if (projectionMatrix == null) {
@@ -71,21 +83,29 @@ public final class OffscreenCanvas {
         //$$ }
         //#endif
         //#if MC>=260200
-        //$$ RenderSystem.getDevice().createCommandEncoder().clearColorTexture(
-        //$$     framebuffer.getColorTexture(), new Vector4f(0f, 0f, 0f, 0f)
-        //$$ );
+        //$$ if (created || clear) {
+        //$$     RenderSystem.getDevice().createCommandEncoder().clearColorTexture(
+        //$$         framebuffer.getColorTexture(), new Vector4f(0f, 0f, 0f, 0f)
+        //$$     );
+        //$$ }
         //$$ RenderUtil.setDrawTarget(framebuffer);
         //#elseif MC>=12105
-        //$$ RenderSystem.getDevice().createCommandEncoder().clearColorTexture(
-        //$$     framebuffer.getColorAttachment(), 0
-        //$$ );
+        //$$ if (created || clear) {
+        //$$     RenderSystem.getDevice().createCommandEncoder().clearColorTexture(
+        //$$         framebuffer.getColorAttachment(), 0
+        //$$     );
+        //$$ }
         //$$ RenderUtil.setDrawTarget(framebuffer);
         //#elseif MC>=12103
-        //$$ framebuffer.setClearColor(0f, 0f, 0f, 0f);
-        //$$ framebuffer.clear();
+        //$$ if (created || clear) {
+        //$$     framebuffer.setClearColor(0f, 0f, 0f, 0f);
+        //$$     framebuffer.clear();
+        //$$ }
         //#else
-        framebuffer.setClearColor(0f, 0f, 0f, 0f);
-        framebuffer.clear(MinecraftClient.IS_SYSTEM_MAC);
+        if (created || clear) {
+            framebuffer.setClearColor(0f, 0f, 0f, 0f);
+            framebuffer.clear(MinecraftClient.IS_SYSTEM_MAC);
+        }
         //#endif
         //#if MC<12105
         framebuffer.beginWrite(true);
@@ -181,6 +201,7 @@ public final class OffscreenCanvas {
         if (framebuffer != null) {
             framebuffer.delete();
             framebuffer = null;
+            sizePx = 0;
         }
         //#if MC>=12108
         //$$ if (projectionMatrix != null) {
@@ -188,5 +209,9 @@ public final class OffscreenCanvas {
         //$$     projectionMatrix = null;
         //$$ }
         //#endif
+    }
+
+    public int size() {
+        return sizePx;
     }
 }

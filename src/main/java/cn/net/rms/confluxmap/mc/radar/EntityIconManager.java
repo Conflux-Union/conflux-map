@@ -1,160 +1,305 @@
 package cn.net.rms.confluxmap.mc.radar;
 
-import cn.net.rms.confluxmap.compat.Ids;
+import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.compat.Regs;
+import cn.net.rms.confluxmap.core.radar.IconBakeCache;
+import cn.net.rms.confluxmap.mixin.AgeableMobEntityRendererAccessor;
+import cn.net.rms.confluxmap.mc.render.OffscreenCanvas;
+import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import com.mojang.blaze3d.systems.RenderSystem;
+import java.lang.ref.WeakReference;
 import java.util.HashMap;
-import java.util.Locale;
 import java.util.Map;
-import java.util.function.Function;
+import java.util.UUID;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.passive.AxolotlEntity;
-import net.minecraft.entity.passive.CatEntity;
-import net.minecraft.entity.passive.FoxEntity;
-import net.minecraft.entity.passive.LlamaEntity;
-import net.minecraft.entity.passive.MooshroomEntity;
-import net.minecraft.entity.passive.PandaEntity;
-import net.minecraft.entity.passive.ParrotEntity;
-import net.minecraft.entity.passive.RabbitEntity;
-import net.minecraft.entity.passive.SheepEntity;
-import net.minecraft.entity.passive.StriderEntity;
-import net.minecraft.entity.passive.VillagerEntity;
-import net.minecraft.entity.passive.WolfEntity;
-import net.minecraft.item.ItemStack;
-//#if MC>=12000 && MC<12100
-//$$ import net.minecraft.registry.Registries;
+import net.minecraft.client.render.entity.EntityRenderer;
+import net.minecraft.client.render.entity.LivingEntityRenderer;
+import net.minecraft.client.render.entity.model.EntityModel;
+//#if MC>=12103
+//$$ import net.minecraft.client.render.entity.state.LivingEntityRenderState;
+//$$ import net.minecraft.entity.EntityPose;
 //#endif
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.LivingEntity;
 import net.minecraft.util.Identifier;
 
 /**
- * Render-thread lookup from a live entity to its radar face icon: for players, a sub-UV crop of
- * the player's own skin (face + hat overlay), exactly as before; for vanilla mobs, one 16x16 cell
- * of a single bundled sprite sheet, replacing the previous approach of hand-picked UV crops into
- * each mob's live in-game texture.
- *
- * <p>The sheet is {@code assets/confluxmap/textures/radar/entity_icons.png}: a 208x240px, 13-col
- * x 15-row grid of 16x16 hand-drawn face icons, originally "Entity-Icons" by Simplexity-Development
- * (CC0-1.0 / public domain, see {@code THIRD_PARTY_NOTICES.md} and the license text bundled
- * alongside the sheet). Cell (row, col) are 1-based, row 1 at the top, col 1 at the left; pixel
- * origin of cell (r, c) is {@code x = (c-1)*16, y = (r-1)*16}. The species-to-cell map in
- * {@link #buildSheetTable()} is transcribed verbatim from the authoritative
- * {@code docs/reference-specs/entity-icon-cellmap.json} spec, which documents how each cell was
- * chosen and verified; that JSON is a build-time artifact and is not read at runtime.
- *
- * <p>Several species render different textures/models per instance (sheep wool, cat breed, llama
- * coat, etc). Rather than trying to bake that into the (single, shared) sheet layout, each such
- * species carries a small resolver ({@link CellIcon#variantKey}) that reads the cheap client-side
- * entity state driving that difference and maps it to an alternate cell; species whose variant
- * state isn't cheaply reachable, or whose resolver returns an unmapped key, fall back to the
- * species' base cell.
- *
- * <p>Species without a table entry (including every non-vanilla/modded entity) simply get no icon
- * here ({@link #iconFor} returns {@code null}); the caller keeps drawing the existing shaped-dot
- * marker for those, unchanged.
+ * Render-thread facade for radar portraits. Player faces remain direct skin crops; every living
+ * mob is lazily baked from its neutral-pose vanilla model into a persistent color atlas.
+ * Callers see one small lookup interface and never handle model or version-specific renderer APIs.
  */
-public final class EntityIconManager {
-    /** One species' fractional UV rect (0..1) into whichever texture it's paired with. */
-    private record FaceUv(float u0, float v0, float u1, float v1) {
+public final class EntityIconManager implements AutoCloseable {
+    private record AtlasSprite(int slot, float u0, float v0, float u1, float v1) {
     }
 
-    /**
-     * The primary-layer (and, for players only, hat-overlay-layer) sub-UV region to draw as this
-     * entity's radar icon. {@code overlayTexture} is {@code null} for every non-player entity.
-     * {@code fromSheet} marks bundled-sheet icons, whose UV rect also addresses their baked
-     * silhouette outline cell in {@link EntityIconOutlineTexture} (player skins have none - the
-     * face crop is fully opaque, so a plain square frame already is its silhouette outline).
-     */
+    /** One portrait region and its source kind. Dynamic portraits bind through this manager. */
     public record FaceIcon(
         Identifier texture, float u0, float v0, float u1, float v1,
         Identifier overlayTexture, float ou0, float ov0, float ou1, float ov1,
-        boolean fromSheet
+        boolean dynamic
     ) {
         public boolean hasOverlay() {
             return overlayTexture != null;
         }
     }
 
-    /** One species' base sheet cell, plus an optional per-instance variant resolver. */
-    private record CellIcon(FaceUv base, Map<String, FaceUv> variants, Function<Entity, String> variantKey) {
-        /** Render thread. {@code entity} is guaranteed to be of the species this table entry was registered under. */
-        FaceUv resolve(final Entity entity) {
-            if (variantKey != null) {
-                final String key = variantKey.apply(entity);
-                if (key != null) {
-                    final FaceUv variant = variants.get(key);
-                    if (variant != null) {
-                        return variant;
-                    }
-                }
-            }
-            return base;
-        }
-    }
-
-    /** Player skins are always 64x64 in 1.17.1 (legacy 64x32 skins are upgraded on load). */
     private static final int SKIN_SIZE = 64;
-    /** BipedEntityModel.getModelData: head = uv(0,0).cuboid(w=8,h=8,d=8). */
-    private static final FaceUv PLAYER_FACE = px(8, 8, 16, 16, SKIN_SIZE, SKIN_SIZE);
-    /** BipedEntityModel.getModelData: hat = uv(32,0).cuboid(w=8,h=8,d=8). */
-    private static final FaceUv PLAYER_HAT = px(40, 8, 48, 16, SKIN_SIZE, SKIN_SIZE);
+    private static final float PLAYER_U0 = 8f / SKIN_SIZE;
+    private static final float PLAYER_V0 = 8f / SKIN_SIZE;
+    private static final float PLAYER_U1 = 16f / SKIN_SIZE;
+    private static final float PLAYER_V1 = 16f / SKIN_SIZE;
+    private static final float HAT_U0 = 40f / SKIN_SIZE;
+    private static final float HAT_V0 = 8f / SKIN_SIZE;
+    private static final float HAT_U1 = 48f / SKIN_SIZE;
+    private static final float HAT_V1 = 16f / SKIN_SIZE;
 
-    private static final Identifier SHEET = Ids.of("confluxmap", "textures/radar/entity_icons.png");
-    /** entity_icons.png is a 13-col x 15-row grid of 16x16 cells (docs/reference-specs/entity-icon-cellmap.json). */
-    private static final int SHEET_W = 208;
-    private static final int SHEET_H = 240;
-    private static final int CELL_PX = 16;
+    static final int CELL_PX = 32;
+    static final int ATLAS_PX = 1024;
+    private static final int CELLS_PER_ROW = ATLAS_PX / CELL_PX;
+    private static final int SLOT_COUNT = CELLS_PER_ROW * CELLS_PER_ROW;
+    private static final long REFRESH_TICKS = 200;
 
-    /**
-     * 1.17.1 CatEntity.getCatType() int-to-breed order, verified against the vanilla class'
-     * TABBY_TYPE..ALL_BLACK_TYPE constant values (0..10) via decompiled bytecode, not guessed.
-     */
-    private static final String[] CAT_TYPE_NAMES = {
-        "tabby", "black", "red", "siamese", "british_shorthair", "calico", "persian", "ragdoll", "white", "jellie", "all_black"
-    };
+    private final OffscreenCanvas colorAtlas = new OffscreenCanvas();
+    private final IconBakeCache<UUID, AtlasSprite> cache = new IconBakeCache<>(SLOT_COUNT, REFRESH_TICKS);
+    private final Map<UUID, WeakReference<Entity>> liveEntities = new HashMap<>();
 
-    private static final Map<EntityType<?>, CellIcon> SHEET_TABLE = buildSheetTable();
+    private int nextSlot;
+    private long clock;
 
-    private final EntityIconOutlineTexture outlineTexture = new EntityIconOutlineTexture(SHEET);
-    private final ItemIconOutlineTexture itemOutlineTexture = new ItemIconOutlineTexture();
-
-    public EntityIconManager() {
+    /** Registers the one-bake-per-client-tick queue drain. */
+    public void register() {
+        ClientTickEvents.END_CLIENT_TICK.register(this::tick);
     }
 
-    /** Render thread. GL id of the sheet's baked silhouette outline mask, or -1 if it can't bake. */
-    public boolean bindOutlineTexture(final MinecraftClient client) {
-        return outlineTexture.bind(client);
+    private void tick(final MinecraftClient client) {
+        assert RenderSystem.isOnRenderThread() : "EntityIconManager.tick() must run on the render thread";
+        clock++;
+        if (client.world == null) {
+            return;
+        }
+        cache.pollNext(clock).ifPresent(key -> bakeOne(client, key, 0f, clock));
     }
 
-    /** Render thread. Binds a cached alpha-tight outline for the stack's flat GUI model. */
-    public boolean bindItemOutlineTexture(
-        final MinecraftClient client,
-        final ItemStack stack,
-        final Entity entity
-    ) {
-        return itemOutlineTexture.bind(client, stack, entity);
-    }
-
-    /** Render thread, resource reload: drop entity-sheet and resolved-item outline masks. */
-    public void invalidateOutlineTexture() {
-        outlineTexture.invalidate();
-        itemOutlineTexture.invalidate();
-    }
-
-    /**
-     * Render thread. Returns the face icon for this live entity, or {@code null} if none is
-     * available (unknown/modded species) - the caller should fall back to the shaped-dot marker
-     * in that case.
-     */
+    /** Returns a ready portrait or null while its first bake is queued/failed. */
     public FaceIcon iconFor(final Entity entity) {
         if (entity instanceof AbstractClientPlayerEntity) {
             return playerIcon((AbstractClientPlayerEntity) entity);
         }
-        return mobIcon(entity);
+        if (!(entity instanceof LivingEntity)) {
+            return null;
+        }
+        final UUID key = entity.getUuid();
+        liveEntities.put(key, new WeakReference<>(entity));
+        final AtlasSprite sprite = cache.request(key, clock).orElse(null);
+        return sprite == null ? null : dynamicIcon(sprite);
     }
 
-    private FaceIcon playerIcon(final AbstractClientPlayerEntity player) {
+    public boolean bindDynamicColor() {
+        if (colorAtlas.size() == 0) {
+            return false;
+        }
+        colorAtlas.bindTexture();
+        return true;
+    }
+
+    /** Resource reload invalidates model-derived portraits. */
+    public void invalidateTextures() {
+        assert RenderSystem.isOnRenderThread() : "EntityIconManager.invalidateTextures() must run on render thread";
+        resetDynamic();
+    }
+
+    /** World/session change: entity UUIDs and their live references no longer belong to this atlas. */
+    public void onSessionChanged() {
+        assert RenderSystem.isOnRenderThread() : "EntityIconManager.onSessionChanged() must run on render thread";
+        resetDynamic();
+    }
+
+    @Override
+    public void close() {
+        assert RenderSystem.isOnRenderThread() : "EntityIconManager.close() must run on render thread";
+        resetDynamic();
+    }
+
+    private void bakeOne(
+        final MinecraftClient client,
+        final UUID key,
+        final float tickDelta,
+        final long now
+    ) {
+        final WeakReference<Entity> reference = liveEntities.get(key);
+        final Entity entity = reference == null ? null : reference.get();
+        //#if MC>=12108 && MC<12109
+        //$$ final boolean wrongWorld = entity == null || entity.getWorld() != client.world;
+        //#else
+        final boolean wrongWorld = entity == null || entity.getEntityWorld() != client.world;
+        //#endif
+        if (!(entity instanceof LivingEntity) || wrongWorld) {
+            cache.fail(key, now);
+            liveEntities.remove(key);
+            return;
+        }
+        try {
+            final AtlasSprite current = cache.value(key).orElse(null);
+            final AtlasSprite baked = bake(client, (LivingEntity) entity, tickDelta, current);
+            if (baked == null) {
+                cache.fail(key, now);
+                return;
+            }
+            cache.complete(key, baked, now);
+        } catch (final RuntimeException e) {
+            cache.fail(key, now);
+            ConfluxMapMod.LOGGER.debug("Failed to bake radar portrait for {}", entity.getType(), e);
+        }
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private AtlasSprite bake(
+        final MinecraftClient client,
+        final LivingEntity entity,
+        final float tickDelta,
+        final AtlasSprite current
+    ) {
+        final EntityRenderer renderer = client.getEntityRenderDispatcher().getRenderer(entity);
+        if (!(renderer instanceof LivingEntityRenderer)) {
+            return null;
+        }
+        final LivingEntityRenderer livingRenderer = (LivingEntityRenderer) renderer;
+        final EntityModel model;
+        final Identifier texture;
+        //#if MC>=12103
+        //$$ final LivingEntityRenderState state = (LivingEntityRenderState) renderer.getAndUpdateRenderState(entity, tickDelta);
+        //$$ neutralizePortraitPose(state);
+        //$$ model = portraitModel(livingRenderer, state);
+        //$$ model.setAngles(state);
+        //$$ texture = livingRenderer.getTexture(state);
+        //#else
+        model = (EntityModel) livingRenderer.getModel();
+        model.animateModel(entity, 0f, 0f, 0f);
+        model.setAngles(entity, 0f, 0f, 0f, 0f, 0f);
+        texture = renderer.getTexture(entity);
+        //#endif
+        if (texture == null) {
+            return null;
+        }
+
+        final float[] geometry = EntityHeadGeometry.project(
+            model, Regs.entityTypeId(entity.getType()).toString(), 0, 0
+        );
+        if (geometry.length == 0) {
+            return null;
+        }
+        final AtlasSprite sprite = current == null ? allocateSprite() : current;
+        if (sprite == null) {
+            return null;
+        }
+        final int column = sprite.slot() % CELLS_PER_ROW;
+        final int row = sprite.slot() / CELLS_PER_ROW;
+        translate(geometry, column * CELL_PX, row * CELL_PX);
+
+        final MatrixStack matrices = new MatrixStack();
+        colorAtlas.beginPreserving(ATLAS_PX);
+        try {
+            RenderUtil.clearTargetRect(matrices, column * CELL_PX, row * CELL_PX, CELL_PX, CELL_PX);
+            RenderUtil.bindTexture(client, texture);
+            RenderUtil.drawProjectedTexturedQuads(matrices, geometry);
+        } finally {
+            colorAtlas.end(client);
+        }
+        return sprite;
+    }
+
+    //#if MC>=12103
+    //$$ private static EntityModel portraitModel(
+    //$$     final LivingEntityRenderer renderer,
+    //$$     final LivingEntityRenderState state
+    //$$ ) {
+    //$$     if (!(renderer instanceof AgeableMobEntityRendererAccessor)) {
+    //$$         return (EntityModel) renderer.getModel();
+    //$$     }
+    //$$     final AgeableMobEntityRendererAccessor ageable = (AgeableMobEntityRendererAccessor) renderer;
+    //#if MC>=260100
+    //$$     return (EntityModel) (state.isBaby
+    //#else
+    //$$     return (EntityModel) (state.baby
+    //#endif
+    //$$         ? ageable.confluxmap$getBabyModel()
+    //$$         : ageable.confluxmap$getAdultModel());
+    //$$ }
+    //#endif
+
+    private static void translate(final float[] geometry, final float x, final float y) {
+        for (int i = 0; i < geometry.length; i += 5) {
+            geometry[i] += x;
+            geometry[i + 1] += y;
+        }
+    }
+
+    private AtlasSprite allocateSprite() {
+        if (nextSlot >= SLOT_COUNT) {
+            // The configured radar cap is below this, but a very long session can accumulate stale
+            // UUIDs. Reset as one atomic generation instead of reusing dirty cells.
+            resetDynamic();
+        }
+        final int slot = nextSlot++;
+        final int column = slot % CELLS_PER_ROW;
+        final int row = slot / CELLS_PER_ROW;
+        final float u0 = column / (float) CELLS_PER_ROW;
+        final float u1 = (column + 1) / (float) CELLS_PER_ROW;
+        // Canvas Y grows downward, so row zero is written at the framebuffer texture's top
+        // (V=1). Flip the complete atlas row, not only the orientation inside that row.
+        final float v0 = atlasTopV(row);
+        final float v1 = atlasBottomV(row);
+        return new AtlasSprite(slot, u0, v0, u1, v1);
+    }
+
+    //#if MC>=12103
+    //$$ /** Keeps model/material variants but removes the live entity's transient viewing pose. */
+    //$$ static void neutralizePortraitPose(final LivingEntityRenderState state) {
+    //$$     state.bodyYaw = 0f;
+    //#if MC>=12105
+    //$$     state.relativeHeadYaw = 0f;
+    //$$     state.limbSwingAnimationProgress = 0f;
+    //$$     state.limbSwingAmplitude = 0f;
+    //#else
+    //$$     state.yawDegrees = 0f;
+    //$$     state.limbFrequency = 0f;
+    //$$     state.limbAmplitudeMultiplier = 0f;
+    //#endif
+    //$$     state.pitch = 0f;
+    //$$     state.age = 0f;
+    //$$     state.deathTime = 0f;
+    //$$     state.flipUpsideDown = false;
+    //$$     state.sneaking = false;
+    //$$     state.pose = EntityPose.STANDING;
+    //$$ }
+    //#endif
+
+    static float atlasTopV(final int row) {
+        return 1f - row / (float) CELLS_PER_ROW;
+    }
+
+    static float atlasBottomV(final int row) {
+        return 1f - (row + 1) / (float) CELLS_PER_ROW;
+    }
+
+    private void resetDynamic() {
+        cache.clear();
+        liveEntities.clear();
+        colorAtlas.close();
+        nextSlot = 0;
+    }
+
+    private static FaceIcon dynamicIcon(final AtlasSprite sprite) {
+        return new FaceIcon(
+            null, sprite.u0(), sprite.v0(), sprite.u1(), sprite.v1(),
+            null, 0f, 0f, 0f, 0f, true
+        );
+    }
+
+    private static FaceIcon playerIcon(final AbstractClientPlayerEntity player) {
         //#if MC>=12109
         //$$ final Identifier skin = player.getSkin().body().texturePath();
         //#elseif MC>=12100
@@ -163,264 +308,9 @@ public final class EntityIconManager {
         final Identifier skin = player.getSkinTexture();
         //#endif
         return new FaceIcon(
-            skin, PLAYER_FACE.u0(), PLAYER_FACE.v0(), PLAYER_FACE.u1(), PLAYER_FACE.v1(),
-            skin, PLAYER_HAT.u0(), PLAYER_HAT.v0(), PLAYER_HAT.u1(), PLAYER_HAT.v1(),
+            skin, PLAYER_U0, PLAYER_V0, PLAYER_U1, PLAYER_V1,
+            skin, HAT_U0, HAT_V0, HAT_U1, HAT_V1,
             false
         );
-    }
-
-    private FaceIcon mobIcon(final Entity entity) {
-        final CellIcon icon = SHEET_TABLE.get(entity.getType());
-        if (icon == null) {
-            return null;
-        }
-        final FaceUv uv = icon.resolve(entity);
-        return new FaceIcon(SHEET, uv.u0(), uv.v0(), uv.u1(), uv.v1(), null, 0f, 0f, 0f, 0f, true);
-    }
-
-    private static FaceUv px(final int x0, final int y0, final int x1, final int y1, final int texW, final int texH) {
-        return new FaceUv(x0 / (float) texW, y0 / (float) texH, x1 / (float) texW, y1 / (float) texH);
-    }
-
-    /** 1-based (row, col) sheet cell -> fractional UV rect, per the grid convention documented on the class. */
-    private static FaceUv cell(final int row, final int col) {
-        final int x0 = (col - 1) * CELL_PX;
-        final int y0 = (row - 1) * CELL_PX;
-        return px(x0, y0, x0 + CELL_PX, y0 + CELL_PX, SHEET_W, SHEET_H);
-    }
-
-    private static CellIcon icon(final int row, final int col) {
-        return new CellIcon(cell(row, col), Map.of(), null);
-    }
-
-    @SafeVarargs
-    private static CellIcon icon(
-        final int row, final int col, final Function<Entity, String> variantKey, final Map.Entry<String, FaceUv>... variants
-    ) {
-        return new CellIcon(cell(row, col), Map.ofEntries(variants), variantKey);
-    }
-
-    private static Map.Entry<String, FaceUv> v(final String key, final int row, final int col) {
-        return Map.entry(key, cell(row, col));
-    }
-
-    // -- Variant resolvers: one per variantBy value in entity-icon-cellmap.json. Each reads only
-    // cheap client-side entity state that exists in 1.17.1, verified against the decompiled/mapped
-    // vanilla classes before use (see per-method comments for what was checked).
-
-    /** DyeColor.getName() (verified in mappings.tiny) already returns the "gray"/"light_gray" spelling the JSON uses. */
-    private static String sheepVariant(final Entity entity) {
-        return ((SheepEntity) entity).getColor().getName();
-    }
-
-    private static String mooshroomVariant(final Entity entity) {
-        //#if MC>=12000
-        //$$ return ((MooshroomEntity) entity).getVariant().asString();
-        //#else
-        return ((MooshroomEntity) entity).getMooshroomType().name().toLowerCase(Locale.ROOT);
-        //#endif
-    }
-
-    /** See {@link #CAT_TYPE_NAMES} for the verified int-to-breed order. */
-    private static String catVariant(final Entity entity) {
-        //#if MC>=12100
-        //$$ return ((CatEntity) entity).getVariant().getKey()
-        //$$     .map(key -> key.getValue().getPath())
-        //$$     .orElse(null);
-        //#elseif MC>=12000
-        //$$ final Identifier id = Registries.CAT_VARIANT.getId(((CatEntity) entity).getVariant());
-        //$$ return id == null ? null : id.getPath();
-        //#else
-        final int type = ((CatEntity) entity).getCatType();
-        return type >= 0 && type < CAT_TYPE_NAMES.length ? CAT_TYPE_NAMES[type] : null;
-        //#endif
-    }
-
-    private static String foxVariant(final Entity entity) {
-        //#if MC>=12000
-        //$$ return ((FoxEntity) entity).getVariant().asString();
-        //#else
-        return ((FoxEntity) entity).getFoxType().name().toLowerCase(Locale.ROOT);
-        //#endif
-    }
-
-    private static String parrotVariant(final Entity entity) {
-        //#if MC>=12000
-        //$$ return String.valueOf(((ParrotEntity) entity).getVariant().getId());
-        //#else
-        return String.valueOf(((ParrotEntity) entity).getVariant());
-        //#endif
-    }
-
-    /** Shared by llama and trader_llama - TraderLlamaEntity extends LlamaEntity and inherits getVariant(). */
-    private static String llamaVariant(final Entity entity) {
-        //#if MC>=12000
-        //$$ return String.valueOf(((LlamaEntity) entity).getVariant().ordinal());
-        //#else
-        return String.valueOf(((LlamaEntity) entity).getVariant());
-        //#endif
-    }
-
-    private static String rabbitVariant(final Entity entity) {
-        //#if MC>=12000
-        //$$ return String.valueOf(((RabbitEntity) entity).getVariant().getId());
-        //#else
-        return String.valueOf(((RabbitEntity) entity).getRabbitType());
-        //#endif
-    }
-
-    private static String axolotlVariant(final Entity entity) {
-        return String.valueOf(((AxolotlEntity) entity).getVariant().getId());
-    }
-
-    /**
-     * getProductGene() (as opposed to getMainGene()) is the gene that's actually expressed in this
-     * panda's appearance - a recessive main gene only shows through if the hidden gene matches it,
-     * otherwise the panda looks NORMAL despite carrying the rarer gene. NORMAL has no sheet entry,
-     * so it naturally falls back to the base cell via CellIcon#resolve.
-     */
-    private static String pandaVariant(final Entity entity) {
-        return ((PandaEntity) entity).getProductGene().name().toLowerCase(Locale.ROOT);
-    }
-
-    private static String striderVariant(final Entity entity) {
-        return String.valueOf(((StriderEntity) entity).isCold());
-    }
-
-    /**
-     * VillagerProfession.getId() (verified against the vanilla registration calls) returns the
-     * plain registry path ("armorer", "butcher", ...) directly - no Registry lookup needed.
-     */
-    private static String villagerVariant(final Entity entity) {
-        //#if MC>=12105
-        //$$ return ((VillagerEntity) entity).getVillagerData().profession().getKey()
-        //$$     .map(key -> key.getValue().getPath())
-        //$$     .orElse("");
-        //#elseif MC>=12000
-        //$$ return ((VillagerEntity) entity).getVillagerData().getProfession().id();
-        //#else
-        return ((VillagerEntity) entity).getVillagerData().getProfession().getId();
-        //#endif
-    }
-
-    /**
-     * 1.17.1 WolfEntity has no coat variants - only "tame"/"angry" alternate cells exist. A tamed
-     * wolf shows as tame regardless of anger; an untamed wolf shows as angry only while it has
-     * anger time (Angerable#hasAngerTime, verified on WolfEntity's implemented interface); a plain
-     * wild, non-angry wolf falls back to the base cell.
-     */
-    private static String wolfVariant(final Entity entity) {
-        final WolfEntity wolf = (WolfEntity) entity;
-        if (wolf.isTamed()) {
-            return "tame";
-        }
-        if (wolf.hasAngerTime()) {
-            return "angry";
-        }
-        return null;
-    }
-
-    private static Map<EntityType<?>, CellIcon> buildSheetTable() {
-        final Map<EntityType<?>, CellIcon> map = new HashMap<>();
-
-        put(map, "axolotl", icon(3, 9, EntityIconManager::axolotlVariant,
-            v("0", 3, 9), v("1", 4, 3), v("2", 6, 11), v("3", 11, 11), v("4", 12, 12)));
-        put(map, "bat", icon(7, 13));
-        put(map, "bee", icon(6, 13));
-        put(map, "blaze", icon(1, 13));
-        put(map, "cat", icon(6, 6, EntityIconManager::catVariant,
-            v("all_black", 10, 13), v("black", 5, 13), v("british_shorthair", 12, 8), v("calico", 10, 12),
-            v("jellie", 9, 10), v("persian", 9, 1), v("ragdoll", 8, 1), v("red", 5, 8),
-            v("siamese", 7, 5), v("tabby", 6, 6), v("white", 5, 2)));
-        put(map, "cave_spider", icon(9, 12));
-        put(map, "chicken", icon(7, 12));
-        put(map, "cod", icon(6, 12));
-        put(map, "cow", icon(4, 12));
-        put(map, "creeper", icon(1, 12));
-        put(map, "dolphin", icon(11, 8));
-        put(map, "donkey", icon(11, 7));
-        put(map, "drowned", icon(11, 6));
-        put(map, "elder_guardian", icon(11, 5));
-        put(map, "ender_dragon", icon(11, 4));
-        put(map, "enderman", icon(11, 3));
-        put(map, "endermite", icon(11, 2));
-        put(map, "evoker", icon(11, 1));
-        put(map, "fox", icon(10, 11, EntityIconManager::foxVariant,
-            v("red", 10, 11), v("snow", 5, 7)));
-        put(map, "ghast", icon(9, 11));
-        put(map, "glow_squid", icon(8, 11));
-        put(map, "goat", icon(7, 11));
-        put(map, "guardian", icon(10, 6));
-        put(map, "hoglin", icon(10, 5));
-        put(map, "horse", icon(10, 4));
-        put(map, "husk", icon(10, 3));
-        put(map, "illusioner", icon(10, 2));
-        put(map, "iron_golem", icon(10, 1));
-        put(map, "llama", icon(3, 12, EntityIconManager::llamaVariant,
-            v("0", 3, 12), v("1", 5, 1), v("2", 12, 7), v("3", 1, 11)));
-        put(map, "magma_cube", icon(9, 8));
-        put(map, "mooshroom", icon(9, 7, EntityIconManager::mooshroomVariant,
-            v("brown", 12, 6), v("red", 9, 7)));
-        put(map, "mule", icon(9, 6));
-        put(map, "ocelot", icon(9, 5));
-        put(map, "panda", icon(9, 2, EntityIconManager::pandaVariant,
-            v("aggressive", 12, 13), v("brown", 12, 5), v("lazy", 8, 10),
-            v("playful", 8, 7), v("weak", 5, 3), v("worried", 3, 3)));
-        put(map, "parrot", icon(6, 8, EntityIconManager::parrotVariant,
-            v("0", 6, 8), v("1", 12, 11), v("2", 4, 11), v("3", 3, 2), v("4", 10, 10)));
-        put(map, "phantom", icon(8, 9));
-        put(map, "pig", icon(7, 9));
-        put(map, "piglin", icon(6, 9));
-        put(map, "piglin_brute", icon(5, 9));
-        put(map, "pillager", icon(4, 9));
-        put(map, "polar_bear", icon(8, 6));
-        put(map, "pufferfish", icon(8, 5));
-        put(map, "rabbit", icon(12, 4, EntityIconManager::rabbitVariant,
-            v("0", 12, 4), v("1", 4, 5), v("2", 4, 13), v("3", 1, 5), v("4", 5, 11), v("5", 1, 8), v("99", 11, 12)));
-        put(map, "ravager", icon(7, 8));
-        put(map, "salmon", icon(2, 8));
-        put(map, "sheep", icon(3, 5, EntityIconManager::sheepVariant,
-            v("black", 3, 13), v("blue", 12, 10), v("brown", 12, 3), v("cyan", 11, 10),
-            v("gray", 10, 9), v("green", 3, 11), v("light_blue", 7, 10), v("light_gray", 5, 10),
-            v("lime", 3, 10), v("magenta", 1, 10), v("orange", 9, 4), v("pink", 2, 9),
-            v("purple", 8, 3), v("red", 4, 8), v("white", 3, 5), v("yellow", 3, 1)));
-        put(map, "shulker", icon(7, 6));
-        put(map, "silverfish", icon(7, 4));
-        put(map, "skeleton", icon(7, 3));
-        put(map, "skeleton_horse", icon(7, 2));
-        put(map, "slime", icon(6, 7));
-        put(map, "snow_golem", icon(8, 4));
-        put(map, "spider", icon(4, 7));
-        put(map, "squid", icon(3, 7));
-        put(map, "stray", icon(2, 7));
-        put(map, "strider", icon(5, 4, EntityIconManager::striderVariant,
-            v("false", 5, 4), v("true", 1, 7)));
-        put(map, "trader_llama", icon(2, 12, EntityIconManager::llamaVariant,
-            v("0", 2, 12), v("1", 4, 4), v("2", 12, 1), v("3", 10, 7)));
-        put(map, "tropical_fish", icon(6, 1));
-        put(map, "turtle", icon(5, 6));
-        put(map, "vex", icon(4, 6));
-        // The cellmap's villager_profession variant table is empty (no vanilla profession got its
-        // own cell), so every villager currently renders its base cell regardless of profession;
-        // the resolver is still wired up so a future non-empty table needs no code change here.
-        put(map, "villager", icon(8, 8, EntityIconManager::villagerVariant));
-        put(map, "vindicator", icon(3, 6));
-        put(map, "wandering_trader", icon(2, 6));
-        put(map, "witch", icon(4, 2));
-        put(map, "wither", icon(4, 1));
-        put(map, "wither_skeleton", icon(3, 4));
-        put(map, "wolf", icon(1, 4, EntityIconManager::wolfVariant,
-            v("angry", 8, 13), v("tame", 6, 4)));
-        put(map, "zoglin", icon(1, 2));
-        put(map, "zombie", icon(1, 3));
-        put(map, "zombie_horse", icon(2, 2));
-        put(map, "zombie_villager", icon(2, 1));
-        put(map, "zombified_piglin", icon(1, 1));
-
-        return Map.copyOf(map);
-    }
-
-    private static void put(final Map<EntityType<?>, CellIcon> map, final String id, final CellIcon icon) {
-        Regs.entityType(Ids.of("minecraft", id)).ifPresent(type -> map.put(type, icon));
     }
 }

@@ -67,7 +67,6 @@ import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
-import cn.net.rms.confluxmap.mc.radar.RadarBackdrop;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
@@ -263,7 +262,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         0xFFE74C3C, 0xFFE67E22, 0xFFF1C40F, 0xFF2ECC71,
         0xFF1ABC9C, 0xFF3498DB, 0xFF9B59B6, 0xFFECF0F1
     };
-    /** Radar markers are ~12px across including their contour (see RadarMarkerRenderer); cull with that margin so one straddling the edge doesn't pop. */
+    /** Radar markers are ~12px across; cull with enough margin that one straddling the edge doesn't pop. */
     private static final float RADAR_CULL_MARGIN = 8f;
 
     /** Null when MaliLib owns the binding and closes this screen through the shared action handler. */
@@ -2707,20 +2706,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
         final PlayerView player = playerView.get();
         final double pxPerBlock = 1.0 / scale;
-        final SessionGuard.Session session = gameBridge.session();
-        final MapLayer layer = layerSelector.current().layer();
-        final boolean predictionActive = predictionActive(layer, session);
-        final boolean biomeMode = biomeMode();
-        final String layerId = biomeMode
-            ? layer.cacheId() + BiomeTileKeys.SUFFIX
-            : layer.cacheId();
-        final RadarBackdrop backdrop = new RadarBackdrop(
-            textures, session.world(), session.dimension(), layerId, currentLod(),
-            predictionActive,
-            predictionActive ? 0xFFFFFFFF : 0,
-            BACKGROUND_COLOR
-        );
-
         final List<RadarMarkerRenderer.Marker> markers = new ArrayList<>();
         for (final RadarEntry entry : radarScanner.snapshot()) {
             double ex = entry.x();
@@ -2739,13 +2724,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 || screenY < -RADAR_CULL_MARGIN || screenY > height + RADAR_CULL_MARGIN) {
                 continue;
             }
-            markers.add(new RadarMarkerRenderer.Marker(
-                entry, screenX, screenY, ex, ez, yDelta, live
-            ));
+            markers.add(new RadarMarkerRenderer.Marker(entry, screenX, screenY, yDelta, live));
         }
-        RadarMarkerRenderer.drawAll(
-            draw, this.client, config, radarIconManager, backdrop, markers, (float) scale
-        );
+        RadarMarkerRenderer.drawAll(draw, this.client, config, radarIconManager, markers);
     }
 
     private void drawStructures(final GuiDraw draw, final int mouseX, final int mouseY) {

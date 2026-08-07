@@ -25,7 +25,6 @@ import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.core.waypoint.WaypointVerticalRelation;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
-import cn.net.rms.confluxmap.mc.radar.RadarBackdrop;
 import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
 import cn.net.rms.confluxmap.mc.render.OffscreenCanvas;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
@@ -72,8 +71,6 @@ public final class MinimapHudRenderer {
     private static final int BORDER_THICKNESS = 1;
     private static final int BORDER_COLOR = 0xB0FFFFFF;
     private static final int BACKGROUND_COLOR = 0x80101018;
-    /** What unexplored map reads as for radar contour contrast: {@link #BACKGROUND_COLOR} over the dimmed 3D world. */
-    private static final int RADAR_BACKDROP_FALLBACK = 0xFF101018;
     private static final int TEXT_COLOR = 0xFFFFFFFF;
     private static final int ARROW_OUTLINE = 0xFF101010;
     private static final int ARROW_FILL = 0xFFFFFFFF;
@@ -509,12 +506,6 @@ public final class MinimapHudRenderer {
         final double rad = Math.toRadians(mapAngle);
         final float cos = (float) Math.cos(rad);
         final float sin = (float) Math.sin(rad);
-        // The minimap has no predicted underlay, so the backdrop is just real tiles over the fill.
-        final RadarBackdrop backdrop = new RadarBackdrop(
-            textures, gameBridge.session().world(), gameBridge.session().dimension(),
-            layerSelector.current().layer().cacheId(), 0, false, 0, RADAR_BACKDROP_FALLBACK
-        );
-
         final List<RadarMarkerRenderer.Marker> markers = new ArrayList<>();
         for (final RadarEntry entry : radarScanner.snapshot()) {
             double ex = entry.x();
@@ -536,9 +527,9 @@ public final class MinimapHudRenderer {
             }
             final float x = centerX + dirX * cos - dirY * sin;
             final float y = centerY + dirX * sin + dirY * cos;
-            markers.add(new RadarMarkerRenderer.Marker(entry, x, y, ex, ez, yDelta, live));
+            markers.add(new RadarMarkerRenderer.Marker(entry, x, y, yDelta, live));
         }
-        RadarMarkerRenderer.drawAll(draw, client, config, iconManager, backdrop, markers, blocksPerPixel);
+        RadarMarkerRenderer.drawAll(draw, client, config, iconManager, markers);
     }
 
     private void drawPlayerArrow(final MatrixStack matrices, final float centerX, final float centerY, final float angle) {

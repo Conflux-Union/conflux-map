@@ -21,4 +21,3 @@ matter, because they are behavior.
 | [`radar-icons.md`](radar-icons.md) | Entity classification, radar dot rendering, above/below elevation cues, icon mapping. |
 | [`predicted-map.md`](predicted-map.md) | Seed prediction, exact correction snapshots, companion patch wire format. |
 | [`waypoint-storage-formats.md`](waypoint-storage-formats.md) | On-disk waypoint file locations, naming, and line grammars of two third-party minimap mods, for read-only import. |
-| [`entity-icon-cellmap.json`](entity-icon-cellmap.json) | Machine-readable companion to `radar-icons.md`: which `entity_icons.png` grid cell each entity type uses, plus the variant key and per-variant cells where one applies. Consumed by `mc/radar/EntityIconManager`. |
