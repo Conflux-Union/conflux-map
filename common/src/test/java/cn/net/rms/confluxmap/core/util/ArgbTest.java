@@ -45,8 +45,8 @@ class ArgbTest {
 
     @Test
     void luminanceWeighsGreenHeaviestAndIgnoresAlpha() {
-        // Rec. 709: the radar contour flips on this, so green terrain must read brighter
-        // than equally-intense blue (water), and alpha must not skew the result.
+        // Rec. 709 keeps contrast decisions perceptual: green must read brighter than
+        // equally-intense blue, and alpha must not skew the result.
         assertEquals(0, Argb.luminance(0xFF000000));
         assertEquals(255, Argb.luminance(0x00FFFFFF));
         assertEquals(Argb.luminance(0xFF00FF00), Argb.luminance(0x0000FF00));

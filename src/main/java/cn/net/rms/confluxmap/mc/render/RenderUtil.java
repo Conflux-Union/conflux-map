@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.mc.render;
 import cn.net.rms.confluxmap.core.util.Argb;
 import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.List;
+import java.util.Optional;
 //#if MC>=260100
 //$$ import com.mojang.blaze3d.pipeline.ColorTargetState;
 //#endif
@@ -76,6 +77,7 @@ public final class RenderUtil {
     //#if MC>=12105
     //$$ private static final RenderPipeline GUI_PRESERVE_DESTINATION_ALPHA =
     //$$     createGuiPreserveDestinationAlphaPipeline();
+    //$$ private static final RenderPipeline GUI_REPLACE = createGuiReplacePipeline();
     //#endif
     //#if MC>=12105
     //$$ private static Framebuffer drawTarget;
@@ -360,6 +362,61 @@ public final class RenderUtil {
         //$$ mesh.drawGui(RenderPipelines.GUI_TEXTURED);
         //#else
         mesh.draw();
+        //#endif
+    }
+
+    /**
+     * Draws already-projected textured model quads into the current target. The array uses
+     * {@code x,y,z,u,v} per vertex and must contain complete groups of four vertices.
+     */
+    public static void drawProjectedTexturedQuads(final MatrixStack matrices, final float[] vertices) {
+        if (vertices.length == 0) {
+            return;
+        }
+        if (vertices.length % 20 != 0) {
+            throw new IllegalArgumentException("projected textured quads require 20 floats per quad");
+        }
+        //#if MC<12105
+        useTintedTextureShader();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        //#endif
+        final var model = matrices.peek().getModel();
+        final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, Mesh.tintedTextureFormat());
+        for (int i = 0; i < vertices.length; i += 5) {
+            mesh.tintedVertex(
+                model, vertices[i], vertices[i + 1], vertices[i + 2],
+                vertices[i + 3], vertices[i + 4], 1f, 1f, 1f, 1f
+            );
+        }
+        //#if MC>=12105
+        //$$ mesh.drawGui(RenderPipelines.GUI_TEXTURED);
+        //#else
+        mesh.draw();
+        //#endif
+    }
+
+    /** Replaces one rectangle in the current render target with fully transparent pixels. */
+    public static void clearTargetRect(
+        final MatrixStack matrices,
+        final float x,
+        final float y,
+        final float width,
+        final float height
+    ) {
+        //#if MC<12105
+        useColorShader();
+        RenderSystem.disableBlend();
+        //#endif
+        final var model = matrices.peek().getModel();
+        final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, VertexFormats.POSITION_COLOR);
+        appendRect(mesh, model, x, y, width, height, 0);
+        //#if MC>=12105
+        //$$ mesh.drawGui(GUI_REPLACE);
+        //#else
+        mesh.draw();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
         //#endif
     }
 
@@ -709,6 +766,51 @@ public final class RenderUtil {
     //$$     builder
     //$$         .withBlend(gui.getBlendFunction().orElseThrow())
     //$$         .withColorWrite(true, false);
+    //#endif
+    //#if MC>=12108
+    //$$     builder
+    //$$         .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
+    //$$         .withUniform("Projection", UniformType.UNIFORM_BUFFER);
+    //#else
+    //$$     builder
+    //$$         .withUniform("ModelViewMat", UniformType.MATRIX4X4)
+    //$$         .withUniform("ProjMat", UniformType.MATRIX4X4)
+    //$$         .withUniform("ColorModulator", UniformType.VEC4);
+    //#endif
+    //#endif
+    //$$     return builder.build();
+    //$$ }
+    //$$
+    //$$ private static RenderPipeline createGuiReplacePipeline() {
+    //$$     final RenderPipeline gui = RenderPipelines.GUI;
+    //#if MC>=260200
+    //$$     final RenderPipeline.Builder builder = RenderPipeline.builder()
+    //$$         .withLocation("pipeline/confluxmap_gui_replace")
+    //$$         .withVertexShader(gui.getVertexShader())
+    //$$         .withFragmentShader(gui.getFragmentShader())
+    //$$         .withCull(gui.isCull())
+    //$$         .withColorTargetState(new ColorTargetState(
+    //$$             Optional.empty(), gui.getColorTargetState().format(), ColorTargetState.WRITE_ALL
+    //$$         ))
+    //$$         .withVertexBinding(0, gui.getVertexFormatBinding(0))
+    //$$         .withPrimitiveTopology(gui.getPrimitiveTopology());
+    //$$     for (final var bindGroupLayout : gui.getBindGroupLayouts()) {
+    //$$         builder.withBindGroupLayout(bindGroupLayout);
+    //$$     }
+    //#else
+    //$$     final RenderPipeline.Builder builder = RenderPipeline.builder()
+    //$$         .withLocation("pipeline/confluxmap_gui_replace")
+    //$$         .withVertexShader(gui.getVertexShader())
+    //$$         .withFragmentShader(gui.getFragmentShader())
+    //$$         .withVertexFormat(gui.getVertexFormat(), gui.getVertexFormatMode());
+    //#if MC>=260100
+    //$$     builder
+    //$$         .withCull(gui.isCull())
+    //$$         .withColorTargetState(new ColorTargetState(Optional.empty(), ColorTargetState.WRITE_ALL));
+    //#else
+    //$$     builder
+    //$$         .withoutBlend()
+    //$$         .withColorWrite(true, true);
     //#endif
     //#if MC>=12108
     //$$     builder

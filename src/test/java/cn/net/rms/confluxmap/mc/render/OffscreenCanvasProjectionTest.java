@@ -55,7 +55,13 @@ final class OffscreenCanvasProjectionTest {
     //$$ @Test
     //$$ void canvasRestoresTheProjectionItReplaced() throws IOException, URISyntaxException {
     //$$     final String source = Files.readString(preprocessedSource());
-    //$$     final String begin = methodBody(source, "public void begin(final int sizePx)");
+    //$$     final String publicBegin = methodBody(source, "public void begin(final int sizePx)");
+    //$$     final String preservingBegin = methodBody(
+    //$$         source, "public void beginPreserving(final int sizePx)"
+    //$$     );
+    //$$     final String begin = methodBody(
+    //$$         source, "private void beginInternal(final int sizePx, final boolean clear)"
+    //$$     );
     //$$     // The signature is matched as text against source this build just wrote, so the class
     //$$     // has to be spelled the way that source spells it. Reading the name off the class
     //$$     // itself gets remapped along with everything else instead of pinning one version's.
@@ -65,6 +71,11 @@ final class OffscreenCanvasProjectionTest {
     //$$     final int backup = begin.indexOf("RenderSystem.backupProjectionMatrix()");
     //$$     final int install = begin.indexOf("setProjection(canvasProjection(");
     //$$
+    //$$     assertTrue(
+    //$$         publicBegin.contains("beginInternal(sizePx, true)")
+    //$$             && preservingBegin.contains("beginInternal(sizePx, false)"),
+    //$$         "both public entry points must share the projection-preserving implementation"
+    //$$     );
     //$$     assertTrue(
     //$$         backup >= 0 && install >= 0 && backup < install,
     //$$         "begin must save the caller's projection before installing the canvas projection"

@@ -93,6 +93,15 @@ public final class Regs {
         //#endif
     }
 
+    /** The registry identifier of an entity type. */
+    public static Identifier entityTypeId(final EntityType<?> type) {
+        //#if MC>=260100
+        //$$ return entityTypes().getKey(type);
+        //#else
+        return entityTypes().getId(type);
+        //#endif
+    }
+
     /** The registry identifier of {@code block}. */
     public static Identifier blockId(final Block block) {
         //#if MC>=260100

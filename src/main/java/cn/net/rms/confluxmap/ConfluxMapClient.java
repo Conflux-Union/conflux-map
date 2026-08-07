@@ -265,6 +265,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(chunkCapture::onSessionChanged);
         sessionTracker.addListener(tileService::onSessionChanged);
         sessionTracker.addListener(radarScanner::onSessionChanged);
+        sessionTracker.addListener(session -> gameBridge.runOnRenderThread(entityIconManager::onSessionChanged));
         sessionTracker.addListener(playerTrailTracker::onSessionChanged);
         sessionTracker.addListener(fullscreenMapViewState::onSessionChanged);
         sessionTracker.addListener(waypointService::onSessionChanged);
@@ -283,6 +284,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
         chunkCapture.register();
         radarScanner.register();
+        entityIconManager.register();
         playerTrailTracker.register();
         minimapHudRenderer.register();
         waypointWorldRenderer.register();
@@ -325,6 +327,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         correctionStore.flush();
         surveyReminderNotifier.flush();
         configIo.save(config);
+        entityIconManager.close();
         //#if MC>=260200
         //$$ Mesh.close();
         //#endif

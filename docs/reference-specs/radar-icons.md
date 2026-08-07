@@ -151,13 +151,13 @@ coat/marking layers.
    black) — this slightly grows anti-aliased edges to reduce seams while the icon sits in the
    shared texture atlas.
 
-> **Deviation (Conflux Map):** icons come from a pre-drawn bundled sheet rather than runtime
-> model bakes, and the outline-fill pass runs **once**, not twice — a 1-pixel ring hugging the
-> first transparent pixels around the silhouette (user request), baked per sheet cell into a
-> tintable mask texture (`IconOutliner` / `EntityIconOutlineTexture`). The contour is also not
-> fixed black: each marker samples the composed map color beneath it and flips between black
-> and white for contrast (`RadarMarkerRenderer#contourBase`). Player faces keep the plain 1px
-> square frame, which for a fully-opaque square crop is already its silhouette outline.
+> **Deviation (Conflux Map):** mob portraits are baked lazily from the current entity model into
+> a persistent color atlas. The model's stable child names select the head group;
+> unfamiliar models fall back through body, cube, segments, and finally the model root. At most
+> one missing portrait is baked per client tick, with the shaped category marker used until it is
+> ready. Portraits use area-normalized sizing; horse-like long heads use a fixed three-quarter
+> view while fish retain a side view. All portrait and item icons render without a surrounding
+> outline. Player faces remain direct skin face/hat crops.
 
 **Distinct cached variants per species.** A species can have more than one cached icon when
 its appearance meaningfully differs at runtime. Recognized variant axes include: a discrete
