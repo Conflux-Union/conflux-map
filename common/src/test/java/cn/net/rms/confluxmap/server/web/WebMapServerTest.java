@@ -144,21 +144,19 @@ final class WebMapServerTest {
                 HttpRequest.newBuilder(server.uri("/app.js")).GET().build(),
                 HttpResponse.BodyHandlers.ofString()
             ).body();
-            final String english = client.send(
-                HttpRequest.newBuilder(server.uri("/locales/en.json")).GET().build(),
-                HttpResponse.BodyHandlers.ofString()
-            ).body();
-            final String chinese = client.send(
-                HttpRequest.newBuilder(server.uri("/locales/zh-CN.json")).GET().build(),
-                HttpResponse.BodyHandlers.ofString()
-            ).body();
-
             assertTrue(page.contains("id=\"scale-label\" class=\"scale-label\""));
+            assertTrue(page.contains("id=\"player-list\""));
+            assertFalse(page.contains("id=\"language\""));
             assertTrue(application.contains("0.5 * Math.pow(1.26, steps)"));
             assertTrue(application.contains("formatZoomMultiplier(map.getZoom())"));
             assertTrue(application.contains("map.on('zoom', updateScaleLabel)"));
-            assertTrue(english.contains("\"scale\": \"Scale: {scale}\""));
-            assertTrue(chinese.contains("\"scale\": \"缩放：{scale}\""));
+            assertTrue(application.contains("updatePlayerList"));
+            assertTrue(application.contains("/api/v1/avatars/${player.id}.png"));
+            assertTrue(application.contains("updateWaypoints"));
+            assertTrue(application.contains("NETHER_ROOF_MAP_COLOR_ID = 11"));
+            assertTrue(application.contains("if (kind === 8) return mapColor(NETHER_ROOF_MAP_COLOR_ID)"));
+            assertFalse(application.contains("tilesLoaded"));
+            assertFalse(application.contains("locales/"));
 
             final int formatterStart = application.indexOf("function formatZoomMultiplier");
             final int formatterEnd = application.indexOf("\nfunction updateScaleLabel", formatterStart);
@@ -249,24 +247,6 @@ final class WebMapServerTest {
                 HttpResponse.BodyHandlers.ofString()
             );
             assertEquals(304, unchanged.statusCode());
-        }
-    }
-
-    @Test
-    void servesSimplifiedChineseLocaleAsJson() throws Exception {
-        try (WebMapServer server = WebMapServer.start(
-            WebMapConfig.loopbackEphemeral(), new FakeBackend()
-        )) {
-            final HttpResponse<String> response = client().send(
-                HttpRequest.newBuilder(server.uri("/locales/zh-CN.json")).GET().build(),
-                HttpResponse.BodyHandlers.ofString()
-            );
-
-            assertEquals(200, response.statusCode());
-            assertEquals("application/json; charset=utf-8", response.headers().firstValue("content-type").orElseThrow());
-            assertTrue(response.body().contains("\"modeAll\": \"全部区域\""));
-            assertTrue(response.body().contains("\"modeGenerated\": \"已生成区域\""));
-            assertFalse(response.body().contains("modeAuthoritative"));
         }
     }
 

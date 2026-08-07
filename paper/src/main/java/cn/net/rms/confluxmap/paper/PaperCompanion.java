@@ -412,7 +412,7 @@ final class PaperCompanion implements Listener {
             chunkLoadStates.tick();
         }
         sharedNetworking.tick();
-        if (webMapBackend != null && config.webMap.sharePlayers
+        if (webMapBackend != null && (config.webMap.sharePlayers || sharedWaypointsEnabled())
             && ++webPlayerTicks >= 40) {
             webPlayerTicks = 0;
             webMapBackend.updatePlayers(++webPlayerRevision);

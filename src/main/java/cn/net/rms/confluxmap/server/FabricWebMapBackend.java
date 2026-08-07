@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.compat.MinecraftVersion;
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import cn.net.rms.confluxmap.core.net.MapRegionSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import cn.net.rms.confluxmap.core.net.Message;
@@ -12,6 +13,7 @@ import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.server.web.WebMapBackend;
 import cn.net.rms.confluxmap.server.web.WebMapManifest;
+import cn.net.rms.confluxmap.server.web.WebMapSnapshot;
 import cn.net.rms.confluxmap.server.web.WebPlayerSnapshot;
 import cn.net.rms.confluxmap.server.web.WebAvatarCache;
 import cn.net.rms.confluxmap.server.web.WebSkinTexture;
@@ -33,7 +35,7 @@ final class FabricWebMapBackend implements WebMapBackend {
     private final MinecraftServer server;
     private final ConfluxMapCompanion companion;
     private final WebMapManifest manifest;
-    private volatile WebPlayerSnapshot players = WebPlayerSnapshot.EMPTY;
+    private volatile WebMapSnapshot snapshot = WebMapSnapshot.EMPTY;
     private volatile Map<UUID, URI> skinUrls = Map.of();
     private final WebAvatarCache avatars = new WebAvatarCache();
 
@@ -103,7 +105,12 @@ final class FabricWebMapBackend implements WebMapBackend {
 
     @Override
     public WebPlayerSnapshot players() {
-        return players;
+        return new WebPlayerSnapshot(snapshot.revision(), snapshot.players());
+    }
+
+    @Override
+    public WebMapSnapshot snapshot() {
+        return snapshot;
     }
 
     @Override
@@ -134,17 +141,32 @@ final class FabricWebMapBackend implements WebMapBackend {
     void updatePlayers(final long revision) {
         final List<WebPlayerSnapshot.Player> result = new ArrayList<>();
         final Map<UUID, URI> currentSkins = new HashMap<>();
-        for (final ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            if (companion.webMapHidden(player.getUuid())) continue;
-            result.add(new WebPlayerSnapshot.Player(
-                player.getUuid().toString(), player.getName().getString(),
-                worldIndex(player.getServerWorld()), player.getX(), player.getZ(),
-                player.isSpectator() || player.isInvisible()
-            ));
-            final URI skin = skin(player);
-            if (skin != null) currentSkins.put(player.getUuid(), skin);
+        if (companion.config().webMap.sharePlayers) {
+            for (final ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+                if (companion.webMapHidden(player.getUuid())) continue;
+                result.add(new WebPlayerSnapshot.Player(
+                    player.getUuid().toString(), player.getName().getString(),
+                    worldIndex(player.getServerWorld()), player.getX(), player.getZ(),
+                    player.isSpectator() || player.isInvisible()
+                ));
+                final URI skin = skin(player);
+                if (skin != null) currentSkins.put(player.getUuid(), skin);
+            }
         }
-        players = new WebPlayerSnapshot(revision, result);
+        final List<WebMapSnapshot.Waypoint> waypoints = new ArrayList<>();
+        if (companion.sharedWaypointsEnabled()) {
+            for (final SharedWaypoint waypoint : companion.sharedWaypoints().snapshot().waypoints()) {
+                final int dimension = worldIndex(waypoint.dimensionId());
+                if (dimension >= 0) {
+                    waypoints.add(new WebMapSnapshot.Waypoint(
+                        waypoint.id().toString(), waypoint.name(), dimension,
+                        waypoint.x(), waypoint.y(), waypoint.z(), waypoint.colorArgb(),
+                        waypoint.type().name()
+                    ));
+                }
+            }
+        }
+        snapshot = new WebMapSnapshot(revision, result, waypoints);
         skinUrls = Map.copyOf(currentSkins);
     }
 
@@ -179,6 +201,15 @@ final class FabricWebMapBackend implements WebMapBackend {
         int index = 0;
         for (final ServerWorld world : server.getWorlds()) {
             if (world == target) return index;
+            index++;
+        }
+        return -1;
+    }
+
+    private int worldIndex(final DimensionId target) {
+        int index = 0;
+        for (final ServerWorld world : server.getWorlds()) {
+            if (DimensionId.parse(world.getRegistryKey().getValue().toString()).equals(target)) return index;
             index++;
         }
         return -1;

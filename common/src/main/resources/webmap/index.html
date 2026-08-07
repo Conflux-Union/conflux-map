@@ -12,21 +12,22 @@
   <main id="map" aria-label="World map"></main>
   <section class="controls" aria-label="Map controls">
     <strong>Conflux Map</strong>
-    <label><span data-i18n="dimension">Dimension</span> <select id="dimension"></select></label>
-    <label><span data-i18n="mode">Mode</span>
+    <label>Dimension <select id="dimension"></select></label>
+    <label>Mode
       <select id="mode">
-        <option value="all" data-i18n="modeAll">All regions</option>
-        <option value="generated" data-i18n="modeGenerated">Generated regions</option>
-      </select>
-    </label>
-    <label><span data-i18n="language">Language</span>
-      <select id="language">
-        <option value="en">English</option>
-        <option value="zh-CN">简体中文</option>
+        <option value="all">All regions</option>
+        <option value="generated">Generated regions</option>
       </select>
     </label>
     <span id="status" role="status">Connecting…</span>
   </section>
+  <aside id="entity-panel" class="entity-panel" aria-label="Players and waypoints">
+    <div class="panel-header">
+      <strong>Players</strong>
+      <span id="player-count" class="panel-count">0</span>
+    </div>
+    <div id="player-list" class="player-list" aria-live="polite"></div>
+  </aside>
   <output id="scale-label" class="scale-label">Scale: 0.50x</output>
   <script src="/vendor/leaflet.js"></script>
   <script type="module" src="/app.js"></script>

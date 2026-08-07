@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.server.web;
 import cn.net.rms.confluxmap.core.net.MapRegionSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import java.util.UUID;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
@@ -28,6 +29,15 @@ public interface WebMapBackend {
 
     default WebPlayerSnapshot players() {
         return WebPlayerSnapshot.EMPTY;
+    }
+
+    default List<WebMapSnapshot.Waypoint> waypoints() {
+        return List.of();
+    }
+
+    default WebMapSnapshot snapshot() {
+        final WebPlayerSnapshot players = players();
+        return new WebMapSnapshot(players.revision(), players.players(), waypoints());
     }
 
     default CompletableFuture<byte[]> avatar(final UUID playerId) {

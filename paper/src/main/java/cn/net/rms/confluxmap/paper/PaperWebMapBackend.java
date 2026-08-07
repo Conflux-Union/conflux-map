@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.paper;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import cn.net.rms.confluxmap.core.net.MapRegionSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapViewReqC2S;
 import cn.net.rms.confluxmap.core.net.Message;
@@ -10,6 +11,7 @@ import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.server.web.WebMapBackend;
 import cn.net.rms.confluxmap.server.web.WebMapManifest;
+import cn.net.rms.confluxmap.server.web.WebMapSnapshot;
 import cn.net.rms.confluxmap.server.web.WebPlayerSnapshot;
 import cn.net.rms.confluxmap.server.web.WebAvatarCache;
 import java.net.URI;
@@ -30,7 +32,7 @@ final class PaperWebMapBackend implements WebMapBackend {
     private final ConfluxMapPaperPlugin plugin;
     private final PaperCompanion companion;
     private final WebMapManifest manifest;
-    private volatile WebPlayerSnapshot players = WebPlayerSnapshot.EMPTY;
+    private volatile WebMapSnapshot snapshot = WebMapSnapshot.EMPTY;
     private volatile Map<UUID, URI> skinUrls = Map.of();
     private final WebAvatarCache avatars = new WebAvatarCache();
 
@@ -94,7 +96,12 @@ final class PaperWebMapBackend implements WebMapBackend {
 
     @Override
     public WebPlayerSnapshot players() {
-        return players;
+        return new WebPlayerSnapshot(snapshot.revision(), snapshot.players());
+    }
+
+    @Override
+    public WebMapSnapshot snapshot() {
+        return snapshot;
     }
 
     @Override
@@ -125,25 +132,47 @@ final class PaperWebMapBackend implements WebMapBackend {
     void updatePlayers(final long revision) {
         final List<WebPlayerSnapshot.Player> result = new ArrayList<>();
         final Map<UUID, URI> currentSkins = new HashMap<>();
-        for (final Player player : Bukkit.getOnlinePlayers()) {
-            if (companion.webMapHidden(player.getUniqueId())) continue;
-            final PaperWorldDirectory.Entry world = companion.worlds().find(player.getWorld());
-            if (world == null) continue;
-            result.add(new WebPlayerSnapshot.Player(
-                player.getUniqueId().toString(), player.getName(), world.index(),
-                player.getX(), player.getZ(),
-                player.getGameMode() == GameMode.SPECTATOR || player.isInvisible()
-            ));
-            final java.net.URL skin = player.getPlayerProfile().getTextures().getSkin();
-            if (skin != null) {
-                try {
-                    currentSkins.put(player.getUniqueId(), skin.toURI());
-                } catch (final URISyntaxException ignored) {
-                    // The cache independently rejects non-Minecraft texture origins.
+        if (companion.config().webMap.sharePlayers) {
+            for (final Player player : Bukkit.getOnlinePlayers()) {
+                if (companion.webMapHidden(player.getUniqueId())) continue;
+                final PaperWorldDirectory.Entry world = companion.worlds().find(player.getWorld());
+                if (world == null) continue;
+                result.add(new WebPlayerSnapshot.Player(
+                    player.getUniqueId().toString(), player.getName(), world.index(),
+                    player.getX(), player.getZ(),
+                    player.getGameMode() == GameMode.SPECTATOR || player.isInvisible()
+                ));
+                final java.net.URL skin = player.getPlayerProfile().getTextures().getSkin();
+                if (skin != null) {
+                    try {
+                        currentSkins.put(player.getUniqueId(), skin.toURI());
+                    } catch (final URISyntaxException ignored) {
+                        // The cache independently rejects non-Minecraft texture origins.
+                    }
                 }
             }
         }
-        players = new WebPlayerSnapshot(revision, result);
+        final List<WebMapSnapshot.Waypoint> waypoints = new ArrayList<>();
+        if (companion.sharedWaypointsEnabled()) {
+            for (final SharedWaypoint waypoint : companion.sharedWaypoints().snapshot().waypoints()) {
+                final int dimension = worldIndex(waypoint.dimensionId());
+                if (dimension >= 0) {
+                    waypoints.add(new WebMapSnapshot.Waypoint(
+                        waypoint.id().toString(), waypoint.name(), dimension,
+                        waypoint.x(), waypoint.y(), waypoint.z(), waypoint.colorArgb(),
+                        waypoint.type().name()
+                    ));
+                }
+            }
+        }
+        snapshot = new WebMapSnapshot(revision, result, waypoints);
         skinUrls = Map.copyOf(currentSkins);
+    }
+
+    private int worldIndex(final DimensionId target) {
+        for (final PaperWorldDirectory.Entry entry : companion.worlds().entries()) {
+            if (DimensionId.parse(entry.dimensionId()).equals(target)) return entry.index();
+        }
+        return -1;
     }
 }

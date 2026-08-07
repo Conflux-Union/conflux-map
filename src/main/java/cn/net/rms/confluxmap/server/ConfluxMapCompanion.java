@@ -112,7 +112,7 @@ public final class ConfluxMapCompanion {
             loadStates.tick(server);
         }
         final FabricWebMapBackend currentWebBackend = webMapBackend;
-        if (currentWebBackend != null && config.webMap.sharePlayers
+        if (currentWebBackend != null && (config.webMap.sharePlayers || sharedWaypointsEnabled())
             && ++webPlayerTicks >= 40) {
             webPlayerTicks = 0;
             currentWebBackend.updatePlayers(++webPlayerRevision);

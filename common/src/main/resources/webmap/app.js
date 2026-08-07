@@ -1,27 +1,19 @@
 const status = document.querySelector('#status');
 const dimension = document.querySelector('#dimension');
 const mode = document.querySelector('#mode');
-const language = document.querySelector('#language');
+const playerList = document.querySelector('#player-list');
+const playerCount = document.querySelector('#player-count');
 const scaleLabel = document.querySelector('#scale-label');
-const supportedLocales = ['en', 'zh-CN'];
-let messages = {
+const messages = {
   connecting: 'Connecting…',
-  loadError: 'Map loading failed'
+  loadError: 'Map loading failed',
+  connected: 'Connected',
+  zoomIn: 'Zoom in',
+  zoomOut: 'Zoom out',
+  scale: 'Scale: {scale}'
 };
 window.addEventListener('unhandledrejection', () => showLoadError());
 window.addEventListener('error', () => showLoadError());
-const locale = selectLocale();
-messages = await fetch(`/locales/${locale}.json`).then(response => {
-  if (!response.ok) throw new Error(`locale ${response.status}`);
-  return response.json();
-});
-document.documentElement.lang = locale;
-language.value = locale;
-translatePage();
-language.addEventListener('change', () => {
-  localStorage.setItem('conflux-map-locale', language.value);
-  location.reload();
-});
 const manifest = await fetch('/api/v1/manifest', {cache: 'no-store'}).then(response => {
   if (!response.ok) throw new Error(`manifest ${response.status}`);
   return response.json();
@@ -49,6 +41,8 @@ localizeZoomControl();
 updateScaleLabel();
 
 const playerMarkers = new Map();
+const waypointMarkers = new Map();
+let currentMapState = {players: [], waypoints: []};
 const PLAYER_MOVE_DURATION_MS = 1800;
 const mapSocket = connectMapSocket();
 let predictionGeneration = 1;
@@ -77,6 +71,7 @@ const palette = [
   '#4c3223','#4c522a','#8e3c2e','#251610','#bd3031','#943f61','#5c191d','#167e86',
   '#3a8e8c','#562c3e','#14b485','#646464','#d8af93','#7fa796'
 ];
+const NETHER_ROOF_MAP_COLOR_ID = 11;
 const predictionBiomes = new Map(
   (manifest.predictionBiomes ?? []).map(entry => [entry.id, entry])
 );
@@ -119,6 +114,8 @@ map.on('moveend zoomend', () => {
 });
 map.on('zoom', updateScaleLabel);
 mapSocket.ready.then(() => {
+  status.classList.remove('error');
+  status.textContent = messages.connected;
   scheduleSubscription();
   scheduleVisibleTileSync();
 });
@@ -126,9 +123,9 @@ layer.on('tileunload', event => event.tile.cancelPrediction?.());
 
 function refresh() {
   beginPredictionGeneration();
-  for (const marker of playerMarkers.values()) removePlayerMarker(marker);
-  playerMarkers.clear();
+  clearMapMarkers();
   layer.redraw();
+  renderMapState(currentMapState);
   scheduleSubscription();
 }
 
@@ -156,7 +153,6 @@ async function syncTile(canvas, tileX, tileZ, lod, generation, force = false) {
   const dimIndex = Number(dimension.value);
   const cacheKey = tileKey(dimIndex, lod, tileX, tileZ);
   if (!force && validated.has(cacheKey)) {
-    updateTileStatus(lod);
     return;
   }
   const patchPromise = requestTile(tileX, tileZ, lod, dimIndex);
@@ -166,7 +162,6 @@ async function syncTile(canvas, tileX, tileZ, lod, generation, force = false) {
   if (patch.mode === 3) {
     await discardRegion(cacheKey);
     validated.add(cacheKey);
-    updateTileStatus(lod);
     return;
   }
   const compressed = patch.mode === 0 ? compressedCache.get(cacheKey) : patch.body;
@@ -183,7 +178,6 @@ async function syncTile(canvas, tileX, tileZ, lod, generation, force = false) {
     persistRegion(cacheKey, patch.revision, patch.body);
   }
   validated.add(cacheKey);
-  updateTileStatus(lod);
 }
 
 function scheduleVisibleTileSync() {
@@ -306,7 +300,7 @@ function connectMapSocket() {
   }, {once: true});
   socket.addEventListener('message', event => {
     if (typeof event.data === 'string') {
-      if (event.data !== 'pong') updatePlayers(JSON.parse(event.data));
+      if (event.data !== 'pong') updateMapState(JSON.parse(event.data));
       return;
     }
     handleMapFrame(new Uint8Array(event.data));
@@ -428,10 +422,17 @@ function enterRequestGate() {
   return requestGate;
 }
 
-function updatePlayers(message) {
-  if (message.type !== 'players') return;
+function updateMapState(message) {
+  if (message.type !== 'map-state' && message.type !== 'players') return;
+  currentMapState = message.snapshot;
+  updatePlayerList(currentMapState.players ?? []);
+  updatePlayers(currentMapState.players ?? []);
+  updateWaypoints(currentMapState.waypoints ?? []);
+}
+
+function updatePlayers(players) {
   const visible = new Set();
-  for (const player of message.snapshot.players) {
+  for (const player of players) {
     if (player.dimension !== Number(dimension.value)) continue;
     visible.add(player.id);
     let marker = playerMarkers.get(player.id);
@@ -448,6 +449,113 @@ function updatePlayers(message) {
   for (const [id, marker] of playerMarkers) if (!visible.has(id)) {
     removePlayerMarker(marker); playerMarkers.delete(id);
   }
+}
+
+function updatePlayerList(players) {
+  playerCount.textContent = String(players.length);
+  playerList.replaceChildren();
+  if (!players.length) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-state';
+    empty.textContent = 'No online players';
+    playerList.append(empty);
+    return;
+  }
+  for (const player of [...players].sort((a, b) => a.name.localeCompare(b.name))) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'player-row';
+    button.title = `Go to ${player.name}`;
+    button.addEventListener('click', () => focusLocation(player));
+    const avatar = document.createElement('span');
+    avatar.className = 'player-list-avatar';
+    const avatarImage = document.createElement('img');
+    avatarImage.alt = '';
+    avatarImage.src = `/api/v1/avatars/${player.id}.png`;
+    avatarImage.addEventListener('load', () => avatar.classList.add('image-loaded'));
+    avatarImage.addEventListener('error', () => {
+      if (avatarImage.src.includes('/api/v1/avatars/')) {
+        avatarImage.src = Math.random() < 0.5 ? '/default-steve.svg' : '/default-alex.svg';
+      } else {
+        avatar.classList.remove('image-loaded');
+      }
+    });
+    const avatarFallback = document.createElement('span');
+    avatarFallback.textContent = player.name.slice(0, 1).toUpperCase();
+    avatar.append(avatarImage, avatarFallback);
+    const details = document.createElement('span');
+    details.className = 'player-details';
+    const name = document.createElement('strong');
+    name.textContent = player.name;
+    const location = document.createElement('small');
+    location.textContent = `${dimensionName(player.dimension)} · ${formatCoordinate(player.x)}, ${formatCoordinate(player.z)}`;
+    details.append(name, location);
+    button.append(avatar, details);
+    playerList.append(button);
+  }
+}
+
+function updateWaypoints(waypoints) {
+  const visible = new Set();
+  for (const waypoint of waypoints) {
+    if (waypoint.dimension !== Number(dimension.value)) continue;
+    visible.add(waypoint.id);
+    const target = [-waypoint.z, waypoint.x];
+    let marker = waypointMarkers.get(waypoint.id);
+    if (!marker) {
+      marker = L.marker(target, {icon: waypointIcon(waypoint)})
+        .bindTooltip(waypointLabel(waypoint)).addTo(map);
+      waypointMarkers.set(waypoint.id, marker);
+    } else {
+      marker.setLatLng(target);
+      marker.setTooltipContent(waypointLabel(waypoint));
+      marker.setIcon(waypointIcon(waypoint));
+    }
+  }
+  for (const [id, marker] of waypointMarkers) if (!visible.has(id)) {
+    marker.remove(); waypointMarkers.delete(id);
+  }
+}
+
+function focusLocation(location) {
+  if (location.dimension !== Number(dimension.value)) {
+    dimension.value = String(location.dimension);
+    syncModeAvailability();
+    refresh();
+  }
+  map.setView([-location.z, location.x], map.getZoom());
+}
+
+function dimensionName(index) {
+  return manifest.dimensions.find(item => item.index === index)?.type
+    ?? manifest.dimensions.find(item => item.index === index)?.id
+    ?? `Dimension ${index}`;
+}
+
+function formatCoordinate(value) {
+  return Math.round(value).toString();
+}
+
+function waypointLabel(waypoint) {
+  const label = document.createElement('span');
+  label.textContent = `${waypoint.name} · ${formatCoordinate(waypoint.x)}, ${formatCoordinate(waypoint.y)}, ${formatCoordinate(waypoint.z)}`;
+  return label;
+}
+
+function waypointIcon(waypoint) {
+  const root = document.createElement('div');
+  root.className = `web-waypoint${waypoint.type === 'DEATH' ? ' death' : ''}`;
+  const color = (waypoint.colorArgb >>> 0) & 0xffffff;
+  root.style.backgroundColor = `#${color.toString(16).padStart(6, '0')}`;
+  root.textContent = waypoint.type === 'DEATH' ? '✕' : '◆';
+  return L.divIcon({className: '', html: root, iconSize: [24, 24], iconAnchor: [12, 12]});
+}
+
+function clearMapMarkers() {
+  for (const marker of playerMarkers.values()) removePlayerMarker(marker);
+  for (const marker of waypointMarkers.values()) marker.remove();
+  playerMarkers.clear();
+  waypointMarkers.clear();
 }
 
 function animatePlayerMarker(marker, target, duration = PLAYER_MOVE_DURATION_MS) {
@@ -602,21 +710,21 @@ async function drawPrediction(canvas, ctx, tileX, tileZ, lod, dimIndex, generati
   };
   let predicted = await predictor.request({...request, exact: false}, generation, canvas);
   if (!predicted || !canvas.isConnected || generation !== predictionGeneration) return false;
-  drawPredictedTile(ctx, predicted, lod);
+  drawPredictedTile(ctx, predicted, lod, isNetherDimension(dimIndex));
   if ((nativeDimension === 0 && lod <= 1) || nativeDimension === 1) {
     predicted = await predictor.request({...request, exact: true}, generation, canvas);
     if (!predicted || !canvas.isConnected || generation !== predictionGeneration) return false;
-    drawPredictedTile(ctx, predicted, lod);
+    drawPredictedTile(ctx, predicted, lod, isNetherDimension(dimIndex));
   }
   return true;
 }
 
-function drawPredictedTile(ctx, predicted, lod) {
+function drawPredictedTile(ctx, predicted, lod, netherRoof) {
   const image = ctx.createImageData(256, 256);
   const size = 258;
   for (let z = 0; z < 256; z++) for (let x = 0; x < 256; x++) {
     const gridIndex = (z + 1) * size + x + 1;
-    const color = predictedColor(predicted, gridIndex, lod);
+    const color = predictedColor(predicted, gridIndex, lod, netherRoof);
     const pixel = (z * 256 + x) * 4;
     if (color < 0) {
       image.data[pixel + 3] = 0;
@@ -630,7 +738,8 @@ function drawPredictedTile(ctx, predicted, lod) {
   ctx.putImageData(image, 0, 0);
 }
 
-function predictedColor(predicted, index, lod) {
+function predictedColor(predicted, index, lod, netherRoof) {
+  if (netherRoof) return applyNetherLight(mapColor(NETHER_ROOF_MAP_COLOR_ID), 0);
   if ((predicted.surfaces[index] & 2) !== 0) return -1;
   const biome = predictionBiomes.get(predicted.biomes[index]) ?? fallbackPredictionBiome;
   const water = (predicted.surfaces[index] & 1) !== 0;
@@ -858,6 +967,7 @@ function authoritativeBaseColor(planes, pixel, lod) {
 }
 
 function authoritativeKindColor(kind, biome) {
+  if (kind === 8) return mapColor(NETHER_ROOF_MAP_COLOR_ID);
   if (kind === 4) return biome.canopyColor;
   if (kind === 5) return 0xf7faff;
   if (kind === 6) return 0xa4c6e8;
@@ -968,17 +1078,6 @@ function tileStillCurrent(canvas, dim, lod, tileX, tileZ, generation) {
     && dim === Number(dimension.value) && tile?.dim === dim && tile.lod === lod
     && tile.x === tileX && tile.z === tileZ && tile.generation === generation;
 }
-function updateTileStatus(lod) {
-  const dim = Number(dimension.value);
-  const visible = [...layer.getContainer().querySelectorAll('canvas.map-tile')]
-    .filter(canvas => canvas.mapTile?.dim === dim && canvas.mapTile.lod === lod);
-  const loaded = visible.filter(canvas => {
-    const tile = canvas.mapTile;
-    return validated.has(tileKey(tile.dim, tile.lod, tile.x, tile.z));
-  }).length;
-  status.classList.remove('error');
-  status.textContent = message('tilesLoaded', {loaded, total: visible.length, lod});
-}
 function playerIcon(player) {
   const root = document.createElement('div');
   root.className = `web-player${player.translucent ? ' translucent' : ''}`;
@@ -995,25 +1094,11 @@ function playerIcon(player) {
   return L.divIcon({className: '', html: root, iconSize: [28, 28], iconAnchor: [14, 14]});
 }
 
-function selectLocale() {
-  const saved = localStorage.getItem('conflux-map-locale');
-  if (supportedLocales.includes(saved)) return saved;
-  return navigator.languages?.some(candidate => candidate.toLowerCase().startsWith('zh'))
-    ? 'zh-CN' : 'en';
-}
 function message(key, values = {}) {
   return Object.entries(values).reduce(
     (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
     messages[key] ?? key
   );
-}
-function translatePage() {
-  document.querySelectorAll('[data-i18n]').forEach(element => {
-    element.textContent = message(element.dataset.i18n);
-  });
-  document.querySelector('#map').setAttribute('aria-label', message('worldMap'));
-  document.querySelector('.controls').setAttribute('aria-label', message('mapControls'));
-  status.textContent = message('connecting');
 }
 function localizeZoomControl() {
   const zoomIn = map.zoomControl._zoomInButton;

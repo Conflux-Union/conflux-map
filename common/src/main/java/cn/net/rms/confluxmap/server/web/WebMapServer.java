@@ -248,9 +248,9 @@ public final class WebMapServer implements AutoCloseable {
         }
 
         private void publishPlayers() {
-            final WebPlayerSnapshot snapshot = backend.players();
+            final WebMapSnapshot snapshot = backend.snapshot();
             for (final MapSocket socket : sockets.values()) {
-                socket.sendPlayers(snapshot);
+                socket.sendMapState(snapshot);
             }
         }
 
@@ -305,7 +305,7 @@ public final class WebMapServer implements AutoCloseable {
                 }
                 registered.set(true);
                 sockets.put(clientId, this);
-                sendPlayers(backend.players());
+                sendMapState(backend.snapshot());
             }
 
             @Override
@@ -383,10 +383,10 @@ public final class WebMapServer implements AutoCloseable {
                 }
             }
 
-            private void sendPlayers(final WebPlayerSnapshot snapshot) {
+            private void sendMapState(final WebMapSnapshot snapshot) {
                 if (!isOpen() || snapshot.revision() == playerRevision) return;
                 try {
-                    send("{\"type\":\"players\",\"snapshot\":" + snapshot.toJson() + "}");
+                    send("{\"type\":\"map-state\",\"snapshot\":" + snapshot.toJson() + "}");
                     playerRevision = snapshot.revision();
                 } catch (final IOException e) {
                     closeQuietly(WebSocketFrame.CloseCode.GoingAway, "write failed");
