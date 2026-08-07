@@ -53,6 +53,28 @@ final class WebMapServerTest {
     }
 
     @Test
+    void defaultPlayerAvatarsAreServedAsSvgImages() throws Exception {
+        try (WebMapServer server = WebMapServer.start(
+            WebMapConfig.loopbackEphemeral(), new FakeBackend()
+        )) {
+            for (final String name : List.of("steve", "alex")) {
+                final HttpResponse<String> response = client().send(
+                    HttpRequest.newBuilder(server.uri("/default-" + name + ".svg"))
+                        .GET().build(),
+                    HttpResponse.BodyHandlers.ofString()
+                );
+
+                assertEquals(200, response.statusCode());
+                assertEquals(
+                    "image/svg+xml",
+                    response.headers().firstValue("content-type").orElseThrow()
+                );
+                assertTrue(response.body().contains("<svg"));
+            }
+        }
+    }
+
+    @Test
     void bundledApplicationUsesTheFullscreenMapZoomRange() throws Exception {
         try (WebMapServer server = WebMapServer.start(
             WebMapConfig.loopbackEphemeral(), new FakeBackend()

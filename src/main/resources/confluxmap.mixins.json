@@ -3,7 +3,8 @@
   "package": "cn.net.rms.confluxmap.mixin",
   "compatibilityLevel": "JAVA_$java_version",
   "mixins": [
-    "VanillaLayeredBiomeSourceAccessor"
+    "VanillaLayeredBiomeSourceAccessor",
+    "WorldChunkMixin"
   ],
   "client": [
     "ChatHudMixin",

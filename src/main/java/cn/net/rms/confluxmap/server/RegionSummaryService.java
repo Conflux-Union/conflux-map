@@ -251,6 +251,11 @@ public final class RegionSummaryService {
         liveChunks.onChunkLoad(world, chunk);
     }
 
+    /** Prioritizes a loaded chunk whose block columns changed while a map viewer is watching it. */
+    public void onChunkDirty(final ServerWorld world, final WorldChunk chunk) {
+        liveChunks.onChunkDirty(world, chunk);
+    }
+
     /** Captures the final in-memory state and queues one batched level-0 cache write. */
     public void onChunkUnload(final ServerWorld world, final WorldChunk chunk) {
         liveChunks.onChunkUnload(world, chunk);
@@ -327,6 +332,7 @@ public final class RegionSummaryService {
             sender.send(new ErrorS2C(ErrorS2C.ERR_RATE_LIMITED, "map correction queue is full"));
         }
         invalidations.acknowledge(clientId, request);
+        regionInvalidations.acknowledge(clientId, request);
         liveChunks.nominate(request, now);
         drain(server, channel, now);
     }

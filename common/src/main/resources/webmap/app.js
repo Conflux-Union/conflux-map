@@ -49,6 +49,7 @@ localizeZoomControl();
 updateScaleLabel();
 
 const playerMarkers = new Map();
+const PLAYER_MOVE_DURATION_MS = 1800;
 const mapSocket = connectMapSocket();
 let predictionGeneration = 1;
 const predictor = manifest.predictionAvailable ? createPredictor() : null;
@@ -125,7 +126,7 @@ layer.on('tileunload', event => event.tile.cancelPrediction?.());
 
 function refresh() {
   beginPredictionGeneration();
-  for (const marker of playerMarkers.values()) marker.remove();
+  for (const marker of playerMarkers.values()) removePlayerMarker(marker);
   playerMarkers.clear();
   layer.redraw();
   scheduleSubscription();
@@ -148,7 +149,7 @@ async function renderTile(canvas, tileX, tileZ, lod, generation) {
   }
   await cached;
   if (!tileStillCurrent(canvas, renderDimension, lod, tileX, tileZ, generation)) return;
-  await drawCachedTile(ctx, cacheKey);
+  await drawCachedTile(ctx, cacheKey, lod, renderDimension);
 }
 
 async function syncTile(canvas, tileX, tileZ, lod, generation, force = false) {
@@ -172,7 +173,9 @@ async function syncTile(canvas, tileX, tileZ, lod, generation, force = false) {
   const decoded = compressed ? await decodeTilePatch(compressed) : null;
   if (decoded) {
     patchCache.set(cacheKey, decoded);
-    drawPatch(canvas.getContext('2d'), decoded, 0, 0);
+    drawPatch(
+      canvas.getContext('2d'), decoded, 0, 0, lod, isNetherDimension(dimIndex)
+    );
   }
   revisions.set(cacheKey, patch.revision);
   if (patch.mode !== 0 && patch.body.length) {
@@ -194,12 +197,13 @@ function scheduleVisibleTileSync() {
       )) continue;
       syncTile(canvas, tile.x, tile.z, tile.lod, tile.generation).catch(error => {
         console.warn('Map correction sync failed', error);
+        scheduleVisibleTileSync();
       });
     }
   }, 500);
 }
 
-async function drawCachedTile(ctx, cacheKey) {
+async function drawCachedTile(ctx, cacheKey, lod, dimIndex) {
   let decoded = patchCache.get(cacheKey);
   if (!decoded) {
     const compressed = compressedCache.get(cacheKey);
@@ -209,7 +213,7 @@ async function drawCachedTile(ctx, cacheKey) {
     }
   }
   if (!decoded) return false;
-  drawPatch(ctx, decoded, 0, 0);
+  drawPatch(ctx, decoded, 0, 0, lod, isNetherDimension(dimIndex));
   return true;
 }
 
@@ -337,6 +341,12 @@ function handleMapFrame(bytes) {
   } else if (type === 0x0f) {
     invalidateRegions(frame);
   } else if (type === 0x06) {
+    const error = new Error('map request was rejected');
+    for (const pending of pendingRequests.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    pendingRequests.clear();
     showLoadError();
   }
 }
@@ -375,6 +385,7 @@ function invalidateRegions(frame) {
     if (!tile || !invalidTiles.has(tileKey(tile.dim, tile.lod, tile.x, tile.z))) continue;
     syncTile(canvas, tile.x, tile.z, tile.lod, tile.generation, true).catch(error => {
       console.warn('Map correction refresh failed', error);
+      scheduleVisibleTileSync();
     });
   }
 }
@@ -429,14 +440,41 @@ function updatePlayers(message) {
         .bindTooltip(player.name).addTo(map);
       playerMarkers.set(player.id, marker);
     } else {
-      marker.setLatLng([-player.z, player.x]);
+      animatePlayerMarker(marker, [-player.z, player.x]);
       marker.getElement()?.querySelector('.web-player')
         ?.classList.toggle('translucent', player.translucent);
     }
   }
   for (const [id, marker] of playerMarkers) if (!visible.has(id)) {
-    marker.remove(); playerMarkers.delete(id);
+    removePlayerMarker(marker); playerMarkers.delete(id);
   }
+}
+
+function animatePlayerMarker(marker, target, duration = PLAYER_MOVE_DURATION_MS) {
+  if (marker.playerMoveFrame != null) cancelAnimationFrame(marker.playerMoveFrame);
+  const start = marker.getLatLng();
+  const deltaLat = target[0] - start.lat;
+  const deltaLng = target[1] - start.lng;
+  if (duration <= 0 || (deltaLat === 0 && deltaLng === 0)) {
+    marker.setLatLng(target);
+    marker.playerMoveFrame = null;
+    return;
+  }
+  const startedAt = performance.now();
+  const frame = now => {
+    const progress = Math.max(0, Math.min(1, (now - startedAt) / duration));
+    marker.setLatLng([
+      start.lat + deltaLat * progress,
+      start.lng + deltaLng * progress
+    ]);
+    marker.playerMoveFrame = progress < 1 ? requestAnimationFrame(frame) : null;
+  };
+  marker.playerMoveFrame = requestAnimationFrame(frame);
+}
+
+function removePlayerMarker(marker) {
+  if (marker.playerMoveFrame != null) cancelAnimationFrame(marker.playerMoveFrame);
+  marker.remove();
 }
 
 function createPredictor() {
@@ -728,11 +766,17 @@ async function decodeTilePatch(compressed) {
   let height = 0;
   for (let i = 0; i < count; i++) { height += r.zigzag(); heights[i] = height; }
   const kinds = r.bytes(count), colors = r.bytes(count), fluids = r.bytes(count);
-  r.bytes(count);
+  const floorColors = r.bytes(count);
+  const materialIds = new Array(count).fill('');
+  const floorMaterialIds = new Array(count).fill('');
   if (version >= 5) {
-    const materials = r.u16();
-    for (let i = 0; i < materials; i++) r.bytes(r.u16());
-    r.bytes(count * 4);
+    const decoder = new TextDecoder();
+    const materials = new Array(r.u16());
+    for (let i = 0; i < materials.length; i++) {
+      materials[i] = decoder.decode(r.bytes(r.u16()));
+    }
+    readMaterialPlane(r, materials, materialIds);
+    readMaterialPlane(r, materials, floorMaterialIds);
   }
   const lights = new Uint8Array(evaluated.length * 8);
   if (version >= 4) {
@@ -740,22 +784,164 @@ async function decodeTilePatch(compressed) {
     for (let i = 0; i < evaluatedIndexes.length; i++) r.zigzagLong();
     for (const index of evaluatedIndexes) lights[index] = r.u8();
   }
-  return {width: 256, height: 256, indexes, biomes, heights, kinds, colors, fluids, lights};
+  return {
+    width: 256, height: 256, indexes, biomes, heights, kinds, colors, fluids,
+    floorColors, materialIds, floorMaterialIds, lights
+  };
 }
 
-function drawPatch(ctx, patch, offsetX, offsetZ) {
+function readMaterialPlane(r, materials, output) {
+  for (let i = 0; i < output.length; i++) {
+    const index = r.u16();
+    if (index >= materials.length) throw new Error(`material index ${index} out of range`);
+    output[i] = materials[index];
+  }
+}
+
+function drawPatch(ctx, patch, offsetX, offsetZ, lod = 0, nether = false) {
   const image = ctx.getImageData(offsetX, offsetZ, patch.width, patch.height);
+  const pixels = patch.width * patch.height;
+  const biomes = new Uint8Array(pixels);
+  const heights = new Int32Array(pixels);
+  const kinds = new Uint8Array(pixels);
+  const colors = new Uint8Array(pixels).fill(255);
+  const fluids = new Uint8Array(pixels);
+  const floorColors = new Uint8Array(pixels).fill(255);
+  const present = new Uint8Array(pixels);
   for (let i = 0; i < patch.indexes.length; i++) {
     const pixel = patch.indexes[i];
-    const color = hex(palette[patch.colors[i]] ?? palette[(patch.biomes[i] % 12) + 1]);
-    const light = .62 + patch.lights[pixel] / 38;
-    const shade = i && patch.heights[i] > patch.heights[i - 1] ? 1.08 : 1;
-    image.data[pixel * 4] = Math.min(255, color[0] * light * shade);
-    image.data[pixel * 4 + 1] = Math.min(255, color[1] * light * shade);
-    image.data[pixel * 4 + 2] = Math.min(255, color[2] * light * shade);
+    biomes[pixel] = patch.biomes[i];
+    heights[pixel] = patch.heights[i];
+    kinds[pixel] = patch.kinds[i];
+    colors[pixel] = patch.colors[i];
+    fluids[pixel] = patch.fluids[i];
+    floorColors[pixel] = patch.floorColors?.[i] ?? 255;
+    present[pixel] = 1;
+  }
+  const planes = {
+    width: patch.width, height: patch.height, biomes, heights, kinds, colors,
+    fluids, floorColors, present
+  };
+  for (const pixel of patch.indexes) {
+    const kind = kinds[pixel];
+    if (kind === 0 || kind === 9) continue;
+    let color = authoritativeBaseColor(planes, pixel, lod);
+    if (!nether) color = applyHeightShade(color, heights[pixel]);
+    color = applyBrightness(color, authoritativeRelief(planes, pixel, lod, false));
+    if (nether) color = applyNetherLight(color, patch.lights[pixel]);
+    image.data[pixel * 4] = color >> 16;
+    image.data[pixel * 4 + 1] = (color >> 8) & 255;
+    image.data[pixel * 4 + 2] = color & 255;
     image.data[pixel * 4 + 3] = 255;
   }
   ctx.putImageData(image, offsetX, offsetZ);
+}
+
+function authoritativeBaseColor(planes, pixel, lod) {
+  const biome = predictionBiomes.get(planes.biomes[pixel]) ?? fallbackPredictionBiome;
+  if (planes.kinds[pixel] === 2) {
+    const tint = biome.waterBiome ? 0x3f76e4 : biome.waterTint;
+    const water = multiplyColor(0xcfe0f2, tint);
+    const floorId = planes.floorColors[pixel];
+    const floorBase = paintsLiteralMapColor(floorId)
+      ? mapColor(floorId) : 0xc2a876;
+    const depthBrightness = Math.max(0.25, 1 - planes.fluids[pixel] / 48);
+    const floor = applyBrightness(
+      scaleColor(floorBase, depthBrightness),
+      authoritativeRelief(planes, pixel, lod, true)
+    );
+    return blendOver(floor, water, 0xcc);
+  }
+  const mapColorId = planes.colors[pixel];
+  if (paintsLiteralMapColor(mapColorId)) return mapColor(mapColorId);
+  return authoritativeKindColor(planes.kinds[pixel], biome);
+}
+
+function authoritativeKindColor(kind, biome) {
+  if (kind === 4) return biome.canopyColor;
+  if (kind === 5) return 0xf7faff;
+  if (kind === 6) return 0xa4c6e8;
+  if (kind === 7) return 0xddce9b;
+  return biome.surfaceColor;
+}
+
+function authoritativeRelief(planes, pixel, lod, floorPlane) {
+  const x = pixel % planes.width;
+  const z = Math.floor(pixel / planes.width);
+  if (lod === 0) {
+    const lit = authoritativeHeight(planes, x - 1, z + 1, floorPlane);
+    const center = authoritativeHeight(planes, x, z, floorPlane);
+    if (lit === null || center === null) return 1;
+    return 1 + 0.3 * Math.max(-1, Math.min(1, (lit - center) / 2));
+  }
+  const lit = [
+    authoritativeHeight(planes, x - 1, z, floorPlane),
+    authoritativeHeight(planes, x, z + 1, floorPlane),
+    authoritativeHeight(planes, x - 1, z + 1, floorPlane)
+  ];
+  const dark = [
+    authoritativeHeight(planes, x + 1, z, floorPlane),
+    authoritativeHeight(planes, x, z - 1, floorPlane),
+    authoritativeHeight(planes, x + 1, z - 1, floorPlane)
+  ];
+  if ([...lit, ...dark].some(height => height === null)) return 1;
+  const litMean = (lit[0] + lit[1] + lit[2]) / 3;
+  const darkMean = (dark[0] + dark[1] + dark[2]) / 3;
+  const rise = (litMean - darkMean) / (2 * (1 << lod));
+  return 1 + 0.3 * Math.max(-1, Math.min(1, rise));
+}
+
+function authoritativeHeight(planes, x, z, floorPlane) {
+  if (x < 0 || x >= planes.width || z < 0 || z >= planes.height) return null;
+  const pixel = z * planes.width + x;
+  const kind = planes.kinds[pixel];
+  if (!planes.present[pixel] || kind === 0 || kind === 9) return null;
+  return planes.heights[pixel] - (floorPlane && kind === 2 ? planes.fluids[pixel] : 0);
+}
+
+function paintsLiteralMapColor(id) { return id !== 255 && id !== 1 && id !== 7; }
+function mapColor(id) {
+  const value = palette[id];
+  return value ? parseInt(value.slice(1), 16) : 0x969696;
+}
+
+function scaleColor(color, factor) {
+  return Math.floor((color >> 16) * factor) << 16
+    | Math.floor(((color >> 8) & 255) * factor) << 8
+    | Math.floor((color & 255) * factor);
+}
+
+function applyNetherLight(color, blockLevel) {
+  const ambient = netherLightTint(0);
+  const base = multiplyColor(color, ambient);
+  if (!blockLevel) return base;
+  const lit = netherLightTint(blockLevel);
+  return Math.min(255, Math.round((base >> 16) * ((lit >> 16) / (ambient >> 16)))) << 16
+    | Math.min(255, Math.round(((base >> 8) & 255) * (((lit >> 8) & 255) / ((ambient >> 8) & 255)))) << 8
+    | Math.min(255, Math.round((base & 255) * ((lit & 255) / (ambient & 255))));
+}
+
+function netherLightTint(blockLevel) {
+  const strength = (blockLevel / 15) / (4 - 3 * (blockLevel / 15)) * 1.5;
+  let red = strength;
+  let green = strength * ((strength * 0.6 + 0.4) * 0.6 + 0.4);
+  let blue = strength * (strength * strength * 0.6 + 0.4);
+  red = mix(red, 1, 0.1);
+  green = mix(green, 1, 0.1);
+  blue = mix(blue, 1, 0.1);
+  red = mix(0.3 + red * 0.7, 0.75, 0.04);
+  green = mix(0.3 + green * 0.7, 0.75, 0.04);
+  blue = mix(0.3 + blue * 0.7, 0.75, 0.04);
+  return clampColor(Math.round(Math.min(1, red) * 255)) << 16
+    | clampColor(Math.round(Math.min(1, green) * 255)) << 8
+    | clampColor(Math.round(Math.min(1, blue) * 255));
+}
+
+function mix(value, target, amount) { return value + (target - value) * amount; }
+
+function isNetherDimension(dimIndex) {
+  return manifest.dimensions.find(item => item.index === dimIndex)?.id
+    === 'minecraft:the_nether';
 }
 
 function readSparseTileMask(r) {
@@ -793,7 +979,6 @@ function updateTileStatus(lod) {
   status.classList.remove('error');
   status.textContent = message('tilesLoaded', {loaded, total: visible.length, lod});
 }
-function hex(value) { const n=parseInt(value.slice(1),16); return [n>>16,(n>>8)&255,n&255]; }
 function playerIcon(player) {
   const root = document.createElement('div');
   root.className = `web-player${player.translucent ? ' translucent' : ''}`;
@@ -801,7 +986,9 @@ function playerIcon(player) {
   image.alt = '';
   image.src = `/api/v1/avatars/${player.id}.png`;
   image.addEventListener('load', () => root.classList.add('skin-loaded'));
-  image.addEventListener('error', () => image.remove());
+  image.addEventListener('error', () => {
+    image.src = Math.random() < 0.5 ? '/default-steve.svg' : '/default-alex.svg';
+  }, {once: true});
   const fallback = document.createElement('span');
   fallback.textContent = player.name.slice(0, 1).toUpperCase();
   root.append(image, fallback);

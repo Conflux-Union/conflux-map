@@ -120,6 +120,7 @@ public final class ConfluxMapCompanion {
     }
 
     private void onServerStarting(final MinecraftServer server) {
+        ServerChunkDirtyHandler.bind(null);
         config = configIo.load();
         runtime.deactivate();
         summaries = null;
@@ -177,6 +178,7 @@ public final class ConfluxMapCompanion {
     }
 
     private void onServerStopped(final MinecraftServer server) {
+        ServerChunkDirtyHandler.bind(null);
         final boolean wasActive = runtime.isActive();
         final RegionSummaryService current = summaries;
         if (wasActive && current != null) {
@@ -346,6 +348,7 @@ public final class ConfluxMapCompanion {
             return;
         }
         summaries = new RegionSummaryService(config);
+        ServerChunkDirtyHandler.bind(summaries);
         chunkLoadStates = config.shareChunkLoadState ? new ChunkLoadStateService() : null;
         // Corrections can use the same predictor as the client when a bundled native exists;
         // failure is non-fatal and RegionSummaryService falls back to absolute samples.

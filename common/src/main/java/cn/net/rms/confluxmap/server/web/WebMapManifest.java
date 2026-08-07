@@ -54,10 +54,10 @@ public record WebMapManifest(
             .append("\",\"predictionAvailable\":").append(predictionAvailable());
         if (predictionAvailable()) {
             result.append(",\"seed\":\"").append(seed).append('"')
-                .append(",\"predictionVersion\":").append(predictionVersion)
-                .append(",\"predictionBiomes\":");
-            appendPredictionBiomes(result);
+                .append(",\"predictionVersion\":").append(predictionVersion);
         }
+        result.append(",\"predictionBiomes\":");
+        appendPredictionBiomes(result);
         result.append(",\"dimensions\":[");
         for (int i = 0; i < dimensions.size(); i++) {
             if (i > 0) {

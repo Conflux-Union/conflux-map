@@ -474,6 +474,7 @@ public final class WebMapServer implements AutoCloseable {
         if (path.endsWith(".json")) return "application/json; charset=utf-8";
         if (path.endsWith(".wasm")) return "application/wasm";
         if (path.endsWith(".png")) return "image/png";
+        if (path.endsWith(".svg")) return "image/svg+xml";
         return "application/octet-stream";
     }
 }

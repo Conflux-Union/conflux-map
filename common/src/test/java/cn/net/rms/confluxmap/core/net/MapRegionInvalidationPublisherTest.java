@@ -1,7 +1,9 @@
 package cn.net.rms.confluxmap.core.net;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.util.List;
 import java.util.UUID;
@@ -35,5 +37,45 @@ class MapRegionInvalidationPublisherTest {
             )
         ));
         assertNull(publisher.poll(player));
+    }
+
+    @Test
+    void tileRefreshAcknowledgesRegionSoTheNextTerrainChangeIsPublished() throws Exception {
+        final UUID player = UUID.randomUUID();
+        final MapRegionInvalidationPublisher publisher = new MapRegionInvalidationPublisher();
+        publisher.subscribe(player, new MapRegionSyncSubscribeC2S(
+            0, 1, true, 0, 31, 0, 31
+        ));
+
+        publisher.invalidateRegion(0, 0, 0);
+        assertNotNull(publisher.poll(player));
+        final MapViewReqC2S tileRefresh = new MapViewReqC2S(
+            7, 0, 1, List.of(new MapViewReqC2S.TileReq(0, 0, Long.MIN_VALUE))
+        );
+        try {
+            MapRegionInvalidationPublisher.class
+                .getMethod("acknowledge", UUID.class, MapViewReqC2S.class)
+                .invoke(publisher, player, tileRefresh);
+        } catch (final NoSuchMethodException missingTileAcknowledgement) {
+            fail("tile refresh does not acknowledge region invalidations");
+        }
+
+        publisher.invalidateRegion(0, 0, 0);
+        assertNotNull(publisher.poll(player));
+    }
+
+    @Test
+    void aFailedRefreshCannotSuppressTheNextTerrainChange() {
+        final UUID player = UUID.randomUUID();
+        final MapRegionInvalidationPublisher publisher = new MapRegionInvalidationPublisher();
+        publisher.subscribe(player, new MapRegionSyncSubscribeC2S(
+            0, 1, true, 0, 31, 0, 31
+        ));
+
+        publisher.invalidateRegion(0, 0, 0);
+        assertNotNull(publisher.poll(player));
+
+        publisher.invalidateRegion(0, 0, 0);
+        assertNotNull(publisher.poll(player));
     }
 }
