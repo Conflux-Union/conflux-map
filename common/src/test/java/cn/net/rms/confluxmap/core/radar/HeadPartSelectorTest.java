@@ -37,7 +37,7 @@ class HeadPartSelectorTest {
     }
 
     @Test
-    void fallsBackThroughHeadPartsBodyCubeSegmentsAndRoot() {
+    void fallsBackThroughNamedFaceLikePartsButNeverTheWholeRoot() {
         assertEquals(Set.of("root/head_parts"), HeadPartSelector.select(
             "example:horse", List.of("root/body", "root/head_parts")
         ));
@@ -50,7 +50,7 @@ class HeadPartSelectorTest {
         assertEquals(Set.of("root/segment0", "root/segment1"), HeadPartSelector.select(
             "example:segments", List.of("root/segment2", "root/segment1", "root/segment0")
         ));
-        assertEquals(Set.of("root"), HeadPartSelector.select("example:unknown", List.of("root")));
+        assertEquals(Set.of(), HeadPartSelector.select("example:unknown", List.of("root")));
     }
 
     @Test

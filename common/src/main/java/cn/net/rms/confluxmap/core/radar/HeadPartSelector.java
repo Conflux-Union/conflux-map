@@ -86,7 +86,7 @@ public final class HeadPartSelector {
         if (!segments.isEmpty()) {
             return Set.copyOf(segments);
         }
-        return root(paths);
+        return Set.of();
     }
 
     private static Set<String> matching(

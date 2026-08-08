@@ -9,14 +9,17 @@ class PortraitLayoutTest {
     private static final float EPSILON = 0.001f;
 
     @Test
-    void normalizesVisualAreaInsteadOfStretchingEveryLongestEdgeToTheCellLimit() {
-        final PortraitLayout.Fit square = PortraitLayout.fit(10f, 10f, 32f, 3f, 22f);
-        final PortraitLayout.Fit portrait = PortraitLayout.fit(9f, 12f, 32f, 3f, 22f);
+    void fillsTheAtlasCellWithoutInternalPadding() {
+        final PortraitLayout.Fit square = PortraitLayout.fit(10f, 10f, 32f, 0f, 32f);
+        final PortraitLayout.Fit portrait = PortraitLayout.fit(9f, 12f, 32f, 0f, 32f);
 
-        assertEquals(22f * 22f, square.width() * square.height(), EPSILON);
-        assertEquals(square.width() * square.height(), portrait.width() * portrait.height(), EPSILON);
-        assertTrue(portrait.width() <= 26f);
-        assertTrue(portrait.height() <= 26f);
+        assertEquals(32f, square.width(), EPSILON);
+        assertEquals(32f, square.height(), EPSILON);
+        assertEquals(0f, square.left(), EPSILON);
+        assertEquals(0f, square.top(), EPSILON);
+        assertTrue(portrait.width() <= 32f);
+        assertEquals(32f, portrait.height(), EPSILON);
+        assertEquals(0f, portrait.top(), EPSILON);
     }
 
     @Test
