@@ -6,23 +6,26 @@ import cn.net.rms.confluxmap.core.config.MinimapHudAvoidance;
 public final class ScoreboardHudBounds {
     private static final Frame EMPTY = new Frame(-1, -1, null);
     private static volatile Frame previous = EMPTY;
-    private static volatile Frame current = EMPTY;
+    private static int currentScreenWidth = -1;
+    private static int currentScreenHeight = -1;
+    private static MinimapHudAvoidance.Bounds currentBounds;
 
     private ScoreboardHudBounds() {
     }
 
     public static void beginFrame(final int screenWidth, final int screenHeight) {
-        previous = current;
-        current = new Frame(screenWidth, screenHeight, null);
+        previous = new Frame(currentScreenWidth, currentScreenHeight, currentBounds);
+        currentScreenWidth = screenWidth;
+        currentScreenHeight = screenHeight;
+        currentBounds = null;
     }
 
     public static void include(final int x1, final int y1, final int x2, final int y2) {
         final MinimapHudAvoidance.Bounds painted = new MinimapHudAvoidance.Bounds(
             Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2)
         );
-        final Frame frame = current;
-        final MinimapHudAvoidance.Bounds existing = frame.bounds();
-        final MinimapHudAvoidance.Bounds combined = existing == null
+        final MinimapHudAvoidance.Bounds existing = currentBounds;
+        currentBounds = existing == null
             ? painted
             : new MinimapHudAvoidance.Bounds(
                 Math.min(existing.left(), painted.left()),
@@ -30,7 +33,6 @@ public final class ScoreboardHudBounds {
                 Math.max(existing.right(), painted.right()),
                 Math.max(existing.bottom(), painted.bottom())
             );
-        current = new Frame(frame.screenWidth(), frame.screenHeight(), combined);
     }
 
     /** Returns the last complete frame only when it uses the current scaled viewport. */
