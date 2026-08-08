@@ -151,13 +151,15 @@ coat/marking layers.
    black) — this slightly grows anti-aliased edges to reduce seams while the icon sits in the
    shared texture atlas.
 
-> **Deviation (Conflux Map):** mob portraits are baked lazily from the current entity model into
-> a persistent color atlas. The model's stable child names select the head group;
+> **Deviation (Conflux Map):** known vanilla mobs and their supported variants first use the
+> bundled 13×15 face sheet. Living entities without a bundled cell are baked lazily from the
+> current entity model into a persistent color atlas. Stable child names select the head group;
 > unfamiliar models fall back through body, cube, segments, and finally the model root. At most
 > one missing portrait is baked per client tick, with the shaped category marker used until it is
-> ready. Portraits use area-normalized sizing; horse-like long heads use a fixed three-quarter
-> view while fish retain a side view. All portrait and item icons render without a surrounding
-> outline. Player faces remain direct skin face/hat crops.
+> ready or when a bake cannot be drawn. Dynamic portraits use area-normalized sizing;
+> horse-like long heads use a fixed three-quarter view while fish retain a side view. Bundled,
+> dynamic, player, and item icons all render without a generated surrounding border. Player faces
+> remain direct skin face/hat crops.
 
 **Distinct cached variants per species.** A species can have more than one cached icon when
 its appearance meaningfully differs at runtime. Recognized variant axes include: a discrete
