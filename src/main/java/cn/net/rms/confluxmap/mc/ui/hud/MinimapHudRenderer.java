@@ -8,9 +8,9 @@ import cn.net.rms.confluxmap.core.annotation.Annotation;
 import cn.net.rms.confluxmap.core.annotation.AnnotationProjection;
 import cn.net.rms.confluxmap.core.annotation.AnnotationService;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.config.HudAvoidanceLayout;
 import cn.net.rms.confluxmap.core.config.MinimapPlacement;
 import cn.net.rms.confluxmap.core.config.MinimapHudVisibility;
-import cn.net.rms.confluxmap.core.config.MinimapHudAvoidance;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
@@ -74,8 +74,6 @@ public final class MinimapHudRenderer {
     private static final int TEXT_COLOR = 0xFFFFFFFF;
     private static final int ARROW_OUTLINE = 0xFF101010;
     private static final int ARROW_FILL = 0xFFFFFFFF;
-    private static final int INFO_TEXT_GAP = 3;
-    private static final int INFO_TEXT_LINE_HEIGHT = 10;
     private static final float[] BLOCKS_PER_PIXEL = {0.5f, 1f, 2f, 4f};
     /** Half of the ~7px-across VoxelMap-style diamond/cross marker (deliverable B). */
     private static final float WAYPOINT_MARKER_HALF_SIZE = 3.5f;
@@ -296,38 +294,28 @@ public final class MinimapHudRenderer {
         drawInfoText(draw, player, x0, y0, size);
     }
 
-    /** Applies a render-only translation around measured vanilla HUD bounds without changing saved placement. */
+    /** Uses the same completed scoreboard frame as status effects without changing saved placement. */
     private MinimapPlacement.Layout avoidHudOverlap(
         final int screenWidth,
         final int screenHeight,
         final MinimapPlacement.Layout configuredPlacement
     ) {
-        if (!config.minimapHudAvoidance || client.player == null) {
+        if (client.player == null) {
             return configuredPlacement;
         }
 
-        return MinimapHudAvoidance.resolve(
+        return HudAvoidanceLayout.resolveMinimap(
+            config.minimapHudAvoidance,
             screenWidth,
             screenHeight,
             configuredPlacement,
-            minimapInformationHeight(),
-            ScoreboardHudBounds.current()
+            HudAvoidanceLayout.informationHeight(
+                config.showCoordinates,
+                config.showBiome,
+                config.showLayerIndicator
+            ),
+            ScoreboardHudBounds.previousFrame(screenWidth, screenHeight)
         );
-    }
-
-    /** Height reserved for the optional information text rendered outside the minimap frame. */
-    private int minimapInformationHeight() {
-        int lines = 0;
-        if (config.showCoordinates) {
-            lines++;
-        }
-        if (config.showBiome) {
-            lines++;
-        }
-        if (config.showLayerIndicator) {
-            lines++;
-        }
-        return lines == 0 ? 0 : INFO_TEXT_GAP + lines * INFO_TEXT_LINE_HEIGHT;
     }
 
     private void drawPlayerTrail(
@@ -573,7 +561,7 @@ public final class MinimapHudRenderer {
         if (!config.showCoordinates && !config.showBiome && !config.showLayerIndicator) {
             return;
         }
-        final int lineHeight = INFO_TEXT_LINE_HEIGHT;
+        final int lineHeight = HudAvoidanceLayout.INFORMATION_LINE_HEIGHT;
         int lines = 0;
         if (config.showCoordinates) {
             lines++;
@@ -584,11 +572,11 @@ public final class MinimapHudRenderer {
         if (config.showLayerIndicator) {
             lines++;
         }
-        final float belowY = y0 + size + INFO_TEXT_GAP;
+        final float belowY = y0 + size + HudAvoidanceLayout.INFORMATION_GAP;
         final float yAfterBelowLines = belowY + lines * lineHeight;
         float y = yAfterBelowLines <= client.getWindow().getScaledHeight()
             ? belowY
-            : Math.max(0, y0 - lines * lineHeight - INFO_TEXT_GAP);
+            : Math.max(0, y0 - lines * lineHeight - HudAvoidanceLayout.INFORMATION_GAP);
         final float centerX = x0 + size / 2f;
 
         if (config.showCoordinates) {

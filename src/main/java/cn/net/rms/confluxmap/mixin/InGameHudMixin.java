@@ -2,6 +2,11 @@ package cn.net.rms.confluxmap.mixin;
 
 import cn.net.rms.confluxmap.mc.ui.hud.ScoreboardHudBounds;
 //#if MC>=260100
+//$$ import net.minecraft.client.Minecraft;
+//#else
+import net.minecraft.client.MinecraftClient;
+//#endif
+//#if MC>=260100
 //$$ import net.minecraft.client.gui.GuiGraphicsExtractor;
 //#if MC>=260200
 //$$ import net.minecraft.client.gui.Hud;
@@ -26,7 +31,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /**
  * Observes vanilla's scoreboard background draws instead of duplicating its layout rules. This
  * keeps the minimap avoidance in step with score count, title width, number format, GUI scale, and
- * window size without moving the scoreboard itself.
+ * window size without moving the scoreboard itself. Completed bounds are applied on the following
+ * frame so the earlier status-effect overlay and later minimap use one stable layout.
  */
 //#if MC>=260200
 //$$ @Mixin(Hud.class)
@@ -39,12 +45,18 @@ public abstract class InGameHudMixin {
     //#if MC>=260100
     //$$ @Inject(method = "extractRenderState", at = @At("HEAD"))
     //$$ private void confluxmap$beginHudFrame(final CallbackInfo ci) {
-    //$$     ScoreboardHudBounds.beginFrame();
+    //$$     final Minecraft client = Minecraft.getInstance();
+    //$$     ScoreboardHudBounds.beginFrame(
+    //$$         client.getWindow().getGuiScaledWidth(), client.getWindow().getGuiScaledHeight()
+    //$$     );
     //$$ }
     //#elseif MC<260100
     @Inject(method = "render", at = @At("HEAD"))
     private void confluxmap$beginHudFrame(final CallbackInfo ci) {
-        ScoreboardHudBounds.beginFrame();
+        final MinecraftClient client = MinecraftClient.getInstance();
+        ScoreboardHudBounds.beginFrame(
+            client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight()
+        );
     }
     //#endif
 
