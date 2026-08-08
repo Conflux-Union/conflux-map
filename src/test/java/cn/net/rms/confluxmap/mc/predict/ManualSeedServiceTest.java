@@ -53,8 +53,54 @@ class ManualSeedServiceTest {
         assertEquals(1, refreshes.get());
 
         companionActive.set(true);
-        assertFalse(service.apply(second, "789", "1.21.1"));
-        assertTrue(service.current().isEmpty());
+        assertTrue(service.apply(second, "789", "1.21.1"));
+        assertEquals(789L, service.current().orElseThrow().seed());
+        assertEquals(2, refreshes.get());
+    }
+
+    @Test
+    void remainsAvailableWhenAnActiveCompanionWithholdsItsSeed(@TempDir final Path temp) {
+        final ConfluxConfig config = new ConfluxConfig();
+        final ConfigIo configIo = new ConfigIo(temp.resolve("config.json"), LogManager.getLogger());
+        final SessionGuard sessions = new SessionGuard();
+        final WorldIdentity world = WorldIdentity.companionMultiplayer("play.example.net", "server-world");
+        sessions.begin(world, DimensionId.OVERWORLD);
+        final AtomicInteger refreshes = new AtomicInteger();
+        final ManualSeedService service = new ManualSeedService(
+            config,
+            configIo,
+            sessions,
+            () -> false,
+            () -> true,
+            () -> false,
+            refreshes::incrementAndGet
+        );
+
+        assertTrue(service.available());
+        assertTrue(service.apply(world, "123", "1.21.1"));
+        assertEquals(123L, service.current().orElseThrow().seed());
         assertEquals(1, refreshes.get());
+    }
+
+    @Test
+    void remainsAvailableWhenAnActiveCompanionSharesItsSeed(@TempDir final Path temp) {
+        final ConfluxConfig config = new ConfluxConfig();
+        final ConfigIo configIo = new ConfigIo(temp.resolve("config.json"), LogManager.getLogger());
+        final SessionGuard sessions = new SessionGuard();
+        final WorldIdentity world = WorldIdentity.companionMultiplayer("play.example.net", "server-world");
+        sessions.begin(world, DimensionId.OVERWORLD);
+        final ManualSeedService service = new ManualSeedService(
+            config,
+            configIo,
+            sessions,
+            () -> false,
+            () -> true,
+            () -> true,
+            () -> { }
+        );
+
+        assertTrue(service.available());
+        assertTrue(service.apply(world, "987", "1.21.1"));
+        assertEquals(987L, service.current().orElseThrow().seed());
     }
 }

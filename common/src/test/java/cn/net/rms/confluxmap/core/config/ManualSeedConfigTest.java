@@ -34,4 +34,21 @@ class ManualSeedConfigTest {
         assertEquals(42L, settings.get(world).orElseThrow().seed());
         assertTrue(copy.get(world).isEmpty());
     }
+
+    @Test
+    void companionWorldCanReadAndClearThePrePluginWorldEntry() {
+        final WorldIdentity legacy = WorldIdentity.multiplayer("play.example.net");
+        final WorldIdentity companion = WorldIdentity.companionMultiplayer(
+            "play.example.net", "11111111-2222-3333-4444-555555555555"
+        );
+        final ManualSeedConfig settings = new ManualSeedConfig();
+        settings.set(legacy, "42", "1.17.1");
+
+        assertEquals(42L, settings.get(companion).orElseThrow().seed());
+        settings.set(companion, "84", "1.17.1");
+        assertEquals(84L, settings.get(companion).orElseThrow().seed());
+        assertTrue(settings.get(legacy).isEmpty());
+        assertTrue(settings.clear(companion));
+        assertTrue(settings.get(companion).isEmpty());
+    }
 }
