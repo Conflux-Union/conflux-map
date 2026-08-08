@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.compat.Texts;
+import cn.net.rms.confluxmap.core.cache.MapCacheMigration;
 import cn.net.rms.confluxmap.core.cache.RegionFileCodec;
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
 import cn.net.rms.confluxmap.core.model.DimensionId;
@@ -30,12 +31,14 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.function.Supplier;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
+import net.minecraft.client.network.ServerInfo;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.Formatting;
 
@@ -75,6 +78,7 @@ public final class ClientMultiworldService {
     private long observationGeneration;
     private boolean terrainAttempted;
     private boolean ambiguityNotified;
+    private volatile boolean migrationInProgress;
     private ChunkCaptureService chunkCapture;
     private Supplier<String> openMapKeyDisplayName;
 
@@ -177,7 +181,17 @@ public final class ClientMultiworldService {
     }
 
     public boolean canManageProfiles() {
-        return client.world != null && !client.isInSingleplayer() && companion.state() != CompanionSession.State.ACTIVE;
+        if (client == null || client.world == null || client.isInSingleplayer()) {
+            return false;
+        }
+        // The companion owns the active cache identity, but the client profile list is still the
+        // recovery path for data created before the companion was installed. Prime the address
+        // namespace here because the normal session tracker intentionally bypasses this service
+        // while the companion is active.
+        if (companionWorldIdentityAuthoritative()) {
+            ensureAddressObserved();
+        }
+        return true;
     }
 
     public boolean needsSelection() {
@@ -185,7 +199,134 @@ public final class ClientMultiworldService {
     }
 
     public List<ClientWorldProfile> profiles() {
+        ensureAddressObserved();
         return serverId == null ? List.of() : resolver.profiles(serverId);
+    }
+
+    /** The companion's UUID is authoritative for active map storage while this flag is true. */
+    public boolean companionWorldIdentityAuthoritative() {
+        return companion.state() == CompanionSession.State.ACTIVE;
+    }
+
+    /** Returns the server-owned world identity currently controlling map storage, if any. */
+    public Optional<WorldIdentity> companionWorldIdentity() {
+        if (!companionWorldIdentityAuthoritative()) {
+            return Optional.empty();
+        }
+        ensureAddressObserved();
+        return address == null ? Optional.empty() : companion.resolveWorldIdentity(address);
+    }
+
+    /** Session writes stay suspended while an explicit cache migration drains the old cache. */
+    public boolean migrationInProgress() {
+        return migrationInProgress;
+    }
+
+    /** Whether this profile was recorded on the seed observed for the current server world. */
+    public boolean profileMatchesCurrentSeed(final String profileId) {
+        if (seedHash.isEmpty()) {
+            return false;
+        }
+        return profiles().stream()
+            .filter(profile -> profile.id().equals(profileId))
+            .findFirst()
+            .map(profile -> profile.matchesSeed(seedHash.getAsLong()))
+            .orElse(false);
+    }
+
+    public enum ProfileMigrationStatus {
+        READY,
+        NOT_CONNECTED,
+        COMPANION_REQUIRED,
+        SEED_UNKNOWN,
+        SEED_MISMATCH,
+        SOURCE_IS_TARGET,
+        ALREADY_RUNNING
+    }
+
+    public record ProfileMigrationPreparation(
+        ProfileMigrationStatus status,
+        String profileId,
+        WorldIdentity source,
+        WorldIdentity target
+    ) {
+        public boolean ready() {
+            return status == ProfileMigrationStatus.READY;
+        }
+    }
+
+    /** Validates an explicit source selection without moving any data. */
+    public ProfileMigrationPreparation prepareProfileMigration(final String profileId) {
+        if (migrationInProgress) {
+            return new ProfileMigrationPreparation(
+                ProfileMigrationStatus.ALREADY_RUNNING, profileId, null, null
+            );
+        }
+        if (client == null || client.world == null || client.isInSingleplayer() || serverId == null) {
+            return new ProfileMigrationPreparation(
+                ProfileMigrationStatus.NOT_CONNECTED, profileId, null, null
+            );
+        }
+        if (!companionWorldIdentityAuthoritative()) {
+            return new ProfileMigrationPreparation(
+                ProfileMigrationStatus.COMPANION_REQUIRED, profileId, null, null
+            );
+        }
+        if (seedHash.isEmpty()) {
+            return new ProfileMigrationPreparation(
+                ProfileMigrationStatus.SEED_UNKNOWN, profileId, null, null
+            );
+        }
+        final ClientWorldProfile profile = profiles().stream()
+            .filter(candidate -> candidate.id().equals(profileId))
+            .findFirst()
+            .orElse(null);
+        if (profile == null) {
+            return new ProfileMigrationPreparation(
+                ProfileMigrationStatus.NOT_CONNECTED, profileId, null, null
+            );
+        }
+        if (!profile.matchesSeed(seedHash.getAsLong())) {
+            return new ProfileMigrationPreparation(
+                ProfileMigrationStatus.SEED_MISMATCH, profileId, null, null
+            );
+        }
+        final WorldIdentity source = WorldIdentity.multiplayer(address, profile.storageId());
+        final WorldIdentity target = companion.resolveWorldIdentity(address).orElse(null);
+        if (target == null) {
+            return new ProfileMigrationPreparation(
+                ProfileMigrationStatus.COMPANION_REQUIRED, profileId, null, null
+            );
+        }
+        if (source.equals(target)) {
+            return new ProfileMigrationPreparation(
+                ProfileMigrationStatus.SOURCE_IS_TARGET, profileId, source, target
+            );
+        }
+        migrationInProgress = true;
+        return new ProfileMigrationPreparation(
+            ProfileMigrationStatus.READY, profileId, source, target
+        );
+    }
+
+    /** Executes a previously validated, user-confirmed cache migration on the map IO executor. */
+    public CompletableFuture<MapCacheMigration.Result> executeProfileMigration(
+        final ProfileMigrationPreparation preparation
+    ) {
+        if (preparation == null || !preparation.ready()) {
+            throw new IllegalArgumentException("profile migration was not prepared");
+        }
+        try {
+            return CompletableFuture.supplyAsync(
+                () -> MapCacheMigration.merge(
+                    cacheRoot, preparation.source(), preparation.target(), ConfluxMapMod.LOGGER
+                ),
+                io
+            ).whenComplete((ignored, error) -> migrationInProgress = false);
+        } catch (final RuntimeException error) {
+            migrationInProgress = false;
+            throw error;
+        }
     }
 
     /** Storage identity owned by one profile shown in the current server's profile manager. */
@@ -482,6 +623,7 @@ public final class ClientMultiworldService {
         signalTicks = 0;
         terrainAttempted = false;
         ambiguityNotified = false;
+        migrationInProgress = false;
         observationGeneration++;
     }
 
@@ -517,6 +659,23 @@ public final class ClientMultiworldService {
         ambiguityNotified = false;
         velocityLegacyProfileId = null;
         observationGeneration++;
+    }
+
+    private void ensureAddressObserved() {
+        if (client != null && client.world != null && !client.isInSingleplayer()) {
+            observeAddress(resolveAddress(client));
+        }
+    }
+
+    private static String resolveAddress(final MinecraftClient client) {
+        final ServerInfo server = client.getCurrentServerEntry();
+        if (server != null) {
+            return server.address;
+        }
+        if (client.getNetworkHandler() != null && client.getNetworkHandler().getConnection() != null) {
+            return client.getNetworkHandler().getConnection().getAddress().toString();
+        }
+        return "unknown";
     }
 
     private boolean shouldAwaitVelocityIdentity() {

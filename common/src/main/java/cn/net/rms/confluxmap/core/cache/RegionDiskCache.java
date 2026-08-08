@@ -98,7 +98,22 @@ public final class RegionDiskCache {
         final TileService tiles,
         final Logger logger
     ) {
-        this.baseDir = WorldStorageMigration.directory(root, session.world(), logger).resolve(session.dimension().fileName());
+        this(root, session, mapWorlds, io, tiles, logger, true);
+    }
+
+    RegionDiskCache(
+        final Path root,
+        final SessionGuard.Session session,
+        final MapWorldService mapWorlds,
+        final Executor io,
+        final TileService tiles,
+        final Logger logger,
+        final boolean migrateLegacyStorage
+    ) {
+        final Path worldDir = migrateLegacyStorage
+            ? WorldStorageMigration.directory(root, session.world(), logger)
+            : root.resolve(session.world().serverId()).resolve(session.world().worldId());
+        this.baseDir = worldDir.resolve(session.dimension().fileName());
         this.token = session.token();
         this.dimension = session.dimension();
         this.mapWorlds = mapWorlds;

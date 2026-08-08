@@ -14,12 +14,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 final class OffscreenCanvasProjectionTest {
-    //#if MC>=12108
-    //$$ /** From 1.21.6 the canvas installs its own identity model-view, so its quads sit on z=0. */
+    //#if MC>=12100
+    //$$ /** Canvas rendering installs an identity model-view, so its quads always sit on z=0. */
     //$$ private static final float CANVAS_DRAW_PLANE_Z = 0f;
-    //#elseif MC>=12100
-    //$$ /** Older 1.21 GUI renderers draw through a model-view that translates z by this much. */
-    //$$ private static final float CANVAS_DRAW_PLANE_Z = -11_000f;
     //#endif
     //#if MC>=12100
     //$$
@@ -84,10 +81,10 @@ final class OffscreenCanvasProjectionTest {
     //$$         end.contains("RenderSystem.restoreProjectionMatrix()"),
     //$$         "end must restore the exact projection and vertex sorter active before begin"
     //$$     );
-    //#if MC>=12108
+    //#if MC>=12100
     //$$     assertTrue(
     //$$         begin.contains("RenderSystem.getModelViewStack().pushMatrix().identity()"),
-    //$$         "begin must clear the model-view the world pass left behind"
+    //$$         "begin must clear the model-view inherited outside GUI rendering"
     //$$     );
     //$$     assertTrue(
     //$$         end.contains("RenderSystem.getModelViewStack().popMatrix()"),

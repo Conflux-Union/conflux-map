@@ -72,6 +72,36 @@ class RegionCacheServiceTest {
         }
     }
 
+    @Test
+    void companionSessionLeavesTheLegacyNamespaceForExplicitMigration(@TempDir final Path tempDir)
+        throws IOException {
+        final WorldIdentity world = WorldIdentity.companionMultiplayer(
+            "play.example.net:25565", "11111111-2222-3333-4444-555555555555"
+        );
+        final Path legacyDir = tempDir.resolve(world.serverId()).resolve("world");
+        final Path currentDir = tempDir.resolve(world.serverId()).resolve(world.worldId());
+        Files.createDirectories(legacyDir);
+        Files.writeString(legacyDir.resolve("marker"), "legacy cache");
+
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final MapWorldService mapWorlds = new MapWorldService();
+            final TileService tiles = new TileService(
+                mapWorlds, executors, new ConfluxConfig(), new DaylightModel()
+            );
+            final RegionCacheService cache = new RegionCacheService(
+                tempDir, mapWorlds, executors, tiles, LOGGER
+            );
+
+            cache.onSessionChanged(new SessionGuard.Session(1L, world, DimensionId.OVERWORLD));
+
+            assertTrue(Files.isRegularFile(legacyDir.resolve("marker")));
+            assertFalse(Files.exists(currentDir.resolve("marker")));
+        } finally {
+            executors.shutdown(1000L);
+        }
+    }
+
     private static Path createSave(final Path root) throws IOException {
         Files.createDirectories(root);
         Files.writeString(root.resolve("level.dat"), "test save");

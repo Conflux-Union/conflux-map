@@ -71,7 +71,8 @@ public final class ClientWorldProfile {
         recognitionDisabled = false;
     }
 
-    boolean matchesSeed(final long seedHash) {
+    /** Returns whether this profile has previously been observed on the supplied seed hash. */
+    public boolean matchesSeed(final long seedHash) {
         for (final Binding binding : bindings()) {
             if (binding.hasSeed && binding.seedHash == seedHash) {
                 return true;

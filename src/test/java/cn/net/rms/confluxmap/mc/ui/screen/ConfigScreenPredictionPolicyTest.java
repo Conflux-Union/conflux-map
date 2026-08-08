@@ -35,6 +35,24 @@ class ConfigScreenPredictionPolicyTest {
     }
 
     @Test
+    void clientSeedFallbackReenablesSeedDependentControlsWhenServerWithholdsSeed() {
+        final ConfigScreen.PredictionSettingsAccess access =
+            ConfigScreen.PredictionSettingsAccess.from(false, false, true, true, null, true);
+
+        assertNull(access.disabledReasonKey(ConfigScreen.PredictionControl.UNDERLAY));
+        assertNull(access.disabledReasonKey(ConfigScreen.PredictionControl.STRUCTURES));
+    }
+
+    @Test
+    void localSeedOverrideKeepsSeedControlsAvailableWhenServerSharesSeed() {
+        final ConfigScreen.PredictionSettingsAccess access =
+            ConfigScreen.PredictionSettingsAccess.from(false, false, false, true, null, true);
+
+        assertNull(access.disabledReasonKey(ConfigScreen.PredictionControl.UNDERLAY));
+        assertNull(access.disabledReasonKey(ConfigScreen.PredictionControl.STRUCTURES));
+    }
+
+    @Test
     void directServerPoliciesExplainCorrectionAndStructureControls() {
         final ConfigScreen.PredictionSettingsAccess access =
             ConfigScreen.PredictionSettingsAccess.from(

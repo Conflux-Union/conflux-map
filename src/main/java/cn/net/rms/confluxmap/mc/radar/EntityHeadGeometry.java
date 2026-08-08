@@ -29,8 +29,8 @@ import net.minecraft.util.math.Vector4f;
 /** Extracts textured quads for only the face-like portion of a neutralized vanilla entity model. */
 final class EntityHeadGeometry {
     private static final int CELL_PX = 32;
-    private static final int CONTENT_PAD = 3;
-    private static final int TARGET_VISUAL_SPAN = 22;
+    private static final int CONTENT_PAD = 0;
+    private static final int TARGET_VISUAL_SPAN = 32;
 
     private record RawVertex(float x, float y, float z, float u, float v) {
     }
@@ -112,7 +112,7 @@ final class EntityHeadGeometry {
         return projected;
     }
 
-    private static List<ModelPart> selectParts(final EntityModel<?> model, final String entityType) {
+    static List<ModelPart> selectParts(final EntityModel<?> model, final String entityType) {
         //#if MC>=12103
         //$$ final ModelPart root = model.getRootPart();
         //$$ final Map<String, ModelPart> byPath = new LinkedHashMap<>();
@@ -136,12 +136,33 @@ final class EntityHeadGeometry {
         if (HeadPartSelector.usesFullModel(entityType)) {
             return topLevelParts(model);
         }
+        //#if MC>=12100 && MC<12103
+        //$$ // CreeperEntityModel does not implement ModelWithHead on 1.21.1. Select its stable
+        //$$ // root child explicitly; returning no part on failure preserves the dot fallback and
+        //$$ // prevents a missing head from silently turning into a whole-body portrait.
+        //$$ if ("minecraft:creeper".equalsIgnoreCase(entityType)) {
+        //$$     return namedChildOfTopLevelParts(model, "head");
+        //$$ }
+        //#endif
         if (model instanceof ModelWithHead) {
             return List.of(((ModelWithHead) model).getHead());
         }
         final List<ModelPart> headGroup = smallestPartGroup(model);
-        return headGroup.isEmpty() ? topLevelParts(model) : headGroup;
+        return headGroup;
         //#endif
+    }
+
+    private static List<ModelPart> namedChildOfTopLevelParts(
+        final EntityModel<?> model,
+        final String childName
+    ) {
+        for (final ModelPart root : topLevelParts(model)) {
+            final ModelPart child = children(root).get(childName);
+            if (child != null) {
+                return List.of(child);
+            }
+        }
+        return List.of();
     }
 
     private static void collectPaths(

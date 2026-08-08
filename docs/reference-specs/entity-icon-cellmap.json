@@ -1,0 +1,736 @@
+{
+ "axolotl": {
+  "base": [
+   3,
+   9
+  ],
+  "variantBy": "axolotl_variant_id",
+  "variants": {
+   "0": [
+    3,
+    9
+   ],
+   "1": [
+    4,
+    3
+   ],
+   "2": [
+    6,
+    11
+   ],
+   "3": [
+    11,
+    11
+   ],
+   "4": [
+    12,
+    12
+   ]
+  }
+ },
+ "bat": {
+  "base": [
+   7,
+   13
+  ]
+ },
+ "bee": {
+  "base": [
+   6,
+   13
+  ]
+ },
+ "blaze": {
+  "base": [
+   1,
+   13
+  ]
+ },
+ "cat": {
+  "base": [
+   6,
+   6
+  ],
+  "variantBy": "cat_type",
+  "variants": {
+   "all_black": [
+    10,
+    13
+   ],
+   "black": [
+    5,
+    13
+   ],
+   "british_shorthair": [
+    12,
+    8
+   ],
+   "calico": [
+    10,
+    12
+   ],
+   "jellie": [
+    9,
+    10
+   ],
+   "persian": [
+    9,
+    1
+   ],
+   "ragdoll": [
+    8,
+    1
+   ],
+   "red": [
+    5,
+    8
+   ],
+   "siamese": [
+    7,
+    5
+   ],
+   "tabby": [
+    6,
+    6
+   ],
+   "white": [
+    5,
+    2
+   ]
+  }
+ },
+ "cave_spider": {
+  "base": [
+   9,
+   12
+  ]
+ },
+ "chicken": {
+  "base": [
+   7,
+   12
+  ]
+ },
+ "cod": {
+  "base": [
+   6,
+   12
+  ]
+ },
+ "cow": {
+  "base": [
+   4,
+   12
+  ]
+ },
+ "creeper": {
+  "base": [
+   1,
+   12
+  ]
+ },
+ "dolphin": {
+  "base": [
+   11,
+   8
+  ]
+ },
+ "donkey": {
+  "base": [
+   11,
+   7
+  ]
+ },
+ "drowned": {
+  "base": [
+   11,
+   6
+  ]
+ },
+ "elder_guardian": {
+  "base": [
+   11,
+   5
+  ]
+ },
+ "ender_dragon": {
+  "base": [
+   11,
+   4
+  ]
+ },
+ "enderman": {
+  "base": [
+   11,
+   3
+  ]
+ },
+ "endermite": {
+  "base": [
+   11,
+   2
+  ]
+ },
+ "evoker": {
+  "base": [
+   11,
+   1
+  ]
+ },
+ "fox": {
+  "base": [
+   10,
+   11
+  ],
+  "variantBy": "fox_type",
+  "variants": {
+   "red": [
+    10,
+    11
+   ],
+   "snow": [
+    5,
+    7
+   ]
+  }
+ },
+ "ghast": {
+  "base": [
+   9,
+   11
+  ]
+ },
+ "glow_squid": {
+  "base": [
+   8,
+   11
+  ]
+ },
+ "goat": {
+  "base": [
+   7,
+   11
+  ]
+ },
+ "guardian": {
+  "base": [
+   10,
+   6
+  ]
+ },
+ "hoglin": {
+  "base": [
+   10,
+   5
+  ]
+ },
+ "horse": {
+  "base": [
+   10,
+   4
+  ]
+ },
+ "husk": {
+  "base": [
+   10,
+   3
+  ]
+ },
+ "illusioner": {
+  "base": [
+   10,
+   2
+  ]
+ },
+ "iron_golem": {
+  "base": [
+   10,
+   1
+  ]
+ },
+ "llama": {
+  "base": [
+   3,
+   12
+  ],
+  "variantBy": "llama_variant_id",
+  "variants": {
+   "0": [
+    3,
+    12
+   ],
+   "1": [
+    5,
+    1
+   ],
+   "2": [
+    12,
+    7
+   ],
+   "3": [
+    1,
+    11
+   ]
+  }
+ },
+ "magma_cube": {
+  "base": [
+   9,
+   8
+  ]
+ },
+ "mooshroom": {
+  "base": [
+   9,
+   7
+  ],
+  "variantBy": "mooshroom_type",
+  "variants": {
+   "brown": [
+    12,
+    6
+   ],
+   "red": [
+    9,
+    7
+   ]
+  }
+ },
+ "mule": {
+  "base": [
+   9,
+   6
+  ]
+ },
+ "ocelot": {
+  "base": [
+   9,
+   5
+  ]
+ },
+ "panda": {
+  "base": [
+   9,
+   2
+  ],
+  "variantBy": "panda_gene",
+  "variants": {
+   "aggressive": [
+    12,
+    13
+   ],
+   "brown": [
+    12,
+    5
+   ],
+   "lazy": [
+    8,
+    10
+   ],
+   "playful": [
+    8,
+    7
+   ],
+   "weak": [
+    5,
+    3
+   ],
+   "worried": [
+    3,
+    3
+   ]
+  }
+ },
+ "parrot": {
+  "base": [
+   6,
+   8
+  ],
+  "variantBy": "parrot_variant_id",
+  "variants": {
+   "0": [
+    6,
+    8
+   ],
+   "1": [
+    12,
+    11
+   ],
+   "2": [
+    4,
+    11
+   ],
+   "3": [
+    3,
+    2
+   ],
+   "4": [
+    10,
+    10
+   ]
+  }
+ },
+ "phantom": {
+  "base": [
+   8,
+   9
+  ]
+ },
+ "pig": {
+  "base": [
+   7,
+   9
+  ]
+ },
+ "piglin": {
+  "base": [
+   6,
+   9
+  ]
+ },
+ "piglin_brute": {
+  "base": [
+   5,
+   9
+  ]
+ },
+ "pillager": {
+  "base": [
+   4,
+   9
+  ]
+ },
+ "polar_bear": {
+  "base": [
+   8,
+   6
+  ]
+ },
+ "pufferfish": {
+  "base": [
+   8,
+   5
+  ]
+ },
+ "rabbit": {
+  "base": [
+   12,
+   4
+  ],
+  "variantBy": "rabbit_type",
+  "variants": {
+   "0": [
+    12,
+    4
+   ],
+   "1": [
+    4,
+    5
+   ],
+   "2": [
+    4,
+    13
+   ],
+   "3": [
+    1,
+    5
+   ],
+   "4": [
+    5,
+    11
+   ],
+   "5": [
+    1,
+    8
+   ],
+   "99": [
+    11,
+    12
+   ]
+  }
+ },
+ "ravager": {
+  "base": [
+   7,
+   8
+  ]
+ },
+ "salmon": {
+  "base": [
+   2,
+   8
+  ]
+ },
+ "sheep": {
+  "base": [
+   3,
+   5
+  ],
+  "variantBy": "wool_color",
+  "variants": {
+   "black": [
+    3,
+    13
+   ],
+   "blue": [
+    12,
+    10
+   ],
+   "brown": [
+    12,
+    3
+   ],
+   "cyan": [
+    11,
+    10
+   ],
+   "gray": [
+    10,
+    9
+   ],
+   "green": [
+    3,
+    11
+   ],
+   "light_blue": [
+    7,
+    10
+   ],
+   "light_gray": [
+    5,
+    10
+   ],
+   "lime": [
+    3,
+    10
+   ],
+   "magenta": [
+    1,
+    10
+   ],
+   "orange": [
+    9,
+    4
+   ],
+   "pink": [
+    2,
+    9
+   ],
+   "purple": [
+    8,
+    3
+   ],
+   "red": [
+    4,
+    8
+   ],
+   "white": [
+    3,
+    5
+   ],
+   "yellow": [
+    3,
+    1
+   ]
+  }
+ },
+ "shulker": {
+  "base": [
+   7,
+   6
+  ]
+ },
+ "silverfish": {
+  "base": [
+   7,
+   4
+  ]
+ },
+ "skeleton": {
+  "base": [
+   7,
+   3
+  ]
+ },
+ "skeleton_horse": {
+  "base": [
+   7,
+   2
+  ]
+ },
+ "slime": {
+  "base": [
+   6,
+   7
+  ]
+ },
+ "snow_golem": {
+  "base": [
+   8,
+   4
+  ]
+ },
+ "spider": {
+  "base": [
+   4,
+   7
+  ]
+ },
+ "squid": {
+  "base": [
+   3,
+   7
+  ]
+ },
+ "stray": {
+  "base": [
+   2,
+   7
+  ]
+ },
+ "strider": {
+  "base": [
+   5,
+   4
+  ],
+  "variantBy": "strider_cold",
+  "variants": {
+   "false": [
+    5,
+    4
+   ],
+   "true": [
+    1,
+    7
+   ]
+  }
+ },
+ "trader_llama": {
+  "base": [
+   2,
+   12
+  ],
+  "variantBy": "llama_variant_id",
+  "variants": {
+   "0": [
+    2,
+    12
+   ],
+   "1": [
+    4,
+    4
+   ],
+   "2": [
+    12,
+    1
+   ],
+   "3": [
+    10,
+    7
+   ]
+  }
+ },
+ "tropical_fish": {
+  "base": [
+   6,
+   1
+  ]
+ },
+ "turtle": {
+  "base": [
+   5,
+   6
+  ]
+ },
+ "vex": {
+  "base": [
+   4,
+   6
+  ]
+ },
+ "villager": {
+  "base": [
+   8,
+   8
+  ],
+  "variantBy": "villager_profession",
+  "variants": {}
+ },
+ "vindicator": {
+  "base": [
+   3,
+   6
+  ]
+ },
+ "wandering_trader": {
+  "base": [
+   2,
+   6
+  ]
+ },
+ "witch": {
+  "base": [
+   4,
+   2
+  ]
+ },
+ "wither": {
+  "base": [
+   4,
+   1
+  ]
+ },
+ "wither_skeleton": {
+  "base": [
+   3,
+   4
+  ]
+ },
+ "wolf": {
+  "base": [
+   1,
+   4
+  ],
+  "variantBy": "wolf_state",
+  "variants": {
+   "angry": [
+    8,
+    13
+   ],
+   "tame": [
+    6,
+    4
+   ]
+  }
+ },
+ "zoglin": {
+  "base": [
+   1,
+   2
+  ]
+ },
+ "zombie": {
+  "base": [
+   1,
+   3
+  ]
+ },
+ "zombie_horse": {
+  "base": [
+   2,
+   2
+  ]
+ },
+ "zombie_villager": {
+  "base": [
+   2,
+   1
+  ]
+ },
+ "zombified_piglin": {
+  "base": [
+   1,
+   1
+  ]
+ }
+}

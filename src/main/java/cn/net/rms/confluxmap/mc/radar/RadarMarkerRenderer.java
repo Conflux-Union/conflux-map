@@ -42,6 +42,8 @@ public final class RadarMarkerRenderer {
     private static final int TEXT_COLOR = 0xFFFFFFFF;
     /** Alpha multiplier for spectator-mode players: shown as translucent ghosts, not hidden. */
     private static final float SPECTATOR_ALPHA = 0.5f;
+    /** Matches the approximate outer span of v0.1.3's enlarged mob-icon silhouette. */
+    private static final float PORTRAIT_SCALE = 1.125f;
 
     private RadarMarkerRenderer() {
     }
@@ -130,11 +132,10 @@ public final class RadarMarkerRenderer {
                 return true;
             }
             final EntityIconManager.FaceIcon icon = iconManager.iconFor(live);
-            if (icon != null) {
-                drawIcon(
+            if (icon != null && drawIcon(
                     matrices, client, iconManager, icon, x, y, config.radarIconSize,
                     yDelta, alphaScale
-                );
+                )) {
                 if (config.radarShowPlayerNames && entry.category() == RadarCategory.PLAYER && entry.name() != null) {
                     drawCenteredLine(
                         client, draw, entry.name(), x, y + config.radarIconSize / 2f + 2f, alphaScale
@@ -201,7 +202,7 @@ public final class RadarMarkerRenderer {
     }
 
     /** Draws the unframed portrait with the same elevation and spectator alpha as dot markers. */
-    private static void drawIcon(
+    private static boolean drawIcon(
         final MatrixStack matrices,
         final MinecraftClient client,
         final EntityIconManager iconManager,
@@ -212,26 +213,28 @@ public final class RadarMarkerRenderer {
         final int yDelta,
         final float alphaScale
     ) {
-        final float iconHalfSize = iconSize / 2f;
+        final float portraitSize = iconSize * PORTRAIT_SCALE;
+        final float iconHalfSize = portraitSize / 2f;
         final int tint = Argb.scaleAlpha(elevationColor(0xFFFFFFFF, yDelta), alphaScale);
         if (icon.dynamic()) {
             if (!iconManager.bindDynamicColor()) {
-                return;
+                return false;
             }
         } else {
             RenderUtil.bindTexture(client, icon.texture());
         }
         RenderUtil.drawTintedQuad(
-            matrices, x - iconHalfSize, y - iconHalfSize, iconSize, iconSize,
+            matrices, x - iconHalfSize, y - iconHalfSize, portraitSize, portraitSize,
             icon.u0(), icon.v0(), icon.u1(), icon.v1(), tint
         );
         if (icon.hasOverlay()) {
             RenderUtil.bindTexture(client, icon.overlayTexture());
             RenderUtil.drawTintedQuad(
-                matrices, x - iconHalfSize, y - iconHalfSize, iconSize, iconSize,
+                matrices, x - iconHalfSize, y - iconHalfSize, portraitSize, portraitSize,
                 icon.ou0(), icon.ov0(), icon.ou1(), icon.ov1(), tint
             );
         }
+        return true;
     }
 
     /** Draws a compact count plate centered on the representative marker's bottom-right corner. */

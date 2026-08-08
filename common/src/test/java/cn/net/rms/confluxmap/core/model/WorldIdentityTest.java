@@ -14,7 +14,8 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * Pure-Java coverage of the S3 companion-aware identity factories. Verifies the compatibility
  * contract: {@code multiplayer(address)} stays byte-identical to today's non-companion path
- * (worldId="world"), while {@code multiplayer(address, worldId)} takes the companion's stable UUID.
+ * (worldId="world"), while {@code companionMultiplayer(address, worldId)} takes the server UUID
+ * and retains the old id for compatibility lookups without authorizing disk migration.
  */
 class WorldIdentityTest {
 
@@ -28,18 +29,37 @@ class WorldIdentityTest {
 
     @Test
     void multiplayerWithOverrideAdoptsCompanionUuid() {
-        final WorldIdentity id = WorldIdentity.multiplayer("example.net:25565", "11111111-2222-3333-4444-555555555555");
+        final WorldIdentity id = WorldIdentity.companionMultiplayer(
+            "example.net:25565", "11111111-2222-3333-4444-555555555555"
+        );
         assertEquals("example.net_25565", id.serverId());
         // UUIDs contain only [0-9a-f-], all already in the safe set, so they pass through unchanged.
         assertEquals("11111111-2222-3333-4444-555555555555", id.worldId());
+        assertEquals(java.util.List.of("world"), id.legacyStorageIds());
     }
 
     @Test
     void companionOverrideChangesWorldIdButNotServerId() {
         final WorldIdentity without = WorldIdentity.multiplayer("example.net:25565");
-        final WorldIdentity with = WorldIdentity.multiplayer("example.net:25565", "deadbeef-0000-0000-0000-000000000000");
+        final WorldIdentity with = WorldIdentity.companionMultiplayer(
+            "example.net:25565", "deadbeef-0000-0000-0000-000000000000"
+        );
         assertEquals(without.serverId(), with.serverId());
         assertNotEquals(without.worldId(), with.worldId());
+    }
+
+    @Test
+    void companionWorldIdDoesNotAddRedundantLegacyNamespace() {
+        final WorldIdentity id = WorldIdentity.companionMultiplayer("example.net:25565", "world");
+
+        assertTrue(id.legacyStorageIds().isEmpty());
+    }
+
+    @Test
+    void clientSelectedWorldDoesNotAdoptTheDefaultWorldNamespace() {
+        final WorldIdentity id = WorldIdentity.multiplayer("example.net:25565", "survival");
+
+        assertTrue(id.legacyStorageIds().isEmpty());
     }
 
     @Test

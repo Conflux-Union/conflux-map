@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.core.cache;
 
 import cn.net.rms.confluxmap.core.store.MapWorld;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
+import cn.net.rms.confluxmap.core.store.WorldStorageMigration;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
@@ -20,6 +21,7 @@ public final class RegionCacheService {
     private final Logger logger;
 
     private volatile RegionDiskCache current;
+    private SessionGuard.Session currentSession;
 
     public RegionCacheService(
         final Path root,
@@ -37,12 +39,36 @@ public final class RegionCacheService {
 
     /** Main thread, from the session tracker. */
     public void onSessionChanged(final SessionGuard.Session session) {
+        final SessionGuard.Session endingSession = currentSession;
         final MapWorld endingWorld = mapWorlds.switchSession(session);
         final RegionDiskCache endingCache = current;
         if (endingCache != null && endingWorld != null) {
             endingCache.flushAllOnSessionEnd(endingWorld);
         }
-        current = session.active() ? new RegionDiskCache(root, session, mapWorlds, executors, tiles, logger) : null;
+        final boolean waitForEndingFlush = migrationMustFollowEndingFlush(session, endingSession);
+        final RegionDiskCache next = session.active()
+            ? new RegionDiskCache(root, session, mapWorlds, executors.io(), tiles, logger, !waitForEndingFlush)
+            : null;
+        if (waitForEndingFlush) {
+            // Both jobs use the single IO queue. The previous session's flush therefore writes
+            // into its old namespace before this move, rather than recreating it afterwards.
+            executors.io().execute(() -> WorldStorageMigration.directory(root, session.world(), logger));
+        }
+        current = next;
+        currentSession = session;
+    }
+
+    private static boolean migrationMustFollowEndingFlush(
+        final SessionGuard.Session session,
+        final SessionGuard.Session endingSession
+    ) {
+        return session.active()
+            && endingSession != null
+            && endingSession.active()
+            && "local".equals(session.world().serverId())
+            && session.dimension().equals(endingSession.dimension())
+            && session.world().serverId().equals(endingSession.world().serverId())
+            && session.world().legacyStorageIds().contains(endingSession.world().worldId());
     }
 
     /** The disk cache for the active session, or null between sessions. */
