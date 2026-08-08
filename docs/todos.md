@@ -141,11 +141,11 @@ registry and one handler. Without MaliLib they retain their existing vanilla
 bindings and defaults. With MaliLib they are registered as a dedicated Conflux
 Map config screen, stored in a separate Conflux Map hotkey file, and may use
 multi-key combinations. Minecraft 1.21.1 and newer expose that screen through
-MaliLib's A+C config switcher without adding a vanilla keybind. On 1.17.1 the
-integration detects a backported config-screen registry at runtime and uses the
-same switcher when available; otherwise it retains an unbound compatibility
-shortcut for legacy MaliLib builds. MaliLib remains a compile-only suggested
-dependency and is not bundled or required at runtime.
+MaliLib's A+C config switcher without adding a vanilla keybind. On 1.17.1,
+1.18.2, and 1.20.1 the integration detects a backported config-screen registry
+at runtime and uses the same switcher when available; otherwise it retains an
+unbound compatibility shortcut for legacy MaliLib builds. MaliLib remains a
+compile-only suggested dependency and is not bundled or required at runtime.
 
 ### 8. Structure icon layer and per-type filters — completed
 
@@ -284,10 +284,12 @@ invalidations retain the exact viewport subscription and stale only the visible
 crop of a changed summary region. Older companions remain on the previous
 capability-gated tile/progressive path.
 
-## Deferred
+## Follow-up fixes
 
-Parked because the request still does not identify missing behavior.
+### Entity head icons shown by default - completed
 
-| Request | Missing |
-|---|---|
-| Entity head icons shown by default | `ConfluxConfig#radarIconsEnabled` already defaults to `true`; the visible defect or missing entity category is not identified. |
+Completed on 2026-08-08. Known vanilla mobs again use the bundled face sheet by
+default. Newer vanilla or modded living entities without a bundled cell fall
+back to a lazily rendered, borderless model portrait. While that portrait is
+pending or unavailable, the category-shaped marker remains visible instead of
+dropping the entity from the radar.
