@@ -42,8 +42,6 @@ public final class RadarMarkerRenderer {
     private static final int TEXT_COLOR = 0xFFFFFFFF;
     /** Alpha multiplier for spectator-mode players: shown as translucent ghosts, not hidden. */
     private static final float SPECTATOR_ALPHA = 0.5f;
-    /** Matches the approximate outer span of v0.1.3's enlarged mob-icon silhouette. */
-    private static final float PORTRAIT_SCALE = 1.125f;
 
     private RadarMarkerRenderer() {
     }
@@ -201,7 +199,11 @@ public final class RadarMarkerRenderer {
         return ItemStack.EMPTY;
     }
 
-    /** Draws the unframed portrait with the same elevation and spectator alpha as dot markers. */
+    /**
+     * Draws the unframed portrait with the same elevation and spectator alpha as dot markers.
+     *
+     * @return false when the portrait could not be bound, so the caller still draws its dot
+     */
     private static boolean drawIcon(
         final MatrixStack matrices,
         final MinecraftClient client,
@@ -213,8 +215,7 @@ public final class RadarMarkerRenderer {
         final int yDelta,
         final float alphaScale
     ) {
-        final float portraitSize = iconSize * PORTRAIT_SCALE;
-        final float iconHalfSize = portraitSize / 2f;
+        final float iconHalfSize = iconSize / 2f;
         final int tint = Argb.scaleAlpha(elevationColor(0xFFFFFFFF, yDelta), alphaScale);
         if (icon.dynamic()) {
             if (!iconManager.bindDynamicColor()) {
@@ -224,13 +225,13 @@ public final class RadarMarkerRenderer {
             RenderUtil.bindTexture(client, icon.texture());
         }
         RenderUtil.drawTintedQuad(
-            matrices, x - iconHalfSize, y - iconHalfSize, portraitSize, portraitSize,
+            matrices, x - iconHalfSize, y - iconHalfSize, iconSize, iconSize,
             icon.u0(), icon.v0(), icon.u1(), icon.v1(), tint
         );
         if (icon.hasOverlay()) {
             RenderUtil.bindTexture(client, icon.overlayTexture());
             RenderUtil.drawTintedQuad(
-                matrices, x - iconHalfSize, y - iconHalfSize, portraitSize, portraitSize,
+                matrices, x - iconHalfSize, y - iconHalfSize, iconSize, iconSize,
                 icon.ou0(), icon.ov0(), icon.ou1(), icon.ov1(), tint
             );
         }

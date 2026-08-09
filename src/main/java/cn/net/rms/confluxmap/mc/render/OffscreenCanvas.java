@@ -114,8 +114,9 @@ public final class OffscreenCanvas {
         //$$ RenderSystem.backupProjectionMatrix();
         //#endif
         //#if MC>=12100
-        //$$ // Atlas updates can run from END_CLIENT_TICK, outside a GUI pass. Never inherit the
-        //$$ // world renderer's model-view: canvas geometry is already expressed in canvas pixels.
+        //$$ // Persistent atlases are filled from the client tick, outside any GUI pass, so the
+        //$$ // global model-view still holds whatever the world pass left in it. Canvas geometry is
+        //$$ // already in canvas pixels and needs none of it.
         //$$ RenderSystem.getModelViewStack().pushMatrix().identity();
         //#if MC<12103
         //$$ RenderSystem.applyModelViewMatrix();

@@ -19,6 +19,5 @@ matter, because they are behavior.
 | [`cave-nether-layers.md`](cave-nether-layers.md) | Cave-mode auto-detection, Nether current-layer / ceiling / Y-slice modes, End rendering. |
 | [`waypoint-ux.md`](waypoint-ux.md) | Waypoint data model, cross-dimension coordinate conversion, death points, list/edit UI, indicators. |
 | [`radar-icons.md`](radar-icons.md) | Entity classification, radar dot rendering, above/below elevation cues, icon mapping. |
-| [`entity-icon-cellmap.json`](entity-icon-cellmap.json) | Bundled radar face-sheet cells and runtime variant mappings. |
 | [`predicted-map.md`](predicted-map.md) | Seed prediction, exact correction snapshots, companion patch wire format. |
 | [`waypoint-storage-formats.md`](waypoint-storage-formats.md) | On-disk waypoint file locations, naming, and line grammars of two third-party minimap mods, for read-only import. |

@@ -7,11 +7,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
+/**
+ * A portrait that could not be bound must leave the marker's shaped category dot on screen. The
+ * dot is the only thing standing between a failed bake and an entity that silently disappears
+ * from the radar.
+ */
 final class RadarMarkerFallbackTest {
     @Test
     void doesNotTreatAnUnboundDynamicIconAsDrawn() throws IOException {
-        final Path root = findProjectRoot();
-        final String renderer = Files.readString(root.resolve(
+        final String renderer = Files.readString(findProjectRoot().resolve(
             "src/main/java/cn/net/rms/confluxmap/mc/radar/RadarMarkerRenderer.java"
         ));
 

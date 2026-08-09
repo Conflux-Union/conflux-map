@@ -86,6 +86,8 @@ public final class HeadPartSelector {
         if (!segments.isEmpty()) {
             return Set.copyOf(segments);
         }
+        // No face-like part name: report nothing instead of the whole root. A whole-body portrait
+        // reads as a rendering bug, while an empty selection degrades to the shaped category dot.
         return Set.of();
     }
 

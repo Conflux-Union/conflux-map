@@ -92,9 +92,11 @@ Conflux Map is a Fabric client-side minimap and world map
   on both maps. Trail duration, dot size, and visibility are configurable.
 - **Entity radar:** Players, hostile mobs, passive and neutral mobs, dropped items,
   vehicles, and projectiles have separate controls. Markers use matching entity heads
-  or item forms. Known vanilla mobs use bundled face icons, while newer or modded
-  living entities fall back to borderless portraits rendered from their current model.
-  Crowded targets collapse into counted clusters, and players always remain separate.
+  or item forms. Every living entity gets a borderless portrait rendered from its own
+  current model, so newer vanilla mobs and modded mobs need no bundled art, and every
+  portrait is normalized to the same icon size. While a portrait is still baking or
+  cannot be produced, the category-shaped dot stays visible instead of dropping the
+  entity. Crowded targets collapse into counted clusters, and players always remain separate.
 - **PNG export:** Select any rectangular map area or enter its coordinates, then
   export at 1 to 16 blocks per pixel. The exporter estimates the output size, can
   include map drawings, runs in the background, reports progress, and supports

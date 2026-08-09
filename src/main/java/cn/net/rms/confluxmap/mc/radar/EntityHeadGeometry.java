@@ -16,8 +16,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import net.minecraft.client.model.ModelPart;
+//#if MC<12103
+import net.minecraft.client.model.TexturedModelData;
+//#endif
 import net.minecraft.client.render.entity.model.EntityModel;
+//#if MC<12103
+import net.minecraft.client.render.entity.model.CompositeEntityModel;
+import net.minecraft.client.render.entity.model.EntityModelLayer;
+import net.minecraft.client.render.entity.model.EntityModels;
+//#endif
 import net.minecraft.client.render.entity.model.ModelWithHead;
+//#if MC<12103
+import net.minecraft.client.render.entity.model.SinglePartEntityModel;
+//#endif
 import net.minecraft.client.util.math.MatrixStack;
 //#if MC>=11900
 //$$ import org.joml.Vector3f;
@@ -29,8 +40,16 @@ import net.minecraft.util.math.Vector4f;
 /** Extracts textured quads for only the face-like portion of a neutralized vanilla entity model. */
 final class EntityHeadGeometry {
     private static final int CELL_PX = 32;
-    private static final int CONTENT_PAD = 0;
-    private static final int TARGET_VISUAL_SPAN = 32;
+    /** Transparent margin that stops a scaled portrait from sampling its atlas neighbour. */
+    private static final int CONTENT_PAD = 1;
+    /** Longest-axis span every portrait is normalized to, so no mob icon reads bigger than another. */
+    static final int PORTRAIT_SPAN_PX = CELL_PX - 2 * CONTENT_PAD;
+    //#if MC<12103
+    private static final String MAIN_LAYER = "main";
+    private static final Map<String, ModelPart> DATA_ROOTS = new LinkedHashMap<>();
+
+    private static Map<String, TexturedModelData> mainLayerData;
+    //#endif
 
     private record RawVertex(float x, float y, float z, float u, float v) {
     }
@@ -42,7 +61,16 @@ final class EntityHeadGeometry {
     }
 
     static float[] project(final EntityModel<?> model, final String entityType, final int cellX, final int cellY) {
-        final List<ModelPart> parts = selectParts(model, entityType);
+        return project(selectParts(model, entityType), entityType, cellX, cellY);
+    }
+
+    /** Projects an already-selected part group; separated so tests can drive raw model trees. */
+    static float[] project(
+        final List<ModelPart> parts,
+        final String entityType,
+        final int cellX,
+        final int cellY
+    ) {
         if (parts.isEmpty()) {
             return new float[0];
         }
@@ -90,9 +118,7 @@ final class EntityHeadGeometry {
         if (!(width > 0f) || !(height > 0f)) {
             return new float[0];
         }
-        final PortraitLayout.Fit fit = PortraitLayout.fit(
-            width, height, CELL_PX, CONTENT_PAD, TARGET_VISUAL_SPAN
-        );
+        final PortraitLayout.Fit fit = PortraitLayout.fit(width, height, CELL_PX, CONTENT_PAD);
         final float scale = fit.scale();
         final float offsetX = cellX + fit.left();
         final float offsetY = cellY + fit.top();
@@ -112,57 +138,109 @@ final class EntityHeadGeometry {
         return projected;
     }
 
+    /**
+     * Resolves the parts a portrait draws. The named part tree is the primary source on every
+     * version, because part names come from model data and survive remapping; the reflective
+     * strategies below it only cover pre-1.21.3 models that never retain their root part.
+     */
     static List<ModelPart> selectParts(final EntityModel<?> model, final String entityType) {
-        //#if MC>=12103
-        //$$ final ModelPart root = model.getRootPart();
-        //$$ final Map<String, ModelPart> byPath = new LinkedHashMap<>();
-        //$$ collectPaths(root, "root", byPath, java.util.Collections.newSetFromMap(new IdentityHashMap<>()));
-        //$$ final Set<String> selectedPaths = HeadPartSelector.select(entityType, byPath.keySet());
-        //$$ final List<ModelPart> selected = new ArrayList<>();
-        //$$ for (final String path : selectedPaths) {
-        //$$     boolean coveredByAncestor = false;
-        //$$     for (final String other : selectedPaths) {
-        //$$         if (!path.equals(other) && path.startsWith(other + "/")) {
-        //$$             coveredByAncestor = true;
-        //$$             break;
-        //$$         }
-        //$$     }
-        //$$     if (!coveredByAncestor) {
-        //$$         selected.add(byPath.get(path));
-        //$$     }
-        //$$ }
-        //$$ return selected;
-        //#else
         if (HeadPartSelector.usesFullModel(entityType)) {
-            return topLevelParts(model);
+            return fullModelParts(model);
         }
-        //#if MC>=12100 && MC<12103
-        //$$ // CreeperEntityModel does not implement ModelWithHead on 1.21.1. Select its stable
-        //$$ // root child explicitly; returning no part on failure preserves the dot fallback and
-        //$$ // prevents a missing head from silently turning into a whole-body portrait.
-        //$$ if ("minecraft:creeper".equalsIgnoreCase(entityType)) {
-        //$$     return namedChildOfTopLevelParts(model, "head");
-        //$$ }
-        //#endif
+        final ModelPart root = rootPart(model);
+        if (root != null) {
+            final List<ModelPart> selected = selectFromRoot(root, entityType);
+            if (!selected.isEmpty()) {
+                return selected;
+            }
+        }
+        //#if MC>=12103
+        //$$ return List.of();
+        //#else
         if (model instanceof ModelWithHead) {
             return List.of(((ModelWithHead) model).getHead());
         }
-        final List<ModelPart> headGroup = smallestPartGroup(model);
-        return headGroup;
+        // AnimalModel exposes its head group only as a protected iterable, and discards the root
+        // it built those parts from, so no named tree is reachable for that model family.
+        // CompositeEntityModel is excluded because its only iterable is every part it owns.
+        if (!(model instanceof CompositeEntityModel)) {
+            final List<ModelPart> headGroup = smallestPartGroup(model);
+            if (!headGroup.isEmpty()) {
+                return headGroup;
+            }
+        }
+        final ModelPart dataRoot = vanillaDataRoot(entityType);
+        return dataRoot == null ? List.of() : selectFromRoot(dataRoot, entityType);
         //#endif
     }
 
-    private static List<ModelPart> namedChildOfTopLevelParts(
-        final EntityModel<?> model,
-        final String childName
-    ) {
-        for (final ModelPart root : topLevelParts(model)) {
-            final ModelPart child = children(root).get(childName);
-            if (child != null) {
-                return List.of(child);
+    //#if MC<12103
+    /**
+     * Rebuilds a vanilla layer's named part tree from the model data the game built the live model
+     * from. Models such as {@code LlamaEntityModel} keep neither their root part nor a head group,
+     * so their live parts carry no name at all; the data tree is geometrically identical and the
+     * portrait pose is neutral anyway. Render thread only.
+     */
+    private static ModelPart vanillaDataRoot(final String entityType) {
+        if (entityType == null) {
+            return null;
+        }
+        if (mainLayerData == null) {
+            mainLayerData = new LinkedHashMap<>();
+            for (final Map.Entry<EntityModelLayer, TexturedModelData> layer : EntityModels.getModels().entrySet()) {
+                if (MAIN_LAYER.equals(layer.getKey().getName())) {
+                    mainLayerData.put(layer.getKey().getId().toString(), layer.getValue());
+                }
             }
         }
-        return List.of();
+        final TexturedModelData data = mainLayerData.get(entityType);
+        if (data == null) {
+            return null;
+        }
+        return DATA_ROOTS.computeIfAbsent(entityType, key -> data.createModel());
+    }
+    //#endif
+
+    /** Path-based selection over a named part tree, shared by every version and by the tests. */
+    static List<ModelPart> selectFromRoot(final ModelPart root, final String entityType) {
+        final Map<String, ModelPart> byPath = new LinkedHashMap<>();
+        collectPaths(root, "root", byPath, java.util.Collections.newSetFromMap(new IdentityHashMap<>()));
+        final Set<String> selectedPaths = HeadPartSelector.select(entityType, byPath.keySet());
+        final List<ModelPart> selected = new ArrayList<>();
+        for (final String path : selectedPaths) {
+            boolean coveredByAncestor = false;
+            for (final String other : selectedPaths) {
+                if (!path.equals(other) && path.startsWith(other + "/")) {
+                    coveredByAncestor = true;
+                    break;
+                }
+            }
+            if (!coveredByAncestor) {
+                selected.add(byPath.get(path));
+            }
+        }
+        return selected;
+    }
+
+    private static ModelPart rootPart(final EntityModel<?> model) {
+        //#if MC>=12103
+        //$$ return model.getRootPart();
+        //#else
+        if (model instanceof SinglePartEntityModel) {
+            return ((SinglePartEntityModel<?>) model).getPart();
+        }
+        final List<ModelPart> topLevel = topLevelParts(model);
+        return topLevel.size() == 1 && !children(topLevel.get(0)).isEmpty() ? topLevel.get(0) : null;
+        //#endif
+    }
+
+    private static List<ModelPart> fullModelParts(final EntityModel<?> model) {
+        //#if MC>=12103
+        //$$ return List.of(model.getRootPart());
+        //#else
+        final ModelPart root = rootPart(model);
+        return root == null ? topLevelParts(model) : List.of(root);
+        //#endif
     }
 
     private static void collectPaths(
@@ -181,7 +259,7 @@ final class EntityHeadGeometry {
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<String, ModelPart> children(final ModelPart part) {
+    static Map<String, ModelPart> children(final ModelPart part) {
         for (final Field field : part.getClass().getDeclaredFields()) {
             if (!Map.class.isAssignableFrom(field.getType())) {
                 continue;

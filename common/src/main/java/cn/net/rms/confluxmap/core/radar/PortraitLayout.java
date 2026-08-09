@@ -33,24 +33,26 @@ public final class PortraitLayout {
         return THREE_QUARTER_VIEW_TYPES.contains(type) ? 35f : 0f;
     }
 
+    /**
+     * Scales a portrait so its longest axis always spans the same number of pixels, whatever the
+     * model's aspect ratio is. Normalizing visual area instead would make an elongated muzzle
+     * overflow the span a cube-shaped head gets, which is exactly how portraits end up looking
+     * inconsistently sized on the radar.
+     */
     public static Fit fit(
         final float rawWidth,
         final float rawHeight,
         final float cellSize,
-        final float padding,
-        final float targetVisualSpan
+        final float padding
     ) {
-        if (!(rawWidth > 0f) || !(rawHeight > 0f) || !(cellSize > 0f)
-            || padding < 0f || !(targetVisualSpan > 0f)) {
+        if (!(rawWidth > 0f) || !(rawHeight > 0f) || !(cellSize > 0f) || padding < 0f) {
             throw new IllegalArgumentException("portrait dimensions must be positive");
         }
         final float content = cellSize - 2f * padding;
         if (!(content > 0f)) {
             throw new IllegalArgumentException("portrait padding leaves no content area");
         }
-        final float areaScale = targetVisualSpan / (float) Math.sqrt(rawWidth * rawHeight);
-        final float boundsScale = content / Math.max(rawWidth, rawHeight);
-        final float scale = Math.min(areaScale, boundsScale);
+        final float scale = content / Math.max(rawWidth, rawHeight);
         final float width = rawWidth * scale;
         final float height = rawHeight * scale;
         return new Fit(scale, width, height, (cellSize - width) / 2f, (cellSize - height) / 2f);
