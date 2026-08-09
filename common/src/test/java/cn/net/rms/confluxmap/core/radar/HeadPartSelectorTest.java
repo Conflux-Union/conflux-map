@@ -49,9 +49,13 @@ class HeadPartSelectorTest {
         assertEquals(Set.of("root/head"), HeadPartSelector.select("minecraft:llama", List.of(
             "root", "root/head", "root/body", "root/right_hind_leg", "root/chest_right"
         )));
-        assertEquals(Set.of("root/head"), HeadPartSelector.select("minecraft:rabbit", List.of(
-            "root", "root/head", "root/body", "root/left_ear", "root/tail", "root/nose"
-        )));
+        assertEquals(
+            Set.of("root/head", "root/right_ear", "root/left_ear", "root/nose"),
+            HeadPartSelector.select("minecraft:rabbit", List.of(
+                "root", "root/head", "root/body", "root/right_ear", "root/left_ear",
+                "root/tail", "root/nose"
+            ))
+        );
         assertEquals(Set.of("root/head"), HeadPartSelector.select("minecraft:shulker", List.of(
             "root", "root/base", "root/lid", "root/head"
         )));
@@ -87,5 +91,13 @@ class HeadPartSelectorTest {
                 "root/head", "root/body0", "root/body1"
             ))
         );
+    }
+
+    @Test
+    void dropsTheVillagerHatRimThatWouldShrinkTheFace() {
+        assertFalse(HeadPartSelector.includesGeometry("minecraft:villager", "/hat/hat_rim"));
+        assertFalse(HeadPartSelector.includesGeometry("minecraft:zombie_villager", "/hat/hat_rim"));
+        assertTrue(HeadPartSelector.includesGeometry("minecraft:villager", "/hat"));
+        assertTrue(HeadPartSelector.includesGeometry("minecraft:witch", "/hat/hat_rim"));
     }
 }

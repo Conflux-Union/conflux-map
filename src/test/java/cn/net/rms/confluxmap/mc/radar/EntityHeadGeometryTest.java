@@ -2,12 +2,15 @@ package cn.net.rms.confluxmap.mc.radar;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import net.minecraft.client.model.Dilation;
 import net.minecraft.client.model.ModelPart;
+import net.minecraft.client.model.TexturedModelData;
 import net.minecraft.client.render.entity.model.CreeperEntityModel;
 import net.minecraft.client.render.entity.model.EntityModel;
+import net.minecraft.client.render.entity.model.VillagerResemblingModel;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -55,5 +58,36 @@ final class EntityHeadGeometryTest {
 
         assertEquals(EntityHeadGeometry.PORTRAIT_SPAN_PX, maxX - minX, SPAN_EPSILON);
         assertEquals(EntityHeadGeometry.PORTRAIT_SPAN_PX, maxY - minY, SPAN_EPSILON);
+    }
+
+    @Test
+    void villagerFaceUsesMostOfThePortraitCell() {
+        final ModelPart root = TexturedModelData.of(
+            VillagerResemblingModel.getModelData(), 64, 64
+        ).createModel();
+        final float[] geometry = EntityHeadGeometry.project(
+            EntityHeadGeometry.selectFromRoot(root, "minecraft:villager"),
+            "minecraft:villager", 0, 0
+        );
+
+        float largestShortAxis = 0f;
+        for (int quad = 0; quad < geometry.length; quad += 20) {
+            float minX = Float.POSITIVE_INFINITY;
+            float minY = Float.POSITIVE_INFINITY;
+            float maxX = Float.NEGATIVE_INFINITY;
+            float maxY = Float.NEGATIVE_INFINITY;
+            for (int vertex = quad; vertex < quad + 20; vertex += 5) {
+                minX = Math.min(minX, geometry[vertex]);
+                maxX = Math.max(maxX, geometry[vertex]);
+                minY = Math.min(minY, geometry[vertex + 1]);
+                maxY = Math.max(maxY, geometry[vertex + 1]);
+            }
+            largestShortAxis = Math.max(largestShortAxis, Math.min(maxX - minX, maxY - minY));
+        }
+
+        assertTrue(
+            largestShortAxis >= 23f,
+            "villager face short axis was only " + largestShortAxis + " pixels"
+        );
     }
 }

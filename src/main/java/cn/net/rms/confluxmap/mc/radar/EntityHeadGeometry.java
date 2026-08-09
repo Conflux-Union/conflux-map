@@ -88,9 +88,11 @@ final class EntityHeadGeometry {
             // axis makes that muzzle project as a vertical strip. Only discard residual head yaw.
             part.setAngles(pitch, 0f, roll);
             try {
-                part.forEachCuboid(matrices, (entry, path, index, cuboid) -> appendCuboid(
-                    quads, entry, cuboid, yawCos, yawSin
-                ));
+                part.forEachCuboid(matrices, (entry, path, index, cuboid) -> {
+                    if (HeadPartSelector.includesGeometry(entityType, path)) {
+                        appendCuboid(quads, entry, cuboid, yawCos, yawSin);
+                    }
+                });
             } finally {
                 // Entity models are renderer-owned singletons; do not leak the portrait pose back
                 // into the next world render or another entity that shares this model.
