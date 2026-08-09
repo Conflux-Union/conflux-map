@@ -14,6 +14,7 @@ import cn.net.rms.confluxmap.core.config.MinimapHudAvoidance;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
+import cn.net.rms.confluxmap.core.radar.RadarCategory;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.tile.TileService;
@@ -507,7 +508,11 @@ public final class MinimapHudRenderer {
         final float cos = (float) Math.cos(rad);
         final float sin = (float) Math.sin(rad);
         final List<RadarMarkerRenderer.Marker> markers = new ArrayList<>();
+        final boolean showPlayers = MinecraftAccess.isPlayerListKeyPressed(client);
         for (final RadarEntry entry : radarScanner.snapshot()) {
+            if (!showPlayers && entry.category() == RadarCategory.PLAYER) {
+                continue;
+            }
             double ex = entry.x();
             double ez = entry.z();
             int yDelta = entry.yDelta();

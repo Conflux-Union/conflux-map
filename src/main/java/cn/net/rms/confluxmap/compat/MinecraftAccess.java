@@ -31,6 +31,17 @@ public final class MinecraftAccess {
         //#endif
     }
 
+    /** Whether the configured vanilla player-list key is currently held. */
+    public static boolean isPlayerListKeyPressed(final MinecraftClient client) {
+        //#if MC>=260100
+        //$$ return client.options.keyPlayerList.isDown();
+        //#elseif MC>=11800
+        //$$ return client.options.playerListKey.isPressed();
+        //#else
+        return client.options.keyPlayerList.isPressed();
+        //#endif
+    }
+
     /** The active screen, whose owner moved from Minecraft to Gui in 26.2. */
     public static Screen screen(final MinecraftClient client) {
         //#if MC>=260200
