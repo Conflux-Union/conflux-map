@@ -1,11 +1,15 @@
 package cn.net.rms.confluxmap.mc.radar;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
@@ -76,6 +80,28 @@ final class VanillaModelPortraitCoverageTest {
         "TridentRiptideEntityModel",
         "WindChargeEntityModel"
     );
+
+    private static final class FactoryFixture {
+        private FactoryFixture() {
+        }
+
+        static TexturedModelData getTexturedModelData() {
+            return null;
+        }
+
+        static TexturedModelData getOverlayTexturedModelData() {
+            return null;
+        }
+    }
+
+    @Test
+    void primaryModelFactoryWinsRegardlessOfReflectionOrder() throws Exception {
+        final Method primary = FactoryFixture.class.getDeclaredMethod("getTexturedModelData");
+        final Method overlay = FactoryFixture.class.getDeclaredMethod("getOverlayTexturedModelData");
+
+        assertSame(primary, primaryFactory(List.of(overlay, primary)));
+        assertSame(primary, primaryFactory(List.of(primary, overlay)));
+    }
 
     @Test
     void everyVanillaModelResolvesAFaceLikePart() {
@@ -153,15 +179,7 @@ final class VanillaModelPortraitCoverageTest {
      * data-driven or block-backed models rather than the mob trees this covers.
      */
     private static ModelPart buildRoot(final Class<?> model) {
-        Method factory = null;
-        for (final Method candidate : model.getDeclaredMethods()) {
-            if (!Modifier.isStatic(candidate.getModifiers())
-                || candidate.getReturnType() != TexturedModelData.class
-                || (factory != null && candidate.getParameterCount() >= factory.getParameterCount())) {
-                continue;
-            }
-            factory = candidate;
-        }
+        final Method factory = primaryFactory(Arrays.asList(model.getDeclaredMethods()));
         if (factory == null) {
             return null;
         }
@@ -178,6 +196,28 @@ final class VanillaModelPortraitCoverageTest {
         } catch (final ReflectiveOperationException | RuntimeException | LinkageError ignored) {
             return null;
         }
+    }
+
+    private static Method primaryFactory(final Collection<Method> methods) {
+        return methods.stream()
+            .filter(method -> Modifier.isStatic(method.getModifiers()))
+            .filter(method -> method.getReturnType() == TexturedModelData.class)
+            .filter(VanillaModelPortraitCoverageTest::supportsFactory)
+            .min(Comparator
+                .comparing((Method method) -> !method.getName().equals("getTexturedModelData"))
+                .thenComparingInt(Method::getParameterCount)
+                .thenComparing(Method::getName)
+                .thenComparing(method -> Arrays.toString(method.getParameterTypes())))
+            .orElse(null);
+    }
+
+    private static boolean supportsFactory(final Method factory) {
+        for (final Class<?> parameter : factory.getParameterTypes()) {
+            if (defaultArgument(parameter) == null) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static Object defaultArgument(final Class<?> type) {
