@@ -93,11 +93,4 @@ class HeadPartSelectorTest {
         );
     }
 
-    @Test
-    void dropsTheVillagerHatRimThatWouldShrinkTheFace() {
-        assertFalse(HeadPartSelector.includesGeometry("minecraft:villager", "/hat/hat_rim"));
-        assertFalse(HeadPartSelector.includesGeometry("minecraft:zombie_villager", "/hat/hat_rim"));
-        assertTrue(HeadPartSelector.includesGeometry("minecraft:villager", "/hat"));
-        assertTrue(HeadPartSelector.includesGeometry("minecraft:witch", "/hat/hat_rim"));
-    }
 }

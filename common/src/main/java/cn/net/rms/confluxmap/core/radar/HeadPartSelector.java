@@ -99,12 +99,6 @@ public final class HeadPartSelector {
         return Set.of();
     }
 
-    /** Whether geometry below a selected portrait part contributes to the final portrait. */
-    public static boolean includesGeometry(final String entityType, final String relativePath) {
-        final String type = entityType == null ? "" : entityType.toLowerCase(Locale.ROOT);
-        return !VILLAGER_FACE_TYPES.contains(type) || !leaf(relativePath).equals("hat_rim");
-    }
-
     private static void addNamed(
         final Set<String> selected,
         final List<String> paths,

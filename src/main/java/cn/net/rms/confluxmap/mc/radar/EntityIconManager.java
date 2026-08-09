@@ -204,7 +204,14 @@ public final class EntityIconManager implements AutoCloseable {
         try {
             RenderUtil.clearTargetRect(matrices, column * CELL_PX, row * CELL_PX, CELL_PX, CELL_PX);
             RenderUtil.bindTexture(client, texture);
-            RenderUtil.drawProjectedTexturedQuads(matrices, geometry);
+            RenderUtil.enableTargetScissor(
+                column * CELL_PX, row * CELL_PX, CELL_PX, CELL_PX, ATLAS_PX
+            );
+            try {
+                RenderUtil.drawProjectedTexturedQuads(matrices, geometry);
+            } finally {
+                RenderUtil.disableScissor();
+            }
         } finally {
             colorAtlas.end(client);
         }

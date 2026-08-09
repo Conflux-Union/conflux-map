@@ -10,32 +10,39 @@ class PortraitLayoutTest {
     private static final float EPSILON = 0.001f;
 
     @Test
-    void givesEveryAspectRatioTheSameLongestAxisSpan() {
+    void givesOrdinarySubjectsTheSameVisualArea() {
         final float cell = 32f;
         final float padding = 1f;
-        final float span = cell - 2f * padding;
+        final float targetArea = 450f;
 
         for (final float[] raw : new float[][] {
-            {10f, 10f}, {9f, 12f}, {24f, 6f}, {3f, 19f}, {1f, 1f}, {40f, 41f}
+            {10f, 10f}, {9f, 12f}, {15f, 10f}, {40f, 41f}
         }) {
             final PortraitLayout.Fit fit = PortraitLayout.fit(raw[0], raw[1], cell, padding);
 
             assertEquals(
-                span, Math.max(fit.width(), fit.height()), EPSILON,
-                () -> "portrait " + raw[0] + "x" + raw[1] + " must span the same pixels as every other"
+                targetArea, fit.width() * fit.height(), EPSILON,
+                () -> "subject " + raw[0] + "x" + raw[1] + " must occupy the same visual area"
             );
             assertEquals(raw[0] / raw[1], fit.width() / fit.height(), EPSILON, "aspect ratio must survive");
         }
     }
 
     @Test
-    void centersThePortraitInsideItsCell() {
+    void keepsTheVisualAreaWhenAnElongatedSubjectNeedsClipping() {
         final PortraitLayout.Fit fit = PortraitLayout.fit(24f, 6f, 32f, 1f);
 
-        assertEquals(30f, fit.width(), EPSILON);
-        assertEquals(1f, fit.left(), EPSILON);
-        assertEquals((32f - fit.height()) / 2f, fit.top(), EPSILON);
-        assertTrue(fit.height() < fit.width());
+        assertEquals(450f, fit.width() * fit.height(), EPSILON);
+        assertTrue(fit.width() > 30f);
+        assertTrue(fit.left() < 0f);
+    }
+
+    @Test
+    void centersTheSubjectInsideItsCell() {
+        final PortraitLayout.Fit fit = PortraitLayout.fit(10f, 10f, 32f, 1f);
+
+        assertEquals(fit.left(), fit.top(), EPSILON);
+        assertTrue(fit.left() > 1f);
     }
 
     @Test

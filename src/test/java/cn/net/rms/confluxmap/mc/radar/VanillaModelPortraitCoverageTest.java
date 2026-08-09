@@ -22,16 +22,15 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Walks every vanilla entity model class the running version ships, rebuilds its part tree from
- * the class' own model data, and proves the tree resolves a face-like part that normalizes onto the
- * single shared portrait span.
+ * the class' own model data, and proves the tree resolves a face-like part with valid projected
+ * geometry.
  *
  * <p>The class list is read off the Minecraft jar rather than hard-coded, so a version that adds,
  * renames or restructures a mob model fails here instead of silently degrading that species to a
- * category dot or drawing it at a different size than its neighbours. Only model data and CPU-side
- * projection are involved: no registries, render thread or GL context.
+ * category dot or producing unusable atlas geometry. Only model data and CPU-side projection are
+ * involved: no registries, render thread or GL context.
  */
 final class VanillaModelPortraitCoverageTest {
-    private static final float SPAN_EPSILON = 0.01f;
     private static final String MODEL_SUFFIX = "Model";
     private static final String ENTITY_MODEL_SUFFIX = "EntityModel";
 
@@ -90,42 +89,30 @@ final class VanillaModelPortraitCoverageTest {
     }
 
     @Test
-    void everyVanillaModelPortraitFillsTheSameSpan() {
-        final List<String> offSize = new ArrayList<>();
+    void everyVanillaModelProducesValidPortraitGeometry() {
+        final List<String> invalid = new ArrayList<>();
         vanillaRoots().forEach((name, root) -> {
             final String entityType = entityTypeOf(name);
             final List<ModelPart> parts = EntityHeadGeometry.selectFromRoot(root, entityType);
             if (parts.isEmpty()) {
                 return;
             }
-            final float span = projectedSpan(parts, entityType);
-            if (Math.abs(span - EntityHeadGeometry.PORTRAIT_SPAN_PX) > SPAN_EPSILON) {
-                offSize.add(name + " spans " + span);
+            final float[] geometry = EntityHeadGeometry.project(parts, entityType, 0, 0);
+            if (geometry.length == 0 || hasNonFiniteCoordinate(geometry)) {
+                invalid.add(name);
             }
         });
 
-        assertEquals(
-            List.of(), offSize,
-            "every portrait must normalize to " + EntityHeadGeometry.PORTRAIT_SPAN_PX + " pixels"
-        );
+        assertEquals(List.of(), invalid, "these models produced invalid portrait geometry");
     }
 
-    private static float projectedSpan(final List<ModelPart> parts, final String entityType) {
-        final float[] geometry = EntityHeadGeometry.project(parts, entityType, 0, 0);
-        if (geometry.length == 0) {
-            return 0f;
+    private static boolean hasNonFiniteCoordinate(final float[] geometry) {
+        for (final float value : geometry) {
+            if (!Float.isFinite(value)) {
+                return true;
+            }
         }
-        float minX = Float.POSITIVE_INFINITY;
-        float minY = Float.POSITIVE_INFINITY;
-        float maxX = Float.NEGATIVE_INFINITY;
-        float maxY = Float.NEGATIVE_INFINITY;
-        for (int i = 0; i < geometry.length; i += 5) {
-            minX = Math.min(minX, geometry[i]);
-            maxX = Math.max(maxX, geometry[i]);
-            minY = Math.min(minY, geometry[i + 1]);
-            maxY = Math.max(maxY, geometry[i + 1]);
-        }
-        return Math.max(maxX - minX, maxY - minY);
+        return false;
     }
 
     /** Simple class name to part tree for every model class that can build its own model data. */

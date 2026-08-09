@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.render;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 //#if MC>=12100
@@ -14,6 +15,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 final class OffscreenCanvasProjectionTest {
+    @Test
+    void targetScissorMatchesTheCanvasYAxis() {
+        //#if MC>=12000
+        //$$ assertEquals(928, RenderUtil.targetScissorY(64, 32, 1024));
+        //#else
+        assertEquals(64, RenderUtil.targetScissorY(64, 32, 1024));
+        //#endif
+    }
+
     //#if MC>=12100
     //$$ /** Canvas rendering installs its own identity model-view, so its quads always sit on z=0. */
     //$$ private static final float CANVAS_DRAW_PLANE_Z = 0f;

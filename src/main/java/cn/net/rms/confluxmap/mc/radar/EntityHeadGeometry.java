@@ -42,8 +42,8 @@ final class EntityHeadGeometry {
     private static final int CELL_PX = 32;
     /** Transparent margin that stops a scaled portrait from sampling its atlas neighbour. */
     private static final int CONTENT_PAD = 1;
-    /** Longest-axis span every portrait is normalized to, so no mob icon reads bigger than another. */
-    static final int PORTRAIT_SPAN_PX = CELL_PX - 2 * CONTENT_PAD;
+    /** Keeps equally dominant cuboids together for multi-part subjects such as wither heads. */
+    private static final float DOMINANT_SCORE_RATIO = 0.99f;
     //#if MC<12103
     private static final String MAIN_LAYER = "main";
     private static final Map<String, ModelPart> DATA_ROOTS = new LinkedHashMap<>();
@@ -55,6 +55,25 @@ final class EntityHeadGeometry {
     }
 
     private record RawQuad(List<RawVertex> vertices, float depth) {
+    }
+
+    private record Bounds(float minX, float minY, float maxX, float maxY) {
+        float width() {
+            return maxX - minX;
+        }
+
+        float height() {
+            return maxY - minY;
+        }
+
+        float dominance() {
+            // Area would let a very long horn or antenna outrank the compact face it belongs to.
+            final float thickness = Math.min(width(), height());
+            return thickness * thickness;
+        }
+    }
+
+    private record RawCuboid(List<RawQuad> quads, Bounds bounds) {
     }
 
     private EntityHeadGeometry() {
@@ -74,7 +93,7 @@ final class EntityHeadGeometry {
         if (parts.isEmpty()) {
             return new float[0];
         }
-        final List<RawQuad> quads = new ArrayList<>();
+        final List<RawCuboid> cuboids = new ArrayList<>();
         final double yawRadians = Math.toRadians(PortraitLayout.viewYawDegrees(entityType));
         final float yawCos = (float) Math.cos(yawRadians);
         final float yawSin = (float) Math.sin(yawRadians);
@@ -89,8 +108,9 @@ final class EntityHeadGeometry {
             part.setAngles(pitch, 0f, roll);
             try {
                 part.forEachCuboid(matrices, (entry, path, index, cuboid) -> {
-                    if (HeadPartSelector.includesGeometry(entityType, path)) {
-                        appendCuboid(quads, entry, cuboid, yawCos, yawSin);
+                    final RawCuboid converted = readCuboid(entry, cuboid, yawCos, yawSin);
+                    if (converted != null) {
+                        cuboids.add(converted);
                     }
                 });
             } finally {
@@ -99,24 +119,32 @@ final class EntityHeadGeometry {
                 part.setAngles(pitch, yaw, roll);
             }
         }
-        if (quads.isEmpty()) {
+        if (cuboids.isEmpty()) {
             return new float[0];
         }
 
-        float minX = Float.POSITIVE_INFINITY;
-        float minY = Float.POSITIVE_INFINITY;
-        float maxX = Float.NEGATIVE_INFINITY;
-        float maxY = Float.NEGATIVE_INFINITY;
-        for (final RawQuad quad : quads) {
-            for (final RawVertex vertex : quad.vertices()) {
-                minX = Math.min(minX, vertex.x());
-                minY = Math.min(minY, vertex.y());
-                maxX = Math.max(maxX, vertex.x());
-                maxY = Math.max(maxY, vertex.y());
-            }
+        float largestDominance = 0f;
+        for (final RawCuboid cuboid : cuboids) {
+            largestDominance = Math.max(largestDominance, cuboid.bounds().dominance());
         }
-        final float width = maxX - minX;
-        final float height = maxY - minY;
+        if (!(largestDominance > 0f)) {
+            return new float[0];
+        }
+        float subjectMinX = Float.POSITIVE_INFINITY;
+        float subjectMinY = Float.POSITIVE_INFINITY;
+        float subjectMaxX = Float.NEGATIVE_INFINITY;
+        float subjectMaxY = Float.NEGATIVE_INFINITY;
+        for (final RawCuboid cuboid : cuboids) {
+            if (cuboid.bounds().dominance() < largestDominance * DOMINANT_SCORE_RATIO) {
+                continue;
+            }
+            subjectMinX = Math.min(subjectMinX, cuboid.bounds().minX());
+            subjectMinY = Math.min(subjectMinY, cuboid.bounds().minY());
+            subjectMaxX = Math.max(subjectMaxX, cuboid.bounds().maxX());
+            subjectMaxY = Math.max(subjectMaxY, cuboid.bounds().maxY());
+        }
+        final float width = subjectMaxX - subjectMinX;
+        final float height = subjectMaxY - subjectMinY;
         if (!(width > 0f) || !(height > 0f)) {
             return new float[0];
         }
@@ -125,13 +153,15 @@ final class EntityHeadGeometry {
         final float offsetX = cellX + fit.left();
         final float offsetY = cellY + fit.top();
 
-        quads.sort(Comparator.comparingDouble(RawQuad::depth).reversed());
+        final List<RawQuad> quads = cuboids.stream().flatMap(cuboid -> cuboid.quads().stream())
+            .sorted(Comparator.comparingDouble(RawQuad::depth).reversed())
+            .toList();
         final float[] projected = new float[quads.size() * 20];
         int out = 0;
         for (final RawQuad quad : quads) {
             for (final RawVertex vertex : quad.vertices()) {
-                projected[out++] = offsetX + (vertex.x() - minX) * scale;
-                projected[out++] = offsetY + (vertex.y() - minY) * scale;
+                projected[out++] = offsetX + (vertex.x() - subjectMinX) * scale;
+                projected[out++] = offsetY + (vertex.y() - subjectMinY) * scale;
                 projected[out++] = 0f;
                 projected[out++] = vertex.u();
                 projected[out++] = vertex.v();
@@ -345,8 +375,7 @@ final class EntityHeadGeometry {
         return List.copyOf(found);
     }
 
-    private static void appendCuboid(
-        final List<RawQuad> output,
+    private static RawCuboid readCuboid(
         final MatrixStack.Entry entry,
         final ModelPart.Cuboid cuboid,
         final float yawCos,
@@ -354,8 +383,9 @@ final class EntityHeadGeometry {
     ) {
         final Object sides = firstArrayField(cuboid);
         if (sides == null) {
-            return;
+            return null;
         }
+        final List<RawQuad> quads = new ArrayList<>();
         for (int side = 0; side < Array.getLength(sides); side++) {
             final Object quad = Array.get(sides, side);
             final Object vertices = firstArrayField(quad);
@@ -375,9 +405,25 @@ final class EntityHeadGeometry {
                 depth += raw.z();
             }
             if (converted.size() == 4) {
-                output.add(new RawQuad(List.copyOf(converted), depth / 4f));
+                quads.add(new RawQuad(List.copyOf(converted), depth / 4f));
             }
         }
+        if (quads.isEmpty()) {
+            return null;
+        }
+        float minX = Float.POSITIVE_INFINITY;
+        float minY = Float.POSITIVE_INFINITY;
+        float maxX = Float.NEGATIVE_INFINITY;
+        float maxY = Float.NEGATIVE_INFINITY;
+        for (final RawQuad quad : quads) {
+            for (final RawVertex vertex : quad.vertices()) {
+                minX = Math.min(minX, vertex.x());
+                minY = Math.min(minY, vertex.y());
+                maxX = Math.max(maxX, vertex.x());
+                maxY = Math.max(maxY, vertex.y());
+            }
+        }
+        return new RawCuboid(List.copyOf(quads), new Bounds(minX, minY, maxX, maxY));
     }
 
     private static RawVertex readVertex(
