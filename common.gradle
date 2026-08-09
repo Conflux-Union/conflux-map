@@ -146,6 +146,7 @@ loom {
 }
 JavaVersion javaCompatibility
 if (mcVersion < 11700) javaCompatibility = JavaVersion.VERSION_1_8 else if (mcVersion < 11800) javaCompatibility = JavaVersion.VERSION_16 else if (mcVersion < 12005) javaCompatibility = JavaVersion.VERSION_17 else if (mcVersion < 260100) javaCompatibility = JavaVersion.VERSION_21 else javaCompatibility = JavaVersion.VERSION_25
+final int javaToolchainVersion = Math.max(17, Integer.parseInt(javaCompatibility.getMajorVersion()))
 tasks.withType(JavaCompile).configureEach {
     // One preprocessor mistake breaks a whole file for every downstream version at once, so
     // javac's default cap of 100 errors routinely hides most of a version's actual breakage.
@@ -208,11 +209,15 @@ tasks.register('checkModMetadata') {
 java {
     sourceCompatibility = javaCompatibility
     targetCompatibility = javaCompatibility
-    // Only the unobfuscated line pins a toolchain: it targets Java 25, which the JDK that builds
-    // every other version cannot emit. Leaving the rest unpinned keeps them compiling on whatever
-    // JDK the developer or CI already has, exactly as before.
-    if (unobfuscated) {
-        toolchain { languageVersion = JavaLanguageVersion.of(25) }
+    // Loom needs a modern JVM to configure, but old Loader/Mixin lines cannot inspect newer JDK
+    // class files. Compile each Minecraft version on its supported runtime instead of inheriting
+    // the JVM that happens to run Gradle. 1.17 keeps Java 16 bytecode on a JDK 17 toolchain.
+    toolchain { languageVersion = JavaLanguageVersion.of(javaToolchainVersion) }
+}
+tasks.withType(JavaExec).configureEach {
+    // Loom's game launch tasks do not inherit the Java plugin toolchain automatically.
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(javaToolchainVersion)
     }
 }
 jar { from '../../LICENSE' }
