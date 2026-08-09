@@ -67,7 +67,7 @@ final class KeybindActionHandler {
                 handled = true;
                 break;
             case OPEN_WAYPOINTS:
-                handled = openScreen(new WaypointListScreen());
+                handled = openScreen(WaypointListScreen.openedFromHotkey());
                 break;
             case NEW_WAYPOINT:
                 handled = openNewWaypointAtPlayer();
@@ -138,8 +138,7 @@ final class KeybindActionHandler {
             return false;
         }
         final PlayerView player = playerView.get();
-        MinecraftAccess.setScreen(client, WaypointEditScreen.forCreate(
-            null,
+        MinecraftAccess.setScreen(client, WaypointEditScreen.forHotkeyCreate(
             player.dimension(),
             player.blockX(),
             player.blockY(),
