@@ -22,6 +22,7 @@ import net.minecraft.client.model.Dilation;
 import net.minecraft.client.model.ModelPart;
 import net.minecraft.client.model.TexturedModelData;
 import net.minecraft.client.render.entity.model.CreeperEntityModel;
+import net.minecraft.client.render.entity.model.EntityModel;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -46,11 +47,13 @@ final class VanillaModelPortraitCoverageTest {
      */
     private static final Set<String> NOT_LIVING = Set.of(
         "ArrowEntityModel",
+        "ArrowModel",
         "BannerBlockModel",
         "BannerEntityModel",
         "BedEntityModel",
         "BellBlockEntityModel",
         "BoatEntityModel",
+        "BoatModel",
         "BookModel",
         "ChestBoatEntityModel",
         "ChestEntityModel",
@@ -59,25 +62,35 @@ final class VanillaModelPortraitCoverageTest {
         "DecoratedPotEntityModel",
         "DragonHeadEntityModel",
         "ElytraEntityModel",
+        "ElytraModel",
         "EvokerFangsEntityModel",
+        "EvokerFangsModel",
         "HangingSignBlockEntityModel",
         "HappyGhastHarnessEntityModel",
+        "HappyGhastHarnessModel",
         "LeashKnotEntityModel",
+        "LeashKnotModel",
         "LlamaSpitEntityModel",
+        "LlamaSpitModel",
         "MinecartEntityModel",
+        "MinecartModel",
         "PiglinHeadEntityModel",
         "PlayerCapeModel",
         "RaftEntityModel",
+        "RaftModel",
         "ShieldEntityModel",
         "ShulkerBulletEntityModel",
+        "ShulkerBulletModel",
         "SignBlockEntityModel",
         "SkullEntityModel",
         "SkullBlockEntityModel",
         "SpectralArrowEntityModel",
         "StingerModel",
+        "SpinAttackEffectModel",
         "TridentEntityModel",
         "TridentRiptideEntityModel",
-        "WindChargeEntityModel"
+        "WindChargeEntityModel",
+        "WindChargeModel"
     );
 
     private static final class FactoryFixture {
@@ -91,6 +104,14 @@ final class VanillaModelPortraitCoverageTest {
         static TexturedModelData getOverlayTexturedModelData() {
             return null;
         }
+
+        static TexturedModelData createBodyLayer() {
+            return null;
+        }
+
+        static TexturedModelData createOverlayLayer() {
+            return null;
+        }
     }
 
     @Test
@@ -100,6 +121,11 @@ final class VanillaModelPortraitCoverageTest {
 
         assertSame(primary, primaryFactory(List.of(overlay, primary)));
         assertSame(primary, primaryFactory(List.of(primary, overlay)));
+
+        final Method body = FactoryFixture.class.getDeclaredMethod("createBodyLayer");
+        final Method bodyOverlay = FactoryFixture.class.getDeclaredMethod("createOverlayLayer");
+        assertSame(body, primaryFactory(List.of(bodyOverlay, body)));
+        assertSame(body, primaryFactory(List.of(body, bodyOverlay)));
     }
 
     @Test
@@ -132,6 +158,40 @@ final class VanillaModelPortraitCoverageTest {
         assertEquals(List.of(), invalid, "these models produced invalid portrait geometry");
     }
 
+    @Test
+    void everyVanillaPortraitKeepsEnoughPixelCoverage() {
+        final Map<String, ModelPart> roots = vanillaRoots();
+        final String pigName = roots.containsKey("PigEntityModel") ? "PigEntityModel" : "PigModel";
+        final ModelPart pigRoot = roots.get(pigName);
+        if (pigRoot == null) {
+            throw new IllegalStateException("Could not find the vanilla pig model");
+        }
+        final int pigPixels = portraitPixels(pigName, pigRoot);
+        final List<String> outliers = new ArrayList<>();
+        roots.forEach((name, root) -> {
+            final int pixels = portraitPixels(name, root);
+            if (pixels > 0 && pixels < pigPixels * 0.75f) {
+                outliers.add(name + "=" + pixels);
+            }
+        });
+
+        assertEquals(
+            List.of(), outliers,
+            "portrait coverage must stay above 75% of pig=" + pigPixels
+        );
+    }
+
+    private static int portraitPixels(final String name, final ModelPart root) {
+        final String entityType = entityTypeOf(name);
+        final List<ModelPart> parts = EntityHeadGeometry.selectFromRoot(root, entityType);
+        if (parts.isEmpty()) {
+            return 0;
+        }
+        return PortraitPixelCoverage.occupiedPixels(
+            EntityHeadGeometry.project(parts, entityType, 0, 0)
+        );
+    }
+
     private static boolean hasNonFiniteCoordinate(final float[] geometry) {
         for (final float value : geometry) {
             if (!Float.isFinite(value)) {
@@ -146,7 +206,8 @@ final class VanillaModelPortraitCoverageTest {
         final Map<String, ModelPart> roots = new TreeMap<>();
         for (final Class<?> model : modelClasses()) {
             final String name = model.getSimpleName();
-            if (NOT_LIVING.contains(name) || Modifier.isAbstract(model.getModifiers())) {
+            if (NOT_LIVING.contains(name) || Modifier.isAbstract(model.getModifiers())
+                || !EntityModel.class.isAssignableFrom(model)) {
                 continue;
             }
             final ModelPart root = buildRoot(model);
@@ -191,11 +252,18 @@ final class VanillaModelPortraitCoverageTest {
             .filter(method -> method.getReturnType() == TexturedModelData.class)
             .filter(VanillaModelPortraitCoverageTest::supportsFactory)
             .min(Comparator
-                .comparing((Method method) -> !method.getName().equals("getTexturedModelData"))
+                .comparingInt(VanillaModelPortraitCoverageTest::factoryRank)
                 .thenComparingInt(Method::getParameterCount)
                 .thenComparing(Method::getName)
                 .thenComparing(method -> Arrays.toString(method.getParameterTypes())))
             .orElse(null);
+    }
+
+    private static int factoryRank(final Method method) {
+        return switch (method.getName()) {
+            case "getTexturedModelData", "createBodyLayer" -> 0;
+            default -> 1;
+        };
     }
 
     private static boolean supportsFactory(final Method factory) {
@@ -212,7 +280,9 @@ final class VanillaModelPortraitCoverageTest {
             return Dilation.NONE;
         }
         if (type == int.class) {
-            return 0;
+            // Vanilla model-data factories use integer parameters for texture dimensions.
+            // Zero creates non-finite normalized UVs even though the geometry itself is valid.
+            return 128;
         }
         if (type == float.class) {
             return 0f;
@@ -224,7 +294,11 @@ final class VanillaModelPortraitCoverageTest {
     }
 
     private static List<Class<?>> modelClasses() {
+        //#if MC>=260100
+        //$$ final String packagePath = "net/minecraft/client/model/";
+        //#else
         final String packagePath = CreeperEntityModel.class.getPackageName().replace('.', '/') + '/';
+        //#endif
         final List<Class<?>> classes = new ArrayList<>();
         try (ZipFile jar = new ZipFile(minecraftJar().toFile())) {
             final Enumeration<? extends ZipEntry> entries = jar.entries();
@@ -261,6 +335,9 @@ final class VanillaModelPortraitCoverageTest {
      * through the generic part-name rules.
      */
     private static String entityTypeOf(final String className) {
+        if (className.equals("WitherBossModel")) {
+            return "minecraft:wither";
+        }
         String name = className;
         if (name.endsWith(ENTITY_MODEL_SUFFIX)) {
             name = name.substring(0, name.length() - ENTITY_MODEL_SUFFIX.length());

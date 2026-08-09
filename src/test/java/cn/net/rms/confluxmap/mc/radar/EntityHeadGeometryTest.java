@@ -15,7 +15,15 @@ import net.minecraft.client.render.entity.model.CreeperEntityModel;
 import net.minecraft.client.render.entity.model.EntityModel;
 import net.minecraft.client.render.entity.model.PigEntityModel;
 import net.minecraft.client.render.entity.model.RabbitEntityModel;
+//#if MC>=260100
+//$$ import net.minecraft.client.model.animal.rabbit.AdultRabbitModel;
+//#endif
 import net.minecraft.client.render.entity.model.VillagerResemblingModel;
+//#if MC>=260100
+//$$ import net.minecraft.client.model.monster.warden.WardenModel;
+//#elseif MC>=11900
+//$$ import net.minecraft.client.render.entity.model.WardenEntityModel;
+//#endif
 import org.junit.jupiter.api.Test;
 
 /**
@@ -24,8 +32,6 @@ import org.junit.jupiter.api.Test;
  * strategy chain that misses its named root child silently renders the whole mob.
  */
 final class EntityHeadGeometryTest {
-    private static final float AREA_EPSILON = 0.01f;
-
     @SuppressWarnings({"rawtypes", "unchecked"})
     private static EntityModel<?> creeperModel(final ModelPart root) {
         return new CreeperEntityModel(root);
@@ -50,7 +56,7 @@ final class EntityHeadGeometryTest {
             "minecraft:creeper", 0, 0
         );
 
-        assertEquals(450f, subjectQuadArea(geometry), AREA_EPSILON);
+        assertComparableToPig("creeper", subjectQuadArea(geometry), subjectQuadArea(projectPig()));
     }
 
     @Test
@@ -70,7 +76,13 @@ final class EntityHeadGeometryTest {
 
     @Test
     void rabbitSubjectIsComparableToPig() {
+        //#if MC>=260100
+        //$$ final ModelPart rabbitRoot = AdultRabbitModel.createBodyLayer().bakeRoot();
+        //#elseif MC>=12103
+        //$$ final ModelPart rabbitRoot = RabbitEntityModel.getTexturedModelData(false).createModel();
+        //#else
         final ModelPart rabbitRoot = RabbitEntityModel.getTexturedModelData().createModel();
+        //#endif
         final float[] rabbit = EntityHeadGeometry.project(
             EntityHeadGeometry.selectFromRoot(rabbitRoot, "minecraft:rabbit"),
             "minecraft:rabbit", 0, 0
@@ -80,6 +92,29 @@ final class EntityHeadGeometryTest {
         final float rabbitSubjectArea = subjectQuadArea(rabbit);
         assertComparableToPig("rabbit", rabbitSubjectArea, pigSubjectArea);
     }
+
+    //#if MC>=11900
+    //$$ @Test
+    //$$ void wardenOccupiesComparablePixelsToPig() {
+    //#if MC>=260100
+    //$$     final ModelPart wardenRoot = WardenModel.createBodyLayer().bakeRoot();
+    //#else
+    //$$     final ModelPart wardenRoot = WardenEntityModel.getTexturedModelData().createModel();
+    //#endif
+    //$$     final float[] warden = EntityHeadGeometry.project(
+    //$$         EntityHeadGeometry.selectFromRoot(wardenRoot, "minecraft:warden"),
+    //$$         "minecraft:warden", 0, 0
+    //$$     );
+    //$$     final int wardenPixels = PortraitPixelCoverage.occupiedPixels(warden);
+    //$$     final int pigPixels = PortraitPixelCoverage.occupiedPixels(projectPig());
+    //$$
+    //$$     assertTrue(
+    //$$         wardenPixels >= pigPixels * 0.9f && wardenPixels <= pigPixels * 1.2f,
+    //$$         "warden occupied " + wardenPixels + " pixels (subject " + subjectQuadArea(warden)
+    //$$             + ") while pig occupied " + pigPixels + " (subject " + subjectQuadArea(projectPig()) + ")"
+    //$$     );
+    //$$ }
+    //#endif
 
     @Test
     void thinBranchWithMoreAreaDoesNotBecomeTheSubject() {
@@ -99,6 +134,38 @@ final class EntityHeadGeometryTest {
         ));
 
         assertComparableToPig("long-antenna subject", area, subjectQuadArea(projectPig()));
+    }
+
+    @Test
+    void rotatedSubjectUsesOccupiedPixelsInsteadOfItsBoundingBox() {
+        final ModelData data = new ModelData();
+        data.getRoot().addChild(
+            "head",
+            ModelPartBuilder.create().uv(0, 0).cuboid(-4f, -4f, -4f, 8f, 8f, 8f),
+            ModelTransform.of(0f, 0f, 0f, 0f, 0f, (float) Math.toRadians(45d))
+        );
+        final ModelPart root = TexturedModelData.of(data, 64, 64).createModel();
+        final int occupied = PortraitPixelCoverage.occupiedPixels(EntityHeadGeometry.project(
+            List.of(root.getChild("head")), "example:rotated_head", 0, 0
+        ));
+
+        assertTrue(occupied >= 400, "rotated subject occupied only " + occupied + " pixels");
+    }
+
+    @Test
+    void planarSubjectStillProducesPortraitGeometry() {
+        final ModelData data = new ModelData();
+        data.getRoot().addChild(
+            "head",
+            ModelPartBuilder.create().uv(0, 0).cuboid(-4f, -4f, 0f, 8f, 8f, 0f),
+            ModelTransform.NONE
+        );
+        final ModelPart root = TexturedModelData.of(data, 64, 64).createModel();
+        final float[] geometry = EntityHeadGeometry.project(
+            List.of(root.getChild("head")), "example:planar_head", 0, 0
+        );
+
+        assertTrue(geometry.length > 0, "a planar face must not degrade to a category dot");
     }
 
     private static float[] projectPig() {
@@ -143,4 +210,5 @@ final class EntityHeadGeometryTest {
         }
         return subjectArea;
     }
+
 }

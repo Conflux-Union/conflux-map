@@ -44,6 +44,12 @@ final class EntityHeadGeometry {
     private static final int CONTENT_PAD = 1;
     /** Keeps equally dominant cuboids together for multi-part subjects such as wither heads. */
     private static final float DOMINANT_SCORE_RATIO = 0.99f;
+    /** Target raster area for the complete silhouette after the compact subject establishes scale. */
+    private static final float TARGET_OCCUPIED_AREA_RATIO = 0.54f;
+    /** Minimum share of the total-area target reserved for the compact subject itself. */
+    private static final float MIN_SUBJECT_OCCUPIED_RATIO = 0.8f;
+    /** Keeps a readable compact face even when its angled raster footprint looks deceptively full. */
+    private static final float MIN_SUBJECT_VISUAL_AREA_RATIO = 0.81f;
     //#if MC<12103
     private static final String MAIN_LAYER = "main";
     private static final Map<String, ModelPart> DATA_ROOTS = new LinkedHashMap<>();
@@ -57,7 +63,14 @@ final class EntityHeadGeometry {
     private record RawQuad(List<RawVertex> vertices, float depth) {
     }
 
-    private record Bounds(float minX, float minY, float maxX, float maxY) {
+    private record Bounds(
+        float minX,
+        float minY,
+        float minZ,
+        float maxX,
+        float maxY,
+        float maxZ
+    ) {
         float width() {
             return maxX - minX;
         }
@@ -66,8 +79,19 @@ final class EntityHeadGeometry {
             return maxY - minY;
         }
 
+        float depth() {
+            return maxZ - minZ;
+        }
+
         float dominance() {
-            // Area would let a very long horn or antenna outrank the compact face it belongs to.
+            // The two thinnest dimensions describe a cuboid's compact cross-section. A long horn
+            // therefore stays subordinate, and a zero-depth tendril plane cannot tie a solid head.
+            final float[] dimensions = {width(), height(), depth()};
+            java.util.Arrays.sort(dimensions);
+            return dimensions[0] * dimensions[1];
+        }
+
+        float projectedDominance() {
             final float thickness = Math.min(width(), height());
             return thickness * thickness;
         }
@@ -127,6 +151,14 @@ final class EntityHeadGeometry {
         for (final RawCuboid cuboid : cuboids) {
             largestDominance = Math.max(largestDominance, cuboid.bounds().dominance());
         }
+        final boolean planarSubject = !(largestDominance > 0f);
+        if (planarSubject) {
+            for (final RawCuboid cuboid : cuboids) {
+                largestDominance = Math.max(
+                    largestDominance, cuboid.bounds().projectedDominance()
+                );
+            }
+        }
         if (!(largestDominance > 0f)) {
             return new float[0];
         }
@@ -134,10 +166,15 @@ final class EntityHeadGeometry {
         float subjectMinY = Float.POSITIVE_INFINITY;
         float subjectMaxX = Float.NEGATIVE_INFINITY;
         float subjectMaxY = Float.NEGATIVE_INFINITY;
+        final List<RawCuboid> subjectCuboids = new ArrayList<>();
         for (final RawCuboid cuboid : cuboids) {
-            if (cuboid.bounds().dominance() < largestDominance * DOMINANT_SCORE_RATIO) {
+            final float dominance = planarSubject
+                ? cuboid.bounds().projectedDominance()
+                : cuboid.bounds().dominance();
+            if (dominance < largestDominance * DOMINANT_SCORE_RATIO) {
                 continue;
             }
+            subjectCuboids.add(cuboid);
             subjectMinX = Math.min(subjectMinX, cuboid.bounds().minX());
             subjectMinY = Math.min(subjectMinY, cuboid.bounds().minY());
             subjectMaxX = Math.max(subjectMaxX, cuboid.bounds().maxX());
@@ -148,14 +185,46 @@ final class EntityHeadGeometry {
         if (!(width > 0f) || !(height > 0f)) {
             return new float[0];
         }
-        final PortraitLayout.Fit fit = PortraitLayout.fit(width, height, CELL_PX, CONTENT_PAD);
-        final float scale = fit.scale();
-        final float offsetX = cellX + fit.left();
-        final float offsetY = cellY + fit.top();
-
         final List<RawQuad> quads = cuboids.stream().flatMap(cuboid -> cuboid.quads().stream())
             .sorted(Comparator.comparingDouble(RawQuad::depth).reversed())
             .toList();
+        final List<RawQuad> subjectQuads = subjectCuboids.stream()
+            .flatMap(cuboid -> cuboid.quads().stream())
+            .toList();
+        final PortraitLayout.Fit fit = PortraitLayout.fit(width, height, CELL_PX, CONTENT_PAD);
+        final float baselineScale = fit.scale();
+        final int occupiedPixels = occupiedPixels(
+            quads, subjectMinX, subjectMinY, width, height, baselineScale
+        );
+        final float targetOccupiedPixels = (CELL_PX - 2f * CONTENT_PAD)
+            * (CELL_PX - 2f * CONTENT_PAD) * TARGET_OCCUPIED_AREA_RATIO;
+        final float coverageScale = occupiedPixels > 0
+            ? baselineScale * (float) Math.sqrt(targetOccupiedPixels / occupiedPixels)
+            : baselineScale;
+        final int subjectOccupiedPixels = occupiedPixels(
+            subjectQuads, subjectMinX, subjectMinY, width, height, baselineScale
+        );
+        final float minimumSubjectPixels = targetOccupiedPixels * MIN_SUBJECT_OCCUPIED_RATIO;
+        final float subjectVisualArea = largestCompactQuadArea(subjectQuads, baselineScale);
+        final float minimumSubjectVisualArea = fit.width() * fit.height()
+            * MIN_SUBJECT_VISUAL_AREA_RATIO;
+        // Whole-model portraits have no smaller face to protect. For head portraits, solve a
+        // second scale from the compact cuboids alone so ears, antlers and tendrils can influence
+        // the total without shrinking the recognizable subject below its own pixel floor.
+        final float minimumSubjectPixelScale = HeadPartSelector.usesFullModel(entityType)
+            || subjectOccupiedPixels <= 0
+            ? 0f
+            : baselineScale * (float) Math.sqrt(minimumSubjectPixels / subjectOccupiedPixels);
+        final float minimumSubjectVisualScale = HeadPartSelector.usesFullModel(entityType)
+            || !(subjectVisualArea > 0f)
+            ? 0f
+            : baselineScale * (float) Math.sqrt(minimumSubjectVisualArea / subjectVisualArea);
+        final float scale = Math.max(
+            coverageScale, Math.max(minimumSubjectPixelScale, minimumSubjectVisualScale)
+        );
+        final float offsetX = cellX + (CELL_PX - width * scale) / 2f;
+        final float offsetY = cellY + (CELL_PX - height * scale) / 2f;
+
         final float[] projected = new float[quads.size() * 20];
         int out = 0;
         for (final RawQuad quad : quads) {
@@ -168,6 +237,125 @@ final class EntityHeadGeometry {
             }
         }
         return projected;
+    }
+
+    private static float largestCompactQuadArea(final List<RawQuad> quads, final float scale) {
+        float bestCompactness = 0f;
+        float bestArea = 0f;
+        for (final RawQuad quad : quads) {
+            float minX = Float.POSITIVE_INFINITY;
+            float minY = Float.POSITIVE_INFINITY;
+            float maxX = Float.NEGATIVE_INFINITY;
+            float maxY = Float.NEGATIVE_INFINITY;
+            for (final RawVertex vertex : quad.vertices()) {
+                minX = Math.min(minX, vertex.x());
+                minY = Math.min(minY, vertex.y());
+                maxX = Math.max(maxX, vertex.x());
+                maxY = Math.max(maxY, vertex.y());
+            }
+            final float width = (maxX - minX) * scale;
+            final float height = (maxY - minY) * scale;
+            final float compactness = Math.min(width, height) * Math.min(width, height);
+            if (compactness > bestCompactness) {
+                bestCompactness = compactness;
+                bestArea = width * height;
+            }
+        }
+        return bestArea;
+    }
+
+    private static int occupiedPixels(
+        final List<RawQuad> quads,
+        final float subjectMinX,
+        final float subjectMinY,
+        final float subjectWidth,
+        final float subjectHeight,
+        final float scale
+    ) {
+        final float offsetX = (CELL_PX - subjectWidth * scale) / 2f;
+        final float offsetY = (CELL_PX - subjectHeight * scale) / 2f;
+        final boolean[][] occupied = new boolean[CELL_PX][CELL_PX];
+        for (final RawQuad quad : quads) {
+            final float[] xs = new float[4];
+            final float[] ys = new float[4];
+            float minX = Float.POSITIVE_INFINITY;
+            float minY = Float.POSITIVE_INFINITY;
+            float maxX = Float.NEGATIVE_INFINITY;
+            float maxY = Float.NEGATIVE_INFINITY;
+            for (int i = 0; i < 4; i++) {
+                final RawVertex vertex = quad.vertices().get(i);
+                xs[i] = offsetX + (vertex.x() - subjectMinX) * scale;
+                ys[i] = offsetY + (vertex.y() - subjectMinY) * scale;
+                minX = Math.min(minX, xs[i]);
+                minY = Math.min(minY, ys[i]);
+                maxX = Math.max(maxX, xs[i]);
+                maxY = Math.max(maxY, ys[i]);
+            }
+            final int firstX = Math.max(CONTENT_PAD, (int) Math.floor(minX));
+            final int firstY = Math.max(CONTENT_PAD, (int) Math.floor(minY));
+            final int lastX = Math.min(CELL_PX - CONTENT_PAD, (int) Math.ceil(maxX));
+            final int lastY = Math.min(CELL_PX - CONTENT_PAD, (int) Math.ceil(maxY));
+            for (int y = firstY; y < lastY; y++) {
+                for (int x = firstX; x < lastX; x++) {
+                    if (occupied[y][x]) {
+                        continue;
+                    }
+                    final float px = x + 0.5f;
+                    final float py = y + 0.5f;
+                    if (insideTriangle(xs, ys, 0, 1, 2, px, py)
+                        || insideTriangle(xs, ys, 0, 2, 3, px, py)) {
+                        occupied[y][x] = true;
+                    }
+                }
+            }
+        }
+        int count = 0;
+        for (final boolean[] row : occupied) {
+            for (final boolean pixel : row) {
+                if (pixel) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    private static boolean insideTriangle(
+        final float[] xs,
+        final float[] ys,
+        final int first,
+        final int second,
+        final int third,
+        final float px,
+        final float py
+    ) {
+        final float ax = xs[first];
+        final float ay = ys[first];
+        final float bx = xs[second];
+        final float by = ys[second];
+        final float cx = xs[third];
+        final float cy = ys[third];
+        final float triangleArea = sign(ax, ay, bx, by, cx, cy);
+        if (Math.abs(triangleArea) < 0.0001f) {
+            return false;
+        }
+        final float firstSign = sign(ax, ay, bx, by, px, py);
+        final float secondSign = sign(bx, by, cx, cy, px, py);
+        final float thirdSign = sign(cx, cy, ax, ay, px, py);
+        final boolean hasNegative = firstSign < 0f || secondSign < 0f || thirdSign < 0f;
+        final boolean hasPositive = firstSign > 0f || secondSign > 0f || thirdSign > 0f;
+        return !(hasNegative && hasPositive);
+    }
+
+    private static float sign(
+        final float ax,
+        final float ay,
+        final float bx,
+        final float by,
+        final float px,
+        final float py
+    ) {
+        return (px - bx) * (ay - by) - (ax - bx) * (py - by);
     }
 
     /**
@@ -413,17 +601,21 @@ final class EntityHeadGeometry {
         }
         float minX = Float.POSITIVE_INFINITY;
         float minY = Float.POSITIVE_INFINITY;
+        float minZ = Float.POSITIVE_INFINITY;
         float maxX = Float.NEGATIVE_INFINITY;
         float maxY = Float.NEGATIVE_INFINITY;
+        float maxZ = Float.NEGATIVE_INFINITY;
         for (final RawQuad quad : quads) {
             for (final RawVertex vertex : quad.vertices()) {
                 minX = Math.min(minX, vertex.x());
                 minY = Math.min(minY, vertex.y());
+                minZ = Math.min(minZ, vertex.z());
                 maxX = Math.max(maxX, vertex.x());
                 maxY = Math.max(maxY, vertex.y());
+                maxZ = Math.max(maxZ, vertex.z());
             }
         }
-        return new RawCuboid(List.copyOf(quads), new Bounds(minX, minY, maxX, maxY));
+        return new RawCuboid(List.copyOf(quads), new Bounds(minX, minY, minZ, maxX, maxY, maxZ));
     }
 
     private static RawVertex readVertex(
