@@ -23,6 +23,8 @@ public abstract class ClientPlayNetworkHandlerMixin {
     private void confluxmap$onGameJoin(final GameJoinS2CPacket packet, final CallbackInfo ci) {
         //#if MC>=12100
         //$$ ClientWorldIdentityHandler.gameJoin(packet.commonPlayerSpawnInfo().seed());
+        //#elseif MC>=11800
+        //$$ ClientWorldIdentityHandler.gameJoin(packet.sha256Seed());
         //#else
         ClientWorldIdentityHandler.gameJoin(packet.getSha256Seed());
         //#endif

@@ -21,10 +21,12 @@ import net.minecraft.client.MinecraftClient;
 //#else
 import net.minecraft.client.gui.hud.InGameHud;
 //#endif
-//#if MC>=12100
+//#if MC>=12000
 //$$ import net.minecraft.client.gui.DrawContext;
+//#endif
+//#if MC>=12100
 //$$ import net.minecraft.client.render.RenderTickCounter;
-//#else
+//#elseif MC<12000
 import net.minecraft.client.util.math.MatrixStack;
 //#endif
 //#if MC>=260100
@@ -118,10 +120,15 @@ public abstract class StatusEffectHudMixin {
     //$$     final DeltaTracker tickCounter,
     //$$     final CallbackInfo ci
     //$$ ) {
-    //#elseif MC>=12000
+    //#elseif MC>=12100
     //$$ private void confluxmap$beforeStatusEffects(
     //$$     final DrawContext context,
     //$$     final RenderTickCounter tickCounter,
+    //$$     final CallbackInfo ci
+    //$$ ) {
+    //#elseif MC>=12000
+    //$$ private void confluxmap$beforeStatusEffects(
+    //$$     final DrawContext context,
     //$$     final CallbackInfo ci
     //$$ ) {
     //#else
@@ -173,10 +180,15 @@ public abstract class StatusEffectHudMixin {
     //$$     final DeltaTracker tickCounter,
     //$$     final CallbackInfo ci
     //$$ ) {
-    //#elseif MC>=12000
+    //#elseif MC>=12100
     //$$ private void confluxmap$afterStatusEffects(
     //$$     final DrawContext context,
     //$$     final RenderTickCounter tickCounter,
+    //$$     final CallbackInfo ci
+    //$$ ) {
+    //#elseif MC>=12000
+    //$$ private void confluxmap$afterStatusEffects(
+    //$$     final DrawContext context,
     //$$     final CallbackInfo ci
     //$$ ) {
     //#else

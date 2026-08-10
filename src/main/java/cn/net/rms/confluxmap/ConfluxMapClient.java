@@ -13,6 +13,7 @@ import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfileIo;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfileRegistry;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfileResolver;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
+import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.PredictionTileService;
 import cn.net.rms.confluxmap.core.predict.CorrectionStore;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
@@ -224,6 +225,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
             sessionGuard,
             client::isInSingleplayer,
             companionSession::isActive,
+            () -> companionSession.seedFor(PredictionDimensions.OVERWORLD).isPresent(),
             this::refreshPredictionSource
         );
         layerSelector = new LayerSelector(client, config);
@@ -265,6 +267,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(chunkCapture::onSessionChanged);
         sessionTracker.addListener(tileService::onSessionChanged);
         sessionTracker.addListener(radarScanner::onSessionChanged);
+        sessionTracker.addListener(session -> gameBridge.runOnRenderThread(entityIconManager::onSessionChanged));
         sessionTracker.addListener(playerTrailTracker::onSessionChanged);
         sessionTracker.addListener(fullscreenMapViewState::onSessionChanged);
         sessionTracker.addListener(waypointService::onSessionChanged);
@@ -283,6 +286,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
         chunkCapture.register();
         radarScanner.register();
+        entityIconManager.register();
         playerTrailTracker.register();
         minimapHudRenderer.register();
         waypointWorldRenderer.register();
@@ -325,6 +329,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         correctionStore.flush();
         surveyReminderNotifier.flush();
         configIo.save(config);
+        entityIconManager.close();
         //#if MC>=260200
         //$$ Mesh.close();
         //#endif

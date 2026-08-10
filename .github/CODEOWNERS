@@ -1,0 +1,4 @@
+# Trirrin is the sole code owner: every pull request targeting this repository
+# must receive Trirrin's approving review before it can be merged. Paired with
+# the "master: require PR review, Trirrin bypass" ruleset (require_code_owner_review).
+* @Trirrin

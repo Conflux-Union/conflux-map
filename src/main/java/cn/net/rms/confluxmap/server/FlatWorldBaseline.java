@@ -37,7 +37,7 @@ public final class FlatWorldBaseline {
         if (!(generator instanceof final FlatChunkGenerator flat)) {
             return Optional.empty();
         }
-        //#if MC>=12100
+        //#if MC>=11800
         //$$ final int biomeId = biomeId(world, flat.getConfig().getBiome().value());
         //#else
         final int biomeId = biomeId(world, flat.getConfig().getBiome());

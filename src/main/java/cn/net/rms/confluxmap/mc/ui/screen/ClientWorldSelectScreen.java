@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
+import cn.net.rms.confluxmap.core.cache.MapCacheMigration;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfile;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
@@ -11,6 +12,8 @@ import cn.net.rms.confluxmap.mc.predict.ManualSeedService;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.world.ClientMultiworldService;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
@@ -35,7 +38,11 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
     private boolean waitingToOpenMap;
     private boolean assigningLegacyWaypoints;
     private String pendingForgetId;
+    private String selectedMigrationId;
+    private boolean migrationConfirm;
+    private CompletableFuture<MapCacheMigration.Result> migrationFuture;
     private String migrationMessage;
+    private boolean migrationError;
 
     public ClientWorldSelectScreen(
         final Screen parent,
@@ -65,17 +72,36 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
     private void rebuild() {
         clearChildren();
         final List<ClientWorldProfile> profiles = worlds.profiles();
-        profileCount = profiles.size();
+        final boolean authoritative = worlds.companionWorldIdentityAuthoritative();
+        final int authorityRows = authoritative ? 1 : 0;
+        profileCount = profiles.size() + authorityRows;
         final int visible = visibleRows();
-        scrollOffset = Math.max(0, Math.min(scrollOffset, Math.max(0, profiles.size() - visible)));
+        scrollOffset = Math.max(0, Math.min(scrollOffset, Math.max(0, profileCount - visible)));
         final int rowWidth = Math.min(440, Math.max(250, width - 24));
         final int rowX = width / 2 - rowWidth / 2;
         final int selectWidth = rowWidth - RENAME_WIDTH - FORGET_WIDTH - GAP * 2;
-        final String currentId = worlds.currentProfile().map(ClientWorldProfile::id).orElse(null);
-        final int end = Math.min(profiles.size(), scrollOffset + visible);
+        final String currentId = authoritative
+            ? null
+            : worlds.currentProfile().map(ClientWorldProfile::id).orElse(null);
+        final boolean migrationBusy = migrationFuture != null;
+        final int end = Math.min(profileCount, scrollOffset + visible);
         for (int index = scrollOffset; index < end; index++) {
-            final ClientWorldProfile profile = profiles.get(index);
             final int y = LIST_TOP + (index - scrollOffset) * ROW_HEIGHT;
+            if (authoritative && index == 0) {
+                final String worldId = worlds.companionWorldIdentity()
+                    .map(WorldIdentity::worldId)
+                    .orElse("?");
+                final ButtonWidget serverWorld = addDrawableChild(Widgets.button(
+                    rowX, y, rowWidth, 20,
+                    Texts.literal("✓ [" + Texts.translatable(
+                        "confluxmap.screen.client_world.server_world"
+                    ).getString() + "] " + worldId),
+                    ignored -> { }
+                ));
+                serverWorld.active = false;
+                continue;
+            }
+            final ClientWorldProfile profile = profiles.get(index - authorityRows);
             if (assigningLegacyWaypoints) {
                 final WorldIdentity target = worlds.worldIdentity(profile);
                 final ButtonWidget assign = addDrawableChild(Widgets.button(
@@ -89,16 +115,29 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
                 continue;
             }
             final String prefix = profile.id().equals(currentId) ? "✓ " : "";
-            addDrawableChild(Widgets.button(
+            final ButtonWidget select = addDrawableChild(Widgets.button(
                 rowX, y, selectWidth, 20,
-                Texts.literal(prefix + profile.displayName()),
-                ignored -> select(profile.id())
+                Texts.literal(
+                    (profile.id().equals(selectedMigrationId) ? "-> " : "")
+                        + prefix + profile.displayName()
+                ),
+                ignored -> {
+                    if (authoritative) {
+                        selectMigrationSource(profile.id());
+                    } else {
+                        select(profile.id());
+                    }
+                }
             ));
-            addDrawableChild(Widgets.button(
+            // The companion UUID controls active map storage. Keep old profiles visible for
+            // review and waypoint migration, but do not silently fork the active map session.
+            select.active = !migrationBusy;
+            final ButtonWidget rename = addDrawableChild(Widgets.button(
                 rowX + selectWidth + GAP, y, RENAME_WIDTH, 20,
                 Texts.translatable("confluxmap.screen.client_world.rename"),
                 ignored -> openNameEditor(profile)
             ));
+            rename.active = !migrationBusy;
             final ButtonWidget forget = addDrawableChild(Widgets.button(
                 rowX + selectWidth + GAP + RENAME_WIDTH + GAP, y, FORGET_WIDTH, 20,
                 Texts.translatable(
@@ -108,7 +147,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
                 ),
                 ignored -> forget(profile.id())
             ));
-            forget.active = profile.bindingCount() > 0;
+            forget.active = !migrationBusy && profile.bindingCount() > 0;
         }
 
         final int footerWidth = Math.min(440, rowWidth);
@@ -123,18 +162,20 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
                 ignored -> {
                     assigningLegacyWaypoints = false;
                     migrationMessage = null;
+                    migrationError = false;
                     rebuild();
                 }
             ));
             return;
         }
 
-        final boolean canMigrate = canMigrateLegacyWaypoints(profiles);
-        final int footerButtonCount = canMigrate ? 4 : 3;
+        final boolean canMerge = authoritative && selectedMigrationId != null;
+        final boolean canMigrate = !authoritative && canMigrateLegacyWaypoints(profiles);
+        final int footerButtonCount = canMerge || canMigrate ? 4 : 3;
         final int footerButtonWidth = (footerWidth - GAP * (footerButtonCount - 1))
             / footerButtonCount;
         int footerIndex = 0;
-        addDrawableChild(Widgets.button(
+        final ButtonWidget create = addDrawableChild(Widgets.button(
             footerX + footerIndex++ * (footerButtonWidth + GAP),
             height - 28,
             footerButtonWidth,
@@ -142,7 +183,22 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
             Texts.translatable("confluxmap.screen.client_world.create"),
             ignored -> openNameEditor(null)
         ));
-        if (canMigrate) {
+        create.active = !authoritative && !migrationBusy;
+        if (canMerge) {
+            final ButtonWidget merge = addDrawableChild(Widgets.button(
+                footerX + footerIndex++ * (footerButtonWidth + GAP),
+                height - 28,
+                footerButtonWidth,
+                20,
+                Texts.translatable(
+                    migrationConfirm
+                        ? "confluxmap.screen.client_world.merge_confirm"
+                        : "confluxmap.screen.client_world.merge"
+                ),
+                ignored -> requestMerge()
+            ));
+            merge.active = !migrationBusy;
+        } else if (canMigrate) {
             addDrawableChild(Widgets.button(
                 footerX + footerIndex++ * (footerButtonWidth + GAP),
                 height - 28,
@@ -152,6 +208,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
                 ignored -> {
                     assigningLegacyWaypoints = true;
                     migrationMessage = null;
+                    migrationError = false;
                     rebuild();
                 }
             ));
@@ -166,7 +223,9 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
                 MinecraftClient.getInstance(), new ManualSeedScreen(this)
             )
         ));
-        seedPreview.active = currentId != null && manualSeedService.available();
+        // This is also the recovery path when the server has just gained the companion plugin;
+        // it must not depend on a pre-existing client profile selection.
+        seedPreview.active = manualSeedService.available();
         addDrawableChild(Widgets.button(
             footerX + footerIndex * (footerButtonWidth + GAP),
             height - 28,
@@ -193,6 +252,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
             waypoints.migrateLegacyMultiplayerWaypoints(worlds.worldIdentity(profile));
         if (result.status() == WaypointService.LegacyMigrationStatus.APPLIED) {
             assigningLegacyWaypoints = false;
+            migrationError = false;
             migrationMessage = Texts.translatable(
                 "confluxmap.screen.client_world.migrate_success",
                 result.migratedWaypoints(),
@@ -200,6 +260,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
                 result.skippedDuplicates()
             ).getString();
         } else {
+            migrationError = true;
             migrationMessage = Texts.translatable(migrationFailureKey(result.status())).getString();
         }
         rebuild();
@@ -220,6 +281,33 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
 
     @Override
     public void tick() {
+        if (migrationFuture != null && migrationFuture.isDone()) {
+            final CompletableFuture<MapCacheMigration.Result> completed = migrationFuture;
+            migrationFuture = null;
+            migrationConfirm = false;
+            try {
+                final MapCacheMigration.Result result = completed.join();
+                if (result.status() == MapCacheMigration.Status.APPLIED) {
+                    migrationError = false;
+                    migrationMessage = Texts.translatable(
+                        "confluxmap.screen.client_world.merge_success",
+                        result.migratedChunks(), result.copiedRegions(), result.mergedRegions()
+                    ).getString();
+                    selectedMigrationId = null;
+                } else {
+                    migrationError = true;
+                    migrationMessage = Texts.translatable(
+                        cacheMigrationFailureKey(result.status())
+                    ).getString();
+                }
+            } catch (final CompletionException | IllegalStateException error) {
+                migrationError = true;
+                migrationMessage = Texts.translatable(
+                    "confluxmap.screen.client_world.merge_failed"
+                ).getString();
+            }
+            rebuild();
+        }
         if (waitingToOpenMap && ConfluxMapClient.get().sessionGuard().current().active()) {
             waitingToOpenMap = false;
             MinecraftAccess.setScreen(MinecraftClient.getInstance(), new FullscreenMapScreen(openMapKey));
@@ -228,8 +316,99 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
 
     private void select(final String profileId) {
         pendingForgetId = null;
+        migrationMessage = null;
+        migrationError = false;
         worlds.select(profileId);
         finishSelection();
+    }
+
+    /** Selects an old client profile as a migration source without switching active map storage. */
+    private void selectMigrationSource(final String profileId) {
+        pendingForgetId = null;
+        migrationConfirm = false;
+        migrationMessage = null;
+        migrationError = false;
+        selectedMigrationId = profileId.equals(selectedMigrationId) ? null : profileId;
+        if (selectedMigrationId != null) {
+            final ClientWorldProfile profile = worlds.profiles().stream()
+                .filter(candidate -> candidate.id().equals(selectedMigrationId))
+                .findFirst()
+                .orElse(null);
+            if (profile != null) {
+                migrationMessage = Texts.translatable(
+                    "confluxmap.screen.client_world.merge_source_selected", profile.displayName()
+                ).getString();
+            }
+        }
+        rebuild();
+    }
+
+    private void requestMerge() {
+        if (selectedMigrationId == null || migrationFuture != null) {
+            return;
+        }
+        if (!migrationConfirm) {
+            migrationConfirm = true;
+            migrationError = false;
+            migrationMessage = Texts.translatable(
+                "confluxmap.screen.client_world.merge_warning"
+            ).getString();
+            rebuild();
+            return;
+        }
+
+        final ClientMultiworldService.ProfileMigrationPreparation preparation =
+            worlds.prepareProfileMigration(selectedMigrationId);
+        if (!preparation.ready()) {
+            migrationConfirm = false;
+            migrationError = true;
+            migrationMessage = Texts.translatable(
+                profileMigrationFailureKey(preparation.status())
+            ).getString();
+            rebuild();
+            return;
+        }
+
+        // End the active session first. RegionCacheService queues its final flush on the same IO
+        // executor used by executeProfileMigration, so the merge cannot race dirty map writes.
+        ConfluxMapClient.get().sessionTracker().endSession();
+        migrationError = false;
+        migrationMessage = Texts.translatable(
+            "confluxmap.screen.client_world.merge_running"
+        ).getString();
+        try {
+            migrationFuture = worlds.executeProfileMigration(preparation);
+        } catch (final RuntimeException error) {
+            migrationConfirm = false;
+            migrationError = true;
+            migrationMessage = Texts.translatable(
+                "confluxmap.screen.client_world.merge_failed"
+            ).getString();
+        }
+        rebuild();
+    }
+
+    private static String profileMigrationFailureKey(
+        final ClientMultiworldService.ProfileMigrationStatus status
+    ) {
+        return switch (status) {
+            case NOT_CONNECTED -> "confluxmap.screen.client_world.merge_not_connected";
+            case COMPANION_REQUIRED -> "confluxmap.screen.client_world.merge_server_required";
+            case SEED_UNKNOWN -> "confluxmap.screen.client_world.merge_seed_unknown";
+            case SEED_MISMATCH -> "confluxmap.screen.client_world.merge_seed_mismatch";
+            case SOURCE_IS_TARGET -> "confluxmap.screen.client_world.merge_same_target";
+            case ALREADY_RUNNING -> "confluxmap.screen.client_world.merge_running";
+            case READY -> throw new IllegalArgumentException("ready migration is not a failure");
+        };
+    }
+
+    private static String cacheMigrationFailureKey(final MapCacheMigration.Status status) {
+        return switch (status) {
+            case SOURCE_NOT_FOUND -> "confluxmap.screen.client_world.merge_source_missing";
+            case SOURCE_IS_TARGET -> "confluxmap.screen.client_world.merge_same_target";
+            case FAILED -> "confluxmap.screen.client_world.merge_failed";
+            case APPLIED -> throw new IllegalArgumentException("applied migration is not a failure");
+        };
     }
 
     private void forget(final String profileId) {
@@ -239,12 +418,16 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
             return;
         }
         pendingForgetId = null;
+        migrationMessage = null;
+        migrationError = false;
         worlds.clearBindings(profileId);
         rebuild();
     }
 
     private void openNameEditor(final ClientWorldProfile profile) {
         pendingForgetId = null;
+        migrationMessage = null;
+        migrationError = false;
         MinecraftAccess.setScreen(MinecraftClient.getInstance(), new ClientWorldNameScreen(
             this,
             profile == null ? null : profile.displayName(),
@@ -315,12 +498,14 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         final int promptColor;
         if (migrationMessage != null) {
             prompt = migrationMessage;
-            promptColor = assigningLegacyWaypoints ? 0xFFFF7777 : 0xFF77FF77;
+            promptColor = migrationError ? 0xFFFF7777 : 0xFF77FF77;
         } else if (assigningLegacyWaypoints) {
             prompt = Texts.translatable("confluxmap.screen.client_world.migrate_prompt").getString();
             promptColor = 0xFFFFCC55;
         } else {
-            final String promptKey = worlds.needsSelection()
+            final String promptKey = worlds.companionWorldIdentityAuthoritative()
+                ? "confluxmap.screen.client_world.companion"
+                : worlds.needsSelection()
                 ? "confluxmap.screen.client_world.ambiguous"
                 : "confluxmap.screen.client_world.prompt";
             prompt = Texts.translatable(promptKey).getString();

@@ -67,7 +67,6 @@ import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
-import cn.net.rms.confluxmap.mc.radar.RadarBackdrop;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
@@ -263,7 +262,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         0xFFE74C3C, 0xFFE67E22, 0xFFF1C40F, 0xFF2ECC71,
         0xFF1ABC9C, 0xFF3498DB, 0xFF9B59B6, 0xFFECF0F1
     };
-    /** Radar markers are ~12px across including their contour (see RadarMarkerRenderer); cull with that margin so one straddling the edge doesn't pop. */
+    /** Radar markers are ~12px across; cull with enough margin that one straddling the edge doesn't pop. */
     private static final float RADAR_CULL_MARGIN = 8f;
 
     /** Null when MaliLib owns the binding and closes this screen through the shared action handler. */
@@ -858,13 +857,28 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         //$$         renderAnnotationColorButton(GuiDraw.of(context), this, color, opensMenu);
         //$$     }
         //$$ });
-        //#elseif MC>=11904
+        //#elseif MC>=12002
         //$$ final ButtonWidget button = addDrawableChild(new ButtonWidget(
         //$$     x, y, ANNOTATION_CONTROL_SIZE, ANNOTATION_CONTROL_SIZE, Texts.literal(""),
         //$$     ignored -> activateAnnotationColorButton(color, opensMenu), narration -> narration.get()
         //$$ ) {
         //$$     @Override
         //$$     protected void renderWidget(
+        //$$         final DrawContext context,
+        //$$         final int mouseX,
+        //$$         final int mouseY,
+        //$$         final float delta
+        //$$     ) {
+        //$$         renderAnnotationColorButton(GuiDraw.of(context), this, color, opensMenu);
+        //$$     }
+        //$$ });
+        //#elseif MC>=12000
+        //$$ final ButtonWidget button = addDrawableChild(new ButtonWidget(
+        //$$     x, y, ANNOTATION_CONTROL_SIZE, ANNOTATION_CONTROL_SIZE, Texts.literal(""),
+        //$$     ignored -> activateAnnotationColorButton(color, opensMenu), narration -> narration.get()
+        //$$ ) {
+        //$$     @Override
+        //$$     protected void renderButton(
         //$$         final DrawContext context,
         //$$         final int mouseX,
         //$$         final int mouseY,
@@ -2472,7 +2486,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         //$$     context.draw();
         //$$     drawContents(GuiDraw.of(context), x, y);
         //$$ }
-        //#elseif MC>=12000
+        //#elseif MC>=12002
         //$$ protected void renderWidget(
         //$$     final DrawContext context,
         //$$     final int mouseX,
@@ -2486,6 +2500,32 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         //$$         : isHovered() ? Ids.of("widget/button_highlighted") : Ids.of("widget/button");
         //$$     context.setShaderColor(1.0f, 1.0f, 1.0f, alpha);
         //$$     context.drawGuiTexture(background, x, y, getWidth(), getHeight());
+        //$$     context.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+        //$$     context.draw();
+        //$$     drawContents(GuiDraw.of(context), x, y);
+        //$$ }
+        //#elseif MC>=12000
+        //$$ protected void renderButton(
+        //$$     final DrawContext context,
+        //$$     final int mouseX,
+        //$$     final int mouseY,
+        //$$     final float delta
+        //$$ ) {
+        //$$     context.setShaderColor(1.0f, 1.0f, 1.0f, alpha);
+        //$$     final int v = 46 + (!active ? 0 : isHovered() ? 2 : 1) * 20;
+        //$$     final int x = Widgets.x(this);
+        //$$     final int y = Widgets.y(this);
+        //$$     final int leftW = getWidth() / 2;
+        //$$     final int rightW = getWidth() - leftW;
+        //$$     final int topH = getHeight() / 2;
+        //$$     final int bottomH = getHeight() - topH;
+        //$$     context.drawTexture(WIDGETS_TEXTURE, x, y, 0, v, leftW, topH);
+        //$$     context.drawTexture(WIDGETS_TEXTURE, x + leftW, y, 200 - rightW, v, rightW, topH);
+        //$$     context.drawTexture(WIDGETS_TEXTURE, x, y + topH, 0, v + 20 - bottomH, leftW, bottomH);
+        //$$     context.drawTexture(
+        //$$         WIDGETS_TEXTURE, x + leftW, y + topH,
+        //$$         200 - rightW, v + 20 - bottomH, rightW, bottomH
+        //$$     );
         //$$     context.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
         //$$     context.draw();
         //$$     drawContents(GuiDraw.of(context), x, y);
@@ -2667,20 +2707,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
         final PlayerView player = playerView.get();
         final double pxPerBlock = 1.0 / scale;
-        final SessionGuard.Session session = gameBridge.session();
-        final MapLayer layer = layerSelector.current().layer();
-        final boolean predictionActive = predictionActive(layer, session);
-        final boolean biomeMode = biomeMode();
-        final String layerId = biomeMode
-            ? layer.cacheId() + BiomeTileKeys.SUFFIX
-            : layer.cacheId();
-        final RadarBackdrop backdrop = new RadarBackdrop(
-            textures, session.world(), session.dimension(), layerId, currentLod(),
-            predictionActive,
-            predictionActive ? 0xFFFFFFFF : 0,
-            BACKGROUND_COLOR
-        );
-
         final List<RadarMarkerRenderer.Marker> markers = new ArrayList<>();
         for (final RadarEntry entry : radarScanner.snapshot()) {
             double ex = entry.x();
@@ -2699,13 +2725,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 || screenY < -RADAR_CULL_MARGIN || screenY > height + RADAR_CULL_MARGIN) {
                 continue;
             }
-            markers.add(new RadarMarkerRenderer.Marker(
-                entry, screenX, screenY, ex, ez, yDelta, live
-            ));
+            markers.add(new RadarMarkerRenderer.Marker(entry, screenX, screenY, yDelta, live));
         }
-        RadarMarkerRenderer.drawAll(
-            draw, this.client, config, radarIconManager, backdrop, markers, (float) scale
-        );
+        RadarMarkerRenderer.drawAll(draw, this.client, config, radarIconManager, markers);
     }
 
     private void drawStructures(final GuiDraw draw, final int mouseX, final int mouseY) {

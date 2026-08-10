@@ -7,6 +7,8 @@ Conflux Map is a Fabric client-side minimap and world map
 | Build      | Loads on                | Fabric | Paper plugin |
 |------------|-------------------------|:------:|:------------:|
 | `1.17.1`   | 1.17.1                  | ✓      | —            |
+| `1.18.2`   | 1.18.2                  | ✓      | —            |
+| `1.20.1`   | 1.20.1                  | ✓      | —            |
 | `1.21.1`   | 1.21, 1.21.1            | ✓      | ✓            |
 | `1.21.3`   | 1.21.2, 1.21.3          | ✓      | ✓            |
 | `1.21.4`   | 1.21.4                  | ✓      | ✓            |
@@ -34,8 +36,9 @@ Conflux Map is a Fabric client-side minimap and world map
 
 - **Minimap HUD:** Choose a square or round frame, a size from 64 to 256 px,
   four zoom levels, free placement, and rotation with the player's view. Info lines
-  can show coordinates, biome, and active layer. The minimap automatically leaves
-  room for inventory screens and JEI/REI overlays.
+  can show coordinates, biome, and active layer. HUD avoidance keeps vanilla status
+  effects and the scoreboard clear of the minimap, while inventory screens and
+  JEI/REI overlays are also taken into account.
 - **Fullscreen map:** Multi-resolution tiles provide continuous zoom, panning, a
   chunk grid, and cursor-anchored scaling. Right-click anywhere to create a waypoint,
   share coordinates, or teleport when permission is available.
@@ -46,20 +49,24 @@ Conflux Map is a Fabric client-side minimap and world map
   cave views, the Nether provides current-level and bedrock-roof views, and the End
   uses a background designed for the void. Surface maps also respond to time of day
   and local lighting.
-- **Seed preview:** When the world seed is available, unexplored Overworld, Nether roof, and End
+- **Map autofill:** When the world seed is available, unexplored Overworld, Nether roof, and End
   areas immediately show predicted biomes and terrain. The Nether roof uses a fixed-height biome
   proxy, while the Overworld also approximates trees. Captured terrain and server corrections
   progressively replace the prediction, and Superflat worlds are supported as well.
 - **Structure filters and search:** Every vanilla structure set available in the
   running game version is covered across the Overworld, Nether, and End. Each type
   has its own icon and visibility toggle, predicted and server-confirmed positions
-  use different frames, and search jumps directly to the nearest candidate.
-- **Seed preview coverage:** Press `P` to switch between everywhere,
-  server-generated areas, and player-visited areas. The visited-only mode provides
-  a purely authoritative map without unexplored-area predictions.
-- **Per-server world profiles:** Terrain fingerprints keep worlds behind the same
-  server address, including proxy networks, in separate map records. Profiles can
-  be created, renamed, and unbound from the fullscreen map.
+  use different frames, and search jumps directly to the nearest candidate. Scrollbars
+  make long filter and result lists explicit, and the zoom level below which structure
+  icons are hidden is configurable.
+- **Map autofill coverage:** Press `P` to switch between everywhere,
+  server-generated areas, and off. Turning autofill off provides a purely
+  authoritative map limited to explored areas.
+- **Per-server sub-worlds:** Terrain fingerprints keep worlds behind the same
+  server address, including proxy networks, in separate map records. Sub-worlds can
+  be created, renamed, and unbound from the fullscreen map. If a companion is later
+  installed on an existing server, old waypoints and same-seed map data remain
+  available for an explicit, confirmed migration instead of moving automatically.
 - **Public waypoints and chat sharing:** A server can maintain a public waypoint list
   for every connected Conflux Map client. Chat coordinates are available on every
   server. Before sending, you can preview both Conflux Map and Xaero formats;
@@ -85,8 +92,11 @@ Conflux Map is a Fabric client-side minimap and world map
   on both maps. Trail duration, dot size, and visibility are configurable.
 - **Entity radar:** Players, hostile mobs, passive and neutral mobs, dropped items,
   vehicles, and projectiles have separate controls. Markers use matching entity heads
-  or item forms, crowded targets collapse into counted clusters, and players always
-  remain separate.
+  or item forms. Every living entity gets a borderless portrait rendered from its own
+  current model, so newer vanilla mobs and modded mobs need no bundled art, and every
+  portrait is normalized to the same icon size. While a portrait is still baking or
+  cannot be produced, the category-shaped dot stays visible instead of dropping the
+  entity. Crowded targets collapse into counted clusters, and players always remain separate.
 - **PNG export:** Select any rectangular map area or enter its coordinates, then
   export at 1 to 16 blocks per pixel. The exporter estimates the output size, can
   include map drawings, runs in the background, reports progress, and supports
@@ -107,8 +117,9 @@ Without MaliLib, all bindings remain configurable under Minecraft's Controls
 screen in the "Conflux Map" category. When MaliLib is installed, the gameplay
 bindings move to MaliLib's hotkey interface (including multi-key
 combinations), and Conflux Map is registered in MaliLib's A+C config switcher
-on Minecraft 1.21.1 and newer. Minecraft 1.17.1 keeps one optional vanilla
-shortcut because its MaliLib version predates the config-screen registry API.
+on Minecraft 1.21.1 and newer. On Minecraft 1.17.1, 1.18.2, and 1.20.1,
+Conflux Map detects the same registry when the installed MaliLib provides it;
+otherwise it keeps one optional vanilla shortcut for opening its hotkey screen.
 
 | Default key | Action |
 |---|---|
@@ -120,8 +131,8 @@ shortcut because its MaliLib version predates the config-screen registry API.
 | `B` | New waypoint at your position |
 | `J` | Toggle local waypoints |
 | `,` | Open the settings screen |
-| `P` | Cycle seed preview area (everywhere / generated-only / visited-only) |
-| `F9` | Refresh seed preview tiles |
+| `P` | Cycle map autofill area (everywhere / generated-only / off) |
+| `F9` | Refresh map autofill tiles |
 
 ## Waypoint management
 

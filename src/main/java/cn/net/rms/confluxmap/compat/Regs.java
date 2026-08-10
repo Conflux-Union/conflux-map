@@ -7,7 +7,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
 
-//#if MC>=12100
+//#if MC>=11903
 //$$ import net.minecraft.registry.Registries;
 //$$ import net.minecraft.registry.Registry;
 //$$ import net.minecraft.registry.RegistryKey;
@@ -37,7 +37,7 @@ public final class Regs {
     public static Registry<Biome> biomes(final World world) {
         //#if MC>=12103
         //$$ return world.getRegistryManager().getOrThrow(RegistryKeys.BIOME);
-        //#elseif MC>=12100
+        //#elseif MC>=11903
         //$$ return world.getRegistryManager().get(RegistryKeys.BIOME);
         //#else
         return world.getRegistryManager().get(Registry.BIOME_KEY);
@@ -46,7 +46,7 @@ public final class Regs {
 
     /** The static block registry. */
     public static Registry<Block> blocks() {
-        //#if MC>=12100
+        //#if MC>=11903
         //$$ return Registries.BLOCK;
         //#else
         return Registry.BLOCK;
@@ -55,7 +55,7 @@ public final class Regs {
 
     /** The static entity-type registry. */
     public static Registry<EntityType<?>> entityTypes() {
-        //#if MC>=12100
+        //#if MC>=11903
         //$$ return Registries.ENTITY_TYPE;
         //#else
         return Registry.ENTITY_TYPE;
@@ -93,6 +93,15 @@ public final class Regs {
         //#endif
     }
 
+    /** The registry identifier of an entity type. */
+    public static Identifier entityTypeId(final EntityType<?> type) {
+        //#if MC>=260100
+        //$$ return entityTypes().getKey(type);
+        //#else
+        return entityTypes().getId(type);
+        //#endif
+    }
+
     /** The registry identifier of {@code block}. */
     public static Identifier blockId(final Block block) {
         //#if MC>=260100
@@ -104,8 +113,10 @@ public final class Regs {
 
     /** The registry identifier of the biome at {@code pos}, or null when it has none. */
     public static Identifier biomeIdAt(final World world, final BlockPos pos) {
-        //#if MC>=12100
+        //#if MC>=11903
         //$$ return world.getBiome(pos).getKey().map(RegistryKey::getValue).orElse(null);
+        //#elseif MC>=11800
+        //$$ return biomes(world).getId(world.getBiome(pos).value());
         //#else
         return biomes(world).getId(world.getBiome(pos));
         //#endif

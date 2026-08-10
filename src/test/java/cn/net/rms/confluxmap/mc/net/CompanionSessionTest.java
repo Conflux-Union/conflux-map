@@ -176,7 +176,7 @@ class CompanionSessionTest {
 
         session.onPolicy(policy("11111111-2222-3333-4444-555555555555"));
         assertEquals(
-            WorldIdentity.multiplayer("example.net", "11111111-2222-3333-4444-555555555555"),
+            WorldIdentity.companionMultiplayer("example.net", "11111111-2222-3333-4444-555555555555"),
             session.resolveWorldIdentity("example.net").orElseThrow()
         );
     }

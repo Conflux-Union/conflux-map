@@ -51,7 +51,6 @@ at `native/jni/`. Both build the optional seed-prediction library under
 
 | Component | License | Role |
 |---|---|---|
-| [Entity-Icons](https://github.com/Simplexity-Development/Entity-Icons) by Simplexity-Development | CC0-1.0 | Source of the hand-drawn mob face icons at `assets/confluxmap/textures/radar/entity_icons.png` (a 13×15 sheet of 16×16 icons), used for radar / minimap entity markers. CC0 license text ships alongside it. |
 | [Velocity](https://github.com/PaperMC/Velocity) by PaperMC | GPL-3.0 | `velocity_server_current.properties` and `velocity_server_available.properties` contain only the 34 localized values of `velocity.command.server-current-server` and `velocity.command.server-available`, pinned from upstream commit [`2676520`](https://github.com/PaperMC/Velocity/commit/2676520c6a54bac0529544793c982dd701b338d9). They are loaded at runtime to recognize and hide the client-issued `/server` probe responses without guessing from arbitrary chat or MOTD messages. |
 | [Leaflet](https://leafletjs.com/) | BSD-2-Clause | The minified browser map runtime and stylesheet are extracted from the pinned `org.webjars.npm:leaflet:1.9.4` artifact into the bundled web-map assets. |
 

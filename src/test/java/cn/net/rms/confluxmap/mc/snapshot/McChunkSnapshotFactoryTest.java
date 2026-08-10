@@ -14,9 +14,9 @@ import org.junit.jupiter.api.Test;
 class McChunkSnapshotFactoryTest {
     @BeforeAll
     static void bootstrapMinecraftRegistries() {
-        //#if MC>=12100
+        //#if MC>=11800
         //$$ Assumptions.abort(
-        //$$     "Yarn's named 1.21 test jar splits vanilla package-private registry access; "
+        //$$     "Yarn's named 1.18+ test jars split vanilla package-private registry access; "
         //$$         + "this Minecraft-backed behavior is verified under Fabric Loader by GameTest"
         //$$ );
         //#else

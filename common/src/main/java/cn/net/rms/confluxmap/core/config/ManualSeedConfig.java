@@ -17,7 +17,20 @@ public final class ManualSeedConfig {
             return Optional.empty();
         }
         final Map<String, Entry> worlds = servers.get(world.serverId());
-        return worlds == null ? Optional.empty() : Optional.ofNullable(worlds.get(world.worldId()));
+        if (worlds == null) {
+            return Optional.empty();
+        }
+        final Entry current = worlds.get(world.worldId());
+        if (current != null) {
+            return Optional.of(current);
+        }
+        for (final String legacyId : world.legacyStorageIds()) {
+            final Entry legacy = worlds.get(legacyId);
+            if (legacy != null) {
+                return Optional.of(legacy);
+            }
+        }
+        return Optional.empty();
     }
 
     public void set(final WorldIdentity world, final String seedInput, final String worldgenVersion) {
@@ -25,8 +38,13 @@ public final class ManualSeedConfig {
             throw new IllegalArgumentException("world must be active");
         }
         final Entry entry = Entry.create(seedInput, worldgenVersion);
-        servers.computeIfAbsent(world.serverId(), ignored -> new TreeMap<>())
-            .put(world.worldId(), entry);
+        final Map<String, Entry> worlds = servers.computeIfAbsent(
+            world.serverId(), ignored -> new TreeMap<>()
+        );
+        worlds.put(world.worldId(), entry);
+        for (final String legacyId : world.legacyStorageIds()) {
+            worlds.remove(legacyId);
+        }
     }
 
     public boolean clear(final WorldIdentity world) {
@@ -34,7 +52,14 @@ public final class ManualSeedConfig {
             return false;
         }
         final Map<String, Entry> worlds = servers.get(world.serverId());
-        if (worlds == null || worlds.remove(world.worldId()) == null) {
+        if (worlds == null) {
+            return false;
+        }
+        boolean removed = worlds.remove(world.worldId()) != null;
+        for (final String legacyId : world.legacyStorageIds()) {
+            removed |= worlds.remove(legacyId) != null;
+        }
+        if (!removed) {
             return false;
         }
         if (worlds.isEmpty()) {

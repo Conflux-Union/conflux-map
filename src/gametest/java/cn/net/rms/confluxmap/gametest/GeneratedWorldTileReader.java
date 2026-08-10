@@ -103,7 +103,7 @@ final class GeneratedWorldTileReader {
                 tile.kind()[index] = (byte) surfaceKind.ordinal();
                 tile.fluidDepth()[index] = (byte) fluidDepth(chunk, position, y, surfaceKind);
                 tile.mapColorId()[index] = (byte) visibleMapColorId(chunk, world, position, y, state);
-                //#if MC>=12100
+                //#if MC>=11800
                 //$$ tile.biomeId()[index] = Regs.biomes(world).getRawId(world.getBiome(position).value());
                 //#else
                 tile.biomeId()[index] = Regs.biomes(world).getRawId(world.getBiome(position));

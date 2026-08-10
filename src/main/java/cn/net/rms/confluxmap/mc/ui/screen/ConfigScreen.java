@@ -12,6 +12,7 @@ import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.mc.predict.ManualSeedService;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -108,7 +109,27 @@ public final class ConfigScreen extends ConfluxScreen {
             final String networkSyncDisabledReasonKey,
             final boolean structureSearchAllowed
         ) {
-            final boolean remoteSeedDisabled = !singleplayer && seedSharingDisabledByServer;
+            return from(
+                singleplayer,
+                seedIndependentUnderlay,
+                seedSharingDisabledByServer,
+                false,
+                networkSyncDisabledReasonKey,
+                structureSearchAllowed
+            );
+        }
+
+        static PredictionSettingsAccess from(
+            final boolean singleplayer,
+            final boolean seedIndependentUnderlay,
+            final boolean seedSharingDisabledByServer,
+            final boolean manualSeedAvailable,
+            final String networkSyncDisabledReasonKey,
+            final boolean structureSearchAllowed
+        ) {
+            final boolean remoteSeedDisabled = !singleplayer
+                && seedSharingDisabledByServer
+                && !manualSeedAvailable;
             return new PredictionSettingsAccess(
                 remoteSeedDisabled && !seedIndependentUnderlay,
                 networkSyncDisabledReasonKey,
@@ -156,6 +177,7 @@ public final class ConfigScreen extends ConfluxScreen {
     private final SharedWaypointClient sharedWaypoints;
     private final GameBridge gameBridge;
     private final PredictionState predictionState;
+    private final ManualSeedService manualSeedService;
     private final List<IntSliderInput> sliderInputs = new ArrayList<>();
     private final List<DecimalSliderInput> decimalSliderInputs = new ArrayList<>();
 
@@ -167,6 +189,7 @@ public final class ConfigScreen extends ConfluxScreen {
     private SharedWaypointAvailability sharedAvailability;
     private RadarSettingsAccess radarAccess = RadarSettingsAccess.ALLOWED;
     private PredictionSettingsAccess predictionAccess;
+    private boolean manualSeedAvailable;
 
     public ConfigScreen() {
         this(null);
@@ -182,6 +205,7 @@ public final class ConfigScreen extends ConfluxScreen {
         this.sharedWaypoints = app.sharedWaypoints();
         this.gameBridge = app.gameBridge();
         this.predictionState = app.predictionState();
+        this.manualSeedService = app.manualSeedService();
     }
 
     /** Keep the world (and this session's capture pipeline) running while the screen is open. */
@@ -194,6 +218,7 @@ public final class ConfigScreen extends ConfluxScreen {
     protected void init() {
         rowWidth = Math.min(MAX_ROW_WIDTH, width - MARGIN * 2);
         scrollOffset = 0;
+        manualSeedAvailable = manualSeedService.available();
         rebuild();
     }
 
@@ -223,8 +248,11 @@ public final class ConfigScreen extends ConfluxScreen {
             }
         }
         final PredictionSettingsAccess currentPredictionAccess = predictionSettingsAccess();
-        if (!currentPredictionAccess.equals(predictionAccess)) {
+        final boolean currentManualSeedAvailable = manualSeedService.available();
+        if (!currentPredictionAccess.equals(predictionAccess)
+            || currentManualSeedAvailable != manualSeedAvailable) {
             predictionAccess = currentPredictionAccess;
+            manualSeedAvailable = currentManualSeedAvailable;
             if (category == Category.PREDICTION) {
                 rebuild();
             }
@@ -301,6 +329,7 @@ public final class ConfigScreen extends ConfluxScreen {
         sharedAvailability = sharedWaypoints.availability();
         radarAccess = RadarSettingsAccess.from(companionSession.entityRadarAllowed());
         predictionAccess = predictionSettingsAccess();
+        manualSeedAvailable = manualSeedService.available();
         sliderInputs.clear();
         decimalSliderInputs.clear();
         clearChildren();
@@ -532,6 +561,15 @@ public final class ConfigScreen extends ConfluxScreen {
                 final String structureReason = predictionAccess.disabledReasonKey(
                     PredictionControl.STRUCTURES
                 );
+                y = addActionRow(
+                    y,
+                    "confluxmap.config.prediction.manual_seed",
+                    () -> MinecraftAccess.setScreen(
+                        MinecraftClient.getInstance(), new ManualSeedScreen(this)
+                    ),
+                    manualSeedAvailable,
+                    manualSeedAvailable ? null : "confluxmap.screen.config.prediction.seed_disabled_by_server"
+                );
                 y = addToggleRow(
                     y, "confluxmap.config.prediction.enabled",
                     () -> config.predictionEnabled, v -> config.predictionEnabled = v,
@@ -673,10 +711,22 @@ public final class ConfigScreen extends ConfluxScreen {
     }
 
     private int addActionRow(final int y, final String labelKey, final Runnable action) {
+        return addActionRow(y, labelKey, action, true, null);
+    }
+
+    private int addActionRow(
+        final int y,
+        final String labelKey,
+        final Runnable action,
+        final boolean active,
+        final String disabledTooltipKey
+    ) {
         if (rowVisible(y)) {
-            addDrawableChild(Widgets.button(
-                rowX(), y, rowWidth, ROW_HEIGHT - 2, Texts.translatable(labelKey), button -> action.run()
+            final ButtonWidget button = addDrawableChild(Widgets.button(
+                rowX(), y, rowWidth, ROW_HEIGHT - 2, Texts.translatable(labelKey), ignored -> action.run()
             ));
+            button.active = active;
+            setDisabledTooltip(button, disabledTooltipKey);
         }
         return y + ROW_HEIGHT;
     }
@@ -838,6 +888,7 @@ public final class ConfigScreen extends ConfluxScreen {
             singleplayer,
             seedIndependentUnderlay,
             companionSession.seedSharingDisabledByServer(),
+            manualSeedService.available(),
             companionSession.mapCorrectionDisabledReasonKey(),
             companionSession.structureSearchAllowed()
         );

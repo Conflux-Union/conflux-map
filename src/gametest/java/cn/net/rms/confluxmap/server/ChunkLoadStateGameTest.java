@@ -23,7 +23,7 @@ public final class ChunkLoadStateGameTest implements FabricGameTest {
 //#endif
     //#if MC>=12105
     //$$ @GameTest(maxTicks = 100)
-    //#elseif MC>=12100
+    //#elseif MC>=12000
     //$$ @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = 100)
     //#else
     @GameTest(structureName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = 100)

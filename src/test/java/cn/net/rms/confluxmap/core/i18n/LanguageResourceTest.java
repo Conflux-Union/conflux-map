@@ -143,14 +143,14 @@ class LanguageResourceTest {
         assertTrue(mismatches.isEmpty(), String.join("\n", mismatches));
     }
 
-    // The Chinese survey copy was specified verbatim, so this locks the exact wording and the
+    // The Chinese survey copy is locked verbatim, so this pins the exact wording and the
     // fragment order the chat message is assembled from.
     @Test
     void chineseSurveyReminderMatchesTheRequestedChatCopy() {
         final Map<String, String> chinese = translations("zh_cn");
 
         assertEquals(
-            "想要我们做的更好?[点击此处]填写Conflux Map的调查问卷[不再提示]",
+            "想帮助我们做得更好吗？[点击此处]填写 Conflux 地图的调查问卷[不再提示]",
             chinese.get("confluxmap.survey.chat.intro")
                 + chinese.get("confluxmap.survey.chat.open")
                 + chinese.get("confluxmap.survey.chat.body")

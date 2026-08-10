@@ -128,7 +128,7 @@ public final class LayerSelector {
     }
 
     private static int logicalHeight(final DimensionType type) {
-        //#if MC>=12100
+        //#if MC>=12000
         //$$ return type.logicalHeight();
         //#else
         return type.getLogicalHeight();

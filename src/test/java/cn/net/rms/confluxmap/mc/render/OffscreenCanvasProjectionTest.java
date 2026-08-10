@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.render;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 //#if MC>=12100
@@ -14,12 +15,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 final class OffscreenCanvasProjectionTest {
-    //#if MC>=12108
-    //$$ /** From 1.21.6 the canvas installs its own identity model-view, so its quads sit on z=0. */
+    @Test
+    void targetScissorMatchesTheCanvasYAxis() {
+        //#if MC>=12000
+        //$$ assertEquals(928, RenderUtil.targetScissorY(64, 32, 1024));
+        //#else
+        assertEquals(64, RenderUtil.targetScissorY(64, 32, 1024));
+        //#endif
+    }
+
+    //#if MC>=12100
+    //$$ /** Canvas rendering installs its own identity model-view, so its quads always sit on z=0. */
     //$$ private static final float CANVAS_DRAW_PLANE_Z = 0f;
-    //#elseif MC>=12100
-    //$$ /** Older 1.21 GUI renderers draw through a model-view that translates z by this much. */
-    //$$ private static final float CANVAS_DRAW_PLANE_Z = -11_000f;
     //#endif
     //#if MC>=12100
     //$$
@@ -55,7 +62,13 @@ final class OffscreenCanvasProjectionTest {
     //$$ @Test
     //$$ void canvasRestoresTheProjectionItReplaced() throws IOException, URISyntaxException {
     //$$     final String source = Files.readString(preprocessedSource());
-    //$$     final String begin = methodBody(source, "public void begin(final int sizePx)");
+    //$$     final String publicBegin = methodBody(source, "public void begin(final int sizePx)");
+    //$$     final String preservingBegin = methodBody(
+    //$$         source, "public void beginPreserving(final int sizePx)"
+    //$$     );
+    //$$     final String begin = methodBody(
+    //$$         source, "private void beginInternal(final int sizePx, final boolean clear)"
+    //$$     );
     //$$     // The signature is matched as text against source this build just wrote, so the class
     //$$     // has to be spelled the way that source spells it. Reading the name off the class
     //$$     // itself gets remapped along with everything else instead of pinning one version's.
@@ -66,6 +79,11 @@ final class OffscreenCanvasProjectionTest {
     //$$     final int install = begin.indexOf("setProjection(canvasProjection(");
     //$$
     //$$     assertTrue(
+    //$$         publicBegin.contains("beginInternal(sizePx, true)")
+    //$$             && preservingBegin.contains("beginInternal(sizePx, false)"),
+    //$$         "both public entry points must share the projection-preserving implementation"
+    //$$     );
+    //$$     assertTrue(
     //$$         backup >= 0 && install >= 0 && backup < install,
     //$$         "begin must save the caller's projection before installing the canvas projection"
     //$$     );
@@ -73,11 +91,18 @@ final class OffscreenCanvasProjectionTest {
     //$$         end.contains("RenderSystem.restoreProjectionMatrix()"),
     //$$         "end must restore the exact projection and vertex sorter active before begin"
     //$$     );
-    //#if MC>=12108
+    //#if MC>=12100
     //$$     assertTrue(
     //$$         begin.contains("RenderSystem.getModelViewStack().pushMatrix().identity()"),
-    //$$         "begin must clear the model-view the world pass left behind"
+    //$$         "begin must clear the model-view inherited outside a GUI pass"
     //$$     );
+    //#if MC<12103
+    //$$     assertTrue(
+    //$$         begin.contains("RenderSystem.applyModelViewMatrix()")
+    //$$             && end.contains("RenderSystem.applyModelViewMatrix()"),
+    //$$         "pre-1.21.3 render state only sees a model-view change once it is applied"
+    //$$     );
+    //#endif
     //$$     assertTrue(
     //$$         end.contains("RenderSystem.getModelViewStack().popMatrix()"),
     //$$         "end must give the caller back its model-view"

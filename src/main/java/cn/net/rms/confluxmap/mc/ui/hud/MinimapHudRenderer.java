@@ -14,6 +14,7 @@ import cn.net.rms.confluxmap.core.config.MinimapHudAvoidance;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
+import cn.net.rms.confluxmap.core.radar.RadarCategory;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.tile.TileService;
@@ -25,7 +26,6 @@ import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.core.waypoint.WaypointVerticalRelation;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
-import cn.net.rms.confluxmap.mc.radar.RadarBackdrop;
 import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
 import cn.net.rms.confluxmap.mc.render.OffscreenCanvas;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
@@ -46,8 +46,10 @@ import java.util.Optional;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 //#endif
 import net.minecraft.client.MinecraftClient;
-//#if MC>=12100
+//#if MC>=12000
 //$$ import net.minecraft.client.gui.DrawContext;
+//#endif
+//#if MC>=12100
 //$$ import net.minecraft.client.render.RenderTickCounter;
 //#endif
 import net.minecraft.client.util.math.MatrixStack;
@@ -70,8 +72,6 @@ public final class MinimapHudRenderer {
     private static final int BORDER_THICKNESS = 1;
     private static final int BORDER_COLOR = 0xB0FFFFFF;
     private static final int BACKGROUND_COLOR = 0x80101018;
-    /** What unexplored map reads as for radar contour contrast: {@link #BACKGROUND_COLOR} over the dimmed 3D world. */
-    private static final int RADAR_BACKDROP_FALLBACK = 0xFF101018;
     private static final int TEXT_COLOR = 0xFFFFFFFF;
     private static final int ARROW_OUTLINE = 0xFF101010;
     private static final int ARROW_FILL = 0xFFFFFFFF;
@@ -146,11 +146,15 @@ public final class MinimapHudRenderer {
     //$$     final GuiDraw draw = GuiDraw.of(context);
     //$$     final PoseStack matrices = draw.matrices();
     //$$     final float tickDelta = tickCounter.getGameTimeDeltaPartialTick(false);
-    //#elseif MC>=12000
+    //#elseif MC>=12100
     //$$ private void render(final DrawContext context, final RenderTickCounter tickCounter) {
     //$$     final GuiDraw draw = GuiDraw.of(context);
     //$$     final MatrixStack matrices = draw.matrices();
     //$$     final float tickDelta = tickCounter.getTickDelta(false);
+    //#elseif MC>=12000
+    //$$ private void render(final DrawContext context, final float tickDelta) {
+    //$$     final GuiDraw draw = GuiDraw.of(context);
+    //$$     final MatrixStack matrices = draw.matrices();
     //#else
     private void render(final MatrixStack matrices, final float tickDelta) {
         final GuiDraw draw = GuiDraw.of(matrices);
@@ -503,14 +507,12 @@ public final class MinimapHudRenderer {
         final double rad = Math.toRadians(mapAngle);
         final float cos = (float) Math.cos(rad);
         final float sin = (float) Math.sin(rad);
-        // The minimap has no predicted underlay, so the backdrop is just real tiles over the fill.
-        final RadarBackdrop backdrop = new RadarBackdrop(
-            textures, gameBridge.session().world(), gameBridge.session().dimension(),
-            layerSelector.current().layer().cacheId(), 0, false, 0, RADAR_BACKDROP_FALLBACK
-        );
-
         final List<RadarMarkerRenderer.Marker> markers = new ArrayList<>();
+        final boolean showPlayers = MinecraftAccess.isPlayerListKeyPressed(client);
         for (final RadarEntry entry : radarScanner.snapshot()) {
+            if (!showPlayers && entry.category() == RadarCategory.PLAYER) {
+                continue;
+            }
             double ex = entry.x();
             double ez = entry.z();
             int yDelta = entry.yDelta();
@@ -530,9 +532,9 @@ public final class MinimapHudRenderer {
             }
             final float x = centerX + dirX * cos - dirY * sin;
             final float y = centerY + dirX * sin + dirY * cos;
-            markers.add(new RadarMarkerRenderer.Marker(entry, x, y, ex, ez, yDelta, live));
+            markers.add(new RadarMarkerRenderer.Marker(entry, x, y, yDelta, live));
         }
-        RadarMarkerRenderer.drawAll(draw, client, config, iconManager, backdrop, markers, blocksPerPixel);
+        RadarMarkerRenderer.drawAll(draw, client, config, iconManager, markers);
     }
 
     private void drawPlayerArrow(final MatrixStack matrices, final float centerX, final float centerY, final float angle) {

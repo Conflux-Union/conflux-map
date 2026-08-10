@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.mc.render;
 import cn.net.rms.confluxmap.core.util.Argb;
 import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.List;
+import java.util.Optional;
 //#if MC>=260100
 //$$ import com.mojang.blaze3d.pipeline.ColorTargetState;
 //#endif
@@ -53,7 +54,7 @@ import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.Window;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
-//#if MC>=12100
+//#if MC>=11904
 //$$ import org.joml.Matrix4f;
 //#else
 import net.minecraft.util.math.Matrix4f;
@@ -76,6 +77,7 @@ public final class RenderUtil {
     //#if MC>=12105
     //$$ private static final RenderPipeline GUI_PRESERVE_DESTINATION_ALPHA =
     //$$     createGuiPreserveDestinationAlphaPipeline();
+    //$$ private static final RenderPipeline GUI_REPLACE = createGuiReplacePipeline();
     //#endif
     //#if MC>=12105
     //$$ private static Framebuffer drawTarget;
@@ -255,7 +257,7 @@ public final class RenderUtil {
         final VertexConsumerProvider.Immediate immediate,
         final int light
     ) {
-        //#if MC>=12100
+        //#if MC>=12000
         //$$ textRenderer.draw(
         //$$     text, x, y, color, false, matrices.peek().getPositionMatrix(), immediate,
         //$$     TextRenderer.TextLayerType.SEE_THROUGH, 0, light
@@ -364,6 +366,61 @@ public final class RenderUtil {
     }
 
     /**
+     * Draws already-projected textured model quads into the current target. The array uses
+     * {@code x,y,z,u,v} per vertex and must contain complete groups of four vertices.
+     */
+    public static void drawProjectedTexturedQuads(final MatrixStack matrices, final float[] vertices) {
+        if (vertices.length == 0) {
+            return;
+        }
+        if (vertices.length % 20 != 0) {
+            throw new IllegalArgumentException("projected textured quads require 20 floats per quad");
+        }
+        //#if MC<12105
+        useTintedTextureShader();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        //#endif
+        final var model = matrices.peek().getModel();
+        final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, Mesh.tintedTextureFormat());
+        for (int i = 0; i < vertices.length; i += 5) {
+            mesh.tintedVertex(
+                model, vertices[i], vertices[i + 1], vertices[i + 2],
+                vertices[i + 3], vertices[i + 4], 1f, 1f, 1f, 1f
+            );
+        }
+        //#if MC>=12105
+        //$$ mesh.drawGui(RenderPipelines.GUI_TEXTURED);
+        //#else
+        mesh.draw();
+        //#endif
+    }
+
+    /** Replaces one rectangle in the current render target with fully transparent pixels. */
+    public static void clearTargetRect(
+        final MatrixStack matrices,
+        final float x,
+        final float y,
+        final float width,
+        final float height
+    ) {
+        //#if MC<12105
+        useColorShader();
+        RenderSystem.disableBlend();
+        //#endif
+        final var model = matrices.peek().getModel();
+        final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, VertexFormats.POSITION_COLOR);
+        appendRect(mesh, model, x, y, width, height, 0);
+        //#if MC>=12105
+        //$$ mesh.drawGui(GUI_REPLACE);
+        //#else
+        mesh.draw();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        //#endif
+    }
+
+    /**
      * Enables the GL scissor test for a rectangle given in GUI (scaled) coordinates,
      * converting to framebuffer pixels via the window's current scale factor.
      */
@@ -395,6 +452,40 @@ public final class RenderUtil {
         //#endif
         //#else
         RenderSystem.enableScissor(x, y, w, h);
+        //#endif
+    }
+
+    /** Enables scissoring in the pixel coordinates of the currently bound off-screen target. */
+    public static void enableTargetScissor(
+        final int targetX,
+        final int targetY,
+        final int width,
+        final int height,
+        final int targetHeight
+    ) {
+        final int scissorY = targetScissorY(targetY, height, targetHeight);
+        //#if MC>=12105
+        //$$ scissorEnabled = true;
+        //$$ scissorX = targetX;
+        //$$ RenderUtil.scissorY = scissorY;
+        //$$ scissorWidth = width;
+        //$$ scissorHeight = height;
+        //#if MC>=12108
+        //$$ guiScissorX = targetX;
+        //$$ guiScissorY = targetY;
+        //$$ guiScissorWidth = width;
+        //$$ guiScissorHeight = height;
+        //#endif
+        //#else
+        RenderSystem.enableScissor(targetX, scissorY, width, height);
+        //#endif
+    }
+
+    static int targetScissorY(final int targetY, final int height, final int targetHeight) {
+        //#if MC>=12000
+        //$$ return targetHeight - targetY - height;
+        //#else
+        return targetY;
         //#endif
     }
 
@@ -723,6 +814,51 @@ public final class RenderUtil {
     //#endif
     //$$     return builder.build();
     //$$ }
+    //$$
+    //$$ private static RenderPipeline createGuiReplacePipeline() {
+    //$$     final RenderPipeline gui = RenderPipelines.GUI;
+    //#if MC>=260200
+    //$$     final RenderPipeline.Builder builder = RenderPipeline.builder()
+    //$$         .withLocation("pipeline/confluxmap_gui_replace")
+    //$$         .withVertexShader(gui.getVertexShader())
+    //$$         .withFragmentShader(gui.getFragmentShader())
+    //$$         .withCull(gui.isCull())
+    //$$         .withColorTargetState(new ColorTargetState(
+    //$$             Optional.empty(), gui.getColorTargetState().format(), ColorTargetState.WRITE_ALL
+    //$$         ))
+    //$$         .withVertexBinding(0, gui.getVertexFormatBinding(0))
+    //$$         .withPrimitiveTopology(gui.getPrimitiveTopology());
+    //$$     for (final var bindGroupLayout : gui.getBindGroupLayouts()) {
+    //$$         builder.withBindGroupLayout(bindGroupLayout);
+    //$$     }
+    //#else
+    //$$     final RenderPipeline.Builder builder = RenderPipeline.builder()
+    //$$         .withLocation("pipeline/confluxmap_gui_replace")
+    //$$         .withVertexShader(gui.getVertexShader())
+    //$$         .withFragmentShader(gui.getFragmentShader())
+    //$$         .withVertexFormat(gui.getVertexFormat(), gui.getVertexFormatMode());
+    //#if MC>=260100
+    //$$     builder
+    //$$         .withCull(gui.isCull())
+    //$$         .withColorTargetState(new ColorTargetState(Optional.empty(), ColorTargetState.WRITE_ALL));
+    //#else
+    //$$     builder
+    //$$         .withoutBlend()
+    //$$         .withColorWrite(true, true);
+    //#endif
+    //#if MC>=12108
+    //$$     builder
+    //$$         .withUniform("DynamicTransforms", UniformType.UNIFORM_BUFFER)
+    //$$         .withUniform("Projection", UniformType.UNIFORM_BUFFER);
+    //#else
+    //$$     builder
+    //$$         .withUniform("ModelViewMat", UniformType.MATRIX4X4)
+    //$$         .withUniform("ProjMat", UniformType.MATRIX4X4)
+    //$$         .withUniform("ColorModulator", UniformType.VEC4);
+    //#endif
+    //#endif
+    //$$     return builder.build();
+    //$$ }
     //#endif
 
     /**
@@ -797,7 +933,7 @@ public final class RenderUtil {
         //$$ // Pipeline selection happens at draw time.
         //#elseif MC>=12103
         //$$ RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX);
-        //#elseif MC>=12100
+        //#elseif MC>=12000
         //$$ RenderSystem.setShader(GameRenderer::getPositionTexProgram);
         //#else
         RenderSystem.setShader(GameRenderer::getPositionTexShader);
@@ -809,7 +945,7 @@ public final class RenderUtil {
         //$$ // Pipeline selection happens at draw time.
         //#elseif MC>=12103
         //$$ RenderSystem.setShader(ShaderProgramKeys.POSITION_COLOR);
-        //#elseif MC>=12100
+        //#elseif MC>=12000
         //$$ RenderSystem.setShader(GameRenderer::getPositionColorProgram);
         //#else
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
@@ -823,6 +959,8 @@ public final class RenderUtil {
         //$$ RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
         //#elseif MC>=12100
         //$$ RenderSystem.setShader(GameRenderer::getPositionTexColorProgram);
+        //#elseif MC>=12000
+        //$$ RenderSystem.setShader(GameRenderer::getPositionColorTexProgram);
         //#else
         RenderSystem.setShader(GameRenderer::getPositionColorTexShader);
         //#endif
