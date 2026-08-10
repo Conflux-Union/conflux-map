@@ -71,7 +71,14 @@ final class FabricWebMapBackend implements WebMapBackend {
             companion.worldIds().get(server).toString(), worldgenVersion,
             sharePrediction ? server.getOverworld().getSeed() : null,
             sharePrediction ? predictionVersion.getAsInt() : -1,
-            dimensions
+            dimensions,
+            new WebMapManifest.Limits(
+                companion.config().maxTilesPerRequest,
+                Math.max(
+                    companion.config().minRequestIntervalMs,
+                    companion.config().webMap.minRequestIntervalMs
+                )
+            )
         );
     }
 
@@ -105,7 +112,7 @@ final class FabricWebMapBackend implements WebMapBackend {
 
     @Override
     public WebPlayerSnapshot players() {
-        return new WebPlayerSnapshot(snapshot.revision(), snapshot.players());
+        return new WebPlayerSnapshot(snapshot.playerRevision(), snapshot.players());
     }
 
     @Override
@@ -138,7 +145,7 @@ final class FabricWebMapBackend implements WebMapBackend {
         };
     }
 
-    void updatePlayers(final long revision) {
+    void updatePlayers() {
         final List<WebPlayerSnapshot.Player> result = new ArrayList<>();
         final Map<UUID, URI> currentSkins = new HashMap<>();
         if (companion.config().webMap.sharePlayers) {
@@ -146,7 +153,7 @@ final class FabricWebMapBackend implements WebMapBackend {
                 if (companion.webMapHidden(player.getUuid())) continue;
                 result.add(new WebPlayerSnapshot.Player(
                     player.getUuid().toString(), player.getName().getString(),
-                    worldIndex(player.getServerWorld()), player.getX(), player.getZ(),
+                    worldIndex((ServerWorld) player.getServerWorld()), player.getX(), player.getZ(),
                     player.isSpectator() || player.isInvisible()
                 ));
                 final URI skin = skin(player);
@@ -166,7 +173,7 @@ final class FabricWebMapBackend implements WebMapBackend {
                 }
             }
         }
-        snapshot = new WebMapSnapshot(revision, result, waypoints);
+        snapshot = snapshot.next(result, waypoints);
         skinUrls = Map.copyOf(currentSkins);
     }
 

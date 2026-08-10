@@ -74,6 +74,19 @@ assert.match(
 assert.equal(core.localeForPreferences('en', ['zh-CN']), 'en');
 assert.equal(core.localeForPreferences(null, ['zh-Hans-CN', 'en-US']), 'zh-CN');
 assert.equal(core.localeForPreferences(null, ['fr-FR']), 'en');
+assert.deepEqual(core.requestLimits({
+  limits: {maxTilesPerRequest: 4, minRequestIntervalMs: 350}
+}), {maxTilesPerRequest: 4, requestIntervalMs: 375});
+assert.deepEqual(core.requestLimits({}), {
+  maxTilesPerRequest: 8, requestIntervalMs: 125
+});
+const mapState = {players: [{id: 'old'}], waypoints: [{id: 'spawn'}]};
+assert.deepEqual(core.mergeMapState(mapState, {
+  type: 'players', snapshot: {players: [{id: 'new'}]}
+}), {players: [{id: 'new'}], waypoints: [{id: 'spawn'}]});
+assert.deepEqual(core.mergeMapState(mapState, {
+  type: 'waypoints', snapshot: {waypoints: [{id: 'home'}]}
+}), {players: [{id: 'old'}], waypoints: [{id: 'home'}]});
 const localeDirectory = join(dirname(fileURLToPath(import.meta.url)), '../../main/webmap/locales');
 const english = JSON.parse(await readFile(join(localeDirectory, 'en.json'), 'utf8'));
 const chinese = JSON.parse(await readFile(join(localeDirectory, 'zh-CN.json'), 'utf8'));

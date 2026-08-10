@@ -12,23 +12,44 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import javax.imageio.ImageIO;
 
 /** Bounded same-host Minecraft skin fetcher and face-thumbnail cache. */
 public final class WebAvatarCache {
     private static final int MAX_SKIN_BYTES = 1 << 20;
+    private static final int MAX_CACHE_ENTRIES = 256;
     private final HttpClient client = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(5))
         .followRedirects(HttpClient.Redirect.NEVER)
         .build();
-    private final Map<URI, CompletableFuture<byte[]>> cache = new ConcurrentHashMap<>();
+    private final Function<URI, CompletableFuture<byte[]>> loader;
+    private final Map<URI, CompletableFuture<byte[]>> cache = new LinkedHashMap<>(32, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(
+            final Map.Entry<URI, CompletableFuture<byte[]>> eldest
+        ) {
+            return size() > MAX_CACHE_ENTRIES;
+        }
+    };
+
+    public WebAvatarCache() {
+        this.loader = this::fetch;
+    }
+
+    WebAvatarCache(final Function<URI, CompletableFuture<byte[]>> loader) {
+        if (loader == null) throw new IllegalArgumentException("avatar loader is required");
+        this.loader = loader;
+    }
 
     public CompletableFuture<byte[]> face(final URI skin) {
         if (!allowed(skin)) return CompletableFuture.completedFuture(null);
-        return cache.computeIfAbsent(skin, this::fetch);
+        synchronized (cache) {
+            return cache.computeIfAbsent(skin, loader);
+        }
     }
 
     static boolean allowed(final URI uri) {

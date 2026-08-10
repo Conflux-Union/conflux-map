@@ -102,7 +102,9 @@ public final class WebMapServer implements AutoCloseable {
 
         @Override
         protected boolean isWebsocketRequested(final IHTTPSession session) {
-            return "/api/v1/map".equals(session.getUri()) && super.isWebsocketRequested(session);
+            return "/api/v1/map".equals(session.getUri())
+                && webSocketOriginAllowed(session)
+                && super.isWebsocketRequested(session);
         }
 
         @Override
@@ -113,6 +115,13 @@ public final class WebMapServer implements AutoCloseable {
         @Override
         protected Response serveHttp(final IHTTPSession session) {
             final String path = session.getUri();
+            if ("/api/v1/map".equals(path) && super.isWebsocketRequested(session)) {
+                return secure(text(
+                    Response.Status.FORBIDDEN,
+                    NanoHTTPD.MIME_PLAINTEXT,
+                    "websocket origin is not allowed"
+                ));
+            }
             if ("/api/v1/manifest".equals(path)) {
                 if (session.getMethod() != Method.GET) return methodNotAllowed("GET");
                 return secure(text(
@@ -132,6 +141,49 @@ public final class WebMapServer implements AutoCloseable {
                 return avatar(session, path);
             }
             return staticAsset(session, path);
+        }
+
+        private static boolean webSocketOriginAllowed(final IHTTPSession session) {
+            final String originValue = header(session, "origin");
+            if (originValue == null || originValue.isBlank()) {
+                // Non-browser clients are not required to send Origin. Browser WebSocket APIs do.
+                return true;
+            }
+            final String hostValue = header(session, "host");
+            if (hostValue == null || hostValue.isBlank()) return false;
+            try {
+                final URI origin = URI.create(originValue);
+                if (origin.getHost() == null || origin.getUserInfo() != null
+                    || origin.getRawQuery() != null || origin.getRawFragment() != null
+                    || !(origin.getRawPath() == null || origin.getRawPath().isEmpty())) {
+                    return false;
+                }
+                final String expectedScheme = forwardedScheme(session);
+                if (!expectedScheme.equalsIgnoreCase(origin.getScheme())) return false;
+                final URI request = URI.create(expectedScheme + "://" + hostValue);
+                return request.getHost() != null
+                    && request.getHost().equalsIgnoreCase(origin.getHost())
+                    && effectivePort(request) == effectivePort(origin);
+            } catch (final IllegalArgumentException e) {
+                return false;
+            }
+        }
+
+        private static String forwardedScheme(final IHTTPSession session) {
+            final String direct = session.getRemoteIpAddress();
+            final String forwarded = header(session, "x-forwarded-proto");
+            if (loopback(direct) && forwarded != null) {
+                final String first = forwarded.split(",", 2)[0].trim();
+                if ("http".equalsIgnoreCase(first) || "https".equalsIgnoreCase(first)) {
+                    return first.toLowerCase(java.util.Locale.ROOT);
+                }
+            }
+            return "http";
+        }
+
+        private static int effectivePort(final URI uri) {
+            if (uri.getPort() >= 0) return uri.getPort();
+            return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
         }
 
         private Response avatar(final IHTTPSession session, final String path) {
@@ -291,6 +343,7 @@ public final class WebMapServer implements AutoCloseable {
             private final AddressBudget budget;
             private final AtomicBoolean registered = new AtomicBoolean();
             private volatile long playerRevision = Long.MIN_VALUE;
+            private volatile long waypointRevision = Long.MIN_VALUE;
 
             MapSocket(final IHTTPSession handshakeRequest) {
                 super(handshakeRequest);
@@ -384,12 +437,31 @@ public final class WebMapServer implements AutoCloseable {
             }
 
             private void sendMapState(final WebMapSnapshot snapshot) {
-                if (!isOpen() || snapshot.revision() == playerRevision) return;
+                if (!isOpen()) return;
+                if (snapshot.playerRevision() != playerRevision) {
+                    final String message = "{\"type\":\"players\",\"snapshot\":"
+                        + snapshot.playersJson() + "}";
+                    if (sendStatePayload(message)) playerRevision = snapshot.playerRevision();
+                }
+                if (snapshot.waypointRevision() != waypointRevision) {
+                    final String message = "{\"type\":\"waypoints\",\"snapshot\":"
+                        + snapshot.waypointsJson() + "}";
+                    if (sendStatePayload(message)) waypointRevision = snapshot.waypointRevision();
+                }
+            }
+
+            private boolean sendStatePayload(final String payload) {
+                final byte[] encoded = payload.getBytes(StandardCharsets.UTF_8);
+                final long now = System.nanoTime();
+                budget.lastSeen = now;
+                if (encoded.length > Proto.MAX_S2C_PAYLOAD
+                    || !budget.budget.allowBytes(encoded.length, now)) return false;
                 try {
-                    send("{\"type\":\"map-state\",\"snapshot\":" + snapshot.toJson() + "}");
-                    playerRevision = snapshot.revision();
+                    send(payload);
+                    return true;
                 } catch (final IOException e) {
                     closeQuietly(WebSocketFrame.CloseCode.GoingAway, "write failed");
+                    return false;
                 }
             }
 

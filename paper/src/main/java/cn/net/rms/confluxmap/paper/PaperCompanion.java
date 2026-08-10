@@ -88,7 +88,6 @@ final class PaperCompanion implements Listener {
     private BukkitTask tickTask;
     private WebMapServer webMap;
     private PaperWebMapBackend webMapBackend;
-    private long webPlayerRevision;
     private int webPlayerTicks;
     private WebMapPrivacyStore webMapPrivacy;
 
@@ -415,7 +414,7 @@ final class PaperCompanion implements Listener {
         if (webMapBackend != null && (config.webMap.sharePlayers || sharedWaypointsEnabled())
             && ++webPlayerTicks >= 40) {
             webPlayerTicks = 0;
-            webMapBackend.updatePlayers(++webPlayerRevision);
+            webMapBackend.updatePlayers();
         }
     }
 

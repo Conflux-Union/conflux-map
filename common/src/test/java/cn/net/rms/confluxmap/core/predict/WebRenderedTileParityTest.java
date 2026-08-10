@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
-import cn.net.rms.confluxmap.core.color.MaterialDetailProfile;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
@@ -88,15 +87,7 @@ final class WebRenderedTileParityTest {
         )));
         final CorrectionTile corrections = new CorrectionTile(lod);
         corrections.applyPatch(1L, new byte[Proto.PATCH_PRESENCE_BYTES], patch);
-        final int[] luminance = {
-            20, 40, 60, 80, 100, 120, 140, 160,
-            180, 200, 220, 240, 60, 100, 140, 180
-        };
-        final MaterialDetailProfile detail = MaterialDetailProfile.fromLuminance(luminance, 0.12);
         final SyncedMaterialPalette materials = new SyncedMaterialPalette();
-        materials.put("minecraft:glowstone", new SyncedMaterialPalette.Sample(
-            0xFFB07030, detail, SyncedMaterialPalette.Tint.NONE, 0xFFFFFFFF, 73
-        ));
         final int[] expected = PredictedTileComposer.compose(
             derived, grid, PredictionPalette.defaults(), corrections,
             PredictionViewMode.EVERYWHERE, lod, Proto.MAP_COLOR_NONE,
@@ -115,10 +106,6 @@ final class WebRenderedTileParityTest {
             "parity", "1.21.8", SEED, version,
             List.of(new WebMapManifest.Dimension(
                 0, "minecraft:overworld", "overworld", true, WorldPreset.DEFAULT
-            )),
-            List.of(new WebMapManifest.Material(
-                "minecraft:glowstone", 0xFFB07030, detail.offsets(),
-                SyncedMaterialPalette.Tint.NONE.name(), 0xFFFFFFFF, 73
             ))
         ).toJson());
         assertNodeParity(version, lod, 0, 0, manifest, image, encodedPatch);

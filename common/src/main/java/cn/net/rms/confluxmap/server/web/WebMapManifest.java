@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.server.web;
 
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
+import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.predict.BiomeTable;
 import cn.net.rms.confluxmap.core.predict.PredictionPalette;
 import java.util.ArrayList;
@@ -15,8 +16,27 @@ public record WebMapManifest(
     Long seed,
     int predictionVersion,
     List<Dimension> dimensions,
-    List<Material> materials
+    Limits limits
 ) {
+    public record Limits(int maxTilesPerRequest, int minRequestIntervalMs) {
+        public static final Limits DEFAULT = new Limits(
+            Proto.DEFAULT_MAX_TILES_PER_REQ,
+            Proto.DEFAULT_MIN_REQ_INTERVAL_MS
+        );
+
+        public Limits {
+            if (maxTilesPerRequest < 1 || maxTilesPerRequest > 255
+                || minRequestIntervalMs < 0 || minRequestIntervalMs > 60_000) {
+                throw new IllegalArgumentException("invalid web map request limits");
+            }
+        }
+
+        String toJson() {
+            return "{\"maxTilesPerRequest\":" + maxTilesPerRequest
+                + ",\"minRequestIntervalMs\":" + minRequestIntervalMs + "}";
+        }
+    }
+
     public record Dimension(
         int index,
         String id,
@@ -33,42 +53,6 @@ public record WebMapManifest(
         }
     }
 
-    public record Material(
-        String id,
-        int baseArgb,
-        double[] detailOffsets,
-        String tint,
-        int fixedTintArgb,
-        int patternSalt
-    ) {
-        public Material {
-            if (id == null || id.isBlank() || detailOffsets == null
-                || detailOffsets.length != 16 || tint == null || tint.isBlank()) {
-                throw new IllegalArgumentException("invalid web material sample");
-            }
-            detailOffsets = detailOffsets.clone();
-        }
-
-        @Override
-        public double[] detailOffsets() {
-            return detailOffsets.clone();
-        }
-
-        public String toJson() {
-            final StringBuilder result = new StringBuilder(256)
-                .append("{\"id\":\"").append(json(id))
-                .append("\",\"baseArgb\":").append(Integer.toUnsignedLong(baseArgb))
-                .append(",\"detailOffsets\":[");
-            for (int i = 0; i < detailOffsets.length; i++) {
-                if (i > 0) result.append(',');
-                result.append(detailOffsets[i]);
-            }
-            return result.append("],\"tint\":\"").append(json(tint))
-                .append("\",\"fixedTintArgb\":").append(Integer.toUnsignedLong(fixedTintArgb))
-                .append(",\"patternSalt\":").append(patternSalt).append('}').toString();
-        }
-    }
-
     public WebMapManifest(
         final String worldId,
         final String worldgenVersion,
@@ -76,7 +60,7 @@ public record WebMapManifest(
         final int predictionVersion,
         final List<Dimension> dimensions
     ) {
-        this(worldId, worldgenVersion, seed, predictionVersion, dimensions, List.of());
+        this(worldId, worldgenVersion, seed, predictionVersion, dimensions, Limits.DEFAULT);
     }
 
     public WebMapManifest {
@@ -88,7 +72,7 @@ public record WebMapManifest(
             throw new IllegalArgumentException("prediction seed and version must be available together");
         }
         dimensions = dimensions == null ? List.of() : List.copyOf(dimensions);
-        materials = materials == null ? List.of() : List.copyOf(materials);
+        limits = limits == null ? Limits.DEFAULT : limits;
     }
 
     public boolean predictionAvailable() {
@@ -104,6 +88,7 @@ public record WebMapManifest(
             result.append(",\"seed\":\"").append(seed).append('"')
                 .append(",\"predictionVersion\":").append(predictionVersion);
         }
+        result.append(",\"limits\":").append(limits.toJson());
         result.append(",\"predictionBiomes\":");
         appendPredictionBiomes(result);
         result.append(",\"dimensions\":[");
@@ -112,11 +97,6 @@ public record WebMapManifest(
                 result.append(',');
             }
             result.append(dimensions.get(i).toJson());
-        }
-        result.append("],\"materials\":[");
-        for (int i = 0; i < materials.size(); i++) {
-            if (i > 0) result.append(',');
-            result.append(materials.get(i).toJson());
         }
         return result.append("]}").toString();
     }

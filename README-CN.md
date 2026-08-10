@@ -156,6 +156,14 @@ companion 共享的所有内容都在 `config/confluxmap/server.json` 中控制�
 - `allowEntityRadar`（默认 `true`）控制合作客户端是否可以扫描并渲染实体雷达。
 - `shareCorrections`（默认 `true`）提供真实地形地图校正。
 - `shareWaypoints`（默认 `false`）启用共享路径点目录。
+- `webMap.enabled`（默认 `false`）启动内置的 2D 浏览器地图。默认只监听
+  `127.0.0.1:8123`，对外提供时应放在 HTTPS 反向代理之后；除非显式设置
+  `webMap.allowInsecureRemote=true`，否则拒绝直接监听非回环地址。代理必须保留原始
+  `Host` 请求头并设置 `X-Forwarded-Proto`，浏览器 WebSocket 的 `Origin` 必须与
+  这个对外来源一致。
+- `webMap.sharePlayers`（默认 `false`）启用可选的两秒一次玩家雷达。玩家可以使用
+  `/confluxmap webmap hide` 持久隐藏，也可以使用 `/confluxmap webmap show` 恢复显示。
+  开启共享后，旁观者和隐身玩家会以半透明方式显示。
 
 这些配置是客户端策略，不是反作弊。服务端一旦共享种子，修改过的客户端或外部
 工具仍可自行推算相同的群系和结构数据，修改过的客户端也始终可以运行自己的
@@ -166,6 +174,18 @@ companion 共享的所有内容都在 `config/confluxmap/server.json` 中控制�
 `minRequestIntervalMs`、`maxChunkSummariesPerSecond`）也在同一个文件中。任何
 玩家都可以在游戏内执行 `/confluxmap performance`，查看自己连接的地图同步
 耗时和流量统计。
+
+浏览器地图使用一条二进制 WebSocket 传输区域页、失效通知、可选玩家雷达和共享
+路径点。它按服务端公布的实际请求上限分批请求，把修订号保存在 IndexedDB 中，
+每个浏览器会话重新校验一次，此后只刷新服务端标记为失效的区域。玩家与路径点
+分别维护修订号；连接短暂中断后会自动重连，并重新订阅当前可见区域。Leaflet
+静态资源和 cubiomes WASM 预测器都打包在 jar 中，正常加载页面时不依赖 CDN。
+
+当 `shareSeed=true` 且 `allowBiomeMap=true` 时，清单会明确发布种子，并允许浏览器
+在受支持的维度预测“全部区域”的群系；服务端已生成区域会覆盖本地预测。能从种子
+进行预测的匿名浏览器也能读取该种子，因此这是披露策略，不是隐藏种子的手段。
+关闭种子共享后，只能查看“已生成区域”。网页缩放范围、默认比例以及 1.26 倍缩放
+步长与游戏内全屏地图一致（每个屏幕像素 `0.25` 到 `16` 个方块）。
 
 ## 构建
 

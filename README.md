@@ -200,6 +200,8 @@ Everything the companion shares is controlled in `config/confluxmap/server.json`
 - `webMap.enabled` (default `false`) starts the bundled 2D browser map. It binds to
   `127.0.0.1:8123` by default and should be published through an HTTPS reverse proxy;
   direct non-loopback binding is rejected unless `webMap.allowInsecureRemote=true`.
+  The proxy must preserve the original `Host` header and set `X-Forwarded-Proto`; browser
+  WebSocket upgrades are accepted only when their `Origin` matches that effective origin.
 - `webMap.sharePlayers` (default `false`) adds the optional two-second player radar.
   Players can persistently opt out with `/confluxmap webmap hide` and opt back in with
   `/confluxmap webmap show`. Spectator and invisible players are shown translucent when sharing
@@ -217,11 +219,12 @@ Per-player rate limits and bandwidth budgets for map sync
 `/confluxmap performance` in game to see timing and volume stats for their
 own connection's map sync.
 
-The browser uses one binary WebSocket for region pages, invalidations, and optional player radar.
-It requests the existing compressed region-summary protocol in batches of at most eight regions,
-keeps revision identifiers in IndexedDB, revalidates them once per browser session, and then
-refreshes only regions invalidated by the server. Static Leaflet assets and the cubiomes WASM
-predictor are bundled in the jar, so normal page loads do not use a CDN.
+The browser uses one binary WebSocket for region pages, invalidations, optional player radar,
+and shared waypoints. It follows the effective request limits published by the server, keeps
+revision identifiers in IndexedDB, revalidates them once per browser session, and then refreshes
+only regions invalidated by the server. Player and waypoint revisions advance independently, and
+the socket reconnects and resubscribes after a temporary interruption. Static Leaflet assets and
+the cubiomes WASM predictor are bundled in the jar, so normal page loads do not use a CDN.
 
 When `shareSeed=true` and `allowBiomeMap=true`, the manifest explicitly publishes the seed and
 enables the browser's “all regions” biome prediction for supported dimensions; generated server

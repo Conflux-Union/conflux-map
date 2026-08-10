@@ -57,7 +57,14 @@ final class PaperWebMapBackend implements WebMapBackend {
             companion.worldId().toString(), worldgenVersion,
             sharePrediction ? companion.worldSeed() : null,
             sharePrediction ? predictionVersion.getAsInt() : -1,
-            dimensions
+            dimensions,
+            new WebMapManifest.Limits(
+                companion.config().maxTilesPerRequest,
+                Math.max(
+                    companion.config().minRequestIntervalMs,
+                    companion.config().webMap.minRequestIntervalMs
+                )
+            )
         );
     }
 
@@ -96,7 +103,7 @@ final class PaperWebMapBackend implements WebMapBackend {
 
     @Override
     public WebPlayerSnapshot players() {
-        return new WebPlayerSnapshot(snapshot.revision(), snapshot.players());
+        return new WebPlayerSnapshot(snapshot.playerRevision(), snapshot.players());
     }
 
     @Override
@@ -129,7 +136,7 @@ final class PaperWebMapBackend implements WebMapBackend {
         };
     }
 
-    void updatePlayers(final long revision) {
+    void updatePlayers() {
         final List<WebPlayerSnapshot.Player> result = new ArrayList<>();
         final Map<UUID, URI> currentSkins = new HashMap<>();
         if (companion.config().webMap.sharePlayers) {
@@ -165,7 +172,7 @@ final class PaperWebMapBackend implements WebMapBackend {
                 }
             }
         }
-        snapshot = new WebMapSnapshot(revision, result, waypoints);
+        snapshot = snapshot.next(result, waypoints);
         skinUrls = Map.copyOf(currentSkins);
     }
 

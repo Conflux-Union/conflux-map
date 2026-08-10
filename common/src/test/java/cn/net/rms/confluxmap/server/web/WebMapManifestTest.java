@@ -29,4 +29,22 @@ final class WebMapManifestTest {
         assertTrue(json.contains("\"predictionBiomes\":["));
         assertFalse(json.contains("\"seed\":"));
     }
+
+    @Test
+    void publishesTheEffectiveBrowserRequestLimits() {
+        final WebMapManifest manifest = new WebMapManifest(
+            "limited-world",
+            "1.21.8",
+            null,
+            -1,
+            List.of(),
+            new WebMapManifest.Limits(4, 350)
+        );
+
+        final String json = manifest.toJson();
+
+        assertTrue(json.contains(
+            "\"limits\":{\"maxTilesPerRequest\":4,\"minRequestIntervalMs\":350}"
+        ));
+    }
 }

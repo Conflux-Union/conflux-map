@@ -18,10 +18,6 @@ export function createMapRenderer(manifest) {
     kind: 'LAND', waterBiome: false, surfaceColor: 0x49763b,
     canopyColor: 0x2f6d1b, waterTint: 0x3f76e4
   };
-  const materialSamples = new Map(
-    (manifest.materials ?? []).map(sample => [sample.id, sample])
-  );
-
   function renderPredictedArgb(predicted, lod, netherRoof, blockX = 0, blockZ = 0) {
     const output = new Uint32Array(256 * 256);
     const size = 258;
@@ -167,8 +163,6 @@ export function createMapRenderer(manifest) {
     const corrected = new Uint8Array(256 * 256);
     const colors = new Uint8Array(256 * 256).fill(255);
     const floorColors = new Uint8Array(256 * 256).fill(255);
-    const materialIds = new Array(256 * 256).fill('');
-    const floorMaterialIds = new Array(256 * 256).fill('');
     for (let sample = 0; sample < patch.indexes.length; sample++) {
       const pixel = patch.indexes[sample];
       const kind = patch.kinds[sample];
@@ -182,8 +176,6 @@ export function createMapRenderer(manifest) {
       biomes[grid] = patch.biomes[sample];
       colors[pixel] = patch.colors[sample];
       floorColors[pixel] = patch.floorColors?.[sample] ?? 255;
-      materialIds[pixel] = patch.materialIds?.[sample] ?? '';
-      floorMaterialIds[pixel] = patch.floorMaterialIds?.[sample] ?? '';
       corrected[pixel] = 1;
     }
     const output = new Uint32Array(256 * 256);
@@ -199,7 +191,6 @@ export function createMapRenderer(manifest) {
       if (corrected[pixel]) {
         color = correctedBaseColor(
           kind, biome, fluids[grid], colors[pixel], floorColors[pixel],
-          materialIds[pixel], floorMaterialIds[pixel], worldX, worldZ,
           surface, kinds, fluids, grid, lod
         );
       } else if (predicted.subBiomes.length) {
@@ -241,20 +232,13 @@ export function createMapRenderer(manifest) {
 
   function correctedBaseColor(
     kind, biome, fluidDepth, mapColorId, floorMapColorId,
-    materialId, floorMaterialId, worldX, worldZ,
     surface, kinds, fluids, grid, lod
   ) {
     if (kind === 2) {
       const tint = biome.waterBiome ? 0x3f76e4 : biome.waterTint;
-      const fallbackWater = multiplyColor(0xcfe0f2, tint);
-      const water = materialColor(
-        materialId, biome, fallbackWater, worldX, worldZ
-      );
-      const fallbackFloor = paintsLiteralMapColor(floorMapColorId)
+      const water = multiplyColor(0xcfe0f2, tint);
+      const floorBase = paintsLiteralMapColor(floorMapColorId)
         ? mapColor(floorMapColorId) : 0xc2a876;
-      const floorBase = materialColor(
-        floorMaterialId, biome, fallbackFloor, worldX, worldZ
-      );
       const brightness = Math.max(
         Math.fround(0.25),
         Math.fround(Math.fround(1) - Math.fround(Math.max(0, fluidDepth) / Math.fround(48)))
@@ -265,24 +249,8 @@ export function createMapRenderer(manifest) {
       );
       return blendOver(floor, water, 0xcc);
     }
-    const fallback = paintsLiteralMapColor(mapColorId)
+    return paintsLiteralMapColor(mapColorId)
       ? mapColor(mapColorId) : kindColor(kindName(kind), biome);
-    return materialColor(materialId, biome, fallback, worldX, worldZ);
-  }
-
-  function materialColor(materialId, biome, fallback, worldX, worldZ) {
-    const sample = materialSamples.get(materialId);
-    if (!sample) return fallback;
-    let tint = 0xffffff;
-    if (sample.tint === 'GRASS') tint = biome.grassTint ?? 0xffffff;
-    else if (sample.tint === 'FOLIAGE') tint = biome.foliageTint ?? 0xffffff;
-    else if (sample.tint === 'WATER') tint = biome.waterTint;
-    else if (sample.tint === 'FIXED') tint = sample.fixedTintArgb & 0xffffff;
-    const colored = multiplyColor(sample.baseArgb & 0xffffff, tint);
-    const offsets = sample.detailOffsets;
-    if (!Array.isArray(offsets) || offsets.length !== 16) return colored;
-    const cell = materialHash(worldX, worldZ, sample.patternSalt) >>> 28;
-    return applyBrightness(colored, 1 + offsets[cell]);
   }
 
   function renderAuthorityOnlyArgb(patch, lod, netherRoof, blockX, blockZ) {
@@ -489,17 +457,6 @@ function planeRelief(surface, kinds, fluids, index, lod, floorPlane) {
   const lit = (samples[0] + samples[1] + samples[2]) / 3;
   const dark = (samples[3] + samples[4] + samples[5]) / 3;
   return 1 + 0.3 * Math.max(-1, Math.min(1, (lit - dark) / (2 * (1 << lod))));
-}
-
-function materialHash(x, z, salt) {
-  let value = Math.imul(salt, 0x9e3779b9);
-  value ^= Math.imul(x, 0x85ebca6b);
-  value = value << 13 | value >>> 19;
-  value ^= Math.imul(z, 0xc2b2ae35);
-  value ^= value >>> 16;
-  value = Math.imul(value, 0x7feb352d);
-  value ^= value >>> 15;
-  return value >>> 0;
 }
 
 function readMaterialPlane(reader, materials, output) {

@@ -6,10 +6,13 @@ import {
   lodForLeafletZoom,
   localeForPreferences,
   mapErrorAction,
+  mergeMapState,
+  requestLimits,
   tileZoomForLeafletZoom,
   patchAction
 } from '/map-core.js';
 import {createMapRenderer} from '/map-renderer.js';
+import {createReconnectingWebSocket} from '/map-connection.js';
 
 const status = document.querySelector('#status');
 const dimension = document.querySelector('#dimension');
@@ -47,6 +50,7 @@ const manifest = await fetch('/api/v1/manifest', {cache: 'no-store'}).then(respo
   if (!response.ok) throw new Error(`manifest ${response.status}`);
   return response.json();
 });
+const limits = requestLimits(manifest);
 const mapRenderer = createMapRenderer(manifest);
 
 for (const item of manifest.dimensions) {
@@ -146,12 +150,6 @@ map.on('moveend zoomend', () => {
   scheduleVisibleTileSync();
 });
 map.on('zoom', updateScaleLabel);
-mapSocket.ready.then(() => {
-  status.classList.remove('error');
-  status.textContent = messages.connected;
-  scheduleSubscription();
-  scheduleVisibleTileSync();
-});
 layer.on('tileunload', event => event.tile.cancelPrediction?.());
 
 function refresh() {
@@ -297,8 +295,8 @@ async function flushTileRequests() {
     groups.get(key).push(item);
   }
   for (const group of groups.values()) {
-    for (let offset = 0; offset < group.length; offset += 8) {
-      const batch = group.slice(offset, offset + 8);
+    for (let offset = 0; offset < group.length; offset += limits.maxTilesPerRequest) {
+      const batch = group.slice(offset, offset + limits.maxTilesPerRequest);
       requestTileBatch(batch).then(patches => {
         for (const item of batch) {
           const patch = patches.find(candidate =>
@@ -315,7 +313,7 @@ async function flushTileRequests() {
 }
 
 async function requestTileBatch(tiles) {
-  await mapSocket.ready;
+  await mapSocket.ready();
   await enterRequestGate();
   const requestId = sequence++;
   const bytes = new Uint8Array(8 + tiles.length * 16);
@@ -341,41 +339,48 @@ async function requestTileBatch(tiles) {
       reject(new Error('tile response timed out'));
     }, 30000);
     pendingRequests.set(requestId, {expected: tiles.length, patches: [], resolve, reject, timer});
-    mapSocket.socket.send(bytes);
+    mapSocket.send(bytes);
   });
 }
 
 function connectMapSocket() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const socket = new WebSocket(`${protocol}//${location.host}/api/v1/map`);
-  socket.binaryType = 'arraybuffer';
-  let open;
-  const ready = new Promise((resolve, reject) => { open = {resolve, reject}; });
-  socket.addEventListener('open', () => {
-    open.resolve();
-    setInterval(() => {
-      if (socket.readyState === WebSocket.OPEN) socket.send('ping');
-    }, 25000);
-  }, {once: true});
-  socket.addEventListener('message', event => {
-    if (typeof event.data === 'string') {
-      if (event.data !== 'pong') updateMapState(JSON.parse(event.data));
-      return;
-    }
-    handleMapFrame(new Uint8Array(event.data));
+  let heartbeat;
+  return createReconnectingWebSocket({
+    url: `${protocol}//${location.host}/api/v1/map`,
+    onOpen() {
+      clearInterval(heartbeat);
+      heartbeat = setInterval(() => {
+        try {
+          mapSocket.send('ping');
+        } catch {
+          // The close event schedules reconnection and retries visible state.
+        }
+      }, 25000);
+      status.classList.remove('error');
+      status.textContent = messages.connected;
+      scheduleSubscription();
+      scheduleVisibleTileSync();
+    },
+    onMessage(event) {
+      if (typeof event.data === 'string') {
+        if (event.data !== 'pong') updateMapState(JSON.parse(event.data));
+        return;
+      }
+      handleMapFrame(new Uint8Array(event.data));
+    },
+    onDisconnect() {
+      clearInterval(heartbeat);
+      const error = new Error('map websocket closed');
+      for (const pending of pendingRequests.values()) {
+        clearTimeout(pending.timer);
+        pending.reject(error);
+      }
+      pendingRequests.clear();
+      showLoadError();
+    },
+    onError: showLoadError
   });
-  socket.addEventListener('close', () => {
-    const error = new Error('map websocket closed');
-    open.reject(error);
-    for (const pending of pendingRequests.values()) {
-      clearTimeout(pending.timer);
-      pending.reject(error);
-    }
-    pendingRequests.clear();
-    showLoadError();
-  });
-  socket.addEventListener('error', () => showLoadError());
-  return {socket, ready};
 }
 
 function handleMapFrame(bytes) {
@@ -454,7 +459,7 @@ function scheduleSubscription() {
 }
 
 async function sendSubscription() {
-  await mapSocket.ready;
+  await mapSocket.ready();
   const bounds = map.getBounds();
   const minChunkX = Math.floor(bounds.getWest() / 16);
   const maxChunkX = Math.floor(bounds.getEast() / 16);
@@ -474,12 +479,12 @@ async function sendSubscription() {
   view.setInt32(p, minChunkZ); p += 4;
   view.setInt32(p, maxChunkZ);
   await enterRequestGate();
-  mapSocket.socket.send(bytes);
+  mapSocket.send(bytes);
 }
 
 function enterRequestGate() {
   requestGate = requestGate.then(async () => {
-    const delay = 125 - (performance.now() - lastRequestAt);
+    const delay = limits.requestIntervalMs - (performance.now() - lastRequestAt);
     if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
     lastRequestAt = performance.now();
   });
@@ -487,8 +492,9 @@ function enterRequestGate() {
 }
 
 function updateMapState(message) {
-  if (message.type !== 'map-state' && message.type !== 'players') return;
-  currentMapState = message.snapshot;
+  const next = mergeMapState(currentMapState, message);
+  if (next === currentMapState) return;
+  currentMapState = next;
   updatePlayerList(currentMapState.players ?? []);
   updatePlayers(currentMapState.players ?? []);
   updateWaypoints(currentMapState.waypoints ?? []);

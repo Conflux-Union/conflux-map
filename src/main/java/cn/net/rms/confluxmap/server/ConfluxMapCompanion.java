@@ -47,7 +47,6 @@ public final class ConfluxMapCompanion {
     private volatile SharedWaypointService sharedWaypoints;
     private volatile WebMapServer webMap;
     private volatile FabricWebMapBackend webMapBackend;
-    private long webPlayerRevision;
     private int webPlayerTicks;
     private volatile WebMapPrivacyStore webMapPrivacy;
 
@@ -115,7 +114,7 @@ public final class ConfluxMapCompanion {
         if (currentWebBackend != null && (config.webMap.sharePlayers || sharedWaypointsEnabled())
             && ++webPlayerTicks >= 40) {
             webPlayerTicks = 0;
-            currentWebBackend.updatePlayers(++webPlayerRevision);
+            currentWebBackend.updatePlayers();
         }
     }
 

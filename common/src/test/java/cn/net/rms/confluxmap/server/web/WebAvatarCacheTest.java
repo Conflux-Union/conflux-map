@@ -1,23 +1,33 @@
 package cn.net.rms.confluxmap.server.web;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.net.URI;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
-class WebAvatarCacheTest {
+final class WebAvatarCacheTest {
     @Test
-    void permitsOnlyTheOfficialHttpsTextureOrigin() {
-        assertTrue(WebAvatarCache.allowed(URI.create(
-            "https://textures.minecraft.net/texture/abc"
-        )));
-        assertFalse(WebAvatarCache.allowed(URI.create(
-            "http://textures.minecraft.net/texture/abc"
-        )));
-        assertFalse(WebAvatarCache.allowed(URI.create(
-            "https://textures.minecraft.net.attacker.invalid/texture/abc"
-        )));
-        assertFalse(WebAvatarCache.allowed(URI.create("https://127.0.0.1/skin.png")));
+    void evictsTheLeastRecentlyUsedFaceAfterTheEntryLimit() {
+        final AtomicInteger loads = new AtomicInteger();
+        final WebAvatarCache cache = new WebAvatarCache(uri -> {
+            loads.incrementAndGet();
+            return CompletableFuture.completedFuture(new byte[] {1});
+        });
+
+        for (int i = 0; i <= 256; i++) {
+            cache.face(skin(i));
+        }
+        assertEquals(257, loads.get());
+
+        cache.face(skin(0));
+        assertEquals(258, loads.get());
+        cache.face(skin(256));
+        assertEquals(258, loads.get());
+    }
+
+    private static URI skin(final int id) {
+        return URI.create("https://textures.minecraft.net/texture/" + id);
     }
 }

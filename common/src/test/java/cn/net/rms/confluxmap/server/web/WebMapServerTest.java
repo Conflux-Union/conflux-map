@@ -2,6 +2,8 @@ package cn.net.rms.confluxmap.server.web;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.net.MapRegionInvalidateS2C;
@@ -18,12 +20,14 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.WebSocket;
+import java.net.http.WebSocketHandshakeException;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -183,6 +187,7 @@ final class WebMapServerTest {
         try (WebMapServer server = WebMapServer.start(WebMapConfig.loopbackEphemeral(), backend)) {
             final URI webSocketUri = URI.create(server.uri("/api/v1/map").toString().replaceFirst("^http", "ws"));
             final WebSocket socket = client().newWebSocketBuilder()
+                .header("Origin", server.uri("").toString())
                 .connectTimeout(Duration.ofSeconds(2))
                 .buildAsync(webSocketUri, new BinaryListener(responseFrame))
                 .get(2, TimeUnit.SECONDS);
@@ -222,6 +227,28 @@ final class WebMapServerTest {
             assertEquals(subscription, backend.subscription.get());
             assertEquals(List.of(new MapRegionInvalidateS2C.Region(-2, 1)), invalidation.regions());
             socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").get(2, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    void webSocketRejectsBrowserConnectionsFromAnotherOrigin() throws Exception {
+        try (WebMapServer server = WebMapServer.start(
+            WebMapConfig.loopbackEphemeral(), new FakeBackend()
+        )) {
+            final URI webSocketUri = URI.create(
+                server.uri("/api/v1/map").toString().replaceFirst("^http", "ws")
+            );
+
+            final ExecutionException failure = assertThrows(ExecutionException.class, () ->
+                client().newWebSocketBuilder()
+                    .header("Origin", "https://attacker.invalid")
+                    .buildAsync(webSocketUri, new WebSocket.Listener() { })
+                    .get(2, TimeUnit.SECONDS)
+            );
+            final WebSocketHandshakeException handshake = assertInstanceOf(
+                WebSocketHandshakeException.class, failure.getCause()
+            );
+            assertEquals(403, handshake.getResponse().statusCode());
         }
     }
 

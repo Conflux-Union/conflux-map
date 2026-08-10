@@ -82,6 +82,36 @@ export function localeForPreferences(storedLocale, browserLanguages = []) {
   return 'en';
 }
 
+export function requestLimits(manifest) {
+  const configuredTiles = Number(manifest?.limits?.maxTilesPerRequest);
+  const maxTilesPerRequest = Number.isInteger(configuredTiles)
+    && configuredTiles >= 1 && configuredTiles <= 255 ? configuredTiles : 8;
+  const configuredInterval = Number(manifest?.limits?.minRequestIntervalMs);
+  const minRequestIntervalMs = Number.isFinite(configuredInterval)
+    ? Math.max(0, Math.min(60000, configuredInterval)) : 100;
+  return {
+    maxTilesPerRequest,
+    requestIntervalMs: minRequestIntervalMs + 25
+  };
+}
+
+export function mergeMapState(current, message) {
+  const snapshot = message?.snapshot ?? {};
+  if (message?.type === 'map-state') {
+    return {
+      players: snapshot.players ?? [],
+      waypoints: snapshot.waypoints ?? []
+    };
+  }
+  if (message?.type === 'players') {
+    return {...current, players: snapshot.players ?? []};
+  }
+  if (message?.type === 'waypoints') {
+    return {...current, waypoints: snapshot.waypoints ?? []};
+  }
+  return current;
+}
+
 export function formatZoomMultiplier(leafletZoom) {
   const zoomStep = Math.log2(1.26);
   const steps = Math.round((leafletZoom + 1) / zoomStep);
