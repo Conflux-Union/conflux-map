@@ -161,6 +161,62 @@ class ClientWorldProfileIoTest {
     }
 
     @Test
+    void loadMigratesPerDimensionPositionsToOneNewestEndpoint() throws Exception {
+        final Path file = tempDir.resolve("client_worlds.json");
+        Files.writeString(file, """
+            {
+              "schemaVersion": 3,
+              "servers": {
+                "example.net_25565": [{
+                  "id": "profile",
+                  "storageId": "world",
+                  "displayName": "World",
+                  "bindings": [],
+                  "switchCommands": [],
+                  "visits": {
+                    "minecraft_overworld": {
+                      "dimensionId": "minecraft_overworld",
+                      "gameMode": "SURVIVAL",
+                      "lastPosition": {"x": 20, "y": 70, "z": -150},
+                      "lastVisitedAtEpochMs": 100,
+                      "terrainFingerprint": null,
+                      "terrainAnchors": [],
+                      "trajectorySamples": [],
+                      "lastServerAckTimeMs": -1,
+                      "connectionGeneration": 0,
+                      "contextSignals": {}
+                    },
+                    "minecraft_the_nether": {
+                      "dimensionId": "minecraft_the_nether",
+                      "gameMode": "SURVIVAL",
+                      "lastPosition": {"x": 4, "y": 91, "z": -33},
+                      "lastVisitedAtEpochMs": 200,
+                      "terrainFingerprint": null,
+                      "terrainAnchors": [],
+                      "trajectorySamples": [],
+                      "lastServerAckTimeMs": -1,
+                      "connectionGeneration": 0,
+                      "contextSignals": {}
+                    }
+                  },
+                  "recognitionDisabled": false
+                }]
+              },
+              "lastStableProfiles": {}
+            }
+            """);
+
+        final ClientWorldProfile profile = new ClientWorldProfileIo(
+            file, LogManager.getLogger("ClientWorldProfileIoTest")
+        ).load().profiles("example.net_25565").get(0);
+
+        assertEquals("minecraft_the_nether", profile.lastObservedVisit().dimensionId());
+        assertEquals(91, profile.lastObservedVisit().lastPosition().y());
+        assertEquals(null, profile.visit("minecraft_overworld").lastPosition());
+        assertEquals(2, profile.visits().size());
+    }
+
+    @Test
     void dropsMalformedTerrainAnchorsAndTrajectorySamplesDuringLoad() throws Exception {
         final Path file = tempDir.resolve("client_worlds.json");
         Files.writeString(file, """

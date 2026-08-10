@@ -26,6 +26,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(ClientPlayNetworkHandler.class)
 public abstract class ClientPlayNetworkHandlerMixin {
+    @Inject(method = "onGameJoin", at = @At("HEAD"))
+    private void confluxmap$beforeGameJoin(final GameJoinS2CPacket packet, final CallbackInfo ci) {
+        if (!MinecraftClient.getInstance().isOnThread()) {
+            return;
+        }
+        ClientWorldIdentityHandler.beforeGameJoin();
+    }
+
     @Inject(method = "onGameJoin", at = @At("TAIL"))
     private void confluxmap$onGameJoin(final GameJoinS2CPacket packet, final CallbackInfo ci) {
         if (!MinecraftClient.getInstance().isOnThread()) {
@@ -38,6 +46,17 @@ public abstract class ClientPlayNetworkHandlerMixin {
         //#else
         ClientWorldIdentityHandler.gameJoin(packet.getSha256Seed());
         //#endif
+    }
+
+    @Inject(method = "onPlayerRespawn", at = @At("HEAD"))
+    private void confluxmap$beforePlayerRespawn(
+        final PlayerRespawnS2CPacket packet,
+        final CallbackInfo ci
+    ) {
+        if (!MinecraftClient.getInstance().isOnThread()) {
+            return;
+        }
+        ClientWorldIdentityHandler.beforeRespawn();
     }
 
     @Inject(method = "onPlayerRespawn", at = @At("TAIL"))

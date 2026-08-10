@@ -80,13 +80,31 @@ public final class ClientWorldProfile {
         return List.copyOf(mutableSwitchCommands());
     }
 
-    /** Per-dimension last-visit data used for conservative client-only matching and UI details. */
+    /** Per-dimension terrain/context history. Only {@link #lastObservedVisit()} owns position. */
     public List<ClientWorldVisit> visits() {
         return List.copyOf(mutableVisits().values());
     }
 
     public ClientWorldVisit visit(final String dimensionId) {
         return mutableVisits().get(dimensionId);
+    }
+
+    /** The profile has exactly one latest positional state across every dimension. */
+    public ClientWorldVisit lastObservedVisit() {
+        ClientWorldVisit latest = null;
+        for (final ClientWorldVisit visit : mutableVisits().values()) {
+            if (visit.hasContinuityEvidence()
+                && (latest == null || visit.lastVisitedAtEpochMs() >= latest.lastVisitedAtEpochMs())) {
+                latest = visit;
+            }
+        }
+        return latest;
+    }
+
+    /** Positional continuity is available only when the latest state is in this dimension. */
+    public ClientWorldVisit lastObservedVisit(final String dimensionId) {
+        final ClientWorldVisit latest = lastObservedVisit();
+        return latest != null && latest.dimensionId().equals(dimensionId) ? latest : null;
     }
 
     void rename(final String name) {
@@ -217,6 +235,7 @@ public final class ClientWorldProfile {
     void rememberVisit(final ClientWorldObservation observation) {
         if (observation.dimensionId() != null) {
             final ClientWorldVisit previous = mutableVisits().get(observation.dimensionId());
+            final long visitedAt = nextVisitTimestamp();
             final ClientWorldTerrainFingerprint observedTerrain = observation.terrainFingerprint();
             final boolean usableTerrain = observedTerrain != null
                 && observedTerrain.complete() && observedTerrain.hasCenter()
@@ -226,7 +245,7 @@ public final class ClientWorldProfile {
                 observation.gameMode() == null && previous != null ? previous.gameMode() : observation.gameMode(),
                 observation.position() == null
                     ? previous == null ? null : previous.lastPosition() : observation.position(),
-                System.currentTimeMillis(),
+                visitedAt,
                 previous == null ? null : previous.terrainFingerprint(),
                 ClientWorldVisit.mergeContextSignals(
                     previous == null ? Map.of() : previous.contextSignals(), observation.signals()
@@ -237,10 +256,18 @@ public final class ClientWorldProfile {
             }
             if (usableTerrain) {
                 next.rememberTerrainAnchor(new ClientWorldTerrainAnchor(
-                    observation.position(), observedTerrain, System.currentTimeMillis()
+                    observation.position(), observedTerrain, visitedAt
                 ));
             }
             next.rememberTrajectory(observation.trajectory());
+            // Terrain and context remain dimension-scoped history, but position/trajectory describe
+            // only where this profile most recently existed. Old dimensions must never compete as
+            // alternative "last" coordinates.
+            for (final ClientWorldVisit historical : mutableVisits().values()) {
+                if (historical != previous) {
+                    historical.clearContinuityEvidence();
+                }
+            }
             mutableVisits().put(observation.dimensionId(), next);
         }
     }
@@ -346,6 +373,21 @@ public final class ClientWorldProfile {
             }
         }
         visits = normalizedVisits;
+        // Schema 3 stored one positional endpoint per dimension. Migrate it in memory to the
+        // single-endpoint model by retaining only the newest positional visit; terrain anchors and
+        // context on the older dimensions remain intact.
+        ClientWorldVisit latest = null;
+        for (final ClientWorldVisit visit : visits.values()) {
+            if (visit.hasContinuityEvidence()
+                && (latest == null || visit.lastVisitedAtEpochMs() >= latest.lastVisitedAtEpochMs())) {
+                latest = visit;
+            }
+        }
+        for (final ClientWorldVisit visit : visits.values()) {
+            if (visit != latest) {
+                visit.clearContinuityEvidence();
+            }
+        }
     }
 
     ClientWorldProfile copy() {
@@ -398,6 +440,15 @@ public final class ClientWorldProfile {
             visits = new LinkedHashMap<>();
         }
         return visits;
+    }
+
+    private long nextVisitTimestamp() {
+        long newest = -1L;
+        for (final ClientWorldVisit visit : mutableVisits().values()) {
+            newest = Math.max(newest, visit.lastVisitedAtEpochMs());
+        }
+        final long wallClock = System.currentTimeMillis();
+        return newest == Long.MAX_VALUE ? Long.MAX_VALUE : Math.max(wallClock, newest + 1L);
     }
 
     private static String requireText(final String value, final String field) {

@@ -144,54 +144,6 @@ class ClientWorldTrajectoryTest {
     }
 
     @Test
-    void causalCorridorUsesOnlyTheLastEndpointAndForwardPrediction() {
-        final ClientWorldTrajectory trajectory = trajectory(
-            point(0L, 0, 0, 1L), point(1_000L, 100, 0, 2L)
-        );
-
-        final ClientWorldTrajectory.CausalCorridor corridor = trajectory.causalCorridor(
-            new ClientWorldPosition(105, 64, 0), "minecraft:overworld", 1_500L, 5_000L
-        );
-
-        assertEquals(5.0D, corridor.alongDistance(), 1.0e-9D);
-        assertEquals(0.0D, corridor.lateralDistance(), 1.0e-9D);
-        assertEquals(5.0D, corridor.predictedLength(), 1.0e-9D);
-        assertEquals(5.0D, corridor.endpointDistance(), 1.0e-9D);
-    }
-
-    @Test
-    void causalCorridorMeasuresVerticalOffsetSeparately() {
-        final ClientWorldTrajectory trajectory = trajectory(
-            point(0L, 0, 0, 1L), point(1_000L, 100, 0, 2L)
-        );
-
-        final ClientWorldTrajectory.CausalCorridor corridor = trajectory.causalCorridor(
-            new ClientWorldPosition(105, 70, 0), "minecraft:overworld", 1_500L, 5_000L
-        );
-
-        assertEquals(5.0D, corridor.alongDistance(), 1.0e-9D);
-        assertEquals(6.0D, corridor.lateralDistance(), 1.0e-9D);
-    }
-
-    @Test
-    void stationaryCausalCorridorCollapsesToTheLastEndpoint() {
-        final ClientWorldTrajectory trajectory = new ClientWorldTrajectory();
-        trajectory.append(new ClientWorldTrajectorySample(
-            10, 64, 20, 0, 0, 0, 0, 1_000L, 20L, "minecraft:overworld", 1L,
-            ClientWorldTrajectorySample.NO_SERVER_ACK, 0L,
-            ClientWorldTrajectorySample.EvidenceSource.CLIENT_OBSERVED
-        ));
-
-        final ClientWorldTrajectory.CausalCorridor corridor = trajectory.causalCorridor(
-            new ClientWorldPosition(10, 70, 20), "minecraft:overworld", 2_000L, 5_000L
-        );
-
-        assertEquals(0.0D, corridor.predictedLength(), 1.0e-9D);
-        assertEquals(0.0D, corridor.alongDistance(), 1.0e-9D);
-        assertEquals(6.0D, corridor.lateralDistance(), 1.0e-9D);
-    }
-
-    @Test
     void nearestApproachFindsCrossingHistoricalPaths() {
         final ClientWorldTrajectory horizontal = trajectory(
             point(0L, 0, 0, 1L), point(1_000L, 10, 0, 2L)
@@ -278,6 +230,64 @@ class ClientWorldTrajectoryTest {
     }
 
     @Test
+    void causalCorridorIgnoresAnEarlierHistoricalPathIntersection() {
+        final ClientWorldTrajectory candidate = trajectory(
+            point(0L, 0, 0, 1L), point(1_000L, 10, 0, 2L)
+        );
+        final ClientWorldTrajectory current = trajectory(
+            new ClientWorldTrajectorySample(
+                5, 64, -5, 0, 0, 0, 0, 2_000L, 40L, "minecraft:overworld", 1L,
+                ClientWorldTrajectorySample.NO_SERVER_ACK, 1L,
+                ClientWorldTrajectorySample.EvidenceSource.CLIENT_OBSERVED
+            ),
+            new ClientWorldTrajectorySample(
+                5, 64, 5, 0, 0, 0, 0, 3_000L, 60L, "minecraft:overworld", 2L,
+                ClientWorldTrajectorySample.NO_SERVER_ACK, 1L,
+                ClientWorldTrajectorySample.EvidenceSource.CLIENT_OBSERVED
+            )
+        );
+
+        assertEquals(0.0D, candidate.nearestApproachDistance(current, 3_000L, 0L));
+        final ClientWorldTrajectory.CausalCorridor corridor = candidate.causalCorridorTo(current, 1_000L);
+        assertTrue(corridor.pointDistance() > 7.0D);
+        assertTrue(corridor.lateralDistance() > 7.0D);
+    }
+
+    @Test
+    void stationaryCausalCorridorIsExactlyAnEndpointToEntryPointComparison() {
+        final ClientWorldTrajectory candidate = trajectory(new ClientWorldTrajectorySample(
+            22, 76, -154, 0, 0, 0, 0, 1_000L, 20L, "minecraft:overworld", 1L,
+            ClientWorldTrajectorySample.NO_SERVER_ACK, 0L,
+            ClientWorldTrajectorySample.EvidenceSource.CLIENT_OBSERVED
+        ));
+        final ClientWorldTrajectory current = trajectory(new ClientWorldTrajectorySample(
+            22, 76, -154, 0, 0, 0, 0, 2_000L, 40L, "minecraft:overworld", 1L,
+            ClientWorldTrajectorySample.NO_SERVER_ACK, 1L,
+            ClientWorldTrajectorySample.EvidenceSource.CLIENT_OBSERVED
+        ));
+
+        final ClientWorldTrajectory.CausalCorridor corridor = candidate.causalCorridorTo(current, 5_000L);
+        assertEquals(0.0D, corridor.pointDistance());
+        assertEquals(0.0D, corridor.alongDistance());
+        assertEquals(0.0D, corridor.lateralDistance());
+    }
+
+    @Test
+    void causalCorridorSeparatesDecayAlongTheLineFromLateralDecay() {
+        final ClientWorldTrajectory candidate = trajectory(
+            movingPoint(0L, 0, 0, 1L, 0L), movingPoint(1_000L, 10, 0, 2L, 0L)
+        );
+        final ClientWorldTrajectory current = trajectory(
+            movingPoint(2_000L, 20, 4, 1L, 1L)
+        );
+
+        final ClientWorldTrajectory.CausalCorridor corridor = candidate.causalCorridorTo(current, 5_000L);
+        assertEquals(10.0D, corridor.predictedLength(), 1.0e-9D);
+        assertEquals(10.0D, corridor.alongDistance(), 1.0e-9D);
+        assertEquals(4.0D, corridor.lateralDistance(), 1.0e-9D);
+    }
+
+    @Test
     void missingAcknowledgementsExpandUncertaintyAndReduceConfidenceMonotonically() {
         final ClientWorldTrajectory trajectory = trajectory(point(1_000L, 0, 0, 1L));
 
@@ -328,6 +338,20 @@ class ClientWorldTrajectoryTest {
     ) {
         return new ClientWorldTrajectorySample(
             x, 64, z, 100, 0, 0, 0, time, time / 50L, "minecraft:overworld", sequence,
+            ClientWorldTrajectorySample.NO_SERVER_ACK, connectionGeneration,
+            ClientWorldTrajectorySample.EvidenceSource.CLIENT_OBSERVED
+        );
+    }
+
+    private static ClientWorldTrajectorySample movingPoint(
+        final long time,
+        final double x,
+        final double z,
+        final long sequence,
+        final long connectionGeneration
+    ) {
+        return new ClientWorldTrajectorySample(
+            x, 64, z, 0.5D, 0, -90, 0, time, time / 50L, "minecraft:overworld", sequence,
             ClientWorldTrajectorySample.NO_SERVER_ACK, connectionGeneration,
             ClientWorldTrajectorySample.EvidenceSource.CLIENT_OBSERVED
         );

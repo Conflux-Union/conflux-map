@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.multiworld;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
@@ -102,6 +103,31 @@ class ClientWorldProfileTerrainVisitTest {
         assertTrue(visit.terrainAnchorFor(first).fingerprint().sameCenter(first));
         assertTrue(visit.terrainAnchorFor(second).fingerprint().sameCenter(second));
         assertEquals(512, visit.lastPosition().x());
+    }
+
+    @Test
+    void changingDimensionKeepsTerrainHistoryButOnlyOneLatestPosition() {
+        final ClientWorldProfile profile = new ClientWorldProfile("id", "world", "World");
+        final ClientWorldTerrainFingerprint overworldTerrain = fingerprint(0, 0);
+        profile.rememberVisit(new ClientWorldObservation(
+            OptionalLong.of(1L), Map.of("brand", "stable"), "minecraft_overworld", "SURVIVAL",
+            new ClientWorldPosition(32, 70, 48), overworldTerrain
+        ));
+
+        profile.rememberVisit(new ClientWorldObservation(
+            OptionalLong.of(1L), Map.of("brand", "stable"), "minecraft_the_nether", "SURVIVAL",
+            new ClientWorldPosition(4, 91, -33), null
+        ));
+
+        final ClientWorldVisit overworld = profile.visit("minecraft_overworld");
+        final ClientWorldVisit nether = profile.visit("minecraft_the_nether");
+        assertNull(overworld.lastPosition());
+        assertTrue(overworld.trajectorySamples().isEmpty());
+        assertEquals(1, overworld.terrainAnchors().size());
+        assertEquals(nether, profile.lastObservedVisit());
+        assertEquals(91, profile.lastObservedVisit().lastPosition().y());
+        assertNull(profile.lastObservedVisit("minecraft_overworld"));
+        assertEquals(nether, profile.lastObservedVisit("minecraft_the_nether"));
     }
 
     private static ClientWorldObservation observation(

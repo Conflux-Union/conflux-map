@@ -28,10 +28,26 @@ public final class ClientWorldIdentityHandler {
         }
     }
 
+    /** Saves the departed world's final local state before vanilla replaces client world data. */
+    public static void beforeGameJoin() {
+        final ClientMultiworldService current = service;
+        if (current != null) {
+            current.onBeforeGameJoin();
+        }
+    }
+
     public static void respawn(final long seedHash) {
         final ClientMultiworldService current = service;
         if (current != null) {
             current.onRespawn(seedHash);
+        }
+    }
+
+    /** Saves the old dimension before vanilla replaces it during a respawn/dimension transfer. */
+    public static void beforeRespawn() {
+        final ClientMultiworldService current = service;
+        if (current != null) {
+            current.onBeforeRespawn();
         }
     }
 

@@ -74,6 +74,27 @@ class ClientWorldTrajectoryCheckpointIoTest {
     }
 
     @Test
+    void provisionalCheckpointRetainsCandidateOwnershipWithoutPublishingAProfile() {
+        final ClientWorldTrajectoryCheckpointIo io = new ClientWorldTrajectoryCheckpointIo(
+            tempDir.resolve("trajectory"), LogManager.getLogger("trajectory-checkpoint-test")
+        );
+        final ClientWorldTrajectory trajectory = new ClientWorldTrajectory();
+        trajectory.append(sample(1_000L, 20.0D, 1L));
+
+        assertTrue(io.save(
+            "proxy.example.net:25565", OptionalLong.of(11L), "profile-a", 7L, trajectory
+        ).saved());
+
+        final ClientWorldTrajectoryCheckpointIo.Checkpoint checkpoint = io.load(
+            "proxy.example.net:25565"
+        );
+        assertNotNull(checkpoint);
+        assertEquals("profile-a", checkpoint.profileId());
+        assertEquals(7L, checkpoint.observationGeneration());
+        assertEquals(20.0D, checkpoint.trajectory().latest().x());
+    }
+
+    @Test
     void wrongServerCannotReuseAnotherServersCheckpoint() {
         final ClientWorldTrajectoryCheckpointIo io = new ClientWorldTrajectoryCheckpointIo(
             tempDir.resolve("trajectory"), LogManager.getLogger("trajectory-checkpoint-test")

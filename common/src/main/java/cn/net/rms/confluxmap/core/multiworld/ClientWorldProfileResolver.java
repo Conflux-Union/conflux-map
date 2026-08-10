@@ -14,15 +14,14 @@ import java.util.function.Supplier;
 public final class ClientWorldProfileResolver {
     public static final int MAX_PROFILES_PER_SERVER = ClientWorldPolicy.DEFAULT_MAX_PROFILES_PER_SERVER;
     private static final double AUTO_SELECT_MIN_CONFIDENCE = 0.60D;
-    /** Queue 1/2 candidates must lead the runner-up by a strict eight percentage points. */
-    private static final double AUTO_SELECT_ERROR_MARGIN = 0.08D;
+    /** Scores within three percentage points are indistinguishable and require a manual choice. */
+    private static final double AUTO_SELECT_ERROR_MARGIN = 0.03D;
     private static final double QUEUE_TWO_MIN_CONFIDENCE = 0.70D;
     private static final double QUEUE_THREE_MIN_CONFIDENCE = 0.80D;
     private static final double QUEUE_THREE_ERROR_MARGIN = 0.15D;
     private static final double AUXILIARY_WEIGHT = 0.75D;
     private static final double TERRAIN_WEIGHT = 0.25D;
-    private static final double POSITION_CORRIDOR_WEIGHT = 0.60D;
-    private static final double TRAJECTORY_WEIGHT = 0.15D;
+    private static final double TRAJECTORY_WEIGHT = 0.60D;
     private static final double LAST_STABLE_WEIGHT = 0.20D;
     private static final double GAME_MODE_WEIGHT = 0.15D;
     private static final double VISIT_CONTEXT_WEIGHT = 0.25D;
@@ -99,6 +98,14 @@ public final class ClientWorldProfileResolver {
         final String serverId,
         final ClientWorldObservation observation
     ) {
+        return resolve(serverId, observation, false);
+    }
+
+    private ClientWorldResolution resolve(
+        final String serverId,
+        final ClientWorldObservation observation,
+        final boolean suppressLastStable
+    ) {
         if (!registry.available()) {
             return ClientWorldResolution.persistenceFailed(registry.loadFailure());
         }
@@ -124,31 +131,10 @@ public final class ClientWorldProfileResolver {
                 }
                 return create(serverId, nextStorageId(), observation);
             }
-            return resolveCandidates(serverId, seedMatches, observation);
+            return resolveCandidates(serverId, seedMatches, observation, suppressLastStable);
         }
 
-        return resolveCandidates(serverId, profiles, observation);
-    }
-
-    /**
-     * Rechecks one already selected provisional profile without allowing another profile to win.
-     * This is intentionally narrower than {@link #resolve(String, ClientWorldObservation)}: later
-     * terrain can confirm or reject the session lock, but ordinary movement cannot re-elect A/B.
-     */
-    public ClientWorldResolution validateLockedProfile(
-        final String serverId,
-        final String profileId,
-        final ClientWorldObservation observation
-    ) {
-        if (!registry.available()) {
-            return ClientWorldResolution.persistenceFailed(registry.loadFailure());
-        }
-        final ClientWorldProfile profile = registry.profiles(serverId).stream()
-            .filter(candidate -> candidate.id().equals(profileId))
-            .findFirst().orElse(null);
-        return profile == null
-            ? ClientWorldResolution.ambiguous()
-            : scoreCandidates(serverId, List.of(profile), observation, null);
+        return resolveCandidates(serverId, profiles, observation, suppressLastStable);
     }
 
     /** Persistently adopts old explicit-default-port registry keys without moving map folders. */
@@ -192,24 +178,51 @@ public final class ClientWorldProfileResolver {
         final OptionalLong previousSeedHash,
         final ClientWorldObservation observation
     ) {
+        return resolveAfterProxyWorldJoin(serverId, previousSeedHash, observation, null);
+    }
+
+    /**
+     * Proxy-boundary variant that also excludes the profile which the join packet just left.
+     * A real Velocity backend switch cannot arrive back in the same departed child world; allowing
+     * that profile to compete merely because its departure point is fresh is a direct route to
+     * cross-profile map writes.
+     */
+    public ClientWorldResolution resolveAfterProxyWorldJoin(
+        final String serverId,
+        final OptionalLong previousSeedHash,
+        final ClientWorldObservation observation,
+        final String departedProfileId
+    ) {
         if (!registry.available()) {
             return ClientWorldResolution.persistenceFailed(registry.loadFailure());
         }
-        if (previousSeedHash.isPresent() && observation.seedHash().isPresent()
-            && previousSeedHash.getAsLong() == observation.seedHash().getAsLong()) {
-            return diagnoseBlocked(serverId, observation, "same_seed_proxy_transition");
-        }
+        final boolean reusedSeed = previousSeedHash.isPresent() && observation.seedHash().isPresent()
+            && previousSeedHash.getAsLong() == observation.seedHash().getAsLong();
         if (observation.seedHash().isPresent()) {
             final long seedHash = observation.seedHash().getAsLong();
-            final long matchingProfiles = registry.mutableProfiles(serverId).stream()
+            final List<ClientWorldProfile> matchingProfiles = registry.mutableProfiles(serverId).stream()
                 .filter(profile -> profile.matchesSeed(seedHash))
-                .limit(2)
-                .count();
-            if (matchingProfiles > 1) {
-                return diagnoseBlocked(serverId, observation, "same_seed_requires_discriminator");
+                .toList();
+            if (reusedSeed && matchingProfiles.size() <= 1) {
+                return diagnoseBlocked(
+                    serverId, observation, "same_seed_proxy_transition", true
+                );
+            }
+            if (matchingProfiles.size() > 1) {
+                final ClientWorldResolution scored = scoreCandidates(
+                    serverId, matchingProfiles, observation, null, true, departedProfileId
+                );
+                return scored != null ? scored : ClientWorldResolution.ambiguous(
+                    displayInsufficientObservation(
+                        matchingProfiles, observation, "same_seed_requires_discriminator"
+                    )
+                );
             }
         }
-        return resolve(serverId, observation);
+        // A real upstream boundary invalidates the old backend-continuity prior even when the
+        // replacement has a different seed. Stable identity can be learned again after this
+        // observation is independently confirmed.
+        return resolve(serverId, observation, true);
     }
 
     /**
@@ -293,6 +306,96 @@ public final class ClientWorldProfileResolver {
         return resolvedMutation(
             serverId, mutation, List.of(), ClientWorldResolution.ConfirmationSource.MANUAL
         );
+    }
+
+    /**
+     * Validates one already-admitted provisional identity without running another candidate
+     * election. New evidence may confirm the locked profile or prove a hard conflict; a temporary
+     * score change can never return a different profile from this method.
+     */
+    public ClientWorldResolution validateProvisional(
+        final String serverId,
+        final String profileId,
+        final ClientWorldObservation observation,
+        final List<ClientWorldResolution.Candidate> admissionDiagnostics,
+        final boolean suppressLastStable
+    ) {
+        final ClientWorldProfile locked = requireProfile(serverId, profileId);
+        final List<ClientWorldProfile> compatible = observation.seedHash().isPresent()
+            ? registry.mutableProfiles(serverId).stream()
+                .filter(profile -> profile.matchesSeed(observation.seedHash().getAsLong()))
+                .toList()
+            : List.copyOf(registry.mutableProfiles(serverId));
+        final ClientWorldVisit visit = observation.dimensionId() == null
+            ? null : locked.visit(observation.dimensionId());
+        final boolean seedConflict = observation.seedHash().isPresent()
+            && !locked.matchesSeed(observation.seedHash().getAsLong());
+        final boolean signalConflict = locked.hasSignalConflict(observation);
+        final boolean contextConflict = visit != null && visit.contextMatch(observation.signals()).hasStableConflict();
+
+        double lockedTerrainScore = Double.NaN;
+        boolean terrainConflict = false;
+        if (visit != null) {
+            final ClientWorldTerrainFingerprint observed = observation.terrainFingerprintFor(profileId);
+            final ClientWorldTerrainAnchor anchor = visit.terrainAnchorFor(observed);
+            if (anchor != null) {
+                final ClientWorldTerrainFingerprint.Match match = observed.match(anchor.fingerprint());
+                if (match.available()) {
+                    lockedTerrainScore = match.score();
+                    terrainConflict = lockedTerrainScore < TERRAIN_HARD_MISMATCH_SCORE;
+                }
+            }
+        }
+        if (seedConflict || signalConflict || contextConflict || terrainConflict) {
+            return diagnoseBlocked(
+                serverId, observation, "provisional_identity_conflict", suppressLastStable
+            );
+        }
+
+        final boolean terrainConfirmed = !Double.isNaN(lockedTerrainScore)
+            && lockedTerrainScore >= TERRAIN_MATCH_MIN_SCORE
+            && provisionalTerrainDiscriminator(
+                locked, lockedTerrainScore, compatible, observation
+            );
+        if (terrainConfirmed) {
+            return resolvedAndLearn(
+                serverId, locked, observation, admissionDiagnostics,
+                ClientWorldResolution.ConfirmationSource.TERRAIN
+            );
+        }
+        final boolean stableSignalsConfirmed = compatible.size() == 1
+            && identitySignalMatches(locked, observation) >= 2;
+        if (stableSignalsConfirmed) {
+            return resolvedAndLearn(
+                serverId, locked, observation, admissionDiagnostics,
+                ClientWorldResolution.ConfirmationSource.STABLE_SIGNALS
+            );
+        }
+        return ClientWorldResolution.provisional(locked, admissionDiagnostics);
+    }
+
+    private static boolean provisionalTerrainDiscriminator(
+        final ClientWorldProfile locked,
+        final double lockedScore,
+        final List<ClientWorldProfile> compatible,
+        final ClientWorldObservation observation
+    ) {
+        for (final ClientWorldProfile other : compatible) {
+            if (other.id().equals(locked.id()) || other.hasSignalConflict(observation)) {
+                continue;
+            }
+            final ClientWorldVisit visit = other.visit(observation.dimensionId());
+            final ClientWorldTerrainFingerprint observed = observation.terrainFingerprintFor(other.id());
+            final ClientWorldTerrainAnchor anchor = visit == null ? null : visit.terrainAnchorFor(observed);
+            if (anchor == null) {
+                return false;
+            }
+            final ClientWorldTerrainFingerprint.Match match = observed.match(anchor.fingerprint());
+            if (!match.available() || lockedScore - match.score() < TERRAIN_DISCRIMINATOR_MIN_GAP) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -547,21 +650,15 @@ public final class ClientWorldProfileResolver {
     private ClientWorldResolution resolveCandidates(
         final String serverId,
         final List<ClientWorldProfile> candidates,
-        final ClientWorldObservation observation
+        final ClientWorldObservation observation,
+        final boolean suppressLastStable
     ) {
-        final ClientWorldResolution scored = scoreCandidates(serverId, candidates, observation);
+        final ClientWorldResolution scored = scoreCandidates(
+            serverId, candidates, observation, null, suppressLastStable, null
+        );
         return scored != null
             ? scored
             : ClientWorldResolution.ambiguous(displayInsufficientObservation(candidates, observation));
-    }
-
-    /** Scores continuity first, then uses terrain as optional validation evidence. */
-    private ClientWorldResolution scoreCandidates(
-        final String serverId,
-        final List<ClientWorldProfile> profiles,
-        final ClientWorldObservation observation
-    ) {
-        return scoreCandidates(serverId, profiles, observation, null);
     }
 
     /** Runs normal diagnostics while a service-level safety rule still forbids auto selection. */
@@ -570,12 +667,23 @@ public final class ClientWorldProfileResolver {
         final ClientWorldObservation observation,
         final String blocker
     ) {
+        return diagnoseBlocked(serverId, observation, blocker, false);
+    }
+
+    public ClientWorldResolution diagnoseBlocked(
+        final String serverId,
+        final ClientWorldObservation observation,
+        final String blocker,
+        final boolean suppressLastStable
+    ) {
         final List<ClientWorldProfile> all = registry.mutableProfiles(serverId);
         final List<ClientWorldProfile> candidates = observation.seedHash().isPresent()
             ? all.stream().filter(profile -> profile.matchesSeed(observation.seedHash().getAsLong())).toList()
             : List.copyOf(all);
         final List<ClientWorldProfile> visible = candidates.isEmpty() ? List.copyOf(all) : candidates;
-        final ClientWorldResolution result = scoreCandidates(serverId, visible, observation, blocker);
+        final ClientWorldResolution result = scoreCandidates(
+            serverId, visible, observation, blocker, suppressLastStable, null
+        );
         return result == null
             ? ClientWorldResolution.ambiguous(displayInsufficientObservation(visible, observation, blocker))
             : result;
@@ -585,7 +693,9 @@ public final class ClientWorldProfileResolver {
         final String serverId,
         final List<ClientWorldProfile> profiles,
         final ClientWorldObservation observation,
-        final String forcedBlocker
+        final String forcedBlocker,
+        final boolean suppressLastStable,
+        final String departedProfileId
     ) {
         if (observation.dimensionId() == null
             || observation.gameMode() == null && observation.position() == null
@@ -597,18 +707,37 @@ public final class ClientWorldProfileResolver {
         final List<TerrainCacheEntry> terrainCache = new ArrayList<>();
         final ClientWorldProfileRegistry.LastStableProfile lastStable = registry.lastStableProfile(serverId);
         final String lastStableProfileId = lastStable == null ? null : lastStable.profileId();
+        final boolean strongerCurrentTrajectory = !suppressLastStable
+            && lastStableProfileId != null
+            && strongerCurrentTrajectoryExists(profiles, lastStableProfileId, observation);
         for (final ClientWorldProfile profile : profiles) {
-            final ClientWorldVisit visit = profile.visit(observation.dimensionId());
+            final ClientWorldVisit dimensionVisit = profile.visit(observation.dimensionId());
+            ClientWorldVisit continuityVisit = profile.lastObservedVisit(observation.dimensionId());
+            boolean checkpointBackedVisit = false;
+            if (continuityVisit == null) {
+                continuityVisit = transientVisitFromCandidateTrajectory(profile.id(), observation);
+                checkpointBackedVisit = continuityVisit != null;
+            }
+            final ClientWorldVisit visit = dimensionVisit == null ? continuityVisit : dimensionVisit;
             final boolean seedCompatible = observation.seedHash().isEmpty()
                 || profile.matchesSeed(observation.seedHash().getAsLong());
+            final ClientWorldVisit lastObservedVisit = profile.lastObservedVisit();
+            final boolean lastDimensionMismatch = lastObservedVisit != null
+                && !observation.dimensionId().equals(lastObservedVisit.dimensionId());
             if (visit == null) {
-                scores.add(CandidateScore.legacy(
-                    profile, !seedCompatible || profile.hasSignalConflict(observation), seedCompatible
-                ));
+                final boolean conflicted = !seedCompatible || profile.hasSignalConflict(observation);
+                scores.add(lastDimensionMismatch
+                    ? CandidateScore.dimensionMismatch(profile, seedCompatible)
+                    : profile.visits().isEmpty()
+                        ? CandidateScore.legacy(profile, conflicted, seedCompatible)
+                        : CandidateScore.dimensionUnavailable(profile, conflicted, seedCompatible));
                 continue;
             }
             final List<String> reasons = new ArrayList<>();
             final List<ClientWorldResolution.Factor> factors = new ArrayList<>();
+            if (checkpointBackedVisit) {
+                reasons.add("candidate_dimension_checkpoint");
+            }
             double terrainScore = Double.NaN;
             int terrainComparableChunks = 0;
             final ClientWorldVisit.ContextMatch context = visit.contextMatch(observation.signals());
@@ -618,23 +747,22 @@ public final class ClientWorldProfileResolver {
             double auxiliary = 0.0D;
             double availableAuxiliaryWeight = 0.0D;
             int independentFactors = 0;
-            final double trajectoryScore = trajectoryConfidence(visit, observation);
-            final double trajectoryFreshness = trajectoryFreshnessConfidence(visit, observation);
+            final TrajectoryEvidence trajectoryEvidence = continuityVisit == null
+                ? TrajectoryEvidence.unavailable()
+                : trajectoryEvidence(profile.id(), continuityVisit, observation);
+            final double trajectoryScore = trajectoryEvidence.confidence();
             final boolean continuityEvidence = trajectoryScore > 0.0D;
             if (trajectoryScore >= 0.0D) {
-                auxiliary += POSITION_CORRIDOR_WEIGHT * trajectoryScore;
-                availableAuxiliaryWeight += POSITION_CORRIDOR_WEIGHT;
+                auxiliary += TRAJECTORY_WEIGHT * trajectoryScore;
+                availableAuxiliaryWeight += TRAJECTORY_WEIGHT;
                 if (trajectoryScore > 0.0D) {
                     independentFactors++;
                 }
-                reasons.add(trajectoryScore > 0.0D ? "position_corridor" : "position_corridor_stale");
+                reasons.add(trajectoryScore > 0.0D ? "trajectory_continuity" : "trajectory_stale");
             }
-            if (trajectoryFreshness >= 0.0D) {
-                auxiliary += TRAJECTORY_WEIGHT * trajectoryFreshness;
-                availableAuxiliaryWeight += TRAJECTORY_WEIGHT;
-                reasons.add(trajectoryFreshness > 0.0D ? "trajectory_fresh" : "trajectory_stale");
-            }
-            if (lastStableProfileId != null) {
+            final boolean lastStableAvailable = lastStableProfileId != null
+                && !suppressLastStable && !strongerCurrentTrajectory;
+            if (lastStableAvailable) {
                 availableAuxiliaryWeight += LAST_STABLE_WEIGHT;
                 if (profile.id().equals(lastStableProfileId)) {
                     if (lastStable.conflicts(observation)) {
@@ -647,6 +775,10 @@ public final class ClientWorldProfileResolver {
                 } else {
                     reasons.add("not_last_stable_profile");
                 }
+            } else if (lastStableProfileId != null) {
+                reasons.add(strongerCurrentTrajectory
+                    ? "last_stable_suppressed_stronger_current_trajectory"
+                    : "last_stable_suppressed_world_boundary");
             }
             final ClientWorldProfile.IdentitySignalMatch identity = profile.identitySignalMatch(observation);
             final int identitySignalMatches = identity.matches();
@@ -667,7 +799,7 @@ public final class ClientWorldProfileResolver {
                 reasons.add(matches ? "game_mode_match" : "game_mode_mismatch");
             }
             int queue = 3;
-            final double continuityDistance = trajectoryDistance(visit, observation);
+            final double continuityDistance = trajectoryEvidence.corridorDistance();
             final boolean corridorNear;
             if (continuityDistance >= 0.0D) {
                 final double radius = positionRadius(observation.dimensionId());
@@ -679,8 +811,11 @@ public final class ClientWorldProfileResolver {
                     corridorNear = false;
                     reasons.add("corridor_outside_radius");
                 }
-            } else if (observation.position() != null && visit.lastPosition() != null) {
-                final double distance = observation.position().horizontalDistanceTo(visit.lastPosition());
+            } else if (observation.position() != null && continuityVisit != null
+                && continuityVisit.lastPosition() != null) {
+                final double distance = observation.position().spatialDistanceTo(
+                    continuityVisit.lastPosition()
+                );
                 if (distance <= positionRadius(observation.dimensionId())) {
                     queue = 2;
                     corridorNear = true;
@@ -731,11 +866,16 @@ public final class ClientWorldProfileResolver {
                 reasons.add("visit_context_" + context.matches() + "_of_" + context.shared());
             }
             final boolean stablePointerConflict = profile.id().equals(lastStableProfileId)
-                && lastStable != null && lastStable.conflicts(observation);
-            final boolean conflicted = !seedCompatible || profile.hasSignalConflict(observation)
+                && lastStable != null && lastStableAvailable && lastStable.conflicts(observation);
+            final boolean departedAtBoundary = departedProfileId != null
+                && departedProfileId.equals(profile.id());
+            final boolean conflicted = departedAtBoundary || lastDimensionMismatch || !seedCompatible
+                || profile.hasSignalConflict(observation)
                 || context.hasStableConflict() || terrainConflict || stablePointerConflict;
             if (conflicted) {
-                reasons.add(terrainConflict ? "terrain_conflict"
+                reasons.add(departedAtBoundary ? "departed_profile_boundary"
+                    : lastDimensionMismatch ? "last_dimension_mismatch"
+                    : terrainConflict ? "terrain_conflict"
                     : context.hasStableConflict() ? "visit_context_conflict"
                     : stablePointerConflict ? "last_stable_conflict"
                     : !seedCompatible ? "seed_conflict" : "signal_conflict");
@@ -747,16 +887,24 @@ public final class ClientWorldProfileResolver {
                 : auxiliaryScore;
             final double auxiliaryScale = terrainAvailable ? AUXILIARY_WEIGHT : 1.0D;
             factors.add(diagnosticFactor(
-                "trajectory", trajectoryFreshness >= 0.0D,
-                Math.max(0.0D, trajectoryFreshness), TRAJECTORY_WEIGHT,
-                availableAuxiliaryWeight, auxiliaryScale, false,
-                trajectoryMetrics(visit, observation, continuityDistance)
+                "trajectory", trajectoryScore >= 0.0D, Math.max(0.0D, trajectoryScore),
+                TRAJECTORY_WEIGHT, availableAuxiliaryWeight, auxiliaryScale, false,
+                trajectoryMetrics(
+                    continuityVisit == null ? visit : continuityVisit,
+                    observation, trajectoryEvidence
+                )
             ));
             factors.add(diagnosticFactor(
-                "last_stable", lastStableProfileId != null,
-                profile.id().equals(lastStableProfileId) && !stablePointerConflict ? 1.0D : 0.0D,
+                "last_stable", lastStableAvailable,
+                lastStableAvailable && profile.id().equals(lastStableProfileId)
+                    && !stablePointerConflict ? 1.0D : 0.0D,
                 LAST_STABLE_WEIGHT, availableAuxiliaryWeight, auxiliaryScale, stablePointerConflict,
-                java.util.Map.of("hit", Boolean.toString(profile.id().equals(lastStableProfileId)))
+                java.util.Map.of(
+                    "hit", Boolean.toString(profile.id().equals(lastStableProfileId)),
+                    "suppressed", Boolean.toString(!lastStableAvailable),
+                    "suppression_reason", suppressLastStable ? "world_boundary"
+                        : strongerCurrentTrajectory ? "stronger_current_trajectory" : "none"
+                )
             ));
             factors.add(diagnosticFactor(
                 "identity_signals", identity.comparable() > 0,
@@ -799,11 +947,6 @@ public final class ClientWorldProfileResolver {
                     "hard_mismatch", Boolean.toString(terrainConflict)
                 )
             ));
-            factors.add(diagnosticFactor(
-                "position_corridor", trajectoryScore >= 0.0D, Math.max(0.0D, trajectoryScore),
-                POSITION_CORRIDOR_WEIGHT, availableAuxiliaryWeight, auxiliaryScale, false,
-                corridorMetrics(visit, observation)
-            ));
             factors.add(new ClientWorldResolution.Factor(
                 "seed_filter",
                 observation.seedHash().isPresent() ? ClientWorldResolution.FactorAvailability.AVAILABLE
@@ -811,6 +954,28 @@ public final class ClientWorldProfileResolver {
                 observation.seedHash().isPresent() ? 1.0D : 0.0D,
                 0.0D, 0.0D, 0.0D, !seedCompatible,
                 java.util.Map.of("compatible", Boolean.toString(seedCompatible))
+            ));
+            factors.add(new ClientWorldResolution.Factor(
+                "proxy_boundary",
+                departedProfileId == null ? ClientWorldResolution.FactorAvailability.UNAVAILABLE
+                    : ClientWorldResolution.FactorAvailability.AVAILABLE,
+                departedAtBoundary ? 0.0D : 1.0D,
+                0.0D, 0.0D, 0.0D, departedAtBoundary,
+                java.util.Map.of(
+                    "departed_profile", Boolean.toString(departedAtBoundary)
+                )
+            ));
+            factors.add(new ClientWorldResolution.Factor(
+                "latest_dimension",
+                lastObservedVisit == null ? ClientWorldResolution.FactorAvailability.UNAVAILABLE
+                    : ClientWorldResolution.FactorAvailability.AVAILABLE,
+                lastDimensionMismatch ? 0.0D : 1.0D,
+                0.0D, 0.0D, 0.0D, lastDimensionMismatch,
+                java.util.Map.of(
+                    "observed", observation.dimensionId(),
+                    "candidate", lastObservedVisit == null
+                        ? "unavailable" : lastObservedVisit.dimensionId()
+                )
             ));
             scores.add(new CandidateScore(
                 profile, score, reasons, conflicted, terrainScore, queue, independentFactors,
@@ -835,10 +1000,10 @@ public final class ClientWorldProfileResolver {
             ));
         }
         final CandidateScore best = eligible.get(0);
-        final boolean hasRunnerUp = eligible.size() > 1;
-        final double runnerUp = hasRunnerUp ? eligible.get(1).score() : 0.0D;
+        final CandidateScore runnerUpCandidate = eligible.size() > 1 ? eligible.get(1) : null;
+        final double runnerUp = runnerUpCandidate == null ? 0.0D : runnerUpCandidate.score();
         final boolean hasTerrain = best.hasTerrainScore();
-        final double requiredMargin = requiredMargin(best);
+        final double requiredMargin = requiredMargin(best, runnerUpCandidate);
         final double requiredConfidence = requiredConfidence(best.queue());
         final boolean hasEnoughAuxiliary = best.independentFactors() >= 2;
         final boolean hasUnresolvedLegacyCandidate = eligible.stream()
@@ -848,16 +1013,14 @@ public final class ClientWorldProfileResolver {
         final List<String> bestBlockers = new ArrayList<>();
         if (forcedBlocker != null) bestBlockers.add(forcedBlocker);
         if (best.score() < requiredConfidence) bestBlockers.add("confidence_below_threshold");
-        if (hasRunnerUp && best.score() - runnerUp <= requiredMargin) {
-            bestBlockers.add("margin_not_strictly_greater");
-        }
+        if (best.score() - runnerUp <= requiredMargin) bestBlockers.add("margin_not_strictly_greater");
         if (!best.continuityEvidence()) bestBlockers.add("continuity_required");
         if (!hasTerrain && !hasEnoughAuxiliary) bestBlockers.add("independent_factors_insufficient");
         if (hasUnresolvedLegacyCandidate) bestBlockers.add("legacy_candidate_unresolved");
         if (higherPriorityConflict) bestBlockers.add("higher_priority_conflict");
         final boolean canAutoSelect = forcedBlocker == null && !best.conflicted()
             && best.score() >= requiredConfidence
-            && (!hasRunnerUp || best.score() - runnerUp > requiredMargin)
+            && best.score() - runnerUp > requiredMargin
             && best.continuityEvidence()
             && (hasTerrain || hasEnoughAuxiliary)
             && !hasUnresolvedLegacyCandidate && !higherPriorityConflict;
@@ -918,41 +1081,78 @@ public final class ClientWorldProfileResolver {
     }
 
     private static double requiredMargin(final CandidateScore candidate) {
-        return candidate.queue() == 3 ? QUEUE_THREE_ERROR_MARGIN : AUTO_SELECT_ERROR_MARGIN;
+        return requiredMargin(candidate, null);
+    }
+
+    private static double requiredMargin(
+        final CandidateScore candidate,
+        final CandidateScore runnerUp
+    ) {
+        // A radius/queue advantage is meaningful evidence, but never an automatic qualification:
+        // the winner must still clear its confidence threshold and strictly beat the runner-up.
+        // Requiring the generic 10% auxiliary margin here made an exact endpoint in the Nether
+        // indistinguishable from a candidate already outside the six-block band.
+        // Queue 1/2 always use the published strict three-point lead. Requiring ten points merely
+        // because terrain is absent suppresses the exact saved endpoint: after shared identity,
+        // context and game-mode factors are normalized, an exact point can otherwise fail to beat
+        // a nearby-but-distinct endpoint. Queue 3 remains deliberately much stricter below.
+        final double evidenceMargin = AUTO_SELECT_ERROR_MARGIN;
+        return Math.max(
+            evidenceMargin,
+            candidate.queue() == 3 ? QUEUE_THREE_ERROR_MARGIN : 0.0D
+        );
     }
 
     private static java.util.Map<String, String> trajectoryMetrics(
         final ClientWorldVisit visit,
         final ClientWorldObservation observation,
-        final double distance
+        final TrajectoryEvidence evidence
     ) {
         final ClientWorldTrajectory trajectory = observation.trajectory();
         final ClientWorldTrajectorySample latest = trajectory == null ? null : trajectory.latest();
-        final long ackAge = latest == null || latest.serverAckTimeMs() == ClientWorldTrajectorySample.NO_SERVER_ACK
+        final List<ClientWorldTrajectorySample> savedSamples = visit.trajectorySamples();
+        final ClientWorldTrajectorySample savedEndpoint = savedSamples.isEmpty()
+            ? null : savedSamples.get(savedSamples.size() - 1);
+        final long correctionAge = latest == null
+            || latest.serverAckTimeMs() == ClientWorldTrajectorySample.NO_SERVER_ACK
             ? -1L : Math.max(0L, latest.clientTimeMs() - latest.serverAckTimeMs());
-        return java.util.Map.of(
-            "distance", distance < 0.0D ? "unavailable" : formatMetric(distance),
-            "ack_age_ms", ackAge < 0L ? "unavailable" : Long.toString(ackAge),
-            "saved_samples", Integer.toString(visit.trajectorySamples().size())
-        );
-    }
-
-    private static java.util.Map<String, String> corridorMetrics(
-        final ClientWorldVisit visit,
-        final ClientWorldObservation observation
-    ) {
-        final ClientWorldTrajectory.CausalCorridor corridor = causalCorridor(visit, observation);
-        if (Double.isInfinite(corridor.endpointDistance())) {
-            return java.util.Map.of("endpoint_distance", "unavailable");
-        }
-        return java.util.Map.of(
-            "endpoint_distance_3d", formatMetric(corridor.endpointDistance()),
-            "along_distance", formatMetric(corridor.alongDistance()),
-            "lateral_distance_3d", formatMetric(corridor.lateralDistance()),
-            "predicted_length", formatMetric(corridor.predictedLength()),
-            "centerline_confidence", formatMetric(positionConfidence(corridor.alongDistance())),
-            "lateral_confidence", formatMetric(positionConfidence(corridor.lateralDistance())),
-            "elapsed_ms", Long.toString(corridor.elapsedMs())
+        final long localEvidenceAge = savedEndpoint == null
+            ? -1L : Math.max(0L, observationTime(observation) - savedEndpoint.clientTimeMs());
+        return java.util.Map.ofEntries(
+            java.util.Map.entry(
+                "distance", evidence.corridorDistance() < 0.0D
+                    ? "unavailable" : formatMetric(evidence.corridorDistance())
+            ),
+            java.util.Map.entry(
+                "point_distance", evidence.pointDistance() < 0.0D
+                    ? "unavailable" : formatMetric(evidence.pointDistance())
+            ),
+            java.util.Map.entry(
+                "along_distance", evidence.alongDistance() < 0.0D
+                    ? "unavailable" : formatMetric(evidence.alongDistance())
+            ),
+            java.util.Map.entry(
+                "lateral_distance", evidence.lateralDistance() < 0.0D
+                    ? "unavailable" : formatMetric(evidence.lateralDistance())
+            ),
+            java.util.Map.entry("predicted_length", formatMetric(evidence.predictedLength())),
+            java.util.Map.entry("prediction_ms", Long.toString(evidence.predictionMs())),
+            java.util.Map.entry(
+                "centerline_confidence", formatMetric(evidence.centerlineConfidence())
+            ),
+            java.util.Map.entry(
+                "lateral_confidence", formatMetric(evidence.lateralConfidence())
+            ),
+            java.util.Map.entry("freshness", formatMetric(evidence.freshness())),
+            java.util.Map.entry(
+                "position_correction_age_ms",
+                correctionAge < 0L ? "unavailable" : Long.toString(correctionAge)
+            ),
+            java.util.Map.entry(
+                "local_evidence_age_ms",
+                localEvidenceAge < 0L ? "unavailable" : Long.toString(localEvidenceAge)
+            ),
+            java.util.Map.entry("saved_samples", Integer.toString(visit.trajectorySamples().size()))
         );
     }
 
@@ -1014,101 +1214,181 @@ public final class ClientWorldProfileResolver {
     }
 
     private static double trajectoryDistance(
+        final String profileId,
+        final ClientWorldVisit visit,
+        final ClientWorldObservation observation
+    ) {
+        return trajectoryEvidence(profileId, visit, observation).corridorDistance();
+    }
+
+    /**
+     * A persisted last-stable pointer is a continuity prior, not a license to contradict a fresh
+     * local position. Keep it as a tie-breaker while candidates share the same base corridor, but
+     * remove it from normalization when another candidate is inside the current corridor and the
+     * old stable candidate is outside it. This prevents a stale proxy/default-backend choice from
+     * reversing clear current trajectory evidence after an ordinary reconnect.
+     */
+    private static boolean strongerCurrentTrajectoryExists(
+        final List<ClientWorldProfile> profiles,
+        final String lastStableProfileId,
+        final ClientWorldObservation observation
+    ) {
+        if (observation.position() == null || observation.dimensionId() == null) {
+            return false;
+        }
+        final ClientWorldProfile stableProfile = profiles.stream()
+            .filter(profile -> profile.id().equals(lastStableProfileId))
+            .findFirst().orElse(null);
+        if (stableProfile == null) {
+            return false;
+        }
+        final ClientWorldVisit stableVisit = stableProfile.lastObservedVisit(observation.dimensionId());
+        if (stableVisit == null) {
+            return false;
+        }
+        final double radius = positionRadius(observation.dimensionId());
+        final double stableDistance = trajectoryDistance(
+            stableProfile.id(), stableVisit, observation
+        );
+        if (stableDistance < 0.0D || stableDistance <= radius) {
+            return false;
+        }
+        return profiles.stream()
+            .filter(profile -> !profile.id().equals(lastStableProfileId))
+            .map(profile -> new java.util.AbstractMap.SimpleImmutableEntry<>(
+                profile.id(), profile.lastObservedVisit(observation.dimensionId())
+            ))
+            .filter(entry -> entry.getValue() != null)
+            .mapToDouble(entry -> trajectoryDistance(
+                entry.getKey(), entry.getValue(), observation
+            ))
+            .anyMatch(distance -> distance >= 0.0D && distance <= radius);
+    }
+
+    /**
+     * A provisional profile may leave a dimension before its first confirmed visit is allowed to
+     * reach the registry. Its profile-owned local checkpoint is still safe ranking evidence: it
+     * cannot be attributed to another profile and it remains non-persistent until confirmation.
+     */
+    private static ClientWorldVisit transientVisitFromCandidateTrajectory(
+        final String profileId,
+        final ClientWorldObservation observation
+    ) {
+        if (observation.dimensionId() == null) {
+            return null;
+        }
+        final ClientWorldTrajectory candidate = observation.candidateTrajectoryFor(profileId);
+        final ClientWorldTrajectorySample endpoint = candidate == null ? null : candidate.latest();
+        if (endpoint == null || !observation.dimensionId().equals(endpoint.dimensionId())) {
+            return null;
+        }
+        final ClientWorldVisit visit = new ClientWorldVisit(
+            observation.dimensionId(), null,
+            new ClientWorldPosition(
+                (int) Math.floor(endpoint.x()),
+                (int) Math.floor(endpoint.y()),
+                (int) Math.floor(endpoint.z())
+            ),
+            endpoint.clientTimeMs(), null, java.util.Map.of()
+        );
+        visit.rememberTrajectory(candidate);
+        return visit;
+    }
+
+    private static TrajectoryEvidence trajectoryEvidence(
+        final String profileId,
         final ClientWorldVisit visit,
         final ClientWorldObservation observation
     ) {
         if (observation.position() == null || observation.dimensionId() == null) {
-            return -1.0D;
+            return TrajectoryEvidence.unavailable();
         }
-        final ClientWorldTrajectory.CausalCorridor corridor = causalCorridor(visit, observation);
-        if (!Double.isInfinite(corridor.endpointDistance())) {
-            return corridor.endpointDistance();
-        }
-        return visit.lastPosition() == null
-            ? -1.0D : threeDimensionalDistance(observation.position(), visit.lastPosition());
-    }
-
-    private static double trajectoryConfidence(
-        final ClientWorldVisit visit,
-        final ClientWorldObservation observation
-    ) {
-        if (observation.position() == null || observation.dimensionId() == null) {
-            return -1.0D;
-        }
-        final ClientWorldTrajectory.CausalCorridor corridor = causalCorridor(visit, observation);
-        if (Double.isInfinite(corridor.endpointDistance())) {
-            return visit.lastPosition() == null
-                ? -1.0D
-                : positionConfidence(threeDimensionalDistance(observation.position(), visit.lastPosition()));
-        }
-        final double freshness = trajectoryFreshnessConfidence(visit, observation);
-        return positionConfidence(corridor.alongDistance())
-            * positionConfidence(corridor.lateralDistance())
-            * (freshness < 0.0D ? 1.0D : freshness);
-    }
-
-    private static double trajectoryFreshnessConfidence(
-        final ClientWorldVisit visit,
-        final ClientWorldObservation observation
-    ) {
-        final ClientWorldTrajectory trajectory = usableTrajectory(visit, observation);
-        return trajectory == null ? -1.0D : confirmationConfidence(trajectory, observationTime(observation));
-    }
-
-    private static ClientWorldTrajectory.CausalCorridor causalCorridor(
-        final ClientWorldVisit visit,
-        final ClientWorldObservation observation
-    ) {
-        if (observation.position() == null || observation.dimensionId() == null) {
-            return new ClientWorldTrajectory.CausalCorridor(
-                Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, 0.0D,
-                Double.POSITIVE_INFINITY, 0L
+        final long now = observationTime(observation);
+        final ClientWorldTrajectory candidateOverride = observation.candidateTrajectoryFor(profileId);
+        final ClientWorldTrajectory trajectory = usableTrajectory(profileId, visit, observation);
+        if (trajectory == null) {
+            final ClientWorldTrajectorySample overrideEndpoint = candidateOverride == null
+                ? null : candidateOverride.latest();
+            final boolean hasOverrideEndpoint = overrideEndpoint != null
+                && overrideEndpoint.dimensionId().equals(observation.dimensionId());
+            if (!hasOverrideEndpoint && visit.lastPosition() == null) {
+                return TrajectoryEvidence.unavailable();
+            }
+            final double pointDistance = hasOverrideEndpoint
+                ? overrideEndpoint.spatialDistanceTo(observation.position())
+                : observation.position().spatialDistanceTo(visit.lastPosition());
+            final double pointConfidence = positionConfidence(pointDistance);
+            return new TrajectoryEvidence(
+                pointConfidence, pointDistance, pointDistance, 0.0D, pointDistance,
+                0.0D, 0L, 1.0D, pointConfidence, 1.0D
             );
         }
-        final ClientWorldTrajectory trajectory = usableTrajectory(visit, observation);
-        return trajectory == null
-            ? new ClientWorldTrajectory.CausalCorridor(
-                0.0D,
-                visit.lastPosition() == null ? Double.POSITIVE_INFINITY
-                    : threeDimensionalDistance(observation.position(), visit.lastPosition()),
-                0.0D,
-                visit.lastPosition() == null ? Double.POSITIVE_INFINITY
-                    : threeDimensionalDistance(observation.position(), visit.lastPosition()),
-                0L
-            )
-            : trajectory.causalCorridor(
-                observation.position(), observation.dimensionId(), observationTime(observation),
-                PREDICTION_HORIZON_MS
+        final ClientWorldTrajectory current = observation.trajectory();
+        final ClientWorldTrajectory.CausalCorridor corridor = current != null && current.latest() != null
+            ? trajectory.causalCorridorTo(current, PREDICTION_HORIZON_MS)
+            : trajectory.causalCorridorTo(
+                observation.position(), now, observation.dimensionId(), PREDICTION_HORIZON_MS
             );
-    }
-
-    private static double threeDimensionalDistance(
-        final ClientWorldPosition first,
-        final ClientWorldPosition second
-    ) {
-        final long dx = (long) first.x() - second.x();
-        final long dy = (long) first.y() - second.y();
-        final long dz = (long) first.z() - second.z();
-        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (!corridor.available()) {
+            return TrajectoryEvidence.unavailable();
+        }
+        // The user's 0..1024 decay is evaluated twice. Confidence on the predicted centerline
+        // falls as it travels away from the saved endpoint; lateral confidence is then multiplied
+        // by that local centerline value, never restarted from 100% beside a distant line point.
+        final ClientWorldTrajectorySample candidateEndpoint = trajectory.latest();
+        final ClientWorldTrajectorySample currentEndpoint = current == null ? null : current.latest();
+        final double currentY = currentEndpoint == null
+            ? observation.position().y() : currentEndpoint.y();
+        final double verticalDistance = candidateEndpoint == null
+            ? 0.0D : Math.abs(currentY - candidateEndpoint.y());
+        final double spatialPointDistance = Math.hypot(corridor.pointDistance(), verticalDistance);
+        final double spatialLateralDistance = Math.hypot(corridor.lateralDistance(), verticalDistance);
+        final double centerlineConfidence = positionConfidence(corridor.alongDistance());
+        final double lateralConfidence = positionConfidence(spatialLateralDistance);
+        // Freshness belongs to the candidate endpoint. Using the current connection here makes
+        // the value almost permanently 100% and lets an old departure velocity masquerade as a
+        // recent causal prediction.
+        final double freshness = confirmationConfidence(trajectory, now);
+        final double confidence = centerlineConfidence * lateralConfidence * freshness;
+        return new TrajectoryEvidence(
+            confidence, spatialLateralDistance, spatialPointDistance,
+            corridor.alongDistance(), spatialLateralDistance, corridor.predictedLength(),
+            corridor.predictionMs(), centerlineConfidence, lateralConfidence
+            , freshness
+        );
     }
 
     static double corridorPositionConfidence(final double distance, final double radius) {
         if (distance >= POSITION_CONFIDENCE_CUTOFF_DISTANCE) {
             return 0.0D;
         }
-        return positionConfidence(Math.max(0.0D, distance - Math.max(0.0D, radius)));
+        // Radius selects the queue only. Confidence follows the documented absolute-distance
+        // curve from 0 to 1024, so 0 blocks and 48 blocks are no longer both treated as perfect.
+        return positionConfidence(Math.max(0.0D, distance));
     }
 
     private static ClientWorldTrajectory usableTrajectory(
+        final String profileId,
         final ClientWorldVisit visit,
         final ClientWorldObservation observation
     ) {
+        final ClientWorldTrajectory candidateOverride = observation.candidateTrajectoryFor(profileId);
+        if (candidateOverride != null && candidateOverride.latest() != null
+            && candidateOverride.latest().dimensionId().equals(observation.dimensionId())
+            && candidateOverride.hasUsableContinuity(
+                observation.dimensionId(), observationTime(observation), MAX_TRAJECTORY_AGE_MS
+            )) {
+            return candidateOverride;
+        }
         if (!visit.trajectorySamples().isEmpty()) {
             final ClientWorldTrajectory trajectory = ClientWorldTrajectory.fromHistoricalSamples(
                 visit.trajectorySamples(), ClientWorldTrajectory.DEFAULT_CAPACITY
             );
             if (trajectory.latest() != null
-                && trajectory.latest().dimensionId().equals(observation.dimensionId())) {
+                && trajectory.latest().dimensionId().equals(observation.dimensionId())
+                && trajectory.hasUsableContinuity(
+                    observation.dimensionId(), observationTime(observation), MAX_TRAJECTORY_AGE_MS
+                )) {
                 return trajectory;
             }
         }
@@ -1119,16 +1399,13 @@ public final class ClientWorldProfileResolver {
         final ClientWorldTrajectory trajectory,
         final long now
     ) {
-        final long acknowledgementAge = trajectory.acknowledgementAgeMs(now);
         final ClientWorldTrajectorySample latest = trajectory.latest();
         final long localEvidenceAge = latest == null
             ? Long.MAX_VALUE : Math.max(0L, now - latest.clientTimeMs());
-        final long age = acknowledgementAge == Long.MAX_VALUE
-            ? localEvidenceAge : acknowledgementAge;
-        if (age <= PREDICTION_HORIZON_MS) {
+        if (localEvidenceAge <= PREDICTION_HORIZON_MS) {
             return 1.0D;
         }
-        return Math.max(0.50D, Math.exp(-(double) (age - PREDICTION_HORIZON_MS)
+        return Math.max(0.50D, Math.exp(-(double) (localEvidenceAge - PREDICTION_HORIZON_MS)
             / MAX_TRAJECTORY_AGE_MS));
     }
 
@@ -1418,6 +1695,31 @@ public final class ClientWorldProfileResolver {
             );
         }
 
+        static CandidateScore dimensionUnavailable(
+            final ClientWorldProfile profile,
+            final boolean conflicted,
+            final boolean seedCompatible
+        ) {
+            return new CandidateScore(
+                profile, 0.0D, List.of("dimension_unavailable"), conflicted, Double.NaN,
+                3, 0, false, List.of(), seedCompatible
+            );
+        }
+
+        static CandidateScore dimensionMismatch(
+            final ClientWorldProfile profile,
+            final boolean seedCompatible
+        ) {
+            return new CandidateScore(
+                profile, 0.0D, List.of("last_dimension_mismatch"), true, Double.NaN,
+                3, 0, false,
+                List.of(new ClientWorldResolution.Factor(
+                    "latest_dimension", ClientWorldResolution.FactorAvailability.AVAILABLE,
+                    0.0D, 0.0D, 0.0D, 0.0D, true, java.util.Map.of()
+                )), seedCompatible
+            );
+        }
+
         boolean hasTerrainScore() {
             return !Double.isNaN(terrainScore);
         }
@@ -1431,7 +1733,9 @@ public final class ClientWorldProfileResolver {
             final ClientWorldResolution.CandidateOutcome outcome
         ) {
             return new ClientWorldResolution.Candidate(
-                profile.id(), !reasons.contains("legacy_profile"), (int) Math.round(score * 100.0D),
+                profile.id(), !reasons.contains("legacy_profile")
+                    && !reasons.contains("dimension_unavailable"),
+                (int) Math.round(score * 100.0D),
                 queue, (int) Math.round(requiredConfidence * 100.0D),
                 (int) Math.round(runnerUp * 100.0D), (int) Math.round(requiredMargin * 100.0D),
                 (int) Math.round((score - runnerUp) * 100.0D), independentFactors,
@@ -1447,4 +1751,23 @@ public final class ClientWorldProfileResolver {
         ClientWorldTerrainFingerprint candidate,
         ClientWorldTerrainFingerprint.Match match
     ) { }
+
+    private record TrajectoryEvidence(
+        double confidence,
+        double corridorDistance,
+        double pointDistance,
+        double alongDistance,
+        double lateralDistance,
+        double predictedLength,
+        long predictionMs,
+        double centerlineConfidence,
+        double lateralConfidence,
+        double freshness
+    ) {
+        static TrajectoryEvidence unavailable() {
+            return new TrajectoryEvidence(
+                -1.0D, -1.0D, -1.0D, -1.0D, -1.0D, 0.0D, 0L, 0.0D, 0.0D, 0.0D
+            );
+        }
+    }
 }

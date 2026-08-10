@@ -47,7 +47,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
     private static final int FUNCTION_ACTION_HEIGHT = 20;
     private static final int MANAGEMENT_BUTTON_MAX_WIDTH = 120;
     private static final int NARROW_VIEWPORT_HEIGHT = 360;
-    private static final int REGULAR_INFO_MAX_HEIGHT = 96;
+    private static final int REGULAR_INFO_MAX_HEIGHT = 210;
     private static final int MIN_PREVIEW_PANEL_HEIGHT = 96;
     private static final int PREVIEW_HEADER_HEIGHT = 18;
     private static final int PREVIEW_META_HEIGHT = 14;
@@ -73,6 +73,8 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
     private String pendingClearProfileId;
     private String operationError;
     private String hoveredDetailText;
+    private List<String> hoveredCandidateDetails;
+    private final List<CandidateRowDiagnostic> candidateRowDiagnostics = new ArrayList<>();
     private boolean draggingScrollbar;
     private ClientWorldMapPreview mapPreview;
     private String previewProfileId;
@@ -108,6 +110,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
 
     private void rebuild() {
         clearChildren();
+        candidateRowDiagnostics.clear();
         final boolean registryAvailable = worlds.profileRegistryAvailable();
         final List<ClientWorldProfile> profiles = worlds.profiles();
         final boolean authoritative = worlds.companionWorldIdentityAuthoritative();
@@ -127,7 +130,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         for (int index = scrollOffset; index < end; index++) {
             final ClientWorldProfile profile = profiles.get(index);
             final int y = layout.listRowsTop() + (index - scrollOffset) * ROW_HEIGHT;
-            String rowLabel = profile.displayName() + " · " + candidateSummary(profile);
+            String rowLabel = profile.displayName();
             if (profile.id().equals(currentId)) {
                 rowLabel = Texts.translatable("confluxmap.screen.client_world.row_current", rowLabel).getString();
             }
@@ -144,6 +147,9 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
                     detailScrollOffset = 0;
                     rebuild();
                 }
+            ));
+            candidateRowDiagnostics.add(new CandidateRowDiagnostic(
+                layout.listX() + 4, y, layout.listButtonWidth(), 20, candidateHoverDetails(profile)
             ));
         }
 
@@ -767,6 +773,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
     protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
         draw.renderBackground(this, mouseX, mouseY, tickDelta);
         hoveredDetailText = null;
+        hoveredCandidateDetails = null;
         drawCentered(draw, getTitle().getString(), 14, 0xFFFFFFFF);
         final boolean registryAvailable = worlds.profileRegistryAvailable();
         final String promptKey = !registryAvailable
@@ -804,6 +811,12 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
             layout.footerX() + 8, layout.footerTop() + 5, 0xFFFFFFFF
         );
         drawListScrollbar(draw, layout);
+        for (final CandidateRowDiagnostic diagnostic : candidateRowDiagnostics) {
+            if (diagnostic.contains(mouseX, mouseY)) {
+                hoveredCandidateDetails = diagnostic.lines();
+                break;
+            }
+        }
         final ClientWorldProfile selected = selectedProfile();
         if (selected != null) {
             drawProfilePanel(draw, layout, selected, mouseX, mouseY);
@@ -834,7 +847,9 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         final int mouseY,
         final float tickDelta
     ) {
-        if (hoveredDetailText != null) {
+        if (hoveredCandidateDetails != null && !hoveredCandidateDetails.isEmpty()) {
+            drawCandidateTooltip(draw, hoveredCandidateDetails, mouseX, mouseY);
+        } else if (hoveredDetailText != null) {
             draw.drawTooltip(this, this.textRenderer, Texts.literal(hoveredDetailText), mouseX, mouseY);
         }
     }
@@ -1019,9 +1034,8 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         final List<String> details = new ArrayList<>();
         final ClientWorldVisit visit = latestVisit(profile);
         final List<String> matches = matchDetails(profile);
-        if (!matches.isEmpty()) {
-            details.add(matches.get(0));
-        }
+        details.addAll(matches);
+        details.add(Texts.translatable("confluxmap.screen.client_world.section.profile").getString());
         details.add(Texts.translatable(
             "confluxmap.screen.client_world.detail_recognition", profile.bindingCount()
         ).getString());
@@ -1062,9 +1076,6 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         details.add(Texts.translatable(
             "confluxmap.screen.client_world.detail_id", profile.id()
         ).getString());
-        if (matches.size() > 1) {
-            details.addAll(matches.subList(1, matches.size()));
-        }
         return details;
     }
 
@@ -1108,53 +1119,35 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
             }
             return details;
         }
-        if (!candidate.scored()) {
-            details.add(Texts.translatable(
-                "confluxmap.screen.client_world.detail_unscored"
-            ).getString());
-        } else {
-            details.add(Texts.translatable(
-                candidate.conflicted()
-                    ? "confluxmap.screen.client_world.detail_conflict_value"
-                    : "confluxmap.screen.client_world.detail_match_value",
-                candidate.confidencePercent()
-            ).getString());
-        }
+        details.add(Texts.translatable("confluxmap.screen.client_world.section.decision").getString());
+        final String score = candidate.scored()
+            ? candidate.confidencePercent() + "%"
+            : Texts.translatable("confluxmap.screen.client_world.summary.unscored").getString();
         details.add(Texts.translatable(
-            "confluxmap.screen.client_world.detail_decision",
-            outcomeLabel(candidate.outcome())
+            "confluxmap.screen.client_world.detail_decision_summary",
+            score, candidate.requiredConfidencePercent(), candidate.queue(),
+            candidate.runnerUpConfidencePercent(), candidate.actualMarginPercent(),
+            candidate.requiredMarginPercent()
         ).getString());
         details.add(Texts.translatable(
-            "confluxmap.screen.client_world.detail_thresholds",
-            candidate.queue(), candidate.requiredConfidencePercent(),
-            candidate.runnerUpConfidencePercent(), candidate.requiredMarginPercent(),
-            candidate.actualMarginPercent(), candidate.independentFactors()
+            "confluxmap.screen.client_world.detail_primary_reason",
+            candidatePrimaryReason(candidate)
         ).getString());
         details.add(Texts.translatable(
             "confluxmap.screen.client_world.detail_seed_filter",
             candidate.seedCompatible(), candidate.sameSeedCandidates()
         ).getString());
+        details.add(Texts.translatable("confluxmap.screen.client_world.section.factors").getString());
+        details.add(Texts.translatable("confluxmap.screen.client_world.detail_factor_header").getString());
         for (final ClientWorldResolution.Factor factor : candidate.factors()) {
-            if (factor.availability() != ClientWorldResolution.FactorAvailability.AVAILABLE) {
-                details.add(Texts.translatable(
-                    "confluxmap.screen.client_world.detail_factor_unavailable", factorLabel(factor.key())
-                ).getString());
-                continue;
-            }
-            details.add(Texts.translatable(
-                factor.veto()
-                    ? "confluxmap.screen.client_world.detail_factor_veto"
-                    : "confluxmap.screen.client_world.detail_factor",
-                factorLabel(factor.key()), percent(factor.rawScore()),
-                percent(factor.configuredWeight()), percent(factor.effectiveWeight()),
-                percent(factor.contribution())
-            ).getString());
+            details.add(factorTableRow(factor));
             if (!factor.metrics().isEmpty()) {
                 details.add(Texts.translatable(
                     "confluxmap.screen.client_world.detail_metrics", metricSummary(factor.metrics())
                 ).getString());
             }
         }
+        details.add(Texts.translatable("confluxmap.screen.client_world.section.diagnostics").getString());
         for (final String blocker : candidate.blockers()) {
             details.add(Texts.translatable(
                 "confluxmap.screen.client_world.detail_blocker", diagnosticCodeLabel("blocker", blocker)
@@ -1168,18 +1161,101 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         return details;
     }
 
-    private String candidateSummary(final ClientWorldProfile profile) {
+    private List<String> candidateHoverDetails(final ClientWorldProfile profile) {
+        final List<String> lines = new ArrayList<>();
         final ClientWorldResolution.Candidate candidate = candidate(profile);
         if (candidate == null) {
-            return Texts.translatable("confluxmap.screen.client_world.summary.no_diagnostic").getString();
+            lines.add(Texts.translatable("confluxmap.screen.client_world.summary.no_diagnostic").getString());
+            return lines;
         }
         final String score = candidate.scored()
             ? candidate.confidencePercent() + "%"
             : Texts.translatable("confluxmap.screen.client_world.summary.unscored").getString();
-        final String reason = candidate.blockers().isEmpty()
-            ? outcomeLabel(candidate.outcome())
-            : diagnosticCodeLabel("blocker", candidate.blockers().get(0));
-        return score + " · " + reason;
+        lines.add(Texts.translatable("confluxmap.screen.client_world.section.decision").getString());
+        lines.add(Texts.translatable(
+            "confluxmap.screen.client_world.summary.score_threshold",
+            score, candidate.requiredConfidencePercent(), candidate.queue()
+        ).getString());
+        lines.add(Texts.translatable(
+            "confluxmap.screen.client_world.summary.comparison",
+            candidate.runnerUpConfidencePercent(), candidate.actualMarginPercent(), candidate.requiredMarginPercent()
+        ).getString());
+        lines.add(Texts.translatable(
+            "confluxmap.screen.client_world.summary.primary_reason", candidatePrimaryReason(candidate)
+        ).getString());
+        lines.add(Texts.translatable("confluxmap.screen.client_world.section.factors").getString());
+        lines.add(Texts.translatable("confluxmap.screen.client_world.detail_factor_header").getString());
+        for (final ClientWorldResolution.Factor factor : candidate.factors()) {
+            lines.add(factorTableRow(factor));
+        }
+        return lines;
+    }
+
+    private static String candidatePrimaryReason(final ClientWorldResolution.Candidate candidate) {
+        if (candidate.blockers().isEmpty()) {
+            return outcomeLabel(candidate.outcome());
+        }
+        if ("margin_not_strictly_greater".equals(candidate.blockers().get(0))) {
+            return Texts.translatable(
+                "confluxmap.screen.client_world.summary.margin",
+                candidate.actualMarginPercent(), candidate.requiredMarginPercent()
+            ).getString();
+        }
+        return diagnosticCodeLabel("blocker", candidate.blockers().get(0));
+    }
+
+    private static String factorTableRow(final ClientWorldResolution.Factor factor) {
+        final boolean available = factor.availability() == ClientWorldResolution.FactorAvailability.AVAILABLE;
+        final String status = Texts.translatable(
+            factor.veto() ? "confluxmap.screen.client_world.factor_status.veto"
+                : available ? "confluxmap.screen.client_world.factor_status.available"
+                    : "confluxmap.screen.client_world.factor_status.unavailable"
+        ).getString();
+        return Texts.translatable(
+            "confluxmap.screen.client_world.detail_factor_row",
+            factorLabel(factor.key()), available ? percent(factor.rawScore()) + "%" : "-",
+            percent(factor.configuredWeight()), percent(factor.effectiveWeight()),
+            percent(factor.contribution()), status
+        ).getString();
+    }
+
+    private void drawCandidateTooltip(
+        final GuiDraw draw,
+        final List<String> sourceLines,
+        final int mouseX,
+        final int mouseY
+    ) {
+        final int maxTextWidth = Math.max(180, Math.min(480, this.width - 28));
+        final List<OrderedText> wrapped = new ArrayList<>();
+        for (final String line : sourceLines) {
+            wrapped.addAll(this.textRenderer.wrapLines(StringVisitable.plain(line), maxTextWidth));
+        }
+        if (wrapped.isEmpty()) {
+            return;
+        }
+        int textWidth = 0;
+        for (final OrderedText line : wrapped) {
+            textWidth = Math.max(textWidth, this.textRenderer.getWidth(line));
+        }
+        final int tooltipWidth = textWidth + 8;
+        final int tooltipHeight = wrapped.size() * 11 + 6;
+        int x = mouseX + 12;
+        int y = mouseY + 10;
+        if (x + tooltipWidth > this.width - 4) {
+            x = mouseX - tooltipWidth - 12;
+        }
+        if (y + tooltipHeight > this.height - 4) {
+            y = this.height - tooltipHeight - 4;
+        }
+        x = Math.max(4, x);
+        y = Math.max(4, y);
+        draw.fill(x - 1, y - 1, x + tooltipWidth + 1, y + tooltipHeight + 1, 0xF0100010);
+        draw.fill(x, y, x + tooltipWidth, y + tooltipHeight, 0xF0202020);
+        int lineY = y + 4;
+        for (final OrderedText line : wrapped) {
+            draw.drawTextWithShadow(this.textRenderer, line, x + 4, lineY, 0xFFFFFFFF);
+            lineY += 11;
+        }
     }
 
     private static int percent(final double value) {
@@ -1188,6 +1264,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
 
     private static String metricSummary(final java.util.Map<String, String> metrics) {
         return metrics.entrySet().stream()
+            .sorted(java.util.Map.Entry.comparingByKey())
             .map(entry -> diagnosticCodeLabel("metric", entry.getKey()) + "=" + entry.getValue())
             .collect(java.util.stream.Collectors.joining(", "));
     }
@@ -1251,6 +1328,11 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
                 "last_stable_profile",
                 "not_last_stable_profile",
                 "last_stable_conflict",
+                "last_stable_suppressed_world_boundary",
+                "last_stable_suppressed_stronger_current_trajectory",
+                "candidate_dimension_checkpoint",
+                "last_dimension_mismatch",
+                "departed_profile_boundary",
                 "corridor_near",
                 "corridor_outside_radius",
                 "position_near_without_trajectory",
@@ -1396,7 +1478,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
             final int reservedHeight = PANEL_GAP + FUNCTION_ACTION_HEIGHT + PANEL_GAP
                 + MIN_PREVIEW_PANEL_HEIGHT;
             final int maximumInfoHeight = Math.max(40, mainHeight - reservedHeight);
-            final int targetInfoHeight = Math.max(72, mainHeight * 30 / 100);
+            final int targetInfoHeight = Math.max(120, mainHeight * 48 / 100);
             final int infoHeight = Math.max(40, Math.min(
                 REGULAR_INFO_MAX_HEIGHT, Math.min(targetInfoHeight, maximumInfoHeight)
             ));
@@ -1438,10 +1520,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         final int detailCount,
         final int rowsPerColumn
     ) {
-        if (layout.previewVisible()) {
-            return 2;
-        }
-        return Math.max(1, Math.min(2, (detailCount + rowsPerColumn - 1) / rowsPerColumn));
+        return 1;
     }
 
     private static int detailLineHeight(final PanelLayout layout) {
@@ -1455,6 +1534,12 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
     }
 
     record ReasonLabel(String translationKey, Object... arguments) {
+    }
+
+    record CandidateRowDiagnostic(int x, int y, int width, int height, List<String> lines) {
+        boolean contains(final int mouseX, final int mouseY) {
+            return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
+        }
     }
 
     record PanelLayout(

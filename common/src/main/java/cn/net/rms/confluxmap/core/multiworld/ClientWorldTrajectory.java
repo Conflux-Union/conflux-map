@@ -11,6 +11,7 @@ public final class ClientWorldTrajectory {
     public static final long DEFAULT_MAX_PREDICTION_MS = 5_000L;
     private static final long VELOCITY_FIT_WINDOW_MS = 2_000L;
     private static final double MIN_PREDICTION_SPEED = 0.01D;
+    private static final double CLIENT_TICKS_PER_SECOND = 20.0D;
     private static final double MIN_REASONABLE_DISPLACEMENT = 32.0D;
     private static final double DISPLACEMENT_SAFETY_FACTOR = 4.0D;
     private static final long MIN_SAMPLE_INTERVAL_MS = 1L;
@@ -22,19 +23,6 @@ public final class ClientWorldTrajectory {
     private DiscontinuityReason lastDiscontinuity = DiscontinuityReason.NONE;
     /** Allows one new connection sample to follow restored history without bridging segments. */
     private boolean restoredHistoryBoundary;
-
-    /** Causal distance from a candidate's departure endpoint to the current entry point. */
-    public record CausalCorridor(
-        double alongDistance,
-        double lateralDistance,
-        double predictedLength,
-        double endpointDistance,
-        long elapsedMs
-    ) {
-        public double centerlineDistance() {
-            return Math.max(0.0D, predictedLength - alongDistance);
-        }
-    }
 
     public ClientWorldTrajectory() {
         this(DEFAULT_CAPACITY);
@@ -252,48 +240,6 @@ public final class ClientWorldTrajectory {
     }
 
     /**
-     * Computes a time-directed corridor from the candidate's last observed point. Historical
-     * samples are used only to fit the velocity at that endpoint; an old crossing segment is
-     * never treated as evidence that the current world was reached.
-     */
-    public CausalCorridor causalCorridor(
-        final ClientWorldPosition target,
-        final String dimensionId,
-        final long targetTimeMs,
-        final long horizonMs
-    ) {
-        Objects.requireNonNull(target, "target");
-        final ClientWorldTrajectorySample endpoint = latest();
-        if (endpoint == null || dimensionId == null || !dimensionId.equals(endpoint.dimensionId())) {
-            return new CausalCorridor(
-                Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY, 0.0D,
-                Double.POSITIVE_INFINITY, 0L
-            );
-        }
-        final long elapsedMs = Math.max(0L, targetTimeMs - endpoint.clientTimeMs());
-        final long boundedHorizon = Math.max(0L, Math.min(DEFAULT_MAX_PREDICTION_MS, horizonMs));
-        final long predictionMs = Math.min(elapsedMs, boundedHorizon);
-        final PredictedVelocity velocity = predictedVelocity();
-        final double predictedLength = Math.hypot(velocity.xPerSecond(), velocity.zPerSecond())
-            * predictionMs / 1_000.0D;
-        final double dx = target.x() - endpoint.x();
-        final double dy = target.y() - endpoint.y();
-        final double dz = target.z() - endpoint.z();
-        final double endpointDistance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (predictedLength <= 0.0D) {
-            return new CausalCorridor(0.0D, endpointDistance, 0.0D, endpointDistance, elapsedMs);
-        }
-        final double ux = velocity.xPerSecond() / Math.hypot(velocity.xPerSecond(), velocity.zPerSecond());
-        final double uz = velocity.zPerSecond() / Math.hypot(velocity.xPerSecond(), velocity.zPerSecond());
-        final double projected = dx * ux + dz * uz;
-        final double along = Math.max(0.0D, Math.min(predictedLength, projected));
-        final double lateralX = dx - ux * along;
-        final double lateralZ = dz - uz * along;
-        final double lateral = Math.sqrt(lateralX * lateralX + dy * dy + lateralZ * lateralZ);
-        return new CausalCorridor(along, lateral, predictedLength, endpointDistance, elapsedMs);
-    }
-
-    /**
      * Finds the closest approach between two locally observed paths. Historical segments remain
      * valid after the short prediction window; only each path's forward projection is time-bound.
      */
@@ -318,6 +264,88 @@ public final class ClientWorldTrajectory {
             }
         }
         return nearest;
+    }
+
+    /**
+     * Builds a causal corridor from this candidate's final locally observed point to the first
+     * point of the current connection generation. Earlier path intersections are deliberately
+     * ignored: history estimates the departure velocity, but only the final point may anchor a
+     * reconnect prediction.
+     */
+    public CausalCorridor causalCorridorTo(
+        final ClientWorldTrajectory current,
+        final long horizonMs
+    ) {
+        Objects.requireNonNull(current, "current");
+        final ClientWorldTrajectorySample entry = current.entrySampleOfLatestGeneration();
+        if (entry == null) {
+            return CausalCorridor.unavailable();
+        }
+        return causalCorridorTo(entry.x(), entry.z(), entry.clientTimeMs(), entry.dimensionId(), horizonMs);
+    }
+
+    /** Point-only fallback for observations that have not accumulated a current trajectory yet. */
+    public CausalCorridor causalCorridorTo(
+        final ClientWorldPosition entry,
+        final long entryTimeMs,
+        final String dimensionId,
+        final long horizonMs
+    ) {
+        Objects.requireNonNull(entry, "entry");
+        return causalCorridorTo(entry.x(), entry.z(), entryTimeMs, dimensionId, horizonMs);
+    }
+
+    private CausalCorridor causalCorridorTo(
+        final double entryX,
+        final double entryZ,
+        final long entryTimeMs,
+        final String dimensionId,
+        final long horizonMs
+    ) {
+        final ClientWorldTrajectorySample endpoint = latest();
+        if (endpoint == null || dimensionId == null || !endpoint.dimensionId().equals(dimensionId)) {
+            return CausalCorridor.unavailable();
+        }
+        final double pointDistance = Math.hypot(entryX - endpoint.x(), entryZ - endpoint.z());
+        final long boundedHorizon = Math.max(0L, Math.min(DEFAULT_MAX_PREDICTION_MS, horizonMs));
+        final long elapsed = Math.max(0L, entryTimeMs - endpoint.clientTimeMs());
+        final long predictionMs = Math.min(elapsed, boundedHorizon);
+        final PredictedVelocity velocity = predictedVelocity();
+        final double predictionX = velocity.xPerSecond() * predictionMs / 1_000.0D;
+        final double predictionZ = velocity.zPerSecond() * predictionMs / 1_000.0D;
+        final double predictedLength = Math.hypot(predictionX, predictionZ);
+        if (predictedLength < MIN_PREDICTION_SPEED) {
+            return new CausalCorridor(
+                true, pointDistance, 0.0D, pointDistance, 0.0D, predictionMs
+            );
+        }
+
+        final double relativeX = entryX - endpoint.x();
+        final double relativeZ = entryZ - endpoint.z();
+        final double lengthSquared = predictionX * predictionX + predictionZ * predictionZ;
+        final double rawProjection = (relativeX * predictionX + relativeZ * predictionZ) / lengthSquared;
+        final double projection = Math.max(0.0D, Math.min(1.0D, rawProjection));
+        final double closestX = endpoint.x() + predictionX * projection;
+        final double closestZ = endpoint.z() + predictionZ * projection;
+        final double alongDistance = predictedLength * projection;
+        final double lateralDistance = Math.hypot(entryX - closestX, entryZ - closestZ);
+        return new CausalCorridor(
+            true, pointDistance, alongDistance, lateralDistance, predictedLength, predictionMs
+        );
+    }
+
+    private ClientWorldTrajectorySample entrySampleOfLatestGeneration() {
+        final ClientWorldTrajectorySample latest = latest();
+        if (latest == null) {
+            return null;
+        }
+        for (final ClientWorldTrajectorySample sample : samples) {
+            if (sample.connectionGeneration() == latest.connectionGeneration()
+                && sample.dimensionId().equals(latest.dimensionId())) {
+                return sample;
+            }
+        }
+        return latest;
     }
 
     /** Uncertainty radius grows with missing acknowledgements but remains bounded. */
@@ -366,25 +394,29 @@ public final class ClientWorldTrajectory {
             fittedZ = (latest.z() - start.z()) / elapsedSeconds;
         }
         final double fittedSpeed = Math.hypot(fittedX, fittedZ);
-        final double reportedSpeed = latest.horizontalSpeed();
+        // Minecraft's velocity vector is blocks per client tick; the fitted displacement above is
+        // blocks per second. Normalize before blending or the forward corridor is 20x too short.
+        final double reportedX = latest.horizontalVelocityX() * CLIENT_TICKS_PER_SECOND;
+        final double reportedZ = latest.horizontalVelocityZ() * CLIENT_TICKS_PER_SECOND;
+        final double reportedSpeed = Math.hypot(reportedX, reportedZ);
         if (fittedSpeed >= MIN_PREDICTION_SPEED && reportedSpeed >= MIN_PREDICTION_SPEED) {
-            final double alignment = (fittedX * latest.horizontalVelocityX()
-                + fittedZ * latest.horizontalVelocityZ()) / (fittedSpeed * reportedSpeed);
+            final double alignment = (fittedX * reportedX
+                + fittedZ * reportedZ) / (fittedSpeed * reportedSpeed);
             if (alignment > 0.0D) {
                 return orientWithHeading(new PredictedVelocity(
-                    fittedX * 0.65D + latest.horizontalVelocityX() * 0.35D,
-                    fittedZ * 0.65D + latest.horizontalVelocityZ() * 0.35D
+                    fittedX * 0.65D + reportedX * 0.35D,
+                    fittedZ * 0.65D + reportedZ * 0.35D
                 ), latest.yawDegrees());
             }
             // A sharp turn makes the older displacement fit stale. Keep the observed path as
             // history, but start the forward corridor in the latest locally reported direction.
             return orientWithHeading(new PredictedVelocity(
-                latest.horizontalVelocityX(), latest.horizontalVelocityZ()
+                reportedX, reportedZ
             ), latest.yawDegrees());
         }
         if (reportedSpeed >= MIN_PREDICTION_SPEED) {
             return orientWithHeading(new PredictedVelocity(
-                latest.horizontalVelocityX(), latest.horizontalVelocityZ()
+                reportedX, reportedZ
             ), latest.yawDegrees());
         }
         if (fittedSpeed >= MIN_PREDICTION_SPEED) {
@@ -434,7 +466,7 @@ public final class ClientWorldTrajectory {
         final double displacement = Math.hypot(current.x() - previous.x(), current.z() - previous.z());
         final double expected = Math.max(
             MIN_REASONABLE_DISPLACEMENT,
-            Math.max(previous.horizontalSpeed(), current.horizontalSpeed())
+            Math.max(previous.horizontalSpeed(), current.horizontalSpeed()) * CLIENT_TICKS_PER_SECOND
                 * elapsedSeconds * DISPLACEMENT_SAFETY_FACTOR + MIN_REASONABLE_DISPLACEMENT
         );
         return displacement > expected ? DiscontinuityReason.POSITION_JUMP : DiscontinuityReason.NONE;
@@ -552,6 +584,23 @@ public final class ClientWorldTrajectory {
     }
 
     public record AppendResult(ClientWorldTrajectorySample sample, DiscontinuityReason discontinuity) { }
+
+    /** Geometry consumed by the resolver's endpoint-anchored confidence model. */
+    public record CausalCorridor(
+        boolean available,
+        double pointDistance,
+        double alongDistance,
+        double lateralDistance,
+        double predictedLength,
+        long predictionMs
+    ) {
+        static CausalCorridor unavailable() {
+            return new CausalCorridor(
+                false, Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY,
+                Double.POSITIVE_INFINITY, 0.0D, 0L
+            );
+        }
+    }
 
     private record PredictedVelocity(double xPerSecond, double zPerSecond) { }
 

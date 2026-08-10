@@ -320,6 +320,14 @@ public final class ChunkCaptureService {
             );
             if (snapshot != null) {
                 buffer.bufferSnapshot(snapshot, decision.layer());
+                if (buffer.provisional() && currentSession.active()) {
+                    // The provisional map is visible in this in-memory session but still cannot
+                    // reach RegionDiskCache. Confirmation replays the buffered snapshot through
+                    // storeSnapshot; rejection/conflict seals this MapWorld and discards it.
+                    publishProvisionalSnapshot(
+                        withSessionToken(snapshot, currentSession.token()), decision.layer()
+                    );
+                }
             }
         }
     }
@@ -334,17 +342,31 @@ public final class ChunkCaptureService {
 
     private void storeSnapshot(final ChunkSnapshot snapshot, final MapLayer layer) {
         final MapWorld world = worlds.ifCurrent(snapshot.sessionToken);
-        if (world != null && world.put(layer, snapshot, SampleSource.REAL_LIVE)) {
+        if (world == null) {
+            return;
+        }
+        if (world.put(layer, snapshot, SampleSource.REAL_LIVE)) {
             storedSnapshots.incrementAndGet();
             tiles.markChunkStored(snapshot.sessionToken, world.session().dimension(), layer, snapshot.chunkX, snapshot.chunkZ);
-            // Non-persistent layers (CAVE_AUTO, NETHER_CURRENT, the Y-slices) never touch disk -
-            // ensureRegionLoaded() also self-guards, but skip the call entirely for clarity here.
-            if (layer.type().persistent()) {
-                final RegionDiskCache cache = regionCache.current();
-                if (cache != null) {
-                    cache.ensureRegionLoaded(layer.type(), snapshot.chunkX >> 4, snapshot.chunkZ >> 4);
-                }
+        }
+        // A committed provisional snapshot may already be present in the in-memory MapWorld and
+        // therefore produce no second mutation above. It must still touch RegionDiskCache here so
+        // the now-confirmed live region becomes persistent.
+        if (layer.type().persistent()) {
+            final RegionDiskCache cache = regionCache.current();
+            if (cache != null) {
+                cache.ensureRegionLoaded(layer.type(), snapshot.chunkX >> 4, snapshot.chunkZ >> 4);
             }
+        }
+    }
+
+    private void publishProvisionalSnapshot(final ChunkSnapshot snapshot, final MapLayer layer) {
+        final MapWorld world = worlds.ifCurrent(snapshot.sessionToken);
+        if (world != null && world.put(layer, snapshot, SampleSource.REAL_LIVE)) {
+            tiles.markChunkStored(
+                snapshot.sessionToken, world.session().dimension(), layer,
+                snapshot.chunkX, snapshot.chunkZ
+            );
         }
     }
 

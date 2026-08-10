@@ -14,7 +14,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalLong;
 import org.apache.logging.log4j.Logger;
@@ -22,12 +24,12 @@ import org.apache.logging.log4j.Logger;
 /**
  * Atomic, profile-independent persistence for the newest local movement history.
  *
- * <p>This store deliberately does not contain a profile id or map data. It is therefore safe to
- * keep while a reconnect is provisional: the history can help the next resolver pass, but it
- * cannot publish evidence into a stable profile by itself.</p>
+ * <p>This store may associate movement with the profile provisionally admitted for the local
+ * session. The association is candidate-only evidence: it is never published into that stable
+ * profile or its map until later confirmation.</p>
  */
 public final class ClientWorldTrajectoryCheckpointIo {
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
     private static final int MAX_SAMPLES = ClientWorldTrajectory.DEFAULT_CAPACITY;
     private static final Gson GSON = new GsonBuilder()
         .registerTypeAdapter(
@@ -51,7 +53,10 @@ public final class ClientWorldTrajectoryCheckpointIo {
         if (serverId == null || serverId.isBlank()) {
             return null;
         }
-        final Path file = file(serverId);
+        return loadFile(serverId, file(serverId));
+    }
+
+    private Checkpoint loadFile(final String serverId, final Path file) {
         if (!Files.isRegularFile(file)) {
             return null;
         }
@@ -81,6 +86,8 @@ public final class ClientWorldTrajectoryCheckpointIo {
                 raw.dimensionId == null || raw.dimensionId.isBlank() ? null : raw.dimensionId,
                 Math.max(0L, raw.connectionGeneration),
                 Math.max(0L, raw.savedAtEpochMs),
+                raw.profileId == null || raw.profileId.isBlank() ? null : raw.profileId,
+                Math.max(0L, raw.observationGeneration),
                 List.copyOf(valid)
             );
         } catch (final IOException | JsonParseException | IllegalArgumentException error) {
@@ -89,10 +96,76 @@ public final class ClientWorldTrajectoryCheckpointIo {
         }
     }
 
+    /** Loads all isolated, candidate-owned departure histories for one outer server. */
+    public Map<String, Checkpoint> loadCandidates(final String serverId) {
+        if (serverId == null || serverId.isBlank() || !Files.isDirectory(root)) {
+            return Map.of();
+        }
+        final String prefix = ClientWorldSignalHasher.hash(serverId) + ".candidate.";
+        final Map<String, Checkpoint> candidates = new LinkedHashMap<>();
+        try (var files = Files.list(root)) {
+            files.filter(path -> path.getFileName().toString().startsWith(prefix)
+                    && path.getFileName().toString().endsWith(".json"))
+                .forEach(path -> {
+                    final Checkpoint checkpoint = loadFile(serverId, path);
+                    if (checkpoint != null && checkpoint.profileId() != null) {
+                        candidates.put(checkpoint.profileId(), checkpoint);
+                    }
+                });
+        } catch (final IOException error) {
+            logger.warn("Could not enumerate candidate trajectory checkpoints for {}", serverId, error);
+        }
+        return Map.copyOf(candidates);
+    }
+
     /** Saves only movement evidence using a temporary file and an atomic replacement. */
     public SaveResult save(
         final String serverId,
         final OptionalLong seedHash,
+        final ClientWorldTrajectory trajectory
+    ) {
+        return save(serverId, seedHash, null, 0L, trajectory);
+    }
+
+    /** Saves candidate-owned local movement without committing it into the stable profile. */
+    public SaveResult save(
+        final String serverId,
+        final OptionalLong seedHash,
+        final String profileId,
+        final long observationGeneration,
+        final ClientWorldTrajectory trajectory
+    ) {
+        if (serverId == null || serverId.isBlank()) {
+            return SaveResult.success();
+        }
+        return saveToFile(
+            file(serverId), serverId, seedHash, profileId, observationGeneration, trajectory
+        );
+    }
+
+    /** Atomically saves one candidate-owned departure history without touching the live file. */
+    public SaveResult saveCandidate(
+        final String serverId,
+        final OptionalLong seedHash,
+        final String profileId,
+        final long observationGeneration,
+        final ClientWorldTrajectory trajectory
+    ) {
+        if (serverId == null || serverId.isBlank() || profileId == null || profileId.isBlank()) {
+            return SaveResult.success();
+        }
+        return saveToFile(
+            candidateFile(serverId, profileId), serverId, seedHash, profileId,
+            observationGeneration, trajectory
+        );
+    }
+
+    private SaveResult saveToFile(
+        final Path file,
+        final String serverId,
+        final OptionalLong seedHash,
+        final String profileId,
+        final long observationGeneration,
         final ClientWorldTrajectory trajectory
     ) {
         if (serverId == null || serverId.isBlank() || trajectory == null || trajectory.samples().isEmpty()) {
@@ -108,10 +181,11 @@ public final class ClientWorldTrajectoryCheckpointIo {
         checkpoint.dimensionId = latest.dimensionId();
         checkpoint.connectionGeneration = latest.connectionGeneration();
         checkpoint.savedAtEpochMs = System.currentTimeMillis();
+        checkpoint.profileId = profileId == null || profileId.isBlank() ? null : profileId;
+        checkpoint.observationGeneration = Math.max(0L, observationGeneration);
         checkpoint.samples = samples.size() <= MAX_SAMPLES
             ? new ArrayList<>(samples)
             : new ArrayList<>(samples.subList(samples.size() - MAX_SAMPLES, samples.size()));
-        final Path file = file(serverId);
         final Path temporary = file.resolveSibling(file.getFileName() + ".tmp");
         try {
             Files.createDirectories(root);
@@ -144,9 +218,31 @@ public final class ClientWorldTrajectoryCheckpointIo {
         }
     }
 
+    /** Removes only one candidate-owned history after confirmation or hard conflict. */
+    public SaveResult clearCandidate(final String serverId, final String profileId) {
+        if (serverId == null || serverId.isBlank() || profileId == null || profileId.isBlank()) {
+            return SaveResult.success();
+        }
+        final Path file = candidateFile(serverId, profileId);
+        try {
+            Files.deleteIfExists(file);
+            Files.deleteIfExists(file.resolveSibling(file.getFileName() + ".tmp"));
+            return SaveResult.success();
+        } catch (final IOException error) {
+            logger.warn("Failed to clear candidate trajectory checkpoint for {}", profileId, error);
+            return SaveResult.failure(error.toString());
+        }
+    }
+
     private Path file(final String serverId) {
         final String key = ClientWorldSignalHasher.hash(serverId);
         return root.resolve(key + ".json").normalize();
+    }
+
+    private Path candidateFile(final String serverId, final String profileId) {
+        final String serverKey = ClientWorldSignalHasher.hash(serverId);
+        final String profileKey = ClientWorldSignalHasher.hash(profileId);
+        return root.resolve(serverKey + ".candidate." + profileKey + ".json").normalize();
     }
 
     private static void move(final Path temporary, final Path target) throws IOException {
@@ -200,6 +296,8 @@ public final class ClientWorldTrajectoryCheckpointIo {
         String dimensionId,
         long connectionGeneration,
         long savedAtEpochMs,
+        String profileId,
+        long observationGeneration,
         List<ClientWorldTrajectorySample> samples
     ) {
         public Checkpoint {
@@ -229,6 +327,8 @@ public final class ClientWorldTrajectoryCheckpointIo {
         private String dimensionId;
         private long connectionGeneration;
         private long savedAtEpochMs;
+        private String profileId;
+        private long observationGeneration;
         private List<ClientWorldTrajectorySample> samples;
     }
 }

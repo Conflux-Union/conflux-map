@@ -82,6 +82,11 @@ public final class ClientWorldVisit {
         return connectionGeneration;
     }
 
+    /** Whether this visit owns the profile's one current endpoint/trajectory. */
+    boolean hasContinuityEvidence() {
+        return lastPosition != null || !trajectorySamples().isEmpty();
+    }
+
     /** Hashed, dimension-scoped signals used as low-cost matching evidence. */
     public Map<String, String> contextSignals() {
         return Map.copyOf(contextSignals == null ? Map.of() : contextSignals);
@@ -155,6 +160,14 @@ public final class ClientWorldVisit {
         trajectorySamples = new ArrayList<>(previous.trajectorySamples());
         lastServerAckTimeMs = previous.lastServerAckTimeMs();
         connectionGeneration = previous.connectionGeneration();
+    }
+
+    /** Keeps dimension-scoped terrain/context while removing stale positional continuity. */
+    void clearContinuityEvidence() {
+        lastPosition = null;
+        trajectorySamples = new ArrayList<>();
+        lastServerAckTimeMs = ClientWorldTrajectorySample.NO_SERVER_ACK;
+        connectionGeneration = 0L;
     }
 
     void rememberTrajectory(final ClientWorldTrajectory trajectory) {

@@ -14,10 +14,11 @@ public record ClientWorldObservation(
     ClientWorldPosition position,
     ClientWorldTerrainFingerprint terrainFingerprint,
     Map<String, ClientWorldTerrainFingerprint> terrainFingerprintsByProfileId,
-    ClientWorldTrajectory trajectory
+    ClientWorldTrajectory trajectory,
+    Map<String, ClientWorldTrajectory> candidateTrajectoriesByProfileId
 ) {
     public ClientWorldObservation(final OptionalLong seedHash, final Map<String, String> signals) {
-        this(seedHash, signals, null, null, null, null, Map.of(), null);
+        this(seedHash, signals, null, null, null, null, Map.of(), null, Map.of());
     }
 
     public ClientWorldObservation(
@@ -28,7 +29,7 @@ public record ClientWorldObservation(
         final ClientWorldPosition position,
         final ClientWorldTerrainFingerprint terrainFingerprint
     ) {
-        this(seedHash, signals, dimensionId, gameMode, position, terrainFingerprint, Map.of(), null);
+        this(seedHash, signals, dimensionId, gameMode, position, terrainFingerprint, Map.of(), null, Map.of());
     }
 
     public ClientWorldObservation(
@@ -41,7 +42,21 @@ public record ClientWorldObservation(
         final Map<String, ClientWorldTerrainFingerprint> terrainFingerprintsByProfileId
     ) {
         this(seedHash, signals, dimensionId, gameMode, position, terrainFingerprint,
-            terrainFingerprintsByProfileId, null);
+            terrainFingerprintsByProfileId, null, Map.of());
+    }
+
+    public ClientWorldObservation(
+        final OptionalLong seedHash,
+        final Map<String, String> signals,
+        final String dimensionId,
+        final String gameMode,
+        final ClientWorldPosition position,
+        final ClientWorldTerrainFingerprint terrainFingerprint,
+        final Map<String, ClientWorldTerrainFingerprint> terrainFingerprintsByProfileId,
+        final ClientWorldTrajectory trajectory
+    ) {
+        this(seedHash, signals, dimensionId, gameMode, position, terrainFingerprint,
+            terrainFingerprintsByProfileId, trajectory, Map.of());
     }
 
     public ClientWorldObservation {
@@ -65,11 +80,26 @@ public record ClientWorldObservation(
             }
         }
         terrainFingerprintsByProfileId = Map.copyOf(normalizedTerrain);
+        final Map<String, ClientWorldTrajectory> normalizedTrajectories = new LinkedHashMap<>();
+        for (final Map.Entry<String, ClientWorldTrajectory> entry : Objects.requireNonNull(
+            candidateTrajectoriesByProfileId, "candidateTrajectoriesByProfileId"
+        ).entrySet()) {
+            if (entry.getKey() != null && !entry.getKey().isBlank() && entry.getValue() != null
+                && entry.getValue().latest() != null) {
+                normalizedTrajectories.put(entry.getKey(), entry.getValue().copy());
+            }
+        }
+        candidateTrajectoriesByProfileId = Map.copyOf(normalizedTrajectories);
     }
 
     public ClientWorldTerrainFingerprint terrainFingerprintFor(final String profileId) {
         final ClientWorldTerrainFingerprint candidate = terrainFingerprintsByProfileId.get(profileId);
         return candidate == null ? terrainFingerprint : candidate;
+    }
+
+    public ClientWorldTrajectory candidateTrajectoryFor(final String profileId) {
+        final ClientWorldTrajectory candidate = candidateTrajectoriesByProfileId.get(profileId);
+        return candidate == null ? null : candidate.copy();
     }
 
     private static String normalizeText(final String value) {

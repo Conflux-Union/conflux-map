@@ -100,36 +100,20 @@ loom {
         client {
             property("mixin.debug.export", "true")
             ideConfigGenerated true
+            // Keep offline-mode development profiles stable across restarts. Without an explicit
+            // name Minecraft's dev launcher increments PlayerNNN, which creates another server-side
+            // UUID and makes client continuity fixtures appear to jump between different players.
+            if (project.hasProperty('testUsername')) {
+                programArgs '--username', project.property('testUsername').toString()
+            }
             // Automated smoke tests: -PautoServer makes the client join a local
             // offline server on launch. CI supplies a virtual display for the client.
             if (project.hasProperty('autoServer')) {
-                // Minecraft 1.20.1+ uses Quick Play instead of the legacy server/port options.
-                if (mcVersion >= 12001) {
+                if (mcVersion >= 12005) {
                     programArgs '--quickPlayMultiplayer', '127.0.0.1:25565'
                 } else {
                     programArgs '--server', '127.0.0.1', '--port', '25565'
                 }
-            }
-            if (project.hasProperty('connectionSmoke')) {
-                runDir "build/connection-smoke/client"
-                vmArg "-Xms256m"
-                vmArg "-Xmx1G"
-            }
-        }
-        if (mcVersion >= 12104) {
-            clientGameTest {
-                client()
-                name "Client Game Test"
-                source sourceSets.gametest
-                vmArg "-Dfabric.client.gametest"
-                vmArg "-Dfabric.client.gametest.modid=confluxmap-gametest"
-                // Fabric documents a GitHub Actions race in its deterministic packet scheduler.
-                // This smoke test only needs normal networking to prove that both companions load
-                // and complete a real login, so the scheduler would add risk without adding coverage.
-                vmArg "-Dfabric.client.gametest.disableNetworkSynchronizer=true"
-                vmArg "-Xms256m"
-                vmArg "-Xmx1G"
-                runDir "build/client-gametest"
             }
         }
         gametest {

@@ -64,6 +64,14 @@ public final class ClientMultiworldService {
     private static final int PERSISTENCE_RETRY_BASE_TICKS = 20;
     private static final int PERSISTENCE_RETRY_MAX_TICKS = 400;
     private static final int TRAJECTORY_CHECKPOINT_INTERVAL_TICKS = 100;
+    /**
+     * An ambiguous score is only an intermediate result while bounded entry evidence can still
+     * arrive. Keep reevaluating position/trajectory through the terrain retry window before the
+     * service declares that manual selection is actually required.
+     */
+    private static final int AMBIGUITY_DECISION_GRACE_TICKS = SIGNAL_REFRESH_TICKS
+        + ClientWorldTerrainProbePolicy.RETRY_INTERVAL_TICKS
+        * (ClientWorldTerrainProbePolicy.MAX_ATTEMPTS + 1);
 
     private final MinecraftClient client;
     private final CompanionSession companion;
@@ -95,15 +103,18 @@ public final class ClientMultiworldService {
     private long detectionStartedAtTick;
     private ClientWorldDetectionState detectionState = ClientWorldDetectionState.SUSPECTED;
     private boolean gameJoinObserved;
+    private boolean gameJoinDeparturePrepared;
+    private boolean respawnDeparturePrepared;
     private boolean proxyWorldJoin;
-    /** A locked provisional profile was contradicted; wait for a real boundary or manual choice. */
-    private boolean provisionalConflictLatched;
+    /** Profile proven to be the source side of the current in-connection GameJoin boundary. */
+    private String departedProfileId;
     private int signalTicks;
     private boolean signalsCollected;
     private long observationGeneration;
     private long detectionGeneration;
     private long connectionGeneration;
-    private long lastServerPositionConfirmationMs = ClientWorldTrajectorySample.NO_SERVER_ACK;
+    /** Timestamp of the latest server position correction; this is not a movement ACK. */
+    private long lastServerPositionCorrectionMs = ClientWorldTrajectorySample.NO_SERVER_ACK;
     private boolean ambiguityNotified;
     private String persistenceError;
     private int persistenceFailureCount;
@@ -114,6 +125,8 @@ public final class ClientMultiworldService {
     private final Map<String, ClientWorldTerrainFingerprint> terrainFingerprintsByProfileId = new LinkedHashMap<>();
     private final ClientWorldTerrainProbePolicy terrainProbePolicy = new ClientWorldTerrainProbePolicy();
     private final ClientWorldTrajectory trajectory = new ClientWorldTrajectory();
+    /** Uncommitted departure trajectories remain isolated but candidate-addressable. */
+    private final Map<String, ClientWorldTrajectory> candidateTrajectoryOverrides = new LinkedHashMap<>();
     private final ClientWorldChangeDetector worldChangeDetector = new ClientWorldChangeDetector();
     private final Deque<PendingSnapshot> pendingSnapshots = new ArrayDeque<>();
     private final Set<Long> recentFullChunks = new HashSet<>();
@@ -246,26 +259,60 @@ public final class ClientMultiworldService {
         openMapKeyDisplayName = Objects.requireNonNull(supplier, "supplier");
     }
 
+    /** Flushes the departed world while vanilla still exposes its player, position and chunks. */
+    public void onBeforeGameJoin() {
+        if (gameJoinObserved) {
+            captureCandidateTrajectoryOverride();
+            flushTrajectoryCheckpoint();
+            gameJoinDeparturePrepared = true;
+        }
+    }
+
     public void onGameJoin(final long observedSeedHash) {
         final OptionalLong departedSeedHash = seedHash;
         final boolean switchedUpstreamWorld = gameJoinObserved;
-        if (switchedUpstreamWorld) {
+        // A proxy packet proves that one backend was left, but a provisional map identity is only
+        // a hypothesis. Hard-excluding that hypothesis on the next election creates an A/B flip
+        // loop after one imperfect admission. Only a fully confirmed identity is safe to use as a
+        // causal departed-profile veto; provisional identities still retain their isolated
+        // candidate checkpoint as ordinary scoring evidence.
+        final String departedProfile = switchedUpstreamWorld && !resolution.provisional()
+            && resolution.state() == ClientWorldResolution.State.RESOLVED
+            ? currentProfile().map(ClientWorldProfile::id).orElse(lockedProfileId)
+            : null;
+        // Direct service callers (notably isolated tests) may not have a packet HEAD hook. Keep a
+        // defensive fallback, while the production mixin always prepares the departure at HEAD.
+        if (switchedUpstreamWorld && !gameJoinDeparturePrepared) {
             flushTrajectoryCheckpoint();
         }
+        gameJoinDeparturePrepared = false;
         final String departedPersistenceError = persistenceError;
         final int departedPersistenceFailureCount = persistenceFailureCount;
         final long departedPersistenceRetryAfterTick = persistenceRetryAfterTick;
         final boolean departedPersistenceFailureLatched = persistenceFailureLatched;
         // A GameJoin is an upstream-world boundary even when seed, dimension and coordinates are
         // reused. Never let movement evidence from the departed child world cross that boundary.
-        lastServerPositionConfirmationMs = ClientWorldTrajectorySample.NO_SERVER_ACK;
+        lastServerPositionCorrectionMs = ClientWorldTrajectorySample.NO_SERVER_ACK;
         trajectory.reset(ClientWorldTrajectory.DiscontinuityReason.EXPLICIT_RESET);
-        trajectoryCheckpointLoaded = false;
+        if (switchedUpstreamWorld) {
+            connectionGeneration++;
+        }
+        // A proxy GameJoin stays on the same multiplayer connection. Mark the departed server-level
+        // checkpoint as already handled so it cannot be rehydrated as the new world's entry path.
+        trajectoryCheckpointLoaded = switchedUpstreamWorld;
         lastTrajectoryCheckpointTick = Long.MIN_VALUE;
-        resetObservation(false);
+        // Preserve address/serverId for an in-connection proxy switch. Clearing them here makes
+        // resolveProfile treat the same Velocity connection as new and reload the just-flushed
+        // departed trajectory checkpoint into the arrival observation.
+        spawnPosition = null;
+        observedWorld = null;
+        observedDimension = null;
+        observedGameMode = null;
+        observedPosition = null;
         gameJoinObserved = true;
         previousSeedHash = switchedUpstreamWorld ? departedSeedHash : OptionalLong.empty();
         proxyWorldJoin = switchedUpstreamWorld;
+        departedProfileId = departedProfile;
         seedHash = OptionalLong.of(observedSeedHash);
         if (hasPendingCommand()) {
             confirmPendingCommandTransitionAfterGameJoin();
@@ -287,8 +334,10 @@ public final class ClientMultiworldService {
     /** Starts a fresh client-owned recognition generation when the network play connection returns. */
     public void onConnectionEstablished() {
         connectionGeneration++;
-        lastServerPositionConfirmationMs = ClientWorldTrajectorySample.NO_SERVER_ACK;
+        lastServerPositionCorrectionMs = ClientWorldTrajectorySample.NO_SERVER_ACK;
         trajectory.reset(ClientWorldTrajectory.DiscontinuityReason.CONNECTION_CHANGE);
+        candidateTrajectoryOverrides.clear();
+        departedProfileId = null;
         trajectoryCheckpointLoaded = false;
         lastTrajectoryCheckpointTick = Long.MIN_VALUE;
         observedWorld = null;
@@ -300,14 +349,16 @@ public final class ClientMultiworldService {
 
     public void onConnectionClosed() {
         flushTrajectoryCheckpoint();
-        lastServerPositionConfirmationMs = ClientWorldTrajectorySample.NO_SERVER_ACK;
+        lastServerPositionCorrectionMs = ClientWorldTrajectorySample.NO_SERVER_ACK;
         trajectory.reset(ClientWorldTrajectory.DiscontinuityReason.CONNECTION_CHANGE);
+        candidateTrajectoryOverrides.clear();
+        departedProfileId = null;
         trajectoryCheckpointLoaded = false;
         lastTrajectoryCheckpointTick = Long.MIN_VALUE;
         resetObservation();
     }
 
-    /** A server position packet confirms its post-handler player state and cuts stale prediction. */
+    /** A server correction establishes one exact position and cuts stale prediction. */
     public void onServerPositionConfirmed() {
         if (client == null || client.world == null || client.player == null) {
             return;
@@ -322,12 +373,15 @@ public final class ClientMultiworldService {
             velocity.x, velocity.z, client.player.getYaw(), client.player.getPitch(),
             now, clientTick, dimension, clientTick, connectionGeneration
         ));
-        lastServerPositionConfirmationMs = now;
+        lastServerPositionCorrectionMs = now;
     }
 
     public void onRespawn(final long observedSeedHash) {
-        flushTrajectoryCheckpoint();
-        lastServerPositionConfirmationMs = ClientWorldTrajectorySample.NO_SERVER_ACK;
+        if (!respawnDeparturePrepared) {
+            flushTrajectoryCheckpoint();
+        }
+        respawnDeparturePrepared = false;
+        lastServerPositionCorrectionMs = ClientWorldTrajectorySample.NO_SERVER_ACK;
         trajectory.reset(ClientWorldTrajectory.DiscontinuityReason.EXPLICIT_RESET);
         // Respawn is a logical-world lifecycle event (death or dimension transfer), not proof
         // that a proxy selected another upstream. Reusing the same seed must therefore keep the
@@ -335,6 +389,7 @@ public final class ClientMultiworldService {
         if (shouldKeepStableProfileOnRespawn(observedSeedHash)) {
             previousSeedHash = OptionalLong.empty();
             proxyWorldJoin = false;
+            departedProfileId = null;
             seedHash = OptionalLong.of(observedSeedHash);
             lockedSeedHash = seedHash;
             signals = Map.of();
@@ -356,8 +411,15 @@ public final class ClientMultiworldService {
         }
         previousSeedHash = OptionalLong.empty();
         proxyWorldJoin = false;
+        departedProfileId = null;
         seedHash = OptionalLong.of(observedSeedHash);
         beginProbing();
+    }
+
+    /** Flushes the old dimension while its position and trajectory are still authoritative. */
+    public void onBeforeRespawn() {
+        flushTrajectoryCheckpoint();
+        respawnDeparturePrepared = true;
     }
 
     /** Called after one full logical chunk packet has been applied to the client world. */
@@ -382,16 +444,18 @@ public final class ClientMultiworldService {
 
     /** Resolves only the client-owned fallback. Companion world UUIDs remain authoritative. */
     public Optional<WorldIdentity> resolve(final String currentAddress) {
-        observeAddress(currentAddress);
-        if (shouldAwaitVelocityIdentity()) {
-            return Optional.empty();
-        }
-        final ClientWorldResolution currentResolution = resolveProfile(currentAddress);
+        ClientWorldResolution currentResolution = resolveProfile(currentAddress);
         if (detectionState != ClientWorldDetectionState.STABLE
             || currentResolution.state() != ClientWorldResolution.State.RESOLVED) {
-            notifyAmbiguity();
+            // The final terrain attempt may resolve the same observation. Never announce failure
+            // before that attempt has had a chance to publish the admitted identity.
             tryTerrainMatch();
-            return Optional.empty();
+            currentResolution = resolution;
+            if (detectionState != ClientWorldDetectionState.STABLE
+                || currentResolution.state() != ClientWorldResolution.State.RESOLVED) {
+                notifyAmbiguity();
+                return Optional.empty();
+            }
         }
         final ClientWorldProfile profile = currentResolution.profile();
         return Optional.of(new WorldIdentity(
@@ -448,6 +512,8 @@ public final class ClientMultiworldService {
                 ConfluxMapMod.LOGGER.warn("Client-world default-port alias merge: {}", conflict);
             }
             trajectory.reset(ClientWorldTrajectory.DiscontinuityReason.CONNECTION_CHANGE);
+            candidateTrajectoryOverrides.clear();
+            departedProfileId = null;
             trajectoryCheckpointLoaded = false;
             lastTrajectoryCheckpointTick = Long.MIN_VALUE;
             restoreTrajectoryCheckpoint();
@@ -456,7 +522,6 @@ public final class ClientMultiworldService {
                 resolver.profiles(serverId).stream().map(ClientWorldProfile::id).collect(java.util.stream.Collectors.toSet())
             );
             clearProfileLock();
-            provisionalConflictLatched = false;
             resolution = ClientWorldResolution.collecting();
             detectionState = ClientWorldDetectionState.PROBING;
             terrainFingerprint = null;
@@ -475,6 +540,13 @@ public final class ClientMultiworldService {
         if (applyPendingCommand()) {
             return resolution;
         }
+        // WorldSessionTracker asks for the current identity every tick. Once an identity has been
+        // admitted (including provisional), that read must be side-effect free: movement never
+        // starts another A/B election. Signal and terrain events use validateProvisionalIdentity.
+        if (detectionState == ClientWorldDetectionState.STABLE
+            && resolution.state() == ClientWorldResolution.State.RESOLVED) {
+            return resolution;
+        }
         refreshTerrainFingerprint();
         if (persistenceRetryBlocked()) {
             return resolution;
@@ -482,19 +554,13 @@ public final class ClientMultiworldService {
         if (isUnrepresentedSameSeedTransition()) {
             resolution = signalsCollected
                 ? resolver.diagnoseBlocked(
-                    serverId, observation(), "same_seed_new_subworld_guard"
+                    serverId, observation(), "same_seed_new_subworld_guard", proxyWorldJoin
                 )
                 : ClientWorldResolution.collecting();
             detectionState = signalsCollected
                 ? ClientWorldDetectionState.WAITING_FOR_USER
                 : ClientWorldDetectionState.PROBING;
             return resolution;
-        }
-        if (provisionalConflictLatched) {
-            return resolution;
-        }
-        if (hasLockedResolution()) {
-            return resolution.provisional() ? validateProvisionalIdentity() : resolution;
         }
         final boolean uniqueKnownSeed = seedHash.isPresent()
             && resolver.profileCountWithSeed(serverId, seedHash.getAsLong()) == 1;
@@ -504,7 +570,12 @@ public final class ClientMultiworldService {
             return resolution;
         }
         final ClientWorldResolution previousResolution = resolution;
-        resolution = resolver.resolve(serverId, observation());
+        final ClientWorldObservation currentObservation = observation();
+        resolution = proxyWorldJoin
+            ? resolver.resolveAfterProxyWorldJoin(
+                serverId, previousSeedHash, currentObservation, departedProfileId
+            )
+            : resolver.resolve(serverId, currentObservation);
         final ProvisionalBufferAction bufferAction = provisionalBufferAction(previousResolution, resolution);
         if (resolution.state() == ClientWorldResolution.State.RESOLVED) {
             lockProfile(resolution.profile());
@@ -520,7 +591,7 @@ public final class ClientMultiworldService {
             persistenceError = resolution.error();
             recordPersistenceFailure();
             detectionState = ClientWorldDetectionState.WAITING_FOR_USER;
-        } else if (signalsCollected && shouldRetryTerrainProbe()) {
+        } else if (signalsCollected && shouldContinueRecognitionEvidence()) {
             if (bufferAction == ProvisionalBufferAction.DISCARD) {
                 discardProvisionalSnapshots();
             }
@@ -553,42 +624,6 @@ public final class ClientMultiworldService {
     }
 
     enum ProvisionalBufferAction { KEEP, COMMIT, DISCARD }
-
-    /**
-     * A provisional recovery is already the session identity. New evidence may validate that
-     * profile or expose a hard conflict, but must never start another all-profile election.
-     */
-    private ClientWorldResolution validateProvisionalIdentity() {
-        final ClientWorldResolution previousResolution = resolution;
-        final ClientWorldResolution validation = resolver.validateLockedProfile(
-            serverId, lockedProfileId, observation()
-        );
-        if (validation.state() == ClientWorldResolution.State.RESOLVED
-            && validation.profile() != null
-            && validation.profile().id().equals(lockedProfileId)) {
-            resolution = validation;
-            detectionState = ClientWorldDetectionState.STABLE;
-            final ProvisionalBufferAction bufferAction = provisionalBufferAction(previousResolution, validation);
-            if (bufferAction == ProvisionalBufferAction.COMMIT) {
-                commitProvisionalSnapshots();
-            }
-            return resolution;
-        }
-        resolution = validation;
-        discardProvisionalSnapshots();
-        clearProfileLock();
-        provisionalConflictLatched = validation.state() != ClientWorldResolution.State.PERSISTENCE_FAILED;
-        detectionState = ClientWorldDetectionState.WAITING_FOR_USER;
-        return resolution;
-    }
-
-    private boolean hasLockedResolution() {
-        return detectionState == ClientWorldDetectionState.STABLE
-            && resolution.state() == ClientWorldResolution.State.RESOLVED
-            && lockedProfileId != null
-            && resolution.profile() != null
-            && lockedProfileId.equals(resolution.profile().id());
-    }
 
     public boolean canManageProfiles() {
         if (client == null || client.world == null || client.isInSingleplayer()) {
@@ -710,6 +745,7 @@ public final class ClientMultiworldService {
             persistenceError = null;
             resetPersistenceBackoff();
             clearTrajectoryCheckpoint();
+            discardCandidateTrajectoryOverride(resolution.profile().id());
             if (bufferAction == ProvisionalBufferAction.COMMIT) {
                 commitProvisionalSnapshots();
             } else if (bufferAction == ProvisionalBufferAction.DISCARD) {
@@ -732,7 +768,6 @@ public final class ClientMultiworldService {
             resolution = ClientWorldResolution.collecting();
         }
         signalTicks = 0;
-        ambiguityNotified = false;
         observationGeneration++;
         resetPersistenceBackoff();
     }
@@ -923,7 +958,11 @@ public final class ClientMultiworldService {
         confirmPendingCommandTransitionAfterWeakEvidence();
         observationGeneration++;
         if (serverId != null) {
-            resolveProfile(address);
+            if (resolution.provisional()) {
+                validateProvisionalIdentity();
+            } else {
+                resolveProfile(address);
+            }
             notifyAmbiguity();
             tryTerrainMatch();
         }
@@ -1015,11 +1054,41 @@ public final class ClientMultiworldService {
     private void tryTerrainMatch() {
         // Terrain is now a bounded in-memory 3x3 fingerprint. Never scan every profile's region
         // files on the shared cache IO executor while an ambiguous session is waiting.
-        refreshTerrainFingerprint();
+        final boolean evidenceChanged = refreshTerrainFingerprint();
         if (serverId != null && address != null && signalsCollected
-            && (detectionState == ClientWorldDetectionState.PROBING || resolution.provisional())) {
+            && detectionState == ClientWorldDetectionState.PROBING) {
             resolveProfile(address);
+        } else if (evidenceChanged && resolution.provisional()) {
+            validateProvisionalIdentity();
         }
+    }
+
+    /** Applies new identity evidence to the admitted profile without electing another candidate. */
+    private void validateProvisionalIdentity() {
+        if (serverId == null || resolution.state() != ClientWorldResolution.State.RESOLVED
+            || !resolution.provisional() || resolution.profile() == null) {
+            return;
+        }
+        final ClientWorldResolution previous = resolution;
+        resolution = resolver.validateProvisional(
+            serverId, previous.profile().id(), observation(), previous.candidates(), proxyWorldJoin
+        );
+        if (resolution.state() == ClientWorldResolution.State.RESOLVED) {
+            lockProfile(resolution.profile());
+            detectionState = ClientWorldDetectionState.STABLE;
+            if (!resolution.provisional()) {
+                commitProvisionalSnapshots();
+                clearTrajectoryCheckpoint();
+                discardCandidateTrajectoryOverride(resolution.profile().id());
+            }
+            return;
+        }
+        // A hard contradiction pauses the admitted map. It never promotes another candidate in
+        // place; a new boundary or explicit user/Companion decision must start the next identity.
+        discardProvisionalSnapshots();
+        discardCandidateTrajectoryOverride(previous.profile().id());
+        clearProfileLock();
+        detectionState = ClientWorldDetectionState.WAITING_FOR_USER;
     }
 
     private MapLayer terrainProbeLayer() {
@@ -1059,7 +1128,7 @@ public final class ClientMultiworldService {
         }
         return new ClientWorldObservation(
             seedHash, signals, dimension, gameMode, position, terrainFingerprint,
-            terrainFingerprintsByProfileId, trajectory.copy()
+            terrainFingerprintsByProfileId, trajectory.copy(), candidateTrajectoryOverrides
         );
     }
 
@@ -1080,6 +1149,7 @@ public final class ClientMultiworldService {
             persistenceError = null;
             resetPersistenceBackoff();
             clearTrajectoryCheckpoint();
+            discardCandidateTrajectoryOverride(resolution.profile().id());
         }
     }
 
@@ -1111,6 +1181,27 @@ public final class ClientMultiworldService {
         }
     }
 
+    private void captureCandidateTrajectoryOverride() {
+        if (trajectory.latest() == null || resolution.state() != ClientWorldResolution.State.RESOLVED
+            || resolution.profile() == null) {
+            return;
+        }
+        final String profileId = resolution.profile().id();
+        final ClientWorldTrajectory candidate = trajectory.copy();
+        candidateTrajectoryOverrides.put(profileId, candidate);
+        final ClientWorldTrajectoryCheckpointIo.SaveResult saved = trajectoryCheckpointIo.saveCandidate(
+            serverId, seedHash, profileId, observationGeneration, candidate
+        );
+        if (!saved.saved()) {
+            trajectoryCheckpointError = saved.error();
+        } else {
+            ConfluxMapMod.LOGGER.info(
+                "Candidate trajectory saved: profile={} dimension={} samples={} generation={}",
+                profileId, candidate.latest().dimensionId(), candidate.samples().size(), observationGeneration
+            );
+        }
+    }
+
     private void restoreTrajectoryCheckpoint() {
         if (trajectoryCheckpointLoaded || serverId == null) {
             return;
@@ -1126,18 +1217,66 @@ public final class ClientMultiworldService {
             }
         }
         if (checkpoint == null) {
+            // Candidate-owned files are independent of the current live checkpoint.
+            restoreCandidateTrajectoryOverrides(serverId);
             return;
         }
         if (checkpoint.hasSeed() && seedHash.isPresent() && checkpoint.seedHash() != seedHash.getAsLong()) {
             clearTrajectoryCheckpoint();
+            restoreCandidateTrajectoryOverrides(serverId);
             return;
         }
         connectionGeneration = nextConnectionGenerationAfterCheckpoint(
             connectionGeneration, checkpoint.connectionGeneration()
         );
-        trajectory.restoreHistoricalSamples(checkpoint.samples());
-        lastServerPositionConfirmationMs = trajectory.lastServerAckTimeMs();
+        if (checkpoint.profileId() != null) {
+            candidateTrajectoryOverrides.put(checkpoint.profileId(), checkpoint.trajectory());
+            // Candidate-owned history is an endpoint for scoring, never the current connection's
+            // entry path. The first live sample remains the sole entry of the new generation.
+            trajectory.reset(ClientWorldTrajectory.DiscontinuityReason.CONNECTION_CHANGE);
+            lastServerPositionCorrectionMs = ClientWorldTrajectorySample.NO_SERVER_ACK;
+        } else {
+            // Schema-1 checkpoints had no safe ownership. Preserve their legacy recovery behavior.
+            trajectory.restoreHistoricalSamples(checkpoint.samples());
+            lastServerPositionCorrectionMs = trajectory.lastServerAckTimeMs();
+        }
         lastTrajectoryCheckpointTick = clientTick;
+        restoreCandidateTrajectoryOverrides(serverId);
+    }
+
+    private void restoreCandidateTrajectoryOverrides(final String candidateServerId) {
+        for (final Map.Entry<String, ClientWorldTrajectoryCheckpointIo.Checkpoint> entry
+            : trajectoryCheckpointIo.loadCandidates(candidateServerId).entrySet()) {
+            final ClientWorldTrajectoryCheckpointIo.Checkpoint checkpoint = entry.getValue();
+            if (!checkpoint.hasSeed() || seedHash.isEmpty()
+                || checkpoint.seedHash() == seedHash.getAsLong()) {
+                connectionGeneration = nextConnectionGenerationAfterCheckpoint(
+                    connectionGeneration, checkpoint.connectionGeneration()
+                );
+                candidateTrajectoryOverrides.put(entry.getKey(), checkpoint.trajectory());
+            }
+        }
+    }
+
+    private void discardCandidateTrajectoryOverride(final String profileId) {
+        candidateTrajectoryOverrides.remove(profileId);
+        if (serverId == null || profileId == null) {
+            return;
+        }
+        ClientWorldTrajectoryCheckpointIo.SaveResult result =
+            trajectoryCheckpointIo.clearCandidate(serverId, profileId);
+        for (final String alias : serverIdAliases) {
+            final ClientWorldTrajectoryCheckpointIo.SaveResult aliasResult =
+                trajectoryCheckpointIo.clearCandidate(alias, profileId);
+            if (!aliasResult.saved() && result.saved()) {
+                result = aliasResult;
+            }
+        }
+        if (!result.saved()) {
+            trajectoryCheckpointError = result.error();
+        } else {
+            ConfluxMapMod.LOGGER.info("Candidate trajectory discarded: profile={}", profileId);
+        }
     }
 
     private void clearTrajectoryCheckpoint() {
@@ -1181,17 +1320,30 @@ public final class ClientMultiworldService {
             client.player.getX(), client.player.getY(), client.player.getZ(),
             velocity.x, velocity.z, client.player.getYaw(), client.player.getPitch(),
             System.currentTimeMillis(), clientTick, dimension, clientTick,
-            lastServerPositionConfirmationMs,
+            lastServerPositionCorrectionMs,
             connectionGeneration
         ));
     }
 
     private void notifyAmbiguity() {
         if (detectionState != ClientWorldDetectionState.WAITING_FOR_USER || ambiguityNotified
+            || resolution.state() != ClientWorldResolution.State.AMBIGUOUS
+            || clientTick - detectionStartedAtTick < AMBIGUITY_DECISION_GRACE_TICKS
             || client == null || client.player == null) {
             return;
         }
         ambiguityNotified = true;
+        ConfluxMapMod.LOGGER.warn(
+            "Client world recognition exhausted generation {}: {}",
+            detectionGeneration,
+            resolution.candidates().stream().map(candidate -> String.format(
+                java.util.Locale.ROOT,
+                "%s=%d%% q%d margin=%d%%/%d%% outcome=%s blockers=%s",
+                candidate.profileId(), candidate.confidencePercent(), candidate.queue(),
+                candidate.actualMarginPercent(), candidate.requiredMarginPercent(),
+                candidate.outcome(), candidate.blockers()
+            )).toList()
+        );
         //#if MC>=260100
         //$$ client.player.sendSystemMessage(
         //$$     Texts.translatable(
@@ -1295,6 +1447,8 @@ public final class ClientMultiworldService {
         terrainFingerprint = null;
         terrainFingerprintsByProfileId.clear();
         terrainProbePolicy.reset();
+        candidateTrajectoryOverrides.clear();
+        departedProfileId = null;
         worldChangeDetector.reset();
         pendingSnapshots.clear();
         recentFullChunks.clear();
@@ -1311,7 +1465,6 @@ public final class ClientMultiworldService {
         }
         gameJoinObserved = false;
         proxyWorldJoin = false;
-        provisionalConflictLatched = false;
         signalTicks = 0;
         ambiguityNotified = false;
         persistenceError = null;
@@ -1333,7 +1486,13 @@ public final class ClientMultiworldService {
     private void lockProfile(final ClientWorldProfile profile) {
         lockedProfileId = profile.id();
         lockedSeedHash = seedHash;
-        proxyWorldJoin = false;
+        // Keep the upstream-boundary flag while identity is only provisional. Otherwise the next
+        // tick would immediately re-enable the departed backend's lastStable prior and could
+        // rotate A -> B without another GameJoin packet.
+        if (!resolution.provisional()) {
+            proxyWorldJoin = false;
+            departedProfileId = null;
+        }
     }
 
     private void clearProfileLock() {
@@ -1364,7 +1523,6 @@ public final class ClientMultiworldService {
 
     private void beginProbing() {
         clearProfileLock();
-        provisionalConflictLatched = false;
         resolution = ClientWorldResolution.collecting();
         signals = Map.of();
         signalsCollected = false;
@@ -1405,12 +1563,26 @@ public final class ClientMultiworldService {
         final ClientWorldPosition position = new ClientWorldPosition(
             client.player.getBlockPos().getX(), client.player.getBlockPos().getY(), client.player.getBlockPos().getZ()
         );
+        final boolean gameModeChanged = observedGameMode != null && !observedGameMode.equals(gameMode);
+        final boolean coordinateJump = observedPosition != null
+            && observedPosition.horizontalDistanceTo(position) > 96.0D;
         observedGameMode = gameMode;
         observedPosition = position;
-        // A coordinate jump or game-mode change is ordinary client-side movement/state and is
-        // never sufficient to start a new A/B election. Real replacement boundaries arrive from
-        // GameJoin, an explicit command, a changed ClientWorld reference, or a definite chunk
-        // replacement wave handled by detectLargeChunkReplacement().
+        if (canObserveWorldReplacementSignals()
+            && gameModeChanged
+            && worldChangeDetector.observeWeakSignal(
+                clientTick, ClientWorldChangeDetector.WeakSignal.GAME_MODE
+            )) {
+            observePotentialWorldReplacement(true);
+            return;
+        }
+        if (canObserveWorldReplacementSignals()
+            && coordinateJump
+            && worldChangeDetector.observeWeakSignal(
+                clientTick, ClientWorldChangeDetector.WeakSignal.POSITION
+            )) {
+            observePotentialWorldReplacement(true);
+        }
     }
 
     static boolean shouldProbeAfterWorldReferenceChange(
@@ -1453,10 +1625,11 @@ public final class ClientMultiworldService {
         return ((long) chunkX << 32) ^ (chunkZ & 0xFFFFFFFFL);
     }
 
-    private void refreshTerrainFingerprint() {
+    private boolean refreshTerrainFingerprint() {
+        boolean changed = false;
         if (chunkCapture == null || client == null
             || client.world == null || client.player == null) {
-            return;
+            return false;
         }
         final int centerChunkX = client.player.getBlockPos().getX() >> 4;
         final int centerChunkZ = client.player.getBlockPos().getZ() >> 4;
@@ -1465,15 +1638,22 @@ public final class ClientMultiworldService {
             || terrainFingerprint.centerChunkZ() != centerChunkZ)) {
             terrainFingerprint = null;
             terrainFingerprintsByProfileId.clear();
-            terrainProbePolicy.reset();
+            // During one recognition generation the terrain work budget is global, not one fresh
+            // budget per traversed chunk. Otherwise continuous flight can keep a supposedly
+            // bounded evidence phase alive forever. Stable/provisional visits may start a fresh
+            // budget at their new center because no A/B election is running there.
+            if (detectionState == ClientWorldDetectionState.STABLE) {
+                terrainProbePolicy.reset();
+            }
+            changed = true;
         }
         final List<ClientWorldProfile> profiles = serverId == null ? List.of() : resolver.profiles(serverId);
         final String dimensionId = currentDimensionId();
         if (!hasPendingTerrainEvidence(profiles, dimensionId)) {
-            return;
+            return changed;
         }
         if (!terrainProbePolicy.shouldProbe(clientTick)) {
-            return;
+            return changed;
         }
         terrainProbePolicy.recordAttempt(clientTick);
         final MapLayer layer = terrainProbeLayer();
@@ -1485,6 +1665,7 @@ public final class ClientMultiworldService {
                 );
                 if (captured.complete()) {
                     terrainFingerprint = captured;
+                    changed = true;
                 }
             }
         }
@@ -1500,6 +1681,7 @@ public final class ClientMultiworldService {
             if (terrainFingerprint != null && visit.terrainAnchors().stream()
                 .anyMatch(anchor -> terrainFingerprint.sameCenter(anchor.fingerprint()))) {
                 terrainFingerprintsByProfileId.put(profile.id(), terrainFingerprint);
+                changed = true;
                 continue;
             }
             final List<ClientWorldTerrainAnchor> anchors = visit.terrainAnchors();
@@ -1514,12 +1696,14 @@ public final class ClientMultiworldService {
                     );
                     if (captured.complete()) {
                         terrainFingerprintsByProfileId.put(profile.id(), captured);
+                        changed = true;
                         break;
                     }
                 }
             }
         }
         rememberStableVisit();
+        return changed;
     }
 
     private boolean shouldRetryTerrainProbe() {
@@ -1529,6 +1713,11 @@ public final class ClientMultiworldService {
         return hasPendingTerrainEvidence(
             serverId == null ? List.of() : resolver.profiles(serverId), currentDimensionId()
         );
+    }
+
+    private boolean shouldContinueRecognitionEvidence() {
+        return clientTick - detectionStartedAtTick < AMBIGUITY_DECISION_GRACE_TICKS
+            || shouldRetryTerrainProbe();
     }
 
     private boolean hasPendingTerrainEvidence(

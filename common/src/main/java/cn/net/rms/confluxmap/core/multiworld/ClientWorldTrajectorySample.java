@@ -143,6 +143,13 @@ public record ClientWorldTrajectorySample(
         return Math.hypot(x - position.x(), z - position.z());
     }
 
+    public double spatialDistanceTo(final ClientWorldPosition position) {
+        Objects.requireNonNull(position, "position");
+        return Math.sqrt(
+            square(x - position.x()) + square(y - position.y()) + square(z - position.z())
+        );
+    }
+
     public enum EvidenceSource {
         CLIENT_OBSERVED,
         SERVER_CONFIRMED
@@ -152,5 +159,9 @@ public record ClientWorldTrajectorySample(
         if (!Double.isFinite(value)) {
             throw new IllegalArgumentException(field + " must be finite");
         }
+    }
+
+    private static double square(final double value) {
+        return value * value;
     }
 }
