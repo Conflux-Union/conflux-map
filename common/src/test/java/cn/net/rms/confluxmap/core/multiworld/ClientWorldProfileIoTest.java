@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.multiworld;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
@@ -86,5 +87,140 @@ class ClientWorldProfileIoTest {
             ClientWorldResolution.State.AMBIGUOUS,
             restored.resolve("example.net_25565", observation).state()
         );
+    }
+
+    @Test
+    void schemaThreePersistsLastStableProfileTrajectoryAndConnectionGeneration() {
+        final Path file = tempDir.resolve("client_worlds.json");
+        final ClientWorldProfileIo io = new ClientWorldProfileIo(
+            file, LogManager.getLogger("ClientWorldProfileIoTest")
+        );
+        final ClientWorldProfileRegistry registry = new ClientWorldProfileRegistry();
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(registry, UUID::randomUUID);
+        final ClientWorldTrajectory trajectory = new ClientWorldTrajectory();
+        trajectory.append(ClientWorldTrajectorySample.observed(
+            10, 64, 20, 4, 0, -90, 0, 1_000L, 20L,
+            "minecraft_overworld", 20L, ClientWorldTrajectorySample.NO_SERVER_ACK, 7L
+        ));
+        final ClientWorldObservation observation = new ClientWorldObservation(
+            OptionalLong.of(42L),
+            Map.of("brand", "brand", "commands", "commands"),
+            "minecraft_overworld", "SURVIVAL", new ClientWorldPosition(10, 64, 20),
+            null, Map.of(), trajectory
+        );
+        final ClientWorldProfile profile = resolver.resolve("example.net_25565", observation).profile();
+
+        io.save(registry);
+        final ClientWorldProfileRegistry loaded = io.load();
+
+        assertEquals(3, ClientWorldProfileRegistry.SCHEMA_VERSION);
+        assertEquals(profile.id(), loaded.lastStableProfileId("example.net_25565"));
+        assertEquals(7L, loaded.lastStableProfile("example.net_25565").connectionGeneration());
+        assertTrue(loaded.lastStableProfile("example.net_25565").hasSeed());
+        assertEquals(42L, loaded.lastStableProfile("example.net_25565").seedHash());
+        assertEquals("brand", loaded.lastStableProfile("example.net_25565")
+            .stableSignals().get("brand"));
+        final ClientWorldVisit visit = loaded.profiles("example.net_25565").get(0)
+            .visit("minecraft_overworld");
+        assertEquals(7L, visit.connectionGeneration());
+        assertEquals(20L, visit.trajectorySamples().get(0).sequence());
+    }
+
+    @Test
+    void schemaTwoUpgradePreservesProfilesAndDropsMalformedStablePointer() throws Exception {
+        final Path file = tempDir.resolve("client_worlds.json");
+        Files.writeString(file, """
+            {
+              "schemaVersion": 2,
+              "servers": {
+                "example.net_25565": [{
+                  "id": "legacy",
+                  "storageId": "world",
+                  "displayName": "Legacy",
+                  "bindings": [],
+                  "switchCommands": [],
+                  "visits": {}
+                }]
+              },
+              "lastStableProfiles": {
+                "example.net_25565": {
+                  "profileId": "missing",
+                  "confirmedAtEpochMs": -1,
+                  "connectionGeneration": 0
+                }
+              }
+            }
+            """);
+
+        final ClientWorldProfileRegistry loaded = new ClientWorldProfileIo(
+            file, LogManager.getLogger("ClientWorldProfileIoTest")
+        ).load();
+
+        assertEquals("legacy", loaded.profiles("example.net_25565").get(0).id());
+        assertEquals(null, loaded.lastStableProfile("example.net_25565"));
+    }
+
+    @Test
+    void dropsMalformedTerrainAnchorsAndTrajectorySamplesDuringLoad() throws Exception {
+        final Path file = tempDir.resolve("client_worlds.json");
+        Files.writeString(file, """
+            {
+              "schemaVersion": 3,
+              "servers": {
+                "example.net_25565": [{
+                  "id": "profile",
+                  "storageId": "world",
+                  "displayName": "World",
+                  "bindings": [],
+                  "switchCommands": [],
+                  "visits": {
+                    "minecraft_overworld": {
+                      "dimensionId": "minecraft_overworld",
+                      "gameMode": "SURVIVAL",
+                      "lastPosition": {"x": 0, "y": 64, "z": 0},
+                      "lastVisitedAtEpochMs": 1,
+                      "terrainFingerprint": null,
+                      "terrainAnchors": [{
+                        "position": {"x": 0, "y": 64, "z": 0},
+                        "fingerprint": null,
+                        "capturedAtEpochMs": -1
+                      }],
+                      "trajectorySamples": [{
+                        "x": 0.0,
+                        "y": 64.0,
+                        "z": 0.0,
+                        "horizontalVelocityX": 0.0,
+                        "horizontalVelocityZ": 0.0,
+                        "yawDegrees": 0.0,
+                        "pitchDegrees": 0.0,
+                        "clientTimeMs": -1,
+                        "clientTick": 0,
+                        "dimensionId": "minecraft_overworld",
+                        "sequence": 1,
+                        "serverAckTimeMs": -1,
+                        "connectionGeneration": 0,
+                        "evidenceSource": "CLIENT_OBSERVED"
+                      }],
+                      "lastServerAckTimeMs": -1,
+                      "connectionGeneration": 0,
+                      "contextSignals": {}
+                    }
+                  },
+                  "recognitionDisabled": false
+                }]
+              },
+              "lastStableProfiles": {}
+            }
+            """);
+
+        final ClientWorldProfileRegistry loaded = new ClientWorldProfileIo(
+            file, LogManager.getLogger("ClientWorldProfileIoTest")
+        ).load();
+
+        final ClientWorldVisit visit = loaded.profiles("example.net_25565").get(0)
+            .visit("minecraft_overworld");
+        assertFalse(loaded.profiles("example.net_25565").isEmpty());
+        assertTrue(visit.terrainAnchors().isEmpty());
+        assertTrue(visit.trajectorySamples().isEmpty());
     }
 }

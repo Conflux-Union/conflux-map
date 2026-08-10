@@ -11,8 +11,11 @@ import java.util.OptionalLong;
 /** One client-owned logical world namespace beneath a multiplayer address. */
 public final class ClientWorldProfile {
     private static final int MAX_BINDINGS = ClientWorldPolicy.MAX_MAX_BINDINGS_PER_PROFILE;
+    static final int MAX_TERRAIN_ANCHORS = 8;
     private String id;
     private String storageId;
+    /** Physical server folder retained when a default-port registry alias is merged. */
+    private String storageServerId;
     private String displayName;
     private List<Binding> bindings;
     private List<String> switchCommands;
@@ -39,6 +42,20 @@ public final class ClientWorldProfile {
 
     public String storageId() {
         return storageId;
+    }
+
+    public String storageServerId(final String logicalServerId) {
+        return storageServerId == null || storageServerId.isBlank() ? logicalServerId : storageServerId;
+    }
+
+    void retainStorageServer(final String serverId) {
+        if (storageServerId == null || storageServerId.isBlank()) {
+            storageServerId = requireText(serverId, "storageServerId");
+        }
+    }
+
+    void reidentify(final String replacementId) {
+        id = requireText(replacementId, "id");
     }
 
     public String displayName() {
@@ -134,6 +151,45 @@ public final class ClientWorldProfile {
         return compared;
     }
 
+    /** Number of matching profile-level signals in the best compatible historical binding. */
+    int matchingIdentitySignalCount(final ClientWorldObservation observation) {
+        return identitySignalMatch(observation).matches();
+    }
+
+    IdentitySignalMatch identitySignalMatch(final ClientWorldObservation observation) {
+        int best = 0;
+        int comparable = 0;
+        boolean sawConflict = false;
+        for (final Binding binding : bindings()) {
+            int matches = 0;
+            int shared = 0;
+            boolean conflict = false;
+            for (final Map.Entry<String, String> signal : observation.signals().entrySet()) {
+                if (isVisitSignal(signal.getKey())) {
+                    continue;
+                }
+                final String known = binding.signals.get(signal.getKey());
+                if (known == null) {
+                    continue;
+                }
+                shared++;
+                if (known.equals(signal.getValue())) {
+                    matches++;
+                } else {
+                    conflict = true;
+                }
+            }
+            comparable = Math.max(comparable, shared);
+            sawConflict |= conflict && shared > 0;
+            if (!conflict) {
+                best = Math.max(best, matches);
+            }
+        }
+        return new IdentitySignalMatch(best, comparable, sawConflict && best == 0);
+    }
+
+    record IdentitySignalMatch(int matches, int comparable, boolean conflict) { }
+
     void bind(final ClientWorldObservation observation) {
         bind(observation, ClientWorldPolicy.DEFAULT_MAX_BINDINGS_PER_PROFILE);
     }
@@ -165,19 +221,27 @@ public final class ClientWorldProfile {
             final boolean usableTerrain = observedTerrain != null
                 && observedTerrain.complete() && observedTerrain.hasCenter()
                 && terrainCenterMatchesPosition(observedTerrain, observation.position());
-            final boolean retainingHistoricalTerrain = !usableTerrain
-                && previous != null && previous.terrainFingerprint() != null;
-            mutableVisits().put(observation.dimensionId(), new ClientWorldVisit(
+            final ClientWorldVisit next = new ClientWorldVisit(
                 observation.dimensionId(),
                 observation.gameMode() == null && previous != null ? previous.gameMode() : observation.gameMode(),
-                observation.position() == null || retainingHistoricalTerrain
+                observation.position() == null
                     ? previous == null ? null : previous.lastPosition() : observation.position(),
                 System.currentTimeMillis(),
-                usableTerrain ? observedTerrain : previous == null ? null : previous.terrainFingerprint(),
+                previous == null ? null : previous.terrainFingerprint(),
                 ClientWorldVisit.mergeContextSignals(
                     previous == null ? Map.of() : previous.contextSignals(), observation.signals()
                 )
-            ));
+            );
+            if (previous != null) {
+                next.copyPersistedEvidenceFrom(previous);
+            }
+            if (usableTerrain) {
+                next.rememberTerrainAnchor(new ClientWorldTerrainAnchor(
+                    observation.position(), observedTerrain, System.currentTimeMillis()
+                ));
+            }
+            next.rememberTrajectory(observation.trajectory());
+            mutableVisits().put(observation.dimensionId(), next);
         }
     }
 
@@ -187,7 +251,7 @@ public final class ClientWorldProfile {
         final ClientWorldPosition position
     ) {
         if (position == null) {
-            return true;
+            return false;
         }
         return (position.x() >> 4) == terrain.centerChunkX()
             && (position.z() >> 4) == terrain.centerChunkZ();
@@ -230,6 +294,11 @@ public final class ClientWorldProfile {
     void normalize() {
         id = requireText(id, "id");
         storageId = requireText(storageId, "storageId");
+        if (storageServerId != null && !storageServerId.isBlank()) {
+            storageServerId = requireText(storageServerId, "storageServerId");
+        } else {
+            storageServerId = null;
+        }
         displayName = requireText(displayName, "displayName");
         if (velocityServerName != null) {
             velocityServerName = requireText(velocityServerName, "velocityServerName");
@@ -283,6 +352,7 @@ public final class ClientWorldProfile {
         final ClientWorldProfile copy = new ClientWorldProfile();
         copy.id = id;
         copy.storageId = storageId;
+        copy.storageServerId = storageServerId;
         copy.displayName = displayName;
         copy.bindings = new ArrayList<>();
         for (final Binding binding : bindings()) {
@@ -301,6 +371,7 @@ public final class ClientWorldProfile {
         final ClientWorldProfile copy = source.copy();
         id = copy.id;
         storageId = copy.storageId;
+        storageServerId = copy.storageServerId;
         displayName = copy.displayName;
         bindings = copy.bindings;
         switchCommands = copy.switchCommands;
@@ -335,6 +406,10 @@ public final class ClientWorldProfile {
         }
         if ("storageId".equals(field) && !isSafeStorageId(value)) {
             throw new IllegalArgumentException("storageId is not a supported local namespace");
+        }
+        if ("storageServerId".equals(field)
+            && (!value.matches("[a-z0-9._-]+") || ".".equals(value) || "..".equals(value))) {
+            throw new IllegalArgumentException("storageServerId is not a supported local namespace");
         }
         return value;
     }

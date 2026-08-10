@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -21,18 +22,16 @@ class WorldIdentityTest {
 
     @Test
     void multiplayerWithoutOverrideUsesLiteralWorldId() {
-        // Bit-for-bit identical to the pre-companion path - this is the compatibility guarantee.
         final WorldIdentity id = WorldIdentity.multiplayer("example.net:25565");
-        assertEquals("example.net_25565", id.serverId());
+        assertEquals("example.net", id.serverId());
+        assertEquals(List.of("example.net_25565"), id.legacyServerIds());
         assertEquals("world", id.worldId());
     }
 
     @Test
     void multiplayerWithOverrideAdoptsCompanionUuid() {
-        final WorldIdentity id = WorldIdentity.companionMultiplayer(
-            "example.net:25565", "11111111-2222-3333-4444-555555555555"
-        );
-        assertEquals("example.net_25565", id.serverId());
+        final WorldIdentity id = WorldIdentity.multiplayer("example.net:25565", "11111111-2222-3333-4444-555555555555");
+        assertEquals("example.net", id.serverId());
         // UUIDs contain only [0-9a-f-], all already in the safe set, so they pass through unchanged.
         assertEquals("11111111-2222-3333-4444-555555555555", id.worldId());
         assertEquals(java.util.List.of("world"), id.legacyStorageIds());
@@ -49,17 +48,27 @@ class WorldIdentityTest {
     }
 
     @Test
-    void companionWorldIdDoesNotAddRedundantLegacyNamespace() {
-        final WorldIdentity id = WorldIdentity.companionMultiplayer("example.net:25565", "world");
-
-        assertTrue(id.legacyStorageIds().isEmpty());
+    void omittedAndExplicitDefaultPortsShareServerIdentity() {
+        assertEquals(
+            WorldIdentity.multiplayer("EXAMPLE.net"),
+            WorldIdentity.multiplayer("example.net:25565")
+        );
+        assertNotEquals(
+            WorldIdentity.multiplayer("example.net"),
+            WorldIdentity.multiplayer("example.net:25566")
+        );
     }
 
     @Test
-    void clientSelectedWorldDoesNotAdoptTheDefaultWorldNamespace() {
-        final WorldIdentity id = WorldIdentity.multiplayer("example.net:25565", "survival");
-
-        assertTrue(id.legacyStorageIds().isEmpty());
+    void bracketedIpv6DefaultPortIsCanonicalizedWithoutTouchingOtherPorts() {
+        assertEquals(
+            WorldIdentity.multiplayer("[2001:db8::1]"),
+            WorldIdentity.multiplayer("[2001:db8::1]:25565")
+        );
+        assertNotEquals(
+            WorldIdentity.multiplayer("[2001:db8::1]"),
+            WorldIdentity.multiplayer("[2001:db8::1]:25566")
+        );
     }
 
     @Test

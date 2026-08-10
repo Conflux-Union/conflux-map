@@ -33,11 +33,21 @@ public final class WorldStorageMigration {
         final Logger logger
     ) {
         final Path current = root.resolve(world.serverId()).resolve(world.worldId() + suffix);
-        // Legacy directory moves exist only for renamed/recreated singleplayer saves. A
-        // multiplayer server changing to an authoritative UUID must wait for an explicit user
-        // choice because the address-level legacy namespace may belong to another upstream world.
-        if (!"local".equals(world.serverId())) {
-            return current;
+        for (final String legacyServerId : world.legacyServerIds()) {
+            final Path legacy = root.resolve(legacyServerId).resolve(world.worldId() + suffix);
+            if (Files.exists(current)) {
+                if (Files.exists(legacy)) {
+                    logger.warn(
+                        "Both canonical and default-port legacy world storage exist; preserving both without overwrite: {} and {}",
+                        current, legacy
+                    );
+                }
+                break;
+            }
+            if (Files.exists(legacy)) {
+                migrate(legacy, current, logger);
+                break;
+            }
         }
         for (final String legacyId : world.legacyStorageIds()) {
             if (Files.exists(current)) {

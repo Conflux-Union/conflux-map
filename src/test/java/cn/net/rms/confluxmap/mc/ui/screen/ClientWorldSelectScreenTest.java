@@ -50,19 +50,27 @@ class ClientWorldSelectScreenTest {
     }
 
     @Test
-    void malformedOrUnknownReasonsDoNotLeakTranslationKeys() {
+    void malformedOrUnknownReasonsRemainExplicitDiagnostics() {
         assertEquals(
             "confluxmap.screen.client_world.reason.visit_context_conflict",
             ClientWorldSelectScreen.reasonLabel("visit_context_conflict").translationKey()
         );
         assertEquals(
-            "confluxmap.screen.client_world.reason.other",
+            "confluxmap.screen.client_world.reason.unknown",
             ClientWorldSelectScreen.reasonLabel("visit_context_unknown").translationKey()
         );
         assertEquals(
-            "confluxmap.screen.client_world.reason.other",
+            "confluxmap.screen.client_world.reason.unknown",
             ClientWorldSelectScreen.reasonLabel("future_reason").translationKey()
         );
+    }
+
+    @Test
+    void detailScrollKeepsEveryDiagnosticReachable() {
+        assertEquals(0, ClientWorldSelectScreen.clampDetailScroll(-3, 24, 10));
+        assertEquals(7, ClientWorldSelectScreen.clampDetailScroll(7, 24, 10));
+        assertEquals(14, ClientWorldSelectScreen.clampDetailScroll(99, 24, 10));
+        assertEquals(0, ClientWorldSelectScreen.clampDetailScroll(4, 8, 10));
     }
 
     @Test

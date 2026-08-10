@@ -59,6 +59,7 @@ public final class ChunkCaptureService {
     private int tickCounter;
     private LayerSelector.Decision lastDecision;
     private ClientMultiworldService pendingSnapshotBuffer;
+    private SessionGuard.Session currentSession = SessionGuard.Session.NONE;
 
     public ChunkCaptureService(
         final MinecraftClient client,
@@ -103,6 +104,7 @@ public final class ChunkCaptureService {
      * not actually loaded are skipped by the snapshot factory at drain time.
      */
     public void onSessionChanged(final SessionGuard.Session session) {
+        currentSession = session;
         dirtyChunks.clear();
         layerSelector.onSessionChanged(session);
         lastDecision = null;
@@ -118,12 +120,29 @@ public final class ChunkCaptureService {
         }
         reseedViewport(player.getBlockPos().getX() >> 4, player.getBlockPos().getZ() >> 4);
         final ClientMultiworldService buffer = pendingSnapshotBuffer;
-        if (buffer != null) {
+        if (buffer != null && !buffer.provisional()) {
             for (final ClientMultiworldService.PendingSnapshot pending : buffer.drainPendingSnapshots()) {
                 final ChunkSnapshot snapshot = withSessionToken(pending.snapshot(), session.token());
                 final MapLayer layer = pending.layer();
                 executors.workers().execute(() -> storeSnapshot(snapshot, layer));
             }
+        }
+    }
+
+    /** Stores snapshots captured during a provisional recognition after validation succeeds. */
+    public void commitPendingSnapshots() {
+        final ClientMultiworldService buffer = pendingSnapshotBuffer;
+        if (buffer == null || client.world == null || client.player == null) {
+            return;
+        }
+        final SessionGuard.Session session = currentSession;
+        if (!session.active()) {
+            return;
+        }
+        for (final ClientMultiworldService.PendingSnapshot pending : buffer.drainPendingSnapshots()) {
+            final ChunkSnapshot snapshot = withSessionToken(pending.snapshot(), session.token());
+            final MapLayer layer = pending.layer();
+            executors.workers().execute(() -> storeSnapshot(snapshot, layer));
         }
     }
 
@@ -233,6 +252,10 @@ public final class ChunkCaptureService {
         final MapWorld world = worlds.current();
         final ClientPlayerEntity player = client.player;
         if (player == null) {
+            return;
+        }
+        if (pendingSnapshotBuffer != null && pendingSnapshotBuffer.provisional()) {
+            capturePendingSnapshots(player);
             return;
         }
         if (world == null) {

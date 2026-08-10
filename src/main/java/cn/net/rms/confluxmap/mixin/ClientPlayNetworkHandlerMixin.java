@@ -14,6 +14,11 @@ import net.minecraft.network.packet.s2c.play.LightUpdateS2CPacket;
 //#endif
 import net.minecraft.network.packet.s2c.play.PlayerRespawnS2CPacket;
 import net.minecraft.network.packet.s2c.play.PlayerSpawnPositionS2CPacket;
+//#if MC>=260100
+//$$ import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
+//#else
+import net.minecraft.network.packet.s2c.play.PlayerPositionLookS2CPacket;
+//#endif
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -66,6 +71,24 @@ public abstract class ClientPlayNetworkHandlerMixin {
         );
         //#endif
     }
+
+    //#if MC>=260100
+    //$$ @Inject(method = "handleMovePlayer", at = @At("TAIL"))
+    //$$ private void confluxmap$onPlayerPosition(
+    //$$     final ClientboundPlayerPositionPacket packet,
+    //$$     final CallbackInfo ci
+    //$$ ) {
+    //$$     ClientWorldIdentityHandler.serverPositionConfirmed();
+    //$$ }
+    //#else
+    @Inject(method = "onPlayerPositionLook", at = @At("TAIL"))
+    private void confluxmap$onPlayerPosition(
+        final PlayerPositionLookS2CPacket packet,
+        final CallbackInfo ci
+    ) {
+        ClientWorldIdentityHandler.serverPositionConfirmed();
+    }
+    //#endif
 
     @Inject(method = "onBlockUpdate", at = @At("TAIL"))
     private void confluxmap$onBlockUpdate(final BlockUpdateS2CPacket packet, final CallbackInfo ci) {

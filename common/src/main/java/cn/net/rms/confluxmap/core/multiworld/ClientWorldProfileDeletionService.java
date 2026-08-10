@@ -42,6 +42,7 @@ public final class ClientWorldProfileDeletionService {
     public Transaction moveToRecovery(final String serverId, final ClientWorldProfile profile) {
         Objects.requireNonNull(profile, "profile");
         final String namespace = profile.storageId();
+        final String storageServerId = profile.storageServerId(serverId);
         final List<Move> completed = new ArrayList<>();
         Path journal = null;
         try {
@@ -50,27 +51,27 @@ public final class ClientWorldProfileDeletionService {
             journal = recovery.resolve("transaction.properties");
             final List<Move> planned = new ArrayList<>();
             planIfPresent(
-                safeDirectory(mapRoot, serverId, namespace),
+                safeDirectory(mapRoot, storageServerId, namespace),
                 recovery.resolve("map"),
                 planned
             );
             planIfPresent(
-                safeDirectory(mapRoot.resolve("prediction"), serverId, namespace),
+                safeDirectory(mapRoot.resolve("prediction"), storageServerId, namespace),
                 recovery.resolve("prediction"),
                 planned
             );
             planIfPresent(
-                safeDirectory(mapRoot.resolve("structures"), serverId, namespace),
+                safeDirectory(mapRoot.resolve("structures"), storageServerId, namespace),
                 recovery.resolve("structures"),
                 planned
             );
             planIfPresent(
-                safeFile(waypointRoot, serverId, namespace + ".json"),
+                safeFile(waypointRoot, storageServerId, namespace + ".json"),
                 recovery.resolve("waypoints.json"),
                 planned
             );
             planIfPresent(
-                safeFile(annotationRoot, serverId, namespace + ".json"),
+                safeFile(annotationRoot, storageServerId, namespace + ".json"),
                 recovery.resolve("annotations.json"),
                 planned
             );

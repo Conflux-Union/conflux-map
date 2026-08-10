@@ -2,8 +2,13 @@ package cn.net.rms.confluxmap.core.multiworld;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonDeserializationContext;
+import com.google.gson.JsonDeserializer;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import java.io.IOException;
+import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -13,7 +18,17 @@ import org.apache.logging.log4j.Logger;
 
 /** Atomic persistence for the client-owned world profile registry. */
 public final class ClientWorldProfileIo {
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final Gson GSON = new GsonBuilder()
+        .registerTypeAdapter(
+            ClientWorldTerrainAnchor.class,
+            (JsonDeserializer<ClientWorldTerrainAnchor>) ClientWorldProfileIo::deserializeTerrainAnchor
+        )
+        .registerTypeAdapter(
+            ClientWorldTrajectorySample.class,
+            (JsonDeserializer<ClientWorldTrajectorySample>) ClientWorldProfileIo::deserializeTrajectorySample
+        )
+        .setPrettyPrinting()
+        .create();
 
     private final Path file;
     private final Path blockedMarker;
@@ -127,6 +142,52 @@ public final class ClientWorldProfileIo {
             Files.deleteIfExists(blockedMarker);
         } catch (final IOException error) {
             logger.warn("Could not clear client world registry blocked marker {}", blockedMarker, error);
+        }
+    }
+
+    /** Optional evidence must fail closed per entry, not quarantine an otherwise valid registry. */
+    private static ClientWorldTerrainAnchor deserializeTerrainAnchor(
+        final JsonElement json,
+        final Type ignored,
+        final JsonDeserializationContext context
+    ) {
+        try {
+            final JsonObject object = json.getAsJsonObject();
+            return new ClientWorldTerrainAnchor(
+                context.deserialize(object.get("position"), ClientWorldPosition.class),
+                context.deserialize(object.get("fingerprint"), ClientWorldTerrainFingerprint.class),
+                object.get("capturedAtEpochMs").getAsLong()
+            );
+        } catch (final RuntimeException malformed) {
+            return null;
+        }
+    }
+
+    private static ClientWorldTrajectorySample deserializeTrajectorySample(
+        final JsonElement json,
+        final Type ignored,
+        final JsonDeserializationContext context
+    ) {
+        try {
+            final JsonObject object = json.getAsJsonObject();
+            return new ClientWorldTrajectorySample(
+                object.get("x").getAsDouble(),
+                object.get("y").getAsDouble(),
+                object.get("z").getAsDouble(),
+                object.get("horizontalVelocityX").getAsDouble(),
+                object.get("horizontalVelocityZ").getAsDouble(),
+                object.get("yawDegrees").getAsDouble(),
+                object.get("pitchDegrees").getAsDouble(),
+                object.get("clientTimeMs").getAsLong(),
+                object.get("clientTick").getAsLong(),
+                object.get("dimensionId").getAsString(),
+                object.get("sequence").getAsLong(),
+                object.get("serverAckTimeMs").getAsLong(),
+                object.get("connectionGeneration").getAsLong(),
+                context.deserialize(object.get("evidenceSource"), ClientWorldTrajectorySample.EvidenceSource.class)
+            );
+        } catch (final RuntimeException malformed) {
+            return null;
         }
     }
 

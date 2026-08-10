@@ -13,10 +13,11 @@ public record ClientWorldObservation(
     String gameMode,
     ClientWorldPosition position,
     ClientWorldTerrainFingerprint terrainFingerprint,
-    Map<String, ClientWorldTerrainFingerprint> terrainFingerprintsByProfileId
+    Map<String, ClientWorldTerrainFingerprint> terrainFingerprintsByProfileId,
+    ClientWorldTrajectory trajectory
 ) {
     public ClientWorldObservation(final OptionalLong seedHash, final Map<String, String> signals) {
-        this(seedHash, signals, null, null, null, null, Map.of());
+        this(seedHash, signals, null, null, null, null, Map.of(), null);
     }
 
     public ClientWorldObservation(
@@ -27,30 +28,43 @@ public record ClientWorldObservation(
         final ClientWorldPosition position,
         final ClientWorldTerrainFingerprint terrainFingerprint
     ) {
-        this(seedHash, signals, dimensionId, gameMode, position, terrainFingerprint, Map.of());
+        this(seedHash, signals, dimensionId, gameMode, position, terrainFingerprint, Map.of(), null);
+    }
+
+    public ClientWorldObservation(
+        final OptionalLong seedHash,
+        final Map<String, String> signals,
+        final String dimensionId,
+        final String gameMode,
+        final ClientWorldPosition position,
+        final ClientWorldTerrainFingerprint terrainFingerprint,
+        final Map<String, ClientWorldTerrainFingerprint> terrainFingerprintsByProfileId
+    ) {
+        this(seedHash, signals, dimensionId, gameMode, position, terrainFingerprint,
+            terrainFingerprintsByProfileId, null);
     }
 
     public ClientWorldObservation {
         seedHash = Objects.requireNonNull(seedHash, "seedHash");
-        final Map<String, String> normalized = new LinkedHashMap<>();
+        final Map<String, String> normalizedSignals = new LinkedHashMap<>();
         for (final Map.Entry<String, String> entry : Objects.requireNonNull(signals, "signals").entrySet()) {
             if (entry.getKey() != null && !entry.getKey().isBlank()
                 && entry.getValue() != null && !entry.getValue().isBlank()) {
-                normalized.put(entry.getKey(), entry.getValue());
+                normalizedSignals.put(entry.getKey(), entry.getValue());
             }
         }
-        signals = Map.copyOf(normalized);
+        signals = Map.copyOf(normalizedSignals);
         dimensionId = normalizeText(dimensionId);
         gameMode = normalizeText(gameMode);
-        final Map<String, ClientWorldTerrainFingerprint> terrainByProfile = new LinkedHashMap<>();
+        final Map<String, ClientWorldTerrainFingerprint> normalizedTerrain = new LinkedHashMap<>();
         for (final Map.Entry<String, ClientWorldTerrainFingerprint> entry : Objects.requireNonNull(
             terrainFingerprintsByProfileId, "terrainFingerprintsByProfileId"
         ).entrySet()) {
             if (entry.getKey() != null && !entry.getKey().isBlank() && entry.getValue() != null) {
-                terrainByProfile.put(entry.getKey(), entry.getValue());
+                normalizedTerrain.put(entry.getKey(), entry.getValue());
             }
         }
-        terrainFingerprintsByProfileId = Map.copyOf(terrainByProfile);
+        terrainFingerprintsByProfileId = Map.copyOf(normalizedTerrain);
     }
 
     public ClientWorldTerrainFingerprint terrainFingerprintFor(final String profileId) {

@@ -168,7 +168,6 @@ public final class ConfluxMapClient implements ClientModInitializer {
         clientMultiworldService.bindProfileFlushBarrier(
             world -> regionCache.awaitFlush(world)
         );
-
         // Beside (not inside) the cache/waypoints directories above, same confluxmap/ root; a
         // failed load just leaves NativeLib.available() false and prediction permanently disabled.
         NativeLib.init(confluxRoot);
@@ -328,6 +327,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     private void shutdown() {
         // Quitting mid-world fires no session tick, so close the complete session lifecycle here.
+        clientMultiworldService.flushTrajectoryCheckpoint();
         sessionTracker.endSession();
         mapExportService.close();
         correctionStore.flush();

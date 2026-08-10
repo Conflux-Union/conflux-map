@@ -21,7 +21,7 @@ class ClientWorldProfileTerrainVisitTest {
         profile.rememberVisit(observation(new ClientWorldPosition(256, 64, -32), null));
 
         final ClientWorldVisit visit = profile.visit("minecraft_overworld");
-        assertEquals(64, visit.lastPosition().x());
+        assertEquals(256, visit.lastPosition().x());
         assertTrue(visit.terrainFingerprint().hasCenter());
         assertEquals(4, visit.terrainFingerprint().centerChunkX());
         assertEquals(-2, visit.terrainFingerprint().centerChunkZ());
@@ -49,7 +49,7 @@ class ClientWorldProfileTerrainVisitTest {
         profile.rememberVisit(observation(new ClientWorldPosition(256, 64, -32), incomplete));
 
         final ClientWorldVisit visit = profile.visit("minecraft_overworld");
-        assertEquals(64, visit.lastPosition().x());
+        assertEquals(256, visit.lastPosition().x());
         assertTrue(visit.terrainFingerprint().sameCenter(saved));
     }
 
@@ -62,8 +62,17 @@ class ClientWorldProfileTerrainVisitTest {
         profile.rememberVisit(observation(new ClientWorldPosition(256, 64, -32), saved));
 
         final ClientWorldVisit visit = profile.visit("minecraft_overworld");
-        assertEquals(64, visit.lastPosition().x());
+        assertEquals(256, visit.lastPosition().x());
         assertTrue(visit.terrainFingerprint().sameCenter(saved));
+    }
+
+    @Test
+    void completeTerrainWithoutAPlayerPositionCannotCreateAnAnchor() {
+        final ClientWorldProfile profile = new ClientWorldProfile("id", "world", "World");
+
+        profile.rememberVisit(observation(null, fingerprint(4, -2)));
+
+        assertTrue(profile.visit("minecraft_overworld").terrainAnchors().isEmpty());
     }
 
     @Test
@@ -77,6 +86,22 @@ class ClientWorldProfileTerrainVisitTest {
 
         assertTrue(observation.terrainFingerprintFor("profile").sameCenter(savedCenterSample));
         assertTrue(observation.terrainFingerprintFor("other").sameCenter(current));
+    }
+
+    @Test
+    void multipleTerrainAnchorsRemainBoundToTheirOwnCenters() {
+        final ClientWorldProfile profile = new ClientWorldProfile("id", "world", "World");
+        final ClientWorldTerrainFingerprint first = fingerprint(0, 0);
+        final ClientWorldTerrainFingerprint second = fingerprint(4, -2);
+        profile.rememberVisit(observation(new ClientWorldPosition(0, 64, 0), first));
+        profile.rememberVisit(observation(new ClientWorldPosition(64, 64, -32), second));
+        profile.rememberVisit(observation(new ClientWorldPosition(512, 64, 512), null));
+
+        final ClientWorldVisit visit = profile.visit("minecraft_overworld");
+        assertEquals(2, visit.terrainAnchors().size());
+        assertTrue(visit.terrainAnchorFor(first).fingerprint().sameCenter(first));
+        assertTrue(visit.terrainAnchorFor(second).fingerprint().sameCenter(second));
+        assertEquals(512, visit.lastPosition().x());
     }
 
     private static ClientWorldObservation observation(

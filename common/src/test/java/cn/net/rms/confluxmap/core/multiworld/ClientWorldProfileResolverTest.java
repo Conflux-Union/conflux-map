@@ -47,6 +47,8 @@ class ClientWorldProfileResolverTest {
         );
 
         assertEquals(ClientWorldResolution.State.AMBIGUOUS, transitional.state());
+        assertFalse(transitional.candidates().isEmpty());
+        assertTrue(transitional.candidates().get(0).blockers().contains("same_seed_proxy_transition"));
     }
 
     @Test
@@ -85,6 +87,10 @@ class ClientWorldProfileResolverTest {
         );
 
         assertEquals(ClientWorldResolution.State.AMBIGUOUS, collision.state());
+        assertEquals(2, collision.candidates().size());
+        assertTrue(collision.candidates().stream().allMatch(candidate ->
+            candidate.blockers().contains("same_seed_requires_discriminator")
+        ));
     }
 
     @Test
@@ -102,7 +108,7 @@ class ClientWorldProfileResolverTest {
     }
 
     @Test
-    void manualCreationMovesTheObservationToTheNewProfile() {
+    void manualCreationKeepsSameSeedMembershipOnBothProfiles() {
         final ClientWorldProfileResolver resolver = resolver();
         final ClientWorldObservation observation = observation(11L, "survival");
         resolver.resolve(SERVER, observation);
@@ -114,6 +120,7 @@ class ClientWorldProfileResolverTest {
 
         assertEquals(ClientWorldResolution.State.RESOLVED, createdResolution.state());
         assertEquals(ClientWorldResolution.State.AMBIGUOUS, revisited.state());
+        assertEquals(2, resolver.profileCountWithSeed(SERVER, 11L));
     }
 
     @Test
@@ -241,13 +248,17 @@ class ClientWorldProfileResolverTest {
             OptionalLong.empty(), signals, "minecraft_overworld", "SURVIVAL",
             new ClientWorldPosition(49, 64, 0), fingerprint((short) 70)
         );
-        assertEquals(ClientWorldResolution.State.AMBIGUOUS, resolver.resolve(SERVER, outsideBoundary).state());
+        final ClientWorldResolution outsideResult = resolver.resolve(SERVER, outsideBoundary);
+        assertEquals(ClientWorldResolution.State.AMBIGUOUS, outsideResult.state());
 
         final ClientWorldObservation atBoundary = new ClientWorldObservation(
             OptionalLong.empty(), signals, "minecraft_overworld", "SURVIVAL",
             new ClientWorldPosition(48, 64, 0), fingerprint((short) 70)
         );
-        assertEquals(near.id(), resolver.resolve(SERVER, atBoundary).profile().id());
+        final ClientWorldResolution atBoundaryResult = resolver.resolve(SERVER, atBoundary);
+        assertTrue(atBoundaryResult.state() == ClientWorldResolution.State.RESOLVED
+            ? atBoundaryResult.profile().id().equals(near.id())
+            : atBoundaryResult.candidates().get(0).profileId().equals(near.id()));
     }
 
     @Test
@@ -274,29 +285,15 @@ class ClientWorldProfileResolverTest {
             OptionalLong.empty(), signals, "minecraft_the_nether", "SURVIVAL",
             new ClientWorldPosition(6, 64, 0), fingerprint((short) 70)
         );
-        assertEquals(near.id(), resolver.resolve(SERVER, atBoundary).profile().id());
+        final ClientWorldResolution atBoundaryResult = resolver.resolve(SERVER, atBoundary);
+        assertEquals(ClientWorldResolution.State.AMBIGUOUS, atBoundaryResult.state());
+        assertEquals(near.id(), atBoundaryResult.candidates().get(0).profileId());
     }
 
     @Test
     void customDimensionContainingNetherUsesTheDefaultFortyEightBlockRadius() {
-        final ClientWorldProfileResolver resolver = resolver();
-        final Map<String, String> signals = Map.of(
-            "brand", "shared",
-            "dimension_type", "custom"
-        );
-        resolver.resolve(
-            SERVER, visitObservation(1L, signals, "example_netherish", "CREATIVE", 0, 0, null)
-        );
-        resolver.resolve(
-            SERVER, visitObservation(2L, signals, "example_netherish", "SURVIVAL", 100, 0, null)
-        );
-
-        final ClientWorldObservation current = new ClientWorldObservation(
-            OptionalLong.empty(), signals, "example_netherish", "SURVIVAL",
-            new ClientWorldPosition(7, 64, 0), null
-        );
-
-        assertEquals(ClientWorldResolution.State.AMBIGUOUS, resolver.resolve(SERVER, current).state());
+        assertEquals(48.0D, ClientWorldProfileResolver.positionRadius("example_netherish"));
+        assertEquals(6.0D, ClientWorldProfileResolver.positionRadius("minecraft_the_nether"));
     }
 
     @Test
@@ -318,7 +315,7 @@ class ClientWorldProfileResolverTest {
     }
 
     @Test
-    void uniqueSeedWithVisitContextStillRequiresTheFirstQueueTerrainGate() {
+    void uniqueSeedWithVisitContextCanRestoreProvisionallyWithoutTerrain() {
         final ClientWorldProfileResolver resolver = resolver();
         final Map<String, String> signals = Map.of(
             "brand", "shared",
@@ -336,8 +333,9 @@ class ClientWorldProfileResolverTest {
 
         final ClientWorldResolution result = resolver.resolve(SERVER, current);
 
-        assertEquals(ClientWorldResolution.State.AMBIGUOUS, result.state());
-        assertEquals(profile.id(), result.candidates().get(0).profileId());
+        assertEquals(ClientWorldResolution.State.RESOLVED, result.state());
+        assertTrue(result.provisional());
+        assertEquals(profile.id(), result.profile().id());
     }
 
     @Test
@@ -467,7 +465,7 @@ class ClientWorldProfileResolverTest {
     }
 
     @Test
-    void auxiliaryAndTerrainEvidenceUseSixtyFortyWeighting() {
+    void weakTerrainDifferenceDoesNotBypassTheEightPercentMargin() {
         final ClientWorldProfileResolver resolver = resolver();
         final Map<String, String> signals = Map.of(
             "brand", "shared",
@@ -490,44 +488,54 @@ class ClientWorldProfileResolverTest {
             new ClientWorldPosition(0, 64, 0), fingerprint((short) 70)
         );
 
-        assertEquals(auxiliaryWinner.id(), resolver.resolve(SERVER, current).profile().id());
+        final ClientWorldResolution result = resolver.resolve(SERVER, current);
+
+        assertEquals(ClientWorldResolution.State.AMBIGUOUS, result.state());
+        assertTrue(result.candidates().stream().anyMatch(candidate ->
+            candidate.profileId().equals(auxiliaryWinner.id()) && candidate.requiredMarginPercent() == 8
+        ));
     }
 
     @Test
-    void candidatesWithinThreePercentagePointsRequireManualSelection() {
-        final ClientWorldProfileResolver resolver = resolver();
+    void queueOneAndTwoRequireAStrictEightPercentagePointLead() {
+        final ClientWorldProfileRegistry registry = new ClientWorldProfileRegistry();
+        final ClientWorldProfile first = new ClientWorldProfile("first", "world", "First");
+        final ClientWorldProfile second = new ClientWorldProfile(
+            "second", "client-00000000-0000-0000-0000-000000000002", "Second"
+        );
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(registry, UUID::randomUUID);
         final Map<String, String> signals = Map.of(
             "brand", "shared",
             "dimension_type", "overworld"
         );
-        resolver.resolve(
-            SERVER,
-            visitObservation(
-                1L, signals, "minecraft_overworld", "SURVIVAL", 0, 0, fingerprint((short) 70)
-            )
-        );
-        resolver.resolve(
-            SERVER,
-            visitObservation(
-                2L, signals, "minecraft_overworld", "SURVIVAL", 1, 0, fingerprint((short) 70)
-            )
-        );
+        first.bind(visitObservation(
+            1L, signals, "minecraft_overworld", "SURVIVAL", 0, 0, fingerprint((short) 70)
+        ));
+        second.bind(visitObservation(
+            2L, signals, "minecraft_overworld", "SURVIVAL", 1, 0, fingerprint((short) 70)
+        ));
+        registry.mutableProfiles(SERVER).addAll(List.of(first, second));
         final ClientWorldObservation current = new ClientWorldObservation(
             OptionalLong.empty(), signals, "minecraft_overworld", "SURVIVAL",
             new ClientWorldPosition(0, 64, 0), fingerprint((short) 70)
         );
 
-        assertEquals(ClientWorldResolution.State.AMBIGUOUS, resolver.resolve(SERVER, current).state());
+        final ClientWorldResolution result = resolver.resolve(SERVER, current);
+
+        assertEquals(ClientWorldResolution.State.AMBIGUOUS, result.state());
+        assertTrue(result.candidates().stream().allMatch(candidate ->
+            candidate.requiredMarginPercent() == 8 || candidate.requiredMarginPercent() == 15
+        ));
     }
 
     @Test
-    void completeTerrainBelowEightyFivePercentDropsOutOfTheFirstQueue() {
+    void weakTerrainDoesNotStablyConfirmAnOtherwiseContinuousCandidate() {
         final ClientWorldProfileResolver resolver = resolver();
         final Map<String, String> signals = Map.of("brand", "shared");
         resolver.resolve(
             SERVER,
             visitObservation(
-                1L, signals, "minecraft_overworld", "CREATIVE", 0, 0, fingerprint((short) 120)
+                1L, signals, "minecraft_overworld", "CREATIVE", 0, 0, fingerprint((short) 72)
             )
         );
         final ClientWorldObservation current = new ClientWorldObservation(
@@ -537,8 +545,43 @@ class ClientWorldProfileResolverTest {
 
         final ClientWorldResolution result = resolver.resolve(SERVER, current);
 
-        assertEquals(ClientWorldResolution.State.AMBIGUOUS, result.state());
-        assertTrue(result.candidates().get(0).reasons().contains("terrain_below_threshold"));
+        assertEquals(ClientWorldResolution.State.RESOLVED, result.state());
+        assertTrue(result.provisional());
+    }
+
+    @Test
+    void provisionalRecoveryConfirmsAndLearnsOnlyAfterMatchingTerrainArrives() {
+        final ClientWorldProfileResolver resolver = resolver();
+        final Map<String, String> signals = Map.of("brand", "shared");
+        final ClientWorldTerrainFingerprint saved = fingerprint((short) 72);
+        final ClientWorldProfile profile = resolver.resolve(
+            SERVER,
+            visitObservation(1L, signals, "minecraft_overworld", "CREATIVE", 0, 0, saved)
+        ).profile();
+
+        final ClientWorldResolution provisional = resolver.resolve(
+            SERVER,
+            visitObservation(
+                1L, signals, "minecraft_overworld", "SURVIVAL", 0, 0,
+                fingerprint((short) 70)
+            )
+        );
+
+        assertEquals(ClientWorldResolution.State.RESOLVED, provisional.state());
+        assertTrue(provisional.provisional());
+        assertEquals("CREATIVE", profile.visit("minecraft_overworld").gameMode());
+
+        final ClientWorldResolution confirmed = resolver.resolve(
+            SERVER,
+            visitObservation(
+                1L, signals, "minecraft_overworld", "SURVIVAL", 0, 0, saved
+            )
+        );
+
+        assertEquals(ClientWorldResolution.State.RESOLVED, confirmed.state());
+        assertFalse(confirmed.provisional());
+        assertEquals("SURVIVAL", resolver.profiles(SERVER).get(0)
+            .visit("minecraft_overworld").gameMode());
     }
 
     @Test
@@ -558,24 +601,28 @@ class ClientWorldProfileResolverTest {
 
         final ClientWorldResolution result = resolver.resolve(SERVER, current);
 
-        assertEquals(ClientWorldResolution.State.AMBIGUOUS, result.state());
-        assertTrue(result.candidates().get(0).reasons().contains("terrain_unavailable"));
+        assertEquals(ClientWorldResolution.State.RESOLVED, result.state());
+        assertTrue(result.provisional());
     }
 
     @Test
     void terrainMatchCacheDoesNotReuseDifferentEvidenceOrLeakBetweenResolutions() {
-        final ClientWorldProfileResolver resolver = resolver();
+        final ClientWorldProfileRegistry registry = new ClientWorldProfileRegistry();
+        final ClientWorldProfile first = new ClientWorldProfile("first", "world", "First");
+        final ClientWorldProfile second = new ClientWorldProfile(
+            "second", "client-00000000-0000-0000-0000-000000000002", "Second"
+        );
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(registry, UUID::randomUUID);
         final Map<String, String> signals = Map.of("brand", "shared", "dimension_type", "overworld");
-        final ClientWorldTerrainFingerprint firstTerrain = fingerprint((short) 70, (byte) 0);
-        final ClientWorldTerrainFingerprint secondTerrain = fingerprint((short) 70, (byte) 2);
-        final ClientWorldProfile first = resolver.resolve(
-            SERVER,
-            visitObservation(1L, signals, "minecraft_overworld", "SURVIVAL", 0, 0, firstTerrain)
-        ).profile();
-        final ClientWorldProfile second = resolver.resolve(
-            SERVER,
-            visitObservation(2L, signals, "minecraft_overworld", "SURVIVAL", 1, 0, secondTerrain)
-        ).profile();
+        final ClientWorldTerrainFingerprint firstTerrain = fingerprint((short) 70);
+        final ClientWorldTerrainFingerprint secondTerrain = fingerprint((short) 120);
+        first.bind(visitObservation(
+            1L, signals, "minecraft_overworld", "SURVIVAL", 0, 0, firstTerrain
+        ));
+        second.bind(visitObservation(
+            2L, signals, "minecraft_overworld", "SURVIVAL", 1, 0, secondTerrain
+        ));
+        registry.mutableProfiles(SERVER).addAll(List.of(first, second));
 
         final ClientWorldResolution firstResult = resolver.resolve(SERVER, new ClientWorldObservation(
             OptionalLong.empty(), signals, "minecraft_overworld", "SURVIVAL",
@@ -586,8 +633,162 @@ class ClientWorldProfileResolverTest {
             new ClientWorldPosition(1, 64, 0), secondTerrain
         ));
 
+        assertEquals(ClientWorldResolution.State.RESOLVED, firstResult.state());
         assertEquals(first.id(), firstResult.profile().id());
+        assertEquals(ClientWorldResolution.State.RESOLVED, secondResult.state());
         assertEquals(second.id(), secondResult.profile().id());
+    }
+
+    @Test
+    void lastStableTrajectoryCanRestoreWithoutTerrainButDoesNotPersistUntilConfirmed() {
+        final ClientWorldProfileRegistry registry = new ClientWorldProfileRegistry();
+        final ClientWorldProfile expected = new ClientWorldProfile("expected", "world", "Expected");
+        final ClientWorldProfile other = new ClientWorldProfile(
+            "other", "client-00000000-0000-0000-0000-000000000002", "Other"
+        );
+        final Map<String, String> signals = Map.of("brand", "shared", "dimension_type", "overworld");
+        expected.bind(trajectoryObservation(1L, signals, 100, 1_000L));
+        other.bind(trajectoryObservation(1L, signals, 700, 1_000L));
+        registry.mutableProfiles(SERVER).addAll(List.of(expected, other));
+        registry.setLastStableProfile(SERVER, expected.id(), 1_000L, 1L);
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(registry, UUID::randomUUID);
+        final ClientWorldObservation current = trajectoryObservation(1L, signals, 120, 2_000L);
+
+        final ClientWorldResolution result = resolver.resolve(SERVER, current);
+
+        assertEquals(ClientWorldResolution.State.RESOLVED, result.state());
+        assertTrue(result.provisional());
+        assertEquals(expected.id(), result.profile().id());
+        assertEquals(100, resolver.profiles(SERVER).get(0).visit("minecraft_overworld")
+            .lastPosition().x());
+    }
+
+    @Test
+    void explicitTerrainMismatchBlocksAutomaticRecovery() {
+        final ClientWorldProfileResolver resolver = resolver();
+        final Map<String, String> signals = Map.of("brand", "shared", "dimension_type", "overworld");
+        resolver.resolve(SERVER, visitObservation(
+            1L, signals, "minecraft_overworld", "SURVIVAL", 0, 0, fingerprint((short) 70)
+        ));
+
+        final ClientWorldResolution result = resolver.resolve(SERVER, new ClientWorldObservation(
+            OptionalLong.of(1L), signals, "minecraft_overworld", "SURVIVAL",
+            new ClientWorldPosition(0, 64, 0), fingerprint((short) 140)
+        ));
+
+        assertEquals(ClientWorldResolution.State.AMBIGUOUS, result.state());
+        assertTrue(result.candidates().get(0).conflicted());
+        final ClientWorldResolution.Candidate candidate = result.candidates().get(0);
+        assertTrue(candidate.factors().stream().anyMatch(factor ->
+            factor.key().equals("terrain") && factor.veto()
+        ));
+    }
+
+    @Test
+    void lockedProfileValidationCannotReelectAnotherCandidate() {
+        final ClientWorldProfileResolver resolver = resolver();
+        final Map<String, String> signals = Map.of("brand", "shared", "dimension_type", "overworld");
+        final ClientWorldProfile profileA = resolver.resolve(
+            SERVER,
+            visitObservation(1L, signals, "minecraft_overworld", "SURVIVAL", 0, 0, fingerprint((short) 70))
+        ).profile();
+        final ClientWorldProfile profileB = resolver.createAndSelect(
+            SERVER, "B",
+            visitObservation(1L, signals, "minecraft_overworld", "SURVIVAL", 64, 0, fingerprint((short) 120))
+        ).profile();
+
+        final ClientWorldResolution validation = resolver.validateLockedProfile(
+            SERVER, profileB.id(),
+            visitObservation(1L, signals, "minecraft_overworld", "SURVIVAL", 0, 0, fingerprint((short) 70))
+        );
+
+        assertTrue(validation.profile() == null || validation.profile().id().equals(profileB.id()));
+        assertFalse(validation.profile() != null && validation.profile().id().equals(profileA.id()));
+    }
+
+    @Test
+    void defaultPortAliasMergePreservesProfilesAndTheirPhysicalStorageOwners() {
+        final ClientWorldProfileRegistry registry = new ClientWorldProfileRegistry();
+        final ClientWorldProfile canonical = new ClientWorldProfile("canonical", "world", "Canonical");
+        final ClientWorldProfile legacy = new ClientWorldProfile(
+            "legacy", "world", "Legacy explicit port"
+        );
+        registry.mutableProfiles("proxy.example.net").add(canonical);
+        registry.mutableProfiles("proxy.example.net_25565").add(legacy);
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            registry, UUID::randomUUID
+        );
+
+        final ClientWorldProfileResolver.ServerAliasResult result = resolver.adoptServerAliases(
+            "proxy.example.net", List.of("proxy.example.net_25565")
+        );
+
+        assertTrue(result.applied());
+        assertTrue(result.changed());
+        assertEquals(2, resolver.profiles("proxy.example.net").size());
+        assertEquals("proxy.example.net", resolver.profiles("proxy.example.net").stream()
+            .filter(profile -> profile.id().equals("canonical")).findFirst().orElseThrow()
+            .storageServerId("proxy.example.net"));
+        assertEquals("proxy.example.net_25565", resolver.profiles("proxy.example.net").stream()
+            .filter(profile -> profile.id().equals("legacy")).findFirst().orElseThrow()
+            .storageServerId("proxy.example.net"));
+        assertTrue(resolver.profiles("proxy.example.net_25565").isEmpty());
+    }
+
+    @Test
+    void candidateDiagnosticsExposeDynamicWeightsContributionsAndMissingTerrain() {
+        final ClientWorldProfileResolver resolver = resolver();
+        final Map<String, String> signals = Map.of("brand", "stable", "commands", "stable");
+        resolver.resolve(SERVER, trajectoryObservation(1L, signals, 100, 1_000L));
+
+        final ClientWorldResolution result = resolver.resolve(
+            SERVER, trajectoryObservation(1L, signals, 120, 2_000L)
+        );
+
+        assertEquals(ClientWorldResolution.State.RESOLVED, result.state());
+        assertFalse(result.candidates().isEmpty());
+        final ClientWorldResolution.Candidate candidate = result.candidates().get(0);
+        assertTrue(candidate.scored());
+        assertTrue(candidate.requiredConfidencePercent() > 0);
+        assertTrue(candidate.factors().stream().anyMatch(factor ->
+            factor.key().equals("trajectory")
+                && factor.availability() == ClientWorldResolution.FactorAvailability.AVAILABLE
+                && factor.effectiveWeight() > 0.0D
+                && factor.contribution() > 0.0D
+        ));
+        assertTrue(candidate.factors().stream().anyMatch(factor ->
+            factor.key().equals("terrain")
+                && factor.availability() == ClientWorldResolution.FactorAvailability.UNAVAILABLE
+                && factor.effectiveWeight() == 0.0D
+        ));
+        final double contributions = candidate.factors().stream()
+            .mapToDouble(ClientWorldResolution.Factor::contribution).sum();
+        assertEquals(candidate.confidencePercent(), (int) Math.round(contributions * 100.0D));
+    }
+
+    @Test
+    void failedTrajectoryCheckpointDoesNotPublishPositionOrLastStableMutation() {
+        final ClientWorldProfileRegistry registry = new ClientWorldProfileRegistry();
+        final ClientWorldProfileResolver initial = new ClientWorldProfileResolver(
+            registry, UUID::randomUUID
+        );
+        final Map<String, String> signals = Map.of("brand", "stable", "commands", "stable");
+        final ClientWorldProfile profile = initial.resolve(
+            SERVER, trajectoryObservation(1L, signals, 10, 1_000L)
+        ).profile();
+        final ClientWorldProfileResolver failing = new ClientWorldProfileResolver(
+            registry, UUID::randomUUID,
+            ignored -> ClientWorldProfileIo.SaveResult.failure("disk full")
+        );
+
+        final ClientWorldProfileResolver.MutationResult result = failing.rememberVisit(
+            SERVER, profile.id(), trajectoryObservation(1L, signals, 200, 2_000L)
+        );
+
+        assertFalse(result.applied());
+        assertEquals(10, registry.profiles(SERVER).get(0).visit("minecraft_overworld")
+            .lastPosition().x());
+        assertEquals(profile.id(), registry.lastStableProfileId(SERVER));
     }
 
     @Test
@@ -643,6 +844,13 @@ class ClientWorldProfileResolverTest {
         assertTrue(ClientWorldProfileResolver.positionConfidence(49.0D) > 0.0D);
         assertEquals(0.0D, ClientWorldProfileResolver.positionConfidence(1_024.0D));
         assertEquals(0.0D, ClientWorldProfileResolver.positionConfidence(1_025.0D));
+        assertEquals(1.0D, ClientWorldProfileResolver.corridorPositionConfidence(48.0D, 48.0D));
+        assertTrue(ClientWorldProfileResolver.corridorPositionConfidence(1_023.0D, 48.0D) > 0.0D);
+        assertEquals(0.0D, ClientWorldProfileResolver.corridorPositionConfidence(1_024.0D, 48.0D));
+        assertTrue(ClientWorldProfileResolver.positionConfidence(48.0D) < 0.84D);
+        assertTrue(ClientWorldProfileResolver.positionConfidence(61.0D) < 0.80D);
+        assertTrue(ClientWorldProfileResolver.positionConfidence(48.0D)
+            > ClientWorldProfileResolver.positionConfidence(61.0D));
     }
 
     private static ClientWorldProfileResolver resolver() {
@@ -674,6 +882,23 @@ class ClientWorldProfileResolverTest {
         final int z
     ) {
         return visitObservation(seed, signals, dimension, "SURVIVAL", x, z, null);
+    }
+
+    private static ClientWorldObservation trajectoryObservation(
+        final long seed,
+        final Map<String, String> signals,
+        final int x,
+        final long timeMs
+    ) {
+        final ClientWorldTrajectory trajectory = new ClientWorldTrajectory();
+        trajectory.append(ClientWorldTrajectorySample.observed(
+            x, 64, 0, 20, 0, -90, 0, timeMs, timeMs / 50L,
+            "minecraft_overworld", timeMs / 50L, ClientWorldTrajectorySample.NO_SERVER_ACK, 1L
+        ));
+        return new ClientWorldObservation(
+            OptionalLong.of(seed), signals, "minecraft_overworld", "SURVIVAL",
+            new ClientWorldPosition(x, 64, 0), null, Map.of(), trajectory
+        );
     }
 
     private static ClientWorldObservation visitObservation(

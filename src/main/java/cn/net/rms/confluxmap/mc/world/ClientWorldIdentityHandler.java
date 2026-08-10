@@ -42,6 +42,14 @@ public final class ClientWorldIdentityHandler {
         }
     }
 
+    /** Called after vanilla applies a server-authoritative position update. */
+    public static void serverPositionConfirmed() {
+        final ClientMultiworldService current = service;
+        if (current != null) {
+            current.onServerPositionConfirmed();
+        }
+    }
+
     /** Called only after a server full-chunk packet has updated the logical client world. */
     public static void fullChunkLoaded(final int chunkX, final int chunkZ) {
         final ClientMultiworldService current = service;

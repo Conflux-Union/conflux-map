@@ -32,15 +32,26 @@ public final class WorldIdentity {
     private final String serverId;
     private final String worldId;
     private final List<String> legacyStorageIds;
+    private final List<String> legacyServerIds;
 
     public WorldIdentity(final String serverId, final String worldId) {
-        this(serverId, worldId, List.of());
+        this(serverId, worldId, List.of(), List.of());
     }
 
     private WorldIdentity(final String serverId, final String worldId, final List<String> legacyStorageIds) {
+        this(serverId, worldId, legacyStorageIds, List.of());
+    }
+
+    private WorldIdentity(
+        final String serverId,
+        final String worldId,
+        final List<String> legacyStorageIds,
+        final List<String> legacyServerIds
+    ) {
         this.serverId = Objects.requireNonNull(serverId, "serverId");
         this.worldId = Objects.requireNonNull(worldId, "worldId");
         this.legacyStorageIds = List.copyOf(legacyStorageIds);
+        this.legacyServerIds = List.copyOf(legacyServerIds);
     }
 
     public String serverId() {
@@ -55,13 +66,18 @@ public final class WorldIdentity {
         return legacyStorageIds;
     }
 
+    /** Pre-canonicalization server folders that may still own this world's map data. */
+    public List<String> legacyServerIds() {
+        return legacyServerIds;
+    }
+
     /**
      * Non-companion multiplayer: {@code worldId} stays at the literal {@code "world"} so existing
      * caches keep working bit-for-bit. Companion servers go through {@link #companionMultiplayer(String, String)}
      * instead with the UUID the server advertised.
      */
     public static WorldIdentity multiplayer(final String address) {
-        return new WorldIdentity(serverId(address), "world");
+        return multiplayerIdentity(address, "world");
     }
 
     /**
@@ -69,7 +85,7 @@ public final class WorldIdentity {
      * profiles use this factory and must not implicitly claim the old default-world cache.
      */
     public static WorldIdentity multiplayer(final String address, final String worldId) {
-        return new WorldIdentity(serverId(address), sanitizeWorldId(worldId));
+        return multiplayerIdentity(address, sanitizeWorldId(worldId));
     }
 
     /** Companion-only form; unlike the legacy overload it rejects untrusted non-UUID namespaces. */
@@ -77,7 +93,7 @@ public final class WorldIdentity {
         if (!isCanonicalUuid(worldId)) {
             throw new IllegalArgumentException("companion worldId must be a canonical UUID");
         }
-        return new WorldIdentity(serverId(address), worldId);
+        return multiplayerIdentity(address, worldId);
     }
 
     /**
@@ -146,6 +162,37 @@ public final class WorldIdentity {
             ? sanitized
             : sanitized.substring(0, SERVER_ID_PREFIX_MAX_LENGTH);
         return prefix + "--" + sha256(canonical).substring(0, SERVER_ID_HASH_LENGTH);
+    }
+
+    private static WorldIdentity multiplayerIdentity(final String address, final String worldId) {
+        final String raw = Objects.requireNonNull(address, "address").trim().toLowerCase(Locale.ROOT);
+        final String canonicalAddress = withoutDefaultPort(raw);
+        final String canonicalServerId = serverId(canonicalAddress);
+        final String explicitDefaultAddress = withDefaultPort(canonicalAddress);
+        final String legacyServerId = serverId(raw.equals(canonicalAddress) ? explicitDefaultAddress : raw);
+        final List<String> legacyServers = legacyServerId.equals(canonicalServerId)
+            ? List.of() : List.of(legacyServerId);
+        return new WorldIdentity(canonicalServerId, worldId, List.of(), legacyServers);
+    }
+
+    /** Removes only an unambiguous Minecraft default port; unbracketed IPv6 is left untouched. */
+    private static String withoutDefaultPort(final String address) {
+        if (address.startsWith("[")) {
+            final int close = address.indexOf(']');
+            return close > 0 && address.substring(close + 1).equals(":25565")
+                ? address.substring(0, close + 1) : address;
+        }
+        final int firstColon = address.indexOf(':');
+        return firstColon >= 0 && firstColon == address.lastIndexOf(':')
+            && address.substring(firstColon).equals(":25565")
+            ? address.substring(0, firstColon) : address;
+    }
+
+    private static String withDefaultPort(final String address) {
+        if (address.startsWith("[") && address.endsWith("]")) {
+            return address + ":25565";
+        }
+        return address.indexOf(':') < 0 ? address + ":25565" : address;
     }
 
     private static String sanitizeWorldId(final String s) {
