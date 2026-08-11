@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.tile;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
@@ -124,6 +125,63 @@ class TileServiceRealCoverageMaskTest {
         } finally {
             executors.shutdown(1000L);
         }
+    }
+
+    @Test
+    void serverViewBoundaryKeepsPredictionUntilLocalChunkArrives() {
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final MapWorldService worlds = new MapWorldService();
+            final SessionGuard.Session session = new SessionGuard.Session(
+                1L, WorldIdentity.singleplayer("pending-local-authority"), DimensionId.OVERWORLD
+            );
+            worlds.switchSession(session);
+            final TileService tiles = new TileService(
+                worlds, executors, new ConfluxConfig(), new DaylightModel()
+            );
+            tiles.setLocalAuthorityViewport(new ChunkViewport(0, 0, 0, 0));
+            for (int lod = 0; lod <= TileMath.MAX_LOD; lod++) {
+                final int[] pixels = predictedTile();
+                tiles.maskKnownRealPixels(tileKey(session, lod), pixels);
+                final int pixelsPerChunk = TileMath.CHUNKS_PER_TILE >> lod;
+                for (int z = 0; z < pixelsPerChunk; z++) {
+                    for (int x = 0; x < pixelsPerChunk; x++) {
+                        assertEquals(
+                            PREDICTED,
+                            pixels[z * TileMath.TILE_SIZE + x],
+                            "a newly entered server-view chunk must keep its predicted underlay at LOD" + lod
+                        );
+                    }
+                }
+            }
+
+            assertTrue(worlds.current().put(
+                MapLayer.SURFACE, snapshot(session.token(), 1L), SampleSource.REAL_LIVE
+            ));
+            for (int lod = 0; lod <= TileMath.MAX_LOD; lod++) {
+                final int[] pixels = predictedTile();
+                tiles.maskKnownRealPixels(tileKey(session, lod), pixels);
+                assertEquals(
+                    Argb.TRANSPARENT,
+                    pixels[0],
+                    "the local snapshot must take over at LOD" + lod
+                );
+            }
+        } finally {
+            executors.shutdown(1000L);
+        }
+    }
+
+    private static int[] predictedTile() {
+        final int[] pixels = new int[TileMath.TILE_SIZE * TileMath.TILE_SIZE];
+        Arrays.fill(pixels, PREDICTED);
+        return pixels;
+    }
+
+    private static TileKey tileKey(final SessionGuard.Session session, final int lod) {
+        return new TileKey(
+            session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), lod, 0, 0
+        );
     }
 
     private static int maskedPixel(

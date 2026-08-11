@@ -67,7 +67,7 @@ class PredictionTileServiceTest {
     }
 
     @Test
-    void localAuthorityBoundaryRefreshesAnAlreadyUploadedSelectedSource(
+    void localAuthorityBoundaryKeepsPredictionWhileLocalChunkIsPending(
         @TempDir final Path tempDir
     ) throws InterruptedException {
         final SessionGuard sessionGuard = new SessionGuard();
@@ -96,10 +96,9 @@ class PredictionTileServiceTest {
             uploads.setLocalAuthorityViewport(new ChunkViewport(0, 0, 0, 0));
             predictionTiles.refreshLiveCoverage();
             awaitIdle(predictionTiles);
-            assertEquals(
-                Argb.TRANSPARENT,
-                latestUpdate(uploads, key).argbPixels()[8 * 256 + 8],
-                "the player-view chunk must hide sync and prediction without comparing revisions"
+            assertTrue(
+                latestUpdate(uploads, key).argbPixels()[8 * 256 + 8] != Argb.TRANSPARENT,
+                "the player-view chunk must keep prediction until its local snapshot exists"
             );
 
             uploads.setLocalAuthorityViewport(new ChunkViewport(1, 1, 0, 0));
@@ -107,7 +106,7 @@ class PredictionTileServiceTest {
             awaitIdle(predictionTiles);
             assertTrue(
                 latestUpdate(uploads, key).argbPixels()[8 * 256 + 8] != Argb.TRANSPARENT,
-                "leaving player view must restore the timestamp-selected outer source"
+                "leaving player view must preserve the predicted outer source"
             );
         } finally {
             executors.shutdown(2000L);
