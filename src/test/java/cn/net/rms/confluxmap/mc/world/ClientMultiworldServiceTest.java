@@ -30,6 +30,9 @@ import java.util.Map;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.logging.log4j.LogManager;
@@ -458,6 +461,64 @@ class ClientMultiworldServiceTest {
         service.persistTrajectoryCheckpointIfDue();
 
         assertTrue(checkpoints.load(serverId) != null);
+    }
+
+    @Test
+    void stableVisitPersistenceRunsOffTheClientPathAndPublishesAfterTheWrite() {
+        final ClientWorldTrajectoryCheckpointIo checkpoints = checkpointIo();
+        final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();
+        assertTrue(checkpoints.save(serverId, OptionalLong.of(11L), trajectory()).saved());
+        final AtomicLong saves = new AtomicLong();
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            new ClientWorldProfileRegistry(), ids(), ignored -> {
+                saves.incrementAndGet();
+                return ClientWorldProfileIo.SaveResult.success();
+            }
+        );
+        final ClientMultiworldService service = service(resolver);
+        final QueueingExecutor io = new QueueingExecutor();
+        service.bindTrajectoryIoExecutor(io);
+        service.onGameJoin(11L);
+        assertEquals(ClientWorldResolution.State.RESOLVED, service.resolveProfile(ADDRESS).state());
+        final long savesBeforeFlush = saves.get();
+
+        service.flushTrajectoryCheckpoint();
+
+        assertEquals(savesBeforeFlush, saves.get());
+        assertEquals(2, io.size());
+        assertEquals(1, resolver.profiles(serverId).get(0).visit("minecraft_overworld")
+            .trajectorySamples().size());
+
+        io.runAll();
+        service.advanceDetectionClock();
+
+        assertEquals(savesBeforeFlush + 1L, saves.get());
+    }
+
+    @Test
+    void deferredVisitCannotOverwriteANewerProfileMutation() {
+        final AtomicLong saves = new AtomicLong();
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            new ClientWorldProfileRegistry(), ids(), ignored -> {
+                saves.incrementAndGet();
+                return ClientWorldProfileIo.SaveResult.success();
+            }
+        );
+        final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();
+        final ClientWorldProfile profile = resolver.createAndSelect(
+            serverId, "Original", visitObservation(0, 0)
+        ).profile();
+        final ClientWorldProfileResolver.PreparedVisitMutation pending = resolver.prepareRememberVisit(
+            serverId, profile.id(), visitObservation(512, 0)
+        );
+        final long savesBeforeRename = saves.get();
+
+        assertTrue(resolver.rename(serverId, profile.id(), "Renamed").applied());
+        assertFalse(resolver.persistPreparedVisit(pending).applied());
+        assertFalse(resolver.publishPreparedVisit(pending).applied());
+
+        assertEquals(savesBeforeRename + 1L, saves.get());
+        assertEquals("Renamed", resolver.profiles(serverId).get(0).displayName());
     }
 
     @Test
@@ -963,6 +1024,25 @@ class ClientMultiworldServiceTest {
             new ClientWorldPosition(x, 64, z),
             null
         );
+    }
+
+    private static final class QueueingExecutor implements Executor {
+        private final Deque<Runnable> tasks = new ArrayDeque<>();
+
+        @Override
+        public void execute(final Runnable task) {
+            tasks.addLast(task);
+        }
+
+        int size() {
+            return tasks.size();
+        }
+
+        void runAll() {
+            while (!tasks.isEmpty()) {
+                tasks.removeFirst().run();
+            }
+        }
     }
 
     private static java.util.function.Supplier<UUID> ids() {

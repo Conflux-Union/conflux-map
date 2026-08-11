@@ -128,6 +128,8 @@ public final class ClientMultiworldService {
     private boolean trajectoryCheckpointWriteInFlight;
     private final AtomicReference<CheckpointWriteCompletion> trajectoryCheckpointCompletion = new AtomicReference<>();
     private final AtomicReference<CompletableFuture<Void>> trajectoryCheckpointFuture = new AtomicReference<>();
+    private boolean visitWriteInFlight;
+    private final AtomicReference<VisitWriteCompletion> visitWriteCompletion = new AtomicReference<>();
     private ClientWorldTerrainFingerprint terrainFingerprint;
     /** Candidate-specific samples captured only when their saved 3x3 is already loaded. */
     private final Map<String, ClientWorldTerrainFingerprint> terrainFingerprintsByProfileId = new LinkedHashMap<>();
@@ -1148,33 +1150,11 @@ public final class ClientMultiworldService {
 
     /** Exit-time supplement for the periodic atomic visit checkpoint. */
     public void flushTrajectoryCheckpoint() {
-        final CompletableFuture<Void> pending = trajectoryCheckpointFuture.getAndSet(null);
-        if (pending != null) {
-            try {
-                pending.join();
-            } catch (final RuntimeException error) {
-                trajectoryCheckpointError = error.getMessage();
-            }
-        }
         applyCompletedTrajectoryCheckpoint();
-        trajectoryCheckpointWriteInFlight = false;
-        persistTrajectoryCheckpoint();
-        if (serverId == null || resolution.state() != ClientWorldResolution.State.RESOLVED
-            || resolution.provisional() || persistenceFailureLatched) {
-            return;
-        }
-        final ClientWorldProfileResolver.MutationResult result = resolver.rememberVisit(
-            serverId, resolution.profile().id(), observation()
-        );
-        if (!result.applied()) {
-            persistenceError = result.error();
-            recordPersistenceFailure();
-        } else {
-            persistenceError = null;
-            resetPersistenceBackoff();
-            clearTrajectoryCheckpoint();
-            discardCandidateTrajectoryOverride(resolution.profile().id());
-        }
+        persistTrajectoryCheckpoint(true);
+        applyCompletedTrajectoryCheckpoint();
+        queueStableVisitPersistence(observation());
+        applyCompletedVisitPersistence();
     }
 
     /** Latest independent checkpoint error; it does not quarantine the stable profile registry. */
@@ -1183,11 +1163,20 @@ public final class ClientMultiworldService {
     }
 
     void persistTrajectoryCheckpointIfDue() {
+        persistTrajectoryCheckpoint(false);
+    }
+
+    /**
+     * Schedules an atomic trajectory image without waiting for the IO thread. Departure paths use
+     * {@code force} so the last known trajectory is retained even when the periodic interval has
+     * not elapsed; shutdown drains the shared IO executor after this task is accepted.
+     */
+    private void persistTrajectoryCheckpoint(final boolean force) {
         applyCompletedTrajectoryCheckpoint();
         if (trajectoryCheckpointWriteInFlight) {
             return;
         }
-        if (lastTrajectoryCheckpointTick != Long.MIN_VALUE
+        if (!force && lastTrajectoryCheckpointTick != Long.MIN_VALUE
             && clientTick - lastTrajectoryCheckpointTick < TRAJECTORY_CHECKPOINT_INTERVAL_TICKS) {
             return;
         }
@@ -1218,21 +1207,6 @@ public final class ClientMultiworldService {
         trajectoryCheckpointFuture.set(future);
     }
 
-    private void persistTrajectoryCheckpoint() {
-        if (serverId == null || trajectory.latest() == null) {
-            return;
-        }
-        final ClientWorldTrajectoryCheckpointIo.SaveResult result = trajectoryCheckpointIo.save(
-            serverId, seedHash, trajectory
-        );
-        if (result.saved()) {
-            lastTrajectoryCheckpointTick = clientTick;
-            trajectoryCheckpointError = null;
-        } else {
-            trajectoryCheckpointError = result.error();
-        }
-    }
-
     private void applyCompletedTrajectoryCheckpoint() {
         final CheckpointWriteCompletion completion = trajectoryCheckpointCompletion.getAndSet(null);
         if (completion == null) {
@@ -1248,9 +1222,84 @@ public final class ClientMultiworldService {
         }
     }
 
+    /**
+     * Persists stable visit evidence on the serialized map IO executor. The resolver publishes the
+     * isolated registry image only after its save succeeds, so map writers cannot observe an
+     * in-memory visit that failed to reach disk.
+     */
+    private void queueStableVisitPersistence(final ClientWorldObservation current) {
+        applyCompletedVisitPersistence();
+        if (visitWriteInFlight || serverId == null || current.dimensionId() == null
+            || resolution.state() != ClientWorldResolution.State.RESOLVED
+            || resolution.provisional() || persistenceFailureLatched) {
+            return;
+        }
+        final String visitServerId = serverId;
+        final String visitProfileId = resolution.profile().id();
+        final long visitGeneration = connectionGeneration;
+        final long visitTick = clientTick;
+        final ClientWorldProfileResolver.PreparedVisitMutation prepared = resolver.prepareRememberVisit(
+            visitServerId, visitProfileId, current
+        );
+        if (!prepared.prepared()) {
+            persistenceError = prepared.result().error();
+            recordPersistenceFailure();
+            return;
+        }
+        visitWriteInFlight = true;
+        CompletableFuture.runAsync(() -> {
+            final ClientWorldProfileResolver.MutationResult result = resolver.persistPreparedVisit(prepared);
+            visitWriteCompletion.set(new VisitWriteCompletion(
+                visitGeneration, visitServerId, visitProfileId, current, visitTick, prepared, result
+            ));
+        }, trajectoryIoExecutor);
+    }
+
+    private void applyCompletedVisitPersistence() {
+        final VisitWriteCompletion completion = visitWriteCompletion.getAndSet(null);
+        if (completion == null) {
+            return;
+        }
+        visitWriteInFlight = false;
+        final ClientWorldProfileResolver.MutationResult published = completion.result().applied()
+            ? resolver.publishPreparedVisit(completion.prepared()) : completion.result();
+        final boolean stillCurrent = completion.connectionGeneration() == connectionGeneration
+            && Objects.equals(completion.serverId(), serverId)
+            && resolution.state() == ClientWorldResolution.State.RESOLVED
+            && !resolution.provisional()
+            && resolution.profile().id().equals(completion.profileId());
+        if (!published.applied()) {
+            if (stillCurrent) {
+                persistenceError = published.error();
+                recordPersistenceFailure();
+            }
+            return;
+        }
+        if (!stillCurrent) {
+            return;
+        }
+        persistenceError = null;
+        resetPersistenceBackoff();
+        lastRememberedVisit = completion.observation();
+        lastVisitRefreshTick = completion.tick();
+        clearTrajectoryCheckpoint();
+        discardCandidateTrajectoryOverride(completion.profileId());
+    }
+
     private record CheckpointWriteCompletion(
         long tick,
         ClientWorldTrajectoryCheckpointIo.SaveResult result
+    ) {
+    }
+
+    private record VisitWriteCompletion(
+        long connectionGeneration,
+        String serverId,
+        String profileId,
+        ClientWorldObservation observation,
+        long tick,
+        ClientWorldProfileResolver.PreparedVisitMutation prepared,
+        ClientWorldProfileResolver.MutationResult result
     ) {
     }
 
@@ -1841,6 +1890,7 @@ public final class ClientMultiworldService {
     }
 
     private void rememberStableVisit() {
+        applyCompletedVisitPersistence();
         if (serverId == null || persistenceFailureLatched) {
             return;
         }
@@ -1861,19 +1911,7 @@ public final class ClientMultiworldService {
             || !shouldRefreshVisit(lastRememberedVisit, current, elapsedTicks, policy())) {
             return;
         }
-        final ClientWorldProfileResolver.MutationResult result = resolver.rememberVisit(
-            serverId, resolution.profile().id(), current
-        );
-        if (!result.applied()) {
-            persistenceError = result.error();
-            recordPersistenceFailure();
-            return;
-        }
-        persistenceError = null;
-        resetPersistenceBackoff();
-        lastRememberedVisit = current;
-        lastVisitRefreshTick = clientTick;
-        clearTrajectoryCheckpoint();
+        queueStableVisitPersistence(current);
     }
 
     static boolean shouldRefreshVisit(
@@ -2048,6 +2086,7 @@ public final class ClientMultiworldService {
 
     void advanceDetectionClock() {
         clientTick++;
+        applyCompletedVisitPersistence();
         if (!hasPendingCommand() || !commandLockAwaitingWorldTransition || clientTick < commandLockDeadlineTick) {
             return;
         }

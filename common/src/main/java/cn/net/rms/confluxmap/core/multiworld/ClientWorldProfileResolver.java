@@ -41,6 +41,9 @@ public final class ClientWorldProfileResolver {
     private final Supplier<UUID> ids;
     private final Persistence persistence;
     private final Supplier<ClientWorldPolicy> policy;
+    /** Serializes disk images so a deferred visit never overwrites a newer management mutation. */
+    private final Object persistenceLock = new Object();
+    private long registryGeneration;
 
     public ClientWorldProfileResolver(
         final ClientWorldProfileRegistry registry,
@@ -545,14 +548,17 @@ public final class ClientWorldProfileResolver {
      */
     public MutationResult restore(final ClientWorldProfileRegistry restored) {
         Objects.requireNonNull(restored, "restored");
-        if (registry.available()) {
+        synchronized (persistenceLock) {
+            if (registry.available()) {
+                return MutationResult.success();
+            }
+            if (!restored.available()) {
+                return MutationResult.failure(restored.loadFailure());
+            }
+            registry.replaceWith(restored);
+            registryGeneration++;
             return MutationResult.success();
         }
-        if (!restored.available()) {
-            return MutationResult.failure(restored.loadFailure());
-        }
-        registry.replaceWith(restored);
-        return MutationResult.success();
     }
 
     /** Whether this server already has a profile bound to the supplied seed signature. */
@@ -610,6 +616,68 @@ public final class ClientWorldProfileResolver {
         }).result();
     }
 
+    /**
+     * Captures a stable visit into an isolated registry image for background persistence.
+     * The caller must persist and publish this object through the methods below; publishing is
+     * rejected when a newer registry mutation has already reached disk.
+     */
+    public PreparedVisitMutation prepareRememberVisit(
+        final String serverId,
+        final String profileId,
+        final ClientWorldObservation observation
+    ) {
+        if (observation.dimensionId() == null) {
+            return PreparedVisitMutation.noop();
+        }
+        synchronized (persistenceLock) {
+            if (!registry.available()) {
+                return PreparedVisitMutation.failure(registry.loadFailure());
+            }
+            try {
+                final ClientWorldProfileRegistry candidate = registry.copy();
+                requireProfile(candidate.mutableProfiles(serverId), profileId).rememberVisit(observation);
+                rememberLastStable(candidate, serverId, profileId, observation);
+                return PreparedVisitMutation.prepared(candidate, registryGeneration);
+            } catch (final RuntimeException error) {
+                return PreparedVisitMutation.failure(errorMessage(error));
+            }
+        }
+    }
+
+    /** Persists a prepared visit without exposing its registry image to readers. */
+    public MutationResult persistPreparedVisit(final PreparedVisitMutation mutation) {
+        if (mutation == null || !mutation.prepared()) {
+            return mutation == null ? MutationResult.failure("missing prepared client world visit") : mutation.result();
+        }
+        synchronized (persistenceLock) {
+            if (mutation.generation != registryGeneration) {
+                return MutationResult.failure("client world registry changed before visit persistence");
+            }
+            try {
+                final ClientWorldProfileIo.SaveResult saved = persistence.save(mutation.candidate);
+                return saved != null && saved.saved()
+                    ? MutationResult.success() : MutationResult.failure(saved == null ? null : saved.error());
+            } catch (final RuntimeException error) {
+                return MutationResult.failure(errorMessage(error));
+            }
+        }
+    }
+
+    /** Publishes a successfully persisted visit on the client thread. */
+    public MutationResult publishPreparedVisit(final PreparedVisitMutation mutation) {
+        if (mutation == null || !mutation.prepared()) {
+            return mutation == null ? MutationResult.failure("missing prepared client world visit") : mutation.result();
+        }
+        synchronized (persistenceLock) {
+            if (mutation.generation != registryGeneration) {
+                return MutationResult.failure("client world registry changed before visit publication");
+            }
+            registry.replaceWith(mutation.candidate);
+            registryGeneration++;
+            return MutationResult.success();
+        }
+    }
+
     /** Removes only registry metadata. Callers must relocate the profile's local data first. */
     public MutationResult delete(final String serverId, final String profileId) {
         try {
@@ -653,6 +721,46 @@ public final class ClientWorldProfileResolver {
 
         static MutationResult failure(final String error) {
             return new MutationResult(false, error == null || error.isBlank() ? "unknown persistence error" : error);
+        }
+    }
+
+    /** Opaque isolated registry image used by the client IO queue for a visit refresh. */
+    public static final class PreparedVisitMutation {
+        private final ClientWorldProfileRegistry candidate;
+        private final long generation;
+        private final MutationResult result;
+
+        private PreparedVisitMutation(
+            final ClientWorldProfileRegistry candidate,
+            final long generation,
+            final MutationResult result
+        ) {
+            this.candidate = candidate;
+            this.generation = generation;
+            this.result = result;
+        }
+
+        private static PreparedVisitMutation prepared(
+            final ClientWorldProfileRegistry candidate,
+            final long generation
+        ) {
+            return new PreparedVisitMutation(candidate, generation, MutationResult.success());
+        }
+
+        private static PreparedVisitMutation noop() {
+            return new PreparedVisitMutation(null, -1L, MutationResult.success());
+        }
+
+        private static PreparedVisitMutation failure(final String error) {
+            return new PreparedVisitMutation(null, -1L, MutationResult.failure(error));
+        }
+
+        public boolean prepared() {
+            return candidate != null && result.applied();
+        }
+
+        public MutationResult result() {
+            return result;
         }
     }
 
@@ -1658,23 +1766,26 @@ public final class ClientWorldProfileResolver {
     }
 
     private <T> Mutation<T> mutate(final Function<ClientWorldProfileRegistry, T> change) {
-        if (!registry.available()) {
-            return new Mutation<>(null, MutationResult.failure(registry.loadFailure()));
+        synchronized (persistenceLock) {
+            if (!registry.available()) {
+                return new Mutation<>(null, MutationResult.failure(registry.loadFailure()));
+            }
+            final ClientWorldProfileRegistry candidate = registry.copy();
+            final T value;
+            final ClientWorldProfileIo.SaveResult persisted;
+            try {
+                value = change.apply(candidate);
+                persisted = persistence.save(candidate);
+            } catch (final RuntimeException error) {
+                return new Mutation<>(null, MutationResult.failure(errorMessage(error)));
+            }
+            if (persisted == null || !persisted.saved()) {
+                return new Mutation<>(null, MutationResult.failure(persisted == null ? null : persisted.error()));
+            }
+            registry.replaceWith(candidate);
+            registryGeneration++;
+            return new Mutation<>(value, MutationResult.success());
         }
-        final ClientWorldProfileRegistry candidate = registry.copy();
-        final T value;
-        final ClientWorldProfileIo.SaveResult persisted;
-        try {
-            value = change.apply(candidate);
-            persisted = persistence.save(candidate);
-        } catch (final RuntimeException error) {
-            return new Mutation<>(null, MutationResult.failure(errorMessage(error)));
-        }
-        if (persisted == null || !persisted.saved()) {
-            return new Mutation<>(null, MutationResult.failure(persisted == null ? null : persisted.error()));
-        }
-        registry.replaceWith(candidate);
-        return new Mutation<>(value, MutationResult.success());
     }
 
     private static String errorMessage(final RuntimeException error) {
