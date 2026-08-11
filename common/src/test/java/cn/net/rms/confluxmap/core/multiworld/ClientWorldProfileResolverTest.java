@@ -467,6 +467,32 @@ class ClientWorldProfileResolverTest {
     }
 
     @Test
+    void manualConfirmationPublishesOwnedHistoryBeforeTheCurrentDimension() {
+        final ClientWorldProfileResolver resolver = resolver();
+        final Map<String, String> signals = Map.of("brand", "shared");
+        final ClientWorldProfile profile = resolver.resolve(
+            SERVER,
+            visitObservation(1L, signals, "minecraft_overworld", "SURVIVAL", 0, 0, null)
+        ).profile();
+        final ClientWorldObservation ownedNetherVisit = visitObservation(
+            1L, signals, "minecraft_the_nether", "SURVIVAL", 64, -32, null
+        );
+        final ClientWorldObservation currentOverworldVisit = visitObservation(
+            1L, signals, "minecraft_overworld", "SURVIVAL", 900, 120, null
+        );
+
+        resolver.select(
+            SERVER, profile.id(), List.of(ownedNetherVisit), currentOverworldVisit
+        );
+
+        final ClientWorldProfile persisted = resolver.profiles(SERVER).get(0);
+        assertEquals("minecraft_overworld", persisted.lastObservedVisit().dimensionId());
+        assertEquals(new ClientWorldPosition(900, 64, 120), persisted.lastObservedVisit().lastPosition());
+        assertTrue(persisted.visit("minecraft_the_nether") != null);
+        assertTrue(persisted.visit("minecraft_the_nether").lastPosition() == null);
+    }
+
+    @Test
     void optionalTerrainCanDisambiguateOtherwiseSimilarAuxiliaryEvidence() {
         final ClientWorldProfileResolver resolver = resolver();
         final Map<String, String> signals = Map.of(

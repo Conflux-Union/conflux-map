@@ -22,6 +22,7 @@ import cn.net.rms.confluxmap.core.multiworld.ClientWorldResolution;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldTrajectory;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldTrajectoryCheckpointIo;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldTrajectorySample;
+import cn.net.rms.confluxmap.core.multiworld.ClientWorldVisit;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -233,6 +234,20 @@ class ClientMultiworldServiceTest {
         assertEquals(1, buffered.size());
         assertEquals(2, buffered.get(0).snapshot().chunkX);
         assertEquals(2, buffered.get(0).snapshot().chunkZ);
+    }
+
+    @Test
+    void unresolvedViewportDoesNotDropSnapshotsAtTheLegacyTwoHundredFiftySixLimit() {
+        final ClientMultiworldService service = service(new ClientWorldProfileResolver(
+            new ClientWorldProfileRegistry(), ids()
+        ));
+        service.onGameJoin(11L);
+
+        for (int chunk = 0; chunk < 512; chunk++) {
+            service.bufferSnapshot(snapshot(chunk, 0), MapLayer.SURFACE);
+        }
+
+        assertEquals(512, service.drainPendingSnapshots().size());
     }
 
     @Test
@@ -468,6 +483,82 @@ class ClientMultiworldServiceTest {
     }
 
     @Test
+    void stableMovementWaitsSixtyTicksBeforeItsPeriodicAsyncVisitWrite() {
+        final ClientWorldTrajectoryCheckpointIo checkpoints = checkpointIo();
+        final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();
+        assertTrue(checkpoints.save(serverId, OptionalLong.of(11L), trajectory()).saved());
+        final AtomicLong saves = new AtomicLong();
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            new ClientWorldProfileRegistry(), ids(), ignored -> {
+                saves.incrementAndGet();
+                return ClientWorldProfileIo.SaveResult.success();
+            }
+        );
+        final ClientMultiworldService service = service(resolver);
+        service.onGameJoin(11L);
+        assertEquals(ClientWorldResolution.State.RESOLVED, service.resolveProfile(ADDRESS).state());
+        final long savesAfterCreation = saves.get();
+
+        service.rememberStableVisit();
+        for (int tick = 0; tick < 59; tick++) {
+            service.advanceDetectionClock();
+            service.rememberStableVisit();
+        }
+
+        assertEquals(savesAfterCreation, saves.get());
+
+        service.advanceDetectionClock();
+        service.rememberStableVisit();
+
+        assertEquals(savesAfterCreation + 1L, saves.get());
+    }
+
+    @Test
+    void forcedDeparturePersistsTheLatestInMemoryPosition() throws Exception {
+        final ClientWorldTrajectoryCheckpointIo checkpoints = checkpointIo();
+        final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();
+        assertTrue(checkpoints.save(serverId, OptionalLong.of(11L), trajectory()).saved());
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            new ClientWorldProfileRegistry(), ids()
+        );
+        final ClientMultiworldService service = service(resolver);
+        service.onGameJoin(11L);
+        final ClientWorldProfile profile = service.resolveProfile(ADDRESS).profile();
+
+        appendTrajectorySample(service, 640.0D, -384.0D, "minecraft_overworld", 80L);
+        service.rememberStableVisit();
+        service.flushTrajectoryCheckpoint();
+
+        final ClientWorldVisit persisted = resolver.profiles(serverId).get(0)
+            .visit("minecraft_overworld");
+        assertEquals(profile.id(), resolver.profiles(serverId).get(0).id());
+        assertEquals(new ClientWorldPosition(640, 64, -384), persisted.lastPosition());
+    }
+
+    @Test
+    void dimensionDeparturePersistsTheNewDimensionBeforeAQuickDisconnect() throws Exception {
+        final ClientWorldTrajectoryCheckpointIo checkpoints = checkpointIo();
+        final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();
+        assertTrue(checkpoints.save(serverId, OptionalLong.of(11L), trajectory()).saved());
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            new ClientWorldProfileRegistry(), ids()
+        );
+        final ClientMultiworldService service = service(resolver);
+        service.onGameJoin(11L);
+        service.resolveProfile(ADDRESS);
+
+        service.onBeforeRespawn();
+        service.onRespawn(11L);
+        appendTrajectorySample(service, 48.0D, -96.0D, "minecraft_the_nether", 100L);
+        service.rememberStableVisit();
+        service.onConnectionClosed();
+
+        final ClientWorldProfile persisted = resolver.profiles(serverId).get(0);
+        assertEquals("minecraft_the_nether", persisted.lastObservedVisit().dimensionId());
+        assertEquals(new ClientWorldPosition(48, 64, -96), persisted.lastObservedVisit().lastPosition());
+    }
+
+    @Test
     void stableVisitPersistenceRunsOffTheClientPathAndPublishesAfterTheWrite() {
         final ClientWorldTrajectoryCheckpointIo checkpoints = checkpointIo();
         final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();
@@ -623,6 +714,33 @@ class ClientMultiworldServiceTest {
         assertEquals(ClientWorldResolution.State.RESOLVED, service.resolveProfile(ADDRESS).state());
         assertEquals(2, resolver.profiles(serverId).size());
         assertEquals(2L, saves.get());
+    }
+
+    @Test
+    void blockedRecognitionRejectsAnAutomaticProfileWriteThatWasAlreadyQueued() {
+        final AtomicLong saves = new AtomicLong();
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            new ClientWorldProfileRegistry(), ids(), ignored -> {
+                saves.incrementAndGet();
+                return ClientWorldProfileIo.SaveResult.success();
+            }
+        );
+        final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();
+        resolver.resolve(serverId, observation(11L, signals("existing")));
+        final ClientMultiworldService service = service(resolver);
+        final QueueingExecutor io = new QueueingExecutor();
+        service.bindTrajectoryIoExecutor(io);
+        service.onGameJoin(22L);
+
+        assertEquals(ClientWorldResolution.State.COLLECTING, service.resolveProfile(ADDRESS).state());
+        assertEquals(1, io.size());
+        service.observeInferredWorldTransition();
+        io.runNext();
+
+        assertEquals(ClientWorldResolution.State.AMBIGUOUS, service.resolveProfile(ADDRESS).state());
+        assertEquals(ClientWorldDetectionState.WAITING_FOR_USER, service.detectionState());
+        assertEquals(1, resolver.profiles(serverId).size());
+        assertEquals(3L, saves.get());
     }
 
     @Test
@@ -1291,6 +1409,26 @@ class ClientMultiworldServiceTest {
             new ClientWorldPosition(x, 64, z),
             null
         );
+    }
+
+    private static void appendTrajectorySample(
+        final ClientMultiworldService service,
+        final double x,
+        final double z,
+        final String dimension,
+        final long tick
+    ) throws Exception {
+        final java.lang.reflect.Field field = ClientMultiworldService.class.getDeclaredField("trajectory");
+        field.setAccessible(true);
+        final ClientWorldTrajectory trajectory = (ClientWorldTrajectory) field.get(service);
+        trajectory.append(ClientWorldTrajectorySample.observed(
+            x, 64.0D, z,
+            0.0D, 0.0D,
+            0.0D, 0.0D,
+            tick * 50L, tick,
+            dimension, tick,
+            ClientWorldTrajectorySample.NO_SERVER_ACK, 1L
+        ));
     }
 
     private static final class QueueingExecutor implements Executor {

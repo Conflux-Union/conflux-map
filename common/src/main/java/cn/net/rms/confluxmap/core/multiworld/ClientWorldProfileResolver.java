@@ -217,6 +217,33 @@ public final class ClientWorldProfileResolver {
         }
     }
 
+    /**
+     * Restores the live registry image when recognition became unsafe after an automatic profile
+     * write had already started. A newer registry generation has already superseded that disk
+     * image and therefore needs no rollback.
+     */
+    public MutationResult rejectPersistedAutomaticProfile(
+        final PreparedAutomaticProfileMutation mutation
+    ) {
+        if (mutation == null || !mutation.prepared()) {
+            return mutation == null
+                ? MutationResult.failure("missing prepared automatic client world profile")
+                : mutation.result();
+        }
+        synchronized (persistenceLock) {
+            if (mutation.generation != registryGeneration) {
+                return MutationResult.success();
+            }
+            try {
+                final ClientWorldProfileIo.SaveResult saved = persistence.save(registry.copy());
+                return saved != null && saved.saved()
+                    ? MutationResult.success() : MutationResult.failure(saved == null ? null : saved.error());
+            } catch (final RuntimeException error) {
+                return MutationResult.failure(errorMessage(error));
+            }
+        }
+    }
+
     /** Whether legacy server keys still need a durable merge into their canonical key. */
     public boolean needsServerAliasAdoption(final String canonicalServerId, final List<String> legacyServerIds) {
         return registry.available() && legacyServerIds.stream()
@@ -501,9 +528,24 @@ public final class ClientWorldProfileResolver {
         final String profileId,
         final ClientWorldObservation observation
     ) {
+        return select(serverId, profileId, List.of(), observation);
+    }
+
+    /**
+     * Confirms one profile and publishes observations that were captured while that exact profile
+     * was only provisional. Owned history is applied before the live observation so an older
+     * dimension can never replace the position that the player currently occupies.
+     */
+    public ClientWorldResolution select(
+        final String serverId,
+        final String profileId,
+        final List<ClientWorldObservation> ownedHistory,
+        final ClientWorldObservation observation
+    ) {
         final Mutation<String> mutation = mutate(copy -> {
             final List<ClientWorldProfile> profiles = copy.mutableProfiles(serverId);
             final ClientWorldProfile profile = requireProfile(profiles, profileId);
+            rememberOwnedHistory(profile, ownedHistory);
             // A seed is compatible with multiple logical worlds. Manual confirmation adds the
             // observation to the selected profile without erasing the same-seed membership of
             // any other profile.
@@ -527,6 +569,20 @@ public final class ClientWorldProfileResolver {
     public ClientWorldResolution validateProvisional(
         final String serverId,
         final String profileId,
+        final ClientWorldObservation observation,
+        final List<ClientWorldResolution.Candidate> admissionDiagnostics,
+        final boolean suppressLastStable
+    ) {
+        return validateProvisional(
+            serverId, profileId, List.of(), observation, admissionDiagnostics, suppressLastStable
+        );
+    }
+
+    /** Validates a provisional profile together with observations owned by that hypothesis. */
+    public ClientWorldResolution validateProvisional(
+        final String serverId,
+        final String profileId,
+        final List<ClientWorldObservation> ownedHistory,
         final ClientWorldObservation observation,
         final List<ClientWorldResolution.Candidate> admissionDiagnostics,
         final boolean suppressLastStable
@@ -570,7 +626,7 @@ public final class ClientWorldProfileResolver {
             );
         if (terrainConfirmed) {
             return resolvedAndLearn(
-                serverId, locked, observation, admissionDiagnostics,
+                serverId, locked, ownedHistory, observation, admissionDiagnostics,
                 ClientWorldResolution.ConfirmationSource.TERRAIN
             );
         }
@@ -578,7 +634,7 @@ public final class ClientWorldProfileResolver {
             && identitySignalMatches(locked, observation) >= 2;
         if (stableSignalsConfirmed) {
             return resolvedAndLearn(
-                serverId, locked, observation, admissionDiagnostics,
+                serverId, locked, ownedHistory, observation, admissionDiagnostics,
                 ClientWorldResolution.ConfirmationSource.STABLE_SIGNALS
             );
         }
@@ -1999,8 +2055,20 @@ public final class ClientWorldProfileResolver {
         final List<ClientWorldResolution.Candidate> candidates,
         final ClientWorldResolution.ConfirmationSource source
     ) {
+        return resolvedAndLearn(serverId, profile, List.of(), observation, candidates, source);
+    }
+
+    private ClientWorldResolution resolvedAndLearn(
+        final String serverId,
+        final ClientWorldProfile profile,
+        final List<ClientWorldObservation> ownedHistory,
+        final ClientWorldObservation observation,
+        final List<ClientWorldResolution.Candidate> candidates,
+        final ClientWorldResolution.ConfirmationSource source
+    ) {
         final Mutation<String> mutation = mutate(copy -> {
             final ClientWorldProfile candidate = requireProfile(copy.mutableProfiles(serverId), profile.id());
+            rememberOwnedHistory(candidate, ownedHistory);
             // Historical candidate probes are not stable visit evidence. Persist only the
             // current observation, whose terrain center (if any) is player-centered.
             candidate.bind(observation, policy().maxBindingsPerProfile());
@@ -2008,6 +2076,20 @@ public final class ClientWorldProfileResolver {
             return candidate.id();
         });
         return resolvedMutation(serverId, mutation, candidates, source);
+    }
+
+    private static void rememberOwnedHistory(
+        final ClientWorldProfile profile,
+        final List<ClientWorldObservation> ownedHistory
+    ) {
+        if (ownedHistory == null) {
+            return;
+        }
+        for (final ClientWorldObservation historical : ownedHistory) {
+            if (historical != null && historical.dimensionId() != null) {
+                profile.rememberVisit(historical);
+            }
+        }
     }
 
     private ClientWorldResolution provisionalAndLearn(
