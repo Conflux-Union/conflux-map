@@ -638,6 +638,38 @@ class ClientMultiworldServiceTest {
     }
 
     @Test
+    void completedDeletionRecoveryKeepsDataInRecoveryWhenTheProfileIsAlreadyGone() throws Exception {
+        final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();
+        final ClientWorldProfile profile = new ClientWorldProfileResolver(
+            new ClientWorldProfileRegistry(), ids()
+        ).resolve(serverId, observation(11L, signals("delete-complete"))).profile();
+        final Path mapRoot = tempDir.resolve("cache");
+        final Path marker = mapRoot.resolve(profile.storageServerId(serverId)).resolve(profile.storageId())
+            .resolve("marker.dat");
+        Files.createDirectories(marker.getParent());
+        Files.writeString(marker, "retain for manual recovery");
+        final Path recoveryRoot = tempDir.resolve("recovery").resolve("client-worlds");
+        final ClientWorldProfileDeletionService deletion = new ClientWorldProfileDeletionService(
+            mapRoot, tempDir.resolve("waypoints"), tempDir.resolve("annotations"), recoveryRoot
+        );
+
+        assertTrue(deletion.moveToRecovery(serverId, profile).prepared());
+        final Path journal;
+        try (var paths = Files.walk(recoveryRoot.resolve(serverId))) {
+            journal = paths.filter(path -> path.getFileName().toString().equals("transaction.properties"))
+                .findFirst().orElseThrow();
+        }
+
+        deletion.recoverPendingTransactions(serverId, Map.of());
+
+        assertFalse(Files.exists(marker));
+        assertFalse(Files.exists(journal));
+        try (var paths = Files.walk(recoveryRoot.resolve(serverId))) {
+            assertTrue(paths.anyMatch(path -> path.getFileName().toString().equals("marker.dat")));
+        }
+    }
+
+    @Test
     void invalidProfileManagementInputReturnsVisibleFailuresInsteadOfThrowing() {
         final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
             new ClientWorldProfileRegistry(), ids()
