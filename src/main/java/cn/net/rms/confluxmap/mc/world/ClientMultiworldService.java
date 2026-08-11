@@ -98,6 +98,7 @@ public final class ClientMultiworldService {
     private boolean commandLockAwaitingWorldTransition;
     private boolean commandLockObservedWeakWorldTransition;
     private boolean commandLockConflict;
+    private boolean commandLockTimedOutAfterWeakTransition;
     private long commandLockDeadlineTick;
     private long clientTick;
     private long detectionStartedAtTick;
@@ -1367,9 +1368,13 @@ public final class ClientMultiworldService {
     }
 
     private boolean applyPendingCommand() {
-        if (commandLockConflict) {
+        if (commandLockConflict || commandLockTimedOutAfterWeakTransition) {
             resolution = resolver.diagnoseBlocked(
-                serverId, observation(), "command_signal_conflict"
+                serverId,
+                observation(),
+                commandLockTimedOutAfterWeakTransition
+                    ? "command_timeout_weak_transition"
+                    : "command_signal_conflict"
             );
             detectionState = ClientWorldDetectionState.WAITING_FOR_USER;
             discardProvisionalSnapshots();
@@ -1509,6 +1514,7 @@ public final class ClientMultiworldService {
         commandLockAwaitingWorldTransition = false;
         commandLockObservedWeakWorldTransition = false;
         commandLockConflict = false;
+        commandLockTimedOutAfterWeakTransition = false;
         commandLockDeadlineTick = 0L;
     }
 
@@ -1957,6 +1963,25 @@ public final class ClientMultiworldService {
             return;
         }
         final String resumeProfileId = commandResumeProfileId;
+        final boolean observedWeakTransition = commandLockObservedWeakWorldTransition;
+        if (observedWeakTransition) {
+            // A replacement signal without a new identity is still evidence that the old map is
+            // unsafe. Keep the command lock blocked until an explicit manual selection instead
+            // of writing the new snapshot to the old profile. Only a timeout with no replacement
+            // evidence may resume the old profile.
+            commandLockAwaitingWorldTransition = false;
+            commandLockTimedOutAfterWeakTransition = true;
+            resolution = resolver.diagnoseBlocked(
+                serverId, observation(), "command_timeout_weak_transition"
+            );
+            detectionState = ClientWorldDetectionState.WAITING_FOR_USER;
+            discardProvisionalSnapshots();
+            ConfluxMapMod.LOGGER.warn(
+                "Client world switch command timed out after a weak world-transition signal; "
+                    + "kept the session blocked to protect profile data"
+            );
+            return;
+        }
         clearCommandLock();
         if (serverId != null && resumeProfileId != null) {
             final Optional<ClientWorldProfile> resume = resolver.profiles(serverId).stream()

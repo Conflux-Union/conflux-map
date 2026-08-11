@@ -319,6 +319,7 @@
   "confluxmap.screen.client_world.blocker.bindings_cleared_by_user": "recognition records were explicitly cleared",
   "confluxmap.screen.client_world.blocker.command_signal_conflict": "the explicit command target conflicts with observed seed or stable signals",
   "confluxmap.screen.client_world.blocker.command_timeout_no_resume": "the switch command timed out and no previous profile could be restored",
+  "confluxmap.screen.client_world.blocker.command_timeout_weak_transition": "the switch command timed out after a possible world replacement; map writes remain paused",
   "confluxmap.screen.client_world.blocker.seed_no_compatible_profile": "no profile currently retains this seed membership",
   "confluxmap.screen.client_world.blocker.profile_limit_reached": "the configured profile limit prevents creating another isolated profile",
   "confluxmap.screen.client_world.blocker.provisional_identity_conflict": "the admitted profile conflicts with newly observed identity or terrain evidence",

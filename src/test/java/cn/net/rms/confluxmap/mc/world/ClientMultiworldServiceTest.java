@@ -716,6 +716,34 @@ class ClientMultiworldServiceTest {
     }
 
     @Test
+    void weakSameSeedTransitionDoesNotRestoreThePreviousProfileAfterCommandTimeout() {
+        final ClientWorldProfileRegistry registry = new ClientWorldProfileRegistry();
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(registry, ids());
+        final ClientMultiworldService service = service(resolver);
+        service.onGameJoin(11L);
+        service.observeSignals(signals("same"));
+        final WorldIdentity first = service.resolve(ADDRESS).orElseThrow();
+        final ClientWorldProfile target = resolver.createAndSelect(
+            first.serverId(), "Same signals target", observation(11L, signals("same"))
+        ).profile();
+        assertNotEquals(first.worldId(), target.storageId());
+        resolver.addSwitchCommand(first.serverId(), target.id(), "/server same", false);
+
+        assertTrue(service.onChatSubmitted("/server same"));
+        service.observeInferredWorldTransition();
+        service.observeSignals(signals("same"));
+        for (int tick = 0; tick < 200; tick++) {
+            service.advanceDetectionClock();
+        }
+
+        assertEquals(ClientWorldDetectionState.WAITING_FOR_USER, service.detectionState());
+        assertTrue(service.candidates().stream()
+            .anyMatch(candidate -> candidate.blockers().contains("command_timeout_weak_transition")));
+        assertTrue(service.resolve(ADDRESS).isEmpty());
+        assertTrue(service.drainPendingSnapshots().isEmpty());
+    }
+
+    @Test
     void configuredCommandTimeoutControlsWhenThePreviousProfileIsRestored() {
         final ClientWorldProfileRegistry registry = new ClientWorldProfileRegistry();
         final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(registry, ids());

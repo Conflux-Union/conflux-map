@@ -528,6 +528,7 @@
   "confluxmap.screen.client_world.blocker.bindings_cleared_by_user": "用户已明确清除识别记录",
   "confluxmap.screen.client_world.blocker.command_signal_conflict": "显式命令目标与观察到的 seed 或稳定信号冲突",
   "confluxmap.screen.client_world.blocker.command_timeout_no_resume": "切换命令超时，且无法恢复原档案",
+  "confluxmap.screen.client_world.blocker.command_timeout_weak_transition": "切换命令超时且检测到可能的世界替换，已暂停地图写入",
   "confluxmap.screen.client_world.blocker.seed_no_compatible_profile": "当前没有档案保留该 seed 成员关系",
   "confluxmap.screen.client_world.blocker.profile_limit_reached": "档案数量上限阻止创建新的隔离档案",
   "confluxmap.screen.client_world.blocker.provisional_identity_conflict": "已准入档案与新到达的身份或地形证据发生硬冲突",
