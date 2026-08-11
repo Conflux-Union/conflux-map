@@ -44,6 +44,8 @@ public final class ClientWorldProfileResolver {
     /** Serializes disk images so a deferred visit never overwrites a newer management mutation. */
     private final Object persistenceLock = new Object();
     private long registryGeneration;
+    /** Service-level automatic scoring can admit a profile without learning new bindings on tick. */
+    private boolean readOnlyAutomaticResolution;
 
     public ClientWorldProfileResolver(
         final ClientWorldProfileRegistry registry,
@@ -102,6 +104,24 @@ public final class ClientWorldProfileResolver {
         final ClientWorldObservation observation
     ) {
         return resolve(serverId, observation, false);
+    }
+
+    /**
+     * Scores an automatic observation without publishing a binding or last-stable pointer. The
+     * service uses this on its lifecycle path; explicit user selection still uses {@link #select}.
+     * Stable visit persistence records the current observation asynchronously after admission.
+     */
+    public ClientWorldResolution resolveReadOnly(
+        final String serverId,
+        final ClientWorldObservation observation
+    ) {
+        final boolean previous = readOnlyAutomaticResolution;
+        readOnlyAutomaticResolution = true;
+        try {
+            return resolve(serverId, observation, false);
+        } finally {
+            readOnlyAutomaticResolution = previous;
+        }
     }
 
     private ClientWorldResolution resolve(
@@ -182,6 +202,22 @@ public final class ClientWorldProfileResolver {
         final ClientWorldObservation observation
     ) {
         return resolveAfterProxyWorldJoin(serverId, previousSeedHash, observation, null);
+    }
+
+    /** Read-only automatic variant used after proxy boundaries on the client lifecycle path. */
+    public ClientWorldResolution resolveAfterProxyWorldJoinReadOnly(
+        final String serverId,
+        final OptionalLong previousSeedHash,
+        final ClientWorldObservation observation,
+        final String departedProfileId
+    ) {
+        final boolean previous = readOnlyAutomaticResolution;
+        readOnlyAutomaticResolution = true;
+        try {
+            return resolveAfterProxyWorldJoin(serverId, previousSeedHash, observation, departedProfileId);
+        } finally {
+            readOnlyAutomaticResolution = previous;
+        }
     }
 
     /**
@@ -1162,12 +1198,13 @@ public final class ClientWorldProfileResolver {
                 scores, best, runnerUp, requiredConfidence, requiredMargin,
                 sameSeedCandidates, bestBlockers, outcome
             );
+            final ClientWorldResolution.ConfirmationSource source = terrainConfirmed
+                ? ClientWorldResolution.ConfirmationSource.TERRAIN
+                : ClientWorldResolution.ConfirmationSource.STABLE_SIGNALS;
             return terrainConfirmed || stableSignalsConfirmed
-                ? resolvedAndLearn(
-                    serverId, best.profile(), observation, display,
-                    terrainConfirmed ? ClientWorldResolution.ConfirmationSource.TERRAIN
-                        : ClientWorldResolution.ConfirmationSource.STABLE_SIGNALS
-                )
+                ? readOnlyAutomaticResolution
+                    ? ClientWorldResolution.resolved(best.profile(), display, source)
+                    : resolvedAndLearn(serverId, best.profile(), observation, display, source)
                 : provisionalAndLearn(serverId, best.profile(), observation, display);
         }
         final List<ClientWorldResolution.Candidate> display = displayScores(

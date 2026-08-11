@@ -545,6 +545,29 @@ class ClientMultiworldServiceTest {
     }
 
     @Test
+    void readOnlyAutomaticResolutionDoesNotPersistAProfileBindingOnTheClientPath() {
+        final AtomicLong saves = new AtomicLong();
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            new ClientWorldProfileRegistry(), ids(), ignored -> {
+                saves.incrementAndGet();
+                return ClientWorldProfileIo.SaveResult.success();
+            }
+        );
+        final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();
+        final ClientWorldObservation initial = visitObservation(0, 0);
+        final ClientWorldProfile profile = resolver.resolve(serverId, initial).profile();
+        final long savesBeforeReadOnlyResolution = saves.get();
+
+        final ClientWorldResolution result = resolver.resolveReadOnly(
+            serverId, visitObservation(1, 0)
+        );
+
+        assertEquals(ClientWorldResolution.State.RESOLVED, result.state());
+        assertEquals(profile.id(), result.profile().id());
+        assertEquals(savesBeforeReadOnlyResolution, saves.get());
+    }
+
+    @Test
     void checkpointWriteFailureDoesNotQuarantineOrFailTheProfileRegistry() throws Exception {
         final ClientWorldTrajectoryCheckpointIo checkpoints = checkpointIo();
         final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();

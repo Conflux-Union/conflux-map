@@ -584,10 +584,10 @@ public final class ClientMultiworldService {
         final ClientWorldResolution previousResolution = resolution;
         final ClientWorldObservation currentObservation = observation();
         resolution = proxyWorldJoin
-            ? resolver.resolveAfterProxyWorldJoin(
+            ? resolver.resolveAfterProxyWorldJoinReadOnly(
                 serverId, previousSeedHash, currentObservation, departedProfileId
             )
-            : resolver.resolve(serverId, currentObservation);
+            : resolver.resolveReadOnly(serverId, currentObservation);
         final ProvisionalBufferAction bufferAction = provisionalBufferAction(previousResolution, resolution);
         if (resolution.state() == ClientWorldResolution.State.RESOLVED) {
             lockProfile(resolution.profile());
