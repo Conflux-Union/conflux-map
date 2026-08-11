@@ -14,12 +14,22 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.Map;
 import org.apache.logging.log4j.Logger;
 
 /** Atomic persistence for the client-owned world profile registry. */
 public final class ClientWorldProfileIo {
     private static final long MAX_REGISTRY_BYTES = 4L * 1024L * 1024L;
     private static final Gson GSON = new GsonBuilder()
+        .registerTypeAdapter(
+            ClientWorldPosition.class,
+            (JsonDeserializer<ClientWorldPosition>) ClientWorldProfileIo::deserializePosition
+        )
+        .registerTypeAdapter(
+            ClientWorldProfileRegistry.LastStableProfile.class,
+            (JsonDeserializer<ClientWorldProfileRegistry.LastStableProfile>)
+                ClientWorldProfileIo::deserializeLastStableProfile
+        )
         .registerTypeAdapter(
             ClientWorldTerrainAnchor.class,
             (JsonDeserializer<ClientWorldTerrainAnchor>) ClientWorldProfileIo::deserializeTerrainAnchor
@@ -169,6 +179,45 @@ public final class ClientWorldProfileIo {
             Files.deleteIfExists(blockedMarker);
         } catch (final IOException error) {
             logger.warn("Could not clear client world registry blocked marker {}", blockedMarker, error);
+        }
+    }
+
+    /** Gson versions bundled with older Minecraft lines cannot reflectively populate Java records on Java 21. */
+    private static ClientWorldPosition deserializePosition(
+        final JsonElement json,
+        final Type ignored,
+        final JsonDeserializationContext context
+    ) {
+        try {
+            final JsonObject object = json.getAsJsonObject();
+            return new ClientWorldPosition(
+                object.get("x").getAsInt(), object.get("y").getAsInt(), object.get("z").getAsInt()
+            );
+        } catch (final RuntimeException malformed) {
+            return null;
+        }
+    }
+
+    /** The persisted stable pointer is a record too, so it needs constructor-based parsing on Java 21. */
+    private static ClientWorldProfileRegistry.LastStableProfile deserializeLastStableProfile(
+        final JsonElement json,
+        final Type ignored,
+        final JsonDeserializationContext context
+    ) {
+        try {
+            final JsonObject object = json.getAsJsonObject();
+            final Map<String, String> stableSignals = object.has("stableSignals")
+                ? context.deserialize(object.get("stableSignals"), Map.class) : Map.of();
+            return new ClientWorldProfileRegistry.LastStableProfile(
+                object.get("profileId").getAsString(),
+                object.get("confirmedAtEpochMs").getAsLong(),
+                object.get("connectionGeneration").getAsLong(),
+                object.has("hasSeed") && object.get("hasSeed").getAsBoolean(),
+                object.has("seedHash") ? object.get("seedHash").getAsLong() : 0L,
+                stableSignals == null ? Map.of() : stableSignals
+            );
+        } catch (final RuntimeException malformed) {
+            return null;
         }
     }
 

@@ -130,6 +130,11 @@ public final class ClientMultiworldService {
     private final AtomicReference<CompletableFuture<Void>> trajectoryCheckpointFuture = new AtomicReference<>();
     private boolean visitWriteInFlight;
     private final AtomicReference<VisitWriteCompletion> visitWriteCompletion = new AtomicReference<>();
+    /**
+     * One in-flight registry image cannot contain observations captured after it was prepared.
+     * Retain the newest authoritative visit for every profile until that image has published.
+     */
+    private final Map<StableVisitTarget, PendingStableVisit> pendingStableVisits = new LinkedHashMap<>();
     private boolean automaticProfileWriteInFlight;
     private final AtomicReference<AutomaticProfileWriteCompletion> automaticProfileWriteCompletion =
         new AtomicReference<>();
@@ -1257,28 +1262,39 @@ public final class ClientMultiworldService {
      */
     private void queueStableVisitPersistence(final ClientWorldObservation current) {
         applyCompletedVisitPersistence();
-        if (visitWriteInFlight || serverId == null || current.dimensionId() == null
+        if (serverId == null || current.dimensionId() == null
             || resolution.state() != ClientWorldResolution.State.RESOLVED
             || resolution.provisional() || persistenceFailureLatched) {
             return;
         }
-        final String visitServerId = serverId;
-        final String visitProfileId = resolution.profile().id();
-        final long visitGeneration = connectionGeneration;
-        final long visitTick = clientTick;
+        final PendingStableVisit visit = new PendingStableVisit(
+            serverId, resolution.profile().id(), connectionGeneration, current, clientTick
+        );
+        if (visitWriteInFlight) {
+            pendingStableVisits.put(visit.target(), visit);
+            return;
+        }
+        startStableVisitPersistence(visit);
+    }
+
+    /** Starts one serialized registry write after the observation has been captured on the client thread. */
+    private void startStableVisitPersistence(final PendingStableVisit visit) {
         final ClientWorldProfileResolver.PreparedVisitMutation prepared = resolver.prepareRememberVisit(
-            visitServerId, visitProfileId, current
+            visit.serverId(), visit.profileId(), visit.observation()
         );
         if (!prepared.prepared()) {
-            persistenceError = prepared.result().error();
-            recordPersistenceFailure();
+            if (isCurrentStableVisit(visit)) {
+                persistenceError = prepared.result().error();
+                recordPersistenceFailure();
+            }
             return;
         }
         visitWriteInFlight = true;
         CompletableFuture.runAsync(() -> {
             final ClientWorldProfileResolver.MutationResult result = resolver.persistPreparedVisit(prepared);
             visitWriteCompletion.set(new VisitWriteCompletion(
-                visitGeneration, visitServerId, visitProfileId, current, visitTick, prepared, result
+                visit.connectionGeneration(), visit.serverId(), visit.profileId(), visit.observation(),
+                visit.tick(), prepared, result
             ));
         }, trajectoryIoExecutor);
     }
@@ -1303,6 +1319,7 @@ public final class ClientMultiworldService {
             }
             return;
         }
+        queueNextPendingStableVisit();
         if (!stillCurrent) {
             return;
         }
@@ -1312,6 +1329,25 @@ public final class ClientMultiworldService {
         lastVisitRefreshTick = completion.tick();
         clearTrajectoryCheckpoint();
         discardCandidateTrajectoryOverride(completion.profileId());
+    }
+
+    /** Publishes deferred departure visits before a new session can overwrite their metadata. */
+    private void queueNextPendingStableVisit() {
+        if (visitWriteInFlight || pendingStableVisits.isEmpty() || persistenceFailureLatched) {
+            return;
+        }
+        final var iterator = pendingStableVisits.entrySet().iterator();
+        final PendingStableVisit next = iterator.next().getValue();
+        iterator.remove();
+        startStableVisitPersistence(next);
+    }
+
+    private boolean isCurrentStableVisit(final PendingStableVisit visit) {
+        return visit.connectionGeneration() == connectionGeneration
+            && Objects.equals(visit.serverId(), serverId)
+            && resolution.state() == ClientWorldResolution.State.RESOLVED
+            && !resolution.provisional()
+            && resolution.profile().id().equals(visit.profileId());
     }
 
     private void queueAutomaticProfileCreation(final ClientWorldObservation currentObservation) {
@@ -1494,6 +1530,21 @@ public final class ClientMultiworldService {
         ClientWorldProfileResolver.PreparedVisitMutation prepared,
         ClientWorldProfileResolver.MutationResult result
     ) {
+    }
+
+    private record StableVisitTarget(String serverId, String profileId) {
+    }
+
+    private record PendingStableVisit(
+        String serverId,
+        String profileId,
+        long connectionGeneration,
+        ClientWorldObservation observation,
+        long tick
+    ) {
+        StableVisitTarget target() {
+            return new StableVisitTarget(serverId, profileId);
+        }
     }
 
     private record AutomaticProfileWriteCompletion(

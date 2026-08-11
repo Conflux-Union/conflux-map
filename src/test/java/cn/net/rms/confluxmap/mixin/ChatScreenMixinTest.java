@@ -15,7 +15,7 @@ final class ChatScreenMixinTest {
         )).replace("\r\n", "\n");
 
         assertTrue(source.contains(
-            "//#elseif MC>=11800\nimport net.minecraft.client.gui.screen.ChatScreen;\n//#else\n"
+            "//#elseif MC>=11800\n//$$ import net.minecraft.client.gui.screen.ChatScreen;\n//#else\n"
                 + "import net.minecraft.client.gui.screen.Screen;"
         ));
         assertTrue(source.contains(

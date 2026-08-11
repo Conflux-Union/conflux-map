@@ -499,6 +499,43 @@ class ClientMultiworldServiceTest {
     }
 
     @Test
+    void stableVisitCapturedDuringAnInFlightWriteIsPersistedAfterTheFirstWrite() {
+        final ClientWorldTrajectoryCheckpointIo checkpoints = checkpointIo();
+        final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();
+        assertTrue(checkpoints.save(serverId, OptionalLong.of(11L), trajectory()).saved());
+        final AtomicLong saves = new AtomicLong();
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            new ClientWorldProfileRegistry(), ids(), ignored -> {
+                saves.incrementAndGet();
+                return ClientWorldProfileIo.SaveResult.success();
+            }
+        );
+        final ClientMultiworldService service = service(resolver);
+        final QueueingExecutor io = new QueueingExecutor();
+        service.bindTrajectoryIoExecutor(io);
+        service.onGameJoin(11L);
+        assertEquals(ClientWorldResolution.State.COLLECTING, service.resolveProfile(ADDRESS).state());
+        io.runNext();
+        assertEquals(ClientWorldResolution.State.RESOLVED, service.resolveProfile(ADDRESS).state());
+        final long savesBeforeDeparture = saves.get();
+
+        service.flushTrajectoryCheckpoint();
+        service.flushTrajectoryCheckpoint();
+
+        assertEquals(2, io.size());
+        io.runAll();
+        service.advanceDetectionClock();
+        assertTrue(io.size() > 0);
+
+        io.runAll();
+        service.advanceDetectionClock();
+
+        assertEquals(savesBeforeDeparture + 2L, saves.get());
+        assertEquals("minecraft_overworld", resolver.profiles(serverId).get(0)
+            .lastObservedVisit().dimensionId());
+    }
+
+    @Test
     void firstAutomaticProfileIsNotPublishedUntilItsIoWriteCompletes() {
         final AtomicLong saves = new AtomicLong();
         final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(

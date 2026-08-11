@@ -165,6 +165,7 @@ class ClientWorldProfileIoTest {
             .stableSignals().get("brand"));
         final ClientWorldVisit visit = loaded.profiles("example.net_25565").get(0)
             .visit("minecraft_overworld");
+        assertEquals(new ClientWorldPosition(10, 64, 20), visit.lastPosition());
         assertEquals(7L, visit.connectionGeneration());
         assertEquals(20L, visit.trajectorySamples().get(0).sequence());
     }

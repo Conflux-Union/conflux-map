@@ -1148,9 +1148,15 @@ public final class ClientWorldProfileResolver {
             final ClientWorldVisit dimensionVisit = profile.visit(observation.dimensionId());
             ClientWorldVisit continuityVisit = profile.lastObservedVisit(observation.dimensionId());
             boolean checkpointBackedVisit = false;
-            if (continuityVisit == null) {
-                continuityVisit = transientVisitFromCandidateTrajectory(profile.id(), observation);
-                checkpointBackedVisit = continuityVisit != null;
+            final ClientWorldVisit checkpointVisit = transientVisitFromCandidateTrajectory(
+                profile.id(), observation
+            );
+            if (checkpointVisit != null && (continuityVisit == null
+                || checkpointVisit.lastVisitedAtEpochMs() >= continuityVisit.lastVisitedAtEpochMs())) {
+                // The checkpoint is captured at the departure boundary on the client thread.
+                // Prefer it over an older registry image that may still be waiting for async IO.
+                continuityVisit = checkpointVisit;
+                checkpointBackedVisit = true;
             }
             final ClientWorldVisit visit = dimensionVisit == null ? continuityVisit : dimensionVisit;
             final boolean seedCompatible = observation.seedHash().isEmpty()

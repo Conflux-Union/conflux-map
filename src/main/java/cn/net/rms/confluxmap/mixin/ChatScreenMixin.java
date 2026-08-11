@@ -4,7 +4,7 @@ import cn.net.rms.confluxmap.mc.world.ClientWorldIdentityHandler;
 //#if MC>=260100
 //$$ import net.minecraft.client.gui.screens.ChatScreen;
 //#elseif MC>=11800
-import net.minecraft.client.gui.screen.ChatScreen;
+//$$ import net.minecraft.client.gui.screen.ChatScreen;
 //#else
 import net.minecraft.client.gui.screen.Screen;
 //#endif

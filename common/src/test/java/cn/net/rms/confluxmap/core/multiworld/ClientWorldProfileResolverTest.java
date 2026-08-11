@@ -785,6 +785,42 @@ class ClientWorldProfileResolverTest {
     }
 
     @Test
+    void freshCurrentDimensionCheckpointOverridesAStaleLatestDimensionVisit() {
+        final long seed = 78L;
+        final Map<String, String> signals = Map.of("brand", "shared", "commands", "shared");
+        final ClientWorldProfileRegistry registry = new ClientWorldProfileRegistry();
+        final ClientWorldProfile profile = new ClientWorldProfile("target", "world", "same-seed-target");
+        profile.bind(visitObservation(
+            seed, signals, "minecraft_overworld", "CREATIVE", 20, -154, null
+        ));
+        profile.bind(visitObservation(
+            seed, signals, "minecraft_the_nether", "CREATIVE", 4, -27, null
+        ));
+        registry.mutableProfiles(SERVER).add(profile);
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            registry, UUID::randomUUID
+        );
+        final ClientWorldTrajectory checkpoint = trajectoryAt(
+            120.0D, 74.0D, -80.0D, 3_000L, "minecraft_overworld", 3L
+        );
+        final ClientWorldObservation current = new ClientWorldObservation(
+            OptionalLong.of(seed), signals, "minecraft_overworld", "CREATIVE",
+            new ClientWorldPosition(120, 74, -80), null, Map.of(),
+            trajectoryAt(120.0D, 74.0D, -80.0D, 3_100L, "minecraft_overworld", 4L),
+            Map.of(profile.id(), checkpoint)
+        );
+
+        final ClientWorldResolution result = resolver.resolve(SERVER, current);
+
+        final ClientWorldResolution.Candidate candidate = result.candidates().get(0);
+        assertFalse(candidate.conflicted());
+        assertTrue(candidate.reasons().contains("candidate_dimension_checkpoint"));
+        assertFalse(candidate.factors().stream().anyMatch(factor ->
+            factor.key().equals("latest_dimension") && factor.veto()
+        ));
+    }
+
+    @Test
     void lastStableTrajectoryCanRestoreWithoutTerrainButDoesNotPersistUntilConfirmed() {
         final ClientWorldProfileRegistry registry = new ClientWorldProfileRegistry();
         final ClientWorldProfile expected = new ClientWorldProfile("expected", "world", "Expected");
