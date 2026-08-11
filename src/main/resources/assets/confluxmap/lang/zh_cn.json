@@ -558,6 +558,7 @@
   "confluxmap.screen.client_world.metric.radius": "基础半径",
   "confluxmap.screen.client_world.metric.cutoff": "归零距离",
   "confluxmap.screen.client_world.metric.compatible": "是否兼容",
+  "confluxmap.screen.client_world.metric.departed_profile": "是否为刚离开的档案",
   "confluxmap.screen.client_world.context.dimension_type": "维度类型",
   "confluxmap.screen.client_world.context.world_shape": "世界高度",
   "confluxmap.screen.client_world.context.spawn": "出生点",

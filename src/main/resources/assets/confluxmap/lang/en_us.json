@@ -348,6 +348,7 @@
   "confluxmap.screen.client_world.metric.radius": "base radius",
   "confluxmap.screen.client_world.metric.cutoff": "zero-confidence cutoff",
   "confluxmap.screen.client_world.metric.compatible": "compatible",
+  "confluxmap.screen.client_world.metric.departed_profile": "departed profile",
   "confluxmap.screen.client_world.context.dimension_type": "dimension type",
   "confluxmap.screen.client_world.context.world_shape": "world height",
   "confluxmap.screen.client_world.context.spawn": "spawn",
