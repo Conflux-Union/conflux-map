@@ -37,6 +37,20 @@ class ClientWorldSelectScreenTest {
     }
 
     @Test
+    void narrowWindowKeepsEveryPanelWithinTheViewport() {
+        final ClientWorldSelectScreen.PanelLayout layout = ClientWorldSelectScreen.panelLayout(240, 320);
+
+        assertTrue(layout.listX() >= 0);
+        assertTrue(layout.detailX() >= 0);
+        assertTrue(layout.listWidth() > 0);
+        assertTrue(layout.detailWidth() > 0);
+        assertTrue(layout.listX() + layout.listWidth() <= 240);
+        assertTrue(layout.detailX() + layout.detailWidth() <= 240);
+        assertTrue(layout.footerX() >= 0);
+        assertTrue(layout.footerX() + layout.footerWidth() <= 240);
+    }
+
+    @Test
     void dynamicCandidateReasonsUseParameterizedTranslations() {
         final ClientWorldSelectScreen.ReasonLabel visitContext =
             ClientWorldSelectScreen.reasonLabel("visit_context_2_of_5");

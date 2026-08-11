@@ -493,10 +493,61 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final MapIconButton settingsButton = addDrawableChild(new MapIconButton(
             x,
             y,
-            MAP_SETTINGS_ICON,
-            Texts.translatable("confluxmap.screen.config.title"),
-            ignored -> MinecraftAccess.setScreen(
-                MinecraftClient.getInstance(), new ConfigScreen(this)
+            DisplayModeIconCatalog.icon(displayMode()),
+            displayModeTooltip(),
+            0,
+            ignored -> cycleDisplayMode()
+        ));
+        controlsDisplayMode = displayMode();
+        refreshDisplayModeButton();
+        y += CONTROL_SIZE + CONTROL_GAP;
+        mapExportButton = addDrawableChild(new MapIconButton(
+            x,
+            y,
+            MAP_EXPORT_ICON,
+            Texts.translatable("confluxmap.screen.map_export.tooltip"),
+            0,
+            ignored -> openMapExport()
+        ));
+        annotationTooltips.put(mapExportButton, "confluxmap.screen.map_export.tooltip");
+        y += CONTROL_SIZE + CONTROL_GAP;
+        if (clientMultiworld.canManageProfiles()) {
+            clientWorldButton = addDrawableChild(Widgets.button(
+                x, y, CONTROL_SIZE, CONTROL_SIZE,
+                Texts.translatable("confluxmap.screen.map.client_world.open"),
+                ignored -> MinecraftAccess.setScreen(
+                    MinecraftClient.getInstance(),
+                    new ClientWorldSelectScreen(this, openMapKey, false)
+                )
+            ));
+            annotationTooltips.put(clientWorldButton, "confluxmap.screen.map.client_world.open");
+            y += CONTROL_SIZE + CONTROL_GAP;
+        }
+        localVisibilityButton = addDrawableChild(new MapIconButton(
+            x, y, LOCAL_WAYPOINT_ICON, LOCAL_CONTROL_ACCENT, b -> {
+                config.localWaypointsVisible = !config.localWaypointsVisible;
+                ConfluxMapClient.get().configIo().save(config);
+                localVisibilityButton.setSelected(config.localWaypointsVisible);
+            }
+        ));
+        localVisibilityButton.setSelected(config.localWaypointsVisible);
+        y += CONTROL_SIZE + CONTROL_GAP;
+        if (sharedAvailability.visible()) {
+            sharedVisibilityButton = addDrawableChild(new MapIconButton(
+                x, y, SHARED_WAYPOINT_ICON, SHARED_CONTROL_ACCENT, b -> {
+                    config.sharedWaypointsVisible = !config.sharedWaypointsVisible;
+                    ConfluxMapClient.get().configIo().save(config);
+                    sharedVisibilityButton.setSelected(config.sharedWaypointsVisible);
+                }
+            ));
+            sharedVisibilityButton.setSelected(config.sharedWaypointsVisible);
+            sharedVisibilityButton.active = sharedAvailability.ready();
+            y += CONTROL_SIZE + CONTROL_GAP;
+        }
+        manageWaypointsButton = addDrawableChild(new MapIconButton(
+            x, y, MANAGE_WAYPOINT_ICON, 0,
+            b -> MinecraftAccess.setScreen(MinecraftClient.getInstance(),
+                new WaypointListScreen(this, WaypointListScreen.Tab.LOCAL)
             )
         ));
         annotationTooltips.put(settingsButton, "confluxmap.screen.config.title");

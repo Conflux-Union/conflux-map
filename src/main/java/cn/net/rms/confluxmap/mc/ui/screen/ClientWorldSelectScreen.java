@@ -38,9 +38,8 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
     private static final int ROW_HEIGHT = 24;
     private static final int GAP = 3;
     private static final int PANEL_GAP = 10;
-    private static final int CONTENT_MIN_WIDTH = 300;
     private static final int CONTENT_MAX_WIDTH = 800;
-    private static final int LIST_MIN_WIDTH = 150;
+    private static final int LIST_MIN_WIDTH = 80;
     private static final int LIST_MAX_WIDTH = 240;
     private static final int FOOTER_HEIGHT = 46;
     private static final int FOOTER_GAP = 8;
@@ -1460,9 +1459,13 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
     }
 
     static PanelLayout panelLayout(final int width, final int height) {
-        final int contentWidth = Math.min(CONTENT_MAX_WIDTH, Math.max(CONTENT_MIN_WIDTH, width - 24));
-        final int contentX = width / 2 - contentWidth / 2;
-        final int listWidth = Math.max(LIST_MIN_WIDTH, Math.min(LIST_MAX_WIDTH, contentWidth / 4));
+        final int contentWidth = Math.max(1, Math.min(CONTENT_MAX_WIDTH, width - 16));
+        final int contentX = Math.max(0, (width - contentWidth) / 2);
+        final int horizontalGap = Math.min(PANEL_GAP, Math.max(0, contentWidth - 2));
+        final int listWidth = Math.min(
+            Math.max(1, contentWidth - horizontalGap - 1),
+            Math.max(LIST_MIN_WIDTH, Math.min(LIST_MAX_WIDTH, contentWidth / 3))
+        );
         final int footerTop = Math.max(MAIN_TOP + 108, height - FOOTER_HEIGHT);
         final int bottom = footerTop - FOOTER_GAP;
         final int listRowsTop = MAIN_TOP + 29;
@@ -1491,8 +1494,8 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         return new PanelLayout(
             contentX,
             listWidth,
-            contentX + listWidth + PANEL_GAP,
-            contentWidth - listWidth - PANEL_GAP,
+            contentX + listWidth + horizontalGap,
+            contentWidth - listWidth - horizontalGap,
             MAIN_TOP,
             bottom,
             listRowsTop,
@@ -1559,7 +1562,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         boolean previewVisible
     ) {
         int listButtonWidth() {
-            return Math.max(20, listWidth - 12);
+            return Math.max(1, listWidth - 12);
         }
 
         int scrollbarX() {
