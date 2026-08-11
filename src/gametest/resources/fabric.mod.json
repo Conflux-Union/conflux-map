@@ -20,7 +20,8 @@
       "cn.net.rms.confluxmap.server.WorldPresetDetectorGameTest"
     ],
     "fabric-client-gametest": [
-      "cn.net.rms.confluxmap.gametest.ClientConnectionGameTest"
+      "cn.net.rms.confluxmap.gametest.ClientConnectionGameTest",
+      "cn.net.rms.confluxmap.gametest.HudAvoidanceClientGameTest"
     ]
   },
   "depends": {

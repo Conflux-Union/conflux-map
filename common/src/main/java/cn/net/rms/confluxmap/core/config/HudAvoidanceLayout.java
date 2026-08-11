@@ -1,6 +1,6 @@
 package cn.net.rms.confluxmap.core.config;
 
-/** Coordinates the render-only minimap position and status-effect translation. */
+/** Coordinates vanilla HUD translations around the configured minimap position. */
 public final class HudAvoidanceLayout {
     public static final int INFORMATION_GAP = 3;
     public static final int INFORMATION_LINE_HEIGHT = 10;
@@ -8,7 +8,7 @@ public final class HudAvoidanceLayout {
     private HudAvoidanceLayout() {
     }
 
-    /** Resolves both HUD elements from the same scoreboard snapshot and configured minimap. */
+    /** Keeps the minimap fixed while resolving scoreboard and status-effect translations. */
     public static Decision resolve(
         final boolean avoidanceEnabled,
         final int screenWidth,
@@ -18,17 +18,52 @@ public final class HudAvoidanceLayout {
         final int statusEffectTop,
         final int beneficialEffectCount,
         final int harmfulEffectCount,
-        final MinimapHudAvoidance.Bounds scoreboard
+        final ScoreboardHudAvoidance.Bounds scoreboard
     ) {
-        final MinimapPlacement.Layout minimap = resolveMinimap(
-            avoidanceEnabled,
-            screenWidth,
-            screenHeight,
+        if (configuredMinimap == null) {
+            throw new IllegalArgumentException("configuredMinimap must not be null");
+        }
+        return new Decision(
             configuredMinimap,
-            informationHeight,
-            scoreboard
+            scoreboardShift(
+                avoidanceEnabled,
+                screenHeight,
+                configuredMinimap,
+                informationHeight,
+                scoreboard
+            ),
+            statusEffectShift(
+                avoidanceEnabled,
+                screenWidth,
+                configuredMinimap,
+                statusEffectTop,
+                beneficialEffectCount,
+                harmfulEffectCount
+            )
         );
-        final int statusEffectShift = avoidanceEnabled
+    }
+
+    public static int scoreboardShift(
+        final boolean avoidanceEnabled,
+        final int screenHeight,
+        final MinimapPlacement.Layout minimap,
+        final int informationHeight,
+        final ScoreboardHudAvoidance.Bounds scoreboard
+    ) {
+        return avoidanceEnabled
+            ? ScoreboardHudAvoidance.horizontalShift(screenHeight, minimap, informationHeight, scoreboard)
+            : 0;
+    }
+
+    public static int statusEffectShift(
+        final boolean avoidanceEnabled,
+        final int screenWidth,
+        final MinimapPlacement.Layout minimap,
+        final int statusEffectTop,
+        final int beneficialEffectCount,
+        final int harmfulEffectCount
+    ) {
+        return avoidanceEnabled
             ? StatusEffectHudAvoidance.horizontalShift(
                 screenWidth,
                 statusEffectTop,
@@ -37,30 +72,6 @@ public final class HudAvoidanceLayout {
                 minimap
             )
             : 0;
-        return new Decision(minimap, statusEffectShift);
-    }
-
-    /** Resolves the final minimap position shared by the minimap and status-effect policies. */
-    public static MinimapPlacement.Layout resolveMinimap(
-        final boolean avoidanceEnabled,
-        final int screenWidth,
-        final int screenHeight,
-        final MinimapPlacement.Layout configuredMinimap,
-        final int informationHeight,
-        final MinimapHudAvoidance.Bounds scoreboard
-    ) {
-        if (configuredMinimap == null) {
-            throw new IllegalArgumentException("configuredMinimap must not be null");
-        }
-        return avoidanceEnabled
-            ? MinimapHudAvoidance.resolve(
-                screenWidth,
-                screenHeight,
-                configuredMinimap,
-                informationHeight,
-                scoreboard
-            )
-            : configuredMinimap;
     }
 
     public static int informationHeight(
@@ -81,6 +92,10 @@ public final class HudAvoidanceLayout {
         return lines == 0 ? 0 : INFORMATION_GAP + lines * INFORMATION_LINE_HEIGHT;
     }
 
-    public record Decision(MinimapPlacement.Layout minimap, int statusEffectShift) {
+    public record Decision(
+        MinimapPlacement.Layout minimap,
+        int scoreboardShift,
+        int statusEffectShift
+    ) {
     }
 }

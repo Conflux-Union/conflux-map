@@ -1,6 +1,13 @@
 package cn.net.rms.confluxmap.mixin;
 
+import cn.net.rms.confluxmap.ConfluxMapClient;
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
+import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.config.HudAvoidanceLayout;
+import cn.net.rms.confluxmap.core.config.MinimapHudVisibility;
+import cn.net.rms.confluxmap.core.config.MinimapPlacement;
 import cn.net.rms.confluxmap.mc.ui.hud.ScoreboardHudBounds;
+import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 //#if MC>=260100
 //$$ import net.minecraft.client.Minecraft;
 //#else
@@ -22,17 +29,21 @@ import net.minecraft.client.gui.DrawableHelper;
 import net.minecraft.client.util.math.MatrixStack;
 //#endif
 //#endif
+//#if MC>=260100
+//$$ import net.minecraft.world.scores.Objective;
+//#else
+import net.minecraft.scoreboard.ScoreboardObjective;
+//#endif
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Observes vanilla's scoreboard background draws instead of duplicating its layout rules. This
- * keeps the minimap avoidance in step with score count, title width, number format, GUI scale, and
- * window size without moving the scoreboard itself. Completed bounds are applied on the following
- * frame so the earlier status-effect overlay and later minimap use one stable layout.
+ * Measures vanilla's scoreboard without duplicating its layout rules, then moves the complete
+ * sidebar away from the configured minimap on the following HUD frame.
  */
 //#if MC>=260200
 //$$ @Mixin(Hud.class)
@@ -42,6 +53,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(InGameHud.class)
 //#endif
 public abstract class InGameHudMixin {
+    @Unique
+    private boolean confluxmap$scoreboardShifted;
+
     //#if MC>=260100
     //$$ @Inject(method = "extractRenderState", at = @At("HEAD"))
     //$$ private void confluxmap$beginHudFrame(final CallbackInfo ci) {
@@ -59,6 +73,160 @@ public abstract class InGameHudMixin {
         );
     }
     //#endif
+
+    @Inject(
+        //#if MC>=260100
+        //$$ method = "displayScoreboardSidebar(Lnet/minecraft/client/gui/GuiGraphicsExtractor;"
+        //$$     + "Lnet/minecraft/world/scores/Objective;)V",
+        //#elseif MC>=12000
+        //$$ method = "renderScoreboardSidebar(Lnet/minecraft/client/gui/DrawContext;"
+        //$$     + "Lnet/minecraft/scoreboard/ScoreboardObjective;)V",
+        //#else
+        method = "renderScoreboardSidebar(Lnet/minecraft/client/util/math/MatrixStack;"
+            + "Lnet/minecraft/scoreboard/ScoreboardObjective;)V",
+        //#endif
+        at = @At("HEAD")
+    )
+    //#if MC>=260100
+    //$$ private void confluxmap$beforeScoreboard(
+    //$$     final GuiGraphicsExtractor context,
+    //$$     final Objective objective,
+    //$$     final CallbackInfo ci
+    //$$ ) {
+    //#elseif MC>=12000
+    //$$ private void confluxmap$beforeScoreboard(
+    //$$     final DrawContext context,
+    //$$     final ScoreboardObjective objective,
+    //$$     final CallbackInfo ci
+    //$$ ) {
+    //#else
+    private void confluxmap$beforeScoreboard(
+        final MatrixStack matrices,
+        final ScoreboardObjective objective,
+        final CallbackInfo ci
+    ) {
+    //#endif
+        confluxmap$scoreboardShifted = false;
+        //#if MC>=260100
+        //$$ final int shift = confluxmap$scoreboardHorizontalShift(context.guiWidth(), context.guiHeight());
+        //#elseif MC>=12000
+        //$$ final int shift = confluxmap$scoreboardHorizontalShift(
+        //$$     context.getScaledWindowWidth(), context.getScaledWindowHeight()
+        //$$ );
+        //#else
+        final MinecraftClient client = MinecraftClient.getInstance();
+        final int shift = confluxmap$scoreboardHorizontalShift(
+            client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight()
+        );
+        //#endif
+        if (shift == 0) {
+            ScoreboardHudBounds.recordAppliedHorizontalShift(0);
+            return;
+        }
+        //#if MC>=260100
+        //$$ context.pose().pushMatrix();
+        //$$ context.pose().translate(shift, 0);
+        //#elseif MC>=12108
+        //$$ context.getMatrices().pushMatrix();
+        //$$ context.getMatrices().translate(shift, 0);
+        //#elseif MC>=12000
+        //$$ context.getMatrices().push();
+        //$$ context.getMatrices().translate(shift, 0, 0);
+        //#else
+        matrices.push();
+        matrices.translate(shift, 0, 0);
+        //#endif
+        ScoreboardHudBounds.recordAppliedHorizontalShift(shift);
+        confluxmap$scoreboardShifted = true;
+    }
+
+    @Inject(
+        //#if MC>=260100
+        //$$ method = "displayScoreboardSidebar(Lnet/minecraft/client/gui/GuiGraphicsExtractor;"
+        //$$     + "Lnet/minecraft/world/scores/Objective;)V",
+        //#elseif MC>=12000
+        //$$ method = "renderScoreboardSidebar(Lnet/minecraft/client/gui/DrawContext;"
+        //$$     + "Lnet/minecraft/scoreboard/ScoreboardObjective;)V",
+        //#else
+        method = "renderScoreboardSidebar(Lnet/minecraft/client/util/math/MatrixStack;"
+            + "Lnet/minecraft/scoreboard/ScoreboardObjective;)V",
+        //#endif
+        at = @At("RETURN")
+    )
+    //#if MC>=260100
+    //$$ private void confluxmap$afterScoreboard(
+    //$$     final GuiGraphicsExtractor context,
+    //$$     final Objective objective,
+    //$$     final CallbackInfo ci
+    //$$ ) {
+    //#elseif MC>=12000
+    //$$ private void confluxmap$afterScoreboard(
+    //$$     final DrawContext context,
+    //$$     final ScoreboardObjective objective,
+    //$$     final CallbackInfo ci
+    //$$ ) {
+    //#else
+    private void confluxmap$afterScoreboard(
+        final MatrixStack matrices,
+        final ScoreboardObjective objective,
+        final CallbackInfo ci
+    ) {
+    //#endif
+        if (!confluxmap$scoreboardShifted) {
+            return;
+        }
+        //#if MC>=260100
+        //$$ context.pose().popMatrix();
+        //#elseif MC>=12108
+        //$$ context.getMatrices().popMatrix();
+        //#elseif MC>=12000
+        //$$ context.getMatrices().pop();
+        //#else
+        matrices.pop();
+        //#endif
+        confluxmap$scoreboardShifted = false;
+    }
+
+    @Unique
+    private static int confluxmap$scoreboardHorizontalShift(
+        final int screenWidth,
+        final int screenHeight
+    ) {
+        final ConfluxMapClient app = ConfluxMapClient.get();
+        final MinecraftClient client = MinecraftClient.getInstance();
+        if (app == null || client.player == null) {
+            return 0;
+        }
+        final ConfluxConfig config = app.config();
+        final var screen = MinecraftAccess.screen(client);
+        if (!MinimapHudVisibility.shouldRender(
+            config.minimapEnabled,
+            app.gameBridge().session().active(),
+            screen instanceof FullscreenMapScreen,
+            MinecraftAccess.isContainerScreen(screen)
+        )) {
+            return 0;
+        }
+
+        final MinimapPlacement.Layout minimap = MinimapPlacement.resolve(
+            screenWidth,
+            screenHeight,
+            config.minimapSize,
+            config.minimapPositionX,
+            config.minimapPositionY
+        );
+        return HudAvoidanceLayout.scoreboardShift(
+            config.minimapHudAvoidance,
+            screenHeight,
+            minimap,
+            HudAvoidanceLayout.informationHeight(
+                config.showCoordinates,
+                config.showBiome,
+                config.showLayerIndicator
+            ),
+            ScoreboardHudBounds.previousFrame(screenWidth, screenHeight)
+        );
+    }
 
     //#if MC>=260100
     //$$ @Redirect(

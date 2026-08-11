@@ -182,15 +182,12 @@ public final class MinimapHudRenderer {
 
         final int screenWidth = client.getWindow().getScaledWidth();
         final int screenHeight = client.getWindow().getScaledHeight();
-        final MinimapPlacement.Layout configuredPlacement = MinimapPlacement.resolve(
+        final MinimapPlacement.Layout placement = MinimapPlacement.resolve(
             screenWidth,
             screenHeight,
             config.minimapSize,
             config.minimapPositionX,
             config.minimapPositionY
-        );
-        final MinimapPlacement.Layout placement = avoidHudOverlap(
-            screenWidth, screenHeight, configuredPlacement
         );
         final int size = placement.size();
         final int x0 = placement.x();
@@ -292,30 +289,6 @@ public final class MinimapHudRenderer {
         drawWaypointMarkers(draw, centerX, centerY, size, mapAngle, player);
         drawPlayerArrow(matrices, centerX, centerY, rotate ? 0f : player.yawDegrees() + 180f);
         drawInfoText(draw, player, x0, y0, size);
-    }
-
-    /** Uses the same completed scoreboard frame as status effects without changing saved placement. */
-    private MinimapPlacement.Layout avoidHudOverlap(
-        final int screenWidth,
-        final int screenHeight,
-        final MinimapPlacement.Layout configuredPlacement
-    ) {
-        if (client.player == null) {
-            return configuredPlacement;
-        }
-
-        return HudAvoidanceLayout.resolveMinimap(
-            config.minimapHudAvoidance,
-            screenWidth,
-            screenHeight,
-            configuredPlacement,
-            HudAvoidanceLayout.informationHeight(
-                config.showCoordinates,
-                config.showBiome,
-                config.showLayerIndicator
-            ),
-            ScoreboardHudBounds.previousFrame(screenWidth, screenHeight)
-        );
     }
 
     private void drawPlayerTrail(

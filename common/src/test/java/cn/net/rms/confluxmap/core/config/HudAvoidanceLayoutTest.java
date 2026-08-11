@@ -6,11 +6,11 @@ import org.junit.jupiter.api.Test;
 
 class HudAvoidanceLayoutTest {
     @Test
-    void coordinatesScoreboardAndStatusEffectsFromOneFinalMinimapPosition() {
+    void keepsTheConfiguredMinimapFixedWhileVanillaHudAvoidsIt() {
         final MinimapPlacement.Layout configured = MinimapPlacement.resolve(640, 360, 128, 1.0, 0.0);
 
         assertEquals(
-            new HudAvoidanceLayout.Decision(new MinimapPlacement.Layout(370, 4, 128), 0),
+            new HudAvoidanceLayout.Decision(configured, -135, -136),
             HudAvoidanceLayout.resolve(
                 true,
                 640,
@@ -20,7 +20,7 @@ class HudAvoidanceLayoutTest {
                 1,
                 1,
                 1,
-                new MinimapHudAvoidance.Bounds(500, 60, 639, 160)
+                new ScoreboardHudAvoidance.Bounds(500, 60, 639, 160)
             )
         );
     }
@@ -30,7 +30,7 @@ class HudAvoidanceLayoutTest {
         final MinimapPlacement.Layout configured = MinimapPlacement.resolve(640, 360, 128, 1.0, 0.0);
 
         assertEquals(
-            new HudAvoidanceLayout.Decision(configured, 0),
+            new HudAvoidanceLayout.Decision(configured, 0, 0),
             HudAvoidanceLayout.resolve(
                 false,
                 640,
@@ -40,7 +40,7 @@ class HudAvoidanceLayoutTest {
                 1,
                 1,
                 1,
-                new MinimapHudAvoidance.Bounds(500, 60, 639, 160)
+                new ScoreboardHudAvoidance.Bounds(500, 60, 639, 160)
             )
         );
     }

@@ -6,7 +6,6 @@ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.config.HudAvoidanceLayout;
 import cn.net.rms.confluxmap.core.config.MinimapHudVisibility;
 import cn.net.rms.confluxmap.core.config.MinimapPlacement;
-import cn.net.rms.confluxmap.mc.ui.hud.ScoreboardHudBounds;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 //#if MC>=12100
 //$$ import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
@@ -270,20 +269,13 @@ public abstract class StatusEffectHudMixin {
             config.minimapPositionX,
             config.minimapPositionY
         );
-        return HudAvoidanceLayout.resolve(
+        return HudAvoidanceLayout.statusEffectShift(
             config.minimapHudAvoidance,
             screenWidth,
-            screenHeight,
             configuredMinimap,
-            HudAvoidanceLayout.informationHeight(
-                config.showCoordinates,
-                config.showBiome,
-                config.showLayerIndicator
-            ),
             client.isDemo() ? 16 : 1,
             beneficialCount,
-            harmfulCount,
-            ScoreboardHudBounds.previousFrame(screenWidth, screenHeight)
-        ).statusEffectShift();
+            harmfulCount
+        );
     }
 }
