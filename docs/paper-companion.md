@@ -47,6 +47,10 @@ world's `.mca` and external `.mcc` files by a bounded read-only scanner supporti
 uncompressed, and LZ4 Anvil payloads. Correction requests never call `getChunkAt` and therefore do
 not generate terrain as a side effect.
 
+The optional web map (`webMap.enabled`) is a browser client on the same wire protocol: its tile
+and correction requests run through this same terrain-access and correction-sync path rather than
+a separate reader.
+
 Disk scans and patch construction run on two daemon workers. Plugin messages and all Bukkit world
 access stay on the main thread. Live summaries use Fabric's demand window and two-chunk-per-tick
 main-thread ceiling, further bounded by `maxChunkSummariesPerSecond`; chunk changes publish both

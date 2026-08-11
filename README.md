@@ -2,7 +2,12 @@
 
 **English** | [简体中文](README-CN.md)
 
-Conflux Map is a Fabric client-side minimap and world map
+Conflux Map is a Fabric minimap and world map built for multiplayer. It replaces the usual pile
+of a minimap, a world map, a biome map, a chunk-load overlay, and a waypoint-sync mod with one
+client jar, and it can sync a live map across a whole server for a few hundred bytes to a few
+hundred kilobytes per update.
+
+## Supported versions
 
 | Build      | Loads on                | Fabric | Paper plugin |
 |------------|-------------------------|:------:|:------------:|
@@ -19,225 +24,125 @@ Conflux Map is a Fabric client-side minimap and world map
 | `26.1.2`   | 26.1, 26.1.1, 26.1.2    | ✓      | ✓            |
 | `26.2`     | 26.2                    | ✓      | ✓            |
 
-## Highlights
+## Installation
 
-- **Full-map sync and public waypoints.** Eliminate blank map tiles. New players
-  can see the live server-wide map as soon as they join, and find coordinates
-  for farms and builds through public waypoints instead of adding each one manually.
-- **Extremely low bandwidth usage.** A predicted map plus an authoritative map,
-  tiled storage, incremental updates, and more compact data structures keep each
-  map sync between a few hundred bytes and a few hundred kilobytes.
-- **One client JAR for the complete map experience.** There is no need to install
-  separate mods for a minimap, world map, biome preview, chunk-load-state map,
-  map sync, and waypoint sync. One Conflux Map client JAR covers most of the
-  features players normally assemble from multiple map mods.
+Download the jar for your Minecraft version from [Releases](../../releases) (or build it
+yourself, see [Building](#building)) and drop it into `mods/` next to
+[Fabric API](https://modrinth.com/mod/fabric-api). [MaliLib](https://modrinth.com/mod/malilib) is
+optional: it adds key-combo bindings and folds Conflux Map into its A+C settings switcher.
+
+Everything in this README works single-player or on a plain vanilla server. Installing the
+companion (the matching Fabric mod jar, or `confluxmap-paper-<version>.jar` on Paper) is optional
+and is what turns per-player features into shared ones, see [Server companion](#server-companion).
 
 ## Features
 
-- **Minimap HUD:** Choose a square or round frame, a size from 64 to 256 px,
-  four zoom levels, free placement, and rotation with the player's view. Info lines
-  can show coordinates, biome, and active layer. HUD avoidance keeps vanilla status
-  effects and the scoreboard clear of the minimap, while inventory screens and
-  JEI/REI overlays are also taken into account.
-- **Fullscreen map:** Multi-resolution tiles provide continuous zoom, panning, a
-  chunk grid, and cursor-anchored scaling. Right-click anywhere to create a waypoint,
-  share coordinates, or teleport when permission is available.
-- **Three base layers:** Switch between normal terrain, stable biome colors, and
-  server chunk-load state. Chunk loading can be shown as readable bands or exact
-  ticket levels.
-- **Dimension layers:** The Overworld automatically switches between surface and
-  cave views, the Nether provides current-level and bedrock-roof views, and the End
-  uses a background designed for the void. Surface maps also respond to time of day
-  and local lighting.
-- **Map autofill:** When the world seed is available, unexplored Overworld, Nether roof, and End
-  areas immediately show predicted biomes and terrain. The Nether roof uses a fixed-height biome
-  proxy, while the Overworld also approximates trees. Captured terrain and server corrections
-  progressively replace the prediction, and Superflat worlds are supported as well.
-- **Structure filters and search:** Every vanilla structure set available in the
-  running game version is covered across the Overworld, Nether, and End. Each type
-  has its own icon and visibility toggle, predicted and server-confirmed positions
-  use different frames, and search jumps directly to the nearest candidate. Scrollbars
-  make long filter and result lists explicit, and the zoom level below which structure
-  icons are hidden is configurable.
-- **Map autofill coverage:** Press `P` to switch between everywhere,
-  server-generated areas, and off. Turning autofill off provides a purely
-  authoritative map limited to explored areas.
-- **Per-server sub-worlds:** Terrain fingerprints keep worlds behind the same
-  server address, including proxy networks, in separate map records. Sub-worlds can
-  be created, renamed, and unbound from the fullscreen map. If a companion is later
-  installed on an existing server, old waypoints and same-seed map data remain
-  available for an explicit, confirmed migration instead of moving automatically.
-- **Public waypoints and chat sharing:** A server can maintain a public waypoint list
-  for every connected Conflux Map client. Chat coordinates are available on every
-  server. Before sending, you can preview both Conflux Map and Xaero formats;
-  received coordinates can be imported with one click.
-- **Local waypoints and death points:** Waypoints support names, colors, sets, and
-  visibility controls, while each dimension keeps the five most recent death points.
-  The Overworld and Nether can optionally show linked waypoints with the 8:1 coordinate
-  conversion applied.
-- **In-world waypoint markers:** Waypoints can appear as beams, names, and distances.
-  Edge indicators point toward targets outside the minimap, and map markers show
-  whether a waypoint is above or below the player. Display ranges are configurable.
-- **Waypoint set management:** Sets can be created, renamed, and deleted. Multiple
-  waypoints, or every result in the current filter, can be moved to another set in
-  one operation.
-- **Import from other mods:** Migrate Xaero's Minimap and VoxelMap waypoints in one
-  click. Duplicate coordinates are skipped automatically, and the original waypoint
-  files remain unchanged.
-- **Map drawing:** Draw lines, circles, rectangles, freehand paths, and text labels,
-  with an adjustable eraser. Shapes can be moved, recolored, deleted, undone, and
-  redone. Each drawing can last until disconnect or persist by world and dimension,
-  and drawings can also appear on the minimap.
-- **Recent player trail:** The last 1 to 120 seconds of movement can be drawn as dots
-  on both maps. Trail duration, dot size, and visibility are configurable.
-- **Entity radar:** Players, hostile mobs, passive and neutral mobs, dropped items,
-  vehicles, and projectiles have separate controls. Markers use matching entity heads
-  or item forms. Every living entity gets a borderless portrait rendered from its own
-  current model, so newer vanilla mobs and modded mobs need no bundled art, and every
-  portrait is normalized to the same icon size. While a portrait is still baking or
-  cannot be produced, the category-shaped dot stays visible instead of dropping the
-  entity. Crowded targets collapse into counted clusters, and players always remain separate.
-- **PNG export:** Select any rectangular map area or enter its coordinates, then
-  export at 1 to 16 blocks per pixel. The exporter estimates the output size, can
-  include map drawings, runs in the background, reports progress, and supports
-  cancellation.
-- **Optional server components:** Fabric servers use the matching mod JAR, while
-  Paper versions 1.21.1 through 26.2 use the standalone plugin. Operators can centrally
-  control the world seed, real-terrain corrections, public waypoints, chunk-load
-  state, and entity-radar permission.
-- **Update checks:** The optional startup check provides a download link in chat and
-  a map-screen badge when a new version is available.
-- **In-game settings:** Client settings apply immediately, and every slider also
-  accepts a directly typed value. With MaliLib installed, controls can use key
-  combinations and Conflux Map appears in the A+C configuration screen.
+**Live map.** A square or round minimap you can resize, rotate with your view, and place anywhere,
+plus a fullscreen map with continuous zoom and a chunk grid. Right-click the fullscreen map to
+drop a waypoint, share its coordinates, or teleport there. Both maps switch between normal
+terrain, biome colors, and server chunk-load state, and follow the dimension you're in: surface
+or cave for the Overworld, current-level or bedrock-roof for the Nether, a dedicated backdrop for
+the End.
+
+**Map autofill.** Once the world seed is known, unexplored Overworld, Nether-roof, and End tiles
+show predicted terrain right away instead of staying blank. Real exploration and any corrections
+from the server gradually replace the prediction. Press `P` to cycle full prediction,
+generated-areas-only, and off.
+
+**Structures.** Vanilla structures across all three dimensions get their own icons, visibility
+toggles, and nearest-match search, with different markers for predicted versus confirmed
+locations.
+
+**Waypoints.** Local waypoints with names, colors, and sets; beams, names, and distances shown in
+the world; the last five death points per dimension kept automatically; and one-click import from
+Xaero's Minimap and VoxelMap (duplicates are skipped, the original files are left untouched). The
+Overworld and Nether can optionally show each other's waypoints, converted through the 1:8 portal
+ratio.
+
+**Sub-worlds.** Servers reachable through the same address, including proxy networks, get separate
+map records per world instead of one server's terrain bleeding into another's.
+
+**Drawing and trails.** Lines, shapes, freehand paths, and text labels on the map, undoable and
+either session-only or saved per world. A short recent-movement trail is also available on both
+maps.
+
+**Entity radar.** Players, mobs, dropped items, vehicles, and projectiles each have their own
+toggle. Every living entity gets a portrait rendered live from its own model, so new or modded
+mobs need no bundled art. Other players show on the minimap only while you hold the player-list
+key (Tab by default); the fullscreen map always shows them.
+
+**Export and updates.** Export any map area to a PNG at a chosen resolution, with a size estimate
+and a cancellable background export. An optional startup check flags new releases in chat.
 
 ## Keybinds
 
-Without MaliLib, all bindings remain configurable under Minecraft's Controls
-screen in the "Conflux Map" category. When MaliLib is installed, the gameplay
-bindings move to MaliLib's hotkey interface (including multi-key
-combinations), and Conflux Map is registered in MaliLib's A+C config switcher
-on Minecraft 1.21.1 and newer. On Minecraft 1.17.1, 1.18.2, and 1.20.1,
-Conflux Map detects the same registry when the installed MaliLib provides it;
-otherwise it keeps one optional vanilla shortcut for opening its hotkey screen.
+All bindings are configurable from Minecraft's Controls screen, under "Conflux Map". With
+MaliLib installed, they move to its hotkey screen instead (multi-key combos included), and
+Conflux Map appears in MaliLib's A+C config switcher on 1.21.1 and newer. On 1.17.1, 1.18.2, and
+1.20.1, Conflux Map picks up MaliLib's key registry when it's present, or otherwise keeps one
+vanilla shortcut for opening its hotkey screen.
 
 | Default key | Action |
 |---|---|
 | `H` | Toggle the minimap |
 | `]` / `[` | Minimap zoom in / out |
-| `M` | Open the fullscreen world map |
+| `M` | Open the fullscreen map |
 | `Y` | Cycle the manual layer override |
 | `U` | Open the waypoint list |
 | `B` | New waypoint at your position |
 | `J` | Toggle local waypoints |
-| `,` | Open the settings screen |
-| `P` | Cycle map autofill area (everywhere / generated-only / off) |
+| `,` | Open settings |
+| `P` | Cycle map autofill (everywhere / generated-only / off) |
 | `F9` | Refresh map autofill tiles |
 
-## Waypoint management
+## Waypoints in multiplayer
 
-Waypoints are rendered in the dimension where they were created. An optional
-setting (off by default) additionally shows Overworld and Nether waypoints
-from the linked dimension with the 8:1 portal coordinate conversion applied
-on display; End waypoints always stay confined to the End. The waypoint list
-supports local set creation, renaming, cascading deletion, and multi-select
-or current-filter select-all batch moves between sets.
+Waypoints stay in the dimension where you made them by default. An optional setting shows
+Overworld and Nether waypoints in both dimensions at once; End waypoints always stay in the End.
 
-Waypoints can also show in the world itself, as a light beam with the name
-and distance floating above it. Each part can be turned off on its own, and
-you can set how far away they still show. An on-screen waypoint list overlay
-is not implemented yet.
+Shared waypoints need the server companion and are off by default. A level-2 operator turns them
+on with `/confluxmap waypoints enable` (`disable` and `status` also work). Once enabled, any
+player can publish a point everyone sees. The publisher can delete their own point as long as
+it's unlocked; only an operator can lock, unlock, or delete any point. Per-world and per-player
+limits are configurable in `config/confluxmap/server.json`.
 
-## Shared waypoints
+Chat coordinate sharing needs no companion and works on any server: before sending, you get a
+preview of the outgoing message in both Conflux Map and Xaero formats, and coordinates shared by
+other players import with one click.
 
-Shared waypoints require a compatible Conflux Map jar on the server and are disabled by
-default. A level-2 operator can use `/confluxmap waypoints enable`, `disable`,
-or `status`; the setting is persisted in `config/confluxmap/server.json`.
-When the feature is disabled or unavailable, shared waypoint buttons, tabs,
-sharing choices, and settings are not shown on the client.
-Shared points are stored in the world directory, are visible to all connected
-mod clients, and cannot be edited after publication. An unlocked point can be
-deleted only by its publisher; operators can lock, unlock, or delete any
-point. The defaults are 512 points per world, 64 per publisher, and 30
-mutations per player per minute. Operators can tune
-`maxSharedWaypointsPerWorld`, `maxSharedWaypointsPerPlayer`, and
-`sharedWaypointMutationsPerMinute` in the same server config.
+## Server companion
 
-Chat sharing remains available on every server. Each send previews the exact
-outgoing messages (Conflux Map and Xaero formats) before confirmation.
-Recognized Conflux Map or labelled `X/Y/Z` messages expose a click-to-import
-action that opens the local waypoint editor before anything is saved.
-
-## Server companion policy
-
-Install the matching Fabric mod jar in a Fabric server's `mods/` directory, or install
-`confluxmap-paper-<version>.jar` in a Paper server's `plugins/` directory. The Paper artifact
-targets the Paper API only; Folia, Spigot, and CraftBukkit are not supported. The client remains
-the normal version-specific Fabric jar. See [Paper companion](docs/paper-companion.md) for the
-runtime and storage details.
-
-Client and server versions do not need to be identical. v0.1.0 is the supported
-compatibility floor: matching prediction profiles keep the smallest residual patches,
-different current profiles fall back to complete absolute patches, and an unknown older
-protocol disables only map correction sync. Shared waypoints independently negotiate their
-highest common minor version. A disabled sync setting remains visible in the client with the
-server or compatibility reason, and the saved client preference is not changed.
+The companion lets a whole server share one live map and one waypoint list instead of everyone
+maintaining their own. Install the matching Fabric mod jar in a Fabric server's `mods/`, or
+`confluxmap-paper-<version>.jar` in a Paper server's `plugins/` (Paper 1.21.1 through 26.2; Folia,
+Spigot, and CraftBukkit aren't supported). Client and server versions don't need to match: a
+mismatched companion falls back to larger, less efficient map updates, and an older one simply
+skips correction sync, rather than either side breaking.
 
 Everything the companion shares is controlled in `config/confluxmap/server.json`:
 
-- `shareSeed` (default `false`) includes the world seed in the client
-  handshake. With it on, `allowBiomeMap` and `allowStructureSearch` (both
-  default `true`) independently gate the fullscreen biome layer and the
-  structure layer / nearest-candidate search on cooperating clients after a
-  server restart.
-- `shareChunkLoadState` (default `false`) exposes which chunks the server
-  currently keeps loaded. It defaults off because loaded chunks reveal player
-  activity and long-running farms.
-- `allowEntityRadar` (default `true`) controls whether cooperating clients
-  may scan and render their entity radar.
-- `shareCorrections` (default `true`) serves real-terrain map corrections.
-- `shareWaypoints` (default `false`) enables the shared waypoint catalog.
-- `webMap.enabled` (default `false`) starts the bundled 2D browser map. It binds to
-  `127.0.0.1:8123` by default and should be published through an HTTPS reverse proxy;
-  direct non-loopback binding is rejected unless `webMap.allowInsecureRemote=true`.
-  The proxy must preserve the original `Host` header and set `X-Forwarded-Proto`; browser
-  WebSocket upgrades are accepted only when their `Origin` matches that effective origin.
-- `webMap.sharePlayers` (default `false`) adds the optional two-second player radar.
-  Players can persistently opt out with `/confluxmap webmap hide` and opt back in with
-  `/confluxmap webmap show`. Spectator and invisible players are shown translucent when sharing
-  is enabled.
+- `shareSeed` sends the world seed so clients can predict biomes and structures; `allowBiomeMap`
+  and `allowStructureSearch` gate those two features independently.
+- `shareChunkLoadState` exposes which chunks the server keeps loaded (off by default, since it can
+  reveal farms and player activity).
+- `allowEntityRadar` lets clients scan and render the entity radar.
+- `shareCorrections` sends real-terrain corrections over the predicted map.
+- `shareWaypoints` turns on the shared waypoint list.
+- `webMap.*` runs an optional built-in browser map. It's off by default and bound to loopback
+  only unless explicitly opened up; put it behind an HTTPS reverse proxy that preserves the
+  original `Host` header if you expose it beyond your own machine.
 
-These settings are client policy, not anti-cheat. Once a server shares its
-seed, a modified client or an external tool can derive the same biome and
-structure data independently, and a modified client can always run its own
-radar.
+None of this is anti-cheat: a modified client can predict terrain or scan entities on its own
+regardless of these settings. They're privacy and bandwidth choices, not security ones.
 
-Per-player rate limits and bandwidth budgets for map sync
-(`maxTilesPerRequest`, `maxPendingTilesPerPlayer`,
-`maxBytesPerSecondPerPlayer`, `minRequestIntervalMs`,
-`maxChunkSummariesPerSecond`) live in the same file. Any player can run
-`/confluxmap performance` in game to see timing and volume stats for their
-own connection's map sync.
-
-The browser uses one binary WebSocket for region pages, invalidations, optional player radar,
-and shared waypoints. It follows the effective request limits published by the server, keeps
-revision identifiers in IndexedDB, revalidates them once per browser session, and then refreshes
-only regions invalidated by the server. Player and waypoint revisions advance independently, and
-the socket reconnects and resubscribes after a temporary interruption. Static Leaflet assets and
-the cubiomes WASM predictor are bundled in the jar, so normal page loads do not use a CDN.
-
-When `shareSeed=true` and `allowBiomeMap=true`, the manifest explicitly publishes the seed and
-enables the browser's “all regions” biome prediction for supported dimensions; generated server
-regions are drawn over that local prediction. An anonymous browser that can predict from the seed can also read that seed,
-so this setting is a disclosure policy, not a way to keep the seed secret. With seed sharing off,
-only “generated regions” is available. The web zoom range, default scale, and 1.26 zoom step match
-the in-game fullscreen map (`0.25` to `16` blocks per screen pixel).
+Per-player rate limits and bandwidth budgets live in the same config file; run
+`/confluxmap performance` in game to see your own connection's stats. Paper-specific installation,
+terrain access, and storage details are in [`docs/paper-companion.md`](docs/paper-companion.md).
 
 ## Building
 
-Requires JDK 21 or newer. Everything else — Minecraft, mappings, Fabric API,
-and the JDK 25 toolchain the 26.x builds target — is downloaded by Gradle on
-demand.
+Requires JDK 21 or newer (Gradle downloads Minecraft, mappings, Fabric API, and the JDK 25
+toolchain the 26.x builds target, on demand).
 
 ```sh
 ./gradlew :1.21.11:build
@@ -245,13 +150,13 @@ demand.
 ./gradlew :paper:runServer
 ```
 
-Replace `1.21.11` with any supported build above. The jar is written to
-`versions/<minecraft-version>/build/libs/`. The standalone Paper plugin is written to
-`paper/build/libs/`. `:paper:runServer` downloads and starts a local Paper 1.21.1 development
-server with the freshly built plugin installed. On the first run, review the Minecraft EULA,
-set `eula=true` in `paper/run/eula.txt`, and run the task again.
+Swap `1.21.11` for any version from the table above; jars land in
+`versions/<minecraft-version>/build/libs/` and the standalone Paper plugin in
+`paper/build/libs/`. `:paper:runServer` downloads a local Paper 1.21.1 development server and
+installs the freshly built plugin; accept the Minecraft EULA in `paper/run/eula.txt` and run the
+task again.
 
 ## License
 
-GPL-3.0 — see [`LICENSE`](LICENSE). Third-party components and behavior
-references are listed in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+GPL-3.0, see [`LICENSE`](LICENSE). Third-party components and behavior references are listed in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
