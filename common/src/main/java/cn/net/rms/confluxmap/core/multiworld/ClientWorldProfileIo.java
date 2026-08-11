@@ -34,13 +34,25 @@ public final class ClientWorldProfileIo {
     private final Path file;
     private final Path blockedMarker;
     private final Logger logger;
+    private final FileMover fileMover;
     private int consecutiveSaveFailures;
     private long nextFailureLogAt;
 
     public ClientWorldProfileIo(final Path file, final Logger logger) {
+        this(file, logger, (source, target, atomic) -> {
+            if (atomic) {
+                Files.move(source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } else {
+                Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        });
+    }
+
+    ClientWorldProfileIo(final Path file, final Logger logger, final FileMover fileMover) {
         this.file = file;
         this.blockedMarker = file.resolveSibling(file.getFileName() + ".blocked");
         this.logger = logger;
+        this.fileMover = fileMover;
     }
 
     public ClientWorldProfileRegistry load() {
@@ -128,10 +140,15 @@ public final class ClientWorldProfileIo {
 
     private void move(final Path temporary) throws IOException {
         try {
-            Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            fileMover.move(temporary, file, true);
         } catch (final AtomicMoveNotSupportedException e) {
-            Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING);
+            fileMover.move(temporary, file, false);
         }
+    }
+
+    @FunctionalInterface
+    interface FileMover {
+        void move(Path source, Path target, boolean atomic) throws IOException;
     }
 
     private void quarantine(final String reason) {

@@ -4,8 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
 import java.util.UUID;
@@ -64,6 +68,45 @@ class ClientWorldProfileIoTest {
                 "client_worlds.json.bad."
             )));
         }
+    }
+
+    @Test
+    void fallsBackToReplaceWhenTheFilesystemDoesNotSupportAtomicMoves() throws Exception {
+        final Path file = tempDir.resolve("client_worlds.json");
+        final List<Boolean> atomicAttempts = new ArrayList<>();
+        final ClientWorldProfileIo io = new ClientWorldProfileIo(
+            file,
+            LogManager.getLogger("ClientWorldProfileIoTest"),
+            (source, target, atomic) -> {
+                atomicAttempts.add(atomic);
+                if (atomic) {
+                    throw new AtomicMoveNotSupportedException(source.toString(), target.toString(), "test filesystem");
+                }
+                Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        );
+
+        assertTrue(io.save(new ClientWorldProfileRegistry()).saved());
+
+        assertEquals(List.of(true, false), atomicAttempts);
+        assertTrue(io.load().available());
+    }
+
+    @Test
+    void ignoresAnInterruptedTemporaryWriteWhenTheLastRegistryIsComplete() throws Exception {
+        final Path file = tempDir.resolve("client_worlds.json");
+        Files.writeString(file, "{\"schemaVersion\":3,\"servers\":{}}");
+        final Path temporary = file.resolveSibling(file.getFileName() + ".tmp");
+        Files.writeString(temporary, "{incomplete");
+
+        final ClientWorldProfileRegistry loaded = new ClientWorldProfileIo(
+            file, LogManager.getLogger("ClientWorldProfileIoTest")
+        ).load();
+
+        assertTrue(loaded.available());
+        assertTrue(loaded.profiles("example.net").isEmpty());
+        assertTrue(Files.exists(temporary));
+        assertFalse(Files.exists(file.resolveSibling("client_worlds.json.blocked")));
     }
 
     @Test
