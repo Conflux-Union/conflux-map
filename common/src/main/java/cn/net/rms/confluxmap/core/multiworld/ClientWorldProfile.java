@@ -11,6 +11,7 @@ import java.util.OptionalLong;
 /** One client-owned logical world namespace beneath a multiplayer address. */
 public final class ClientWorldProfile {
     private static final int MAX_BINDINGS = ClientWorldPolicy.MAX_MAX_BINDINGS_PER_PROFILE;
+    private static final int MAX_TEXT_LENGTH = 128;
     static final int MAX_TERRAIN_ANCHORS = 8;
     private String id;
     private String storageId;
@@ -454,6 +455,9 @@ public final class ClientWorldProfile {
     private static String requireText(final String value, final String field) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(field + " must not be blank");
+        }
+        if (value.length() > MAX_TEXT_LENGTH) {
+            throw new IllegalArgumentException(field + " exceeds " + MAX_TEXT_LENGTH + " characters");
         }
         if ("storageId".equals(field) && !isSafeStorageId(value)) {
             throw new IllegalArgumentException("storageId is not a supported local namespace");

@@ -5,6 +5,8 @@ import java.util.Optional;
 
 /** Normalizes explicitly configured client-world switch commands for exact matching. */
 public final class ClientWorldCommand {
+    public static final int MAX_LENGTH = 256;
+
     private ClientWorldCommand() {
     }
 
@@ -33,6 +35,9 @@ public final class ClientWorldCommand {
         final String normalized = value.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
         if (normalized.length() < 2 || !normalized.startsWith("/")) {
             throw new IllegalArgumentException("command must start with '/' and contain a command name");
+        }
+        if (normalized.length() > MAX_LENGTH) {
+            throw new IllegalArgumentException("command exceeds " + MAX_LENGTH + " characters");
         }
         return normalized;
     }

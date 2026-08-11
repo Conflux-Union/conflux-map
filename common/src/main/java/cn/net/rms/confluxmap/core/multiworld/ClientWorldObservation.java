@@ -17,6 +17,13 @@ public record ClientWorldObservation(
     ClientWorldTrajectory trajectory,
     Map<String, ClientWorldTrajectory> candidateTrajectoriesByProfileId
 ) {
+    public static final int MAX_SIGNAL_ENTRIES = 64;
+    public static final int MAX_SIGNAL_KEY_LENGTH = 64;
+    public static final int MAX_SIGNAL_VALUE_LENGTH = 256;
+    public static final int MAX_DIMENSION_LENGTH = 128;
+    public static final int MAX_GAME_MODE_LENGTH = 64;
+    public static final int MAX_PROFILE_EVIDENCE_ENTRIES = 128;
+
     public ClientWorldObservation(final OptionalLong seedHash, final Map<String, String> signals) {
         this(seedHash, signals, null, null, null, null, Map.of(), null, Map.of());
     }
@@ -62,28 +69,54 @@ public record ClientWorldObservation(
     public ClientWorldObservation {
         seedHash = Objects.requireNonNull(seedHash, "seedHash");
         final Map<String, String> normalizedSignals = new LinkedHashMap<>();
-        for (final Map.Entry<String, String> entry : Objects.requireNonNull(signals, "signals").entrySet()) {
+        final Map<String, String> suppliedSignals = Objects.requireNonNull(signals, "signals");
+        if (suppliedSignals.size() > MAX_SIGNAL_ENTRIES) {
+            throw new IllegalArgumentException("signals exceed " + MAX_SIGNAL_ENTRIES + " entries");
+        }
+        for (final Map.Entry<String, String> entry : suppliedSignals.entrySet()) {
             if (entry.getKey() != null && !entry.getKey().isBlank()
                 && entry.getValue() != null && !entry.getValue().isBlank()) {
+                if (entry.getKey().length() > MAX_SIGNAL_KEY_LENGTH
+                    || entry.getValue().length() > MAX_SIGNAL_VALUE_LENGTH) {
+                    throw new IllegalArgumentException("signal key or value exceeds configured length");
+                }
                 normalizedSignals.put(entry.getKey(), entry.getValue());
             }
         }
         signals = Map.copyOf(normalizedSignals);
         dimensionId = normalizeText(dimensionId);
         gameMode = normalizeText(gameMode);
+        if (dimensionId != null && dimensionId.length() > MAX_DIMENSION_LENGTH) {
+            throw new IllegalArgumentException("dimensionId exceeds " + MAX_DIMENSION_LENGTH + " characters");
+        }
+        if (gameMode != null && gameMode.length() > MAX_GAME_MODE_LENGTH) {
+            throw new IllegalArgumentException("gameMode exceeds " + MAX_GAME_MODE_LENGTH + " characters");
+        }
         final Map<String, ClientWorldTerrainFingerprint> normalizedTerrain = new LinkedHashMap<>();
-        for (final Map.Entry<String, ClientWorldTerrainFingerprint> entry : Objects.requireNonNull(
+        final Map<String, ClientWorldTerrainFingerprint> suppliedTerrain = Objects.requireNonNull(
             terrainFingerprintsByProfileId, "terrainFingerprintsByProfileId"
-        ).entrySet()) {
+        );
+        if (suppliedTerrain.size() > MAX_PROFILE_EVIDENCE_ENTRIES) {
+            throw new IllegalArgumentException(
+                "terrain profile evidence exceeds " + MAX_PROFILE_EVIDENCE_ENTRIES + " entries"
+            );
+        }
+        for (final Map.Entry<String, ClientWorldTerrainFingerprint> entry : suppliedTerrain.entrySet()) {
             if (entry.getKey() != null && !entry.getKey().isBlank() && entry.getValue() != null) {
                 normalizedTerrain.put(entry.getKey(), entry.getValue());
             }
         }
         terrainFingerprintsByProfileId = Map.copyOf(normalizedTerrain);
         final Map<String, ClientWorldTrajectory> normalizedTrajectories = new LinkedHashMap<>();
-        for (final Map.Entry<String, ClientWorldTrajectory> entry : Objects.requireNonNull(
+        final Map<String, ClientWorldTrajectory> suppliedTrajectories = Objects.requireNonNull(
             candidateTrajectoriesByProfileId, "candidateTrajectoriesByProfileId"
-        ).entrySet()) {
+        );
+        if (suppliedTrajectories.size() > MAX_PROFILE_EVIDENCE_ENTRIES) {
+            throw new IllegalArgumentException(
+                "trajectory profile evidence exceeds " + MAX_PROFILE_EVIDENCE_ENTRIES + " entries"
+            );
+        }
+        for (final Map.Entry<String, ClientWorldTrajectory> entry : suppliedTrajectories.entrySet()) {
             if (entry.getKey() != null && !entry.getKey().isBlank() && entry.getValue() != null
                 && entry.getValue().latest() != null) {
                 normalizedTrajectories.put(entry.getKey(), entry.getValue().copy());

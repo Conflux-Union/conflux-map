@@ -18,6 +18,7 @@ import org.apache.logging.log4j.Logger;
 
 /** Atomic persistence for the client-owned world profile registry. */
 public final class ClientWorldProfileIo {
+    private static final long MAX_REGISTRY_BYTES = 4L * 1024L * 1024L;
     private static final Gson GSON = new GsonBuilder()
         .registerTypeAdapter(
             ClientWorldTerrainAnchor.class,
@@ -52,6 +53,9 @@ public final class ClientWorldProfileIo {
             return new ClientWorldProfileRegistry();
         }
         try {
+            if (Files.size(file) > MAX_REGISTRY_BYTES) {
+                throw new IOException("client world registry exceeds " + MAX_REGISTRY_BYTES + " bytes");
+            }
             final ClientWorldProfileRegistry registry = GSON.fromJson(
                 Files.readString(file, StandardCharsets.UTF_8),
                 ClientWorldProfileRegistry.class
@@ -91,7 +95,13 @@ public final class ClientWorldProfileIo {
                 Files.createDirectories(file.getParent());
             }
             temporary = file.resolveSibling(file.getFileName() + ".tmp");
-            Files.writeString(temporary, GSON.toJson(registry), StandardCharsets.UTF_8);
+            final byte[] serialized = GSON.toJson(registry).getBytes(StandardCharsets.UTF_8);
+            if (serialized.length > MAX_REGISTRY_BYTES) {
+                return SaveResult.failure(
+                    "client world registry exceeds " + MAX_REGISTRY_BYTES + " bytes"
+                );
+            }
+            Files.write(temporary, serialized);
             move(temporary);
             clearBlockedMarker();
             consecutiveSaveFailures = 0;

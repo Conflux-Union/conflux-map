@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.mc.world;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
@@ -563,6 +564,8 @@ class ClientMultiworldServiceTest {
 
         assertFalse(service.createAndSelect("   ").applied());
         assertTrue(service.persistenceError().contains("name"));
+        assertFalse(service.createAndSelect("x".repeat(129)).applied());
+        assertTrue(service.persistenceError().contains("128"));
         assertFalse(service.rename(profile.id(), "   ").applied());
         assertTrue(service.persistenceError().contains("name"));
         final ClientWorldProfileResolver.CommandBindingResult command = service.addSwitchCommand(
@@ -570,10 +573,34 @@ class ClientMultiworldServiceTest {
         );
         assertEquals(ClientWorldProfileResolver.CommandBindingResult.Status.PERSISTENCE_FAILED, command.status());
         assertTrue(command.mutation().error().contains("command"));
+        final ClientWorldProfileResolver.CommandBindingResult oversizedCommand = service.addSwitchCommand(
+            profile.id(), "/" + "x".repeat(256), false
+        );
+        assertEquals(
+            ClientWorldProfileResolver.CommandBindingResult.Status.PERSISTENCE_FAILED,
+            oversizedCommand.status()
+        );
+        assertTrue(oversizedCommand.mutation().error().contains("256"));
         assertFalse(service.removeSwitchCommand("missing-profile", "/server hub").applied());
         assertTrue(service.persistenceError().contains("unknown client world profile"));
         assertFalse(service.delete("missing-profile").deleted());
         assertTrue(service.persistenceError().contains("unknown client world profile"));
+    }
+
+    @Test
+    void observationAndRegistryInputLimitsRejectOversizedData() throws Exception {
+        assertThrows(IllegalArgumentException.class, () -> new ClientWorldObservation(
+            OptionalLong.of(11L), Map.of("brand", "x".repeat(257))
+        ));
+        final Path registryFile = tempDir.resolve("oversized-client-worlds.json");
+        Files.write(registryFile, new byte[4 * 1024 * 1024 + 1]);
+
+        final ClientWorldProfileRegistry loaded = new ClientWorldProfileIo(
+            registryFile, LogManager.getLogger("ClientMultiworldServiceTest")
+        ).load();
+
+        assertFalse(loaded.available());
+        assertTrue(Files.exists(registryFile.resolveSibling("oversized-client-worlds.json.blocked")));
     }
 
     @Test
