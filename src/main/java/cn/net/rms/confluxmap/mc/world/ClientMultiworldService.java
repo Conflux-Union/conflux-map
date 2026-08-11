@@ -2198,20 +2198,20 @@ public final class ClientMultiworldService {
             persistTrajectoryCheckpointIfDue();
             return;
         }
+        final ClientWorldObservation current = observation();
+        if (current.dimensionId() == null) {
+            return;
+        }
+        // Keep the in-memory visit current on every client tick. Registry writes are debounced
+        // below, but departure paths must be able to flush the position seen on the latest tick.
+        latestVisitObservation = current;
         final long elapsedTicks = lastVisitRefreshTick == Long.MIN_VALUE
             ? Long.MAX_VALUE
             : clientTick - lastVisitRefreshTick;
         if (elapsedTicks < VISIT_REFRESH_MIN_TICKS) {
             return;
         }
-        final ClientWorldObservation current = observation();
-        if (current.dimensionId() == null) {
-            return;
-        }
         final ClientWorldObservation previous = lastRememberedVisit;
-        // Keep the live position current in memory on every tick. Durable registry writes remain
-        // debounced below, so movement is never lost while the serialized JSON stays off-thread.
-        latestVisitObservation = current;
         if (!shouldRefreshVisit(previous, current, elapsedTicks, policy())) {
             return;
         }
