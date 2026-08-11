@@ -3,9 +3,9 @@ package cn.net.rms.confluxmap.mixin;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.config.HudAvoidanceLayout;
 import cn.net.rms.confluxmap.core.config.MinimapHudVisibility;
 import cn.net.rms.confluxmap.core.config.MinimapPlacement;
-import cn.net.rms.confluxmap.core.config.StatusEffectHudAvoidance;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 //#if MC>=12100
 //$$ import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
@@ -262,19 +262,20 @@ public abstract class StatusEffectHudMixin {
         }
         //#endif
 
-        final MinimapPlacement.Layout minimap = MinimapPlacement.resolve(
+        final MinimapPlacement.Layout configuredMinimap = MinimapPlacement.resolve(
             screenWidth,
             screenHeight,
             config.minimapSize,
             config.minimapPositionX,
             config.minimapPositionY
         );
-        return StatusEffectHudAvoidance.horizontalShift(
+        return HudAvoidanceLayout.statusEffectShift(
+            config.minimapHudAvoidance,
             screenWidth,
+            configuredMinimap,
             client.isDemo() ? 16 : 1,
             beneficialCount,
-            harmfulCount,
-            minimap
+            harmfulCount
         );
     }
 }

@@ -33,7 +33,7 @@ public final class ToastHudAvoidance {
         if (minimapRight <= toastLeft || minimap.x() >= screenWidth) {
             return 0;
         }
-        final MinimapHudAvoidance.Bounds footprint = MinimapHudAvoidance.visualBounds(
+        final MinimapInformationLayout.Bounds footprint = MinimapInformationLayout.visualBounds(
             minimap, screenHeight, informationHeight
         );
         final long desiredTop = (long) footprint.bottom() + GAP;

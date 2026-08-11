@@ -26,4 +26,36 @@ public final class MinimapInformationLayout {
         }
         return lines == 0 ? 0 : GAP + lines * LINE_HEIGHT;
     }
+
+    /** Returns the complete visible footprint, including information text below or above the map. */
+    public static Bounds visualBounds(
+        final MinimapPlacement.Layout layout,
+        final int screenHeight,
+        final int informationHeight
+    ) {
+        if (layout == null) {
+            throw new IllegalArgumentException("layout must not be null");
+        }
+        final int safeInformationHeight = Math.max(0, informationHeight);
+        if (safeInformationHeight == 0) {
+            return new Bounds(layout.x(), layout.y(), layout.x() + layout.size(), layout.y() + layout.size());
+        }
+        final int belowBottom = layout.y() + layout.size() + safeInformationHeight;
+        if (belowBottom <= screenHeight) {
+            return new Bounds(layout.x(), layout.y(), layout.x() + layout.size(), belowBottom);
+        }
+        return new Bounds(
+            layout.x(), Math.max(0, layout.y() - safeInformationHeight),
+            layout.x() + layout.size(), layout.y() + layout.size()
+        );
+    }
+
+    /** A rectangle in scaled GUI coordinates, with exclusive right and bottom edges. */
+    public record Bounds(int left, int top, int right, int bottom) {
+        public Bounds {
+            if (right < left || bottom < top) {
+                throw new IllegalArgumentException("bounds must not have negative dimensions");
+            }
+        }
+    }
 }

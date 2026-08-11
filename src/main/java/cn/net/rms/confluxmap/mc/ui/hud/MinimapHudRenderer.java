@@ -8,10 +8,9 @@ import cn.net.rms.confluxmap.core.annotation.Annotation;
 import cn.net.rms.confluxmap.core.annotation.AnnotationProjection;
 import cn.net.rms.confluxmap.core.annotation.AnnotationService;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
-import cn.net.rms.confluxmap.core.config.MinimapPlacement;
 import cn.net.rms.confluxmap.core.config.MinimapHudVisibility;
-import cn.net.rms.confluxmap.core.config.MinimapHudAvoidance;
 import cn.net.rms.confluxmap.core.config.MinimapInformationLayout;
+import cn.net.rms.confluxmap.core.config.MinimapPlacement;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
@@ -184,15 +183,12 @@ public final class MinimapHudRenderer {
 
         final int screenWidth = client.getWindow().getScaledWidth();
         final int screenHeight = client.getWindow().getScaledHeight();
-        final MinimapPlacement.Layout configuredPlacement = MinimapPlacement.resolve(
+        final MinimapPlacement.Layout placement = MinimapPlacement.resolve(
             screenWidth,
             screenHeight,
             config.minimapSize,
             config.minimapPositionX,
             config.minimapPositionY
-        );
-        final MinimapPlacement.Layout placement = avoidHudOverlap(
-            screenWidth, screenHeight, configuredPlacement
         );
         final int size = placement.size();
         final int x0 = placement.x();
@@ -294,32 +290,6 @@ public final class MinimapHudRenderer {
         drawWaypointMarkers(draw, centerX, centerY, size, mapAngle, player);
         drawPlayerArrow(matrices, centerX, centerY, rotate ? 0f : player.yawDegrees() + 180f);
         drawInfoText(draw, player, x0, y0, size);
-    }
-
-    /** Applies a render-only translation around measured vanilla HUD bounds without changing saved placement. */
-    private MinimapPlacement.Layout avoidHudOverlap(
-        final int screenWidth,
-        final int screenHeight,
-        final MinimapPlacement.Layout configuredPlacement
-    ) {
-        if (!config.minimapHudAvoidance || client.player == null) {
-            return configuredPlacement;
-        }
-
-        return MinimapHudAvoidance.resolve(
-            screenWidth,
-            screenHeight,
-            configuredPlacement,
-            minimapInformationHeight(),
-            ScoreboardHudBounds.current()
-        );
-    }
-
-    /** Height reserved for the optional information text rendered outside the minimap frame. */
-    private int minimapInformationHeight() {
-        return MinimapInformationLayout.height(
-            config.showCoordinates, config.showBiome, config.showLayerIndicator
-        );
     }
 
     private void drawPlayerTrail(
