@@ -7,6 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
 class ClientWorldSelectScreenTest {
@@ -88,6 +91,35 @@ class ClientWorldSelectScreenTest {
     }
 
     @Test
+    void keyboardAndPointerContractsKeepProfileDiagnosticsReachable() throws IOException {
+        final String source = Files.readString(findProjectRoot().resolve(
+            "src/main/java/cn/net/rms/confluxmap/mc/ui/screen/ClientWorldSelectScreen.java"
+        )).replace("\r\n", "\n");
+
+        final int childKeyHandling = source.indexOf("if (super.keyPressed(keyCode, scanCode, modifiers))");
+        final int keyboardFallback = source.indexOf("switch (keyCode)", childKeyHandling);
+        assertTrue(childKeyHandling >= 0 && keyboardFallback > childKeyHandling,
+            "focused controls must receive keyboard input before screen-level selection shortcuts");
+        assertTrue(source.contains("case GLFW.GLFW_KEY_UP:\n                moveSelection(-1);"));
+        assertTrue(source.contains("case GLFW.GLFW_KEY_DOWN:\n                moveSelection(1);"));
+
+        final int selectionUpdate = source.indexOf("selectedProfileId = profiles.get(index).id();");
+        assertTrue(
+            selectionUpdate >= 0 && source.indexOf("rebuild();", selectionUpdate) > selectionUpdate,
+            "keyboard selection must rebuild the detail panel with the selected profile diagnostics"
+        );
+        assertTrue(source.contains(
+            "mouseX >= layout.detailX() && mouseX <= layout.detailX() + layout.detailWidth()"
+        ));
+        assertTrue(source.contains(
+            "mouseX >= layout.listX() && mouseX <= layout.listX() + layout.listWidth()"
+        ));
+        assertTrue(source.contains(
+            "confluxmap.screen.client_world.section.diagnostics"
+        ));
+    }
+
+    @Test
     void mapPreviewUsesDurableLayerForEachVanillaDimension() {
         assertEquals(
             MapLayer.SURFACE,
@@ -105,5 +137,17 @@ class ClientWorldSelectScreenTest {
             MapLayer.SURFACE,
             ClientWorldMapPreview.layerForDimensionStorageId(DimensionId.of("example", "custom").fileName())
         );
+    }
+
+    private static Path findProjectRoot() {
+        Path current = Path.of("").toAbsolutePath().normalize();
+        while (current != null) {
+            if (Files.isRegularFile(current.resolve("common.gradle"))
+                && Files.isDirectory(current.resolve("src/main/java"))) {
+                return current;
+            }
+            current = current.getParent();
+        }
+        throw new IllegalStateException("Could not locate the Conflux Map project root");
     }
 }
