@@ -482,11 +482,7 @@ public final class RenderUtil {
     }
 
     static int targetScissorY(final int targetY, final int height, final int targetHeight) {
-        //#if MC>=12000
-        //$$ return targetHeight - targetY - height;
-        //#else
-        return targetY;
-        //#endif
+        return targetHeight - targetY - height;
     }
 
     public static void disableScissor() {

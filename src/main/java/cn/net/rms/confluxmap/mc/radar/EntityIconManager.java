@@ -200,6 +200,7 @@ public final class EntityIconManager implements AutoCloseable {
         translate(geometry, column * CELL_PX, row * CELL_PX);
 
         final MatrixStack matrices = new MatrixStack();
+        matrices.translate(0f, 0f, OffscreenCanvas.atlasDrawPlaneZ());
         colorAtlas.beginPreserving(ATLAS_PX);
         try {
             RenderUtil.clearTargetRect(matrices, column * CELL_PX, row * CELL_PX, CELL_PX, CELL_PX);
