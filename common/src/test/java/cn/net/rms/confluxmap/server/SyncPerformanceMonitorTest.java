@@ -1,12 +1,23 @@
 package cn.net.rms.confluxmap.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.net.Proto;
+import java.lang.reflect.Modifier;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class SyncPerformanceMonitorTest {
+    @Test
+    void cumulativeWorkPresenceIsPublicAcrossModuleBoundary() throws NoSuchMethodException {
+        final int modifiers = SyncPerformanceMonitor.CumulativeWork.class
+            .getDeclaredMethod("present")
+            .getModifiers();
+
+        assertTrue(Modifier.isPublic(modifiers));
+    }
+
     @Test
     void partialResponsesBecomeOneCompletedTileSample() {
         final SyncPerformanceMonitor monitor = new SyncPerformanceMonitor();

@@ -35,7 +35,7 @@ public final class SyncPerformanceMonitor {
             computeNanos = Math.max(0L, computeNanos);
         }
 
-        boolean present() {
+        public boolean present() {
             return workId > 0L;
         }
     }
