@@ -554,6 +554,37 @@ class ClientMultiworldServiceTest {
     }
 
     @Test
+    void legacyServerAliasIsNotPublishedUntilItsIoWriteCompletes() {
+        final AtomicLong saves = new AtomicLong();
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            new ClientWorldProfileRegistry(), ids(), ignored -> {
+                saves.incrementAndGet();
+                return ClientWorldProfileIo.SaveResult.success();
+            }
+        );
+        final WorldIdentity identity = WorldIdentity.multiplayer(ADDRESS);
+        final String legacyServerId = identity.legacyServerIds().get(0);
+        resolver.resolve(legacyServerId, observation(11L, signals("legacy")));
+        final ClientMultiworldService service = service(resolver);
+        final QueueingExecutor io = new QueueingExecutor();
+        service.bindTrajectoryIoExecutor(io);
+        service.onGameJoin(11L);
+        service.observeSignals(signals("legacy"));
+
+        assertEquals(ClientWorldResolution.State.COLLECTING, service.resolveProfile(ADDRESS).state());
+        assertTrue(resolver.profiles(identity.serverId()).isEmpty());
+        assertEquals(1, io.size());
+        assertEquals(1L, saves.get());
+
+        io.runNext();
+
+        assertEquals(ClientWorldResolution.State.AMBIGUOUS, service.resolveProfile(ADDRESS).state());
+        assertEquals(1, resolver.profiles(identity.serverId()).size());
+        assertTrue(resolver.profiles(legacyServerId).isEmpty());
+        assertEquals(2L, saves.get());
+    }
+
+    @Test
     void departureCandidateTrajectoryIsWrittenOnlyByTheIoQueue() {
         final ClientWorldTrajectoryCheckpointIo checkpoints = checkpointIo();
         final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();

@@ -216,6 +216,85 @@ public final class ClientWorldProfileResolver {
         }
     }
 
+    /** Whether legacy server keys still need a durable merge into their canonical key. */
+    public boolean needsServerAliasAdoption(final String canonicalServerId, final List<String> legacyServerIds) {
+        return registry.available() && legacyServerIds.stream()
+            .anyMatch(legacy -> !Objects.equals(canonicalServerId, legacy) && !registry.profiles(legacy).isEmpty());
+    }
+
+    /** Captures an alias merge into an isolated registry image for background persistence. */
+    public PreparedServerAliasMutation prepareServerAliasAdoption(
+        final String canonicalServerId,
+        final List<String> legacyServerIds
+    ) {
+        synchronized (persistenceLock) {
+            final List<String> populatedAliases = legacyServerIds.stream()
+                .filter(legacy -> !Objects.equals(canonicalServerId, legacy) && !registry.profiles(legacy).isEmpty())
+                .toList();
+            if (!registry.available()) {
+                return PreparedServerAliasMutation.failure(registry.loadFailure());
+            }
+            if (populatedAliases.isEmpty()) {
+                return PreparedServerAliasMutation.failure("server alias adoption is no longer applicable");
+            }
+            try {
+                final ClientWorldProfileRegistry candidate = registry.copy();
+                final List<String> conflicts = new ArrayList<>();
+                boolean changed = false;
+                for (final String legacyServerId : populatedAliases) {
+                    final ClientWorldProfileRegistry.AliasMerge merge = candidate.mergeServerAlias(
+                        canonicalServerId, legacyServerId
+                    );
+                    changed |= merge.changed();
+                    conflicts.addAll(merge.conflicts());
+                }
+                return PreparedServerAliasMutation.prepared(
+                    candidate, registryGeneration, canonicalServerId, List.copyOf(conflicts), changed
+                );
+            } catch (final RuntimeException error) {
+                return PreparedServerAliasMutation.failure(errorMessage(error));
+            }
+        }
+    }
+
+    /** Persists a prepared alias merge without exposing its registry image to readers. */
+    public MutationResult persistPreparedServerAlias(final PreparedServerAliasMutation mutation) {
+        if (mutation == null || !mutation.prepared()) {
+            return mutation == null ? MutationResult.failure("missing prepared server alias merge") : mutation.result();
+        }
+        synchronized (persistenceLock) {
+            if (mutation.generation != registryGeneration) {
+                return MutationResult.failure("client world registry changed before server alias persistence");
+            }
+            try {
+                final ClientWorldProfileIo.SaveResult saved = persistence.save(mutation.candidate);
+                return saved != null && saved.saved()
+                    ? MutationResult.success() : MutationResult.failure(saved == null ? null : saved.error());
+            } catch (final RuntimeException error) {
+                return MutationResult.failure(errorMessage(error));
+            }
+        }
+    }
+
+    /** Publishes a successfully persisted alias merge from the client thread. */
+    public ServerAliasResult publishPreparedServerAlias(final PreparedServerAliasMutation mutation) {
+        if (mutation == null || !mutation.prepared()) {
+            return new ServerAliasResult(
+                false, false, List.of(), mutation == null ? "missing prepared server alias merge" : mutation.result().error()
+            );
+        }
+        synchronized (persistenceLock) {
+            if (mutation.generation != registryGeneration) {
+                return new ServerAliasResult(
+                    false, false, List.of(), "client world registry changed before server alias publication"
+                );
+            }
+            registry.replaceWith(mutation.candidate);
+            registryGeneration++;
+            return new ServerAliasResult(true, mutation.changed, mutation.conflicts, null);
+        }
+    }
+
     private ClientWorldResolution resolve(
         final String serverId,
         final ClientWorldObservation observation,
@@ -892,6 +971,58 @@ public final class ClientWorldProfileResolver {
         private static PreparedAutomaticProfileMutation failure(final String error) {
             return new PreparedAutomaticProfileMutation(
                 null, -1L, null, null, MutationResult.failure(error)
+            );
+        }
+
+        public boolean prepared() {
+            return candidate != null && result.applied();
+        }
+
+        public MutationResult result() {
+            return result;
+        }
+    }
+
+    /** Opaque isolated registry image used by the client IO queue for a server alias merge. */
+    public static final class PreparedServerAliasMutation {
+        private final ClientWorldProfileRegistry candidate;
+        private final long generation;
+        private final String canonicalServerId;
+        private final List<String> conflicts;
+        private final boolean changed;
+        private final MutationResult result;
+
+        private PreparedServerAliasMutation(
+            final ClientWorldProfileRegistry candidate,
+            final long generation,
+            final String canonicalServerId,
+            final List<String> conflicts,
+            final boolean changed,
+            final MutationResult result
+        ) {
+            this.candidate = candidate;
+            this.generation = generation;
+            this.canonicalServerId = canonicalServerId;
+            this.conflicts = conflicts;
+            this.changed = changed;
+            this.result = result;
+        }
+
+        private static PreparedServerAliasMutation prepared(
+            final ClientWorldProfileRegistry candidate,
+            final long generation,
+            final String canonicalServerId,
+            final List<String> conflicts,
+            final boolean changed
+        ) {
+            return new PreparedServerAliasMutation(
+                candidate, generation, canonicalServerId, conflicts, changed, MutationResult.success()
+            );
+        }
+
+        private static PreparedServerAliasMutation failure(final String error) {
+            return new PreparedServerAliasMutation(
+                null, -1L, null, List.of(), false, MutationResult.failure(error)
             );
         }
 

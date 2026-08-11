@@ -133,6 +133,8 @@ public final class ClientMultiworldService {
     private boolean automaticProfileWriteInFlight;
     private final AtomicReference<AutomaticProfileWriteCompletion> automaticProfileWriteCompletion =
         new AtomicReference<>();
+    private boolean serverAliasWriteInFlight;
+    private final AtomicReference<ServerAliasWriteCompletion> serverAliasWriteCompletion = new AtomicReference<>();
     private ClientWorldTerrainFingerprint terrainFingerprint;
     /** Candidate-specific samples captured only when their saved 3x3 is already loaded. */
     private final Map<String, ClientWorldTerrainFingerprint> terrainFingerprintsByProfileId = new LinkedHashMap<>();
@@ -488,12 +490,6 @@ public final class ClientMultiworldService {
             // A spelling-only change such as host -> host:25565 is not a connection boundary.
             address = currentAddress;
             serverIdAliases = requestedServer.legacyServerIds();
-            final ClientWorldProfileResolver.ServerAliasResult aliasResult = resolver.adoptServerAliases(
-                serverId, requestedServer.legacyServerIds()
-            );
-            if (!aliasResult.applied()) {
-                persistenceError = aliasResult.error();
-            }
         }
         if (!Objects.equals(serverId, requestedServer.serverId())) {
             final WorldIdentity serverIdentity = requestedServer;
@@ -504,31 +500,6 @@ public final class ClientMultiworldService {
             address = currentAddress;
             serverId = nextServerId;
             serverIdAliases = serverIdentity.legacyServerIds();
-            final ClientWorldProfileResolver.ServerAliasResult aliasResult = resolver.adoptServerAliases(
-                serverId, serverIdentity.legacyServerIds()
-            );
-            if (!aliasResult.applied()) {
-                persistenceError = aliasResult.error();
-                final String legacyWithProfiles = serverIdentity.legacyServerIds().stream()
-                    .filter(legacy -> !resolver.profiles(legacy).isEmpty())
-                    .findFirst().orElse(null);
-                if (resolver.profiles(serverId).isEmpty() && legacyWithProfiles != null) {
-                    // Persistence failed before the alias could be published. Continue on the old
-                    // key rather than creating a second, empty default-port namespace.
-                    serverId = legacyWithProfiles;
-                    ConfluxMapMod.LOGGER.warn(
-                        "Could not persist default-port alias merge; temporarily using legacy server key {}",
-                        legacyWithProfiles
-                    );
-                } else {
-                    resolution = ClientWorldResolution.persistenceFailed(aliasResult.error());
-                    detectionState = ClientWorldDetectionState.WAITING_FOR_USER;
-                    return resolution;
-                }
-            }
-            for (final String conflict : aliasResult.conflicts()) {
-                ConfluxMapMod.LOGGER.warn("Client-world default-port alias merge: {}", conflict);
-            }
             trajectory.reset(ClientWorldTrajectory.DiscontinuityReason.CONNECTION_CHANGE);
             candidateTrajectoryOverrides.clear();
             departedProfileId = null;
@@ -551,6 +522,22 @@ public final class ClientMultiworldService {
             }
             observationGeneration++;
             resetPersistenceBackoff();
+        }
+        if (applyCompletedServerAliasAdoption()) {
+            return resolution;
+        }
+        if (resolver.needsServerAliasAdoption(serverId, serverIdAliases)) {
+            queueServerAliasAdoption();
+            if (resolution.state() == ClientWorldResolution.State.PERSISTENCE_FAILED) {
+                return resolution;
+            }
+            if (applyCompletedServerAliasAdoption()) {
+                return resolution;
+            }
+            resolution = ClientWorldResolution.collecting();
+            detectionState = ClientWorldDetectionState.PROBING;
+            clearProfileLock();
+            return resolution;
         }
         if (applyPendingCommand()) {
             return resolution;
@@ -1366,6 +1353,75 @@ public final class ClientMultiworldService {
         return true;
     }
 
+    private void queueServerAliasAdoption() {
+        if (serverAliasWriteInFlight) {
+            return;
+        }
+        final ClientWorldProfileResolver.PreparedServerAliasMutation prepared =
+            resolver.prepareServerAliasAdoption(serverId, serverIdAliases);
+        if (!prepared.prepared()) {
+            persistenceError = prepared.result().error();
+            recordPersistenceFailure();
+            resolution = ClientWorldResolution.persistenceFailed(persistenceError);
+            detectionState = ClientWorldDetectionState.WAITING_FOR_USER;
+            return;
+        }
+        final long aliasGeneration = connectionGeneration;
+        final String canonicalServerId = serverId;
+        final List<String> legacyServerIds = List.copyOf(serverIdAliases);
+        serverAliasWriteInFlight = true;
+        CompletableFuture.runAsync(() -> {
+            final ClientWorldProfileResolver.MutationResult result = resolver.persistPreparedServerAlias(prepared);
+            serverAliasWriteCompletion.set(new ServerAliasWriteCompletion(
+                aliasGeneration, canonicalServerId, legacyServerIds, prepared, result
+            ));
+        }, trajectoryIoExecutor);
+    }
+
+    /** Resolves a completed alias merge before a canonical key can participate in matching. */
+    private boolean applyCompletedServerAliasAdoption() {
+        final ServerAliasWriteCompletion completion = serverAliasWriteCompletion.getAndSet(null);
+        if (completion == null) {
+            return serverAliasWriteInFlight;
+        }
+        serverAliasWriteInFlight = false;
+        final ClientWorldProfileResolver.ServerAliasResult result = completion.result().applied()
+            ? resolver.publishPreparedServerAlias(completion.prepared())
+            : new ClientWorldProfileResolver.ServerAliasResult(false, false, List.of(), completion.result().error());
+        final boolean stillCurrent = completion.connectionGeneration() == connectionGeneration
+            && Objects.equals(completion.canonicalServerId(), serverId);
+        if (!result.applied()) {
+            if (!stillCurrent) {
+                return false;
+            }
+            final String legacyWithProfiles = completion.legacyServerIds().stream()
+                .filter(legacy -> !resolver.profiles(legacy).isEmpty())
+                .findFirst().orElse(null);
+            if (resolver.profiles(serverId).isEmpty() && legacyWithProfiles != null) {
+                // Keep using the legacy namespace when the durable merge cannot be published.
+                serverId = legacyWithProfiles;
+                persistenceError = result.error();
+                ConfluxMapMod.LOGGER.warn(
+                    "Could not persist default-port alias merge; temporarily using legacy server key {}",
+                    legacyWithProfiles
+                );
+                return false;
+            }
+            persistenceError = result.error();
+            recordPersistenceFailure();
+            resolution = ClientWorldResolution.persistenceFailed(persistenceError);
+            detectionState = ClientWorldDetectionState.WAITING_FOR_USER;
+            return true;
+        }
+        for (final String conflict : result.conflicts()) {
+            ConfluxMapMod.LOGGER.warn("Client-world default-port alias merge: {}", conflict);
+        }
+        if (stillCurrent) {
+            recoverPendingProfileDeletions();
+        }
+        return false;
+    }
+
     private record CheckpointWriteCompletion(
         long tick,
         ClientWorldTrajectoryCheckpointIo.SaveResult result
@@ -1388,6 +1444,15 @@ public final class ClientMultiworldService {
         String serverId,
         OptionalLong seedHash,
         ClientWorldProfileResolver.PreparedAutomaticProfileMutation prepared,
+        ClientWorldProfileResolver.MutationResult result
+    ) {
+    }
+
+    private record ServerAliasWriteCompletion(
+        long connectionGeneration,
+        String canonicalServerId,
+        List<String> legacyServerIds,
+        ClientWorldProfileResolver.PreparedServerAliasMutation prepared,
         ClientWorldProfileResolver.MutationResult result
     ) {
     }
