@@ -19,6 +19,7 @@ public final class ClientWorldProfileResolver {
     private static final double QUEUE_TWO_MIN_CONFIDENCE = 0.70D;
     private static final double QUEUE_THREE_MIN_CONFIDENCE = 0.80D;
     private static final double QUEUE_THREE_ERROR_MARGIN = 0.15D;
+    private static final double SINGLE_PROFILE_MIN_CONFIDENCE = 0.90D;
     private static final double AUXILIARY_WEIGHT = 0.75D;
     private static final double TERRAIN_WEIGHT = 0.25D;
     private static final double TRAJECTORY_WEIGHT = 0.60D;
@@ -1455,7 +1456,7 @@ public final class ClientWorldProfileResolver {
             final CandidateScore first = scores.stream()
                 .max(Comparator.comparingDouble(CandidateScore::score)).orElseThrow();
             return ClientWorldResolution.ambiguous(displayScores(
-                scores, first, 0.0D, requiredConfidence(first.queue()), requiredMargin(first),
+                scores, first, 0.0D, requiredConfidence(first.queue(), false), requiredMargin(first),
                 observation.seedHash().isPresent() && profiles.size() > 1,
                 List.of("candidate_conflicted"), ClientWorldResolution.CandidateOutcome.CONFLICTED
             ));
@@ -1466,7 +1467,11 @@ public final class ClientWorldProfileResolver {
         final boolean hasTerrain = best.hasTerrainScore();
         final boolean terrainDiscriminated = profiles.size() <= 1 || hasTerrainDiscriminator(best, scores);
         final double requiredMargin = requiredMargin(best, runnerUpCandidate);
-        final double requiredConfidence = requiredConfidence(best.queue());
+        final boolean singleProfileFarPosition = profiles.size() == 1
+            && !best.hasTerrainScore()
+            && (best.reasons().contains("corridor_outside_radius")
+                || best.reasons().contains("position_far_without_trajectory"));
+        final double requiredConfidence = requiredConfidence(best.queue(), singleProfileFarPosition);
         final boolean hasEnoughAuxiliary = best.independentFactors() >= 2;
         final boolean hasUnresolvedLegacyCandidate = eligible.stream()
             .anyMatch(candidate -> candidate.reasons().contains("legacy_profile"));
@@ -1474,6 +1479,7 @@ public final class ClientWorldProfileResolver {
             .anyMatch(candidate -> candidate.conflicted() && candidate.queue() < best.queue());
         final List<String> bestBlockers = new ArrayList<>();
         if (forcedBlocker != null) bestBlockers.add(forcedBlocker);
+        if (singleProfileFarPosition) bestBlockers.add("single_profile_far_position");
         if (best.score() < requiredConfidence) bestBlockers.add("confidence_below_threshold");
         if (best.score() - runnerUp <= requiredMargin) bestBlockers.add("margin_not_strictly_greater");
         if (!best.continuityEvidence()) bestBlockers.add("continuity_required");
@@ -1485,7 +1491,7 @@ public final class ClientWorldProfileResolver {
             && best.score() - runnerUp > requiredMargin
             && best.continuityEvidence()
             && (hasTerrain || hasEnoughAuxiliary)
-            && !hasUnresolvedLegacyCandidate && !higherPriorityConflict;
+            && !hasUnresolvedLegacyCandidate && !higherPriorityConflict && !singleProfileFarPosition;
         final boolean sameSeedCandidates = observation.seedHash().isPresent() && profiles.size() > 1;
         if (canAutoSelect) {
             final boolean terrainConfirmed = hasTerrain
@@ -1537,9 +1543,11 @@ public final class ClientWorldProfileResolver {
         );
     }
 
-    private static double requiredConfidence(final int queue) {
-        return queue == 3 ? QUEUE_THREE_MIN_CONFIDENCE
+    private static double requiredConfidence(final int queue, final boolean strictSingleProfileFar) {
+        final double queueConfidence = queue == 3 ? QUEUE_THREE_MIN_CONFIDENCE
             : queue == 2 ? QUEUE_TWO_MIN_CONFIDENCE : AUTO_SELECT_MIN_CONFIDENCE;
+        return strictSingleProfileFar ? Math.max(queueConfidence, SINGLE_PROFILE_MIN_CONFIDENCE)
+            : queueConfidence;
     }
 
     private static double requiredMargin(final CandidateScore candidate) {

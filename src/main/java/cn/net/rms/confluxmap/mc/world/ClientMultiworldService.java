@@ -110,6 +110,8 @@ public final class ClientMultiworldService {
     private boolean gameJoinObserved;
     private boolean gameJoinDeparturePrepared;
     private boolean respawnDeparturePrepared;
+    /** A weak replacement boundary must not be auto-resolved back to the old map. */
+    private boolean worldTransitionAwaitingConfirmation;
     private boolean proxyWorldJoin;
     /** Profile proven to be the source side of the current in-connection GameJoin boundary. */
     private String departedProfileId;
@@ -341,6 +343,7 @@ public final class ClientMultiworldService {
         observedGameMode = null;
         observedPosition = null;
         gameJoinObserved = true;
+        worldTransitionAwaitingConfirmation = false;
         previousSeedHash = switchedUpstreamWorld ? departedSeedHash : OptionalLong.empty();
         proxyWorldJoin = switchedUpstreamWorld;
         departedProfileId = departedProfile;
@@ -375,6 +378,7 @@ public final class ClientMultiworldService {
         observedDimension = null;
         observedGameMode = null;
         observedPosition = null;
+        worldTransitionAwaitingConfirmation = false;
         beginProbing();
     }
 
@@ -412,6 +416,7 @@ public final class ClientMultiworldService {
             flushTrajectoryCheckpoint();
         }
         respawnDeparturePrepared = false;
+        worldTransitionAwaitingConfirmation = false;
         lastServerPositionCorrectionMs = ClientWorldTrajectorySample.NO_SERVER_ACK;
         trajectory.reset(ClientWorldTrajectory.DiscontinuityReason.EXPLICIT_RESET);
         // Respawn is a logical-world lifecycle event (death or dimension transfer), not proof
@@ -433,6 +438,7 @@ public final class ClientMultiworldService {
             pendingSnapshots.clear();
             recentFullChunks.clear();
             recentUnloadedChunks.clear();
+            resetWorldObservationBaseline();
             lastRememberedVisit = null;
             latestVisitObservation = null;
             lastVisitRefreshTick = Long.MIN_VALUE;
@@ -570,6 +576,13 @@ public final class ClientMultiworldService {
             }
         }
         if (applyPendingCommand()) {
+            return resolution;
+        }
+        if (worldTransitionAwaitingConfirmation && serverId != null) {
+            resolution = resolver.diagnoseBlocked(
+                serverId, observation(), "weak_world_transition"
+            );
+            detectionState = ClientWorldDetectionState.WAITING_FOR_USER;
             return resolution;
         }
         if (applyCompletedAutomaticProfileCreation()) {
@@ -786,6 +799,7 @@ public final class ClientMultiworldService {
     public ClientWorldProfileResolver.MutationResult select(final String profileId) {
         requireConnection();
         clearCommandLock();
+        worldTransitionAwaitingConfirmation = false;
         final ClientWorldResolution previousResolution = resolution;
         resolution = resolver.select(serverId, profileId, observation());
         if (resolution.state() == ClientWorldResolution.State.RESOLVED) {
@@ -825,6 +839,7 @@ public final class ClientMultiworldService {
     public ClientWorldProfileResolver.MutationResult createAndSelect(final String displayName) {
         requireConnection();
         clearCommandLock();
+        worldTransitionAwaitingConfirmation = false;
         final ClientWorldResolution previousResolution = resolution;
         resolution = resolver.createAndSelect(serverId, displayName, observation());
         if (resolution.state() == ClientWorldResolution.State.RESOLVED) {
@@ -1905,6 +1920,7 @@ public final class ClientMultiworldService {
         }
         gameJoinObserved = false;
         proxyWorldJoin = false;
+        worldTransitionAwaitingConfirmation = false;
         signalTicks = 0;
         ambiguityNotified = false;
         persistenceError = null;
@@ -1960,6 +1976,27 @@ public final class ClientMultiworldService {
             && seedHash.isPresent()
             && seedHash.getAsLong() == observedSeedHash
             && Objects.equals(lockedProfileId, resolution.profile().id());
+    }
+
+    /** Dimension transfers replace the world and coordinate frame; establish a new weak-signal baseline. */
+    private void resetWorldObservationBaseline() {
+        if (client == null || client.world == null || client.player == null) {
+            observedWorld = null;
+            observedDimension = null;
+            observedGameMode = null;
+            observedPosition = null;
+            return;
+        }
+        observedWorld = client.world;
+        observedDimension = client.world.getRegistryKey().getValue().toString();
+        observedGameMode = client.interactionManager == null
+            ? null
+            : String.valueOf(client.interactionManager.getCurrentGameMode());
+        observedPosition = new ClientWorldPosition(
+            client.player.getBlockPos().getX(),
+            client.player.getBlockPos().getY(),
+            client.player.getBlockPos().getZ()
+        );
     }
 
     private void beginProbing() {
@@ -2284,6 +2321,7 @@ public final class ClientMultiworldService {
         }
         trajectory.reset(ClientWorldTrajectory.DiscontinuityReason.EXPLICIT_RESET);
         beginProbing();
+        worldTransitionAwaitingConfirmation = true;
         if (hasPendingCommand()) {
             commandLockObservedWeakWorldTransition = true;
         }

@@ -969,6 +969,22 @@ class ClientWorldProfileResolverTest {
     }
 
     @Test
+    void singleProfileFarPositionRequiresManualConfirmationWithoutChangingScoreFactors() {
+        final ClientWorldProfileResolver resolver = resolver();
+        final Map<String, String> signals = Map.of("brand", "stable", "commands", "stable");
+        resolver.resolve(SERVER, trajectoryObservation(1L, signals, 0, 1_000L));
+
+        final ClientWorldResolution result = resolver.resolve(
+            SERVER, trajectoryObservation(1L, signals, 2_000, 2_000L)
+        );
+
+        assertEquals(ClientWorldResolution.State.AMBIGUOUS, result.state());
+        final ClientWorldResolution.Candidate candidate = result.candidates().get(0);
+        assertTrue(candidate.blockers().contains("single_profile_far_position"));
+        assertEquals(90, candidate.requiredConfidencePercent());
+    }
+
+    @Test
     void failedTrajectoryCheckpointDoesNotPublishPositionOrLastStableMutation() {
         final ClientWorldProfileRegistry registry = new ClientWorldProfileRegistry();
         final ClientWorldProfileResolver initial = new ClientWorldProfileResolver(

@@ -213,7 +213,7 @@ class ClientMultiworldServiceTest {
         assertEquals(ClientWorldDetectionState.WAITING_FOR_USER, service.detectionState());
         assertEquals(first.worldId(), service.profiles().get(0).storageId());
         assertFalse(service.candidates().isEmpty());
-        assertTrue(service.candidates().get(0).blockers().contains("same_seed_new_subworld_guard"));
+        assertTrue(service.candidates().get(0).blockers().contains("weak_world_transition"));
     }
 
     @Test
