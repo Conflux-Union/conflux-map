@@ -143,6 +143,7 @@ public final class WaypointListScreen extends ConfluxScreen {
     private final WaypointService waypointService;
     private final SharedWaypointClient sharedWaypoints;
     private final Screen parent;
+    private final boolean openedFromHotkey;
     private final Set<UUID> selectedWaypointIds = new LinkedHashSet<>();
     private Tab tab;
 
@@ -174,16 +175,29 @@ public final class WaypointListScreen extends ConfluxScreen {
     private DimensionId lastDimension;
 
     public WaypointListScreen() {
-        this(null, Tab.LOCAL);
+        this(null, Tab.LOCAL, false);
     }
 
     public WaypointListScreen(final Screen parent, final Tab initialTab) {
+        this(parent, initialTab, false);
+    }
+
+    public static WaypointListScreen openedFromHotkey() {
+        return new WaypointListScreen(null, Tab.LOCAL, true);
+    }
+
+    private WaypointListScreen(
+        final Screen parent,
+        final Tab initialTab,
+        final boolean openedFromHotkey
+    ) {
         super(Texts.translatable("confluxmap.screen.waypoints.title"));
         final ConfluxMapClient app = ConfluxMapClient.get();
         this.gameBridge = app.gameBridge();
         this.waypointService = app.waypointService();
         this.sharedWaypoints = app.sharedWaypoints();
         this.parent = parent;
+        this.openedFromHotkey = openedFromHotkey;
         this.tab = initialTab == null ? Tab.LOCAL : initialTab;
         if (this.tab != Tab.LOCAL && !sharedWaypoints.availability().enabled()) {
             this.tab = Tab.LOCAL;
@@ -214,11 +228,16 @@ public final class WaypointListScreen extends ConfluxScreen {
         searchField.setMaxLength(64);
         searchField.setText(observedSearch);
         rebuild();
-        setInitialFocus(searchField);
+        if (openedFromHotkey) {
+            deferInitialFocusUntilNextTick(searchField);
+        } else {
+            setInitialFocus(searchField);
+        }
     }
 
     @Override
     public void tick() {
+        super.tick();
         Widgets.tick(searchField);
         final String currentSearch = searchField == null ? "" : searchField.getText();
         if (!currentSearch.equals(observedSearch)) {

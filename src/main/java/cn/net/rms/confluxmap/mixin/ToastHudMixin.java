@@ -7,6 +7,7 @@ import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.config.MinimapHudVisibility;
+import cn.net.rms.confluxmap.core.config.MinimapInformationLayout;
 import cn.net.rms.confluxmap.core.config.MinimapPlacement;
 import cn.net.rms.confluxmap.core.config.ToastHudAvoidance;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
@@ -149,6 +150,9 @@ public abstract class ToastHudMixin {
             config.minimapPositionX,
             config.minimapPositionY
         );
-        return ToastHudAvoidance.verticalShift(screenWidth, screenHeight, minimap);
+        final int informationHeight = MinimapInformationLayout.height(
+            config.showCoordinates, config.showBiome, config.showLayerIndicator
+        );
+        return ToastHudAvoidance.verticalShift(screenWidth, screenHeight, minimap, informationHeight);
     }
 }

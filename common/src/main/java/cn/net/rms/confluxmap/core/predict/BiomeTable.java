@@ -93,6 +93,12 @@ public final class BiomeTable {
         return surfaceY >= SNOW_LINES.getOrDefault(cubiomesBiomeId, NO_SNOW_LINE);
     }
 
+    /** Midpoint snow-line metadata for non-Minecraft renderers; empty means no altitude snow. */
+    public static java.util.OptionalInt altitudeSnowLine(final int cubiomesBiomeId) {
+        final Integer line = SNOW_LINES.get(cubiomesBiomeId);
+        return line == null ? java.util.OptionalInt.empty() : java.util.OptionalInt.of(line);
+    }
+
     private static final Entry DEFAULT_FALLBACK =
         new Entry(
             SurfaceKind.LAND,

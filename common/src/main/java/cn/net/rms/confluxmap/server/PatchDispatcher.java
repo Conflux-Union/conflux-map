@@ -130,7 +130,8 @@ public final class PatchDispatcher {
         this(budget, maxQueued, System::nanoTime, DeliveryObserver.NONE);
     }
 
-    PatchDispatcher(
+    /** Creates a dispatcher with adapter-provided timing and delivery instrumentation. */
+    public PatchDispatcher(
         final PlayerBudget budget,
         final int maxQueued,
         final LongSupplier nanoClock,

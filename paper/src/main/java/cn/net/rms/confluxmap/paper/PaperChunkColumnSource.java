@@ -77,7 +77,16 @@ final class PaperChunkColumnSource implements ChunkColumnSource {
 
     @Override
     public int blockLightAbove(final int x, final int surfaceY, final int z) {
-        return snapshot.getBlockEmittedLight(x, Math.min(surfaceY + 1, maxHeight - 1), z);
+        final int surfaceBlockY = Math.max(minHeight, Math.min(surfaceY, maxHeight - 1));
+        final int aboveY = Math.min(surfaceBlockY + 1, maxHeight - 1);
+        // ChunkSnapshot exposes the light emitted by a block, not the propagated block-light
+        // value at an air position. The old air-only lookup therefore returned 0 above every
+        // glowstone roof. Include the sampled surface block so self-emitting roof materials keep
+        // their authoritative light level on Paper as well.
+        return Math.max(
+            snapshot.getBlockEmittedLight(x, surfaceBlockY, z),
+            snapshot.getBlockEmittedLight(x, aboveY, z)
+        );
     }
 
     @Override

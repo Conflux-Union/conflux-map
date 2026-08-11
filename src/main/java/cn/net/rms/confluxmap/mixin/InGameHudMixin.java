@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.config.HudAvoidanceLayout;
 import cn.net.rms.confluxmap.core.config.MinimapHudVisibility;
+import cn.net.rms.confluxmap.core.config.MinimapInformationLayout;
 import cn.net.rms.confluxmap.core.config.MinimapPlacement;
 import cn.net.rms.confluxmap.core.config.ScoreboardHudAvoidance;
 import cn.net.rms.confluxmap.mc.ui.hud.ScoreboardHudBounds;
@@ -225,7 +226,7 @@ public abstract class InGameHudMixin {
             config.minimapHudAvoidance,
             screenHeight,
             minimap,
-            HudAvoidanceLayout.informationHeight(
+            MinimapInformationLayout.height(
                 config.showCoordinates,
                 config.showBiome,
                 config.showLayerIndicator

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Conflux Map</title>
+  <link rel="stylesheet" href="/vendor/leaflet.css">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <main id="map" aria-label="World map" data-i18n-aria-label="worldMap"></main>
+  <section class="controls" aria-label="Map controls" data-i18n-aria-label="mapControls">
+    <strong>Conflux Map</strong>
+    <label><span data-i18n="dimension">Dimension</span> <select id="dimension"></select></label>
+    <label><span data-i18n="mode">Mode</span>
+      <select id="mode">
+        <option value="all" data-i18n="modeAll">All regions</option>
+        <option value="generated" data-i18n="modeGenerated">Generated regions</option>
+      </select>
+    </label>
+    <label><span data-i18n="language">Language</span>
+      <select id="language">
+        <option value="en">English</option>
+        <option value="zh-CN">简体中文</option>
+      </select>
+    </label>
+    <span id="status" role="status" data-i18n="connecting">Connecting…</span>
+  </section>
+  <aside id="entity-panel" class="entity-panel" aria-label="Players and waypoints" data-i18n-aria-label="entityPanel">
+    <div class="panel-header">
+      <strong data-i18n="players">Players</strong>
+      <span id="player-count" class="panel-count">0</span>
+    </div>
+    <div id="player-list" class="player-list" aria-live="polite"></div>
+  </aside>
+  <output id="scale-label" class="scale-label" data-i18n="scale">Scale: 0.50x</output>
+  <script src="/vendor/leaflet.js"></script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

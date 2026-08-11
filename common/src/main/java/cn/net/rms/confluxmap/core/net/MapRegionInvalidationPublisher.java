@@ -30,7 +30,6 @@ public final class MapRegionInvalidationPublisher {
         if (previous != null && previous.request.dimIndex() == request.dimIndex()
             && previous.request.lod() == request.lod()) {
             copyVisible(previous.pending, replacement.pending, request);
-            copyVisible(previous.notified, replacement.notified, request);
         }
         subscriptions.put(player, replacement);
         return true;
@@ -50,8 +49,7 @@ public final class MapRegionInvalidationPublisher {
         final MapRegionInvalidateS2C.Region region = new MapRegionInvalidateS2C.Region(regionX, regionZ);
         for (final Subscription subscription : subscriptions.values()) {
             if (subscription.request.dimIndex() == dimIndex
-                && contains(subscription.request, region)
-                && !subscription.notified.contains(region)) {
+                && contains(subscription.request, region)) {
                 subscription.pending.add(region);
             }
         }
@@ -70,7 +68,6 @@ public final class MapRegionInvalidationPublisher {
         while (iterator.hasNext() && regions.size() < Proto.MAX_REGION_INVALIDATIONS) {
             final MapRegionInvalidateS2C.Region region = iterator.next();
             iterator.remove();
-            subscription.notified.add(region);
             regions.add(region);
         }
         return new MapRegionInvalidateS2C(
@@ -91,7 +88,34 @@ public final class MapRegionInvalidationPublisher {
                 region.regionX(), region.regionZ()
             );
             subscription.pending.remove(key);
-            subscription.notified.remove(key);
+        }
+    }
+
+    /** A web tile refresh acknowledges every source region covered by that tile. */
+    public synchronized void acknowledge(final UUID player, final MapViewReqC2S request) {
+        final Subscription subscription = subscriptions.get(player);
+        if (subscription == null
+            || subscription.request.dimIndex() != request.dimIndex()
+            || subscription.request.lod() != request.lod()) {
+            return;
+        }
+        final int regionsPerTile = 1 << request.lod();
+        for (final MapViewReqC2S.TileReq tile : request.tiles()) {
+            final long baseX = (long) tile.tileX() * regionsPerTile;
+            final long baseZ = (long) tile.tileZ() * regionsPerTile;
+            for (int dz = 0; dz < regionsPerTile; dz++) {
+                for (int dx = 0; dx < regionsPerTile; dx++) {
+                    final long regionX = baseX + dx;
+                    final long regionZ = baseZ + dz;
+                    if (regionX < Integer.MIN_VALUE || regionX > Integer.MAX_VALUE
+                        || regionZ < Integer.MIN_VALUE || regionZ > Integer.MAX_VALUE) {
+                        continue;
+                    }
+                    final MapRegionInvalidateS2C.Region key =
+                        new MapRegionInvalidateS2C.Region((int) regionX, (int) regionZ);
+                    subscription.pending.remove(key);
+                }
+            }
         }
     }
 
@@ -149,7 +173,6 @@ public final class MapRegionInvalidationPublisher {
     private static final class Subscription {
         final MapRegionSyncSubscribeC2S request;
         final Set<MapRegionInvalidateS2C.Region> pending = new LinkedHashSet<>();
-        final Set<MapRegionInvalidateS2C.Region> notified = new LinkedHashSet<>();
 
         Subscription(final MapRegionSyncSubscribeC2S request) {
             this.request = request;

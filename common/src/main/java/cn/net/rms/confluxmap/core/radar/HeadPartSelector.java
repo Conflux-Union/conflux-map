@@ -18,6 +18,9 @@ public final class HeadPartSelector {
         "minecraft:tropical_fish", "minecraft:slime", "minecraft:magma_cube",
         "minecraft:ghast"
     );
+    private static final Set<String> VILLAGER_FACE_TYPES = Set.of(
+        "minecraft:villager", "minecraft:zombie_villager", "minecraft:wandering_trader"
+    );
 
     private HeadPartSelector() {
     }
@@ -56,10 +59,15 @@ public final class HeadPartSelector {
         if (head != null) {
             final LinkedHashSet<String> selected = new LinkedHashSet<>();
             selected.add(head);
-            if (type.equals("minecraft:villager") || type.equals("minecraft:zombie_villager")) {
+            if (VILLAGER_FACE_TYPES.contains(type)) {
                 paths.stream()
                     .filter(path -> path.startsWith(head + "/") && leaf(path).contains("hat"))
                     .forEach(selected::add);
+            }
+            if (type.equals("minecraft:rabbit")) {
+                addNamed(selected, paths, "right_ear");
+                addNamed(selected, paths, "left_ear");
+                addNamed(selected, paths, "nose");
             }
             if (type.equals("minecraft:spider") || type.equals("minecraft:cave_spider")) {
                 final String body0 = firstNamed(paths, "body0");
@@ -86,7 +94,20 @@ public final class HeadPartSelector {
         if (!segments.isEmpty()) {
             return Set.copyOf(segments);
         }
-        return root(paths);
+        // No face-like part name: report nothing instead of the whole root. A whole-body portrait
+        // reads as a rendering bug, while an empty selection degrades to the shaped category dot.
+        return Set.of();
+    }
+
+    private static void addNamed(
+        final Set<String> selected,
+        final List<String> paths,
+        final String name
+    ) {
+        final String path = firstNamed(paths, name);
+        if (path != null) {
+            selected.add(path);
+        }
     }
 
     private static Set<String> matching(

@@ -49,6 +49,8 @@ class ServerConfigTest {
         );
         assertEquals(256 * 1024, c.maxBytesPerSecondPerPlayer);
         assertEquals(100, c.minRequestIntervalMs);
+        assertFalse(c.webMap.enabled);
+        assertTrue(c.webMap.loopbackOnly());
     }
 
     @Test
@@ -210,6 +212,9 @@ class ServerConfigTest {
         original.maxSharedWaypointsPerWorld = 500;
         original.maxSharedWaypointsPerPlayer = 70;
         original.sharedWaypointMutationsPerMinute = 45;
+        original.webMap.enabled = true;
+        original.webMap.port = 9123;
+        original.webMap.sharePlayers = true;
 
         assertTrue(io.saveAtomically(original));
         final ServerConfig loaded = io.load();
@@ -231,6 +236,9 @@ class ServerConfigTest {
         assertEquals(original.maxSharedWaypointsPerWorld, loaded.maxSharedWaypointsPerWorld);
         assertEquals(original.maxSharedWaypointsPerPlayer, loaded.maxSharedWaypointsPerPlayer);
         assertEquals(original.sharedWaypointMutationsPerMinute, loaded.sharedWaypointMutationsPerMinute);
+        assertEquals(original.webMap.enabled, loaded.webMap.enabled);
+        assertEquals(original.webMap.port, loaded.webMap.port);
+        assertEquals(original.webMap.sharePlayers, loaded.webMap.sharePlayers);
     }
 
     @Test
@@ -277,6 +285,7 @@ class ServerConfigTest {
         assertTrue(rewritten.contains("\"sharedWaypointMutationsPerMinute\""));
         assertTrue(rewritten.contains("\"allowEntityRadar\": true"));
         assertTrue(rewritten.contains("\"shareSeed\": true"));
+        assertTrue(rewritten.contains("\"webMap\""));
         assertFalse(rewritten.contains("shareStructureInfo"));
         assertFalse(rewritten.contains("maxPatchLod"), "LOD sync is no longer operator-capped");
         assertFalse(rewritten.contains("maxPresenceLod"));

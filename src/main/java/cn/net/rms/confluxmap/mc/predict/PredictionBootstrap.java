@@ -93,17 +93,34 @@ public final class PredictionBootstrap {
         } else if (companion.isActive()) {
             // The companion publishes the same vanilla seed for every dim (research R6 confirms
             // vanilla threads one long through every dimension); read it from the overworld entry.
-            seedOpt = companion.seedFor(PredictionDimensions.OVERWORLD);
-            // Plan: worldgen version comes from the handshake. A 1.17.1 client predicting against
-            // a different-version server's seed uses cubiomes' params for the server's version.
-            worldgenVersion = companion.policy() != null ? companion.policy().worldgenVersion() : MC_VERSION_STRING;
+            final OptionalLong companionSeed = companion.seedFor(PredictionDimensions.OVERWORLD);
+            final Optional<ManualSeedConfig.Entry> manualEntry = manualSeeds.get(session.world());
+            if (manualEntry.isPresent()) {
+                // A client-entered value is an explicit recovery/override choice. Prefer it over
+                // the companion value until the user clears it, then fall back to the server seed.
+                seedOpt = OptionalLong.of(manualEntry.get().seed());
+                worldgenVersion = manualEntry.get().worldgenVersion();
+                manual = true;
+            } else if (companionSeed.isPresent()) {
+                seedOpt = companionSeed;
+                // Plan: worldgen version comes from the handshake. A 1.17.1 client predicting
+                // against a different-version server's seed uses cubiomes' params for the
+                // server's version.
+                worldgenVersion = companion.policy() != null
+                    ? companion.policy().worldgenVersion() : MC_VERSION_STRING;
+                manual = false;
+            } else {
+                seedOpt = OptionalLong.empty();
+                worldgenVersion = companion.policy() != null
+                    ? companion.policy().worldgenVersion() : MC_VERSION_STRING;
+                manual = false;
+            }
             overworldPreset = advertisedPreset(DimensionId.OVERWORLD);
             netherPreset = advertisedPreset(DimensionId.NETHER);
             endPreset = advertisedPreset(DimensionId.END);
             flatBaseline = overworldPreset == WorldPreset.FLAT
                 ? companion.flatBaselineFor(PredictionDimensions.OVERWORLD)
                 : Optional.empty();
-            manual = false;
         } else {
             final Optional<ManualSeedConfig.Entry> configured = manualSeeds.get(session.world());
             if (configured.isEmpty()) {

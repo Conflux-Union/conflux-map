@@ -17,22 +17,18 @@ public final class ScoreboardHudAvoidance {
         if (minimap == null || scoreboard == null) {
             return Transform.IDENTITY;
         }
-        final int safeInformationHeight = Math.max(0, informationHeight);
-        final int minimapTop = minimap.y() + minimap.size() + safeInformationHeight <= screenHeight
-            ? minimap.y()
-            : Math.max(0, minimap.y() - safeInformationHeight);
-        final int minimapBottom = minimap.y() + minimap.size()
-            + (minimapTop == minimap.y() ? safeInformationHeight : 0);
-        final int minimapRight = minimap.x() + minimap.size();
-        final boolean overlaps = scoreboard.left() < minimapRight
-            && scoreboard.right() > minimap.x()
-            && scoreboard.top() < minimapBottom
-            && scoreboard.bottom() > minimapTop;
+        final MinimapInformationLayout.Bounds footprint = MinimapInformationLayout.visualBounds(
+            minimap, screenHeight, informationHeight
+        );
+        final boolean overlaps = scoreboard.left() < footprint.right()
+            && scoreboard.right() > footprint.left()
+            && scoreboard.top() < footprint.bottom()
+            && scoreboard.bottom() > footprint.top();
         if (!overlaps) {
             return Transform.IDENTITY;
         }
 
-        final int targetTop = minimapBottom + GAP;
+        final int targetTop = footprint.bottom() + GAP;
         final int scoreboardHeight = scoreboard.bottom() - scoreboard.top();
         final int availableHeight = screenHeight - GAP - targetTop;
         if (availableHeight <= 0) {

@@ -130,11 +130,10 @@ public final class RadarMarkerRenderer {
                 return true;
             }
             final EntityIconManager.FaceIcon icon = iconManager.iconFor(live);
-            if (icon != null) {
-                drawIcon(
+            if (icon != null && drawIcon(
                     matrices, client, iconManager, icon, x, y, config.radarIconSize,
                     yDelta, alphaScale
-                );
+                )) {
                 if (config.radarShowPlayerNames && entry.category() == RadarCategory.PLAYER && entry.name() != null) {
                     drawCenteredLine(
                         client, draw, entry.name(), x, y + config.radarIconSize / 2f + 2f, alphaScale
@@ -200,8 +199,12 @@ public final class RadarMarkerRenderer {
         return ItemStack.EMPTY;
     }
 
-    /** Draws the unframed portrait with the same elevation and spectator alpha as dot markers. */
-    private static void drawIcon(
+    /**
+     * Draws the unframed portrait with the same elevation and spectator alpha as dot markers.
+     *
+     * @return false when the portrait could not be bound, so the caller still draws its dot
+     */
+    private static boolean drawIcon(
         final MatrixStack matrices,
         final MinecraftClient client,
         final EntityIconManager iconManager,
@@ -216,7 +219,7 @@ public final class RadarMarkerRenderer {
         final int tint = Argb.scaleAlpha(elevationColor(0xFFFFFFFF, yDelta), alphaScale);
         if (icon.dynamic()) {
             if (!iconManager.bindDynamicColor()) {
-                return;
+                return false;
             }
         } else {
             RenderUtil.bindTexture(client, icon.texture());
@@ -232,6 +235,7 @@ public final class RadarMarkerRenderer {
                 icon.ou0(), icon.ov0(), icon.ou1(), icon.ov1(), tint
             );
         }
+        return true;
     }
 
     /** Draws a compact count plate centered on the representative marker's bottom-right corner. */

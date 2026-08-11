@@ -21,8 +21,10 @@ import org.lwjgl.glfw.GLFW;
 /** Screen base that keeps the MatrixStack-to-DrawContext rewrite at one lifecycle seam. */
 public abstract class ConfluxScreen extends Screen {
     private final Map<ClickableWidget, String> disabledTooltipKeys = new IdentityHashMap<>();
+    private final HotkeyFocusDelay initialFocusDelay = new HotkeyFocusDelay();
     private Runnable enterAction;
     private BooleanSupplier enterActionEnabled = () -> false;
+    private ClickableWidget deferredInitialFocus;
     //#if MC>=12000
     //$$ /**
     //$$  * Screen.render owns the widget loop, but its implicit background must not cover
@@ -34,6 +36,36 @@ public abstract class ConfluxScreen extends Screen {
 
     protected ConfluxScreen(final Text title) {
         super(title);
+    }
+
+    /** Leaves a new text field unfocused until the opening key's character event has drained. */
+    protected final void deferInitialFocusUntilNextTick(final ClickableWidget widget) {
+        deferredInitialFocus = widget;
+        initialFocusDelay.defer();
+        setFocused(null);
+    }
+
+    //#if MC>=12109
+    //$$ @Override
+    //$$ protected void setInitialFocus() {
+    //$$     if (initialFocusDelay.shouldFocus()) {
+    //$$         super.setInitialFocus();
+    //$$     }
+    //$$ }
+    //#endif
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (deferredInitialFocus == null) {
+            return;
+        }
+        initialFocusDelay.advanceTick();
+        if (initialFocusDelay.shouldFocus()) {
+            final ClickableWidget widget = deferredInitialFocus;
+            deferredInitialFocus = null;
+            setInitialFocus(widget);
+        }
     }
 
     //#if MC>=260100

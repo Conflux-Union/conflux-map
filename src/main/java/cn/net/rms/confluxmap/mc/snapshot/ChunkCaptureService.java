@@ -186,11 +186,11 @@ public final class ChunkCaptureService {
             lastPlayerChunkX = playerChunkX;
             lastPlayerChunkZ = playerChunkZ;
             lastServerViewDistance = currentServerViewDistance;
-            tiles.setLocalAuthorityViewport(currentServerViewDistance < 0
-                ? null
-                : ChunkViewport.centered(
-                    playerChunkX, playerChunkZ, currentServerViewDistance
-                ));
+            tiles.setLocalAuthorityViewport(ChunkViewport.centered(
+                playerChunkX,
+                playerChunkZ,
+                captureViewDistance(MinecraftAccess.viewDistance(client), currentServerViewDistance)
+            ));
             predictionTiles.refreshLiveCoverage();
         }
 

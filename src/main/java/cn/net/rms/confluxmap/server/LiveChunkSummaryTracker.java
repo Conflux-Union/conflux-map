@@ -40,6 +40,7 @@ final class LiveChunkSummaryTracker {
     private final Map<LoadedKey, WorldChunk> loadedChunks = new HashMap<>();
     private final ArrayDeque<LoadedKey> refreshQueue = new ArrayDeque<>();
     private final Set<LoadedKey> queuedForRefresh = new HashSet<>();
+    private final LiveDirtyQueue<LoadedKey> dirtyChunks = new LiveDirtyQueue<>();
     private final Set<LiveKey> activeChunks = new HashSet<>();
     private final Map<PendingRegionKey, Map<Integer, PendingChunk>> pendingRegions = new LinkedHashMap<>();
     private final ConcurrentLinkedQueue<LiveDemand> incomingDemands = new ConcurrentLinkedQueue<>();
@@ -96,16 +97,15 @@ final class LiveChunkSummaryTracker {
     }
 
     void onChunkLoad(final ServerWorld world, final WorldChunk chunk) {
-        final ChunkPos pos = chunk.getPos();
-        final int chunkX = chunkX(pos);
-        final int chunkZ = chunkZ(pos);
-        final LoadedKey loaded = new LoadedKey(world, chunkLong(pos));
-        loadedChunks.put(loaded, chunk);
+        final LoadedKey loaded = trackLoaded(world, chunk);
         if (queuedForRefresh.add(loaded)) {
             refreshQueue.addLast(loaded);
         }
-        dimensionIndices.put(world, worldIndex(world.getServer(), world));
-        activeChunks.add(new LiveKey(dimension(world), chunkX, chunkZ));
+    }
+
+    void onChunkDirty(final ServerWorld world, final WorldChunk chunk) {
+        final LoadedKey loaded = trackLoaded(world, chunk);
+        dirtyChunks.mark(loaded);
     }
 
     void onChunkUnload(final ServerWorld world, final WorldChunk chunk) {
@@ -113,7 +113,9 @@ final class LiveChunkSummaryTracker {
         final int chunkX = chunkX(pos);
         final int chunkZ = chunkZ(pos);
         capture(world, chunk);
-        loadedChunks.remove(new LoadedKey(world, chunkLong(pos)));
+        final LoadedKey loaded = new LoadedKey(world, chunkLong(pos));
+        loadedChunks.remove(loaded);
+        dirtyChunks.remove(loaded);
         final String dimension = dimension(world);
         activeChunks.remove(new LiveKey(dimension, chunkX, chunkZ));
         final SummaryCodec.Chunk summary = summaries.get(dimension, chunkX, chunkZ);
@@ -235,6 +237,7 @@ final class LiveChunkSummaryTracker {
         loadedChunks.clear();
         refreshQueue.clear();
         queuedForRefresh.clear();
+        dirtyChunks.clear();
         activeChunks.clear();
         pendingRegions.clear();
         incomingDemands.clear();
@@ -256,7 +259,7 @@ final class LiveChunkSummaryTracker {
         final int available = refreshQueue.size();
         final int configuredPerTick = Math.max(1, (config.maxChunkSummariesPerSecond + 19) / 20);
         final int budget = Math.min(MAX_LIVE_SUMMARIES_PER_TICK, configuredPerTick);
-        int captured = 0;
+        int captured = refreshDirtyChunks(nowNanos, budget);
         final int inspectionBudget = Math.min(available, MAX_LIVE_INSPECTIONS_PER_TICK);
         for (int inspected = 0; inspected < inspectionBudget && captured < budget; inspected++) {
             final LoadedKey key = refreshQueue.removeFirst();
@@ -277,11 +280,55 @@ final class LiveChunkSummaryTracker {
                 continue;
             }
             final String dimension = dimension(key.world());
-            if (summaries.get(dimension, chunkX, chunkZ) == null || chunk.needsSaving()) {
+            if (summaries.get(dimension, chunkX, chunkZ) == null) {
                 capture(key.world(), chunk);
                 captured++;
             }
         }
+    }
+
+    private int refreshDirtyChunks(final long nowNanos, final int budget) {
+        int captured = 0;
+        while (captured < budget) {
+            final LoadedKey key = dirtyChunks.pollMatching(candidate -> {
+                final WorldChunk candidateChunk = loadedChunks.get(candidate);
+                if (candidateChunk == null) {
+                    return true;
+                }
+                final Integer candidateDimension = dimensionIndices.get(candidate.world());
+                if (candidateDimension == null) {
+                    return false;
+                }
+                final ChunkPos candidatePos = candidateChunk.getPos();
+                return isDemanded(
+                    candidateDimension,
+                    chunkX(candidatePos),
+                    chunkZ(candidatePos),
+                    nowNanos
+                );
+            }, MAX_LIVE_INSPECTIONS_PER_TICK);
+            if (key == null) {
+                break;
+            }
+            final WorldChunk chunk = loadedChunks.get(key);
+            if (chunk == null) {
+                continue;
+            }
+            capture(key.world(), chunk);
+            captured++;
+        }
+        return captured;
+    }
+
+    private LoadedKey trackLoaded(final ServerWorld world, final WorldChunk chunk) {
+        final ChunkPos pos = chunk.getPos();
+        final int chunkX = chunkX(pos);
+        final int chunkZ = chunkZ(pos);
+        final LoadedKey loaded = new LoadedKey(world, chunkLong(pos));
+        loadedChunks.put(loaded, chunk);
+        dimensionIndices.put(world, worldIndex(world.getServer(), world));
+        activeChunks.add(new LiveKey(dimension(world), chunkX, chunkZ));
+        return loaded;
     }
 
     private boolean isDemanded(

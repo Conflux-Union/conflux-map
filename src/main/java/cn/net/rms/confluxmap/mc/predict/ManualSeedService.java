@@ -8,13 +8,12 @@ import cn.net.rms.confluxmap.core.task.SessionGuard;
 import java.util.Optional;
 import java.util.function.BooleanSupplier;
 
-/** Applies client-entered seed settings only to the currently bound non-companion world. */
+/** Applies client-entered seed settings only to the currently bound multiplayer world. */
 public final class ManualSeedService {
     private final ConfluxConfig config;
     private final ConfigIo configIo;
     private final SessionGuard sessions;
     private final BooleanSupplier singleplayer;
-    private final BooleanSupplier companionActive;
     private final Runnable refreshPrediction;
 
     public ManualSeedService(
@@ -25,16 +24,35 @@ public final class ManualSeedService {
         final BooleanSupplier companionActive,
         final Runnable refreshPrediction
     ) {
+        this(
+            config, configIo, sessions, singleplayer, companionActive,
+            companionActive, refreshPrediction
+        );
+    }
+
+    public ManualSeedService(
+        final ConfluxConfig config,
+        final ConfigIo configIo,
+        final SessionGuard sessions,
+        final BooleanSupplier singleplayer,
+        final BooleanSupplier companionActive,
+        final BooleanSupplier companionSeedGranted,
+        final Runnable refreshPrediction
+    ) {
+        // Keep the policy suppliers in this overload for callers compiled against the previous
+        // API. Availability is intentionally independent of server seed sharing.
         this.config = config;
         this.configIo = configIo;
         this.sessions = sessions;
         this.singleplayer = singleplayer;
-        this.companionActive = companionActive;
         this.refreshPrediction = refreshPrediction;
     }
 
     public boolean available() {
-        return sessions.current().active() && !singleplayer.getAsBoolean() && !companionActive.getAsBoolean();
+        // A local entry is an explicit recovery/override path. It must remain available even
+        // when a companion shares a seed: users may be restoring a pre-plugin seed, and clearing
+        // the entry still returns prediction to the server-advertised seed.
+        return sessions.current().active() && !singleplayer.getAsBoolean();
     }
 
     public Optional<ManualSeedConfig.Entry> current() {

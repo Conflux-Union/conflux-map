@@ -60,8 +60,9 @@ grid (including the tile margin); LOD1-4 use 18x18, so close views retain more s
 precision without making LOD1 expensive merely because its tile covers more world. The anchor's
 world spacing naturally grows with the LOD's blocks per pixel.
 
-The Java layout, correction density, biome pass, fluid pass, and tests are identical for 1.17.1 and
-1.21+. Only the internal cubiomes overview-height formula follows the version's own terrain generator.
+The Java layout, correction density, biome pass, fluid pass, and tests are identical across every
+supported build from 1.17.1 through 26.2. Only the internal cubiomes overview-height formula follows
+the version's own terrain generator.
 Final surface biomes use the corrected heights. Fluid is categorical and resolved independently at
 every output pixel. Exact anchors provide water confidence, which is bilinearly interpolated before
 being combined with the corrected terrain floor and final ocean/river biome. The categorical flag

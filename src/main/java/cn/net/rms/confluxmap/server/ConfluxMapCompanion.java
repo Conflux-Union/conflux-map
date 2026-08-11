@@ -10,6 +10,8 @@ import cn.net.rms.confluxmap.server.shared.SharedWaypointNetworking;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointService;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointStore;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointValidator;
+import cn.net.rms.confluxmap.server.web.WebMapServer;
+import cn.net.rms.confluxmap.server.web.WebMapPrivacyStore;
 import java.io.IOException;
 import java.time.Clock;
 import java.util.LinkedHashMap;
@@ -43,6 +45,10 @@ public final class ConfluxMapCompanion {
     private volatile RegionSummaryService summaries;
     private volatile ChunkLoadStateService chunkLoadStates;
     private volatile SharedWaypointService sharedWaypoints;
+    private volatile WebMapServer webMap;
+    private volatile FabricWebMapBackend webMapBackend;
+    private int webPlayerTicks;
+    private volatile WebMapPrivacyStore webMapPrivacy;
 
     public ConfluxMapCompanion(final ServerConfigIo configIo) {
         this.configIo = configIo;
@@ -104,14 +110,24 @@ public final class ConfluxMapCompanion {
         if (loadStates != null) {
             loadStates.tick(server);
         }
+        final FabricWebMapBackend currentWebBackend = webMapBackend;
+        if (currentWebBackend != null && (config.webMap.sharePlayers || sharedWaypointsEnabled())
+            && ++webPlayerTicks >= 40) {
+            webPlayerTicks = 0;
+            currentWebBackend.updatePlayers();
+        }
     }
 
     private void onServerStarting(final MinecraftServer server) {
+        ServerChunkDirtyHandler.bind(null);
         config = configIo.load();
         runtime.deactivate();
         summaries = null;
         chunkLoadStates = null;
         sharedWaypoints = null;
+        webMap = null;
+        webMapBackend = null;
+        webMapPrivacy = null;
     }
 
     private void onServerStarted(final MinecraftServer server) {
@@ -136,6 +152,13 @@ public final class ConfluxMapCompanion {
     }
 
     private void onServerStopping(final MinecraftServer server) {
+        final WebMapServer currentWebMap = webMap;
+        webMap = null;
+        webMapBackend = null;
+        webMapPrivacy = null;
+        if (currentWebMap != null) {
+            currentWebMap.close();
+        }
         sharedWaypointNetworking.onServerStopping();
         if (!runtime.isActive()) {
             return;
@@ -149,10 +172,12 @@ public final class ConfluxMapCompanion {
             loadStates.clear();
         }
         sharedWaypoints = null;
+        webMap = null;
         ConfluxMapMod.LOGGER.info("companion stopping");
     }
 
     private void onServerStopped(final MinecraftServer server) {
+        ServerChunkDirtyHandler.bind(null);
         final boolean wasActive = runtime.isActive();
         final RegionSummaryService current = summaries;
         if (wasActive && current != null) {
@@ -161,6 +186,7 @@ public final class ConfluxMapCompanion {
         summaries = null;
         chunkLoadStates = null;
         sharedWaypoints = null;
+        webMapBackend = null;
         runtime.deactivate();
         if (wasActive) {
             worldIds.forget(server);
@@ -170,6 +196,23 @@ public final class ConfluxMapCompanion {
 
     public boolean isEnabled() {
         return config.enabled && runtime.isActive();
+    }
+
+    boolean webMapHidden(final UUID playerId) {
+        final WebMapPrivacyStore privacy = webMapPrivacy;
+        return privacy != null && privacy.hidden(playerId);
+    }
+
+    boolean setWebMapHidden(final UUID playerId, final boolean hidden) {
+        final WebMapPrivacyStore privacy = webMapPrivacy;
+        if (privacy == null) return false;
+        try {
+            privacy.setHidden(playerId, hidden);
+            return true;
+        } catch (final IOException e) {
+            ConfluxMapMod.LOGGER.error("could not persist web-map privacy preference", e);
+            return false;
+        }
     }
 
     public ServerConfig config() {
@@ -304,12 +347,34 @@ public final class ConfluxMapCompanion {
             return;
         }
         summaries = new RegionSummaryService(config);
+        ServerChunkDirtyHandler.bind(summaries);
         chunkLoadStates = config.shareChunkLoadState ? new ChunkLoadStateService() : null;
         // Corrections can use the same predictor as the client when a bundled native exists;
         // failure is non-fatal and RegionSummaryService falls back to absolute samples.
         NativeLib.init(server.getSavePath(WorldSavePath.ROOT).resolve("confluxmap"));
+        webMapPrivacy = new WebMapPrivacyStore(
+            server.getSavePath(WorldSavePath.ROOT).resolve("confluxmap/webmap-hidden.txt")
+        );
+        try {
+            webMapPrivacy.load();
+        } catch (final IOException e) {
+            ConfluxMapMod.LOGGER.error("could not load web-map privacy preferences", e);
+        }
         if (config.shareWaypoints) {
             sharedWaypoints = loadSharedWaypoints(server);
+        }
+        if (config.webMap.enabled) {
+            try {
+                webMapBackend = new FabricWebMapBackend(server, this);
+                webMap = WebMapServer.start(config.webMap, webMapBackend);
+                ConfluxMapMod.LOGGER.info(
+                    "web map listening on {}:{}",
+                    config.webMap.bindAddress, config.webMap.port
+                );
+            } catch (final IOException e) {
+                webMapBackend = null;
+                ConfluxMapMod.LOGGER.error("web map failed to start", e);
+            }
         }
         ConfluxMapMod.LOGGER.info(
             "companion ready (shareSeed={} allowBiomeMap={} allowStructureSearch={} shareCorrections={} shareChunkLoadState={} allowEntityRadar={} shareWaypoints={} maxTilesPerRequest={})",

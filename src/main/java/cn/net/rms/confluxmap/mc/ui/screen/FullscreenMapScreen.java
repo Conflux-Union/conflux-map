@@ -2629,9 +2629,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             } else {
                 final int playerChunkX = this.client.player.getBlockPos().getX() >> 4;
                 final int playerChunkZ = this.client.player.getBlockPos().getZ() >> 4;
-                final int radius = companion.serverViewDistance();
-                playerView = radius < 0
-                    ? null : ChunkViewport.centered(playerChunkX, playerChunkZ, radius);
+                final int advertisedRadius = companion.serverViewDistance();
+                final int radius = advertisedRadius >= 0
+                    ? advertisedRadius : MinecraftAccess.viewDistance(this.client);
+                playerView = ChunkViewport.centered(playerChunkX, playerChunkZ, radius);
             }
             ConfluxMapClient.get().mapSyncClient().reportViewport(
                 session.dimension(), lod, firstTileX, lastTileX, firstTileZ, lastTileZ,

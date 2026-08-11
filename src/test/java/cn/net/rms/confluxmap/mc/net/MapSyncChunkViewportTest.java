@@ -9,6 +9,7 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
+import cn.net.rms.confluxmap.core.net.MapRegionInvalidateS2C;
 import cn.net.rms.confluxmap.core.net.MapRegionSyncSubscribeC2S;
 import cn.net.rms.confluxmap.core.net.MapRegionPatchS2C;
 import cn.net.rms.confluxmap.core.net.MapRegionViewReqC2S;
@@ -32,6 +33,87 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class MapSyncChunkViewportTest {
+    @Test
+    void regionInvalidationReopensACompletedJavaViewportWithoutMovement(
+        @TempDir final Path tempDir
+    ) {
+        final DimensionId dimension = DimensionId.OVERWORLD;
+        final SessionGuard sessions = new SessionGuard();
+        sessions.begin(WorldIdentity.singleplayer("region-invalidation"), dimension);
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final ConfluxConfig config = new ConfluxConfig();
+            config.predictionDebounceMs = 100;
+            final PredictionTileService predictions = new PredictionTileService(
+                sessions,
+                new PredictionState(),
+                executors,
+                new TileService(new MapWorldService(), executors, config, new DaylightModel())
+            );
+            final CorrectionStore corrections = new CorrectionStore(tempDir);
+            corrections.onSessionChanged(sessions.current());
+            predictions.bindCorrectionStore(corrections);
+            final CompanionSession companion = new CompanionSession();
+            MapSyncTestCompanion.activate(companion, new HelloPolicyS2C(
+                new HelloPolicyS2C.Flags(false, true, false, false, false, true, true),
+                "region-invalidation-world",
+                "1.17",
+                new HelloPolicyS2C.Budgets(256 * 1024, 8, 0, 4),
+                List.of(new HelloPolicyS2C.DimDescriptor(
+                    dimension.toString(), "overworld", true, false, 0L, WorldPreset.DEFAULT
+                ))
+            ));
+            final List<Message> sent = new ArrayList<>();
+            final long[] now = {1_000L};
+            final MapSyncClient client = new MapSyncClient(
+                companion,
+                message -> {
+                    sent.add(message);
+                    return 1;
+                },
+                corrections,
+                predictions,
+                config,
+                () -> now[0]
+            );
+            final ChunkViewport chunks = new ChunkViewport(0, 0, 0, 0);
+
+            client.reportViewport(dimension, 0, 0, 0, 0, 0, chunks);
+            now[0] += 150L;
+            client.reportViewport(dimension, 0, 0, 0, 0, 0, chunks);
+
+            final MapRegionViewReqC2S initial = sent.stream()
+                .filter(MapRegionViewReqC2S.class::isInstance)
+                .map(MapRegionViewReqC2S.class::cast)
+                .findFirst()
+                .orElseThrow();
+            final MapRegionViewReqC2S.RegionReq region = initial.regions().get(0);
+            client.onRegionPatch(new MapRegionPatchS2C(
+                initial.reqId(), initial.dimIndex(), initial.lod(),
+                region.regionX(), region.regionZ(),
+                region.minLocalChunkX(), region.minLocalChunkZ(),
+                region.maxLocalChunkX(), region.maxLocalChunkZ(),
+                Proto.PATCH_MODE_UNAVAILABLE, 0L, new byte[0]
+            ), 5);
+            assertEquals(MapSyncProgress.State.COMPLETED, client.status().state());
+
+            client.onRegionInvalidation(new MapRegionInvalidateS2C(
+                0, 0, List.of(new MapRegionInvalidateS2C.Region(0, 0))
+            ));
+            now[0] += 150L;
+            client.reportViewport(dimension, 0, 0, 0, 0, 0, chunks);
+
+            final List<MapRegionViewReqC2S> requests = sent.stream()
+                .filter(MapRegionViewReqC2S.class::isInstance)
+                .map(MapRegionViewReqC2S.class::cast)
+                .toList();
+            assertEquals(2, requests.size());
+            assertEquals(region.slice(), requests.get(1).regions().get(0).slice());
+        } finally {
+            executors.shutdown(2_000L);
+        }
+    }
+
     @Test
     void chunkCapableCompanionRequestsOnlyIntersectingRegionSlices(
         @TempDir final Path tempDir

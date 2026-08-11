@@ -225,6 +225,7 @@ final class PaperCorrectionService implements AutoCloseable {
             return;
         }
         invalidations.acknowledge(playerId, request);
+        regionInvalidations.acknowledge(playerId, request);
         liveDemand.nominate(request, now);
         final int itemCount = request.tiles().size();
         final int perItemBytes = itemCount == 0 ? 0 : Math.max(0, requestBytes) / itemCount;

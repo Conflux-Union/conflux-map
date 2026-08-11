@@ -13,6 +13,14 @@ class ToastHudAvoidanceTest {
     }
 
     @Test
+    void placesToastStackBelowMinimapInformationText() {
+        final MinimapPlacement.Layout minimap = new MinimapPlacement.Layout(196, 4, 100);
+        final int informationHeight = MinimapInformationLayout.height(true, true, true);
+
+        assertEquals(141, ToastHudAvoidance.verticalShift(300, 300, minimap, informationHeight));
+    }
+
+    @Test
     void leavesToastStackAtTheTopWhenTheMinimapIsOutsideItsColumn() {
         final MinimapPlacement.Layout minimap = new MinimapPlacement.Layout(4, 4, 100);
 

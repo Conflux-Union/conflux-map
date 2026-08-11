@@ -8,12 +8,13 @@ import cn.net.rms.confluxmap.core.annotation.Annotation;
 import cn.net.rms.confluxmap.core.annotation.AnnotationProjection;
 import cn.net.rms.confluxmap.core.annotation.AnnotationService;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
-import cn.net.rms.confluxmap.core.config.HudAvoidanceLayout;
-import cn.net.rms.confluxmap.core.config.MinimapPlacement;
 import cn.net.rms.confluxmap.core.config.MinimapHudVisibility;
+import cn.net.rms.confluxmap.core.config.MinimapInformationLayout;
+import cn.net.rms.confluxmap.core.config.MinimapPlacement;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
+import cn.net.rms.confluxmap.core.radar.RadarCategory;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.tile.TileService;
@@ -468,7 +469,11 @@ public final class MinimapHudRenderer {
         final float cos = (float) Math.cos(rad);
         final float sin = (float) Math.sin(rad);
         final List<RadarMarkerRenderer.Marker> markers = new ArrayList<>();
+        final boolean showPlayers = MinecraftAccess.isPlayerListKeyPressed(client);
         for (final RadarEntry entry : radarScanner.snapshot()) {
+            if (!showPlayers && entry.category() == RadarCategory.PLAYER) {
+                continue;
+            }
             double ex = entry.x();
             double ez = entry.z();
             int yDelta = entry.yDelta();
@@ -534,7 +539,7 @@ public final class MinimapHudRenderer {
         if (!config.showCoordinates && !config.showBiome && !config.showLayerIndicator) {
             return;
         }
-        final int lineHeight = HudAvoidanceLayout.INFORMATION_LINE_HEIGHT;
+        final int lineHeight = MinimapInformationLayout.LINE_HEIGHT;
         int lines = 0;
         if (config.showCoordinates) {
             lines++;
@@ -545,11 +550,11 @@ public final class MinimapHudRenderer {
         if (config.showLayerIndicator) {
             lines++;
         }
-        final float belowY = y0 + size + HudAvoidanceLayout.INFORMATION_GAP;
+        final float belowY = y0 + size + MinimapInformationLayout.GAP;
         final float yAfterBelowLines = belowY + lines * lineHeight;
         float y = yAfterBelowLines <= client.getWindow().getScaledHeight()
             ? belowY
-            : Math.max(0, y0 - lines * lineHeight - HudAvoidanceLayout.INFORMATION_GAP);
+            : Math.max(0, y0 - lines * lineHeight - MinimapInformationLayout.GAP);
         final float centerX = x0 + size / 2f;
 
         if (config.showCoordinates) {

@@ -113,11 +113,14 @@ public final class OffscreenCanvas {
         //#if MC>=12000
         //$$ RenderSystem.backupProjectionMatrix();
         //#endif
-        //#if MC>=12108
-        //$$ // From 1.21.6 the canvas is filled while the GUI is only being collected, so the global
-        //$$ // model-view still holds whatever the world pass left in it. Canvas geometry is already
-        //$$ // in canvas pixels and needs none of it.
+        //#if MC>=12100
+        //$$ // Persistent atlases are filled from the client tick, outside any GUI pass, so the
+        //$$ // global model-view still holds whatever the world pass left in it. Canvas geometry is
+        //$$ // already in canvas pixels and needs none of it.
         //$$ RenderSystem.getModelViewStack().pushMatrix().identity();
+        //#if MC<12103
+        //$$ RenderSystem.applyModelViewMatrix();
+        //#endif
         //#endif
         setProjection(canvasProjection(sizePx));
     }
@@ -138,7 +141,7 @@ public final class OffscreenCanvas {
      * z=-11000, so the far plane has to reach past it or every canvas quad is depth-clipped.
      */
     private static Matrix4f ortho(final float left, final float right, final float bottom, final float top) {
-        //#if MC>=12108
+        //#if MC>=12100
         //$$ // The canvas installs its own identity model-view, so the depth range only has to cover
         //$$ // the z=0 plane every canvas quad sits on.
         //$$ return new Matrix4f().setOrtho(left, right, bottom, top, -1000f, 1000f);
@@ -172,8 +175,11 @@ public final class OffscreenCanvas {
         framebuffer.endWrite();
         client.getFramebuffer().beginWrite(true);
         //#endif
-        //#if MC>=12108
+        //#if MC>=12100
         //$$ RenderSystem.getModelViewStack().popMatrix();
+        //#if MC<12103
+        //$$ RenderSystem.applyModelViewMatrix();
+        //#endif
         //#endif
         //#if MC>=12000
         //$$ RenderSystem.restoreProjectionMatrix();

@@ -45,12 +45,31 @@ for what it predicts; this file is only the build/maintenance side.
   (GPL-3.0). The Anvil scanner receives already-decompressed chunk NBT from
   Java and retains only the status, heightmap, palette and biome fields needed
   by LOD-3/4 correction columns; unrelated NBT payloads are skipped in-place.
+- `web/confluxpredict.c` - the browser-only cubiomes wrapper. It produces the
+  same margin-inclusive biome, overview-height, exact-residual and fluid
+  baseline used by the Java predictor. A Web Worker composes that baseline;
+  generated server regions are then drawn over it. `buildWebPredictor` compiles it to the
+  committed `common/src/main/resources/webmap/predictor.wasm` asset.
 - `prebuilt/<target>/<libname>` - **committed** compiled binaries, so a
   contributor without a C toolchain can still build/run/test the mod; `git`
   must not ignore this directory. `common.gradle`'s `processResources` copies
   it into every version subproject's jar (and dev classpath) as `natives/`.
 
 ## Building
+
+`buildWebPredictor` uses `zig cc -target wasm32-wasi` to refresh the browser
+predictor. It is intentionally separate from normal builds, which package the
+committed WASM artifact and therefore do not require Zig:
+
+```
+./gradlew buildWebPredictor
+```
+
+The browser wrapper compiles cubiomes' biome and terrain generator. It uses the
+same determinism flags and height model as the JNI library plus `-O3`,
+dead-section elimination and WASM SIMD. The Web Worker first paints the cheap
+terrain overview, then refines LOD 0-1 with the sparse exact residual grid while
+keeping prediction work off the page's rendering thread.
 
 `buildNativesHost` (root `build.gradle`) compiles `prebuilt/linux-x86_64/` with
 the host `cc` - this is what CI/contributors on Linux x86_64 run to refresh

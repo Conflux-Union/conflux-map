@@ -455,6 +455,40 @@ public final class RenderUtil {
         //#endif
     }
 
+    /** Enables scissoring in the pixel coordinates of the currently bound off-screen target. */
+    public static void enableTargetScissor(
+        final int targetX,
+        final int targetY,
+        final int width,
+        final int height,
+        final int targetHeight
+    ) {
+        final int scissorY = targetScissorY(targetY, height, targetHeight);
+        //#if MC>=12105
+        //$$ scissorEnabled = true;
+        //$$ scissorX = targetX;
+        //$$ RenderUtil.scissorY = scissorY;
+        //$$ scissorWidth = width;
+        //$$ scissorHeight = height;
+        //#if MC>=12108
+        //$$ guiScissorX = targetX;
+        //$$ guiScissorY = targetY;
+        //$$ guiScissorWidth = width;
+        //$$ guiScissorHeight = height;
+        //#endif
+        //#else
+        RenderSystem.enableScissor(targetX, scissorY, width, height);
+        //#endif
+    }
+
+    static int targetScissorY(final int targetY, final int height, final int targetHeight) {
+        //#if MC>=12000
+        //$$ return targetHeight - targetY - height;
+        //#else
+        return targetY;
+        //#endif
+    }
+
     public static void disableScissor() {
         //#if MC>=12105
         //$$ scissorEnabled = false;

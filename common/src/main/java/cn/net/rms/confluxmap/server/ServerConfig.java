@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProto;
+import cn.net.rms.confluxmap.server.web.WebMapConfig;
 
 /**
  * Server-side companion settings, serialized as one JSON document at
@@ -12,7 +13,7 @@ import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProto;
  * ON so a fresh server install gets map-sync benefits without extra setup.
  */
 public final class ServerConfig {
-    public static final int SCHEMA_VERSION = 4;
+    public static final int SCHEMA_VERSION = 5;
 
     public int schemaVersion = SCHEMA_VERSION;
 
@@ -62,9 +63,15 @@ public final class ServerConfig {
     public int minRequestIntervalMs = Proto.DEFAULT_MIN_REQ_INTERVAL_MS;
     /** Global live-summary refresh budget in chunks/sec. */
     public int maxChunkSummariesPerSecond = 4_000;
+    /** Optional loopback-first HTTP map. It remains disabled until an operator enables it. */
+    public WebMapConfig webMap = new WebMapConfig();
 
     /** Clamp out-of-range values loaded from a hand-edited file. */
     public void normalize() {
+        if (webMap == null) {
+            webMap = new WebMapConfig();
+        }
+        webMap.normalize();
         maxTilesPerRequest = clamp(maxTilesPerRequest, 1, 255);
         maxPendingTilesPerPlayer = clamp(maxPendingTilesPerPlayer, 1, 1024);
         maxBytesPerSecondPerPlayer = clamp(maxBytesPerSecondPerPlayer, 1024, 1 << 20);

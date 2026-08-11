@@ -9,7 +9,7 @@ load: POSTWORLD
 commands:
   confluxmap:
     description: Conflux Map companion administration and diagnostics
-    usage: /confluxmap <waypoints|performance>
+    usage: /confluxmap <performance|webmap hide|show|waypoints>
 permissions:
   confluxmap.admin:
     description: Manage Conflux Map server-owned features
