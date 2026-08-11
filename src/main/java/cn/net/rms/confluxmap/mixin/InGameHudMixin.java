@@ -6,6 +6,7 @@ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.config.HudAvoidanceLayout;
 import cn.net.rms.confluxmap.core.config.MinimapHudVisibility;
 import cn.net.rms.confluxmap.core.config.MinimapPlacement;
+import cn.net.rms.confluxmap.core.config.ScoreboardHudAvoidance;
 import cn.net.rms.confluxmap.mc.ui.hud.ScoreboardHudBounds;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 //#if MC>=260100
@@ -54,7 +55,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 //#endif
 public abstract class InGameHudMixin {
     @Unique
-    private boolean confluxmap$scoreboardShifted;
+    private boolean confluxmap$scoreboardTransformed;
 
     //#if MC>=260100
     //$$ @Inject(method = "extractRenderState", at = @At("HEAD"))
@@ -106,38 +107,43 @@ public abstract class InGameHudMixin {
         final CallbackInfo ci
     ) {
     //#endif
-        confluxmap$scoreboardShifted = false;
+        confluxmap$scoreboardTransformed = false;
         //#if MC>=260100
-        //$$ final int shift = confluxmap$scoreboardHorizontalShift(context.guiWidth(), context.guiHeight());
+        //$$ final ScoreboardHudAvoidance.Transform transform =
+        //$$     confluxmap$scoreboardTransform(context.guiWidth(), context.guiHeight());
         //#elseif MC>=12000
-        //$$ final int shift = confluxmap$scoreboardHorizontalShift(
+        //$$ final ScoreboardHudAvoidance.Transform transform = confluxmap$scoreboardTransform(
         //$$     context.getScaledWindowWidth(), context.getScaledWindowHeight()
         //$$ );
         //#else
         final MinecraftClient client = MinecraftClient.getInstance();
-        final int shift = confluxmap$scoreboardHorizontalShift(
+        final ScoreboardHudAvoidance.Transform transform = confluxmap$scoreboardTransform(
             client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight()
         );
         //#endif
-        if (shift == 0) {
-            ScoreboardHudBounds.recordAppliedHorizontalShift(0);
+        if (transform.isIdentity()) {
+            ScoreboardHudBounds.recordAppliedTransform(ScoreboardHudAvoidance.Transform.IDENTITY);
             return;
         }
         //#if MC>=260100
         //$$ context.pose().pushMatrix();
-        //$$ context.pose().translate(shift, 0);
+        //$$ context.pose().translate(transform.translateX(), transform.translateY());
+        //$$ context.pose().scale(transform.scale(), transform.scale());
         //#elseif MC>=12108
         //$$ context.getMatrices().pushMatrix();
-        //$$ context.getMatrices().translate(shift, 0);
+        //$$ context.getMatrices().translate(transform.translateX(), transform.translateY());
+        //$$ context.getMatrices().scale(transform.scale(), transform.scale());
         //#elseif MC>=12000
         //$$ context.getMatrices().push();
-        //$$ context.getMatrices().translate(shift, 0, 0);
+        //$$ context.getMatrices().translate(transform.translateX(), transform.translateY(), 0);
+        //$$ context.getMatrices().scale(transform.scale(), transform.scale(), 1f);
         //#else
         matrices.push();
-        matrices.translate(shift, 0, 0);
+        matrices.translate(transform.translateX(), transform.translateY(), 0);
+        matrices.scale(transform.scale(), transform.scale(), 1f);
         //#endif
-        ScoreboardHudBounds.recordAppliedHorizontalShift(shift);
-        confluxmap$scoreboardShifted = true;
+        ScoreboardHudBounds.recordAppliedTransform(transform);
+        confluxmap$scoreboardTransformed = true;
     }
 
     @Inject(
@@ -172,7 +178,7 @@ public abstract class InGameHudMixin {
         final CallbackInfo ci
     ) {
     //#endif
-        if (!confluxmap$scoreboardShifted) {
+        if (!confluxmap$scoreboardTransformed) {
             return;
         }
         //#if MC>=260100
@@ -184,18 +190,18 @@ public abstract class InGameHudMixin {
         //#else
         matrices.pop();
         //#endif
-        confluxmap$scoreboardShifted = false;
+        confluxmap$scoreboardTransformed = false;
     }
 
     @Unique
-    private static int confluxmap$scoreboardHorizontalShift(
+    private static ScoreboardHudAvoidance.Transform confluxmap$scoreboardTransform(
         final int screenWidth,
         final int screenHeight
     ) {
         final ConfluxMapClient app = ConfluxMapClient.get();
         final MinecraftClient client = MinecraftClient.getInstance();
         if (app == null || client.player == null) {
-            return 0;
+            return ScoreboardHudAvoidance.Transform.IDENTITY;
         }
         final ConfluxConfig config = app.config();
         final var screen = MinecraftAccess.screen(client);
@@ -205,7 +211,7 @@ public abstract class InGameHudMixin {
             screen instanceof FullscreenMapScreen,
             MinecraftAccess.isContainerScreen(screen)
         )) {
-            return 0;
+            return ScoreboardHudAvoidance.Transform.IDENTITY;
         }
 
         final MinimapPlacement.Layout minimap = MinimapPlacement.resolve(
@@ -215,7 +221,7 @@ public abstract class InGameHudMixin {
             config.minimapPositionX,
             config.minimapPositionY
         );
-        return HudAvoidanceLayout.scoreboardShift(
+        return HudAvoidanceLayout.scoreboardTransform(
             config.minimapHudAvoidance,
             screenHeight,
             minimap,

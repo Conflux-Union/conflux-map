@@ -1,6 +1,6 @@
 package cn.net.rms.confluxmap.core.config;
 
-/** Coordinates vanilla HUD translations around the configured minimap position. */
+/** Coordinates vanilla HUD transforms around the configured minimap position. */
 public final class HudAvoidanceLayout {
     public static final int INFORMATION_GAP = 3;
     public static final int INFORMATION_LINE_HEIGHT = 10;
@@ -8,7 +8,7 @@ public final class HudAvoidanceLayout {
     private HudAvoidanceLayout() {
     }
 
-    /** Keeps the minimap fixed while resolving scoreboard and status-effect translations. */
+    /** Keeps the minimap fixed while resolving scoreboard and status-effect transforms. */
     public static Decision resolve(
         final boolean avoidanceEnabled,
         final int screenWidth,
@@ -25,7 +25,7 @@ public final class HudAvoidanceLayout {
         }
         return new Decision(
             configuredMinimap,
-            scoreboardShift(
+            scoreboardTransform(
                 avoidanceEnabled,
                 screenHeight,
                 configuredMinimap,
@@ -43,7 +43,7 @@ public final class HudAvoidanceLayout {
         );
     }
 
-    public static int scoreboardShift(
+    public static ScoreboardHudAvoidance.Transform scoreboardTransform(
         final boolean avoidanceEnabled,
         final int screenHeight,
         final MinimapPlacement.Layout minimap,
@@ -51,8 +51,8 @@ public final class HudAvoidanceLayout {
         final ScoreboardHudAvoidance.Bounds scoreboard
     ) {
         return avoidanceEnabled
-            ? ScoreboardHudAvoidance.horizontalShift(screenHeight, minimap, informationHeight, scoreboard)
-            : 0;
+            ? ScoreboardHudAvoidance.resolve(screenHeight, minimap, informationHeight, scoreboard)
+            : ScoreboardHudAvoidance.Transform.IDENTITY;
     }
 
     public static int statusEffectShift(
@@ -94,7 +94,7 @@ public final class HudAvoidanceLayout {
 
     public record Decision(
         MinimapPlacement.Layout minimap,
-        int scoreboardShift,
+        ScoreboardHudAvoidance.Transform scoreboardTransform,
         int statusEffectShift
     ) {
     }

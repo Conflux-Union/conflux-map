@@ -6,12 +6,12 @@ import org.junit.jupiter.api.Test;
 
 class ScoreboardHudAvoidanceTest {
     @Test
-    void shiftsAnOverlappingScoreboardToTheLeftOfTheMinimap() {
+    void movesAnOverlappingScoreboardBelowTheMinimap() {
         final MinimapPlacement.Layout minimap = new MinimapPlacement.Layout(196, 4, 100);
 
         assertEquals(
-            -108,
-            ScoreboardHudAvoidance.horizontalShift(
+            new ScoreboardHudAvoidance.Transform(0f, 88f, 1f),
+            ScoreboardHudAvoidance.resolve(
                 300,
                 minimap,
                 0,
@@ -25,8 +25,8 @@ class ScoreboardHudAvoidanceTest {
         final MinimapPlacement.Layout minimap = new MinimapPlacement.Layout(196, 4, 100);
 
         assertEquals(
-            0,
-            ScoreboardHudAvoidance.horizontalShift(
+            ScoreboardHudAvoidance.Transform.IDENTITY,
+            ScoreboardHudAvoidance.resolve(
                 300,
                 minimap,
                 0,
@@ -40,8 +40,8 @@ class ScoreboardHudAvoidanceTest {
         final MinimapPlacement.Layout minimap = new MinimapPlacement.Layout(196, 4, 100);
 
         assertEquals(
-            -108,
-            ScoreboardHudAvoidance.horizontalShift(
+            new ScoreboardHudAvoidance.Transform(0f, 31f, 1f),
+            ScoreboardHudAvoidance.resolve(
                 300,
                 minimap,
                 33,
@@ -51,16 +51,16 @@ class ScoreboardHudAvoidanceTest {
     }
 
     @Test
-    void leavesTheScoreboardVisibleWhenNoInBoundsShiftExists() {
-        final MinimapPlacement.Layout minimap = new MinimapPlacement.Layout(4, 4, 292);
+    void scalesTheScoreboardWhenThereIsNotEnoughSpaceBelowTheMinimap() {
+        final MinimapPlacement.Layout minimap = new MinimapPlacement.Layout(196, 4, 100);
 
         assertEquals(
-            0,
-            ScoreboardHudAvoidance.horizontalShift(
-                300,
+            new ScoreboardHudAvoidance.Transform(150f, 98f, 0.5f),
+            ScoreboardHudAvoidance.resolve(
+                162,
                 minimap,
                 0,
-                new ScoreboardHudAvoidance.Bounds(196, 20, 300, 100)
+                new ScoreboardHudAvoidance.Bounds(220, 20, 300, 120)
             )
         );
     }

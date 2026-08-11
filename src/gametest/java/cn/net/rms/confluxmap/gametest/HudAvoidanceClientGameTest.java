@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.gametest;
 //#if MC>=12104
 //$$ import cn.net.rms.confluxmap.ConfluxMapClient;
 //$$ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+//$$ import cn.net.rms.confluxmap.core.config.ScoreboardHudAvoidance;
 //$$ import cn.net.rms.confluxmap.mc.ui.hud.ScoreboardHudBounds;
 //$$ import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 //$$ import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
@@ -56,8 +57,11 @@ package cn.net.rms.confluxmap.gametest;
 //$$                 final int screenWidth = client.getWindow().getScaledWidth();
 //$$                 final int screenHeight = client.getWindow().getScaledHeight();
 //#endif
+//$$                 final ScoreboardHudAvoidance.Transform transform =
+//$$                     ScoreboardHudBounds.previousAppliedTransform(screenWidth, screenHeight);
 //$$                 return ScoreboardHudBounds.previousFrame(screenWidth, screenHeight) != null
-//$$                     && ScoreboardHudBounds.previousAppliedHorizontalShift(screenWidth, screenHeight) < 0;
+//$$                     && transform.translateY() > 0f
+//$$                     && transform.scale() == 1f;
 //$$             }, 100);
 //$$         }
 //$$     }

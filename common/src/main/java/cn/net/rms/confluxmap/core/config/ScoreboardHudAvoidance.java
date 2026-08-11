@@ -7,15 +7,15 @@ public final class ScoreboardHudAvoidance {
     private ScoreboardHudAvoidance() {
     }
 
-    /** Returns the horizontal translation for the complete vanilla scoreboard sidebar. */
-    public static int horizontalShift(
+    /** Resolves the transform for the complete vanilla scoreboard sidebar. */
+    public static Transform resolve(
         final int screenHeight,
         final MinimapPlacement.Layout minimap,
         final int informationHeight,
         final Bounds scoreboard
     ) {
         if (minimap == null || scoreboard == null) {
-            return 0;
+            return Transform.IDENTITY;
         }
         final int safeInformationHeight = Math.max(0, informationHeight);
         final int minimapTop = minimap.y() + minimap.size() + safeInformationHeight <= screenHeight
@@ -29,11 +29,21 @@ public final class ScoreboardHudAvoidance {
             && scoreboard.top() < minimapBottom
             && scoreboard.bottom() > minimapTop;
         if (!overlaps) {
-            return 0;
+            return Transform.IDENTITY;
         }
 
-        final int shift = Math.min(0, minimap.x() - GAP - scoreboard.right());
-        return scoreboard.left() + shift < 0 ? 0 : shift;
+        final int targetTop = minimapBottom + GAP;
+        final int scoreboardHeight = scoreboard.bottom() - scoreboard.top();
+        final int availableHeight = screenHeight - GAP - targetTop;
+        if (availableHeight <= 0) {
+            return Transform.IDENTITY;
+        }
+        final float scale = scoreboardHeight <= availableHeight || scoreboardHeight == 0
+            ? 1f
+            : (float) availableHeight / scoreboardHeight;
+        final float translateX = scoreboard.right() * (1f - scale);
+        final float translateY = targetTop - scoreboard.top() * scale;
+        return new Transform(translateX, translateY, scale);
     }
 
     /** A rectangle in scaled GUI coordinates, with exclusive right and bottom edges. */
@@ -42,6 +52,15 @@ public final class ScoreboardHudAvoidance {
             if (right < left || bottom < top) {
                 throw new IllegalArgumentException("bounds must not have negative dimensions");
             }
+        }
+    }
+
+    /** An affine transform applied to the complete scoreboard around the GUI origin. */
+    public record Transform(float translateX, float translateY, float scale) {
+        public static final Transform IDENTITY = new Transform(0f, 0f, 1f);
+
+        public boolean isIdentity() {
+            return equals(IDENTITY);
         }
     }
 }

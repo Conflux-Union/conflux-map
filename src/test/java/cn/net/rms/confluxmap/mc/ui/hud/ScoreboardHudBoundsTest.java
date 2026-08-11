@@ -15,16 +15,21 @@ class ScoreboardHudBoundsTest {
 
         ScoreboardHudBounds.include(600, 40, 639, 100);
         ScoreboardHudBounds.include(500, 60, 620, 160);
-        ScoreboardHudBounds.recordAppliedHorizontalShift(-135);
+        final ScoreboardHudAvoidance.Transform transform =
+            new ScoreboardHudAvoidance.Transform(0f, 76f, 1f);
+        ScoreboardHudBounds.recordAppliedTransform(transform);
         assertNull(ScoreboardHudBounds.previousFrame(640, 360));
 
         ScoreboardHudBounds.beginFrame(640, 360);
         final ScoreboardHudAvoidance.Bounds completed =
             new ScoreboardHudAvoidance.Bounds(500, 40, 639, 160);
         assertEquals(completed, ScoreboardHudBounds.previousFrame(640, 360));
-        assertEquals(-135, ScoreboardHudBounds.previousAppliedHorizontalShift(640, 360));
+        assertEquals(transform, ScoreboardHudBounds.previousAppliedTransform(640, 360));
         assertNull(ScoreboardHudBounds.previousFrame(800, 600));
-        assertEquals(0, ScoreboardHudBounds.previousAppliedHorizontalShift(800, 600));
+        assertEquals(
+            ScoreboardHudAvoidance.Transform.IDENTITY,
+            ScoreboardHudBounds.previousAppliedTransform(800, 600)
+        );
 
         ScoreboardHudBounds.include(610, 1, 639, 25);
         assertEquals(completed, ScoreboardHudBounds.previousFrame(640, 360));

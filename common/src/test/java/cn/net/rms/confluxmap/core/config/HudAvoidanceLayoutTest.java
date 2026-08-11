@@ -10,7 +10,11 @@ class HudAvoidanceLayoutTest {
         final MinimapPlacement.Layout configured = MinimapPlacement.resolve(640, 360, 128, 1.0, 0.0);
 
         assertEquals(
-            new HudAvoidanceLayout.Decision(configured, -135, -136),
+            new HudAvoidanceLayout.Decision(
+                configured,
+                new ScoreboardHudAvoidance.Transform(0f, 76f, 1f),
+                -136
+            ),
             HudAvoidanceLayout.resolve(
                 true,
                 640,
@@ -30,7 +34,11 @@ class HudAvoidanceLayoutTest {
         final MinimapPlacement.Layout configured = MinimapPlacement.resolve(640, 360, 128, 1.0, 0.0);
 
         assertEquals(
-            new HudAvoidanceLayout.Decision(configured, 0, 0),
+            new HudAvoidanceLayout.Decision(
+                configured,
+                ScoreboardHudAvoidance.Transform.IDENTITY,
+                0
+            ),
             HudAvoidanceLayout.resolve(
                 false,
                 640,
