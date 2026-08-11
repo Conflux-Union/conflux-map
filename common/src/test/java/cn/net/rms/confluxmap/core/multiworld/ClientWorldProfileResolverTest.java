@@ -422,7 +422,7 @@ class ClientWorldProfileResolverTest {
     }
 
     @Test
-    void automaticSelectionDoesNotPersistCandidateHistoricalTerrain() {
+    void singleProfileDoesNotPersistCandidateTerrainBelowTheStrictThreshold() {
         final ClientWorldProfileResolver resolver = resolver();
         final Map<String, String> signals = Map.of("brand", "shared", "dimension_type", "overworld");
         final ClientWorldTerrainFingerprint savedCenter = fingerprint((short) 70, 2, 0);
@@ -439,9 +439,10 @@ class ClientWorldProfileResolverTest {
 
         final ClientWorldResolution result = resolver.resolve(SERVER, current);
 
-        assertEquals(ClientWorldResolution.State.RESOLVED, result.state());
+        assertEquals(ClientWorldResolution.State.AMBIGUOUS, result.state());
+        assertEquals(90, result.candidates().get(0).requiredConfidencePercent());
         assertTrue(resolver.profiles(SERVER).get(0).visit("minecraft_overworld")
-            .terrainFingerprint().sameCenter(currentCenter));
+            .terrainFingerprint().sameCenter(savedCenter));
     }
 
     @Test
@@ -536,8 +537,8 @@ class ClientWorldProfileResolverTest {
 
         final ClientWorldResolution result = resolver.resolve(SERVER, current);
 
-        assertEquals(ClientWorldResolution.State.RESOLVED, result.state());
-        assertTrue(result.provisional());
+        assertEquals(ClientWorldResolution.State.AMBIGUOUS, result.state());
+        assertEquals(90, result.candidates().get(0).requiredConfidencePercent());
     }
 
     @Test
@@ -558,12 +559,12 @@ class ClientWorldProfileResolverTest {
             )
         );
 
-        assertEquals(ClientWorldResolution.State.RESOLVED, provisional.state());
-        assertTrue(provisional.provisional());
+        assertEquals(ClientWorldResolution.State.AMBIGUOUS, provisional.state());
+        assertEquals(90, provisional.candidates().get(0).requiredConfidencePercent());
         assertEquals("CREATIVE", profile.visit("minecraft_overworld").gameMode());
 
-        final ClientWorldResolution confirmed = resolver.resolve(
-            SERVER,
+        final ClientWorldResolution confirmed = resolver.select(
+            SERVER, profile.id(),
             visitObservation(
                 1L, signals, "minecraft_overworld", "SURVIVAL", 0, 0, saved
             )
@@ -592,8 +593,8 @@ class ClientWorldProfileResolverTest {
 
         final ClientWorldResolution result = resolver.resolve(SERVER, current);
 
-        assertEquals(ClientWorldResolution.State.RESOLVED, result.state());
-        assertTrue(result.provisional());
+        assertEquals(ClientWorldResolution.State.AMBIGUOUS, result.state());
+        assertEquals(90, result.candidates().get(0).requiredConfidencePercent());
     }
 
     @Test
@@ -985,6 +986,34 @@ class ClientWorldProfileResolverTest {
     }
 
     @Test
+    void singleProfileTerrainCandidateBelowNinetyPercentRequiresManualConfirmation() {
+        final ClientWorldProfileResolver resolver = resolver();
+        final Map<String, String> signals = Map.of("brand", "stable", "commands", "stable");
+        resolver.resolve(
+            SERVER,
+            visitObservation(
+                1L, signals, "minecraft_overworld", "CREATIVE", 0, 0, fingerprint((short) 70)
+            )
+        );
+
+        final ClientWorldResolution result = resolver.resolve(
+            SERVER,
+            visitObservation(
+                1L, signals, "minecraft_overworld", "SURVIVAL", 2_000, 0,
+                mixedFingerprint((short) 70, (short) 75)
+            )
+        );
+
+        assertEquals(ClientWorldResolution.State.AMBIGUOUS, result.state());
+        final ClientWorldResolution.Candidate candidate = result.candidates().get(0);
+        assertTrue(candidate.factors().stream().anyMatch(factor -> factor.key().equals("terrain")
+            && factor.availability() == ClientWorldResolution.FactorAvailability.AVAILABLE));
+        assertTrue(candidate.confidencePercent() < 90);
+        assertEquals(90, candidate.requiredConfidencePercent());
+        assertTrue(candidate.blockers().contains("confidence_below_threshold"));
+    }
+
+    @Test
     void failedTrajectoryCheckpointDoesNotPublishPositionOrLastStableMutation() {
         final ClientWorldProfileRegistry registry = new ClientWorldProfileRegistry();
         final ClientWorldProfileResolver initial = new ClientWorldProfileResolver(
@@ -1204,6 +1233,20 @@ class ClientWorldProfileResolverTest {
             }
         }
         return ClientWorldTerrainFingerprint.from(snapshots, centerChunkX, centerChunkZ);
+    }
+
+    private static ClientWorldTerrainFingerprint mixedFingerprint(
+        final short matchingHeight,
+        final short differingHeight
+    ) {
+        final List<ChunkSnapshot> snapshots = new ArrayList<>();
+        for (int chunkZ = -1; chunkZ <= 1; chunkZ++) {
+            for (int chunkX = -1; chunkX <= 1; chunkX++) {
+                final short height = snapshots.size() < 5 ? matchingHeight : differingHeight;
+                snapshots.add(snapshot(chunkX, chunkZ, height));
+            }
+        }
+        return ClientWorldTerrainFingerprint.from(snapshots, 0, 0);
     }
 
     private static ChunkSnapshot snapshot(final int chunkX, final int chunkZ, final short height) {

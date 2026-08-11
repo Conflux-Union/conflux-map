@@ -1467,11 +1467,15 @@ public final class ClientWorldProfileResolver {
         final boolean hasTerrain = best.hasTerrainScore();
         final boolean terrainDiscriminated = profiles.size() <= 1 || hasTerrainDiscriminator(best, scores);
         final double requiredMargin = requiredMargin(best, runnerUpCandidate);
-        final boolean singleProfileFarPosition = profiles.size() == 1
+        // Until this server has more than one confirmed profile, a familiar seed, terrain sample,
+        // or server signature identifies only the one known profile, not the current upstream
+        // world. Keep automatic relocking at the stricter threshold without changing any factor.
+        final boolean strictSingleProfileConfidence = profiles.size() == 1;
+        final boolean singleProfileFarPosition = strictSingleProfileConfidence
             && !best.hasTerrainScore()
             && (best.reasons().contains("corridor_outside_radius")
                 || best.reasons().contains("position_far_without_trajectory"));
-        final double requiredConfidence = requiredConfidence(best.queue(), singleProfileFarPosition);
+        final double requiredConfidence = requiredConfidence(best.queue(), strictSingleProfileConfidence);
         final boolean hasEnoughAuxiliary = best.independentFactors() >= 2;
         final boolean hasUnresolvedLegacyCandidate = eligible.stream()
             .anyMatch(candidate -> candidate.reasons().contains("legacy_profile"));
@@ -1543,10 +1547,10 @@ public final class ClientWorldProfileResolver {
         );
     }
 
-    private static double requiredConfidence(final int queue, final boolean strictSingleProfileFar) {
+    private static double requiredConfidence(final int queue, final boolean strictSingleProfileConfidence) {
         final double queueConfidence = queue == 3 ? QUEUE_THREE_MIN_CONFIDENCE
             : queue == 2 ? QUEUE_TWO_MIN_CONFIDENCE : AUTO_SELECT_MIN_CONFIDENCE;
-        return strictSingleProfileFar ? Math.max(queueConfidence, SINGLE_PROFILE_MIN_CONFIDENCE)
+        return strictSingleProfileConfidence ? Math.max(queueConfidence, SINGLE_PROFILE_MIN_CONFIDENCE)
             : queueConfidence;
     }
 
