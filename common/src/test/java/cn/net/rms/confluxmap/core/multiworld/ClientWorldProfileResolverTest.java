@@ -286,8 +286,9 @@ class ClientWorldProfileResolverTest {
             new ClientWorldPosition(6, 64, 0), fingerprint((short) 70)
         );
         final ClientWorldResolution atBoundaryResult = resolver.resolve(SERVER, atBoundary);
-        assertEquals(ClientWorldResolution.State.AMBIGUOUS, atBoundaryResult.state());
-        assertEquals(near.id(), atBoundaryResult.candidates().get(0).profileId());
+        assertEquals(ClientWorldResolution.State.RESOLVED, atBoundaryResult.state());
+        assertTrue(atBoundaryResult.provisional());
+        assertEquals(near.id(), atBoundaryResult.profile().id());
     }
 
     @Test
@@ -383,7 +384,7 @@ class ClientWorldProfileResolverTest {
 
         assertEquals(ClientWorldResolution.State.AMBIGUOUS, result.state());
         assertEquals(profile.id(), result.candidates().get(0).profileId());
-        assertTrue(result.candidates().get(0).reasons().contains("legacy_profile"));
+        assertTrue(result.candidates().get(0).reasons().contains("last_dimension_mismatch"));
     }
 
     @Test
@@ -738,7 +739,7 @@ class ClientWorldProfileResolverTest {
         assertTrue(arrivingCandidate.reasons().contains("candidate_dimension_checkpoint"));
         assertTrue(departedCandidate.reasons().contains("departed_profile_boundary"));
         assertTrue(departedCandidate.factors().stream().anyMatch(factor ->
-            factor.key().equals("proxy_boundary") && factor.conflict()
+            factor.key().equals("proxy_boundary") && factor.veto()
         ));
     }
 
@@ -779,7 +780,7 @@ class ClientWorldProfileResolverTest {
         assertTrue(stale.conflicted());
         assertTrue(stale.reasons().contains("last_dimension_mismatch"));
         assertTrue(stale.factors().stream().anyMatch(factor ->
-            factor.key().equals("latest_dimension") && factor.conflict()
+            factor.key().equals("latest_dimension") && factor.veto()
         ));
     }
 

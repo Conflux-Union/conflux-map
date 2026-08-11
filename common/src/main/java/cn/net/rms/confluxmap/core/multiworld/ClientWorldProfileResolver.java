@@ -1139,7 +1139,7 @@ public final class ClientWorldProfileResolver {
         }
         final List<CandidateScore> scores = new ArrayList<>();
         final List<TerrainCacheEntry> terrainCache = new ArrayList<>();
-        final ClientWorldProfileRegistry.LastStableProfile lastStable = registry.lastStableProfile(serverId);
+            final ClientWorldProfileRegistry.LastStableProfile lastStable = registry.lastStableProfile(serverId);
         final String lastStableProfileId = lastStable == null ? null : lastStable.profileId();
         final boolean strongerCurrentTrajectory = !suppressLastStable
             && lastStableProfileId != null
@@ -1157,7 +1157,10 @@ public final class ClientWorldProfileResolver {
                 || profile.matchesSeed(observation.seedHash().getAsLong());
             final ClientWorldVisit lastObservedVisit = profile.lastObservedVisit();
             final boolean lastDimensionMismatch = lastObservedVisit != null
-                && !observation.dimensionId().equals(lastObservedVisit.dimensionId());
+                && !observation.dimensionId().equals(lastObservedVisit.dimensionId())
+                // A profile-owned checkpoint is current-dimension continuity evidence. Its
+                // existence must outrank a stale persisted visit in another dimension.
+                && !checkpointBackedVisit;
             if (visit == null) {
                 final boolean conflicted = !seedCompatible || profile.hasSignalConflict(observation);
                 scores.add(lastDimensionMismatch
@@ -1437,6 +1440,7 @@ public final class ClientWorldProfileResolver {
         final CandidateScore runnerUpCandidate = eligible.size() > 1 ? eligible.get(1) : null;
         final double runnerUp = runnerUpCandidate == null ? 0.0D : runnerUpCandidate.score();
         final boolean hasTerrain = best.hasTerrainScore();
+        final boolean terrainDiscriminated = profiles.size() <= 1 || hasTerrainDiscriminator(best, scores);
         final double requiredMargin = requiredMargin(best, runnerUpCandidate);
         final double requiredConfidence = requiredConfidence(best.queue());
         final boolean hasEnoughAuxiliary = best.independentFactors() >= 2;
@@ -1462,8 +1466,7 @@ public final class ClientWorldProfileResolver {
         if (canAutoSelect) {
             final boolean terrainConfirmed = hasTerrain
                 && best.terrainScore() >= TERRAIN_MATCH_MIN_SCORE
-                && (!observation.seedHash().isPresent() || profiles.size() == 1
-                    || hasTerrainDiscriminator(best, scores));
+                && terrainDiscriminated;
             final boolean stableSignalsConfirmed = profiles.size() == 1
                 && hasIdentitySignalDiscriminator(best, scores, observation);
             final ClientWorldResolution.CandidateOutcome outcome = terrainConfirmed || stableSignalsConfirmed

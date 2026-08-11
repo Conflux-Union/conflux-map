@@ -111,7 +111,7 @@ class ClientWorldProfileTerrainVisitTest {
         final ClientWorldTerrainFingerprint overworldTerrain = fingerprint(0, 0);
         profile.rememberVisit(new ClientWorldObservation(
             OptionalLong.of(1L), Map.of("brand", "stable"), "minecraft_overworld", "SURVIVAL",
-            new ClientWorldPosition(32, 70, 48), overworldTerrain
+            new ClientWorldPosition(0, 70, 0), overworldTerrain
         ));
 
         profile.rememberVisit(new ClientWorldObservation(
