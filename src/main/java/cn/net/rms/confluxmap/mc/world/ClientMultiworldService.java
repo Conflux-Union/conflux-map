@@ -62,7 +62,6 @@ public final class ClientMultiworldService {
     private static final int SIGNAL_REFRESH_TICKS = ClientWorldChangeDetector.OBSERVATION_WINDOW_TICKS;
     /** One full maximum-distance viewport per active layer, with duplicate chunks coalesced. */
     private static final int MAX_PENDING_SNAPSHOTS = 8_192;
-    private static final int VISIT_REFRESH_MIN_TICKS = 60;
     private static final int MAX_PROFILE_OWNED_VISIT_CANDIDATES =
         ClientWorldObservation.MAX_PROFILE_EVIDENCE_ENTRIES;
     private static final int MAX_PERSISTENCE_RETRIES = 5;
@@ -2441,9 +2440,6 @@ public final class ClientMultiworldService {
             return;
         }
         final long elapsedTicks = clientTick - lastVisitRefreshTick;
-        if (elapsedTicks < VISIT_REFRESH_MIN_TICKS) {
-            return;
-        }
         final ClientWorldObservation previous = lastRememberedVisit;
         if (!shouldRefreshVisit(previous, current, elapsedTicks, policy())) {
             return;

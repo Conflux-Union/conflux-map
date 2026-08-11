@@ -514,6 +514,31 @@ class ClientMultiworldServiceTest {
     }
 
     @Test
+    void movementBeyondTwoHundredFiftySixBlocksWritesBeforeSixtyTicks() throws Exception {
+        final ClientWorldTrajectoryCheckpointIo checkpoints = checkpointIo();
+        final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();
+        assertTrue(checkpoints.save(serverId, OptionalLong.of(11L), trajectory()).saved());
+        final AtomicLong saves = new AtomicLong();
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            new ClientWorldProfileRegistry(), ids(), ignored -> {
+                saves.incrementAndGet();
+                return ClientWorldProfileIo.SaveResult.success();
+            }
+        );
+        final ClientMultiworldService service = service(resolver);
+        service.onGameJoin(11L);
+        service.resolveProfile(ADDRESS);
+        final long savesAfterCreation = saves.get();
+        service.rememberStableVisit();
+
+        service.advanceDetectionClock();
+        appendTrajectorySample(service, 640.0D, -32.0D, "minecraft_overworld", 21L);
+        service.rememberStableVisit();
+
+        assertEquals(savesAfterCreation + 1L, saves.get());
+    }
+
+    @Test
     void forcedDeparturePersistsTheLatestInMemoryPosition() throws Exception {
         final ClientWorldTrajectoryCheckpointIo checkpoints = checkpointIo();
         final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();
