@@ -1268,7 +1268,7 @@ public final class ClientMultiworldService {
             return;
         }
         final PendingStableVisit visit = new PendingStableVisit(
-            serverId, resolution.profile().id(), connectionGeneration, current, clientTick
+            serverId, resolution.profile().id(), connectionGeneration, current, clientTick, 0
         );
         if (visitWriteInFlight) {
             pendingStableVisits.put(visit.target(), visit);
@@ -1294,7 +1294,7 @@ public final class ClientMultiworldService {
             final ClientWorldProfileResolver.MutationResult result = resolver.persistPreparedVisit(prepared);
             visitWriteCompletion.set(new VisitWriteCompletion(
                 visit.connectionGeneration(), visit.serverId(), visit.profileId(), visit.observation(),
-                visit.tick(), prepared, result
+                visit.tick(), visit.registryConflictRetries(), prepared, result
             ));
         }, trajectoryIoExecutor);
     }
@@ -1313,6 +1313,16 @@ public final class ClientMultiworldService {
             && !resolution.provisional()
             && resolution.profile().id().equals(completion.profileId());
         if (!published.applied()) {
+            if (isRegistryMutationConflict(published)
+                && completion.registryConflictRetries() < MAX_PERSISTENCE_RETRIES) {
+                final PendingStableVisit retry = new PendingStableVisit(
+                    completion.serverId(), completion.profileId(), completion.connectionGeneration(),
+                    completion.observation(), completion.tick(), completion.registryConflictRetries() + 1
+                );
+                pendingStableVisits.put(retry.target(), retry);
+                queueNextPendingStableVisit();
+                return;
+            }
             if (stillCurrent) {
                 persistenceError = published.error();
                 recordPersistenceFailure();
@@ -1329,6 +1339,13 @@ public final class ClientMultiworldService {
         lastVisitRefreshTick = completion.tick();
         clearTrajectoryCheckpoint();
         discardCandidateTrajectoryOverride(completion.profileId());
+    }
+
+    private static boolean isRegistryMutationConflict(
+        final ClientWorldProfileResolver.MutationResult result
+    ) {
+        final String error = result.error();
+        return error != null && error.startsWith("client world registry changed before visit ");
     }
 
     /** Publishes deferred departure visits before a new session can overwrite their metadata. */
@@ -1527,6 +1544,7 @@ public final class ClientMultiworldService {
         String profileId,
         ClientWorldObservation observation,
         long tick,
+        int registryConflictRetries,
         ClientWorldProfileResolver.PreparedVisitMutation prepared,
         ClientWorldProfileResolver.MutationResult result
     ) {
@@ -1540,7 +1558,8 @@ public final class ClientMultiworldService {
         String profileId,
         long connectionGeneration,
         ClientWorldObservation observation,
-        long tick
+        long tick,
+        int registryConflictRetries
     ) {
         StableVisitTarget target() {
             return new StableVisitTarget(serverId, profileId);
@@ -1748,10 +1767,12 @@ public final class ClientMultiworldService {
             detectionGeneration,
             resolution.candidates().stream().map(candidate -> String.format(
                 java.util.Locale.ROOT,
-                "%s=%d%% q%d margin=%d%%/%d%% outcome=%s blockers=%s",
+                "%s=%d%% q%d margin=%d%%/%d%% outcome=%s blockers=%s reasons=%s vetoes=%s",
                 candidate.profileId(), candidate.confidencePercent(), candidate.queue(),
                 candidate.actualMarginPercent(), candidate.requiredMarginPercent(),
-                candidate.outcome(), candidate.blockers()
+                candidate.outcome(), candidate.blockers(), candidate.reasons(),
+                candidate.factors().stream().filter(ClientWorldResolution.Factor::veto)
+                    .map(ClientWorldResolution.Factor::key).toList()
             )).toList()
         );
         //#if MC>=260100

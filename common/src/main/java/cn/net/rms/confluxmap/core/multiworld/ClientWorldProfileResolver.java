@@ -1158,15 +1158,22 @@ public final class ClientWorldProfileResolver {
                 continuityVisit = checkpointVisit;
                 checkpointBackedVisit = true;
             }
+            final ClientWorldVisit lastObservedVisit = profile.lastObservedVisit();
+            final boolean knownDimensionHistoryAfterProxyBoundary = suppressLastStable
+                && dimensionVisit != null;
             final ClientWorldVisit visit = dimensionVisit == null ? continuityVisit : dimensionVisit;
             final boolean seedCompatible = observation.seedHash().isEmpty()
                 || profile.matchesSeed(observation.seedHash().getAsLong());
-            final ClientWorldVisit lastObservedVisit = profile.lastObservedVisit();
             final boolean lastDimensionMismatch = lastObservedVisit != null
                 && !observation.dimensionId().equals(lastObservedVisit.dimensionId())
                 // A profile-owned checkpoint is current-dimension continuity evidence. Its
                 // existence must outrank a stale persisted visit in another dimension.
-                && !checkpointBackedVisit;
+                && !checkpointBackedVisit
+                // A proxy boundary may arrive while a same-profile dimension transition is still
+                // waiting for persistence. A previously confirmed visit in this dimension is
+                // safer continuity evidence than treating the profile's other-dimension visit as
+                // a cross-profile conflict; the resulting selection remains provisional.
+                && !knownDimensionHistoryAfterProxyBoundary;
             if (visit == null) {
                 final boolean conflicted = !seedCompatible || profile.hasSignalConflict(observation);
                 scores.add(lastDimensionMismatch
@@ -1181,6 +1188,9 @@ public final class ClientWorldProfileResolver {
             if (checkpointBackedVisit) {
                 reasons.add("candidate_dimension_checkpoint");
             }
+            if (knownDimensionHistoryAfterProxyBoundary) {
+                reasons.add("known_dimension_history_after_proxy_boundary");
+            }
             double terrainScore = Double.NaN;
             int terrainComparableChunks = 0;
             final ClientWorldVisit.ContextMatch context = visit.contextMatch(observation.signals());
@@ -1194,7 +1204,12 @@ public final class ClientWorldProfileResolver {
                 ? TrajectoryEvidence.unavailable()
                 : trajectoryEvidence(profile.id(), continuityVisit, observation);
             final double trajectoryScore = trajectoryEvidence.confidence();
-            final boolean continuityEvidence = trajectoryScore > 0.0D;
+            // Position is intentionally owned only by the latest dimension visit. At a proxy
+            // boundary, a previously confirmed visit in the arriving dimension still proves that
+            // this profile can legitimately host it, but only enough for a buffered provisional
+            // admission until independent confirmation arrives.
+            final boolean continuityEvidence = trajectoryScore > 0.0D
+                || knownDimensionHistoryAfterProxyBoundary;
             if (trajectoryScore >= 0.0D) {
                 auxiliary += TRAJECTORY_WEIGHT * trajectoryScore;
                 availableAuxiliaryWeight += TRAJECTORY_WEIGHT;
@@ -1202,6 +1217,9 @@ public final class ClientWorldProfileResolver {
                     independentFactors++;
                 }
                 reasons.add(trajectoryScore > 0.0D ? "trajectory_continuity" : "trajectory_stale");
+            }
+            if (knownDimensionHistoryAfterProxyBoundary && trajectoryScore <= 0.0D) {
+                reasons.add("known_dimension_history_continuity");
             }
             final boolean lastStableAvailable = lastStableProfileId != null
                 && !suppressLastStable && !strongerCurrentTrajectory;

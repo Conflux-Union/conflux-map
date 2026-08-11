@@ -536,6 +536,37 @@ class ClientMultiworldServiceTest {
     }
 
     @Test
+    void stableVisitRetriesAfterAnotherProfileMutationInvalidatesItsPreparedRegistry() {
+        final ClientWorldTrajectoryCheckpointIo checkpoints = checkpointIo();
+        final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();
+        assertTrue(checkpoints.save(serverId, OptionalLong.of(11L), trajectory()).saved());
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            new ClientWorldProfileRegistry(), ids()
+        );
+        final ClientMultiworldService service = service(resolver);
+        final QueueingExecutor io = new QueueingExecutor();
+        service.bindTrajectoryIoExecutor(io);
+        service.onGameJoin(11L);
+        assertEquals(ClientWorldResolution.State.COLLECTING, service.resolveProfile(ADDRESS).state());
+        io.runNext();
+        final ClientWorldProfile profile = service.resolveProfile(ADDRESS).profile();
+
+        service.flushTrajectoryCheckpoint();
+        io.runNext();
+        assertTrue(resolver.rename(serverId, profile.id(), "Renamed").applied());
+        io.runNext();
+        service.advanceDetectionClock();
+
+        assertTrue(io.size() > 0);
+        io.runNext();
+        service.advanceDetectionClock();
+
+        final ClientWorldProfile persisted = resolver.profiles(serverId).get(0);
+        assertEquals("Renamed", persisted.displayName());
+        assertEquals(1, persisted.visit("minecraft_overworld").trajectorySamples().size());
+    }
+
+    @Test
     void firstAutomaticProfileIsNotPublishedUntilItsIoWriteCompletes() {
         final AtomicLong saves = new AtomicLong();
         final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(

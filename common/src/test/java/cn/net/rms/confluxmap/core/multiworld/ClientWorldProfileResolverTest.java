@@ -785,6 +785,49 @@ class ClientWorldProfileResolverTest {
     }
 
     @Test
+    void knownDimensionHistoryCanRecoverProvisionallyAfterProxyBoundary() {
+        final long seed = 79L;
+        final Map<String, String> signals = Map.of("brand", "shared", "commands", "shared");
+        final ClientWorldProfileRegistry registry = new ClientWorldProfileRegistry();
+        final ClientWorldProfile arriving = new ClientWorldProfile("arriving", "world", "same-seed-arriving");
+        final ClientWorldProfile departed = new ClientWorldProfile(
+            "departed", "client-00000000-0000-0000-0000-000000000003", "same-seed-departed"
+        );
+        arriving.bind(visitObservation(
+            seed, signals, "minecraft_overworld", "CREATIVE", 26, -303, null
+        ));
+        arriving.bind(visitObservation(
+            seed, signals, "minecraft_the_nether", "CREATIVE", 4, -27, null
+        ));
+        departed.bind(visitObservation(
+            seed, signals, "minecraft_the_nether", "CREATIVE", 6, -33, null
+        ));
+        registry.mutableProfiles(SERVER).addAll(List.of(arriving, departed));
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            registry, UUID::randomUUID
+        );
+
+        final ClientWorldResolution result = resolver.resolveAfterProxyWorldJoin(
+            SERVER, OptionalLong.of(seed), visitObservation(
+                seed, signals, "minecraft_overworld", "CREATIVE", 26, -303, null
+            ), departed.id()
+        );
+
+        assertEquals(ClientWorldResolution.State.RESOLVED, result.state());
+        assertTrue(result.provisional());
+        assertEquals(arriving.id(), result.profile().id());
+        assertEquals("minecraft_the_nether", arriving.lastObservedVisit().dimensionId());
+        final ClientWorldResolution.Candidate candidate = result.candidates().stream()
+            .filter(entry -> entry.profileId().equals(arriving.id())).findFirst().orElseThrow();
+        assertFalse(candidate.conflicted());
+        assertTrue(candidate.reasons().contains("known_dimension_history_after_proxy_boundary"));
+        assertTrue(candidate.reasons().contains("known_dimension_history_continuity"));
+        assertTrue(candidate.factors().stream().anyMatch(factor ->
+            factor.key().equals("latest_dimension") && !factor.veto()
+        ));
+    }
+
+    @Test
     void freshCurrentDimensionCheckpointOverridesAStaleLatestDimensionVisit() {
         final long seed = 78L;
         final Map<String, String> signals = Map.of("brand", "shared", "commands", "shared");
