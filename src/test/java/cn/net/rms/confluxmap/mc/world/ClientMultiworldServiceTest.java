@@ -739,6 +739,8 @@ class ClientMultiworldServiceTest {
             registryFile, LogManager.getLogger("ClientMultiworldServiceTest")
         );
         final ClientMultiworldService service = service(new ClientWorldProfileResolver(io.load(), ids()));
+        final QueueingExecutor recoveryIo = new QueueingExecutor();
+        service.bindTrajectoryIoExecutor(recoveryIo);
         service.onGameJoin(11L);
         service.resolveProfile(ADDRESS);
         service.bindProfileRegistryLoader(() -> restoredRegistry);
@@ -746,6 +748,10 @@ class ClientMultiworldServiceTest {
         assertFalse(service.profileRegistryAvailable());
         assertTrue(service.retryProfileRegistryLoad().applied());
         assertEquals(profile.id(), service.profiles().get(0).id());
+        assertEquals(1, recoveryIo.size());
+        assertFalse(Files.exists(marker));
+        recoveryIo.runNext();
+        service.resolveProfile(ADDRESS);
         assertEquals("recover me", Files.readString(marker));
     }
 

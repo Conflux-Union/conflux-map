@@ -135,6 +135,10 @@ public final class ClientMultiworldService {
         new AtomicReference<>();
     private boolean serverAliasWriteInFlight;
     private final AtomicReference<ServerAliasWriteCompletion> serverAliasWriteCompletion = new AtomicReference<>();
+    private boolean profileDeletionRecoveryInFlight;
+    private final AtomicReference<ProfileDeletionRecoveryCompletion> profileDeletionRecoveryCompletion =
+        new AtomicReference<>();
+    private String recoveredProfileServerId;
     private ClientWorldTerrainFingerprint terrainFingerprint;
     /** Candidate-specific samples captured only when their saved 3x3 is already loaded. */
     private final Map<String, ClientWorldTerrainFingerprint> terrainFingerprintsByProfileId = new LinkedHashMap<>();
@@ -506,7 +510,7 @@ public final class ClientMultiworldService {
             trajectoryCheckpointLoaded = false;
             lastTrajectoryCheckpointTick = Long.MIN_VALUE;
             restoreTrajectoryCheckpoint();
-            recoverPendingProfileDeletions();
+            recoveredProfileServerId = null;
             clearProfileLock();
             resolution = ClientWorldResolution.collecting();
             detectionState = ClientWorldDetectionState.PROBING;
@@ -534,10 +538,27 @@ public final class ClientMultiworldService {
             if (applyCompletedServerAliasAdoption()) {
                 return resolution;
             }
-            resolution = ClientWorldResolution.collecting();
-            detectionState = ClientWorldDetectionState.PROBING;
-            clearProfileLock();
+            if (resolver.needsServerAliasAdoption(serverId, serverIdAliases)) {
+                resolution = ClientWorldResolution.collecting();
+                detectionState = ClientWorldDetectionState.PROBING;
+                clearProfileLock();
+                return resolution;
+            }
+        }
+        if (applyCompletedProfileDeletionRecovery()) {
             return resolution;
+        }
+        if (!Objects.equals(recoveredProfileServerId, serverId)) {
+            queueProfileDeletionRecovery();
+            if (applyCompletedProfileDeletionRecovery()) {
+                return resolution;
+            }
+            if (!Objects.equals(recoveredProfileServerId, serverId)) {
+                resolution = ClientWorldResolution.collecting();
+                detectionState = ClientWorldDetectionState.PROBING;
+                clearProfileLock();
+                return resolution;
+            }
         }
         if (applyPendingCommand()) {
             return resolution;
@@ -709,7 +730,9 @@ public final class ClientMultiworldService {
             persistenceError = result.error();
             return result;
         }
-        recoverPendingProfileDeletions();
+        recoveredProfileServerId = null;
+        queueProfileDeletionRecovery();
+        applyCompletedProfileDeletionRecovery();
         persistenceError = null;
         clearCommandLock();
         clearProfileLock();
@@ -1417,7 +1440,41 @@ public final class ClientMultiworldService {
             ConfluxMapMod.LOGGER.warn("Client-world default-port alias merge: {}", conflict);
         }
         if (stillCurrent) {
-            recoverPendingProfileDeletions();
+            recoveredProfileServerId = null;
+        }
+        return false;
+    }
+
+    private void queueProfileDeletionRecovery() {
+        if (profileDeletionRecoveryInFlight || serverId == null || !resolver.available()
+            || Objects.equals(recoveredProfileServerId, serverId)) {
+            return;
+        }
+        final String recoveryServerId = serverId;
+        if (!deletionService.hasPendingTransactions(recoveryServerId)) {
+            recoveredProfileServerId = recoveryServerId;
+            return;
+        }
+        final Map<String, ClientWorldProfile> liveProfiles = new LinkedHashMap<>();
+        for (final ClientWorldProfile profile : resolver.profiles(recoveryServerId)) {
+            liveProfiles.put(profile.id(), profile);
+        }
+        profileDeletionRecoveryInFlight = true;
+        CompletableFuture.runAsync(() -> {
+            deletionService.recoverPendingTransactions(recoveryServerId, liveProfiles);
+            profileDeletionRecoveryCompletion.set(new ProfileDeletionRecoveryCompletion(recoveryServerId));
+        }, trajectoryIoExecutor);
+    }
+
+    /** Marks journal recovery complete on the client thread before allowing map identity use. */
+    private boolean applyCompletedProfileDeletionRecovery() {
+        final ProfileDeletionRecoveryCompletion completion = profileDeletionRecoveryCompletion.getAndSet(null);
+        if (completion == null) {
+            return profileDeletionRecoveryInFlight;
+        }
+        profileDeletionRecoveryInFlight = false;
+        if (Objects.equals(completion.serverId(), serverId)) {
+            recoveredProfileServerId = completion.serverId();
         }
         return false;
     }
@@ -1455,6 +1512,9 @@ public final class ClientMultiworldService {
         ClientWorldProfileResolver.PreparedServerAliasMutation prepared,
         ClientWorldProfileResolver.MutationResult result
     ) {
+    }
+
+    private record ProfileDeletionRecoveryCompletion(String serverId) {
     }
 
     private void captureCandidateTrajectoryOverride() {
@@ -1801,23 +1861,6 @@ public final class ClientMultiworldService {
     private void clearProfileLock() {
         lockedProfileId = null;
         lockedSeedHash = OptionalLong.empty();
-    }
-
-    /** Restores interrupted deletions after either a connection or a fail-closed registry reload. */
-    private void recoverPendingProfileDeletions() {
-        // An unavailable registry cannot distinguish a live profile from a deleted one. Skipping
-        // recovery here preserves the journal until the fail-closed reload publishes that answer.
-        if (serverId == null || !resolver.available()) {
-            return;
-        }
-        final Map<String, ClientWorldProfile> liveProfiles = new LinkedHashMap<>();
-        for (final ClientWorldProfile profile : resolver.profiles(serverId)) {
-            liveProfiles.put(profile.id(), profile);
-        }
-        deletionService.recoverPendingTransactions(
-            serverId,
-            liveProfiles
-        );
     }
 
     private void clearCommandLock() {

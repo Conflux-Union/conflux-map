@@ -103,6 +103,11 @@ public final class ClientWorldProfileDeletionService {
      * profile still exists is rolled back; one whose registry entry is already gone is finalized
      * in recovery, so no source directory can be recreated by a half-completed delete.
      */
+    public boolean hasPendingTransactions(final String serverId) {
+        final Path serverRoot = recoveryRoot.resolve(serverId).normalize();
+        return serverRoot.startsWith(recoveryRoot) && Files.isDirectory(serverRoot);
+    }
+
     public void recoverPendingTransactions(
         final String serverId,
         final Map<String, ClientWorldProfile> liveProfiles
