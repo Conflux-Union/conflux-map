@@ -154,7 +154,7 @@ public final class ClientMultiworldService {
     private long lastVisitRefreshTick = Long.MIN_VALUE;
     private long lastTrajectoryCheckpointTick = Long.MIN_VALUE;
     private boolean trajectoryCheckpointLoaded;
-    private String trajectoryCheckpointError;
+    private volatile String trajectoryCheckpointError;
 
     public ClientMultiworldService(
         final MinecraftClient client,
@@ -1304,24 +1304,23 @@ public final class ClientMultiworldService {
     }
 
     private void captureCandidateTrajectoryOverride() {
-        if (trajectory.latest() == null || resolution.state() != ClientWorldResolution.State.RESOLVED
+        if (serverId == null || trajectory.latest() == null || resolution.state() != ClientWorldResolution.State.RESOLVED
             || resolution.profile() == null) {
             return;
         }
         final String profileId = resolution.profile().id();
+        final String candidateServerId = serverId;
+        final OptionalLong candidateSeedHash = seedHash;
+        final long candidateGeneration = observationGeneration;
         final ClientWorldTrajectory candidate = trajectory.copy();
         candidateTrajectoryOverrides.put(profileId, candidate);
-        final ClientWorldTrajectoryCheckpointIo.SaveResult saved = trajectoryCheckpointIo.saveCandidate(
-            serverId, seedHash, profileId, observationGeneration, candidate
+        queueTrajectorySideEffect(
+            () -> trajectoryCheckpointIo.saveCandidate(
+                candidateServerId, candidateSeedHash, profileId, candidateGeneration, candidate
+            ),
+            "Candidate trajectory saved: profile={} dimension={} samples={} generation={}",
+            profileId, candidate.latest().dimensionId(), candidate.samples().size(), candidateGeneration
         );
-        if (!saved.saved()) {
-            trajectoryCheckpointError = saved.error();
-        } else {
-            ConfluxMapMod.LOGGER.info(
-                "Candidate trajectory saved: profile={} dimension={} samples={} generation={}",
-                profileId, candidate.latest().dimensionId(), candidate.samples().size(), observationGeneration
-            );
-        }
     }
 
     private void restoreTrajectoryCheckpoint() {
@@ -1385,38 +1384,62 @@ public final class ClientMultiworldService {
         if (serverId == null || profileId == null) {
             return;
         }
-        ClientWorldTrajectoryCheckpointIo.SaveResult result =
-            trajectoryCheckpointIo.clearCandidate(serverId, profileId);
-        for (final String alias : serverIdAliases) {
-            final ClientWorldTrajectoryCheckpointIo.SaveResult aliasResult =
-                trajectoryCheckpointIo.clearCandidate(alias, profileId);
-            if (!aliasResult.saved() && result.saved()) {
-                result = aliasResult;
+        final String candidateServerId = serverId;
+        final List<String> aliases = List.copyOf(serverIdAliases);
+        queueTrajectorySideEffect(() -> {
+            ClientWorldTrajectoryCheckpointIo.SaveResult result = trajectoryCheckpointIo.clearCandidate(
+                candidateServerId, profileId
+            );
+            for (final String alias : aliases) {
+                final ClientWorldTrajectoryCheckpointIo.SaveResult aliasResult =
+                    trajectoryCheckpointIo.clearCandidate(alias, profileId);
+                if (!aliasResult.saved() && result.saved()) {
+                    result = aliasResult;
+                }
             }
-        }
-        if (!result.saved()) {
-            trajectoryCheckpointError = result.error();
-        } else {
-            ConfluxMapMod.LOGGER.info("Candidate trajectory discarded: profile={}", profileId);
-        }
+            return result;
+        }, "Candidate trajectory discarded: profile={}", profileId);
     }
 
     private void clearTrajectoryCheckpoint() {
         if (serverId == null) {
             return;
         }
-        ClientWorldTrajectoryCheckpointIo.SaveResult result = trajectoryCheckpointIo.clear(serverId);
-        for (final String alias : serverIdAliases) {
-            final ClientWorldTrajectoryCheckpointIo.SaveResult aliasResult = trajectoryCheckpointIo.clear(alias);
-            if (!aliasResult.saved() && result.saved()) {
-                result = aliasResult;
+        final String checkpointServerId = serverId;
+        final List<String> aliases = List.copyOf(serverIdAliases);
+        queueTrajectorySideEffect(() -> {
+            ClientWorldTrajectoryCheckpointIo.SaveResult result = trajectoryCheckpointIo.clear(checkpointServerId);
+            for (final String alias : aliases) {
+                final ClientWorldTrajectoryCheckpointIo.SaveResult aliasResult = trajectoryCheckpointIo.clear(alias);
+                if (!aliasResult.saved() && result.saved()) {
+                    result = aliasResult;
+                }
             }
-        }
-        if (result.saved()) {
-            trajectoryCheckpointError = null;
-        } else {
-            trajectoryCheckpointError = result.error();
-        }
+            return result;
+        }, null);
+    }
+
+    /** Queues non-decision trajectory file maintenance without ever blocking a client lifecycle hook. */
+    private void queueTrajectorySideEffect(
+        final Supplier<ClientWorldTrajectoryCheckpointIo.SaveResult> action,
+        final String successMessage,
+        final Object... successArguments
+    ) {
+        CompletableFuture.runAsync(() -> {
+            final ClientWorldTrajectoryCheckpointIo.SaveResult result;
+            try {
+                result = action.get();
+            } catch (final RuntimeException error) {
+                trajectoryCheckpointError = error.getMessage() == null
+                    ? error.getClass().getSimpleName() : error.getMessage();
+                return;
+            }
+            if (!result.saved()) {
+                trajectoryCheckpointError = result.error();
+            } else if (successMessage != null) {
+                ConfluxMapMod.LOGGER.info(successMessage, successArguments);
+            }
+        }, trajectoryIoExecutor);
     }
 
     static long nextConnectionGenerationAfterCheckpoint(

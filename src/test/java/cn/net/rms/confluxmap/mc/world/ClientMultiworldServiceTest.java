@@ -496,6 +496,29 @@ class ClientMultiworldServiceTest {
     }
 
     @Test
+    void departureCandidateTrajectoryIsWrittenOnlyByTheIoQueue() {
+        final ClientWorldTrajectoryCheckpointIo checkpoints = checkpointIo();
+        final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();
+        assertTrue(checkpoints.save(serverId, OptionalLong.of(11L), trajectory()).saved());
+        final ClientMultiworldService service = service(new ClientWorldProfileResolver(
+            new ClientWorldProfileRegistry(), ids()
+        ));
+        service.onGameJoin(11L);
+        final ClientWorldProfile profile = service.resolveProfile(ADDRESS).profile();
+        final QueueingExecutor io = new QueueingExecutor();
+        service.bindTrajectoryIoExecutor(io);
+
+        service.onBeforeGameJoin();
+
+        assertFalse(checkpoints.loadCandidates(serverId).containsKey(profile.id()));
+        assertEquals(3, io.size());
+
+        io.runNext();
+
+        assertTrue(checkpoints.loadCandidates(serverId).containsKey(profile.id()));
+    }
+
+    @Test
     void deferredVisitCannotOverwriteANewerProfileMutation() {
         final AtomicLong saves = new AtomicLong();
         final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
@@ -1042,6 +1065,10 @@ class ClientMultiworldServiceTest {
             while (!tasks.isEmpty()) {
                 tasks.removeFirst().run();
             }
+        }
+
+        void runNext() {
+            tasks.removeFirst().run();
         }
     }
 
