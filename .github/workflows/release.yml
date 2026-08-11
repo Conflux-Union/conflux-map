@@ -349,7 +349,7 @@ jobs:
           path: release-notes/
       - name: Publish to Modrinth
         if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
-        uses: Kir-Antipov/mc-publish@v3.3.1
+        uses: Kira-NT/mc-publish@v3.3.1
         with:
           modrinth-id: ${{ vars.MODRINTH_ID }}
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
@@ -367,8 +367,9 @@ jobs:
           loaders: fabric
           game-versions: |
             ${{ steps.Game_Versions.outputs.game_versions }}
-          dependencies: |-
-          # Dependencies here
+          # dependencies intentionally omitted: mc-publish derives fabric-api
+          # (required) and malilib (optional) straight from fabric.mod.json's
+          # depends/suggests, which already tracks the right ids per version.
   Publish-Paper-Modrinth:
     if: vars.ENABLE_MODRINTH == 'true'
     runs-on: ubuntu-24.04
@@ -400,7 +401,7 @@ jobs:
           name: release-changelog
           path: release-notes/
       - name: Publish Paper companion to Modrinth
-        uses: Kir-Antipov/mc-publish@v3.3.1
+        uses: Kira-NT/mc-publish@v3.3.1
         with:
           modrinth-id: ${{ vars.MODRINTH_ID }}
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
@@ -427,8 +428,8 @@ jobs:
             1.21.11
             26.1
             26.2
-          dependencies: |-
-          # Dependencies here
+          # no dependencies: the Paper companion has no Modrinth-listed
+          # runtime dependency (plugin.yml declares none).
   Github-Release:
     runs-on: ubuntu-24.04
     needs: [ Build-Matrix, Build-Paper, Get-Versions ]
@@ -491,7 +492,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish to GitHub release
         if: github.event_name == 'workflow_dispatch'
-        uses: Kir-Antipov/mc-publish@v3.3.1
+        uses: Kira-NT/mc-publish@v3.3.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           files: |
