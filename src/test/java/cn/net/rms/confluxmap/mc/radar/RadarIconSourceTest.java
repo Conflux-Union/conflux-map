@@ -39,6 +39,10 @@ final class RadarIconSourceTest {
             manager.contains("EntityHeadGeometry.project("),
             "portraits must keep being baked from the entity's own model"
         );
+        assertTrue(
+            manager.contains("OffscreenCanvas.atlasDrawPlaneZ()"),
+            "portrait baking must use the canvas depth valid outside a GUI pass"
+        );
     }
 
     @Test

@@ -11,17 +11,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 //$$ import net.minecraft.client.MinecraftClient;
 //$$ import org.joml.Matrix4f;
 //$$ import org.joml.Vector4f;
+//#elseif MC<11904
+import net.minecraft.util.math.Matrix4f;
+import net.minecraft.util.math.Vector4f;
 //#endif
 import org.junit.jupiter.api.Test;
 
 final class OffscreenCanvasProjectionTest {
     @Test
     void targetScissorMatchesTheCanvasYAxis() {
-        //#if MC>=12000
-        //$$ assertEquals(928, RenderUtil.targetScissorY(64, 32, 1024));
-        //#else
-        assertEquals(64, RenderUtil.targetScissorY(64, 32, 1024));
-        //#endif
+        assertEquals(928, RenderUtil.targetScissorY(64, 32, 1024));
     }
 
     //#if MC>=12100
@@ -148,10 +147,21 @@ final class OffscreenCanvasProjectionTest {
     //$$     final int nextMethod = source.indexOf("\n    public ", start + signature.length());
     //$$     return source.substring(start, nextMethod < 0 ? source.length() : nextMethod);
     //$$ }
-    //#else
+    //#elseif MC<11904
     @Test
-    void legacyCanvasProjectionUsesTheLegacyGuiDepthRange() {
-        assertTrue(true);
+    void canvasProjectionContainsTheAtlasDrawPlane() throws Exception {
+        final var method = OffscreenCanvas.class.getDeclaredMethod("canvasProjection", int.class);
+        method.setAccessible(true);
+        final Matrix4f projection = (Matrix4f) method.invoke(null, 128);
+        final Vector4f clip = new Vector4f(
+            64f, 64f, OffscreenCanvas.atlasDrawPlaneZ(), 1f
+        );
+        clip.transform(projection);
+
+        assertTrue(
+            Math.abs(clip.getZ()) <= Math.abs(clip.getW()),
+            () -> "atlas draw plane is clipped: z=" + clip.getZ() + ", w=" + clip.getW()
+        );
     }
     //#endif
 }

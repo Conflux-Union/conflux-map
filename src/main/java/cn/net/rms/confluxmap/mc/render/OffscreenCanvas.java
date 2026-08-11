@@ -134,6 +134,15 @@ public final class OffscreenCanvas {
         //#endif
     }
 
+    /** Local depth used while the persistent radar atlas is filled from a client tick. */
+    public static float atlasDrawPlaneZ() {
+        //#if MC<11904
+        return -2000f;
+        //#else
+        //$$ return 0f;
+        //#endif
+    }
+
     /**
      * Orthographic projection over the canvas' depth range. 1.19.4 swapped Minecraft's matrix
      * type for JOML's; the argument order (left, right, bottom, top, near, far) is the same in
