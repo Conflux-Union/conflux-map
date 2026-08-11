@@ -155,6 +155,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         clientMultiworldService = new ClientMultiworldService(
             client, companionSession, clientWorldResolver, cacheRoot, config::clientWorldPolicy
         );
+        clientMultiworldService.bindTrajectoryIoExecutor(executors.io());
         clientMultiworldService.bindProfileRegistryLoader(clientWorldProfileIo::load);
         sessionTracker = new WorldSessionTracker(sessionGuard, companionSession, clientMultiworldService);
         mapWorlds = new MapWorldService();

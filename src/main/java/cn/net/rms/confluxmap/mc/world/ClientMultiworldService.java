@@ -39,6 +39,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.concurrent.Executor;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -79,6 +82,7 @@ public final class ClientMultiworldService {
     private final ClientWorldProfileDeletionService deletionService;
     private final ClientWorldTrajectoryCheckpointIo trajectoryCheckpointIo;
     private final Supplier<ClientWorldPolicy> policy;
+    private Executor trajectoryIoExecutor = Runnable::run;
 
     private OptionalLong seedHash = OptionalLong.empty();
     private OptionalLong previousSeedHash = OptionalLong.empty();
@@ -121,6 +125,9 @@ public final class ClientMultiworldService {
     private int persistenceFailureCount;
     private long persistenceRetryAfterTick;
     private boolean persistenceFailureLatched;
+    private boolean trajectoryCheckpointWriteInFlight;
+    private final AtomicReference<CheckpointWriteCompletion> trajectoryCheckpointCompletion = new AtomicReference<>();
+    private final AtomicReference<CompletableFuture<Void>> trajectoryCheckpointFuture = new AtomicReference<>();
     private ClientWorldTerrainFingerprint terrainFingerprint;
     /** Candidate-specific samples captured only when their saved 3x3 is already loaded. */
     private final Map<String, ClientWorldTerrainFingerprint> terrainFingerprintsByProfileId = new LinkedHashMap<>();
@@ -205,6 +212,11 @@ public final class ClientMultiworldService {
     /** Supplies an explicit user-triggered reload path after fail-closed registry quarantine. */
     public void bindProfileRegistryLoader(final Supplier<ClientWorldProfileRegistry> loader) {
         profileRegistryLoader = Objects.requireNonNull(loader, "loader");
+    }
+
+    /** Routes periodic trajectory checkpoints away from the client tick thread. */
+    public void bindTrajectoryIoExecutor(final Executor executor) {
+        trajectoryIoExecutor = Objects.requireNonNull(executor, "executor");
     }
 
     /**
@@ -1136,6 +1148,16 @@ public final class ClientMultiworldService {
 
     /** Exit-time supplement for the periodic atomic visit checkpoint. */
     public void flushTrajectoryCheckpoint() {
+        final CompletableFuture<Void> pending = trajectoryCheckpointFuture.getAndSet(null);
+        if (pending != null) {
+            try {
+                pending.join();
+            } catch (final RuntimeException error) {
+                trajectoryCheckpointError = error.getMessage();
+            }
+        }
+        applyCompletedTrajectoryCheckpoint();
+        trajectoryCheckpointWriteInFlight = false;
         persistTrajectoryCheckpoint();
         if (serverId == null || resolution.state() != ClientWorldResolution.State.RESOLVED
             || resolution.provisional() || persistenceFailureLatched) {
@@ -1161,11 +1183,39 @@ public final class ClientMultiworldService {
     }
 
     void persistTrajectoryCheckpointIfDue() {
+        applyCompletedTrajectoryCheckpoint();
+        if (trajectoryCheckpointWriteInFlight) {
+            return;
+        }
         if (lastTrajectoryCheckpointTick != Long.MIN_VALUE
             && clientTick - lastTrajectoryCheckpointTick < TRAJECTORY_CHECKPOINT_INTERVAL_TICKS) {
             return;
         }
-        persistTrajectoryCheckpoint();
+        if (serverId == null || trajectory.latest() == null) {
+            return;
+        }
+        final String checkpointServerId = serverId;
+        final OptionalLong checkpointSeedHash = seedHash;
+        final ClientWorldTrajectory checkpoint = trajectory.copy();
+        final long checkpointTick = clientTick;
+        trajectoryCheckpointWriteInFlight = true;
+        final CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+            final ClientWorldTrajectoryCheckpointIo.SaveResult result;
+            try {
+                result = trajectoryCheckpointIo.save(checkpointServerId, checkpointSeedHash, checkpoint);
+            } catch (final RuntimeException error) {
+                trajectoryCheckpointCompletion.set(new CheckpointWriteCompletion(
+                    checkpointTick,
+                    new ClientWorldTrajectoryCheckpointIo.SaveResult(
+                        false,
+                        error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage()
+                    )
+                ));
+                return;
+            }
+            trajectoryCheckpointCompletion.set(new CheckpointWriteCompletion(checkpointTick, result));
+        }, trajectoryIoExecutor);
+        trajectoryCheckpointFuture.set(future);
     }
 
     private void persistTrajectoryCheckpoint() {
@@ -1181,6 +1231,27 @@ public final class ClientMultiworldService {
         } else {
             trajectoryCheckpointError = result.error();
         }
+    }
+
+    private void applyCompletedTrajectoryCheckpoint() {
+        final CheckpointWriteCompletion completion = trajectoryCheckpointCompletion.getAndSet(null);
+        if (completion == null) {
+            return;
+        }
+        trajectoryCheckpointFuture.set(null);
+        trajectoryCheckpointWriteInFlight = false;
+        if (completion.result().saved()) {
+            lastTrajectoryCheckpointTick = completion.tick();
+            trajectoryCheckpointError = null;
+        } else {
+            trajectoryCheckpointError = completion.result().error();
+        }
+    }
+
+    private record CheckpointWriteCompletion(
+        long tick,
+        ClientWorldTrajectoryCheckpointIo.SaveResult result
+    ) {
     }
 
     private void captureCandidateTrajectoryOverride() {
