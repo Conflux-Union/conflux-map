@@ -14,13 +14,13 @@ public record ClientWorldPolicy(
     public static final int DEFAULT_MAX_PROFILES_PER_SERVER = 128;
     public static final int DEFAULT_MAX_BINDINGS_PER_PROFILE = 64;
     public static final int DEFAULT_COMMAND_CONFIRMATION_SECONDS = 10;
-    public static final int DEFAULT_VISIT_REFRESH_SECONDS = 60;
+    public static final int DEFAULT_VISIT_REFRESH_SECONDS = 3;
     public static final int DEFAULT_VISIT_REFRESH_DISTANCE = 256;
 
     public static final int MIN_MAX_PROFILES_PER_SERVER = 1;
     public static final int MIN_MAX_BINDINGS_PER_PROFILE = 1;
     public static final int MIN_COMMAND_CONFIRMATION_SECONDS = 5;
-    public static final int MIN_VISIT_REFRESH_SECONDS = 10;
+    public static final int MIN_VISIT_REFRESH_SECONDS = 3;
     public static final int MIN_VISIT_REFRESH_DISTANCE = 64;
 
     public static final int MAX_MAX_PROFILES_PER_SERVER = 128;

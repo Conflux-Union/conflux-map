@@ -9,6 +9,7 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import cn.net.rms.confluxmap.core.multiworld.ClientWorldPolicy;
 import org.apache.logging.log4j.Logger;
 
 /**
@@ -20,6 +21,7 @@ import org.apache.logging.log4j.Logger;
  */
 public final class ConfigIo {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final int LEGACY_DEFAULT_VISIT_REFRESH_SECONDS = 60;
 
     private final Path file;
     private final Logger logger;
@@ -41,6 +43,7 @@ public final class ConfigIo {
             if (config == null) {
                 throw new JsonParseException("empty config");
             }
+            migrateLegacyDefaults(config);
             config.normalize();
             upgradeOnDisk(json, config);
             return config;
@@ -50,6 +53,14 @@ public final class ConfigIo {
             final ConfluxConfig fresh = new ConfluxConfig();
             save(fresh);
             return fresh;
+        }
+    }
+
+    /** Converts the old generated 60-second default while preserving other configured values. */
+    private static void migrateLegacyDefaults(final ConfluxConfig config) {
+        if (config.schemaVersion < ConfluxConfig.SCHEMA_VERSION
+            && config.clientWorldVisitRefreshSeconds == LEGACY_DEFAULT_VISIT_REFRESH_SECONDS) {
+            config.clientWorldVisitRefreshSeconds = ClientWorldPolicy.DEFAULT_VISIT_REFRESH_SECONDS;
         }
     }
 

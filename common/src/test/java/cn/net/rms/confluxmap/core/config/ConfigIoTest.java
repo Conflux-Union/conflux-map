@@ -99,6 +99,22 @@ class ConfigIoTest {
     }
 
     @Test
+    void loadMigratesThePreviousDefaultVisitRefreshInterval(@TempDir final Path tmp) throws IOException {
+        final Path file = tmp.resolve("config.json");
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":3,\"clientWorldVisitRefreshSeconds\":60}",
+            StandardCharsets.UTF_8
+        );
+
+        final ConfluxConfig loaded = new ConfigIo(file, LOGGER).load();
+
+        assertEquals(3, loaded.clientWorldVisitRefreshSeconds);
+        assertTrue(Files.readString(file, StandardCharsets.UTF_8)
+            .contains("\"clientWorldVisitRefreshSeconds\": 3"));
+    }
+
+    @Test
     void loadMigratesEveryLegacyCornerToTheEquivalentFreePosition(@TempDir final Path tmp) throws IOException {
         final Path file = tmp.resolve("config.json");
 
@@ -197,7 +213,7 @@ class ConfigIoTest {
 
         assertEquals(60, loaded.playerTrailDurationSeconds);
         final String rewritten = Files.readString(file, StandardCharsets.UTF_8);
-        assertTrue(rewritten.contains("\"schemaVersion\": " + ConfluxConfig.SCHEMA_VERSION));
+        assertTrue(rewritten.contains("\"schemaVersion\": 4"));
         assertTrue(rewritten.contains("\"playerTrailDurationSeconds\": 60"));
         assertFalse(rewritten.contains("\"playerTrailDurationMinutes\""));
     }

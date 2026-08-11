@@ -302,10 +302,13 @@ class ClientMultiworldServiceTest {
         final ClientWorldObservation previous = visitObservation(0, 0);
 
         assertFalse(ClientMultiworldService.shouldRefreshVisit(
-            previous, visitObservation(100, 100), 100L
+            previous, visitObservation(100, 100), 59L
         ));
         assertTrue(ClientMultiworldService.shouldRefreshVisit(
-            previous, visitObservation(300, 0), 100L
+            previous, visitObservation(100, 100), 60L
+        ));
+        assertTrue(ClientMultiworldService.shouldRefreshVisit(
+            previous, visitObservation(300, 0), 59L
         ));
         assertTrue(ClientMultiworldService.shouldRefreshVisit(
             previous, visitObservation(100, 100), 1_200L
@@ -331,7 +334,8 @@ class ClientMultiworldServiceTest {
             null
         );
 
-        assertFalse(ClientMultiworldService.shouldRefreshVisit(previous, current, 100L));
+        assertFalse(ClientMultiworldService.shouldRefreshVisit(previous, current, 59L));
+        assertTrue(ClientMultiworldService.shouldRefreshVisit(previous, current, 60L));
     }
 
     @Test
@@ -672,6 +676,27 @@ class ClientMultiworldServiceTest {
 
         io.runNext();
 
+        assertTrue(checkpoints.loadCandidates(serverId).containsKey(profile.id()));
+    }
+
+    @Test
+    void respawnDepartureCapturesAProfileOwnedCandidateBeforeResettingTrajectory() {
+        final ClientWorldTrajectoryCheckpointIo checkpoints = checkpointIo();
+        final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();
+        assertTrue(checkpoints.save(serverId, OptionalLong.of(11L), trajectory()).saved());
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            new ClientWorldProfileRegistry(), ids()
+        );
+        final ClientMultiworldService service = service(resolver);
+        service.onGameJoin(11L);
+        final ClientWorldProfile profile = service.resolveProfile(ADDRESS).profile();
+        final QueueingExecutor io = new QueueingExecutor();
+        service.bindTrajectoryIoExecutor(io);
+
+        service.onBeforeRespawn();
+
+        assertFalse(checkpoints.loadCandidates(serverId).containsKey(profile.id()));
+        io.runNext();
         assertTrue(checkpoints.loadCandidates(serverId).containsKey(profile.id()));
     }
 

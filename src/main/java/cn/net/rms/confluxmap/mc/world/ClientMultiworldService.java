@@ -62,7 +62,7 @@ import net.minecraft.util.Formatting;
 public final class ClientMultiworldService {
     private static final int SIGNAL_REFRESH_TICKS = ClientWorldChangeDetector.OBSERVATION_WINDOW_TICKS;
     private static final int MAX_PENDING_SNAPSHOTS = 256;
-    private static final int VISIT_REFRESH_MIN_TICKS = 100;
+    private static final int VISIT_REFRESH_MIN_TICKS = 60;
     private static final int MAX_PERSISTENCE_RETRIES = 5;
     private static final int PERSISTENCE_RETRY_BASE_TICKS = 20;
     private static final int PERSISTENCE_RETRY_MAX_TICKS = 400;
@@ -164,6 +164,8 @@ public final class ClientMultiworldService {
     private Supplier<String> openMapKeyDisplayName;
     private Consumer<WorldIdentity> profileFlushBarrier = ignored -> { };
     private Supplier<ClientWorldProfileRegistry> profileRegistryLoader;
+    /** Latest stable observation kept on the client thread; the registry baseline remains separate. */
+    private ClientWorldObservation latestVisitObservation;
     private ClientWorldObservation lastRememberedVisit;
     private long lastVisitRefreshTick = Long.MIN_VALUE;
     private long lastTrajectoryCheckpointTick = Long.MIN_VALUE;
@@ -432,6 +434,7 @@ public final class ClientMultiworldService {
             recentFullChunks.clear();
             recentUnloadedChunks.clear();
             lastRememberedVisit = null;
+            latestVisitObservation = null;
             lastVisitRefreshTick = Long.MIN_VALUE;
             ambiguityNotified = false;
             persistenceError = null;
@@ -447,6 +450,7 @@ public final class ClientMultiworldService {
 
     /** Flushes the old dimension while its position and trajectory are still authoritative. */
     public void onBeforeRespawn() {
+        captureCandidateTrajectoryOverride();
         flushTrajectoryCheckpoint();
         respawnDeparturePrepared = true;
     }
@@ -1173,7 +1177,7 @@ public final class ClientMultiworldService {
                 (int) Math.floor(latest.x()), (int) Math.floor(latest.y()),
                 (int) Math.floor(latest.z())
             );
-            gameMode = lastRememberedVisit == null ? null : lastRememberedVisit.gameMode();
+            gameMode = latestVisitObservation == null ? null : latestVisitObservation.gameMode();
         }
         return new ClientWorldObservation(
             seedHash, signals, dimension, gameMode, position, terrainFingerprint,
@@ -1893,6 +1897,7 @@ public final class ClientMultiworldService {
         observedGameMode = null;
         observedPosition = null;
         lastRememberedVisit = null;
+        latestVisitObservation = null;
         lastVisitRefreshTick = Long.MIN_VALUE;
         clearProfileLock();
         if (clearCommandLock) {
@@ -1970,6 +1975,7 @@ public final class ClientMultiworldService {
         recentFullChunks.clear();
         recentUnloadedChunks.clear();
         lastRememberedVisit = null;
+        latestVisitObservation = null;
         lastVisitRefreshTick = Long.MIN_VALUE;
         fullChunkWindowStartedAt = clientTick;
         detectionStartedAtTick = clientTick;
@@ -2199,8 +2205,14 @@ public final class ClientMultiworldService {
             return;
         }
         final ClientWorldObservation current = observation();
-        if (current.dimensionId() == null
-            || !shouldRefreshVisit(lastRememberedVisit, current, elapsedTicks, policy())) {
+        if (current.dimensionId() == null) {
+            return;
+        }
+        final ClientWorldObservation previous = lastRememberedVisit;
+        // Keep the live position current in memory on every tick. Durable registry writes remain
+        // debounced below, so movement is never lost while the serialized JSON stays off-thread.
+        latestVisitObservation = current;
+        if (!shouldRefreshVisit(previous, current, elapsedTicks, policy())) {
             return;
         }
         queueStableVisitPersistence(current);
@@ -2369,6 +2381,7 @@ public final class ClientMultiworldService {
         persistenceRetryAfterTick = 0L;
         persistenceFailureLatched = false;
         lastRememberedVisit = null;
+        latestVisitObservation = null;
         lastVisitRefreshTick = Long.MIN_VALUE;
     }
 
