@@ -604,6 +604,41 @@ class ClientMultiworldServiceTest {
     }
 
     @Test
+    void recoveryJournalForAnotherServerNamespaceIsLeftUntouched() throws Exception {
+        final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            new ClientWorldProfileRegistry(), ids()
+        );
+        final ClientMultiworldService service = service(resolver);
+        service.onGameJoin(11L);
+        final ClientWorldProfile profile = service.resolveProfile(ADDRESS).profile();
+        final Path mapData = tempDir.resolve("cache")
+            .resolve(profile.storageServerId(serverId)).resolve(profile.storageId());
+        Files.createDirectories(mapData);
+        final Path marker = mapData.resolve("marker.dat");
+        Files.writeString(marker, "do not restore from foreign journal");
+        final ClientWorldProfileDeletionService deletion = new ClientWorldProfileDeletionService(
+            tempDir.resolve("cache"), tempDir.resolve("waypoints"), tempDir.resolve("annotations"),
+            tempDir.resolve("recovery").resolve("client-worlds")
+        );
+        assertTrue(deletion.moveToRecovery(serverId, profile).prepared());
+        final Path journal;
+        try (var paths = Files.walk(tempDir.resolve("recovery").resolve("client-worlds").resolve(serverId))) {
+            journal = paths.filter(path -> path.getFileName().toString().equals("transaction.properties"))
+                .findFirst().orElseThrow();
+        }
+        Files.writeString(journal, Files.readString(journal).replace(
+            "serverId=" + serverId, "serverId=foreign.example"
+        ));
+
+        service.onGameJoin(11L);
+        service.resolveProfile(ADDRESS);
+
+        assertFalse(Files.exists(marker));
+        assertTrue(Files.exists(journal));
+    }
+
+    @Test
     void submittedSwitchCommandActivatesItsProfileWithoutChangingTheTextOrLearningOldSignals() {
         final ClientWorldProfileRegistry registry = new ClientWorldProfileRegistry();
         final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(registry, ids());

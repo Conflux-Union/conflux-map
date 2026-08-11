@@ -1513,9 +1513,13 @@ public final class ClientMultiworldService {
         if (serverId == null || !resolver.available()) {
             return;
         }
+        final Map<String, ClientWorldProfile> liveProfiles = new LinkedHashMap<>();
+        for (final ClientWorldProfile profile : resolver.profiles(serverId)) {
+            liveProfiles.put(profile.id(), profile);
+        }
         deletionService.recoverPendingTransactions(
             serverId,
-            resolver.profiles(serverId).stream().map(ClientWorldProfile::id).collect(java.util.stream.Collectors.toSet())
+            liveProfiles
         );
     }
 

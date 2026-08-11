@@ -8,6 +8,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
@@ -77,7 +78,7 @@ public final class ClientWorldProfileDeletionService {
             );
             // Persist the complete intent before the first move. A crash after any individual
             // move is therefore recoverable even if the process stops before another journal write.
-            writeJournal(journal, serverId, profile.id(), planned);
+            writeJournal(journal, serverId, profile.id(), storageServerId, namespace, planned);
             for (final Move move : planned) {
                 if (!Files.exists(move.source)) {
                     continue;
@@ -102,7 +103,10 @@ public final class ClientWorldProfileDeletionService {
      * profile still exists is rolled back; one whose registry entry is already gone is finalized
      * in recovery, so no source directory can be recreated by a half-completed delete.
      */
-    public void recoverPendingTransactions(final String serverId, final Set<String> liveProfileIds) {
+    public void recoverPendingTransactions(
+        final String serverId,
+        final Map<String, ClientWorldProfile> liveProfiles
+    ) {
         final Path serverRoot = recoveryRoot.resolve(serverId).normalize();
         if (!serverRoot.startsWith(recoveryRoot) || !Files.isDirectory(serverRoot)) {
             return;
@@ -110,7 +114,7 @@ public final class ClientWorldProfileDeletionService {
         try (Stream<Path> paths = Files.walk(serverRoot, 4)) {
             paths.filter(path -> path.getFileName() != null
                     && path.getFileName().toString().equals("transaction.properties"))
-                .forEach(journal -> recoverJournal(journal, liveProfileIds));
+                .forEach(journal -> recoverJournal(journal, serverId, liveProfiles));
         } catch (final IOException | RuntimeException error) {
             // Recovery is best effort; leaving the journal is safer than deleting data. The
             // caller must still be able to diagnose why a recovery remains pending.
@@ -122,21 +126,40 @@ public final class ClientWorldProfileDeletionService {
         }
     }
 
-    private void recoverJournal(final Path journal, final Set<String> liveProfileIds) {
+    private void recoverJournal(
+        final Path journal,
+        final String expectedServerId,
+        final Map<String, ClientWorldProfile> liveProfiles
+    ) {
         final Properties properties = new Properties();
         try (var reader = Files.newBufferedReader(journal)) {
             properties.load(reader);
             final String profileId = properties.getProperty("profileId");
-            if (profileId == null || profileId.isBlank()) {
+            final String journalServerId = properties.getProperty("serverId");
+            final String namespace = journalNamespace(journal, properties);
+            if (profileId == null || profileId.isBlank()
+                || !expectedServerId.equals(journalServerId)
+                || namespace == null
+                || !journalBelongsToNamespace(journal, expectedServerId, namespace)) {
                 // A truncated/corrupt journal must remain available for manual recovery. Removing
                 // it here could strand files already moved into recovery with no ownership record.
                 return;
             }
-            if (!liveProfileIds.contains(profileId)) {
+            final ClientWorldProfile profile = liveProfiles.get(profileId);
+            if (profile == null) {
                 deleteJournal(journal);
                 return;
             }
-            final List<Move> moves = readMoves(properties);
+            final String expectedNamespace = profile.storageId();
+            final String expectedStorageServerId = profile.storageServerId(expectedServerId);
+            final String journalStorageServerId = properties.getProperty("storageServerId");
+            if (!expectedNamespace.equals(namespace)
+                || journalStorageServerId != null && !journalStorageServerId.equals(expectedStorageServerId)) {
+                return;
+            }
+            final List<Move> moves = readMoves(
+                properties, journal.getParent(), expectedStorageServerId, expectedNamespace
+            );
             final String restoreError = restore(moves);
             if (restoreError == null) {
                 deleteJournal(journal);
@@ -225,6 +248,8 @@ public final class ClientWorldProfileDeletionService {
         final Path journal,
         final String serverId,
         final String profileId,
+        final String storageServerId,
+        final String namespace,
         final List<Move> moves
     ) throws IOException {
         final Properties properties = new Properties();
@@ -233,6 +258,12 @@ public final class ClientWorldProfileDeletionService {
         }
         if (profileId != null) {
             properties.setProperty("profileId", profileId);
+        }
+        if (storageServerId != null) {
+            properties.setProperty("storageServerId", storageServerId);
+        }
+        if (namespace != null) {
+            properties.setProperty("namespace", namespace);
         }
         properties.setProperty("moveCount", Integer.toString(moves.size()));
         for (int index = 0; index < moves.size(); index++) {
@@ -251,7 +282,12 @@ public final class ClientWorldProfileDeletionService {
         }
     }
 
-    private List<Move> readMoves(final Properties properties) {
+    private List<Move> readMoves(
+        final Properties properties,
+        final Path recoveryTransactionRoot,
+        final String storageServerId,
+        final String namespace
+    ) {
         final int count = Integer.parseInt(properties.getProperty("moveCount", "0"));
         if (count < 0 || count > 16) {
             throw new IllegalArgumentException("invalid deletion journal move count");
@@ -260,16 +296,41 @@ public final class ClientWorldProfileDeletionService {
         for (int index = 0; index < count; index++) {
             final Path source = Path.of(properties.getProperty("move." + index + ".source")).toAbsolutePath().normalize();
             final Path target = Path.of(properties.getProperty("move." + index + ".target")).toAbsolutePath().normalize();
-            if (!source.startsWith(mapRoot) && !source.startsWith(waypointRoot)
-                && !source.startsWith(annotationRoot)) {
-                throw new IllegalArgumentException("deletion journal source escaped storage roots");
-            }
-            if (!target.startsWith(recoveryRoot)) {
-                throw new IllegalArgumentException("deletion journal target escaped recovery root");
+            if (!expectedSource(source, storageServerId, namespace)
+                || !target.startsWith(recoveryTransactionRoot)) {
+                throw new IllegalArgumentException("deletion journal path does not match its profile namespace");
             }
             moves.add(new Move(source, target));
         }
         return moves;
+    }
+
+    private boolean expectedSource(final Path source, final String storageServerId, final String namespace) {
+        return source.equals(safeDirectory(mapRoot, storageServerId, namespace))
+            || source.equals(safeDirectory(mapRoot.resolve("prediction"), storageServerId, namespace))
+            || source.equals(safeDirectory(mapRoot.resolve("structures"), storageServerId, namespace))
+            || source.equals(safeFile(waypointRoot, storageServerId, namespace + ".json"))
+            || source.equals(safeFile(annotationRoot, storageServerId, namespace + ".json"));
+    }
+
+    private String journalNamespace(final Path journal, final Properties properties) {
+        final String namespace = properties.getProperty("namespace");
+        if (namespace != null && !namespace.isBlank()) {
+            return namespace;
+        }
+        final Path transactionRoot = journal.getParent();
+        final Path namespaceRoot = transactionRoot == null ? null : transactionRoot.getParent();
+        return namespaceRoot == null || namespaceRoot.getFileName() == null
+            ? null : namespaceRoot.getFileName().toString();
+    }
+
+    private boolean journalBelongsToNamespace(
+        final Path journal,
+        final String serverId,
+        final String namespace
+    ) {
+        final Path expectedRoot = safeDirectory(recoveryRoot, serverId, namespace);
+        return journal.toAbsolutePath().normalize().startsWith(expectedRoot);
     }
 
     private static void deleteJournal(final Path journal) {
