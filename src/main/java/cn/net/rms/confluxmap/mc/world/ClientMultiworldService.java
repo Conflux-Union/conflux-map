@@ -130,6 +130,9 @@ public final class ClientMultiworldService {
     private final AtomicReference<CompletableFuture<Void>> trajectoryCheckpointFuture = new AtomicReference<>();
     private boolean visitWriteInFlight;
     private final AtomicReference<VisitWriteCompletion> visitWriteCompletion = new AtomicReference<>();
+    private boolean automaticProfileWriteInFlight;
+    private final AtomicReference<AutomaticProfileWriteCompletion> automaticProfileWriteCompletion =
+        new AtomicReference<>();
     private ClientWorldTerrainFingerprint terrainFingerprint;
     /** Candidate-specific samples captured only when their saved 3x3 is already loaded. */
     private final Map<String, ClientWorldTerrainFingerprint> terrainFingerprintsByProfileId = new LinkedHashMap<>();
@@ -552,6 +555,9 @@ public final class ClientMultiworldService {
         if (applyPendingCommand()) {
             return resolution;
         }
+        if (applyCompletedAutomaticProfileCreation()) {
+            return resolution;
+        }
         // WorldSessionTracker asks for the current identity every tick. Once an identity has been
         // admitted (including provisional), that read must be side-effect free: movement never
         // starts another A/B election. Signal and terrain events use validateProvisionalIdentity.
@@ -583,6 +589,18 @@ public final class ClientMultiworldService {
         }
         final ClientWorldResolution previousResolution = resolution;
         final ClientWorldObservation currentObservation = observation();
+        if (resolver.needsAutomaticProfileCreation(serverId, currentObservation)) {
+            queueAutomaticProfileCreation(currentObservation);
+            if (resolution.state() == ClientWorldResolution.State.PERSISTENCE_FAILED) {
+                return resolution;
+            }
+            if (applyCompletedAutomaticProfileCreation()) {
+                return resolution;
+            }
+            resolution = ClientWorldResolution.collecting();
+            detectionState = ClientWorldDetectionState.PROBING;
+            return resolution;
+        }
         resolution = proxyWorldJoin
             ? resolver.resolveAfterProxyWorldJoinReadOnly(
                 serverId, previousSeedHash, currentObservation, departedProfileId
@@ -1286,6 +1304,68 @@ public final class ClientMultiworldService {
         discardCandidateTrajectoryOverride(completion.profileId());
     }
 
+    private void queueAutomaticProfileCreation(final ClientWorldObservation currentObservation) {
+        if (automaticProfileWriteInFlight) {
+            return;
+        }
+        final ClientWorldProfileResolver.PreparedAutomaticProfileMutation prepared =
+            resolver.prepareAutomaticProfileCreation(serverId, currentObservation);
+        if (!prepared.prepared()) {
+            persistenceError = prepared.result().error();
+            recordPersistenceFailure();
+            resolution = ClientWorldResolution.persistenceFailed(persistenceError);
+            detectionState = ClientWorldDetectionState.WAITING_FOR_USER;
+            return;
+        }
+        final long creationGeneration = connectionGeneration;
+        final String creationServerId = serverId;
+        final OptionalLong creationSeedHash = seedHash;
+        automaticProfileWriteInFlight = true;
+        CompletableFuture.runAsync(() -> {
+            final ClientWorldProfileResolver.MutationResult result =
+                resolver.persistPreparedAutomaticProfile(prepared);
+            automaticProfileWriteCompletion.set(new AutomaticProfileWriteCompletion(
+                creationGeneration, creationServerId, creationSeedHash, prepared, result
+            ));
+        }, trajectoryIoExecutor);
+    }
+
+    /** Publishes a completed automatic creation only after its registry image was durably written. */
+    private boolean applyCompletedAutomaticProfileCreation() {
+        final AutomaticProfileWriteCompletion completion = automaticProfileWriteCompletion.getAndSet(null);
+        if (completion == null) {
+            return automaticProfileWriteInFlight;
+        }
+        automaticProfileWriteInFlight = false;
+        final ClientWorldProfileResolver.AutomaticProfilePublication publication = completion.result().applied()
+            ? resolver.publishPreparedAutomaticProfile(completion.prepared())
+            : new ClientWorldProfileResolver.AutomaticProfilePublication(completion.result(), null);
+        final boolean stillCurrent = completion.connectionGeneration() == connectionGeneration
+            && Objects.equals(completion.serverId(), serverId)
+            && completion.seedHash().equals(seedHash);
+        if (!publication.mutation().applied()) {
+            if (stillCurrent) {
+                persistenceError = publication.mutation().error();
+                recordPersistenceFailure();
+                resolution = ClientWorldResolution.persistenceFailed(persistenceError);
+                detectionState = ClientWorldDetectionState.WAITING_FOR_USER;
+                return true;
+            }
+            return false;
+        }
+        if (!stillCurrent) {
+            return false;
+        }
+        resolution = ClientWorldResolution.resolved(
+            publication.profile(), List.of(), ClientWorldResolution.ConfirmationSource.CREATED
+        );
+        lockProfile(publication.profile());
+        detectionState = ClientWorldDetectionState.STABLE;
+        persistenceError = null;
+        resetPersistenceBackoff();
+        return true;
+    }
+
     private record CheckpointWriteCompletion(
         long tick,
         ClientWorldTrajectoryCheckpointIo.SaveResult result
@@ -1299,6 +1379,15 @@ public final class ClientMultiworldService {
         ClientWorldObservation observation,
         long tick,
         ClientWorldProfileResolver.PreparedVisitMutation prepared,
+        ClientWorldProfileResolver.MutationResult result
+    ) {
+    }
+
+    private record AutomaticProfileWriteCompletion(
+        long connectionGeneration,
+        String serverId,
+        OptionalLong seedHash,
+        ClientWorldProfileResolver.PreparedAutomaticProfileMutation prepared,
         ClientWorldProfileResolver.MutationResult result
     ) {
     }

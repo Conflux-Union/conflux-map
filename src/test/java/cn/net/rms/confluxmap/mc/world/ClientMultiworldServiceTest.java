@@ -479,6 +479,9 @@ class ClientMultiworldServiceTest {
         final QueueingExecutor io = new QueueingExecutor();
         service.bindTrajectoryIoExecutor(io);
         service.onGameJoin(11L);
+        assertEquals(ClientWorldResolution.State.COLLECTING, service.resolveProfile(ADDRESS).state());
+        assertEquals(1, io.size());
+        io.runNext();
         assertEquals(ClientWorldResolution.State.RESOLVED, service.resolveProfile(ADDRESS).state());
         final long savesBeforeFlush = saves.get();
 
@@ -493,6 +496,61 @@ class ClientMultiworldServiceTest {
         service.advanceDetectionClock();
 
         assertEquals(savesBeforeFlush + 1L, saves.get());
+    }
+
+    @Test
+    void firstAutomaticProfileIsNotPublishedUntilItsIoWriteCompletes() {
+        final AtomicLong saves = new AtomicLong();
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            new ClientWorldProfileRegistry(), ids(), ignored -> {
+                saves.incrementAndGet();
+                return ClientWorldProfileIo.SaveResult.success();
+            }
+        );
+        final ClientMultiworldService service = service(resolver);
+        final QueueingExecutor io = new QueueingExecutor();
+        service.bindTrajectoryIoExecutor(io);
+        service.onGameJoin(11L);
+
+        assertEquals(ClientWorldResolution.State.COLLECTING, service.resolveProfile(ADDRESS).state());
+        assertTrue(resolver.profiles(WorldIdentity.multiplayer(ADDRESS).serverId()).isEmpty());
+        assertEquals(1, io.size());
+        assertEquals(0L, saves.get());
+
+        io.runNext();
+
+        assertEquals(ClientWorldResolution.State.RESOLVED, service.resolveProfile(ADDRESS).state());
+        assertEquals(1, resolver.profiles(WorldIdentity.multiplayer(ADDRESS).serverId()).size());
+        assertEquals(1L, saves.get());
+    }
+
+    @Test
+    void newSeedAutomaticProfileIsNotPublishedUntilItsIoWriteCompletes() {
+        final AtomicLong saves = new AtomicLong();
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            new ClientWorldProfileRegistry(), ids(), ignored -> {
+                saves.incrementAndGet();
+                return ClientWorldProfileIo.SaveResult.success();
+            }
+        );
+        final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();
+        resolver.resolve(serverId, observation(11L, signals("existing")));
+        final ClientMultiworldService service = service(resolver);
+        final QueueingExecutor io = new QueueingExecutor();
+        service.bindTrajectoryIoExecutor(io);
+        service.onGameJoin(22L);
+        service.observeSignals(signals("new"));
+
+        assertEquals(ClientWorldResolution.State.COLLECTING, service.resolveProfile(ADDRESS).state());
+        assertEquals(1, resolver.profiles(serverId).size());
+        assertEquals(1, io.size());
+        assertEquals(1L, saves.get());
+
+        io.runNext();
+
+        assertEquals(ClientWorldResolution.State.RESOLVED, service.resolveProfile(ADDRESS).state());
+        assertEquals(2, resolver.profiles(serverId).size());
+        assertEquals(2L, saves.get());
     }
 
     @Test

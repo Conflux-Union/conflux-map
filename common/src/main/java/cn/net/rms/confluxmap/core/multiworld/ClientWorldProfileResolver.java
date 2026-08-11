@@ -124,6 +124,98 @@ public final class ClientWorldProfileResolver {
         }
     }
 
+    /**
+     * Whether automatic resolution would create a fresh profile for this observation. The client
+     * service uses this to move that durable mutation off its lifecycle thread.
+     */
+    public boolean needsAutomaticProfileCreation(
+        final String serverId,
+        final ClientWorldObservation observation
+    ) {
+        if (observation.seedHash().isEmpty() || !registry.available()) {
+            return false;
+        }
+        final List<ClientWorldProfile> profiles = registry.mutableProfiles(serverId);
+        final long seedHash = observation.seedHash().getAsLong();
+        return profiles.stream().noneMatch(profile -> profile.matchesSeed(seedHash))
+            && profiles.stream().noneMatch(ClientWorldProfile::recognitionDisabled)
+            && profiles.size() < policy().maxProfilesPerServer();
+    }
+
+    /** Captures the durable automatic-profile creation into an isolated registry image. */
+    public PreparedAutomaticProfileMutation prepareAutomaticProfileCreation(
+        final String serverId,
+        final ClientWorldObservation observation
+    ) {
+        synchronized (persistenceLock) {
+            if (!needsAutomaticProfileCreation(serverId, observation)) {
+                return PreparedAutomaticProfileMutation.failure(
+                    "automatic client world profile creation is no longer applicable"
+                );
+            }
+            try {
+                final ClientWorldProfileRegistry candidate = registry.copy();
+                final List<ClientWorldProfile> profiles = candidate.mutableProfiles(serverId);
+                final ClientWorldProfile profile = create(
+                    profiles, profiles.isEmpty() ? "world" : nextStorageId(), observation
+                );
+                rememberLastStable(candidate, serverId, profile.id(), observation);
+                return PreparedAutomaticProfileMutation.prepared(
+                    candidate, registryGeneration, serverId, profile.id()
+                );
+            } catch (final RuntimeException error) {
+                return PreparedAutomaticProfileMutation.failure(errorMessage(error));
+            }
+        }
+    }
+
+    /** Writes a prepared automatic profile while keeping its registry image private. */
+    public MutationResult persistPreparedAutomaticProfile(final PreparedAutomaticProfileMutation mutation) {
+        if (mutation == null || !mutation.prepared()) {
+            return mutation == null
+                ? MutationResult.failure("missing prepared automatic client world profile")
+                : mutation.result();
+        }
+        synchronized (persistenceLock) {
+            if (mutation.generation != registryGeneration) {
+                return MutationResult.failure("client world registry changed before automatic profile persistence");
+            }
+            try {
+                final ClientWorldProfileIo.SaveResult saved = persistence.save(mutation.candidate);
+                return saved != null && saved.saved()
+                    ? MutationResult.success() : MutationResult.failure(saved == null ? null : saved.error());
+            } catch (final RuntimeException error) {
+                return MutationResult.failure(errorMessage(error));
+            }
+        }
+    }
+
+    /** Publishes a successfully persisted automatic profile from the client thread. */
+    public AutomaticProfilePublication publishPreparedAutomaticProfile(
+        final PreparedAutomaticProfileMutation mutation
+    ) {
+        if (mutation == null || !mutation.prepared()) {
+            return new AutomaticProfilePublication(
+                mutation == null
+                    ? MutationResult.failure("missing prepared automatic client world profile")
+                    : mutation.result(),
+                null
+            );
+        }
+        synchronized (persistenceLock) {
+            if (mutation.generation != registryGeneration) {
+                return new AutomaticProfilePublication(
+                    MutationResult.failure("client world registry changed before automatic profile publication"), null
+                );
+            }
+            registry.replaceWith(mutation.candidate);
+            registryGeneration++;
+            return new AutomaticProfilePublication(
+                MutationResult.success(), requireProfile(registry.mutableProfiles(mutation.serverId), mutation.profileId)
+            );
+        }
+    }
+
     private ClientWorldResolution resolve(
         final String serverId,
         final ClientWorldObservation observation,
@@ -757,6 +849,58 @@ public final class ClientWorldProfileResolver {
 
         static MutationResult failure(final String error) {
             return new MutationResult(false, error == null || error.isBlank() ? "unknown persistence error" : error);
+        }
+    }
+
+    /** Result of publishing an automatic profile after its isolated image reached durable storage. */
+    public record AutomaticProfilePublication(MutationResult mutation, ClientWorldProfile profile) {
+    }
+
+    /** Opaque isolated registry image used by the client IO queue for automatic profile creation. */
+    public static final class PreparedAutomaticProfileMutation {
+        private final ClientWorldProfileRegistry candidate;
+        private final long generation;
+        private final String serverId;
+        private final String profileId;
+        private final MutationResult result;
+
+        private PreparedAutomaticProfileMutation(
+            final ClientWorldProfileRegistry candidate,
+            final long generation,
+            final String serverId,
+            final String profileId,
+            final MutationResult result
+        ) {
+            this.candidate = candidate;
+            this.generation = generation;
+            this.serverId = serverId;
+            this.profileId = profileId;
+            this.result = result;
+        }
+
+        private static PreparedAutomaticProfileMutation prepared(
+            final ClientWorldProfileRegistry candidate,
+            final long generation,
+            final String serverId,
+            final String profileId
+        ) {
+            return new PreparedAutomaticProfileMutation(
+                candidate, generation, serverId, profileId, MutationResult.success()
+            );
+        }
+
+        private static PreparedAutomaticProfileMutation failure(final String error) {
+            return new PreparedAutomaticProfileMutation(
+                null, -1L, null, null, MutationResult.failure(error)
+            );
+        }
+
+        public boolean prepared() {
+            return candidate != null && result.applied();
+        }
+
+        public MutationResult result() {
+            return result;
         }
     }
 
