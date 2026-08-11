@@ -786,10 +786,8 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         if (operationError != null) {
             drawWrappedCentered(
                 draw,
-                Texts.translatable(
-                    registryAvailable
-                        ? "confluxmap.screen.client_world.save_failed_generic"
-                        : "confluxmap.screen.client_world.retry_failed"
+                registryAvailable ? operationError : Texts.translatable(
+                    "confluxmap.screen.client_world.retry_failed"
                 ).getString(),
                 47,
                 0xFFFF7777

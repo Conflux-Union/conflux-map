@@ -445,9 +445,16 @@ public final class ClientWorldProfileResolver {
         final String command,
         final boolean rebind
     ) {
-        final String normalized = ClientWorldCommand.normalizeConfigured(command);
-        final List<ClientWorldProfile> profiles = registry.mutableProfiles(serverId);
-        final ClientWorldProfile target = requireProfile(profiles, profileId);
+        final String normalized;
+        final List<ClientWorldProfile> profiles;
+        final ClientWorldProfile target;
+        try {
+            normalized = ClientWorldCommand.normalizeConfigured(command);
+            profiles = registry.mutableProfiles(serverId);
+            target = requireProfile(profiles, profileId);
+        } catch (final RuntimeException error) {
+            return CommandBindingResult.failed(null, MutationResult.failure(errorMessage(error)));
+        }
         final ClientWorldProfile owner = profiles.stream()
             .filter(profile -> profile.hasSwitchCommand(normalized))
             .findFirst()
@@ -477,14 +484,18 @@ public final class ClientWorldProfileResolver {
     }
 
     public MutationResult removeSwitchCommand(final String serverId, final String profileId, final String command) {
-        final String normalized = ClientWorldCommand.normalizeConfigured(command);
-        if (!requireProfile(serverId, profileId).hasSwitchCommand(normalized)) {
-            return MutationResult.success();
+        try {
+            final String normalized = ClientWorldCommand.normalizeConfigured(command);
+            if (!requireProfile(serverId, profileId).hasSwitchCommand(normalized)) {
+                return MutationResult.success();
+            }
+            return mutate(copy -> {
+                requireProfile(copy.mutableProfiles(serverId), profileId).removeSwitchCommand(normalized);
+                return profileId;
+            }).result();
+        } catch (final RuntimeException error) {
+            return MutationResult.failure(errorMessage(error));
         }
-        return mutate(copy -> {
-            requireProfile(copy.mutableProfiles(serverId), profileId).removeSwitchCommand(normalized);
-            return profileId;
-        }).result();
     }
 
     public ClientWorldResolution createAndSelect(
@@ -601,7 +612,11 @@ public final class ClientWorldProfileResolver {
 
     /** Removes only registry metadata. Callers must relocate the profile's local data first. */
     public MutationResult delete(final String serverId, final String profileId) {
-        requireProfile(serverId, profileId);
+        try {
+            requireProfile(serverId, profileId);
+        } catch (final RuntimeException error) {
+            return MutationResult.failure(errorMessage(error));
+        }
         return mutate(copy -> {
             final boolean removed = copy.mutableProfiles(serverId).removeIf(profile -> profile.id().equals(profileId));
             if (!removed) {
@@ -1647,18 +1662,26 @@ public final class ClientWorldProfileResolver {
             return new Mutation<>(null, MutationResult.failure(registry.loadFailure()));
         }
         final ClientWorldProfileRegistry candidate = registry.copy();
-        final T value = change.apply(candidate);
+        final T value;
         final ClientWorldProfileIo.SaveResult persisted;
         try {
+            value = change.apply(candidate);
             persisted = persistence.save(candidate);
         } catch (final RuntimeException error) {
-            return new Mutation<>(null, MutationResult.failure(error.toString()));
+            return new Mutation<>(null, MutationResult.failure(errorMessage(error)));
         }
         if (persisted == null || !persisted.saved()) {
             return new Mutation<>(null, MutationResult.failure(persisted == null ? null : persisted.error()));
         }
         registry.replaceWith(candidate);
         return new Mutation<>(value, MutationResult.success());
+    }
+
+    private static String errorMessage(final RuntimeException error) {
+        final String message = error.getMessage();
+        return message == null || message.isBlank()
+            ? error.getClass().getSimpleName()
+            : message;
     }
 
     private record Mutation<T>(T value, MutationResult result) {

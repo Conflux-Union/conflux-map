@@ -890,8 +890,11 @@ public final class ClientMultiworldService {
         if (currentProfile().map(ClientWorldProfile::id).filter(profileId::equals).isPresent()) {
             return ClientWorldProfileDeletionService.DeletionResult.failure("current_profile");
         }
-        final ClientWorldProfile profile = profile(profileId)
-            .orElseThrow(() -> new IllegalArgumentException("unknown client world profile " + profileId));
+        final ClientWorldProfile profile = profile(profileId).orElse(null);
+        if (profile == null) {
+            persistenceError = "unknown client world profile " + profileId;
+            return ClientWorldProfileDeletionService.DeletionResult.failure(persistenceError);
+        }
         profileFlushBarrier.accept(new WorldIdentity(profile.storageServerId(serverId), profile.storageId()));
         final ClientWorldProfileDeletionService.Transaction transaction = deletionService.moveToRecovery(serverId, profile);
         if (!transaction.prepared()) {

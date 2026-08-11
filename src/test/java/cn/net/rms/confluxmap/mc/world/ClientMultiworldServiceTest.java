@@ -553,6 +553,30 @@ class ClientMultiworldServiceTest {
     }
 
     @Test
+    void invalidProfileManagementInputReturnsVisibleFailuresInsteadOfThrowing() {
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            new ClientWorldProfileRegistry(), ids()
+        );
+        final ClientMultiworldService service = service(resolver);
+        service.onGameJoin(11L);
+        final ClientWorldProfile profile = service.resolveProfile(ADDRESS).profile();
+
+        assertFalse(service.createAndSelect("   ").applied());
+        assertTrue(service.persistenceError().contains("name"));
+        assertFalse(service.rename(profile.id(), "   ").applied());
+        assertTrue(service.persistenceError().contains("name"));
+        final ClientWorldProfileResolver.CommandBindingResult command = service.addSwitchCommand(
+            profile.id(), "not a command", false
+        );
+        assertEquals(ClientWorldProfileResolver.CommandBindingResult.Status.PERSISTENCE_FAILED, command.status());
+        assertTrue(command.mutation().error().contains("command"));
+        assertFalse(service.removeSwitchCommand("missing-profile", "/server hub").applied());
+        assertTrue(service.persistenceError().contains("unknown client world profile"));
+        assertFalse(service.delete("missing-profile").deleted());
+        assertTrue(service.persistenceError().contains("unknown client world profile"));
+    }
+
+    @Test
     void submittedSwitchCommandActivatesItsProfileWithoutChangingTheTextOrLearningOldSignals() {
         final ClientWorldProfileRegistry registry = new ClientWorldProfileRegistry();
         final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(registry, ids());
