@@ -245,7 +245,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
             panelWidth - (buttonWidth + GAP) * 3, FUNCTION_ACTION_HEIGHT,
             Texts.translatable(
                 profile.id().equals(pendingClearProfileId)
-                    ? "confluxmap.screen.client_world.forget_confirm"
+                    ? "confluxmap.screen.client_world.forget_confirm_maps_kept"
                     : "confluxmap.screen.client_world.forget"
             ),
             ignored -> forget(profile.id())
@@ -289,7 +289,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
             Texts.translatable(
                 profile == null ? "confluxmap.screen.client_world.delete" :
                     profile.id().equals(pendingDeleteProfileId)
-                        ? "confluxmap.screen.client_world.delete_confirm"
+                        ? "confluxmap.screen.client_world.delete_confirm_recoverable"
                         : "confluxmap.screen.client_world.delete"
             ).formatted(Formatting.RED),
             ignored -> {
