@@ -57,8 +57,8 @@ final class ClientWorldCommandScreen extends ConfluxScreen {
             MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
             return;
         }
-        final int rowWidth = Math.min(420, Math.max(250, width - 24));
-        final int rowX = width / 2 - rowWidth / 2;
+        final int rowWidth = Math.max(1, Math.min(420, width - 24));
+        final int rowX = Math.max(8, width / 2 - rowWidth / 2);
         commandField = new TextFieldWidget(
             this.textRenderer, rowX, 54, rowWidth - REMOVE_WIDTH - GAP, 20,
             Texts.translatable("confluxmap.screen.client_world.command")
@@ -166,7 +166,12 @@ final class ClientWorldCommandScreen extends ConfluxScreen {
     public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
     //#endif
         final ClientWorldProfile profile = worlds.profile(profileId).orElse(null);
-        if (profile != null && amount != 0 && profile.switchCommands().size() > visibleRows()) {
+        final int rowWidth = Math.max(1, Math.min(420, width - 24));
+        final int rowX = Math.max(8, width / 2 - rowWidth / 2);
+        final boolean withinCommandList = mouseX >= rowX && mouseX <= rowX + rowWidth
+            && mouseY >= LIST_TOP && mouseY < LIST_TOP + visibleRows() * ROW_HEIGHT;
+        if (profile != null && withinCommandList && amount != 0
+            && profile.switchCommands().size() > visibleRows()) {
             scrollOffset -= (int) Math.signum(amount);
             rebuild();
             return true;
