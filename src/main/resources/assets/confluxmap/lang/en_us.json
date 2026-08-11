@@ -550,7 +550,6 @@
   "confluxmap.value.zoom_1": "1x",
   "confluxmap.value.zoom_2": "2x",
   "confluxmap.value.zoom_4": "4x",
-  "confluxmap.map.client_world": "World Profile: %s",
   "confluxmap.screen.map.client_world.open": "Manage World Profiles",
   "confluxmap.screen.client_world.title": "World Profiles",
   "confluxmap.screen.client_world.prompt": "Choose or manage the map data used for this server address",

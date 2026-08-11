@@ -362,7 +362,6 @@
   "confluxmap.value.zoom_1": "1 倍",
   "confluxmap.value.zoom_2": "2 倍",
   "confluxmap.value.zoom_4": "4 倍",
-  "confluxmap.map.client_world": "子世界：%s",
   "confluxmap.screen.map.client_world.open": "管理子世界档案",
   "confluxmap.screen.client_world.title": "子世界",
   "confluxmap.screen.client_world.prompt": "选择或管理此服务器地址对应的子世界",
