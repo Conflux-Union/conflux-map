@@ -316,7 +316,7 @@ class ClientWorldProfileResolverTest {
     }
 
     @Test
-    void uniqueSeedWithVisitContextCanRestoreProvisionallyWithoutTerrain() {
+    void uniqueSeedWithVisitContextBelowStrictThresholdRequiresManualSelection() {
         final ClientWorldProfileResolver resolver = resolver();
         final Map<String, String> signals = Map.of(
             "brand", "shared",
@@ -334,9 +334,9 @@ class ClientWorldProfileResolverTest {
 
         final ClientWorldResolution result = resolver.resolve(SERVER, current);
 
-        assertEquals(ClientWorldResolution.State.RESOLVED, result.state());
-        assertTrue(result.provisional());
-        assertEquals(profile.id(), result.profile().id());
+        assertEquals(ClientWorldResolution.State.AMBIGUOUS, result.state());
+        assertEquals(profile.id(), result.candidates().get(0).profileId());
+        assertEquals(95, result.candidates().get(0).requiredConfidencePercent());
     }
 
     @Test
@@ -440,7 +440,7 @@ class ClientWorldProfileResolverTest {
         final ClientWorldResolution result = resolver.resolve(SERVER, current);
 
         assertEquals(ClientWorldResolution.State.AMBIGUOUS, result.state());
-        assertEquals(90, result.candidates().get(0).requiredConfidencePercent());
+        assertEquals(95, result.candidates().get(0).requiredConfidencePercent());
         assertTrue(resolver.profiles(SERVER).get(0).visit("minecraft_overworld")
             .terrainFingerprint().sameCenter(savedCenter));
     }
@@ -538,7 +538,7 @@ class ClientWorldProfileResolverTest {
         final ClientWorldResolution result = resolver.resolve(SERVER, current);
 
         assertEquals(ClientWorldResolution.State.AMBIGUOUS, result.state());
-        assertEquals(90, result.candidates().get(0).requiredConfidencePercent());
+        assertEquals(95, result.candidates().get(0).requiredConfidencePercent());
     }
 
     @Test
@@ -560,7 +560,7 @@ class ClientWorldProfileResolverTest {
         );
 
         assertEquals(ClientWorldResolution.State.AMBIGUOUS, provisional.state());
-        assertEquals(90, provisional.candidates().get(0).requiredConfidencePercent());
+        assertEquals(95, provisional.candidates().get(0).requiredConfidencePercent());
         assertEquals("CREATIVE", profile.visit("minecraft_overworld").gameMode());
 
         final ClientWorldResolution confirmed = resolver.select(
@@ -594,7 +594,7 @@ class ClientWorldProfileResolverTest {
         final ClientWorldResolution result = resolver.resolve(SERVER, current);
 
         assertEquals(ClientWorldResolution.State.AMBIGUOUS, result.state());
-        assertEquals(90, result.candidates().get(0).requiredConfidencePercent());
+        assertEquals(95, result.candidates().get(0).requiredConfidencePercent());
     }
 
     @Test
@@ -982,11 +982,11 @@ class ClientWorldProfileResolverTest {
         assertEquals(ClientWorldResolution.State.AMBIGUOUS, result.state());
         final ClientWorldResolution.Candidate candidate = result.candidates().get(0);
         assertTrue(candidate.blockers().contains("single_profile_far_position"));
-        assertEquals(90, candidate.requiredConfidencePercent());
+        assertEquals(95, candidate.requiredConfidencePercent());
     }
 
     @Test
-    void singleProfileTerrainCandidateBelowNinetyPercentRequiresManualConfirmation() {
+    void singleProfileTerrainCandidateBelowNinetyFivePercentRequiresManualConfirmation() {
         final ClientWorldProfileResolver resolver = resolver();
         final Map<String, String> signals = Map.of("brand", "stable", "commands", "stable");
         resolver.resolve(
@@ -1008,8 +1008,8 @@ class ClientWorldProfileResolverTest {
         final ClientWorldResolution.Candidate candidate = result.candidates().get(0);
         assertTrue(candidate.factors().stream().anyMatch(factor -> factor.key().equals("terrain")
             && factor.availability() == ClientWorldResolution.FactorAvailability.AVAILABLE));
-        assertTrue(candidate.confidencePercent() < 90);
-        assertEquals(90, candidate.requiredConfidencePercent());
+        assertTrue(candidate.confidencePercent() < 95);
+        assertEquals(95, candidate.requiredConfidencePercent());
         assertTrue(candidate.blockers().contains("confidence_below_threshold"));
     }
 

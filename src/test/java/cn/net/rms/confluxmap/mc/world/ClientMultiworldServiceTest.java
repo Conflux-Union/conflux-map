@@ -727,7 +727,7 @@ class ClientMultiworldServiceTest {
     }
 
     @Test
-    void readOnlySingleProfileResolutionBelowNinetyPercentDoesNotPersistAProfileBinding() {
+    void readOnlySingleProfileResolutionBelowNinetyFivePercentDoesNotPersistAProfileBinding() {
         final AtomicLong saves = new AtomicLong();
         final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
             new ClientWorldProfileRegistry(), ids(), ignored -> {
@@ -746,7 +746,7 @@ class ClientMultiworldServiceTest {
 
         assertEquals(ClientWorldResolution.State.AMBIGUOUS, result.state());
         assertEquals(profile.id(), result.candidates().get(0).profileId());
-        assertEquals(90, result.candidates().get(0).requiredConfidencePercent());
+        assertEquals(95, result.candidates().get(0).requiredConfidencePercent());
         assertEquals(savesBeforeReadOnlyResolution, saves.get());
     }
 

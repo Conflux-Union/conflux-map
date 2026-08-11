@@ -19,7 +19,7 @@ public final class ClientWorldProfileResolver {
     private static final double QUEUE_TWO_MIN_CONFIDENCE = 0.70D;
     private static final double QUEUE_THREE_MIN_CONFIDENCE = 0.80D;
     private static final double QUEUE_THREE_ERROR_MARGIN = 0.15D;
-    private static final double SINGLE_PROFILE_MIN_CONFIDENCE = 0.90D;
+    private static final double SINGLE_PROFILE_MIN_CONFIDENCE = 0.95D;
     private static final double AUXILIARY_WEIGHT = 0.75D;
     private static final double TERRAIN_WEIGHT = 0.25D;
     private static final double TRAJECTORY_WEIGHT = 0.60D;
