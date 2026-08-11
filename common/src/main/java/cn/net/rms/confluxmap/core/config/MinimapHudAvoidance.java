@@ -41,7 +41,7 @@ public final class MinimapHudAvoidance {
             throw new IllegalArgumentException("configuredLayout must not be null");
         }
         final int safeInformationHeight = Math.max(0, informationHeight);
-        if (!intersectsAny(bounds(configuredLayout, screenHeight, safeInformationHeight), obstacles)) {
+        if (!intersectsAny(visualBounds(configuredLayout, screenHeight, safeInformationHeight), obstacles)) {
             return configuredLayout;
         }
 
@@ -161,7 +161,7 @@ public final class MinimapHudAvoidance {
             return current;
         }
         final MinimapPlacement.Layout layout = new MinimapPlacement.Layout(x, y, configured.size());
-        if (intersectsAny(bounds(layout, screenHeight, informationHeight), obstacles)) {
+        if (intersectsAny(visualBounds(layout, screenHeight, informationHeight), obstacles)) {
             return current;
         }
         final long deltaX = (long) x - configured.x();
@@ -189,20 +189,25 @@ public final class MinimapHudAvoidance {
         return false;
     }
 
-    private static Bounds bounds(
+    /** Returns the complete visible footprint, including information text below or above the map. */
+    public static Bounds visualBounds(
         final MinimapPlacement.Layout layout,
         final int screenHeight,
         final int informationHeight
     ) {
-        if (informationHeight == 0) {
+        if (layout == null) {
+            throw new IllegalArgumentException("layout must not be null");
+        }
+        final int safeInformationHeight = Math.max(0, informationHeight);
+        if (safeInformationHeight == 0) {
             return new Bounds(layout.x(), layout.y(), layout.x() + layout.size(), layout.y() + layout.size());
         }
-        final int belowBottom = layout.y() + layout.size() + informationHeight;
+        final int belowBottom = layout.y() + layout.size() + safeInformationHeight;
         if (belowBottom <= screenHeight) {
             return new Bounds(layout.x(), layout.y(), layout.x() + layout.size(), belowBottom);
         }
         return new Bounds(
-            layout.x(), Math.max(0, layout.y() - informationHeight),
+            layout.x(), Math.max(0, layout.y() - safeInformationHeight),
             layout.x() + layout.size(), layout.y() + layout.size()
         );
     }

@@ -66,4 +66,14 @@ class MinimapHudAvoidanceTest {
             )
         );
     }
+
+    @Test
+    void reportsInformationAboveAMinimapNearTheBottomEdge() {
+        final MinimapPlacement.Layout minimap = new MinimapPlacement.Layout(508, 228, 128);
+
+        assertEquals(
+            new MinimapHudAvoidance.Bounds(508, 195, 636, 356),
+            MinimapHudAvoidance.visualBounds(minimap, 360, 33)
+        );
+    }
 }

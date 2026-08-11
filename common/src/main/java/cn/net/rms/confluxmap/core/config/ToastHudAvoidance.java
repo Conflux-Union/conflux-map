@@ -15,6 +15,16 @@ public final class ToastHudAvoidance {
         final int screenHeight,
         final MinimapPlacement.Layout minimap
     ) {
+        return verticalShift(screenWidth, screenHeight, minimap, 0);
+    }
+
+    /** Returns the translation below the complete minimap footprint, including information text. */
+    public static int verticalShift(
+        final int screenWidth,
+        final int screenHeight,
+        final MinimapPlacement.Layout minimap,
+        final int informationHeight
+    ) {
         if (minimap == null || screenWidth <= 0 || screenHeight <= 0) {
             return 0;
         }
@@ -23,7 +33,10 @@ public final class ToastHudAvoidance {
         if (minimapRight <= toastLeft || minimap.x() >= screenWidth) {
             return 0;
         }
-        final long desiredTop = (long) minimap.y() + minimap.size() + GAP;
+        final MinimapHudAvoidance.Bounds footprint = MinimapHudAvoidance.visualBounds(
+            minimap, screenHeight, informationHeight
+        );
+        final long desiredTop = (long) footprint.bottom() + GAP;
         if (desiredTop < 0 || desiredTop + TOAST_HEIGHT > screenHeight) {
             return 0;
         }
