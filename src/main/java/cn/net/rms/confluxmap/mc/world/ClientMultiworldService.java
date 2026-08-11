@@ -518,10 +518,7 @@ public final class ClientMultiworldService {
             trajectoryCheckpointLoaded = false;
             lastTrajectoryCheckpointTick = Long.MIN_VALUE;
             restoreTrajectoryCheckpoint();
-            deletionService.recoverPendingTransactions(
-                serverId,
-                resolver.profiles(serverId).stream().map(ClientWorldProfile::id).collect(java.util.stream.Collectors.toSet())
-            );
+            recoverPendingProfileDeletions();
             clearProfileLock();
             resolution = ClientWorldResolution.collecting();
             detectionState = ClientWorldDetectionState.PROBING;
@@ -693,6 +690,7 @@ public final class ClientMultiworldService {
             persistenceError = result.error();
             return result;
         }
+        recoverPendingProfileDeletions();
         persistenceError = null;
         clearCommandLock();
         clearProfileLock();
@@ -1503,6 +1501,19 @@ public final class ClientMultiworldService {
     private void clearProfileLock() {
         lockedProfileId = null;
         lockedSeedHash = OptionalLong.empty();
+    }
+
+    /** Restores interrupted deletions after either a connection or a fail-closed registry reload. */
+    private void recoverPendingProfileDeletions() {
+        // An unavailable registry cannot distinguish a live profile from a deleted one. Skipping
+        // recovery here preserves the journal until the fail-closed reload publishes that answer.
+        if (serverId == null || !resolver.available()) {
+            return;
+        }
+        deletionService.recoverPendingTransactions(
+            serverId,
+            resolver.profiles(serverId).stream().map(ClientWorldProfile::id).collect(java.util.stream.Collectors.toSet())
+        );
     }
 
     private void clearCommandLock() {

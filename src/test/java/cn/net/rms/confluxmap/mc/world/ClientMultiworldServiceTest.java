@@ -11,6 +11,7 @@ import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldObservation;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldPolicy;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldDetectionState;
+import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfileDeletionService;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldPosition;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfile;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfileIo;
@@ -507,6 +508,48 @@ class ClientMultiworldServiceTest {
         Files.writeString(registryFile, "{\"schemaVersion\":2,\"servers\":{}}");
         assertTrue(service.retryProfileRegistryLoad().applied());
         assertTrue(service.profileRegistryAvailable());
+    }
+
+    @Test
+    void registryReloadRecoversInterruptedDeletionForTheExistingConnection() throws Exception {
+        final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();
+        final ClientWorldProfileRegistry restoredRegistry = new ClientWorldProfileRegistry();
+        final ClientWorldProfileResolver restoredResolver = new ClientWorldProfileResolver(restoredRegistry, ids());
+        final ClientWorldProfile profile = restoredResolver.resolve(
+            serverId, observation(11L, signals("recovery"))
+        ).profile();
+        final Path mapRoot = tempDir.resolve("cache");
+        final Path mapData = mapRoot.resolve(profile.storageServerId(serverId)).resolve(profile.storageId());
+        Files.createDirectories(mapData);
+        final Path marker = mapData.resolve("marker.dat");
+        Files.writeString(marker, "recover me");
+
+        final ClientWorldProfileDeletionService deletion = new ClientWorldProfileDeletionService(
+            mapRoot,
+            tempDir.resolve("waypoints"),
+            tempDir.resolve("annotations"),
+            tempDir.resolve("recovery").resolve("client-worlds")
+        );
+        final ClientWorldProfileDeletionService.Transaction transaction = deletion.moveToRecovery(
+            serverId, profile
+        );
+        assertTrue(transaction.prepared());
+        assertFalse(Files.exists(marker));
+
+        final Path registryFile = tempDir.resolve("reload-client-worlds.json");
+        Files.writeString(registryFile, "{not json");
+        final ClientWorldProfileIo io = new ClientWorldProfileIo(
+            registryFile, LogManager.getLogger("ClientMultiworldServiceTest")
+        );
+        final ClientMultiworldService service = service(new ClientWorldProfileResolver(io.load(), ids()));
+        service.onGameJoin(11L);
+        service.resolveProfile(ADDRESS);
+        service.bindProfileRegistryLoader(() -> restoredRegistry);
+
+        assertFalse(service.profileRegistryAvailable());
+        assertTrue(service.retryProfileRegistryLoad().applied());
+        assertEquals(profile.id(), service.profiles().get(0).id());
+        assertEquals("recover me", Files.readString(marker));
     }
 
     @Test

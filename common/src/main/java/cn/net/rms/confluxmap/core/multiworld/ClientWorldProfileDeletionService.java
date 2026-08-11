@@ -112,7 +112,13 @@ public final class ClientWorldProfileDeletionService {
                     && path.getFileName().toString().equals("transaction.properties"))
                 .forEach(journal -> recoverJournal(journal, liveProfileIds));
         } catch (final IOException | RuntimeException error) {
-            // Recovery is best effort; leaving the journal is safer than deleting data.
+            // Recovery is best effort; leaving the journal is safer than deleting data. The
+            // caller must still be able to diagnose why a recovery remains pending.
+            System.getLogger(ClientWorldProfileDeletionService.class.getName()).log(
+                System.Logger.Level.WARNING,
+                "Client-world deletion recovery failed for server " + serverId,
+                error
+            );
         }
     }
 
