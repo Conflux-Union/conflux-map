@@ -289,7 +289,7 @@ public final class TileService {
         );
     }
 
-    /** Keeps prediction below both real sources while allowing newer synchronized chunks through. */
+    /** Keeps prediction below available real sources while allowing newer synchronized chunks through. */
     public void maskPredictedPixels(
         final TileKey realKey,
         final int[] predictedPixels,
@@ -342,7 +342,7 @@ public final class TileService {
                 final boolean locallyAuthoritative = localViewport != null
                     && localViewport.contains(chunkX, chunkZ);
                 final boolean localPresent = store.hasRealChunk(chunkX, chunkZ);
-                if (!locallyAuthoritative && !localPresent) {
+                if (!localPresent) {
                     continue;
                 }
                 final long localRevision = localPresent
