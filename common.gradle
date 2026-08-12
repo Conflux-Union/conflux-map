@@ -25,8 +25,25 @@ repositories {
         content { includeGroup 'curse.maven' }
     }
 }
-sourceSets {
-    gametest
+if (mcVersion >= 12104) {
+    // Fabric Loom's Fabric API DSL owns the gametest source set for client GameTests.  It also
+    // creates the runClientGameTest task; declaring a custom run with loom.runs only creates a
+    // run configuration and is not enough to register that task.
+    fabricApi {
+        configureTests {
+            createSourceSet = true
+            modId = 'confluxmap-gametest'
+            enableGameTests = false
+            enableClientGameTests = true
+            eula = true
+            clearRunDirectory = true
+            username = 'ConfluxGameTest'
+        }
+    }
+} else {
+    sourceSets {
+        gametest
+    }
 }
 // Loom wires Minecraft into main's and test's classpath configurations but not into a source set
 // the build declares itself, so gametest has to inherit them explicitly. It has to happen through
@@ -118,6 +135,15 @@ loom {
             // Keep manual smoke tests isolated from the developer's normal run directory.
             if (project.hasProperty('clientRunDir')) {
                 runDir project.property('clientRunDir').toString()
+            }
+        }
+        if (mcVersion >= 12104) {
+            clientGameTest {
+                // Keep the CI run directory stable for cleanup and artifact collection.
+                runDir "build/client-gametest"
+                vmArg "-Dfabric.client.gametest.disableNetworkSynchronizer=true"
+                vmArg "-Xms256m"
+                vmArg "-Xmx1G"
             }
         }
         gametest {
