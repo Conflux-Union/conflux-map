@@ -71,6 +71,12 @@ toggle. Every living entity gets a portrait rendered live from its own model, so
 mobs need no bundled art. Other players show on the minimap only while you hold the player-list
 key (Tab by default); the fullscreen map always shows them.
 
+**Web map.** An optional browser map served by the server companion, no game client required.
+Shows the same explored tiles and terrain prediction, shared waypoints, and, if the operator turns
+it on, player positions with names, plus dimension and language switches. Off by default and
+loopback-only until an operator opens it up, see [Server companion](#server-companion). Players
+can hide themselves from it with `/confluxmap webmap hide` (`show` to opt back in).
+
 **Export and updates.** Export any map area to a PNG at a chosen resolution, with a size estimate
 and a cancellable background export. An optional startup check flags new releases in chat.
 
@@ -128,9 +134,10 @@ Everything the companion shares is controlled in `config/confluxmap/server.json`
 - `allowEntityRadar` lets clients scan and render the entity radar.
 - `shareCorrections` sends real-terrain corrections over the predicted map.
 - `shareWaypoints` turns on the shared waypoint list.
-- `webMap.*` runs an optional built-in browser map. It's off by default and bound to loopback
-  only unless explicitly opened up; put it behind an HTTPS reverse proxy that preserves the
-  original `Host` header if you expose it beyond your own machine.
+- `webMap.*` runs the browser map described in [Features](#features): default port `8123`,
+  bound to `127.0.0.1` until explicitly opened up, and `sharePlayers` gates whether it includes
+  player positions at all. Put it behind an HTTPS reverse proxy that preserves the original
+  `Host` header if you expose it beyond your own machine.
 
 None of this is anti-cheat: a modified client can predict terrain or scan entities on its own
 regardless of these settings. They're privacy and bandwidth choices, not security ones.
