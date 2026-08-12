@@ -70,15 +70,11 @@ areas:
       - common/src/main/java/cn/net/rms/confluxmap/nativepredict/**
       - src/main/**
       - versions/**
-    assignees:
-      - Trirrin
   - label: area/server
     paths:
       - common/src/main/java/cn/net/rms/confluxmap/server/**
       - src/main/java/cn/net/rms/confluxmap/server/**
       - paper/**
-    assignees:
-      - Trirrin
 
 autonomy:
   automatic:
@@ -89,6 +85,12 @@ autonomy:
     wontfix: false
     assignment: true
   minimumConfidence: 0.92
+  duplicateMinimumConfidence: 0.88
+  assignment:
+    historyDepth: 30
+    minimumCommits: 3
+    minimumShare: 0.6
+    minimumLead: 2
   trustedAssociations:
     - OWNER
     - MEMBER
