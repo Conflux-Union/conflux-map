@@ -17,6 +17,7 @@ concurrency:
 jobs:
   label-issue:
     if: >-
+      vars.CONFLUX_AGENT_ACTIVE != 'true' &&
       github.event.issue.state == 'open' &&
       !github.event.issue.pull_request &&
       (github.event_name == 'issues' ||

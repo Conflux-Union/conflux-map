@@ -1,0 +1,103 @@
+version: 1
+enabled: true
+languages:
+  - zh-CN
+  - en
+
+repository:
+  description: >-
+    Conflux Map is a Fabric client-side minimap and world-map mod with optional
+    Fabric and Paper server companions and a browser web map.
+  defaultBranch: master
+
+search:
+  repositories: []
+  maxCandidates: 10
+  maxDeepComparisons: 3
+
+metadata:
+  issueTypes:
+    bug:
+      label: bug
+      fieldValue: Bug
+      canonical: true
+      titlePrefix: "[Bug]"
+    feature:
+      label: feature
+      fieldValue: Feature
+      canonical: true
+      titlePrefix: "[Feature]"
+    enhancement:
+      label: enhancement
+      fieldValue: Task
+      canonical: true
+      titlePrefix: "[Improvement]"
+    documentation:
+      label: documentation
+      fieldValue: Task
+      titlePrefix: "[Documentation]"
+    question:
+      label: question
+      fieldValue: Task
+      titlePrefix: "[Question]"
+  priorities:
+    P0:
+      label: P0
+      fieldValue: Urgent
+      canonical: true
+    P1:
+      label: P1
+      fieldValue: High
+      canonical: true
+    P2:
+      label: P2
+      fieldValue: Medium
+      canonical: true
+    P3:
+      label: P3
+      fieldValue: Low
+      canonical: true
+    P4:
+      label: P4
+      fieldValue: Low
+  priorityFieldId: 33061222
+
+areas:
+  - label: area/client
+    paths:
+      - common/src/main/java/cn/net/rms/confluxmap/core/**
+      - common/src/main/java/cn/net/rms/confluxmap/bridge/**
+      - common/src/main/java/cn/net/rms/confluxmap/nativepredict/**
+      - src/main/**
+      - versions/**
+    assignees:
+      - Trirrin
+  - label: area/server
+    paths:
+      - common/src/main/java/cn/net/rms/confluxmap/server/**
+      - src/main/java/cn/net/rms/confluxmap/server/**
+      - paper/**
+    assignees:
+      - Trirrin
+
+autonomy:
+  automatic:
+    metadata: true
+    conversation: true
+    closingLinks: true
+    duplicate: true
+    wontfix: false
+    assignment: true
+  minimumConfidence: 0.92
+  trustedAssociations:
+    - OWNER
+    - MEMBER
+    - COLLABORATOR
+
+budgets:
+  maxModelCallsPerEvent: 2
+  maxInputCharacters: 30000
+  maxOutputTokens: 2500
+
+disabledLabels:
+  - agent/disabled
