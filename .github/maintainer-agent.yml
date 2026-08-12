@@ -9,6 +9,16 @@ repository:
     Conflux Map is a Fabric client-side minimap and world-map mod with optional
     Fabric and Paper server companions and a browser web map.
   defaultBranch: master
+  maintainers:
+    - Chonghua-05
+    - Ftimever
+    - husbvt
+    - Jog-Ming
+    - mgHurryo
+    - Sylph-XiErF
+    - Tri-bbie
+    - Trirrin
+    - VY-L
 
 search:
   repositories: []
