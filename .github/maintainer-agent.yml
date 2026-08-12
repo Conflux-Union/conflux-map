@@ -96,7 +96,7 @@ autonomy:
     - COLLABORATOR
 
 budgets:
-  maxModelCallsPerEvent: 4
+  maxModelCallsPerEvent: 30
   maxToolCallsPerEvent: 8
   maxToolResultCharacters: 12000
   maxInputCharacters: 30000
