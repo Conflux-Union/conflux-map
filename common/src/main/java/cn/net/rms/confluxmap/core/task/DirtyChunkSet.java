@@ -34,10 +34,27 @@ public final class DirtyChunkSet {
      * ({@code centerChunkX}, {@code centerChunkZ}) first.
      */
     public List<long[]> drainNearest(final int budget, final int centerChunkX, final int centerChunkZ) {
+        return drainNearestMatching(budget, centerChunkX, centerChunkZ, (chunkX, chunkZ) -> true);
+    }
+
+    /**
+     * Remove and return up to {@code budget} eligible chunks, nearest to the player first.
+     * Ineligible entries remain dirty. This matters for client capture: a viewport seed may name
+     * chunks that the server has not delivered yet, and removing those coordinates would turn a
+     * temporary loading gap into a permanent hole in the map.
+     */
+    public List<long[]> drainNearestMatching(
+        final int budget,
+        final int centerChunkX,
+        final int centerChunkZ,
+        final ChunkEligibility eligibility
+    ) {
         if (dirty.isEmpty() || budget <= 0) {
             return List.of();
         }
-        final List<Long> keys = new ArrayList<>(dirty);
+        final List<Long> keys = dirty.stream()
+            .filter(key -> eligibility.test((int) (key >> 32), (int) (long) key))
+            .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
         keys.sort((a, b) -> Long.compare(
             distanceSq(a, centerChunkX, centerChunkZ),
             distanceSq(b, centerChunkX, centerChunkZ)
@@ -50,6 +67,11 @@ public final class DirtyChunkSet {
             result.add(new long[]{key >> 32, (int) key});
         }
         return result;
+    }
+
+    @FunctionalInterface
+    public interface ChunkEligibility {
+        boolean test(int chunkX, int chunkZ);
     }
 
     private static long distanceSq(final long key, final int centerX, final int centerZ) {

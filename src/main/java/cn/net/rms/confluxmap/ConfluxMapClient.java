@@ -235,9 +235,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
         layerSelector = new LayerSelector(client, config);
 
         chunkCapture = new ChunkCaptureService(
-            client, config, mapWorlds, executors, tileService, predictionTileService,
-            companionSession::serverViewDistance,
-            regionCache, spriteColorSampler, biomeTintResolver, layerSelector
+            client, config, mapWorlds, tileService, regionCache,
+            spriteColorSampler, biomeTintResolver, layerSelector
         );
         clientMultiworldService.bindChunkCapture(chunkCapture);
         radarViewRange = new RadarViewRange();

@@ -584,6 +584,40 @@ class ClientMultiworldServiceTest {
     }
 
     @Test
+    void rapidProxySwitchAfterReturningFromNetherPublishesTheOverworldDeparture() throws Exception {
+        final ClientWorldTrajectoryCheckpointIo checkpoints = checkpointIo();
+        final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();
+        assertTrue(checkpoints.save(serverId, OptionalLong.of(11L), trajectory()).saved());
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            new ClientWorldProfileRegistry(), ids()
+        );
+        final ClientMultiworldService service = service(resolver);
+        service.onGameJoin(11L);
+        service.resolveProfile(ADDRESS);
+
+        service.onBeforeRespawn();
+        service.onRespawn(11L);
+        appendTrajectorySample(service, 24.0D, -40.0D, "minecraft_the_nether", 80L);
+        service.rememberStableVisit();
+        service.onBeforeRespawn();
+        assertEquals("minecraft_the_nether",
+            resolver.profiles(serverId).get(0).lastObservedVisit().dimensionId());
+        assertEquals(new ClientWorldPosition(24, 64, -40),
+            resolver.profiles(serverId).get(0).lastObservedVisit().lastPosition());
+        service.onRespawn(11L);
+        appendTrajectorySample(service, 192.0D, -320.0D, "minecraft_overworld", 140L);
+        service.rememberStableVisit();
+
+        service.onBeforeGameJoin();
+        service.onGameJoin(11L);
+
+        final ClientWorldProfile persisted = resolver.profiles(serverId).get(0);
+        assertEquals("minecraft_overworld", persisted.lastObservedVisit().dimensionId());
+        assertEquals(new ClientWorldPosition(192, 64, -320), persisted.lastObservedVisit().lastPosition());
+        assertTrue(persisted.visit("minecraft_the_nether") != null);
+    }
+
+    @Test
     void stableVisitPersistenceRunsOffTheClientPathAndPublishesAfterTheWrite() {
         final ClientWorldTrajectoryCheckpointIo checkpoints = checkpointIo();
         final String serverId = WorldIdentity.multiplayer(ADDRESS).serverId();

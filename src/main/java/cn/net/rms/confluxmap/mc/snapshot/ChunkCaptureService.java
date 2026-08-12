@@ -12,7 +12,6 @@ import cn.net.rms.confluxmap.core.predict.PredictionTileService;
 import cn.net.rms.confluxmap.core.store.MapWorld;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.DirtyChunkSet;
-import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.util.ChunkViewport;
@@ -34,8 +33,8 @@ import net.minecraft.client.network.ClientPlayerEntity;
  * {@link ChunkCaptureHandler}); each tick, {@link LayerSelector} decides the
  * one active layer (per cave-nether-layers.md §1), and a bounded number of
  * the nearest dirty chunks is snapshotted into that layer on the main thread
- * and merged into the store on a worker thread, which then tells the {@link
- * TileService} which tile(s) need recomposing. Only one layer is captured at
+ * and merged into the store before a session boundary can invalidate it; tile
+ * composition and disk persistence remain asynchronous. Only one layer is captured at
  * a time; when the active layer (or its floor-scan pivot Y) changes, the
  * whole server send-distance square is reseeded into the new layer, the same way a
  * session change reseeds it.
@@ -46,7 +45,6 @@ public final class ChunkCaptureService {
     private final MinecraftClient client;
     private final ConfluxConfig config;
     private final MapWorldService worlds;
-    private final MapExecutors executors;
     private final TileService tiles;
     private final PredictionTileService predictionTiles;
     private final IntSupplier serverViewDistance;
@@ -65,7 +63,6 @@ public final class ChunkCaptureService {
         final MinecraftClient client,
         final ConfluxConfig config,
         final MapWorldService worlds,
-        final MapExecutors executors,
         final TileService tiles,
         final PredictionTileService predictionTiles,
         final IntSupplier serverViewDistance,
@@ -77,7 +74,6 @@ public final class ChunkCaptureService {
         this.client = client;
         this.config = config;
         this.worlds = worlds;
-        this.executors = executors;
         this.tiles = tiles;
         this.predictionTiles = predictionTiles;
         this.serverViewDistance = serverViewDistance;
@@ -124,7 +120,7 @@ public final class ChunkCaptureService {
             for (final ClientMultiworldService.PendingSnapshot pending : buffer.drainPendingSnapshots()) {
                 final ChunkSnapshot snapshot = withSessionToken(pending.snapshot(), session.token());
                 final MapLayer layer = pending.layer();
-                executors.workers().execute(() -> storeSnapshot(snapshot, layer));
+                storeSnapshot(snapshot, layer);
             }
         }
     }
@@ -142,7 +138,7 @@ public final class ChunkCaptureService {
         for (final ClientMultiworldService.PendingSnapshot pending : buffer.drainPendingSnapshots()) {
             final ChunkSnapshot snapshot = withSessionToken(pending.snapshot(), session.token());
             final MapLayer layer = pending.layer();
-            executors.workers().execute(() -> storeSnapshot(snapshot, layer));
+            storeSnapshot(snapshot, layer);
         }
     }
 
@@ -240,10 +236,17 @@ public final class ChunkCaptureService {
 
     /** Marks every chunk in the current view-distance square dirty, so the active layer fills in from scratch. */
     private void reseedViewport(final int centerChunkX, final int centerChunkZ) {
-        final int radius = captureViewDistance() + 1;
+        if (client.world == null) {
+            return;
+        }
+        final int radius = MinecraftAccess.viewDistance(client) + 1;
         for (int dz = -radius; dz <= radius; dz++) {
             for (int dx = -radius; dx <= radius; dx++) {
-                dirtyChunks.mark(centerChunkX + dx, centerChunkZ + dz);
+                final int chunkX = centerChunkX + dx;
+                final int chunkZ = centerChunkZ + dz;
+                if (client.world.getChunkManager().isChunkLoaded(chunkX, chunkZ)) {
+                    dirtyChunks.mark(chunkX, chunkZ);
+                }
             }
         }
     }
@@ -288,12 +291,15 @@ public final class ChunkCaptureService {
             reseedViewport(playerChunkX, playerChunkZ);
         }
 
-        final List<long[]> batch = dirtyChunks.drainNearest(config.snapshotBudgetPerTick, playerChunkX, playerChunkZ);
+        final List<long[]> batch = drainLoadedChunks(playerChunkX, playerChunkZ);
         for (final long[] chunkPos : batch) {
             final ChunkSnapshot snapshot = factory.snapshot((int) chunkPos[0], (int) chunkPos[1], decision.layer(), decision.pivotY(), token);
             if (snapshot != null) {
                 final MapLayer layer = decision.layer();
-                executors.workers().execute(() -> storeSnapshot(snapshot, layer));
+                // The immutable snapshot is already fully sampled. Publish it now, while this
+                // token is current, so a rapid dimension/server switch cannot seal the old map
+                // before a worker gets around to accepting the data.
+                storeSnapshot(snapshot, layer);
             }
         }
         final RegionDiskCache cache = regionCache.current();
@@ -311,9 +317,7 @@ public final class ChunkCaptureService {
         final LayerSelector.Decision decision = layerSelector.tick();
         final int playerChunkX = player.getBlockPos().getX() >> 4;
         final int playerChunkZ = player.getBlockPos().getZ() >> 4;
-        final List<long[]> batch = dirtyChunks.drainNearest(
-            config.snapshotBudgetPerTick, playerChunkX, playerChunkZ
-        );
+        final List<long[]> batch = drainLoadedChunks(playerChunkX, playerChunkZ);
         for (final long[] chunkPos : batch) {
             final ChunkSnapshot snapshot = factory.snapshot(
                 (int) chunkPos[0], (int) chunkPos[1], decision.layer(), decision.pivotY(), 0L
@@ -330,6 +334,18 @@ public final class ChunkCaptureService {
                 }
             }
         }
+    }
+
+    private List<long[]> drainLoadedChunks(final int playerChunkX, final int playerChunkZ) {
+        if (client.world == null) {
+            return List.of();
+        }
+        return dirtyChunks.drainNearestMatching(
+            config.snapshotBudgetPerTick,
+            playerChunkX,
+            playerChunkZ,
+            client.world.getChunkManager()::isChunkLoaded
+        );
     }
 
     private static ChunkSnapshot withSessionToken(final ChunkSnapshot snapshot, final long token) {
