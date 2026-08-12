@@ -49,6 +49,12 @@ public final class WorldStorageMigration {
                 break;
             }
         }
+        // Address aliases are safe to canonicalize, but an address-level multiplayer `world`
+        // namespace may belong to another proxy backend. World-id migration therefore remains
+        // an explicit user operation for multiplayer profiles and companion UUIDs.
+        if (!"local".equals(world.serverId())) {
+            return current;
+        }
         for (final String legacyId : world.legacyStorageIds()) {
             if (Files.exists(current)) {
                 break;

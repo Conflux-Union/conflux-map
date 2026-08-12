@@ -235,7 +235,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
         layerSelector = new LayerSelector(client, config);
 
         chunkCapture = new ChunkCaptureService(
-            client, config, mapWorlds, tileService, regionCache,
+            client, config, mapWorlds, tileService, predictionTileService,
+            companionSession::serverViewDistance, regionCache,
             spriteColorSampler, biomeTintResolver, layerSelector
         );
         clientMultiworldService.bindChunkCapture(chunkCapture);

@@ -146,9 +146,6 @@ public final class WorldSessionTracker {
         }
         singleplayerSaveRoot = null;
         singleplayerIdentity = null;
-        if (clientMultiworld != null && clientMultiworld.migrationInProgress()) {
-            return Optional.empty();
-        }
         final String address = resolveAddress(client);
         if (companion.state() == CompanionSession.State.ACTIVE
             || companion.state() == CompanionSession.State.HELLO_SENT

@@ -47,7 +47,7 @@ final class MapExportDesktopActionsTest {
         actions.openDirectory(output);
 
         assertEquals(output, copied.get());
-        assertEquals(output.getParent(), opened.get());
+        assertEquals(output.toAbsolutePath().getParent(), opened.get());
         assertEquals(MapExportDesktopActions.CopyState.COPIED, actions.copyState());
         assertEquals(MapExportDesktopActions.OpenState.OPENED, actions.openState());
     }

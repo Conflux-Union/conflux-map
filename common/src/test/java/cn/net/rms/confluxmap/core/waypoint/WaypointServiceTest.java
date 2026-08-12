@@ -117,6 +117,9 @@ class WaypointServiceTest {
                 ""
             ));
             service.onSessionChanged(SessionGuard.Session.NONE);
+            // Session rotation deliberately queues its final snapshot instead of blocking the
+            // client thread. Drain the executor before inspecting the durable files.
+            executors.shutdown(1000L);
 
             assertEquals(List.of("Old home"), WaypointIo.load(targetFile, LOGGER).stream()
                 .map(waypoint -> waypoint.name)

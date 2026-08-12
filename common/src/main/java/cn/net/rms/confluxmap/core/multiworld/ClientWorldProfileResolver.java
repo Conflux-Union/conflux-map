@@ -485,7 +485,13 @@ public final class ClientWorldProfileResolver {
             return ClientWorldResolution.ambiguous();
         }
         if (exact.size() == 1) {
-            return resolvedAndLearn(exact.get(0), observation);
+            return resolvedAndLearn(
+                serverId,
+                exact.get(0),
+                observation,
+                List.of(),
+                ClientWorldResolution.ConfirmationSource.AUTOMATIC
+            );
         }
 
         ClientWorldProfile legacy = legacyProfileId == null ? null : profiles.stream()
@@ -505,22 +511,35 @@ public final class ClientWorldProfileResolver {
             }
         }
         if (legacy != null) {
-            legacy.rename(normalized);
-            legacy.bindVelocityServer(normalized);
-            legacy.bind(observation);
-            onChange.run();
-            return ClientWorldResolution.resolved(legacy);
+            final String legacyId = legacy.id();
+            final Mutation<String> mutation = mutate(copy -> {
+                final ClientWorldProfile candidate = requireProfile(
+                    copy.mutableProfiles(serverId), legacyId
+                );
+                candidate.rename(normalized);
+                candidate.bindVelocityServer(normalized);
+                candidate.bind(observation, policy().maxBindingsPerProfile());
+                rememberLastStable(copy, serverId, candidate.id(), observation);
+                return candidate.id();
+            });
+            return resolvedMutation(serverId, mutation);
+        }
+        if (profiles.size() >= policy().maxProfilesPerServer()) {
+            return ClientWorldResolution.persistenceFailed("client world profile limit reached");
         }
         final String storageId = profiles.isEmpty() ? "world" : nextStorageId();
-        final UUID id = ids.get();
-        final ClientWorldProfile profile = new ClientWorldProfile(
-            id.toString(), storageId, normalized
-        );
-        profile.bind(observation);
-        profile.bindVelocityServer(normalized);
-        profiles.add(profile);
-        onChange.run();
-        return ClientWorldResolution.resolved(profile);
+        final Mutation<String> mutation = mutate(copy -> {
+            final List<ClientWorldProfile> candidates = copy.mutableProfiles(serverId);
+            final ClientWorldProfile profile = new ClientWorldProfile(
+                ids.get().toString(), storageId, normalized
+            );
+            profile.bind(observation, policy().maxBindingsPerProfile());
+            profile.bindVelocityServer(normalized);
+            candidates.add(profile);
+            rememberLastStable(copy, serverId, profile.id(), observation);
+            return profile.id();
+        });
+        return resolvedMutation(serverId, mutation);
     }
 
     public ClientWorldResolution select(

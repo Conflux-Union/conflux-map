@@ -359,6 +359,10 @@ public final class ConfluxConfig {
         return Math.max(min, Math.min(max, v));
     }
 
+    private static double clamp(final double value, final double min, final double max) {
+        return Double.isFinite(value) ? Math.max(min, Math.min(max, value)) : min;
+    }
+
     /** Returns a normalized snapshot so live config edits cannot bypass recognition safety caps. */
     public ClientWorldPolicy clientWorldPolicy() {
         return new ClientWorldPolicy(

@@ -17,8 +17,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import net.minecraft.client.MinecraftClient;
 //#if MC>=12109
 //$$ import net.minecraft.client.gui.Click;
@@ -60,8 +58,6 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
     private final KeyBinding openMapKey;
     private final boolean openMapAfterSelection;
     private final ClientMultiworldService worlds;
-    private final ManualSeedService manualSeedService;
-    private final WaypointService waypoints;
     private int scrollOffset;
     private int detailScrollOffset;
     private int detailCount;
@@ -88,13 +84,10 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         final boolean openMapAfterSelection
     ) {
         super(Texts.translatable("confluxmap.screen.client_world.title"));
-        final ConfluxMapClient app = ConfluxMapClient.get();
         this.parent = parent;
         this.openMapKey = openMapKey;
         this.openMapAfterSelection = openMapAfterSelection;
-        this.worlds = app.clientMultiworldService();
-        this.manualSeedService = app.manualSeedService();
-        this.waypoints = app.waypointService();
+        this.worlds = ConfluxMapClient.get().clientMultiworldService();
     }
 
     @Override
@@ -112,9 +105,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         candidateRowDiagnostics.clear();
         final boolean registryAvailable = worlds.profileRegistryAvailable();
         final List<ClientWorldProfile> profiles = worlds.profiles();
-        final boolean authoritative = worlds.companionWorldIdentityAuthoritative();
-        final int authorityRows = authoritative ? 1 : 0;
-        profileCount = profiles.size() + authorityRows;
+        profileCount = profiles.size();
         final int visible = visibleRows();
         scrollOffset = Math.max(0, Math.min(scrollOffset, Math.max(0, profiles.size() - visible)));
         final PanelLayout layout = panelLayout();
@@ -306,78 +297,8 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         }
     }
 
-    private boolean canMigrateLegacyWaypoints(final List<ClientWorldProfile> profiles) {
-        for (final ClientWorldProfile profile : profiles) {
-            final WorldIdentity target = worlds.worldIdentity(profile);
-            if (!"world".equals(target.worldId())
-                && waypoints.hasLegacyMultiplayerWaypoints(target.serverId())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private void assignLegacyWaypoints(final ClientWorldProfile profile) {
-        final WaypointService.LegacyMigrationResult result =
-            waypoints.migrateLegacyMultiplayerWaypoints(worlds.worldIdentity(profile));
-        if (result.status() == WaypointService.LegacyMigrationStatus.APPLIED) {
-            assigningLegacyWaypoints = false;
-            migrationError = false;
-            migrationMessage = Texts.translatable(
-                "confluxmap.screen.client_world.migrate_success",
-                result.migratedWaypoints(),
-                profile.displayName(),
-                result.skippedDuplicates()
-            ).getString();
-        } else {
-            migrationError = true;
-            migrationMessage = Texts.translatable(migrationFailureKey(result.status())).getString();
-        }
-        rebuild();
-    }
-
-    private static String migrationFailureKey(
-        final WaypointService.LegacyMigrationStatus status
-    ) {
-        return switch (status) {
-            case SOURCE_NOT_FOUND -> "confluxmap.screen.client_world.migrate_source_missing";
-            case SOURCE_IS_TARGET -> "confluxmap.screen.client_world.migrate_same_world";
-            case SOURCE_READ_ONLY -> "confluxmap.screen.client_world.migrate_source_read_only";
-            case TARGET_READ_ONLY -> "confluxmap.screen.client_world.migrate_target_read_only";
-            case FAILED -> "confluxmap.screen.client_world.migrate_failed";
-            case APPLIED -> throw new IllegalArgumentException("applied migration is not a failure");
-        };
-    }
-
     @Override
     public void tick() {
-        if (migrationFuture != null && migrationFuture.isDone()) {
-            final CompletableFuture<MapCacheMigration.Result> completed = migrationFuture;
-            migrationFuture = null;
-            migrationConfirm = false;
-            try {
-                final MapCacheMigration.Result result = completed.join();
-                if (result.status() == MapCacheMigration.Status.APPLIED) {
-                    migrationError = false;
-                    migrationMessage = Texts.translatable(
-                        "confluxmap.screen.client_world.merge_success",
-                        result.migratedChunks(), result.copiedRegions(), result.mergedRegions()
-                    ).getString();
-                    selectedMigrationId = null;
-                } else {
-                    migrationError = true;
-                    migrationMessage = Texts.translatable(
-                        cacheMigrationFailureKey(result.status())
-                    ).getString();
-                }
-            } catch (final CompletionException | IllegalStateException error) {
-                migrationError = true;
-                migrationMessage = Texts.translatable(
-                    "confluxmap.screen.client_world.merge_failed"
-                ).getString();
-            }
-            rebuild();
-        }
         if (waitingToOpenMap && ConfluxMapClient.get().sessionGuard().current().active()) {
             waitingToOpenMap = false;
             MinecraftAccess.setScreen(MinecraftClient.getInstance(), new FullscreenMapScreen(openMapKey));
@@ -392,95 +313,6 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
             operationError = worlds.persistenceError();
             rebuild();
         }
-    }
-
-    /** Selects an old client profile as a migration source without switching active map storage. */
-    private void selectMigrationSource(final String profileId) {
-        pendingForgetId = null;
-        migrationConfirm = false;
-        migrationMessage = null;
-        migrationError = false;
-        selectedMigrationId = profileId.equals(selectedMigrationId) ? null : profileId;
-        if (selectedMigrationId != null) {
-            final ClientWorldProfile profile = worlds.profiles().stream()
-                .filter(candidate -> candidate.id().equals(selectedMigrationId))
-                .findFirst()
-                .orElse(null);
-            if (profile != null) {
-                migrationMessage = Texts.translatable(
-                    "confluxmap.screen.client_world.merge_source_selected", profile.displayName()
-                ).getString();
-            }
-        }
-        rebuild();
-    }
-
-    private void requestMerge() {
-        if (selectedMigrationId == null || migrationFuture != null) {
-            return;
-        }
-        if (!migrationConfirm) {
-            migrationConfirm = true;
-            migrationError = false;
-            migrationMessage = Texts.translatable(
-                "confluxmap.screen.client_world.merge_warning"
-            ).getString();
-            rebuild();
-            return;
-        }
-
-        final ClientMultiworldService.ProfileMigrationPreparation preparation =
-            worlds.prepareProfileMigration(selectedMigrationId);
-        if (!preparation.ready()) {
-            migrationConfirm = false;
-            migrationError = true;
-            migrationMessage = Texts.translatable(
-                profileMigrationFailureKey(preparation.status())
-            ).getString();
-            rebuild();
-            return;
-        }
-
-        // End the active session first. RegionCacheService queues its final flush on the same IO
-        // executor used by executeProfileMigration, so the merge cannot race dirty map writes.
-        ConfluxMapClient.get().sessionTracker().endSession();
-        migrationError = false;
-        migrationMessage = Texts.translatable(
-            "confluxmap.screen.client_world.merge_running"
-        ).getString();
-        try {
-            migrationFuture = worlds.executeProfileMigration(preparation);
-        } catch (final RuntimeException error) {
-            migrationConfirm = false;
-            migrationError = true;
-            migrationMessage = Texts.translatable(
-                "confluxmap.screen.client_world.merge_failed"
-            ).getString();
-        }
-        rebuild();
-    }
-
-    private static String profileMigrationFailureKey(
-        final ClientMultiworldService.ProfileMigrationStatus status
-    ) {
-        return switch (status) {
-            case NOT_CONNECTED -> "confluxmap.screen.client_world.merge_not_connected";
-            case COMPANION_REQUIRED -> "confluxmap.screen.client_world.merge_server_required";
-            case SEED_UNKNOWN -> "confluxmap.screen.client_world.merge_seed_unknown";
-            case SEED_MISMATCH -> "confluxmap.screen.client_world.merge_seed_mismatch";
-            case SOURCE_IS_TARGET -> "confluxmap.screen.client_world.merge_same_target";
-            case ALREADY_RUNNING -> "confluxmap.screen.client_world.merge_running";
-            case READY -> throw new IllegalArgumentException("ready migration is not a failure");
-        };
-    }
-
-    private static String cacheMigrationFailureKey(final MapCacheMigration.Status status) {
-        return switch (status) {
-            case SOURCE_NOT_FOUND -> "confluxmap.screen.client_world.merge_source_missing";
-            case SOURCE_IS_TARGET -> "confluxmap.screen.client_world.merge_same_target";
-            case FAILED -> "confluxmap.screen.client_world.merge_failed";
-            case APPLIED -> throw new IllegalArgumentException("applied migration is not a failure");
-        };
     }
 
     private void forget(final String profileId) {

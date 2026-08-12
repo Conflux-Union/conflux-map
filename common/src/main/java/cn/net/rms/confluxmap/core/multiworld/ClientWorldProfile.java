@@ -67,6 +67,10 @@ public final class ClientWorldProfile {
         return bindings == null ? 0 : bindings.size();
     }
 
+    public Optional<String> velocityServerName() {
+        return Optional.ofNullable(velocityServerName);
+    }
+
     /** Redacted seed signatures suitable for UI diagnostics; the raw server seed is never exposed. */
     public List<String> seedSignatures() {
         return bindings().stream()
@@ -122,11 +126,20 @@ public final class ClientWorldProfile {
         return recognitionDisabled;
     }
 
+    boolean matchesVelocityServer(final String serverName) {
+        return Objects.equals(velocityServerName, serverName);
+    }
+
+    void bindVelocityServer(final String serverName) {
+        velocityServerName = requireText(serverName, "serverName");
+        recognitionDisabled = false;
+    }
+
     boolean hasKnownSeedBinding() {
         return bindings().stream().anyMatch(binding -> binding.hasSeed);
     }
 
-    boolean matchesSeed(final long seedHash) {
+    public boolean matchesSeed(final long seedHash) {
         for (final Binding binding : bindings()) {
             if (binding.hasSeed && binding.seedHash == seedHash) {
                 return true;
@@ -407,6 +420,7 @@ public final class ClientWorldProfile {
             copy.visits.put(entry.getKey(), entry.getValue().copy());
         }
         copy.recognitionDisabled = recognitionDisabled;
+        copy.velocityServerName = velocityServerName;
         return copy;
     }
 
@@ -420,6 +434,7 @@ public final class ClientWorldProfile {
         switchCommands = copy.switchCommands;
         visits = copy.visits;
         recognitionDisabled = copy.recognitionDisabled;
+        velocityServerName = copy.velocityServerName;
     }
 
     private List<Binding> bindings() {

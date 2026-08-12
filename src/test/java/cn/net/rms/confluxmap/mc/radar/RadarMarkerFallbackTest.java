@@ -17,7 +17,7 @@ final class RadarMarkerFallbackTest {
     void doesNotTreatAnUnboundDynamicIconAsDrawn() throws IOException {
         final String renderer = Files.readString(findProjectRoot().resolve(
             "src/main/java/cn/net/rms/confluxmap/mc/radar/RadarMarkerRenderer.java"
-        ));
+        )).replace("\r\n", "\n");
 
         assertTrue(renderer.contains("icon != null && drawIcon("));
         assertTrue(renderer.contains("private static boolean drawIcon("));

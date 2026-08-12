@@ -56,6 +56,9 @@ public final class ChunkCaptureService {
     private long lastLoggedSnapshots = -1;
     private int tickCounter;
     private LayerSelector.Decision lastDecision;
+    private int lastPlayerChunkX = Integer.MIN_VALUE;
+    private int lastPlayerChunkZ = Integer.MIN_VALUE;
+    private int lastServerViewDistance = Integer.MIN_VALUE;
     private ClientMultiworldService pendingSnapshotBuffer;
     private SessionGuard.Session currentSession = SessionGuard.Session.NONE;
 
@@ -239,7 +242,7 @@ public final class ChunkCaptureService {
         if (client.world == null) {
             return;
         }
-        final int radius = MinecraftAccess.viewDistance(client) + 1;
+        final int radius = captureViewDistance() + 1;
         for (int dz = -radius; dz <= radius; dz++) {
             for (int dx = -radius; dx <= radius; dx++) {
                 final int chunkX = centerChunkX + dx;
@@ -334,6 +337,19 @@ public final class ChunkCaptureService {
                 }
             }
         }
+    }
+
+    private int captureViewDistance() {
+        return captureViewDistance(
+            MinecraftAccess.viewDistance(client), serverViewDistance.getAsInt()
+        );
+    }
+
+    static int captureViewDistance(
+        final int clientViewDistance, final int advertisedServerViewDistance
+    ) {
+        return advertisedServerViewDistance >= 0
+            ? advertisedServerViewDistance : clientViewDistance;
     }
 
     private List<long[]> drainLoadedChunks(final int playerChunkX, final int playerChunkZ) {

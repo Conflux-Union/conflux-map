@@ -28,6 +28,7 @@ public final class RegionCacheService {
     private final Logger logger;
 
     private volatile RegionDiskCache current;
+    private SessionGuard.Session currentSession;
     private final Map<WorldIdentity, CompletableFuture<Void>> endingFlushes = new ConcurrentHashMap<>();
 
     public RegionCacheService(

@@ -89,4 +89,13 @@ public final class ClientWorldIdentityHandler {
             current.onChatSubmitted(rawText);
         }
     }
+
+    /** Returns whether a pending world-detection query consumed this rendered chat message. */
+    public static boolean chatMessage(final Text message) {
+        final ClientMultiworldService current = service;
+        return current != null && current.onVelocityServerMessage(
+            VelocityServerTextParser.parse(message),
+            VelocityServerTextParser.isCurrentServerNotice(message)
+        );
+    }
 }

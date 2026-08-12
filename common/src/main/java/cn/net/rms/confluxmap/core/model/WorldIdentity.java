@@ -93,22 +93,10 @@ public final class WorldIdentity {
         if (!isCanonicalUuid(worldId)) {
             throw new IllegalArgumentException("companion worldId must be a canonical UUID");
         }
-        return multiplayerIdentity(address, worldId);
-    }
-
-    /**
-     * Companion-aware multiplayer: the server handed us a stable {@code worldId} (UUID string),
-     * so we adopt it as the cache namespace. The address-based {@code serverId} stays the same
-     * as the non-companion path so a server operator can still find the right cache directory.
-     * The old client-only {@code world} id remains available for non-destructive configuration
-     * lookups. Multiplayer disk storage migration is always explicit.
-     */
-    public static WorldIdentity companionMultiplayer(final String address, final String worldId) {
-        final String sanitizedWorldId = sanitizeWorldId(worldId);
-        final List<String> legacyIds = "world".equals(sanitizedWorldId)
-            ? List.of()
-            : List.of("world");
-        return new WorldIdentity(sanitize(address), sanitizedWorldId, legacyIds);
+        final WorldIdentity identity = multiplayerIdentity(address, worldId);
+        return new WorldIdentity(
+            identity.serverId(), identity.worldId(), List.of("world"), identity.legacyServerIds()
+        );
     }
 
     public static WorldIdentity singleplayer(final String levelName) {

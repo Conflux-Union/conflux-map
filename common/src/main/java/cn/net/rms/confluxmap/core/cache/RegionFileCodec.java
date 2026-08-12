@@ -140,11 +140,13 @@ public final class RegionFileCodec {
         int rz,
         long lastWriteEpochMs,
         byte[] chunkSourceOrdinal,
-        int[] chunkUpdateEpochSeconds
+        int[] chunkUpdateEpochSeconds,
+        long[] chunkSourceRevision
     ) {
         public RegionMetadata {
             RegionData.requireLength("chunkSourceOrdinal", chunkSourceOrdinal.length, CHUNK_TABLE_ENTRIES);
             RegionData.requireLength("chunkUpdateEpochSeconds", chunkUpdateEpochSeconds.length, CHUNK_TABLE_ENTRIES);
+            RegionData.requireLength("chunkSourceRevision", chunkSourceRevision.length, CHUNK_TABLE_ENTRIES);
         }
     }
 
@@ -275,7 +277,10 @@ public final class RegionFileCodec {
             }
         }
 
-        return new RegionMetadata(rx, rz, lastWriteEpochMs, chunkSourceOrdinal, chunkUpdateEpochSeconds);
+        return new RegionMetadata(
+            rx, rz, lastWriteEpochMs,
+            chunkSourceOrdinal, chunkUpdateEpochSeconds, chunkSourceRevision
+        );
     }
 
     public static RegionData decode(
@@ -330,7 +335,7 @@ public final class RegionFileCodec {
 
         return new RegionData(
             metadata.rx(), metadata.rz(), metadata.lastWriteEpochMs(),
-            metadata.chunkSourceOrdinal(), metadata.chunkUpdateEpochSeconds(),
+            metadata.chunkSourceOrdinal(), metadata.chunkUpdateEpochSeconds(), metadata.chunkSourceRevision(),
             surfaceY, fluidDepth, kind, biomeId, baseArgb, biomeTint, overlayArgb, light
         );
     }

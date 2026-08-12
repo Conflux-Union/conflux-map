@@ -63,7 +63,9 @@ class ManualSeedServiceTest {
         final ConfluxConfig config = new ConfluxConfig();
         final ConfigIo configIo = new ConfigIo(temp.resolve("config.json"), LogManager.getLogger());
         final SessionGuard sessions = new SessionGuard();
-        final WorldIdentity world = WorldIdentity.companionMultiplayer("play.example.net", "server-world");
+        final WorldIdentity world = WorldIdentity.companionMultiplayer(
+            "play.example.net", "11111111-2222-3333-4444-555555555555"
+        );
         sessions.begin(world, DimensionId.OVERWORLD);
         final AtomicInteger refreshes = new AtomicInteger();
         final ManualSeedService service = new ManualSeedService(
@@ -87,7 +89,9 @@ class ManualSeedServiceTest {
         final ConfluxConfig config = new ConfluxConfig();
         final ConfigIo configIo = new ConfigIo(temp.resolve("config.json"), LogManager.getLogger());
         final SessionGuard sessions = new SessionGuard();
-        final WorldIdentity world = WorldIdentity.companionMultiplayer("play.example.net", "server-world");
+        final WorldIdentity world = WorldIdentity.companionMultiplayer(
+            "play.example.net", "11111111-2222-3333-4444-555555555555"
+        );
         sessions.begin(world, DimensionId.OVERWORLD);
         final ManualSeedService service = new ManualSeedService(
             config,

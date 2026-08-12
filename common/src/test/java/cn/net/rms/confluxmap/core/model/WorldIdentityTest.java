@@ -34,7 +34,7 @@ class WorldIdentityTest {
         assertEquals("example.net", id.serverId());
         // UUIDs contain only [0-9a-f-], all already in the safe set, so they pass through unchanged.
         assertEquals("11111111-2222-3333-4444-555555555555", id.worldId());
-        assertEquals(java.util.List.of("world"), id.legacyStorageIds());
+        assertTrue(id.legacyStorageIds().isEmpty());
     }
 
     @Test
