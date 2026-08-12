@@ -1,0 +1,105 @@
+name: Report an issue
+description: Report a bug, request a feature, ask a question, or suggest an improvement.
+title: "[Type] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Conflux Map. Please include enough detail for someone else to understand and reproduce the issue.
+
+  - type: dropdown
+    id: issue-type
+    attributes:
+      label: Issue type
+      description: Choose the option that best describes this issue.
+      options:
+        - Bug report
+        - Feature request
+        - Improvement
+        - Documentation
+        - Question
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Briefly describe the problem or requested change.
+      placeholder: What happened, or what would you like Conflux Map to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Include the context, expected behavior, actual behavior, and any relevant screenshots or logs.
+      placeholder: |
+        Context:
+        Expected behavior:
+        Actual behavior:
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: For bugs, list the smallest reliable sequence that demonstrates the problem. Otherwise, write "Not applicable".
+      placeholder: |
+        1. Start ...
+        2. Open ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: input
+    id: conflux-map-version
+    attributes:
+      label: Conflux Map version
+      description: Use the release version or jar filename. For non-runtime requests, write "Not applicable".
+      placeholder: e.g. 0.4.0
+    validations:
+      required: true
+
+  - type: input
+    id: minecraft-version
+    attributes:
+      label: Minecraft version
+      description: Include the exact game version. For non-runtime requests, write "Not applicable".
+      placeholder: e.g. 1.21.11
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Affected environment
+      description: Select the part of Conflux Map involved in this issue.
+      multiple: true
+      options:
+        - Fabric client
+        - Fabric server companion
+        - Paper server companion
+        - Web map
+        - Documentation or repository
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add mod lists, loader versions, server software, crash reports, or anything else that may help.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues and did not find an issue that already reports this.
+          required: true
+        - label: I removed passwords, tokens, private server addresses, and other sensitive information.
+          required: true
