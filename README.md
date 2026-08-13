@@ -37,34 +37,48 @@ and is what turns per-player features into shared ones, see [Server companion](#
 
 ## Features
 
-**Live map.** A square or round minimap you can resize, rotate with your view, and place anywhere,
-plus a fullscreen map with continuous zoom and a chunk grid. Right-click the fullscreen map to
-drop a waypoint, share its coordinates, or teleport there. Both maps switch between normal
-terrain, biome colors, and server chunk-load state, and follow the dimension you're in: surface
-or cave for the Overworld, current-level or bedrock-roof for the Nether, a dedicated backdrop for
-the End.
+**Live map.** A square or round minimap you can resize, rotate with your view, and place anywhere
+on screen; it steps aside on its own when a vanilla HUD element would overlap it, and its info
+line can show your coordinates, your current biome, and the map layer in use. The fullscreen map
+adds continuous zoom, a chunk grid, and a right-click menu that drops a waypoint, shares the spot
+in chat, or teleports you there. Both follow the dimension you're in: surface or cave for the
+Overworld, current-level or bedrock-roof for the Nether, a dedicated backdrop for the End. The
+surface layer is shaded by time of day and nearby block light unless you turn that off.
+
+**Map modes.** The fullscreen map switches its base layer between normal terrain, biome colors,
+and the server's chunk-load state, the last one drawn either as four coarse bands or as exact
+ticket levels. Chunk-load state needs the server companion; the minimap always draws terrain.
 
 **Map autofill.** Once the world seed is known, unexplored Overworld, Nether-roof, and End tiles
 show predicted terrain right away instead of staying blank. Real exploration and any corrections
-from the server gradually replace the prediction. Press `P` to cycle full prediction,
-generated-areas-only, and off.
+from the server gradually replace the prediction. Press `P` to cycle predicting everywhere,
+generated areas only, and explored terrain only. On a server that keeps its seed private, you can
+type a seed in yourself under Settings → Map Autofill → Configure Local Seed: it stays on your
+machine, is never sent to the server, and does not turn on map sync.
 
-**Structures.** Vanilla structures across all three dimensions get their own icons, visibility
-toggles, and nearest-match search, with different markers for predicted versus confirmed
-locations.
+**Structures.** Vanilla structures across all three dimensions get their own icons, per-type
+visibility toggles, and one shared on/off switch. Search by name for the nearest match, or give a
+center, a radius, and a result count to list every candidate in an area and turn any of them into
+a waypoint. Predicted and server-confirmed locations use different markers.
 
-**Waypoints.** Local waypoints with names, colors, and sets; beams, names, and distances shown in
-the world; the last five death points per dimension kept automatically; and one-click import from
+**Waypoints.** Local waypoints with names, colors, and sets; a searchable list you can filter by
+set and move several entries at once; beams, names, and distances shown in the world, with
+indicators at the screen edge for the ones out of view and an optional distance cutoff; death
+points kept per dimension (five by default, adjustable from 0 to 50); and one-click import from
 Xaero's Minimap and VoxelMap (duplicates are skipped, the original files are left untouched). The
 Overworld and Nether can optionally show each other's waypoints, converted through the 1:8 portal
 ratio.
 
 **Sub-worlds.** Servers reachable through the same address, including proxy networks, get separate
-map records per world instead of one server's terrain bleeding into another's.
+map records per world instead of one server's terrain bleeding into another's. When the mod can't
+tell which world you're on, it pauses recording and asks you to pick one; the same screen creates,
+renames, and unbinds sub-worlds, merges an older same-seed map cache into the current world, and
+moves waypoints left behind on an old record.
 
-**Drawing and trails.** Lines, shapes, freehand paths, and text labels on the map, undoable and
-either session-only or saved per world. A short recent-movement trail is also available on both
-maps.
+**Drawing and trails.** Lines, shapes, freehand paths, and text labels on the map. Select and move
+what you drew, recolor it, erase with a resizable eraser, and undo or redo with `Ctrl+Z` /
+`Ctrl+Y`. Drawings are either kept with the world or dropped when you disconnect, and can be
+mirrored onto the minimap. A short recent-movement trail is also available on both maps.
 
 **Entity radar.** Players, mobs, dropped items, vehicles, and projectiles each have their own
 toggle. Every living entity gets a portrait rendered live from its own model, so new or modded
@@ -77,8 +91,14 @@ it on, player positions with names, plus dimension and language switches. Off by
 loopback-only until an operator opens it up, see [Server companion](#server-companion). Players
 can hide themselves from it with `/confluxmap webmap hide` (`show` to opt back in).
 
-**Export and updates.** Export any map area to a PNG at a chosen resolution, with a size estimate
-and a cancellable background export. An optional startup check flags new releases in chat.
+**Export.** Export any map area to a PNG at a chosen resolution: type the corner coordinates or
+drag a box on the map, decide whether drawings are included, and check the size estimate before
+starting. The export runs in the background and can be cancelled, copies the finished image to
+your clipboard when it is small enough, and offers to open the output folder.
+
+**Notices in chat.** An optional startup check flags new releases. After a few hours of play the
+mod also posts a one-line invitation to a feedback survey, repeated at most once a day, with a
+click to stop it for good.
 
 ## Keybinds
 
@@ -98,7 +118,7 @@ vanilla shortcut for opening its hotkey screen.
 | `B` | New waypoint at your position |
 | `J` | Toggle local waypoints |
 | `,` | Open settings |
-| `P` | Cycle map autofill (everywhere / generated-only / off) |
+| `P` | Cycle map autofill (everywhere / generated-only / explored-only) |
 | `F9` | Refresh map autofill tiles |
 
 ## Waypoints in multiplayer
@@ -108,9 +128,10 @@ Overworld and Nether waypoints in both dimensions at once; End waypoints always 
 
 Shared waypoints need the server companion and are off by default. A level-2 operator turns them
 on with `/confluxmap waypoints enable` (`disable` and `status` also work). Once enabled, any
-player can publish a point everyone sees. The publisher can delete their own point as long as
-it's unlocked; only an operator can lock, unlock, or delete any point. Per-world and per-player
-limits are configurable in `config/confluxmap/server.json`.
+player can publish a point everyone sees, listed under "Shared Waypoints" in the waypoint screen.
+The publisher can delete their own point as long as it is unmarked; only an operator can mark,
+unmark, or delete any point, and marked points move to a separate "Server Markers" list. Per-world
+and per-player limits are configurable in `config/confluxmap/server.json`.
 
 Chat coordinate sharing needs no companion and works on any server: before sending, you get a
 preview of the outgoing message in both Conflux Map and Xaero formats, and coordinates shared by
@@ -127,6 +148,9 @@ skips correction sync, rather than either side breaking.
 
 Everything the companion shares is controlled in `config/confluxmap/server.json`:
 
+- `enabled` is the master switch; with it off the companion answers nothing and every client falls
+  back to plain single-player behavior. `checkForUpdates` prints a console notice at startup when
+  a newer release exists.
 - `shareSeed` sends the world seed so clients can predict biomes and structures; `allowBiomeMap`
   and `allowStructureSearch` gate those two features independently.
 - `shareChunkLoadState` exposes which chunks the server keeps loaded (off by default, since it can
