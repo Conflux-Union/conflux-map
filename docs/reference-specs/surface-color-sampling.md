@@ -80,6 +80,11 @@ snowy top texture because it's in a snowy biome needs no special handling —
 its own model/texture already reflects that, and it's sampled like any other
 block.)
 
+**Carpets:** carpet blocks receive the same surface promotion as thin snow,
+including when the motion-blocking heightmap points directly at the opaque
+block below them. This keeps the visible material and height consistent with
+cave-floor sampling instead of storing the carpet only as a disposable overlay.
+
 **Leaves:** leaves have a nonzero light-dampening factor in the underlying
 game, so the general descent loop treats them as opaque — a tree canopy is
 drawn as the surface, not the ground underneath it.

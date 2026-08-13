@@ -30,8 +30,9 @@ public final class SummaryCodec {
      * created with inclusive top-block Y values. Version 9 adds the surface block-light plane.
      * Version 10 invalidates summaries produced before native block-light parity. Version 11 adds
      * surface and submerged-floor material identities for client-resource colour sampling.
+     * Version 12 invalidates summaries that stored carpets only as their supporting block.
      */
-    public static final int FORMAT_VERSION = 11;
+    public static final int FORMAT_VERSION = 12;
     public static final int CHUNKS = 256;
     public static final int COLUMNS = 256;
     public static final int RECORD_BYTES = 12;

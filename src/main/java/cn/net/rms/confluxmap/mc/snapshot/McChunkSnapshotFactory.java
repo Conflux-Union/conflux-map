@@ -10,6 +10,7 @@ import cn.net.rms.confluxmap.mc.color.SpriteColorSampler;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
+import net.minecraft.block.CarpetBlock;
 import net.minecraft.block.LeavesBlock;
 import net.minecraft.block.SnowBlock;
 import net.minecraft.client.MinecraftClient;
@@ -184,12 +185,15 @@ public final class McChunkSnapshotFactory {
         if (!descended) {
             pos.set(worldX, surfaceYVal + 1, worldZ);
             final BlockState above = collapse(chunk.getBlockState(pos));
-            if (!above.isAir()) {
+            if (isPromotedSurfaceCover(above)) {
+                surfaceState = above;
+                surfaceYVal++;
+            } else if (!above.isAir()) {
                 foliageOverlay = above;
                 foliageOverlayY = surfaceYVal + 1;
             }
-        } else if (bottomOverlay.getBlock() instanceof SnowBlock) {
-            // §1 snow-layer promotion: the foliage candidate becomes the surface itself.
+        } else if (isPromotedSurfaceCover(bottomOverlay)) {
+            // Thin surface-cover promotion: the foliage candidate becomes the surface itself.
             surfaceState = bottomOverlay;
             surfaceYVal = bottomOverlayY;
             if (topOverlayY != bottomOverlayY) {
@@ -493,6 +497,12 @@ public final class McChunkSnapshotFactory {
             return true;
         }
         return !state.isAir() && state.getBlock() != Blocks.LAVA && state.getBlock() != Blocks.WATER;
+    }
+
+    /** Thin snow and carpets remain the visible top even when MOTION_BLOCKING ignores them. */
+    private static boolean isPromotedSurfaceCover(final BlockState state) {
+        final Block block = state.getBlock();
+        return block instanceof SnowBlock || block instanceof CarpetBlock;
     }
 
     /** §2/§6 unified block-type classification, shared by the surface scan and the floor scan. */
