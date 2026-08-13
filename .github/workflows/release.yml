@@ -222,7 +222,7 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
       - name: Build for ${{ matrix.minecraft_version }}
-        run: ./gradlew :${{ matrix.minecraft_version }}:buildRelease
+        run: ./gradlew :${{ matrix.minecraft_version }}:build
       - name: Stop Gradle daemon
         run: ./gradlew --stop
       - name: Upload build artifacts

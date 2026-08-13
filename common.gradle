@@ -235,14 +235,16 @@ check.dependsOn 'checkCoreIsolation'
 check.dependsOn 'checkModMetadata'
 check.dependsOn 'checkVersionCoverage'
 check.dependsOn 'runGametest'
-tasks.register('buildRelease') {
-    group = 'build'
-    description = 'Assembles release artifacts and runs non-test release checks'
-    dependsOn tasks.named('assemble')
-    dependsOn tasks.named('checkCoreIsolation')
-    dependsOn tasks.named('checkModMetadata')
-    dependsOn tasks.named('checkVersionCoverage')
-    dependsOn tasks.named('validateAccessWidener')
+tasks.named('build') {
+    description = 'Assembles release artifacts and runs unit tests and non-GameTest checks'
+    setDependsOn([
+        tasks.named('assemble'),
+        tasks.named('test'),
+        tasks.named('checkCoreIsolation'),
+        tasks.named('checkModMetadata'),
+        tasks.named('checkVersionCoverage'),
+        tasks.named('validateAccessWidener'),
+    ])
 }
 tasks.named('runGametest') {
     doFirst {
