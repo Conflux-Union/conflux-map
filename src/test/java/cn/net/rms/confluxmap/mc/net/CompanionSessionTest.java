@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.net;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -13,12 +14,17 @@ import cn.net.rms.confluxmap.core.net.MapSyncCompatibility;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
+import cn.net.rms.confluxmap.core.net.ServerInstanceS2C;
 import cn.net.rms.confluxmap.core.net.ServerViewDistanceS2C;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class CompanionSessionTest {
+    private static final String SHARED_WORLD = "11111111-2222-3333-4444-555555555555";
+    private static final String SURVIVAL_INSTANCE = "aaaaaaaa-0000-0000-0000-000000000000";
+    private static final String MIRROR_INSTANCE = "bbbbbbbb-0000-0000-0000-000000000000";
+
     @Test
     void explicitCompatibilitySelectsResidualOrAbsoluteBeforePolicy() {
         final CompanionSession residual = new CompanionSession();
@@ -243,6 +249,77 @@ class CompanionSessionTest {
         assertFalse(session.seedSharingDisabledByServer());
         assertFalse(session.mapCorrectionsDisabledByServer());
         assertNull(session.mapCorrectionDisabledReasonKey());
+    }
+
+    /**
+     * A world UUID lives inside the save and travels with a copy, so it cannot tell two servers
+     * sharing a synced world apart. The instance id takes over that role when the server sends one.
+     */
+    @Test
+    void advertisedInstanceIdBecomesTheStorageNamespace() {
+        final CompanionSession session = activeWithInstance(SURVIVAL_INSTANCE);
+
+        assertEquals(
+            WorldIdentity.companionMultiplayer("mc.example.com", SURVIVAL_INSTANCE, SHARED_WORLD),
+            session.resolveWorldIdentity("mc.example.com").orElseThrow()
+        );
+    }
+
+    @Test
+    void serverWithoutTheInstanceCapabilityStillUsesTheWorldUuid() {
+        final CompanionSession session = activeWithInstance(null);
+
+        assertEquals(
+            WorldIdentity.companionMultiplayer("mc.example.com", SHARED_WORLD),
+            session.resolveWorldIdentity("mc.example.com").orElseThrow()
+        );
+    }
+
+    /**
+     * The mirror and survival servers reached through one proxy address advertise the same world
+     * UUID; only the instance id keeps their map data apart.
+     */
+    @Test
+    void twoInstancesSharingAWorldAndAnAddressResolveApart() {
+        final WorldIdentity survival = activeWithInstance(SURVIVAL_INSTANCE)
+            .resolveWorldIdentity("play.example.com").orElseThrow();
+        final WorldIdentity mirror = activeWithInstance(MIRROR_INSTANCE)
+            .resolveWorldIdentity("play.example.com").orElseThrow();
+
+        assertNotEquals(survival, mirror);
+    }
+
+    @Test
+    void instanceIdIsExposedOnlyWhileTheSessionIsActive() {
+        final CompanionSession session = new CompanionSession();
+        session.onHelloSent();
+        session.onServerInstance(new ServerInstanceS2C(SURVIVAL_INSTANCE));
+
+        assertNull(session.companionInstanceId());
+
+        session.onPolicy(policy(SHARED_WORLD));
+
+        assertEquals(SURVIVAL_INSTANCE, session.companionInstanceId());
+    }
+
+    @Test
+    void aNewHandshakeForgetsThePreviousInstanceId() {
+        final CompanionSession session = activeWithInstance(SURVIVAL_INSTANCE);
+
+        session.onHelloSent();
+        session.onPolicy(policy(SHARED_WORLD));
+
+        assertNull(session.companionInstanceId());
+    }
+
+    private static CompanionSession activeWithInstance(final String instanceId) {
+        final CompanionSession session = new CompanionSession();
+        session.onHelloSent();
+        if (instanceId != null) {
+            session.onServerInstance(new ServerInstanceS2C(instanceId));
+        }
+        session.onPolicy(policy(SHARED_WORLD));
+        return session;
     }
 
     private static HelloPolicyS2C policy(final String worldId) {

@@ -11,9 +11,14 @@ import java.util.function.Predicate;
  *
  * <p>Two spellings of one server merge in two ways. Cosmetic differences (case, trailing dot,
  * explicit default port) collapse through {@link ServerAddressNormalizer}. Genuinely different
- * hostnames merge only on evidence: a companion server advertises a world UUID generated once per
- * world, so meeting that UUID again identifies the same server whatever address reached it.
+ * hostnames merge only on evidence: a companion server advertises an instance id stored outside
+ * its world save, so meeting that id again identifies the same server whatever address reached it.
  * Without a companion there is no such evidence and the link stays a user decision.
+ *
+ * <p>The world UUID is deliberately not that evidence. It lives inside the save and so travels
+ * with a copy: a mirror server synced from a survival server advertises the survival world's UUID
+ * while being a different server, and behind a proxy the two share an address as well. Merging on
+ * it would fold their map data together with no way back.
  *
  * <p>Learning never silently merges two directories that both already hold data — that would mix
  * two histories with no way back. It only adopts an address that has written nothing yet; an
@@ -47,7 +52,7 @@ public final class ServerAliasResolver {
         NEW,
         /** The address inherited the namespace of an unnormalized spelling that holds data. */
         ADOPTED_LEGACY,
-        /** A companion world UUID proved this address is a server already known under another name. */
+        /** A companion instance id proved this address is a server already known under another name. */
         LEARNED,
         /** Same proof as {@link #LEARNED}, but both namespaces hold data, so nothing was merged. */
         CONFLICT
@@ -66,32 +71,41 @@ public final class ServerAliasResolver {
 
     /** Resolves without companion evidence. */
     public String resolve(final String rawAddress) {
-        return resolve(rawAddress, null).canonicalId();
+        return resolve(rawAddress, null, null).canonicalId();
     }
 
     /**
-     * @param companionWorldId world UUID advertised by an active companion, or null when the
-     *                         server runs no companion or has not completed its handshake
+     * @param companionInstanceId identity of the server itself, or null when it runs no companion,
+     *                            has not completed its handshake, or predates the capability;
+     *                            this is the only evidence that merges two addresses
+     * @param companionWorldId    world UUID the companion advertised, recorded so the worlds one
+     *                            server has hosted can be listed - never used to merge, because a
+     *                            copied world carries it to a different server
      */
-    public Resolution resolve(final String rawAddress, final String companionWorldId) {
+    public Resolution resolve(
+        final String rawAddress,
+        final String companionInstanceId,
+        final String companionWorldId
+    ) {
         final String addressId = addressId(rawAddress);
         final String legacyId = WorldIdentity.serverId(rawAddress);
 
         final Optional<String> known = registry.canonicalForAddress(addressId);
         if (known.isPresent()) {
             final String canonicalId = known.get();
-            learnCompanionWorld(canonicalId, companionWorldId);
+            learnCompanionIds(canonicalId, companionInstanceId, companionWorldId);
             return new Resolution(canonicalId, Origin.KNOWN, null);
         }
 
-        final Optional<String> sameWorld = companionWorldId == null
+        final Optional<String> sameInstance = companionInstanceId == null
             ? Optional.empty()
-            : registry.canonicalForCompanionWorld(companionWorldId)
+            : registry.canonicalForCompanionInstance(companionInstanceId)
                 .filter(candidate -> !registry.isDetached(candidate, addressId));
-        if (sameWorld.isPresent() && !holdsData(addressId) && !holdsData(legacyId)) {
-            final String canonicalId = sameWorld.get();
+        if (sameInstance.isPresent() && !holdsData(addressId) && !holdsData(legacyId)) {
+            final String canonicalId = sameInstance.get();
             linkIfUnowned(canonicalId, addressId);
             linkIfUnowned(canonicalId, legacyId);
+            learnCompanionWorld(canonicalId, companionWorldId);
             onChange.run();
             return new Resolution(canonicalId, Origin.LEARNED, null);
         }
@@ -103,10 +117,10 @@ public final class ServerAliasResolver {
         registry.create(canonicalId);
         linkIfUnowned(canonicalId, addressId);
         linkIfUnowned(canonicalId, legacyId);
-        learnCompanionWorld(canonicalId, companionWorldId);
+        learnCompanionIds(canonicalId, companionInstanceId, companionWorldId);
         onChange.run();
-        if (sameWorld.isPresent()) {
-            return new Resolution(canonicalId, Origin.CONFLICT, sameWorld.get());
+        if (sameInstance.isPresent()) {
+            return new Resolution(canonicalId, Origin.CONFLICT, sameInstance.get());
         }
         return new Resolution(canonicalId, adoptLegacy ? Origin.ADOPTED_LEGACY : Origin.NEW, null);
     }
@@ -238,17 +252,40 @@ public final class ServerAliasResolver {
             : "address " + addressId + " is already linked to " + owner.get());
     }
 
+    private void learnCompanionIds(
+        final String canonicalId,
+        final String companionInstanceId,
+        final String companionWorldId
+    ) {
+        learnCompanionInstance(canonicalId, companionInstanceId);
+        learnCompanionWorld(canonicalId, companionWorldId);
+    }
+
     /**
-     * A world UUID may point at one namespace only. When it already names another — the player
+     * An instance id may point at one namespace only. When it already names another — the player
      * detached this address, or both namespaces hold data — the new namespace stays unmarked, so
-     * later addresses keep learning the one namespace that owns the world.
+     * later addresses keep learning the one namespace that owns the server.
+     */
+    private void learnCompanionInstance(final String canonicalId, final String companionInstanceId) {
+        if (companionInstanceId == null) {
+            return;
+        }
+        final Optional<String> owner = registry.canonicalForCompanionInstance(companionInstanceId);
+        if (owner.isPresent() && !owner.get().equals(canonicalId)) {
+            return;
+        }
+        if (registry.linkCompanionInstance(canonicalId, companionInstanceId)) {
+            onChange.run();
+        }
+    }
+
+    /**
+     * Records which worlds a server has hosted, for listing them. Unlike an instance id the same
+     * world UUID may legitimately appear under several servers once a save has been copied, so
+     * this deliberately does not check for another owner.
      */
     private void learnCompanionWorld(final String canonicalId, final String companionWorldId) {
         if (companionWorldId == null) {
-            return;
-        }
-        final Optional<String> owner = registry.canonicalForCompanionWorld(companionWorldId);
-        if (owner.isPresent() && !owner.get().equals(canonicalId)) {
             return;
         }
         if (registry.linkCompanionWorld(canonicalId, companionWorldId)) {

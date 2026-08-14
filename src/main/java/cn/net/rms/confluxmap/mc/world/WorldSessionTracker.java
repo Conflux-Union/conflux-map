@@ -39,7 +39,9 @@ public final class WorldSessionTracker {
     private WorldIdentity singleplayerIdentity;
     private String observedAddress;
     private String observedCompanionWorldId;
+    private String observedCompanionInstanceId;
     private String canonicalAddress;
+    private Consumer<WorldIdentity> namespaceAdopter = identity -> { };
 
     public WorldSessionTracker(final SessionGuard guard, final CompanionSession companion) {
         this(guard, companion, null, null);
@@ -76,6 +78,15 @@ public final class WorldSessionTracker {
     /** Called on the main thread whenever a session starts or ends. */
     public void addListener(final Consumer<SessionGuard.Session> listener) {
         listeners.add(listener);
+    }
+
+    /**
+     * Runs once per identity, immediately before its session opens, so stored data can be carried
+     * into a namespace whose key changed. It has to precede the session: the region cache binds
+     * its directory the moment the session begins.
+     */
+    public void bindNamespaceAdopter(final Consumer<WorldIdentity> adopter) {
+        this.namespaceAdopter = Objects.requireNonNull(adopter, "adopter");
     }
 
     /** Ends the active session and notifies every lifecycle owner; safe to call repeatedly. */
@@ -121,6 +132,7 @@ public final class WorldSessionTracker {
         }
         final WorldIdentity fresh = resolved.get();
         if (!current.active()) {
+            namespaceAdopter.accept(fresh);
             final SessionGuard.Session session = guard.begin(fresh, dimension);
             ConfluxMapMod.LOGGER.info(
                 "Map session started: {}/{} in {} (token {})",
@@ -128,6 +140,9 @@ public final class WorldSessionTracker {
             );
             notifyListeners(session);
         } else if (!current.dimension().equals(dimension) || !current.world().equals(fresh)) {
+            if (!current.world().equals(fresh)) {
+                namespaceAdopter.accept(fresh);
+            }
             final SessionGuard.Session session = guard.begin(fresh, dimension);
             if (!current.dimension().equals(dimension) && current.world().equals(fresh)) {
                 ConfluxMapMod.LOGGER.info("Map session dimension change: {} (token {})", dimension, session.token());
@@ -181,20 +196,24 @@ public final class WorldSessionTracker {
 
     /**
      * Maps the typed address onto the storage namespace that owns its data. Resolution is cached
-     * against the address and the companion world it was resolved with, because this runs every
-     * tick while only those two inputs can change the answer.
+     * against the address and the companion ids it was resolved with, because this runs every tick
+     * while only those inputs can change the answer.
      */
     String canonicalAddress(final String rawAddress) {
         if (aliases == null) {
             return rawAddress;
         }
+        final String companionInstanceId = companion.companionInstanceId();
         final String companionWorldId = companion.companionWorldId();
         if (rawAddress.equals(observedAddress)
+            && Objects.equals(companionInstanceId, observedCompanionInstanceId)
             && Objects.equals(companionWorldId, observedCompanionWorldId)) {
             return canonicalAddress;
         }
-        final ServerAliasResolver.Resolution resolution = aliases.resolve(rawAddress, companionWorldId);
+        final ServerAliasResolver.Resolution resolution =
+            aliases.resolve(rawAddress, companionInstanceId, companionWorldId);
         observedAddress = rawAddress;
+        observedCompanionInstanceId = companionInstanceId;
         observedCompanionWorldId = companionWorldId;
         canonicalAddress = resolution.canonicalId();
         logResolution(rawAddress, resolution);
@@ -203,6 +222,7 @@ public final class WorldSessionTracker {
 
     private void forgetCanonicalAddress() {
         observedAddress = null;
+        observedCompanionInstanceId = null;
         observedCompanionWorldId = null;
         canonicalAddress = null;
     }

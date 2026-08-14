@@ -6,6 +6,7 @@ import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
 import cn.net.rms.confluxmap.core.predict.FlatBaseline;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
+import cn.net.rms.confluxmap.core.store.ServerInstanceIdStore;
 import cn.net.rms.confluxmap.core.store.WorldIdStore;
 import cn.net.rms.confluxmap.core.update.GithubReleaseFetcher;
 import cn.net.rms.confluxmap.core.update.UpdateCheckService;
@@ -76,6 +77,7 @@ final class PaperCompanion implements Listener {
     private final Map<Integer, Map<FlatBaseline, Integer>> flatCandidates = new LinkedHashMap<>();
     private ServerConfig config;
     private UUID worldId;
+    private UUID instanceId;
     private long worldSeed;
     private Path primaryWorldRoot;
     private PaperCorrectionService corrections;
@@ -110,6 +112,9 @@ final class PaperCompanion implements Listener {
         }
         primaryWorldRoot = primary.getWorldFolder().toPath();
         worldId = WorldIdStore.loadOrCreate(primaryWorldRoot);
+        // Kept beside the config rather than in the world, so a world synced to a mirror server
+        // reaches it without carrying this server's identity along.
+        instanceId = ServerInstanceIdStore.loadOrCreate(configIo.directory());
         worldSeed = primary.getSeed();
         webMapPrivacy = new WebMapPrivacyStore(
             primaryWorldRoot.resolve("confluxmap/webmap-hidden.txt")
@@ -322,6 +327,11 @@ final class PaperCompanion implements Listener {
 
     UUID worldId() {
         return worldId;
+    }
+
+    /** Identity of this server installation, unaffected by copying the world it hosts. */
+    UUID instanceId() {
+        return instanceId;
     }
 
     long worldSeed() {
@@ -549,7 +559,9 @@ final class PaperCompanion implements Listener {
     }
 
     private SharedWaypointService loadSharedWaypoints() {
-        final SharedWaypointIo io = new SharedWaypointIo(primaryWorldRoot, SHARED_LOGGER);
+        final SharedWaypointIo io = new SharedWaypointIo(
+            primaryWorldRoot, instanceId.toString(), SHARED_LOGGER
+        );
         try {
             final Map<DimensionId, SharedWaypointValidator.HeightRange> dimensions =
                 new LinkedHashMap<>();

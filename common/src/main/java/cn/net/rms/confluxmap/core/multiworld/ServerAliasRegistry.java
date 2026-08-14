@@ -31,14 +31,15 @@ public final class ServerAliasRegistry {
     }
 
     /**
-     * Canonical id previously seen advertising {@code companionWorldId}. A companion world UUID is
-     * generated once per server world, so seeing it again identifies the same server regardless of
-     * which address the player used to connect.
+     * Canonical id previously seen advertising {@code companionInstanceId}. The instance id is
+     * stored outside the world save, so meeting it again identifies the same server regardless of
+     * which address the player used to connect - and, unlike a world UUID, a copied world cannot
+     * carry it to a different server.
      */
-    public Optional<String> canonicalForCompanionWorld(final String companionWorldId) {
-        Objects.requireNonNull(companionWorldId, "companionWorldId");
+    public Optional<String> canonicalForCompanionInstance(final String companionInstanceId) {
+        Objects.requireNonNull(companionInstanceId, "companionInstanceId");
         return servers().entrySet().stream()
-            .filter(entry -> entry.getValue().companionWorldIds().contains(companionWorldId))
+            .filter(entry -> entry.getValue().companionInstanceIds().contains(companionInstanceId))
             .map(Map.Entry::getKey)
             .findFirst();
     }
@@ -98,6 +99,17 @@ public final class ServerAliasRegistry {
         return true;
     }
 
+    /** Records a companion instance id observed on {@code canonicalId}; false when already known. */
+    public boolean linkCompanionInstance(final String canonicalId, final String companionInstanceId) {
+        Objects.requireNonNull(companionInstanceId, "companionInstanceId");
+        final Entry entry = require(canonicalId);
+        if (entry.companionInstanceIds().contains(companionInstanceId)) {
+            return false;
+        }
+        entry.companionInstanceIds().add(companionInstanceId);
+        return true;
+    }
+
     /**
      * Folds {@code sourceCanonicalId} into {@code canonicalId}, moving every address and companion
      * world onto it and dropping the source entry. Only the identity is merged; the caller must
@@ -119,6 +131,11 @@ public final class ServerAliasRegistry {
         for (final String worldId : source.companionWorldIds()) {
             if (!target.companionWorldIds().contains(worldId)) {
                 target.companionWorldIds().add(worldId);
+            }
+        }
+        for (final String instanceId : source.companionInstanceIds()) {
+            if (!target.companionInstanceIds().contains(instanceId)) {
+                target.companionInstanceIds().add(instanceId);
             }
         }
         for (final String detached : source.detachedAddresses()) {
@@ -211,10 +228,16 @@ public final class ServerAliasRegistry {
         return servers;
     }
 
-    /** One server's address spellings and the companion world UUIDs observed on it. */
+    /**
+     * One server's address spellings, the instance ids proving they are that server, and the
+     * world UUIDs it has hosted. The two id lists answer different questions: an instance id says
+     * <em>which server</em>, a world UUID says <em>which world on it</em>, and only the former
+     * survives having the world copied elsewhere.
+     */
     public static final class Entry {
         private List<String> addresses = new ArrayList<>();
         private List<String> companionWorldIds = new ArrayList<>();
+        private List<String> companionInstanceIds = new ArrayList<>();
         private List<String> detachedAddresses = new ArrayList<>();
 
         List<String> addresses() {
@@ -231,6 +254,13 @@ public final class ServerAliasRegistry {
             return companionWorldIds;
         }
 
+        List<String> companionInstanceIds() {
+            if (companionInstanceIds == null) {
+                companionInstanceIds = new ArrayList<>();
+            }
+            return companionInstanceIds;
+        }
+
         List<String> detachedAddresses() {
             if (detachedAddresses == null) {
                 detachedAddresses = new ArrayList<>();
@@ -245,6 +275,7 @@ public final class ServerAliasRegistry {
         void normalize(final String canonicalId, final List<String> claimed) {
             addresses = dedupe(addresses(), canonicalId, claimed);
             companionWorldIds = dedupe(companionWorldIds(), null, List.of());
+            companionInstanceIds = dedupe(companionInstanceIds(), null, List.of());
             detachedAddresses = dedupe(detachedAddresses(), null, addresses);
         }
 

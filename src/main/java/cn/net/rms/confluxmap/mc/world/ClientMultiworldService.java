@@ -740,7 +740,9 @@ public final class ClientMultiworldService {
     private String canonicalAddress(final String rawAddress) {
         return aliases == null
             ? rawAddress
-            : aliases.resolve(rawAddress, companion.companionWorldId()).canonicalId();
+            : aliases.resolve(
+                rawAddress, companion.companionInstanceId(), companion.companionWorldId()
+            ).canonicalId();
     }
 
     private static String resolveAddress(final MinecraftClient client) {

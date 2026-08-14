@@ -84,6 +84,35 @@ public final class WorldIdentity {
         return new WorldIdentity(sanitize(address), sanitizedWorldId, legacyIds);
     }
 
+    /**
+     * Companion-aware multiplayer keyed on the server instance rather than the world.
+     *
+     * <p>A world UUID lives inside the save and therefore survives a copy: a mirror server synced
+     * from a survival server advertises the same one, and behind a proxy both also share an
+     * address, so nothing else in the identity tells them apart. {@code instanceId} is stored
+     * outside the save and stays behind, so it is what the storage namespace keys on.
+     *
+     * <p>The world UUID is not discarded - it becomes the leading migration hint, ahead of the
+     * older address-level {@code world} namespace. Both remain metadata; multiplayer disk storage
+     * migration is always explicit.
+     */
+    public static WorldIdentity companionMultiplayer(
+        final String address,
+        final String instanceId,
+        final String worldId
+    ) {
+        final String sanitizedInstanceId = sanitizeWorldId(instanceId);
+        final String sanitizedWorldId = sanitizeWorldId(worldId);
+        final List<String> legacyIds = new ArrayList<>();
+        if (!sanitizedWorldId.equals(sanitizedInstanceId)) {
+            legacyIds.add(sanitizedWorldId);
+        }
+        if (!"world".equals(sanitizedInstanceId) && !legacyIds.contains("world")) {
+            legacyIds.add("world");
+        }
+        return new WorldIdentity(sanitize(address), sanitizedInstanceId, legacyIds);
+    }
+
     public static WorldIdentity singleplayer(final String levelName) {
         return new WorldIdentity("local", sanitizeWorldId(levelName));
     }

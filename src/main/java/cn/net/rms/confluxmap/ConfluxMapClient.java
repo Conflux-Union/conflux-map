@@ -21,6 +21,7 @@ import cn.net.rms.confluxmap.core.predict.PredictionTileService;
 import cn.net.rms.confluxmap.core.predict.CorrectionStore;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
+import cn.net.rms.confluxmap.core.store.NamespaceAdoption;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
@@ -72,6 +73,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.resource.ResourceType;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.UUID;
 
 /** Composition root: builds and wires every client-side service. */
@@ -175,6 +177,17 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker = new WorldSessionTracker(
             sessionGuard, companionSession, clientMultiworldService, serverAliasResolver
         );
+        // A server that starts advertising an instance id changes the key its data is stored
+        // under. Carry the old namespace over before the session binds its directories, or the
+        // player's map looks erased on the first reconnect after the server upgrades.
+        final List<NamespaceAdoption.Store> adoptableStores = List.of(
+            new NamespaceAdoption.Store(cacheRoot, ""),
+            new NamespaceAdoption.Store(cacheRoot.resolve("prediction"), ""),
+            new NamespaceAdoption.Store(waypointRoot, ".json")
+        );
+        sessionTracker.bindNamespaceAdopter(identity -> NamespaceAdoption.adopt(
+            adoptableStores, identity, companionSession.companionWorldId(), ConfluxMapMod.LOGGER
+        ));
         mapWorlds = new MapWorldService();
         daylightModel = new DaylightModel();
         tileService = new TileService(mapWorlds, executors, config, daylightModel);

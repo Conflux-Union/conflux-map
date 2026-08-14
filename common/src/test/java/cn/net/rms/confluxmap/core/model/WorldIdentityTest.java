@@ -56,6 +56,50 @@ class WorldIdentityTest {
     }
 
     @Test
+    void instanceIdBecomesTheStorageNamespace() {
+        final WorldIdentity id = WorldIdentity.companionMultiplayer(
+            "example.net:25565",
+            "aaaaaaaa-0000-0000-0000-000000000000",
+            "11111111-2222-3333-4444-555555555555"
+        );
+
+        assertEquals("example.net_25565", id.serverId());
+        assertEquals("aaaaaaaa-0000-0000-0000-000000000000", id.worldId());
+    }
+
+    @Test
+    void instanceIdKeepsTheWorldUuidNamespaceAsAMigrationHint() {
+        final WorldIdentity id = WorldIdentity.companionMultiplayer(
+            "example.net:25565",
+            "aaaaaaaa-0000-0000-0000-000000000000",
+            "11111111-2222-3333-4444-555555555555"
+        );
+
+        assertEquals(
+            java.util.List.of("11111111-2222-3333-4444-555555555555", "world"),
+            id.legacyStorageIds()
+        );
+    }
+
+    /**
+     * A mirror server synced from a survival server shares the world UUID but not the instance id,
+     * which is the whole point of keying storage on the instance.
+     */
+    @Test
+    void twoInstancesSharingOneWorldStayDistinct() {
+        final String sharedWorld = "11111111-2222-3333-4444-555555555555";
+        final WorldIdentity survival = WorldIdentity.companionMultiplayer(
+            "example.net:25565", "aaaaaaaa-0000-0000-0000-000000000000", sharedWorld
+        );
+        final WorldIdentity mirror = WorldIdentity.companionMultiplayer(
+            "example.net:25565", "bbbbbbbb-0000-0000-0000-000000000000", sharedWorld
+        );
+
+        assertNotEquals(survival, mirror);
+        assertNotEquals(survival.worldId(), mirror.worldId());
+    }
+
+    @Test
     void clientSelectedWorldDoesNotAdoptTheDefaultWorldNamespace() {
         final WorldIdentity id = WorldIdentity.multiplayer("example.net:25565", "survival");
 

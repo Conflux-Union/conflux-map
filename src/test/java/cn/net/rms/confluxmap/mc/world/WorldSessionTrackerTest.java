@@ -10,6 +10,7 @@ import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.multiworld.ServerAliasRegistry;
 import cn.net.rms.confluxmap.core.multiworld.ServerAliasResolver;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
+import cn.net.rms.confluxmap.core.net.ServerInstanceS2C;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import java.util.ArrayList;
@@ -88,9 +89,51 @@ class WorldSessionTrackerTest {
         );
     }
 
+    /**
+     * The region cache opens its directory when the session begins, so data has to be carried over
+     * to the new namespace before that, not after.
+     */
+    @Test
+    void namespaceAdoptionRunsBeforeTheSessionOpens() {
+        final SessionGuard guard = new SessionGuard();
+        final WorldSessionTracker tracker = new WorldSessionTracker(guard, new CompanionSession());
+        final List<String> order = new ArrayList<>();
+        tracker.bindNamespaceAdopter(identity -> order.add("adopt:" + identity.worldId()));
+        tracker.addListener(session -> order.add("session:" + session.world().worldId()));
+
+        tracker.updateSession(
+            Optional.of(WorldIdentity.multiplayer("example.net", "survival")),
+            DimensionId.OVERWORLD
+        );
+
+        assertEquals(List.of("adopt:survival", "session:survival"), order);
+    }
+
+    @Test
+    void namespaceAdoptionDoesNotRepeatWhileTheIdentityIsUnchanged() {
+        final WorldSessionTracker tracker =
+            new WorldSessionTracker(new SessionGuard(), new CompanionSession());
+        final List<String> adopted = new ArrayList<>();
+        tracker.bindNamespaceAdopter(identity -> adopted.add(identity.worldId()));
+        final WorldIdentity world = WorldIdentity.multiplayer("example.net", "survival");
+
+        tracker.updateSession(Optional.of(world), DimensionId.OVERWORLD);
+        tracker.updateSession(Optional.of(world), DimensionId.OVERWORLD);
+        tracker.updateSession(Optional.of(world), DimensionId.NETHER);
+
+        assertEquals(List.of("survival"), adopted);
+    }
+
     private static CompanionSession activeCompanion() {
+        return activeCompanion("aaaaaaaa-0000-0000-0000-000000000000");
+    }
+
+    private static CompanionSession activeCompanion(final String instanceId) {
         final CompanionSession companion = new CompanionSession();
         companion.onHelloSent();
+        if (instanceId != null) {
+            companion.onServerInstance(new ServerInstanceS2C(instanceId));
+        }
         companion.onPolicy(new HelloPolicyS2C(
             new HelloPolicyS2C.Flags(false, true, false, false, false, false, false, false),
             "11111111-2222-3333-4444-555555555555",

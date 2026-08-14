@@ -20,6 +20,7 @@ import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.PolicyUpdateS2C;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
+import cn.net.rms.confluxmap.core.net.ServerInstanceS2C;
 import cn.net.rms.confluxmap.core.net.ServerViewDistanceS2C;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -90,6 +91,8 @@ public final class ClientNetworking {
             session.onSelection(msg);
         } else if (msg instanceof final ServerViewDistanceS2C viewDistance) {
             session.onServerViewDistance(viewDistance);
+        } else if (msg instanceof final ServerInstanceS2C serverInstance) {
+            session.onServerInstance(serverInstance);
         } else if (msg instanceof final FlatBaselineS2C f) {
             session.onFlatBaselines(f);
         } else if (msg instanceof final PolicyUpdateS2C u) {

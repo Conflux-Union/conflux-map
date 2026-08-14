@@ -12,6 +12,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 class ServerAliasIoTest {
     private static final String WORLD_UUID = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
+    private static final String INSTANCE = "aaaaaaaa-0000-0000-0000-000000000000";
 
     @TempDir
     Path tempDir;
@@ -21,14 +22,14 @@ class ServerAliasIoTest {
         final ServerAliasIo io = io();
         final ServerAliasRegistry registry = new ServerAliasRegistry();
         final ServerAliasResolver resolver = resolver(registry, Set.of());
-        final String canonical = resolver.resolve("mc.example.com", WORLD_UUID).canonicalId();
+        final String canonical = resolver.resolve("mc.example.com", INSTANCE, WORLD_UUID).canonicalId();
         resolver.link(canonical, "192.0.2.10");
 
         io.save(registry);
         final ServerAliasResolver restored = resolver(io.load(), Set.of(canonical));
 
         assertEquals(canonical, restored.resolve("192.0.2.10"));
-        assertEquals(canonical, restored.resolve("play.example.com", WORLD_UUID).canonicalId());
+        assertEquals(canonical, restored.resolve("play.example.com", INSTANCE, WORLD_UUID).canonicalId());
     }
 
     @Test
@@ -36,14 +37,14 @@ class ServerAliasIoTest {
         final ServerAliasIo io = io();
         final ServerAliasRegistry registry = new ServerAliasRegistry();
         final ServerAliasResolver resolver = resolver(registry, Set.of());
-        final String canonical = resolver.resolve("mc.example.com", WORLD_UUID).canonicalId();
-        resolver.resolve("192.0.2.10", WORLD_UUID);
+        final String canonical = resolver.resolve("mc.example.com", INSTANCE, WORLD_UUID).canonicalId();
+        resolver.resolve("192.0.2.10", INSTANCE, WORLD_UUID);
         resolver.unlink("192.0.2.10");
 
         io.save(registry);
         final ServerAliasResolver restored = resolver(io.load(), Set.of(canonical));
 
-        assertEquals("192.0.2.10", restored.resolve("192.0.2.10", WORLD_UUID).canonicalId());
+        assertEquals("192.0.2.10", restored.resolve("192.0.2.10", INSTANCE, WORLD_UUID).canonicalId());
     }
 
     @Test

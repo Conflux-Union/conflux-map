@@ -13,6 +13,8 @@ import org.junit.jupiter.api.Test;
 class ServerAliasResolverTest {
     private static final String WORLD_UUID = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
     private static final String OTHER_WORLD_UUID = "0b3d5f1a-1111-2222-3333-444455556666";
+    private static final String INSTANCE = "aaaaaaaa-0000-0000-0000-000000000000";
+    private static final String OTHER_INSTANCE = "bbbbbbbb-0000-0000-0000-000000000000";
 
     private final Set<String> storage = new HashSet<>();
     private final ServerAliasRegistry registry = new ServerAliasRegistry();
@@ -55,19 +57,19 @@ class ServerAliasResolverTest {
     @Test
     void anExplicitDefaultPortIsNotMergedOnSpellingAlone() {
         final ServerAliasResolver resolver = resolver();
-        final String bare = resolver.resolve("mc.example.com", WORLD_UUID).canonicalId();
+        final String bare = resolver.resolve("mc.example.com", INSTANCE, WORLD_UUID).canonicalId();
         storage.add(bare);
 
-        assertNotEquals(bare, resolver.resolve("mc.example.com:25565", null).canonicalId());
+        assertNotEquals(bare, resolver.resolve("mc.example.com:25565", null, null).canonicalId());
     }
 
     @Test
     void anExplicitDefaultPortStillMergesOnCompanionEvidence() {
         final ServerAliasResolver resolver = resolver();
-        final String bare = resolver.resolve("mc.example.com", WORLD_UUID).canonicalId();
+        final String bare = resolver.resolve("mc.example.com", INSTANCE, WORLD_UUID).canonicalId();
         storage.add(bare);
 
-        assertEquals(bare, resolver.resolve("mc.example.com:25565", WORLD_UUID).canonicalId());
+        assertEquals(bare, resolver.resolve("mc.example.com:25565", INSTANCE, WORLD_UUID).canonicalId());
     }
 
     @Test
@@ -75,7 +77,7 @@ class ServerAliasResolverTest {
         storage.add("mc.example.com.");
         final ServerAliasResolver resolver = resolver();
 
-        final ServerAliasResolver.Resolution resolution = resolver.resolve("mc.example.com.", null);
+        final ServerAliasResolver.Resolution resolution = resolver.resolve("mc.example.com.", null, null);
 
         assertEquals(ServerAliasResolver.Origin.ADOPTED_LEGACY, resolution.origin());
         assertEquals("mc.example.com.", resolution.canonicalId());
@@ -85,24 +87,24 @@ class ServerAliasResolverTest {
     @Test
     void aSecondAddressOfACompanionServerJoinsTheExistingNamespace() {
         final ServerAliasResolver resolver = resolver();
-        final String canonical = resolver.resolve("mc.example.com", WORLD_UUID).canonicalId();
+        final String canonical = resolver.resolve("mc.example.com", INSTANCE, WORLD_UUID).canonicalId();
         storage.add(canonical);
 
-        final ServerAliasResolver.Resolution byIp = resolver.resolve("192.0.2.10", WORLD_UUID);
+        final ServerAliasResolver.Resolution byIp = resolver.resolve("192.0.2.10", INSTANCE, WORLD_UUID);
 
         assertEquals(ServerAliasResolver.Origin.LEARNED, byIp.origin());
         assertEquals(canonical, byIp.canonicalId());
-        assertEquals(ServerAliasResolver.Origin.KNOWN, resolver.resolve("192.0.2.10", WORLD_UUID).origin());
+        assertEquals(ServerAliasResolver.Origin.KNOWN, resolver.resolve("192.0.2.10", INSTANCE, WORLD_UUID).origin());
     }
 
     @Test
     void learningNeverSilentlyMergesTwoDirectoriesThatBothHoldData() {
         final ServerAliasResolver resolver = resolver();
-        final String canonical = resolver.resolve("mc.example.com", WORLD_UUID).canonicalId();
+        final String canonical = resolver.resolve("mc.example.com", INSTANCE, WORLD_UUID).canonicalId();
         storage.add(canonical);
         storage.add("192.0.2.10");
 
-        final ServerAliasResolver.Resolution byIp = resolver.resolve("192.0.2.10", WORLD_UUID);
+        final ServerAliasResolver.Resolution byIp = resolver.resolve("192.0.2.10", INSTANCE, WORLD_UUID);
 
         assertEquals(ServerAliasResolver.Origin.CONFLICT, byIp.origin());
         assertEquals("192.0.2.10", byIp.canonicalId());
@@ -110,11 +112,11 @@ class ServerAliasResolverTest {
     }
 
     @Test
-    void aDifferentCompanionWorldDoesNotJoinAnotherServersNamespace() {
+    void aDifferentCompanionInstanceDoesNotJoinAnotherServersNamespace() {
         final ServerAliasResolver resolver = resolver();
-        final String canonical = resolver.resolve("mc.example.com", WORLD_UUID).canonicalId();
+        final String canonical = resolver.resolve("mc.example.com", INSTANCE, WORLD_UUID).canonicalId();
 
-        final ServerAliasResolver.Resolution other = resolver.resolve("192.0.2.10", OTHER_WORLD_UUID);
+        final ServerAliasResolver.Resolution other = resolver.resolve("192.0.2.10", OTHER_INSTANCE, OTHER_WORLD_UUID);
 
         assertEquals(ServerAliasResolver.Origin.NEW, other.origin());
         assertNotEquals(canonical, other.canonicalId());
@@ -160,21 +162,21 @@ class ServerAliasResolverTest {
     void absorbingCarriesTheCompanionWorldSoLaterAddressesLearnFromIt() {
         final ServerAliasResolver resolver = resolver();
         final String canonical = resolver.resolve("mc.example.com");
-        final String other = resolver.resolve("192.0.2.10", WORLD_UUID).canonicalId();
+        final String other = resolver.resolve("192.0.2.10", INSTANCE, WORLD_UUID).canonicalId();
         storage.add(canonical);
         storage.add(other);
 
         resolver.absorb(canonical, "192.0.2.10");
 
-        assertEquals(canonical, resolver.resolve("play.example.com", WORLD_UUID).canonicalId());
+        assertEquals(canonical, resolver.resolve("play.example.com", INSTANCE, WORLD_UUID).canonicalId());
     }
 
     @Test
     void unlinkingRestoresTheAddressToItsOwnNamespace() {
         final ServerAliasResolver resolver = resolver();
-        final String canonical = resolver.resolve("mc.example.com", WORLD_UUID).canonicalId();
+        final String canonical = resolver.resolve("mc.example.com", INSTANCE, WORLD_UUID).canonicalId();
         storage.add(canonical);
-        resolver.resolve("192.0.2.10", WORLD_UUID);
+        resolver.resolve("192.0.2.10", INSTANCE, WORLD_UUID);
 
         resolver.unlink("192.0.2.10");
 
@@ -184,12 +186,12 @@ class ServerAliasResolverTest {
     @Test
     void aDetachedAddressIsNotSilentlyRelearnedOnTheNextConnection() {
         final ServerAliasResolver resolver = resolver();
-        final String canonical = resolver.resolve("mc.example.com", WORLD_UUID).canonicalId();
+        final String canonical = resolver.resolve("mc.example.com", INSTANCE, WORLD_UUID).canonicalId();
         storage.add(canonical);
-        resolver.resolve("192.0.2.10", WORLD_UUID);
+        resolver.resolve("192.0.2.10", INSTANCE, WORLD_UUID);
         resolver.unlink("192.0.2.10");
 
-        final ServerAliasResolver.Resolution again = resolver.resolve("192.0.2.10", WORLD_UUID);
+        final ServerAliasResolver.Resolution again = resolver.resolve("192.0.2.10", INSTANCE, WORLD_UUID);
 
         assertEquals(ServerAliasResolver.Origin.NEW, again.origin());
         assertEquals("192.0.2.10", again.canonicalId());
@@ -198,14 +200,14 @@ class ServerAliasResolverTest {
     @Test
     void anExplicitRelinkOverridesAnEarlierDetach() {
         final ServerAliasResolver resolver = resolver();
-        final String canonical = resolver.resolve("mc.example.com", WORLD_UUID).canonicalId();
+        final String canonical = resolver.resolve("mc.example.com", INSTANCE, WORLD_UUID).canonicalId();
         storage.add(canonical);
-        resolver.resolve("192.0.2.10", WORLD_UUID);
+        resolver.resolve("192.0.2.10", INSTANCE, WORLD_UUID);
         resolver.unlink("192.0.2.10");
 
         resolver.link(canonical, "192.0.2.10");
 
-        assertEquals(canonical, resolver.resolve("192.0.2.10", WORLD_UUID).canonicalId());
+        assertEquals(canonical, resolver.resolve("192.0.2.10", INSTANCE, WORLD_UUID).canonicalId());
     }
 
     @Test
@@ -219,11 +221,11 @@ class ServerAliasResolverTest {
     @Test
     void repeatedResolutionOfAKnownAddressPersistsNothingNew() {
         final ServerAliasResolver resolver = resolver();
-        resolver.resolve("mc.example.com", WORLD_UUID);
+        resolver.resolve("mc.example.com", INSTANCE, WORLD_UUID);
         final int afterFirst = saves;
 
-        resolver.resolve("mc.example.com", WORLD_UUID);
-        resolver.resolve("MC.EXAMPLE.COM.", WORLD_UUID);
+        resolver.resolve("mc.example.com", INSTANCE, WORLD_UUID);
+        resolver.resolve("MC.EXAMPLE.COM.", INSTANCE, WORLD_UUID);
 
         assertEquals(afterFirst, saves);
     }
@@ -263,9 +265,9 @@ class ServerAliasResolverTest {
     @Test
     void aDetachedAddressIsListedAndCanBeLinkedBackExplicitly() {
         final ServerAliasResolver resolver = resolver();
-        final String canonical = resolver.resolve("mc.example.com", WORLD_UUID).canonicalId();
+        final String canonical = resolver.resolve("mc.example.com", INSTANCE, WORLD_UUID).canonicalId();
         storage.add(canonical);
-        resolver.resolve("192.0.2.10", WORLD_UUID);
+        resolver.resolve("192.0.2.10", INSTANCE, WORLD_UUID);
         resolver.unlink("192.0.2.10");
 
         assertEquals(List.of("192.0.2.10"), resolver.detachedAddresses(canonical));
@@ -283,8 +285,8 @@ class ServerAliasResolverTest {
     @Test
     void companionWorldsAreNumberedInTheOrderTheyWereSeen() {
         final ServerAliasResolver resolver = resolver();
-        final String canonical = resolver.resolve("mc.example.com", WORLD_UUID).canonicalId();
-        resolver.resolve("mc.example.com", OTHER_WORLD_UUID);
+        final String canonical = resolver.resolve("mc.example.com", INSTANCE, WORLD_UUID).canonicalId();
+        resolver.resolve("mc.example.com", INSTANCE, OTHER_WORLD_UUID);
 
         assertEquals(1, resolver.worldOrdinal(canonical, WORLD_UUID));
         assertEquals(2, resolver.worldOrdinal(canonical, OTHER_WORLD_UUID));
@@ -296,6 +298,66 @@ class ServerAliasResolverTest {
         final String canonical = resolver.resolve("mc.example.com");
 
         assertEquals(0, resolver.worldOrdinal(canonical, WORLD_UUID));
+    }
+
+    /**
+     * A mirror server synced from a survival server carries the survival world's UUID inside the
+     * copied save, and behind one proxy both are reached at the same address. Only the instance id
+     * distinguishes them, so merging must never key on the world.
+     */
+    @Test
+    void twoInstancesSharingACopiedWorldNeverMerge() {
+        final ServerAliasResolver resolver = resolver();
+        final String survival =
+            resolver.resolve("play.example.com", INSTANCE, WORLD_UUID).canonicalId();
+        storage.add(survival);
+
+        final ServerAliasResolver.Resolution mirror =
+            resolver.resolve("mirror.example.com", OTHER_INSTANCE, WORLD_UUID);
+
+        assertEquals(ServerAliasResolver.Origin.NEW, mirror.origin());
+        assertNotEquals(survival, mirror.canonicalId());
+    }
+
+    @Test
+    void aSecondAddressOfOneInstanceJoinsItsNamespace() {
+        final ServerAliasResolver resolver = resolver();
+        final String canonical =
+            resolver.resolve("mc.example.com", INSTANCE, WORLD_UUID).canonicalId();
+        storage.add(canonical);
+
+        final ServerAliasResolver.Resolution byIp =
+            resolver.resolve("192.0.2.10", INSTANCE, WORLD_UUID);
+
+        assertEquals(ServerAliasResolver.Origin.LEARNED, byIp.origin());
+        assertEquals(canonical, byIp.canonicalId());
+    }
+
+    /** An instance that hosts a different world over time is still the same server. */
+    @Test
+    void oneInstanceChangingItsWorldKeepsItsNamespace() {
+        final ServerAliasResolver resolver = resolver();
+        final String canonical =
+            resolver.resolve("mc.example.com", INSTANCE, WORLD_UUID).canonicalId();
+        storage.add(canonical);
+
+        assertEquals(
+            canonical,
+            resolver.resolve("192.0.2.10", INSTANCE, OTHER_WORLD_UUID).canonicalId()
+        );
+    }
+
+    /** Servers predating the capability advertise no instance id and must not merge on the world. */
+    @Test
+    void withoutAnInstanceIdAddressesStayApartEvenOnAMatchingWorld() {
+        final ServerAliasResolver resolver = resolver();
+        final String canonical = resolver.resolve("mc.example.com", null, WORLD_UUID).canonicalId();
+        storage.add(canonical);
+
+        final ServerAliasResolver.Resolution byIp = resolver.resolve("192.0.2.10", null, WORLD_UUID);
+
+        assertEquals(ServerAliasResolver.Origin.NEW, byIp.origin());
+        assertNotEquals(canonical, byIp.canonicalId());
     }
 
     private ServerAliasResolver resolver() {
