@@ -12,6 +12,9 @@ import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfileIo;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfileRegistry;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfileResolver;
+import cn.net.rms.confluxmap.core.multiworld.ServerAliasIo;
+import cn.net.rms.confluxmap.core.multiworld.ServerAliasRegistry;
+import cn.net.rms.confluxmap.core.multiworld.ServerAliasResolver;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.PredictionTileService;
@@ -67,6 +70,7 @@ import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.resource.ResourceType;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
 
@@ -80,6 +84,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private SessionGuard sessionGuard;
     private WorldSessionTracker sessionTracker;
     private ClientMultiworldService clientMultiworldService;
+    private ServerAliasResolver serverAliasResolver;
     private GameBridge gameBridge;
     private MapWorldService mapWorlds;
     private TileService tileService;
@@ -152,10 +157,24 @@ public final class ConfluxMapClient implements ClientModInitializer {
         final ClientWorldProfileResolver clientWorldResolver = new ClientWorldProfileResolver(
             clientWorldProfiles, UUID::randomUUID, () -> clientWorldProfileIo.save(clientWorldProfiles)
         );
-        clientMultiworldService = new ClientMultiworldService(
-            client, companionSession, clientWorldResolver, cacheRoot, executors.io()
+        final Path waypointRoot = confluxRoot.resolve("waypoints");
+        final ServerAliasIo serverAliasIo = new ServerAliasIo(
+            FabricLoader.getInstance().getConfigDir().resolve(ConfluxMapMod.ID).resolve("server_aliases.json"),
+            ConfluxMapMod.LOGGER
         );
-        sessionTracker = new WorldSessionTracker(sessionGuard, companionSession, clientMultiworldService);
+        final ServerAliasRegistry serverAliases = serverAliasIo.load();
+        serverAliasResolver = new ServerAliasResolver(
+            serverAliases,
+            storageId -> Files.isDirectory(cacheRoot.resolve(storageId))
+                || Files.isDirectory(waypointRoot.resolve(storageId)),
+            () -> serverAliasIo.save(serverAliases)
+        );
+        clientMultiworldService = new ClientMultiworldService(
+            client, companionSession, clientWorldResolver, cacheRoot, executors.io(), serverAliasResolver
+        );
+        sessionTracker = new WorldSessionTracker(
+            sessionGuard, companionSession, clientMultiworldService, serverAliasResolver
+        );
         mapWorlds = new MapWorldService();
         daylightModel = new DaylightModel();
         tileService = new TileService(mapWorlds, executors, config, daylightModel);
@@ -243,10 +262,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         entityIconManager = new EntityIconManager();
         playerTrail = new PlayerTrail();
         playerTrailTracker = new PlayerTrailTracker(client, config, sessionGuard, playerTrail);
-        waypointService = new WaypointService(
-            FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("waypoints"),
-            executors, ConfluxMapMod.LOGGER
-        );
+        waypointService = new WaypointService(waypointRoot, executors, ConfluxMapMod.LOGGER);
         annotationService = new AnnotationService(
             FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("annotations"),
             executors, ConfluxMapMod.LOGGER
@@ -350,6 +366,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public SessionGuard sessionGuard() {
         return sessionGuard;
+    }
+
+    public ServerAliasResolver serverAliasResolver() {
+        return serverAliasResolver;
     }
 
     public WorldSessionTracker sessionTracker() {

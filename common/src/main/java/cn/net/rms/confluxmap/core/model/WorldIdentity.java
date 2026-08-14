@@ -89,6 +89,15 @@ public final class WorldIdentity {
     }
 
     /**
+     * The storage id {@link #multiplayer(String)} would derive from {@code address}. Exposed so
+     * server-alias resolution can compare and index address spellings without building a throwaway
+     * identity, and so both paths share one sanitizer.
+     */
+    public static String serverId(final String address) {
+        return sanitize(address);
+    }
+
+    /**
      * Uses a UUID persisted inside the save, rather than its editable display or directory name.
      * Reopening or renaming a save keeps the UUID; deleting it and creating a same-named save
      * creates a fresh UUID and therefore a fresh map namespace.

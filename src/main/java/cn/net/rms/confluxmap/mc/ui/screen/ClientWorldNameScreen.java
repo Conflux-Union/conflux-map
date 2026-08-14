@@ -9,12 +9,14 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.text.Text;
 
 /** Create/rename form for one client-owned world profile. */
 final class ClientWorldNameScreen extends ConfluxScreen {
     private final Screen parent;
     private final String initialName;
     private final Consumer<String> onSubmit;
+    private final String fieldLabelKey;
     private TextFieldWidget nameField;
     private ButtonWidget doneButton;
 
@@ -23,12 +25,30 @@ final class ClientWorldNameScreen extends ConfluxScreen {
         final String initialName,
         final Consumer<String> onSubmit
     ) {
-        super(Texts.translatable(initialName == null
-            ? "confluxmap.screen.client_world.create_title"
-            : "confluxmap.screen.client_world.rename_title"));
+        this(
+            parent,
+            initialName,
+            onSubmit,
+            Texts.translatable(initialName == null
+                ? "confluxmap.screen.client_world.create_title"
+                : "confluxmap.screen.client_world.rename_title"),
+            "confluxmap.screen.client_world.name"
+        );
+    }
+
+    /** Same form with caller-chosen wording, for names that are not a client sub-world's. */
+    ClientWorldNameScreen(
+        final Screen parent,
+        final String initialName,
+        final Consumer<String> onSubmit,
+        final Text title,
+        final String fieldLabelKey
+    ) {
+        super(title);
         this.parent = parent;
         this.initialName = initialName;
         this.onSubmit = onSubmit;
+        this.fieldLabelKey = fieldLabelKey;
     }
 
     @Override
@@ -41,7 +61,7 @@ final class ClientWorldNameScreen extends ConfluxScreen {
         final int fieldWidth = Math.min(240, width - 24);
         nameField = new TextFieldWidget(
             this.textRenderer, width / 2 - fieldWidth / 2, 62, fieldWidth, 20,
-            Texts.translatable("confluxmap.screen.client_world.name")
+            Texts.translatable(fieldLabelKey)
         );
         nameField.setMaxLength(64);
         nameField.setText(initialName == null ? "" : initialName);
@@ -94,7 +114,7 @@ final class ClientWorldNameScreen extends ConfluxScreen {
         draw.drawTextWithShadow(
             this.textRenderer, title, width / 2f - this.textRenderer.getWidth(title) / 2f, 24, 0xFFFFFFFF
         );
-        final String prompt = Texts.translatable("confluxmap.screen.client_world.name").getString();
+        final String prompt = Texts.translatable(fieldLabelKey).getString();
         draw.drawTextWithShadow(
             this.textRenderer, prompt, width / 2f - this.textRenderer.getWidth(prompt) / 2f, 48, 0xFFBBBBBB
         );

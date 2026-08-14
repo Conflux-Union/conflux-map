@@ -88,17 +88,18 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         for (int index = scrollOffset; index < end; index++) {
             final int y = LIST_TOP + (index - scrollOffset) * ROW_HEIGHT;
             if (authoritative && index == 0) {
-                final String worldId = worlds.companionWorldIdentity()
-                    .map(WorldIdentity::worldId)
-                    .orElse("?");
                 final ButtonWidget serverWorld = addDrawableChild(Widgets.button(
-                    rowX, y, rowWidth, 20,
-                    Texts.literal("✓ [" + Texts.translatable(
-                        "confluxmap.screen.client_world.server_world"
-                    ).getString() + "] " + worldId),
+                    rowX, y, rowWidth - RENAME_WIDTH - GAP, 20,
+                    Texts.literal("✓ " + companionWorldLabel()),
                     ignored -> { }
                 ));
                 serverWorld.active = false;
+                final ButtonWidget renameServerWorld = addDrawableChild(Widgets.button(
+                    rowX + rowWidth - RENAME_WIDTH, y, RENAME_WIDTH, 20,
+                    Texts.translatable("confluxmap.screen.client_world.rename"),
+                    ignored -> openCompanionWorldNameEditor()
+                ));
+                renameServerWorld.active = !migrationBusy;
                 continue;
             }
             final ClientWorldProfile profile = profiles.get(index - authorityRows);
@@ -171,7 +172,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
 
         final boolean canMerge = authoritative && selectedMigrationId != null;
         final boolean canMigrate = !authoritative && canMigrateLegacyWaypoints(profiles);
-        final int footerButtonCount = canMerge || canMigrate ? 4 : 3;
+        final int footerButtonCount = canMerge || canMigrate ? 5 : 4;
         final int footerButtonWidth = (footerWidth - GAP * (footerButtonCount - 1))
             / footerButtonCount;
         int footerIndex = 0;
@@ -213,6 +214,17 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
                 }
             ));
         }
+        final ButtonWidget aliases = addDrawableChild(Widgets.button(
+            footerX + footerIndex++ * (footerButtonWidth + GAP),
+            height - 28,
+            footerButtonWidth,
+            20,
+            Texts.translatable("confluxmap.screen.client_world.aliases"),
+            ignored -> MinecraftAccess.setScreen(
+                MinecraftClient.getInstance(), new ServerAliasScreen(this)
+            )
+        ));
+        aliases.active = !migrationBusy && worlds.currentServerId().isPresent();
         final ButtonWidget seedPreview = addDrawableChild(Widgets.button(
             footerX + footerIndex++ * (footerButtonWidth + GAP),
             height - 28,
@@ -422,6 +434,32 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         migrationError = false;
         worlds.clearBindings(profileId);
         rebuild();
+    }
+
+    /**
+     * The server owns this world's identity, so the only name it can carry is one the player
+     * chose. Unnamed worlds are numbered per server rather than shown as their raw UUID.
+     */
+    private String companionWorldLabel() {
+        return worlds.companionWorldName().orElseGet(() -> Texts.translatable(
+            "confluxmap.screen.client_world.server_world_unnamed", worlds.companionWorldOrdinal()
+        ).getString());
+    }
+
+    private void openCompanionWorldNameEditor() {
+        pendingForgetId = null;
+        migrationMessage = null;
+        migrationError = false;
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new ClientWorldNameScreen(
+            this,
+            worlds.companionWorldName().orElse(null),
+            name -> {
+                worlds.renameCompanionWorld(name);
+                rebuild();
+            },
+            Texts.translatable("confluxmap.screen.client_world.server_world_rename_title"),
+            "confluxmap.screen.client_world.server_world_name"
+        ));
     }
 
     private void openNameEditor(final ClientWorldProfile profile) {

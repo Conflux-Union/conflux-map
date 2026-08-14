@@ -3,11 +3,13 @@ package cn.net.rms.confluxmap.mc.world;
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
+import cn.net.rms.confluxmap.core.multiworld.ServerAliasResolver;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -32,11 +34,15 @@ public final class WorldSessionTracker {
     private final List<Consumer<SessionGuard.Session>> listeners = new ArrayList<>();
     private final CompanionSession companion;
     private final ClientMultiworldService clientMultiworld;
+    private final ServerAliasResolver aliases;
     private Path singleplayerSaveRoot;
     private WorldIdentity singleplayerIdentity;
+    private String observedAddress;
+    private String observedCompanionWorldId;
+    private String canonicalAddress;
 
     public WorldSessionTracker(final SessionGuard guard, final CompanionSession companion) {
-        this(guard, companion, null);
+        this(guard, companion, null, null);
     }
 
     public WorldSessionTracker(
@@ -44,9 +50,23 @@ public final class WorldSessionTracker {
         final CompanionSession companion,
         final ClientMultiworldService clientMultiworld
     ) {
+        this(guard, companion, clientMultiworld, null);
+    }
+
+    /**
+     * @param aliases resolves the typed address to the namespace its data lives in, merging the
+     *                several addresses of one server; null keeps the raw address, as before
+     */
+    public WorldSessionTracker(
+        final SessionGuard guard,
+        final CompanionSession companion,
+        final ClientMultiworldService clientMultiworld,
+        final ServerAliasResolver aliases
+    ) {
         this.guard = guard;
         this.companion = companion;
         this.clientMultiworld = clientMultiworld;
+        this.aliases = aliases;
     }
 
     public void register() {
@@ -75,6 +95,7 @@ public final class WorldSessionTracker {
         if (client.world == null || client.player == null) {
             singleplayerSaveRoot = null;
             singleplayerIdentity = null;
+            forgetCanonicalAddress();
             if (current.active()) {
                 endSession();
                 ConfluxMapMod.LOGGER.info("Map session ended (token {})", current.token());
@@ -149,13 +170,62 @@ public final class WorldSessionTracker {
         if (clientMultiworld != null && clientMultiworld.migrationInProgress()) {
             return Optional.empty();
         }
-        final String address = resolveAddress(client);
+        final String address = canonicalAddress(resolveAddress(client));
         if (companion.state() == CompanionSession.State.ACTIVE
             || companion.state() == CompanionSession.State.HELLO_SENT
             || clientMultiworld == null) {
             return companion.resolveWorldIdentity(address);
         }
         return clientMultiworld.resolve(address);
+    }
+
+    /**
+     * Maps the typed address onto the storage namespace that owns its data. Resolution is cached
+     * against the address and the companion world it was resolved with, because this runs every
+     * tick while only those two inputs can change the answer.
+     */
+    String canonicalAddress(final String rawAddress) {
+        if (aliases == null) {
+            return rawAddress;
+        }
+        final String companionWorldId = companion.companionWorldId();
+        if (rawAddress.equals(observedAddress)
+            && Objects.equals(companionWorldId, observedCompanionWorldId)) {
+            return canonicalAddress;
+        }
+        final ServerAliasResolver.Resolution resolution = aliases.resolve(rawAddress, companionWorldId);
+        observedAddress = rawAddress;
+        observedCompanionWorldId = companionWorldId;
+        canonicalAddress = resolution.canonicalId();
+        logResolution(rawAddress, resolution);
+        return canonicalAddress;
+    }
+
+    private void forgetCanonicalAddress() {
+        observedAddress = null;
+        observedCompanionWorldId = null;
+        canonicalAddress = null;
+    }
+
+    private static void logResolution(
+        final String rawAddress,
+        final ServerAliasResolver.Resolution resolution
+    ) {
+        switch (resolution.origin()) {
+            case LEARNED -> ConfluxMapMod.LOGGER.info(
+                "Recognized {} as an address of {} from its companion world id; sharing its map data",
+                rawAddress, resolution.canonicalId()
+            );
+            case CONFLICT -> ConfluxMapMod.LOGGER.info(
+                "{} is the same server as {}, but both already store map data; keeping them apart "
+                    + "until the data is merged explicitly",
+                rawAddress, resolution.mergeTarget()
+            );
+            case ADOPTED_LEGACY -> ConfluxMapMod.LOGGER.info(
+                "Reusing existing map data stored for {} under {}", rawAddress, resolution.canonicalId()
+            );
+            default -> { }
+        }
     }
 
     private static String resolveAddress(final MinecraftClient client) {

@@ -201,6 +201,17 @@ public final class CompanionSession {
     }
 
     /**
+     * The world UUID an active companion advertised, or {@code null} when no companion is
+     * negotiated. Because the server generates it once per world, meeting the same value again
+     * identifies the same server whichever address the player connected through, which is what
+     * {@link cn.net.rms.confluxmap.core.multiworld.ServerAliasResolver} merges namespaces on.
+     */
+    public @Nullable String companionWorldId() {
+        final HelloPolicyS2C currentPolicy = policy;
+        return state.get() == State.ACTIVE && currentPolicy != null ? currentPolicy.worldId() : null;
+    }
+
+    /**
      * Returns the seed the server advertised for dimension index {@code dimIndex}, or empty if
      * the companion is not active, has not granted the seed, or the dim has no seed.
      */

@@ -47,6 +47,41 @@ class ClientWorldProfileIoTest {
     }
 
     @Test
+    void namesGivenToCompanionOwnedWorldsSurviveARestart() {
+        final Path file = tempDir.resolve("client_worlds.json");
+        final ClientWorldProfileIo io = new ClientWorldProfileIo(
+            file, LogManager.getLogger("ClientWorldProfileIoTest")
+        );
+        final ClientWorldProfileRegistry registry = new ClientWorldProfileRegistry();
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            registry, UUID::randomUUID
+        );
+        resolver.nameServerWorld("example.net", "world-uuid-1", "  Survival  ");
+        resolver.nameServerWorld("example.net", "world-uuid-2", "Creative");
+
+        io.save(registry);
+        final ClientWorldProfileRegistry loaded = io.load();
+
+        assertEquals("Survival", loaded.serverWorldName("example.net", "world-uuid-1").orElseThrow());
+        assertEquals("Creative", loaded.serverWorldName("example.net", "world-uuid-2").orElseThrow());
+        assertTrue(loaded.serverWorldName("other.net", "world-uuid-1").isEmpty());
+    }
+
+    @Test
+    void clearingACompanionWorldNameLeavesNothingBehind() {
+        final ClientWorldProfileRegistry registry = new ClientWorldProfileRegistry();
+        final ClientWorldProfileResolver resolver = new ClientWorldProfileResolver(
+            registry, UUID::randomUUID
+        );
+        resolver.nameServerWorld("example.net", "world-uuid-1", "Survival");
+
+        resolver.nameServerWorld("example.net", "world-uuid-1", "   ");
+        registry.normalize();
+
+        assertTrue(registry.serverWorldName("example.net", "world-uuid-1").isEmpty());
+    }
+
+    @Test
     void quarantinesCorruptJsonAndReturnsAnEmptyRegistry() throws Exception {
         final Path file = tempDir.resolve("client_worlds.json");
         Files.writeString(file, "{not json");
