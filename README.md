@@ -73,7 +73,17 @@ ratio.
 map records per world instead of one server's terrain bleeding into another's. When the mod can't
 tell which world you're on, it pauses recording and asks you to pick one; the same screen creates,
 renames, and unbinds sub-worlds, merges an older same-seed map cache into the current world, and
-moves waypoints left behind on an old record.
+moves waypoints left behind on an old record. A world the companion identifies for you is listed
+under a name you give it, or a plain number, rather than its internal id.
+
+**Server addresses.** One server reached through several addresses — a short alias, the full
+hostname, a bare IP — keeps one map cache, waypoint set, and local seed instead of a separate copy
+per address you typed. No companion needed: addresses that differ only in case or a trailing dot
+merge on their own, and "Addresses" in the sub-world screen links or unlinks the rest by hand. An
+explicit port is never assumed to be the default one, since `mc.example.com` and
+`mc.example.com:25565` can reach different machines. A companion, when there is one, confirms the
+relationship itself and saves you the manual link. Unlinking deletes nothing, it only splits what
+gets stored from then on, and an address that already holds its own map data is never linked over.
 
 **Drawing and trails.** Lines, shapes, freehand paths, and text labels on the map. Select and move
 what you drew, recolor it, erase with a resizable eraser, and undo or redo with `Ctrl+Z` /
