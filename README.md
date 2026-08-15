@@ -2,10 +2,7 @@
 
 **English** | [简体中文](README-CN.md)
 
-Conflux Map is a Fabric minimap and world map built for multiplayer. It replaces the usual pile
-of a minimap, a world map, a biome map, a chunk-load overlay, and a waypoint-sync mod with one
-client jar, and it can sync a live map across a whole server for a few hundred bytes to a few
-hundred kilobytes per update.
+Conflux Map is a Fabric minimap / world map mod for multiplayer games. It integrates a minimap, world map, biome map, chunk-ticket map, structure finder, and waypoint synchronization into one jar file. A single sync uses only a few hundred bytes to a few hundred kb.
 
 ## Supported versions
 
