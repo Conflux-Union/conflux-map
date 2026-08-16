@@ -123,6 +123,7 @@ public final class PredictionTileService {
         this.millisClock = millisClock;
         this.maxConcurrentCompositions = Math.max(1, executors.workerCount());
         uploads.bindRealCoverageListener(this::onRealCoverageChanged);
+        uploads.bindPredictedUploadReloader(this::requestTile);
     }
 
     private void onRealCoverageChanged(final TileKey realKey) {

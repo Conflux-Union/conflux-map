@@ -16,6 +16,7 @@ import cn.net.rms.confluxmap.core.net.CorrectionProfile;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.predict.CorrectionTile;
 import cn.net.rms.confluxmap.core.predict.MapSourceSelector;
+import cn.net.rms.confluxmap.core.predict.PredictedTileKeys;
 import cn.net.rms.confluxmap.core.store.ColumnStore;
 import cn.net.rms.confluxmap.core.store.MapWorld;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
@@ -85,6 +86,7 @@ public final class TileService {
      */
     private volatile RegionCacheService regionCache;
     private volatile Consumer<TileKey> realCoverageListener = ignored -> { };
+    private volatile Consumer<TileKey> predictedUploadReloader = ignored -> { };
     private volatile ChunkViewport localAuthorityViewport;
 
     public TileService(
@@ -107,6 +109,16 @@ public final class TileService {
     /** Registers the prediction-plane invalidator for newly available real-map coverage. */
     public void bindRealCoverageListener(final Consumer<TileKey> listener) {
         realCoverageListener = listener == null ? ignored -> { } : listener;
+    }
+
+    /**
+     * Registers the composer to ask for a predicted tile again after {@link #pushUpload} had to
+     * evict its pending upload. This class can only recompose the tiles it owns; a {@code "!pred"}
+     * key belongs to the prediction plane, and dropping its update without telling anyone would
+     * strand whatever pixels that tile last managed to upload.
+     */
+    public void bindPredictedUploadReloader(final Consumer<TileKey> reloader) {
+        predictedUploadReloader = reloader == null ? ignored -> { } : reloader;
     }
 
     /** Publishes the server send-distance snapshot used for local source authority. */
@@ -557,6 +569,12 @@ public final class TileService {
             synchronized (this) {
                 final int compositionLimit = viewport == null ? maxConcurrentCompositions : 1;
                 if (inFlight.size() >= compositionLimit || dirty.isEmpty()) {
+                    return;
+                }
+                // Every in-flight composition ends in one queued upload. Starting more than the
+                // queue can still take would push finished tiles back out of it; leaving them in
+                // the dirty map instead costs latency, not pixels. drainUploads() pumps again.
+                if (uploads.size() + inFlight.size() >= UPLOAD_QUEUE_CAPACITY) {
                     return;
                 }
                 next = nearestDirty();
@@ -1022,15 +1040,51 @@ public final class TileService {
         }
     }
 
+    /**
+     * Queues a finished composition for the render thread, evicting the oldest pending upload
+     * while the queue is over capacity.
+     *
+     * <p>An evicted update is handed back to whoever can compose it again instead of being
+     * forgotten. Composition already took its tile out of {@link #dirty} and its pixels live
+     * nowhere else, while {@code TileTextureManager} only re-requests a tile whose texture is
+     * missing entirely - so a tile that is already on screen would otherwise keep showing the
+     * composition it happened to be uploaded with, missing every chunk captured since, until
+     * something unrelated evicted its texture.
+     */
     private void pushUpload(final TileUpdate update) {
+        final List<TileKey> evicted;
         synchronized (this) {
             uploads.remove(update.key());
             uploads.put(update.key(), update);
+            if (uploads.size() <= UPLOAD_QUEUE_CAPACITY) {
+                return;
+            }
+            evicted = new ArrayList<>();
             while (uploads.size() > UPLOAD_QUEUE_CAPACITY) {
                 final TileKey oldest = uploads.keySet().iterator().next();
                 uploads.remove(oldest);
+                evicted.add(oldest);
             }
         }
+        // Outside the monitor: recomposing goes back through markDirty() and pump().
+        for (final TileKey key : evicted) {
+            recomposeEvicted(key);
+        }
+    }
+
+    private void recomposeEvicted(final TileKey key) {
+        if (PredictedTileKeys.isPredicted(key)) {
+            predictedUploadReloader.accept(key);
+            return;
+        }
+        final MapWorld world = mapWorlds.current();
+        if (world == null
+            || !key.world().equals(world.session().world())
+            || !key.dimension().equals(world.session().dimension())) {
+            // A session change already invalidated the tile; onSessionChanged cleared the queue.
+            return;
+        }
+        markDirty(key, world.session().token());
     }
 
     private record ViewportRect(
@@ -1066,6 +1120,10 @@ public final class TileService {
                 result.add(it.next().getValue());
                 it.remove();
             }
+        }
+        if (!result.isEmpty()) {
+            // The room this just freed is what the composition backpressure in pump() waits for.
+            pump();
         }
         return result;
     }
