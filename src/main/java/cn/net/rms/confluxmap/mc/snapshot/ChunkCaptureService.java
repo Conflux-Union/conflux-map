@@ -143,9 +143,10 @@ public final class ChunkCaptureService {
      * Whether a dirty chunk is worth sampling this tick. A chunk is only fully sampleable once
      * its 3x3 neighbourhood has arrived - the biome blend and the surrounding terrain reach
      * across the border - so an incomplete neighbourhood is held back rather than baked. The
-     * hold is bounded by {@link DirtyChunkSet}: the ring at the edge of the server's send
-     * distance never completes, and it still has to reach the map, with
-     * {@link ChunkTintSampler}'s window keeping its border tints honest in the meantime.
+     * hold only outranks competing work, and {@link DirtyChunkSet} bounds it either way: the
+     * ring at the edge of the server's send distance never completes, and it still has to reach
+     * the map, with {@link ChunkTintSampler}'s window keeping its border tints honest until an
+     * arriving neighbour re-marks it for a full-quality resample.
      */
     private DirtyChunkSet.Readiness captureReadiness(final int chunkX, final int chunkZ) {
         final ClientWorld world = client.world;

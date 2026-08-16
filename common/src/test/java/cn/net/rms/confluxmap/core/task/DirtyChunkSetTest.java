@@ -100,13 +100,13 @@ class DirtyChunkSetTest {
     }
 
     @Test
-    void chunksWaitingForNeighborsStayDirtyAndLetFartherReadyChunksThrough() {
+    void chunksWaitingForNeighborsLetReadyChunksThroughFirst() {
         final DirtyChunkSet dirty = new DirtyChunkSet();
         dirty.mark(1, 0);
         dirty.mark(2, 0);
 
         final List<long[]> batch = dirty.drainNearest(
-            4, 0, 0, (x, z) -> x == 1 ? Readiness.WAITING : Readiness.READY
+            1, 0, 0, (x, z) -> x == 1 ? Readiness.WAITING : Readiness.READY
         );
 
         assertEquals(List.of(key(2, 0)), batch.stream().map(DirtyChunkSetTest::keyOf).toList());
@@ -115,20 +115,75 @@ class DirtyChunkSetTest {
     }
 
     @Test
+    void waitingChunksTakeTheBudgetLeftOverAfterTheSampleableOnes() {
+        final DirtyChunkSet dirty = new DirtyChunkSet();
+        dirty.mark(1, 0);
+        dirty.mark(2, 0);
+        dirty.mark(3, 0);
+
+        final List<long[]> batch = dirty.drainNearest(
+            3, 0, 0, (x, z) -> x == 2 ? Readiness.WAITING : Readiness.READY
+        );
+
+        assertEquals(
+            List.of(key(1, 0), key(3, 0), key(2, 0)),
+            batch.stream().map(DirtyChunkSetTest::keyOf).toList(),
+            "the held chunk is sampled last, but an idle budget must not leave it off the map"
+        );
+        assertEquals(0, dirty.size());
+    }
+
+    @Test
     void aNeighborhoodThatNeverCompletesIsSampledAnywayOnceTheHoldRunsOut() {
         final DirtyChunkSet dirty = new DirtyChunkSet();
-        dirty.mark(3, 4);
-        final ChunkReadiness neverReady = (x, z) -> Readiness.WAITING;
+        // The held chunk is nearer than the ready work behind it, so every drain fills its whole
+        // budget after passing it over - the hold has to expire on its own to ever be sampled.
+        dirty.mark(5, 0);
+        final ChunkReadiness readiness = (x, z) -> x == 5 ? Readiness.WAITING : Readiness.READY;
 
         for (int drain = 1; drain < DirtyChunkSet.MAX_DEFERRALS; drain++) {
-            assertTrue(dirty.drainNearest(4, 0, 0, neverReady).isEmpty(), "released on drain " + drain);
+            dirty.mark(6, 0);
+            dirty.mark(7, 0);
+            assertEquals(
+                List.of(key(6, 0), key(7, 0)),
+                dirty.drainNearest(2, 0, 0, readiness).stream().map(DirtyChunkSetTest::keyOf).toList(),
+                "released on drain " + drain
+            );
             // Re-marking mid-hold must not restart the count, or the edge ring never draws.
-            dirty.mark(3, 4);
+            dirty.mark(5, 0);
+        }
+        dirty.mark(6, 0);
+        dirty.mark(7, 0);
+
+        final List<long[]> batch = dirty.drainNearest(2, 0, 0, readiness);
+
+        assertEquals(
+            List.of(key(5, 0), key(6, 0)),
+            batch.stream().map(DirtyChunkSetTest::keyOf).toList()
+        );
+        assertEquals(Set.of(key(7, 0)), drainAll(dirty, 0, 0));
+    }
+
+    @Test
+    void theHoldIsMeasuredInDrainsEvenWhenTheBudgetNeverReachesTheHeldChunk() {
+        final DirtyChunkSet dirty = new DirtyChunkSet();
+        dirty.mark(50, 0);
+        final ChunkReadiness readiness = (x, z) -> x == 50 ? Readiness.WAITING : Readiness.READY;
+
+        // A chunk arriving next to the player every tick keeps the budget spent long before the
+        // scan reaches the far ring, so the hold must age on the drain count, not on inspection.
+        for (int drain = 1; drain < DirtyChunkSet.MAX_DEFERRALS; drain++) {
+            dirty.mark(1, 0);
+            assertEquals(
+                List.of(key(1, 0)),
+                dirty.drainNearest(1, 0, 0, readiness).stream().map(DirtyChunkSetTest::keyOf).toList()
+            );
         }
 
-        final List<long[]> batch = dirty.drainNearest(4, 0, 0, neverReady);
-
-        assertEquals(List.of(key(3, 4)), batch.stream().map(DirtyChunkSetTest::keyOf).toList());
+        assertEquals(
+            List.of(key(50, 0)),
+            dirty.drainNearest(1, 0, 0, readiness).stream().map(DirtyChunkSetTest::keyOf).toList()
+        );
         assertEquals(0, dirty.size());
     }
 

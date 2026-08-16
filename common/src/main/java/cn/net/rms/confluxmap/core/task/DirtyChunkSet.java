@@ -12,29 +12,41 @@ import java.util.Map;
  *
  * <p>A drain also asks whether each candidate is worth sampling yet (see {@link
  * Readiness}). Chunks that are loaded but still missing neighbours are held back
- * rather than sampled against data the client does not have, but only for {@link
- * #MAX_DEFERRALS} drains: at the edge of the server's send distance the missing
- * neighbours never arrive, and a map that refuses to draw its own outermost ring
- * would be worse than one drawn from a slightly narrower biome blend.
+ * rather than sampled against data the client does not have - but only against
+ * competing work: budget left over once every sampleable chunk has been taken goes
+ * to the held ones, and a hold expires outright after {@link #MAX_DEFERRALS} drains.
+ * At the edge of the server's send distance the missing neighbours never arrive, and
+ * a map that refuses to draw its own outermost ring would be worse than one drawn
+ * from a slightly narrower biome blend.
  */
 public final class DirtyChunkSet {
     /**
-     * How many drains a chunk may be held back waiting for its neighbours. One drain per
-     * client tick, so this is about a second - long enough that normal chunk streaming
-     * completes a neighbourhood first, short enough to be invisible at the map's edge.
+     * How many drains a chunk may be held back waiting for its neighbours before it is
+     * sampled at full priority. One drain per client tick, so this is about a second -
+     * long enough that normal chunk streaming completes a neighbourhood first, short
+     * enough to be invisible at the map's edge.
+     *
+     * <p>Measured from the drain the chunk was marked on, not from the drains that happened
+     * to look at it. The permanently incomplete ring is also the farthest thing from the
+     * player, so it sorts last and a nearer chunk arriving each tick can keep the budget
+     * spent before the scan ever reaches it; a hold that only aged on inspection would
+     * never expire and that ring would stay off the map for as long as chunks keep arriving.
      */
     static final int MAX_DEFERRALS = 20;
 
-    /** Chunk key to the number of drains it has already been held back. */
+    /** Chunk key to the value of {@link #drains} when it was marked. */
     private final Map<Long, Integer> dirty = new HashMap<>();
+
+    /** Drains so far - the clock the {@link #MAX_DEFERRALS} hold is measured against. */
+    private int drains;
 
     private static long key(final int chunkX, final int chunkZ) {
         return ((long) chunkX << 32) | (chunkZ & 0xFFFFFFFFL);
     }
 
-    /** Marking an already-dirty chunk keeps its deferral count, so re-marks cannot starve it. */
+    /** Marking an already-dirty chunk keeps the drain it was first marked on, so re-marks cannot starve it. */
     public void mark(final int chunkX, final int chunkZ) {
-        dirty.putIfAbsent(key(chunkX, chunkZ), 0);
+        dirty.putIfAbsent(key(chunkX, chunkZ), drains);
     }
 
     /**
@@ -69,8 +81,15 @@ public final class DirtyChunkSet {
      *
      * <p>Candidates the readiness check rejects do not consume budget: {@link
      * Readiness#MISSING} ones are dropped (they mark themselves again when they arrive) and
-     * {@link Readiness#WAITING} ones stay dirty for a later drain, so the budget goes to
+     * {@link Readiness#WAITING} ones are held for a later drain, so the budget goes to
      * chunks that can be sampled now.
+     *
+     * <p>Budget still unspent once the scan has taken every sampleable chunk it reached goes
+     * to the held ones, nearest first. Holding them past that point would leave the map's
+     * outermost ring blank while the capture pipeline sits idle - the ring is exactly the part
+     * whose neighbourhood never completes, so waiting for it means waiting forever. What such
+     * a chunk bakes is already clamped to the loaded part of its neighbourhood, and an arriving
+     * neighbour re-marks it for a full-quality resample.
      */
     public List<long[]> drainNearest(
         final int budget,
@@ -81,12 +100,14 @@ public final class DirtyChunkSet {
         if (dirty.isEmpty() || budget <= 0) {
             return List.of();
         }
+        final int drain = ++drains;
         final List<Long> keys = new ArrayList<>(dirty.keySet());
         keys.sort((a, b) -> Long.compare(
             distanceSq(a, centerChunkX, centerChunkZ),
             distanceSq(b, centerChunkX, centerChunkZ)
         ));
         final List<long[]> result = new ArrayList<>(Math.min(budget, keys.size()));
+        final List<Long> held = new ArrayList<>();
         for (final long key : keys) {
             if (result.size() >= budget) {
                 break;
@@ -96,12 +117,19 @@ public final class DirtyChunkSet {
             final Readiness state = readiness.of(chunkX, chunkZ);
             if (state == Readiness.MISSING) {
                 dirty.remove(key);
-            } else if (state == Readiness.WAITING && dirty.get(key) + 1 < MAX_DEFERRALS) {
-                dirty.put(key, dirty.get(key) + 1);
+            } else if (state == Readiness.WAITING && drain - dirty.get(key) < MAX_DEFERRALS) {
+                held.add(key);
             } else {
                 dirty.remove(key);
                 result.add(new long[]{chunkX, chunkZ});
             }
+        }
+        for (final long key : held) {
+            if (result.size() >= budget) {
+                break;
+            }
+            dirty.remove(key);
+            result.add(new long[]{(int) (key >> 32), (int) key});
         }
         return result;
     }
