@@ -42,7 +42,7 @@ public final class McChunkSnapshotFactory {
 
     private final MinecraftClient client;
     private final SpriteColorSampler sampler;
-    private final BiomeTintResolver tintResolver;
+    private final ChunkTintSampler tints;
 
     public McChunkSnapshotFactory(
         final MinecraftClient client,
@@ -51,7 +51,7 @@ public final class McChunkSnapshotFactory {
     ) {
         this.client = client;
         this.sampler = sampler;
-        this.tintResolver = tintResolver;
+        this.tints = new ChunkTintSampler(client, tintResolver);
     }
 
     /**
@@ -82,6 +82,7 @@ public final class McChunkSnapshotFactory {
         final BlockPos.Mutable pos = new BlockPos.Mutable();
         final int baseX = chunkX << 4;
         final int baseZ = chunkZ << 4;
+        tints.beginChunk(world, chunkX, chunkZ);
 
         if (layer.type() == MapLayer.Type.SURFACE || layer.type() == MapLayer.Type.END_SURFACE) {
             final ClientPlayerEntity player = client.player;
@@ -279,7 +280,7 @@ public final class McChunkSnapshotFactory {
     ) {
         pos.set(worldX, surfaceYVal, worldZ);
         final int surfaceBaseColor = sampler.colorFor(surfaceState, world, pos);
-        final int surfaceTintColor = tintResolver.resolve(surfaceState, world, pos);
+        final int surfaceTintColor = tints.resolve(surfaceState, world, worldX, surfaceYVal, worldZ);
         light[index] = sampleBlockLightAbove(world, pos, worldX, surfaceYVal, worldZ, topY);
 
         if (resolvedKind == SurfaceKind.WATER || resolvedKind == SurfaceKind.ICE) {
@@ -335,7 +336,7 @@ public final class McChunkSnapshotFactory {
     ) {
         pos.set(worldX, y, worldZ);
         final int base = sampler.colorFor(state, world, pos);
-        final int tint = tintResolver.resolve(state, world, pos);
+        final int tint = tints.resolve(state, world, worldX, y, worldZ);
         return Argb.multiply(base, tint);
     }
 
@@ -415,7 +416,7 @@ public final class McChunkSnapshotFactory {
                 pos.set(worldX, clampedPivot, worldZ);
                 final BlockState rockState = collapse(chunk.getBlockState(pos));
                 final int rockBase = sampler.colorFor(rockState, world, pos);
-                final int rockTint = tintResolver.resolve(rockState, world, pos);
+                final int rockTint = tints.resolve(rockState, world, worldX, clampedPivot, worldZ);
                 final int crossSection = Argb.scale(
                     Argb.multiply(rockBase, rockTint), CROSS_SECTION_DARKEN
                 );
@@ -446,7 +447,7 @@ public final class McChunkSnapshotFactory {
         final Block solidBlock = solidState.getBlock();
 
         final int solidBase = sampler.colorFor(solidState, world, pos);
-        final int solidTint = tintResolver.resolve(solidState, world, pos);
+        final int solidTint = tints.resolve(solidState, world, worldX, solidY, worldZ);
         // Floor layers normally bake visible light directly into baseArgb. NETHER_CEILING keeps
         // only the zero-light Nether ambient tint here and applies light[] during composition;
         // synchronized roof pixels use that same representation and calculation.
@@ -471,7 +472,7 @@ public final class McChunkSnapshotFactory {
             final BlockState above = collapse(chunk.getBlockState(pos));
             if (isFloorOverlayCandidate(above)) {
                 final int overlayBase = sampler.colorFor(above, world, pos);
-                final int overlayTint = tintResolver.resolve(above, world, pos);
+                final int overlayTint = tints.resolve(above, world, worldX, solidY + 1, worldZ);
                 overlayColor = deferBlockLight
                     ? applyAmbientLight(Argb.multiply(overlayBase, overlayTint), netherAmbient)
                     : applyLight(Argb.multiply(overlayBase, overlayTint), pos, world, above.getBlock(), netherAmbient);

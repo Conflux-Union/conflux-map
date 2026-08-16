@@ -26,6 +26,7 @@ import java.util.function.IntSupplier;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.client.world.ClientWorld;
 
 /**
  * Drives the capture pipeline: packet hooks mark chunks dirty (via
@@ -119,6 +120,53 @@ public final class ChunkCaptureService {
         dirtyChunks.mark(chunkX, chunkZ);
     }
 
+    /**
+     * Main thread, from the chunk-load mixin: marks the arriving chunk and re-marks the
+     * neighbours it just invalidated.
+     *
+     * <p>Tints are baked into the snapshot through {@link cn.net.rms.confluxmap.mc.color.BiomeTintResolver},
+     * which goes through the game's own biome blend - that averages the biome color over a
+     * {@code biomeBlendRadius} square that reaches into the adjacent chunks, and every position
+     * inside a chunk the client has not received yet answers {@code ClientWorld}'s plains
+     * fallback biome. A neighbour snapshotted before this chunk arrived therefore baked
+     * plains-tinted water/grass into its border strip, which reads as a chunk grid wherever the
+     * real biome's tint is far from plains - warm ocean water being the most visible case.
+     * Vanilla discards the same stale colors by clearing the 3x3 {@code BiomeColorCache} square
+     * in {@code ClientWorld.resetChunkColor}; a snapshot has the color baked in, so the only
+     * way to drop it is to take the snapshot again.
+     */
+    public void markChunkLoaded(final int chunkX, final int chunkZ) {
+        dirtyChunks.markWithLoadedNeighbors(chunkX, chunkZ, this::isChunkLoaded);
+    }
+
+    /**
+     * Whether a dirty chunk is worth sampling this tick. A chunk is only fully sampleable once
+     * its 3x3 neighbourhood has arrived - the biome blend and the surrounding terrain reach
+     * across the border - so an incomplete neighbourhood is held back rather than baked. The
+     * hold is bounded by {@link DirtyChunkSet}: the ring at the edge of the server's send
+     * distance never completes, and it still has to reach the map, with
+     * {@link ChunkTintSampler}'s window keeping its border tints honest in the meantime.
+     */
+    private DirtyChunkSet.Readiness captureReadiness(final int chunkX, final int chunkZ) {
+        final ClientWorld world = client.world;
+        if (world == null || !ChunkTintSampler.loaded(world, chunkX, chunkZ)) {
+            return DirtyChunkSet.Readiness.MISSING;
+        }
+        for (int dz = -1; dz <= 1; dz++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                if ((dx != 0 || dz != 0) && !ChunkTintSampler.loaded(world, chunkX + dx, chunkZ + dz)) {
+                    return DirtyChunkSet.Readiness.WAITING;
+                }
+            }
+        }
+        return DirtyChunkSet.Readiness.READY;
+    }
+
+    private boolean isChunkLoaded(final int chunkX, final int chunkZ) {
+        final ClientWorld world = client.world;
+        return world != null && ChunkTintSampler.loaded(world, chunkX, chunkZ);
+    }
+
     public long storedSnapshotCount() {
         return storedSnapshots.get();
     }
@@ -202,7 +250,9 @@ public final class ChunkCaptureService {
             reseedViewport(playerChunkX, playerChunkZ);
         }
 
-        final List<long[]> batch = dirtyChunks.drainNearest(config.snapshotBudgetPerTick, playerChunkX, playerChunkZ);
+        final List<long[]> batch = dirtyChunks.drainNearest(
+            config.snapshotBudgetPerTick, playerChunkX, playerChunkZ, this::captureReadiness
+        );
         for (final long[] chunkPos : batch) {
             final ChunkSnapshot snapshot = factory.snapshot((int) chunkPos[0], (int) chunkPos[1], decision.layer(), decision.pivotY(), token);
             if (snapshot != null) {
