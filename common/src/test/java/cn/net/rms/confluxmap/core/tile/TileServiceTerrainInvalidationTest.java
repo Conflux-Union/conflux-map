@@ -21,16 +21,17 @@ class TileServiceTerrainInvalidationTest {
     void chunkOnNorthWestTileBoundaryInvalidatesEveryReliefConsumerAtEachLod() throws InterruptedException {
         final Fixture fixture = new Fixture();
         try {
-            fixture.tiles.markChunkStored(1L, DimensionId.OVERWORLD, MapLayer.SURFACE, 0, 0);
-
-            final Set<TileKey> expected = new HashSet<>();
             for (int lod = 0; lod <= TileMath.MAX_LOD; lod++) {
-                expected.add(fixture.key(lod, 0, 0));
-                expected.add(fixture.key(lod, -1, 0));
-                expected.add(fixture.key(lod, 0, -1));
-                expected.add(fixture.key(lod, -1, -1));
+                final Set<TileKey> expected = Set.of(
+                    fixture.key(lod, 0, 0), fixture.key(lod, -1, 0),
+                    fixture.key(lod, 0, -1), fixture.key(lod, -1, -1)
+                );
+                fixture.showing(lod);
+
+                fixture.tiles.markChunkStored(1L, DimensionId.OVERWORLD, MapLayer.SURFACE, 0, 0);
+
+                assertEquals(expected, fixture.drainKeys(expected.size()), "at LOD" + lod);
             }
-            assertEquals(expected, fixture.drainKeys(expected.size()));
         } finally {
             fixture.close();
         }
@@ -40,21 +41,44 @@ class TileServiceTerrainInvalidationTest {
     void loadedRegionInvalidatesAllNineLod0NeighborsAndOnlyTouchedCoarseEdges() throws InterruptedException {
         final Fixture fixture = new Fixture();
         try {
-            fixture.tiles.markRegionStored(1L, DimensionId.OVERWORLD, MapLayer.SURFACE, 0, 0);
-
-            final Set<TileKey> expected = new HashSet<>();
+            final Set<TileKey> lod0 = new HashSet<>();
             for (int z = -1; z <= 1; z++) {
                 for (int x = -1; x <= 1; x++) {
-                    expected.add(fixture.key(0, x, z));
+                    lod0.add(fixture.key(0, x, z));
                 }
             }
-            for (int lod = 1; lod <= TileMath.MAX_LOD; lod++) {
-                expected.add(fixture.key(lod, 0, 0));
-                expected.add(fixture.key(lod, -1, 0));
-                expected.add(fixture.key(lod, 0, -1));
-                expected.add(fixture.key(lod, -1, -1));
+            for (int lod = 0; lod <= TileMath.MAX_LOD; lod++) {
+                final Set<TileKey> expected = lod == 0 ? lod0 : Set.of(
+                    fixture.key(lod, 0, 0), fixture.key(lod, -1, 0),
+                    fixture.key(lod, 0, -1), fixture.key(lod, -1, -1)
+                );
+                fixture.showing(lod);
+
+                fixture.tiles.markRegionStored(1L, DimensionId.OVERWORLD, MapLayer.SURFACE, 0, 0);
+
+                assertEquals(expected, fixture.drainKeys(expected.size()), "at LOD" + lod);
             }
-            assertEquals(expected, fixture.drainKeys(expected.size()));
+        } finally {
+            fixture.close();
+        }
+    }
+
+    @Test
+    void aTileTheRendererNeverAskedForIsNotComposedOnCapture() throws InterruptedException {
+        final Fixture fixture = new Fixture();
+        try {
+            fixture.tiles.setViewport(MapLayer.SURFACE, 0, -2, 2, -2, 2);
+
+            fixture.tiles.markChunkStored(1L, DimensionId.OVERWORLD, MapLayer.SURFACE, 0, 0);
+
+            final Set<TileKey> keys = new HashSet<>();
+            for (int pass = 0; pass < 10; pass++) {
+                Thread.sleep(20L);
+                fixture.tiles.drainUploads(64).forEach(update -> keys.add(update.key()));
+            }
+            assertEquals(
+                Set.of(), keys, "composing a tile with no texture behind it is work nobody can see"
+            );
         } finally {
             fixture.close();
         }
@@ -77,6 +101,25 @@ class TileServiceTerrainInvalidationTest {
             return new TileKey(
                 session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), lod, tileX, tileZ
             );
+        }
+
+        /**
+         * Puts the renderer on {@code lod}: publishes a viewport wide enough for every key the
+         * invalidation tests look at and asks for those tiles, since an invalidation only reaches
+         * tiles the renderer holds and is showing.
+         */
+        private void showing(final int lod) throws InterruptedException {
+            tiles.setViewport(MapLayer.SURFACE, lod, -2, 2, -2, 2);
+            for (int z = -2; z <= 2; z++) {
+                for (int x = -2; x <= 2; x++) {
+                    tiles.requestTile(key(lod, x, z));
+                }
+            }
+            int idle = 0;
+            while (idle < 3) {
+                Thread.sleep(20L);
+                idle = tiles.drainUploads(64).isEmpty() ? idle + 1 : 0;
+            }
         }
 
         private Set<TileKey> drainKeys(final int count) throws InterruptedException {

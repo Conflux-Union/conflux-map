@@ -33,27 +33,42 @@ class TileServiceRelightTest {
             world.put(MapLayer.SURFACE, snapshot(-16, -16), SampleSource.REAL_LIVE);
             final TileService tiles = new TileService(mapWorlds, executors, new ConfluxConfig(), new DaylightModel());
 
-            tiles.markSurfaceRelit(1L);
-
-            final Set<TileKey> expected = new HashSet<>();
+            // A relight only has to reach tiles the renderer is holding and showing; one LOD is on
+            // screen at a time, so check each in its own viewport.
             for (int lod = 0; lod <= TileMath.MAX_LOD; lod++) {
-                expected.add(surfaceKey(session, lod, 0, 0));
-                expected.add(surfaceKey(session, lod, -1 >> lod, -1 >> lod));
-            }
-            final Set<TileKey> uploaded = new HashSet<>();
-            final long deadline = System.nanoTime() + 5_000_000_000L;
-            while (!uploaded.containsAll(expected) && System.nanoTime() < deadline) {
-                for (final TileUpdate update : tiles.drainUploads(64)) {
-                    uploaded.add(update.key());
+                final Set<TileKey> expected = Set.of(
+                    surfaceKey(session, lod, 0, 0), surfaceKey(session, lod, -1 >> lod, -1 >> lod)
+                );
+                tiles.setViewport(MapLayer.SURFACE, lod, -1, 0, -1, 0);
+                expected.forEach(tiles::requestTile);
+                settle(tiles);
+
+                tiles.markSurfaceRelit(1L);
+
+                final Set<TileKey> uploaded = new HashSet<>();
+                final long deadline = System.nanoTime() + 5_000_000_000L;
+                while (!uploaded.containsAll(expected) && System.nanoTime() < deadline) {
+                    for (final TileUpdate update : tiles.drainUploads(64)) {
+                        uploaded.add(update.key());
+                    }
+                    Thread.sleep(10L);
                 }
-                Thread.sleep(10L);
+                assertTrue(
+                    uploaded.containsAll(expected),
+                    "expected relit tiles at LOD" + lod + ", missing: " + missing(expected, uploaded)
+                );
             }
-            assertTrue(
-                uploaded.containsAll(expected),
-                "expected relit tiles at every LOD, missing: " + missing(expected, uploaded)
-            );
         } finally {
             executors.shutdown(1000L);
+        }
+    }
+
+    /** Drains until the composer has been quiet for a few passes, so the next drain is the new work. */
+    private static void settle(final TileService tiles) throws InterruptedException {
+        int idle = 0;
+        while (idle < 3) {
+            Thread.sleep(20L);
+            idle = tiles.drainUploads(64).isEmpty() ? idle + 1 : 0;
         }
     }
 

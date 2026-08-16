@@ -64,8 +64,19 @@ public final class TileService {
     private final Map<TileKey, Long> dirty = new HashMap<>();
     /** Guarded by {@code this}: tiles currently being composed on a worker. */
     private final Set<TileKey> inFlight = new HashSet<>();
-    /** Biome variants requested at least once this session; avoids composing unused twins eagerly. */
-    private final Set<TileKey> requestedBiomeTiles = new HashSet<>();
+    /**
+     * Guarded by {@code this}: tiles the renderer has asked for at least once and has not
+     * reported dropping. A tile outside this set has no texture to keep fresh, so invalidating
+     * it would compose pixels nobody is looking at - and a coarse tile costs one full compose
+     * per LOD-0 region it covers (256 of them at LOD4), per captured chunk.
+     */
+    private final Set<TileKey> requestedTiles = new HashSet<>();
+    /**
+     * Guarded by {@code this}: requested tiles that changed while off screen. Recomposing them
+     * where they are is wasted work at any LOD the viewer is not currently on; {@link
+     * #setViewport} promotes them back into {@link #dirty} when they come into view.
+     */
+    private final Set<TileKey> staleTiles = new HashSet<>();
 
     /** Guarded by {@code this}: bounded, key-deduped upload queue (newest composition wins). */
     private final LinkedHashMap<TileKey, TileUpdate> uploads = new LinkedHashMap<>();
@@ -131,7 +142,8 @@ public final class TileService {
         synchronized (this) {
             dirty.clear();
             inFlight.clear();
-            requestedBiomeTiles.clear();
+            requestedTiles.clear();
+            staleTiles.clear();
             uploads.clear();
             viewport = null;
             viewportRegionLoadCursor = 0L;
@@ -158,14 +170,34 @@ public final class TileService {
         final int maxTileZ
     ) {
         final ViewportRect next = new ViewportRect(layer.type(), lod, minTileX, maxTileX, minTileZ, maxTileZ);
+        final MapWorld world = mapWorlds.current();
+        final long token = world == null ? 0L : world.session().token();
         synchronized (this) {
             if (!next.equals(viewport)) {
                 viewportRegionLoadCursor = 0L;
+                if (world != null) {
+                    promoteStale(next, token);
+                }
             }
             viewport = next;
         }
         scheduleViewportRegionLoads(next);
         pump();
+    }
+
+    /**
+     * Caller must hold the monitor: queues every off-screen tile that changed while the viewer
+     * was elsewhere and that {@code next} is about to show. This is what keeps a zoom level the
+     * viewer left and came back to from drawing the map as it looked when they left it.
+     */
+    private void promoteStale(final ViewportRect next, final long token) {
+        staleTiles.removeIf(key -> {
+            if (!next.contains(key)) {
+                return false;
+            }
+            dirty.put(key, token);
+            return true;
+        });
     }
 
     /** Clears fullscreen ordering after the screen closes so minimap requests return to distance priority. */
@@ -408,7 +440,7 @@ public final class TileService {
                 markDirty(key, token);
                 if (dx == 0 && dz == 0) {
                     // Biome mode is a flat colour plane and has no cross-tile relief stencil.
-                    markBiomeDirtyIfRequested(BiomeTileKeys.toBiome(key), token);
+                    markDirty(BiomeTileKeys.toBiome(key), token);
                 }
             }
         }
@@ -455,9 +487,8 @@ public final class TileService {
             return;
         }
         synchronized (this) {
-            if (BiomeTileKeys.isBiome(key)) {
-                requestedBiomeTiles.add(key);
-            }
+            requestedTiles.add(key);
+            staleTiles.remove(key);
             // A missing texture is checked once per rendered frame. Do not turn that repeated
             // check into an invalidation loop while the same tile is already queued or composing.
             if (dirty.containsKey(key) || inFlight.contains(key)) {
@@ -478,13 +509,25 @@ public final class TileService {
         }
     }
 
-    private void markBiomeDirtyIfRequested(final TileKey key, final long token) {
-        synchronized (this) {
-            if (!requestedBiomeTiles.contains(key)) {
-                return;
-            }
-        }
-        markDirty(key, token);
+    /**
+     * Render thread: the texture for {@code key} is gone (LRU eviction or a session release), so
+     * this service has nothing to keep fresh for it any more. Keeping the key would leave every
+     * later capture recomposing a tile whose pixels have no home; {@code bind} composes it in
+     * full again the next time it is actually drawn.
+     */
+    public synchronized void forgetTile(final TileKey key) {
+        requestedTiles.remove(key);
+        staleTiles.remove(key);
+    }
+
+    /**
+     * Render thread: {@code key} has a texture again. Normally {@link #requestTile} already said
+     * so, but an upload composed before an eviction can land after it - and a tile the renderer
+     * holds while this service has forgotten it is exactly the tile that would freeze on screen,
+     * since {@code bind} only re-requests a texture that is missing outright.
+     */
+    public synchronized void retainTile(final TileKey key) {
+        requestedTiles.add(key);
     }
 
     private void requestRegionLoad(final MapLayer.Type layerType, final int regionX, final int regionZ) {
@@ -547,8 +590,28 @@ public final class TileService {
         }
     }
 
+    /**
+     * Queues a recompose for a tile that already exists on screen or in the texture cache.
+     *
+     * <p>Two gates decide whether the work is worth doing at all. A tile the renderer has never
+     * requested has no texture to keep fresh: {@code TileTextureManager.bind} composes it in full
+     * the first time it needs it, so composing it now would only burn a worker on something
+     * nobody is looking at. A tile that is requested but off screen is remembered in {@link
+     * #staleTiles} and recomposed when {@link #setViewport} brings it back into view. Without
+     * those gates every captured chunk recomposes its covering tile at every LOD, and a coarse
+     * tile costs one full LOD-0 compose per region it covers - 256 of them at LOD4.
+     */
     private void markDirty(final TileKey key, final long token) {
         synchronized (this) {
+            if (!requestedTiles.contains(key)) {
+                return;
+            }
+            // Both renderers publish their rectangle immediately before drawing tiles and clear
+            // it when they stop, so a null viewport means no map surface is on screen at all.
+            if (viewport == null || !viewport.contains(key)) {
+                staleTiles.add(key);
+                return;
+            }
             if (inFlight.contains(key)) {
                 // Already composing; the in-flight pass will pick up a fresh copy of the
                 // store, so nothing more to do unless it's already done - re-mark dirty is
