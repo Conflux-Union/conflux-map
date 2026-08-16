@@ -536,6 +536,14 @@ public final class ConfigScreen extends ConfluxScreen {
                     y, "confluxmap.config.waypoints.labels_enabled",
                     () -> config.waypointLabelsEnabled, v -> config.waypointLabelsEnabled = v
                 );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.waypoints.label_scale",
+                    ConfluxConfig.MIN_WAYPOINT_LABEL_SCALE_PERCENT,
+                    ConfluxConfig.MAX_WAYPOINT_LABEL_SCALE_PERCENT,
+                    () -> config.waypointLabelScalePercent,
+                    v -> config.waypointLabelScalePercent = v,
+                    ConfigScreen::percentText
+                );
                 break;
             case PERFORMANCE:
                 y = addIntSliderRow(
@@ -859,6 +867,10 @@ public final class ConfigScreen extends ConfluxScreen {
 
     private static String pxText(final int value) {
         return Texts.translatable("confluxmap.value.px", value).getString();
+    }
+
+    private static String percentText(final int value) {
+        return Texts.translatable("confluxmap.value.percent", value).getString();
     }
 
     private static String blocksText(final int value) {
