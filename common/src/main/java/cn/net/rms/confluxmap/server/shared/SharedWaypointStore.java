@@ -166,6 +166,32 @@ public final class SharedWaypointStore {
         return new PreparedMutation(revision, snapshotOf(nextRevision, next), Delta.upsert(updated, nextRevision));
     }
 
+    synchronized PreparedMutation prepareUpdate(final SharedWaypoint waypoint) {
+        Objects.requireNonNull(waypoint, "waypoint");
+        if (!byId.containsKey(waypoint.id())) {
+            throw new IllegalArgumentException("shared waypoint does not exist: " + waypoint.id());
+        }
+        final long nextRevision = Math.addExact(revision, 1);
+        if (waypoint.revision() != nextRevision) {
+            throw new IllegalArgumentException("updated waypoint revision must equal next global revision");
+        }
+        final SharedWaypoint current = byId.get(waypoint.id());
+        final SharedWaypointLocationKey currentLocation = SharedWaypointLocationKey.from(current);
+        final SharedWaypointLocationKey updatedLocation = SharedWaypointLocationKey.from(waypoint);
+        final UUID occupant = idByLocation.get(updatedLocation);
+        if (!updatedLocation.equals(currentLocation)
+            && occupant != null && !occupant.equals(waypoint.id())) {
+            throw new IllegalArgumentException("duplicate shared waypoint location");
+        }
+        final Map<UUID, SharedWaypoint> next = new LinkedHashMap<>(byId);
+        next.put(waypoint.id(), waypoint);
+        return new PreparedMutation(
+            revision,
+            snapshotOf(nextRevision, next),
+            Delta.upsert(waypoint, nextRevision)
+        );
+    }
+
     synchronized void commit(final PreparedMutation mutation) {
         Objects.requireNonNull(mutation, "mutation");
         if (revision != mutation.baseRevision) {

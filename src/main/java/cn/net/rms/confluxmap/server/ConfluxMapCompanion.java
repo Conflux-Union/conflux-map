@@ -266,6 +266,13 @@ public final class ConfluxMapCompanion {
         return isEnabled() && config.shareWaypoints && sharedWaypoints != null;
     }
 
+    public void onSharedWaypointCommandMutation(
+        final MinecraftServer server,
+        final SharedWaypointService.MutationResult mutation
+    ) {
+        sharedWaypointNetworking.onCommandMutation(server, mutation);
+    }
+
     public enum SharedWaypointToggleResult {
         ENABLED,
         DISABLED,

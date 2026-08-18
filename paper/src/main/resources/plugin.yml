@@ -8,8 +8,8 @@ website: https://github.com/Conflux-Union/conflux-map
 load: POSTWORLD
 commands:
   confluxmap:
-    description: Conflux Map companion administration and diagnostics
-    usage: /confluxmap <performance|webmap hide|show|waypoints>
+    description: Conflux Map companion commands, shared waypoints, and diagnostics
+    usage: /confluxmap <performance|webmap hide|show|waypoints list|add|edit|move|delete>
 permissions:
   confluxmap.admin:
     description: Manage Conflux Map server-owned features

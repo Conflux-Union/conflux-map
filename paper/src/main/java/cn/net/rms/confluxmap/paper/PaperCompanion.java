@@ -362,6 +362,12 @@ final class PaperCompanion implements Listener {
         return isEnabled() && config.shareWaypoints && sharedWaypoints != null;
     }
 
+    void onSharedWaypointCommandMutation(
+        final SharedWaypointService.MutationResult mutation
+    ) {
+        sharedNetworking.commandMutation(mutation);
+    }
+
     List<FlatBaselineS2C.Entry> flatBaselines() {
         final List<FlatBaselineS2C.Entry> result = new ArrayList<>();
         flatBaselines.entrySet().stream()

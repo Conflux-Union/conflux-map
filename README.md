@@ -139,6 +139,10 @@ Overworld and Nether waypoints in both dimensions at once; End waypoints always 
 Shared waypoints need the server companion and are off by default. A level-2 operator turns them
 on with `/confluxmap waypoints enable` (`disable` and `status` also work). Once enabled, any
 player can publish a point everyone sees, listed under "Shared Waypoints" in the waypoint screen.
+Players without Conflux Map can use `/confluxmap waypoints add <name>` at their current position
+and `/confluxmap waypoints list [page]` to browse the same public list. List entries include Xaero's
+chat share format for one-click import. Operators can use the displayed short ID with `edit`,
+`move`, `delete`, `lock`, and `unlock`.
 The publisher can delete their own point as long as it is unmarked; only an operator can mark,
 unmark, or delete any point, and marked points move to a separate "Server Markers" list. Per-world
 and per-player limits are configurable in `config/confluxmap/server.json`.
