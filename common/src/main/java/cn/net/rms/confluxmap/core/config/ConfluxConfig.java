@@ -26,6 +26,10 @@ public final class ConfluxConfig {
     public static final int MIN_PLAYER_TRAIL_DOT_SIZE = 1;
     public static final int MAX_PLAYER_TRAIL_DOT_SIZE = 8;
     public static final int DEFAULT_PLAYER_TRAIL_DOT_SIZE = 3;
+    /** Mirrors the 300% upper bound: one third of default size. */
+    public static final int MIN_WAYPOINT_LABEL_SCALE_PERCENT = 33;
+    public static final int MAX_WAYPOINT_LABEL_SCALE_PERCENT = 300;
+    public static final int DEFAULT_WAYPOINT_LABEL_SCALE_PERCENT = 100;
     /** Always hide structure icons at the furthest fullscreen-map zoom. */
     public static final double MIN_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM = 0.0625;
     /** Largest fullscreen-map zoom multiplier the renderer can display. */
@@ -138,6 +142,11 @@ public final class ConfluxConfig {
     public boolean waypointBeamsEnabled = true;
     /** In-world floating name/distance label above each visible waypoint. */
     public boolean waypointLabelsEnabled = true;
+    /**
+     * Apparent size of the in-world waypoint label, as a percentage of the distance-compensated
+     * default. Scales the icon plate, background panel, and both text lines together.
+     */
+    public int waypointLabelScalePercent = DEFAULT_WAYPOINT_LABEL_SCALE_PERCENT;
 
     /** Master toggle for the seed-predicted fullscreen-map underlay. */
     public boolean predictionEnabled = true;
@@ -222,6 +231,7 @@ public final class ConfluxConfig {
         c.deathPointsKept = deathPointsKept;
         c.waypointBeamsEnabled = waypointBeamsEnabled;
         c.waypointLabelsEnabled = waypointLabelsEnabled;
+        c.waypointLabelScalePercent = waypointLabelScalePercent;
         c.predictionEnabled = predictionEnabled;
         c.predictionNetworkSync = predictionNetworkSync;
         c.predictionViewMode = predictionViewMode;
@@ -294,6 +304,10 @@ public final class ConfluxConfig {
         radarMaxEntities = clamp(radarMaxEntities, 1, 500);
         radarIconSize = clamp(radarIconSize, MIN_RADAR_ICON_SIZE, MAX_RADAR_ICON_SIZE);
         waypointRenderDistance = clamp(waypointRenderDistance, 0, 100_000);
+        waypointLabelScalePercent = clamp(
+            waypointLabelScalePercent,
+            MIN_WAYPOINT_LABEL_SCALE_PERCENT, MAX_WAYPOINT_LABEL_SCALE_PERCENT
+        );
         deathPointsKept = clamp(deathPointsKept, 0, 50);
         if (predictionViewMode == null) {
             predictionViewMode = PredictionViewMode.EVERYWHERE;

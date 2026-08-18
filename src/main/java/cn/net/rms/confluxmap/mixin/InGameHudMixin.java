@@ -1,13 +1,15 @@
 package cn.net.rms.confluxmap.mixin;
 
 import cn.net.rms.confluxmap.ConfluxMapClient;
+import cn.net.rms.confluxmap.compat.GuiTransforms;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.config.HudAmbient;
 import cn.net.rms.confluxmap.core.config.HudAvoidanceLayout;
+import cn.net.rms.confluxmap.core.config.HudTransform;
 import cn.net.rms.confluxmap.core.config.MinimapHudVisibility;
 import cn.net.rms.confluxmap.core.config.MinimapInformationLayout;
 import cn.net.rms.confluxmap.core.config.MinimapPlacement;
-import cn.net.rms.confluxmap.core.config.ScoreboardHudAvoidance;
 import cn.net.rms.confluxmap.mc.ui.hud.ScoreboardHudBounds;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 //#if MC>=260100
@@ -46,6 +48,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /**
  * Measures vanilla's scoreboard without duplicating its layout rules, then moves the complete
  * sidebar away from the configured minimap on the following HUD frame.
+ *
+ * <p>The measurement goes through the GUI matrix rather than reading the painted coordinates
+ * directly, so a mod that rescales the sidebar (TweakerMore's scoreboard scale, for example) is
+ * measured at its rendered size instead of vanilla's.
  */
 //#if MC>=260200
 //$$ @Mixin(Hud.class)
@@ -110,40 +116,49 @@ public abstract class InGameHudMixin {
     //#endif
         confluxmap$scoreboardTransformed = false;
         //#if MC>=260100
-        //$$ final ScoreboardHudAvoidance.Transform transform =
+        //$$ final HudTransform transform =
         //$$     confluxmap$scoreboardTransform(context.guiWidth(), context.guiHeight());
         //#elseif MC>=12000
-        //$$ final ScoreboardHudAvoidance.Transform transform = confluxmap$scoreboardTransform(
+        //$$ final HudTransform transform = confluxmap$scoreboardTransform(
         //$$     context.getScaledWindowWidth(), context.getScaledWindowHeight()
         //$$ );
         //#else
         final MinecraftClient client = MinecraftClient.getInstance();
-        final ScoreboardHudAvoidance.Transform transform = confluxmap$scoreboardTransform(
+        final HudTransform transform = confluxmap$scoreboardTransform(
             client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight()
         );
         //#endif
+        ScoreboardHudBounds.recordAppliedTransform(transform);
         if (transform.isIdentity()) {
-            ScoreboardHudBounds.recordAppliedTransform(ScoreboardHudAvoidance.Transform.IDENTITY);
             return;
         }
+        // Another mod may already have scaled the sidebar around this injection, which would
+        // scale this transform's translation with it; rebasing cancels that out.
         //#if MC>=260100
+        //$$ final HudTransform pushed =
+        //$$     transform.rebased(GuiTransforms.ambient(context));
         //$$ context.pose().pushMatrix();
-        //$$ context.pose().translate(transform.translateX(), transform.translateY());
-        //$$ context.pose().scale(transform.scale(), transform.scale());
+        //$$ context.pose().translate(pushed.translateX(), pushed.translateY());
+        //$$ context.pose().scale(pushed.scale(), pushed.scale());
         //#elseif MC>=12108
+        //$$ final HudTransform pushed =
+        //$$     transform.rebased(GuiTransforms.ambient(context));
         //$$ context.getMatrices().pushMatrix();
-        //$$ context.getMatrices().translate(transform.translateX(), transform.translateY());
-        //$$ context.getMatrices().scale(transform.scale(), transform.scale());
+        //$$ context.getMatrices().translate(pushed.translateX(), pushed.translateY());
+        //$$ context.getMatrices().scale(pushed.scale(), pushed.scale());
         //#elseif MC>=12000
+        //$$ final HudTransform pushed =
+        //$$     transform.rebased(GuiTransforms.ambient(context));
         //$$ context.getMatrices().push();
-        //$$ context.getMatrices().translate(transform.translateX(), transform.translateY(), 0);
-        //$$ context.getMatrices().scale(transform.scale(), transform.scale(), 1f);
+        //$$ context.getMatrices().translate(pushed.translateX(), pushed.translateY(), 0);
+        //$$ context.getMatrices().scale(pushed.scale(), pushed.scale(), 1f);
         //#else
+        final HudTransform pushed =
+            transform.rebased(GuiTransforms.ambient(matrices));
         matrices.push();
-        matrices.translate(transform.translateX(), transform.translateY(), 0);
-        matrices.scale(transform.scale(), transform.scale(), 1f);
+        matrices.translate(pushed.translateX(), pushed.translateY(), 0);
+        matrices.scale(pushed.scale(), pushed.scale(), 1f);
         //#endif
-        ScoreboardHudBounds.recordAppliedTransform(transform);
         confluxmap$scoreboardTransformed = true;
     }
 
@@ -195,14 +210,14 @@ public abstract class InGameHudMixin {
     }
 
     @Unique
-    private static ScoreboardHudAvoidance.Transform confluxmap$scoreboardTransform(
+    private static HudTransform confluxmap$scoreboardTransform(
         final int screenWidth,
         final int screenHeight
     ) {
         final ConfluxMapClient app = ConfluxMapClient.get();
         final MinecraftClient client = MinecraftClient.getInstance();
         if (app == null || client.player == null) {
-            return ScoreboardHudAvoidance.Transform.IDENTITY;
+            return HudTransform.IDENTITY;
         }
         final ConfluxConfig config = app.config();
         final var screen = MinecraftAccess.screen(client);
@@ -212,7 +227,7 @@ public abstract class InGameHudMixin {
             screen instanceof FullscreenMapScreen,
             MinecraftAccess.isContainerScreen(screen)
         )) {
-            return ScoreboardHudAvoidance.Transform.IDENTITY;
+            return HudTransform.IDENTITY;
         }
 
         final MinimapPlacement.Layout minimap = MinimapPlacement.resolve(
@@ -252,7 +267,10 @@ public abstract class InGameHudMixin {
     //$$     final int y2,
     //$$     final int color
     //$$ ) {
-    //$$     ScoreboardHudBounds.include(x1, y1, x2, y2);
+    //$$     final HudAmbient pose = GuiTransforms.ambient(context);
+    //$$     ScoreboardHudBounds.include(
+    //$$         pose.applyX(x1), pose.applyY(y1), pose.applyX(x2), pose.applyY(y2)
+    //$$     );
     //$$     context.fill(x1, y1, x2, y2, color);
     //$$ }
     //#elseif MC>=12000
@@ -277,7 +295,10 @@ public abstract class InGameHudMixin {
     //$$     final int y2,
     //$$     final int color
     //$$ ) {
-    //$$     ScoreboardHudBounds.include(x1, y1, x2, y2);
+    //$$     final HudAmbient pose = GuiTransforms.ambient(context);
+    //$$     ScoreboardHudBounds.include(
+    //$$         pose.applyX(x1), pose.applyY(y1), pose.applyX(x2), pose.applyY(y2)
+    //$$     );
     //$$     context.fill(x1, y1, x2, y2, color);
     //$$ }
     //#else
@@ -298,7 +319,10 @@ public abstract class InGameHudMixin {
         final int y2,
         final int color
     ) {
-        ScoreboardHudBounds.include(x1, y1, x2, y2);
+        final HudAmbient pose = GuiTransforms.ambient(matrices);
+        ScoreboardHudBounds.include(
+            pose.applyX(x1), pose.applyY(y1), pose.applyX(x2), pose.applyY(y2)
+        );
         DrawableHelper.fill(matrices, x1, y1, x2, y2, color);
     }
     //#endif

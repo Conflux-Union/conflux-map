@@ -12,6 +12,7 @@
     "InGameHudMixin",
     "ScreenMixin",
     "StatusEffectHudMixin",
+    "ToastEntryMixin",
     "ToastHudMixin"
   ],
   "injectors": {

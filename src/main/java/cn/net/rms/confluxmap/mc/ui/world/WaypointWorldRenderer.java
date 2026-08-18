@@ -524,7 +524,8 @@ public final class WaypointWorldRenderer {
         final float scaleMult = (float) MathHelper.clamp(
             distance3d / LABEL_REFERENCE_DISTANCE, LABEL_MIN_SCALE_MULT, LABEL_MAX_SCALE_MULT
         );
-        final float scale = LABEL_BASE_SCALE * scaleMult;
+        // Applied last so the user factor is a plain multiplier on apparent size at every distance.
+        final float scale = LABEL_BASE_SCALE * scaleMult * config.waypointLabelScalePercent / 100f;
         final float easedProgress = WaypointHudMotion.smoothStep(animationProgress);
 
         final TextRenderer textRenderer = client.textRenderer;

@@ -2,44 +2,37 @@ package cn.net.rms.confluxmap.core.config;
 
 /** Pure screen-space policy for keeping vanilla toast notifications clear of the minimap. */
 public final class ToastHudAvoidance {
-    private static final int TOAST_WIDTH = 160;
-    private static final int TOAST_HEIGHT = 32;
     private static final int GAP = 4;
 
     private ToastHudAvoidance() {
     }
 
-    /** Returns the vertical translation that places the vanilla toast stack below the minimap. */
+    /**
+     * Returns the vertical translation that places the measured toast stack below the minimap.
+     *
+     * <p>{@code toasts} is the stack as it was actually drawn; toast width and height are
+     * per-toast properties in vanilla, so assuming the default size would under-report a wide
+     * notification or a multi-line system toast.
+     */
     public static int verticalShift(
-        final int screenWidth,
-        final int screenHeight,
-        final MinimapPlacement.Layout minimap
-    ) {
-        return verticalShift(screenWidth, screenHeight, minimap, 0);
-    }
-
-    /** Returns the translation below the complete minimap footprint, including information text. */
-    public static int verticalShift(
-        final int screenWidth,
         final int screenHeight,
         final MinimapPlacement.Layout minimap,
-        final int informationHeight
+        final int informationHeight,
+        final HudRect toasts
     ) {
-        if (minimap == null || screenWidth <= 0 || screenHeight <= 0) {
+        if (minimap == null || toasts == null || screenHeight <= 0) {
             return 0;
         }
-        final long toastLeft = (long) screenWidth - TOAST_WIDTH;
-        final long minimapRight = (long) minimap.x() + minimap.size();
-        if (minimapRight <= toastLeft || minimap.x() >= screenWidth) {
-            return 0;
-        }
-        final MinimapInformationLayout.Bounds footprint = MinimapInformationLayout.visualBounds(
+        final HudRect footprint = MinimapInformationLayout.visualBounds(
             minimap, screenHeight, informationHeight
         );
-        final long desiredTop = (long) footprint.bottom() + GAP;
-        if (desiredTop < 0 || desiredTop + TOAST_HEIGHT > screenHeight) {
+        if (!toasts.overlaps(footprint)) {
             return 0;
         }
-        return (int) desiredTop;
+        final int desiredTop = footprint.bottom() + GAP;
+        if (desiredTop < 0 || desiredTop + toasts.height() > screenHeight) {
+            return 0;
+        }
+        return desiredTop - toasts.top();
     }
 }

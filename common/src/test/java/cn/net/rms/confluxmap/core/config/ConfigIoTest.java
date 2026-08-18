@@ -151,6 +151,45 @@ class ConfigIoTest {
     }
 
     @Test
+    void waypointLabelScaleRoundTripsAndClampsInvalidValues(@TempDir final Path tmp) throws IOException {
+        final Path file = tmp.resolve("config.json");
+        final ConfigIo io = new ConfigIo(file, LOGGER);
+        final ConfluxConfig config = new ConfluxConfig();
+        assertEquals(ConfluxConfig.DEFAULT_WAYPOINT_LABEL_SCALE_PERCENT, config.waypointLabelScalePercent);
+        config.waypointLabelScalePercent = 175;
+
+        io.save(config);
+        assertEquals(175, io.load().waypointLabelScalePercent);
+
+        // A file written before this setting existed must land on the default, not on 0.
+        Files.writeString(file, "{\"schemaVersion\":5}", StandardCharsets.UTF_8);
+        assertEquals(
+            ConfluxConfig.DEFAULT_WAYPOINT_LABEL_SCALE_PERCENT,
+            io.load().waypointLabelScalePercent
+        );
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":6,\"waypointLabelScalePercent\":5000}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(
+            ConfluxConfig.MAX_WAYPOINT_LABEL_SCALE_PERCENT,
+            io.load().waypointLabelScalePercent
+        );
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":6,\"waypointLabelScalePercent\":0}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(
+            ConfluxConfig.MIN_WAYPOINT_LABEL_SCALE_PERCENT,
+            io.load().waypointLabelScalePercent
+        );
+    }
+
+    @Test
     void playerTrailSettingsRoundTripAndClampInvalidValues(@TempDir final Path tmp) throws IOException {
         final Path file = tmp.resolve("config.json");
         final ConfigIo io = new ConfigIo(file, LOGGER);

@@ -1,11 +1,15 @@
 package cn.net.rms.confluxmap.mixin;
 
 import cn.net.rms.confluxmap.ConfluxMapClient;
+import cn.net.rms.confluxmap.compat.GuiTransforms;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.config.HudAmbient;
 import cn.net.rms.confluxmap.core.config.HudAvoidanceLayout;
+import cn.net.rms.confluxmap.core.config.HudTransform;
 import cn.net.rms.confluxmap.core.config.MinimapHudVisibility;
 import cn.net.rms.confluxmap.core.config.MinimapPlacement;
+import cn.net.rms.confluxmap.mc.ui.hud.VanillaStatusEffectLayout;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 //#if MC>=12100
 //$$ import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
@@ -65,18 +69,22 @@ public abstract class StatusEffectHudMixin {
     //$$     final DeltaTracker tickCounter,
     //$$     final Operation<Void> original
     //$$ ) {
-    //$$     final int shift = confluxmap$horizontalShift(context.guiWidth(), context.guiHeight());
+    //$$     final float shift = confluxmap$horizontalPush(
+    //$$         GuiTransforms.ambient(context), context.guiWidth(), context.guiHeight()
+    //$$     );
     //#else
     //$$ private void confluxmap$renderStatusEffects(
     //$$     final DrawContext context,
     //$$     final RenderTickCounter tickCounter,
     //$$     final Operation<Void> original
     //$$ ) {
-    //$$     final int shift = confluxmap$horizontalShift(
-    //$$         context.getScaledWindowWidth(), context.getScaledWindowHeight()
+    //$$     final float shift = confluxmap$horizontalPush(
+    //$$         GuiTransforms.ambient(context),
+    //$$         context.getScaledWindowWidth(),
+    //$$         context.getScaledWindowHeight()
     //$$     );
     //#endif
-    //$$     if (shift == 0) {
+    //$$     if (shift == 0f) {
     //$$         original.call(context, tickCounter);
     //$$         return;
     //$$     }
@@ -136,18 +144,24 @@ public abstract class StatusEffectHudMixin {
     //#endif
         confluxmap$statusEffectsShifted = false;
         //#if MC>=260100
-        //$$ final int shift = confluxmap$horizontalShift(context.guiWidth(), context.guiHeight());
+        //$$ final float shift = confluxmap$horizontalPush(
+        //$$     GuiTransforms.ambient(context), context.guiWidth(), context.guiHeight()
+        //$$ );
         //#elseif MC>=12000
-        //$$ final int shift = confluxmap$horizontalShift(
-        //$$     context.getScaledWindowWidth(), context.getScaledWindowHeight()
+        //$$ final float shift = confluxmap$horizontalPush(
+        //$$     GuiTransforms.ambient(context),
+        //$$     context.getScaledWindowWidth(),
+        //$$     context.getScaledWindowHeight()
         //$$ );
         //#else
         final MinecraftClient client = MinecraftClient.getInstance();
-        final int shift = confluxmap$horizontalShift(
-            client.getWindow().getScaledWidth(), client.getWindow().getScaledHeight()
+        final float shift = confluxmap$horizontalPush(
+            GuiTransforms.ambient(matrices),
+            client.getWindow().getScaledWidth(),
+            client.getWindow().getScaledHeight()
         );
         //#endif
-        if (shift == 0) {
+        if (shift == 0f) {
             return;
         }
         //#if MC>=260100
@@ -210,16 +224,27 @@ public abstract class StatusEffectHudMixin {
     }
     //#endif
 
+    /**
+     * Returns the translation to push, in the coordinates of the matrix {@code ambient} sits on.
+     *
+     * <p>The row rectangles are mapped through {@code ambient} first, so an overlay another mod
+     * rescaled is compared against the minimap at its rendered size, and the resulting shift is
+     * rebased so that scale does not also stretch the shift itself.
+     */
     @Unique
-    private static int confluxmap$horizontalShift(final int screenWidth, final int screenHeight) {
+    private static float confluxmap$horizontalPush(
+        final HudAmbient ambient,
+        final int screenWidth,
+        final int screenHeight
+    ) {
         final ConfluxMapClient app = ConfluxMapClient.get();
         final MinecraftClient client = MinecraftClient.getInstance();
         if (app == null || client.player == null) {
-            return 0;
+            return 0f;
         }
         final ConfluxConfig config = app.config();
         if (!config.minimapHudAvoidance) {
-            return 0;
+            return 0f;
         }
         final var screen = MinecraftAccess.screen(client);
         if (!MinimapHudVisibility.shouldRender(
@@ -228,7 +253,7 @@ public abstract class StatusEffectHudMixin {
             screen instanceof FullscreenMapScreen,
             MinecraftAccess.isContainerScreen(screen)
         )) {
-            return 0;
+            return 0f;
         }
 
         int beneficialCount = 0;
@@ -269,13 +294,17 @@ public abstract class StatusEffectHudMixin {
             config.minimapPositionX,
             config.minimapPositionY
         );
-        return HudAvoidanceLayout.statusEffectShift(
+        final boolean demo = client.isDemo();
+        final int shift = HudAvoidanceLayout.statusEffectShift(
             config.minimapHudAvoidance,
-            screenWidth,
             configuredMinimap,
-            client.isDemo() ? 16 : 1,
-            beneficialCount,
-            harmfulCount
+            ambient.apply(VanillaStatusEffectLayout.row(
+                screenWidth, VanillaStatusEffectLayout.beneficialTop(demo), beneficialCount
+            )),
+            ambient.apply(VanillaStatusEffectLayout.row(
+                screenWidth, VanillaStatusEffectLayout.harmfulTop(demo), harmfulCount
+            ))
         );
+        return HudTransform.ofHorizontalShift(shift).rebased(ambient).translateX();
     }
 }

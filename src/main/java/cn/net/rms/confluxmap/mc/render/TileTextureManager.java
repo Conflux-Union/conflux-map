@@ -99,6 +99,9 @@ public final class TileTextureManager {
             entry = new TileTexture(new NativeImageBackedTexture(TILE_SIZE, TILE_SIZE, false));
             //#endif
             textures.put(update.key(), entry);
+            if (!PredictedTileKeys.isPredicted(update.key())) {
+                tiles.retainTile(update.key());
+            }
         }
         final NativeImage image = entry.texture.getImage();
         if (image == null) {
@@ -211,6 +214,9 @@ public final class TileTextureManager {
             final Map.Entry<TileKey, TileTexture> oldest = it.next();
             it.remove();
             oldest.getValue().texture.close();
+            // Nothing holds this tile's pixels any more, so the composer must stop refreshing it
+            // and go back to composing it in full when bind() next asks for it.
+            tiles.forgetTile(oldest.getKey());
         }
     }
 
@@ -243,8 +249,9 @@ public final class TileTextureManager {
     /** Render thread, session end: drop every cached tile texture. */
     public void releaseAll() {
         assert RenderSystem.isOnRenderThread() : "TileTextureManager.releaseAll() must run on the render thread";
-        for (final TileTexture entry : textures.values()) {
-            entry.texture.close();
+        for (final Map.Entry<TileKey, TileTexture> entry : textures.entrySet()) {
+            entry.getValue().texture.close();
+            tiles.forgetTile(entry.getKey());
         }
         textures.clear();
         ConfluxMapMod.LOGGER.debug("TileTextureManager: released all tile textures");
