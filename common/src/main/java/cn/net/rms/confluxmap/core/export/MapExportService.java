@@ -12,7 +12,7 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 /** Owns the single bounded background PNG export and its temporary-file lifecycle. */
@@ -21,12 +21,23 @@ public final class MapExportService implements AutoCloseable {
     private static final long MIN_HEAP_HEADROOM_BYTES = 128L * 1024L * 1024L;
     private static final long SLOW_TICK_NANOS = 500_000_000L;
     private static final int MAX_CONSECUTIVE_SLOW_TICKS = 5;
+    private static final StopReason USER_CANCELLED = new StopReason(true, null);
+    private static final StopReason SLOW_CLIENT_TICKS = new StopReason(
+        false,
+        "Map export stopped after five consecutive client tick intervals exceeded 500 ms"
+    );
+    private static final StopReason SESSION_CHANGED = new StopReason(
+        false, "Map session changed during export"
+    );
+    private static final StopReason SERVICE_CLOSED = new StopReason(
+        false, "Map export service closed"
+    );
 
     private final Path exportDir;
     private final SessionGuard sessions;
     private final Function<MapExportRequest, MapExportTileSource> sources;
     private final ExecutorService executor;
-    private final AtomicBoolean cancellationRequested = new AtomicBoolean();
+    private final AtomicReference<StopReason> stopReason = new AtomicReference<>();
 
     private volatile MapExportStatus status = MapExportStatus.idle();
     private volatile Path activeSpool;
@@ -58,7 +69,7 @@ public final class MapExportService implements AutoCloseable {
         if (status.active()) {
             throw new IllegalStateException("A map export is already active");
         }
-        cancellationRequested.set(false);
+        stopReason.set(null);
         consecutiveSlowTicks = 0;
         lastTickNanos = 0L;
         status = new MapExportStatus(MapExportStatus.State.RASTERIZING, 0L, 0L, null, null);
@@ -70,10 +81,10 @@ public final class MapExportService implements AutoCloseable {
     }
 
     public void cancel() {
-        cancellationRequested.set(true);
+        requestStop(USER_CANCELLED);
     }
 
-    /** Client-thread watchdog; the export cancels after five consecutive half-second tick gaps. */
+    /** Client-thread watchdog; sustained half-second tick gaps stop the export with an error. */
     public void tick() {
         if (!status.active()) {
             lastTickNanos = 0L;
@@ -85,7 +96,7 @@ public final class MapExportService implements AutoCloseable {
         lastTickNanos = now;
         if (previous != 0L && now - previous > SLOW_TICK_NANOS) {
             if (++consecutiveSlowTicks >= MAX_CONSECUTIVE_SLOW_TICKS) {
-                cancellationRequested.set(true);
+                requestStop(SLOW_CLIENT_TICKS);
             }
         } else {
             consecutiveSlowTicks = 0;
@@ -142,12 +153,12 @@ public final class MapExportService implements AutoCloseable {
                 MapExportStatus.State.COMPLETED, request.pixelHeight(), request.pixelHeight(), output, null
             );
         } catch (final CancellationException e) {
-            status = new MapExportStatus(MapExportStatus.State.CANCELLED, 0L, 0L, null, null);
+            final StopReason reason = stopReason.get();
+            status = reason != null && reason.userCancelled()
+                ? new MapExportStatus(MapExportStatus.State.CANCELLED, 0L, 0L, null, null)
+                : failedStatus(reason == null ? failureMessage(e) : reason.error());
         } catch (final Exception | OutOfMemoryError e) {
-            status = new MapExportStatus(
-                MapExportStatus.State.FAILED, 0L, 0L, null,
-                e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()
-            );
+            status = failedStatus(e);
         } finally {
             deleteQuietly(spool);
             deleteQuietly(part);
@@ -157,14 +168,25 @@ public final class MapExportService implements AutoCloseable {
     }
 
     private boolean unhealthy(final MapExportRequest request) {
-        if (cancellationRequested.get() || !sessions.isCurrent(request.session().token())) {
+        if (stopReason.get() != null) {
+            return true;
+        }
+        if (!sessions.isCurrent(request.session().token())) {
+            requestStop(SESSION_CHANGED);
             return true;
         }
         final Runtime runtime = Runtime.getRuntime();
         final long used = runtime.totalMemory() - runtime.freeMemory();
         final long headroom = runtime.maxMemory() - used;
         final long required = Math.max(MIN_HEAP_HEADROOM_BYTES, runtime.maxMemory() / 10L);
-        return headroom < required;
+        if (headroom < required) {
+            requestStop(new StopReason(false,
+                "Not enough heap memory to continue map export: "
+                    + toMib(headroom) + " MiB available, " + toMib(required) + " MiB required"
+            ));
+            return true;
+        }
+        return false;
     }
 
     private void checkHealthy(final MapExportRequest request) {
@@ -237,10 +259,30 @@ public final class MapExportService implements AutoCloseable {
         }
     }
 
+    private void requestStop(final StopReason reason) {
+        stopReason.compareAndSet(null, reason);
+    }
+
+    private static long toMib(final long bytes) {
+        return bytes / (1024L * 1024L);
+    }
+
+    private static MapExportStatus failedStatus(final Throwable error) {
+        return failedStatus(failureMessage(error));
+    }
+
+    private static MapExportStatus failedStatus(final String message) {
+        return new MapExportStatus(MapExportStatus.State.FAILED, 0L, 0L, null, message);
+    }
+
+    private static String failureMessage(final Throwable error) {
+        return error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+    }
+
     @Override
     public void close() {
         closed = true;
-        cancel();
+        requestStop(SERVICE_CLOSED);
         executor.shutdownNow();
         try {
             executor.awaitTermination(2L, TimeUnit.SECONDS);
@@ -249,5 +291,8 @@ public final class MapExportService implements AutoCloseable {
         }
         deleteQuietly(activeSpool);
         deleteQuietly(activePart);
+    }
+
+    private record StopReason(boolean userCancelled, String error) {
     }
 }
