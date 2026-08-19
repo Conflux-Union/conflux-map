@@ -51,6 +51,7 @@ public final class SharedWaypointService {
 
     public enum Action {
         CREATE,
+        UPDATE,
         DELETE,
         LOCK,
         UNLOCK
@@ -89,6 +90,24 @@ public final class SharedWaypointService {
 
     public record DeleteRequest(UUID operationId, long expectedRevision, UUID waypointId) {
         public DeleteRequest {
+            Objects.requireNonNull(operationId, "operationId");
+            Objects.requireNonNull(waypointId, "waypointId");
+        }
+    }
+
+    public record UpdateRequest(
+        UUID operationId,
+        long expectedRevision,
+        UUID waypointId,
+        String name,
+        DimensionId dimensionId,
+        double x,
+        double y,
+        double z,
+        int colorArgb,
+        Waypoint.Type type
+    ) {
+        public UpdateRequest {
             Objects.requireNonNull(operationId, "operationId");
             Objects.requireNonNull(waypointId, "waypointId");
         }
@@ -385,6 +404,79 @@ public final class SharedWaypointService {
         }
         return persist(player, request, actor, request.operationId(), Action.DELETE, request.waypointId(),
             mutation, now);
+    }
+
+    public synchronized MutationResult update(final Actor actor, final UpdateRequest request) {
+        Objects.requireNonNull(actor, "actor");
+        Objects.requireNonNull(request, "request");
+        final PlayerState player = playerState(actor);
+        final MutationResult replay = replayOrRejectReuse(
+            player, actor, request.operationId(), Action.UPDATE, request.waypointId(), request
+        );
+        if (replay != null) {
+            return replay;
+        }
+        final long now = clock.millis();
+        if (!player.bucket.tryConsume(now)) {
+            return finish(player, request, actor, request.operationId(), Action.UPDATE, request.waypointId(),
+                rejected(request.operationId(), MutationError.RATE_LIMITED), now);
+        }
+        if (!actor.operator()) {
+            return finish(player, request, actor, request.operationId(), Action.UPDATE, request.waypointId(),
+                rejected(request.operationId(), MutationError.FORBIDDEN), now);
+        }
+        final Optional<SharedWaypoint> existing = store.find(request.waypointId());
+        if (existing.isEmpty()) {
+            return finish(player, request, actor, request.operationId(), Action.UPDATE, request.waypointId(),
+                rejected(request.operationId(), MutationError.NOT_FOUND), now);
+        }
+        final SharedWaypoint current = existing.get();
+        if (request.expectedRevision() != current.revision()) {
+            return finish(player, request, actor, request.operationId(), Action.UPDATE, request.waypointId(),
+                rejected(request.operationId(), MutationError.REVISION_CONFLICT), now);
+        }
+        final Optional<SharedWaypointValidator.ValidatedCreate> validated = validator.validate(
+            request.name(), request.dimensionId(), request.x(), request.y(), request.z(),
+            request.colorArgb(), request.type()
+        );
+        if (validated.isEmpty()) {
+            return finish(player, request, actor, request.operationId(), Action.UPDATE, request.waypointId(),
+                rejected(request.operationId(), MutationError.INVALID_REQUEST), now);
+        }
+        final SharedWaypointValidator.ValidatedCreate value = validated.get();
+        final SharedWaypointLocationKey currentLocation = SharedWaypointLocationKey.from(current);
+        final SharedWaypointLocationKey updatedLocation = SharedWaypointLocationKey.from(
+            value.dimensionId(), value.x(), value.y(), value.z()
+        );
+        final Optional<SharedWaypoint> occupant = store.findAt(updatedLocation);
+        if (!updatedLocation.equals(currentLocation)
+            && occupant.isPresent() && !occupant.get().id().equals(current.id())) {
+            return finish(player, request, actor, request.operationId(), Action.UPDATE, request.waypointId(),
+                rejected(request.operationId(), MutationError.DUPLICATE_LOCATION), now);
+        }
+        final long nextRevision;
+        try {
+            nextRevision = Math.addExact(store.snapshot().revision(), 1);
+        } catch (final ArithmeticException e) {
+            return finish(player, request, actor, request.operationId(), Action.UPDATE, request.waypointId(),
+                rejected(request.operationId(), MutationError.PERSISTENCE_FAILED), now);
+        }
+        final SharedWaypoint updated = new SharedWaypoint(
+            current.id(), current.publisherId(), current.publisherName(), value.name(),
+            value.dimensionId(), value.x(), value.y(), value.z(), value.colorArgb(), value.type(),
+            current.locked(), current.createdAtEpochMs(), nextRevision
+        );
+        final SharedWaypointStore.PreparedMutation mutation;
+        try {
+            mutation = store.prepareUpdate(updated);
+        } catch (final ArithmeticException e) {
+            return finish(player, request, actor, request.operationId(), Action.UPDATE, request.waypointId(),
+                rejected(request.operationId(), MutationError.PERSISTENCE_FAILED), now);
+        }
+        return persist(
+            player, request, actor, request.operationId(), Action.UPDATE, request.waypointId(),
+            mutation, now
+        );
     }
 
     public synchronized MutationResult setLocked(final Actor actor, final LockRequest request) {

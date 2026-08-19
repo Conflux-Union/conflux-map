@@ -90,6 +90,18 @@ final class PaperSharedWaypointNetworking implements PluginMessageListener {
         }
     }
 
+    void commandMutation(final cn.net.rms.confluxmap.server.shared.SharedWaypointService.MutationResult mutation) {
+        final SharedWaypointMessage delta = SharedWaypointSessionHandler.deltaMessage(mutation);
+        if (delta == null) {
+            return;
+        }
+        for (final Player recipient : Bukkit.getOnlinePlayers()) {
+            if (sessions.isSubscribed(recipient.getUniqueId())) {
+                send(recipient, delta);
+            }
+        }
+    }
+
     private void receive(final UUID playerId, final byte[] payload) {
         final Player player = Bukkit.getPlayer(playerId);
         if (player == null || !player.isOnline() || !companion.isEnabled()) {

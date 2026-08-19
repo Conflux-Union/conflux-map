@@ -364,15 +364,26 @@ public final class SharedWaypointSessionHandler {
             statusCode(mutation.status()),
             errorCode(mutation.error(), session.negotiatedMinor)
         );
-        final SharedWaypointMessage delta = switch (mutation.delta().kind()) {
-            case UPSERT -> new UpsertS2C(mutation.delta().revision(), mutation.delta().waypoint());
-            case REMOVE -> new RemoveS2C(mutation.delta().revision(), mutation.delta().removedId());
-            case NOOP -> null;
-        };
+        final SharedWaypointMessage delta = deltaMessage(mutation);
         return new Dispatch(
             List.of(result),
             mutation.applied() && !mutation.replayed() ? delta : null
         );
+    }
+
+    /** Converts an applied service mutation into the delta sent to subscribed modded clients. */
+    public static SharedWaypointMessage deltaMessage(
+        final SharedWaypointService.MutationResult mutation
+    ) {
+        Objects.requireNonNull(mutation, "mutation");
+        if (!mutation.applied() || mutation.replayed()) {
+            return null;
+        }
+        return switch (mutation.delta().kind()) {
+            case UPSERT -> new UpsertS2C(mutation.delta().revision(), mutation.delta().waypoint());
+            case REMOVE -> new RemoveS2C(mutation.delta().revision(), mutation.delta().removedId());
+            case NOOP -> null;
+        };
     }
 
     static int statusCode(final SharedWaypointService.MutationStatus status) {

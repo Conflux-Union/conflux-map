@@ -156,6 +156,17 @@ public final class SharedWaypointNetworking {
         }
     }
 
+    /** Publishes a command-originated mutation to clients subscribed through the binary protocol. */
+    public void onCommandMutation(
+        final MinecraftServer server,
+        final SharedWaypointService.MutationResult mutation
+    ) {
+        final SharedWaypointMessage delta = SharedWaypointSessionHandler.deltaMessage(mutation);
+        if (delta != null) {
+            broadcast(server, delta);
+        }
+    }
+
     public void onServerStopping() {
         sessions.clear();
     }

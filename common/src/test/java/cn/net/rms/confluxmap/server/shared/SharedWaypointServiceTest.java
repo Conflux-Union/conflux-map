@@ -278,6 +278,69 @@ class SharedWaypointServiceTest {
     }
 
     @Test
+    void operatorCanUpdateAWaypointWithoutChangingItsOwnershipOrCreationTime() {
+        final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
+        final SharedWaypoint created = fixture.service.create(
+            PLAYER, createRequest(uuid(1_300), 0, "Old name")
+        ).delta().waypoint();
+
+        final SharedWaypointService.MutationResult result = fixture.service.update(
+            OPERATOR,
+            new SharedWaypointService.UpdateRequest(
+                uuid(1_301), created.revision(), created.id(), "  New name  ",
+                DimensionId.NETHER, 20.5d, 70d, -30.25d, 0xFF3498DB, Waypoint.Type.NORMAL
+            )
+        );
+
+        assertTrue(result.applied());
+        assertEquals(SharedWaypointStore.DeltaKind.UPSERT, result.delta().kind());
+        final SharedWaypoint updated = result.delta().waypoint();
+        assertEquals(created.id(), updated.id());
+        assertEquals(created.publisherId(), updated.publisherId());
+        assertEquals(created.publisherName(), updated.publisherName());
+        assertEquals(created.createdAtEpochMs(), updated.createdAtEpochMs());
+        assertEquals(created.locked(), updated.locked());
+        assertEquals("New name", updated.name());
+        assertEquals(DimensionId.NETHER, updated.dimensionId());
+        assertEquals(20.5d, updated.x());
+        assertEquals(70d, updated.y());
+        assertEquals(-30.25d, updated.z());
+        assertEquals(0xFF3498DB, updated.colorArgb());
+        assertEquals(2L, updated.revision());
+        assertEquals(2, fixture.persistence.saves);
+        assertEquals(SharedWaypointService.Action.UPDATE, fixture.audit.get(1).action());
+    }
+
+    @Test
+    void updateRequiresOperatorAndRejectsAnOccupiedDestination() {
+        final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
+        final SharedWaypoint first = fixture.service.create(
+            PLAYER, createRequestAt(uuid(1_310), 0, "First", DimensionId.OVERWORLD, 1d, 64d, 1d)
+        ).delta().waypoint();
+        fixture.service.create(
+            OTHER, createRequestAt(uuid(1_311), 1, "Second", DimensionId.OVERWORLD, 2d, 64d, 2d)
+        );
+
+        final SharedWaypointService.UpdateRequest request = new SharedWaypointService.UpdateRequest(
+            uuid(1_312), first.revision(), first.id(), "Moved", DimensionId.OVERWORLD,
+            2.9d, 64.1d, 2.9d, 0xFF33AA66, Waypoint.Type.NORMAL
+        );
+        final SharedWaypointService.MutationResult forbidden = fixture.service.update(PLAYER, request);
+        final SharedWaypointService.MutationResult duplicate = fixture.service.update(
+            OPERATOR,
+            new SharedWaypointService.UpdateRequest(
+                uuid(1_313), first.revision(), first.id(), "Moved", DimensionId.OVERWORLD,
+                2.9d, 64.1d, 2.9d, 0xFF33AA66, Waypoint.Type.NORMAL
+            )
+        );
+
+        assertEquals(SharedWaypointService.MutationError.FORBIDDEN, forbidden.error());
+        assertEquals(SharedWaypointService.MutationError.DUPLICATE_LOCATION, duplicate.error());
+        assertEquals(2L, fixture.service.snapshot().revision());
+        assertEquals(2, fixture.persistence.saves);
+    }
+
+    @Test
     void targetRevisionRemainsValidWhenAnUnrelatedWaypointAdvancesGlobalRevision() {
         final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
         final SharedWaypoint first = fixture.service.create(
