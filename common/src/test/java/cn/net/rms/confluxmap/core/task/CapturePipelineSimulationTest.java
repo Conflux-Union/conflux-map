@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test;
  * snapshots it actually takes to fill one view-distance square, versus how many chunks that
  * square contains. Nothing here asserts - it is a measurement harness for the capture budget.
  */
+@Tag("benchmark")
 class CapturePipelineSimulationTest {
     private static final int BUDGET = 8;
     private static final int MAX_TICKS = 20_000;

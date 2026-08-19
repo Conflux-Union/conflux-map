@@ -18,13 +18,16 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
  * Measures composition wall-clock through the real {@link TileService} queue: what one tile
  * costs per LOD, and what publishing a viewport (which pins {@code pump()} to a single worker)
- * does to a full screen's worth of tiles. Nothing here asserts.
+ * does to a full screen's worth of tiles. No performance threshold is asserted; the timeout only
+ * prevents a wedged queue from hanging the harness.
  */
+@Tag("benchmark")
 class TileComposeThroughputBenchmarkTest {
     private static final int REGIONS_PER_SIDE = 4;
     private static final int ROUNDS = 5;
