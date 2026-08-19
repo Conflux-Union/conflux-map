@@ -12,7 +12,8 @@ import cn.net.rms.confluxmap.core.util.TileMath;
  * {@link #SCHEMA_VERSION} and adding a migration in {@link ConfigIo}.
  */
 public final class ConfluxConfig {
-    public static final int SCHEMA_VERSION = 6;
+    public static final int SCHEMA_VERSION = 7;
+    public static final String DEFAULT_TELEPORT_COMMAND = "tp {x} {y} {z}";
     public static final int DEFAULT_MINIMAP_SIZE = 90;
     public static final int MIN_ANNOTATION_ERASER_SIZE = 4;
     public static final int MAX_ANNOTATION_ERASER_SIZE = 64;
@@ -142,6 +143,8 @@ public final class ConfluxConfig {
     public boolean waypointBeamsEnabled = true;
     /** In-world floating name/distance label above each visible waypoint. */
     public boolean waypointLabelsEnabled = true;
+    /** Command template used by the fullscreen map's teleport action. */
+    public String teleportCommand = DEFAULT_TELEPORT_COMMAND;
     /**
      * Apparent size of the in-world waypoint label, as a percentage of the distance-compensated
      * default. Scales the icon plate, background panel, and both text lines together.
@@ -231,6 +234,7 @@ public final class ConfluxConfig {
         c.deathPointsKept = deathPointsKept;
         c.waypointBeamsEnabled = waypointBeamsEnabled;
         c.waypointLabelsEnabled = waypointLabelsEnabled;
+        c.teleportCommand = teleportCommand;
         c.waypointLabelScalePercent = waypointLabelScalePercent;
         c.predictionEnabled = predictionEnabled;
         c.predictionNetworkSync = predictionNetworkSync;
@@ -308,6 +312,9 @@ public final class ConfluxConfig {
             waypointLabelScalePercent,
             MIN_WAYPOINT_LABEL_SCALE_PERCENT, MAX_WAYPOINT_LABEL_SCALE_PERCENT
         );
+        if (!TeleportCommandTemplate.valid(teleportCommand)) {
+            teleportCommand = DEFAULT_TELEPORT_COMMAND;
+        }
         deathPointsKept = clamp(deathPointsKept, 0, 50);
         if (predictionViewMode == null) {
             predictionViewMode = PredictionViewMode.EVERYWHERE;

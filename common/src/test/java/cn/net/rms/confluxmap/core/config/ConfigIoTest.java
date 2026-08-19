@@ -53,6 +53,7 @@ class ConfigIoTest {
         assertTrue(loaded.annotationsOnHud);
         assertEquals(ConfluxConfig.DEFAULT_ANNOTATION_ERASER_SIZE, loaded.annotationEraserSize);
         assertEquals(new ConfluxConfig().fullscreenDisplayMode, loaded.fullscreenDisplayMode);
+        assertEquals(ConfluxConfig.DEFAULT_TELEPORT_COMMAND, loaded.teleportCommand);
         assertEquals(new ConfluxConfig().chunkLoadDetailMode, loaded.chunkLoadDetailMode);
         assertEquals(ConfluxConfig.DEFAULT_RADAR_ICON_SIZE, loaded.radarIconSize);
         assertTrue(loaded.playerTrailEnabled);
@@ -83,6 +84,7 @@ class ConfigIoTest {
         assertTrue(rewritten.contains("\"annotationsOnHud\""));
         assertTrue(rewritten.contains("\"annotationEraserSize\""));
         assertTrue(rewritten.contains("\"fullscreenDisplayMode\""));
+        assertTrue(rewritten.contains("\"teleportCommand\""));
         assertTrue(rewritten.contains("\"chunkLoadDetailMode\""));
         assertTrue(rewritten.contains("\"radarIconSize\""));
         assertTrue(rewritten.contains("\"playerTrailEnabled\""));

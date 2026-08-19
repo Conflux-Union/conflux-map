@@ -61,6 +61,7 @@ import cn.net.rms.confluxmap.mc.ui.world.WaypointWorldRenderer;
 import cn.net.rms.confluxmap.mc.world.DeathWatcher;
 import cn.net.rms.confluxmap.mc.world.ClientMultiworldService;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
+import cn.net.rms.confluxmap.mc.world.FullscreenMapBrowseService;
 import cn.net.rms.confluxmap.mc.world.McDaylightTracker;
 import cn.net.rms.confluxmap.mc.world.WorldSessionTracker;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
@@ -95,6 +96,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private BiomeTintResolver biomeTintResolver;
     private SyncedMaterialResolver syncedMaterialResolver;
     private TileTextureManager tileTextureManager;
+    private FullscreenMapBrowseService fullscreenMapBrowseService;
     private ChunkCaptureService chunkCapture;
     private RadarViewRange radarViewRange;
     private EntityRadarScanner radarScanner;
@@ -160,6 +162,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
             clientWorldProfiles, UUID::randomUUID, () -> clientWorldProfileIo.save(clientWorldProfiles)
         );
         final Path waypointRoot = confluxRoot.resolve("waypoints");
+        final Path annotationRoot = confluxRoot.resolve("annotations");
         final ServerAliasIo serverAliasIo = new ServerAliasIo(
             FabricLoader.getInstance().getConfigDir().resolve(ConfluxMapMod.ID).resolve("server_aliases.json"),
             ConfluxMapMod.LOGGER
@@ -247,10 +250,19 @@ public final class ConfluxMapClient implements ClientModInitializer {
         clientNetworking.register();
         sharedWaypoints = new SharedWaypointClient(client);
         sharedWaypoints.register();
-        groundTeleportService = new ClientGroundTeleportService(client);
+        groundTeleportService = new ClientGroundTeleportService(client, config);
 
         predictionPaletteBuilder = new PredictionPaletteBuilder(client, predictionState, spriteColorSampler);
         tileTextureManager = new TileTextureManager(config, tileService, predictionTileService, daylightModel);
+        fullscreenMapBrowseService = new FullscreenMapBrowseService(
+            cacheRoot,
+            waypointRoot,
+            annotationRoot,
+            executors,
+            config,
+            daylightModel,
+            predictionTileService
+        );
         manualSeedService = new ManualSeedService(
             config,
             configIo,
@@ -276,10 +288,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         playerTrail = new PlayerTrail();
         playerTrailTracker = new PlayerTrailTracker(client, config, sessionGuard, playerTrail);
         waypointService = new WaypointService(waypointRoot, executors, ConfluxMapMod.LOGGER);
-        annotationService = new AnnotationService(
-            FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("annotations"),
-            executors, ConfluxMapMod.LOGGER
-        );
+        annotationService = new AnnotationService(annotationRoot, executors, ConfluxMapMod.LOGGER);
         waypointRenderCatalog = new WaypointRenderCatalog(waypointService, sharedWaypoints::list, config);
         deathWatcher = new DeathWatcher(gameBridge, config, waypointService);
         minimapHudRenderer = new MinimapHudRenderer(
@@ -309,6 +318,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(predictionTileService::onSessionChanged);
         sessionTracker.addListener(structureMarkerService::onSessionChanged);
         sessionTracker.addListener(session -> groundTeleportService.reset());
+        sessionTracker.addListener(session -> gameBridge.runOnRenderThread(fullscreenMapBrowseService::clear));
         sessionTracker.addListener(session -> gameBridge.runOnRenderThread(tileTextureManager::releaseAll));
         clientMultiworldService.register();
         sessionTracker.register();
@@ -435,6 +445,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public TileTextureManager tileTextureManager() {
         return tileTextureManager;
+    }
+
+    public FullscreenMapBrowseService fullscreenMapBrowseService() {
+        return fullscreenMapBrowseService;
     }
 
     /** Forces a prediction-only cache/queue reload; captured map textures remain resident. */

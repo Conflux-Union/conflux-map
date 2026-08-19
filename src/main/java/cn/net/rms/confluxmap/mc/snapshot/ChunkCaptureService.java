@@ -251,14 +251,23 @@ public final class ChunkCaptureService {
             reseedViewport(playerChunkX, playerChunkZ);
         }
 
+        final List<LayerSelector.Decision> capturePlan = capturePlan(
+            decision, client.world.getTopY()
+        );
+        final int chunkBudget = Math.max(1, config.snapshotBudgetPerTick / capturePlan.size());
         final List<long[]> batch = dirtyChunks.drainNearest(
-            config.snapshotBudgetPerTick, playerChunkX, playerChunkZ, this::captureReadiness
+            chunkBudget, playerChunkX, playerChunkZ, this::captureReadiness
         );
         for (final long[] chunkPos : batch) {
-            final ChunkSnapshot snapshot = factory.snapshot((int) chunkPos[0], (int) chunkPos[1], decision.layer(), decision.pivotY(), token);
-            if (snapshot != null) {
-                final MapLayer layer = decision.layer();
-                executors.workers().execute(() -> storeSnapshot(snapshot, layer));
+            for (final LayerSelector.Decision capture : capturePlan) {
+                final ChunkSnapshot snapshot = factory.snapshot(
+                    (int) chunkPos[0], (int) chunkPos[1],
+                    capture.layer(), capture.pivotY(), token
+                );
+                if (snapshot != null) {
+                    final MapLayer layer = capture.layer();
+                    executors.workers().execute(() -> storeSnapshot(snapshot, layer));
+                }
             }
         }
         final RegionDiskCache cache = regionCache.current();
@@ -279,6 +288,26 @@ public final class ChunkCaptureService {
     ) {
         return advertisedServerViewDistance >= 0
             ? advertisedServerViewDistance : clientViewDistance;
+    }
+
+    /**
+     * A below-roof Nether player still needs the persistent roof surface for the fullscreen map.
+     * Divide the per-tick chunk batch by this plan's size so normal budgets remain bounded. A
+     * configured budget of one deliberately captures one chunk in both layers, making progress on
+     * the visible cave and the persistent roof instead of starving either one.
+     */
+    static List<LayerSelector.Decision> capturePlan(
+        final LayerSelector.Decision selected,
+        final int worldTopY
+    ) {
+        if (selected.layer().type() == MapLayer.Type.NETHER_CURRENT
+            || selected.layer().type() == MapLayer.Type.NETHER_SLICE) {
+            return List.of(
+                selected,
+                new LayerSelector.Decision(MapLayer.NETHER_CEILING, worldTopY - 1)
+            );
+        }
+        return List.of(selected);
     }
 
     private void storeSnapshot(final ChunkSnapshot snapshot, final MapLayer layer) {

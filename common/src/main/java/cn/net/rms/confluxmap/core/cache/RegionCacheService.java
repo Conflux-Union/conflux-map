@@ -19,6 +19,7 @@ public final class RegionCacheService {
     private final MapExecutors executors;
     private final TileService tiles;
     private final Logger logger;
+    private final boolean readOnly;
 
     private volatile RegionDiskCache current;
     private SessionGuard.Session currentSession;
@@ -30,11 +31,26 @@ public final class RegionCacheService {
         final TileService tiles,
         final Logger logger
     ) {
+        this(root, mapWorlds, executors, tiles, logger, false);
+    }
+
+    /**
+     * @param readOnly true for the fullscreen archive browser, which may load but never flush cache data
+     */
+    public RegionCacheService(
+        final Path root,
+        final MapWorldService mapWorlds,
+        final MapExecutors executors,
+        final TileService tiles,
+        final Logger logger,
+        final boolean readOnly
+    ) {
         this.root = root;
         this.mapWorlds = mapWorlds;
         this.executors = executors;
         this.tiles = tiles;
         this.logger = logger;
+        this.readOnly = readOnly;
     }
 
     /** Main thread, from the session tracker. */
@@ -42,12 +58,16 @@ public final class RegionCacheService {
         final SessionGuard.Session endingSession = currentSession;
         final MapWorld endingWorld = mapWorlds.switchSession(session);
         final RegionDiskCache endingCache = current;
-        if (endingCache != null && endingWorld != null) {
+        if (!readOnly && endingCache != null && endingWorld != null) {
             endingCache.flushAllOnSessionEnd(endingWorld);
         }
-        final boolean waitForEndingFlush = migrationMustFollowEndingFlush(session, endingSession);
+        final boolean waitForEndingFlush = !readOnly
+            && migrationMustFollowEndingFlush(session, endingSession);
         final RegionDiskCache next = session.active()
-            ? new RegionDiskCache(root, session, mapWorlds, executors.io(), tiles, logger, !waitForEndingFlush)
+            ? new RegionDiskCache(
+                root, session, mapWorlds, executors.io(), tiles, logger,
+                !readOnly && !waitForEndingFlush
+            )
             : null;
         if (waitForEndingFlush) {
             // Both jobs use the single IO queue. The previous session's flush therefore writes

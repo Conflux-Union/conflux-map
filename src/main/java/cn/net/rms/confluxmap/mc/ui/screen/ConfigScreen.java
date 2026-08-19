@@ -498,6 +498,14 @@ public final class ConfigScreen extends ConfluxScreen {
                 );
                 break;
             case WAYPOINTS:
+                y = addActionRow(
+                    y,
+                    "confluxmap.config.waypoints.teleport_command",
+                    () -> MinecraftAccess.setScreen(
+                        MinecraftClient.getInstance(),
+                        new TeleportCommandScreen(this, config, configIo)
+                    )
+                );
                 y = addToggleRow(
                     y, "confluxmap.config.waypoints.show_local",
                     () -> config.localWaypointsVisible, v -> config.localWaypointsVisible = v

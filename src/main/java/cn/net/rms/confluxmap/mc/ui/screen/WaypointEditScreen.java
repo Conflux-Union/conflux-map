@@ -16,6 +16,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import net.minecraft.client.MinecraftClient;
 //#if MC>=12000
@@ -61,6 +62,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
     private final CreateTarget createTarget;
     private final SharedWaypointClient sharedWaypoints;
     private final WaypointStore boundLocalStore;
+    private final Supplier<WaypointStore> localStoreSupplier;
     private final boolean openedFromHotkey;
 
     private TextFieldWidget nameField;
@@ -88,6 +90,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         final String group,
         final boolean visible,
         final CreateTarget createTarget,
+        final Supplier<WaypointStore> localStoreSupplier,
         final boolean openedFromHotkey
     ) {
         super(Texts.translatable(titleKey(editingId, createTarget)));
@@ -106,9 +109,12 @@ public final class WaypointEditScreen extends ConfluxScreen {
         this.createTarget = createTarget;
         this.openedFromHotkey = openedFromHotkey;
         this.sharedWaypoints = ConfluxMapClient.get().sharedWaypoints();
-        this.boundLocalStore = createTarget == CreateTarget.LOCAL
-            ? ConfluxMapClient.get().waypointService().current()
-            : null;
+        this.localStoreSupplier = createTarget == CreateTarget.LOCAL
+            ? localStoreSupplier == null
+                ? () -> ConfluxMapClient.get().waypointService().current()
+                : localStoreSupplier
+            : () -> null;
+        this.boundLocalStore = this.localStoreSupplier.get();
         this.selectedColor = color;
     }
 
@@ -130,7 +136,24 @@ public final class WaypointEditScreen extends ConfluxScreen {
     ) {
         return new WaypointEditScreen(
             parent, null, dimensionId, Waypoint.Type.NORMAL, System.currentTimeMillis(),
-            "", x, y, z, PRESET_COLORS[5], initialSetName, true, CreateTarget.LOCAL, false
+            "", x, y, z, PRESET_COLORS[5], initialSetName, true,
+            CreateTarget.LOCAL, null, false
+        );
+    }
+
+    /** Local create form bound to an explicitly selected archived world's store. */
+    static WaypointEditScreen forCreate(
+        final Screen parent,
+        final DimensionId dimensionId,
+        final double x,
+        final double y,
+        final double z,
+        final Supplier<WaypointStore> localStoreSupplier
+    ) {
+        return new WaypointEditScreen(
+            parent, null, dimensionId, Waypoint.Type.NORMAL, System.currentTimeMillis(),
+            "", x, y, z, PRESET_COLORS[5], WaypointSet.DEFAULT_NAME, true,
+            CreateTarget.LOCAL, localStoreSupplier, false
         );
     }
 
@@ -144,7 +167,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         return new WaypointEditScreen(
             null, null, dimensionId, Waypoint.Type.NORMAL, System.currentTimeMillis(),
             "", x, y, z, PRESET_COLORS[5], WaypointSet.DEFAULT_NAME, true,
-            CreateTarget.LOCAL, true
+            CreateTarget.LOCAL, null, true
         );
     }
 
@@ -159,7 +182,8 @@ public final class WaypointEditScreen extends ConfluxScreen {
     ) {
         return new WaypointEditScreen(
             parent, null, dimensionId, Waypoint.Type.NORMAL, System.currentTimeMillis(),
-            name, x, y, z, PRESET_COLORS[5], "", true, CreateTarget.LOCAL, false
+            name, x, y, z, PRESET_COLORS[5], "", true,
+            CreateTarget.LOCAL, null, false
         );
     }
 
@@ -185,7 +209,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
     ) {
         return new WaypointEditScreen(
             parent, null, dimensionId, Waypoint.Type.NORMAL, System.currentTimeMillis(),
-            "", x, y, z, PRESET_COLORS[5], "", true, target, false
+            "", x, y, z, PRESET_COLORS[5], "", true, target, null, false
         );
     }
 
@@ -193,7 +217,19 @@ public final class WaypointEditScreen extends ConfluxScreen {
         return new WaypointEditScreen(
             parent, waypoint.id, waypoint.dimensionId, waypoint.type, waypoint.createdAtEpochMs,
             waypoint.name, waypoint.x, waypoint.y, waypoint.z, waypoint.colorArgb, waypoint.group,
-            waypoint.visible, CreateTarget.LOCAL, false
+            waypoint.visible, CreateTarget.LOCAL, null, false
+        );
+    }
+
+    static WaypointEditScreen forEdit(
+        final Screen parent,
+        final Waypoint waypoint,
+        final Supplier<WaypointStore> localStoreSupplier
+    ) {
+        return new WaypointEditScreen(
+            parent, waypoint.id, waypoint.dimensionId, waypoint.type, waypoint.createdAtEpochMs,
+            waypoint.name, waypoint.x, waypoint.y, waypoint.z, waypoint.colorArgb, waypoint.group,
+            waypoint.visible, CreateTarget.LOCAL, localStoreSupplier, false
         );
     }
 
@@ -428,7 +464,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
     private void onDone() {
         if (createTarget == CreateTarget.LOCAL
             && (boundLocalStore == null
-                || boundLocalStore != ConfluxMapClient.get().waypointService().current()
+                || boundLocalStore != localStoreSupplier.get()
                 || !boundLocalStore.persistenceWritable())) {
             return;
         }
@@ -480,7 +516,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
     public void tick() {
         super.tick();
         if (createTarget == CreateTarget.LOCAL
-            && boundLocalStore != ConfluxMapClient.get().waypointService().current()) {
+            && boundLocalStore != localStoreSupplier.get()) {
             MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
             return;
         }
