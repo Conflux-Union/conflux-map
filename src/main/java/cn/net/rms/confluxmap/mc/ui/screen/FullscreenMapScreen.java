@@ -168,9 +168,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final int CONTROL_SIZE = 22;
     private static final int CONTROL_ICON_SIZE = 16;
     private static final int CONTROL_GAP = 3;
-    private static final int TARGET_SELECTOR_WIDTH = 148;
-    private static final int TARGET_SELECTOR_HEIGHT = 18;
-    private static final int TARGET_SELECTOR_GAP = 6;
+    private static final int TARGET_SELECTOR_WIDTH = 128;
+    private static final int TARGET_SELECTOR_HEIGHT = 16;
+    private static final int TARGET_SELECTOR_GAP = 4;
     private static final int TARGET_DROPDOWN_ROW_HEIGHT = 18;
     private static final int TARGET_DROPDOWN_MAX_ROWS = 8;
     private static final Identifier VIEW_GROUP_ICON = Ids.of(
@@ -515,7 +515,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         drawingGroupButton = null;
         actionsGroupButton = null;
 
-        addTargetSelectors();
+        if (displayMode() == FullscreenDisplayMode.TERRAIN) {
+            addTargetSelectors();
+        } else {
+            openTargetSelector = null;
+            targetDropdownScrollOffset = 0;
+        }
 
         final int x = width - MARGIN - CONTROL_SIZE;
         final int top = MARGIN + this.textRenderer.fontHeight + 5;
