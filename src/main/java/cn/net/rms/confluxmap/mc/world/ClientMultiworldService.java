@@ -226,7 +226,12 @@ public final class ClientMultiworldService {
     }
 
     public boolean needsSelection() {
-        return canManageProfiles() && resolution.state() == ClientWorldResolution.State.AMBIGUOUS;
+        return canManageProfiles() && shouldExposeAmbiguity();
+    }
+
+    boolean shouldExposeAmbiguity() {
+        return !companionWorldIdentityAuthoritative()
+            && resolution.state() == ClientWorldResolution.State.AMBIGUOUS;
     }
 
     public List<ClientWorldProfile> profiles() {
@@ -646,8 +651,7 @@ public final class ClientMultiworldService {
     }
 
     private void notifyAmbiguity() {
-        if (ambiguityNotified || resolution.state() != ClientWorldResolution.State.AMBIGUOUS
-            || client.player == null) {
+        if (ambiguityNotified || !shouldExposeAmbiguity() || client.player == null) {
             return;
         }
         ambiguityNotified = true;
