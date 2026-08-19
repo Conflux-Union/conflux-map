@@ -88,7 +88,7 @@ Conflux Map 是一款面向多人游戏的 Fabric 小地图与世界地图模组
 
 路径点默认仅显示在其创建所在的维度中。通过可选设置，主世界和下界的路径点可以相互显示；末地路径点始终仅显示在末地。
 
-共享路径点需要在服务端安装 companion，默认处于关闭状态。权限等级为 2 的管理员可使用 `/confluxmap waypoints enable` 启用该功能，使用 `disable` 和 `status` 执行相应操作。启用后，所有玩家均可发布全员可见的路径点，这些路径点会显示在路径点界面的“共享路径点”一栏。未设为标记的路径点可由发布者删除；设置或取消标记，以及删除任意路径点，仅限管理员执行。标记后的路径点将移动至“服务器标记”一栏。每个世界及每位玩家可发布的路径点数量，均可在 `config/confluxmap/server.json` 中调整。
+共享路径点需要在服务端安装 companion，默认处于关闭状态。权限等级为 2 的管理员可使用 `/confluxmap waypoints enable` 启用该功能，使用 `disable` 和 `status` 执行相应操作。启用后，所有玩家均可发布全员可见的路径点，这些路径点会显示在路径点界面的“共享路径点”一栏。未安装 Conflux Map 的玩家也可在当前位置使用 `/confluxmap waypoints add <name>` 发布路径点，并使用 `/confluxmap waypoints list [page]` 分页查看同一公共列表。列表条目同时提供 Xaero 聊天分享格式，便于一键导入；管理员可使用列表显示的短 ID 执行 `edit`、`move`、`delete`、`lock` 和 `unlock` 操作。未设为标记的路径点可由发布者删除；设置或取消标记，以及删除任意路径点，仅限管理员执行。标记后的路径点将移动至“服务器标记”一栏。每个世界及每位玩家可发布的路径点数量，均可在 `config/confluxmap/server.json` 中调整。
 
 聊天坐标分享无需 companion，可在任何服务器上使用。发送前会预览即将发出的消息（包括 Conflux Map 和 Xaero 两种格式），收到其他玩家分享的坐标后可一键导入。
 
