@@ -33,6 +33,7 @@ class MapCacheMigrationTest {
         assertTrue(Files.isRegularFile(region(root, source)));
         assertTrue(Files.isRegularFile(region(root, target)));
         assertEquals(17, read(root, target).baseArgb()[0]);
+        assertEquals(1_017, read(root, target).xaeroBaseArgb()[0]);
     }
 
     @Test
@@ -52,6 +53,8 @@ class MapCacheMigrationTest {
         assertEquals(1, result.migratedChunks());
         assertEquals(22, merged.baseArgb()[0]);
         assertEquals(11, merged.baseArgb()[16]);
+        assertEquals(1_022, merged.xaeroBaseArgb()[0]);
+        assertEquals(1_011, merged.xaeroBaseArgb()[16]);
     }
 
     @Test
@@ -80,14 +83,17 @@ class MapCacheMigrationTest {
         final byte[] kind = new byte[RegionFileCodec.COLUMN_COUNT];
         final String[] biomes = new String[RegionFileCodec.COLUMN_COUNT];
         final int[] base = new int[RegionFileCodec.COLUMN_COUNT];
+        final int[] xaeroBase = new int[RegionFileCodec.COLUMN_COUNT];
         final int[] tint = new int[RegionFileCodec.COLUMN_COUNT];
         final int[] overlay = new int[RegionFileCodec.COLUMN_COUNT];
         final byte[] light = new byte[RegionFileCodec.COLUMN_COUNT];
         base[0] = marker;
         base[16] = marker;
+        xaeroBase[0] = marker + 1_000;
+        xaeroBase[16] = marker + 1_000;
         return new RegionFileCodec.RegionData(
             rx, rz, 1L, chunkSource, updates, revisions, surface, fluid, kind, biomes,
-            base, tint, overlay, light
+            base, xaeroBase, tint, overlay, light
         );
     }
 
@@ -103,8 +109,8 @@ class MapCacheMigrationTest {
         return new RegionFileCodec.RegionData(
             data.rx(), data.rz(), data.lastWriteEpochMs(), chunkSource,
             data.chunkUpdateEpochSeconds(), data.chunkSourceRevision(), data.surfaceY(),
-            data.fluidDepth(), data.kind(), data.biomeId(), data.baseArgb(), data.biomeTint(),
-            data.overlayArgb(), data.light()
+            data.fluidDepth(), data.kind(), data.biomeId(), data.baseArgb(), data.xaeroBaseArgb(),
+            data.biomeTint(), data.overlayArgb(), data.light()
         );
     }
 

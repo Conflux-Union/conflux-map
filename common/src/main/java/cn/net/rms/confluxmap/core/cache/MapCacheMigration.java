@@ -154,6 +154,7 @@ public final class MapCacheMigration {
         final byte[] kind = target.kind().clone();
         final String[] biomeId = target.biomeId().clone();
         final int[] baseArgb = target.baseArgb().clone();
+        final int[] xaeroBaseArgb = target.xaeroBaseArgb().clone();
         final int[] biomeTint = target.biomeTint().clone();
         final int[] overlayArgb = target.overlayArgb().clone();
         final byte[] light = target.light().clone();
@@ -166,7 +167,10 @@ public final class MapCacheMigration {
                 || existing.priority() >= SampleSource.REAL_CACHED.priority()) {
                 continue;
             }
-            copyChunk(chunkIndex, source, surfaceY, fluidDepth, kind, biomeId, baseArgb, biomeTint, overlayArgb, light);
+            copyChunk(
+                chunkIndex, source, surfaceY, fluidDepth, kind, biomeId,
+                baseArgb, xaeroBaseArgb, biomeTint, overlayArgb, light
+            );
             chunkSource[chunkIndex] = source.chunkSourceOrdinal()[chunkIndex];
             chunkUpdateSeconds[chunkIndex] = source.chunkUpdateEpochSeconds()[chunkIndex];
             chunkSourceRevision[chunkIndex] = source.chunkSourceRevision()[chunkIndex];
@@ -179,7 +183,8 @@ public final class MapCacheMigration {
             new RegionFileCodec.RegionData(
                 target.rx(), target.rz(), Math.max(target.lastWriteEpochMs(), source.lastWriteEpochMs()),
                 chunkSource, chunkUpdateSeconds, chunkSourceRevision,
-                surfaceY, fluidDepth, kind, biomeId, baseArgb, biomeTint, overlayArgb, light
+                surfaceY, fluidDepth, kind, biomeId,
+                baseArgb, xaeroBaseArgb, biomeTint, overlayArgb, light
             ),
             migratedChunks
         );
@@ -193,6 +198,7 @@ public final class MapCacheMigration {
         final byte[] kind,
         final String[] biomeId,
         final int[] baseArgb,
+        final int[] xaeroBaseArgb,
         final int[] biomeTint,
         final int[] overlayArgb,
         final byte[] light
@@ -209,6 +215,7 @@ public final class MapCacheMigration {
             System.arraycopy(source.kind(), from, kind, to, 16);
             System.arraycopy(source.biomeId(), from, biomeId, to, 16);
             System.arraycopy(source.baseArgb(), from, baseArgb, to, 16);
+            System.arraycopy(source.xaeroBaseArgb(), from, xaeroBaseArgb, to, 16);
             System.arraycopy(source.biomeTint(), from, biomeTint, to, 16);
             System.arraycopy(source.overlayArgb(), from, overlayArgb, to, 16);
             System.arraycopy(source.light(), from, light, to, 16);

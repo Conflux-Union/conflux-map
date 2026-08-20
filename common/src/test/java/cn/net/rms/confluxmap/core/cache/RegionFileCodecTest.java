@@ -6,7 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.zip.DeflaterOutputStream;
 import org.junit.jupiter.api.Test;
 
 /** Round-trip and corruption-handling coverage for {@link RegionFileCodec}. */
@@ -27,6 +29,7 @@ class RegionFileCodecTest {
         final byte[] kind = new byte[RegionFileCodec.COLUMN_COUNT];
         final String[] biomeId = new String[RegionFileCodec.COLUMN_COUNT];
         final int[] baseArgb = new int[RegionFileCodec.COLUMN_COUNT];
+        final int[] xaeroBaseArgb = new int[RegionFileCodec.COLUMN_COUNT];
         final int[] biomeTint = new int[RegionFileCodec.COLUMN_COUNT];
         final int[] overlayArgb = new int[RegionFileCodec.COLUMN_COUNT];
         final byte[] light = new byte[RegionFileCodec.COLUMN_COUNT];
@@ -41,6 +44,7 @@ class RegionFileCodecTest {
                 default -> null;
             };
             baseArgb[i] = 0xFF000000 | (int) ((i * 2654435761L) & 0x00FFFFFF);
+            xaeroBaseArgb[i] = baseArgb[i] ^ 0x00010203;
             biomeTint[i] = 0xFF445566 + i;
             overlayArgb[i] = i % 5 == 0 ? 0 : 0x80112233 + i;
             light[i] = (byte) (i % 16);
@@ -49,7 +53,8 @@ class RegionFileCodecTest {
         return new RegionFileCodec.RegionData(
             rx, rz, 1_700_000_123_456L,
             chunkSourceOrdinal, chunkUpdateEpochSeconds, chunkSourceRevision,
-            surfaceY, fluidDepth, kind, biomeId, baseArgb, biomeTint, overlayArgb, light
+            surfaceY, fluidDepth, kind, biomeId,
+            baseArgb, xaeroBaseArgb, biomeTint, overlayArgb, light
         );
     }
 
@@ -78,6 +83,7 @@ class RegionFileCodecTest {
         assertArrayEquals(original.kind(), decoded.kind());
         assertArrayEquals(original.biomeId(), decoded.biomeId());
         assertArrayEquals(original.baseArgb(), decoded.baseArgb());
+        assertArrayEquals(original.xaeroBaseArgb(), decoded.xaeroBaseArgb());
         assertArrayEquals(original.biomeTint(), decoded.biomeTint());
         assertArrayEquals(original.overlayArgb(), decoded.overlayArgb());
         assertArrayEquals(original.light(), decoded.light());
@@ -101,29 +107,8 @@ class RegionFileCodecTest {
     @Test
     void schemaThreeCacheLoadsWithUnknownSourceRevisions() throws Exception {
         final RegionFileCodec.RegionData original = sampleData(4, -8);
-        final ByteArrayOutputStream currentOut = new ByteArrayOutputStream();
-        RegionFileCodec.encode(currentOut, 0, original);
-        final byte[] current = currentOut.toByteArray();
         final ByteArrayOutputStream legacyOut = new ByteArrayOutputStream();
-        legacyOut.write(current, 0, RegionFileCodec.HEADER_SIZE);
-        final byte[] legacy = legacyOut.toByteArray();
-        legacy[5] = 3;
-        legacyOut.reset();
-        legacyOut.write(legacy);
-        final int currentEntryBytes = 13;
-        final int legacyEntryBytes = 5;
-        for (int chunk = 0; chunk < RegionFileCodec.CHUNK_TABLE_ENTRIES; chunk++) {
-            legacyOut.write(
-                current,
-                RegionFileCodec.HEADER_SIZE + chunk * currentEntryBytes,
-                legacyEntryBytes
-            );
-        }
-        legacyOut.write(
-            current,
-            RegionFileCodec.HEADER_SIZE + RegionFileCodec.CHUNK_TABLE_SIZE,
-            current.length - RegionFileCodec.HEADER_SIZE - RegionFileCodec.CHUNK_TABLE_SIZE
-        );
+        encodeLegacy(legacyOut, original, 3);
 
         final RegionFileCodec.RegionData decoded = RegionFileCodec.decode(
             new ByteArrayInputStream(legacyOut.toByteArray()), 4, -8, 0
@@ -133,6 +118,21 @@ class RegionFileCodecTest {
         java.util.Arrays.fill(unknown, Long.MIN_VALUE);
         assertArrayEquals(unknown, decoded.chunkSourceRevision());
         assertArrayEquals(original.surfaceY(), decoded.surfaceY());
+        assertArrayEquals(original.baseArgb(), decoded.xaeroBaseArgb());
+    }
+
+    @Test
+    void schemaFourCacheKeepsSourceRevisionsAndFallsBackToBaseColor() throws Exception {
+        final RegionFileCodec.RegionData original = sampleData(4, -8);
+        final ByteArrayOutputStream legacyOut = new ByteArrayOutputStream();
+        encodeLegacy(legacyOut, original, 4);
+
+        final RegionFileCodec.RegionData decoded = RegionFileCodec.decode(
+            new ByteArrayInputStream(legacyOut.toByteArray()), 4, -8, 0
+        );
+
+        assertArrayEquals(original.chunkSourceRevision(), decoded.chunkSourceRevision());
+        assertArrayEquals(original.baseArgb(), decoded.xaeroBaseArgb());
     }
 
     @Test
@@ -180,5 +180,46 @@ class RegionFileCodecTest {
             new int[RegionFileCodec.COLUMN_COUNT], new int[RegionFileCodec.COLUMN_COUNT],
             new byte[RegionFileCodec.COLUMN_COUNT]
         ));
+    }
+
+    private static void encodeLegacy(
+        final ByteArrayOutputStream out,
+        final RegionFileCodec.RegionData data,
+        final int schemaVersion
+    ) throws IOException {
+        final DataOutputStream header = new DataOutputStream(out);
+        header.write(RegionFileCodec.MAGIC);
+        header.writeByte(RegionFileCodec.FORMAT_VERSION);
+        header.writeByte(schemaVersion);
+        header.writeByte(RegionFileCodec.SOURCE_CLASS);
+        header.writeByte(0);
+        header.writeInt(data.rx());
+        header.writeInt(data.rz());
+        header.writeLong(data.lastWriteEpochMs());
+        header.write(new byte[8]);
+        for (int i = 0; i < RegionFileCodec.CHUNK_TABLE_ENTRIES; i++) {
+            header.writeByte(data.chunkSourceOrdinal()[i]);
+            header.writeInt(data.chunkUpdateEpochSeconds()[i]);
+            if (schemaVersion >= 4) {
+                header.writeLong(data.chunkSourceRevision()[i]);
+            }
+        }
+        header.flush();
+
+        final DeflaterOutputStream compressed = new DeflaterOutputStream(out);
+        final DataOutputStream columns = new DataOutputStream(compressed);
+        columns.writeInt(0);
+        for (int i = 0; i < RegionFileCodec.COLUMN_COUNT; i++) {
+            columns.writeShort(data.surfaceY()[i]);
+            columns.writeByte(data.fluidDepth()[i]);
+            columns.writeByte(data.kind()[i]);
+            columns.writeShort(0);
+            columns.writeInt(data.baseArgb()[i]);
+            columns.writeInt(data.biomeTint()[i]);
+            columns.writeInt(data.overlayArgb()[i]);
+            columns.writeByte(data.light()[i]);
+        }
+        columns.flush();
+        compressed.finish();
     }
 }

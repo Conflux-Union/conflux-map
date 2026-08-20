@@ -22,6 +22,7 @@ public final class RegionColumns {
     private final String[] biomeId = new String[SIZE * SIZE];
     private final byte[] fluidDepth = new byte[SIZE * SIZE];
     private final int[] baseArgb = new int[SIZE * SIZE];
+    private final int[] xaeroBaseArgb = new int[SIZE * SIZE];
     private final int[] tintArgb = new int[SIZE * SIZE];
     private final int[] overlayArgb = new int[SIZE * SIZE];
     private final byte[] kind = new byte[SIZE * SIZE];
@@ -61,6 +62,7 @@ public final class RegionColumns {
             System.arraycopy(snapshot.biomeId, rowFrom, biomeId, rowTo, 16);
             System.arraycopy(snapshot.fluidDepth, rowFrom, fluidDepth, rowTo, 16);
             System.arraycopy(snapshot.baseArgb, rowFrom, baseArgb, rowTo, 16);
+            System.arraycopy(snapshot.xaeroBaseArgb, rowFrom, xaeroBaseArgb, rowTo, 16);
             System.arraycopy(snapshot.tintArgb, rowFrom, tintArgb, rowTo, 16);
             System.arraycopy(snapshot.overlayArgb, rowFrom, overlayArgb, rowTo, 16);
             System.arraycopy(snapshot.kind, rowFrom, kind, rowTo, 16);
@@ -109,6 +111,7 @@ public final class RegionColumns {
         final String[] outBiomeId,
         final byte[] outFluidDepth,
         final int[] outBaseArgb,
+        final int[] outXaeroBaseArgb,
         final int[] outTintArgb,
         final int[] outOverlayArgb,
         final byte[] outKind,
@@ -120,6 +123,7 @@ public final class RegionColumns {
         System.arraycopy(biomeId, from, outBiomeId, 0, length);
         System.arraycopy(fluidDepth, from, outFluidDepth, 0, length);
         System.arraycopy(baseArgb, from, outBaseArgb, 0, length);
+        System.arraycopy(xaeroBaseArgb, from, outXaeroBaseArgb, 0, length);
         System.arraycopy(tintArgb, from, outTintArgb, 0, length);
         System.arraycopy(overlayArgb, from, outOverlayArgb, 0, length);
         System.arraycopy(kind, from, outKind, 0, length);
@@ -167,6 +171,7 @@ public final class RegionColumns {
         final String[] outBiomeId,
         final byte[] outFluidDepth,
         final int[] outBaseArgb,
+        final int[] outXaeroBaseArgb,
         final int[] outTintArgb,
         final int[] outOverlayArgb,
         final byte[] outKind,
@@ -177,7 +182,7 @@ public final class RegionColumns {
     ) {
         copyChunkRows(
             0, SIZE, outSurfaceY, outBiomeId, outFluidDepth,
-            outBaseArgb, outTintArgb, outOverlayArgb, outKind, outLight
+            outBaseArgb, outXaeroBaseArgb, outTintArgb, outOverlayArgb, outKind, outLight
         );
         System.arraycopy(chunkSource, 0, outChunkSource, 0, chunkSource.length);
         System.arraycopy(chunkUpdateSeconds, 0, outChunkUpdateSeconds, 0, chunkUpdateSeconds.length);

@@ -17,6 +17,9 @@ package cn.net.rms.confluxmap.gametest;
 //$$ public final class HudAvoidanceClientGameTest implements FabricClientGameTest {
 //$$     @Override
 //$$     public void runTest(final ClientGameTestContext context) {
+//$$         if (Boolean.getBoolean("confluxmap.xaero.oracle")) {
+//$$             return;
+//$$         }
 //$$         try (TestSingleplayerContext world = context.worldBuilder().create()) {
 //$$             final ConfluxConfig config = ConfluxMapClient.get().config();
 //$$             config.minimapEnabled = true;

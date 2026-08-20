@@ -301,6 +301,7 @@ public final class RegionDiskCache {
         final byte[] fluidDepth = new byte[ChunkSnapshot.COLUMNS];
         final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
         final int[] baseArgb = new int[ChunkSnapshot.COLUMNS];
+        final int[] xaeroBaseArgb = new int[ChunkSnapshot.COLUMNS];
         final int[] tintArgb = new int[ChunkSnapshot.COLUMNS];
         final int[] overlayArgb = new int[ChunkSnapshot.COLUMNS];
         final byte[] light = new byte[ChunkSnapshot.COLUMNS];
@@ -314,6 +315,7 @@ public final class RegionDiskCache {
             System.arraycopy(data.fluidDepth(), srcRow, fluidDepth, dstRow, 16);
             System.arraycopy(data.kind(), srcRow, kind, dstRow, 16);
             System.arraycopy(data.baseArgb(), srcRow, baseArgb, dstRow, 16);
+            System.arraycopy(data.xaeroBaseArgb(), srcRow, xaeroBaseArgb, dstRow, 16);
             System.arraycopy(data.biomeTint(), srcRow, tintArgb, dstRow, 16);
             System.arraycopy(data.overlayArgb(), srcRow, overlayArgb, dstRow, 16);
             System.arraycopy(data.light(), srcRow, light, dstRow, 16);
@@ -324,7 +326,7 @@ public final class RegionDiskCache {
             chunkX, chunkZ, token,
             data.chunkSourceRevision()[chunkLocalZ * RegionColumns.CHUNKS + chunkLocalX],
             surfaceY, biomeId, fluidDepth,
-            baseArgb, tintArgb, overlayArgb, kind, light
+            baseArgb, xaeroBaseArgb, tintArgb, overlayArgb, kind, light
         );
     }
 
@@ -417,6 +419,7 @@ public final class RegionDiskCache {
         final String[] biomeId = new String[size * size];
         final byte[] fluidDepth = new byte[size * size];
         final int[] baseArgb = new int[size * size];
+        final int[] xaeroBaseArgb = new int[size * size];
         final int[] tintArgb = new int[size * size];
         final int[] overlayArgb = new int[size * size];
         final byte[] kind = new byte[size * size];
@@ -429,6 +432,7 @@ public final class RegionDiskCache {
             biomeId,
             fluidDepth,
             baseArgb,
+            xaeroBaseArgb,
             tintArgb,
             overlayArgb,
             kind,
@@ -442,7 +446,7 @@ public final class RegionDiskCache {
             region.regionX, region.regionZ, System.currentTimeMillis(),
             chunkSource, chunkUpdateSeconds, chunkSourceRevision,
             surfaceY, fluidDepth, kind, biomeId,
-            baseArgb, tintArgb, overlayArgb, light
+            baseArgb, xaeroBaseArgb, tintArgb, overlayArgb, light
         );
         return writeAtomic(regionFile(type, region.regionX, region.regionZ), data, type.ordinal()) ? copiedVersion : -1;
     }

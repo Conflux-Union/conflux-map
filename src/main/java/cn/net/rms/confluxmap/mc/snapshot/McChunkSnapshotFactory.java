@@ -74,6 +74,7 @@ public final class McChunkSnapshotFactory {
         final String[] biomeId = new String[ChunkSnapshot.COLUMNS];
         final byte[] fluidDepth = new byte[ChunkSnapshot.COLUMNS];
         final int[] baseArgb = new int[ChunkSnapshot.COLUMNS];
+        final int[] xaeroBaseArgb = new int[ChunkSnapshot.COLUMNS];
         final int[] tintArgb = new int[ChunkSnapshot.COLUMNS];
         final int[] overlayArgb = new int[ChunkSnapshot.COLUMNS];
         final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
@@ -94,7 +95,8 @@ public final class McChunkSnapshotFactory {
                 for (int x = 0; x < 16; x++) {
                     sampleColumn(
                         chunk, world, pos, baseX, baseZ, x, z, bottomY, topY, playerY, heightmap, z * 16 + x,
-                        surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light
+                        surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light,
+                        xaeroBaseArgb
                     );
                 }
             }
@@ -112,11 +114,12 @@ public final class McChunkSnapshotFactory {
                     );
                 }
             }
+            System.arraycopy(baseArgb, 0, xaeroBaseArgb, 0, ChunkSnapshot.COLUMNS);
         }
         BiomeIdentityCapture.capture(world, pos, baseX, baseZ, surfaceY, biomeId);
         return new ChunkSnapshot(
             chunkX, chunkZ, sessionToken, world.getTime(), surfaceY, biomeId, fluidDepth,
-            baseArgb, tintArgb, overlayArgb, kind, light
+            baseArgb, xaeroBaseArgb, tintArgb, overlayArgb, kind, light
         );
     }
 
@@ -139,7 +142,8 @@ public final class McChunkSnapshotFactory {
         final int[] tintArgb,
         final int[] overlayArgb,
         final byte[] kind,
-        final byte[] light
+        final byte[] light,
+        final int[] xaeroBaseArgb
     ) {
         final int worldX = baseX + localX;
         final int worldZ = baseZ + localZ;
@@ -249,7 +253,8 @@ public final class McChunkSnapshotFactory {
             surfaceState, surfaceYVal, resolvedKind,
             transparentOverlay, transparentOverlayY, foliageOverlay, foliageOverlayY,
             seafloorState, seafloorY, bottomless,
-            surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light
+            surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light,
+            xaeroBaseArgb
         );
     }
 
@@ -276,10 +281,12 @@ public final class McChunkSnapshotFactory {
         final int[] tintArgb,
         final int[] overlayArgb,
         final byte[] kind,
-        final byte[] light
+        final byte[] light,
+        final int[] xaeroBaseArgb
     ) {
         pos.set(worldX, surfaceYVal, worldZ);
         final int surfaceBaseColor = sampler.colorFor(surfaceState, world, pos);
+        final int xaeroSurfaceBaseColor = sampler.xaeroColorFor(surfaceState, world, pos);
         final int surfaceTintColor = tints.resolve(surfaceState, world, worldX, surfaceYVal, worldZ);
         light[index] = sampleBlockLightAbove(world, pos, worldX, surfaceYVal, worldZ, topY);
 
@@ -291,6 +298,7 @@ public final class McChunkSnapshotFactory {
                 waterColor = Argb.over(coloredLayer(transparentOverlay, transparentOverlayY, worldX, worldZ, pos, world), waterColor);
             }
             baseArgb[index] = waterColor;
+            xaeroBaseArgb[index] = Argb.multiply(xaeroSurfaceBaseColor, surfaceTintColor);
             tintArgb[index] = 0xFFFFFFFF;
 
             int floorComposite = Argb.TRANSPARENT;
@@ -308,6 +316,7 @@ public final class McChunkSnapshotFactory {
             fluidDepth[index] = (byte) Math.min(Math.max(depth, 0), 127);
         } else {
             baseArgb[index] = surfaceBaseColor;
+            xaeroBaseArgb[index] = xaeroSurfaceBaseColor;
             tintArgb[index] = surfaceTintColor;
 
             int overlayComposite = Argb.TRANSPARENT;

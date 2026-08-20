@@ -20,6 +20,8 @@ public final class ChunkSnapshot {
     public final String[] biomeId;
     public final byte[] fluidDepth;
     public final int[] baseArgb;
+    /** Raw texture-average colors retained for Xaero rendering; tint is still stored separately. */
+    public final int[] xaeroBaseArgb;
     public final int[] tintArgb;
     /** Overlay color with its own tint already applied, 0 = no overlay. See surface-color-sampling.md §1/§5. */
     public final int[] overlayArgb;
@@ -43,13 +45,15 @@ public final class ChunkSnapshot {
         final String[] biomeId,
         final byte[] fluidDepth,
         final int[] baseArgb,
+        final int[] xaeroBaseArgb,
         final int[] tintArgb,
         final int[] overlayArgb,
         final byte[] kind,
         final byte[] light
     ) {
         if (surfaceY.length != COLUMNS || biomeId.length != COLUMNS || fluidDepth.length != COLUMNS
-            || baseArgb.length != COLUMNS || tintArgb.length != COLUMNS
+            || baseArgb.length != COLUMNS || xaeroBaseArgb.length != COLUMNS
+            || tintArgb.length != COLUMNS
             || overlayArgb.length != COLUMNS || kind.length != COLUMNS || light.length != COLUMNS) {
             throw new IllegalArgumentException("snapshot arrays must have 256 entries");
         }
@@ -61,10 +65,31 @@ public final class ChunkSnapshot {
         this.biomeId = biomeId;
         this.fluidDepth = fluidDepth;
         this.baseArgb = baseArgb;
+        this.xaeroBaseArgb = xaeroBaseArgb;
         this.tintArgb = tintArgb;
         this.overlayArgb = overlayArgb;
         this.kind = kind;
         this.light = light;
+    }
+
+    public ChunkSnapshot(
+        final int chunkX,
+        final int chunkZ,
+        final long sessionToken,
+        final long sourceRevision,
+        final short[] surfaceY,
+        final String[] biomeId,
+        final byte[] fluidDepth,
+        final int[] baseArgb,
+        final int[] tintArgb,
+        final int[] overlayArgb,
+        final byte[] kind,
+        final byte[] light
+    ) {
+        this(
+            chunkX, chunkZ, sessionToken, sourceRevision, surfaceY, biomeId, fluidDepth,
+            baseArgb, baseArgb, tintArgb, overlayArgb, kind, light
+        );
     }
 
     public ChunkSnapshot(
@@ -82,7 +107,7 @@ public final class ChunkSnapshot {
     ) {
         this(
             chunkX, chunkZ, sessionToken, Long.MIN_VALUE, surfaceY, biomeId, fluidDepth,
-            baseArgb, tintArgb, overlayArgb, kind, light
+            baseArgb, baseArgb, tintArgb, overlayArgb, kind, light
         );
     }
 }
