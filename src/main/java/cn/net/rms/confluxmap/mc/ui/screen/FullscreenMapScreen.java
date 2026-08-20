@@ -20,7 +20,6 @@ import cn.net.rms.confluxmap.core.annotation.AnnotationStyle;
 import cn.net.rms.confluxmap.core.annotation.AnnotationTool;
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
-import cn.net.rms.confluxmap.core.config.TeleportCommandTemplate;
 import cn.net.rms.confluxmap.core.export.MapExportBounds;
 import cn.net.rms.confluxmap.core.export.MapExportLoadState;
 import cn.net.rms.confluxmap.core.export.MapExportRequest;
@@ -77,6 +76,7 @@ import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
+import cn.net.rms.confluxmap.mc.teleport.TeleportCommandAccess;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
 import cn.net.rms.confluxmap.mc.ui.DisplayModeIconCatalog;
@@ -324,6 +324,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private final ClientGroundTeleportService groundTeleport;
     private final ClientMultiworldService clientMultiworld;
     private final FullscreenMapBrowseService mapBrowser;
+    private InitialFocus initialFocus;
 
     /** World point currently at screen center, and blocks-per-pixel; all mutable, panned/zoomed by input. */
     private double centerX;
@@ -365,6 +366,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private ButtonWidget setWaypointLocationButton;
     private ButtonWidget shareLocationButton;
     private ButtonWidget teleportLocationButton;
+    private String teleportLocationUnavailableKey;
     private final Map<ButtonWidget, String> annotationTooltips = new LinkedHashMap<>();
     private final Map<AnnotationTool, ButtonWidget> annotationToolButtons = new EnumMap<>(AnnotationTool.class);
     private AnnotationToolbarBounds annotationToolbarBounds;
@@ -393,8 +395,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private final MapExportSelection exportSelection = new MapExportSelection();
 
     public FullscreenMapScreen(final KeyBinding openMapKey) {
+        this(openMapKey, null);
+    }
+
+    private FullscreenMapScreen(final KeyBinding openMapKey, final InitialFocus initialFocus) {
         super(Texts.translatable("confluxmap.screen.map.title"));
         this.openMapKey = openMapKey;
+        this.initialFocus = initialFocus;
         final ConfluxMapClient app = ConfluxMapClient.get();
         this.gameBridge = app.gameBridge();
         this.mapWorlds = app.mapWorlds();
@@ -439,11 +446,29 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         scale = initialView.scale();
     }
 
+    static FullscreenMapScreen focusedOnWaypoint(
+        final DimensionId dimension,
+        final double x,
+        final double z
+    ) {
+        return new FullscreenMapScreen(null, new InitialFocus(dimension, x, z));
+    }
+
     @Override
     protected void init() {
         locationMenuBounds = null;
         locationMenuTarget = null;
         pendingLocationAction = null;
+        final InitialFocus requestedFocus = initialFocus;
+        if (requestedFocus != null) {
+            initialFocus = null;
+            selectViewTarget(new FullscreenMapBrowseService.Target(
+                gameBridge.session().world(), requestedFocus.dimension()
+            ));
+            centerX = requestedFocus.x();
+            centerZ = requestedFocus.z();
+            scale = Math.min(scale, DEFAULT_SCALE);
+        }
         if (exportSelectionScreen != null) {
             rebuildExportSelectionControls();
             return;
@@ -493,6 +518,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         setWaypointLocationButton = null;
         shareLocationButton = null;
         teleportLocationButton = null;
+        teleportLocationUnavailableKey = null;
         structureSearchButton = null;
         annotationTooltips.clear();
         annotationToolButtons.clear();
@@ -1394,18 +1420,16 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final boolean playerPresent = client.player != null;
         final SessionGuard.Session viewed = viewSession();
         final SessionGuard.Session live = gameBridge.session();
-        final boolean dimensionSwitchSupported = viewed.dimension().equals(live.dimension())
-            || TeleportCommandTemplate.supportsDimensionSwitch(config.teleportCommand);
-        final boolean worldSwitchSupported = viewed.world().equals(live.world())
-            || TeleportCommandTemplate.supportsWorldSwitch(config.teleportCommand);
-        final boolean teleportCommandAvailable = heightKnown
-            && dimensionSwitchSupported
-            && worldSwitchSupported
-            && TeleportCommandTemplate.commandName(config.teleportCommand)
-                .map(name -> "tp".equals(name) || "teleport".equals(name)
-                    ? MinecraftAccess.canSendCommand(client, "teleport", "tp")
-                    : MinecraftAccess.canSendCommand(client, name))
-                .orElse(false);
+        final TeleportCommandAccess.Result teleportAccess = TeleportCommandAccess.evaluate(
+            client,
+            config.teleportCommand,
+            live,
+            viewed.world(),
+            viewed.dimension(),
+            heightKnown
+        );
+        final boolean teleportCommandAvailable = teleportAccess.available();
+        teleportLocationUnavailableKey = teleportAccess.reasonKey();
         final List<FullscreenMapLocationMenu.Action> actions = FullscreenMapLocationMenu.actions(
             teleportCommandAvailable
         );
@@ -2694,7 +2718,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         } else if (teleportLocationButton != null
             && teleportLocationButton.isHovered()
             && !teleportLocationButton.active) {
-            tooltip = Texts.translatable("confluxmap.map.location_menu.teleport_unavailable");
+            tooltip = Texts.translatable(
+                teleportLocationUnavailableKey == null
+                    ? "confluxmap.map.location_menu.teleport_unavailable"
+                    : teleportLocationUnavailableKey
+            );
         } else if (structureSearchButton != null && structureSearchButton.isHovered()) {
             tooltip = Texts.translatable(
                 !companion.structureSearchAllowed()
@@ -3801,5 +3829,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     static int candidateWaypointY(final OptionalInt surfaceY, final OptionalInt playerY) {
         return surfaceY.orElseGet(() -> playerY.orElse(DEFAULT_CANDIDATE_WAYPOINT_Y));
+    }
+
+    private record InitialFocus(DimensionId dimension, double x, double z) {
     }
 }

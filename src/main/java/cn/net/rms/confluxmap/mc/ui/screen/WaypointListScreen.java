@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
+import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointClientState;
@@ -18,6 +19,8 @@ import cn.net.rms.confluxmap.core.waypoint.WaypointSet;
 import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
+import cn.net.rms.confluxmap.mc.teleport.TeleportCommandAccess;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
@@ -55,17 +58,14 @@ public final class WaypointListScreen extends ConfluxScreen {
     private static final int ROW_PADDING = 6;
     private static final int MARKER_SIZE = 14;
     private static final int CHECK_WIDTH = 20;
-    private static final int DELETE_WIDTH = 52;
-    private static final int ACTION_WIDTH = 56;
+    private static final int ROW_ACTION_COUNT = 5;
+    private static final int ROW_ACTION_MAX_WIDTH = 48;
     private static final int DIM_WIDTH = 66;
     private static final int DIST_WIDTH = 58;
     private static final int GAP = 4;
     private static final int TOOLBAR_Y = 76;
     private static final int TOOLBAR_HEIGHT = 20;
     private static final int NARROW_TOOLBAR_WIDTH = 248;
-    private static final int NARROW_ROW_WIDTH = 254;
-    private static final int NARROW_ACTION_WIDTH = 36;
-    private static final int NARROW_DELETE_WIDTH = 40;
     private static final int DROPDOWN_MAX_WIDTH = 200;
     private static final int DROPDOWN_ROW_HEIGHT = 20;
     private static final int DROPDOWN_MAX_VISIBLE_ROWS = 6;
@@ -142,6 +142,8 @@ public final class WaypointListScreen extends ConfluxScreen {
     private final GameBridge gameBridge;
     private final WaypointService waypointService;
     private final SharedWaypointClient sharedWaypoints;
+    private final ConfluxConfig config;
+    private final ClientGroundTeleportService groundTeleport;
     private final Screen parent;
     private final boolean openedFromHotkey;
     private final Set<UUID> selectedWaypointIds = new LinkedHashSet<>();
@@ -196,6 +198,8 @@ public final class WaypointListScreen extends ConfluxScreen {
         this.gameBridge = app.gameBridge();
         this.waypointService = app.waypointService();
         this.sharedWaypoints = app.sharedWaypoints();
+        this.config = app.config();
+        this.groundTeleport = app.groundTeleportService();
         this.parent = parent;
         this.openedFromHotkey = openedFromHotkey;
         this.tab = initialTab == null ? Tab.LOCAL : initialTab;
@@ -588,18 +592,15 @@ public final class WaypointListScreen extends ConfluxScreen {
     }
 
     private void addRowWidgets(final RowInfo row, final WaypointStore renderedStore) {
-        final int buttonY = row.y() + 4;
-        final int actionWidth = rowActionWidth();
-        final int deleteWidth = rowDeleteWidth();
-        final int deleteX = deleteX();
-        final int secondaryX = secondaryX();
-        final int primaryX = primaryX();
+        final int selectionY = row.y() + 3;
+        final int actionY = selectionY;
+        final WaypointRowActionLayout actions = rowActionLayout();
 
         if (row.local() != null) {
             final Waypoint waypoint = row.local();
             final ButtonWidget selected = addDrawableChild(Widgets.button(
                 contentLeft() + ROW_PADDING,
-                buttonY,
+                selectionY,
                 CHECK_WIDTH,
                 20,
                 Text.of(selectedWaypointIds.contains(waypoint.id) ? "\u2713" : ""),
@@ -607,46 +608,46 @@ public final class WaypointListScreen extends ConfluxScreen {
             ));
             selected.active = renderedStore != null && renderedStore.persistenceWritable();
             final ButtonWidget visibility = addDrawableChild(Widgets.button(
-                primaryX,
-                buttonY,
-                actionWidth,
+                actions.x(0),
+                actionY,
+                actions.width(),
                 20,
                 fitButtonLabel(Texts.translatable(
                     waypoint.visible
                         ? "confluxmap.screen.waypoints.hide"
                         : "confluxmap.screen.waypoints.show"
-                ), actionWidth),
+                ), actions.width()),
                 button -> toggleVisible(renderedStore, waypoint)
             ));
             visibility.active = renderedStore != null && renderedStore.persistenceWritable();
             addDrawableChild(Widgets.button(
-                secondaryX,
-                buttonY,
-                actionWidth,
+                actions.x(1),
+                actionY,
+                actions.width(),
                 20,
-                fitButtonLabel(Texts.translatable("confluxmap.screen.waypoints.share"), actionWidth),
+                fitButtonLabel(Texts.translatable("confluxmap.screen.waypoints.share"), actions.width()),
                 button -> openShare(renderedStore, waypoint)
             ));
         } else {
             final SharedWaypoint waypoint = row.shared();
             addDrawableChild(Widgets.button(
-                primaryX,
-                buttonY,
-                actionWidth,
+                actions.x(0),
+                actionY,
+                actions.width(),
                 20,
-                fitButtonLabel(Texts.translatable("confluxmap.screen.waypoints.chat"), actionWidth),
+                fitButtonLabel(Texts.translatable("confluxmap.screen.waypoints.chat"), actions.width()),
                 button -> openSharedChat(waypoint)
             ));
             final ButtonWidget lock = addDrawableChild(Widgets.button(
-                secondaryX,
-                buttonY,
-                actionWidth,
+                actions.x(1),
+                actionY,
+                actions.width(),
                 20,
                 fitButtonLabel(Texts.translatable(
                     waypoint.locked()
                         ? "confluxmap.screen.waypoints.unlock"
                         : "confluxmap.screen.waypoints.lock"
-                ), actionWidth),
+                ), actions.width()),
                 button -> setLocked(waypoint, !waypoint.locked())
             ));
             lock.active = sharedWaypoints.availability().ready() && sharedWaypoints.isOperator();
@@ -654,20 +655,71 @@ public final class WaypointListScreen extends ConfluxScreen {
 
         final boolean pendingThis = row.id().equals(pendingDeleteId);
         final ButtonWidget delete = addDrawableChild(Widgets.button(
-            deleteX,
-            buttonY,
-            deleteWidth,
+            actions.x(2),
+            actionY,
+            actions.width(),
             20,
             fitButtonLabel(Texts.translatable(
                 pendingThis
                     ? "confluxmap.screen.waypoints.confirm"
                     : "confluxmap.screen.waypoints.delete"
-            ), deleteWidth),
+            ), actions.width()),
             button -> delete(renderedStore, row)
         ));
         delete.active = row.shared() == null
             ? renderedStore != null && renderedStore.persistenceWritable()
             : sharedWaypoints.availability().ready() && sharedWaypoints.canDelete(row.shared());
+        addDrawableChild(Widgets.button(
+            actions.x(3),
+            actionY,
+            actions.width(),
+            20,
+            fitButtonLabel(Texts.translatable("confluxmap.screen.waypoints.locate"), actions.width()),
+            ignored -> locate(row)
+        ));
+        final TeleportCommandAccess.Result access = teleportAccess(row);
+        final ButtonWidget teleport = addDrawableChild(Widgets.button(
+            actions.x(4),
+            actionY,
+            actions.width(),
+            20,
+            fitButtonLabel(Texts.translatable("confluxmap.screen.waypoints.teleport"), actions.width()),
+            ignored -> teleport(row)
+        ));
+        teleport.active = access.available();
+        setDisabledTooltip(teleport, access.reasonKey());
+    }
+
+    private TeleportCommandAccess.Result teleportAccess(final RowInfo row) {
+        final var entry = row.renderEntry();
+        final var live = gameBridge.session();
+        return TeleportCommandAccess.evaluate(
+            MinecraftClient.getInstance(),
+            config.teleportCommand,
+            live,
+            live.world(),
+            entry.dimensionId(),
+            true
+        );
+    }
+
+    private void locate(final RowInfo row) {
+        final var entry = row.renderEntry();
+        MinecraftAccess.setScreen(
+            MinecraftClient.getInstance(),
+            FullscreenMapScreen.focusedOnWaypoint(entry.dimensionId(), entry.x(), entry.z())
+        );
+    }
+
+    private void teleport(final RowInfo row) {
+        final TeleportCommandAccess.Result access = teleportAccess(row);
+        if (!access.available()) {
+            return;
+        }
+        final var entry = row.renderEntry();
+        groundTeleport.teleportExact(
+            entry.x(), entry.y(), entry.z(), entry.dimensionId(), gameBridge.session().world()
+        );
     }
 
     private void selectTab(final Tab selected) {
@@ -1315,7 +1367,7 @@ public final class WaypointListScreen extends ConfluxScreen {
                 this.textRenderer,
                 row.renderEntry(),
                 markerLeft + MARKER_SIZE / 2f,
-                row.y() + ROW_HEIGHT / 2f,
+                row.y() + 13f,
                 MARKER_SIZE / 2f - 1f,
                 1f,
                 hovered,
@@ -1627,32 +1679,8 @@ public final class WaypointListScreen extends ConfluxScreen {
         return Math.min(116, Math.max(60, (contentWidth() - 80 - GAP * 2) / 2));
     }
 
-    private boolean narrowRows() {
-        return contentWidth() < NARROW_ROW_WIDTH;
-    }
-
-    private int rowActionWidth() {
-        return narrowRows() ? NARROW_ACTION_WIDTH : ACTION_WIDTH;
-    }
-
-    private int rowDeleteWidth() {
-        return narrowRows() ? NARROW_DELETE_WIDTH : DELETE_WIDTH;
-    }
-
-    private int deleteX() {
-        return contentRight() - ROW_PADDING - rowDeleteWidth();
-    }
-
-    private int secondaryX() {
-        return deleteX() - GAP - rowActionWidth();
-    }
-
-    private int primaryX() {
-        return secondaryX() - GAP - rowActionWidth();
-    }
-
     private int dimensionX() {
-        return primaryX() - GAP - DIM_WIDTH;
+        return rowActionLayout().x(0) - GAP - DIM_WIDTH;
     }
 
     private int distanceX() {
@@ -1669,7 +1697,13 @@ public final class WaypointListScreen extends ConfluxScreen {
     }
 
     private int nameRight() {
-        return compactRows() ? primaryX() - GAP : distanceX() - GAP;
+        return compactRows() ? rowActionLayout().x(0) - GAP : distanceX() - GAP;
+    }
+
+    private WaypointRowActionLayout rowActionLayout() {
+        return WaypointRowActionLayout.create(
+            contentLeft(), contentRight(), ROW_PADDING, GAP, ROW_ACTION_COUNT, ROW_ACTION_MAX_WIDTH
+        );
     }
 
     private static double distance(

@@ -39,6 +39,21 @@ public final class ClientGroundTeleportService {
         pending = null;
     }
 
+    /** Sends the configured command to the waypoint's exact stored coordinates. */
+    public void teleportExact(
+        final double x,
+        final double y,
+        final double z,
+        final DimensionId dimension,
+        final WorldIdentity worldIdentity
+    ) {
+        if (client.world == null || client.player == null) {
+            return;
+        }
+        pending = null;
+        sendCommand(x, y, z, dimension, worldIdentity);
+    }
+
     /**
      * Starts a teleport to any map coordinate. The estimate can come from cubiomes or map cache,
      * but is only used to stage above the predicted terrain while the authoritative client chunk loads.
