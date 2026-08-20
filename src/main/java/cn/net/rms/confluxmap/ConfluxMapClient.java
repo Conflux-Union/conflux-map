@@ -383,6 +383,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
         return configIo;
     }
 
+    public Keybinds keybinds() {
+        return keybinds;
+    }
+
     public MapExecutors executors() {
         return executors;
     }

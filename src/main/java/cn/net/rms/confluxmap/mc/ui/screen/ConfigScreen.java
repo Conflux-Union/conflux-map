@@ -335,8 +335,19 @@ public final class ConfigScreen extends ConfluxScreen {
         clearChildren();
         addTabs();
         addRows();
+        final int bottomButtonWidth = Math.min(140, Math.max(80, (width - MARGIN * 2 - TAB_GAP) / 2));
+        final int bottomButtonsWidth = bottomButtonWidth * 2 + TAB_GAP;
+        final int bottomButtonsX = width / 2 - bottomButtonsWidth / 2;
         addDrawableChild(Widgets.button(
-            width / 2 - 50, height - BOTTOM_MARGIN + 4, 100, 20,
+            bottomButtonsX, height - BOTTOM_MARGIN + 4, bottomButtonWidth, 20,
+            Texts.translatable("confluxmap.screen.config.hotkeys"),
+            b -> ConfluxMapClient.get().keybinds().openHotkeySettings(this)
+        ));
+        addDrawableChild(Widgets.button(
+            bottomButtonsX + bottomButtonWidth + TAB_GAP,
+            height - BOTTOM_MARGIN + 4,
+            bottomButtonWidth,
+            20,
             Texts.translatable("confluxmap.screen.waypoint.done"), b -> onClose()
         ));
     }

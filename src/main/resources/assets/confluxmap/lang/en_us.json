@@ -1,5 +1,6 @@
 {
   "key.categories.confluxmap": "Conflux Map",
+  "key.category.confluxmap.controls": "Conflux Map",
   "key.confluxmap.toggle_minimap": "Show/Hide Minimap",
   "key.confluxmap.zoom_in": "Minimap Zoom In",
   "key.confluxmap.zoom_out": "Minimap Zoom Out",
@@ -227,6 +228,7 @@
   "confluxmap.chat.waypoint.import": "[Click to import]",
   "confluxmap.waypoint.death.name": "Death",
   "confluxmap.screen.config.title": "Conflux Map Settings",
+  "confluxmap.screen.config.hotkeys": "Hotkey Settings",
   "confluxmap.screen.config.category.minimap": "Minimap",
   "confluxmap.screen.config.category.layers": "Layers",
   "confluxmap.screen.config.category.radar": "Radar",

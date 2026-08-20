@@ -10,6 +10,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -68,6 +69,19 @@ final class KeybindActionTest {
                 assertTrue(!english.get(key).isBlank(), "blank English translation for " + key);
                 assertTrue(!chinese.get(key).isBlank(), "blank Chinese translation for " + key);
             }
+        }
+    }
+
+    @Test
+    void vanillaCategoryHasLocalizedDisplayTextForBothCategoryApis() {
+        final Map<String, String> english = translations("en_us");
+        final Map<String, String> chinese = translations("zh_cn");
+
+        for (final String key : List.of("key.categories.confluxmap", Keybinds.CATEGORY_TRANSLATION_KEY)) {
+            assertTrue(english.containsKey(key), "missing English translation for " + key);
+            assertTrue(chinese.containsKey(key), "missing Chinese translation for " + key);
+            assertTrue(!english.get(key).isBlank(), "blank English translation for " + key);
+            assertTrue(!chinese.get(key).isBlank(), "blank Chinese translation for " + key);
         }
     }
 
