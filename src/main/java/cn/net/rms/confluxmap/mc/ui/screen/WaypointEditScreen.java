@@ -514,7 +514,10 @@ public final class WaypointEditScreen extends ConfluxScreen {
             return;
         }
         if (editingShared != null) {
-            sharedWaypoints.update(editingShared, waypoint);
+            if (!sharedWaypoints.update(editingShared, waypoint)) {
+                errorKey = "confluxmap.screen.waypoint.public_unavailable";
+                return;
+            }
             MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
             return;
         }

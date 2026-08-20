@@ -6,8 +6,8 @@ import java.util.UUID;
 
 /**
  * Immutable, storage-agnostic waypoint view consumed by every rendering surface.
- * The source flag is deliberately retained so UI gestures can never mistake a
- * server-owned waypoint for an editable local one.
+ * The source flag is deliberately retained so UI gestures route mutations through
+ * the correct local or server authority.
  */
 public record WaypointRenderEntry(
     UUID id,

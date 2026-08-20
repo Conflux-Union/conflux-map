@@ -232,7 +232,7 @@ public final class SharedWaypointClient {
     }
 
     public boolean update(final SharedWaypoint original, final Waypoint updated) {
-        if (original == null || updated == null || !stateMachine.canMutate() || !canUpdate(original)) {
+        if (original == null || updated == null || !canUpdate(original)) {
             return false;
         }
         final UUID operationId = UUID.randomUUID();

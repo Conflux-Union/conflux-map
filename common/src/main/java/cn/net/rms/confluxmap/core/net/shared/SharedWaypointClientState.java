@@ -223,7 +223,7 @@ public final class SharedWaypointClientState {
         return Action.NONE;
     }
 
-    /** Applies one create/lock delta, ignores duplicates, and resubscribes on a gap. */
+    /** Applies one create/update delta, ignores duplicates, and resubscribes on a gap. */
     public synchronized Action onUpsert(final UpsertS2C upsert) {
         final View current = view.get();
         if (current.state() != State.ENABLED || upsert == null) {
