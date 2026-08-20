@@ -214,6 +214,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         );
         predictionTileService = new PredictionTileService(sessionGuard, predictionState, executors, tileService);
         predictionTileService.bindDaylightModel(daylightModel);
+        predictionTileService.setMapColorStyle(config.mapColorStyle);
         predictionTileService.setViewMode(config.predictionViewMode);
         correctionStore = new CorrectionStore(
             cacheRoot.resolve("prediction")
@@ -460,6 +461,15 @@ public final class ConfluxMapClient implements ClientModInitializer {
         predictionTileService.reloadAll();
         gameBridge.runOnRenderThread(tileTextureManager::releasePredicted);
         ConfluxMapMod.LOGGER.info("Prediction tiles force-reloaded");
+    }
+
+    /** Invalidates every rendered terrain plane after the shared colour style changes. */
+    public void onMapColorStyleChanged() {
+        predictionTileService.setMapColorStyle(config.mapColorStyle);
+        predictionTileService.reloadAll();
+        tileService.reloadMapColorStyle();
+        gameBridge.runOnRenderThread(tileTextureManager::releaseAll);
+        ConfluxMapMod.LOGGER.info("Map color style changed to {}", config.mapColorStyle);
     }
 
     /** Re-resolves the active session's seed source after a local seed setting changes. */

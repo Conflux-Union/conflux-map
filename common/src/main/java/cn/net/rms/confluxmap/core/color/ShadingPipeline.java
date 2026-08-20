@@ -244,9 +244,24 @@ public final class ShadingPipeline {
      * #DAYLIGHT_FLOOR}, so the division is always safe.
      */
     public static float[] relightRatios(final float fromFactor, final float toFactor) {
+        return relightRatios(fromFactor, toFactor, MapColorStyle.CONFLUX);
+    }
+
+    /** Style-aware variant used by resident textures after the map colour renderer changes. */
+    public static float[] relightRatios(
+        final float fromFactor,
+        final float toFactor,
+        final MapColorStyle style
+    ) {
         final float[] ratios = new float[16];
         for (int level = 0; level < ratios.length; level++) {
-            ratios[level] = daylightScale(toFactor, level) / daylightScale(fromFactor, level);
+            final float fromScale = style == MapColorStyle.XAERO
+                ? XaeroMapStyle.daylightScale(fromFactor, level)
+                : daylightScale(fromFactor, level);
+            final float toScale = style == MapColorStyle.XAERO
+                ? XaeroMapStyle.daylightScale(toFactor, level)
+                : daylightScale(toFactor, level);
+            ratios[level] = toScale / fromScale;
         }
         return ratios;
     }

@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.compat.NativeImages;
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
+import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.predict.PredictedTileKeys;
@@ -60,6 +61,7 @@ public final class TileTextureManager {
         final NativeImageBackedTexture texture;
         float appliedDaylight = Float.NaN;
         byte[] lightLevels;
+        MapColorStyle lightStyle = MapColorStyle.CONFLUX;
 
         TileTexture(final NativeImageBackedTexture texture) {
             this.texture = texture;
@@ -120,13 +122,17 @@ public final class TileTextureManager {
             && !DaylightModel.sameBucket(entry.appliedDaylight, relight.composedDaylight())) {
             // Preserved pixels were darkened at an older daylight bucket than the rects about
             // to land; re-light them first so one tile never mixes two buckets.
-            relightPixels(image, entry.lightLevels, entry.appliedDaylight, relight.composedDaylight());
+            relightPixels(
+                image, entry.lightLevels, entry.appliedDaylight,
+                relight.composedDaylight(), entry.lightStyle
+            );
         }
         if (relight == null) {
             entry.appliedDaylight = Float.NaN;
             entry.lightLevels = null;
         } else {
             entry.appliedDaylight = relight.composedDaylight();
+            entry.lightStyle = relight.style();
             if (entry.lightLevels == null) {
                 entry.lightLevels = new byte[TILE_SIZE * TILE_SIZE];
             }
@@ -169,7 +175,7 @@ public final class TileTextureManager {
             if (image == null) {
                 continue;
             }
-            relightPixels(image, entry.lightLevels, entry.appliedDaylight, target);
+            relightPixels(image, entry.lightLevels, entry.appliedDaylight, target, entry.lightStyle);
             entry.appliedDaylight = target;
             entry.texture.upload();
             budget--;
@@ -177,8 +183,14 @@ public final class TileTextureManager {
     }
 
     /** Rewrites every pixel from the daylight it was darkened with to {@code to}, per its block light. */
-    private static void relightPixels(final NativeImage image, final byte[] light, final float from, final float to) {
-        final float[] ratios = ShadingPipeline.relightRatios(from, to);
+    private static void relightPixels(
+        final NativeImage image,
+        final byte[] light,
+        final float from,
+        final float to,
+        final MapColorStyle style
+    ) {
+        final float[] ratios = ShadingPipeline.relightRatios(from, to, style);
         for (int y = 0; y < TILE_SIZE; y++) {
             final int row = y * TILE_SIZE;
             for (int x = 0; x < TILE_SIZE; x++) {

@@ -2,7 +2,9 @@ package cn.net.rms.confluxmap.core.predict;
 
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.color.LightTint;
+import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
+import cn.net.rms.confluxmap.core.color.XaeroMapStyle;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
@@ -17,8 +19,9 @@ import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.BiomeTileKeys;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.tile.TileUpdate;
-import cn.net.rms.confluxmap.core.util.TileMath;
+import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
+import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.nativepredict.CubiomesContexts;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import java.util.Collection;
@@ -70,6 +73,7 @@ public final class PredictionTileService {
     private volatile CorrectionStore correctionStore;
     private volatile DaylightModel daylightModel;
     private volatile PredictionViewMode viewMode = PredictionViewMode.EVERYWHERE;
+    private volatile MapColorStyle mapColorStyle = MapColorStyle.CONFLUX;
 
     /** Guarded by {@code this}: tiles waiting to be composed, with the session token that requested them. */
     private final Map<TileKey, Long> dirty = new HashMap<>();
@@ -169,6 +173,10 @@ public final class PredictionTileService {
         this.daylightModel = model;
     }
 
+    public void setMapColorStyle(final MapColorStyle style) {
+        mapColorStyle = style == null ? MapColorStyle.CONFLUX : style;
+    }
+
     public SyncedMaterialPalette syncedMaterials() {
         return syncedMaterials;
     }
@@ -202,7 +210,8 @@ public final class PredictionTileService {
     private float applyLayerLighting(
         final TileKey key,
         final int[] pixels,
-        final byte[] blockLight
+        final byte[] blockLight,
+        final MapColorStyle style
     ) {
         if (BiomeTileKeys.isBiome(key)) {
             return Float.NaN;
@@ -212,6 +221,9 @@ public final class PredictionTileService {
         );
         final MapLayer.Type layer = MapLayer.parse(realLayer).type();
         if (layer == MapLayer.Type.NETHER_CEILING) {
+            if (style == MapColorStyle.XAERO) {
+                return Float.NaN;
+            }
             for (int pixel = 0; pixel < pixels.length; pixel++) {
                 pixels[pixel] = LightTint.applyBlockLightOverAmbient(
                     pixels[pixel], blockLight[pixel] & 0xFF, true
@@ -228,9 +240,11 @@ public final class PredictionTileService {
         }
         final float factor = model.factor();
         for (int pixel = 0; pixel < pixels.length; pixel++) {
-            pixels[pixel] = ShadingPipeline.applyDaylight(
-                pixels[pixel], factor, blockLight[pixel] & 0xFF
-            );
+            pixels[pixel] = style == MapColorStyle.XAERO
+                ? Argb.scale(
+                    pixels[pixel], XaeroMapStyle.daylightScale(factor, blockLight[pixel] & 0xFF)
+                )
+                : ShadingPipeline.applyDaylight(pixels[pixel], factor, blockLight[pixel] & 0xFF);
         }
         return factor;
     }
@@ -239,12 +253,13 @@ public final class PredictionTileService {
         final TileKey key,
         final int[] pixels,
         final byte[] blockLight,
-        final float composedDaylight
+        final float composedDaylight,
+        final MapColorStyle style
     ) {
         return Float.isNaN(composedDaylight)
             ? TileUpdate.fullTile(key, pixels)
             : TileUpdate.fullTile(
-                key, pixels, new TileUpdate.Relight(composedDaylight, blockLight)
+                key, pixels, new TileUpdate.Relight(composedDaylight, blockLight, style)
             );
     }
 
@@ -952,7 +967,9 @@ public final class PredictionTileService {
             || directValidatedAt == 0L
             || lower.freshnessValidatedAtMillis() >= directValidatedAt)) {
             final Composition composition = new Composition(
-                tileUpdate(key, lower.pixels(), lower.blockLight(), lower.composedDaylight()),
+                tileUpdate(
+                    key, lower.pixels(), lower.blockLight(), lower.composedDaylight(), mapColorStyle
+                ),
                 new TileMetadata(lower.biomes(), lower.surfaces()),
                 lower.syncEvaluated(),
                 lower.syncSourceRevisions(),
@@ -1001,6 +1018,8 @@ public final class PredictionTileService {
                 : Proto.MAP_COLOR_NONE;
         }
 
+        final MapColorStyle style = mapColorStyle;
+        final XaeroMapStyle.Shadow shadow = XaeroMapStyle.shadowFor(key.dimension());
         final int[] pixels = BiomeTileKeys.isBiome(key)
             ? PredictedBiomeComposer.compose(
                 derived, grid, directCorrections, compositionMode, lod, derived, grid
@@ -1012,7 +1031,7 @@ public final class PredictionTileService {
                 key.dimension().equals(DimensionId.NETHER)
                     ? LightTint.multiplier(0, 0, true)
                     : 0xFFFFFFFF,
-                syncedMaterials
+                syncedMaterials, style, shadow
             );
         final byte[] syncEvaluated = directCorrections == null
             ? new byte[PatchCodec.MASK_BYTES] : directCorrections.copyEvaluated();
@@ -1025,9 +1044,9 @@ public final class PredictionTileService {
             directCorrections == null
                 ? CorrectionProfile.LEGACY_V1 : directCorrections.correctionProfile()
         );
-        final float composedDaylight = applyLayerLighting(key, pixels, blockLight);
+        final float composedDaylight = applyLayerLighting(key, pixels, blockLight, style);
         return new Composition(
-            tileUpdate(key, pixels, blockLight, composedDaylight),
+            tileUpdate(key, pixels, blockLight, composedDaylight, style),
             new TileMetadata(
                 biomeIds(grid, directCorrections, grid),
                 surfaceYs(derived, directCorrections, derived)

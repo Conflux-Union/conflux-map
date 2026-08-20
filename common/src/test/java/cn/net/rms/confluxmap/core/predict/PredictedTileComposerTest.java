@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.core.color.MapColorStyle;
+import cn.net.rms.confluxmap.core.color.XaeroMapStyle;
 import cn.net.rms.confluxmap.core.color.LightTint;
 import cn.net.rms.confluxmap.core.color.MaterialDetailProfile;
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
@@ -20,6 +22,30 @@ import org.junit.jupiter.api.Test;
 
 /** {@link PredictedTileComposer} determinism, using the pure-Java {@link PositionBasedFakeSampler}. */
 class PredictedTileComposerTest {
+    @Test
+    void xaeroStyleUsesTheSameFlatTerrainRendererForPrediction() {
+        final BaselineGrid grid = new BaselineGrid();
+        final DerivedGrid derived = new DerivedGrid();
+        Arrays.fill(grid.biomeId, 0);
+        Arrays.fill(derived.kind, (byte) SurfaceKind.LAND.ordinal());
+        Arrays.fill(derived.surfaceY, 63);
+        final PredictionPalette palette = PredictionPalette.defaults();
+
+        final int[] pixels = PredictedTileComposer.compose(
+            derived, grid, palette, null, PredictionViewMode.EVERYWHERE, 0,
+            Proto.MAP_COLOR_NONE, derived, grid, Proto.MAP_COLOR_NONE,
+            true, 0xFFFFFFFF, null,
+            MapColorStyle.XAERO, XaeroMapStyle.Shadow.OVERWORLD
+        );
+
+        assertEquals(
+            XaeroMapStyle.applyTerrain(
+                palette.groundColor(0), 63, 63, 63, 1, true, XaeroMapStyle.Shadow.OVERWORLD
+            ),
+            pixels[20 * 256 + 20]
+        );
+    }
+
     /** Vanilla map colour GRASS - the id a grass block reports in every biome. */
     private static final int GRASS_MAP_COLOR = 1;
 

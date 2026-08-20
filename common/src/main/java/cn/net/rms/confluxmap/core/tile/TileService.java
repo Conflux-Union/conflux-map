@@ -5,7 +5,9 @@ import cn.net.rms.confluxmap.core.cache.RegionDiskCache;
 import cn.net.rms.confluxmap.core.color.BiomeColorPalette;
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.color.LightTint;
+import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
+import cn.net.rms.confluxmap.core.color.XaeroMapStyle;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
 import cn.net.rms.confluxmap.core.model.DimensionId;
@@ -85,6 +87,8 @@ public final class TileService {
     private ViewportRect viewport;
     /** Next LOD-0 region in the current viewport to offer to the bounded disk-load queue. */
     private long viewportRegionLoadCursor;
+    /** Invalidates a composition that started before a map colour style switch. Guarded by this. */
+    private long mapColorStyleGeneration;
 
     private volatile int viewpointX;
     private volatile int viewpointZ;
@@ -476,6 +480,14 @@ public final class TileService {
         }
     }
 
+    /** Drops queued old-style results; released textures request fresh compositions next frame. */
+    public synchronized void reloadMapColorStyle() {
+        mapColorStyleGeneration++;
+        dirty.clear();
+        staleTiles.clear();
+        uploads.clear();
+    }
+
     /** For a tile that's visible but has never been composed (or requested again after being evicted). */
     public void requestTile(final TileKey key) {
         final MapWorld world = mapWorlds.current();
@@ -629,6 +641,7 @@ public final class TileService {
         while (true) {
             final TileKey next;
             final long token;
+            final long styleGeneration;
             synchronized (this) {
                 final int compositionLimit = viewport == null ? maxConcurrentCompositions : 1;
                 if (inFlight.size() >= compositionLimit || dirty.isEmpty()) {
@@ -645,9 +658,10 @@ public final class TileService {
                     return;
                 }
                 token = dirty.remove(next);
+                styleGeneration = mapColorStyleGeneration;
                 inFlight.add(next);
             }
-            executors.workers().execute(() -> composeAndFinish(next, token));
+            executors.workers().execute(() -> composeAndFinish(next, token, styleGeneration));
         }
     }
 
@@ -693,11 +707,11 @@ public final class TileService {
             || (candidate.tileZ() == current.tileZ() && candidate.tileX() < current.tileX());
     }
 
-    private void composeAndFinish(final TileKey key, final long token) {
+    private void composeAndFinish(final TileKey key, final long token, final long styleGeneration) {
         try {
             final TileUpdate update = composeTile(key, token);
             if (update != null) {
-                pushUpload(update);
+                pushUpload(update, styleGeneration);
             }
         } finally {
             synchronized (this) {
@@ -723,6 +737,8 @@ public final class TileService {
         }
         final boolean biomeMode = BiomeTileKeys.isBiome(key);
         final MapLayer layer = MapLayer.parse(BiomeTileKeys.realLayerId(key.layerId()));
+        final MapColorStyle mapColorStyle = config.mapColorStyle;
+        final XaeroMapStyle.Shadow xaeroShadow = XaeroMapStyle.shadowFor(key.dimension());
         final ColumnStore store = world.store(layer);
         // The roof view is block-accurate and lives around one almost-flat Y. Keep the shared,
         // symmetric local relief there, but omit the fixed Y=80 absolute-height wash that used to
@@ -749,7 +765,8 @@ public final class TileService {
         if (key.lod() == 0) {
             pixels = composeLod0(
                 store, key.tileX(), key.tileZ(), biomeMode, applyAbsoluteHeight,
-                applyNetherCeilingLight, applyDaylight, daylightFactor, lightPlane
+                applyNetherCeilingLight, applyDaylight, daylightFactor, lightPlane,
+                mapColorStyle, xaeroShadow
             );
             if (store.region(key.tileX(), key.tileZ()) != null) {
                 changed.add(new TileUpdate.Rect(0, 0, RegionColumns.SIZE, RegionColumns.SIZE));
@@ -757,12 +774,13 @@ public final class TileService {
         } else {
             pixels = composeLodN(
                 store, key, biomeMode, applyAbsoluteHeight,
-                applyNetherCeilingLight, applyDaylight, daylightFactor, lightPlane, changed
+                applyNetherCeilingLight, applyDaylight, daylightFactor, lightPlane, changed,
+                mapColorStyle, xaeroShadow
             );
         }
         final TileUpdate.Relight relight = lightPlane == null
             ? null
-            : new TileUpdate.Relight(daylightFactor, lightPlane);
+            : new TileUpdate.Relight(daylightFactor, lightPlane, mapColorStyle);
         return new TileUpdate(key, pixels, List.copyOf(changed), relight);
     }
 
@@ -780,7 +798,9 @@ public final class TileService {
         final boolean applyNetherCeilingLight,
         final boolean applyDaylight,
         final float daylightFactor,
-        final byte[] outLight
+        final byte[] outLight,
+        final MapColorStyle mapColorStyle,
+        final XaeroMapStyle.Shadow xaeroShadow
     ) {
         final int[] pixels = new int[RegionColumns.SIZE * RegionColumns.SIZE];
         final RegionColumns region = store.region(regionX, regionZ);
@@ -799,7 +819,7 @@ public final class TileService {
             composeRegion(
                 neighborhood, pixels,
                 biomeMode, applyAbsoluteHeight, applyNetherCeilingLight,
-                applyDaylight, daylightFactor, outLight
+                applyDaylight, daylightFactor, outLight, mapColorStyle, xaeroShadow
             );
         }
         return pixels;
@@ -826,7 +846,9 @@ public final class TileService {
         final boolean applyDaylight,
         final float daylightFactor,
         final byte[] outLight,
-        final List<TileUpdate.Rect> outChanged
+        final List<TileUpdate.Rect> outChanged,
+        final MapColorStyle mapColorStyle,
+        final XaeroMapStyle.Shadow xaeroShadow
     ) {
         final int lod = key.lod();
         final int size = RegionColumns.SIZE;
@@ -845,7 +867,8 @@ public final class TileService {
                 final byte[] fullLight = outLight == null ? null : new byte[size * size];
                 final int[] full = composeLod0(
                     store, regionX, regionZ, biomeMode, applyAbsoluteHeight,
-                    applyNetherCeilingLight, applyDaylight, daylightFactor, fullLight
+                    applyNetherCeilingLight, applyDaylight, daylightFactor, fullLight,
+                    mapColorStyle, xaeroShadow
                 );
                 final int[] downsampled = downsample(full, size, lod);
                 stitch(downsampled, subSize, outPixels, dx * subSize, dz * subSize);
@@ -935,7 +958,9 @@ public final class TileService {
         final boolean applyNetherCeilingLight,
         final boolean applyDaylight,
         final float daylightFactor,
-        final byte[] outLight
+        final byte[] outLight,
+        final MapColorStyle mapColorStyle,
+        final XaeroMapStyle.Shadow xaeroShadow
     ) {
         final int size = RegionColumns.SIZE;
         final short[] surfaceY = new short[size * size];
@@ -964,6 +989,13 @@ public final class TileService {
                 }
                 if (biomeMode) {
                     outPixels[idx] = BiomeColorPalette.color(biomeId[idx]);
+                    continue;
+                }
+                if (mapColorStyle == MapColorStyle.XAERO) {
+                    outPixels[idx] = composeXaeroColumn(
+                        x, z, surfaceY, fluidDepth, kind, baseArgb, tintArgb, overlayArgb,
+                        neighborhood, xaeroShadow, applyDaylight, daylightFactor, light[idx]
+                    );
                     continue;
                 }
                 final double surfaceHeightShade = applyAbsoluteHeight
@@ -1007,6 +1039,55 @@ public final class TileService {
                 outPixels[idx] = composed;
             }
         }
+    }
+
+    private static int composeXaeroColumn(
+        final int x,
+        final int z,
+        final short[] surfaceY,
+        final byte[] fluidDepth,
+        final byte[] kind,
+        final int[] baseArgb,
+        final int[] tintArgb,
+        final int[] overlayArgb,
+        final RegionNeighborhood neighborhood,
+        final XaeroMapStyle.Shadow shadow,
+        final boolean applyDaylight,
+        final float daylightFactor,
+        final byte blockLight
+    ) {
+        final int idx = z * RegionColumns.SIZE + x;
+        final boolean waterOrIce = kind[idx] == SurfaceKind.WATER.ordinal()
+            || kind[idx] == SurfaceKind.ICE.ordinal();
+        final int surface = surfaceY[idx];
+        final int floor = surface - (fluidDepth[idx] & 0xFF);
+        final int tintedBase = Argb.multiply(baseArgb[idx], tintArgb[idx]);
+        final int composed;
+        if (waterOrIce) {
+            int shadedFloor = overlayArgb[idx] == Argb.TRANSPARENT
+                ? Argb.TRANSPARENT
+                : XaeroMapStyle.applyTerrain(
+                    overlayArgb[idx], floor,
+                    reliefHeight(x, z - 1, true, surfaceY, fluidDepth, kind, neighborhood),
+                    reliefHeight(x - 1, z - 1, true, surfaceY, fluidDepth, kind, neighborhood),
+                    1, true, shadow
+                );
+            shadedFloor = ShadingPipeline.applyBrightnessMultiplier(
+                shadedFloor, XaeroMapStyle.transparentFloorBrightness(fluidDepth[idx] & 0xFF)
+            );
+            composed = ShadingPipeline.compositeOver(tintedBase, shadedFloor);
+        } else {
+            final int shadedBase = XaeroMapStyle.applyTerrain(
+                tintedBase, surface,
+                reliefHeight(x, z - 1, false, surfaceY, fluidDepth, kind, neighborhood),
+                reliefHeight(x - 1, z - 1, false, surfaceY, fluidDepth, kind, neighborhood),
+                1, true, shadow
+            );
+            composed = ShadingPipeline.compositeOver(overlayArgb[idx], shadedBase);
+        }
+        return applyDaylight
+            ? Argb.scale(composed, XaeroMapStyle.daylightScale(daylightFactor, blockLight & 0xFF))
+            : composed;
     }
 
     private static double reliefMultiplier(
@@ -1115,8 +1196,16 @@ public final class TileService {
      * something unrelated evicted its texture.
      */
     private void pushUpload(final TileUpdate update) {
+        pushUpload(update, null);
+    }
+
+    private void pushUpload(final TileUpdate update, final Long expectedStyleGeneration) {
         final List<TileKey> evicted;
         synchronized (this) {
+            if (expectedStyleGeneration != null
+                && expectedStyleGeneration.longValue() != mapColorStyleGeneration) {
+                return;
+            }
             uploads.remove(update.key());
             uploads.put(update.key(), update);
             if (uploads.size() <= UPLOAD_QUEUE_CAPACITY) {

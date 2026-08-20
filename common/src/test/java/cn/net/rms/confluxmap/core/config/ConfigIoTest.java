@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
 import cn.net.rms.confluxmap.core.survey.SurveyReminderSchedule;
@@ -23,6 +24,21 @@ class ConfigIoTest {
     private static final Logger LOGGER = LogManager.getLogger("ConfigIoTest");
 
     @Test
+    void mapColorStyleRoundTripsCopiesAndDefaultsSafely(@TempDir final Path tmp) throws IOException {
+        final ConfigIo io = new ConfigIo(tmp.resolve("config.json"), LOGGER);
+        final ConfluxConfig config = new ConfluxConfig();
+        config.mapColorStyle = MapColorStyle.XAERO;
+
+        io.save(config);
+
+        assertEquals(MapColorStyle.XAERO, io.load().mapColorStyle);
+        assertEquals(MapColorStyle.XAERO, config.copy().mapColorStyle);
+        config.mapColorStyle = null;
+        config.normalize();
+        assertEquals(MapColorStyle.CONFLUX, config.mapColorStyle);
+    }
+
+    @Test
     void loadCreatesNewConfigWithSmallerDefaultMinimap(@TempDir final Path tmp) throws IOException {
         final Path file = tmp.resolve("config.json");
 
@@ -32,6 +48,7 @@ class ConfigIoTest {
         assertEquals(ConfluxConfig.DEFAULT_MINIMAP_SIZE, loaded.minimapSize);
         assertEquals(ConfluxConfig.DEFAULT_RADAR_ICON_SIZE, loaded.radarIconSize);
         assertTrue(loaded.minimapHudAvoidance);
+        assertEquals(MapColorStyle.CONFLUX, loaded.mapColorStyle);
         assertTrue(Files.readString(file, StandardCharsets.UTF_8).contains("\"minimapSize\": 90"));
         assertTrue(Files.readString(file, StandardCharsets.UTF_8).contains("\"minimapHudAvoidance\": true"));
         assertTrue(Files.readString(file, StandardCharsets.UTF_8).contains("\"radarIconSize\": 10"));
@@ -55,6 +72,7 @@ class ConfigIoTest {
         assertEquals(new ConfluxConfig().fullscreenDisplayMode, loaded.fullscreenDisplayMode);
         assertEquals(ConfluxConfig.DEFAULT_TELEPORT_COMMAND, loaded.teleportCommand);
         assertEquals(new ConfluxConfig().chunkLoadDetailMode, loaded.chunkLoadDetailMode);
+        assertEquals(MapColorStyle.CONFLUX, loaded.mapColorStyle);
         assertEquals(ConfluxConfig.DEFAULT_RADAR_ICON_SIZE, loaded.radarIconSize);
         assertTrue(loaded.playerTrailEnabled);
         assertEquals(
@@ -86,6 +104,7 @@ class ConfigIoTest {
         assertTrue(rewritten.contains("\"fullscreenDisplayMode\""));
         assertTrue(rewritten.contains("\"teleportCommand\""));
         assertTrue(rewritten.contains("\"chunkLoadDetailMode\""));
+        assertTrue(rewritten.contains("\"mapColorStyle\""));
         assertTrue(rewritten.contains("\"radarIconSize\""));
         assertTrue(rewritten.contains("\"playerTrailEnabled\""));
         assertTrue(rewritten.contains("\"playerTrailDurationSeconds\""));
