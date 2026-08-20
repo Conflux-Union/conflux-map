@@ -30,16 +30,21 @@ final class FullscreenMapLocationMenu {
         }
     }
 
-    private static final List<Action> ACTIONS = List.of(Action.values());
+    private static final List<Action> DEFAULT_ACTIONS = List.of(Action.values());
+    private static final List<Action> TELEPORT_FIRST_ACTIONS = List.of(
+        Action.TELEPORT,
+        Action.SET_WAYPOINT,
+        Action.SHARE_LOCATION
+    );
     private static final int PANEL_HEIGHT = PANEL_PADDING * 2
-        + ACTIONS.size() * BUTTON_HEIGHT
-        + (ACTIONS.size() - 1) * BUTTON_GAP;
+        + DEFAULT_ACTIONS.size() * BUTTON_HEIGHT
+        + (DEFAULT_ACTIONS.size() - 1) * BUTTON_GAP;
 
     private FullscreenMapLocationMenu() {
     }
 
-    static List<Action> actions() {
-        return ACTIONS;
+    static List<Action> actions(final boolean teleportCommandAvailable) {
+        return teleportCommandAvailable ? TELEPORT_FIRST_ACTIONS : DEFAULT_ACTIONS;
     }
 
     static boolean actionEnabled(

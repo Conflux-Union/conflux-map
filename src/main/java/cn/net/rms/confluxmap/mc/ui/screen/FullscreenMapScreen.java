@@ -1406,8 +1406,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                     ? MinecraftAccess.canSendCommand(client, "teleport", "tp")
                     : MinecraftAccess.canSendCommand(client, name))
                 .orElse(false);
-        for (int index = 0; index < FullscreenMapLocationMenu.actions().size(); index++) {
-            final FullscreenMapLocationMenu.Action action = FullscreenMapLocationMenu.actions().get(index);
+        final List<FullscreenMapLocationMenu.Action> actions = FullscreenMapLocationMenu.actions(
+            teleportCommandAvailable
+        );
+        for (int index = 0; index < actions.size(); index++) {
+            final FullscreenMapLocationMenu.Action action = actions.get(index);
             final ButtonWidget button = addDrawableChild(Widgets.button(
                 locationMenuBounds.buttonX(),
                 locationMenuBounds.buttonY(index),
