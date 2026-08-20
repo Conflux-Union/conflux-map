@@ -101,7 +101,6 @@ public final class WaypointWorldRenderer {
     private static final int LABEL_BACKGROUND_COLOR = 0xC0101010;
     private static final int LABEL_LOCAL_OUTLINE_COLOR = 0xFF101010;
     private static final int LABEL_SHARED_OUTLINE_COLOR = 0xFF55DDE0;
-    private static final int LABEL_LOCKED_OUTLINE_COLOR = 0xFFFFD166;
     private static final int LABEL_NAME_COLOR = 0xFFFFFFFF;
     private static final int LABEL_DISTANCE_COLOR = 0xFFC8C8C8;
     /** LightmapTextureManager.pack(15, 15) - always fully lit, like other UI-ish world markers. */
@@ -732,7 +731,7 @@ public final class WaypointWorldRenderer {
         if (!waypoint.shared()) {
             return LABEL_LOCAL_OUTLINE_COLOR;
         }
-        return waypoint.locked() ? LABEL_LOCKED_OUTLINE_COLOR : LABEL_SHARED_OUTLINE_COLOR;
+        return LABEL_SHARED_OUTLINE_COLOR;
     }
 
     private static String initial(final String name) {

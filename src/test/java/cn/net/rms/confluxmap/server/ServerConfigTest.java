@@ -38,6 +38,16 @@ class ServerConfigTest {
         assertFalse(c.shareChunkLoadState);
         assertTrue(c.allowEntityRadar);
         assertFalse(c.shareWaypoints);
+        assertFalse(c.allowNonOperatorSharedWaypointManagement);
+        assertEquals(
+            cn.net.rms.confluxmap.server.shared.SharedWaypointService.AccessPolicy.OPERATOR_ONLY,
+            c.sharedWaypointAccessPolicy()
+        );
+        c.allowNonOperatorSharedWaypointManagement = true;
+        assertEquals(
+            cn.net.rms.confluxmap.server.shared.SharedWaypointService.AccessPolicy.OWNER_MANAGED,
+            c.sharedWaypointAccessPolicy()
+        );
         assertEquals(SharedWaypointProto.MAX_SNAPSHOT_WAYPOINTS, c.maxSharedWaypointsPerWorld);
         assertEquals(64, c.maxSharedWaypointsPerPlayer);
         assertEquals(30, c.sharedWaypointMutationsPerMinute);

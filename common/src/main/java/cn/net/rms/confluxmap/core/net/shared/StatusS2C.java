@@ -12,10 +12,29 @@ public record StatusS2C(
     String worldId,
     long revision,
     int maxWorld,
-    int maxPlayer
+    int maxPlayer,
+    boolean ownerManagementAllowed
 ) implements SharedWaypointMessage {
     public StatusS2C {
         Objects.requireNonNull(worldId, "worldId");
+    }
+
+    /** Source-compatible constructor for protocol minors before owner-management policy existed. */
+    public StatusS2C(
+        final int major,
+        final int minor,
+        final boolean supported,
+        final boolean enabled,
+        final boolean operator,
+        final String worldId,
+        final long revision,
+        final int maxWorld,
+        final int maxPlayer
+    ) {
+        this(
+            major, minor, supported, enabled, operator, worldId, revision,
+            maxWorld, maxPlayer, minor < 2
+        );
     }
 
     @Override

@@ -18,8 +18,7 @@ public record WaypointRenderEntry(
     double z,
     int colorArgb,
     Waypoint.Type type,
-    Source source,
-    boolean locked
+    Source source
 ) {
     public enum Source { LOCAL, SHARED }
 
@@ -29,9 +28,6 @@ public record WaypointRenderEntry(
         Objects.requireNonNull(dimensionId, "dimensionId");
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(source, "source");
-        if (source == Source.LOCAL && locked) {
-            throw new IllegalArgumentException("local waypoint cannot be server-locked");
-        }
     }
 
     public boolean local() {

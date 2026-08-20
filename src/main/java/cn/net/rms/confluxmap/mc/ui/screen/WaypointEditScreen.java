@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
+import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointSet;
 import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
@@ -64,6 +65,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
     private final WaypointStore boundLocalStore;
     private final Supplier<WaypointStore> localStoreSupplier;
     private final boolean openedFromHotkey;
+    private final SharedWaypoint editingShared;
 
     private TextFieldWidget nameField;
     private TextFieldWidget xField;
@@ -91,7 +93,8 @@ public final class WaypointEditScreen extends ConfluxScreen {
         final boolean visible,
         final CreateTarget createTarget,
         final Supplier<WaypointStore> localStoreSupplier,
-        final boolean openedFromHotkey
+        final boolean openedFromHotkey,
+        final SharedWaypoint editingShared
     ) {
         super(Texts.translatable(titleKey(editingId, createTarget)));
         this.parent = parent;
@@ -108,6 +111,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         this.initialVisible = visible;
         this.createTarget = createTarget;
         this.openedFromHotkey = openedFromHotkey;
+        this.editingShared = editingShared;
         this.sharedWaypoints = ConfluxMapClient.get().sharedWaypoints();
         this.localStoreSupplier = createTarget == CreateTarget.LOCAL
             ? localStoreSupplier == null
@@ -137,7 +141,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         return new WaypointEditScreen(
             parent, null, dimensionId, Waypoint.Type.NORMAL, System.currentTimeMillis(),
             "", x, y, z, PRESET_COLORS[5], initialSetName, true,
-            CreateTarget.LOCAL, null, false
+            CreateTarget.LOCAL, null, false, null
         );
     }
 
@@ -153,7 +157,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         return new WaypointEditScreen(
             parent, null, dimensionId, Waypoint.Type.NORMAL, System.currentTimeMillis(),
             "", x, y, z, PRESET_COLORS[5], WaypointSet.DEFAULT_NAME, true,
-            CreateTarget.LOCAL, localStoreSupplier, false
+            CreateTarget.LOCAL, localStoreSupplier, false, null
         );
     }
 
@@ -167,7 +171,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         return new WaypointEditScreen(
             null, null, dimensionId, Waypoint.Type.NORMAL, System.currentTimeMillis(),
             "", x, y, z, PRESET_COLORS[5], WaypointSet.DEFAULT_NAME, true,
-            CreateTarget.LOCAL, null, true
+            CreateTarget.LOCAL, null, true, null
         );
     }
 
@@ -183,7 +187,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         return new WaypointEditScreen(
             parent, null, dimensionId, Waypoint.Type.NORMAL, System.currentTimeMillis(),
             name, x, y, z, PRESET_COLORS[5], "", true,
-            CreateTarget.LOCAL, null, false
+            CreateTarget.LOCAL, null, false, null
         );
     }
 
@@ -209,7 +213,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
     ) {
         return new WaypointEditScreen(
             parent, null, dimensionId, Waypoint.Type.NORMAL, System.currentTimeMillis(),
-            "", x, y, z, PRESET_COLORS[5], "", true, target, null, false
+            "", x, y, z, PRESET_COLORS[5], "", true, target, null, false, null
         );
     }
 
@@ -217,7 +221,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         return new WaypointEditScreen(
             parent, waypoint.id, waypoint.dimensionId, waypoint.type, waypoint.createdAtEpochMs,
             waypoint.name, waypoint.x, waypoint.y, waypoint.z, waypoint.colorArgb, waypoint.group,
-            waypoint.visible, CreateTarget.LOCAL, null, false
+            waypoint.visible, CreateTarget.LOCAL, null, false, null
         );
     }
 
@@ -229,7 +233,18 @@ public final class WaypointEditScreen extends ConfluxScreen {
         return new WaypointEditScreen(
             parent, waypoint.id, waypoint.dimensionId, waypoint.type, waypoint.createdAtEpochMs,
             waypoint.name, waypoint.x, waypoint.y, waypoint.z, waypoint.colorArgb, waypoint.group,
-            waypoint.visible, CreateTarget.LOCAL, localStoreSupplier, false
+            waypoint.visible, CreateTarget.LOCAL, localStoreSupplier, false, null
+        );
+    }
+
+    public static WaypointEditScreen forPublicEdit(
+        final Screen parent,
+        final SharedWaypoint waypoint
+    ) {
+        return new WaypointEditScreen(
+            parent, waypoint.id(), waypoint.dimensionId(), waypoint.type(), waypoint.createdAtEpochMs(),
+            waypoint.name(), waypoint.x(), waypoint.y(), waypoint.z(), waypoint.colorArgb(), "",
+            true, CreateTarget.PUBLIC, null, false, waypoint
         );
     }
 
@@ -468,7 +483,8 @@ public final class WaypointEditScreen extends ConfluxScreen {
                 || !boundLocalStore.persistenceWritable())) {
             return;
         }
-        if (createTarget == CreateTarget.PUBLIC && !sharedWaypoints.availability().ready()) {
+        if (createTarget == CreateTarget.PUBLIC
+            && (editingShared == null ? !sharedWaypoints.canCreate() : !sharedWaypoints.canUpdate(editingShared))) {
             return;
         }
         final var validationError = WaypointFormValidation.error(
@@ -495,6 +511,11 @@ public final class WaypointEditScreen extends ConfluxScreen {
                 ? WaypointShareConfirmScreen.Target.PUBLIC
                 : WaypointShareConfirmScreen.Target.CHAT;
             MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WaypointShareConfirmScreen(parent, waypoint, target));
+            return;
+        }
+        if (editingShared != null) {
+            sharedWaypoints.update(editingShared, waypoint);
+            MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
             return;
         }
         final WaypointStore store = boundLocalStore;
@@ -538,7 +559,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
         final boolean localAvailable = createTarget != CreateTarget.LOCAL
             || boundLocalStore != null && boundLocalStore.persistenceWritable();
         final boolean publicAvailable = createTarget != CreateTarget.PUBLIC
-            || sharedWaypoints.availability().ready();
+            || (editingShared == null
+                ? sharedWaypoints.canCreate()
+                : sharedWaypoints.canUpdate(editingShared));
         doneButton.active = localAvailable && publicAvailable && WaypointFormValidation.error(
             nameField.getText(), xField.getText(), yField.getText(), zField.getText()
         ).isEmpty();
@@ -546,7 +569,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
 
     private void updatePublicDoneButton() {
         final SharedWaypointAvailability availability = sharedWaypoints.availability();
-        doneButton.active = availability.ready();
+        doneButton.active = editingShared == null
+            ? sharedWaypoints.canCreate()
+            : sharedWaypoints.canUpdate(editingShared);
         setDisabledTooltip(
             doneButton,
             availability.disabledByServer()

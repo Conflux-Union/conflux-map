@@ -118,7 +118,7 @@ final class WaypointListFilterTest {
     private static SharedWaypoint sharedWaypoint(final String name, final DimensionId dimension) {
         return new SharedWaypoint(
             UUID.randomUUID(), UUID.randomUUID(), "Publisher", name, dimension,
-            0.0, 64.0, 0.0, 0xFFFFFFFF, Waypoint.Type.NORMAL, false, 1L, 1L
+            0.0, 64.0, 0.0, 0xFFFFFFFF, Waypoint.Type.NORMAL, 1L, 1L
         );
     }
 }

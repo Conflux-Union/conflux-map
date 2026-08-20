@@ -6,7 +6,6 @@ import cn.net.rms.confluxmap.compat.PlayNetworking;
 import cn.net.rms.confluxmap.core.net.shared.CreateC2S;
 import cn.net.rms.confluxmap.core.net.shared.DeleteC2S;
 import cn.net.rms.confluxmap.core.net.shared.HelloC2S;
-import cn.net.rms.confluxmap.core.net.shared.LockC2S;
 import cn.net.rms.confluxmap.core.net.shared.RemoveS2C;
 import cn.net.rms.confluxmap.core.net.shared.ResultS2C;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
@@ -19,6 +18,7 @@ import cn.net.rms.confluxmap.core.net.shared.SnapshotS2C;
 import cn.net.rms.confluxmap.core.net.shared.StatusS2C;
 import cn.net.rms.confluxmap.core.net.shared.SubscribeC2S;
 import cn.net.rms.confluxmap.core.net.shared.UpsertS2C;
+import cn.net.rms.confluxmap.core.net.shared.UpdateC2S;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import cn.net.rms.confluxmap.core.shared.SharedWaypointLocationKey;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
@@ -54,8 +54,7 @@ public final class SharedWaypointClient {
     public enum OperationKind {
         CREATE,
         DELETE,
-        LOCK,
-        UNLOCK
+        UPDATE
     }
 
     public record OperationResult(
@@ -174,7 +173,7 @@ public final class SharedWaypointClient {
 
     /** Publishes a copy of a local waypoint using the current authoritative revision. */
     public boolean create(final Waypoint waypoint) {
-        if (waypoint == null || !stateMachine.canMutate()
+        if (waypoint == null || !canCreate()
             || isLocationShared(waypoint) || isCreatePending(waypoint)) {
             return false;
         }
@@ -197,9 +196,27 @@ public final class SharedWaypointClient {
         );
     }
 
-    /** Mirrors the server delete rule: operators may delete any point, others only their own unlocked points. */
+    public boolean canCreate() {
+        return stateMachine.canMutate()
+            && (isOperator() || stateMachine.ownerManagementAllowed());
+    }
+
+    /** Mirrors the server rule: operators manage every point; enabled owners manage only theirs. */
+    public boolean canManage(final SharedWaypoint waypoint) {
+        return stateMachine.canMutate() && canManage(
+            waypoint,
+            isOperator(),
+            stateMachine.ownerManagementAllowed(),
+            client.player == null ? null : client.player.getUuid()
+        );
+    }
+
+    public boolean canUpdate(final SharedWaypoint waypoint) {
+        return stateMachine.negotiatedMinor() >= 2 && canManage(waypoint);
+    }
+
     public boolean canDelete(final SharedWaypoint waypoint) {
-        return canDelete(waypoint, isOperator(), client.player == null ? null : client.player.getUuid());
+        return canManage(waypoint);
     }
 
     public boolean delete(final SharedWaypoint waypoint) {
@@ -214,15 +231,15 @@ public final class SharedWaypointClient {
         );
     }
 
-    public boolean setLocked(final SharedWaypoint waypoint, final boolean locked) {
-        if (waypoint == null || !stateMachine.canMutate() || !isOperator()) {
+    public boolean update(final SharedWaypoint original, final Waypoint updated) {
+        if (original == null || updated == null || !stateMachine.canMutate() || !canUpdate(original)) {
             return false;
         }
         final UUID operationId = UUID.randomUUID();
         return sendMutation(
             operationId,
-            new PendingOperation(locked ? OperationKind.LOCK : OperationKind.UNLOCK, null),
-            lockMessage(operationId, waypoint, locked)
+            new PendingOperation(OperationKind.UPDATE, null),
+            updateMessage(operationId, original, updated)
         );
     }
 
@@ -234,9 +251,10 @@ public final class SharedWaypointClient {
         listeners.remove(listener);
     }
 
-    static boolean canDelete(
+    static boolean canManage(
         final SharedWaypoint waypoint,
         final boolean operator,
+        final boolean ownerManagementAllowed,
         final UUID localPlayerId
     ) {
         if (waypoint == null) {
@@ -245,19 +263,22 @@ public final class SharedWaypointClient {
         if (operator) {
             return true;
         }
-        return !waypoint.locked() && waypoint.publisherId().equals(localPlayerId);
+        return ownerManagementAllowed && waypoint.publisherId().equals(localPlayerId);
     }
 
     static DeleteC2S deleteMessage(final UUID operationId, final SharedWaypoint waypoint) {
         return new DeleteC2S(operationId, waypoint.id(), waypoint.revision());
     }
 
-    static LockC2S lockMessage(
+    static UpdateC2S updateMessage(
         final UUID operationId,
-        final SharedWaypoint waypoint,
-        final boolean locked
+        final SharedWaypoint original,
+        final Waypoint updated
     ) {
-        return new LockC2S(operationId, waypoint.id(), waypoint.revision(), locked);
+        return new UpdateC2S(
+            operationId, original.id(), original.revision(), updated.name, updated.dimensionId,
+            updated.x, updated.y, updated.z, updated.colorArgb, updated.type
+        );
     }
 
     private void onJoin() {

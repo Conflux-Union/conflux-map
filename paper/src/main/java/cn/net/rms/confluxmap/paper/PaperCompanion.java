@@ -594,6 +594,7 @@ final class PaperCompanion implements Listener {
                     config.maxSharedWaypointsPerPlayer,
                     config.sharedWaypointMutationsPerMinute
                 ),
+                config.sharedWaypointAccessPolicy(),
                 event -> plugin.getSLF4JLogger().info(
                     "Shared waypoint operation={} actor={} action={} status={} error={} waypoint={} revision={}",
                     event.operationId(), event.actorId(), event.action(), event.status(), event.error(),

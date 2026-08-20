@@ -170,24 +170,6 @@ public final class SharedWaypointCommandService {
         ));
     }
 
-    public Result setLocked(
-        final SharedWaypointService.Actor actor,
-        final String idPrefix,
-        final boolean locked
-    ) {
-        final Resolution resolution = resolve(idPrefix);
-        if (resolution.status() != Status.APPLIED) {
-            return new Result(resolution.status(), null, null);
-        }
-        final SharedWaypoint waypoint = resolution.waypoint();
-        return mutation(service.setLocked(
-            actor,
-            new SharedWaypointService.LockRequest(
-                operationId(), waypoint.revision(), waypoint.id(), locked
-            )
-        ));
-    }
-
     private Result update(
         final SharedWaypointService.Actor actor,
         final SharedWaypoint waypoint,

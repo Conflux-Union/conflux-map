@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointProto;
+import cn.net.rms.confluxmap.server.shared.SharedWaypointService;
 import cn.net.rms.confluxmap.server.web.WebMapConfig;
 
 /**
@@ -13,7 +14,7 @@ import cn.net.rms.confluxmap.server.web.WebMapConfig;
  * ON so a fresh server install gets map-sync benefits without extra setup.
  */
 public final class ServerConfig {
-    public static final int SCHEMA_VERSION = 5;
+    public static final int SCHEMA_VERSION = 6;
 
     public int schemaVersion = SCHEMA_VERSION;
 
@@ -45,8 +46,10 @@ public final class ServerConfig {
     public boolean shareChunkLoadState = false;
     /** Whether cooperating Conflux Map clients may scan and render their entity radar. */
     public boolean allowEntityRadar = true;
-    /** Whether players may publish and receive server-owned shared waypoints. */
+    /** Whether the server-owned shared waypoint catalog is enabled. */
     public boolean shareWaypoints = false;
+    /** Whether non-operators may create and manage shared waypoints they published. */
+    public boolean allowNonOperatorSharedWaypointManagement = false;
     /** Maximum shared waypoints retained for one world. */
     public int maxSharedWaypointsPerWorld = SharedWaypointProto.MAX_SNAPSHOT_WAYPOINTS;
     /** Maximum shared waypoints published by one player in one world. */
@@ -84,6 +87,12 @@ public final class ServerConfig {
         );
         maxSharedWaypointsPerPlayer = clamp(maxSharedWaypointsPerPlayer, 1, maxSharedWaypointsPerWorld);
         sharedWaypointMutationsPerMinute = clamp(sharedWaypointMutationsPerMinute, 1, 6_000);
+    }
+
+    public SharedWaypointService.AccessPolicy sharedWaypointAccessPolicy() {
+        return allowNonOperatorSharedWaypointManagement
+            ? SharedWaypointService.AccessPolicy.OWNER_MANAGED
+            : SharedWaypointService.AccessPolicy.OPERATOR_ONLY;
     }
 
     private static int clamp(final int v, final int min, final int max) {

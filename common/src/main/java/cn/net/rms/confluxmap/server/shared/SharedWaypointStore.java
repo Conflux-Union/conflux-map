@@ -150,22 +150,6 @@ public final class SharedWaypointStore {
         return new PreparedMutation(revision, snapshotOf(nextRevision, next), Delta.remove(id, nextRevision));
     }
 
-    synchronized PreparedMutation prepareLocked(final UUID id, final boolean locked) {
-        final SharedWaypoint current = byId.get(Objects.requireNonNull(id, "id"));
-        if (current == null) {
-            throw new IllegalArgumentException("shared waypoint does not exist: " + id);
-        }
-        final long nextRevision = Math.addExact(revision, 1);
-        final SharedWaypoint updated = new SharedWaypoint(
-            current.id(), current.publisherId(), current.publisherName(), current.name(), current.dimensionId(),
-            current.x(), current.y(), current.z(), current.colorArgb(), current.type(), locked,
-            current.createdAtEpochMs(), nextRevision
-        );
-        final Map<UUID, SharedWaypoint> next = new LinkedHashMap<>(byId);
-        next.put(id, updated);
-        return new PreparedMutation(revision, snapshotOf(nextRevision, next), Delta.upsert(updated, nextRevision));
-    }
-
     synchronized PreparedMutation prepareUpdate(final SharedWaypoint waypoint) {
         Objects.requireNonNull(waypoint, "waypoint");
         if (!byId.containsKey(waypoint.id())) {

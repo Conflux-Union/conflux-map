@@ -57,6 +57,9 @@ public final class SharedWaypointCodec {
                 out.writeLong(m.revision());
                 out.writeInt(m.maxWorld());
                 out.writeInt(m.maxPlayer());
+                if (m.minor() >= 2) {
+                    writeBoolean(out, m.ownerManagementAllowed());
+                }
             } else if (message instanceof SubscribeC2S) {
                 s2c = false;
                 out.writeByte(SharedWaypointProto.MSG_SUBSCRIBE_C2S);
@@ -83,6 +86,17 @@ public final class SharedWaypointCodec {
                 writeUuid(out, m.id());
                 out.writeLong(m.expectedRevision());
                 writeBoolean(out, m.locked());
+            } else if (message instanceof final UpdateC2S m) {
+                s2c = false;
+                out.writeByte(SharedWaypointProto.MSG_UPDATE_C2S);
+                writeUuid(out, m.operationId());
+                writeUuid(out, m.id());
+                out.writeLong(m.expectedRevision());
+                writeUtf(out, m.name(), "name");
+                writeDimension(out, m.dimensionId());
+                writeCoordinates(out, m.x(), m.y(), m.z());
+                out.writeInt(m.color());
+                writeWaypointType(out, m.type());
             } else if (message instanceof final SnapshotS2C m) {
                 s2c = true;
                 out.writeByte(SharedWaypointProto.MSG_SNAPSHOT_S2C);
@@ -163,17 +177,7 @@ public final class SharedWaypointCodec {
         try {
             final SharedWaypointMessage message = switch (typeId) {
                 case SharedWaypointProto.MSG_HELLO_C2S -> new HelloC2S(in.readInt(), in.readInt());
-                case SharedWaypointProto.MSG_STATUS_S2C -> new StatusS2C(
-                    in.readInt(),
-                    in.readInt(),
-                    readBoolean(in, "supported"),
-                    readBoolean(in, "enabled"),
-                    readBoolean(in, "operator"),
-                    readUtf(in, "worldId"),
-                    in.readLong(),
-                    in.readInt(),
-                    in.readInt()
-                );
+                case SharedWaypointProto.MSG_STATUS_S2C -> readStatus(in);
                 case SharedWaypointProto.MSG_SUBSCRIBE_C2S -> new SubscribeC2S();
                 case SharedWaypointProto.MSG_CREATE_C2S -> new CreateC2S(
                     readUuid(in),
@@ -191,6 +195,11 @@ public final class SharedWaypointCodec {
                 );
                 case SharedWaypointProto.MSG_LOCK_C2S -> new LockC2S(
                     readUuid(in), readUuid(in), in.readLong(), readBoolean(in, "locked")
+                );
+                case SharedWaypointProto.MSG_UPDATE_C2S -> new UpdateC2S(
+                    readUuid(in), readUuid(in), in.readLong(), readUtf(in, "name"),
+                    readDimension(in), readFiniteDouble(in, "x"), readFiniteDouble(in, "y"),
+                    readFiniteDouble(in, "z"), in.readInt(), readWaypointType(in)
                 );
                 case SharedWaypointProto.MSG_SNAPSHOT_S2C -> new SnapshotS2C(
                     in.readLong(), readBoolean(in, "operator"), readSnapshot(in)
@@ -233,6 +242,25 @@ public final class SharedWaypointCodec {
         }
     }
 
+    private static StatusS2C readStatus(final DataInputStream in)
+        throws IOException, SharedWaypointProtocolException {
+        final int major = in.readInt();
+        final int minor = in.readInt();
+        final boolean supported = readBoolean(in, "supported");
+        final boolean enabled = readBoolean(in, "enabled");
+        final boolean operator = readBoolean(in, "operator");
+        final String worldId = readUtf(in, "worldId");
+        final long revision = in.readLong();
+        final int maxWorld = in.readInt();
+        final int maxPlayer = in.readInt();
+        final boolean ownerManagementAllowed = minor < 2
+            || readBoolean(in, "ownerManagementAllowed");
+        return new StatusS2C(
+            major, minor, supported, enabled, operator, worldId, revision,
+            maxWorld, maxPlayer, ownerManagementAllowed
+        );
+    }
+
     private static List<SharedWaypoint> readSnapshot(final DataInputStream in)
         throws IOException, SharedWaypointProtocolException {
         final int count = in.readUnsignedShort();
@@ -262,27 +290,28 @@ public final class SharedWaypointCodec {
         writeCoordinates(out, waypoint.x(), waypoint.y(), waypoint.z());
         out.writeInt(waypoint.colorArgb());
         writeWaypointType(out, waypoint.type());
-        writeBoolean(out, waypoint.locked());
+        // Kept in the v1 wire shape for older clients; server markers no longer exist.
+        writeBoolean(out, false);
         out.writeLong(waypoint.createdAtEpochMs());
         out.writeLong(waypoint.revision());
     }
 
     private static SharedWaypoint readWaypoint(final DataInputStream in)
         throws IOException, SharedWaypointProtocolException {
+        final UUID id = readUuid(in);
+        final UUID publisherId = readUuid(in);
+        final String publisherName = readUtf(in, "publisherName");
+        final String name = readUtf(in, "name");
+        final DimensionId dimensionId = readDimension(in);
+        final double x = readFiniteDouble(in, "x");
+        final double y = readFiniteDouble(in, "y");
+        final double z = readFiniteDouble(in, "z");
+        final int color = in.readInt();
+        final Waypoint.Type type = readWaypointType(in);
+        readBoolean(in, "legacyLocked");
         return new SharedWaypoint(
-            readUuid(in),
-            readUuid(in),
-            readUtf(in, "publisherName"),
-            readUtf(in, "name"),
-            readDimension(in),
-            readFiniteDouble(in, "x"),
-            readFiniteDouble(in, "y"),
-            readFiniteDouble(in, "z"),
-            in.readInt(),
-            readWaypointType(in),
-            readBoolean(in, "locked"),
-            in.readLong(),
-            in.readLong()
+            id, publisherId, publisherName, name, dimensionId, x, y, z,
+            color, type, in.readLong(), in.readLong()
         );
     }
 
@@ -429,7 +458,7 @@ public final class SharedWaypointCodec {
 
     private static boolean isKnownType(final int typeId) {
         return typeId >= SharedWaypointProto.MSG_HELLO_C2S
-            && typeId <= SharedWaypointProto.MSG_RESULT_S2C;
+            && typeId <= SharedWaypointProto.MSG_UPDATE_C2S;
     }
 
     private static boolean isS2C(final int typeId) {

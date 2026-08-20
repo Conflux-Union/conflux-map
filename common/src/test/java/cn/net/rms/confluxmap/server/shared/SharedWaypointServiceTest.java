@@ -29,6 +29,75 @@ class SharedWaypointServiceTest {
     private static final SharedWaypointService.Actor OPERATOR = actor(3, "Operator", true);
 
     @Test
+    void operatorOnlyPolicyRejectsEveryNonOperatorMutation() {
+        final Fixture fixture = fixture(
+            new SharedWaypointService.Limits(20, 10, 30),
+            SharedWaypointService.AccessPolicy.OPERATOR_ONLY
+        );
+
+        final SharedWaypointService.MutationResult forbiddenCreate = fixture.service.create(
+            PLAYER, createRequest(uuid(90), 0, "Player point")
+        );
+        assertEquals(SharedWaypointService.MutationError.FORBIDDEN, forbiddenCreate.error());
+
+        final SharedWaypoint created = fixture.service.create(
+            OPERATOR, createRequest(uuid(91), 0, "Operator point")
+        ).delta().waypoint();
+        final SharedWaypointService.MutationResult forbiddenUpdate = fixture.service.update(
+            PLAYER,
+            new SharedWaypointService.UpdateRequest(
+                uuid(92), created.revision(), created.id(), "Changed", DimensionId.OVERWORLD,
+                created.x(), created.y(), created.z(), created.colorArgb(), created.type()
+            )
+        );
+        final SharedWaypointService.MutationResult forbiddenDelete = fixture.service.delete(
+            PLAYER,
+            new SharedWaypointService.DeleteRequest(uuid(93), created.revision(), created.id())
+        );
+
+        assertEquals(SharedWaypointService.MutationError.FORBIDDEN, forbiddenUpdate.error());
+        assertEquals(SharedWaypointService.MutationError.FORBIDDEN, forbiddenDelete.error());
+        assertEquals(List.of(created), fixture.service.snapshot().waypoints());
+    }
+
+    @Test
+    void ownerManagedPolicyLetsPlayersManageOnlyTheirOwnWaypoints() {
+        final Fixture fixture = fixture(
+            new SharedWaypointService.Limits(20, 10, 30),
+            SharedWaypointService.AccessPolicy.OWNER_MANAGED
+        );
+        final SharedWaypoint created = fixture.service.create(
+            PLAYER, createRequest(uuid(94), 0, "Player point")
+        ).delta().waypoint();
+
+        final SharedWaypointService.MutationResult forbidden = fixture.service.update(
+            OTHER,
+            new SharedWaypointService.UpdateRequest(
+                uuid(95), created.revision(), created.id(), "Stolen", DimensionId.OVERWORLD,
+                created.x(), created.y(), created.z(), created.colorArgb(), created.type()
+            )
+        );
+        final SharedWaypointService.MutationResult updated = fixture.service.update(
+            PLAYER,
+            new SharedWaypointService.UpdateRequest(
+                uuid(96), created.revision(), created.id(), "Owned", DimensionId.OVERWORLD,
+                created.x(), created.y(), created.z(), created.colorArgb(), created.type()
+            )
+        );
+        final SharedWaypointService.MutationResult deleted = fixture.service.delete(
+            PLAYER,
+            new SharedWaypointService.DeleteRequest(
+                uuid(97), updated.delta().waypoint().revision(), created.id()
+            )
+        );
+
+        assertEquals(SharedWaypointService.MutationError.FORBIDDEN, forbidden.error());
+        assertTrue(updated.applied());
+        assertTrue(deleted.applied());
+        assertTrue(deleted.snapshot().waypoints().isEmpty());
+    }
+
+    @Test
     void createInjectsAuthorityFieldsPersistsThenCommitsAndReplaysIdempotently() {
         final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
         final UUID operationId = uuid(100);
@@ -116,11 +185,11 @@ class SharedWaypointServiceTest {
     void historicalDuplicateLocationsRemainReadableButBlockNewDuplicates() {
         final SharedWaypoint first = new SharedWaypoint(
             uuid(1_600), PLAYER.playerId(), PLAYER.playerName(), "First", DimensionId.OVERWORLD,
-            8.1d, 70.2d, -4.1d, 0xFF33AA66, Waypoint.Type.NORMAL, false, 1L, 1L
+            8.1d, 70.2d, -4.1d, 0xFF33AA66, Waypoint.Type.NORMAL, 1L, 1L
         );
         final SharedWaypoint second = new SharedWaypoint(
             uuid(1_601), OTHER.playerId(), OTHER.playerName(), "Second", DimensionId.OVERWORLD,
-            8.9d, 70.8d, -4.9d, 0xFF33AA66, Waypoint.Type.NORMAL, false, 2L, 2L
+            8.9d, 70.8d, -4.9d, 0xFF33AA66, Waypoint.Type.NORMAL, 2L, 2L
         );
         final Fixture fixture = fixture(
             new SharedWaypointStore.Snapshot(2L, List.of(first, second)),
@@ -186,10 +255,10 @@ class SharedWaypointServiceTest {
     }
 
     @Test
-    void exhaustedRevisionRejectsDeleteAndLockWithoutPersisting() {
+    void exhaustedRevisionRejectsDeleteWithoutPersisting() {
         final SharedWaypoint waypoint = new SharedWaypoint(
             uuid(1_500), PLAYER.playerId(), PLAYER.playerName(), "Limit", DimensionId.OVERWORLD,
-            12.5d, 64d, -8.25d, 0xFF33AA66, Waypoint.Type.NORMAL, false, 1L, Long.MAX_VALUE
+            12.5d, 64d, -8.25d, 0xFF33AA66, Waypoint.Type.NORMAL, 1L, Long.MAX_VALUE
         );
         final Fixture fixture = fixture(
             new SharedWaypointStore.Snapshot(Long.MAX_VALUE, List.of(waypoint)),
@@ -199,57 +268,14 @@ class SharedWaypointServiceTest {
         final SharedWaypointService.MutationResult deleted = fixture.service.delete(
             PLAYER, new SharedWaypointService.DeleteRequest(uuid(1_501), Long.MAX_VALUE, waypoint.id())
         );
-        final SharedWaypointService.MutationResult locked = fixture.service.setLocked(
-            OPERATOR, new SharedWaypointService.LockRequest(uuid(1_502), Long.MAX_VALUE, waypoint.id(), true)
-        );
-
         assertEquals(SharedWaypointService.MutationError.PERSISTENCE_FAILED, deleted.error());
-        assertEquals(SharedWaypointService.MutationError.PERSISTENCE_FAILED, locked.error());
         assertEquals(Long.MAX_VALUE, fixture.service.snapshot().revision());
         assertEquals(List.of(waypoint), fixture.service.snapshot().waypoints());
         assertEquals(0, fixture.persistence.saves);
     }
 
     @Test
-    void lockRequiresOperatorAndLockedDeleteIsOperatorOnly() {
-        final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
-        final SharedWaypoint created = fixture.service.create(
-            PLAYER, createRequest(uuid(110), 0, "Public")
-        ).delta().waypoint();
-
-        final SharedWaypointService.MutationResult nonOperatorLock = fixture.service.setLocked(
-            PLAYER, new SharedWaypointService.LockRequest(uuid(111), 1, created.id(), true)
-        );
-        assertEquals(SharedWaypointService.MutationError.FORBIDDEN, nonOperatorLock.error());
-
-        final SharedWaypointService.MutationResult locked = fixture.service.setLocked(
-            OPERATOR, new SharedWaypointService.LockRequest(uuid(112), 1, created.id(), true)
-        );
-        assertTrue(locked.applied());
-        assertTrue(locked.delta().waypoint().locked());
-        assertEquals(2L, locked.snapshot().revision());
-
-        final SharedWaypointService.MutationResult forbiddenDelete = fixture.service.delete(
-            OTHER, new SharedWaypointService.DeleteRequest(uuid(113), 2, created.id())
-        );
-        assertEquals(SharedWaypointService.MutationError.FORBIDDEN, forbiddenDelete.error());
-
-        final SharedWaypointService.MutationResult publisherDelete = fixture.service.delete(
-            PLAYER, new SharedWaypointService.DeleteRequest(uuid(116), 2, created.id())
-        );
-        assertEquals(SharedWaypointService.MutationError.FORBIDDEN, publisherDelete.error());
-
-        final SharedWaypointService.MutationResult deleted = fixture.service.delete(
-            OPERATOR, new SharedWaypointService.DeleteRequest(uuid(114), 2, created.id())
-        );
-        assertTrue(deleted.applied());
-        assertEquals(SharedWaypointStore.DeltaKind.REMOVE, deleted.delta().kind());
-        assertEquals(created.id(), deleted.delta().removedId());
-        assertTrue(deleted.snapshot().waypoints().isEmpty());
-    }
-
-    @Test
-    void unlockedDeleteIsAllowedForPublisherAndOperatorButNotOtherPlayers() {
+    void ownerManagedDeleteIsAllowedForPublisherAndOperatorButNotOtherPlayers() {
         final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
         final SharedWaypoint created = fixture.service.create(
             PLAYER, createRequest(uuid(120), 0, "Public")
@@ -299,7 +325,6 @@ class SharedWaypointServiceTest {
         assertEquals(created.publisherId(), updated.publisherId());
         assertEquals(created.publisherName(), updated.publisherName());
         assertEquals(created.createdAtEpochMs(), updated.createdAtEpochMs());
-        assertEquals(created.locked(), updated.locked());
         assertEquals("New name", updated.name());
         assertEquals(DimensionId.NETHER, updated.dimensionId());
         assertEquals(20.5d, updated.x());
@@ -312,7 +337,7 @@ class SharedWaypointServiceTest {
     }
 
     @Test
-    void updateRequiresOperatorAndRejectsAnOccupiedDestination() {
+    void updateRejectsOtherPlayersAndAnOccupiedDestination() {
         final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
         final SharedWaypoint first = fixture.service.create(
             PLAYER, createRequestAt(uuid(1_310), 0, "First", DimensionId.OVERWORLD, 1d, 64d, 1d)
@@ -325,7 +350,7 @@ class SharedWaypointServiceTest {
             uuid(1_312), first.revision(), first.id(), "Moved", DimensionId.OVERWORLD,
             2.9d, 64.1d, 2.9d, 0xFF33AA66, Waypoint.Type.NORMAL
         );
-        final SharedWaypointService.MutationResult forbidden = fixture.service.update(PLAYER, request);
+        final SharedWaypointService.MutationResult forbidden = fixture.service.update(OTHER, request);
         final SharedWaypointService.MutationResult duplicate = fixture.service.update(
             OPERATOR,
             new SharedWaypointService.UpdateRequest(
@@ -425,23 +450,6 @@ class SharedWaypointServiceTest {
     }
 
     @Test
-    void operatorSettingSameLockStateReturnsSuccessfulNoopWithoutSaving() {
-        final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
-        final SharedWaypoint waypoint = fixture.service.create(
-            PLAYER, createRequest(uuid(230), 0, "Home")
-        ).delta().waypoint();
-
-        final SharedWaypointService.MutationResult result = fixture.service.setLocked(
-            OPERATOR, new SharedWaypointService.LockRequest(uuid(231), 1, waypoint.id(), false)
-        );
-
-        assertTrue(result.applied());
-        assertEquals(SharedWaypointStore.DeltaKind.NOOP, result.delta().kind());
-        assertEquals(1L, result.snapshot().revision());
-        assertEquals(1, fixture.persistence.saves);
-    }
-
-    @Test
     void appliedResultsSurviveForReplayAndTrackedPlayersAreGloballyBounded() {
         final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
         final UUID operationId = uuid(235);
@@ -522,11 +530,11 @@ class SharedWaypointServiceTest {
     void sanitizeLoadedQuarantinesInvalidPersistedEntriesInsteadOfDisablingTheFeature() {
         final SharedWaypoint valid = new SharedWaypoint(
             uuid(1_700), PLAYER.playerId(), PLAYER.playerName(), "Kept", DimensionId.OVERWORLD,
-            8d, 70d, -4d, 0xFF33AA66, Waypoint.Type.NORMAL, false, 1L, 1L
+            8d, 70d, -4d, 0xFF33AA66, Waypoint.Type.NORMAL, 1L, 1L
         );
         final SharedWaypoint removedDimension = new SharedWaypoint(
             uuid(1_701), OTHER.playerId(), OTHER.playerName(), "Dropped", DimensionId.END,
-            8d, 70d, -4d, 0xFF33AA66, Waypoint.Type.NORMAL, false, 2L, 2L
+            8d, 70d, -4d, 0xFF33AA66, Waypoint.Type.NORMAL, 2L, 2L
         );
         final SharedWaypointValidator validator = new SharedWaypointValidator(Map.of(
             DimensionId.OVERWORLD, new SharedWaypointValidator.HeightRange(0, 256)
@@ -543,12 +551,31 @@ class SharedWaypointServiceTest {
     }
 
     private static Fixture fixture(final SharedWaypointService.Limits limits) {
-        return fixture(new SharedWaypointStore.Snapshot(0, List.of()), limits);
+        return fixture(
+            new SharedWaypointStore.Snapshot(0, List.of()),
+            limits,
+            SharedWaypointService.AccessPolicy.OWNER_MANAGED
+        );
+    }
+
+    private static Fixture fixture(
+        final SharedWaypointService.Limits limits,
+        final SharedWaypointService.AccessPolicy accessPolicy
+    ) {
+        return fixture(new SharedWaypointStore.Snapshot(0, List.of()), limits, accessPolicy);
     }
 
     private static Fixture fixture(
         final SharedWaypointStore.Snapshot initial,
         final SharedWaypointService.Limits limits
+    ) {
+        return fixture(initial, limits, SharedWaypointService.AccessPolicy.OWNER_MANAGED);
+    }
+
+    private static Fixture fixture(
+        final SharedWaypointStore.Snapshot initial,
+        final SharedWaypointService.Limits limits,
+        final SharedWaypointService.AccessPolicy accessPolicy
     ) {
         final SharedWaypointStore store = new SharedWaypointStore(initial);
         final MemoryPersistence persistence = new MemoryPersistence();
@@ -560,7 +587,8 @@ class SharedWaypointServiceTest {
             DimensionId.NETHER, new SharedWaypointValidator.HeightRange(0, 128)
         ));
         final SharedWaypointService service = new SharedWaypointService(
-            store, persistence, validator, clock, () -> uuid(ids.getAndIncrement()), limits, audit::add, LOGGER
+            store, persistence, validator, clock, () -> uuid(ids.getAndIncrement()), limits,
+            accessPolicy, audit::add, LOGGER
         );
         return new Fixture(service, persistence, clock, audit);
     }

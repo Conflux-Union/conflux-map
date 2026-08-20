@@ -28,10 +28,10 @@ import org.apache.logging.log4j.Logger;
 
 /**
  * Schema-controlled JSON persistence at {@code <worldRoot>/confluxmap/shared_waypoints.json}.
- * Corrupt schema-1 files are quarantined; future schemas are preserved and explicitly rejected.
+ * Corrupt files are quarantined; future schemas are preserved and explicitly rejected.
  */
 public final class SharedWaypointIo implements SharedWaypointPersistence {
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
 
     private static final long MAX_FILE_BYTES = 8L * 1024L * 1024L;
     private static final int MAX_PERSISTED_WAYPOINTS = 512;
@@ -70,7 +70,6 @@ public final class SharedWaypointIo implements SharedWaypointPersistence {
         double z;
         int colorArgb;
         String type;
-        boolean locked;
         long createdAtEpochMs;
         long revision;
     }
@@ -134,14 +133,22 @@ public final class SharedWaypointIo implements SharedWaypointPersistence {
             if (schemaVersion > SCHEMA_VERSION) {
                 throw new UnsupportedSchemaVersionException(schemaVersion);
             }
-            if (schemaVersion != SCHEMA_VERSION) {
+            if (schemaVersion < 1) {
                 throw new JsonParseException("unsupported shared-waypoint schema " + schemaVersion);
             }
             final FileShape shape = GSON.fromJson(root, FileShape.class);
             if (shape != null && belongsToAnotherServer(shape.ownerInstanceId)) {
                 return setAsideInheritedCopy(shape.ownerInstanceId);
             }
-            return fromShape(shape);
+            final SharedWaypointStore.Snapshot snapshot = fromShape(shape);
+            if (schemaVersion < SCHEMA_VERSION) {
+                logger.info(
+                    "Migrating shared waypoints at {} from schema {} to {}",
+                    file, schemaVersion, SCHEMA_VERSION
+                );
+                save(snapshot);
+            }
+            return snapshot;
         } catch (final UnsupportedSchemaVersionException e) {
             throw e;
         } catch (final RuntimeException e) {
@@ -234,7 +241,7 @@ public final class SharedWaypointIo implements SharedWaypointPersistence {
             return new SharedWaypoint(
                 UUID.fromString(entry.id), UUID.fromString(entry.publisherId), entry.publisherName, entry.name,
                 DimensionId.parse(entry.dimensionId), entry.x, entry.y, entry.z, entry.colorArgb,
-                Waypoint.Type.valueOf(entry.type), entry.locked, entry.createdAtEpochMs, entry.revision
+                Waypoint.Type.valueOf(entry.type), entry.createdAtEpochMs, entry.revision
             );
         } catch (final IllegalArgumentException e) {
             throw new JsonParseException("shared waypoint contains an invalid identifier or type", e);
@@ -283,7 +290,6 @@ public final class SharedWaypointIo implements SharedWaypointPersistence {
         entry.z = waypoint.z();
         entry.colorArgb = waypoint.colorArgb();
         entry.type = waypoint.type().name();
-        entry.locked = waypoint.locked();
         entry.createdAtEpochMs = waypoint.createdAtEpochMs();
         entry.revision = waypoint.revision();
         return entry;

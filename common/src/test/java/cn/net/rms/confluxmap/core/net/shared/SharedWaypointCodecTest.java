@@ -37,6 +37,10 @@ class SharedWaypointCodecTest {
             ),
             new DeleteC2S(OPERATION_ID, WAYPOINT_ID, 40L),
             new LockC2S(OPERATION_ID, WAYPOINT_ID, 40L, true),
+            new UpdateC2S(
+                OPERATION_ID, WAYPOINT_ID, 40L, "Updated", DimensionId.END,
+                8d, 70d, 9d, 0xFF3498DB, Waypoint.Type.NORMAL
+            ),
             new SnapshotS2C(42L, true, List.of(waypoint)),
             new UpsertS2C(42L, waypoint),
             new RemoveS2C(43L, WAYPOINT_ID),
@@ -46,6 +50,25 @@ class SharedWaypointCodecTest {
         for (final SharedWaypointMessage original : messages) {
             assertEquals(original, roundTrip(original), original.getClass().getSimpleName());
         }
+    }
+
+    @Test
+    void statusAddsOwnerPolicyOnlyForProtocolMinorTwo() throws Exception {
+        final StatusS2C legacy = new StatusS2C(
+            1, 1, true, true, false, "world", 2L, 20, 10, false
+        );
+        final StatusS2C current = new StatusS2C(
+            1, 2, true, true, false, "world", 2L, 20, 10, false
+        );
+
+        assertEquals(current, SharedWaypointCodec.decodeS2C(SharedWaypointCodec.encode(current)));
+        assertEquals(
+            SharedWaypointCodec.encode(legacy).length + 1,
+            SharedWaypointCodec.encode(current).length
+        );
+        assertTrue(((StatusS2C) SharedWaypointCodec.decodeS2C(
+            SharedWaypointCodec.encode(legacy)
+        )).ownerManagementAllowed());
     }
 
     @Test
@@ -262,7 +285,8 @@ class SharedWaypointCodecTest {
             || message instanceof SubscribeC2S
             || message instanceof CreateC2S
             || message instanceof DeleteC2S
-            || message instanceof LockC2S) {
+            || message instanceof LockC2S
+            || message instanceof UpdateC2S) {
             return SharedWaypointCodec.decodeC2S(payload);
         }
         return SharedWaypointCodec.decodeS2C(payload);
@@ -277,6 +301,10 @@ class SharedWaypointCodecTest {
             new CreateC2S(OPERATION_ID, 8L, "name", DimensionId.END, 1, 2, 3, 4, Waypoint.Type.DEATH),
             new DeleteC2S(OPERATION_ID, WAYPOINT_ID, 8),
             new LockC2S(OPERATION_ID, WAYPOINT_ID, 8, true),
+            new UpdateC2S(
+                OPERATION_ID, WAYPOINT_ID, 8, "updated", DimensionId.END,
+                1, 2, 3, 4, Waypoint.Type.DEATH
+            ),
             new SnapshotS2C(9, true, List.of(waypoint)),
             new UpsertS2C(9, waypoint),
             new RemoveS2C(10, WAYPOINT_ID),
@@ -301,7 +329,6 @@ class SharedWaypointCodecTest {
             88.0,
             0xFFAABBCC,
             Waypoint.Type.DEATH,
-            true,
             1_721_555_200_000L,
             revision
         );

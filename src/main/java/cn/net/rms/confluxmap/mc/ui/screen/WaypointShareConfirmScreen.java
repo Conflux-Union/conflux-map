@@ -255,14 +255,6 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
                     ? "confluxmap.screen.waypoint.preview.audience_public"
                     : "confluxmap.screen.waypoint.preview.audience_chat"
             ).getString(), 124, MUTED_TEXT_COLOR);
-            if (target == Target.PUBLIC) {
-                drawCentered(
-                    draw,
-                    Texts.translatable("confluxmap.screen.waypoint.public_immutable").getString(),
-                    140,
-                    MUTED_TEXT_COLOR
-                );
-            }
         }
         if (errorKey != null) {
             drawCentered(draw, Texts.translatable(errorKey).getString(), height - 50, ERROR_TEXT_COLOR);

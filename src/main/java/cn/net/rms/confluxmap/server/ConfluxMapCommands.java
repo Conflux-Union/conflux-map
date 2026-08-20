@@ -58,7 +58,6 @@ final class ConfluxMapCommands {
                             getString(context, "name")
                         ))))
                     .then(literal("edit")
-                        .requires(source -> MinecraftAccess.hasPermission(source, 2))
                         .then(argument("id", word())
                             .then(argument("name", greedyString()).executes(context -> rename(
                                 companion,
@@ -67,29 +66,17 @@ final class ConfluxMapCommands {
                                 getString(context, "name")
                             )))))
                     .then(literal("move")
-                        .requires(source -> MinecraftAccess.hasPermission(source, 2)
-                            && source.getEntity() instanceof ServerPlayerEntity)
+                        .requires(source -> source.getEntity() instanceof ServerPlayerEntity)
                         .then(argument("id", word()).executes(context -> moveHere(
                             companion,
                             context.getSource(),
                             getString(context, "id")
                         ))))
                     .then(literal("delete")
-                        .requires(source -> MinecraftAccess.hasPermission(source, 2))
                         .then(argument("id", word()).executes(context -> delete(
                             companion,
                             context.getSource(),
                             getString(context, "id")
-                        ))))
-                    .then(literal("lock")
-                        .requires(source -> MinecraftAccess.hasPermission(source, 2))
-                        .then(argument("id", word()).executes(context -> setLocked(
-                            companion, context.getSource(), getString(context, "id"), true
-                        ))))
-                    .then(literal("unlock")
-                        .requires(source -> MinecraftAccess.hasPermission(source, 2))
-                        .then(argument("id", word()).executes(context -> setLocked(
-                            companion, context.getSource(), getString(context, "id"), false
                         ))))
                     .then(literal("status").executes(context -> status(
                         companion,
@@ -206,22 +193,6 @@ final class ConfluxMapCommands {
             : result(source, commands.delete(actor(source), id), "Shared waypoint deleted.");
     }
 
-    private static int setLocked(
-        final ConfluxMapCompanion companion,
-        final ServerCommandSource source,
-        final String id,
-        final boolean locked
-    ) {
-        final SharedWaypointCommandService commands = commands(companion, source);
-        return commands == null
-            ? error(source, "Shared waypoints are disabled on this server.")
-            : result(
-                source,
-                commands.setLocked(actor(source), id, locked),
-                locked ? "Shared waypoint locked." : "Shared waypoint unlocked."
-            );
-    }
-
     private static SharedWaypointCommandService commands(
         final ConfluxMapCompanion companion,
         final ServerCommandSource source
@@ -271,7 +242,7 @@ final class ConfluxMapCommands {
             case INVALID_ID -> "Invalid waypoint ID.";
             case UNKNOWN_ID -> "Shared waypoint not found.";
             case AMBIGUOUS_ID -> "Waypoint ID prefix is ambiguous; use the longer ID shown by list.";
-            case FORBIDDEN -> "Only administrators may perform this action.";
+            case FORBIDDEN -> "You do not have permission to manage this shared waypoint.";
             case REJECTED -> mutationError(result.mutation().error());
             default -> "Shared waypoint command failed.";
         });
@@ -282,7 +253,7 @@ final class ConfluxMapCommands {
             case INVALID_REQUEST -> "The waypoint name or position is invalid.";
             case REVISION_CONFLICT -> "The waypoint changed; run the list command and try again.";
             case NOT_FOUND -> "Shared waypoint not found.";
-            case FORBIDDEN -> "Only administrators may perform this action.";
+            case FORBIDDEN -> "You do not have permission to manage this shared waypoint.";
             case WORLD_QUOTA_EXCEEDED -> "The server shared-waypoint limit has been reached.";
             case PLAYER_QUOTA_EXCEEDED -> "Your shared-waypoint limit has been reached.";
             case RATE_LIMITED -> "Too many waypoint changes; try again shortly.";
@@ -346,6 +317,7 @@ final class ConfluxMapCommands {
                 + ", revision=" + revision
                 + ", worldQuota=" + config.maxSharedWaypointsPerWorld
                 + ", playerQuota=" + config.maxSharedWaypointsPerPlayer
+                + ", nonOperatorManagement=" + config.allowNonOperatorSharedWaypointManagement
         ), false);
         return 1;
     }

@@ -46,7 +46,7 @@ import net.minecraft.util.math.MathHelper;
 
 /** Management UI for local waypoint sets and server-enabled shared waypoints. */
 public final class WaypointListScreen extends ConfluxScreen {
-    public enum Tab { LOCAL, PUBLIC, LOCKED }
+    public enum Tab { LOCAL, PUBLIC }
 
     private static final int ROW_HEIGHT = 28;
     private static final int SEARCH_Y = 52;
@@ -131,12 +131,12 @@ public final class WaypointListScreen extends ConfluxScreen {
             if (local != null) {
                 return new WaypointRenderEntry(
                     local.id, local.name, local.dimensionId, local.x, local.y, local.z,
-                    local.colorArgb, local.type, WaypointRenderEntry.Source.LOCAL, false
+                    local.colorArgb, local.type, WaypointRenderEntry.Source.LOCAL
                 );
             }
             return new WaypointRenderEntry(
                 shared.id(), shared.name(), shared.dimensionId(), shared.x(), shared.y(), shared.z(),
-                shared.colorArgb(), shared.type(), WaypointRenderEntry.Source.SHARED, shared.locked()
+                shared.colorArgb(), shared.type(), WaypointRenderEntry.Source.SHARED
             );
         }
     }
@@ -488,36 +488,34 @@ public final class WaypointListScreen extends ConfluxScreen {
     }
 
     private void addBottomButtons(final WaypointStore store) {
-        if (tab != Tab.LOCKED) {
-            final int createWidth = tab == Tab.LOCAL ? bottomActionWidth() : 116;
-            final ButtonWidget create = addDrawableChild(Widgets.button(
-                contentLeft(),
+        final int createWidth = tab == Tab.LOCAL ? bottomActionWidth() : 116;
+        final ButtonWidget create = addDrawableChild(Widgets.button(
+            contentLeft(),
+            height - 24,
+            createWidth,
+            20,
+            fitButtonLabel(Texts.translatable(
+                tab == Tab.LOCAL
+                    ? "confluxmap.screen.waypoints.create_local"
+                    : "confluxmap.screen.waypoints.create_public"
+            ), createWidth),
+            button -> openCreate(store)
+        ));
+        if (tab == Tab.PUBLIC) {
+            create.active = sharedWaypoints.canCreate();
+        } else {
+            create.active = store != null && store.persistenceWritable();
+        }
+        if (tab == Tab.LOCAL) {
+            final ButtonWidget importButton = addDrawableChild(Widgets.button(
+                contentLeft() + createWidth + GAP,
                 height - 24,
                 createWidth,
                 20,
-                fitButtonLabel(Texts.translatable(
-                    tab == Tab.LOCAL
-                        ? "confluxmap.screen.waypoints.create_local"
-                        : "confluxmap.screen.waypoints.create_public"
-                ), createWidth),
-                button -> openCreate(store)
+                fitButtonLabel(Texts.translatable("confluxmap.screen.waypoints.import_open"), createWidth),
+                button -> openImport(store)
             ));
-            if (tab == Tab.PUBLIC) {
-                create.active = sharedWaypoints.availability().ready();
-            } else {
-                create.active = store != null && store.persistenceWritable();
-            }
-            if (tab == Tab.LOCAL) {
-                final ButtonWidget importButton = addDrawableChild(Widgets.button(
-                    contentLeft() + createWidth + GAP,
-                    height - 24,
-                    createWidth,
-                    20,
-                    fitButtonLabel(Texts.translatable("confluxmap.screen.waypoints.import_open"), createWidth),
-                    button -> openImport(store)
-                ));
-                importButton.active = store != null && store.persistenceWritable();
-            }
+            importButton.active = store != null && store.persistenceWritable();
         }
         addDrawableChild(Widgets.button(
             contentRight() - 80,
@@ -542,7 +540,7 @@ public final class WaypointListScreen extends ConfluxScreen {
     private void addTabs() {
         final SharedWaypointAvailability availability = sharedWaypoints.availability();
         final List<Tab> tabs = availability.visible()
-            ? List.of(Tab.LOCAL, Tab.PUBLIC, Tab.LOCKED)
+            ? List.of(Tab.LOCAL, Tab.PUBLIC)
             : List.of(Tab.LOCAL);
         final int availableWidth = contentWidth() - GAP * (tabs.size() - 1);
         final int tabWidth = Math.max(80, Math.min(140, availableWidth / tabs.size()));
@@ -715,13 +713,9 @@ public final class WaypointListScreen extends ConfluxScreen {
             }
             return result;
         }
-        final boolean locked = tab == Tab.LOCKED;
         for (final SharedWaypoint waypoint : WaypointListFilter.shared(
             sharedWaypoints.list(), currentDimension, dimensionFilter
         )) {
-            if (waypoint.locked() != locked) {
-                continue;
-            }
             result.add(new RowInfo(
                 null,
                 waypoint,
@@ -783,19 +777,15 @@ public final class WaypointListScreen extends ConfluxScreen {
                 fitButtonLabel(Texts.translatable("confluxmap.screen.waypoints.chat"), actions.width()),
                 button -> openSharedChat(waypoint)
             ));
-            final ButtonWidget lock = addDrawableChild(Widgets.button(
+            final ButtonWidget edit = addDrawableChild(Widgets.button(
                 actions.x(1),
                 actionY,
                 actions.width(),
                 20,
-                fitButtonLabel(Texts.translatable(
-                    waypoint.locked()
-                        ? "confluxmap.screen.waypoints.unlock"
-                        : "confluxmap.screen.waypoints.lock"
-                ), actions.width()),
-                button -> setLocked(waypoint, !waypoint.locked())
+                fitButtonLabel(Texts.translatable("confluxmap.screen.waypoint.edit"), actions.width()),
+                button -> openSharedEdit(waypoint)
             ));
-            lock.active = sharedWaypoints.availability().ready() && sharedWaypoints.isOperator();
+            edit.active = sharedWaypoints.canUpdate(waypoint);
         }
 
         final boolean pendingThis = row.id().equals(pendingDeleteId);
@@ -882,6 +872,9 @@ public final class WaypointListScreen extends ConfluxScreen {
     }
 
     private void openCreate(final WaypointStore renderedStore) {
+        if (tab == Tab.PUBLIC && !sharedWaypoints.canCreate()) {
+            return;
+        }
         if (tab == Tab.LOCAL
             && (renderedStore == null
                 || renderedStore != waypointService.current()
@@ -910,6 +903,16 @@ public final class WaypointListScreen extends ConfluxScreen {
             return;
         }
         MinecraftAccess.setScreen(MinecraftClient.getInstance(), WaypointEditScreen.forEdit(this, waypoint));
+    }
+
+    private void openSharedEdit(final SharedWaypoint waypoint) {
+        if (!sharedWaypoints.canUpdate(waypoint)) {
+            return;
+        }
+        MinecraftAccess.setScreen(
+            MinecraftClient.getInstance(),
+            WaypointEditScreen.forPublicEdit(this, waypoint)
+        );
     }
 
     private void openImport(final WaypointStore renderedStore) {
@@ -948,11 +951,6 @@ public final class WaypointListScreen extends ConfluxScreen {
         store.update(updated);
         clearPendingActions();
         rebuild();
-    }
-
-    private void setLocked(final SharedWaypoint waypoint, final boolean locked) {
-        clearPendingActions();
-        sharedWaypoints.setLocked(waypoint, locked);
     }
 
     private void delete(final WaypointStore renderedStore, final RowInfo row) {
@@ -2073,7 +2071,6 @@ public final class WaypointListScreen extends ConfluxScreen {
         return switch (tab) {
             case LOCAL -> "confluxmap.screen.waypoints.tab.local";
             case PUBLIC -> "confluxmap.screen.waypoints.tab.public";
-            case LOCKED -> "confluxmap.screen.waypoints.tab.locked";
         };
     }
 

@@ -66,6 +66,7 @@ public final class SharedWaypointClientState {
     private int subscriptionRetryTicks;
     private boolean disabledNoticeShown;
     private int negotiatedMinor = -1;
+    private boolean ownerManagementAllowed;
 
     /** Starts one connection lifecycle and returns whether the transport should send HELLO. */
     public synchronized boolean beginConnection(final boolean channelAvailable) {
@@ -73,6 +74,7 @@ public final class SharedWaypointClientState {
         subscriptionRetryTicks = 0;
         disabledNoticeShown = false;
         negotiatedMinor = -1;
+        ownerManagementAllowed = false;
         view.set(View.empty(channelAvailable ? State.HANDSHAKE : State.UNSUPPORTED));
         return channelAvailable;
     }
@@ -83,6 +85,7 @@ public final class SharedWaypointClientState {
         subscriptionRetryTicks = 0;
         disabledNoticeShown = false;
         negotiatedMinor = -1;
+        ownerManagementAllowed = false;
         view.set(View.empty(State.UNKNOWN));
     }
 
@@ -126,6 +129,7 @@ public final class SharedWaypointClientState {
         if (!status.supported() || status.major() != SharedWaypointProto.PROTO_MAJOR) {
             subscriptionRetryTicks = 0;
             negotiatedMinor = -1;
+            ownerManagementAllowed = false;
             view.set(View.empty(State.UNSUPPORTED));
             return Action.NONE;
         }
@@ -133,6 +137,7 @@ public final class SharedWaypointClientState {
             return rejectProtocol();
         }
         negotiatedMinor = Math.min(status.minor(), SharedWaypointProto.PROTO_MINOR);
+        ownerManagementAllowed = status.ownerManagementAllowed();
 
         handshakeTicks = 0;
         if (!status.enabled()) {
@@ -323,6 +328,10 @@ public final class SharedWaypointClientState {
         return negotiatedMinor;
     }
 
+    public synchronized boolean ownerManagementAllowed() {
+        return ownerManagementAllowed;
+    }
+
     public boolean canMutate() {
         final View current = view.get();
         return current.state() == State.ENABLED && current.synchronizedSnapshot();
@@ -331,6 +340,7 @@ public final class SharedWaypointClientState {
     private Action rejectProtocol() {
         subscriptionRetryTicks = 0;
         negotiatedMinor = -1;
+        ownerManagementAllowed = false;
         view.set(View.empty(State.UNSUPPORTED));
         return Action.REJECTED;
     }

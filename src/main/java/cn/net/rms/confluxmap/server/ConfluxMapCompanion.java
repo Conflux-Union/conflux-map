@@ -354,6 +354,7 @@ public final class ConfluxMapCompanion {
                 Clock.systemUTC(),
                 UUID::randomUUID,
                 limits,
+                config.sharedWaypointAccessPolicy(),
                 event -> ConfluxMapMod.LOGGER.info(
                     "shared-waypoint audit operationId={} actorId={} action={} status={} error={} waypointId={} revision={}",
                     event.operationId(), event.actorId(), event.action(), event.status(), event.error(),

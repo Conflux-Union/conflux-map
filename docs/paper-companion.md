@@ -78,14 +78,14 @@ for the plugin lifetime so a late world load cannot change an index already sent
   share message, so Xaero's Minimap users can add it from chat without installing Conflux Map.
 - `/confluxmap waypoints add <name>` publishes the player's current position.
 - `/confluxmap waypoints edit <id> <name>` renames a public waypoint.
-- `/confluxmap waypoints move <id>` moves a public waypoint to the administrator's current position.
+- `/confluxmap waypoints move <id>` moves a public waypoint to the player's current position.
 - `/confluxmap waypoints delete <id>` deletes a public waypoint.
-- `/confluxmap waypoints lock|unlock <id>` changes whether Conflux Map clients treat a public
-  waypoint as operator-locked.
 - `/confluxmap waypoints status` shows the effective shared-waypoint state and quotas.
 - `/confluxmap waypoints enable` loads storage, atomically persists the setting, then advertises it.
 - `/confluxmap waypoints disable` blocks mutations immediately and persists the setting.
 
-Listing and publishing are available to players without the client mod. Editing, moving, deleting,
-locking, feature toggles, and status inspection require `confluxmap.admin`, granted to operators by
-default. The short ID accepted by administrative commands is shown by `waypoints list`.
+Listing is available to every player. By default, uploading, editing, moving, and deleting require
+`confluxmap.admin`, granted to operators by default. When
+`allowNonOperatorSharedWaypointManagement` is enabled, ordinary players may use those commands only
+for waypoints they published; operators may manage every waypoint. Feature toggles and status
+inspection always require `confluxmap.admin`. The accepted short ID is shown by `waypoints list`.

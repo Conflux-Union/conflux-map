@@ -75,8 +75,7 @@ public final class WaypointRenderCatalog {
                 DimensionScale.convertHorizontal(entry.z(), entry.dimensionId(), dimension),
                 entry.colorArgb(),
                 entry.type(),
-                entry.source(),
-                entry.locked()
+                entry.source()
             ));
         }
         return List.copyOf(matching);
@@ -105,8 +104,7 @@ public final class WaypointRenderCatalog {
                         waypoint.z,
                         waypoint.colorArgb,
                         waypoint.type,
-                        WaypointRenderEntry.Source.LOCAL,
-                        false
+                        WaypointRenderEntry.Source.LOCAL
                     ));
                 }
             }
@@ -122,8 +120,7 @@ public final class WaypointRenderCatalog {
                     waypoint.z(),
                     waypoint.colorArgb(),
                     waypoint.type(),
-                    WaypointRenderEntry.Source.SHARED,
-                    waypoint.locked()
+                    WaypointRenderEntry.Source.SHARED
                 ));
             }
         }

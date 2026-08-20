@@ -62,8 +62,8 @@ final class PaperCommands implements CommandExecutor, TabCompleter {
         if (args.length == 2 && "waypoints".equalsIgnoreCase(args[0])
         ) {
             final List<String> values = sender.hasPermission("confluxmap.admin")
-                ? List.of("list", "add", "edit", "move", "delete", "lock", "unlock", "status", "enable", "disable")
-                : List.of("list", "add");
+                ? List.of("list", "add", "edit", "move", "delete", "status", "enable", "disable")
+                : List.of("list", "add", "edit", "move", "delete");
             return prefix(args[1], values);
         }
         if (args.length == 2 && "webmap".equalsIgnoreCase(args[0])) {
@@ -87,10 +87,6 @@ final class PaperCommands implements CommandExecutor, TabCompleter {
         if ("add".equals(action) && args.length >= 3) {
             return createHere(sender, join(args, 2));
         }
-        if (!sender.hasPermission("confluxmap.admin")) {
-            sender.sendMessage("Only administrators may perform this action.");
-            return true;
-        }
         if ("edit".equals(action) && args.length >= 4) {
             return rename(sender, args[2], join(args, 3));
         }
@@ -100,11 +96,9 @@ final class PaperCommands implements CommandExecutor, TabCompleter {
         if ("delete".equals(action) && args.length == 3) {
             return delete(sender, args[2]);
         }
-        if ("lock".equals(action) && args.length == 3) {
-            return setLocked(sender, args[2], true);
-        }
-        if ("unlock".equals(action) && args.length == 3) {
-            return setLocked(sender, args[2], false);
+        if (!sender.hasPermission("confluxmap.admin")) {
+            sender.sendMessage("Only administrators may perform this action.");
+            return true;
         }
         if (args.length == 2) {
             return switch (action) {
@@ -191,17 +185,6 @@ final class PaperCommands implements CommandExecutor, TabCompleter {
             : result(sender, commands.delete(actor(sender), id), "Shared waypoint deleted.");
     }
 
-    private boolean setLocked(final CommandSender sender, final String id, final boolean locked) {
-        final SharedWaypointCommandService commands = commands();
-        return commands == null
-            ? disabled(sender)
-            : result(
-                sender,
-                commands.setLocked(actor(sender), id, locked),
-                locked ? "Shared waypoint locked." : "Shared waypoint unlocked."
-            );
-    }
-
     private SharedWaypointCommandService commands() {
         if (!companion.sharedWaypointsEnabled()) {
             return null;
@@ -242,7 +225,7 @@ final class PaperCommands implements CommandExecutor, TabCompleter {
             case INVALID_ID -> "Invalid waypoint ID.";
             case UNKNOWN_ID -> "Shared waypoint not found.";
             case AMBIGUOUS_ID -> "Waypoint ID prefix is ambiguous; use the longer ID shown by list.";
-            case FORBIDDEN -> "Only administrators may perform this action.";
+            case FORBIDDEN -> "You do not have permission to manage this shared waypoint.";
             case REJECTED -> mutationError(result.mutation().error());
             default -> "Shared waypoint command failed.";
         });
@@ -254,7 +237,7 @@ final class PaperCommands implements CommandExecutor, TabCompleter {
             case INVALID_REQUEST -> "The waypoint name or position is invalid.";
             case REVISION_CONFLICT -> "The waypoint changed; run the list command and try again.";
             case NOT_FOUND -> "Shared waypoint not found.";
-            case FORBIDDEN -> "Only administrators may perform this action.";
+            case FORBIDDEN -> "You do not have permission to manage this shared waypoint.";
             case WORLD_QUOTA_EXCEEDED -> "The server shared-waypoint limit has been reached.";
             case PLAYER_QUOTA_EXCEEDED -> "Your shared-waypoint limit has been reached.";
             case RATE_LIMITED -> "Too many waypoint changes; try again shortly.";
@@ -324,6 +307,7 @@ final class PaperCommands implements CommandExecutor, TabCompleter {
                 + ", revision=" + revision
                 + ", worldQuota=" + config.maxSharedWaypointsPerWorld
                 + ", playerQuota=" + config.maxSharedWaypointsPerPlayer
+                + ", nonOperatorManagement=" + config.allowNonOperatorSharedWaypointManagement
         );
         return true;
     }

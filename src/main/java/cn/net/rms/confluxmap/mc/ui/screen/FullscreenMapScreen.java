@@ -2053,8 +2053,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 return;
             }
             MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WaypointListScreen(
-                this,
-                waypoint.locked() ? WaypointListScreen.Tab.LOCKED : WaypointListScreen.Tab.PUBLIC
+                this, WaypointListScreen.Tab.PUBLIC
             ));
             return;
         }

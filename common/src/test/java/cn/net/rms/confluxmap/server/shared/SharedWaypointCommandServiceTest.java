@@ -46,7 +46,7 @@ class SharedWaypointCommandServiceTest {
     }
 
     @Test
-    void administratorCanRenameMoveLockAndDeleteByDisplayedIdPrefix() {
+    void administratorCanRenameMoveAndDeleteByDisplayedIdPrefix() {
         final Fixture fixture = fixture();
         final SharedWaypoint created = fixture.commands.createHere(
             PLAYER,
@@ -61,15 +61,14 @@ class SharedWaypointCommandServiceTest {
             id,
             new SharedWaypointCommandService.Position(DimensionId.NETHER, 8d, 70d, 9d)
         ).applied());
-        assertTrue(fixture.commands.setLocked(OPERATOR, id, true).applied());
         assertTrue(fixture.commands.delete(OPERATOR, id).applied());
         assertTrue(fixture.commands.list(1).entries().isEmpty());
         assertEquals(created.id(), fixture.mutations.get(0).delta().waypoint().id());
-        assertEquals(5, fixture.mutations.size());
+        assertEquals(4, fixture.mutations.size());
     }
 
     @Test
-    void commandDeletionIsAdministratorOnlyAndAmbiguousPrefixesAreRejected() {
+    void enabledOwnersCanManageOnlyTheirOwnCommandEntries() {
         final Fixture fixture = fixture();
         fixture.commands.createHere(
             PLAYER,
@@ -82,10 +81,17 @@ class SharedWaypointCommandServiceTest {
             "Two"
         );
 
-        final SharedWaypointCommandService.Result forbidden = fixture.commands.delete(PLAYER, "00000000");
+        final List<SharedWaypointCommandService.Entry> entries = fixture.commands.list(1).entries();
+        final SharedWaypointCommandService.Result renamed = fixture.commands.rename(
+            PLAYER, entries.get(0).idPrefix(), "Owned"
+        );
+        final SharedWaypointCommandService.Result forbidden = fixture.commands.delete(
+            PLAYER, entries.get(1).idPrefix()
+        );
         final SharedWaypointCommandService.Result ambiguous = fixture.commands.delete(OPERATOR, "0");
         final SharedWaypointCommandService.Page outside = fixture.commands.list(2);
 
+        assertTrue(renamed.applied());
         assertEquals(SharedWaypointCommandService.Status.FORBIDDEN, forbidden.status());
         assertEquals(SharedWaypointCommandService.Status.AMBIGUOUS_ID, ambiguous.status());
         assertFalse(outside.valid());
@@ -113,6 +119,7 @@ class SharedWaypointCommandServiceTest {
             Clock.systemUTC(),
             () -> uuid(ids.getAndIncrement()),
             new SharedWaypointService.Limits(20, 10, 60),
+            SharedWaypointService.AccessPolicy.OWNER_MANAGED,
             event -> { },
             LogManager.getLogger("SharedWaypointCommandServiceTest")
         );

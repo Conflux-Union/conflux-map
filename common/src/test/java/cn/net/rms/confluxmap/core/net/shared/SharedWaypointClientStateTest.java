@@ -92,6 +92,39 @@ class SharedWaypointClientStateTest {
     }
 
     @Test
+    void recordsTheServerOwnerManagementPolicy() {
+        final SharedWaypointClientState state = enabledHandshake(state());
+
+        state.onStatus(new StatusS2C(
+            SharedWaypointProto.PROTO_MAJOR,
+            SharedWaypointProto.PROTO_MINOR,
+            true,
+            true,
+            false,
+            "world-id",
+            0L,
+            32,
+            8,
+            false
+        ));
+        assertFalse(state.ownerManagementAllowed());
+
+        state.onStatus(new StatusS2C(
+            SharedWaypointProto.PROTO_MAJOR,
+            SharedWaypointProto.PROTO_MINOR,
+            true,
+            true,
+            false,
+            "world-id",
+            0L,
+            32,
+            8,
+            true
+        ));
+        assertTrue(state.ownerManagementAllowed());
+    }
+
+    @Test
     void deltasRequireExactlyTheNextRevisionAndGapResubscribes() {
         final SharedWaypointClientState state = synchronizedState(4L);
 
@@ -180,7 +213,7 @@ class SharedWaypointClientStateTest {
         final SharedWaypointClientState coordinateState = synchronizedState(4L);
         final SharedWaypoint hostile = new SharedWaypoint(
             ID, PUBLISHER, "Player", "Too far", DimensionId.OVERWORLD,
-            30_000_001d, 0d, 0d, 0xFFFFFFFF, Waypoint.Type.NORMAL, false, 1L, 5L
+            30_000_001d, 0d, 0d, 0xFFFFFFFF, Waypoint.Type.NORMAL, 1L, 5L
         );
         assertTrue(coordinateState.onUpsert(new UpsertS2C(5L, hostile)).protocolRejected());
         assertEquals(SharedWaypointClientState.State.UNSUPPORTED, coordinateState.view().state());
@@ -188,7 +221,7 @@ class SharedWaypointClientStateTest {
         final SharedWaypointClientState colorState = synchronizedState(4L);
         final SharedWaypoint transparent = new SharedWaypoint(
             ID, PUBLISHER, "Player", "Transparent", DimensionId.OVERWORLD,
-            0d, 0d, 0d, 0x0055AAFF, Waypoint.Type.NORMAL, false, 1L, 5L
+            0d, 0d, 0d, 0x0055AAFF, Waypoint.Type.NORMAL, 1L, 5L
         );
         assertTrue(colorState.onUpsert(new UpsertS2C(5L, transparent)).protocolRejected());
         assertEquals(SharedWaypointClientState.State.UNSUPPORTED, colorState.view().state());
@@ -196,7 +229,7 @@ class SharedWaypointClientStateTest {
         final SharedWaypointClientState formattedNameState = synchronizedState(4L);
         final SharedWaypoint formattedName = new SharedWaypoint(
             ID, PUBLISHER, "Player", "\u00a7kHidden", DimensionId.OVERWORLD,
-            0d, 0d, 0d, 0xFF55AAFF, Waypoint.Type.NORMAL, false, 1L, 5L
+            0d, 0d, 0d, 0xFF55AAFF, Waypoint.Type.NORMAL, 1L, 5L
         );
         assertTrue(formattedNameState.onUpsert(new UpsertS2C(5L, formattedName)).protocolRejected());
         assertEquals(SharedWaypointClientState.State.UNSUPPORTED, formattedNameState.view().state());
@@ -254,7 +287,6 @@ class SharedWaypointClientStateTest {
             -3.25d,
             0xFF55AAFF,
             Waypoint.Type.NORMAL,
-            false,
             1L,
             revision
         );
