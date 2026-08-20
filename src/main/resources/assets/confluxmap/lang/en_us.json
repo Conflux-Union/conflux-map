@@ -61,7 +61,7 @@
   "confluxmap.screen.map_export.second_corner": "Second corner: X / Z",
   "confluxmap.screen.map_export.quality": "Image quality",
   "confluxmap.screen.map_export.invalid_coordinates": "Enter valid X / Z coordinates",
-  "confluxmap.screen.map_export.select_on_map": "Select on map",
+  "confluxmap.screen.map_export.select_on_map": "Reselect Area",
   "confluxmap.screen.map_export.drawings": "Drawings: %s",
   "confluxmap.screen.map_export.select_first": "Click the first corner · drag to pan · right-click to cancel",
   "confluxmap.screen.map_export.select_second": "Click the opposite corner · right-click to reset",

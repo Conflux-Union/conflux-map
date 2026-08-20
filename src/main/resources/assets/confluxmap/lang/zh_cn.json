@@ -61,7 +61,7 @@
   "confluxmap.screen.map_export.second_corner": "第二个角点：X / Z",
   "confluxmap.screen.map_export.quality": "图片质量",
   "confluxmap.screen.map_export.invalid_coordinates": "请输入有效的 X / Z 坐标",
-  "confluxmap.screen.map_export.select_on_map": "地图选区",
+  "confluxmap.screen.map_export.select_on_map": "重新选区",
   "confluxmap.screen.map_export.drawings": "包含绘图：%s",
   "confluxmap.screen.map_export.select_first": "点击第一个角点 · 拖动平移 · 右键取消",
   "confluxmap.screen.map_export.select_second": "点击对角位置 · 右键重选",
