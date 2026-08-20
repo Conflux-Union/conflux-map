@@ -11,6 +11,7 @@ import cn.net.rms.confluxmap.core.net.shared.SharedWaypointClientState;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import cn.net.rms.confluxmap.core.waypoint.DimensionScale;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
+import cn.net.rms.confluxmap.core.waypoint.WaypointDimensionFilter;
 import cn.net.rms.confluxmap.core.waypoint.WaypointListFilter;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.core.waypoint.WaypointVerticalRelation;
@@ -49,12 +50,13 @@ public final class WaypointListScreen extends ConfluxScreen {
 
     private static final int ROW_HEIGHT = 28;
     private static final int SEARCH_Y = 52;
-    private static final int SHARED_LIST_TOP = 80;
-    private static final int LOCAL_IDLE_LIST_TOP = 104;
-    private static final int LOCAL_LIST_TOP = 128;
+    private static final int SHARED_LIST_TOP = 104;
+    private static final int LOCAL_IDLE_LIST_TOP = 128;
+    private static final int LOCAL_LIST_TOP = 152;
     private static final int BOTTOM_MARGIN = 34;
     private static final int MIN_SIDE_MARGIN = 16;
     private static final int MAX_CONTENT_WIDTH = 880;
+    private static final int HEADER_CONTROL_MAX_WIDTH = 280;
     private static final int ROW_PADDING = 6;
     private static final int MARKER_SIZE = 14;
     private static final int CHECK_WIDTH = 20;
@@ -63,10 +65,10 @@ public final class WaypointListScreen extends ConfluxScreen {
     private static final int DIM_WIDTH = 66;
     private static final int DIST_WIDTH = 58;
     private static final int GAP = 4;
-    private static final int TOOLBAR_Y = 76;
+    private static final int DIMENSION_FILTER_Y = 76;
+    private static final int TOOLBAR_Y = 100;
     private static final int TOOLBAR_HEIGHT = 20;
     private static final int NARROW_TOOLBAR_WIDTH = 248;
-    private static final int DROPDOWN_MAX_WIDTH = 200;
     private static final int DROPDOWN_ROW_HEIGHT = 20;
     private static final int DROPDOWN_MAX_VISIBLE_ROWS = 6;
     private static final int DROPDOWN_SCROLLBAR_WIDTH = 6;
@@ -152,6 +154,13 @@ public final class WaypointListScreen extends ConfluxScreen {
     private int scrollOffset;
     private UUID pendingDeleteId;
     private String selectedSetFilter;
+    private WaypointDimensionFilter dimensionFilter = WaypointDimensionFilter.current();
+    private boolean dimensionDropdownOpen;
+    private int dimensionDropdownX;
+    private int dimensionDropdownWidth;
+    private List<WaypointDimensionFilter> dimensionDropdownOptions = List.of();
+    private int dimensionDropdownScrollOffset;
+    private int dimensionDropdownKeyboardIndex;
     private String moveTargetSet = WaypointSet.DEFAULT_NAME;
     private SetDropdown openSetDropdown;
     private int dropdownScrollOffset;
@@ -220,7 +229,7 @@ public final class WaypointListScreen extends ConfluxScreen {
 
     @Override
     protected void init() {
-        final int searchWidth = Math.min(260, Math.max(120, width - MIN_SIDE_MARGIN * 2));
+        final int searchWidth = headerControlWidth();
         searchField = new TextFieldWidget(
             this.textRenderer,
             width / 2 - searchWidth / 2,
@@ -286,6 +295,8 @@ public final class WaypointListScreen extends ConfluxScreen {
         normalizeDropdownState(store);
         final Optional<PlayerView> playerView = gameBridge.player();
         final DimensionId currentDimension = gameBridge.session().dimension();
+        final List<DimensionId> knownDimensions = knownDimensions(currentDimension);
+        dimensionFilter = dimensionFilter.normalized(currentDimension, knownDimensions);
         final double px = playerView.map(PlayerView::x).orElse(0.0);
         final double py = playerView.map(PlayerView::y).orElse(0.0);
         final double pz = playerView.map(PlayerView::z).orElse(0.0);
@@ -304,6 +315,7 @@ public final class WaypointListScreen extends ConfluxScreen {
         }
 
         addTabs();
+        addDimensionFilter(knownDimensions, currentDimension);
         if (tab == Tab.LOCAL) {
             addLocalSetControls(store);
         }
@@ -334,6 +346,145 @@ public final class WaypointListScreen extends ConfluxScreen {
         return WaypointSearch.matches(
             query, row.name(), row.secondaryText(), row.dimensionText(), x, y, z
         );
+    }
+
+    private List<DimensionId> knownDimensions(final DimensionId currentDimension) {
+        final Set<DimensionId> dimensions = new LinkedHashSet<>();
+        dimensions.add(currentDimension);
+        waypointService.list().stream()
+            .map(waypoint -> waypoint.dimensionId)
+            .forEach(dimensions::add);
+        if (sharedWaypoints.availability().visible()) {
+            sharedWaypoints.list().stream()
+                .map(SharedWaypoint::dimensionId)
+                .forEach(dimensions::add);
+        }
+        return List.copyOf(dimensions);
+    }
+
+    private void addDimensionFilter(
+        final List<DimensionId> knownDimensions,
+        final DimensionId currentDimension
+    ) {
+        final int buttonWidth = headerControlWidth();
+        final List<WaypointDimensionFilter> options = WaypointDimensionFilter.options(
+            currentDimension, knownDimensions
+        );
+        dimensionDropdownX = width / 2 - buttonWidth / 2;
+        dimensionDropdownWidth = buttonWidth;
+        dimensionDropdownOptions = options;
+        normalizeDimensionDropdownState();
+        final ButtonWidget button = addDrawableChild(Widgets.button(
+            dimensionDropdownX,
+            DIMENSION_FILTER_Y,
+            buttonWidth,
+            TOOLBAR_HEIGHT,
+            fitButtonLabel(Text.of(
+                Texts.translatable(
+                    "confluxmap.screen.waypoints.dimension_filter",
+                    dimensionFilterLabel(dimensionFilter, currentDimension),
+                    totalRowCount
+                ).getString() + " \u25be"
+            ), buttonWidth),
+            ignored -> toggleDimensionDropdown()
+        ));
+        button.active = options.size() > 1;
+    }
+
+    private void toggleDimensionDropdown() {
+        if (dimensionDropdownOptions.size() <= 1) {
+            return;
+        }
+        if (dimensionDropdownOpen) {
+            closeDimensionDropdown();
+        } else {
+            closeSetDropdown();
+            dimensionDropdownOpen = true;
+            dimensionDropdownKeyboardIndex = Math.max(
+                0, dimensionDropdownOptions.indexOf(dimensionFilter)
+            );
+            dimensionDropdownScrollOffset = DropdownScroll.ensureVisible(
+                dimensionDropdownKeyboardIndex,
+                dimensionDropdownOptions.size(),
+                dimensionDropdownVisibleRows()
+            );
+        }
+        rebuild();
+    }
+
+    private void selectDimensionFilter(final WaypointDimensionFilter selected) {
+        dimensionFilter = selected;
+        scrollOffset = 0;
+        selectedWaypointIds.clear();
+        clearPendingActions();
+        closeDimensionDropdown();
+        closeSetDropdown();
+        rebuild();
+    }
+
+    private void closeDimensionDropdown() {
+        dimensionDropdownOpen = false;
+        dimensionDropdownScrollOffset = 0;
+        dimensionDropdownKeyboardIndex = 0;
+        draggingDropdownScrollbar = false;
+    }
+
+    private void normalizeDimensionDropdownState() {
+        if (!dimensionDropdownOpen) {
+            return;
+        }
+        if (dimensionDropdownOptions.size() <= 1) {
+            closeDimensionDropdown();
+            return;
+        }
+        dimensionDropdownKeyboardIndex = MathHelper.clamp(
+            dimensionDropdownKeyboardIndex, 0, dimensionDropdownOptions.size() - 1
+        );
+        dimensionDropdownScrollOffset = DropdownScroll.keepVisible(
+            dimensionDropdownScrollOffset,
+            dimensionDropdownKeyboardIndex,
+            dimensionDropdownOptions.size(),
+            dimensionDropdownVisibleRows()
+        );
+    }
+
+    private int dimensionDropdownVisibleRows() {
+        final int popupY = DIMENSION_FILTER_Y + TOOLBAR_HEIGHT;
+        final int availableHeight = height - BOTTOM_MARGIN - popupY;
+        final int rowsByHeight = Math.max(1, availableHeight / DROPDOWN_ROW_HEIGHT);
+        return Math.min(
+            dimensionDropdownOptions.size(), Math.min(DROPDOWN_MAX_VISIBLE_ROWS, rowsByHeight)
+        );
+    }
+
+    private DropdownGeometry dimensionDropdownGeometry() {
+        if (!dimensionDropdownOpen || dimensionDropdownWidth <= 0) {
+            return null;
+        }
+        return new DropdownGeometry(
+            dimensionDropdownX,
+            DIMENSION_FILTER_Y,
+            dimensionDropdownWidth,
+            DIMENSION_FILTER_Y + TOOLBAR_HEIGHT,
+            dimensionDropdownVisibleRows(),
+            0
+        );
+    }
+
+    private String dimensionFilterLabel(
+        final WaypointDimensionFilter filter,
+        final DimensionId currentDimension
+    ) {
+        return switch (filter.mode()) {
+            case CURRENT -> Texts.translatable(
+                "confluxmap.screen.waypoints.dimension_current",
+                dimensionLabel(currentDimension)
+            ).getString();
+            case ALL -> Texts.translatable(
+                "confluxmap.screen.waypoints.dimension_all"
+            ).getString();
+            case ONLY -> dimensionLabel(filter.dimension());
+        };
     }
 
     private void addBottomButtons(final WaypointStore store) {
@@ -422,12 +573,9 @@ public final class WaypointListScreen extends ConfluxScreen {
             return;
         }
         final int selectWidth = 84;
-        final int filterWidth = Math.min(
-            DROPDOWN_MAX_WIDTH,
-            Math.max(44, contentWidth() - selectWidth - GAP)
-        );
-        final int firstRowWidth = filterWidth + GAP + selectWidth;
-        final int x = contentLeft() + Math.max(0, (contentWidth() - firstRowWidth) / 2);
+        final int firstRowWidth = headerControlWidth();
+        final int filterWidth = firstRowWidth - selectWidth - GAP;
+        final int x = width / 2 - firstRowWidth / 2;
         addSetDropdownButton(SetDropdown.FILTER, x, TOOLBAR_Y, filterWidth, setFilterLabel(), store);
         final boolean allFilteredSelected = !filteredLocalIds.isEmpty()
             && selectedWaypointIds.containsAll(filteredLocalIds);
@@ -452,12 +600,9 @@ public final class WaypointListScreen extends ConfluxScreen {
         final int secondY = TOOLBAR_Y + TOOLBAR_HEIGHT + GAP;
         final int clearWidth = 84;
         final int moveWidth = 92;
-        final int targetWidth = Math.min(
-            DROPDOWN_MAX_WIDTH,
-            Math.max(48, contentWidth() - clearWidth - moveWidth - GAP * 2)
-        );
-        final int secondRowWidth = clearWidth + targetWidth + moveWidth + GAP * 2;
-        final int secondRowX = contentLeft() + Math.max(0, (contentWidth() - secondRowWidth) / 2);
+        final int secondRowWidth = headerControlWidth();
+        final int targetWidth = secondRowWidth - clearWidth - moveWidth - GAP * 2;
+        final int secondRowX = width / 2 - secondRowWidth / 2;
         final ButtonWidget clearSelection = addDrawableChild(Widgets.button(
             secondRowX, secondY, clearWidth, TOOLBAR_HEIGHT,
             fitButtonLabel(selectionClearLabel(), clearWidth),
@@ -552,7 +697,7 @@ public final class WaypointListScreen extends ConfluxScreen {
         final boolean crossDimension = ConfluxMapClient.get().config().waypointCrossDimensionEnabled;
         if (tab == Tab.LOCAL) {
             for (final Waypoint waypoint : WaypointListFilter.local(
-                waypointService.list(), currentDimension, crossDimension
+                waypointService.list(), currentDimension, dimensionFilter
             )) {
                 if (selectedSetFilter != null && !selectedSetFilter.equals(waypoint.group)) {
                     continue;
@@ -572,7 +717,7 @@ public final class WaypointListScreen extends ConfluxScreen {
         }
         final boolean locked = tab == Tab.LOCKED;
         for (final SharedWaypoint waypoint : WaypointListFilter.shared(
-            sharedWaypoints.list(), currentDimension, crossDimension
+            sharedWaypoints.list(), currentDimension, dimensionFilter
         )) {
             if (waypoint.locked() != locked) {
                 continue;
@@ -731,6 +876,7 @@ public final class WaypointListScreen extends ConfluxScreen {
         scrollOffset = 0;
         pendingDeleteId = null;
         selectedWaypointIds.clear();
+        closeDimensionDropdown();
         closeSetDropdown();
         rebuild();
     }
@@ -916,6 +1062,7 @@ public final class WaypointListScreen extends ConfluxScreen {
         if (openSetDropdown == dropdown) {
             closeSetDropdown();
         } else {
+            closeDimensionDropdown();
             openSetDropdown = dropdown;
             dropdownKeyboardIndex = selectedDropdownIndex(store);
             dropdownScrollOffset = DropdownScroll.ensureVisible(
@@ -1083,10 +1230,12 @@ public final class WaypointListScreen extends ConfluxScreen {
 
     private void resetLocalUiState() {
         selectedSetFilter = null;
+        dimensionFilter = WaypointDimensionFilter.current();
         moveTargetSet = WaypointSet.DEFAULT_NAME;
         selectedWaypointIds.clear();
         pendingDeleteId = null;
         scrollOffset = 0;
+        closeDimensionDropdown();
         closeSetDropdown();
     }
 
@@ -1101,6 +1250,18 @@ public final class WaypointListScreen extends ConfluxScreen {
     //#else
     public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
     //#endif
+        final DropdownGeometry dimensionDropdown = dimensionDropdownGeometry();
+        if (amount != 0 && dimensionDropdown != null
+            && (dimensionDropdown.containsPopup(mouseX, mouseY)
+                || dimensionDropdown.containsTrigger(mouseX, mouseY))) {
+            dimensionDropdownScrollOffset = DropdownScroll.afterWheel(
+                dimensionDropdownScrollOffset,
+                amount,
+                dimensionDropdownOptions.size(),
+                dimensionDropdown.visibleRows()
+            );
+            return true;
+        }
         final WaypointStore store = waypointService.current();
         final DropdownGeometry dropdown = dropdownGeometry(store);
         if (amount != 0 && dropdown != null
@@ -1134,6 +1295,33 @@ public final class WaypointListScreen extends ConfluxScreen {
     //#else
     public boolean mouseClicked(final double mouseX, final double mouseY, final int button) {
     //#endif
+        final DropdownGeometry dimensionDropdown = dimensionDropdownGeometry();
+        if (button == 0 && dimensionDropdown != null) {
+            if (dimensionDropdown.containsPopup(mouseX, mouseY)) {
+                if (dimensionDropdownOptions.size() > dimensionDropdown.visibleRows()
+                    && mouseX >= dimensionDropdown.x() + dimensionDropdown.width()
+                        - DROPDOWN_SCROLLBAR_WIDTH) {
+                    draggingDropdownScrollbar = true;
+                    dimensionDropdownScrollOffset = dropdownScrollFromMouse(
+                        mouseY,
+                        dimensionDropdown,
+                        dimensionDropdownOptions.size()
+                    );
+                    return true;
+                }
+                final int visibleIndex = (int) (
+                    (mouseY - dimensionDropdown.popupY()) / DROPDOWN_ROW_HEIGHT
+                );
+                final int optionIndex = dimensionDropdownScrollOffset + visibleIndex;
+                if (optionIndex >= 0 && optionIndex < dimensionDropdownOptions.size()) {
+                    selectDimensionFilter(dimensionDropdownOptions.get(optionIndex));
+                }
+                return true;
+            }
+            if (!dimensionDropdown.containsTrigger(mouseX, mouseY)) {
+                closeDimensionDropdown();
+            }
+        }
         final WaypointStore store = waypointService.current();
         final DropdownGeometry dropdown = dropdownGeometry(store);
         if (button == 0 && dropdown != null) {
@@ -1160,8 +1348,6 @@ public final class WaypointListScreen extends ConfluxScreen {
             }
             if (!dropdown.containsTrigger(mouseX, mouseY)) {
                 closeSetDropdown();
-                rebuild();
-                return true;
             }
         }
         //#if MC>=12109
@@ -1208,6 +1394,15 @@ public final class WaypointListScreen extends ConfluxScreen {
     ) {
     //#endif
         if (button == 0 && draggingDropdownScrollbar) {
+            final DropdownGeometry dimensionDropdown = dimensionDropdownGeometry();
+            if (dimensionDropdown != null) {
+                dimensionDropdownScrollOffset = dropdownScrollFromMouse(
+                    mouseY,
+                    dimensionDropdown,
+                    dimensionDropdownOptions.size()
+                );
+                return true;
+            }
             final WaypointStore store = waypointService.current();
             final DropdownGeometry dropdown = dropdownGeometry(store);
             if (dropdown != null) {
@@ -1248,6 +1443,39 @@ public final class WaypointListScreen extends ConfluxScreen {
     //#else
     public boolean keyPressed(final int keyCode, final int scanCode, final int modifiers) {
     //#endif
+        if (dimensionDropdownOpen) {
+            if (keyCode == 256) {
+                closeDimensionDropdown();
+                rebuild();
+                return true;
+            }
+            if (!dimensionDropdownOptions.isEmpty()
+                && (keyCode == 264 || keyCode == 265 || keyCode == 268 || keyCode == 269)) {
+                dimensionDropdownKeyboardIndex = switch (keyCode) {
+                    case 264 -> Math.min(
+                        dimensionDropdownOptions.size() - 1,
+                        dimensionDropdownKeyboardIndex + 1
+                    );
+                    case 265 -> Math.max(0, dimensionDropdownKeyboardIndex - 1);
+                    case 268 -> 0;
+                    case 269 -> dimensionDropdownOptions.size() - 1;
+                    default -> dimensionDropdownKeyboardIndex;
+                };
+                dimensionDropdownScrollOffset = DropdownScroll.keepVisible(
+                    dimensionDropdownScrollOffset,
+                    dimensionDropdownKeyboardIndex,
+                    dimensionDropdownOptions.size(),
+                    dimensionDropdownVisibleRows()
+                );
+                return true;
+            }
+            if (!dimensionDropdownOptions.isEmpty() && (keyCode == 257 || keyCode == 335)) {
+                selectDimensionFilter(
+                    dimensionDropdownOptions.get(dimensionDropdownKeyboardIndex)
+                );
+                return true;
+            }
+        }
         if (openSetDropdown != null) {
             final WaypointStore store = waypointService.current();
             final List<String> options = dropdownOptions(store);
@@ -1326,11 +1554,19 @@ public final class WaypointListScreen extends ConfluxScreen {
         final DropdownGeometry dropdown,
         final int optionCount
     ) {
+        dropdownScrollOffset = dropdownScrollFromMouse(mouseY, dropdown, optionCount);
+    }
+
+    private int dropdownScrollFromMouse(
+        final double mouseY,
+        final DropdownGeometry dropdown,
+        final int optionCount
+    ) {
         // The track deliberately spans only the option rows, never the action strip below them.
         final int trackTop = dropdown.popupY() + 1;
         final int trackHeight = Math.max(1, dropdown.optionHeight() - 2);
         final int thumbHeight = dropdownThumbHeight(trackHeight, optionCount, dropdown.visibleRows());
-        dropdownScrollOffset = DropdownScroll.fromThumbPosition(
+        return DropdownScroll.fromThumbPosition(
             mouseY,
             trackTop,
             trackHeight,
@@ -1427,7 +1663,89 @@ public final class WaypointListScreen extends ConfluxScreen {
         final int mouseY,
         final float tickDelta
     ) {
+        renderDimensionDropdown(draw, mouseX, mouseY);
         renderSetDropdown(draw, mouseX, mouseY);
+    }
+
+    private void renderDimensionDropdown(final GuiDraw draw, final int mouseX, final int mouseY) {
+        final DropdownGeometry dropdown = dimensionDropdownGeometry();
+        if (dropdown == null || dropdown.visibleRows() <= 0) {
+            return;
+        }
+        dimensionDropdownScrollOffset = DropdownScroll.clamp(
+            dimensionDropdownScrollOffset,
+            dimensionDropdownOptions.size(),
+            dropdown.visibleRows()
+        );
+        final boolean hasScrollbar = dimensionDropdownOptions.size() > dropdown.visibleRows();
+        final int textRightPadding = hasScrollbar ? DROPDOWN_SCROLLBAR_WIDTH + 5 : 5;
+        final DimensionId currentDimension = gameBridge.session().dimension();
+
+        draw.fill(
+            dropdown.x() - 1,
+            dropdown.popupY() - 1,
+            dropdown.x() + dropdown.width() + 1,
+            dropdown.popupY() + dropdown.popupHeight() + 1,
+            0xFF000000
+        );
+        for (int visibleIndex = 0; visibleIndex < dropdown.visibleRows(); visibleIndex++) {
+            final int optionIndex = dimensionDropdownScrollOffset + visibleIndex;
+            if (optionIndex >= dimensionDropdownOptions.size()) {
+                break;
+            }
+            final int rowY = dropdown.popupY() + visibleIndex * DROPDOWN_ROW_HEIGHT;
+            final boolean hovered = mouseX >= dropdown.x()
+                && mouseX < dropdown.x() + dropdown.width()
+                    - (hasScrollbar ? DROPDOWN_SCROLLBAR_WIDTH : 0)
+                && mouseY >= rowY
+                && mouseY < rowY + DROPDOWN_ROW_HEIGHT;
+            final WaypointDimensionFilter option = dimensionDropdownOptions.get(optionIndex);
+            final boolean selected = option.equals(dimensionFilter);
+            final boolean keyboardFocused = optionIndex == dimensionDropdownKeyboardIndex;
+            draw.fill(
+                dropdown.x(),
+                rowY,
+                dropdown.x() + dropdown.width(),
+                rowY + DROPDOWN_ROW_HEIGHT,
+                hovered || keyboardFocused ? 0xFF6E6E6E : selected ? 0xFF505050 : 0xFF2A2A2A
+            );
+            if (selected) {
+                draw.fill(
+                    dropdown.x(),
+                    rowY + 2,
+                    dropdown.x() + 2,
+                    rowY + DROPDOWN_ROW_HEIGHT - 2,
+                    0xFFFFFFFF
+                );
+            }
+            //#if MC>=260100
+            //$$ final String label = this.font.plainSubstrByWidth(
+            //$$     dimensionFilterLabel(option, currentDimension),
+            //$$     Math.max(8, dropdown.width() - textRightPadding - 5)
+            //$$ );
+            //#else
+            final String label = this.textRenderer.trimToWidth(
+                dimensionFilterLabel(option, currentDimension),
+                Math.max(8, dropdown.width() - textRightPadding - 5)
+            );
+            //#endif
+            draw.drawTextWithShadow(
+                this.textRenderer,
+                label,
+                dropdown.x() + 5,
+                rowY + (DROPDOWN_ROW_HEIGHT - this.textRenderer.fontHeight) / 2f,
+                selected ? 0xFFFFFFFF : 0xFFE0E0E0
+            );
+        }
+
+        if (hasScrollbar) {
+            renderDropdownScrollbar(
+                draw,
+                dropdown,
+                dimensionDropdownOptions.size(),
+                dimensionDropdownScrollOffset
+            );
+        }
     }
 
     private void renderSetDropdown(final GuiDraw draw, final int mouseX, final int mouseY) {
@@ -1504,34 +1822,43 @@ public final class WaypointListScreen extends ConfluxScreen {
         }
 
         if (hasScrollbar) {
-            final int trackX = dropdown.x() + dropdown.width() - DROPDOWN_SCROLLBAR_WIDTH;
-            final int trackTop = dropdown.popupY() + 1;
-            final int trackHeight = Math.max(1, dropdown.optionHeight() - 2);
-            final int thumbHeight = dropdownThumbHeight(trackHeight, options.size(), dropdown.visibleRows());
-            final int maxOffset = DropdownScroll.maxOffset(options.size(), dropdown.visibleRows());
-            final int thumbTravel = Math.max(0, trackHeight - thumbHeight);
-            final int thumbTop = trackTop + (maxOffset == 0
-                ? 0
-                : Math.round(thumbTravel * (dropdownScrollOffset / (float) maxOffset)));
-            draw.fill(
-                trackX,
-                dropdown.popupY(),
-                dropdown.x() + dropdown.width(),
-                dropdown.popupY() + dropdown.optionHeight(),
-                0xFF151515
-            );
-            draw.fill(
-                trackX + 1,
-                thumbTop,
-                dropdown.x() + dropdown.width() - 1,
-                thumbTop + thumbHeight,
-                draggingDropdownScrollbar ? 0xFFFFFFFF : 0xFFAAAAAA
-            );
+            renderDropdownScrollbar(draw, dropdown, options.size(), dropdownScrollOffset);
         }
 
         if (dropdown.actionHeight() > 0) {
             renderDropdownActions(draw, mouseX, mouseY, store, dropdown);
         }
+    }
+
+    private void renderDropdownScrollbar(
+        final GuiDraw draw,
+        final DropdownGeometry dropdown,
+        final int optionCount,
+        final int offset
+    ) {
+        final int trackX = dropdown.x() + dropdown.width() - DROPDOWN_SCROLLBAR_WIDTH;
+        final int trackTop = dropdown.popupY() + 1;
+        final int trackHeight = Math.max(1, dropdown.optionHeight() - 2);
+        final int thumbHeight = dropdownThumbHeight(trackHeight, optionCount, dropdown.visibleRows());
+        final int maxOffset = DropdownScroll.maxOffset(optionCount, dropdown.visibleRows());
+        final int thumbTravel = Math.max(0, trackHeight - thumbHeight);
+        final int thumbTop = trackTop + (maxOffset == 0
+            ? 0
+            : Math.round(thumbTravel * (offset / (float) maxOffset)));
+        draw.fill(
+            trackX,
+            dropdown.popupY(),
+            dropdown.x() + dropdown.width(),
+            dropdown.popupY() + dropdown.optionHeight(),
+            0xFF151515
+        );
+        draw.fill(
+            trackX + 1,
+            thumbTop,
+            dropdown.x() + dropdown.width() - 1,
+            thumbTop + thumbHeight,
+            draggingDropdownScrollbar ? 0xFFFFFFFF : 0xFFAAAAAA
+        );
     }
 
     private int dropdownOptionCount(final WaypointStore store, final String option) {
@@ -1664,6 +1991,13 @@ public final class WaypointListScreen extends ConfluxScreen {
 
     private int contentWidth() {
         return contentRight() - contentLeft();
+    }
+
+    private int headerControlWidth() {
+        return Math.min(
+            HEADER_CONTROL_MAX_WIDTH,
+            Math.max(120, width - MIN_SIDE_MARGIN * 2)
+        );
     }
 
     private boolean compactRows() {

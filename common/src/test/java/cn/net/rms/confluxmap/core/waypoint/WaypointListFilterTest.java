@@ -53,6 +53,61 @@ final class WaypointListFilterTest {
         );
     }
 
+    @Test
+    void managementFilterSupportsCurrentAllAndOneKnownDimension() {
+        final List<Waypoint> waypoints = List.of(
+            waypoint("Overworld", DimensionId.OVERWORLD),
+            waypoint("Nether", DimensionId.NETHER),
+            waypoint("End", DimensionId.END)
+        );
+
+        assertEquals(
+            List.of("Nether"),
+            WaypointListFilter.local(
+                waypoints, DimensionId.NETHER, WaypointDimensionFilter.current()
+            ).stream().map(waypoint -> waypoint.name).toList()
+        );
+        assertEquals(
+            List.of("Overworld", "Nether", "End"),
+            WaypointListFilter.local(
+                waypoints, DimensionId.NETHER, WaypointDimensionFilter.all()
+            ).stream().map(waypoint -> waypoint.name).toList()
+        );
+        assertEquals(
+            List.of("End"),
+            WaypointListFilter.local(
+                waypoints, DimensionId.NETHER, WaypointDimensionFilter.only(DimensionId.END)
+            ).stream().map(waypoint -> waypoint.name).toList()
+        );
+        assertEquals(
+            List.of("Overworld"),
+            WaypointListFilter.shared(
+                List.of(
+                    sharedWaypoint("Overworld", DimensionId.OVERWORLD),
+                    sharedWaypoint("Nether", DimensionId.NETHER)
+                ),
+                DimensionId.NETHER,
+                WaypointDimensionFilter.only(DimensionId.OVERWORLD)
+            ).stream().map(SharedWaypoint::name).toList()
+        );
+    }
+
+    @Test
+    void filterOptionsContainEveryKnownDimensionWithoutDuplicatingCurrent() {
+        assertEquals(
+            List.of(
+                WaypointDimensionFilter.current(),
+                WaypointDimensionFilter.all(),
+                WaypointDimensionFilter.only(DimensionId.OVERWORLD),
+                WaypointDimensionFilter.only(DimensionId.END)
+            ),
+            WaypointDimensionFilter.options(
+                DimensionId.NETHER,
+                List.of(DimensionId.OVERWORLD, DimensionId.NETHER, DimensionId.END)
+            )
+        );
+    }
+
     private static Waypoint waypoint(final String name, final DimensionId dimension) {
         return new Waypoint(
             UUID.randomUUID(), name, dimension, 0.0, 64.0, 0.0,
