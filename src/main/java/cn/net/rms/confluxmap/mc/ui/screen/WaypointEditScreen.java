@@ -515,7 +515,10 @@ public final class WaypointEditScreen extends ConfluxScreen {
         }
         if (editingShared != null) {
             if (!sharedWaypoints.update(editingShared, waypoint)) {
-                errorKey = "confluxmap.screen.waypoint.public_unavailable";
+                final String reasonKey = sharedWaypoints.updateDisabledReasonKey(editingShared);
+                errorKey = reasonKey == null
+                    ? "confluxmap.screen.waypoint.public_unavailable"
+                    : reasonKey;
                 return;
             }
             MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
@@ -571,15 +574,14 @@ public final class WaypointEditScreen extends ConfluxScreen {
     }
 
     private void updatePublicDoneButton() {
-        final SharedWaypointAvailability availability = sharedWaypoints.availability();
         doneButton.active = editingShared == null
             ? sharedWaypoints.canCreate()
             : sharedWaypoints.canUpdate(editingShared);
         setDisabledTooltip(
             doneButton,
-            availability.disabledByServer()
-                ? "confluxmap.shared_waypoints.disabled_by_server"
-                : null
+            editingShared == null
+                ? sharedWaypoints.createDisabledReasonKey()
+                : sharedWaypoints.updateDisabledReasonKey(editingShared)
         );
     }
 

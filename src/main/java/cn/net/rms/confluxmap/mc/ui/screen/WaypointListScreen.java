@@ -503,6 +503,7 @@ public final class WaypointListScreen extends ConfluxScreen {
         ));
         if (tab == Tab.PUBLIC) {
             create.active = sharedWaypoints.canCreate();
+            setDisabledTooltip(create, sharedWaypoints.createDisabledReasonKey());
         } else {
             create.active = store != null && store.persistenceWritable();
         }
@@ -774,8 +775,8 @@ public final class WaypointListScreen extends ConfluxScreen {
                 actionY,
                 actions.width(),
                 20,
-                fitButtonLabel(Texts.translatable("confluxmap.screen.waypoints.chat"), actions.width()),
-                button -> openSharedChat(waypoint)
+                fitButtonLabel(Texts.translatable("confluxmap.screen.waypoints.share"), actions.width()),
+                button -> openSharedShare(waypoint)
             ));
             final ButtonWidget edit = addDrawableChild(Widgets.button(
                 actions.x(1),
@@ -786,6 +787,7 @@ public final class WaypointListScreen extends ConfluxScreen {
                 button -> openSharedEdit(waypoint)
             ));
             edit.active = sharedWaypoints.canUpdate(waypoint);
+            setDisabledTooltip(edit, sharedWaypoints.updateDisabledReasonKey(waypoint));
         }
 
         final boolean pendingThis = row.id().equals(pendingDeleteId);
@@ -804,6 +806,9 @@ public final class WaypointListScreen extends ConfluxScreen {
         delete.active = row.shared() == null
             ? renderedStore != null && renderedStore.persistenceWritable()
             : sharedWaypoints.availability().ready() && sharedWaypoints.canDelete(row.shared());
+        if (row.shared() != null) {
+            setDisabledTooltip(delete, sharedWaypoints.deleteDisabledReasonKey(row.shared()));
+        }
         addDrawableChild(Widgets.button(
             actions.x(3),
             actionY,
@@ -933,11 +938,10 @@ public final class WaypointListScreen extends ConfluxScreen {
         ));
     }
 
-    private void openSharedChat(final SharedWaypoint waypoint) {
-        MinecraftAccess.setScreen(MinecraftClient.getInstance(), new WaypointShareConfirmScreen(
+    private void openSharedShare(final SharedWaypoint waypoint) {
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), WaypointShareConfirmScreen.forSharedWaypoint(
             this,
-            displayCopy(waypoint),
-            WaypointShareConfirmScreen.Target.CHAT
+            displayCopy(waypoint)
         ));
     }
 

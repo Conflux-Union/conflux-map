@@ -2,10 +2,12 @@ package cn.net.rms.confluxmap.mc.net.shared;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.net.shared.DeleteC2S;
+import cn.net.rms.confluxmap.core.net.shared.SharedWaypointClientState;
 import cn.net.rms.confluxmap.core.net.shared.UpdateC2S;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
@@ -43,6 +45,51 @@ class SharedWaypointClientTest {
         assertFalse(SharedWaypointClient.canManage(waypoint(), false, true, STRANGER));
         assertFalse(SharedWaypointClient.canManage(waypoint(), false, true, null));
         assertFalse(SharedWaypointClient.canManage(null, true, true, PUBLISHER));
+    }
+
+    @Test
+    void operatorOnlyPolicyHasADedicatedCreateDenialReason() {
+        assertEquals(
+            "confluxmap.shared_waypoints.operator_only",
+            SharedWaypointClient.createDisabledReasonKey(
+                SharedWaypointClientState.State.ENABLED, true, false, false
+            )
+        );
+        assertEquals(
+            "confluxmap.screen.waypoint.public_unavailable",
+            SharedWaypointClient.createDisabledReasonKey(
+                SharedWaypointClientState.State.ENABLED, false, false, false
+            )
+        );
+        assertEquals(
+            "confluxmap.shared_waypoints.disabled_by_server",
+            SharedWaypointClient.createDisabledReasonKey(
+                SharedWaypointClientState.State.SUPPORTED_DISABLED, false, false, false
+            )
+        );
+        assertNull(SharedWaypointClient.createDisabledReasonKey(
+            SharedWaypointClientState.State.ENABLED, true, true, false
+        ));
+        assertNull(SharedWaypointClient.createDisabledReasonKey(
+            SharedWaypointClientState.State.ENABLED, true, false, true
+        ));
+    }
+
+    @Test
+    void enabledPlayersGetAnOwnerOnlyReasonForAnotherPlayersWaypoint() {
+        assertEquals(
+            "confluxmap.shared_waypoints.owner_only",
+            SharedWaypointClient.managementDisabledReasonKey(
+                SharedWaypointClientState.State.ENABLED, true, false, true,
+                waypoint(), STRANGER
+            )
+        );
+        assertNull(
+            SharedWaypointClient.managementDisabledReasonKey(
+                SharedWaypointClientState.State.ENABLED, true, false, true,
+                waypoint(), PUBLISHER
+            )
+        );
     }
 
     private static SharedWaypoint waypoint() {
