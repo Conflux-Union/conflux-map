@@ -34,6 +34,9 @@ public final class UiResourceTheme {
     private static final Identifier XAERO_MINIMAP_FRAME = Ids.of(
         "xaerobetterpvp", "gui/minimap_frame.png"
     );
+    private static final Identifier XAERO_MINIMAP_GUI = Ids.of(
+        "xaerobetterpvp", "gui/guis.png"
+    );
     private static final Identifier XAERO_WORLD_MAP_GUI = Ids.of(
         "xaeroworldmap", "gui/gui.png"
     );
@@ -53,6 +56,7 @@ public final class UiResourceTheme {
     private boolean confluxSquareFrame;
     private boolean confluxCircleFrame;
     private boolean confluxPlayerMarker;
+    private boolean xaeroPlayerMarker;
     private boolean vanillaButtonStyle;
     private Set<Identifier> overriddenConfluxIcons = Set.of();
 
@@ -79,9 +83,9 @@ public final class UiResourceTheme {
         if (manager == null) {
             return;
         }
-        xaeroMinimapFrame = suppliedByResourcePack(
-            manager, XAERO_MINIMAP_FRAME, FabricLoader.getInstance().isModLoaded("xaerominimap")
-        );
+        final boolean xaeroMinimapLoaded = FabricLoader.getInstance().isModLoaded("xaerominimap");
+        xaeroMinimapFrame = suppliedByResourcePack(manager, XAERO_MINIMAP_FRAME, xaeroMinimapLoaded);
+        xaeroPlayerMarker = suppliedByResourcePack(manager, XAERO_MINIMAP_GUI, xaeroMinimapLoaded);
         xaeroWorldMapGui = suppliedByResourcePack(
             manager, XAERO_WORLD_MAP_GUI, FabricLoader.getInstance().isModLoaded("xaeroworldmap")
         );
@@ -111,15 +115,23 @@ public final class UiResourceTheme {
         return vanillaButtonStyle;
     }
 
-    /** Optional full-color player marker supplied only by an enabled resource pack. */
-    public Optional<UiTextureRegion> playerMarker() {
-        return confluxPlayerMarker
-            ? Optional.of(UiTextureRegion.full(CONFLUX_PLAYER_MARKER))
-            : Optional.empty();
+    /** Optional player marker supplied only by an enabled resource pack. */
+    public Optional<PlayerMarkerTexture> playerMarker() {
+        if (confluxPlayerMarker) {
+            return Optional.of(PlayerMarkerTexture.fullColor(CONFLUX_PLAYER_MARKER));
+        }
+        if (xaeroPlayerMarker) {
+            return Optional.of(PlayerMarkerTexture.xaero(XAERO_MINIMAP_GUI));
+        }
+        return Optional.empty();
     }
 
     static Identifier playerMarkerResource() {
         return CONFLUX_PLAYER_MARKER;
+    }
+
+    static Identifier xaeroPlayerMarkerResource() {
+        return XAERO_MINIMAP_GUI;
     }
 
     static Identifier vanillaButtonResource() {
@@ -155,11 +167,14 @@ public final class UiResourceTheme {
         final Identifier id,
         final boolean providingModLoaded
     ) {
-        final int resources = resourceCount(manager, id);
-        if (resources == 0) {
-            return false;
-        }
-        return !providingModLoaded || resources > 1;
+        return isResourcePackOverride(resourceCount(manager, id), providingModLoaded);
+    }
+
+    static boolean isResourcePackOverride(
+        final int resourceCount,
+        final boolean providingModLoaded
+    ) {
+        return resourceCount > 0 && (!providingModLoaded || resourceCount > 1);
     }
 
     private static int resourceCount(final ResourceManager manager, final Identifier id) {
@@ -240,6 +255,50 @@ public final class UiResourceTheme {
 
     private static Identifier confluxIcon(final String file) {
         return Ids.of("confluxmap", "textures/gui/" + file);
+    }
+
+    /** Texture-region geometry and coloring rules for one resource-pack player marker. */
+    public record PlayerMarkerTexture(
+        UiTextureRegion texture,
+        float x,
+        float y,
+        float width,
+        float height,
+        float rotationOffset,
+        boolean tintWithFallbackColor,
+        float outlineOffsetY
+    ) {
+        private static final float CONFLUX_SIZE = 16f;
+        // Xaero's 0.5 UI transform combines with its default 0.75 arrow transform.
+        private static final float XAERO_DEFAULT_RENDER_SCALE = 0.375f;
+
+        public static PlayerMarkerTexture fullColor(final Identifier texture) {
+            return new PlayerMarkerTexture(
+                UiTextureRegion.full(texture),
+                -CONFLUX_SIZE / 2f,
+                -CONFLUX_SIZE / 2f,
+                CONFLUX_SIZE,
+                CONFLUX_SIZE,
+                0f,
+                false,
+                0f
+            );
+        }
+
+        private static PlayerMarkerTexture xaero(final Identifier texture) {
+            return new PlayerMarkerTexture(
+                UiTextureRegion.atlas(
+                    texture, 49, 0, 26, 28, XAERO_ATLAS_SIZE, XAERO_ATLAS_SIZE
+                ),
+                -13f * XAERO_DEFAULT_RENDER_SCALE,
+                -6f * XAERO_DEFAULT_RENDER_SCALE,
+                26f * XAERO_DEFAULT_RENDER_SCALE,
+                28f * XAERO_DEFAULT_RENDER_SCALE,
+                180f,
+                true,
+                1f
+            );
+        }
     }
 
     public record MinimapFrame(UiTextureRegion texture, Layout layout) {

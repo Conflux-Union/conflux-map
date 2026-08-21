@@ -8,8 +8,9 @@ import net.minecraft.client.util.math.MatrixStack;
 
 /** Resource-pack player marker with selectable code-drawn fallbacks. */
 public final class PlayerMarkerRenderer {
-    private static final float TEXTURE_SIZE = 16f;
     private static final int OUTLINE_COLOR = 0xFF101010;
+    private static final int XAERO_TOP_OUTLINE_COLOR = 0x4D101010;
+    private static final int XAERO_BOTTOM_OUTLINE_COLOR = 0x80101010;
     private static final float OUTLINE_WIDTH = 2.8f;
     private static final float FILL_WIDTH = 1.4f;
     private static final float TIP_Y = -4f;
@@ -49,12 +50,15 @@ public final class PlayerMarkerRenderer {
         final float angle,
         final int fallbackColor
     ) {
+        final Optional<UiResourceTheme.PlayerMarkerTexture> texture = theme.playerMarker();
         matrices.push();
         matrices.translate(centerX, centerY, 0);
-        RenderUtil.rotateZ(matrices, angle);
-        final Optional<UiTextureRegion> texture = theme.playerMarker();
+        RenderUtil.rotateZ(
+            matrices,
+            angle + texture.map(UiResourceTheme.PlayerMarkerTexture::rotationOffset).orElse(0f)
+        );
         if (texture.isPresent()) {
-            drawTexture(client, matrices, texture.get());
+            drawTexture(client, matrices, texture.get(), fallbackColor);
         } else if (fallbackStyle == ConfluxConfig.PlayerMarkerStyle.TRADITIONAL) {
             drawTraditional(matrices, fallbackColor);
         } else {
@@ -66,20 +70,53 @@ public final class PlayerMarkerRenderer {
     private static void drawTexture(
         final MinecraftClient client,
         final MatrixStack matrices,
-        final UiTextureRegion texture
+        final UiResourceTheme.PlayerMarkerTexture marker,
+        final int fallbackColor
     ) {
+        final UiTextureRegion texture = marker.texture();
         RenderUtil.beginTexturedQuads();
         RenderUtil.bindTexture(client, texture.texture());
+        if (marker.tintWithFallbackColor()) {
+            drawTintedTexture(
+                matrices, marker, -marker.outlineOffsetY(), XAERO_TOP_OUTLINE_COLOR
+            );
+            drawTintedTexture(
+                matrices, marker, marker.outlineOffsetY(), XAERO_BOTTOM_OUTLINE_COLOR
+            );
+            drawTintedTexture(matrices, marker, 0f, fallbackColor);
+            return;
+        }
         RenderUtil.drawQuad(
             matrices,
-            -TEXTURE_SIZE / 2f,
-            -TEXTURE_SIZE / 2f,
-            TEXTURE_SIZE,
-            TEXTURE_SIZE,
+            marker.x(),
+            marker.y(),
+            marker.width(),
+            marker.height(),
             texture.u0(),
             texture.v0(),
             texture.u1(),
             texture.v1()
+        );
+    }
+
+    private static void drawTintedTexture(
+        final MatrixStack matrices,
+        final UiResourceTheme.PlayerMarkerTexture marker,
+        final float offsetY,
+        final int color
+    ) {
+        final UiTextureRegion texture = marker.texture();
+        RenderUtil.drawTintedQuad(
+            matrices,
+            marker.x(),
+            marker.y() + offsetY,
+            marker.width(),
+            marker.height(),
+            texture.u0(),
+            texture.v0(),
+            texture.u1(),
+            texture.v1(),
+            color
         );
     }
 

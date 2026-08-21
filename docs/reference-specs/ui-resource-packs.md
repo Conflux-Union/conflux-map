@@ -37,10 +37,11 @@ assets/confluxmap/textures/gui/player_marker.png
 The complete square texture is rendered at 16x16 GUI pixels and rotated around its center. Artwork
 must face up in the source image; up represents the player's forward direction. The texture is
 full-color and should use transparency around the marker. If the resource is absent, Conflux draws
-the player-marker style selected under **Settings > Minimap > Player Marker** without requesting a
-missing texture. `New` is the default outlined `^`; `Traditional` restores the filled triangle.
-When the resource is present, the setting displays `Resource Pack` and is disabled until the
-override is removed and resources are reloaded.
+an enabled resource pack's Xaero player-arrow region when available, then falls back to the style
+selected under **Settings > Minimap > Player Marker**. `New` is the default outlined `^`;
+`Traditional` restores the filled triangle. When either resource-pack marker is present, the
+setting displays `Resource Pack` and is disabled until the override is removed and resources are
+reloaded.
 
 Resource changes apply after the normal Minecraft resource reload (`F3+T`); a client restart is not
 required.
@@ -69,6 +70,7 @@ An enabled Xaero UI resource pack can be retained unchanged when migrating. Conf
 
 ```text
 assets/xaerobetterpvp/gui/minimap_frame.png
+assets/xaerobetterpvp/gui/guis.png
 assets/xaeroworldmap/gui/gui.png
 ```
 
@@ -80,6 +82,13 @@ The minimap renderer uses Xaero's default square-frame regions (`x=192` corners,
 horizontal edges, and `y=97` vertical edges). Circular maps use the current frame strip at
 `0,210 137x4`. These coordinates were verified against Xaero's Minimap 26.4.2; a future Xaero atlas
 layout change can require a compatibility update.
+
+The player marker uses Xaero's `guis.png` arrow at `49,0 26x28`, rendered at Xaero's current
+default scale and rotated around the same off-center pivot. The source sprite is a white mask, so
+Conflux applies its normal minimap/full-screen marker color and Xaero-style dark vertical outline.
+Conflux compensates for the source sprite facing down. Xaero's own arrow color, opacity, and scale
+settings are not imported. A native `assets/confluxmap/textures/gui/player_marker.png` always wins
+when both marker resources are present.
 
 World-map icon compatibility is based on the control fields and tooltips in Xaero's World Map
 1.44.2, not on visual similarity. Xaero atlas icons are treated as full-color artwork; Conflux does

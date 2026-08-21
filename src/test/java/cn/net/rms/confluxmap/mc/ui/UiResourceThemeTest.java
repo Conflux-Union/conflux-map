@@ -8,6 +8,7 @@ import cn.net.rms.confluxmap.compat.Ids;
 import java.lang.reflect.Proxy;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import net.minecraft.resource.ResourceManager;
 import net.minecraft.util.Identifier;
@@ -125,9 +126,58 @@ final class UiResourceThemeTest {
         theme.reload(resourceManagerWithLayers(UiResourceTheme.playerMarkerResource(), 1));
 
         assertEquals(
-            UiTextureRegion.full(UiResourceTheme.playerMarkerResource()),
+            UiResourceTheme.PlayerMarkerTexture.fullColor(
+                UiResourceTheme.playerMarkerResource()
+            ),
             theme.playerMarker().orElseThrow()
         );
+    }
+
+    @Test
+    void xaeroPlayerMarkerPackUsesTheAuditedAtlasRegion() {
+        final UiResourceTheme theme = new UiResourceTheme();
+
+        theme.reload(resourceManagerWithLayers(UiResourceTheme.xaeroPlayerMarkerResource(), 1));
+
+        final UiResourceTheme.PlayerMarkerTexture marker = theme.playerMarker().orElseThrow();
+        assertEquals(
+            UiTextureRegion.atlas(
+                UiResourceTheme.xaeroPlayerMarkerResource(),
+                49, 0, 26, 28, 256, 256
+            ),
+            marker.texture()
+        );
+        assertEquals(9.75f, marker.width());
+        assertEquals(10.5f, marker.height());
+        assertEquals(-4.875f, marker.x());
+        assertEquals(-2.25f, marker.y());
+        assertEquals(180f, marker.rotationOffset());
+        assertTrue(marker.tintWithFallbackColor());
+        assertEquals(1f, marker.outlineOffsetY());
+    }
+
+    @Test
+    void projectNativePlayerMarkerWinsOverXaeroCompatibility() {
+        final UiResourceTheme theme = new UiResourceTheme();
+
+        theme.reload(resourceManagerWithLayers(Map.of(
+            UiResourceTheme.playerMarkerResource(), 1,
+            UiResourceTheme.xaeroPlayerMarkerResource(), 1
+        )));
+
+        assertEquals(
+            UiResourceTheme.PlayerMarkerTexture.fullColor(
+                UiResourceTheme.playerMarkerResource()
+            ),
+            theme.playerMarker().orElseThrow()
+        );
+    }
+
+    @Test
+    void installedXaeroBaseAtlasIsNotMistakenForAResourcePackOverride() {
+        assertFalse(UiResourceTheme.isResourcePackOverride(1, true));
+        assertTrue(UiResourceTheme.isResourcePackOverride(2, true));
+        assertTrue(UiResourceTheme.isResourcePackOverride(1, false));
     }
 
     @Test
@@ -136,6 +186,16 @@ final class UiResourceThemeTest {
         theme.reload(resourceManagerWithLayers(UiResourceTheme.playerMarkerResource(), 1));
 
         theme.reload(resourceManagerWithLayers(UiResourceTheme.playerMarkerResource(), 0));
+
+        assertTrue(theme.playerMarker().isEmpty());
+    }
+
+    @Test
+    void removingTheXaeroPackRestoresTheCodeDrawnPlayerMarker() {
+        final UiResourceTheme theme = new UiResourceTheme();
+        theme.reload(resourceManagerWithLayers(UiResourceTheme.xaeroPlayerMarkerResource(), 1));
+
+        theme.reload(resourceManagerWithLayers(UiResourceTheme.xaeroPlayerMarkerResource(), 0));
 
         assertTrue(theme.playerMarker().isEmpty());
     }
@@ -188,6 +248,12 @@ final class UiResourceThemeTest {
         final Identifier resource,
         final int layers
     ) {
+        return resourceManagerWithLayers(Map.of(resource, layers));
+    }
+
+    private static ResourceManager resourceManagerWithLayers(
+        final Map<Identifier, Integer> layers
+    ) {
         return (ResourceManager) Proxy.newProxyInstance(
             ResourceManager.class.getClassLoader(),
             new Class<?>[] {ResourceManager.class},
@@ -197,9 +263,7 @@ final class UiResourceThemeTest {
                         || method.getName().equals("getResourceStack")
                 ) {
                     final Identifier requested = (Identifier) arguments[0];
-                    final int count = requested.equals(resource)
-                        ? layers
-                        : 0;
+                    final int count = layers.getOrDefault(requested, 0);
                     return Collections.nCopies(count, null);
                 }
                 throw new UnsupportedOperationException(method.getName());
