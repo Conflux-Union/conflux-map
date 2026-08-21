@@ -8,6 +8,7 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
@@ -62,6 +63,18 @@ final class MonochromeUiIconTest {
                 .collect(Collectors.toCollection(TreeSet::new));
             assertEquals(new TreeSet<>(Set.of(ICONS)), shipped);
         }
+    }
+
+    @Test
+    void everyToolbarIconHasAnExplicitXaeroCompatibilityDecision() {
+        final Set<String> expected = Arrays.stream(ICONS)
+            .map(file -> "confluxmap:textures/gui/" + file)
+            .collect(Collectors.toCollection(TreeSet::new));
+        final Set<String> audited = UiResourceTheme.auditedIconIds().stream()
+            .map(Object::toString)
+            .collect(Collectors.toCollection(TreeSet::new));
+
+        assertEquals(expected, audited);
     }
 
     @Test

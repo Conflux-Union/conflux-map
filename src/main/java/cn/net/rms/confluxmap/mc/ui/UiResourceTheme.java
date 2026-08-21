@@ -34,7 +34,7 @@ public final class UiResourceTheme {
     private static final Identifier CONFLUX_CIRCLE_FRAME = Ids.of(
         "confluxmap", "textures/gui/minimap_frame_circle.png"
     );
-    private static final Map<Identifier, UiTextureRegion> XAERO_WORLD_MAP_ICONS = xaeroIcons();
+    private static final Map<Identifier, UiIcon> XAERO_WORLD_MAP_ICONS = xaeroIcons();
 
     private boolean xaeroMinimapFrame;
     private boolean xaeroWorldMapGui;
@@ -83,11 +83,11 @@ public final class UiResourceTheme {
         overriddenConfluxIcons = Set.copyOf(overridden);
     }
 
-    public UiTextureRegion icon(final Identifier confluxIcon) {
+    public UiIcon icon(final Identifier confluxIcon) {
         if (!xaeroWorldMapGui || overriddenConfluxIcons.contains(confluxIcon)) {
-            return UiTextureRegion.full(confluxIcon);
+            return UiIcon.monochrome(confluxIcon);
         }
-        return XAERO_WORLD_MAP_ICONS.getOrDefault(confluxIcon, UiTextureRegion.full(confluxIcon));
+        return XAERO_WORLD_MAP_ICONS.getOrDefault(confluxIcon, UiIcon.monochrome(confluxIcon));
     }
 
     public Optional<MinimapFrame> minimapFrame(final boolean circle) {
@@ -138,20 +138,53 @@ public final class UiResourceTheme {
         //#endif
     }
 
-    private static Map<Identifier, UiTextureRegion> xaeroIcons() {
-        final Map<Identifier, UiTextureRegion> icons = new HashMap<>();
+    private static Map<Identifier, UiIcon> xaeroIcons() {
+        final Map<Identifier, UiIcon> icons = new HashMap<>();
+        mapNativeIcon(icons, "annotation_circle.png");
+        mapNativeIcon(icons, "annotation_collapse.png");
+        mapNativeIcon(icons, "annotation_drawing.png");
+        mapNativeIcon(icons, "annotation_eraser.png");
+        mapNativeIcon(icons, "annotation_freehand.png");
+        mapNativeIcon(icons, "annotation_label.png");
+        mapNativeIcon(icons, "annotation_line.png");
+        mapNativeIcon(icons, "annotation_persistence.png");
+        mapNativeIcon(icons, "annotation_persistence_transient.png");
+        mapNativeIcon(icons, "annotation_rectangle.png");
+        mapNativeIcon(icons, "annotation_redo.png");
+        mapNativeIcon(icons, "annotation_select.png");
+        mapNativeIcon(icons, "annotation_undo.png");
+        mapNativeIcon(icons, "chunk_load_state.png");
+        mapNativeIcon(icons, "chunk_load_state_off.png");
+        mapNativeIcon(icons, "group_actions.png");
+        mapNativeIcon(icons, "group_view.png");
+        mapNativeIcon(icons, "map_biome.png");
+        mapNativeIcon(icons, "map_biome_off.png");
+        mapNativeIcon(icons, "map_terrain.png");
+        mapNativeIcon(icons, "structure_search.png");
+        mapNativeIcon(icons, "structure_search_off.png");
+        mapNativeIcon(icons, "waypoint_local.png");
+        mapNativeIcon(icons, "waypoint_local_off.png");
+        mapNativeIcon(icons, "waypoint_shared.png");
+        mapNativeIcon(icons, "waypoint_shared_off.png");
+        mapNativeIcon(icons, "world_profile.png");
         mapXaeroIcon(icons, "group_waypoints.png", 213, 0, 16, 16);
         mapXaeroIcon(icons, "waypoint_manage.png", 213, 0, 16, 16);
-        mapXaeroIcon(icons, "waypoint_local.png", 229, 48, 16, 16);
-        mapXaeroIcon(icons, "waypoint_local_off.png", 213, 48, 16, 16);
         mapXaeroIcon(icons, "map_export.png", 133, 0, 16, 16);
         mapXaeroIcon(icons, "map_settings.png", 113, 0, 20, 20);
-        mapXaeroIcon(icons, "world_profile.png", 197, 80, 16, 16);
         return Map.copyOf(icons);
     }
 
+    static Set<Identifier> auditedIconIds() {
+        return XAERO_WORLD_MAP_ICONS.keySet();
+    }
+
+    private static void mapNativeIcon(final Map<Identifier, UiIcon> icons, final String confluxFile) {
+        final Identifier texture = confluxIcon(confluxFile);
+        icons.put(texture, UiIcon.monochrome(texture));
+    }
+
     private static void mapXaeroIcon(
-        final Map<Identifier, UiTextureRegion> icons,
+        final Map<Identifier, UiIcon> icons,
         final String confluxFile,
         final int x,
         final int y,
@@ -159,11 +192,18 @@ public final class UiResourceTheme {
         final int height
     ) {
         icons.put(
-            Ids.of("confluxmap", "textures/gui/" + confluxFile),
-            UiTextureRegion.atlas(
-                XAERO_WORLD_MAP_GUI, x, y, width, height, XAERO_ATLAS_SIZE, XAERO_ATLAS_SIZE
+            confluxIcon(confluxFile),
+            UiIcon.fullColor(
+                UiTextureRegion.atlas(
+                    XAERO_WORLD_MAP_GUI, x, y, width, height,
+                    XAERO_ATLAS_SIZE, XAERO_ATLAS_SIZE
+                )
             )
         );
+    }
+
+    private static Identifier confluxIcon(final String file) {
+        return Ids.of("confluxmap", "textures/gui/" + file);
     }
 
     public record MinimapFrame(UiTextureRegion texture, Layout layout) {

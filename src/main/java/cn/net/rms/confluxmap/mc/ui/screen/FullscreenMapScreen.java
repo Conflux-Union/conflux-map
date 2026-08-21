@@ -78,6 +78,7 @@ import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
 import cn.net.rms.confluxmap.mc.teleport.TeleportCommandAccess;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.mc.ui.UiIcon;
 import cn.net.rms.confluxmap.mc.ui.UiResourceTheme;
 import cn.net.rms.confluxmap.mc.ui.UiTextureRegion;
 import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
@@ -2997,8 +2998,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
         private void drawContents(final GuiDraw draw, final int x, final int y) {
             final MatrixStack matrices = draw.matrices();
+            final UiIcon resolvedIcon = uiTheme.icon(icon);
             final MapIconButtonVisualState visual = MapIconButtonVisualState.of(
-                active, selected, isHovered()
+                active, selected, isHovered(), resolvedIcon.colorMode()
             );
             RenderUtil.fillRect(matrices, x, y, getWidth(), getHeight(), visual.background());
             RenderUtil.fillRect(matrices, x, y, getWidth(), 1, visual.border());
@@ -3011,18 +3013,18 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             );
             final int iconX = x + (getWidth() - CONTROL_ICON_SIZE) / 2;
             final int iconY = y + (getHeight() - CONTROL_ICON_SIZE) / 2;
-            final UiTextureRegion resolvedIcon = uiTheme.icon(icon);
-            RenderUtil.bindTexture(MinecraftClient.getInstance(), resolvedIcon.texture());
+            final UiTextureRegion texture = resolvedIcon.region();
+            RenderUtil.bindTexture(MinecraftClient.getInstance(), texture.texture());
             RenderUtil.drawTintedQuad(
                 matrices,
                 iconX,
                 iconY,
                 CONTROL_ICON_SIZE,
                 CONTROL_ICON_SIZE,
-                resolvedIcon.u0(),
-                resolvedIcon.v0(),
-                resolvedIcon.u1(),
-                resolvedIcon.v1(),
+                texture.u0(),
+                texture.v0(),
+                texture.u1(),
+                texture.v1(),
                 visual.iconTint()
             );
         }

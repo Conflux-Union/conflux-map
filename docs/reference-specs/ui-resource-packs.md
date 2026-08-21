@@ -47,21 +47,53 @@ atlas. If Xaero is not installed, the resource-pack asset itself is enough.
 The minimap renderer uses Xaero's default square-frame regions (`x=192` corners, `y=0/16`
 horizontal edges, and `y=97` vertical edges). Circular maps use the current frame strip at
 `0,210 137x4`. These coordinates were verified against Xaero's Minimap 26.4.2; a future Xaero atlas
-layout change can require a compatibility update. The world-map adapter uses only controls with an
-unambiguous Conflux equivalent:
+layout change can require a compatibility update.
 
-| Conflux resource | Xaero `gui.png` region |
-| --- | --- |
-| `group_waypoints.png` | `213,0 16x16` |
-| `waypoint_manage.png` | `213,0 16x16` |
-| `waypoint_local.png` | `229,48 16x16` |
-| `waypoint_local_off.png` | `213,48 16x16` |
-| `map_export.png` | `133,0 16x16` |
-| `map_settings.png` | `113,0 20x20` |
-| `world_profile.png` | `197,80 16x16` |
+World-map icon compatibility is based on the control fields and tooltips in Xaero's World Map
+1.44.2, not on visual similarity. Xaero atlas icons are treated as full-color artwork; Conflux does
+not apply the selected-state RGB mask intended for its native white icons.
 
-Conflux-specific controls such as annotations, structure search, biome display, and shared
-waypoints deliberately keep their Conflux textures. Guessing an unrelated Xaero sprite would make
-the control misleading. Xaero entity-icon definitions are a separate format and are not part of
-this UI compatibility contract. The world-map coordinates above were verified against Xaero's
-World Map 1.44.2.
+### Audited icon catalog
+
+Every shipped Conflux GUI icon has an explicit interoperability decision. `Native` means that
+Xaero has no control with the same scope and action, so the Conflux texture remains in use. A pack
+can still replace it by adding the normal `assets/confluxmap/textures/gui/<file>` resource.
+
+| Conflux resource | Xaero control/region | Decision |
+| --- | --- | --- |
+| `group_waypoints.png` | `waypointsButton`, `213,0 16x16` | Exact: toggles the waypoint tool/menu group |
+| `waypoint_manage.png` | `waypointsButton`, `213,0 16x16` | Category match: waypoint management instead of Xaero's quick menu |
+| `map_export.png` | `exportButton`, `133,0 16x16` | Exact: exports the map as PNG |
+| `map_settings.png` | `settingsButton`, `113,0 20x20` | Exact: opens map settings |
+| `group_view.png` | None | Native: Xaero has no grouped display-mode control |
+| `group_actions.png` | None | Native: Xaero has no matching action group |
+| `waypoint_local.png` | None | Native: Xaero's toggle controls all waypoint sets, not local waypoints |
+| `waypoint_local_off.png` | None | Native: Xaero's toggle controls all waypoint sets, not local waypoints |
+| `waypoint_shared.png` | None | Native: Xaero has no server-shared waypoint visibility set |
+| `waypoint_shared_off.png` | None | Native: Xaero has no server-shared waypoint visibility set |
+| `world_profile.png` | None | Native: Xaero's dimension toggle does not select client world profiles |
+| `structure_search.png` | None | Native: Xaero has no structure-search control |
+| `structure_search_off.png` | None | Native: Xaero has no structure-search control |
+| `map_terrain.png` | None | Native: terrain is not a Xaero toolbar display-mode control |
+| `chunk_load_state.png` | None | Native: Xaero has no chunk-load-state layer |
+| `chunk_load_state_off.png` | None | Native: Xaero has no chunk-load-state layer |
+| `map_biome.png` | None | Native: Xaero has no equivalent biome display-mode toggle |
+| `map_biome_off.png` | None | Native: Xaero has no equivalent biome display-mode toggle |
+| `annotation_collapse.png` | None | Native: Xaero has no annotation toolbar |
+| `annotation_drawing.png` | None | Native: Xaero has no annotation toolbar |
+| `annotation_select.png` | None | Native: Xaero has no annotation toolbar |
+| `annotation_eraser.png` | None | Native: Xaero has no annotation toolbar |
+| `annotation_line.png` | None | Native: Xaero has no annotation toolbar |
+| `annotation_circle.png` | None | Native: Xaero has no annotation toolbar |
+| `annotation_rectangle.png` | None | Native: Xaero has no annotation toolbar |
+| `annotation_freehand.png` | None | Native: Xaero has no annotation toolbar |
+| `annotation_label.png` | None | Native: Xaero has no annotation toolbar |
+| `annotation_persistence.png` | None | Native: Xaero has no annotation persistence mode |
+| `annotation_persistence_transient.png` | None | Native: Xaero has no annotation persistence mode |
+| `annotation_undo.png` | None | Native: Xaero has no annotation toolbar |
+| `annotation_redo.png` | None | Native: Xaero has no annotation toolbar |
+
+In particular, Xaero's `renderWaypointsButton` regions at `229,48` and `213,48` are deliberately
+not used for Conflux's local-waypoint switch. That Xaero control toggles every waypoint set, which
+is a different scope. Xaero entity-icon definitions are also a separate format and are not part of
+this UI compatibility contract.

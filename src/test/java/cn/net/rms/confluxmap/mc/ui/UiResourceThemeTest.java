@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.compat.Ids;
+import java.util.List;
 import java.util.Set;
 import net.minecraft.util.Identifier;
 import org.junit.jupiter.api.Test;
@@ -14,33 +15,60 @@ final class UiResourceThemeTest {
     );
 
     @Test
-    void xaeroWorldMapPackSuppliesOnlyTheVerifiedSemanticAtlasRegions() {
+    void xaeroWorldMapPackSuppliesOnlyAuditedSemanticAtlasRegions() {
         final UiResourceTheme theme = theme(false, true, false, false, Set.of());
 
         assertXaeroRegion(theme, "group_waypoints.png", 213, 0, 16, 16);
         assertXaeroRegion(theme, "waypoint_manage.png", 213, 0, 16, 16);
-        assertXaeroRegion(theme, "waypoint_local.png", 229, 48, 16, 16);
-        assertXaeroRegion(theme, "waypoint_local_off.png", 213, 48, 16, 16);
         assertXaeroRegion(theme, "map_export.png", 133, 0, 16, 16);
         assertXaeroRegion(theme, "map_settings.png", 113, 0, 20, 20);
-        assertXaeroRegion(theme, "world_profile.png", 197, 80, 16, 16);
     }
 
     @Test
     void projectNativeIconOverrideWinsOverXaeroCompatibility() {
         final UiResourceTheme theme = theme(false, true, false, false, Set.of(SETTINGS));
 
-        assertEquals(UiTextureRegion.full(SETTINGS), theme.icon(SETTINGS));
+        assertEquals(UiIcon.monochrome(SETTINGS), theme.icon(SETTINGS));
     }
 
     @Test
-    void unrelatedConfluxIconsAreNeverReplacedWithTheWrongXaeroSprite() {
-        final Identifier annotation = Ids.of(
-            "confluxmap", "textures/gui/annotation_drawing.png"
-        );
+    void everyIconWithoutAnExactXaeroControlRemainsProjectNative() {
         final UiResourceTheme theme = theme(false, true, false, false, Set.of());
+        final List<String> nativeOnly = List.of(
+            "annotation_circle.png",
+            "annotation_collapse.png",
+            "annotation_drawing.png",
+            "annotation_eraser.png",
+            "annotation_freehand.png",
+            "annotation_label.png",
+            "annotation_line.png",
+            "annotation_persistence.png",
+            "annotation_persistence_transient.png",
+            "annotation_rectangle.png",
+            "annotation_redo.png",
+            "annotation_select.png",
+            "annotation_undo.png",
+            "chunk_load_state.png",
+            "chunk_load_state_off.png",
+            "group_actions.png",
+            "group_view.png",
+            "map_biome.png",
+            "map_biome_off.png",
+            "map_terrain.png",
+            "structure_search.png",
+            "structure_search_off.png",
+            "waypoint_local.png",
+            "waypoint_local_off.png",
+            "waypoint_shared.png",
+            "waypoint_shared_off.png",
+            "world_profile.png"
+        );
 
-        assertEquals(UiTextureRegion.full(annotation), theme.icon(annotation));
+        for (final String file : nativeOnly) {
+            final Identifier icon = Ids.of("confluxmap", "textures/gui/" + file);
+            assertEquals(UiIcon.monochrome(icon), theme.icon(icon), file);
+        }
+        assertEquals(31, UiResourceTheme.auditedIconIds().size());
     }
 
     @Test
@@ -108,9 +136,11 @@ final class UiResourceThemeTest {
         final int height
     ) {
         assertEquals(
-            UiTextureRegion.atlas(
-                Ids.of("xaeroworldmap", "gui/gui.png"),
-                x, y, width, height, 256, 256
+            UiIcon.fullColor(
+                UiTextureRegion.atlas(
+                    Ids.of("xaeroworldmap", "gui/gui.png"),
+                    x, y, width, height, 256, 256
+                )
             ),
             theme.icon(Ids.of("confluxmap", "textures/gui/" + confluxFile)),
             confluxFile
