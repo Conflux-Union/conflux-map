@@ -22,6 +22,15 @@ import net.minecraft.util.Identifier;
  */
 public final class UiResourceTheme {
     private static final int XAERO_ATLAS_SIZE = 256;
+    //#if MC>=12002
+    //$$ private static final Identifier VANILLA_BUTTON_RESOURCE = Ids.of(
+    //$$     "minecraft", "textures/gui/sprites/widget/button.png"
+    //$$ );
+    //#else
+    private static final Identifier VANILLA_BUTTON_RESOURCE = Ids.of(
+        "minecraft", "textures/gui/widgets.png"
+    );
+    //#endif
     private static final Identifier XAERO_MINIMAP_FRAME = Ids.of(
         "xaerobetterpvp", "gui/minimap_frame.png"
     );
@@ -40,6 +49,7 @@ public final class UiResourceTheme {
     private boolean xaeroWorldMapGui;
     private boolean confluxSquareFrame;
     private boolean confluxCircleFrame;
+    private boolean vanillaButtonStyle;
     private Set<Identifier> overriddenConfluxIcons = Set.of();
 
     public UiResourceTheme() {
@@ -73,6 +83,7 @@ public final class UiResourceTheme {
         );
         confluxSquareFrame = resourceCount(manager, CONFLUX_SQUARE_FRAME) > 0;
         confluxCircleFrame = resourceCount(manager, CONFLUX_CIRCLE_FRAME) > 0;
+        vanillaButtonStyle = resourceCount(manager, VANILLA_BUTTON_RESOURCE) > 1;
 
         final Set<Identifier> overridden = new HashSet<>();
         for (final Identifier icon : XAERO_WORLD_MAP_ICONS.keySet()) {
@@ -88,6 +99,15 @@ public final class UiResourceTheme {
             return UiIcon.monochrome(confluxIcon);
         }
         return XAERO_WORLD_MAP_ICONS.getOrDefault(confluxIcon, UiIcon.monochrome(confluxIcon));
+    }
+
+    /** Uses the effective Minecraft button skin only when another resource layer replaces it. */
+    public boolean useVanillaButtonStyle() {
+        return vanillaButtonStyle;
+    }
+
+    static Identifier vanillaButtonResource() {
+        return VANILLA_BUTTON_RESOURCE;
     }
 
     public Optional<MinimapFrame> minimapFrame(final boolean circle) {
@@ -207,8 +227,18 @@ public final class UiResourceTheme {
     }
 
     public record MinimapFrame(UiTextureRegion texture, Layout layout) {
+        private static final int XAERO_SQUARE_CONTENT_INSET = 4;
+
         public static MinimapFrame overlay(final Identifier texture) {
             return new MinimapFrame(UiTextureRegion.full(texture), Layout.OVERLAY);
+        }
+
+        /**
+         * Insets the map beneath frame artwork that extends four GUI pixels outside Xaero's map
+         * rectangle. Full-overlay and circular layouts already define their own clipping shape.
+         */
+        public int contentInset() {
+            return layout == Layout.XAERO_SQUARE ? XAERO_SQUARE_CONTENT_INSET : 0;
         }
     }
 

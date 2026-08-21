@@ -38,12 +38,19 @@ final class FullscreenMapTargetSelectorTest {
     }
 
     @Test
-    void targetSelectorsUseTheCompactSize() throws IOException {
+    void targetSelectorsKeepTheCompactDefaultButRespectStandardPackHeight() throws IOException {
         final String source = source();
 
         assertEquals(128, integerConstant(source, "TARGET_SELECTOR_WIDTH"));
-        assertEquals(16, integerConstant(source, "TARGET_SELECTOR_HEIGHT"));
+        assertEquals(16, integerConstant(source, "COMPACT_TARGET_SELECTOR_HEIGHT"));
+        assertEquals(20, integerConstant(source, "RESOURCE_PACK_TARGET_SELECTOR_HEIGHT"));
         assertEquals(4, integerConstant(source, "TARGET_SELECTOR_GAP"));
+        assertTrue(
+            source.contains("uiTheme.useVanillaButtonStyle()\n"
+                + "            ? RESOURCE_PACK_TARGET_SELECTOR_HEIGHT\n"
+                + "            : COMPACT_TARGET_SELECTOR_HEIGHT"),
+            "resource-pack buttons need vanilla's standard 20px design height"
+        );
     }
 
     private static int integerConstant(final String source, final String name) {

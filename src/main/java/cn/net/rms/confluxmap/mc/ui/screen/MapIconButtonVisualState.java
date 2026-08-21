@@ -20,7 +20,24 @@ record MapIconButtonVisualState(int border, int background, int iconTint) {
         final boolean hovered,
         final UiIcon.ColorMode colorMode
     ) {
+        return of(active, selected, hovered, colorMode, false);
+    }
+
+    static MapIconButtonVisualState of(
+        final boolean active,
+        final boolean selected,
+        final boolean hovered,
+        final UiIcon.ColorMode colorMode,
+        final boolean vanillaButtonStyle
+    ) {
         final boolean selectedAppearance = active && selected;
+        if (vanillaButtonStyle) {
+            return new MapIconButtonVisualState(
+                selectedAppearance ? 0xFFFFFFFF : 0,
+                0,
+                active ? ENABLED_ICON_TINT : DISABLED_ICON_TINT
+            );
+        }
         final boolean fullColor = colorMode == UiIcon.ColorMode.FULL_COLOR;
         final int border = active
             ? hovered || selectedAppearance ? 0xFFFFFFFF : 0xFF8A8A8A

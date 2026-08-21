@@ -1,11 +1,15 @@
 package cn.net.rms.confluxmap.mc.ui;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.compat.Ids;
+import java.lang.reflect.Proxy;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import net.minecraft.resource.ResourceManager;
 import net.minecraft.util.Identifier;
 import org.junit.jupiter.api.Test;
 
@@ -77,6 +81,7 @@ final class UiResourceThemeTest {
 
         final UiResourceTheme.MinimapFrame frame = theme.minimapFrame(false).orElseThrow();
         assertEquals(UiResourceTheme.Layout.OVERLAY, frame.layout());
+        assertEquals(0, frame.contentInset());
         assertEquals(
             "confluxmap:textures/gui/minimap_frame_square.png",
             frame.texture().texture().toString()
@@ -90,10 +95,12 @@ final class UiResourceThemeTest {
 
         final UiResourceTheme.MinimapFrame square = theme.minimapFrame(false).orElseThrow();
         assertEquals(UiResourceTheme.Layout.XAERO_SQUARE, square.layout());
+        assertEquals(4, square.contentInset());
         assertEquals(UiTextureRegion.full(square.texture().texture()), square.texture());
 
         final UiResourceTheme.MinimapFrame circle = theme.minimapFrame(true).orElseThrow();
         assertEquals(UiResourceTheme.Layout.XAERO_CIRCLE, circle.layout());
+        assertEquals(0, circle.contentInset());
         assertEquals("xaerobetterpvp:gui/minimap_frame.png", circle.texture().texture().toString());
         assertEquals(0f, circle.texture().u0());
         assertEquals(210f / 256f, circle.texture().v0());
@@ -113,6 +120,25 @@ final class UiResourceThemeTest {
         theme.reload(null);
 
         assertTrue(theme.minimapFrame(false).isEmpty());
+        assertFalse(theme.useVanillaButtonStyle());
+    }
+
+    @Test
+    void baseVanillaButtonResourceKeepsTheConfluxButtonStyle() {
+        final UiResourceTheme theme = new UiResourceTheme();
+
+        theme.reload(resourceManagerWithVanillaButtonLayers(1));
+
+        assertFalse(theme.useVanillaButtonStyle());
+    }
+
+    @Test
+    void anyPackOverridingTheVanillaButtonResourceActivatesItsStyle() {
+        final UiResourceTheme theme = new UiResourceTheme();
+
+        theme.reload(resourceManagerWithVanillaButtonLayers(2));
+
+        assertTrue(theme.useVanillaButtonStyle());
     }
 
     private static UiResourceTheme theme(
@@ -124,6 +150,26 @@ final class UiResourceThemeTest {
     ) {
         return new UiResourceTheme(
             xaeroMinimap, xaeroWorldMap, confluxSquare, confluxCircle, overriddenIcons
+        );
+    }
+
+    private static ResourceManager resourceManagerWithVanillaButtonLayers(final int layers) {
+        return (ResourceManager) Proxy.newProxyInstance(
+            ResourceManager.class.getClassLoader(),
+            new Class<?>[] {ResourceManager.class},
+            (proxy, method, arguments) -> {
+                if (
+                    method.getName().equals("getAllResources")
+                        || method.getName().equals("getResourceStack")
+                ) {
+                    final Identifier requested = (Identifier) arguments[0];
+                    final int count = requested.equals(UiResourceTheme.vanillaButtonResource())
+                        ? layers
+                        : 0;
+                    return Collections.nCopies(count, null);
+                }
+                throw new UnsupportedOperationException(method.getName());
+            }
         );
     }
 

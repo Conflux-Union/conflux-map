@@ -320,6 +320,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
             //$$         final int mouseY,
             //$$         final float delta
             //$$     ) {
+            //$$         if (useVanillaButtonStyle()) {
+            //$$             extractDefaultSprite(context);
+            //$$         }
             //$$         renderColorSwatch(GuiDraw.of(context), this, color);
             //$$     }
             //$$ });
@@ -335,6 +338,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
             //$$         final int mouseY,
             //$$         final float delta
             //$$     ) {
+            //$$         if (useVanillaButtonStyle()) {
+            //$$             drawButton(context);
+            //$$         }
             //$$         renderColorSwatch(GuiDraw.of(context), this, color);
             //$$     }
             //$$ });
@@ -350,6 +356,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
             //$$         final int mouseY,
             //$$         final float delta
             //$$     ) {
+            //$$         if (useVanillaButtonStyle()) {
+            //$$             super.renderWidget(context, mouseX, mouseY, delta);
+            //$$         }
             //$$         renderColorSwatch(GuiDraw.of(context), this, color);
             //$$     }
             //$$ });
@@ -365,6 +374,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
             //$$         final int mouseY,
             //$$         final float delta
             //$$     ) {
+            //$$         if (useVanillaButtonStyle()) {
+            //$$             super.renderButton(context, mouseX, mouseY, delta);
+            //$$         }
             //$$         renderColorSwatch(GuiDraw.of(context), this, color);
             //$$     }
             //$$ });
@@ -372,6 +384,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
             addDrawableChild(new ButtonWidget(x, 150, SWATCH_SIZE, SWATCH_SIZE, Text.of(""), b -> selectedColor = color) {
                 @Override
                 public void renderButton(final MatrixStack matrices, final int mouseX, final int mouseY, final float delta) {
+                    if (useVanillaButtonStyle()) {
+                        super.renderButton(matrices, mouseX, mouseY, delta);
+                    }
                     renderColorSwatch(GuiDraw.of(matrices), this, color);
                 }
             });
@@ -418,6 +433,31 @@ public final class WaypointEditScreen extends ConfluxScreen {
         final MatrixStack matrices = draw.matrices();
         final int x = Widgets.x(button);
         final int y = Widgets.y(button);
+        if (useVanillaButtonStyle()) {
+            final int inset = 3;
+            final int swatchSize = button.getWidth() - inset * 2;
+            RenderUtil.fillRect(
+                matrices, x + inset, y + inset, swatchSize, swatchSize,
+                color | 0xFF000000
+            );
+            if (color == selectedColor) {
+                RenderUtil.fillRect(
+                    matrices, x + inset, y + inset, swatchSize, 1, 0xFFFFFFFF
+                );
+                RenderUtil.fillRect(
+                    matrices, x + inset, y + inset + swatchSize - 1,
+                    swatchSize, 1, 0xFFFFFFFF
+                );
+                RenderUtil.fillRect(
+                    matrices, x + inset, y + inset, 1, swatchSize, 0xFFFFFFFF
+                );
+                RenderUtil.fillRect(
+                    matrices, x + inset + swatchSize - 1, y + inset,
+                    1, swatchSize, 0xFFFFFFFF
+                );
+            }
+            return;
+        }
         RenderUtil.fillRect(matrices, x, y, button.getWidth(), button.getHeight(), color | 0xFF000000);
         if (color == selectedColor) {
             RenderUtil.fillRect(matrices, x - 2, y - 2, button.getWidth() + 4, 2, 0xFFFFFFFF);
@@ -425,6 +465,12 @@ public final class WaypointEditScreen extends ConfluxScreen {
             RenderUtil.fillRect(matrices, x - 2, y - 2, 2, button.getHeight() + 4, 0xFFFFFFFF);
             RenderUtil.fillRect(matrices, x + button.getWidth(), y - 2, 2, button.getHeight() + 4, 0xFFFFFFFF);
         }
+    }
+
+    private static boolean useVanillaButtonStyle() {
+        final ConfluxMapClient app = ConfluxMapClient.get();
+        return app != null && app.uiResourceTheme() != null
+            && app.uiResourceTheme().useVanillaButtonStyle();
     }
 
     private List<String> localSetNames() {

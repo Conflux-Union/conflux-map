@@ -172,7 +172,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final int CONTROL_ICON_SIZE = 16;
     private static final int CONTROL_GAP = 3;
     private static final int TARGET_SELECTOR_WIDTH = 128;
-    private static final int TARGET_SELECTOR_HEIGHT = 16;
+    private static final int COMPACT_TARGET_SELECTOR_HEIGHT = 16;
+    private static final int RESOURCE_PACK_TARGET_SELECTOR_HEIGHT = 20;
     private static final int TARGET_SELECTOR_GAP = 4;
     private static final int TARGET_DROPDOWN_ROW_HEIGHT = 18;
     private static final int TARGET_DROPDOWN_MAX_ROWS = 8;
@@ -614,12 +615,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             TARGET_SELECTOR_WIDTH,
             Math.max(80, (availableWidth - TARGET_SELECTOR_GAP) / 2)
         );
+        final int selectorHeight = targetSelectorHeight();
         final int startX = (width - selectorWidth * 2 - TARGET_SELECTOR_GAP) / 2;
         worldSelectorButton = addDrawableChild(Widgets.button(
             startX,
             MARGIN,
             selectorWidth,
-            TARGET_SELECTOR_HEIGHT,
+            selectorHeight,
             targetSelectorLabel(TargetSelector.WORLD, selectorWidth),
             ignored -> toggleTargetSelector(TargetSelector.WORLD)
         ));
@@ -627,11 +629,17 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             startX + selectorWidth + TARGET_SELECTOR_GAP,
             MARGIN,
             selectorWidth,
-            TARGET_SELECTOR_HEIGHT,
+            selectorHeight,
             targetSelectorLabel(TargetSelector.DIMENSION, selectorWidth),
             ignored -> toggleTargetSelector(TargetSelector.DIMENSION)
         ));
         dimensionSelectorButton.active = !dimensionOptions().isEmpty();
+    }
+
+    private int targetSelectorHeight() {
+        return uiTheme.useVanillaButtonStyle()
+            ? RESOURCE_PACK_TARGET_SELECTOR_HEIGHT
+            : COMPACT_TARGET_SELECTOR_HEIGHT;
     }
 
     private Text targetSelectorLabel(final TargetSelector selector, final int buttonWidth) {
@@ -1034,6 +1042,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         //$$         final int mouseY,
         //$$         final float delta
         //$$     ) {
+        //$$         if (uiTheme.useVanillaButtonStyle()) {
+        //$$             extractDefaultSprite(context);
+        //$$         }
         //$$         renderAnnotationColorButton(GuiDraw.of(context), this, color, opensMenu);
         //$$     }
         //$$ });
@@ -1049,6 +1060,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         //$$         final int mouseY,
         //$$         final float delta
         //$$     ) {
+        //$$         if (uiTheme.useVanillaButtonStyle()) {
+        //$$             drawButton(context);
+        //$$         }
         //$$         renderAnnotationColorButton(GuiDraw.of(context), this, color, opensMenu);
         //$$     }
         //$$ });
@@ -1064,6 +1078,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         //$$         final int mouseY,
         //$$         final float delta
         //$$     ) {
+        //$$         if (uiTheme.useVanillaButtonStyle()) {
+        //$$             super.renderWidget(context, mouseX, mouseY, delta);
+        //$$         }
         //$$         renderAnnotationColorButton(GuiDraw.of(context), this, color, opensMenu);
         //$$     }
         //$$ });
@@ -1079,6 +1096,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         //$$         final int mouseY,
         //$$         final float delta
         //$$     ) {
+        //$$         if (uiTheme.useVanillaButtonStyle()) {
+        //$$             super.renderButton(context, mouseX, mouseY, delta);
+        //$$         }
         //$$         renderAnnotationColorButton(GuiDraw.of(context), this, color, opensMenu);
         //$$     }
         //$$ });
@@ -1094,6 +1114,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 final int mouseY,
                 final float delta
             ) {
+                if (uiTheme.useVanillaButtonStyle()) {
+                    super.renderButton(matrices, mouseX, mouseY, delta);
+                }
                 renderAnnotationColorButton(GuiDraw.of(matrices), this, color, opensMenu);
             }
         });
@@ -1110,14 +1133,28 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final int x = Widgets.x(button);
         final int y = Widgets.y(button);
         final int displayedColor = opensMenu ? selectedAnnotationColor() : color;
+        final int inset = uiTheme.useVanillaButtonStyle() ? 3 : 0;
+        final int swatchSize = button.getWidth() - inset * 2;
         RenderUtil.fillRect(
-            draw.matrices(), x, y, button.getWidth(), button.getHeight(), displayedColor | 0xFF000000
+            draw.matrices(), x + inset, y + inset, swatchSize, swatchSize,
+            displayedColor | 0xFF000000
         );
         if (opensMenu ? annotationColorMenuOpen : color == selectedAnnotationColor()) {
-            RenderUtil.fillRect(draw.matrices(), x, y, button.getWidth(), 2, 0xFFFFFFFF);
-            RenderUtil.fillRect(draw.matrices(), x, y + button.getHeight() - 2, button.getWidth(), 2, 0xFFFFFFFF);
-            RenderUtil.fillRect(draw.matrices(), x, y, 2, button.getHeight(), 0xFFFFFFFF);
-            RenderUtil.fillRect(draw.matrices(), x + button.getWidth() - 2, y, 2, button.getHeight(), 0xFFFFFFFF);
+            final int border = uiTheme.useVanillaButtonStyle() ? 1 : 2;
+            RenderUtil.fillRect(
+                draw.matrices(), x + inset, y + inset, swatchSize, border, 0xFFFFFFFF
+            );
+            RenderUtil.fillRect(
+                draw.matrices(), x + inset, y + inset + swatchSize - border,
+                swatchSize, border, 0xFFFFFFFF
+            );
+            RenderUtil.fillRect(
+                draw.matrices(), x + inset, y + inset, border, swatchSize, 0xFFFFFFFF
+            );
+            RenderUtil.fillRect(
+                draw.matrices(), x + inset + swatchSize - border, y + inset,
+                border, swatchSize, 0xFFFFFFFF
+            );
         }
     }
 
@@ -3000,17 +3037,24 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             final MatrixStack matrices = draw.matrices();
             final UiIcon resolvedIcon = uiTheme.icon(icon);
             final MapIconButtonVisualState visual = MapIconButtonVisualState.of(
-                active, selected, isHovered(), resolvedIcon.colorMode()
+                active, selected, isHovered(), resolvedIcon.colorMode(),
+                uiTheme.useVanillaButtonStyle()
             );
-            RenderUtil.fillRect(matrices, x, y, getWidth(), getHeight(), visual.background());
-            RenderUtil.fillRect(matrices, x, y, getWidth(), 1, visual.border());
-            RenderUtil.fillRect(
-                matrices, x, y + getHeight() - 1, getWidth(), 1, visual.border()
-            );
-            RenderUtil.fillRect(matrices, x, y, 1, getHeight(), visual.border());
-            RenderUtil.fillRect(
-                matrices, x + getWidth() - 1, y, 1, getHeight(), visual.border()
-            );
+            if (visual.background() != 0) {
+                RenderUtil.fillRect(
+                    matrices, x, y, getWidth(), getHeight(), visual.background()
+                );
+            }
+            if (visual.border() != 0) {
+                RenderUtil.fillRect(matrices, x, y, getWidth(), 1, visual.border());
+                RenderUtil.fillRect(
+                    matrices, x, y + getHeight() - 1, getWidth(), 1, visual.border()
+                );
+                RenderUtil.fillRect(matrices, x, y, 1, getHeight(), visual.border());
+                RenderUtil.fillRect(
+                    matrices, x + getWidth() - 1, y, 1, getHeight(), visual.border()
+                );
+            }
             final int iconX = x + (getWidth() - CONTROL_ICON_SIZE) / 2;
             final int iconY = y + (getHeight() - CONTROL_ICON_SIZE) / 2;
             final UiTextureRegion texture = resolvedIcon.region();

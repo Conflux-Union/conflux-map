@@ -198,9 +198,17 @@ public final class MinimapHudRenderer {
         final int size = placement.size();
         final int x0 = placement.x();
         final int y0 = placement.y();
-        final float centerX = x0 + size / 2f;
-        final float centerY = y0 + size / 2f;
         final boolean circle = config.minimapShape == ConfluxConfig.Shape.CIRCLE;
+        final Optional<UiResourceTheme.MinimapFrame> minimapFrame = uiTheme.minimapFrame(circle);
+        final int contentInset = minimapFrame
+            .map(UiResourceTheme.MinimapFrame::contentInset)
+            .orElse(0);
+        final MinimapContentViewport viewport = MinimapContentViewport.resolve(
+            x0, y0, size, contentInset
+        );
+        final int contentSize = viewport.size();
+        final float centerX = viewport.centerX();
+        final float centerY = viewport.centerY();
         final boolean rotate = config.minimapRotate;
         final float mapAngle = rotate ? 180f - player.yawDegrees() : 0f;
         final List<Annotation> visibleAnnotations = config.annotationsOnHud && annotations.current() != null
@@ -210,33 +218,44 @@ public final class MinimapHudRenderer {
         // Radar scans exactly what this frame's minimap will show: the circle's radius, or
         // the square's half-diagonal (so a corner-cropped mob is still caught by the scan).
         final float minimapBlocksPerPixel = BLOCKS_PER_PIXEL[config.minimapZoomIndex];
-        final double visibleRadius = size / 2.0 * minimapBlocksPerPixel * (circle ? 1.0 : Math.sqrt(2));
+        final double visibleRadius = contentSize / 2.0
+            * minimapBlocksPerPixel
+            * (circle ? 1.0 : Math.sqrt(2));
         radarViewRange.set(visibleRadius);
 
         if (circle) {
             // Real geometric clipping: render the square map into an off-screen canvas,
             // then sample it back as a textured disk. Unlike destination-alpha masking
             // this cannot leak outside the circle regardless of framebuffer state.
-            final int canvasPx = Math.max(64, (int) Math.round(size * client.getWindow().getScaleFactor()));
+            final int canvasPx = Math.max(
+                64,
+                (int) Math.round(contentSize * client.getWindow().getScaleFactor())
+            );
             canvas.begin(canvasPx);
             final MatrixStack fbo = new MatrixStack();
-            final float unit = canvasPx / (float) size;
+            final float unit = canvasPx / (float) contentSize;
             fbo.scale(unit, unit, 1f);
-            RenderUtil.fillRect(fbo, 0, 0, size, size, BACKGROUND_COLOR);
+            RenderUtil.fillRect(fbo, 0, 0, contentSize, contentSize, BACKGROUND_COLOR);
             fbo.push();
-            fbo.translate(size / 2f, size / 2f, 0);
+            fbo.translate(contentSize / 2f, contentSize / 2f, 0);
             if (rotate) {
                 RenderUtil.rotateZ(fbo, mapAngle);
             }
             RenderUtil.beginTexturedQuads();
-            drawTiles(fbo, size, rotate, player);
+            drawTiles(fbo, contentSize, rotate, player);
             fbo.pop();
-            drawPlayerTrail(fbo, player, size / 2f, size / 2f, size, mapAngle);
+            drawPlayerTrail(
+                fbo, player,
+                contentSize / 2f, contentSize / 2f, contentSize, mapAngle
+            );
             if (!visibleAnnotations.isEmpty()) {
                 AnnotationRenderer.drawGeometry(
                     fbo,
                     visibleAnnotations,
-                    annotationProjection(player, size / 2f, size / 2f, size, mapAngle),
+                    annotationProjection(
+                        player,
+                        contentSize / 2f, contentSize / 2f, contentSize, mapAngle
+                    ),
                     null
                 );
             }
@@ -244,34 +263,38 @@ public final class MinimapHudRenderer {
 
             RenderUtil.beginTexturedQuads();
             canvas.bindTexture();
-            RenderUtil.drawTexturedDisk(matrices, centerX, centerY, size / 2f);
-            drawFrame(matrices, x0, y0, size, true);
+            RenderUtil.drawTexturedDisk(matrices, centerX, centerY, contentSize / 2f);
+            drawFrame(matrices, x0, y0, size, true, minimapFrame);
             AnnotationRenderer.drawLabels(
                 draw,
                 client.textRenderer,
                 visibleAnnotations,
-                annotationProjection(player, centerX, centerY, size, mapAngle),
-                x0,
-                y0,
-                size,
-                size,
+                annotationProjection(player, centerX, centerY, contentSize, mapAngle),
+                viewport.x(),
+                viewport.y(),
+                contentSize,
+                contentSize,
                 AnnotationRenderer.ClipShape.CIRCLE
             );
         } else {
-            RenderUtil.fillRect(matrices, x0, y0, size, size, BACKGROUND_COLOR);
-            RenderUtil.enableScissor(client, x0, y0, size, size);
+            RenderUtil.fillRect(
+                matrices, viewport.x(), viewport.y(), contentSize, contentSize, BACKGROUND_COLOR
+            );
+            RenderUtil.enableScissor(
+                client, viewport.x(), viewport.y(), contentSize, contentSize
+            );
             RenderUtil.beginTexturedQuads();
             matrices.push();
             matrices.translate(centerX, centerY, 0);
             if (rotate) {
                 RenderUtil.rotateZ(matrices, mapAngle);
             }
-            drawTiles(matrices, size, rotate, player);
+            drawTiles(matrices, contentSize, rotate, player);
             matrices.pop();
-            drawPlayerTrail(matrices, player, centerX, centerY, size, mapAngle);
+            drawPlayerTrail(matrices, player, centerX, centerY, contentSize, mapAngle);
             if (!visibleAnnotations.isEmpty()) {
                 final AnnotationProjection annotationProjection = annotationProjection(
-                    player, centerX, centerY, size, mapAngle
+                    player, centerX, centerY, contentSize, mapAngle
                 );
                 AnnotationRenderer.drawGeometry(matrices, visibleAnnotations, annotationProjection, null);
                 AnnotationRenderer.drawLabels(
@@ -279,20 +302,20 @@ public final class MinimapHudRenderer {
                     client.textRenderer,
                     visibleAnnotations,
                     annotationProjection,
-                    x0,
-                    y0,
-                    size,
-                    size,
+                    viewport.x(),
+                    viewport.y(),
+                    contentSize,
+                    contentSize,
                     AnnotationRenderer.ClipShape.RECTANGLE
                 );
             }
             RenderUtil.disableScissor();
-            drawFrame(matrices, x0, y0, size, false);
+            drawFrame(matrices, x0, y0, size, false, minimapFrame);
         }
 
-        drawRadar(draw, centerX, centerY, size, mapAngle, player, tickDelta);
-        drawCardinals(draw, centerX, centerY, size, mapAngle);
-        drawWaypointMarkers(draw, centerX, centerY, size, mapAngle, player);
+        drawRadar(draw, centerX, centerY, contentSize, mapAngle, player, tickDelta);
+        drawCardinals(draw, centerX, centerY, contentSize, mapAngle);
+        drawWaypointMarkers(draw, centerX, centerY, contentSize, mapAngle, player);
         drawPlayerArrow(matrices, centerX, centerY, rotate ? 0f : player.yawDegrees() + 180f);
         drawInfoText(draw, player, x0, y0, size);
     }
@@ -620,9 +643,9 @@ public final class MinimapHudRenderer {
         final int x0,
         final int y0,
         final int size,
-        final boolean circle
+        final boolean circle,
+        final Optional<UiResourceTheme.MinimapFrame> selected
     ) {
-        final Optional<UiResourceTheme.MinimapFrame> selected = uiTheme.minimapFrame(circle);
         if (selected.isEmpty()) {
             if (circle) {
                 RenderUtil.drawRing(

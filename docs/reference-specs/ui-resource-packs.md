@@ -31,6 +31,24 @@ Conflux frame or icon always takes priority over the Xaero compatibility mapping
 Resource changes apply after the normal Minecraft resource reload (`F3+T`); a client restart is not
 required.
 
+## Vanilla control styles
+
+Conflux keeps its built-in dark button style when Minecraft is using only its base UI resources.
+If the active resource stack overrides Minecraft's normal button texture, Conflux automatically
+uses the effective normal, highlighted, and disabled button textures for its text buttons, map
+toolbar buttons, and color-swatch frames. This is based only on the resource stack, never on a
+resource-pack name:
+
+```text
+Minecraft 1.20.2+: assets/minecraft/textures/gui/sprites/widget/button.png
+Older versions:    assets/minecraft/textures/gui/widgets.png
+```
+
+The two choices are intentionally independent: a pack can restyle vanilla controls without
+providing Xaero assets, and a Xaero-compatible pack can replace map icons without changing vanilla
+buttons. Selected map tools retain a thin semantic outline because vanilla buttons do not expose a
+persistent selected state.
+
 ## Xaero compatibility
 
 An enabled Xaero UI resource pack can be retained unchanged when migrating. Conflux recognizes:

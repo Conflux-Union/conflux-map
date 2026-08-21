@@ -1,7 +1,8 @@
 package cn.net.rms.confluxmap.mc.ui.widget;
 
-import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.compat.Widgets;
+import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import net.minecraft.client.MinecraftClient;
 //#if MC>=12000
 //$$ import net.minecraft.client.gui.DrawContext;
@@ -9,7 +10,7 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.util.math.MatrixStack;
 
-/** High-contrast button shared by every Conflux screen. */
+/** Shared button that keeps the Conflux style unless the active pack reskins vanilla controls. */
 public final class ConfluxTextButton extends ButtonWidget {
     private static final int BACKGROUND = 0xE0181818;
     private static final int HOVER_BACKGROUND = 0xF02A2A2A;
@@ -45,6 +46,11 @@ public final class ConfluxTextButton extends ButtonWidget {
     //$$     final int mouseY,
     //$$     final float delta
     //$$ ) {
+    //$$     if (useVanillaButtonStyle()) {
+    //$$         extractDefaultSprite(context);
+    //$$         drawText(GuiDraw.of(context));
+    //$$         return;
+    //$$     }
     //$$     drawContents(GuiDraw.of(context));
     //$$ }
     //#elseif MC>=12111
@@ -54,6 +60,11 @@ public final class ConfluxTextButton extends ButtonWidget {
     //$$     final int mouseY,
     //$$     final float delta
     //$$ ) {
+    //$$     if (useVanillaButtonStyle()) {
+    //$$         drawButton(context);
+    //$$         drawText(GuiDraw.of(context));
+    //$$         return;
+    //$$     }
     //$$     drawContents(GuiDraw.of(context));
     //$$ }
     //#elseif MC>=12002
@@ -63,6 +74,10 @@ public final class ConfluxTextButton extends ButtonWidget {
     //$$     final int mouseY,
     //$$     final float delta
     //$$ ) {
+    //$$     if (useVanillaButtonStyle()) {
+    //$$         super.renderWidget(context, mouseX, mouseY, delta);
+    //$$         return;
+    //$$     }
     //$$     drawContents(GuiDraw.of(context));
     //$$ }
     //#elseif MC>=12000
@@ -72,6 +87,10 @@ public final class ConfluxTextButton extends ButtonWidget {
     //$$     final int mouseY,
     //$$     final float delta
     //$$ ) {
+    //$$     if (useVanillaButtonStyle()) {
+    //$$         super.renderButton(context, mouseX, mouseY, delta);
+    //$$         return;
+    //$$     }
     //$$     drawContents(GuiDraw.of(context));
     //$$ }
     //#else
@@ -81,6 +100,10 @@ public final class ConfluxTextButton extends ButtonWidget {
         final int mouseY,
         final float delta
     ) {
+        if (useVanillaButtonStyle()) {
+            super.renderButton(matrices, mouseX, mouseY, delta);
+            return;
+        }
         drawContents(GuiDraw.of(matrices));
     }
     //#endif
@@ -101,6 +124,12 @@ public final class ConfluxTextButton extends ButtonWidget {
         draw.fill(x, y, x + 1, bottom, border);
         draw.fill(right - 1, y, right, bottom, border);
 
+        drawText(draw);
+    }
+
+    private void drawText(final GuiDraw draw) {
+        final int x = Widgets.x(this);
+        final int y = Widgets.y(this);
         final MinecraftClient client = MinecraftClient.getInstance();
         final net.minecraft.text.Text message = getMessage();
         final int availableWidth = Math.max(1, getWidth() - 8);
@@ -126,5 +155,11 @@ public final class ConfluxTextButton extends ButtonWidget {
             active ? TEXT : DISABLED_TEXT
         );
         //#endif
+    }
+
+    private static boolean useVanillaButtonStyle() {
+        final ConfluxMapClient app = ConfluxMapClient.get();
+        return app != null && app.uiResourceTheme() != null
+            && app.uiResourceTheme().useVanillaButtonStyle();
     }
 }

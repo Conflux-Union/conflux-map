@@ -36,4 +36,20 @@ final class MapIconButtonVisualStateTest {
             state
         );
     }
+
+    @Test
+    void vanillaResourcePackStyleKeepsTheButtonTextureVisible() {
+        final MapIconButtonVisualState idle = MapIconButtonVisualState.of(
+            true, false, false, UiIcon.ColorMode.MONOCHROME_MASK, true
+        );
+        final MapIconButtonVisualState selected = MapIconButtonVisualState.of(
+            true, true, false, UiIcon.ColorMode.MONOCHROME_MASK, true
+        );
+
+        assertEquals(0, idle.background());
+        assertEquals(0, idle.border());
+        assertEquals(0, selected.background());
+        assertEquals(0xFFFFFFFF, selected.border());
+        assertEquals(0xFFFFFFFF, selected.iconTint());
+    }
 }
