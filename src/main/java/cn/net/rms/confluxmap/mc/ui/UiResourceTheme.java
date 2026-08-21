@@ -43,12 +43,16 @@ public final class UiResourceTheme {
     private static final Identifier CONFLUX_CIRCLE_FRAME = Ids.of(
         "confluxmap", "textures/gui/minimap_frame_circle.png"
     );
+    private static final Identifier CONFLUX_PLAYER_MARKER = Ids.of(
+        "confluxmap", "textures/gui/player_marker.png"
+    );
     private static final Map<Identifier, UiIcon> XAERO_WORLD_MAP_ICONS = xaeroIcons();
 
     private boolean xaeroMinimapFrame;
     private boolean xaeroWorldMapGui;
     private boolean confluxSquareFrame;
     private boolean confluxCircleFrame;
+    private boolean confluxPlayerMarker;
     private boolean vanillaButtonStyle;
     private Set<Identifier> overriddenConfluxIcons = Set.of();
 
@@ -83,6 +87,7 @@ public final class UiResourceTheme {
         );
         confluxSquareFrame = resourceCount(manager, CONFLUX_SQUARE_FRAME) > 0;
         confluxCircleFrame = resourceCount(manager, CONFLUX_CIRCLE_FRAME) > 0;
+        confluxPlayerMarker = resourceCount(manager, CONFLUX_PLAYER_MARKER) > 0;
         vanillaButtonStyle = resourceCount(manager, VANILLA_BUTTON_RESOURCE) > 1;
 
         final Set<Identifier> overridden = new HashSet<>();
@@ -104,6 +109,17 @@ public final class UiResourceTheme {
     /** Uses the effective Minecraft button skin only when another resource layer replaces it. */
     public boolean useVanillaButtonStyle() {
         return vanillaButtonStyle;
+    }
+
+    /** Optional full-color player marker supplied only by an enabled resource pack. */
+    public Optional<UiTextureRegion> playerMarker() {
+        return confluxPlayerMarker
+            ? Optional.of(UiTextureRegion.full(CONFLUX_PLAYER_MARKER))
+            : Optional.empty();
+    }
+
+    static Identifier playerMarkerResource() {
+        return CONFLUX_PLAYER_MARKER;
     }
 
     static Identifier vanillaButtonResource() {

@@ -24,6 +24,32 @@ class ConfigIoTest {
     private static final Logger LOGGER = LogManager.getLogger("ConfigIoTest");
 
     @Test
+    void playerMarkerStyleRoundTripsCopiesAndDefaultsSafely(@TempDir final Path tmp)
+        throws IOException {
+        final Path file = tmp.resolve("config.json");
+        final ConfigIo io = new ConfigIo(file, LOGGER);
+        final ConfluxConfig config = new ConfluxConfig();
+        config.playerMarkerStyle = ConfluxConfig.PlayerMarkerStyle.TRADITIONAL;
+
+        io.save(config);
+
+        assertEquals(ConfluxConfig.PlayerMarkerStyle.TRADITIONAL, io.load().playerMarkerStyle);
+        assertEquals(
+            ConfluxConfig.PlayerMarkerStyle.TRADITIONAL, config.copy().playerMarkerStyle
+        );
+        config.playerMarkerStyle = null;
+        config.normalize();
+        assertEquals(ConfluxConfig.PlayerMarkerStyle.MODERN, config.playerMarkerStyle);
+
+        Files.writeString(file, "{\"schemaVersion\":7}", StandardCharsets.UTF_8);
+        assertEquals(ConfluxConfig.PlayerMarkerStyle.MODERN, io.load().playerMarkerStyle);
+        assertTrue(
+            Files.readString(file, StandardCharsets.UTF_8)
+                .contains("\"playerMarkerStyle\": \"MODERN\"")
+        );
+    }
+
+    @Test
     void mapColorStyleRoundTripsCopiesAndDefaultsSafely(@TempDir final Path tmp) throws IOException {
         final ConfigIo io = new ConfigIo(tmp.resolve("config.json"), LOGGER);
         final ConfluxConfig config = new ConfluxConfig();

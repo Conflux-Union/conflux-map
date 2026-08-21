@@ -28,6 +28,20 @@ Each frame is sampled over the complete minimap square. Transparent pixels revea
 The image can use any square resolution, although a power-of-two texture is recommended. A native
 Conflux frame or icon always takes priority over the Xaero compatibility mapping below.
 
+A pack can replace the code-drawn `^` player marker on both the minimap and full-screen map with:
+
+```text
+assets/confluxmap/textures/gui/player_marker.png
+```
+
+The complete square texture is rendered at 16x16 GUI pixels and rotated around its center. Artwork
+must face up in the source image; up represents the player's forward direction. The texture is
+full-color and should use transparency around the marker. If the resource is absent, Conflux draws
+the player-marker style selected under **Settings > Minimap > Player Marker** without requesting a
+missing texture. `New` is the default outlined `^`; `Traditional` restores the filled triangle.
+When the resource is present, the setting displays `Resource Pack` and is disabled until the
+override is removed and resources are reloaded.
+
 Resource changes apply after the normal Minecraft resource reload (`F3+T`); a client restart is not
 required.
 

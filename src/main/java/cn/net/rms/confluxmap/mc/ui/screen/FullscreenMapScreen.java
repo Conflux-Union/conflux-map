@@ -83,6 +83,7 @@ import cn.net.rms.confluxmap.mc.ui.UiResourceTheme;
 import cn.net.rms.confluxmap.mc.ui.UiTextureRegion;
 import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
 import cn.net.rms.confluxmap.mc.ui.DisplayModeIconCatalog;
+import cn.net.rms.confluxmap.mc.ui.PlayerMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.PlayerTrailRenderer;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.StructureMarkerRenderer;
@@ -268,8 +269,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final int LOCATION_MENU_BORDER = 0xFF9A9AA8;
     private static final int TEMPORARY_LOCATION_COLOR = 0xFF3498DB;
     private static final int GRID_COLOR = 0x22FFFFFF;
-    private static final int ARROW_OUTLINE = 0xFF101010;
-    private static final int ARROW_FILL = 0xFFFFE066;
+    private static final int PLAYER_MARKER_COLOR = 0xFFFFE066;
     private static final double MIN_GRID_SPACING_PX = 8.0;
     /** Xaero-style faint dark lattice on chunk borders, understated over both light and dark terrain. */
     private static final int CHUNK_GRID_COLOR = 0x40000000;
@@ -3496,12 +3496,16 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final double pxPerBlock = 1.0 / scale;
         final float screenX = (float) (width / 2.0 + (player.x() - centerX) * pxPerBlock);
         final float screenY = (float) (height / 2.0 + (player.z() - centerZ) * pxPerBlock);
-        matrices.push();
-        matrices.translate(screenX, screenY, 0);
-        RenderUtil.rotateZ(matrices, player.yawDegrees() + 180f);
-        RenderUtil.fillTriangle(matrices, 0f, -7f, -5.5f, 6f, 5.5f, 6f, ARROW_OUTLINE);
-        RenderUtil.fillTriangle(matrices, 0f, -5.5f, -4f, 4.5f, 4f, 4.5f, ARROW_FILL);
-        matrices.pop();
+        PlayerMarkerRenderer.draw(
+            this.client,
+            matrices,
+            uiTheme,
+            config.playerMarkerStyle,
+            screenX,
+            screenY,
+            player.yawDegrees() + 180f,
+            PLAYER_MARKER_COLOR
+        );
     }
 
     /**

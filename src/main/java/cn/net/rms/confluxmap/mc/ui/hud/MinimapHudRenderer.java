@@ -33,6 +33,7 @@ import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.mc.ui.PlayerMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.PlayerTrailRenderer;
 import cn.net.rms.confluxmap.mc.ui.UiResourceTheme;
 import cn.net.rms.confluxmap.mc.ui.UiTextureRegion;
@@ -75,8 +76,7 @@ public final class MinimapHudRenderer {
     private static final int BORDER_COLOR = 0xB0FFFFFF;
     private static final int BACKGROUND_COLOR = 0x80101018;
     private static final int TEXT_COLOR = 0xFFFFFFFF;
-    private static final int ARROW_OUTLINE = 0xFF101010;
-    private static final int ARROW_FILL = 0xFFFFFFFF;
+    private static final int PLAYER_MARKER_COLOR = 0xFFFFFFFF;
     private static final float[] BLOCKS_PER_PIXEL = {0.5f, 1f, 2f, 4f};
     /** Half of the ~7px-across VoxelMap-style diamond/cross marker (deliverable B). */
     private static final float WAYPOINT_MARKER_HALF_SIZE = 3.5f;
@@ -316,7 +316,16 @@ public final class MinimapHudRenderer {
         drawRadar(draw, centerX, centerY, contentSize, mapAngle, player, tickDelta);
         drawCardinals(draw, centerX, centerY, contentSize, mapAngle);
         drawWaypointMarkers(draw, centerX, centerY, contentSize, mapAngle, player);
-        drawPlayerArrow(matrices, centerX, centerY, rotate ? 0f : player.yawDegrees() + 180f);
+        PlayerMarkerRenderer.draw(
+            client,
+            matrices,
+            uiTheme,
+            config.playerMarkerStyle,
+            centerX,
+            centerY,
+            rotate ? 0f : player.yawDegrees() + 180f,
+            PLAYER_MARKER_COLOR
+        );
         drawInfoText(draw, player, x0, y0, size);
     }
 
@@ -524,15 +533,6 @@ public final class MinimapHudRenderer {
             markers.add(new RadarMarkerRenderer.Marker(entry, x, y, yDelta, live));
         }
         RadarMarkerRenderer.drawAll(draw, client, config, iconManager, markers);
-    }
-
-    private void drawPlayerArrow(final MatrixStack matrices, final float centerX, final float centerY, final float angle) {
-        matrices.push();
-        matrices.translate(centerX, centerY, 0);
-        RenderUtil.rotateZ(matrices, angle);
-        RenderUtil.fillTriangle(matrices, 0f, -6.5f, -5f, 5.5f, 5f, 5.5f, ARROW_OUTLINE);
-        RenderUtil.fillTriangle(matrices, 0f, -5f, -3.5f, 4f, 3.5f, 4f, ARROW_FILL);
-        matrices.pop();
     }
 
     /** Cardinal letters sit on the (possibly rotated) compass ring but are always drawn upright. */

@@ -51,6 +51,8 @@ public final class ConfluxConfig {
 
     public enum Shape { SQUARE, CIRCLE }
 
+    public enum PlayerMarkerStyle { TRADITIONAL, MODERN }
+
     /**
      * Manual layer override cycled by {@code key.confluxmap.cycle_layer}; see
      * {@code mc.world.LayerSelector} for how each dimension interprets these
@@ -70,6 +72,8 @@ public final class ConfluxConfig {
     /** Temporarily moves only the minimap to keep it clear of vanilla HUD elements. */
     public boolean minimapHudAvoidance = true;
     public Shape minimapShape = Shape.SQUARE;
+    /** Code-drawn player marker used on both map surfaces when no resource pack overrides it. */
+    public PlayerMarkerStyle playerMarkerStyle = PlayerMarkerStyle.MODERN;
     public int minimapSize = DEFAULT_MINIMAP_SIZE;
     public boolean minimapRotate = true;
     public int minimapZoomIndex = 1;
@@ -200,6 +204,7 @@ public final class ConfluxConfig {
         c.minimapPositionY = minimapPositionY;
         c.minimapHudAvoidance = minimapHudAvoidance;
         c.minimapShape = minimapShape;
+        c.playerMarkerStyle = playerMarkerStyle;
         c.minimapSize = minimapSize;
         c.minimapRotate = minimapRotate;
         c.minimapZoomIndex = minimapZoomIndex;
@@ -272,6 +277,9 @@ public final class ConfluxConfig {
         minimapPositionY = position.y();
         if (minimapShape == null) {
             minimapShape = Shape.SQUARE;
+        }
+        if (playerMarkerStyle == null) {
+            playerMarkerStyle = PlayerMarkerStyle.MODERN;
         }
         if (layerOverride == null) {
             layerOverride = LayerOverride.AUTO;

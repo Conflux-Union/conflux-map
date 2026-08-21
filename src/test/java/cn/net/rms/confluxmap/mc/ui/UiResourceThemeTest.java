@@ -114,6 +114,33 @@ final class UiResourceThemeTest {
     }
 
     @Test
+    void noPackKeepsTheCodeDrawnPlayerMarker() {
+        assertTrue(new UiResourceTheme().playerMarker().isEmpty());
+    }
+
+    @Test
+    void resourcePackPlayerMarkerReplacesTheCodeDrawnMarker() {
+        final UiResourceTheme theme = new UiResourceTheme();
+
+        theme.reload(resourceManagerWithLayers(UiResourceTheme.playerMarkerResource(), 1));
+
+        assertEquals(
+            UiTextureRegion.full(UiResourceTheme.playerMarkerResource()),
+            theme.playerMarker().orElseThrow()
+        );
+    }
+
+    @Test
+    void removingTheResourcePackRestoresTheCodeDrawnPlayerMarker() {
+        final UiResourceTheme theme = new UiResourceTheme();
+        theme.reload(resourceManagerWithLayers(UiResourceTheme.playerMarkerResource(), 1));
+
+        theme.reload(resourceManagerWithLayers(UiResourceTheme.playerMarkerResource(), 0));
+
+        assertTrue(theme.playerMarker().isEmpty());
+    }
+
+    @Test
     void missingStartupResourceManagerKeepsTheDefaultTheme() {
         final UiResourceTheme theme = new UiResourceTheme();
 
@@ -154,6 +181,13 @@ final class UiResourceThemeTest {
     }
 
     private static ResourceManager resourceManagerWithVanillaButtonLayers(final int layers) {
+        return resourceManagerWithLayers(UiResourceTheme.vanillaButtonResource(), layers);
+    }
+
+    private static ResourceManager resourceManagerWithLayers(
+        final Identifier resource,
+        final int layers
+    ) {
         return (ResourceManager) Proxy.newProxyInstance(
             ResourceManager.class.getClassLoader(),
             new Class<?>[] {ResourceManager.class},
@@ -163,7 +197,7 @@ final class UiResourceThemeTest {
                         || method.getName().equals("getResourceStack")
                 ) {
                     final Identifier requested = (Identifier) arguments[0];
-                    final int count = requested.equals(UiResourceTheme.vanillaButtonResource())
+                    final int count = requested.equals(resource)
                         ? layers
                         : 0;
                     return Collections.nCopies(count, null);
