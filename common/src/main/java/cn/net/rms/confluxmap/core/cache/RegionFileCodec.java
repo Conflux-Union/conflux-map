@@ -27,10 +27,13 @@ import java.util.zip.InflaterInputStream;
  *
  * <p>The compressed body starts with a UTF biome-identifier dictionary, followed by fixed-width
  * column records: {@code i16 surfaceY, u8 fluidDepth, u8 kind, u16 biomeIndex, i32 baseArgb,
- * i32 biomeTint, i32 overlayArgb, u8 light}. Biome index 0 means unknown; other values are
+ * i32 xaeroBaseArgb, i32 biomeTint, i32 overlayArgb, i32 xaeroOverlayArgb, u8 light}.
+ * Biome index 0 means unknown; other values are
  * one-based dictionary indexes. Schema 3 introduced this stable identity plane; schema 4 adds
- * each chunk's world source revision to the uncompressed table. Schema 3 remains readable with
- * unknown source revisions so existing caches keep their old local-first fallback behavior.
+ * each chunk's world source revision to the uncompressed table. Schema 5 retains the raw texture
+ * average needed by Xaero rendering. Schema 6 separates Xaero-filtered overlays so decorative
+ * plants hidden by Xaero do not inherit Conflux detail noise. Older schemas remain readable;
+ * schemas 3/4 fall back to baseArgb and schemas 3-5 start with an empty Xaero overlay plane.
  *
  * <p>All multi-byte integers are big-endian (plain {@link DataOutputStream}/
  * {@link DataInputStream} semantics). This class only encodes/decodes streams; file
@@ -39,8 +42,8 @@ import java.util.zip.InflaterInputStream;
 public final class RegionFileCodec {
     public static final byte[] MAGIC = {'C', 'F', 'R', 'M'};
     public static final int FORMAT_VERSION = 1;
-    public static final int SCHEMA_VERSION = 4;
-    private static final int LEGACY_SCHEMA_VERSION = 3;
+    public static final int SCHEMA_VERSION = 6;
+    private static final int MIN_SUPPORTED_SCHEMA_VERSION = 3;
     /** Discriminates the on-disk record family; 0 = the fixed-width column layout described above. */
     public static final int SOURCE_CLASS = 0;
 
@@ -53,7 +56,7 @@ public final class RegionFileCodec {
     public static final int CHUNK_TABLE_SIZE = CHUNK_TABLE_ENTRIES * CHUNK_TABLE_ENTRY_SIZE;
 
     public static final int COLUMN_COUNT = RegionColumns.SIZE * RegionColumns.SIZE;
-    public static final int COLUMN_RECORD_SIZE = 2 + 1 + 1 + 2 + 4 + 4 + 4 + 1;
+    public static final int COLUMN_RECORD_SIZE = 2 + 1 + 1 + 2 + 4 + 4 + 4 + 4 + 4 + 1;
     private static final int MAX_BIOME_PALETTE_SIZE = 0xFFFF;
 
     private RegionFileCodec() {
@@ -83,8 +86,10 @@ public final class RegionFileCodec {
         byte[] kind,
         String[] biomeId,
         int[] baseArgb,
+        int[] xaeroBaseArgb,
         int[] biomeTint,
         int[] overlayArgb,
+        int[] xaeroOverlayArgb,
         byte[] light
     ) {
         public RegionData {
@@ -96,9 +101,34 @@ public final class RegionFileCodec {
             requireLength("kind", kind.length, COLUMN_COUNT);
             requireLength("biomeId", biomeId.length, COLUMN_COUNT);
             requireLength("baseArgb", baseArgb.length, COLUMN_COUNT);
+            requireLength("xaeroBaseArgb", xaeroBaseArgb.length, COLUMN_COUNT);
             requireLength("biomeTint", biomeTint.length, COLUMN_COUNT);
             requireLength("overlayArgb", overlayArgb.length, COLUMN_COUNT);
+            requireLength("xaeroOverlayArgb", xaeroOverlayArgb.length, COLUMN_COUNT);
             requireLength("light", light.length, COLUMN_COUNT);
+        }
+
+        public RegionData(
+            final int rx,
+            final int rz,
+            final long lastWriteEpochMs,
+            final byte[] chunkSourceOrdinal,
+            final int[] chunkUpdateEpochSeconds,
+            final long[] chunkSourceRevision,
+            final short[] surfaceY,
+            final byte[] fluidDepth,
+            final byte[] kind,
+            final String[] biomeId,
+            final int[] baseArgb,
+            final int[] biomeTint,
+            final int[] overlayArgb,
+            final byte[] light
+        ) {
+            this(
+                rx, rz, lastWriteEpochMs, chunkSourceOrdinal, chunkUpdateEpochSeconds,
+                chunkSourceRevision, surfaceY, fluidDepth, kind, biomeId,
+                baseArgb, baseArgb, biomeTint, overlayArgb, overlayArgb, light
+            );
         }
 
         public RegionData(
@@ -119,7 +149,7 @@ public final class RegionFileCodec {
             this(
                 rx, rz, lastWriteEpochMs, chunkSourceOrdinal, chunkUpdateEpochSeconds,
                 unknownRevisions(), surfaceY, fluidDepth, kind, biomeId,
-                baseArgb, biomeTint, overlayArgb, light
+                baseArgb, baseArgb, biomeTint, overlayArgb, overlayArgb, light
             );
         }
 
@@ -171,8 +201,10 @@ public final class RegionFileCodec {
                 columns.writeByte(data.kind()[i]);
                 columns.writeShort(data.biomeId()[i] == null ? 0 : biomePalette.get(data.biomeId()[i]));
                 columns.writeInt(data.baseArgb()[i]);
+                columns.writeInt(data.xaeroBaseArgb()[i]);
                 columns.writeInt(data.biomeTint()[i]);
                 columns.writeInt(data.overlayArgb()[i]);
+                columns.writeInt(data.xaeroOverlayArgb()[i]);
                 columns.writeByte(data.light()[i]);
             }
             columns.flush();
@@ -225,7 +257,7 @@ public final class RegionFileCodec {
             throw new RegionFileException("unsupported format version " + formatVersion);
         }
         final int schemaVersion = header.readUnsignedByte();
-        if (schemaVersion != SCHEMA_VERSION && schemaVersion != LEGACY_SCHEMA_VERSION) {
+        if (schemaVersion < MIN_SUPPORTED_SCHEMA_VERSION || schemaVersion > SCHEMA_VERSION) {
             throw new RegionFileException("unsupported schema version " + schemaVersion);
         }
         final int sourceClass = header.readUnsignedByte();
@@ -252,7 +284,7 @@ public final class RegionFileCodec {
         for (int i = 0; i < CHUNK_TABLE_ENTRIES; i++) {
             chunkSourceOrdinal[i] = header.readByte();
             chunkUpdateEpochSeconds[i] = header.readInt();
-            if (schemaVersion >= SCHEMA_VERSION) {
+            if (schemaVersion >= 4) {
                 chunkSourceRevision[i] = header.readLong();
             }
         }
@@ -262,8 +294,10 @@ public final class RegionFileCodec {
         final byte[] kind = new byte[COLUMN_COUNT];
         final String[] biomeId = new String[COLUMN_COUNT];
         final int[] baseArgb = new int[COLUMN_COUNT];
+        final int[] xaeroBaseArgb = new int[COLUMN_COUNT];
         final int[] biomeTint = new int[COLUMN_COUNT];
         final int[] overlayArgb = new int[COLUMN_COUNT];
+        final int[] xaeroOverlayArgb = new int[COLUMN_COUNT];
         final byte[] light = new byte[COLUMN_COUNT];
         final Inflater inflater = new Inflater();
         try {
@@ -291,8 +325,10 @@ public final class RegionFileCodec {
                 }
                 biomeId[i] = biomePalette[biomeIndex];
                 baseArgb[i] = columns.readInt();
+                xaeroBaseArgb[i] = schemaVersion >= 5 ? columns.readInt() : baseArgb[i];
                 biomeTint[i] = columns.readInt();
                 overlayArgb[i] = columns.readInt();
+                xaeroOverlayArgb[i] = schemaVersion >= 6 ? columns.readInt() : 0;
                 light[i] = columns.readByte();
             }
         } finally {
@@ -301,7 +337,8 @@ public final class RegionFileCodec {
 
         return new RegionData(
             rx, rz, lastWriteEpochMs, chunkSourceOrdinal, chunkUpdateEpochSeconds, chunkSourceRevision,
-            surfaceY, fluidDepth, kind, biomeId, baseArgb, biomeTint, overlayArgb, light
+            surfaceY, fluidDepth, kind, biomeId, baseArgb, xaeroBaseArgb,
+            biomeTint, overlayArgb, xaeroOverlayArgb, light
         );
     }
 

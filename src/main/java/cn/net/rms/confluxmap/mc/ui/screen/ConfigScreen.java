@@ -7,6 +7,7 @@ import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
@@ -456,6 +457,15 @@ public final class ConfigScreen extends ConfluxScreen {
                 );
                 y = addToggleRow(
                     y, "confluxmap.config.map.dynamic_lighting", () -> config.dynamicLighting, v -> config.dynamicLighting = v
+                );
+                y = addEnumRow(
+                    y, "confluxmap.config.map.color_style", MapColorStyle.values(),
+                    () -> config.mapColorStyle,
+                    v -> {
+                        config.mapColorStyle = v;
+                        ConfluxMapClient.get().onMapColorStyleChanged();
+                    },
+                    ConfigScreen::mapColorStyleKey
                 );
                 break;
             case RADAR:
@@ -938,6 +948,12 @@ public final class ConfigScreen extends ConfluxScreen {
             default:
                 return "confluxmap.config.layer_override.auto";
         }
+    }
+
+    private static String mapColorStyleKey(final MapColorStyle style) {
+        return style == MapColorStyle.XAERO
+            ? "confluxmap.value.map_color_style.xaero"
+            : "confluxmap.value.map_color_style.conflux";
     }
 
     private static String predictionViewModeKey(final PredictionViewMode mode) {

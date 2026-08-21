@@ -1,8 +1,9 @@
 package cn.net.rms.confluxmap.core.config;
 
-import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
+import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.loadstate.ChunkLoadDetailMode;
 import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
+import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.core.survey.SurveyReminderSchedule;
 import cn.net.rms.confluxmap.core.util.TileMath;
 
@@ -107,6 +108,8 @@ public final class ConfluxConfig {
      * layers always keep their baked light). Off = exactly today's fixed-brightness rendering.
      */
     public boolean dynamicLighting = true;
+    /** Keeps the historical Conflux renderer by default; XAERO is an explicit presentation choice. */
+    public MapColorStyle mapColorStyle = MapColorStyle.CONFLUX;
 
     public int snapshotBudgetPerTick = 8;
     public int gpuTileCacheLimit = 256;
@@ -215,6 +218,7 @@ public final class ConfluxConfig {
         c.caveSliceY = caveSliceY;
         c.netherSliceY = netherSliceY;
         c.dynamicLighting = dynamicLighting;
+        c.mapColorStyle = mapColorStyle;
         c.snapshotBudgetPerTick = snapshotBudgetPerTick;
         c.gpuTileCacheLimit = gpuTileCacheLimit;
         c.radarEnabled = radarEnabled;
@@ -277,6 +281,9 @@ public final class ConfluxConfig {
         }
         if (chunkLoadDetailMode == null) {
             chunkLoadDetailMode = ChunkLoadDetailMode.BANDS;
+        }
+        if (mapColorStyle == null) {
+            mapColorStyle = MapColorStyle.CONFLUX;
         }
         if (schemaVersion < 3 && playerTrailDurationMinutes != null) {
             final long legacyDurationSeconds = playerTrailDurationMinutes.longValue() * 60L;

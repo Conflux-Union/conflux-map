@@ -26,6 +26,9 @@ package cn.net.rms.confluxmap.gametest;
 //$$
 //$$     @Override
 //$$     public void runTest(final ClientGameTestContext context) {
+//$$         if (Boolean.getBoolean("confluxmap.xaero.oracle")) {
+//$$             return;
+//$$         }
 //$$         final Properties serverProperties = new Properties();
 //$$         serverProperties.setProperty("max-tick-time", "0");
 //$$         serverProperties.setProperty("server-port", "25566");

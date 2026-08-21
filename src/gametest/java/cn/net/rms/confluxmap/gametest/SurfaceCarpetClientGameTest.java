@@ -20,6 +20,9 @@ package cn.net.rms.confluxmap.gametest;
 //$$ public final class SurfaceCarpetClientGameTest implements FabricClientGameTest {
 //$$     @Override
 //$$     public void runTest(final ClientGameTestContext context) {
+//$$         if (Boolean.getBoolean("confluxmap.xaero.oracle")) {
+//$$             return;
+//$$         }
 //$$         try (TestSingleplayerContext world = context.worldBuilder().create()) {
 //$$             world.getServer().runCommand(
 //$$                 "execute at @p run setblock ~2 ~-1 ~ minecraft:stone"

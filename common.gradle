@@ -24,6 +24,11 @@ repositories {
         url = 'https://cursemaven.com'
         content { includeGroup 'curse.maven' }
     }
+    maven {
+        name = 'XaeroMaven'
+        url = 'https://chocolateminecraft.com/maven'
+        content { includeGroup 'xaero.lib' }
+    }
 }
 sourceSets {
     gametest
@@ -50,6 +55,14 @@ dependencies {
     }
     autoImpl "net.fabricmc:fabric-loader:$loader_version"
     autoImpl "net.fabricmc.fabric-api:fabric-api:$fabric_api_version"
+    // Xaero's World Map is an all-rights-reserved external oracle, not a project dependency.
+    // Keep its exact 1.21.11 build off normal classpaths and out of release jars; maintainers opt
+    // into the client GameTest with -PxaeroOracle when checking pixel parity against the real mod.
+    if (project.hasProperty('xaeroOracle') && mcVersion == 12111) {
+        modRuntimeOnly 'maven.modrinth:NcUtCpym:uuPYtgMh'
+        // Loom's development remap does not expose the jar-in-jar XaeroLib as a separate mod.
+        modRuntimeOnly 'xaero.lib:xaerolib-fabric-1.21.11:1.7.1'
+    }
     implementation project(':common')
     include project(':common')
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
@@ -129,6 +142,9 @@ loom {
                 vmArg "-Dfabric.client.gametest.disableNetworkSynchronizer=true"
                 vmArg "-Xms256m"
                 vmArg "-Xmx1G"
+                if (project.hasProperty('xaeroOracle') && mcVersion == 12111) {
+                    vmArg "-Dconfluxmap.xaero.oracle=true"
+                }
                 runDir "build/client-gametest"
             }
         }

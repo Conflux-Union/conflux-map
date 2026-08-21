@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.core.tile;
 
+import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import java.util.List;
 
@@ -34,9 +35,16 @@ public record TileUpdate(
      * bit-identical to darkening with factor 1.0); {@code lightLevels} is the tile's
      * per-pixel 0-15 block-light plane, needed so torch-lit pixels keep their own
      * brightness through a re-light instead of scaling with the sky. Null on tiles whose
-     * colors never respond to daylight (cave/nether/end layers, predicted tiles).
+     * colors never respond to daylight (cave/nether/end layers and biome-color tiles).
      */
-    public record Relight(float composedDaylight, byte[] lightLevels) {
+    public record Relight(
+        float composedDaylight,
+        byte[] lightLevels,
+        MapColorStyle style
+    ) {
+        public Relight(final float composedDaylight, final byte[] lightLevels) {
+            this(composedDaylight, lightLevels, MapColorStyle.CONFLUX);
+        }
     }
 
     public static TileUpdate fullTile(final TileKey key, final int[] argbPixels) {

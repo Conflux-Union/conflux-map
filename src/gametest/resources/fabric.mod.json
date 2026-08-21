@@ -22,7 +22,8 @@
     "fabric-client-gametest": [
       "cn.net.rms.confluxmap.gametest.ClientConnectionGameTest",
       "cn.net.rms.confluxmap.gametest.HudAvoidanceClientGameTest",
-      "cn.net.rms.confluxmap.gametest.SurfaceCarpetClientGameTest"
+      "cn.net.rms.confluxmap.gametest.SurfaceCarpetClientGameTest",
+      "cn.net.rms.confluxmap.gametest.XaeroAuthoritativeParityClientGameTest"
     ]
   },
   "depends": {

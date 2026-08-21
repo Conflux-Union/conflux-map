@@ -1,6 +1,8 @@
 package cn.net.rms.confluxmap.core.predict;
 
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
+import cn.net.rms.confluxmap.core.color.MapColorStyle;
+import cn.net.rms.confluxmap.core.color.XaeroMapStyle;
 import cn.net.rms.confluxmap.core.model.MapPixel;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
@@ -157,6 +159,32 @@ public final class PredictedTileComposer {
         final int ambientLightTint,
         final SyncedMaterialPalette syncedMaterials
     ) {
+        return compose(
+            derived, grid, palette, corrections, viewMode, lod, baselineMapColorId,
+            correctionDerived, correctionGrid, correctionBaselineMapColorId,
+            applyAbsoluteHeight, ambientLightTint, syncedMaterials,
+            MapColorStyle.CONFLUX, XaeroMapStyle.Shadow.OVERWORLD
+        );
+    }
+
+    /** Full form with an explicitly selected final colour renderer and dimension shadow tint. */
+    public static int[] compose(
+        final DerivedGrid derived,
+        final BaselineGrid grid,
+        final PredictionPalette palette,
+        final CorrectionTile corrections,
+        final PredictionViewMode viewMode,
+        final int lod,
+        final int baselineMapColorId,
+        final DerivedGrid correctionDerived,
+        final BaselineGrid correctionGrid,
+        final int correctionBaselineMapColorId,
+        final boolean applyAbsoluteHeight,
+        final int ambientLightTint,
+        final SyncedMaterialPalette syncedMaterials,
+        final MapColorStyle mapColorStyle,
+        final XaeroMapStyle.Shadow xaeroShadow
+    ) {
         final int size = BaselineGrid.PIXELS;
         final int[] out = new int[size * size];
         final int[] surface = derived.surfaceY.clone();
@@ -248,6 +276,16 @@ public final class PredictedTileComposer {
                     continue;
                 }
 
+                if (mapColorStyle == MapColorStyle.XAERO) {
+                    out[outIdx] = xaeroColor(
+                        kind, biomes[idx], fluids[idx], palette, syncedMaterials,
+                        corrected[outIdx], colors[outIdx], floorColors[outIdx], baselineMapColorId,
+                        materials[outIdx], floorMaterials[outIdx], grid.blockX(x), grid.blockZ(z),
+                        surface, floorSurface, kinds, x, z, lod, xaeroShadow
+                    );
+                    continue;
+                }
+
                 final double reliefMultiplier = directionalReliefMultiplier(
                     surface, kinds, x, z, lod
                 );
@@ -284,6 +322,71 @@ public final class PredictedTileComposer {
             }
         }
         return out;
+    }
+
+    private static int xaeroColor(
+        final SurfaceKind kind,
+        final int biomeId,
+        final int fluidDepth,
+        final PredictionPalette palette,
+        final SyncedMaterialPalette syncedMaterials,
+        final boolean corrected,
+        final int correctedMapColorId,
+        final int correctedFloorMapColorId,
+        final int baselineMapColorId,
+        final String materialId,
+        final String floorMaterialId,
+        final int worldX,
+        final int worldZ,
+        final int[] surface,
+        final int[] floorSurface,
+        final byte[] kinds,
+        final int x,
+        final int z,
+        final int lod,
+        final XaeroMapStyle.Shadow shadow
+    ) {
+        final int idx = BaselineGrid.index(x, z);
+        final int blocksPerPixel = TileMath.blocksPerPixel(lod);
+        if (kind == SurfaceKind.WATER) {
+            final int waterTint = BiomeTable.get(biomeId).waterBiome()
+                ? BiomeTable.DEFAULT_WATER_TINT
+                : palette.waterTint(biomeId);
+            final int fallbackWater = Argb.multiply(palette.waterBase, waterTint);
+            final int water = corrected && syncedMaterials != null
+                ? syncedMaterials.color(materialId, biomeId, fallbackWater, worldX, worldZ, palette)
+                : fallbackWater;
+            final int fallbackFloor = corrected && paintsFromMapColor(correctedFloorMapColorId)
+                ? MapColorTable.argb(correctedFloorMapColorId)
+                : SEAFLOOR_BASE;
+            final int floor = corrected && syncedMaterials != null
+                ? syncedMaterials.color(
+                    floorMaterialId, biomeId, fallbackFloor, worldX, worldZ, palette
+                ) : fallbackFloor;
+            final int shadedFloor = XaeroMapStyle.applyTerrain(
+                floor, floorSurface[idx],
+                slopeSampleHeight(floorSurface, kinds, x, z - 1),
+                slopeSampleHeight(floorSurface, kinds, x - 1, z - 1),
+                blocksPerPixel, true, shadow
+            );
+            return ShadingPipeline.compositeOver(
+                water,
+                ShadingPipeline.applyBrightnessMultiplier(
+                    shadedFloor, XaeroMapStyle.transparentFloorBrightness(fluidDepth)
+                )
+            );
+        }
+        final int base = baseColor(
+            kind, biomeId, fluidDepth, palette, syncedMaterials, corrected,
+            correctedMapColorId, correctedFloorMapColorId, baselineMapColorId,
+            1.0, materialId, floorMaterialId, worldX, worldZ
+        );
+        return XaeroMapStyle.applyTerrain(
+            base, surface[idx],
+            slopeSampleHeight(surface, kinds, x, z - 1),
+            slopeSampleHeight(surface, kinds, x - 1, z - 1),
+            blocksPerPixel, true, shadow
+        );
     }
 
     /** One column's colour before height shading and relief. */

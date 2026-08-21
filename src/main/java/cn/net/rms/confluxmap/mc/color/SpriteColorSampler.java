@@ -59,10 +59,14 @@ public final class SpriteColorSampler {
     private final MinecraftClient client;
     //#if MC>=11900
     //$$ private final Random modelRandom = Random.create(42L);
+    //$$ private final Random xaeroModelRandom = Random.create(0L);
     //#else
     private final Random modelRandom = new Random(42L);
+    private final Random xaeroModelRandom = new Random(0L);
     //#endif
     private SampledMaterial[] cache = new SampledMaterial[4096];
+    private int[] xaeroCache = new int[4096];
+    private boolean[] xaeroCached = new boolean[4096];
 
     public SpriteColorSampler(final MinecraftClient client) {
         this.client = client;
@@ -71,6 +75,8 @@ public final class SpriteColorSampler {
     /** Resource-reload listener hook: the atlas is being restitched, every cached color is stale. */
     public void clearCache() {
         cache = new SampledMaterial[4096];
+        xaeroCache = new int[4096];
+        xaeroCached = new boolean[4096];
     }
 
     /** The cached base color (tint not applied) for {@code state}, sampling and caching it if new. */
@@ -84,6 +90,177 @@ public final class SpriteColorSampler {
     public int baseColorFor(final BlockState state, final BlockView world, final BlockPos pos) {
         final int id = Block.getRawIdFromState(state);
         return materialFor(state, world, pos, id).argb();
+    }
+
+    /** Xaero's raw top-texture average, before biome tint and terrain lighting. */
+    public int xaeroColorFor(final BlockState state, final BlockView world, final BlockPos pos) {
+        final int id = Block.getRawIdFromState(state);
+        if (id >= 0 && id < xaeroCached.length && xaeroCached[id]) {
+            return xaeroCache[id];
+        }
+        final int color = computeXaeroColor(state, world, pos);
+        if (id >= 0) {
+            if (id >= xaeroCache.length) {
+                final int size = Math.max(id + 1, xaeroCache.length * 2);
+                xaeroCache = Arrays.copyOf(xaeroCache, size);
+                xaeroCached = Arrays.copyOf(xaeroCached, size);
+            }
+            xaeroCache[id] = color;
+            xaeroCached[id] = true;
+        }
+        return color;
+    }
+
+    private int computeXaeroColor(final BlockState state, final BlockView world, final BlockPos pos) {
+        //#if MC>=260100
+        //$$ // Xaero's pinned oracle is 1.21.11; newer unobfuscated versions retain the normal
+        //$$ // raw average until an oracle artifact for that game line exists.
+        //$$ return baseColorFor(state, world, pos);
+        //#else
+        final BakedModel model = client.getBlockRenderManager().getModel(state);
+        if (model == null) {
+            return fallbackToMapColor(state, world, pos).argb();
+        }
+        BakedQuad biggest = null;
+        float biggestArea = 0f;
+        //#if MC>=12105
+        //$$ for (final BlockModelPart part : model.getParts(xaeroModelRandom)) {
+        //$$     for (final BakedQuad quad : part.getQuads(Direction.UP)) {
+        //$$         final float area = xaeroTopArea(quad);
+        //$$         if (area > biggestArea) {
+        //$$             biggest = quad;
+        //$$             biggestArea = area;
+        //$$         }
+        //$$     }
+        //$$ }
+        //$$ for (final BlockModelPart part : model.getParts(xaeroModelRandom)) {
+        //$$     for (final BakedQuad quad : part.getQuads(null)) {
+        //#if MC>=12105
+        //$$         if (quad.face() != Direction.UP) {
+        //#else
+        //$$         if (quad.getFace() != Direction.UP) {
+        //#endif
+        //$$             continue;
+        //$$         }
+        //$$         final float area = xaeroTopArea(quad);
+        //$$         if (area > biggestArea) {
+        //$$             biggest = quad;
+        //$$             biggestArea = area;
+        //$$         }
+        //$$     }
+        //$$ }
+        //#else
+        for (final BakedQuad quad : model.getQuads(state, Direction.UP, xaeroModelRandom)) {
+            final float area = xaeroTopArea(quad);
+            if (area > biggestArea) {
+                biggest = quad;
+                biggestArea = area;
+            }
+        }
+        for (final BakedQuad quad : model.getQuads(state, null, xaeroModelRandom)) {
+            if (quad.getFace() != Direction.UP) {
+                continue;
+            }
+            final float area = xaeroTopArea(quad);
+            if (area > biggestArea) {
+                biggest = quad;
+                biggestArea = area;
+            }
+        }
+        //#endif
+        //#if MC>=12111
+        //$$ final Sprite sprite = biggest == null
+        //$$     ? client.getBlockRenderManager().getModels().getModelParticleSprite(state)
+        //$$     : biggest.sprite();
+        //#elseif MC>=12105
+        //$$ final Sprite sprite = biggest == null ? model.particleSprite() : biggest.sprite();
+        //#else
+        final Sprite sprite = biggest == null ? model.getParticleSprite() : biggest.getSprite();
+        //#endif
+        final Integer sampled = sampleOneSpriteXaero(sprite);
+        return sampled == null ? fallbackToMapColor(state, world, pos).argb() : sampled;
+        //#endif
+    }
+
+    private static float xaeroTopArea(final BakedQuad quad) {
+        //#if MC>=12111 && MC<260100
+        //$$ float minX = Float.POSITIVE_INFINITY;
+        //$$ float maxX = Float.NEGATIVE_INFINITY;
+        //$$ float minZ = Float.POSITIVE_INFINITY;
+        //$$ float maxZ = Float.NEGATIVE_INFINITY;
+        //$$ for (int vertex = 0; vertex < 4; vertex++) {
+        //$$     final org.joml.Vector3fc position = quad.getPosition(vertex);
+        //$$     minX = Math.min(minX, position.x());
+        //$$     maxX = Math.max(maxX, position.x());
+        //$$     minZ = Math.min(minZ, position.z());
+        //$$     maxZ = Math.max(maxZ, position.z());
+        //$$ }
+        //$$ return (maxX - minX) * (maxZ - minZ);
+        //#else
+        return 1f;
+        //#endif
+    }
+
+    private Integer sampleOneSpriteXaero(final Sprite sprite) {
+        if (sprite == null || isMissing(sprite)) {
+            return null;
+        }
+        //#if MC>=11900
+        //$$ final NativeImage[] images = sprite.getContents().mipmapLevelsImages;
+        //#else
+        final NativeImage[] images = sprite.images;
+        //#endif
+        if (images == null || images.length == 0 || images[0] == null) {
+            return null;
+        }
+        final NativeImage image = images[0];
+        //#if MC>=11900
+        //$$ final int size = Math.min(
+        //$$     Math.min(sprite.getContents().getWidth(), image.getWidth()),
+        //$$     Math.min(sprite.getContents().getHeight(), image.getHeight())
+        //$$ );
+        //#else
+        final int size = Math.min(
+            Math.min(sprite.getWidth(), image.getWidth()),
+            Math.min(sprite.getHeight(), image.getHeight())
+        );
+        //#endif
+        if (size <= 0) {
+            return null;
+        }
+        final int stride = Math.max(1, Math.min(4, size / 8));
+        long alpha = 0;
+        long red = 0;
+        long green = 0;
+        long blue = 0;
+        int count = 0;
+        final int parts = size / stride;
+        for (int partY = 0; partY < parts; partY++) {
+            for (int partX = 0; partX < parts; partX++) {
+                final int x = partX * stride;
+                final int y = partY * stride;
+                final int argb = NativeImages.getArgb(image, x, y);
+                final int a = Argb.alpha(argb);
+                if (argb == 0 || a <= 10) {
+                    continue;
+                }
+                alpha += a;
+                red += Argb.red(argb);
+                green += Argb.green(argb);
+                blue += Argb.blue(argb);
+                count++;
+            }
+        }
+        if (count == 0) {
+            return null;
+        }
+        final int averageRed = (int) (red / count);
+        final int averageGreen = (int) (green / count);
+        final int averageBlue = (int) (blue / count);
+        if (averageRed == 0 && averageGreen == 0 && averageBlue == 0) {
+            return null;
+        }
+        return Argb.pack((int) (alpha / count), averageRed, averageGreen, averageBlue);
     }
 
     /** Resource-derived luminance profile for prediction's representative material palette. */
