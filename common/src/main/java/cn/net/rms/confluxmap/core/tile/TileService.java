@@ -970,11 +970,12 @@ public final class TileService {
         final int[] xaeroBaseArgb = new int[size * size];
         final int[] tintArgb = new int[size * size];
         final int[] overlayArgb = new int[size * size];
+        final int[] xaeroOverlayArgb = new int[size * size];
         final byte[] kind = new byte[size * size];
         final byte[] light = new byte[size * size];
         neighborhood.center().copyChunkRows(
             0, size, surfaceY, biomeId, fluidDepth,
-            baseArgb, xaeroBaseArgb, tintArgb, overlayArgb, kind, light
+            baseArgb, xaeroBaseArgb, tintArgb, overlayArgb, xaeroOverlayArgb, kind, light
         );
         if (outLight != null) {
             System.arraycopy(light, 0, outLight, 0, size * size);
@@ -994,7 +995,7 @@ public final class TileService {
                 }
                 if (mapColorStyle == MapColorStyle.XAERO) {
                     outPixels[idx] = composeXaeroColumn(
-                        x, z, surfaceY, fluidDepth, kind, xaeroBaseArgb, tintArgb, overlayArgb,
+                        x, z, surfaceY, fluidDepth, kind, xaeroBaseArgb, tintArgb, xaeroOverlayArgb,
                         neighborhood, xaeroShadow, applyDaylight, daylightFactor, light[idx]
                     );
                     continue;

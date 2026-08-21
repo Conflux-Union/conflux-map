@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Test;
 
 class TileServiceTerrainDetailTest {
     @Test
-    void xaeroStyleUsesItsRawColorPlaneInsteadOfConfluxTextureDetail() throws InterruptedException {
+    void xaeroStyleUsesItsIndependentColorPlanesInsteadOfConfluxDetail() throws InterruptedException {
         final MapExecutors executors = new MapExecutors();
         try {
             final MapWorldService worlds = new MapWorldService();
@@ -155,12 +155,15 @@ class TileServiceTerrainDetailTest {
         Arrays.fill(xaeroBaseArgb, 0xFF204060);
         final int[] tintArgb = new int[ChunkSnapshot.COLUMNS];
         Arrays.fill(tintArgb, 0xFFFFFFFF);
+        final int[] overlayArgb = new int[ChunkSnapshot.COLUMNS];
+        Arrays.fill(overlayArgb, 0xFF00FF00);
+        final int[] xaeroOverlayArgb = new int[ChunkSnapshot.COLUMNS];
         final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
         Arrays.fill(kind, (byte) SurfaceKind.LAND.ordinal());
         return new ChunkSnapshot(
             0, 0, 1L, Long.MIN_VALUE, surfaceY, new String[ChunkSnapshot.COLUMNS],
             new byte[ChunkSnapshot.COLUMNS], baseArgb, xaeroBaseArgb, tintArgb,
-            new int[ChunkSnapshot.COLUMNS], kind, new byte[ChunkSnapshot.COLUMNS]
+            overlayArgb, xaeroOverlayArgb, kind, new byte[ChunkSnapshot.COLUMNS]
         );
     }
 

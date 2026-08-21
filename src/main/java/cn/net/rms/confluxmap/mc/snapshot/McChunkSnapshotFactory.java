@@ -11,13 +11,17 @@ import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.CarpetBlock;
+import net.minecraft.block.FlowerBlock;
 import net.minecraft.block.LeavesBlock;
 import net.minecraft.block.SnowBlock;
+import net.minecraft.block.TallFlowerBlock;
+import net.minecraft.block.TallPlantBlock;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.fluid.FluidState;
 import net.minecraft.state.property.Properties;
+import net.minecraft.tag.BlockTags;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
@@ -77,6 +81,7 @@ public final class McChunkSnapshotFactory {
         final int[] xaeroBaseArgb = new int[ChunkSnapshot.COLUMNS];
         final int[] tintArgb = new int[ChunkSnapshot.COLUMNS];
         final int[] overlayArgb = new int[ChunkSnapshot.COLUMNS];
+        final int[] xaeroOverlayArgb = new int[ChunkSnapshot.COLUMNS];
         final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
         final byte[] light = new byte[ChunkSnapshot.COLUMNS];
 
@@ -96,7 +101,7 @@ public final class McChunkSnapshotFactory {
                     sampleColumn(
                         chunk, world, pos, baseX, baseZ, x, z, bottomY, topY, playerY, heightmap, z * 16 + x,
                         surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light,
-                        xaeroBaseArgb
+                        xaeroBaseArgb, xaeroOverlayArgb
                     );
                 }
             }
@@ -115,11 +120,12 @@ public final class McChunkSnapshotFactory {
                 }
             }
             System.arraycopy(baseArgb, 0, xaeroBaseArgb, 0, ChunkSnapshot.COLUMNS);
+            System.arraycopy(overlayArgb, 0, xaeroOverlayArgb, 0, ChunkSnapshot.COLUMNS);
         }
         BiomeIdentityCapture.capture(world, pos, baseX, baseZ, surfaceY, biomeId);
         return new ChunkSnapshot(
             chunkX, chunkZ, sessionToken, world.getTime(), surfaceY, biomeId, fluidDepth,
-            baseArgb, xaeroBaseArgb, tintArgb, overlayArgb, kind, light
+            baseArgb, xaeroBaseArgb, tintArgb, overlayArgb, xaeroOverlayArgb, kind, light
         );
     }
 
@@ -143,7 +149,8 @@ public final class McChunkSnapshotFactory {
         final int[] overlayArgb,
         final byte[] kind,
         final byte[] light,
-        final int[] xaeroBaseArgb
+        final int[] xaeroBaseArgb,
+        final int[] xaeroOverlayArgb
     ) {
         final int worldX = baseX + localX;
         final int worldZ = baseZ + localZ;
@@ -254,7 +261,7 @@ public final class McChunkSnapshotFactory {
             transparentOverlay, transparentOverlayY, foliageOverlay, foliageOverlayY,
             seafloorState, seafloorY, bottomless,
             surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light,
-            xaeroBaseArgb
+            xaeroBaseArgb, xaeroOverlayArgb
         );
     }
 
@@ -282,7 +289,8 @@ public final class McChunkSnapshotFactory {
         final int[] overlayArgb,
         final byte[] kind,
         final byte[] light,
-        final int[] xaeroBaseArgb
+        final int[] xaeroBaseArgb,
+        final int[] xaeroOverlayArgb
     ) {
         pos.set(worldX, surfaceYVal, worldZ);
         final int surfaceBaseColor = sampler.colorFor(surfaceState, world, pos);
@@ -302,17 +310,26 @@ public final class McChunkSnapshotFactory {
             tintArgb[index] = 0xFFFFFFFF;
 
             int floorComposite = Argb.TRANSPARENT;
+            int xaeroFloorComposite = Argb.TRANSPARENT;
             int depth = 0;
             if (!bottomless && seafloorState != null) {
                 floorComposite = coloredLayer(seafloorState, seafloorY, worldX, worldZ, pos, world);
+                xaeroFloorComposite = xaeroColoredLayer(seafloorState, seafloorY, worldX, worldZ, pos, world);
                 if (foliageOverlay != null) {
                     floorComposite = Argb.over(
                         coloredLayer(foliageOverlay, foliageOverlayY, worldX, worldZ, pos, world), floorComposite
                     );
+                    if (!isXaeroInvisible(foliageOverlay)) {
+                        xaeroFloorComposite = Argb.over(
+                            xaeroColoredLayer(foliageOverlay, foliageOverlayY, worldX, worldZ, pos, world),
+                            xaeroFloorComposite
+                        );
+                    }
                 }
                 depth = surfaceYVal - seafloorY;
             }
             overlayArgb[index] = floorComposite;
+            xaeroOverlayArgb[index] = xaeroFloorComposite;
             fluidDepth[index] = (byte) Math.min(Math.max(depth, 0), 127);
         } else {
             baseArgb[index] = surfaceBaseColor;
@@ -320,14 +337,29 @@ public final class McChunkSnapshotFactory {
             tintArgb[index] = surfaceTintColor;
 
             int overlayComposite = Argb.TRANSPARENT;
+            int xaeroOverlayComposite = Argb.TRANSPARENT;
             if (foliageOverlay != null) {
                 overlayComposite = coloredLayer(foliageOverlay, foliageOverlayY, worldX, worldZ, pos, world);
+                if (!isXaeroInvisible(foliageOverlay)) {
+                    xaeroOverlayComposite = xaeroColoredLayer(
+                        foliageOverlay, foliageOverlayY, worldX, worldZ, pos, world
+                    );
+                }
             }
             if (transparentOverlay != null) {
                 final int top = coloredLayer(transparentOverlay, transparentOverlayY, worldX, worldZ, pos, world);
                 overlayComposite = overlayComposite == Argb.TRANSPARENT ? top : Argb.over(top, overlayComposite);
+                if (!isXaeroInvisible(transparentOverlay)) {
+                    final int xaeroTop = xaeroColoredLayer(
+                        transparentOverlay, transparentOverlayY, worldX, worldZ, pos, world
+                    );
+                    xaeroOverlayComposite = xaeroOverlayComposite == Argb.TRANSPARENT
+                        ? xaeroTop
+                        : Argb.over(xaeroTop, xaeroOverlayComposite);
+                }
             }
             overlayArgb[index] = overlayComposite;
+            xaeroOverlayArgb[index] = xaeroOverlayComposite;
             fluidDepth[index] = 0;
         }
         surfaceY[index] = clampSurfaceY(surfaceYVal);
@@ -347,6 +379,41 @@ public final class McChunkSnapshotFactory {
         final int base = sampler.colorFor(state, world, pos);
         final int tint = tints.resolve(state, world, worldX, y, worldZ);
         return Argb.multiply(base, tint);
+    }
+
+    /** Xaero uses the raw top-quad texture average and its normal biome tint without Conflux detail noise. */
+    private int xaeroColoredLayer(
+        final BlockState state,
+        final int y,
+        final int worldX,
+        final int worldZ,
+        final BlockPos.Mutable pos,
+        final ClientWorld world
+    ) {
+        pos.set(worldX, y, worldZ);
+        final int base = sampler.xaeroColorFor(state, world, pos);
+        final int tint = tints.resolve(state, world, worldX, y, worldZ);
+        return Argb.multiply(base, tint);
+    }
+
+    /** Mirrors Xaero's default surface scan exclusions for decoration above the real terrain. */
+    private static boolean isXaeroInvisible(final BlockState state) {
+        final Block block = state.getBlock();
+        //#if MC>=12100
+        //$$ final boolean shortGrass = block == Blocks.SHORT_GRASS;
+        //#else
+        final boolean shortGrass = block == Blocks.GRASS;
+        //#endif
+        if (block == Blocks.TORCH || shortGrass || block == Blocks.GLASS || block == Blocks.GLASS_PANE) {
+            return true;
+        }
+        final boolean flower = block instanceof FlowerBlock || block instanceof TallFlowerBlock
+            || state.isIn(BlockTags.FLOWERS)
+            //#if MC>=12000
+            //$$ || block instanceof net.minecraft.block.PitcherCropBlock
+            //#endif
+            ;
+        return block instanceof TallPlantBlock && !flower;
     }
 
     /**

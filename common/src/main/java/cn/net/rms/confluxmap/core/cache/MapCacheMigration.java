@@ -157,6 +157,7 @@ public final class MapCacheMigration {
         final int[] xaeroBaseArgb = target.xaeroBaseArgb().clone();
         final int[] biomeTint = target.biomeTint().clone();
         final int[] overlayArgb = target.overlayArgb().clone();
+        final int[] xaeroOverlayArgb = target.xaeroOverlayArgb().clone();
         final byte[] light = target.light().clone();
         int migratedChunks = 0;
 
@@ -169,7 +170,7 @@ public final class MapCacheMigration {
             }
             copyChunk(
                 chunkIndex, source, surfaceY, fluidDepth, kind, biomeId,
-                baseArgb, xaeroBaseArgb, biomeTint, overlayArgb, light
+                baseArgb, xaeroBaseArgb, biomeTint, overlayArgb, xaeroOverlayArgb, light
             );
             chunkSource[chunkIndex] = source.chunkSourceOrdinal()[chunkIndex];
             chunkUpdateSeconds[chunkIndex] = source.chunkUpdateEpochSeconds()[chunkIndex];
@@ -184,7 +185,7 @@ public final class MapCacheMigration {
                 target.rx(), target.rz(), Math.max(target.lastWriteEpochMs(), source.lastWriteEpochMs()),
                 chunkSource, chunkUpdateSeconds, chunkSourceRevision,
                 surfaceY, fluidDepth, kind, biomeId,
-                baseArgb, xaeroBaseArgb, biomeTint, overlayArgb, light
+                baseArgb, xaeroBaseArgb, biomeTint, overlayArgb, xaeroOverlayArgb, light
             ),
             migratedChunks
         );
@@ -201,6 +202,7 @@ public final class MapCacheMigration {
         final int[] xaeroBaseArgb,
         final int[] biomeTint,
         final int[] overlayArgb,
+        final int[] xaeroOverlayArgb,
         final byte[] light
     ) {
         final int chunkX = chunkIndex % 16;
@@ -218,6 +220,7 @@ public final class MapCacheMigration {
             System.arraycopy(source.xaeroBaseArgb(), from, xaeroBaseArgb, to, 16);
             System.arraycopy(source.biomeTint(), from, biomeTint, to, 16);
             System.arraycopy(source.overlayArgb(), from, overlayArgb, to, 16);
+            System.arraycopy(source.xaeroOverlayArgb(), from, xaeroOverlayArgb, to, 16);
             System.arraycopy(source.light(), from, light, to, 16);
         }
     }

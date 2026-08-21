@@ -77,7 +77,8 @@ package cn.net.rms.confluxmap.gametest;
 //$$             // a colour comparison, not a race against Xaero's asynchronous chunk scan.
 //$$             world.getServer().runCommand(fill(minX - 1, FIXTURE_Y, minZ - 1, maxX, FIXTURE_Y + 6, maxZ, "air"));
 //$$             world.getServer().runCommand(fill(minX - 1, FIXTURE_Y, minZ - 1, maxX, FIXTURE_Y, maxZ, "stone"));
-//$$             world.getServer().runCommand(fill(minX, FIXTURE_Y + 1, minZ + 4, maxX, FIXTURE_Y + 1, minZ + 7, "dirt"));
+//$$             world.getServer().runCommand(fill(minX, FIXTURE_Y + 1, minZ + 4, maxX, FIXTURE_Y + 1, minZ + 7, "grass_block"));
+//$$             world.getServer().runCommand(fill(minX, FIXTURE_Y + 2, minZ + 5, maxX, FIXTURE_Y + 2, minZ + 6, "short_grass"));
 //$$             world.getServer().runCommand(fill(minX, FIXTURE_Y + 1, minZ + 8, maxX, FIXTURE_Y + 2, minZ + 11, "oak_planks"));
 //$$             world.getServer().runCommand(fill(minX, FIXTURE_Y + 1, minZ + 12, maxX, FIXTURE_Y + 3, maxZ, "white_concrete"));
 //$$             world.getServer().runCommand(

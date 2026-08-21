@@ -32,6 +32,7 @@ class RegionFileCodecTest {
         final int[] xaeroBaseArgb = new int[RegionFileCodec.COLUMN_COUNT];
         final int[] biomeTint = new int[RegionFileCodec.COLUMN_COUNT];
         final int[] overlayArgb = new int[RegionFileCodec.COLUMN_COUNT];
+        final int[] xaeroOverlayArgb = new int[RegionFileCodec.COLUMN_COUNT];
         final byte[] light = new byte[RegionFileCodec.COLUMN_COUNT];
         for (int i = 0; i < RegionFileCodec.COLUMN_COUNT; i++) {
             surfaceY[i] = (short) (i % 400 - 64);
@@ -47,6 +48,7 @@ class RegionFileCodecTest {
             xaeroBaseArgb[i] = baseArgb[i] ^ 0x00010203;
             biomeTint[i] = 0xFF445566 + i;
             overlayArgb[i] = i % 5 == 0 ? 0 : 0x80112233 + i;
+            xaeroOverlayArgb[i] = i % 7 == 0 ? 0 : 0x80445566 + i;
             light[i] = (byte) (i % 16);
         }
 
@@ -54,7 +56,7 @@ class RegionFileCodecTest {
             rx, rz, 1_700_000_123_456L,
             chunkSourceOrdinal, chunkUpdateEpochSeconds, chunkSourceRevision,
             surfaceY, fluidDepth, kind, biomeId,
-            baseArgb, xaeroBaseArgb, biomeTint, overlayArgb, light
+            baseArgb, xaeroBaseArgb, biomeTint, overlayArgb, xaeroOverlayArgb, light
         );
     }
 
@@ -86,6 +88,7 @@ class RegionFileCodecTest {
         assertArrayEquals(original.xaeroBaseArgb(), decoded.xaeroBaseArgb());
         assertArrayEquals(original.biomeTint(), decoded.biomeTint());
         assertArrayEquals(original.overlayArgb(), decoded.overlayArgb());
+        assertArrayEquals(original.xaeroOverlayArgb(), decoded.xaeroOverlayArgb());
         assertArrayEquals(original.light(), decoded.light());
     }
 
@@ -119,6 +122,7 @@ class RegionFileCodecTest {
         assertArrayEquals(unknown, decoded.chunkSourceRevision());
         assertArrayEquals(original.surfaceY(), decoded.surfaceY());
         assertArrayEquals(original.baseArgb(), decoded.xaeroBaseArgb());
+        assertArrayEquals(new int[RegionFileCodec.COLUMN_COUNT], decoded.xaeroOverlayArgb());
     }
 
     @Test
@@ -133,6 +137,22 @@ class RegionFileCodecTest {
 
         assertArrayEquals(original.chunkSourceRevision(), decoded.chunkSourceRevision());
         assertArrayEquals(original.baseArgb(), decoded.xaeroBaseArgb());
+        assertArrayEquals(new int[RegionFileCodec.COLUMN_COUNT], decoded.xaeroOverlayArgb());
+    }
+
+    @Test
+    void schemaFiveCacheKeepsXaeroBaseAndStartsWithEmptyXaeroOverlay() throws Exception {
+        final RegionFileCodec.RegionData original = sampleData(4, -8);
+        final ByteArrayOutputStream legacyOut = new ByteArrayOutputStream();
+        encodeLegacy(legacyOut, original, 5);
+
+        final RegionFileCodec.RegionData decoded = RegionFileCodec.decode(
+            new ByteArrayInputStream(legacyOut.toByteArray()), 4, -8, 0
+        );
+
+        assertArrayEquals(original.xaeroBaseArgb(), decoded.xaeroBaseArgb());
+        assertArrayEquals(original.overlayArgb(), decoded.overlayArgb());
+        assertArrayEquals(new int[RegionFileCodec.COLUMN_COUNT], decoded.xaeroOverlayArgb());
     }
 
     @Test
@@ -215,6 +235,9 @@ class RegionFileCodecTest {
             columns.writeByte(data.kind()[i]);
             columns.writeShort(0);
             columns.writeInt(data.baseArgb()[i]);
+            if (schemaVersion >= 5) {
+                columns.writeInt(data.xaeroBaseArgb()[i]);
+            }
             columns.writeInt(data.biomeTint()[i]);
             columns.writeInt(data.overlayArgb()[i]);
             columns.writeByte(data.light()[i]);
