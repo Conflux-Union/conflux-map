@@ -60,6 +60,11 @@ public final class UiResourceTheme {
     }
 
     public void reload(final ResourceManager manager) {
+        // The client entrypoint runs before Minecraft assigns its resource manager. The registered
+        // reload listener supplies the real manager during the initial resource load that follows.
+        if (manager == null) {
+            return;
+        }
         xaeroMinimapFrame = suppliedByResourcePack(
             manager, XAERO_MINIMAP_FRAME, FabricLoader.getInstance().isModLoaded("xaerominimap")
         );

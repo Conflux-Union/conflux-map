@@ -78,6 +78,15 @@ final class UiResourceThemeTest {
         assertTrue(theme(false, false, false, false, Set.of()).minimapFrame(false).isEmpty());
     }
 
+    @Test
+    void missingStartupResourceManagerKeepsTheDefaultTheme() {
+        final UiResourceTheme theme = new UiResourceTheme();
+
+        theme.reload(null);
+
+        assertTrue(theme.minimapFrame(false).isEmpty());
+    }
+
     private static UiResourceTheme theme(
         final boolean xaeroMinimap,
         final boolean xaeroWorldMap,

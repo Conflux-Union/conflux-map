@@ -296,7 +296,6 @@ public final class ConfluxMapClient implements ClientModInitializer {
         waypointRenderCatalog = new WaypointRenderCatalog(waypointService, sharedWaypoints::list, config);
         deathWatcher = new DeathWatcher(gameBridge, config, waypointService);
         uiResourceTheme = new UiResourceTheme();
-        uiResourceTheme.reload(client.getResourceManager());
         minimapHudRenderer = new MinimapHudRenderer(
             client, config, gameBridge, tileService, tileTextureManager, radarScanner, entityIconManager,
             playerTrail, annotationService, layerSelector, waypointRenderCatalog,
