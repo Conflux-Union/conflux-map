@@ -78,6 +78,8 @@ import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
 import cn.net.rms.confluxmap.mc.teleport.TeleportCommandAccess;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.mc.ui.UiResourceTheme;
+import cn.net.rms.confluxmap.mc.ui.UiTextureRegion;
 import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
 import cn.net.rms.confluxmap.mc.ui.DisplayModeIconCatalog;
 import cn.net.rms.confluxmap.mc.ui.PlayerTrailRenderer;
@@ -324,6 +326,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private final ClientGroundTeleportService groundTeleport;
     private final ClientMultiworldService clientMultiworld;
     private final FullscreenMapBrowseService mapBrowser;
+    private final UiResourceTheme uiTheme;
     private InitialFocus initialFocus;
 
     /** World point currently at screen center, and blocks-per-pixel; all mutable, panned/zoomed by input. */
@@ -428,6 +431,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         this.groundTeleport = app.groundTeleportService();
         this.clientMultiworld = app.clientMultiworldService();
         this.mapBrowser = app.fullscreenMapBrowseService();
+        this.uiTheme = app.uiResourceTheme();
         this.mapBrowser.clear();
         this.archivedWaypointRenderCatalog = new WaypointRenderCatalog(
             mapBrowser.waypoints(), List::of, config
@@ -2792,7 +2796,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
     }
 
-    private static final class MapIconButton extends ButtonWidget {
+    private final class MapIconButton extends ButtonWidget {
         private Identifier icon;
         private boolean selected;
 
@@ -3007,17 +3011,18 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             );
             final int iconX = x + (getWidth() - CONTROL_ICON_SIZE) / 2;
             final int iconY = y + (getHeight() - CONTROL_ICON_SIZE) / 2;
-            RenderUtil.bindTexture(MinecraftClient.getInstance(), icon);
+            final UiTextureRegion resolvedIcon = uiTheme.icon(icon);
+            RenderUtil.bindTexture(MinecraftClient.getInstance(), resolvedIcon.texture());
             RenderUtil.drawTintedQuad(
                 matrices,
                 iconX,
                 iconY,
                 CONTROL_ICON_SIZE,
                 CONTROL_ICON_SIZE,
-                0f,
-                0f,
-                1f,
-                1f,
+                resolvedIcon.u0(),
+                resolvedIcon.v0(),
+                resolvedIcon.u1(),
+                resolvedIcon.v1(),
                 visual.iconTint()
             );
         }

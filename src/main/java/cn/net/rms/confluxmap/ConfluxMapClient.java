@@ -55,6 +55,8 @@ import cn.net.rms.confluxmap.mc.survey.SurveyReminderNotifier;
 import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
 import cn.net.rms.confluxmap.mc.trail.PlayerTrailTracker;
 import cn.net.rms.confluxmap.mc.ui.hud.MinimapHudRenderer;
+import cn.net.rms.confluxmap.mc.ui.UiResourceReloadListener;
+import cn.net.rms.confluxmap.mc.ui.UiResourceTheme;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapViewState;
 import cn.net.rms.confluxmap.mc.update.UpdateNotifier;
 import cn.net.rms.confluxmap.mc.ui.world.WaypointWorldRenderer;
@@ -104,6 +106,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private PlayerTrail playerTrail;
     private PlayerTrailTracker playerTrailTracker;
     private MinimapHudRenderer minimapHudRenderer;
+    private UiResourceTheme uiResourceTheme;
     private FullscreenMapViewState fullscreenMapViewState;
     private LayerSelector layerSelector;
     private WaypointService waypointService;
@@ -292,10 +295,12 @@ public final class ConfluxMapClient implements ClientModInitializer {
         annotationService = new AnnotationService(annotationRoot, executors, ConfluxMapMod.LOGGER);
         waypointRenderCatalog = new WaypointRenderCatalog(waypointService, sharedWaypoints::list, config);
         deathWatcher = new DeathWatcher(gameBridge, config, waypointService);
+        uiResourceTheme = new UiResourceTheme();
+        uiResourceTheme.reload(client.getResourceManager());
         minimapHudRenderer = new MinimapHudRenderer(
             client, config, gameBridge, tileService, tileTextureManager, radarScanner, entityIconManager,
             playerTrail, annotationService, layerSelector, waypointRenderCatalog,
-            radarViewRange
+            radarViewRange, uiResourceTheme
         );
         waypointWorldRenderer = new WaypointWorldRenderer(client, config, gameBridge, waypointRenderCatalog);
         fullscreenMapViewState = new FullscreenMapViewState();
@@ -342,6 +347,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
         );
         ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
             new EntityIconReloadListener(entityIconManager)
+        );
+        ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
+            new UiResourceReloadListener(uiResourceTheme)
         );
 
         updateCheck = new UpdateCheckService(
@@ -454,6 +462,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public FullscreenMapBrowseService fullscreenMapBrowseService() {
         return fullscreenMapBrowseService;
+    }
+
+    public UiResourceTheme uiResourceTheme() {
+        return uiResourceTheme;
     }
 
     /** Forces a prediction-only cache/queue reload; captured map textures remain resident. */

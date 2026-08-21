@@ -34,6 +34,8 @@ import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.PlayerTrailRenderer;
+import cn.net.rms.confluxmap.mc.ui.UiResourceTheme;
+import cn.net.rms.confluxmap.mc.ui.UiTextureRegion;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
@@ -92,6 +94,7 @@ public final class MinimapHudRenderer {
     private final LayerSelector layerSelector;
     private final WaypointRenderCatalog waypointRenderCatalog;
     private final RadarViewRange radarViewRange;
+    private final UiResourceTheme uiTheme;
 
     public MinimapHudRenderer(
         final MinecraftClient client,
@@ -105,7 +108,8 @@ public final class MinimapHudRenderer {
         final AnnotationService annotations,
         final LayerSelector layerSelector,
         final WaypointRenderCatalog waypointRenderCatalog,
-        final RadarViewRange radarViewRange
+        final RadarViewRange radarViewRange,
+        final UiResourceTheme uiTheme
     ) {
         this.client = client;
         this.config = config;
@@ -119,6 +123,7 @@ public final class MinimapHudRenderer {
         this.layerSelector = layerSelector;
         this.waypointRenderCatalog = waypointRenderCatalog;
         this.radarViewRange = radarViewRange;
+        this.uiTheme = uiTheme;
     }
 
     public void register() {
@@ -240,7 +245,7 @@ public final class MinimapHudRenderer {
             RenderUtil.beginTexturedQuads();
             canvas.bindTexture();
             RenderUtil.drawTexturedDisk(matrices, centerX, centerY, size / 2f);
-            RenderUtil.drawRing(matrices, centerX, centerY, size / 2f, BORDER_THICKNESS, BORDER_COLOR);
+            drawFrame(matrices, x0, y0, size, true);
             AnnotationRenderer.drawLabels(
                 draw,
                 client.textRenderer,
@@ -282,7 +287,7 @@ public final class MinimapHudRenderer {
                 );
             }
             RenderUtil.disableScissor();
-            drawBorder(matrices, x0, y0, size);
+            drawFrame(matrices, x0, y0, size, false);
         }
 
         drawRadar(draw, centerX, centerY, size, mapAngle, player, tickDelta);
@@ -608,6 +613,44 @@ public final class MinimapHudRenderer {
         RenderUtil.fillRect(matrices, x0, y0 + size - BORDER_THICKNESS, size, BORDER_THICKNESS, BORDER_COLOR);
         RenderUtil.fillRect(matrices, x0, y0, BORDER_THICKNESS, size, BORDER_COLOR);
         RenderUtil.fillRect(matrices, x0 + size - BORDER_THICKNESS, y0, BORDER_THICKNESS, size, BORDER_COLOR);
+    }
+
+    private void drawFrame(
+        final MatrixStack matrices,
+        final int x0,
+        final int y0,
+        final int size,
+        final boolean circle
+    ) {
+        final Optional<UiResourceTheme.MinimapFrame> selected = uiTheme.minimapFrame(circle);
+        if (selected.isEmpty()) {
+            if (circle) {
+                RenderUtil.drawRing(
+                    matrices, x0 + size / 2f, y0 + size / 2f,
+                    size / 2f, BORDER_THICKNESS, BORDER_COLOR
+                );
+            } else {
+                drawBorder(matrices, x0, y0, size);
+            }
+            return;
+        }
+
+        final UiResourceTheme.MinimapFrame frame = selected.get();
+        final UiTextureRegion texture = frame.texture();
+        RenderUtil.bindTexture(client, texture.texture());
+        if (frame.layout() == UiResourceTheme.Layout.OVERLAY) {
+            RenderUtil.drawTintedQuad(
+                matrices, x0, y0, size, size,
+                texture.u0(), texture.v0(), texture.u1(), texture.v1(), 0xFFFFFFFF
+            );
+        } else if (frame.layout() == UiResourceTheme.Layout.XAERO_CIRCLE) {
+            RenderUtil.drawTexturedRing(
+                matrices, x0 + size / 2f, y0 + size / 2f, size / 2f,
+                4f, texture.u0(), texture.v0(), texture.u1(), texture.v1(), 0xFFFFFFFF
+            );
+        } else {
+            XaeroMinimapFrameRenderer.drawSquare(matrices, x0, y0, size);
+        }
     }
 
 }
