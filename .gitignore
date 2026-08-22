@@ -40,6 +40,10 @@ artifacts/
 
 .worktrees/
 
+# local publishing credentials
+
+cf-token.txt
+
 # java
 
 hs_err_*.log

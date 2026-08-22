@@ -364,6 +364,90 @@ jobs:
           # dependencies intentionally omitted: mc-publish derives fabric-api
           # (required) and malilib (optional) straight from fabric.mod.json's
           # depends/suggests, which already tracks the right ids per version.
+  Publish-CurseForge-Matrix:
+    if: vars.ENABLE_CURSEFORGE == 'true'
+    runs-on: ubuntu-24.04
+    needs: [ Build-Matrix, Get-Versions ]
+    strategy:
+      fail-fast: false
+      matrix:
+        minecraft_version: ${{ fromJson(needs.Get-Versions.outputs.versions) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Extract version info
+        id: Version_Info
+        run: |
+          MOD_VERSION=$(grep '^version=' gradle.properties | cut -d'=' -f2)
+          MOD_NAME=$(jq -r '.name' src/main/resources/fabric.mod.json)
+          case "$MOD_VERSION" in
+            *-alpha*) VERSION_TYPE=alpha ;;
+            *-beta*|*-rc*) VERSION_TYPE=beta ;;
+            *) VERSION_TYPE=release ;;
+          esac
+          echo "mod_version=$MOD_VERSION" >> $GITHUB_OUTPUT
+          echo "mod_name=$MOD_NAME" >> $GITHUB_OUTPUT
+          echo "version_type=$VERSION_TYPE" >> $GITHUB_OUTPUT
+      - name: Resolve supported game versions
+        id: Game_Versions
+        run: |
+          set -euo pipefail
+
+          PROPERTIES="versions/${{ matrix.minecraft_version }}/gradle.properties"
+          GAME_VERSIONS=$(sed -n 's/^minecraft_versions=//p' "$PROPERTIES" | tr -s ' ' '\n' | sed '/^$/d' | sort -V)
+          if [[ -z "$GAME_VERSIONS" ]]; then
+            echo "$PROPERTIES does not define minecraft_versions" >&2
+            exit 1
+          fi
+
+          OLDEST=$(echo "$GAME_VERSIONS" | head -n 1)
+          NEWEST=$(echo "$GAME_VERSIONS" | tail -n 1)
+          if [[ "$OLDEST" == "$NEWEST" ]]; then
+            echo "label=$OLDEST" >> $GITHUB_OUTPUT
+          else
+            echo "label=$OLDEST-$NEWEST" >> $GITHUB_OUTPUT
+          fi
+
+          {
+            echo 'game_versions<<EOF'
+            echo "$GAME_VERSIONS"
+            echo 'EOF'
+          } >> $GITHUB_OUTPUT
+      - name: Download build artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: build-${{ matrix.minecraft_version }}
+          path: versions/${{ matrix.minecraft_version }}/build/libs/
+      - name: Download changelog
+        uses: actions/download-artifact@v6
+        with:
+          name: release-changelog
+          path: release-notes/
+      - name: Publish to CurseForge
+        uses: Kira-NT/mc-publish@v3.3.1
+        with:
+          curseforge-id: ${{ vars.CURSEFORGE_ID }}
+          curseforge-token: ${{ secrets.CURSEFORGE_TOKEN }}
+          files: |
+            versions/${{ matrix.minecraft_version }}/build/libs/*.jar
+          name: ${{ format('{0} v{1} for MC {2}',
+            steps.Version_Info.outputs.mod_name,
+            steps.Version_Info.outputs.mod_version,
+            steps.Game_Versions.outputs.label) }}
+          version: ${{ format('v{0}-mc{1}',
+            steps.Version_Info.outputs.mod_version,
+            matrix.minecraft_version) }}
+          version-type: ${{ steps.Version_Info.outputs.version_type }}
+          changelog-file: release-notes/changelog.md
+          loaders: fabric
+          environment: client | server
+          game-versions: |
+            ${{ steps.Game_Versions.outputs.game_versions }}
+          dependencies: |
+            fabric-api(required)
+            malilib(optional)
   Publish-Paper-Modrinth:
     if: vars.ENABLE_MODRINTH == 'true'
     runs-on: ubuntu-24.04
