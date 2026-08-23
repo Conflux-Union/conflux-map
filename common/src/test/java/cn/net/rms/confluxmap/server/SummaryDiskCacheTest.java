@@ -15,6 +15,27 @@ import org.junit.jupiter.api.io.TempDir;
 
 class SummaryDiskCacheTest {
     @Test
+    void completeSampledLoadDistinguishesFullAndPartialSummaries(@TempDir final Path tempDir)
+        throws IOException {
+        final SummaryDiskCache cache = new SummaryDiskCache(tempDir);
+        cache.saveLiveChunk("minecraft:overworld", 35, -46, 123L, chunk(10L, 60));
+
+        assertNull(cache.loadCurrentCompleteSampled(
+            "minecraft:overworld", 2, -3, 123L, 4
+        ));
+
+        final SummaryCodec.Chunk[] chunks = new SummaryCodec.Chunk[SummaryCodec.CHUNKS];
+        Arrays.fill(chunks, chunk(11L, 61));
+        cache.save(
+            "minecraft:overworld", new SummaryCodec.Region(2, -3, 123L, chunks)
+        );
+
+        assertNotNull(cache.loadCurrentCompleteSampled(
+            "minecraft:overworld", 2, -3, 123L, 4
+        ));
+    }
+
+    @Test
     void liveChunksMergeWithinOneRegionAndAChangedMcaInvalidatesOlderSlots(
         @TempDir final Path tempDir
     ) throws IOException {

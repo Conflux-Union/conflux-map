@@ -781,7 +781,7 @@ public final class RegionSummaryService {
         SummaryCodec.SampledRegion region;
         started = System.nanoTime();
         try {
-            region = disk.loadCurrentSampled(
+            region = disk.loadCurrentCompleteSampled(
                 dimension, slice.regionX(), slice.regionZ(), mtimeBefore, lod
             );
             if (region == null) {
