@@ -85,6 +85,20 @@ class TileServiceUploadQueueTest {
         }
     }
 
+    @Test
+    void lightingReloadDropsQueuedCompositions() {
+        final Fixture fixture = new Fixture();
+        try {
+            fixture.tiles.submitUpload(TileUpdate.fullTile(fixture.key(0, 0, 0), blankTile()));
+
+            fixture.tiles.reloadLighting();
+
+            assertTrue(fixture.tiles.drainUploads(1).isEmpty());
+        } finally {
+            fixture.close();
+        }
+    }
+
     private static int[] blankTile() {
         return new int[RegionColumns.SIZE * RegionColumns.SIZE];
     }

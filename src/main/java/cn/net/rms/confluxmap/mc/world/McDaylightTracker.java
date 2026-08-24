@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.world;
 
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.store.MapWorld;
@@ -14,7 +15,8 @@ import net.minecraft.util.math.MathHelper;
 //#endif
 
 /**
- * Drives {@link DaylightModel} once per client tick from the live world's sky angle, using
+ * Drives {@link DaylightModel} once per client tick from the live world's sky angle and
+ * vanilla gamma option, using
  * vanilla's own sky-brightness cosine curve (the same one {@code BackgroundRenderer} uses for
  * fog/sky color): {@code f = clamp(2*cos(skyAngle * 2*pi) + 0.5, 0, 1)}.
  *
@@ -25,6 +27,8 @@ import net.minecraft.util.math.MathHelper;
  * to 1.0 when the setting or dimension makes the factor pin again - the currently active
  * world's SURFACE tiles are relit via {@link TileService#markSurfaceRelit}, so toggling the
  * setting off promptly clears any existing night-darkening instead of leaving it stale.
+ * Gamma bucket changes additionally clear resident textures and prediction mips so layers
+ * whose base light tint was baked into stored columns recompose from their gamma-free data.
  */
 public final class McDaylightTracker {
     private final MinecraftClient client;
@@ -32,19 +36,22 @@ public final class McDaylightTracker {
     private final DaylightModel model;
     private final MapWorldService mapWorlds;
     private final TileService tiles;
+    private final Runnable gammaChanged;
 
     public McDaylightTracker(
         final MinecraftClient client,
         final ConfluxConfig config,
         final DaylightModel model,
         final MapWorldService mapWorlds,
-        final TileService tiles
+        final TileService tiles,
+        final Runnable gammaChanged
     ) {
         this.client = client;
         this.config = config;
         this.model = model;
         this.mapWorlds = mapWorlds;
         this.tiles = tiles;
+        this.gammaChanged = gammaChanged;
     }
 
     public void register() {
@@ -52,9 +59,16 @@ public final class McDaylightTracker {
     }
 
     private void tick() {
-        final boolean changed = model.update(computeFactor());
+        final float nextGamma = MinecraftAccess.gamma(client);
+        final boolean gammaBucketChanged = !DaylightModel.sameGammaBucket(
+            model.gamma(), nextGamma
+        );
+        final boolean changed = model.update(computeFactor(), nextGamma);
         if (!changed) {
             return;
+        }
+        if (gammaBucketChanged) {
+            gammaChanged.run();
         }
         final MapWorld world = mapWorlds.current();
         if (world != null) {

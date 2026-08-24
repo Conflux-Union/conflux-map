@@ -303,7 +303,18 @@ public final class ConfluxMapClient implements ClientModInitializer {
         );
         waypointWorldRenderer = new WaypointWorldRenderer(client, config, gameBridge, waypointRenderCatalog);
         fullscreenMapViewState = new FullscreenMapViewState();
-        daylightTracker = new McDaylightTracker(client, config, daylightModel, mapWorlds, tileService);
+        daylightTracker = new McDaylightTracker(
+            client,
+            config,
+            daylightModel,
+            mapWorlds,
+            tileService,
+            () -> {
+                tileService.reloadLighting();
+                tileTextureManager.releaseAll();
+                predictionTileService.reloadAll();
+            }
+        );
 
         // RegionCacheService owns the map-world rotation and final-flush boundary as one transition.
         sessionTracker.addListener(regionCache::onSessionChanged);

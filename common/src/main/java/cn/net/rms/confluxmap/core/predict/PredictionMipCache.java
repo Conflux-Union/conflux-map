@@ -20,6 +20,7 @@ final class PredictionMipCache {
         long[] syncSourceRevisions,
         byte[] blockLight,
         float composedDaylight,
+        float composedGamma,
         PredictionViewMode mode,
         boolean hasServerState,
         long freshnessValidatedAtMillis,
@@ -182,6 +183,7 @@ final class PredictionMipCache {
         java.util.Arrays.fill(syncSourceRevisions, Long.MIN_VALUE);
         final byte[] blockLight = new byte[pixels.length];
         final float composedDaylight = children[0].composedDaylight();
+        final float composedGamma = children[0].composedGamma();
         for (int z = 0; z < BaselineGrid.PIXELS; z++) {
             for (int x = 0; x < BaselineGrid.PIXELS; x++) {
                 final int sourceX = x * 2;
@@ -246,6 +248,7 @@ final class PredictionMipCache {
             syncSourceRevisions,
             blockLight,
             composedDaylight,
+            composedGamma,
             mode,
             hasServerState,
             freshnessValidatedAt == Long.MAX_VALUE ? 0L : freshnessValidatedAt,

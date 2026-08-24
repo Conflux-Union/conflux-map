@@ -43,6 +43,18 @@ public final class MinecraftAccess {
         //#endif
     }
 
+    /**
+     * Live video gamma. Tweakeroo Gamma Override deliberately writes through this vanilla
+     * option, including values above the normal slider range, so no optional API is needed.
+     */
+    public static float gamma(final MinecraftClient client) {
+        //#if MC>=12000
+        //$$ return client.options.getGamma().getValue().floatValue();
+        //#else
+        return (float) client.options.gamma;
+        //#endif
+    }
+
     /** Whether the configured vanilla player-list key is currently held. */
     public static boolean isPlayerListKeyPressed(final MinecraftClient client) {
         //#if MC>=260100

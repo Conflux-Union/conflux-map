@@ -16,11 +16,11 @@ import cn.net.rms.confluxmap.core.util.Argb;
  * <p>{@link #applyDaylight} is a deliberately simplified slice of §4's "Light-based
  * (day/night) shading": a single global day/night factor (see {@link DaylightModel})
  * blended with per-column block-light, applied only to the live SURFACE layer. It does
- * not reproduce the full reference curve (per-pixel torch flicker, gamma-setting
- * response, night-vision ramp, the ice-specific extra seafloor darkening, or the
- * cached-pass "recolor with today's palette" rule) - those remain unimplemented. Cave/
- * Nether/End layers never call this; they use {@link LightTint} instead. Most bake it at
- * snapshot time, while NETHER_CEILING applies its stored block-light plane during composition.
+ * includes vanilla's gamma ease-out curve but does not reproduce per-pixel torch flicker,
+ * night-vision ramp, the ice-specific extra seafloor darkening, or the cached-pass
+ * "recolor with today's palette" rule. Cave/Nether/End layers use {@link LightTint}
+ * instead. Most bake their base tint at snapshot time and replace it with the live gamma
+ * variant during composition; NETHER_CEILING applies its stored block-light plane there.
  */
 public final class ShadingPipeline {
     /** §4: the cached/world-map pass's fixed height-shading reference. */
@@ -226,10 +226,37 @@ public final class ShadingPipeline {
         return Argb.scale(argb, daylightScale(daylightFactor, blockLevel));
     }
 
+    /** Gamma-aware lightmap approximation used by vanilla and compatible gamma overrides. */
+    public static int applyDaylight(
+        final int argb,
+        final float daylightFactor,
+        final int blockLevel,
+        final float gamma
+    ) {
+        return Argb.scale(argb, daylightScale(daylightFactor, blockLevel, gamma));
+    }
+
     /** The RGB scale {@link #applyDaylight} multiplies a column's composed color by. */
     public static float daylightScale(final float daylightFactor, final int blockLevel) {
         final float b = Math.max(daylightFactor, blockLevel / 15f);
         return DAYLIGHT_FLOOR + (1f - DAYLIGHT_FLOOR) * b;
+    }
+
+    /** Applies vanilla's ease-out-quart gamma blend to the existing daylight scale. */
+    public static float daylightScale(
+        final float daylightFactor,
+        final int blockLevel,
+        final float gamma
+    ) {
+        return applyGamma(daylightScale(daylightFactor, blockLevel), gamma);
+    }
+
+    public static float applyGamma(final float brightness, final float gamma) {
+        final float clampedBrightness = Math.max(0f, Math.min(brightness, 1f));
+        final float inverse = 1f - clampedBrightness;
+        final float brightened = 1f - inverse * inverse * inverse * inverse;
+        final float adjusted = clampedBrightness + (brightened - clampedBrightness) * Math.max(0f, gamma);
+        return Math.max(0f, Math.min(adjusted, 1f));
     }
 
     /**
@@ -262,6 +289,27 @@ public final class ShadingPipeline {
                 ? XaeroMapStyle.daylightScale(toFactor, level)
                 : daylightScale(toFactor, level);
             ratios[level] = toScale / fromScale;
+        }
+        return ratios;
+    }
+
+    /** Gamma-aware variant used when either the day/night factor or video gamma changes. */
+    public static float[] relightRatios(
+        final float fromFactor,
+        final float fromGamma,
+        final float toFactor,
+        final float toGamma,
+        final MapColorStyle style
+    ) {
+        final float[] ratios = new float[16];
+        for (int level = 0; level < ratios.length; level++) {
+            final float fromBase = style == MapColorStyle.XAERO
+                ? XaeroMapStyle.daylightScale(fromFactor, level)
+                : daylightScale(fromFactor, level);
+            final float toBase = style == MapColorStyle.XAERO
+                ? XaeroMapStyle.daylightScale(toFactor, level)
+                : daylightScale(toFactor, level);
+            ratios[level] = applyGamma(toBase, toGamma) / applyGamma(fromBase, fromGamma);
         }
         return ratios;
     }
