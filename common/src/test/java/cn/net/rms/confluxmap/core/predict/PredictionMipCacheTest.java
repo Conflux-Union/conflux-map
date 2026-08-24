@@ -33,6 +33,7 @@ class PredictionMipCacheTest {
             new long[pixels],
             new byte[pixels],
             1.0F,
+            0F,
             PredictionViewMode.EVERYWHERE,
             false,
             0L,

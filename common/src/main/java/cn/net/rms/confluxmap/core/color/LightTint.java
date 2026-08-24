@@ -8,21 +8,16 @@ import cn.net.rms.confluxmap.core.util.Argb;
  * {@code mc/} resolves the actual (blockLevel, skyLevel) pair and any lava/magma override
  * (§3's forced block-light-14) and hands them here.
  *
- * <p>The spec's own curve depends on inputs this codebase does not track anywhere yet
- * (gamma/brightness setting, night-vision duration, lightning-flash state, live
- * time-of-day sky darkening, per-tick torch flicker) - S3's {@link ShadingPipeline}
- * already deferred all of that ("no day/night light table exists yet"). Rather than wire
- * up that whole subsystem for this slice, this class fixes those inputs to a static
- * "plain daytime, no gamma boost" approximation and only varies the two things the spec
- * calls out as structural: the nonlinear block/sky brightness curve and each dimension's
- * ambient-light floor (0 normally, ~0.1 for nether-like dimensions - see {@code
- * McChunkSnapshotFactory#isNetherLayer}). The spec's own confidence notes explicitly say
- * an equivalent substitute curve is fine here, since the exact constants belong to the
- * base game's lightmap shader, not to the mapping logic.
+ * <p>The base lookup fixes night vision, lightning flashes, live sky darkening, and torch
+ * flicker to a static daytime approximation. Gamma is deliberately not baked into stored
+ * columns: composition replaces the lookup tint with a live gamma-adjusted variant, so a
+ * vanilla brightness change or Tweakeroo Gamma Override takes effect without invalidating
+ * disk caches. The structural inputs remain the nonlinear block/sky curve and each
+ * dimension's ambient-light floor (0 normally, ~0.1 for Nether-like dimensions).
  *
- * <p>Precomputed once per (blockLevel, skyLevel, ambient-floor-variant) at class-load,
- * per the spec's "small lookup table, not per-pixel work" approach - cheap here since we
- * only resolve light once per captured column, not once per rendered frame.
+ * <p>The gamma-free base is precomputed once per (blockLevel, skyLevel,
+ * ambient-floor-variant) at class load. Gamma replacement is CPU tile-composition work,
+ * never per-frame shader work.
  */
 public final class LightTint {
     private static final int LEVELS = 16;
@@ -67,12 +62,22 @@ public final class LightTint {
         final int blockLevel,
         final boolean netherAmbient
     ) {
+        return applyBlockLightOverAmbient(argb, blockLevel, netherAmbient, 0f);
+    }
+
+    /** Gamma-aware variant for deferred-light Nether roof pixels. */
+    public static int applyBlockLightOverAmbient(
+        final int argb,
+        final int blockLevel,
+        final boolean netherAmbient,
+        final float gamma
+    ) {
         final int level = clampLevel(blockLevel);
-        if (level == 0) {
+        if (level == 0 && gamma <= 0f) {
             return argb;
         }
         final int ambient = multiplier(0, 0, netherAmbient);
-        final int lit = multiplier(level, 0, netherAmbient);
+        final int lit = gammaAdjustedMultiplier(level, netherAmbient, gamma);
         return Argb.pack(
             Argb.alpha(argb),
             replaceTint(Argb.red(argb), Argb.red(ambient), Argb.red(lit)),
@@ -81,8 +86,47 @@ public final class LightTint {
         );
     }
 
+    /** Replaces the static tint baked into a cave/Nether/End pixel with its gamma-aware tint. */
+    public static int applyGammaOverBakedLight(
+        final int argb,
+        final int blockLevel,
+        final boolean netherAmbient,
+        final float gamma
+    ) {
+        if (gamma <= 0f) {
+            return argb;
+        }
+        final int level = clampLevel(blockLevel);
+        final int baked = multiplier(level, 0, netherAmbient);
+        final int adjusted = gammaAdjustedMultiplier(level, netherAmbient, gamma);
+        return Argb.pack(
+            Argb.alpha(argb),
+            replaceTint(Argb.red(argb), Argb.red(baked), Argb.red(adjusted)),
+            replaceTint(Argb.green(argb), Argb.green(baked), Argb.green(adjusted)),
+            replaceTint(Argb.blue(argb), Argb.blue(baked), Argb.blue(adjusted))
+        );
+    }
+
     private static int replaceTint(final int channel, final int ambient, final int lit) {
         return Math.min(255, Math.round(channel * (lit / (float) ambient)));
+    }
+
+    private static int gammaAdjustedMultiplier(
+        final int blockLevel,
+        final boolean netherAmbient,
+        final float gamma
+    ) {
+        final int base = multiplier(blockLevel, 0, netherAmbient);
+        return Argb.pack(
+            255,
+            gammaChannel(Argb.red(base), gamma),
+            gammaChannel(Argb.green(base), gamma),
+            gammaChannel(Argb.blue(base), gamma)
+        );
+    }
+
+    private static int gammaChannel(final int channel, final float gamma) {
+        return Math.round(ShadingPipeline.applyGamma(channel / 255f, gamma) * 255f);
     }
 
     private static int[] build(final float ambientFloor) {

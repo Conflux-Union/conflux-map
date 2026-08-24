@@ -87,8 +87,8 @@ public final class TileService {
     private ViewportRect viewport;
     /** Next LOD-0 region in the current viewport to offer to the bounded disk-load queue. */
     private long viewportRegionLoadCursor;
-    /** Invalidates a composition that started before a map colour style switch. Guarded by this. */
-    private long mapColorStyleGeneration;
+    /** Invalidates a composition that started before a global rendering-input change. Guarded by this. */
+    private long compositionGeneration;
 
     private volatile int viewpointX;
     private volatile int viewpointZ;
@@ -245,7 +245,7 @@ public final class TileService {
         }
         final CompletableFuture<int[]> composed = loaded.thenApplyAsync(ignored -> {
             final TileUpdate update = composeTile(
-                key, token, dynamicLighting, daylightFactor
+                key, token, dynamicLighting, daylightFactor, 0f
             );
             if (update == null) {
                 throw new CancellationException("Map session changed");
@@ -482,7 +482,16 @@ public final class TileService {
 
     /** Drops queued old-style results; released textures request fresh compositions next frame. */
     public synchronized void reloadMapColorStyle() {
-        mapColorStyleGeneration++;
+        invalidateCompositions();
+    }
+
+    /** Drops results composed with an obsolete global light state. */
+    public synchronized void reloadLighting() {
+        invalidateCompositions();
+    }
+
+    private void invalidateCompositions() {
+        compositionGeneration++;
         dirty.clear();
         staleTiles.clear();
         uploads.clear();
@@ -641,7 +650,7 @@ public final class TileService {
         while (true) {
             final TileKey next;
             final long token;
-            final long styleGeneration;
+            final long generation;
             synchronized (this) {
                 final int compositionLimit = viewport == null ? maxConcurrentCompositions : 1;
                 if (inFlight.size() >= compositionLimit || dirty.isEmpty()) {
@@ -658,10 +667,10 @@ public final class TileService {
                     return;
                 }
                 token = dirty.remove(next);
-                styleGeneration = mapColorStyleGeneration;
+                generation = compositionGeneration;
                 inFlight.add(next);
             }
-            executors.workers().execute(() -> composeAndFinish(next, token, styleGeneration));
+            executors.workers().execute(() -> composeAndFinish(next, token, generation));
         }
     }
 
@@ -707,11 +716,11 @@ public final class TileService {
             || (candidate.tileZ() == current.tileZ() && candidate.tileX() < current.tileX());
     }
 
-    private void composeAndFinish(final TileKey key, final long token, final long styleGeneration) {
+    private void composeAndFinish(final TileKey key, final long token, final long generation) {
         try {
             final TileUpdate update = composeTile(key, token);
             if (update != null) {
-                pushUpload(update, styleGeneration);
+                pushUpload(update, generation);
             }
         } finally {
             synchronized (this) {
@@ -722,14 +731,22 @@ public final class TileService {
     }
 
     private TileUpdate composeTile(final TileKey key, final long token) {
-        return composeTile(key, token, config.dynamicLighting, daylightModel.factor());
+        final DaylightModel.State lighting = daylightModel.state();
+        return composeTile(
+            key,
+            token,
+            config.dynamicLighting,
+            lighting.daylight(),
+            lighting.gamma()
+        );
     }
 
     private TileUpdate composeTile(
         final TileKey key,
         final long token,
         final boolean dynamicLighting,
-        final float requestedDaylightFactor
+        final float requestedDaylightFactor,
+        final float gamma
     ) {
         final MapWorld world = mapWorlds.ifCurrent(token);
         if (world == null) {
@@ -744,7 +761,6 @@ public final class TileService {
         // symmetric local relief there, but omit the fixed Y=80 absolute-height wash that used to
         // turn the whole bedrock roof pale.
         final boolean applyAbsoluteHeight = layer.type() != MapLayer.Type.NETHER_CEILING;
-        final boolean applyNetherCeilingLight = layer.type() == MapLayer.Type.NETHER_CEILING;
         // Dynamic daylight only touches SURFACE. NETHER_CEILING has no sky cycle, but its static
         // per-column block light is applied separately below from ChunkSnapshot#light.
         final boolean applyDaylight = !biomeMode
@@ -765,7 +781,7 @@ public final class TileService {
         if (key.lod() == 0) {
             pixels = composeLod0(
                 store, key.tileX(), key.tileZ(), biomeMode, applyAbsoluteHeight,
-                applyNetherCeilingLight, applyDaylight, daylightFactor, lightPlane,
+                layer.type(), applyDaylight, daylightFactor, gamma, lightPlane,
                 mapColorStyle, xaeroShadow
             );
             if (store.region(key.tileX(), key.tileZ()) != null) {
@@ -774,13 +790,13 @@ public final class TileService {
         } else {
             pixels = composeLodN(
                 store, key, biomeMode, applyAbsoluteHeight,
-                applyNetherCeilingLight, applyDaylight, daylightFactor, lightPlane, changed,
+                layer.type(), applyDaylight, daylightFactor, gamma, lightPlane, changed,
                 mapColorStyle, xaeroShadow
             );
         }
         final TileUpdate.Relight relight = lightPlane == null
             ? null
-            : new TileUpdate.Relight(daylightFactor, lightPlane, mapColorStyle);
+            : new TileUpdate.Relight(daylightFactor, gamma, lightPlane, mapColorStyle);
         return new TileUpdate(key, pixels, List.copyOf(changed), relight);
     }
 
@@ -795,9 +811,10 @@ public final class TileService {
         final int regionZ,
         final boolean biomeMode,
         final boolean applyAbsoluteHeight,
-        final boolean applyNetherCeilingLight,
+        final MapLayer.Type layerType,
         final boolean applyDaylight,
         final float daylightFactor,
+        final float gamma,
         final byte[] outLight,
         final MapColorStyle mapColorStyle,
         final XaeroMapStyle.Shadow xaeroShadow
@@ -818,8 +835,8 @@ public final class TileService {
             );
             composeRegion(
                 neighborhood, pixels,
-                biomeMode, applyAbsoluteHeight, applyNetherCeilingLight,
-                applyDaylight, daylightFactor, outLight, mapColorStyle, xaeroShadow
+                biomeMode, applyAbsoluteHeight, layerType,
+                applyDaylight, daylightFactor, gamma, outLight, mapColorStyle, xaeroShadow
             );
         }
         return pixels;
@@ -842,9 +859,10 @@ public final class TileService {
         final TileKey key,
         final boolean biomeMode,
         final boolean applyAbsoluteHeight,
-        final boolean applyNetherCeilingLight,
+        final MapLayer.Type layerType,
         final boolean applyDaylight,
         final float daylightFactor,
+        final float gamma,
         final byte[] outLight,
         final List<TileUpdate.Rect> outChanged,
         final MapColorStyle mapColorStyle,
@@ -867,7 +885,7 @@ public final class TileService {
                 final byte[] fullLight = outLight == null ? null : new byte[size * size];
                 final int[] full = composeLod0(
                     store, regionX, regionZ, biomeMode, applyAbsoluteHeight,
-                    applyNetherCeilingLight, applyDaylight, daylightFactor, fullLight,
+                    layerType, applyDaylight, daylightFactor, gamma, fullLight,
                     mapColorStyle, xaeroShadow
                 );
                 final int[] downsampled = downsample(full, size, lod);
@@ -955,9 +973,10 @@ public final class TileService {
         final int[] outPixels,
         final boolean biomeMode,
         final boolean applyAbsoluteHeight,
-        final boolean applyNetherCeilingLight,
+        final MapLayer.Type layerType,
         final boolean applyDaylight,
         final float daylightFactor,
+        final float gamma,
         final byte[] outLight,
         final MapColorStyle mapColorStyle,
         final XaeroMapStyle.Shadow xaeroShadow
@@ -996,7 +1015,8 @@ public final class TileService {
                 if (mapColorStyle == MapColorStyle.XAERO) {
                     outPixels[idx] = composeXaeroColumn(
                         x, z, surfaceY, fluidDepth, kind, xaeroBaseArgb, tintArgb, xaeroOverlayArgb,
-                        neighborhood, xaeroShadow, applyDaylight, daylightFactor, light[idx]
+                        neighborhood, xaeroShadow, layerType,
+                        applyDaylight, daylightFactor, gamma, light[idx]
                     );
                     continue;
                 }
@@ -1032,10 +1052,19 @@ public final class TileService {
                     ? ShadingPipeline.compositeOver(shadedBase, shadedOverlay)
                     : ShadingPipeline.compositeOver(shadedOverlay, shadedBase);
                 if (applyDaylight) {
-                    composed = ShadingPipeline.applyDaylight(composed, daylightFactor, light[idx]);
-                } else if (applyNetherCeilingLight) {
+                    composed = ShadingPipeline.applyDaylight(
+                        composed, daylightFactor, light[idx], gamma
+                    );
+                } else if (layerType == MapLayer.Type.NETHER_CEILING) {
                     composed = LightTint.applyBlockLightOverAmbient(
-                        composed, light[idx] & 0xFF, true
+                        composed, light[idx] & 0xFF, true, gamma
+                    );
+                } else if (usesBakedLight(layerType)) {
+                    composed = LightTint.applyGammaOverBakedLight(
+                        composed,
+                        light[idx] & 0xFF,
+                        isNetherFloorLayer(layerType),
+                        gamma
                     );
                 }
                 outPixels[idx] = composed;
@@ -1054,8 +1083,10 @@ public final class TileService {
         final int[] overlayArgb,
         final RegionNeighborhood neighborhood,
         final XaeroMapStyle.Shadow shadow,
+        final MapLayer.Type layerType,
         final boolean applyDaylight,
         final float daylightFactor,
+        final float gamma,
         final byte blockLight
     ) {
         final int idx = z * RegionColumns.SIZE + x;
@@ -1087,9 +1118,35 @@ public final class TileService {
             );
             composed = ShadingPipeline.compositeOver(overlayArgb[idx], shadedBase);
         }
-        return applyDaylight
-            ? Argb.scale(composed, XaeroMapStyle.daylightScale(daylightFactor, blockLight & 0xFF))
+        if (applyDaylight) {
+            return Argb.scale(
+                composed,
+                ShadingPipeline.applyGamma(
+                    XaeroMapStyle.daylightScale(daylightFactor, blockLight & 0xFF), gamma
+                )
+            );
+        }
+        return usesBakedLight(layerType)
+            ? LightTint.applyGammaOverBakedLight(
+                composed,
+                blockLight & 0xFF,
+                isNetherFloorLayer(layerType),
+                gamma
+            )
             : composed;
+    }
+
+    private static boolean usesBakedLight(final MapLayer.Type layerType) {
+        return layerType == MapLayer.Type.CAVE_AUTO
+            || layerType == MapLayer.Type.CAVE_SLICE
+            || layerType == MapLayer.Type.NETHER_CURRENT
+            || layerType == MapLayer.Type.NETHER_SLICE
+            || layerType == MapLayer.Type.END_SURFACE;
+    }
+
+    private static boolean isNetherFloorLayer(final MapLayer.Type layerType) {
+        return layerType == MapLayer.Type.NETHER_CURRENT
+            || layerType == MapLayer.Type.NETHER_SLICE;
     }
 
     private static double reliefMultiplier(
@@ -1201,11 +1258,11 @@ public final class TileService {
         pushUpload(update, null);
     }
 
-    private void pushUpload(final TileUpdate update, final Long expectedStyleGeneration) {
+    private void pushUpload(final TileUpdate update, final Long expectedGeneration) {
         final List<TileKey> evicted;
         synchronized (this) {
-            if (expectedStyleGeneration != null
-                && expectedStyleGeneration.longValue() != mapColorStyleGeneration) {
+            if (expectedGeneration != null
+                && expectedGeneration.longValue() != compositionGeneration) {
                 return;
             }
             uploads.remove(update.key());

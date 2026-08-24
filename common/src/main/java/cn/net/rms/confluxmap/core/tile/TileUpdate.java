@@ -26,11 +26,11 @@ public record TileUpdate(
     private static final List<Rect> FULL_TILE = List.of(new Rect(0, 0, 256, 256));
 
     /**
-     * How this tile's pixels can be re-lit in place when the day/night factor moves on
+     * How this tile's pixels can be re-lit in place when the day/night factor or gamma moves on
      * without a recompose - the fix for tiles whose backing regions were evicted from the
      * in-memory store (their data is only on disk, so {@code TileService#markSurfaceRelit}
      * can't reach them, yet their GPU texture keeps being drawn). {@code composedDaylight}
-     * is the {@code DaylightModel} factor the pixels were darkened with at compose time
+     * and {@code composedGamma} are the {@code DaylightModel} inputs used at compose time
      * (1.0 when dynamic lighting was off - compose then leaves pixels untouched, which is
      * bit-identical to darkening with factor 1.0); {@code lightLevels} is the tile's
      * per-pixel 0-15 block-light plane, needed so torch-lit pixels keep their own
@@ -39,11 +39,20 @@ public record TileUpdate(
      */
     public record Relight(
         float composedDaylight,
+        float composedGamma,
         byte[] lightLevels,
         MapColorStyle style
     ) {
         public Relight(final float composedDaylight, final byte[] lightLevels) {
-            this(composedDaylight, lightLevels, MapColorStyle.CONFLUX);
+            this(composedDaylight, 0f, lightLevels, MapColorStyle.CONFLUX);
+        }
+
+        public Relight(
+            final float composedDaylight,
+            final byte[] lightLevels,
+            final MapColorStyle style
+        ) {
+            this(composedDaylight, 0f, lightLevels, style);
         }
     }
 

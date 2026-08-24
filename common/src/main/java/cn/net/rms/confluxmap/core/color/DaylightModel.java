@@ -1,41 +1,62 @@
 package cn.net.rms.confluxmap.core.color;
 
 /**
- * Holds the current global day/night daylight factor in {@code [0, 1]} (1 = full daylight,
- * 0 = darkest night), quantized into a small number of buckets so the SURFACE layer's
- * dynamic lighting (see {@link ShadingPipeline#applyDaylight}) only triggers a tile relight
- * when the factor has moved meaningfully, not every single client tick.
+ * Holds the current global day/night factor and live vanilla gamma value. Both are
+ * quantized so map lighting only triggers a tile relight when an input has moved
+ * meaningfully, not every client tick.
  *
  * <p>Single writer, many readers: the client-tick thread ({@code mc.world.McDaylightTracker})
- * is the only caller of {@link #update}, while {@link #factor()} is read by tile-composition
- * worker threads. {@link #factor} is {@code volatile} so a freshly-published value is always
- * visible to those readers without a lock; a reader observing last tick's value instead of
- * this tick's is harmless since the day/night cycle is a many-second drift, not a per-frame
- * concern.
+ * is the only caller of {@link #update}, while tile-composition workers read the immutable
+ * {@link State} through one volatile reference. A reader observing last tick's state is harmless
+ * since the day/night cycle is a many-second drift, not a per-frame concern.
  */
 public final class DaylightModel {
+    public record State(float daylight, float gamma) {
+    }
+
     /** Quantization buckets across [0, 1]; coarse enough that a full day/night cycle only relights a few dozen times. */
     private static final int BUCKETS = 32;
+    private static final int GAMMA_BUCKETS_PER_UNIT = 64;
+    private static final float MAX_GAMMA = 32f;
 
-    private volatile float factor = 1f;
+    private volatile State state = new State(1f, 0f);
     private int bucket = bucketOf(1f);
+    private int gammaBucket;
 
     /** The most recently published daylight factor, clamped to [0, 1]. */
     public float factor() {
-        return factor;
+        return state.daylight();
+    }
+
+    /** The live vanilla gamma option, including values injected by compatible mods. */
+    public float gamma() {
+        return state.gamma();
+    }
+
+    /** Atomic snapshot for consumers that need both values from the same client tick. */
+    public State state() {
+        return state;
     }
 
     /**
      * Publishes a new raw factor (clamped to [0, 1] here so callers don't each have to).
-     * Returns true exactly when this call moved the quantized bucket, i.e. when callers
-     * should invalidate cached SURFACE-layer tiles. Main/client-tick thread only.
+     * Returns true exactly when this call moved the quantized daylight bucket. Main/client-tick
+     * thread only; the two-input overload also reports gamma bucket changes.
      */
     public boolean update(final float rawFactor) {
+        return update(rawFactor, state.gamma());
+    }
+
+    /** Publishes daylight and gamma as one relight state. Main/client-tick thread only. */
+    public boolean update(final float rawFactor, final float rawGamma) {
         final float clamped = clamp01(rawFactor);
-        factor = clamped;
+        final float clampedGamma = clampGamma(rawGamma);
+        state = new State(clamped, clampedGamma);
         final int nextBucket = bucketOf(clamped);
-        final boolean changed = nextBucket != bucket;
+        final int nextGammaBucket = gammaBucketOf(clampedGamma);
+        final boolean changed = nextBucket != bucket || nextGammaBucket != gammaBucket;
         bucket = nextBucket;
+        gammaBucket = nextGammaBucket;
         return changed;
     }
 
@@ -50,11 +71,37 @@ public final class DaylightModel {
         return bucketOf(clamp01(a)) == bucketOf(clamp01(b));
     }
 
+    /** Whether two complete lightmap states are visually equivalent for relighting. */
+    public static boolean sameBucket(
+        final float daylightA,
+        final float gammaA,
+        final float daylightB,
+        final float gammaB
+    ) {
+        return sameBucket(daylightA, daylightB)
+            && sameGammaBucket(gammaA, gammaB);
+    }
+
+    public static boolean sameGammaBucket(final float a, final float b) {
+        return gammaBucketOf(clampGamma(a)) == gammaBucketOf(clampGamma(b));
+    }
+
     private static int bucketOf(final float f) {
         return Math.round(f * (BUCKETS - 1));
     }
 
+    private static int gammaBucketOf(final float gamma) {
+        return Math.round(gamma * GAMMA_BUCKETS_PER_UNIT);
+    }
+
     private static float clamp01(final float v) {
         return v < 0f ? 0f : Math.min(v, 1f);
+    }
+
+    private static float clampGamma(final float value) {
+        if (!Float.isFinite(value)) {
+            return 0f;
+        }
+        return value < 0f ? 0f : Math.min(value, MAX_GAMMA);
     }
 }

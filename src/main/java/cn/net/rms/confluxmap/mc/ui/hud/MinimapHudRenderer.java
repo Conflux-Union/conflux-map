@@ -33,6 +33,7 @@ import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.mc.ui.MapLayerText;
 import cn.net.rms.confluxmap.mc.ui.PlayerMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.PlayerTrailRenderer;
 import cn.net.rms.confluxmap.mc.ui.UiResourceTheme;
@@ -166,7 +167,11 @@ public final class MinimapHudRenderer {
         final boolean fullscreenOpen = MinecraftAccess.screen(client) instanceof FullscreenMapScreen;
         final boolean containerOpen = MinecraftAccess.isContainerScreen(MinecraftAccess.screen(client));
         if (!MinimapHudVisibility.shouldRender(
-            config.minimapEnabled, gameBridge.session().active(), fullscreenOpen, containerOpen
+            config.minimapEnabled,
+            gameBridge.session().active(),
+            fullscreenOpen,
+            containerOpen,
+            MinecraftAccess.isDebugHudVisible(client)
         )) {
             // FullscreenMapScreen owns radarViewRange while it's open; otherwise the minimap
             // isn't rendering at all, so there's no visible map surface for the radar to scan.
@@ -604,8 +609,8 @@ public final class MinimapHudRenderer {
 
     /** cave-nether-layers.md-driven layer name, keyed off {@link MapLayer.Type#id()} (e.g. "confluxmap.layer.cave"). */
     private String layerIndicatorText() {
-        final MapLayer.Type type = layerSelector.current().layer().type();
-        return Texts.translatable("confluxmap.layer." + type.id()).getString();
+        final LayerSelector.Decision decision = layerSelector.current();
+        return MapLayerText.label(decision.layer(), decision.pivotY());
     }
 
     private void drawCenteredLine(final GuiDraw draw, final String text, final float centerX, final float y) {

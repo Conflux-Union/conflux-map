@@ -38,7 +38,7 @@ The client provides local maps, waypoints, drawings, and map export as soon as i
 ### Map autofill and world exploration
 
 - **Map autofill:** Once the world seed is available, the Overworld, Nether roof, and End can immediately display predicted terrain. Exploration and server corrections progressively replace the prediction with the real map. Press `P` to cycle through all predictions, generated areas only, and explored areas only; a local seed can also be configured for a private prediction map.
-- **Map layers:** The fullscreen map provides Map, Biome, and Load Level modes. Load Level mode offers Status Bands and Exact Levels. The Overworld distinguishes surface and cave layers, the Nether provides current-level and bedrock-roof layers, and the End uses a void-adapted background. The surface layer also applies shading based on time of day and nearby block light.
+- **Map layers:** The fullscreen map provides Map, Biome, and Load Level modes. Load Level mode offers Status Bands and Exact Levels. The Overworld distinguishes surface, current cave, and configured fixed-height layers; the Nether provides current-level, bedrock-roof, and configured below-bedrock layers. The active current or fixed height is shown on both map surfaces. The End uses a void-adapted background. Map lighting follows the live vanilla gamma option as well as time of day and nearby block light.
 - **Structure finder:** Vanilla structures in the Overworld, Nether, and End have individual icons, category toggles, and a master toggle. Search by name for the nearest structure, or specify a center, radius, and result count to list candidates in an area and save any candidate directly as a waypoint.
 - **Sub-world management:** When several servers sit behind the same address, including proxy networks, map data is stored separately for each world. The sub-world screen creates, renames, and clears identification records, merges an older same-seed map cache into the current world, and moves waypoints from an older record.
 - **Server address association:** Multiple addresses for one server can share the same map cache, waypoint set, and local seed. The server address controls allow those relationships to be managed directly, and the companion can identify addresses that point to the same world.
@@ -77,7 +77,7 @@ All bindings can be changed in Minecraft's Controls screen under "Conflux Map". 
 | `H` | Toggle the minimap |
 | `]` / `[` | Minimap zoom in / out |
 | `M` | Open the fullscreen map |
-| `Y` | Cycle the manual layer override |
+| `Y` | Cycle automatic, surface/roof, current-height, and configured fixed-height layers |
 | `U` | Open the waypoint list |
 | `B` | New waypoint at your position |
 | `J` | Toggle local waypoints |

@@ -13,10 +13,10 @@ public final class FullscreenMapLayerPolicy {
         final boolean liveSession,
         final MapLayer liveLayer
     ) {
-        if (dimension.equals(DimensionId.NETHER)) {
-            return MapLayer.NETHER_CEILING;
-        }
         if (!liveSession) {
+            if (dimension.equals(DimensionId.NETHER)) {
+                return MapLayer.NETHER_CEILING;
+            }
             return dimension.equals(DimensionId.END) ? MapLayer.END_SURFACE : MapLayer.SURFACE;
         }
         return liveLayer;

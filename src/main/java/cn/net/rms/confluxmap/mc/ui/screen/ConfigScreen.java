@@ -995,6 +995,8 @@ public final class ConfigScreen extends ConfluxScreen {
                 return "confluxmap.config.layer_override.force_surface";
             case FORCE_UNDERGROUND:
                 return "confluxmap.config.layer_override.force_underground";
+            case FORCE_SLICE:
+                return "confluxmap.config.layer_override.force_slice";
             default:
                 return "confluxmap.config.layer_override.auto";
         }

@@ -207,46 +207,56 @@ public final class PredictionTileService {
         return viewMode;
     }
 
-    private float applyLayerLighting(
+    private AppliedLighting applyLayerLighting(
         final TileKey key,
         final int[] pixels,
         final byte[] blockLight,
         final MapColorStyle style
     ) {
         if (BiomeTileKeys.isBiome(key)) {
-            return Float.NaN;
+            return AppliedLighting.NONE;
         }
         final String realLayer = BiomeTileKeys.realLayerId(
             PredictedTileKeys.realLayerId(key.layerId())
         );
         final MapLayer.Type layer = MapLayer.parse(realLayer).type();
+        final DaylightModel model = daylightModel;
+        final DaylightModel.State lighting = model == null
+            ? new DaylightModel.State(1f, 0f)
+            : model.state();
+        final float gamma = lighting.gamma();
         if (layer == MapLayer.Type.NETHER_CEILING) {
-            if (style == MapColorStyle.XAERO) {
-                return Float.NaN;
-            }
             for (int pixel = 0; pixel < pixels.length; pixel++) {
-                pixels[pixel] = LightTint.applyBlockLightOverAmbient(
-                    pixels[pixel], blockLight[pixel] & 0xFF, true
-                );
+                pixels[pixel] = style == MapColorStyle.XAERO
+                    ? LightTint.applyGammaOverBakedLight(
+                        pixels[pixel], blockLight[pixel] & 0xFF, true, gamma
+                    )
+                    : LightTint.applyBlockLightOverAmbient(
+                        pixels[pixel], blockLight[pixel] & 0xFF, true, gamma
+                    );
             }
-            return Float.NaN;
+            return AppliedLighting.NONE;
         }
         if (layer != MapLayer.Type.SURFACE) {
-            return Float.NaN;
+            return AppliedLighting.NONE;
         }
-        final DaylightModel model = daylightModel;
         if (model == null) {
-            return Float.NaN;
+            return AppliedLighting.NONE;
         }
-        final float factor = model.factor();
+        final float factor = lighting.daylight();
         for (int pixel = 0; pixel < pixels.length; pixel++) {
             pixels[pixel] = style == MapColorStyle.XAERO
                 ? Argb.scale(
-                    pixels[pixel], XaeroMapStyle.daylightScale(factor, blockLight[pixel] & 0xFF)
+                    pixels[pixel],
+                    ShadingPipeline.applyGamma(
+                        XaeroMapStyle.daylightScale(factor, blockLight[pixel] & 0xFF), gamma
+                    )
                 )
-                : ShadingPipeline.applyDaylight(pixels[pixel], factor, blockLight[pixel] & 0xFF);
+                : ShadingPipeline.applyDaylight(
+                    pixels[pixel], factor, blockLight[pixel] & 0xFF, gamma
+                );
         }
-        return factor;
+        return new AppliedLighting(factor, gamma);
     }
 
     private static TileUpdate tileUpdate(
@@ -254,12 +264,15 @@ public final class PredictionTileService {
         final int[] pixels,
         final byte[] blockLight,
         final float composedDaylight,
+        final float composedGamma,
         final MapColorStyle style
     ) {
         return Float.isNaN(composedDaylight)
             ? TileUpdate.fullTile(key, pixels)
             : TileUpdate.fullTile(
-                key, pixels, new TileUpdate.Relight(composedDaylight, blockLight, style)
+                key, pixels, new TileUpdate.Relight(
+                    composedDaylight, composedGamma, blockLight, style
+                )
             );
     }
 
@@ -891,6 +904,7 @@ public final class PredictionTileService {
                         composition.syncSourceRevisions(),
                         composition.blockLight(),
                         composition.composedDaylight(),
+                        composition.composedGamma(),
                         composition.mode(),
                         composition.hasServerState(),
                         composition.freshnessValidatedAtMillis(),
@@ -968,13 +982,19 @@ public final class PredictionTileService {
             || lower.freshnessValidatedAtMillis() >= directValidatedAt)) {
             final Composition composition = new Composition(
                 tileUpdate(
-                    key, lower.pixels(), lower.blockLight(), lower.composedDaylight(), mapColorStyle
+                    key,
+                    lower.pixels(),
+                    lower.blockLight(),
+                    lower.composedDaylight(),
+                    lower.composedGamma(),
+                    mapColorStyle
                 ),
                 new TileMetadata(lower.biomes(), lower.surfaces()),
                 lower.syncEvaluated(),
                 lower.syncSourceRevisions(),
                 lower.blockLight(),
                 lower.composedDaylight(),
+                lower.composedGamma(),
                 lower.mode(),
                 lower.hasServerState(),
                 lower.freshnessValidatedAtMillis(),
@@ -1044,9 +1064,15 @@ public final class PredictionTileService {
             directCorrections == null
                 ? CorrectionProfile.LEGACY_V1 : directCorrections.correctionProfile()
         );
-        final float composedDaylight = applyLayerLighting(key, pixels, blockLight, style);
+        final AppliedLighting appliedLighting = applyLayerLighting(
+            key, pixels, blockLight, style
+        );
+        final float composedDaylight = appliedLighting.daylight();
+        final float composedGamma = appliedLighting.gamma();
         return new Composition(
-            tileUpdate(key, pixels, blockLight, composedDaylight, style),
+            tileUpdate(
+                key, pixels, blockLight, composedDaylight, composedGamma, style
+            ),
             new TileMetadata(
                 biomeIds(grid, directCorrections, grid),
                 surfaceYs(derived, directCorrections, derived)
@@ -1055,6 +1081,7 @@ public final class PredictionTileService {
             syncSourceRevisions,
             blockLight,
             composedDaylight,
+            composedGamma,
             compositionMode,
             directHasServerState,
             directValidatedAt,
@@ -1296,6 +1323,7 @@ public final class PredictionTileService {
             composition.syncSourceRevisions(),
             composition.blockLight(),
             composition.composedDaylight(),
+            composition.composedGamma(),
             composition.mode(),
             composition.hasServerState(),
             composition.freshnessValidatedAtMillis(),
@@ -1465,6 +1493,7 @@ public final class PredictionTileService {
         long[] syncSourceRevisions,
         byte[] blockLight,
         float composedDaylight,
+        float composedGamma,
         PredictionViewMode mode,
         boolean hasServerState,
         long freshnessValidatedAtMillis,
@@ -1474,6 +1503,10 @@ public final class PredictionTileService {
     }
 
     private record TileMetadata(byte[] biomes, int[] surfaces) {
+    }
+
+    private record AppliedLighting(float daylight, float gamma) {
+        private static final AppliedLighting NONE = new AppliedLighting(Float.NaN, 0f);
     }
 
     private record PixelLookup(TileKey key, int pixel) {
