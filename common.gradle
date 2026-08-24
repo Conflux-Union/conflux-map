@@ -75,8 +75,12 @@ dependencies {
         compileOnly malilib_dependency
         testCompileOnly malilib_dependency
         testRuntimeOnly malilib_dependency
+        compileOnly modmenu_dependency
+        testCompileOnly modmenu_dependency
+        testRuntimeOnly modmenu_dependency
     } else {
         modCompileOnly malilib_dependency
+        modCompileOnly modmenu_dependency
         // Reuse Loom's named remap in JUnit instead of loading the intermediary production jar.
         afterEvaluate {
             configurations.testRuntimeOnly.extendsFrom(
