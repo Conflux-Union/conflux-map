@@ -57,10 +57,10 @@ public final class ConfluxConfig {
     /**
      * Manual layer override cycled by {@code key.confluxmap.cycle_layer}; see
      * {@code mc.world.LayerSelector} for how each dimension interprets these
-     * (e.g. FORCE_UNDERGROUND means CAVE_AUTO in the Overworld, NETHER_CEILING
-     * in the Nether, and is a no-op in the End).
+     * (e.g. FORCE_UNDERGROUND means CAVE_AUTO in the Overworld and NETHER_CEILING
+     * in the Nether, while FORCE_SLICE selects that dimension's configured fixed Y).
      */
-    public enum LayerOverride { AUTO, FORCE_SURFACE, FORCE_UNDERGROUND }
+    public enum LayerOverride { AUTO, FORCE_SURFACE, FORCE_UNDERGROUND, FORCE_SLICE }
 
     public boolean minimapEnabled = true;
     /** Legacy schema-v1 field. Null after migration and omitted from newly written JSON. */
@@ -104,9 +104,9 @@ public final class ConfluxConfig {
     public LayerOverride layerOverride = LayerOverride.AUTO;
     /** Minimap/fullscreen-map info line: a small text label naming the currently active layer. */
     public boolean showLayerIndicator = true;
-    /** Fixed-band Y for {@code MapLayer.CAVE_SLICE}; not yet reachable via the cycle keybind (UI deferred). */
+    /** Fixed-band Y for the Overworld fixed-height preset. */
     public int caveSliceY = 32;
-    /** Fixed-band Y for {@code MapLayer.NETHER_SLICE}; not yet reachable via the cycle keybind (UI deferred). */
+    /** Fixed-band Y for the Nether below-bedrock preset. */
     public int netherSliceY = 64;
     /**
      * VoxelMap-style day/night + block-light darkening on the SURFACE layer only (cave/nether/end

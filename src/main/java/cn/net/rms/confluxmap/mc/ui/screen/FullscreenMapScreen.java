@@ -78,6 +78,7 @@ import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
 import cn.net.rms.confluxmap.mc.teleport.TeleportCommandAccess;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.mc.ui.MapLayerText;
 import cn.net.rms.confluxmap.mc.ui.UiIcon;
 import cn.net.rms.confluxmap.mc.ui.UiResourceTheme;
 import cn.net.rms.confluxmap.mc.ui.UiTextureRegion;
@@ -3584,9 +3585,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     /** Deliverable D: the fullscreen map shows the active layer for the current dimension. */
     private void drawLayerLabel(final GuiDraw draw) {
-        final String text = Texts.translatable(
-            "confluxmap.layer." + viewLayer().type().id()
-        ).getString();
+        final MapLayer layer = viewLayer();
+        final int currentY = viewingLiveSession()
+            ? layerSelector.current().pivotY()
+            : layer.param();
+        final String text = MapLayerText.label(layer, currentY);
         draw.drawTextWithShadow(this.textRenderer, text, MARGIN, MARGIN + this.textRenderer.fontHeight + 2, TEXT_COLOR);
     }
 

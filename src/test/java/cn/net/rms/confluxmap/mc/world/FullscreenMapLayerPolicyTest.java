@@ -8,11 +8,21 @@ import org.junit.jupiter.api.Test;
 
 class FullscreenMapLayerPolicyTest {
     @Test
-    void netherAlwaysOpensOnTheTopOfTheBedrockRoof() {
+    void liveNetherKeepsTheSelectedHeightPreset() {
+        assertEquals(
+            MapLayer.netherSlice(64),
+            FullscreenMapLayerPolicy.select(
+                DimensionId.NETHER, true, MapLayer.netherSlice(64)
+            )
+        );
+    }
+
+    @Test
+    void archivedNetherUsesItsPersistentBedrockRoof() {
         assertEquals(
             MapLayer.NETHER_CEILING,
             FullscreenMapLayerPolicy.select(
-                DimensionId.NETHER, true, MapLayer.NETHER_CURRENT
+                DimensionId.NETHER, false, MapLayer.netherSlice(64)
             )
         );
     }

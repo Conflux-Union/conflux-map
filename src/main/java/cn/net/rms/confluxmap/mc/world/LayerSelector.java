@@ -80,7 +80,12 @@ public final class LayerSelector {
         final MapLayer layer;
         switch (kind) {
             case HAS_CEILING:
-                layer = resolveNether(config.layerOverride, eyeY, logicalHeight(world.getDimension()));
+                layer = resolveNether(
+                    config.layerOverride,
+                    eyeY,
+                    logicalHeight(world.getDimension()),
+                    config.netherSliceY
+                );
                 break;
             case NO_SKY_NO_CEILING:
                 // §1.2/§4: M1 always renders the End as a plain top-down surface (no player-relative
@@ -120,8 +125,14 @@ public final class LayerSelector {
 
     /** §1 Case A: above-roof play uses the top-down roof layer; lower play keeps the current-Y floor scan. */
     static MapLayer resolveNether(
-        final ConfluxConfig.LayerOverride override, final int eyeY, final int logicalHeight
+        final ConfluxConfig.LayerOverride override,
+        final int eyeY,
+        final int logicalHeight,
+        final int sliceY
     ) {
+        if (override == ConfluxConfig.LayerOverride.FORCE_SLICE) {
+            return MapLayer.netherSlice(sliceY);
+        }
         return override == ConfluxConfig.LayerOverride.FORCE_UNDERGROUND || eyeY >= logicalHeight
             ? MapLayer.NETHER_CEILING
             : MapLayer.NETHER_CURRENT;
@@ -136,9 +147,12 @@ public final class LayerSelector {
     }
 
     /** §1 Case C: sky-light-gated automatic cave detection, or a manual pin. */
-    private static MapLayer resolveOverworld(
+    private MapLayer resolveOverworld(
         final ClientWorld world, final ClientPlayerEntity player, final int eyeY, final ConfluxConfig.LayerOverride override
     ) {
+        if (override == ConfluxConfig.LayerOverride.FORCE_SLICE) {
+            return MapLayer.caveSlice(config.caveSliceY);
+        }
         if (override == ConfluxConfig.LayerOverride.FORCE_SURFACE) {
             return MapLayer.SURFACE;
         }
@@ -156,7 +170,7 @@ public final class LayerSelector {
     /**
      * The pivot Y {@link cn.net.rms.confluxmap.mc.snapshot.McChunkSnapshotFactory} should scan
      * around for {@code layer}: the §2.2-debounced player Y for the player-relative layers, a
-     * slice's own fixed Y (deferred to a future UI slice, per the plan), the world's build-limit
+     * slice's configured fixed Y, the world's build-limit
      * for the nether-roof pivot, or an unused constant for the two top-down surface layers (kept
      * fixed so drifting player Y never spuriously flags a "layer changed" reseed while surfaced).
      */
@@ -187,12 +201,17 @@ public final class LayerSelector {
     }
 
     /** Deliverable A's cycle, with each dimension only offering the states meaningful to it. */
-    private static ConfluxConfig.LayerOverride nextOverride(final DimensionKind kind, final ConfluxConfig.LayerOverride current) {
+    public static ConfluxConfig.LayerOverride nextOverride(
+        final DimensionKind kind,
+        final ConfluxConfig.LayerOverride current
+    ) {
         if (kind == DimensionKind.HAS_CEILING) {
-            // Nether: no "force surface" state (it would show the roof) - AUTO <-> NETHER_CEILING only.
-            return current == ConfluxConfig.LayerOverride.AUTO
-                ? ConfluxConfig.LayerOverride.FORCE_UNDERGROUND
-                : ConfluxConfig.LayerOverride.AUTO;
+            // Nether: current/automatic -> top of roof -> configured below-roof slice.
+            return switch (current) {
+                case AUTO -> ConfluxConfig.LayerOverride.FORCE_UNDERGROUND;
+                case FORCE_UNDERGROUND -> ConfluxConfig.LayerOverride.FORCE_SLICE;
+                default -> ConfluxConfig.LayerOverride.AUTO;
+            };
         }
         if (kind == DimensionKind.NO_SKY_NO_CEILING) {
             // End: only one layer exists in M1, so cycling is a predictable no-op.
@@ -203,6 +222,8 @@ public final class LayerSelector {
                 return ConfluxConfig.LayerOverride.FORCE_SURFACE;
             case FORCE_SURFACE:
                 return ConfluxConfig.LayerOverride.FORCE_UNDERGROUND;
+            case FORCE_UNDERGROUND:
+                return ConfluxConfig.LayerOverride.FORCE_SLICE;
             default:
                 return ConfluxConfig.LayerOverride.AUTO;
         }

@@ -33,6 +33,7 @@ import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.mc.ui.MapLayerText;
 import cn.net.rms.confluxmap.mc.ui.PlayerMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.PlayerTrailRenderer;
 import cn.net.rms.confluxmap.mc.ui.UiResourceTheme;
@@ -604,8 +605,8 @@ public final class MinimapHudRenderer {
 
     /** cave-nether-layers.md-driven layer name, keyed off {@link MapLayer.Type#id()} (e.g. "confluxmap.layer.cave"). */
     private String layerIndicatorText() {
-        final MapLayer.Type type = layerSelector.current().layer().type();
-        return Texts.translatable("confluxmap.layer." + type.id()).getString();
+        final LayerSelector.Decision decision = layerSelector.current();
+        return MapLayerText.label(decision.layer(), decision.pivotY());
     }
 
     private void drawCenteredLine(final GuiDraw draw, final String text, final float centerX, final float y) {
