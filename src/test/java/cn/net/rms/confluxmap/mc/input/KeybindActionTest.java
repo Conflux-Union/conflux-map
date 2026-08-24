@@ -1,11 +1,15 @@
 package cn.net.rms.confluxmap.mc.input;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
+import fi.dy.masa.malilib.hotkeys.KeyAction;
+import fi.dy.masa.malilib.hotkeys.KeybindSettings;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -50,6 +54,38 @@ final class KeybindActionTest {
         assertEquals("M", KeybindAction.OPEN_MAP.maliLibDefaultKeys());
         assertEquals("COMMA", KeybindAction.OPEN_CONFIG.maliLibDefaultKeys());
         assertEquals("F9", KeybindAction.RELOAD_PREDICTION.maliLibDefaultKeys());
+    }
+
+    @Test
+    void maliLibHotkeysAllowNativeGameKeysToRemainHeld() {
+        for (final KeybindAction action : KeybindAction.values()) {
+            final KeybindSettings settings = MaliLibHotkeyFactory.settingsFor(action);
+
+            assertTrue(settings.getAllowExtraKeys(), action.configName());
+            assertSame(KeyAction.PRESS, settings.getActivateOn(), action.configName());
+            assertSame(
+                action == KeybindAction.OPEN_MAP
+                    ? KeybindSettings.Context.ANY
+                    : KeybindSettings.Context.INGAME,
+                settings.getContext(),
+                action.configName()
+            );
+            assertTrue(settings.isOrderSensitive(), action.configName());
+            assertFalse(settings.isExclusive(), action.configName());
+            assertTrue(settings.shouldCancel(), action.configName());
+        }
+    }
+
+    @Test
+    void maliLibConfigShortcutAllowsNativeGameKeysToRemainHeld() {
+        final KeybindSettings settings = MaliLibHotkeyFactory.configScreenSettings();
+
+        assertTrue(settings.getAllowExtraKeys());
+        assertSame(KeyAction.PRESS, settings.getActivateOn());
+        assertSame(KeybindSettings.Context.INGAME, settings.getContext());
+        assertTrue(settings.isOrderSensitive());
+        assertFalse(settings.isExclusive());
+        assertTrue(settings.shouldCancel());
     }
 
     @Test

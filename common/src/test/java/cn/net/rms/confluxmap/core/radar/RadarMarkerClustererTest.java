@@ -7,11 +7,11 @@ import org.junit.jupiter.api.Test;
 
 class RadarMarkerClustererTest {
     @Test
-    void mergesOverlappingMarkersAndKeepsTheHighestPriorityRepresentative() {
+    void mergesOverlappingMarkersOfTheSameEntityType() {
         final List<RadarMarkerClusterer.Candidate> candidates = List.of(
-            candidate(0, 10f, 10f, RadarCategory.PASSIVE, 30),
-            candidate(1, 12f, 10f, RadarCategory.OTHER, 20),
-            candidate(2, 11f, 12f, RadarCategory.HOSTILE, 10)
+            candidate(0, 10f, 10f, RadarCategory.PASSIVE, "minecraft:sheep", 30),
+            candidate(1, 12f, 10f, RadarCategory.PASSIVE, "minecraft:sheep", 20),
+            candidate(2, 11f, 12f, RadarCategory.PASSIVE, "minecraft:sheep", 10)
         );
 
         assertEquals(
@@ -21,12 +21,28 @@ class RadarMarkerClustererTest {
     }
 
     @Test
+    void keepsOverlappingMarkersOfDifferentEntityTypesIndependent() {
+        final List<RadarMarkerClusterer.Candidate> candidates = List.of(
+            candidate(0, 10f, 10f, RadarCategory.PASSIVE, "minecraft:sheep", 20),
+            candidate(1, 11f, 11f, RadarCategory.PASSIVE, "minecraft:zombie_horse", 10)
+        );
+
+        assertEquals(
+            List.of(
+                new RadarMarkerClusterer.Cluster(1, 1),
+                new RadarMarkerClusterer.Cluster(0, 1)
+            ),
+            RadarMarkerClusterer.cluster(candidates, 10f)
+        );
+    }
+
+    @Test
     void leavesPlayersAndSeparatedMarkersIndependent() {
         final List<RadarMarkerClusterer.Candidate> candidates = List.of(
-            candidate(0, 0f, 0f, RadarCategory.PLAYER, 10),
-            candidate(1, 1f, 1f, RadarCategory.PLAYER, 11),
-            candidate(2, 20f, 20f, RadarCategory.PASSIVE, 12),
-            candidate(3, 40f, 40f, RadarCategory.PASSIVE, 13)
+            candidate(0, 0f, 0f, RadarCategory.PLAYER, "minecraft:player", 10),
+            candidate(1, 1f, 1f, RadarCategory.PLAYER, "minecraft:player", 11),
+            candidate(2, 20f, 20f, RadarCategory.PASSIVE, "minecraft:sheep", 12),
+            candidate(3, 40f, 40f, RadarCategory.PASSIVE, "minecraft:sheep", 13)
         );
 
         assertEquals(
@@ -45,8 +61,9 @@ class RadarMarkerClustererTest {
         final float x,
         final float y,
         final RadarCategory category,
+        final String entityType,
         final int entityId
     ) {
-        return new RadarMarkerClusterer.Candidate(index, x, y, category, entityId);
+        return new RadarMarkerClusterer.Candidate(index, x, y, category, entityType, entityId);
     }
 }
