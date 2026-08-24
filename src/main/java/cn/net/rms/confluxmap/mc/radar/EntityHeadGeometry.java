@@ -15,6 +15,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+//#if MC<12103
+import java.util.function.Function;
+//#endif
 import net.minecraft.client.model.ModelPart;
 //#if MC>=12103
 //$$ import net.minecraft.client.model.ModelTransform;
@@ -130,13 +133,27 @@ final class EntityHeadGeometry {
         //$$     }
         //$$ }
         //#else
-        final ModelPart dataRoot = vanillaDataRoot(entityType);
+        return projectNeutral(
+            model, entityType, cellX, cellY, EntityHeadGeometry::vanillaDataRoot
+        );
+        //#endif
+    }
+
+    //#if MC<12103
+    static float[] projectNeutral(
+        final EntityModel<?> model,
+        final String entityType,
+        final int cellX,
+        final int cellY,
+        final Function<String, ModelPart> neutralRootResolver
+    ) {
+        final ModelPart dataRoot = neutralRootResolver.apply(entityType);
         if (dataRoot != null) {
             return project(selectFromRoot(dataRoot, entityType), entityType, cellX, cellY);
         }
         return project(model, entityType, cellX, cellY);
-        //#endif
     }
+    //#endif
 
     /** Projects an already-selected part group; separated so tests can drive raw model trees. */
     static float[] project(

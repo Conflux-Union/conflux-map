@@ -6,8 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 //#if MC<12103
-import net.minecraft.Bootstrap;
-import net.minecraft.SharedConstants;
+import java.util.function.Function;
 //#endif
 import net.minecraft.client.model.Dilation;
 import net.minecraft.client.model.ModelData;
@@ -31,9 +30,6 @@ import net.minecraft.client.render.entity.model.VillagerResemblingModel;
 //#elseif MC>=11900
 //$$ import net.minecraft.client.render.entity.model.WardenEntityModel;
 //#endif
-//#if MC<12103
-import org.junit.jupiter.api.BeforeAll;
-//#endif
 import org.junit.jupiter.api.Test;
 
 /**
@@ -42,14 +38,6 @@ import org.junit.jupiter.api.Test;
  * strategy chain that misses its named root child silently renders the whole mob.
  */
 final class EntityHeadGeometryTest {
-    //#if MC<12103
-    @BeforeAll
-    static void bootstrapMinecraftRegistries() {
-        SharedConstants.createGameVersion();
-        Bootstrap.initialize();
-    }
-    //#endif
-
     @SuppressWarnings({"rawtypes", "unchecked"})
     private static EntityModel<?> creeperModel(final ModelPart root) {
         return new CreeperEntityModel(root);
@@ -189,12 +177,15 @@ final class EntityHeadGeometryTest {
     //#if MC<12103
     @Test
     void horsePortraitIgnoresTheLiveGrazingPose() {
+        final Function<String, ModelPart> neutralRootResolver = ignored -> TexturedModelData.of(
+            HorseEntityModel.getModelData(Dilation.NONE), 128, 128
+        ).createModel();
         final ModelPart neutralRoot = TexturedModelData.of(
             HorseEntityModel.getModelData(Dilation.NONE), 128, 128
         ).createModel();
         final HorseEntityModel<?> neutralModel = new HorseEntityModel<>(neutralRoot);
         final float[] neutral = EntityHeadGeometry.projectNeutral(
-            neutralModel, "minecraft:horse", 0, 0
+            neutralModel, "minecraft:horse", 0, 0, neutralRootResolver
         );
 
         final ModelPart grazingRoot = TexturedModelData.of(
@@ -207,7 +198,7 @@ final class EntityHeadGeometryTest {
         grazingHead.pivotZ = -12f;
 
         final float[] grazing = EntityHeadGeometry.projectNeutral(
-            grazingModel, "minecraft:horse", 0, 0
+            grazingModel, "minecraft:horse", 0, 0, neutralRootResolver
         );
 
         assertTrue(neutral.length > 0);
