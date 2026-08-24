@@ -16,6 +16,7 @@ public final class ConfluxConfig {
     public static final int SCHEMA_VERSION = 7;
     public static final String DEFAULT_TELEPORT_COMMAND = "tp {x} {y} {z}";
     public static final int DEFAULT_MINIMAP_SIZE = 90;
+    public static final int MINIMAP_ZOOM_LEVEL_COUNT = 4;
     public static final int MIN_ANNOTATION_ERASER_SIZE = 4;
     public static final int MAX_ANNOTATION_ERASER_SIZE = 64;
     public static final int DEFAULT_ANNOTATION_ERASER_SIZE = 16;
@@ -264,6 +265,11 @@ public final class ConfluxConfig {
         return c;
     }
 
+    /** Advances to the next minimap zoom level, wrapping after the final level. */
+    public void cycleMinimapZoom() {
+        minimapZoomIndex = (minimapZoomIndex + 1) % MINIMAP_ZOOM_LEVEL_COUNT;
+    }
+
     /** Clamp out-of-range values loaded from a hand-edited file. */
     public void normalize() {
         if (schemaVersion < 2) {
@@ -302,7 +308,7 @@ public final class ConfluxConfig {
         }
         playerTrailDurationMinutes = null;
         minimapSize = clamp(minimapSize, 64, 256);
-        minimapZoomIndex = clamp(minimapZoomIndex, 0, 3);
+        minimapZoomIndex = clamp(minimapZoomIndex, 0, MINIMAP_ZOOM_LEVEL_COUNT - 1);
         playerTrailDurationSeconds = clamp(
             playerTrailDurationSeconds,
             MIN_PLAYER_TRAIL_DURATION_SECONDS,

@@ -19,12 +19,11 @@ import org.junit.jupiter.api.Test;
 final class KeybindActionTest {
     @Test
     void sharedRegistryContainsEveryExistingActionWithUniqueBackendKeys() {
-        assertEquals(11, KeybindAction.values().length);
+        assertEquals(10, KeybindAction.values().length);
         assertEquals(
             Set.of(
                 "toggle_minimap",
                 "zoom_in",
-                "zoom_out",
                 "open_map",
                 "cycle_layer",
                 "waypoints",
@@ -47,8 +46,7 @@ final class KeybindActionTest {
     @Test
     void maliLibDefaultsPreserveVanillaDefaults() {
         assertEquals("H", KeybindAction.TOGGLE_MINIMAP.maliLibDefaultKeys());
-        assertEquals("RIGHT_BRACKET", KeybindAction.ZOOM_IN.maliLibDefaultKeys());
-        assertEquals("LEFT_BRACKET", KeybindAction.ZOOM_OUT.maliLibDefaultKeys());
+        assertEquals("RIGHT_BRACKET", KeybindAction.CYCLE_ZOOM.maliLibDefaultKeys());
         assertEquals("M", KeybindAction.OPEN_MAP.maliLibDefaultKeys());
         assertEquals("COMMA", KeybindAction.OPEN_CONFIG.maliLibDefaultKeys());
         assertEquals("F9", KeybindAction.RELOAD_PREDICTION.maliLibDefaultKeys());

@@ -778,10 +778,9 @@ public final class ConfigScreen extends ConfluxScreen {
             addDrawableChild(Widgets.button(
                 rowX(), y, rowWidth, ROW_HEIGHT - 2, zoomLabel(config.minimapZoomIndex),
                 b -> {
-                    final int next = (config.minimapZoomIndex + 1) % ZOOM_VALUE_KEYS.length;
-                    config.minimapZoomIndex = next;
+                    config.cycleMinimapZoom();
                     configIo.save(config);
-                    b.setMessage(zoomLabel(next));
+                    b.setMessage(zoomLabel(config.minimapZoomIndex));
                 }
             ));
         }
