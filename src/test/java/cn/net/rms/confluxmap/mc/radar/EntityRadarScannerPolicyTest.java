@@ -21,7 +21,10 @@ class EntityRadarScannerPolicyTest {
     @Test
     void forbiddenPolicyHidesAnAlreadyPublishedSnapshot() {
         final List<RadarEntry> current = List.of(
-            new RadarEntry(12.0, -4.0, 0, RadarCategory.PLAYER, "Player", 7, false)
+            new RadarEntry(
+                12.0, -4.0, 0, RadarCategory.PLAYER,
+                "minecraft:player", "Player", 7, false
+            )
         );
 
         assertSame(current, EntityRadarScanner.visibleSnapshot(true, current));

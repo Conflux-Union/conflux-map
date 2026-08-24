@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.core.radar;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Merges radar markers whose screen-space icon footprints overlap. The representative is chosen
@@ -11,7 +12,17 @@ import java.util.List;
  */
 public final class RadarMarkerClusterer {
     /** One projected marker; {@code index} points back into the caller's render-data list. */
-    public record Candidate(int index, float x, float y, RadarCategory category, int entityId) {
+    public record Candidate(
+        int index,
+        float x,
+        float y,
+        RadarCategory category,
+        String entityType,
+        int entityId
+    ) {
+        public Candidate {
+            Objects.requireNonNull(entityType, "entityType");
+        }
     }
 
     /** The marker to draw and the total number of entities it represents. */
@@ -49,6 +60,9 @@ public final class RadarMarkerClusterer {
             MutableCluster nearest = null;
             float nearestDistanceSq = Float.POSITIVE_INFINITY;
             for (final MutableCluster cluster : merged) {
+                if (!candidate.entityType().equals(cluster.anchor.entityType())) {
+                    continue;
+                }
                 final float dx = candidate.x() - cluster.anchor.x();
                 final float dy = candidate.y() - cluster.anchor.y();
                 if (Math.abs(dx) > mergeDistance || Math.abs(dy) > mergeDistance) {
