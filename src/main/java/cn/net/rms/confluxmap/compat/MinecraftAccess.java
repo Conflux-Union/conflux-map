@@ -93,6 +93,18 @@ public final class MinecraftAccess {
         //#endif
     }
 
+    /**
+     * Whether the vanilla debug HUD is visible. BetterF3 renders through the same debug-HUD
+     * state, so this remains a soft compatibility seam with no optional-mod dependency.
+     */
+    public static boolean isDebugHudVisible(final MinecraftClient client) {
+        //#if MC>=12100
+        //$$ return client.getDebugHud().shouldShowDebugHud();
+        //#else
+        return client.options.debugEnabled;
+        //#endif
+    }
+
     public static void sendChatMessage(final MinecraftClient client, final String message) {
         //#if MC>=12000
         //$$ if (client.getNetworkHandler() != null) {

@@ -225,7 +225,8 @@ public abstract class InGameHudMixin {
             config.minimapEnabled,
             app.gameBridge().session().active(),
             screen instanceof FullscreenMapScreen,
-            MinecraftAccess.isContainerScreen(screen)
+            MinecraftAccess.isContainerScreen(screen),
+            MinecraftAccess.isDebugHudVisible(client)
         )) {
             return HudTransform.IDENTITY;
         }
