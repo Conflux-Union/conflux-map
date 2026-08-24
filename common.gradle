@@ -70,11 +70,19 @@ dependencies {
     include 'org.nanohttpd:nanohttpd:2.3.1'
     include 'org.nanohttpd:nanohttpd-websocket:2.3.1'
     // Compile the optional adapter against the exact MaliLib line for this Minecraft version.
-    // This is deliberately absent from runtime and from the produced jar.
+    // This is deliberately absent from production runtime and from the produced jar.
     if (unobfuscated) {
         compileOnly malilib_dependency
+        testCompileOnly malilib_dependency
+        testRuntimeOnly malilib_dependency
     } else {
         modCompileOnly malilib_dependency
+        // Reuse Loom's named remap in JUnit instead of loading the intermediary production jar.
+        afterEvaluate {
+            configurations.testRuntimeOnly.extendsFrom(
+                configurations.getByName('modCompileClasspathMainMapped')
+            )
+        }
     }
     testImplementation "org.junit.jupiter:junit-jupiter:5.10.2"
     testRuntimeOnly "org.junit.platform:junit-platform-launcher"
