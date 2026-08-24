@@ -1,0 +1,125 @@
+name: Bug report (English)
+description: Report reproducible behavior that is not working as expected in English
+title: "[Bug]: "
+labels: []
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Conflux Map. Please provide the smallest reliable reproduction and remove sensitive information from anything you attach.
+
+  - type: input
+    id: minecraft-version
+    attributes:
+      label: Minecraft version
+      placeholder: "For example: 1.21.4"
+    validations:
+      required: true
+
+  - type: input
+    id: conflux-map-version
+    attributes:
+      label: Conflux Map version
+      description: Use the exact release or build identifier.
+      placeholder: "For example: 1.2.3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Fabric client
+        - Fabric server companion
+        - Paper server companion
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: loader-version
+    attributes:
+      label: Loader or server version
+      description: Include the Fabric Loader, Fabric API, or Paper version, as applicable.
+      placeholder: "For example: Fabric Loader 0.16.10, Fabric API 0.119.2"
+    validations:
+      required: true
+
+  - type: textarea
+    id: other-mods
+    attributes:
+      label: Other relevant mods or plugins
+      description: List names and versions, or write "None".
+      placeholder: |
+        Sodium 0.6.9
+        Iris 1.8.8
+    validations:
+      required: true
+
+  - type: input
+    id: operating-system
+    attributes:
+      label: Operating system
+      placeholder: "For example: Windows 11, Arch Linux, macOS 15"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: List the smallest set of steps that reliably triggers the problem.
+      placeholder: |
+        1. Start a world with ...
+        2. Open ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual behavior
+      description: Explain what happened, including any visible error.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected behavior
+      description: Explain what you expected to happen instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: configuration
+    attributes:
+      label: Relevant configuration
+      description: Include relevant settings, key bindings, dimensions, worlds, or server configuration.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, screenshots, or videos
+      description: Drag files here or paste links. Remove passwords, tokens, personal data, and other sensitive information first.
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add anything else that may help diagnose the problem.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+        - label: I included the relevant version information and reproduction steps.
+          required: true
+        - label: I removed sensitive information from logs and attachments.
+          required: true

@@ -1,0 +1,125 @@
+name: 错误报告（中文）
+description: 用中文报告可以稳定复现的异常行为
+title: "[Bug]: "
+labels: []
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你帮助改进 Conflux Map。请提供能够稳定触发问题的最简复现步骤，并在上传文件前删除其中的敏感信息。
+
+  - type: input
+    id: minecraft-version
+    attributes:
+      label: Minecraft 版本
+      placeholder: "例如：1.21.4"
+    validations:
+      required: true
+
+  - type: input
+    id: conflux-map-version
+    attributes:
+      label: Conflux Map 版本
+      description: 请填写准确的发布版本号或构建标识。
+      placeholder: "例如：1.2.3"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 运行平台
+      options:
+        - Fabric 客户端
+        - Fabric 服务端组件
+        - Paper 服务端组件
+        - 其他
+    validations:
+      required: true
+
+  - type: input
+    id: loader-version
+    attributes:
+      label: 加载器或服务端版本
+      description: 根据实际环境填写 Fabric Loader、Fabric API 或 Paper 版本。
+      placeholder: "例如：Fabric Loader 0.16.10、Fabric API 0.119.2"
+    validations:
+      required: true
+
+  - type: textarea
+    id: other-mods
+    attributes:
+      label: 其他相关模组或插件
+      description: 请列出名称和版本；如果没有，请填写“无”。
+      placeholder: |
+        Sodium 0.6.9
+        Iris 1.8.8
+    validations:
+      required: true
+
+  - type: input
+    id: operating-system
+    attributes:
+      label: 操作系统
+      placeholder: "例如：Windows 11、Arch Linux、macOS 15"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 请列出能够稳定触发问题的最少步骤。
+      placeholder: |
+        1. 使用……启动世界
+        2. 打开……
+        3. 观察到……
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: 实际行为
+      description: 请说明实际发生了什么，包括可见的错误信息。
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: 预期行为
+      description: 请说明你原本期望发生什么。
+    validations:
+      required: true
+
+  - type: textarea
+    id: configuration
+    attributes:
+      label: 相关配置
+      description: 请填写相关设置、按键绑定、维度、世界或服务端配置。
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志、截图或视频
+      description: 可将文件拖到此处或粘贴链接。请先删除密码、令牌、个人信息及其他敏感内容。
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: 其他信息
+      description: 请补充任何可能有助于定位问题的信息。
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我搜索过现有 Issue，没有发现重复报告。
+          required: true
+        - label: 我提供了相关版本信息和复现步骤。
+          required: true
+        - label: 我已从日志和附件中删除敏感信息。
+          required: true

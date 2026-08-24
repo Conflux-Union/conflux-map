@@ -1,0 +1,55 @@
+name: Documentation or other issue (English)
+description: Report a documentation problem, ask a project question, or raise another issue in English
+title: "[Other]: "
+labels: []
+assignees: []
+body:
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - Documentation
+        - Project question
+        - Packaging or distribution
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the issue in one sentence.
+    validations:
+      required: true
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Explain the problem, question, or requested correction.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-result
+    attributes:
+      label: Proposed result
+      description: If applicable, explain what should change.
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add relevant links, screenshots, versions, or related issues.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+        - label: I removed sensitive information from any attachments.
+          required: true
