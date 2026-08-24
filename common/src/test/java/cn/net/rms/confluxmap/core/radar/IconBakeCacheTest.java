@@ -20,7 +20,7 @@ class IconBakeCacheTest {
     }
 
     @Test
-    void expiredIconsStayVisibleWhileARefreshIsQueued() {
+    void completedIconsRemainCachedUntilExplicitInvalidation() {
         final IconBakeCache<String, String> cache = new IconBakeCache<>(2, 200);
         cache.request("frog", 0);
         cache.pollNext(0);
@@ -28,24 +28,21 @@ class IconBakeCacheTest {
 
         assertEquals("temperate", cache.request("frog", 199).orElseThrow());
         assertEquals("temperate", cache.request("frog", 200).orElseThrow());
-        assertEquals("frog", cache.pollNext(200).orElseThrow());
+        assertEquals("temperate", cache.request("frog", 1_000_000).orElseThrow());
+        assertTrue(cache.pollNext(1_000_000).isEmpty());
     }
 
     @Test
-    void failedRefreshKeepsTheLastPublishedIconDuringBackoff() {
+    void clearingTheCacheQueuesOneReplacementBake() {
         final IconBakeCache<String, String> cache = new IconBakeCache<>(2, 200);
         cache.request("frog", 0);
         cache.pollNext(0);
         cache.complete("frog", "temperate", 0);
-        cache.request("frog", 200);
-        cache.pollNext(200);
 
-        cache.fail("frog", 200);
+        cache.clear();
 
-        assertEquals("temperate", cache.request("frog", 201).orElseThrow());
-        assertTrue(cache.pollNext(201).isEmpty());
-        assertEquals("temperate", cache.request("frog", 400).orElseThrow());
-        assertEquals("frog", cache.pollNext(400).orElseThrow());
+        assertTrue(cache.request("frog", 200).isEmpty());
+        assertEquals("frog", cache.pollNext(200).orElseThrow());
     }
 
     @Test

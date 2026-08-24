@@ -5,6 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+//#if MC<12103
+import net.minecraft.Bootstrap;
+import net.minecraft.SharedConstants;
+//#endif
 import net.minecraft.client.model.Dilation;
 import net.minecraft.client.model.ModelData;
 import net.minecraft.client.model.ModelPart;
@@ -13,6 +17,9 @@ import net.minecraft.client.model.ModelTransform;
 import net.minecraft.client.model.TexturedModelData;
 import net.minecraft.client.render.entity.model.CreeperEntityModel;
 import net.minecraft.client.render.entity.model.EntityModel;
+//#if MC<12103
+import net.minecraft.client.render.entity.model.HorseEntityModel;
+//#endif
 import net.minecraft.client.render.entity.model.PigEntityModel;
 import net.minecraft.client.render.entity.model.RabbitEntityModel;
 //#if MC>=260100
@@ -24,6 +31,9 @@ import net.minecraft.client.render.entity.model.VillagerResemblingModel;
 //#elseif MC>=11900
 //$$ import net.minecraft.client.render.entity.model.WardenEntityModel;
 //#endif
+//#if MC<12103
+import org.junit.jupiter.api.BeforeAll;
+//#endif
 import org.junit.jupiter.api.Test;
 
 /**
@@ -32,6 +42,14 @@ import org.junit.jupiter.api.Test;
  * strategy chain that misses its named root child silently renders the whole mob.
  */
 final class EntityHeadGeometryTest {
+    //#if MC<12103
+    @BeforeAll
+    static void bootstrapMinecraftRegistries() {
+        SharedConstants.createGameVersion();
+        Bootstrap.initialize();
+    }
+    //#endif
+
     @SuppressWarnings({"rawtypes", "unchecked"})
     private static EntityModel<?> creeperModel(final ModelPart root) {
         return new CreeperEntityModel(root);
@@ -167,6 +185,38 @@ final class EntityHeadGeometryTest {
 
         assertTrue(geometry.length > 0, "a planar face must not degrade to a category dot");
     }
+
+    //#if MC<12103
+    @Test
+    void horsePortraitIgnoresTheLiveGrazingPose() {
+        final ModelPart neutralRoot = TexturedModelData.of(
+            HorseEntityModel.getModelData(Dilation.NONE), 128, 128
+        ).createModel();
+        final HorseEntityModel<?> neutralModel = new HorseEntityModel<>(neutralRoot);
+        final float[] neutral = EntityHeadGeometry.projectNeutral(
+            neutralModel, "minecraft:horse", 0, 0
+        );
+
+        final ModelPart grazingRoot = TexturedModelData.of(
+            HorseEntityModel.getModelData(Dilation.NONE), 128, 128
+        ).createModel();
+        final HorseEntityModel<?> grazingModel = new HorseEntityModel<>(grazingRoot);
+        final ModelPart grazingHead = grazingRoot.getChild("head_parts");
+        grazingHead.pitch = (float) Math.toRadians(125d);
+        grazingHead.pivotY = 11f;
+        grazingHead.pivotZ = -12f;
+
+        final float[] grazing = EntityHeadGeometry.projectNeutral(
+            grazingModel, "minecraft:horse", 0, 0
+        );
+
+        assertTrue(neutral.length > 0);
+        assertEquals(neutral.length, grazing.length);
+        for (int i = 0; i < neutral.length; i++) {
+            assertEquals(neutral[i], grazing[i], 0.000001f, "vertex component " + i);
+        }
+    }
+    //#endif
 
     private static float[] projectPig() {
         final ModelPart root = PigEntityModel.getTexturedModelData(Dilation.NONE).createModel();

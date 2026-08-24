@@ -159,7 +159,10 @@ coat/marking layers.
 > ready or when a bake cannot be drawn. Dynamic portraits use area-normalized sizing;
 > horse-like long heads use a fixed three-quarter view while fish retain a side view. Bundled,
 > dynamic, player, and item icons all render without a generated surrounding border. Player faces
-> remain direct skin face/hat crops.
+> remain direct skin face/hat crops. Dynamic atlas entries are keyed by entity type, resolved
+> texture, and selected model, so entities with the same visual appearance share one bake. Each
+> entity's appearance key is rechecked periodically, but an unchanged key is never re-rendered;
+> resource reloads and session changes invalidate the atlas explicitly.
 
 **Distinct cached variants per species.** A species can have more than one cached icon when
 its appearance meaningfully differs at runtime. Recognized variant axes include: a discrete
