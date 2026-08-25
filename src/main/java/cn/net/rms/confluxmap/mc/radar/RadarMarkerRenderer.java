@@ -57,10 +57,10 @@ public final class RadarMarkerRenderer {
     }
 
     /**
-     * Clusters overlapping non-player icons, then draws an entity head icon or the entity's normal
-     * in-game item icon when available, falling back to the original shaped dot otherwise. Dropped
-     * and flying items use their live stack; other targets use the same item form as creative
-     * pick-block where vanilla exposes one.
+     * Clusters matching non-player icons, moves the remaining overlapping icons apart, then draws
+     * an entity head icon or the entity's normal in-game item icon when available, falling back to
+     * the original shaped dot otherwise. Dropped and flying items use their live stack; other
+     * targets use the same item form as creative pick-block where vanilla exposes one.
      *
      * <p>Spectator-mode entries render every element (icon, dot, name) at
      * {@link #SPECTATOR_ALPHA} of its normal alpha, on top of any elevation fading.
@@ -87,22 +87,32 @@ public final class RadarMarkerRenderer {
         final List<RadarMarkerClusterer.Candidate> candidates = new ArrayList<>(markers.size());
         for (int i = 0; i < markers.size(); i++) {
             final Marker marker = markers.get(i);
+            Object mergeKey = marker.entry().entityType();
+            if (marker.entry().category() == RadarCategory.OTHER && marker.live() != null) {
+                final ItemStack itemIcon = itemIconFor(marker.live());
+                if (!itemIcon.isEmpty()) {
+                    mergeKey = itemIcon.getItem();
+                }
+            }
             candidates.add(new RadarMarkerClusterer.Candidate(
                 i, marker.x(), marker.y(), marker.entry().category(),
-                marker.entry().entityType(), marker.entry().entityId()
+                mergeKey, marker.entry().entityId()
             ));
         }
         for (final RadarMarkerClusterer.Cluster cluster
             : RadarMarkerClusterer.cluster(candidates, config.radarIconSize)) {
             final Marker marker = markers.get(cluster.representativeIndex());
+            final Marker positioned = new Marker(
+                marker.entry(), cluster.x(), cluster.y(), marker.yDelta(), marker.live()
+            );
             final boolean iconDrawn = drawMarker(
-                draw, client, config, iconManager, marker
+                draw, client, config, iconManager, positioned
             );
             if (cluster.count() > 1) {
                 drawStackCount(
-                    draw, client, marker.x(), marker.y(),
+                    draw, client, positioned.x(), positioned.y(),
                     iconDrawn ? config.radarIconSize / 2f : 2.5f,
-                    config.radarIconSize, cluster.count(), marker.entry().spectator()
+                    config.radarIconSize, cluster.count(), positioned.entry().spectator()
                 );
             }
         }
