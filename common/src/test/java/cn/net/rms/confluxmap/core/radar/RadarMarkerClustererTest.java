@@ -22,6 +22,24 @@ class RadarMarkerClustererTest {
     }
 
     @Test
+    void keepsEveryMarkerAtItsProjectedPositionWhenMergingIsDisabled() {
+        final List<RadarMarkerClusterer.Candidate> candidates = List.of(
+            candidate(0, 10f, 10f, RadarCategory.PASSIVE, "minecraft:sheep", 30),
+            candidate(1, 12f, 10f, RadarCategory.PASSIVE, "minecraft:sheep", 20),
+            candidate(2, 11f, 12f, RadarCategory.PASSIVE, "minecraft:sheep", 10)
+        );
+
+        assertEquals(
+            List.of(
+                new RadarMarkerClusterer.Cluster(0, 1, 10f, 10f),
+                new RadarMarkerClusterer.Cluster(1, 1, 12f, 10f),
+                new RadarMarkerClusterer.Cluster(2, 1, 11f, 12f)
+            ),
+            RadarMarkerClusterer.cluster(candidates, 10f, false)
+        );
+    }
+
+    @Test
     void keepsDifferentMergeKeysIndependentAndMovesTheirIconsApart() {
         final List<RadarMarkerClusterer.Candidate> candidates = List.of(
             candidate(0, 10f, 10f, RadarCategory.OTHER, "minecraft:item:iron_ingot", 20),

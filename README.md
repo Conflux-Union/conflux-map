@@ -62,7 +62,7 @@ The client provides local maps, waypoints, drawings, and map export as soon as i
 
 ### Entity radar and interface settings
 
-- **Entity radar:** Players, mobs, dropped items, vehicles, and projectiles have independent controls. Entity icons are generated from the corresponding mob model or item appearance, crowded targets are grouped automatically, and player markers remain separate.
+- **Entity radar:** Players, mobs, dropped items, vehicles, and projectiles have independent controls. Entity icons are generated from the corresponding mob model or item appearance, automatic grouping for crowded targets can be toggled, and player markers remain separate.
 - **Display customization:** The minimap, waypoints, entity radar, map layers, and information lines all provide detailed display settings. Client settings apply immediately, and sliders accept directly entered values.
 - **UI resource packs:** Toolbar icons and minimap frames can be replaced through normal Minecraft resource packs. Existing Xaero UI packs can reuse compatible minimap-frame and world-map icon assets during migration; see [UI resource packs](docs/reference-specs/ui-resource-packs.md) for the supported paths and limits.
 - **MaliLib key combinations:** With MaliLib installed, Conflux Map supports multi-key combinations and can be managed through the A+C configuration screen.

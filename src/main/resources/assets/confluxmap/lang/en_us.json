@@ -287,6 +287,7 @@
   "confluxmap.config.radar.show_player_names": "Show Player Names: %s",
   "confluxmap.config.radar.max_entities": "Radar Target Limit: %s",
   "confluxmap.config.radar.icons_enabled": "Entity and Item Icons: %s",
+  "confluxmap.config.radar.merge_enabled": "Merge Matching Markers: %s",
   "confluxmap.config.radar.icon_size": "Radar Icon Size: %s",
   "confluxmap.screen.config.radar.disabled_by_server": "Entity radar is disabled by this server",
   "confluxmap.config.waypoints.render_distance": "Waypoint Visibility Distance: %s",

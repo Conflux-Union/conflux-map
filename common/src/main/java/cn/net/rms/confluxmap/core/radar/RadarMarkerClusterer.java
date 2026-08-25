@@ -8,10 +8,11 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Merges matching radar markers whose screen-space icon footprints overlap, then moves independent
- * icons apart. The representative is chosen by gameplay relevance before grouping, so a hostile
- * marker keeps its projected position ahead of a friendly mob or dropped item. Players remain
- * independent because merging them would discard names.
+ * When enabled, merges matching radar markers whose screen-space icon footprints overlap, then
+ * moves independent icons apart. When disabled, every marker keeps its projected position. The
+ * representative is chosen by gameplay relevance before grouping, so a hostile marker keeps its
+ * projected position ahead of a friendly mob or dropped item. Players remain independent because
+ * merging them would discard names.
  */
 public final class RadarMarkerClusterer {
     private static final int[][] DISPLACEMENT_DIRECTIONS = {
@@ -48,11 +49,27 @@ public final class RadarMarkerClusterer {
      * chain of individually-close entities from collapsing into one group spanning a large area.
      */
     public static List<Cluster> cluster(final List<Candidate> candidates, final float mergeDistance) {
+        return cluster(candidates, mergeDistance, true);
+    }
+
+    /** Applies merging and overlap avoidance only when {@code mergeMatching} is enabled. */
+    public static List<Cluster> cluster(
+        final List<Candidate> candidates,
+        final float mergeDistance,
+        final boolean mergeMatching
+    ) {
         if (candidates.isEmpty()) {
             return List.of();
         }
         if (!(mergeDistance > 0f) || !Float.isFinite(mergeDistance)) {
             throw new IllegalArgumentException("mergeDistance must be finite and positive");
+        }
+        if (!mergeMatching) {
+            final List<Cluster> independent = new ArrayList<>(candidates.size());
+            for (final Candidate candidate : candidates) {
+                independent.add(new Cluster(candidate.index(), 1, candidate.x(), candidate.y()));
+            }
+            return List.copyOf(independent);
         }
 
         final List<Candidate> ordered = new ArrayList<>(candidates);

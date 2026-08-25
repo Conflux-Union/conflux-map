@@ -99,8 +99,7 @@ public final class RadarMarkerRenderer {
                 mergeKey, marker.entry().entityId()
             ));
         }
-        for (final RadarMarkerClusterer.Cluster cluster
-            : RadarMarkerClusterer.cluster(candidates, config.radarIconSize)) {
+        for (final RadarMarkerClusterer.Cluster cluster : clusterCandidates(candidates, config)) {
             final Marker marker = markers.get(cluster.representativeIndex());
             final Marker positioned = new Marker(
                 marker.entry(), cluster.x(), cluster.y(), marker.yDelta(), marker.live()
@@ -116,6 +115,15 @@ public final class RadarMarkerRenderer {
                 );
             }
         }
+    }
+
+    static List<RadarMarkerClusterer.Cluster> clusterCandidates(
+        final List<RadarMarkerClusterer.Candidate> candidates,
+        final ConfluxConfig config
+    ) {
+        return RadarMarkerClusterer.cluster(
+            candidates, config.radarIconSize, config.radarMergeEnabled
+        );
     }
 
     private static boolean drawMarker(

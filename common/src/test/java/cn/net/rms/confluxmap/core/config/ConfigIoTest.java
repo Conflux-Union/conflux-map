@@ -100,6 +100,7 @@ class ConfigIoTest {
         assertEquals(new ConfluxConfig().chunkLoadDetailMode, loaded.chunkLoadDetailMode);
         assertEquals(MapColorStyle.CONFLUX, loaded.mapColorStyle);
         assertEquals(ConfluxConfig.DEFAULT_RADAR_ICON_SIZE, loaded.radarIconSize);
+        assertTrue(loaded.radarMergeEnabled);
         assertTrue(loaded.playerTrailEnabled);
         assertEquals(
             ConfluxConfig.DEFAULT_PLAYER_TRAIL_DURATION_SECONDS,
@@ -132,6 +133,7 @@ class ConfigIoTest {
         assertTrue(rewritten.contains("\"chunkLoadDetailMode\""));
         assertTrue(rewritten.contains("\"mapColorStyle\""));
         assertTrue(rewritten.contains("\"radarIconSize\""));
+        assertTrue(rewritten.contains("\"radarMergeEnabled\""));
         assertTrue(rewritten.contains("\"playerTrailEnabled\""));
         assertTrue(rewritten.contains("\"playerTrailDurationSeconds\""));
         assertFalse(rewritten.contains("\"playerTrailDurationMinutes\""));

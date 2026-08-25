@@ -1,10 +1,25 @@
 package cn.net.rms.confluxmap.core.config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
 final class ConfluxConfigTest {
+    @Test
+    void radarMarkerMergingIsEnabledByDefault() {
+        assertTrue(new ConfluxConfig().radarMergeEnabled);
+    }
+
+    @Test
+    void radarMarkerMergeChoiceSurvivesConfigCopy() {
+        final ConfluxConfig config = new ConfluxConfig();
+        config.radarMergeEnabled = false;
+
+        assertFalse(config.copy().radarMergeEnabled);
+    }
+
     @Test
     void minimapZoomCyclesThroughEveryLevelAndWraps() {
         final ConfluxConfig config = new ConfluxConfig();
