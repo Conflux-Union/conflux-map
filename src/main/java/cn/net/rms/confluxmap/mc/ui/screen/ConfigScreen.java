@@ -618,6 +618,14 @@ public final class ConfigScreen extends ConfluxScreen {
                     ConfigScreen::percentText
                 );
                 y = addIntSliderRow(
+                    y, "confluxmap.config.waypoints.highlight_dim_opacity",
+                    ConfluxConfig.MIN_WAYPOINT_HIGHLIGHT_DIM_OPACITY,
+                    ConfluxConfig.MAX_WAYPOINT_HIGHLIGHT_DIM_OPACITY,
+                    () -> config.waypointHighlightDimOpacity,
+                    v -> config.waypointHighlightDimOpacity = v,
+                    ConfigScreen::percentText
+                );
+                y = addIntSliderRow(
                     y, "confluxmap.config.waypoints.label_scale",
                     ConfluxConfig.MIN_WAYPOINT_LABEL_SCALE_PERCENT,
                     ConfluxConfig.MAX_WAYPOINT_LABEL_SCALE_PERCENT,
