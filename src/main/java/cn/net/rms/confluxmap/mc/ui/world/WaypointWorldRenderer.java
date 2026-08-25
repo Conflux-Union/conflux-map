@@ -576,11 +576,13 @@ public final class WaypointWorldRenderer {
         }
         //#if MC>=260200
         //$$ drawIcon(
-        //$$     matrices, textRenderer, plates, text, waypoint, iconHalfSize, nearFade
+        //$$     matrices, textRenderer, plates, text, waypoint, iconHalfSize,
+        //$$     nearFade * config.waypointIconOpacity / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY
         //$$ );
         //#else
         drawIcon(
-            matrices, textRenderer, immediate, waypoint, iconHalfSize, nearFade
+            matrices, textRenderer, immediate, waypoint, iconHalfSize,
+            nearFade * config.waypointIconOpacity / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY
         );
         //#endif
 

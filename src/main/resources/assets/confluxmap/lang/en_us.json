@@ -302,6 +302,7 @@
   "confluxmap.config.waypoints.death_points_kept": "Saved Death Waypoints: %s",
   "confluxmap.config.waypoints.beams_enabled": "Waypoint Beams: %s",
   "confluxmap.config.waypoints.labels_enabled": "Waypoint Labels: %s",
+  "confluxmap.config.waypoints.icon_opacity": "In-World Waypoint Icon Opacity: %s",
   "confluxmap.config.waypoints.label_scale": "Label Size: %s",
   "confluxmap.config.performance.snapshot_budget": "Map Update Speed: %s",
   "confluxmap.config.performance.gpu_tile_cache_limit": "Loaded Map Area: %s",
