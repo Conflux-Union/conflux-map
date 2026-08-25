@@ -7,6 +7,7 @@ import cn.net.rms.confluxmap.core.task.SessionGuard;
 import java.util.Optional;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.entity.Entity;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
 
@@ -30,12 +31,20 @@ public final class McGameBridge implements GameBridge {
         if (player == null || client.world == null) {
             return Optional.empty();
         }
+        // Some client-side mods temporarily move the camera into a separate entity (for
+        // example while the player's soul is detached from their body).  Map overlays are
+        // screen-space views, so anchoring them to the player entity in that state makes the
+        // map, markers, and waypoints appear to slide away from the actual view.  Vanilla
+        // normally returns the player here; the fallback keeps this bridge safe during camera
+        // teardown and on versions where no camera entity is available yet.
+        final Entity cameraEntity = client.getCameraEntity();
+        final Entity viewEntity = cameraEntity != null ? cameraEntity : player;
         final Identifier dim = client.world.getRegistryKey().getValue();
         return Optional.of(new PlayerView(
-            MathHelper.lerp(tickDelta, player.prevX, player.getX()),
-            MathHelper.lerp(tickDelta, player.prevY, player.getY()),
-            MathHelper.lerp(tickDelta, player.prevZ, player.getZ()),
-            player.getYaw(tickDelta),
+            MathHelper.lerp(tickDelta, viewEntity.prevX, viewEntity.getX()),
+            MathHelper.lerp(tickDelta, viewEntity.prevY, viewEntity.getY()),
+            MathHelper.lerp(tickDelta, viewEntity.prevZ, viewEntity.getZ()),
+            viewEntity.getYaw(tickDelta),
             DimensionId.of(dim.getNamespace(), dim.getPath())
         ));
     }
