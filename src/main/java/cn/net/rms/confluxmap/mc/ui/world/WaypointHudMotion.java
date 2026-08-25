@@ -21,6 +21,17 @@ final class WaypointHudMotion {
         final double dz
     ) {
         final double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        return alignment(cameraYawDegrees, cameraPitchDegrees, dx, dy, dz, distance);
+    }
+
+    static double alignment(
+        final float cameraYawDegrees,
+        final float cameraPitchDegrees,
+        final double dx,
+        final double dy,
+        final double dz,
+        final double distance
+    ) {
         if (distance <= 0.0) {
             return -1.0;
         }
