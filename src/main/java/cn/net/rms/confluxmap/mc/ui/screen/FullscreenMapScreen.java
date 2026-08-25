@@ -441,7 +441,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         );
 
         final DimensionId dimension = gameBridge.session().dimension();
-        final Optional<PlayerView> player = gameBridge.player();
+        final Optional<PlayerView> player = gameBridge.viewpoint();
         final FullscreenMapViewState.View initialView = viewState.viewForOpening(
             dimension,
             player.isPresent() ? player.get().x() : 0.0,
@@ -2213,7 +2213,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         // This screen owns radarViewRange while it's open (MinimapHudRenderer stops writing it -
         // see its render() javadoc).
         final Optional<PlayerView> radarObserver = viewingLiveSession()
-            ? gameBridge.player(tickDelta)
+            ? gameBridge.viewpoint(tickDelta)
             : Optional.empty();
         if (radarObserver.isPresent()) {
             final PlayerView observer = radarObserver.get();
@@ -3306,7 +3306,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         if (!viewingLiveSession() || this.client.world == null) {
             return;
         }
-        final Optional<PlayerView> playerView = gameBridge.player(tickDelta);
+        final Optional<PlayerView> playerView = gameBridge.viewpoint(tickDelta);
         if (playerView.isEmpty()) {
             return;
         }

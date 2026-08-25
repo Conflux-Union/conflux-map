@@ -2,7 +2,7 @@ package cn.net.rms.confluxmap.bridge;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
 
-/** Immutable snapshot of the local player's pose, taken on the main thread. */
+/** Immutable snapshot of a player or client-viewpoint pose, taken on the main thread. */
 public record PlayerView(
     double x,
     double y,
