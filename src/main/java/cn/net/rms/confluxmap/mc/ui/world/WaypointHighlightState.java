@@ -9,6 +9,10 @@ import java.util.UUID;
 
 /** Client-only selection shared by the fullscreen map and the in-world waypoint HUD. */
 public final class WaypointHighlightState {
+    public static final String SELECTED_LOCATION_TRANSLATION_KEY =
+        "confluxmap.map.location_menu.selected_location";
+    public static final double DEFAULT_LOCATION_Y = 64.0;
+
     public record Target(
         UUID waypointId,
         DimensionId dimension,

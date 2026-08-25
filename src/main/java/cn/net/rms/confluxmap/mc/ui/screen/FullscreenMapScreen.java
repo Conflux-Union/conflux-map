@@ -1907,16 +1907,20 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         switch (action) {
             case HIGHLIGHT -> {
                 if (waypoint != null) {
-                    waypointHighlightState.selectWaypoint(
-                        waypoint, viewSession().dimension()
-                    );
+                    if (SELECTED_LOCATION_ID.equals(waypoint.id())) {
+                        waypointHighlightState.target()
+                            .filter(existing -> existing.waypointId() == null)
+                            .ifPresentOrElse(
+                                waypointHighlightState::select,
+                                () -> selectLocationHighlight(target)
+                            );
+                    } else {
+                        waypointHighlightState.selectWaypoint(
+                            waypoint, viewSession().dimension()
+                        );
+                    }
                 } else if (target != null) {
-                    final boolean yKnown = target.blockY().isPresent();
-                    waypointHighlightState.select(WaypointHighlightState.Target.location(
-                        viewSession().dimension(), target.blockX() + 0.5,
-                        yKnown ? target.blockY().getAsInt() : 0.0,
-                        target.blockZ() + 0.5, yKnown
-                    ));
+                    selectLocationHighlight(target);
                 }
             }
             case CLEAR_HIGHLIGHT -> waypointHighlightState.clear();
@@ -1943,6 +1947,15 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 );
             }
         }
+    }
+
+    private void selectLocationHighlight(final FullscreenMapLocationMenu.Target target) {
+        final boolean yKnown = target.blockY().isPresent();
+        waypointHighlightState.select(WaypointHighlightState.Target.location(
+            viewSession().dimension(), target.blockX() + 0.5,
+            yKnown ? target.blockY().getAsInt() : WaypointHighlightState.DEFAULT_LOCATION_Y,
+            target.blockZ() + 0.5, yKnown
+        ));
     }
 
     private void shareTemporaryLocation(final FullscreenMapLocationMenu.Target target) {
@@ -3563,7 +3576,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         waypointHighlightState.target()
             .filter(target -> target.waypointId() == null && target.dimension().equals(currentDimension))
             .map(target -> new WaypointRenderEntry(
-                SELECTED_LOCATION_ID, "Selected location", currentDimension,
+                SELECTED_LOCATION_ID,
+                Texts.translatable(WaypointHighlightState.SELECTED_LOCATION_TRANSLATION_KEY).getString(),
+                currentDimension,
                 target.x(), target.y(), target.z(), 0xFFFFE066,
                 Waypoint.Type.NORMAL, WaypointRenderEntry.Source.LOCAL
             ))

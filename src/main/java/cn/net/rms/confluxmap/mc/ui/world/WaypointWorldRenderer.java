@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.mc.ui.world;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
+import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.util.Argb;
@@ -365,13 +366,15 @@ public final class WaypointWorldRenderer {
                     //$$     matrices, context.submitNodeCollector(), cameraState.orientation,
                     //$$     cameraPos, waypoint.x(), waypoint.y(), waypoint.z(), waypoint,
                     //$$     distance3d, progress,
-                    //$$     selected ? 1f : waypointHighlightState.activeIn(currentDimension) ? 0.28f : 1f
+                    //$$     selected ? 1f : waypointHighlightState.activeIn(currentDimension) ? 0.28f : 1f,
+                    //$$     selected
                     //$$ );
                     //#else
                     drawLabel(
                         matrices, immediate, camera, cameraPos, waypoint.x(), waypoint.y(), waypoint.z(),
                         waypoint, distance3d, progress,
-                        selected ? 1f : waypointHighlightState.activeIn(currentDimension) ? 0.28f : 1f
+                        selected ? 1f : waypointHighlightState.activeIn(currentDimension) ? 0.28f : 1f,
+                        selected
                     );
                     //#endif
                 }
@@ -409,11 +412,18 @@ public final class WaypointWorldRenderer {
         return waypointHighlightState.target()
             .filter(target -> target.waypointId() == null && target.dimension().equals(dimension))
             .map(target -> new WaypointRenderEntry(
-                SELECTED_LOCATION_ID, "Selected location", dimension,
-                target.x(), target.y(), target.z(), SELECTED_LOCATION_COLOR,
+                SELECTED_LOCATION_ID,
+                Texts.translatable(WaypointHighlightState.SELECTED_LOCATION_TRANSLATION_KEY).getString(),
+                dimension,
+                target.x(), selectedLocationY(target), target.z(), SELECTED_LOCATION_COLOR,
                 Waypoint.Type.NORMAL,
                 WaypointRenderEntry.Source.LOCAL
             ));
+    }
+
+    private double selectedLocationY(final WaypointHighlightState.Target target) {
+        final double y = target.yKnown() ? target.y() : WaypointHighlightState.DEFAULT_LOCATION_Y;
+        return MathHelper.clamp(y, client.world.getBottomY(), client.world.getTopY() - 1.0);
     }
 
     private WaypointRenderEntry targetedWaypoint(
@@ -543,7 +553,8 @@ public final class WaypointWorldRenderer {
         final WaypointRenderEntry waypoint,
         final double distance3d,
         final float animationProgress,
-        final float visibilityAlpha
+        final float visibilityAlpha,
+        final boolean selected
     ) {
         final float nearFade = (float) MathHelper.clamp(distance3d / LABEL_NEAR_FADE_BLOCKS, 0.0, 1.0);
         if (nearFade <= 0.01f) {
@@ -609,14 +620,14 @@ public final class WaypointWorldRenderer {
         //$$     matrices, textRenderer, plates, text, waypoint, iconHalfSize,
         //$$     nearFade * config.waypointIconOpacity
         //$$         / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY * visibilityAlpha,
-        //$$     visibilityAlpha >= 1f
+        //$$     selected
         //$$ );
         //#else
         drawIcon(
             matrices, textRenderer, immediate, waypoint, iconHalfSize,
             nearFade * config.waypointIconOpacity
                 / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY * visibilityAlpha,
-            visibilityAlpha >= 1f
+            selected
         );
         //#endif
 
