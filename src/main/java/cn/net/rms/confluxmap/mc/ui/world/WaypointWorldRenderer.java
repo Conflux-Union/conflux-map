@@ -81,7 +81,6 @@ import net.minecraft.util.math.Vec3d;
  * (when non-zero) can only tighten that limit, never extend it.
  */
 public final class WaypointWorldRenderer {
-    private static final UUID SELECTED_LOCATION_ID = new UUID(0x434f4e464c555858L, 0x53454c4543544544L);
     private static final int SELECTED_LOCATION_COLOR = 0xFFFFE066;
     private static final double BEAM_HALF_WIDTH = 0.18;
     private static final float BEAM_CORE_ALPHA = 0.55f;
@@ -117,6 +116,8 @@ public final class WaypointWorldRenderer {
     private final WaypointRenderCatalog waypointRenderCatalog;
     private final WaypointHighlightState waypointHighlightState;
     private final Map<UUID, Float> labelAnimationProgress = new HashMap<>();
+    private WaypointHighlightState.Target cachedLocationTarget;
+    private WaypointRenderEntry cachedLocationEntry;
     private long lastAnimationNanos;
 
     public WaypointWorldRenderer(
@@ -225,8 +226,7 @@ public final class WaypointWorldRenderer {
         final double maxDistance = maxVisibleDistance();
         final double bottomY = client.world.getBottomY();
         final double topY = client.world.getTopY();
-        final List<WaypointRenderEntry> waypoints = new ArrayList<>(waypointRenderCatalog.snapshot(currentDimension));
-        selectedTargetEntry(currentDimension).ifPresent(waypoints::add);
+        final List<WaypointRenderEntry> waypoints = waypointsForRender(currentDimension);
 
         //#if MC<12105
         RenderSystem.enableDepthTest();
@@ -246,12 +246,11 @@ public final class WaypointWorldRenderer {
                 continue;
             }
             final double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
-            final boolean selected = waypointHighlightState.matches(waypoint, currentDimension)
-                || waypointHighlightState.matches(waypoint.x(), waypoint.z(), currentDimension);
+            final boolean selected = waypointHighlightState.matchesEntry(waypoint, currentDimension);
             drawBeam(
                 matrices, cameraPos, worldX, worldZ, bottomY, topY,
                 waypoint.colorArgb(), horizontalDistance, maxDistance,
-                selected ? 1f : waypointHighlightState.activeIn(currentDimension) ? 0.28f : 1f
+                highlightVisibilityAlpha(selected, currentDimension)
             );
         }
 
@@ -317,8 +316,7 @@ public final class WaypointWorldRenderer {
         final MatrixStack matrices = context.matrixStack();
         //#endif
         final double maxDistance = maxVisibleDistance();
-        final List<WaypointRenderEntry> waypoints = new ArrayList<>(waypointRenderCatalog.snapshot(currentDimension));
-        selectedTargetEntry(currentDimension).ifPresent(waypoints::add);
+        final List<WaypointRenderEntry> waypoints = waypointsForRender(currentDimension);
         final WaypointRenderEntry targetedWaypoint = targetedWaypoint(
             waypoints, cameraYaw, cameraPitch, cameraPos, maxDistance
         );
@@ -356,8 +354,7 @@ public final class WaypointWorldRenderer {
                     final double dy = waypoint.y() - player.y();
                     final double dz = waypoint.z() - player.z();
                     final double distance3d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                    final boolean selected = waypointHighlightState.matches(waypoint, currentDimension)
-                        || waypointHighlightState.matches(waypoint.x(), waypoint.z(), currentDimension);
+                    final boolean selected = waypointHighlightState.matchesEntry(waypoint, currentDimension);
                     final boolean targeted = selected
                         || targetedWaypoint != null && targetedWaypoint.id().equals(waypoint.id());
                     final float progress = updateLabelAnimation(waypoint.id(), targeted, animationDeltaSeconds);
@@ -366,14 +363,14 @@ public final class WaypointWorldRenderer {
                     //$$     matrices, context.submitNodeCollector(), cameraState.orientation,
                     //$$     cameraPos, waypoint.x(), waypoint.y(), waypoint.z(), waypoint,
                     //$$     distance3d, progress,
-                    //$$     selected ? 1f : waypointHighlightState.activeIn(currentDimension) ? 0.28f : 1f,
+                    //$$     highlightVisibilityAlpha(selected, currentDimension),
                     //$$     selected
                     //$$ );
                     //#else
                     drawLabel(
                         matrices, immediate, camera, cameraPos, waypoint.x(), waypoint.y(), waypoint.z(),
                         waypoint, distance3d, progress,
-                        selected ? 1f : waypointHighlightState.activeIn(currentDimension) ? 0.28f : 1f,
+                        highlightVisibilityAlpha(selected, currentDimension),
                         selected
                     );
                     //#endif
@@ -408,17 +405,41 @@ public final class WaypointWorldRenderer {
             : viewDistanceBlocks;
     }
 
-    private Optional<WaypointRenderEntry> selectedTargetEntry(final DimensionId dimension) {
-        return waypointHighlightState.target()
-            .filter(target -> target.waypointId() == null && target.dimension().equals(dimension))
-            .map(target -> new WaypointRenderEntry(
-                SELECTED_LOCATION_ID,
+    private List<WaypointRenderEntry> waypointsForRender(final DimensionId dimension) {
+        final List<WaypointRenderEntry> base = waypointRenderCatalog.snapshot(dimension);
+        final Optional<WaypointHighlightState.Target> target = waypointHighlightState.target()
+            .filter(value -> value.waypointId() == null && value.dimension().equals(dimension));
+        if (target.isEmpty()) {
+            return base;
+        }
+        final List<WaypointRenderEntry> result = new ArrayList<>(base.size() + 1);
+        result.addAll(base);
+        result.add(selectedTargetEntry(target.get()));
+        return result;
+    }
+
+    private WaypointRenderEntry selectedTargetEntry(final WaypointHighlightState.Target target) {
+        if (!target.equals(cachedLocationTarget)) {
+            cachedLocationTarget = target;
+            cachedLocationEntry = new WaypointRenderEntry(
+                WaypointHighlightState.SELECTED_LOCATION_ID,
                 Texts.translatable(WaypointHighlightState.SELECTED_LOCATION_TRANSLATION_KEY).getString(),
-                dimension,
+                target.dimension(),
                 target.x(), selectedLocationY(target), target.z(), SELECTED_LOCATION_COLOR,
                 Waypoint.Type.NORMAL,
                 WaypointRenderEntry.Source.LOCAL
-            ));
+            );
+        }
+        return cachedLocationEntry;
+    }
+
+    private float highlightVisibilityAlpha(
+        final boolean selected,
+        final DimensionId dimension
+    ) {
+        return selected || !waypointHighlightState.activeIn(dimension)
+            ? 1f
+            : config.waypointHighlightDimOpacity / 100f;
     }
 
     private double selectedLocationY(final WaypointHighlightState.Target target) {

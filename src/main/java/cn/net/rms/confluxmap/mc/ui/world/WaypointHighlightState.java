@@ -9,6 +9,10 @@ import java.util.UUID;
 
 /** Client-only selection shared by the fullscreen map and the in-world waypoint HUD. */
 public final class WaypointHighlightState {
+    /** Stable ID used only for a highlighted map location that is not a saved waypoint. */
+    public static final UUID SELECTED_LOCATION_ID = new UUID(
+        0x434f4e464c555858L, 0x53454c4543544544L
+    );
     public static final String SELECTED_LOCATION_TRANSLATION_KEY =
         "confluxmap.map.location_menu.selected_location";
     public static final double DEFAULT_LOCATION_Y = 64.0;
@@ -67,6 +71,21 @@ public final class WaypointHighlightState {
         return target != null && target.waypointId() != null
             && target.waypointId().equals(waypoint.id())
             && target.dimension().equals(displayedDimension);
+    }
+
+    /** Matches either a saved waypoint by ID or the synthetic entry for a highlighted location. */
+    public boolean matchesEntry(
+        final WaypointRenderEntry waypoint,
+        final DimensionId displayedDimension
+    ) {
+        if (target == null || !target.dimension().equals(displayedDimension)) {
+            return false;
+        }
+        if (target.waypointId() != null) {
+            return target.waypointId().equals(waypoint.id());
+        }
+        return SELECTED_LOCATION_ID.equals(waypoint.id())
+            && matches(waypoint.x(), waypoint.z(), displayedDimension);
     }
 
     public boolean matches(final double x, final double z, final DimensionId dimension) {

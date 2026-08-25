@@ -164,7 +164,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
     }
 
-    private static final UUID SELECTED_LOCATION_ID = new UUID(0x434f4e464c555858L, 0x53454c4543544544L);
     private static final double MIN_SCALE = 0.25;
     private static final double MAX_SCALE = 16.0;
     private static final double DEFAULT_SCALE = 2.0;
@@ -378,6 +377,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private ButtonWidget teleportLocationButton;
     private String teleportLocationUnavailableKey;
     private final Map<ButtonWidget, String> annotationTooltips = new LinkedHashMap<>();
+    private final Map<ButtonWidget, String> locationActionTooltips = new LinkedHashMap<>();
+    private WaypointHighlightState.Target cachedLocationTarget;
+    private WaypointRenderEntry cachedLocationEntry;
     private final Map<AnnotationTool, ButtonWidget> annotationToolButtons = new EnumMap<>(AnnotationTool.class);
     private AnnotationToolbarBounds annotationToolbarBounds;
     private AnnotationToolbarBounds annotationColorMenuBounds;
@@ -532,6 +534,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         shareLocationButton = null;
         teleportLocationButton = null;
         teleportLocationUnavailableKey = null;
+        locationActionTooltips.clear();
         structureSearchButton = null;
         annotationTooltips.clear();
         annotationToolButtons.clear();
@@ -1492,6 +1495,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 Texts.translatable(action.translationKey()),
                 ignored -> pendingLocationAction = action
             ));
+            locationActionTooltips.put(button, actionTooltipKey(action));
             button.active = FullscreenMapLocationMenu.actionEnabled(
                 action, playerPresent, heightKnown, teleportCommandAvailable
             );
@@ -1907,7 +1911,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         switch (action) {
             case HIGHLIGHT -> {
                 if (waypoint != null) {
-                    if (SELECTED_LOCATION_ID.equals(waypoint.id())) {
+                    if (WaypointHighlightState.SELECTED_LOCATION_ID.equals(waypoint.id())) {
                         waypointHighlightState.target()
                             .filter(existing -> existing.waypointId() == null)
                             .ifPresentOrElse(
@@ -2785,6 +2789,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     ) {
         renderTargetDropdown(draw, mouseX, mouseY);
         final Text annotationTooltip = hoveredAnnotationTooltip();
+        final Text locationActionTooltip = hoveredLocationActionTooltip();
         final Text tooltip;
         if (displayModeButton != null && displayModeButton.isHovered()) {
             tooltip = displayModeTooltip();
@@ -2808,6 +2813,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                     ? "confluxmap.map.location_menu.teleport_unavailable"
                     : teleportLocationUnavailableKey
             );
+        } else if (locationActionTooltip != null) {
+            tooltip = locationActionTooltip;
         } else if (structureSearchButton != null && structureSearchButton.isHovered()) {
             tooltip = Texts.translatable(
                 !companion.structureSearchAllowed()
@@ -2831,6 +2838,25 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             return;
         }
         draw.drawTooltip(this, this.textRenderer, tooltip, mouseX, mouseY);
+    }
+
+    private Text hoveredLocationActionTooltip() {
+        for (final Map.Entry<ButtonWidget, String> entry : locationActionTooltips.entrySet()) {
+            if (entry.getKey().isHovered()) {
+                return Texts.translatable(entry.getValue());
+            }
+        }
+        return null;
+    }
+
+    private static String actionTooltipKey(final FullscreenMapLocationMenu.Action action) {
+        return switch (action) {
+            case SET_WAYPOINT -> "confluxmap.map.location_menu.set_waypoint.tooltip";
+            case SHARE_LOCATION -> "confluxmap.map.location_menu.share_location.tooltip";
+            case TELEPORT -> "confluxmap.map.location_menu.teleport.tooltip";
+            case HIGHLIGHT -> "confluxmap.map.location_menu.highlight.tooltip";
+            case CLEAR_HIGHLIGHT -> "confluxmap.map.location_menu.clear_highlight.tooltip";
+        };
     }
 
     private Text hoveredAnnotationTooltip() {
@@ -3381,6 +3407,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         );
     }
 
+    private static int withAlpha(final int color, final float alpha) {
+        final int clamped = Math.round(Math.max(0f, Math.min(1f, alpha)) * 255f);
+        return (clamped << 24) | (color & 0x00FFFFFF);
+    }
+
     private boolean radarMarkerIntersectsLocationMenu(final RadarMarkerRenderer.Marker marker) {
         if (locationMenuBounds == null) {
             return false;
@@ -3590,19 +3621,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final DimensionId currentDimension = viewSession().dimension();
         final double pxPerBlock = 1.0 / scale;
         final List<ScreenMarker> markers = new ArrayList<>();
-        final List<WaypointRenderEntry> waypoints = new ArrayList<>(
-            viewWaypointRenderCatalog().snapshot(currentDimension)
-        );
-        waypointHighlightState.target()
-            .filter(target -> target.waypointId() == null && target.dimension().equals(currentDimension))
-            .map(target -> new WaypointRenderEntry(
-                SELECTED_LOCATION_ID,
-                Texts.translatable(WaypointHighlightState.SELECTED_LOCATION_TRANSLATION_KEY).getString(),
-                currentDimension,
-                target.x(), target.y(), target.z(), 0xFFFFE066,
-                Waypoint.Type.NORMAL, WaypointRenderEntry.Source.LOCAL
-            ))
-            .ifPresent(waypoints::add);
+        final List<WaypointRenderEntry> waypoints = waypointsForRender(currentDimension);
         for (final WaypointRenderEntry waypoint : waypoints) {
             final float screenX = (float) (width / 2.0 + (waypoint.x() - centerX) * pxPerBlock);
             final float screenY = (float) (height / 2.0 + (waypoint.z() - centerZ) * pxPerBlock);
@@ -3627,8 +3646,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
         for (final ScreenMarker marker : markers) {
             final WaypointRenderEntry waypoint = marker.waypoint();
-            final boolean selected = waypointHighlightState.matches(waypoint, currentDimension)
-                || waypointHighlightState.matches(waypoint.x(), waypoint.z(), currentDimension);
+            final boolean selected = waypointHighlightState.matchesEntry(waypoint, currentDimension);
             final boolean isHovered = waypoint == hoveredWaypoint || selected;
             final WaypointVerticalRelation relation = playerView
                 .map(player -> WaypointVerticalRelation.between(waypoint.y(), player.y()))
@@ -3640,7 +3658,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             if (!locationMenuIntersects(markerLeft, markerTop, markerRight, markerBottom)) {
                 WaypointMarkerRenderer.draw(
                     draw, this.client.textRenderer, waypoint, marker.screenX(), marker.screenY(),
-                    MARKER_HALF_SIZE, hasHighlight && !selected ? 0.28f : 1f, isHovered, relation
+                    MARKER_HALF_SIZE, visibilityAlpha(selected, hasHighlight), isHovered, relation
                 );
             }
             if (scale <= NAME_LABEL_MAX_SCALE || isHovered) {
@@ -3650,11 +3668,42 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 final float labelBottom = labelY + this.textRenderer.fontHeight;
                 if (!locationMenuIntersects(labelX, labelY, labelRight, labelBottom)) {
                     draw.drawTextWithShadow(
-                        this.textRenderer, waypoint.name(), labelX, labelY, TEXT_COLOR
+                        this.textRenderer, waypoint.name(), labelX, labelY,
+                        withAlpha(TEXT_COLOR, visibilityAlpha(selected, hasHighlight))
                     );
                 }
             }
         }
+    }
+
+    private List<WaypointRenderEntry> waypointsForRender(final DimensionId dimension) {
+        final List<WaypointRenderEntry> base = viewWaypointRenderCatalog().snapshot(dimension);
+        final Optional<WaypointHighlightState.Target> target = waypointHighlightState.target()
+            .filter(value -> value.waypointId() == null && value.dimension().equals(dimension));
+        if (target.isEmpty()) {
+            return base;
+        }
+        final List<WaypointRenderEntry> result = new ArrayList<>(base.size() + 1);
+        result.addAll(base);
+        result.add(selectedLocationEntry(target.get()));
+        return result;
+    }
+
+    private WaypointRenderEntry selectedLocationEntry(final WaypointHighlightState.Target target) {
+        if (!target.equals(cachedLocationTarget)) {
+            cachedLocationTarget = target;
+            cachedLocationEntry = new WaypointRenderEntry(
+                WaypointHighlightState.SELECTED_LOCATION_ID,
+                Texts.translatable(WaypointHighlightState.SELECTED_LOCATION_TRANSLATION_KEY).getString(),
+                target.dimension(), target.x(), target.y(), target.z(), 0xFFFFE066,
+                Waypoint.Type.NORMAL, WaypointRenderEntry.Source.LOCAL
+            );
+        }
+        return cachedLocationEntry;
+    }
+
+    private float visibilityAlpha(final boolean selected, final boolean hasHighlight) {
+        return selected || !hasHighlight ? 1f : config.waypointHighlightDimOpacity / 100f;
     }
 
     /** Keeps map marker glyphs and labels out of the active context menu's screen rectangle. */
