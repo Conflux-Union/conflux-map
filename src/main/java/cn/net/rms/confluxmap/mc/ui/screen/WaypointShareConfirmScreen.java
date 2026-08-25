@@ -28,6 +28,7 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
 
     private final Screen parent;
     private final Waypoint waypoint;
+    private final boolean allowPublicTarget;
     private Target target;
     private final SharedWaypointClient sharedWaypoints;
     private final String confluxPreview;
@@ -36,9 +37,26 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
     private String errorKey;
 
     public WaypointShareConfirmScreen(final Screen parent, final Waypoint waypoint, final Target target) {
+        this(parent, waypoint, target, true);
+    }
+
+    public static WaypointShareConfirmScreen forSharedWaypoint(
+        final Screen parent,
+        final Waypoint waypoint
+    ) {
+        return new WaypointShareConfirmScreen(parent, waypoint, Target.CHAT, false);
+    }
+
+    private WaypointShareConfirmScreen(
+        final Screen parent,
+        final Waypoint waypoint,
+        final Target target,
+        final boolean allowPublicTarget
+    ) {
         super(Texts.translatable("confluxmap.screen.waypoint.share"));
         this.parent = parent;
         this.waypoint = waypoint.copy();
+        this.allowPublicTarget = allowPublicTarget;
         this.target = target;
         this.sharedWaypoints = ConfluxMapClient.get().sharedWaypoints();
         // Chat sharing previews the exact outgoing messages, so name truncation, coordinate
@@ -67,12 +85,15 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
     protected void init() {
         confirmButton = null;
         final SharedWaypointAvailability availability = sharedWaypoints.availability();
-        if (target == Target.PUBLIC && !availability.visible()) {
+        final boolean showPublicTarget = shouldShowPublicTarget(
+            allowPublicTarget, availability.visible()
+        );
+        if (target == Target.PUBLIC && !showPublicTarget) {
             target = Target.CHAT;
         }
 
         final int centerX = width / 2;
-        if (availability.visible()) {
+        if (showPublicTarget) {
             final ButtonWidget publicTarget = addDrawableChild(Widgets.button(
                 centerX - 104,
                 38,
@@ -81,16 +102,12 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
                 targetLabel(Target.PUBLIC),
                 ignored -> selectTarget(Target.PUBLIC)
             ));
-            publicTarget.active = !availability.disabledByServer();
-            setDisabledTooltip(
-                publicTarget,
-                availability.disabledByServer()
-                    ? "confluxmap.shared_waypoints.disabled_by_server"
-                    : null
-            );
+            final String createDisabledReasonKey = sharedWaypoints.createDisabledReasonKey();
+            publicTarget.active = createDisabledReasonKey == null;
+            setDisabledTooltip(publicTarget, createDisabledReasonKey);
         }
         addDrawableChild(Widgets.button(
-            availability.visible() ? centerX + 4 : centerX - 50,
+            showPublicTarget ? centerX + 4 : centerX - 50,
             38,
             100,
             20,
@@ -110,7 +127,7 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
             button -> confirm()
         ));
         if (target == Target.PUBLIC) {
-            updatePublicButton(availability);
+            updatePublicButton();
         } else {
             confirmButton.active = confluxPreview != null && xaeroPreview != null;
         }
@@ -135,7 +152,7 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
     }
 
     private void selectTarget(final Target selected) {
-        if (selected == Target.PUBLIC && sharedWaypoints.availability().disabledByServer()) {
+        if (selected == Target.PUBLIC && (!allowPublicTarget || !sharedWaypoints.canCreate())) {
             return;
         }
         target = selected;
@@ -168,20 +185,16 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
             return;
         }
         if (confirmButton != null) {
-            updatePublicButton(availability);
+            updatePublicButton();
         }
     }
 
-    private void updatePublicButton(final SharedWaypointAvailability availability) {
+    private void updatePublicButton() {
         final boolean shared = sharedWaypoints.isLocationShared(waypoint);
         final boolean pending = sharedWaypoints.isCreatePending(waypoint);
-        confirmButton.active = availability.ready() && !shared && !pending;
-        setDisabledTooltip(
-            confirmButton,
-            availability.disabledByServer()
-                ? "confluxmap.shared_waypoints.disabled_by_server"
-                : null
-        );
+        final String createDisabledReasonKey = sharedWaypoints.createDisabledReasonKey();
+        confirmButton.active = createDisabledReasonKey == null && !shared && !pending;
+        setDisabledTooltip(confirmButton, createDisabledReasonKey);
         confirmButton.setMessage(Texts.translatable(
             shared
                 ? "confluxmap.screen.waypoint.already_shared"
@@ -203,7 +216,10 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
                 return;
             }
             if (!sharedWaypoints.create(waypoint)) {
-                errorKey = "confluxmap.screen.waypoint.public_unavailable";
+                final String reasonKey = sharedWaypoints.createDisabledReasonKey();
+                errorKey = reasonKey == null
+                    ? "confluxmap.screen.waypoint.public_unavailable"
+                    : reasonKey;
                 return;
             }
             onClose();
@@ -222,6 +238,13 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
         MinecraftAccess.sendChatMessage(client, confluxPreview);
         MinecraftAccess.sendChatMessage(client, xaeroPreview);
         onClose();
+    }
+
+    static boolean shouldShowPublicTarget(
+        final boolean allowPublicTarget,
+        final boolean sharedWaypointsVisible
+    ) {
+        return allowPublicTarget && sharedWaypointsVisible;
     }
 
     @Override
@@ -255,14 +278,6 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
                     ? "confluxmap.screen.waypoint.preview.audience_public"
                     : "confluxmap.screen.waypoint.preview.audience_chat"
             ).getString(), 124, MUTED_TEXT_COLOR);
-            if (target == Target.PUBLIC) {
-                drawCentered(
-                    draw,
-                    Texts.translatable("confluxmap.screen.waypoint.public_immutable").getString(),
-                    140,
-                    MUTED_TEXT_COLOR
-                );
-            }
         }
         if (errorKey != null) {
             drawCentered(draw, Texts.translatable(errorKey).getString(), height - 50, ERROR_TEXT_COLOR);

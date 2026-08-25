@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
 import cn.net.rms.confluxmap.core.survey.SurveyReminderSchedule;
@@ -23,6 +24,47 @@ class ConfigIoTest {
     private static final Logger LOGGER = LogManager.getLogger("ConfigIoTest");
 
     @Test
+    void playerMarkerStyleRoundTripsCopiesAndDefaultsSafely(@TempDir final Path tmp)
+        throws IOException {
+        final Path file = tmp.resolve("config.json");
+        final ConfigIo io = new ConfigIo(file, LOGGER);
+        final ConfluxConfig config = new ConfluxConfig();
+        config.playerMarkerStyle = ConfluxConfig.PlayerMarkerStyle.TRADITIONAL;
+
+        io.save(config);
+
+        assertEquals(ConfluxConfig.PlayerMarkerStyle.TRADITIONAL, io.load().playerMarkerStyle);
+        assertEquals(
+            ConfluxConfig.PlayerMarkerStyle.TRADITIONAL, config.copy().playerMarkerStyle
+        );
+        config.playerMarkerStyle = null;
+        config.normalize();
+        assertEquals(ConfluxConfig.PlayerMarkerStyle.MODERN, config.playerMarkerStyle);
+
+        Files.writeString(file, "{\"schemaVersion\":7}", StandardCharsets.UTF_8);
+        assertEquals(ConfluxConfig.PlayerMarkerStyle.MODERN, io.load().playerMarkerStyle);
+        assertTrue(
+            Files.readString(file, StandardCharsets.UTF_8)
+                .contains("\"playerMarkerStyle\": \"MODERN\"")
+        );
+    }
+
+    @Test
+    void mapColorStyleRoundTripsCopiesAndDefaultsSafely(@TempDir final Path tmp) throws IOException {
+        final ConfigIo io = new ConfigIo(tmp.resolve("config.json"), LOGGER);
+        final ConfluxConfig config = new ConfluxConfig();
+        config.mapColorStyle = MapColorStyle.XAERO;
+
+        io.save(config);
+
+        assertEquals(MapColorStyle.XAERO, io.load().mapColorStyle);
+        assertEquals(MapColorStyle.XAERO, config.copy().mapColorStyle);
+        config.mapColorStyle = null;
+        config.normalize();
+        assertEquals(MapColorStyle.CONFLUX, config.mapColorStyle);
+    }
+
+    @Test
     void loadCreatesNewConfigWithSmallerDefaultMinimap(@TempDir final Path tmp) throws IOException {
         final Path file = tmp.resolve("config.json");
 
@@ -32,6 +74,7 @@ class ConfigIoTest {
         assertEquals(ConfluxConfig.DEFAULT_MINIMAP_SIZE, loaded.minimapSize);
         assertEquals(ConfluxConfig.DEFAULT_RADAR_ICON_SIZE, loaded.radarIconSize);
         assertTrue(loaded.minimapHudAvoidance);
+        assertEquals(MapColorStyle.CONFLUX, loaded.mapColorStyle);
         assertTrue(Files.readString(file, StandardCharsets.UTF_8).contains("\"minimapSize\": 90"));
         assertTrue(Files.readString(file, StandardCharsets.UTF_8).contains("\"minimapHudAvoidance\": true"));
         assertTrue(Files.readString(file, StandardCharsets.UTF_8).contains("\"radarIconSize\": 10"));
@@ -53,7 +96,9 @@ class ConfigIoTest {
         assertTrue(loaded.annotationsOnHud);
         assertEquals(ConfluxConfig.DEFAULT_ANNOTATION_ERASER_SIZE, loaded.annotationEraserSize);
         assertEquals(new ConfluxConfig().fullscreenDisplayMode, loaded.fullscreenDisplayMode);
+        assertEquals(ConfluxConfig.DEFAULT_TELEPORT_COMMAND, loaded.teleportCommand);
         assertEquals(new ConfluxConfig().chunkLoadDetailMode, loaded.chunkLoadDetailMode);
+        assertEquals(MapColorStyle.CONFLUX, loaded.mapColorStyle);
         assertEquals(ConfluxConfig.DEFAULT_RADAR_ICON_SIZE, loaded.radarIconSize);
         assertTrue(loaded.playerTrailEnabled);
         assertEquals(
@@ -83,7 +128,9 @@ class ConfigIoTest {
         assertTrue(rewritten.contains("\"annotationsOnHud\""));
         assertTrue(rewritten.contains("\"annotationEraserSize\""));
         assertTrue(rewritten.contains("\"fullscreenDisplayMode\""));
+        assertTrue(rewritten.contains("\"teleportCommand\""));
         assertTrue(rewritten.contains("\"chunkLoadDetailMode\""));
+        assertTrue(rewritten.contains("\"mapColorStyle\""));
         assertTrue(rewritten.contains("\"radarIconSize\""));
         assertTrue(rewritten.contains("\"playerTrailEnabled\""));
         assertTrue(rewritten.contains("\"playerTrailDurationSeconds\""));
@@ -173,6 +220,45 @@ class ConfigIoTest {
             StandardCharsets.UTF_8
         );
         assertEquals(ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY, io.load().waypointIconOpacity);
+    }
+
+    @Test
+    void waypointLabelScaleRoundTripsAndClampsInvalidValues(@TempDir final Path tmp) throws IOException {
+        final Path file = tmp.resolve("config.json");
+        final ConfigIo io = new ConfigIo(file, LOGGER);
+        final ConfluxConfig config = new ConfluxConfig();
+        assertEquals(ConfluxConfig.DEFAULT_WAYPOINT_LABEL_SCALE_PERCENT, config.waypointLabelScalePercent);
+        config.waypointLabelScalePercent = 175;
+
+        io.save(config);
+        assertEquals(175, io.load().waypointLabelScalePercent);
+
+        // A file written before this setting existed must land on the default, not on 0.
+        Files.writeString(file, "{\"schemaVersion\":5}", StandardCharsets.UTF_8);
+        assertEquals(
+            ConfluxConfig.DEFAULT_WAYPOINT_LABEL_SCALE_PERCENT,
+            io.load().waypointLabelScalePercent
+        );
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":6,\"waypointLabelScalePercent\":5000}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(
+            ConfluxConfig.MAX_WAYPOINT_LABEL_SCALE_PERCENT,
+            io.load().waypointLabelScalePercent
+        );
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":6,\"waypointLabelScalePercent\":0}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(
+            ConfluxConfig.MIN_WAYPOINT_LABEL_SCALE_PERCENT,
+            io.load().waypointLabelScalePercent
+        );
     }
 
     @Test

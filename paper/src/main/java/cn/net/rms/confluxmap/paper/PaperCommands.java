@@ -1,11 +1,16 @@
 package cn.net.rms.confluxmap.paper;
 
+import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.server.ServerConfig;
 import cn.net.rms.confluxmap.server.SyncPerformanceFormatter;
+import cn.net.rms.confluxmap.server.shared.SharedWaypointCommandService;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointService;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -33,23 +38,14 @@ final class PaperCommands implements CommandExecutor, TabCompleter {
         if (args.length == 1 && "performance".equalsIgnoreCase(args[0])) {
             return performance(sender);
         }
-        if (args.length == 2 && "waypoints".equalsIgnoreCase(args[0])) {
-            if (!sender.hasPermission("confluxmap.admin")) {
-                sender.sendMessage("You do not have permission to manage Conflux Map.");
-                return true;
-            }
-            return switch (args[1].toLowerCase(Locale.ROOT)) {
-                case "status" -> status(sender);
-                case "enable" -> enable(sender);
-                case "disable" -> disable(sender);
-                default -> false;
-            };
+        if (args.length >= 2 && "waypoints".equalsIgnoreCase(args[0])) {
+            return waypoints(sender, args);
         }
         if (args.length == 2 && "webmap".equalsIgnoreCase(args[0])
             && ("hide".equalsIgnoreCase(args[1]) || "show".equalsIgnoreCase(args[1]))) {
             return webMapPrivacy(sender, "hide".equalsIgnoreCase(args[1]));
         }
-        sender.sendMessage("Usage: /confluxmap <performance|webmap hide|show|waypoints status|enable|disable>");
+        sender.sendMessage("Usage: /confluxmap <performance|webmap hide|show|waypoints list|add|edit|move|delete>");
         return true;
     }
 
@@ -64,13 +60,208 @@ final class PaperCommands implements CommandExecutor, TabCompleter {
             return prefix(args[0], List.of("performance", "webmap", "waypoints"));
         }
         if (args.length == 2 && "waypoints".equalsIgnoreCase(args[0])
-            && sender.hasPermission("confluxmap.admin")) {
-            return prefix(args[1], List.of("status", "enable", "disable"));
+        ) {
+            final List<String> values = sender.hasPermission("confluxmap.admin")
+                ? List.of("list", "add", "edit", "move", "delete", "status", "enable", "disable")
+                : List.of("list", "add", "edit", "move", "delete");
+            return prefix(args[1], values);
         }
         if (args.length == 2 && "webmap".equalsIgnoreCase(args[0])) {
             return prefix(args[1], List.of("hide", "show"));
         }
         return List.of();
+    }
+
+    private boolean waypoints(final CommandSender sender, final String[] args) {
+        final String action = args[1].toLowerCase(Locale.ROOT);
+        if ("list".equals(action) && (args.length == 2 || args.length == 3)) {
+            final int page;
+            try {
+                page = args.length == 2 ? 1 : Integer.parseInt(args[2]);
+            } catch (final NumberFormatException ignored) {
+                sender.sendMessage("Page must be a positive number.");
+                return true;
+            }
+            return list(sender, page);
+        }
+        if ("add".equals(action) && args.length >= 3) {
+            return createHere(sender, join(args, 2));
+        }
+        if ("edit".equals(action) && args.length >= 4) {
+            return rename(sender, args[2], join(args, 3));
+        }
+        if ("move".equals(action) && args.length == 3) {
+            return moveHere(sender, args[2]);
+        }
+        if ("delete".equals(action) && args.length == 3) {
+            return delete(sender, args[2]);
+        }
+        if (!sender.hasPermission("confluxmap.admin")) {
+            sender.sendMessage("Only administrators may perform this action.");
+            return true;
+        }
+        if (args.length == 2) {
+            return switch (action) {
+                case "status" -> status(sender);
+                case "enable" -> enable(sender);
+                case "disable" -> disable(sender);
+                default -> usage(sender);
+            };
+        }
+        return usage(sender);
+    }
+
+    private boolean list(final CommandSender sender, final int pageNumber) {
+        final SharedWaypointCommandService commands = commands();
+        if (commands == null) {
+            sender.sendMessage("Shared waypoints are disabled on this server.");
+            return true;
+        }
+        final SharedWaypointCommandService.Page page = commands.list(pageNumber);
+        if (!page.valid()) {
+            sender.sendMessage("Page must be between 1 and " + page.totalPages() + ".");
+            return true;
+        }
+        sender.sendMessage(
+            "Shared waypoints (page " + page.page() + "/" + page.totalPages()
+                + ", total " + page.totalWaypoints() + ")"
+        );
+        if (page.entries().isEmpty()) {
+            sender.sendMessage("No shared waypoints.");
+            return true;
+        }
+        for (final SharedWaypointCommandService.Entry entry : page.entries()) {
+            sender.sendMessage(
+                "[" + entry.idPrefix() + "] " + entry.waypoint().name()
+                    + " by " + entry.waypoint().publisherName()
+                    + " @ " + entry.waypoint().dimensionId()
+                    + " (" + entry.waypoint().x() + ", " + entry.waypoint().y()
+                    + ", " + entry.waypoint().z() + ")"
+            );
+            sender.sendMessage(entry.xaeroMessage());
+        }
+        return true;
+    }
+
+    private boolean createHere(final CommandSender sender, final String name) {
+        if (!(sender instanceof final Player player)) {
+            sender.sendMessage("This command must be run by a player.");
+            return true;
+        }
+        final SharedWaypointCommandService commands = commands();
+        if (commands == null) {
+            sender.sendMessage("Shared waypoints are disabled on this server.");
+            return true;
+        }
+        return result(
+            sender,
+            commands.createHere(actor(sender), position(player), name),
+            "Shared waypoint uploaded."
+        );
+    }
+
+    private boolean rename(final CommandSender sender, final String id, final String name) {
+        final SharedWaypointCommandService commands = commands();
+        return commands == null
+            ? disabled(sender)
+            : result(sender, commands.rename(actor(sender), id, name), "Shared waypoint renamed.");
+    }
+
+    private boolean moveHere(final CommandSender sender, final String id) {
+        if (!(sender instanceof final Player player)) {
+            sender.sendMessage("This command must be run by a player.");
+            return true;
+        }
+        final SharedWaypointCommandService commands = commands();
+        return commands == null
+            ? disabled(sender)
+            : result(sender, commands.moveHere(actor(sender), id, position(player)), "Shared waypoint moved.");
+    }
+
+    private boolean delete(final CommandSender sender, final String id) {
+        final SharedWaypointCommandService commands = commands();
+        return commands == null
+            ? disabled(sender)
+            : result(sender, commands.delete(actor(sender), id), "Shared waypoint deleted.");
+    }
+
+    private SharedWaypointCommandService commands() {
+        if (!companion.sharedWaypointsEnabled()) {
+            return null;
+        }
+        return new SharedWaypointCommandService(
+            companion.sharedWaypoints(), UUID::randomUUID, companion::onSharedWaypointCommandMutation
+        );
+    }
+
+    private static SharedWaypointService.Actor actor(final CommandSender sender) {
+        final UUID id = sender instanceof final Player player
+            ? player.getUniqueId()
+            : UUID.nameUUIDFromBytes(
+                ("confluxmap-command:" + sender.getName()).getBytes(StandardCharsets.UTF_8)
+            );
+        return new SharedWaypointService.Actor(
+            id, sender.getName(), sender.hasPermission("confluxmap.admin")
+        );
+    }
+
+    private static SharedWaypointCommandService.Position position(final Player player) {
+        return new SharedWaypointCommandService.Position(
+            DimensionId.parse(player.getWorld().getKey().toString()),
+            player.getX(), player.getY(), player.getZ()
+        );
+    }
+
+    private static boolean result(
+        final CommandSender sender,
+        final SharedWaypointCommandService.Result result,
+        final String success
+    ) {
+        if (result.applied()) {
+            sender.sendMessage(success);
+            return true;
+        }
+        sender.sendMessage(switch (result.status()) {
+            case INVALID_ID -> "Invalid waypoint ID.";
+            case UNKNOWN_ID -> "Shared waypoint not found.";
+            case AMBIGUOUS_ID -> "Waypoint ID prefix is ambiguous; use the longer ID shown by list.";
+            case FORBIDDEN -> "You do not have permission to manage this shared waypoint.";
+            case REJECTED -> mutationError(result.mutation().error());
+            default -> "Shared waypoint command failed.";
+        });
+        return true;
+    }
+
+    private static String mutationError(final SharedWaypointService.MutationError error) {
+        return switch (error) {
+            case INVALID_REQUEST -> "The waypoint name or position is invalid.";
+            case REVISION_CONFLICT -> "The waypoint changed; run the list command and try again.";
+            case NOT_FOUND -> "Shared waypoint not found.";
+            case FORBIDDEN -> "You do not have permission to manage this shared waypoint.";
+            case WORLD_QUOTA_EXCEEDED -> "The server shared-waypoint limit has been reached.";
+            case PLAYER_QUOTA_EXCEEDED -> "Your shared-waypoint limit has been reached.";
+            case RATE_LIMITED -> "Too many waypoint changes; try again shortly.";
+            case DUPLICATE_LOCATION -> "A shared waypoint already exists at that block.";
+            case PERSISTENCE_FAILED -> "The waypoint could not be saved.";
+            case ID_GENERATION_FAILED -> "The server could not allocate a waypoint ID.";
+            default -> "Shared waypoint command failed: " + error;
+        };
+    }
+
+    private static boolean disabled(final CommandSender sender) {
+        sender.sendMessage("Shared waypoints are disabled on this server.");
+        return true;
+    }
+
+    private static boolean usage(final CommandSender sender) {
+        sender.sendMessage(
+            "Usage: /confluxmap waypoints <list [page]|add <name>|edit <id> <name>|move <id>|delete <id>|lock <id>|unlock <id>>"
+        );
+        return true;
+    }
+
+    private static String join(final String[] args, final int from) {
+        return String.join(" ", Arrays.copyOfRange(args, from, args.length));
     }
 
     private boolean performance(final CommandSender sender) {
@@ -116,6 +307,7 @@ final class PaperCommands implements CommandExecutor, TabCompleter {
                 + ", revision=" + revision
                 + ", worldQuota=" + config.maxSharedWaypointsPerWorld
                 + ", playerQuota=" + config.maxSharedWaypointsPerPlayer
+                + ", nonOperatorManagement=" + config.allowNonOperatorSharedWaypointManagement
         );
         return true;
     }

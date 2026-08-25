@@ -83,7 +83,7 @@ public final class ChunkColumnSummarizer {
             fluidSurfaceY = surfaceY;
             fluidSurface = surface;
             promotedFluidCover = true;
-        } else if (isSnowCover(coverName)) {
+        } else if (isSurfaceCover(coverName)) {
             surfaceY++;
             surface = classify(coverName, mapColors);
         }
@@ -221,8 +221,9 @@ public final class ChunkColumnSummarizer {
         return "minecraft:kelp".equals(name) || "minecraft:kelp_plant".equals(name);
     }
 
-    private static boolean isSnowCover(final String name) {
-        return "minecraft:snow".equals(name) || "minecraft:powder_snow".equals(name);
+    private static boolean isSurfaceCover(final String name) {
+        return "minecraft:snow".equals(name) || "minecraft:powder_snow".equals(name)
+            || name != null && name.endsWith("_carpet");
     }
 
     private static int clamp(final int value) {

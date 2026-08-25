@@ -34,6 +34,15 @@ public final class ServerConfigIo {
         this.logger = logger;
     }
 
+    /** Directory holding the companion's own files, outside any world save. */
+    public Path directory() {
+        final Path parent = file.getParent();
+        if (parent == null) {
+            throw new IllegalStateException("server config path has no directory: " + file);
+        }
+        return parent;
+    }
+
     public ServerConfig load() {
         if (!Files.exists(file)) {
             final ServerConfig fresh = new ServerConfig();

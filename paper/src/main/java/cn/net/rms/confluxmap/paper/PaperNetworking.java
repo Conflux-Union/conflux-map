@@ -17,6 +17,7 @@ import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.NegotiatedMapSync;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
+import cn.net.rms.confluxmap.core.net.ServerInstanceS2C;
 import cn.net.rms.confluxmap.core.net.ServerViewDistanceS2C;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
@@ -161,6 +162,13 @@ final class PaperNetworking implements PluginMessageListener {
                 playerSendDistance >= 0
                     ? playerSendDistance : plugin.getServer().getViewDistance()
             ));
+        }
+        // Precedes HELLO_POLICY for the same reason FLAT_BASELINE does: the client opens its
+        // session on the policy frame and must already know which namespace the data belongs to.
+        if (session.supports(MapSyncCapability.SERVER_INSTANCE)) {
+            sendNegotiated(
+                player, session, new ServerInstanceS2C(companion.instanceId().toString())
+            );
         }
         final HelloPolicyS2C policy = policy(session);
         send(player, policy);

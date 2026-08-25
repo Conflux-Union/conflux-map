@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.store.ServerInstanceIdStore;
 import cn.net.rms.confluxmap.core.update.GithubReleaseFetcher;
 import cn.net.rms.confluxmap.core.update.UpdateCheckService;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
@@ -42,6 +43,7 @@ public final class ConfluxMapCompanion {
     private final UpdateCheckService updateCheck;
     private final CompanionRuntimeState runtime = new CompanionRuntimeState();
     private volatile ServerConfig config;
+    private volatile UUID instanceId;
     private volatile RegionSummaryService summaries;
     private volatile ChunkLoadStateService chunkLoadStates;
     private volatile SharedWaypointService sharedWaypoints;
@@ -223,6 +225,25 @@ public final class ConfluxMapCompanion {
         return worldIds;
     }
 
+    /**
+     * Identity of this server installation, distinct from the world UUID a copied save carries.
+     * Resolved on first use rather than at construction so a singleplayer client that never runs
+     * a companion session does not write the file at all.
+     */
+    public UUID instanceId() {
+        UUID current = instanceId;
+        if (current == null) {
+            synchronized (this) {
+                current = instanceId;
+                if (current == null) {
+                    current = ServerInstanceIdStore.loadOrCreate(configIo.directory());
+                    instanceId = current;
+                }
+            }
+        }
+        return current;
+    }
+
     public RegionSummaryService summaries() {
         return summaries;
     }
@@ -243,6 +264,13 @@ public final class ConfluxMapCompanion {
     /** Effective capability: both configuration gates are on and world state loaded successfully. */
     public boolean sharedWaypointsEnabled() {
         return isEnabled() && config.shareWaypoints && sharedWaypoints != null;
+    }
+
+    public void onSharedWaypointCommandMutation(
+        final MinecraftServer server,
+        final SharedWaypointService.MutationResult mutation
+    ) {
+        sharedWaypointNetworking.onCommandMutation(server, mutation);
     }
 
     public enum SharedWaypointToggleResult {
@@ -299,7 +327,9 @@ public final class ConfluxMapCompanion {
     }
 
     private SharedWaypointService loadSharedWaypoints(final MinecraftServer server) {
-        final SharedWaypointIo io = new SharedWaypointIo(server.getSavePath(WorldSavePath.ROOT), ConfluxMapMod.LOGGER);
+        final SharedWaypointIo io = new SharedWaypointIo(
+            server.getSavePath(WorldSavePath.ROOT), instanceId().toString(), ConfluxMapMod.LOGGER
+        );
         try {
             final Map<DimensionId, SharedWaypointValidator.HeightRange> dimensions = new LinkedHashMap<>();
             for (final ServerWorld world : server.getWorlds()) {
@@ -324,6 +354,7 @@ public final class ConfluxMapCompanion {
                 Clock.systemUTC(),
                 UUID::randomUUID,
                 limits,
+                config.sharedWaypointAccessPolicy(),
                 event -> ConfluxMapMod.LOGGER.info(
                     "shared-waypoint audit operationId={} actorId={} action={} status={} error={} waypointId={} revision={}",
                     event.operationId(), event.actorId(), event.action(), event.status(), event.error(),

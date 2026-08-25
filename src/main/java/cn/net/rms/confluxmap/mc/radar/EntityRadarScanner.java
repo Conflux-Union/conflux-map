@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.radar;
 
+import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.radar.RadarCategory;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
@@ -177,8 +178,12 @@ public final class EntityRadarScanner {
             }
 
             final RadarCategory category = classify(entity);
+            final String entityType = Regs.entityTypeId(entity.getType()).toString();
             final String name = category == RadarCategory.PLAYER ? entity.getName().getString() : null;
-            raw.add(new RadarEntry(entity.getX(), entity.getZ(), yDelta, category, name, entity.getId(), spectator));
+            raw.add(new RadarEntry(
+                entity.getX(), entity.getZ(), yDelta, category, entityType,
+                name, entity.getId(), spectator
+            ));
         }
 
         final RadarFilter filter = new RadarFilter(

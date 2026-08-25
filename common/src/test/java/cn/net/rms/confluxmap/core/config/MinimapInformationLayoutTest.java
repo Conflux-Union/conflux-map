@@ -21,7 +21,7 @@ class MinimapInformationLayoutTest {
         final MinimapPlacement.Layout minimap = new MinimapPlacement.Layout(508, 228, 128);
 
         assertEquals(
-            new MinimapInformationLayout.Bounds(508, 195, 636, 356),
+            new HudRect(508, 195, 636, 356),
             MinimapInformationLayout.visualBounds(minimap, 360, 33)
         );
     }

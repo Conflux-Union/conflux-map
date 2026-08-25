@@ -1,7 +1,9 @@
 package cn.net.rms.confluxmap.mc.world;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldObservation;
@@ -9,8 +11,10 @@ import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfile;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfileRegistry;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfileResolver;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldResolution;
+import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
 import java.util.UUID;
@@ -92,9 +96,49 @@ class ClientMultiworldServiceTest {
         assertNotEquals(first.serverId(), second.serverId());
     }
 
+    @Test
+    void activeCompanionDoesNotExposeStaleClientAmbiguity() {
+        final CompanionSession companion = new CompanionSession();
+        final ClientMultiworldService service = service(
+            new ClientWorldProfileResolver(new ClientWorldProfileRegistry(), ids()),
+            companion
+        );
+        service.onGameJoin(11L);
+        service.resolve(ADDRESS).orElseThrow();
+        service.onGameJoin(11L);
+        assertEquals(
+            ClientWorldResolution.State.AMBIGUOUS,
+            service.resolveProfile(ADDRESS).state()
+        );
+        assertTrue(service.shouldExposeAmbiguity());
+
+        companion.onHelloSent();
+        companion.onPolicy(new HelloPolicyS2C(
+            new HelloPolicyS2C.Flags(false, true, false, false, false, false, false, false),
+            "11111111-2222-3333-4444-555555555555",
+            "1.17.1",
+            new HelloPolicyS2C.Budgets(65_536, 8, 300, 4),
+            List.of()
+        ));
+        service.onRespawn(11L);
+
+        assertEquals(
+            ClientWorldResolution.State.AMBIGUOUS,
+            service.resolveProfile(ADDRESS).state()
+        );
+        assertFalse(service.shouldExposeAmbiguity());
+    }
+
     private ClientMultiworldService service(final ClientWorldProfileResolver resolver) {
+        return service(resolver, new CompanionSession());
+    }
+
+    private ClientMultiworldService service(
+        final ClientWorldProfileResolver resolver,
+        final CompanionSession companion
+    ) {
         return new ClientMultiworldService(
-            null, new CompanionSession(), resolver, tempDir.resolve("cache"), Runnable::run
+            null, companion, resolver, tempDir.resolve("cache"), Runnable::run
         );
     }
 

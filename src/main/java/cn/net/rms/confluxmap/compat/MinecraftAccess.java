@@ -31,6 +31,30 @@ public final class MinecraftAccess {
         //#endif
     }
 
+    /**
+     * The player's biome-blend radius in blocks: the tint at a position is averaged over the
+     * square that many blocks around it, and 0 turns blending off entirely.
+     */
+    public static int biomeBlendRadius(final MinecraftClient client) {
+        //#if MC>=12000
+        //$$ return client.options.getBiomeBlendRadius().getValue();
+        //#else
+        return client.options.biomeBlendRadius;
+        //#endif
+    }
+
+    /**
+     * Live video gamma. Tweakeroo Gamma Override deliberately writes through this vanilla
+     * option, including values above the normal slider range, so no optional API is needed.
+     */
+    public static float gamma(final MinecraftClient client) {
+        //#if MC>=12000
+        //$$ return client.options.getGamma().getValue().floatValue();
+        //#else
+        return (float) client.options.gamma;
+        //#endif
+    }
+
     /** Whether the configured vanilla player-list key is currently held. */
     public static boolean isPlayerListKeyPressed(final MinecraftClient client) {
         //#if MC>=260100
@@ -66,6 +90,18 @@ public final class MinecraftAccess {
         //$$ return screen instanceof AbstractContainerScreen<?>;
         //#else
         return screen instanceof HandledScreen<?>;
+        //#endif
+    }
+
+    /**
+     * Whether the vanilla debug HUD is visible. BetterF3 renders through the same debug-HUD
+     * state, so this remains a soft compatibility seam with no optional-mod dependency.
+     */
+    public static boolean isDebugHudVisible(final MinecraftClient client) {
+        //#if MC>=12100
+        //$$ return client.getDebugHud().shouldShowDebugHud();
+        //#else
+        return client.options.debugEnabled;
         //#endif
     }
 

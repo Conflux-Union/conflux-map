@@ -12,12 +12,16 @@ import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfileIo;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfileRegistry;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfileResolver;
+import cn.net.rms.confluxmap.core.multiworld.ServerAliasIo;
+import cn.net.rms.confluxmap.core.multiworld.ServerAliasRegistry;
+import cn.net.rms.confluxmap.core.multiworld.ServerAliasResolver;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.PredictionTileService;
 import cn.net.rms.confluxmap.core.predict.CorrectionStore;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
+import cn.net.rms.confluxmap.core.store.NamespaceAdoption;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.TileService;
@@ -51,12 +55,15 @@ import cn.net.rms.confluxmap.mc.survey.SurveyReminderNotifier;
 import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
 import cn.net.rms.confluxmap.mc.trail.PlayerTrailTracker;
 import cn.net.rms.confluxmap.mc.ui.hud.MinimapHudRenderer;
+import cn.net.rms.confluxmap.mc.ui.UiResourceReloadListener;
+import cn.net.rms.confluxmap.mc.ui.UiResourceTheme;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapViewState;
 import cn.net.rms.confluxmap.mc.update.UpdateNotifier;
 import cn.net.rms.confluxmap.mc.ui.world.WaypointWorldRenderer;
 import cn.net.rms.confluxmap.mc.world.DeathWatcher;
 import cn.net.rms.confluxmap.mc.world.ClientMultiworldService;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
+import cn.net.rms.confluxmap.mc.world.FullscreenMapBrowseService;
 import cn.net.rms.confluxmap.mc.world.McDaylightTracker;
 import cn.net.rms.confluxmap.mc.world.WorldSessionTracker;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
@@ -67,7 +74,9 @@ import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.resource.ResourceType;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.UUID;
 
 /** Composition root: builds and wires every client-side service. */
@@ -80,6 +89,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private SessionGuard sessionGuard;
     private WorldSessionTracker sessionTracker;
     private ClientMultiworldService clientMultiworldService;
+    private ServerAliasResolver serverAliasResolver;
     private GameBridge gameBridge;
     private MapWorldService mapWorlds;
     private TileService tileService;
@@ -88,6 +98,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private BiomeTintResolver biomeTintResolver;
     private SyncedMaterialResolver syncedMaterialResolver;
     private TileTextureManager tileTextureManager;
+    private FullscreenMapBrowseService fullscreenMapBrowseService;
     private ChunkCaptureService chunkCapture;
     private RadarViewRange radarViewRange;
     private EntityRadarScanner radarScanner;
@@ -95,6 +106,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private PlayerTrail playerTrail;
     private PlayerTrailTracker playerTrailTracker;
     private MinimapHudRenderer minimapHudRenderer;
+    private UiResourceTheme uiResourceTheme;
     private FullscreenMapViewState fullscreenMapViewState;
     private LayerSelector layerSelector;
     private WaypointService waypointService;
@@ -152,10 +164,36 @@ public final class ConfluxMapClient implements ClientModInitializer {
         final ClientWorldProfileResolver clientWorldResolver = new ClientWorldProfileResolver(
             clientWorldProfiles, UUID::randomUUID, () -> clientWorldProfileIo.save(clientWorldProfiles)
         );
-        clientMultiworldService = new ClientMultiworldService(
-            client, companionSession, clientWorldResolver, cacheRoot, executors.io()
+        final Path waypointRoot = confluxRoot.resolve("waypoints");
+        final Path annotationRoot = confluxRoot.resolve("annotations");
+        final ServerAliasIo serverAliasIo = new ServerAliasIo(
+            FabricLoader.getInstance().getConfigDir().resolve(ConfluxMapMod.ID).resolve("server_aliases.json"),
+            ConfluxMapMod.LOGGER
         );
-        sessionTracker = new WorldSessionTracker(sessionGuard, companionSession, clientMultiworldService);
+        final ServerAliasRegistry serverAliases = serverAliasIo.load();
+        serverAliasResolver = new ServerAliasResolver(
+            serverAliases,
+            storageId -> Files.isDirectory(cacheRoot.resolve(storageId))
+                || Files.isDirectory(waypointRoot.resolve(storageId)),
+            () -> serverAliasIo.save(serverAliases)
+        );
+        clientMultiworldService = new ClientMultiworldService(
+            client, companionSession, clientWorldResolver, cacheRoot, executors.io(), serverAliasResolver
+        );
+        sessionTracker = new WorldSessionTracker(
+            sessionGuard, companionSession, clientMultiworldService, serverAliasResolver
+        );
+        // A server that starts advertising an instance id changes the key its data is stored
+        // under. Carry the old namespace over before the session binds its directories, or the
+        // player's map looks erased on the first reconnect after the server upgrades.
+        final List<NamespaceAdoption.Store> adoptableStores = List.of(
+            new NamespaceAdoption.Store(cacheRoot, ""),
+            new NamespaceAdoption.Store(cacheRoot.resolve("prediction"), ""),
+            new NamespaceAdoption.Store(waypointRoot, ".json")
+        );
+        sessionTracker.bindNamespaceAdopter(identity -> NamespaceAdoption.adopt(
+            adoptableStores, identity, companionSession.companionWorldId(), ConfluxMapMod.LOGGER
+        ));
         mapWorlds = new MapWorldService();
         daylightModel = new DaylightModel();
         tileService = new TileService(mapWorlds, executors, config, daylightModel);
@@ -179,6 +217,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         );
         predictionTileService = new PredictionTileService(sessionGuard, predictionState, executors, tileService);
         predictionTileService.bindDaylightModel(daylightModel);
+        predictionTileService.setMapColorStyle(config.mapColorStyle);
         predictionTileService.setViewMode(config.predictionViewMode);
         correctionStore = new CorrectionStore(
             cacheRoot.resolve("prediction")
@@ -215,10 +254,19 @@ public final class ConfluxMapClient implements ClientModInitializer {
         clientNetworking.register();
         sharedWaypoints = new SharedWaypointClient(client);
         sharedWaypoints.register();
-        groundTeleportService = new ClientGroundTeleportService(client);
+        groundTeleportService = new ClientGroundTeleportService(client, config);
 
         predictionPaletteBuilder = new PredictionPaletteBuilder(client, predictionState, spriteColorSampler);
         tileTextureManager = new TileTextureManager(config, tileService, predictionTileService, daylightModel);
+        fullscreenMapBrowseService = new FullscreenMapBrowseService(
+            cacheRoot,
+            waypointRoot,
+            annotationRoot,
+            executors,
+            config,
+            daylightModel,
+            predictionTileService
+        );
         manualSeedService = new ManualSeedService(
             config,
             configIo,
@@ -243,24 +291,30 @@ public final class ConfluxMapClient implements ClientModInitializer {
         entityIconManager = new EntityIconManager();
         playerTrail = new PlayerTrail();
         playerTrailTracker = new PlayerTrailTracker(client, config, sessionGuard, playerTrail);
-        waypointService = new WaypointService(
-            FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("waypoints"),
-            executors, ConfluxMapMod.LOGGER
-        );
-        annotationService = new AnnotationService(
-            FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID).resolve("annotations"),
-            executors, ConfluxMapMod.LOGGER
-        );
+        waypointService = new WaypointService(waypointRoot, executors, ConfluxMapMod.LOGGER);
+        annotationService = new AnnotationService(annotationRoot, executors, ConfluxMapMod.LOGGER);
         waypointRenderCatalog = new WaypointRenderCatalog(waypointService, sharedWaypoints::list, config);
         deathWatcher = new DeathWatcher(gameBridge, config, waypointService);
+        uiResourceTheme = new UiResourceTheme();
         minimapHudRenderer = new MinimapHudRenderer(
             client, config, gameBridge, tileService, tileTextureManager, radarScanner, entityIconManager,
             playerTrail, annotationService, layerSelector, waypointRenderCatalog,
-            radarViewRange
+            radarViewRange, uiResourceTheme
         );
         waypointWorldRenderer = new WaypointWorldRenderer(client, config, gameBridge, waypointRenderCatalog);
         fullscreenMapViewState = new FullscreenMapViewState();
-        daylightTracker = new McDaylightTracker(client, config, daylightModel, mapWorlds, tileService);
+        daylightTracker = new McDaylightTracker(
+            client,
+            config,
+            daylightModel,
+            mapWorlds,
+            tileService,
+            () -> {
+                tileService.reloadLighting();
+                tileTextureManager.releaseAll();
+                predictionTileService.reloadAll();
+            }
+        );
 
         // RegionCacheService owns the map-world rotation and final-flush boundary as one transition.
         sessionTracker.addListener(regionCache::onSessionChanged);
@@ -280,6 +334,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(predictionTileService::onSessionChanged);
         sessionTracker.addListener(structureMarkerService::onSessionChanged);
         sessionTracker.addListener(session -> groundTeleportService.reset());
+        sessionTracker.addListener(session -> gameBridge.runOnRenderThread(fullscreenMapBrowseService::clear));
         sessionTracker.addListener(session -> gameBridge.runOnRenderThread(tileTextureManager::releaseAll));
         clientMultiworldService.register();
         sessionTracker.register();
@@ -302,6 +357,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
         );
         ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
             new EntityIconReloadListener(entityIconManager)
+        );
+        ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
+            new UiResourceReloadListener(uiResourceTheme)
         );
 
         updateCheck = new UpdateCheckService(
@@ -344,12 +402,20 @@ public final class ConfluxMapClient implements ClientModInitializer {
         return configIo;
     }
 
+    public Keybinds keybinds() {
+        return keybinds;
+    }
+
     public MapExecutors executors() {
         return executors;
     }
 
     public SessionGuard sessionGuard() {
         return sessionGuard;
+    }
+
+    public ServerAliasResolver serverAliasResolver() {
+        return serverAliasResolver;
     }
 
     public WorldSessionTracker sessionTracker() {
@@ -404,11 +470,28 @@ public final class ConfluxMapClient implements ClientModInitializer {
         return tileTextureManager;
     }
 
+    public FullscreenMapBrowseService fullscreenMapBrowseService() {
+        return fullscreenMapBrowseService;
+    }
+
+    public UiResourceTheme uiResourceTheme() {
+        return uiResourceTheme;
+    }
+
     /** Forces a prediction-only cache/queue reload; captured map textures remain resident. */
     public void reloadPredictionTiles() {
         predictionTileService.reloadAll();
         gameBridge.runOnRenderThread(tileTextureManager::releasePredicted);
         ConfluxMapMod.LOGGER.info("Prediction tiles force-reloaded");
+    }
+
+    /** Invalidates every rendered terrain plane after the shared colour style changes. */
+    public void onMapColorStyleChanged() {
+        predictionTileService.setMapColorStyle(config.mapColorStyle);
+        predictionTileService.reloadAll();
+        tileService.reloadMapColorStyle();
+        gameBridge.runOnRenderThread(tileTextureManager::releaseAll);
+        ConfluxMapMod.LOGGER.info("Map color style changed to {}", config.mapColorStyle);
     }
 
     /** Re-resolves the active session's seed source after a local seed setting changes. */

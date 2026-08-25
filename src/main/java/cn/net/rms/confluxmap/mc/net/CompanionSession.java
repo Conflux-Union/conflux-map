@@ -13,6 +13,7 @@ import cn.net.rms.confluxmap.core.net.MapSyncProtocol;
 import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.NegotiatedMapSync;
 import cn.net.rms.confluxmap.core.net.ProtoException;
+import cn.net.rms.confluxmap.core.net.ServerInstanceS2C;
 import cn.net.rms.confluxmap.core.net.ServerViewDistanceS2C;
 import cn.net.rms.confluxmap.core.predict.FlatBaseline;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
@@ -57,6 +58,7 @@ public final class CompanionSession {
     private volatile Message pendingSelection;
     private volatile NegotiatedMapSync negotiatedMapSync;
     private volatile int serverViewDistance = -1;
+    private volatile String instanceId;
     private volatile MapSyncCompatibility.ClientMode mapSyncMode =
         MapSyncCompatibility.ClientMode.INCOMPATIBLE;
     private int ticksSinceHello;
@@ -69,6 +71,7 @@ public final class CompanionSession {
         pendingSelection = null;
         negotiatedMapSync = null;
         serverViewDistance = -1;
+        instanceId = null;
         mapSyncMode = MapSyncCompatibility.ClientMode.INCOMPATIBLE;
         ticksSinceHello = 0;
     }
@@ -84,6 +87,13 @@ public final class CompanionSession {
     public void onServerViewDistance(final ServerViewDistanceS2C viewDistance) {
         if (state.get() == State.HELLO_SENT && viewDistance != null) {
             serverViewDistance = viewDistance.chunks();
+        }
+    }
+
+    /** Stores the server's own identity before policy activates the session. */
+    public void onServerInstance(final ServerInstanceS2C serverInstance) {
+        if (state.get() == State.HELLO_SENT && serverInstance != null) {
+            instanceId = serverInstance.instanceId();
         }
     }
 
@@ -158,6 +168,7 @@ public final class CompanionSession {
         pendingSelection = null;
         negotiatedMapSync = null;
         serverViewDistance = -1;
+        instanceId = null;
         mapSyncMode = MapSyncCompatibility.ClientMode.INCOMPATIBLE;
         ticksSinceHello = 0;
     }
@@ -195,9 +206,34 @@ public final class CompanionSession {
         }
         final HelloPolicyS2C currentPolicy = policy;
         if (current == State.ACTIVE && currentPolicy != null) {
-            return Optional.of(WorldIdentity.companionMultiplayer(address, currentPolicy.worldId()));
+            final String currentInstanceId = instanceId;
+            return Optional.of(currentInstanceId == null
+                ? WorldIdentity.companionMultiplayer(address, currentPolicy.worldId())
+                : WorldIdentity.companionMultiplayer(
+                    address, currentInstanceId, currentPolicy.worldId()
+                ));
         }
         return Optional.of(WorldIdentity.multiplayer(address));
+    }
+
+    /**
+     * The world UUID an active companion advertised, or {@code null} when no companion is
+     * negotiated. It identifies the world, not the server: a mirror server synced from another
+     * advertises the same value, so it is a migration hint rather than proof of identity.
+     */
+    public @Nullable String companionWorldId() {
+        final HelloPolicyS2C currentPolicy = policy;
+        return state.get() == State.ACTIVE && currentPolicy != null ? currentPolicy.worldId() : null;
+    }
+
+    /**
+     * The server's own identity, or {@code null} when the companion is inactive or predates the
+     * {@code SERVER_INSTANCE} capability. Unlike {@link #companionWorldId()} this is stored
+     * outside the world save, so copying a world does not copy it - which makes it the evidence
+     * {@link cn.net.rms.confluxmap.core.multiworld.ServerAliasResolver} merges namespaces on.
+     */
+    public @Nullable String companionInstanceId() {
+        return state.get() == State.ACTIVE ? instanceId : null;
     }
 
     /**

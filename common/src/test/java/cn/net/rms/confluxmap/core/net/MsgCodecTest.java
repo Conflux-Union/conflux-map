@@ -69,6 +69,19 @@ class MsgCodecTest {
     }
 
     @Test
+    void serverInstanceRoundTrips() throws ProtoException {
+        final ServerInstanceS2C original =
+            new ServerInstanceS2C("3f2504e0-4f89-11d3-9a0c-0305e82c3301");
+
+        final ServerInstanceS2C decoded = (ServerInstanceS2C) MsgCodec.decode(
+            MsgCodec.encode(original)
+        );
+
+        assertEquals("3f2504e0-4f89-11d3-9a0c-0305e82c3301", decoded.instanceId());
+        assertEquals(Proto.MSG_SERVER_INSTANCE_S2C, decoded.typeId());
+    }
+
+    @Test
     void mapCompatibilityRejectsUnknownSelections() {
         final MapCompatibilityS2C invalid = new MapCompatibilityS2C(
             MapSyncCompatibility.NEGOTIATION_VERSION,

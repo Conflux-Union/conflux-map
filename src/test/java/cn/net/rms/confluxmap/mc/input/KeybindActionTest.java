@@ -1,15 +1,20 @@
 package cn.net.rms.confluxmap.mc.input;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
+import fi.dy.masa.malilib.hotkeys.KeyAction;
+import fi.dy.masa.malilib.hotkeys.KeybindSettings;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -18,12 +23,11 @@ import org.junit.jupiter.api.Test;
 final class KeybindActionTest {
     @Test
     void sharedRegistryContainsEveryExistingActionWithUniqueBackendKeys() {
-        assertEquals(11, KeybindAction.values().length);
+        assertEquals(10, KeybindAction.values().length);
         assertEquals(
             Set.of(
                 "toggle_minimap",
                 "zoom_in",
-                "zoom_out",
                 "open_map",
                 "cycle_layer",
                 "waypoints",
@@ -46,11 +50,42 @@ final class KeybindActionTest {
     @Test
     void maliLibDefaultsPreserveVanillaDefaults() {
         assertEquals("H", KeybindAction.TOGGLE_MINIMAP.maliLibDefaultKeys());
-        assertEquals("RIGHT_BRACKET", KeybindAction.ZOOM_IN.maliLibDefaultKeys());
-        assertEquals("LEFT_BRACKET", KeybindAction.ZOOM_OUT.maliLibDefaultKeys());
+        assertEquals("RIGHT_BRACKET", KeybindAction.CYCLE_ZOOM.maliLibDefaultKeys());
         assertEquals("M", KeybindAction.OPEN_MAP.maliLibDefaultKeys());
         assertEquals("COMMA", KeybindAction.OPEN_CONFIG.maliLibDefaultKeys());
         assertEquals("F9", KeybindAction.RELOAD_PREDICTION.maliLibDefaultKeys());
+    }
+
+    @Test
+    void maliLibHotkeysAllowNativeGameKeysToRemainHeld() {
+        for (final KeybindAction action : KeybindAction.values()) {
+            final KeybindSettings settings = MaliLibHotkeyFactory.settingsFor(action);
+
+            assertTrue(settings.getAllowExtraKeys(), action.configName());
+            assertSame(KeyAction.PRESS, settings.getActivateOn(), action.configName());
+            assertSame(
+                action == KeybindAction.OPEN_MAP
+                    ? KeybindSettings.Context.ANY
+                    : KeybindSettings.Context.INGAME,
+                settings.getContext(),
+                action.configName()
+            );
+            assertTrue(settings.isOrderSensitive(), action.configName());
+            assertFalse(settings.isExclusive(), action.configName());
+            assertTrue(settings.shouldCancel(), action.configName());
+        }
+    }
+
+    @Test
+    void maliLibConfigShortcutAllowsNativeGameKeysToRemainHeld() {
+        final KeybindSettings settings = MaliLibHotkeyFactory.configScreenSettings();
+
+        assertTrue(settings.getAllowExtraKeys());
+        assertSame(KeyAction.PRESS, settings.getActivateOn());
+        assertSame(KeybindSettings.Context.INGAME, settings.getContext());
+        assertTrue(settings.isOrderSensitive());
+        assertFalse(settings.isExclusive());
+        assertTrue(settings.shouldCancel());
     }
 
     @Test
@@ -68,6 +103,19 @@ final class KeybindActionTest {
                 assertTrue(!english.get(key).isBlank(), "blank English translation for " + key);
                 assertTrue(!chinese.get(key).isBlank(), "blank Chinese translation for " + key);
             }
+        }
+    }
+
+    @Test
+    void vanillaCategoryHasLocalizedDisplayTextForBothCategoryApis() {
+        final Map<String, String> english = translations("en_us");
+        final Map<String, String> chinese = translations("zh_cn");
+
+        for (final String key : List.of("key.categories.confluxmap", Keybinds.CATEGORY_TRANSLATION_KEY)) {
+            assertTrue(english.containsKey(key), "missing English translation for " + key);
+            assertTrue(chinese.containsKey(key), "missing Chinese translation for " + key);
+            assertTrue(!english.get(key).isBlank(), "blank English translation for " + key);
+            assertTrue(!chinese.get(key).isBlank(), "blank Chinese translation for " + key);
         }
     }
 

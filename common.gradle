@@ -24,6 +24,11 @@ repositories {
         url = 'https://cursemaven.com'
         content { includeGroup 'curse.maven' }
     }
+    maven {
+        name = 'XaeroMaven'
+        url = 'https://chocolateminecraft.com/maven'
+        content { includeGroup 'xaero.lib' }
+    }
 }
 sourceSets {
     gametest
@@ -50,6 +55,14 @@ dependencies {
     }
     autoImpl "net.fabricmc:fabric-loader:$loader_version"
     autoImpl "net.fabricmc.fabric-api:fabric-api:$fabric_api_version"
+    // Xaero's World Map is an all-rights-reserved external oracle, not a project dependency.
+    // Keep its exact 1.21.11 build off normal classpaths and out of release jars; maintainers opt
+    // into the client GameTest with -PxaeroOracle when checking pixel parity against the real mod.
+    if (project.hasProperty('xaeroOracle') && mcVersion == 12111) {
+        modRuntimeOnly 'maven.modrinth:NcUtCpym:uuPYtgMh'
+        // Loom's development remap does not expose the jar-in-jar XaeroLib as a separate mod.
+        modRuntimeOnly 'xaero.lib:xaerolib-fabric-1.21.11:1.7.1'
+    }
     implementation project(':common')
     include project(':common')
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
@@ -57,11 +70,23 @@ dependencies {
     include 'org.nanohttpd:nanohttpd:2.3.1'
     include 'org.nanohttpd:nanohttpd-websocket:2.3.1'
     // Compile the optional adapter against the exact MaliLib line for this Minecraft version.
-    // This is deliberately absent from runtime and from the produced jar.
+    // This is deliberately absent from production runtime and from the produced jar.
     if (unobfuscated) {
         compileOnly malilib_dependency
+        testCompileOnly malilib_dependency
+        testRuntimeOnly malilib_dependency
+        compileOnly modmenu_dependency
+        testCompileOnly modmenu_dependency
+        testRuntimeOnly modmenu_dependency
     } else {
         modCompileOnly malilib_dependency
+        modCompileOnly modmenu_dependency
+        // Reuse Loom's named remap in JUnit instead of loading the intermediary production jar.
+        afterEvaluate {
+            configurations.testRuntimeOnly.extendsFrom(
+                configurations.getByName('modCompileClasspathMainMapped')
+            )
+        }
     }
     testImplementation "org.junit.jupiter:junit-jupiter:5.10.2"
     testRuntimeOnly "org.junit.platform:junit-platform-launcher"
@@ -129,6 +154,9 @@ loom {
                 vmArg "-Dfabric.client.gametest.disableNetworkSynchronizer=true"
                 vmArg "-Xms256m"
                 vmArg "-Xmx1G"
+                if (project.hasProperty('xaeroOracle') && mcVersion == 12111) {
+                    vmArg "-Dconfluxmap.xaero.oracle=true"
+                }
                 runDir "build/client-gametest"
             }
         }
@@ -235,14 +263,16 @@ check.dependsOn 'checkCoreIsolation'
 check.dependsOn 'checkModMetadata'
 check.dependsOn 'checkVersionCoverage'
 check.dependsOn 'runGametest'
-tasks.register('buildRelease') {
-    group = 'build'
-    description = 'Assembles release artifacts and runs non-test release checks'
-    dependsOn tasks.named('assemble')
-    dependsOn tasks.named('checkCoreIsolation')
-    dependsOn tasks.named('checkModMetadata')
-    dependsOn tasks.named('checkVersionCoverage')
-    dependsOn tasks.named('validateAccessWidener')
+tasks.named('build') {
+    description = 'Assembles release artifacts and runs unit tests and non-GameTest checks'
+    setDependsOn([
+        tasks.named('assemble'),
+        tasks.named('test'),
+        tasks.named('checkCoreIsolation'),
+        tasks.named('checkModMetadata'),
+        tasks.named('checkVersionCoverage'),
+        tasks.named('validateAccessWidener'),
+    ])
 }
 tasks.named('runGametest') {
     doFirst {

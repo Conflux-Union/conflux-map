@@ -86,6 +86,24 @@ public final class SummaryDiskCache {
     }
 
     /**
+     * Loads a current sampled summary only when every chunk slot has been resolved from Anvil.
+     * Callers that treat empty slots as authoritative {@code generated=false} must use this form;
+     * a partial live summary requires an Anvil fallback for its unresolved slots.
+     */
+    public synchronized SummaryCodec.SampledRegion loadCurrentCompleteSampled(
+        final String dimension,
+        final int regionX,
+        final int regionZ,
+        final long sourceMcaMtimeMs,
+        final int lod
+    ) {
+        final SummaryCodec.SampledRegion region = loadCurrentSampled(
+            dimension, regionX, regionZ, sourceMcaMtimeMs, lod
+        );
+        return region != null && region.sourceMcaMtimeMs() > 0L ? region : null;
+    }
+
+    /**
      * Loads only a region's chunk-generation flags, reading the fixed-size header and stopping
      * before the deflated column body. Used by coarse presence answers, which span far too many
      * regions to decode in full.

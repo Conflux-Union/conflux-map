@@ -21,6 +21,14 @@ public final class ChunkCaptureHandler {
         }
     }
 
+    /** A whole chunk arrived from the server; its already-captured neighbours go stale with it. */
+    public static void chunkLoaded(final int chunkX, final int chunkZ) {
+        final ChunkCaptureService s = service;
+        if (s != null) {
+            s.markChunkLoaded(chunkX, chunkZ);
+        }
+    }
+
     public static void blockDirty(final int blockX, final int blockZ) {
         chunkDirty(blockX >> 4, blockZ >> 4);
     }

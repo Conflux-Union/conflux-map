@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.core.multiworld;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -185,6 +186,20 @@ public final class ClientWorldProfileResolver {
 
     public List<ClientWorldProfile> profiles(final String serverId) {
         return registry.profiles(serverId);
+    }
+
+    /**
+     * Name the player gave a companion-owned world. Empty means it has none and the caller labels
+     * it by its position among the worlds seen on that server.
+     */
+    public Optional<String> serverWorldName(final String serverId, final String worldId) {
+        return registry.serverWorldName(serverId, worldId);
+    }
+
+    /** Names a companion-owned world, or clears the name when {@code name} is null or blank. */
+    public void nameServerWorld(final String serverId, final String worldId, final String name) {
+        registry.nameServerWorld(serverId, worldId, name);
+        onChange.run();
     }
 
     public void rename(final String serverId, final String profileId, final String displayName) {

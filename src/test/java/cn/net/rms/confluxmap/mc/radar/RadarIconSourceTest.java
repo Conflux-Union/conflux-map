@@ -36,8 +36,8 @@ final class RadarIconSourceTest {
 
         assertFalse(manager.contains("BUNDLED"), "no bundled sprite-sheet lookup may return");
         assertTrue(
-            manager.contains("EntityHeadGeometry.project("),
-            "portraits must keep being baked from the entity's own model"
+            manager.contains("EntityHeadGeometry.projectNeutral("),
+            "portraits must keep being baked from the entity's own neutral model geometry"
         );
         assertTrue(
             manager.contains("OffscreenCanvas.atlasDrawPlaneZ()"),

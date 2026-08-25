@@ -3,8 +3,9 @@ package cn.net.rms.confluxmap.gametest;
 //#if MC>=12104
 //$$ import cn.net.rms.confluxmap.ConfluxMapClient;
 //$$ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
-//$$ import cn.net.rms.confluxmap.core.config.ScoreboardHudAvoidance;
+//$$ import cn.net.rms.confluxmap.core.config.HudTransform;
 //$$ import cn.net.rms.confluxmap.mc.ui.hud.ScoreboardHudBounds;
+//$$ import cn.net.rms.confluxmap.mc.ui.hud.ToastHudBounds;
 //$$ import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 //$$ import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 //$$ import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
@@ -16,6 +17,9 @@ package cn.net.rms.confluxmap.gametest;
 //$$ public final class HudAvoidanceClientGameTest implements FabricClientGameTest {
 //$$     @Override
 //$$     public void runTest(final ClientGameTestContext context) {
+//$$         if (Boolean.getBoolean("confluxmap.xaero.oracle")) {
+//$$             return;
+//$$         }
 //$$         try (TestSingleplayerContext world = context.worldBuilder().create()) {
 //$$             final ConfluxConfig config = ConfluxMapClient.get().config();
 //$$             config.minimapEnabled = true;
@@ -57,11 +61,35 @@ package cn.net.rms.confluxmap.gametest;
 //$$                 final int screenWidth = client.getWindow().getScaledWidth();
 //$$                 final int screenHeight = client.getWindow().getScaledHeight();
 //#endif
-//$$                 final ScoreboardHudAvoidance.Transform transform =
+//$$                 final HudTransform transform =
 //$$                     ScoreboardHudBounds.previousAppliedTransform(screenWidth, screenHeight);
 //$$                 return ScoreboardHudBounds.previousFrame(screenWidth, screenHeight) != null
 //$$                     && transform.translateY() > 0f
 //$$                     && transform.scale() == 1f;
+//$$             }, 100);
+//$$
+//$$             // story/root sets show_toast false; mine_stone omits it, so it defaults to true.
+//$$             world.getServer().runCommand("advancement grant @p only minecraft:story/mine_stone");
+//$$             context.waitFor(client -> {
+//#if MC>=260100
+//$$                 final int screenWidth = client.getWindow().getGuiScaledWidth();
+//$$                 final int screenHeight = client.getWindow().getGuiScaledHeight();
+//#else
+//$$                 final int screenWidth = client.getWindow().getScaledWidth();
+//$$                 final int screenHeight = client.getWindow().getScaledHeight();
+//#endif
+//$$                 return ToastHudBounds.previousFrame(screenWidth, screenHeight) != null;
+//$$             }, 100);
+//$$             context.waitFor(client -> {
+//#if MC>=260100
+//$$                 final int screenWidth = client.getWindow().getGuiScaledWidth();
+//$$                 final int screenHeight = client.getWindow().getGuiScaledHeight();
+//#else
+//$$                 final int screenWidth = client.getWindow().getScaledWidth();
+//$$                 final int screenHeight = client.getWindow().getScaledHeight();
+//#endif
+//$$                 return ToastHudBounds.previousAppliedTransform(screenWidth, screenHeight)
+//$$                     .translateY() > 0f;
 //$$             }, 100);
 //$$         }
 //$$     }

@@ -5,7 +5,9 @@ import cn.net.rms.confluxmap.core.cache.RegionDiskCache;
 import cn.net.rms.confluxmap.core.color.BiomeColorPalette;
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.color.LightTint;
+import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
+import cn.net.rms.confluxmap.core.color.XaeroMapStyle;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
 import cn.net.rms.confluxmap.core.model.DimensionId;
@@ -16,6 +18,7 @@ import cn.net.rms.confluxmap.core.net.CorrectionProfile;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.predict.CorrectionTile;
 import cn.net.rms.confluxmap.core.predict.MapSourceSelector;
+import cn.net.rms.confluxmap.core.predict.PredictedTileKeys;
 import cn.net.rms.confluxmap.core.store.ColumnStore;
 import cn.net.rms.confluxmap.core.store.MapWorld;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
@@ -63,8 +66,19 @@ public final class TileService {
     private final Map<TileKey, Long> dirty = new HashMap<>();
     /** Guarded by {@code this}: tiles currently being composed on a worker. */
     private final Set<TileKey> inFlight = new HashSet<>();
-    /** Biome variants requested at least once this session; avoids composing unused twins eagerly. */
-    private final Set<TileKey> requestedBiomeTiles = new HashSet<>();
+    /**
+     * Guarded by {@code this}: tiles the renderer has asked for at least once and has not
+     * reported dropping. A tile outside this set has no texture to keep fresh, so invalidating
+     * it would compose pixels nobody is looking at - and a coarse tile costs one full compose
+     * per LOD-0 region it covers (256 of them at LOD4), per captured chunk.
+     */
+    private final Set<TileKey> requestedTiles = new HashSet<>();
+    /**
+     * Guarded by {@code this}: requested tiles that changed while off screen. Recomposing them
+     * where they are is wasted work at any LOD the viewer is not currently on; {@link
+     * #setViewport} promotes them back into {@link #dirty} when they come into view.
+     */
+    private final Set<TileKey> staleTiles = new HashSet<>();
 
     /** Guarded by {@code this}: bounded, key-deduped upload queue (newest composition wins). */
     private final LinkedHashMap<TileKey, TileUpdate> uploads = new LinkedHashMap<>();
@@ -73,6 +87,8 @@ public final class TileService {
     private ViewportRect viewport;
     /** Next LOD-0 region in the current viewport to offer to the bounded disk-load queue. */
     private long viewportRegionLoadCursor;
+    /** Invalidates a composition that started before a global rendering-input change. Guarded by this. */
+    private long compositionGeneration;
 
     private volatile int viewpointX;
     private volatile int viewpointZ;
@@ -85,6 +101,7 @@ public final class TileService {
      */
     private volatile RegionCacheService regionCache;
     private volatile Consumer<TileKey> realCoverageListener = ignored -> { };
+    private volatile Consumer<TileKey> predictedUploadReloader = ignored -> { };
     private volatile ChunkViewport localAuthorityViewport;
 
     public TileService(
@@ -109,6 +126,16 @@ public final class TileService {
         realCoverageListener = listener == null ? ignored -> { } : listener;
     }
 
+    /**
+     * Registers the composer to ask for a predicted tile again after {@link #pushUpload} had to
+     * evict its pending upload. This class can only recompose the tiles it owns; a {@code "!pred"}
+     * key belongs to the prediction plane, and dropping its update without telling anyone would
+     * strand whatever pixels that tile last managed to upload.
+     */
+    public void bindPredictedUploadReloader(final Consumer<TileKey> reloader) {
+        predictedUploadReloader = reloader == null ? ignored -> { } : reloader;
+    }
+
     /** Publishes the server send-distance snapshot used for local source authority. */
     public void setLocalAuthorityViewport(final ChunkViewport viewport) {
         localAuthorityViewport = viewport;
@@ -119,7 +146,8 @@ public final class TileService {
         synchronized (this) {
             dirty.clear();
             inFlight.clear();
-            requestedBiomeTiles.clear();
+            requestedTiles.clear();
+            staleTiles.clear();
             uploads.clear();
             viewport = null;
             viewportRegionLoadCursor = 0L;
@@ -146,14 +174,34 @@ public final class TileService {
         final int maxTileZ
     ) {
         final ViewportRect next = new ViewportRect(layer.type(), lod, minTileX, maxTileX, minTileZ, maxTileZ);
+        final MapWorld world = mapWorlds.current();
+        final long token = world == null ? 0L : world.session().token();
         synchronized (this) {
             if (!next.equals(viewport)) {
                 viewportRegionLoadCursor = 0L;
+                if (world != null) {
+                    promoteStale(next, token);
+                }
             }
             viewport = next;
         }
         scheduleViewportRegionLoads(next);
         pump();
+    }
+
+    /**
+     * Caller must hold the monitor: queues every off-screen tile that changed while the viewer
+     * was elsewhere and that {@code next} is about to show. This is what keeps a zoom level the
+     * viewer left and came back to from drawing the map as it looked when they left it.
+     */
+    private void promoteStale(final ViewportRect next, final long token) {
+        staleTiles.removeIf(key -> {
+            if (!next.contains(key)) {
+                return false;
+            }
+            dirty.put(key, token);
+            return true;
+        });
     }
 
     /** Clears fullscreen ordering after the screen closes so minimap requests return to distance priority. */
@@ -197,7 +245,7 @@ public final class TileService {
         }
         final CompletableFuture<int[]> composed = loaded.thenApplyAsync(ignored -> {
             final TileUpdate update = composeTile(
-                key, token, dynamicLighting, daylightFactor
+                key, token, dynamicLighting, daylightFactor, 0f
             );
             if (update == null) {
                 throw new CancellationException("Map session changed");
@@ -396,7 +444,7 @@ public final class TileService {
                 markDirty(key, token);
                 if (dx == 0 && dz == 0) {
                     // Biome mode is a flat colour plane and has no cross-tile relief stencil.
-                    markBiomeDirtyIfRequested(BiomeTileKeys.toBiome(key), token);
+                    markDirty(BiomeTileKeys.toBiome(key), token);
                 }
             }
         }
@@ -432,6 +480,23 @@ public final class TileService {
         }
     }
 
+    /** Drops queued old-style results; released textures request fresh compositions next frame. */
+    public synchronized void reloadMapColorStyle() {
+        invalidateCompositions();
+    }
+
+    /** Drops results composed with an obsolete global light state. */
+    public synchronized void reloadLighting() {
+        invalidateCompositions();
+    }
+
+    private void invalidateCompositions() {
+        compositionGeneration++;
+        dirty.clear();
+        staleTiles.clear();
+        uploads.clear();
+    }
+
     /** For a tile that's visible but has never been composed (or requested again after being evicted). */
     public void requestTile(final TileKey key) {
         final MapWorld world = mapWorlds.current();
@@ -443,9 +508,8 @@ public final class TileService {
             return;
         }
         synchronized (this) {
-            if (BiomeTileKeys.isBiome(key)) {
-                requestedBiomeTiles.add(key);
-            }
+            requestedTiles.add(key);
+            staleTiles.remove(key);
             // A missing texture is checked once per rendered frame. Do not turn that repeated
             // check into an invalidation loop while the same tile is already queued or composing.
             if (dirty.containsKey(key) || inFlight.contains(key)) {
@@ -466,13 +530,25 @@ public final class TileService {
         }
     }
 
-    private void markBiomeDirtyIfRequested(final TileKey key, final long token) {
-        synchronized (this) {
-            if (!requestedBiomeTiles.contains(key)) {
-                return;
-            }
-        }
-        markDirty(key, token);
+    /**
+     * Render thread: the texture for {@code key} is gone (LRU eviction or a session release), so
+     * this service has nothing to keep fresh for it any more. Keeping the key would leave every
+     * later capture recomposing a tile whose pixels have no home; {@code bind} composes it in
+     * full again the next time it is actually drawn.
+     */
+    public synchronized void forgetTile(final TileKey key) {
+        requestedTiles.remove(key);
+        staleTiles.remove(key);
+    }
+
+    /**
+     * Render thread: {@code key} has a texture again. Normally {@link #requestTile} already said
+     * so, but an upload composed before an eviction can land after it - and a tile the renderer
+     * holds while this service has forgotten it is exactly the tile that would freeze on screen,
+     * since {@code bind} only re-requests a texture that is missing outright.
+     */
+    public synchronized void retainTile(final TileKey key) {
+        requestedTiles.add(key);
     }
 
     private void requestRegionLoad(final MapLayer.Type layerType, final int regionX, final int regionZ) {
@@ -535,8 +611,28 @@ public final class TileService {
         }
     }
 
+    /**
+     * Queues a recompose for a tile that already exists on screen or in the texture cache.
+     *
+     * <p>Two gates decide whether the work is worth doing at all. A tile the renderer has never
+     * requested has no texture to keep fresh: {@code TileTextureManager.bind} composes it in full
+     * the first time it needs it, so composing it now would only burn a worker on something
+     * nobody is looking at. A tile that is requested but off screen is remembered in {@link
+     * #staleTiles} and recomposed when {@link #setViewport} brings it back into view. Without
+     * those gates every captured chunk recomposes its covering tile at every LOD, and a coarse
+     * tile costs one full LOD-0 compose per region it covers - 256 of them at LOD4.
+     */
     private void markDirty(final TileKey key, final long token) {
         synchronized (this) {
+            if (!requestedTiles.contains(key)) {
+                return;
+            }
+            // Both renderers publish their rectangle immediately before drawing tiles and clear
+            // it when they stop, so a null viewport means no map surface is on screen at all.
+            if (viewport == null || !viewport.contains(key)) {
+                staleTiles.add(key);
+                return;
+            }
             if (inFlight.contains(key)) {
                 // Already composing; the in-flight pass will pick up a fresh copy of the
                 // store, so nothing more to do unless it's already done - re-mark dirty is
@@ -554,9 +650,16 @@ public final class TileService {
         while (true) {
             final TileKey next;
             final long token;
+            final long generation;
             synchronized (this) {
                 final int compositionLimit = viewport == null ? maxConcurrentCompositions : 1;
                 if (inFlight.size() >= compositionLimit || dirty.isEmpty()) {
+                    return;
+                }
+                // Every in-flight composition ends in one queued upload. Starting more than the
+                // queue can still take would push finished tiles back out of it; leaving them in
+                // the dirty map instead costs latency, not pixels. drainUploads() pumps again.
+                if (uploads.size() + inFlight.size() >= UPLOAD_QUEUE_CAPACITY) {
                     return;
                 }
                 next = nearestDirty();
@@ -564,9 +667,10 @@ public final class TileService {
                     return;
                 }
                 token = dirty.remove(next);
+                generation = compositionGeneration;
                 inFlight.add(next);
             }
-            executors.workers().execute(() -> composeAndFinish(next, token));
+            executors.workers().execute(() -> composeAndFinish(next, token, generation));
         }
     }
 
@@ -612,11 +716,11 @@ public final class TileService {
             || (candidate.tileZ() == current.tileZ() && candidate.tileX() < current.tileX());
     }
 
-    private void composeAndFinish(final TileKey key, final long token) {
+    private void composeAndFinish(final TileKey key, final long token, final long generation) {
         try {
             final TileUpdate update = composeTile(key, token);
             if (update != null) {
-                pushUpload(update);
+                pushUpload(update, generation);
             }
         } finally {
             synchronized (this) {
@@ -627,14 +731,22 @@ public final class TileService {
     }
 
     private TileUpdate composeTile(final TileKey key, final long token) {
-        return composeTile(key, token, config.dynamicLighting, daylightModel.factor());
+        final DaylightModel.State lighting = daylightModel.state();
+        return composeTile(
+            key,
+            token,
+            config.dynamicLighting,
+            lighting.daylight(),
+            lighting.gamma()
+        );
     }
 
     private TileUpdate composeTile(
         final TileKey key,
         final long token,
         final boolean dynamicLighting,
-        final float requestedDaylightFactor
+        final float requestedDaylightFactor,
+        final float gamma
     ) {
         final MapWorld world = mapWorlds.ifCurrent(token);
         if (world == null) {
@@ -642,12 +754,13 @@ public final class TileService {
         }
         final boolean biomeMode = BiomeTileKeys.isBiome(key);
         final MapLayer layer = MapLayer.parse(BiomeTileKeys.realLayerId(key.layerId()));
+        final MapColorStyle mapColorStyle = config.mapColorStyle;
+        final XaeroMapStyle.Shadow xaeroShadow = XaeroMapStyle.shadowFor(key.dimension());
         final ColumnStore store = world.store(layer);
         // The roof view is block-accurate and lives around one almost-flat Y. Keep the shared,
         // symmetric local relief there, but omit the fixed Y=80 absolute-height wash that used to
         // turn the whole bedrock roof pale.
         final boolean applyAbsoluteHeight = layer.type() != MapLayer.Type.NETHER_CEILING;
-        final boolean applyNetherCeilingLight = layer.type() == MapLayer.Type.NETHER_CEILING;
         // Dynamic daylight only touches SURFACE. NETHER_CEILING has no sky cycle, but its static
         // per-column block light is applied separately below from ChunkSnapshot#light.
         final boolean applyDaylight = !biomeMode
@@ -668,7 +781,8 @@ public final class TileService {
         if (key.lod() == 0) {
             pixels = composeLod0(
                 store, key.tileX(), key.tileZ(), biomeMode, applyAbsoluteHeight,
-                applyNetherCeilingLight, applyDaylight, daylightFactor, lightPlane
+                layer.type(), applyDaylight, daylightFactor, gamma, lightPlane,
+                mapColorStyle, xaeroShadow
             );
             if (store.region(key.tileX(), key.tileZ()) != null) {
                 changed.add(new TileUpdate.Rect(0, 0, RegionColumns.SIZE, RegionColumns.SIZE));
@@ -676,12 +790,13 @@ public final class TileService {
         } else {
             pixels = composeLodN(
                 store, key, biomeMode, applyAbsoluteHeight,
-                applyNetherCeilingLight, applyDaylight, daylightFactor, lightPlane, changed
+                layer.type(), applyDaylight, daylightFactor, gamma, lightPlane, changed,
+                mapColorStyle, xaeroShadow
             );
         }
         final TileUpdate.Relight relight = lightPlane == null
             ? null
-            : new TileUpdate.Relight(daylightFactor, lightPlane);
+            : new TileUpdate.Relight(daylightFactor, gamma, lightPlane, mapColorStyle);
         return new TileUpdate(key, pixels, List.copyOf(changed), relight);
     }
 
@@ -696,10 +811,13 @@ public final class TileService {
         final int regionZ,
         final boolean biomeMode,
         final boolean applyAbsoluteHeight,
-        final boolean applyNetherCeilingLight,
+        final MapLayer.Type layerType,
         final boolean applyDaylight,
         final float daylightFactor,
-        final byte[] outLight
+        final float gamma,
+        final byte[] outLight,
+        final MapColorStyle mapColorStyle,
+        final XaeroMapStyle.Shadow xaeroShadow
     ) {
         final int[] pixels = new int[RegionColumns.SIZE * RegionColumns.SIZE];
         final RegionColumns region = store.region(regionX, regionZ);
@@ -717,8 +835,8 @@ public final class TileService {
             );
             composeRegion(
                 neighborhood, pixels,
-                biomeMode, applyAbsoluteHeight, applyNetherCeilingLight,
-                applyDaylight, daylightFactor, outLight
+                biomeMode, applyAbsoluteHeight, layerType,
+                applyDaylight, daylightFactor, gamma, outLight, mapColorStyle, xaeroShadow
             );
         }
         return pixels;
@@ -741,11 +859,14 @@ public final class TileService {
         final TileKey key,
         final boolean biomeMode,
         final boolean applyAbsoluteHeight,
-        final boolean applyNetherCeilingLight,
+        final MapLayer.Type layerType,
         final boolean applyDaylight,
         final float daylightFactor,
+        final float gamma,
         final byte[] outLight,
-        final List<TileUpdate.Rect> outChanged
+        final List<TileUpdate.Rect> outChanged,
+        final MapColorStyle mapColorStyle,
+        final XaeroMapStyle.Shadow xaeroShadow
     ) {
         final int lod = key.lod();
         final int size = RegionColumns.SIZE;
@@ -764,7 +885,8 @@ public final class TileService {
                 final byte[] fullLight = outLight == null ? null : new byte[size * size];
                 final int[] full = composeLod0(
                     store, regionX, regionZ, biomeMode, applyAbsoluteHeight,
-                    applyNetherCeilingLight, applyDaylight, daylightFactor, fullLight
+                    layerType, applyDaylight, daylightFactor, gamma, fullLight,
+                    mapColorStyle, xaeroShadow
                 );
                 final int[] downsampled = downsample(full, size, lod);
                 stitch(downsampled, subSize, outPixels, dx * subSize, dz * subSize);
@@ -851,23 +973,28 @@ public final class TileService {
         final int[] outPixels,
         final boolean biomeMode,
         final boolean applyAbsoluteHeight,
-        final boolean applyNetherCeilingLight,
+        final MapLayer.Type layerType,
         final boolean applyDaylight,
         final float daylightFactor,
-        final byte[] outLight
+        final float gamma,
+        final byte[] outLight,
+        final MapColorStyle mapColorStyle,
+        final XaeroMapStyle.Shadow xaeroShadow
     ) {
         final int size = RegionColumns.SIZE;
         final short[] surfaceY = new short[size * size];
         final String[] biomeId = new String[size * size];
         final byte[] fluidDepth = new byte[size * size];
         final int[] baseArgb = new int[size * size];
+        final int[] xaeroBaseArgb = new int[size * size];
         final int[] tintArgb = new int[size * size];
         final int[] overlayArgb = new int[size * size];
+        final int[] xaeroOverlayArgb = new int[size * size];
         final byte[] kind = new byte[size * size];
         final byte[] light = new byte[size * size];
         neighborhood.center().copyChunkRows(
             0, size, surfaceY, biomeId, fluidDepth,
-            baseArgb, tintArgb, overlayArgb, kind, light
+            baseArgb, xaeroBaseArgb, tintArgb, overlayArgb, xaeroOverlayArgb, kind, light
         );
         if (outLight != null) {
             System.arraycopy(light, 0, outLight, 0, size * size);
@@ -883,6 +1010,14 @@ public final class TileService {
                 }
                 if (biomeMode) {
                     outPixels[idx] = BiomeColorPalette.color(biomeId[idx]);
+                    continue;
+                }
+                if (mapColorStyle == MapColorStyle.XAERO) {
+                    outPixels[idx] = composeXaeroColumn(
+                        x, z, surfaceY, fluidDepth, kind, xaeroBaseArgb, tintArgb, xaeroOverlayArgb,
+                        neighborhood, xaeroShadow, layerType,
+                        applyDaylight, daylightFactor, gamma, light[idx]
+                    );
                     continue;
                 }
                 final double surfaceHeightShade = applyAbsoluteHeight
@@ -917,15 +1052,101 @@ public final class TileService {
                     ? ShadingPipeline.compositeOver(shadedBase, shadedOverlay)
                     : ShadingPipeline.compositeOver(shadedOverlay, shadedBase);
                 if (applyDaylight) {
-                    composed = ShadingPipeline.applyDaylight(composed, daylightFactor, light[idx]);
-                } else if (applyNetherCeilingLight) {
+                    composed = ShadingPipeline.applyDaylight(
+                        composed, daylightFactor, light[idx], gamma
+                    );
+                } else if (layerType == MapLayer.Type.NETHER_CEILING) {
                     composed = LightTint.applyBlockLightOverAmbient(
-                        composed, light[idx] & 0xFF, true
+                        composed, light[idx] & 0xFF, true, gamma
+                    );
+                } else if (usesBakedLight(layerType)) {
+                    composed = LightTint.applyGammaOverBakedLight(
+                        composed,
+                        light[idx] & 0xFF,
+                        isNetherFloorLayer(layerType),
+                        gamma
                     );
                 }
                 outPixels[idx] = composed;
             }
         }
+    }
+
+    private static int composeXaeroColumn(
+        final int x,
+        final int z,
+        final short[] surfaceY,
+        final byte[] fluidDepth,
+        final byte[] kind,
+        final int[] baseArgb,
+        final int[] tintArgb,
+        final int[] overlayArgb,
+        final RegionNeighborhood neighborhood,
+        final XaeroMapStyle.Shadow shadow,
+        final MapLayer.Type layerType,
+        final boolean applyDaylight,
+        final float daylightFactor,
+        final float gamma,
+        final byte blockLight
+    ) {
+        final int idx = z * RegionColumns.SIZE + x;
+        final boolean waterOrIce = kind[idx] == SurfaceKind.WATER.ordinal()
+            || kind[idx] == SurfaceKind.ICE.ordinal();
+        final int surface = surfaceY[idx];
+        final int floor = surface - (fluidDepth[idx] & 0xFF);
+        final int tintedBase = Argb.multiply(baseArgb[idx], tintArgb[idx]);
+        final int composed;
+        if (waterOrIce) {
+            int shadedFloor = overlayArgb[idx] == Argb.TRANSPARENT
+                ? Argb.TRANSPARENT
+                : XaeroMapStyle.applyTerrain(
+                    overlayArgb[idx], floor,
+                    reliefHeight(x, z - 1, true, surfaceY, fluidDepth, kind, neighborhood),
+                    reliefHeight(x - 1, z - 1, true, surfaceY, fluidDepth, kind, neighborhood),
+                    1, true, shadow
+                );
+            shadedFloor = ShadingPipeline.applyBrightnessMultiplier(
+                shadedFloor, XaeroMapStyle.transparentFloorBrightness(fluidDepth[idx] & 0xFF)
+            );
+            composed = ShadingPipeline.compositeOver(tintedBase, shadedFloor);
+        } else {
+            final int shadedBase = XaeroMapStyle.applyTerrain(
+                tintedBase, surface,
+                reliefHeight(x, z - 1, false, surfaceY, fluidDepth, kind, neighborhood),
+                reliefHeight(x - 1, z - 1, false, surfaceY, fluidDepth, kind, neighborhood),
+                1, true, shadow
+            );
+            composed = ShadingPipeline.compositeOver(overlayArgb[idx], shadedBase);
+        }
+        if (applyDaylight) {
+            return Argb.scale(
+                composed,
+                ShadingPipeline.applyGamma(
+                    XaeroMapStyle.daylightScale(daylightFactor, blockLight & 0xFF), gamma
+                )
+            );
+        }
+        return usesBakedLight(layerType)
+            ? LightTint.applyGammaOverBakedLight(
+                composed,
+                blockLight & 0xFF,
+                isNetherFloorLayer(layerType),
+                gamma
+            )
+            : composed;
+    }
+
+    private static boolean usesBakedLight(final MapLayer.Type layerType) {
+        return layerType == MapLayer.Type.CAVE_AUTO
+            || layerType == MapLayer.Type.CAVE_SLICE
+            || layerType == MapLayer.Type.NETHER_CURRENT
+            || layerType == MapLayer.Type.NETHER_SLICE
+            || layerType == MapLayer.Type.END_SURFACE;
+    }
+
+    private static boolean isNetherFloorLayer(final MapLayer.Type layerType) {
+        return layerType == MapLayer.Type.NETHER_CURRENT
+            || layerType == MapLayer.Type.NETHER_SLICE;
     }
 
     private static double reliefMultiplier(
@@ -1022,15 +1243,59 @@ public final class TileService {
         }
     }
 
+    /**
+     * Queues a finished composition for the render thread, evicting the oldest pending upload
+     * while the queue is over capacity.
+     *
+     * <p>An evicted update is handed back to whoever can compose it again instead of being
+     * forgotten. Composition already took its tile out of {@link #dirty} and its pixels live
+     * nowhere else, while {@code TileTextureManager} only re-requests a tile whose texture is
+     * missing entirely - so a tile that is already on screen would otherwise keep showing the
+     * composition it happened to be uploaded with, missing every chunk captured since, until
+     * something unrelated evicted its texture.
+     */
     private void pushUpload(final TileUpdate update) {
+        pushUpload(update, null);
+    }
+
+    private void pushUpload(final TileUpdate update, final Long expectedGeneration) {
+        final List<TileKey> evicted;
         synchronized (this) {
+            if (expectedGeneration != null
+                && expectedGeneration.longValue() != compositionGeneration) {
+                return;
+            }
             uploads.remove(update.key());
             uploads.put(update.key(), update);
+            if (uploads.size() <= UPLOAD_QUEUE_CAPACITY) {
+                return;
+            }
+            evicted = new ArrayList<>();
             while (uploads.size() > UPLOAD_QUEUE_CAPACITY) {
                 final TileKey oldest = uploads.keySet().iterator().next();
                 uploads.remove(oldest);
+                evicted.add(oldest);
             }
         }
+        // Outside the monitor: recomposing goes back through markDirty() and pump().
+        for (final TileKey key : evicted) {
+            recomposeEvicted(key);
+        }
+    }
+
+    private void recomposeEvicted(final TileKey key) {
+        if (PredictedTileKeys.isPredicted(key)) {
+            predictedUploadReloader.accept(key);
+            return;
+        }
+        final MapWorld world = mapWorlds.current();
+        if (world == null
+            || !key.world().equals(world.session().world())
+            || !key.dimension().equals(world.session().dimension())) {
+            // A session change already invalidated the tile; onSessionChanged cleared the queue.
+            return;
+        }
+        markDirty(key, world.session().token());
     }
 
     private record ViewportRect(
@@ -1066,6 +1331,10 @@ public final class TileService {
                 result.add(it.next().getValue());
                 it.remove();
             }
+        }
+        if (!result.isEmpty()) {
+            // The room this just freed is what the composition backpressure in pump() waits for.
+            pump();
         }
         return result;
     }

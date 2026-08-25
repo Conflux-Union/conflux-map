@@ -20,6 +20,9 @@
     ],
     "client": [
       "cn.net.rms.confluxmap.ConfluxMapClient"
+    ],
+    "modmenu": [
+      "cn.net.rms.confluxmap.compat.ModMenuIntegration"
     ]
   },
   "mixins": [
@@ -32,6 +35,7 @@
     "minecraft": "$minecraft_dependency"
   },
   "suggests": {
-    "malilib": "*"
+    "malilib": "*",
+    "modmenu": "*"
   }
 }

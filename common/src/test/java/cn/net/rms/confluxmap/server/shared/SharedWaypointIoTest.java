@@ -21,6 +21,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 class SharedWaypointIoTest {
     private static final Logger LOGGER = LogManager.getLogger("SharedWaypointIoTest");
+    private static final String SURVIVAL_INSTANCE = "aaaaaaaa-0000-0000-0000-000000000000";
+    private static final String MIRROR_INSTANCE = "bbbbbbbb-0000-0000-0000-000000000000";
 
     @Test
     void roundTripsExplicitSchemaAtWorldPath(@TempDir final Path worldRoot) throws Exception {
@@ -29,7 +31,7 @@ class SharedWaypointIoTest {
             UUID.fromString("00000000-0000-0000-0000-000000000001"),
             UUID.fromString("00000000-0000-0000-0000-000000000002"),
             "PlayerOne", "村庄", DimensionId.OVERWORLD,
-            12.5d, 64d, -8.25d, 0xFF33AA66, Waypoint.Type.NORMAL, true, 1_234L, 3L
+            12.5d, 64d, -8.25d, 0xFF33AA66, Waypoint.Type.NORMAL, 1_234L, 3L
         );
 
         io.save(new SharedWaypointStore.Snapshot(3L, List.of(waypoint)));
@@ -40,9 +42,101 @@ class SharedWaypointIoTest {
         assertEquals(worldRoot.resolve("confluxmap/shared_waypoints.json"), io.file());
         assertFalse(Files.exists(io.file().resolveSibling("shared_waypoints.json.tmp")));
         final String json = Files.readString(io.file(), StandardCharsets.UTF_8);
-        assertTrue(json.contains("\"schemaVersion\": 1"));
+        assertTrue(json.contains("\"schemaVersion\": 2"));
+        assertFalse(json.contains("\"locked\""));
         assertTrue(json.contains("\"publisherId\""));
         assertTrue(json.contains("村庄"));
+    }
+
+    @Test
+    void schemaOneServerMarkersMigrateIntoTheSharedList(@TempDir final Path worldRoot)
+        throws Exception {
+        final SharedWaypointIo io = new SharedWaypointIo(worldRoot, LOGGER);
+        Files.createDirectories(io.file().getParent());
+        Files.writeString(
+            io.file(),
+            "{\"schemaVersion\":1,\"revision\":1,\"waypoints\":[{"
+                + "\"id\":\"00000000-0000-0000-0000-000000000001\","
+                + "\"publisherId\":\"00000000-0000-0000-0000-000000000002\","
+                + "\"publisherName\":\"Player\",\"name\":\"Spawn\","
+                + "\"dimensionId\":\"minecraft:overworld\","
+                + "\"x\":0,\"y\":64,\"z\":0,\"colorArgb\":-1,"
+                + "\"type\":\"NORMAL\",\"locked\":true,"
+                + "\"createdAtEpochMs\":1,\"revision\":1}]}",
+            StandardCharsets.UTF_8
+        );
+
+        final SharedWaypointStore.Snapshot loaded = io.load();
+
+        assertEquals(1, loaded.waypoints().size());
+        assertEquals("Spawn", loaded.waypoints().get(0).name());
+        final String migrated = Files.readString(io.file(), StandardCharsets.UTF_8);
+        assertTrue(migrated.contains("\"schemaVersion\": 2"));
+        assertFalse(migrated.contains("\"locked\""));
+    }
+
+    /**
+     * Syncing a world folder to a mirror server copies this file along with it. The mirror must not
+     * serve the origin server's shared waypoints, so it sets the inherited file aside and starts
+     * its own.
+     */
+    @Test
+    void aFileOwnedByAnotherInstanceIsSetAsideAndLoadsEmpty(@TempDir final Path worldRoot)
+        throws Exception {
+        new SharedWaypointIo(worldRoot, SURVIVAL_INSTANCE, LOGGER)
+            .save(new SharedWaypointStore.Snapshot(3L, List.of(waypoint())));
+        final SharedWaypointIo mirror = new SharedWaypointIo(worldRoot, MIRROR_INSTANCE, LOGGER);
+
+        final SharedWaypointStore.Snapshot loaded = mirror.load();
+
+        assertTrue(loaded.waypoints().isEmpty());
+        assertTrue(Files.exists(mirror.file().resolveSibling("shared_waypoints.json.bak")));
+    }
+
+    @Test
+    void aFileOwnedByThisInstanceLoadsNormally(@TempDir final Path worldRoot) throws Exception {
+        final SharedWaypointIo io = new SharedWaypointIo(worldRoot, SURVIVAL_INSTANCE, LOGGER);
+        io.save(new SharedWaypointStore.Snapshot(3L, List.of(waypoint())));
+
+        assertEquals(List.of(waypoint()), io.load().waypoints());
+        assertFalse(Files.exists(io.file().resolveSibling("shared_waypoints.json.bak")));
+    }
+
+    /** Files written before instance ids existed belong to whichever server opens them first. */
+    @Test
+    void aFileWithoutAnOwnerIsClaimed(@TempDir final Path worldRoot) throws Exception {
+        new SharedWaypointIo(worldRoot, LOGGER)
+            .save(new SharedWaypointStore.Snapshot(3L, List.of(waypoint())));
+        final SharedWaypointIo io = new SharedWaypointIo(worldRoot, SURVIVAL_INSTANCE, LOGGER);
+
+        assertEquals(List.of(waypoint()), io.load().waypoints());
+
+        io.save(io.load());
+
+        assertEquals(List.of(waypoint()), new SharedWaypointIo(worldRoot, SURVIVAL_INSTANCE, LOGGER).load().waypoints());
+        assertTrue(new SharedWaypointIo(worldRoot, MIRROR_INSTANCE, LOGGER).load().waypoints().isEmpty());
+    }
+
+    /** Each sync brings the origin's file back, so the set-aside copy is replaced, not accumulated. */
+    @Test
+    void anExistingSetAsideCopyIsReplaced(@TempDir final Path worldRoot) throws Exception {
+        final SharedWaypointIo survival = new SharedWaypointIo(worldRoot, SURVIVAL_INSTANCE, LOGGER);
+        final SharedWaypointIo mirror = new SharedWaypointIo(worldRoot, MIRROR_INSTANCE, LOGGER);
+        survival.save(new SharedWaypointStore.Snapshot(3L, List.of(waypoint())));
+        mirror.load();
+        survival.save(new SharedWaypointStore.Snapshot(4L, List.of(waypoint())));
+
+        assertTrue(mirror.load().waypoints().isEmpty());
+        assertTrue(Files.exists(mirror.file().resolveSibling("shared_waypoints.json.bak")));
+    }
+
+    private static SharedWaypoint waypoint() {
+        return new SharedWaypoint(
+            UUID.fromString("00000000-0000-0000-0000-000000000001"),
+            UUID.fromString("00000000-0000-0000-0000-000000000002"),
+            "PlayerOne", "村庄", DimensionId.OVERWORLD,
+            12.5d, 64d, -8.25d, 0xFF33AA66, Waypoint.Type.NORMAL, 1_234L, 3L
+        );
     }
 
     @Test
@@ -63,14 +157,14 @@ class SharedWaypointIoTest {
     void futureSchemaIsRejectedWithoutQuarantine(@TempDir final Path worldRoot) throws Exception {
         final SharedWaypointIo io = new SharedWaypointIo(worldRoot, LOGGER);
         Files.createDirectories(io.file().getParent());
-        Files.writeString(io.file(), "{\"schemaVersion\":2,\"revision\":0,\"waypoints\":[]}", StandardCharsets.UTF_8);
+        Files.writeString(io.file(), "{\"schemaVersion\":3,\"revision\":0,\"waypoints\":[]}", StandardCharsets.UTF_8);
 
         final SharedWaypointIo.UnsupportedSchemaVersionException error = assertThrows(
             SharedWaypointIo.UnsupportedSchemaVersionException.class,
             io::load
         );
 
-        assertEquals(2, error.schemaVersion());
+        assertEquals(3, error.schemaVersion());
         assertTrue(Files.exists(io.file()));
         assertFalse(Files.exists(io.file().resolveSibling("shared_waypoints.json.bad")));
     }

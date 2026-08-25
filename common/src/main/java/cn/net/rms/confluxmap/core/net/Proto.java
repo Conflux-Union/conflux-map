@@ -78,11 +78,13 @@ public final class Proto {
     public static final int MSG_SERVER_VIEW_DISTANCE_S2C = 0x11;
     /** S2C: extensible profile/capability selection for clients advertising caps2. */
     public static final int MSG_MAP_CAPABILITIES_S2C = 0x12;
+    /** S2C: identity of the server instance, sent only to clients advertising support. */
+    public static final int MSG_SERVER_INSTANCE_S2C = 0x13;
 
     /** First valid message id; used to range-check the type byte. */
     public static final int MSG_MIN = MSG_HELLO_C2S;
     /** Last valid message id for this proto major version. */
-    public static final int MSG_MAX = MSG_MAP_CAPABILITIES_S2C;
+    public static final int MSG_MAX = MSG_SERVER_INSTANCE_S2C;
 
     // ---- Hard caps (enforced everywhere untrusted bytes cross a boundary) ----
 

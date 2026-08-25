@@ -1,0 +1,62 @@
+name: Feature request (English)
+description: Suggest an improvement or a new capability in English
+title: "[Feature]: "
+labels: []
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem first, then explain the result you want. This helps us evaluate solutions without locking the issue to one implementation.
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: What are you trying to accomplish, and who would benefit?
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-limitation
+    attributes:
+      label: Current limitation
+      description: What is difficult, missing, or impossible today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-result
+    attributes:
+      label: Proposed result
+      description: Describe the behavior or outcome you would like to see.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe any workarounds or alternative solutions you have tried.
+
+  - type: input
+    id: minecraft-version
+    attributes:
+      label: Relevant Minecraft version
+      placeholder: "For example: 1.21.4, or All"
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Add mockups, examples from other mods, related issues, or other useful details.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and did not find a duplicate request.
+          required: true
+        - label: I described the use case rather than only an implementation.
+          required: true

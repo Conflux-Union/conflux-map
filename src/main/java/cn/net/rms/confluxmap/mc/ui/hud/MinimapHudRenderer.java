@@ -33,7 +33,11 @@ import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.mc.ui.MapLayerText;
+import cn.net.rms.confluxmap.mc.ui.PlayerMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.PlayerTrailRenderer;
+import cn.net.rms.confluxmap.mc.ui.UiResourceTheme;
+import cn.net.rms.confluxmap.mc.ui.UiTextureRegion;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
@@ -73,8 +77,7 @@ public final class MinimapHudRenderer {
     private static final int BORDER_COLOR = 0xB0FFFFFF;
     private static final int BACKGROUND_COLOR = 0x80101018;
     private static final int TEXT_COLOR = 0xFFFFFFFF;
-    private static final int ARROW_OUTLINE = 0xFF101010;
-    private static final int ARROW_FILL = 0xFFFFFFFF;
+    private static final int PLAYER_MARKER_COLOR = 0xFFFFFFFF;
     private static final float[] BLOCKS_PER_PIXEL = {0.5f, 1f, 2f, 4f};
     /** Half of the ~7px-across VoxelMap-style diamond/cross marker (deliverable B). */
     private static final float WAYPOINT_MARKER_HALF_SIZE = 3.5f;
@@ -92,6 +95,7 @@ public final class MinimapHudRenderer {
     private final LayerSelector layerSelector;
     private final WaypointRenderCatalog waypointRenderCatalog;
     private final RadarViewRange radarViewRange;
+    private final UiResourceTheme uiTheme;
 
     public MinimapHudRenderer(
         final MinecraftClient client,
@@ -105,7 +109,8 @@ public final class MinimapHudRenderer {
         final AnnotationService annotations,
         final LayerSelector layerSelector,
         final WaypointRenderCatalog waypointRenderCatalog,
-        final RadarViewRange radarViewRange
+        final RadarViewRange radarViewRange,
+        final UiResourceTheme uiTheme
     ) {
         this.client = client;
         this.config = config;
@@ -119,6 +124,7 @@ public final class MinimapHudRenderer {
         this.layerSelector = layerSelector;
         this.waypointRenderCatalog = waypointRenderCatalog;
         this.radarViewRange = radarViewRange;
+        this.uiTheme = uiTheme;
     }
 
     public void register() {
@@ -161,7 +167,11 @@ public final class MinimapHudRenderer {
         final boolean fullscreenOpen = MinecraftAccess.screen(client) instanceof FullscreenMapScreen;
         final boolean containerOpen = MinecraftAccess.isContainerScreen(MinecraftAccess.screen(client));
         if (!MinimapHudVisibility.shouldRender(
-            config.minimapEnabled, gameBridge.session().active(), fullscreenOpen, containerOpen
+            config.minimapEnabled,
+            gameBridge.session().active(),
+            fullscreenOpen,
+            containerOpen,
+            MinecraftAccess.isDebugHudVisible(client)
         )) {
             // FullscreenMapScreen owns radarViewRange while it's open; otherwise the minimap
             // isn't rendering at all, so there's no visible map surface for the radar to scan.
@@ -193,9 +203,17 @@ public final class MinimapHudRenderer {
         final int size = placement.size();
         final int x0 = placement.x();
         final int y0 = placement.y();
-        final float centerX = x0 + size / 2f;
-        final float centerY = y0 + size / 2f;
         final boolean circle = config.minimapShape == ConfluxConfig.Shape.CIRCLE;
+        final Optional<UiResourceTheme.MinimapFrame> minimapFrame = uiTheme.minimapFrame(circle);
+        final int contentInset = minimapFrame
+            .map(UiResourceTheme.MinimapFrame::contentInset)
+            .orElse(0);
+        final MinimapContentViewport viewport = MinimapContentViewport.resolve(
+            x0, y0, size, contentInset
+        );
+        final int contentSize = viewport.size();
+        final float centerX = viewport.centerX();
+        final float centerY = viewport.centerY();
         final boolean rotate = config.minimapRotate;
         final float mapAngle = rotate ? 180f - player.yawDegrees() : 0f;
         final List<Annotation> visibleAnnotations = config.annotationsOnHud && annotations.current() != null
@@ -205,33 +223,44 @@ public final class MinimapHudRenderer {
         // Radar scans exactly what this frame's minimap will show: the circle's radius, or
         // the square's half-diagonal (so a corner-cropped mob is still caught by the scan).
         final float minimapBlocksPerPixel = BLOCKS_PER_PIXEL[config.minimapZoomIndex];
-        final double visibleRadius = size / 2.0 * minimapBlocksPerPixel * (circle ? 1.0 : Math.sqrt(2));
+        final double visibleRadius = contentSize / 2.0
+            * minimapBlocksPerPixel
+            * (circle ? 1.0 : Math.sqrt(2));
         radarViewRange.set(visibleRadius);
 
         if (circle) {
             // Real geometric clipping: render the square map into an off-screen canvas,
             // then sample it back as a textured disk. Unlike destination-alpha masking
             // this cannot leak outside the circle regardless of framebuffer state.
-            final int canvasPx = Math.max(64, (int) Math.round(size * client.getWindow().getScaleFactor()));
+            final int canvasPx = Math.max(
+                64,
+                (int) Math.round(contentSize * client.getWindow().getScaleFactor())
+            );
             canvas.begin(canvasPx);
             final MatrixStack fbo = new MatrixStack();
-            final float unit = canvasPx / (float) size;
+            final float unit = canvasPx / (float) contentSize;
             fbo.scale(unit, unit, 1f);
-            RenderUtil.fillRect(fbo, 0, 0, size, size, BACKGROUND_COLOR);
+            RenderUtil.fillRect(fbo, 0, 0, contentSize, contentSize, BACKGROUND_COLOR);
             fbo.push();
-            fbo.translate(size / 2f, size / 2f, 0);
+            fbo.translate(contentSize / 2f, contentSize / 2f, 0);
             if (rotate) {
                 RenderUtil.rotateZ(fbo, mapAngle);
             }
             RenderUtil.beginTexturedQuads();
-            drawTiles(fbo, size, rotate, player);
+            drawTiles(fbo, contentSize, rotate, player);
             fbo.pop();
-            drawPlayerTrail(fbo, player, size / 2f, size / 2f, size, mapAngle);
+            drawPlayerTrail(
+                fbo, player,
+                contentSize / 2f, contentSize / 2f, contentSize, mapAngle
+            );
             if (!visibleAnnotations.isEmpty()) {
                 AnnotationRenderer.drawGeometry(
                     fbo,
                     visibleAnnotations,
-                    annotationProjection(player, size / 2f, size / 2f, size, mapAngle),
+                    annotationProjection(
+                        player,
+                        contentSize / 2f, contentSize / 2f, contentSize, mapAngle
+                    ),
                     null
                 );
             }
@@ -239,34 +268,38 @@ public final class MinimapHudRenderer {
 
             RenderUtil.beginTexturedQuads();
             canvas.bindTexture();
-            RenderUtil.drawTexturedDisk(matrices, centerX, centerY, size / 2f);
-            RenderUtil.drawRing(matrices, centerX, centerY, size / 2f, BORDER_THICKNESS, BORDER_COLOR);
+            RenderUtil.drawTexturedDisk(matrices, centerX, centerY, contentSize / 2f);
+            drawFrame(matrices, x0, y0, size, true, minimapFrame);
             AnnotationRenderer.drawLabels(
                 draw,
                 client.textRenderer,
                 visibleAnnotations,
-                annotationProjection(player, centerX, centerY, size, mapAngle),
-                x0,
-                y0,
-                size,
-                size,
+                annotationProjection(player, centerX, centerY, contentSize, mapAngle),
+                viewport.x(),
+                viewport.y(),
+                contentSize,
+                contentSize,
                 AnnotationRenderer.ClipShape.CIRCLE
             );
         } else {
-            RenderUtil.fillRect(matrices, x0, y0, size, size, BACKGROUND_COLOR);
-            RenderUtil.enableScissor(client, x0, y0, size, size);
+            RenderUtil.fillRect(
+                matrices, viewport.x(), viewport.y(), contentSize, contentSize, BACKGROUND_COLOR
+            );
+            RenderUtil.enableScissor(
+                client, viewport.x(), viewport.y(), contentSize, contentSize
+            );
             RenderUtil.beginTexturedQuads();
             matrices.push();
             matrices.translate(centerX, centerY, 0);
             if (rotate) {
                 RenderUtil.rotateZ(matrices, mapAngle);
             }
-            drawTiles(matrices, size, rotate, player);
+            drawTiles(matrices, contentSize, rotate, player);
             matrices.pop();
-            drawPlayerTrail(matrices, player, centerX, centerY, size, mapAngle);
+            drawPlayerTrail(matrices, player, centerX, centerY, contentSize, mapAngle);
             if (!visibleAnnotations.isEmpty()) {
                 final AnnotationProjection annotationProjection = annotationProjection(
-                    player, centerX, centerY, size, mapAngle
+                    player, centerX, centerY, contentSize, mapAngle
                 );
                 AnnotationRenderer.drawGeometry(matrices, visibleAnnotations, annotationProjection, null);
                 AnnotationRenderer.drawLabels(
@@ -274,21 +307,30 @@ public final class MinimapHudRenderer {
                     client.textRenderer,
                     visibleAnnotations,
                     annotationProjection,
-                    x0,
-                    y0,
-                    size,
-                    size,
+                    viewport.x(),
+                    viewport.y(),
+                    contentSize,
+                    contentSize,
                     AnnotationRenderer.ClipShape.RECTANGLE
                 );
             }
             RenderUtil.disableScissor();
-            drawBorder(matrices, x0, y0, size);
+            drawFrame(matrices, x0, y0, size, false, minimapFrame);
         }
 
-        drawRadar(draw, centerX, centerY, size, mapAngle, player, tickDelta);
-        drawCardinals(draw, centerX, centerY, size, mapAngle);
-        drawWaypointMarkers(draw, centerX, centerY, size, mapAngle, player);
-        drawPlayerArrow(matrices, centerX, centerY, rotate ? 0f : player.yawDegrees() + 180f);
+        drawRadar(draw, centerX, centerY, contentSize, mapAngle, player, tickDelta);
+        drawCardinals(draw, centerX, centerY, contentSize, mapAngle);
+        drawWaypointMarkers(draw, centerX, centerY, contentSize, mapAngle, player);
+        PlayerMarkerRenderer.draw(
+            client,
+            matrices,
+            uiTheme,
+            config.playerMarkerStyle,
+            centerX,
+            centerY,
+            rotate ? 0f : player.yawDegrees() + 180f,
+            PLAYER_MARKER_COLOR
+        );
         drawInfoText(draw, player, x0, y0, size);
     }
 
@@ -498,15 +540,6 @@ public final class MinimapHudRenderer {
         RadarMarkerRenderer.drawAll(draw, client, config, iconManager, markers);
     }
 
-    private void drawPlayerArrow(final MatrixStack matrices, final float centerX, final float centerY, final float angle) {
-        matrices.push();
-        matrices.translate(centerX, centerY, 0);
-        RenderUtil.rotateZ(matrices, angle);
-        RenderUtil.fillTriangle(matrices, 0f, -6.5f, -5f, 5.5f, 5f, 5.5f, ARROW_OUTLINE);
-        RenderUtil.fillTriangle(matrices, 0f, -5f, -3.5f, 4f, 3.5f, 4f, ARROW_FILL);
-        matrices.pop();
-    }
-
     /** Cardinal letters sit on the (possibly rotated) compass ring but are always drawn upright. */
     private void drawCardinals(final GuiDraw draw, final float centerX, final float centerY, final int size, final float mapAngle) {
         final float radius = size / 2f - 7f;
@@ -576,8 +609,8 @@ public final class MinimapHudRenderer {
 
     /** cave-nether-layers.md-driven layer name, keyed off {@link MapLayer.Type#id()} (e.g. "confluxmap.layer.cave"). */
     private String layerIndicatorText() {
-        final MapLayer.Type type = layerSelector.current().layer().type();
-        return Texts.translatable("confluxmap.layer." + type.id()).getString();
+        final LayerSelector.Decision decision = layerSelector.current();
+        return MapLayerText.label(decision.layer(), decision.pivotY());
     }
 
     private void drawCenteredLine(final GuiDraw draw, final String text, final float centerX, final float y) {
@@ -608,6 +641,44 @@ public final class MinimapHudRenderer {
         RenderUtil.fillRect(matrices, x0, y0 + size - BORDER_THICKNESS, size, BORDER_THICKNESS, BORDER_COLOR);
         RenderUtil.fillRect(matrices, x0, y0, BORDER_THICKNESS, size, BORDER_COLOR);
         RenderUtil.fillRect(matrices, x0 + size - BORDER_THICKNESS, y0, BORDER_THICKNESS, size, BORDER_COLOR);
+    }
+
+    private void drawFrame(
+        final MatrixStack matrices,
+        final int x0,
+        final int y0,
+        final int size,
+        final boolean circle,
+        final Optional<UiResourceTheme.MinimapFrame> selected
+    ) {
+        if (selected.isEmpty()) {
+            if (circle) {
+                RenderUtil.drawRing(
+                    matrices, x0 + size / 2f, y0 + size / 2f,
+                    size / 2f, BORDER_THICKNESS, BORDER_COLOR
+                );
+            } else {
+                drawBorder(matrices, x0, y0, size);
+            }
+            return;
+        }
+
+        final UiResourceTheme.MinimapFrame frame = selected.get();
+        final UiTextureRegion texture = frame.texture();
+        RenderUtil.bindTexture(client, texture.texture());
+        if (frame.layout() == UiResourceTheme.Layout.OVERLAY) {
+            RenderUtil.drawTintedQuad(
+                matrices, x0, y0, size, size,
+                texture.u0(), texture.v0(), texture.u1(), texture.v1(), 0xFFFFFFFF
+            );
+        } else if (frame.layout() == UiResourceTheme.Layout.XAERO_CIRCLE) {
+            RenderUtil.drawTexturedRing(
+                matrices, x0 + size / 2f, y0 + size / 2f, size / 2f,
+                4f, texture.u0(), texture.v0(), texture.u1(), texture.v1(), 0xFFFFFFFF
+            );
+        } else {
+            XaeroMinimapFrameRenderer.drawSquare(matrices, x0, y0, size);
+        }
     }
 
 }

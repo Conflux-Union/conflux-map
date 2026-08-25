@@ -7,35 +7,33 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Render-thread LRU state machine for lazily baked icons. Existing values remain visible while
- * refresh work is queued, and failed bakes use the same interval as their retry backoff.
+ * Render-thread LRU state machine for lazily baked icons. Successful values stay cached until
+ * explicitly invalidated, while failed bakes use a bounded retry backoff.
  */
 public final class IconBakeCache<K, V> {
     private static final class Entry<V> {
         private V value;
-        private long bakedAt;
         private long retryAt;
         private boolean queued;
     }
 
     private final int capacity;
-    private final long refreshTicks;
+    private final long retryTicks;
     private final LinkedHashMap<K, Entry<V>> entries = new LinkedHashMap<>(16, 0.75f, true);
     private final ArrayDeque<K> pending = new ArrayDeque<>();
 
-    public IconBakeCache(final int capacity, final long refreshTicks) {
-        if (capacity < 1 || refreshTicks < 1) {
-            throw new IllegalArgumentException("capacity and refreshTicks must be positive");
+    public IconBakeCache(final int capacity, final long retryTicks) {
+        if (capacity < 1 || retryTicks < 1) {
+            throw new IllegalArgumentException("capacity and retryTicks must be positive");
         }
         this.capacity = capacity;
-        this.refreshTicks = refreshTicks;
+        this.retryTicks = retryTicks;
     }
 
     public Optional<V> request(final K key, final long now) {
         final Entry<V> entry = entries.computeIfAbsent(key, ignored -> new Entry<>());
-        final boolean stale = entry.value != null && now - entry.bakedAt >= refreshTicks;
         final boolean retryable = entry.value == null && now >= entry.retryAt;
-        if (!entry.queued && now >= entry.retryAt && (stale || retryable)) {
+        if (!entry.queued && retryable) {
             entry.queued = true;
             pending.addLast(key);
         }
@@ -64,7 +62,6 @@ public final class IconBakeCache<K, V> {
     public Optional<V> complete(final K key, final V value, final long now) {
         final Entry<V> entry = entries.computeIfAbsent(key, ignored -> new Entry<>());
         entry.value = value;
-        entry.bakedAt = now;
         entry.retryAt = 0;
         entry.queued = false;
         entries.get(key); // touch after completion
@@ -80,7 +77,7 @@ public final class IconBakeCache<K, V> {
 
     public void fail(final K key, final long now) {
         final Entry<V> entry = entries.computeIfAbsent(key, ignored -> new Entry<>());
-        entry.retryAt = now + refreshTicks;
+        entry.retryAt = now + retryTicks;
         entry.queued = false;
     }
 

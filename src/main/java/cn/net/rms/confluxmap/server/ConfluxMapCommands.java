@@ -1,11 +1,21 @@
 package cn.net.rms.confluxmap.server;
 
-import cn.net.rms.confluxmap.compat.Texts;
-import cn.net.rms.confluxmap.compat.MinecraftAccess;
+import static com.mojang.brigadier.arguments.IntegerArgumentType.getInteger;
+import static com.mojang.brigadier.arguments.IntegerArgumentType.integer;
+import static com.mojang.brigadier.arguments.StringArgumentType.getString;
+import static com.mojang.brigadier.arguments.StringArgumentType.greedyString;
+import static com.mojang.brigadier.arguments.StringArgumentType.word;
+import static net.minecraft.server.command.CommandManager.argument;
 import static net.minecraft.server.command.CommandManager.literal;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
+import cn.net.rms.confluxmap.compat.Texts;
+import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.server.shared.SharedWaypointCommandService;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointService;
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 //#if MC>=12108
 //$$ import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 //#else
@@ -33,11 +43,45 @@ final class ConfluxMapCommands {
         //#endif
             literal("confluxmap")
                 .then(literal("waypoints")
-                    .requires(source -> MinecraftAccess.hasPermission(source, 2))
+                    .then(literal("list")
+                        .executes(context -> list(companion, context.getSource(), 1))
+                        .then(argument("page", integer(1)).executes(context -> list(
+                            companion,
+                            context.getSource(),
+                            getInteger(context, "page")
+                        ))))
+                    .then(literal("add")
+                        .requires(source -> source.getEntity() instanceof ServerPlayerEntity)
+                        .then(argument("name", greedyString()).executes(context -> createHere(
+                            companion,
+                            context.getSource(),
+                            getString(context, "name")
+                        ))))
+                    .then(literal("edit")
+                        .then(argument("id", word())
+                            .then(argument("name", greedyString()).executes(context -> rename(
+                                companion,
+                                context.getSource(),
+                                getString(context, "id"),
+                                getString(context, "name")
+                            )))))
+                    .then(literal("move")
+                        .requires(source -> source.getEntity() instanceof ServerPlayerEntity)
+                        .then(argument("id", word()).executes(context -> moveHere(
+                            companion,
+                            context.getSource(),
+                            getString(context, "id")
+                        ))))
+                    .then(literal("delete")
+                        .then(argument("id", word()).executes(context -> delete(
+                            companion,
+                            context.getSource(),
+                            getString(context, "id")
+                        ))))
                     .then(literal("status").executes(context -> status(
                         companion,
                         context.getSource()
-                    )))
+                    )).requires(source -> MinecraftAccess.hasPermission(source, 2)))
                     .then(literal("enable")
                         .requires(source -> MinecraftAccess.hasPermission(source, 2))
                         .executes(context -> enable(companion, context.getSource())))
@@ -56,6 +100,172 @@ final class ConfluxMapCommands {
                         companion, context.getSource(), false
                     ))))
         ));
+    }
+
+    private static int list(
+        final ConfluxMapCompanion companion,
+        final ServerCommandSource source,
+        final int pageNumber
+    ) {
+        final SharedWaypointCommandService commands = commands(companion, source);
+        if (commands == null) {
+            return error(source, "Shared waypoints are disabled on this server.");
+        }
+        final SharedWaypointCommandService.Page page = commands.list(pageNumber);
+        if (!page.valid()) {
+            return error(source, "Page must be between 1 and " + page.totalPages() + ".");
+        }
+        MinecraftAccess.sendFeedback(source, Texts.literal(
+            "Shared waypoints (page " + page.page() + "/" + page.totalPages()
+                + ", total " + page.totalWaypoints() + ")"
+        ), false);
+        if (page.entries().isEmpty()) {
+            MinecraftAccess.sendFeedback(source, Texts.literal("No shared waypoints."), false);
+            return 1;
+        }
+        for (final SharedWaypointCommandService.Entry entry : page.entries()) {
+            MinecraftAccess.sendFeedback(source, Texts.literal(
+                "[" + entry.idPrefix() + "] " + entry.waypoint().name()
+                    + " by " + entry.waypoint().publisherName()
+                    + " @ " + entry.waypoint().dimensionId()
+                    + " (" + coordinate(entry.waypoint().x())
+                    + ", " + coordinate(entry.waypoint().y())
+                    + ", " + coordinate(entry.waypoint().z()) + ")"
+            ), false);
+            MinecraftAccess.sendFeedback(source, Texts.literal(entry.xaeroMessage()), false);
+        }
+        return 1;
+    }
+
+    private static int createHere(
+        final ConfluxMapCompanion companion,
+        final ServerCommandSource source,
+        final String name
+    ) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        final SharedWaypointCommandService commands = commands(companion, source);
+        if (commands == null) {
+            return error(source, "Shared waypoints are disabled on this server.");
+        }
+        final ServerPlayerEntity player = source.getPlayer();
+        return result(
+            source,
+            commands.createHere(actor(source), position(player), name),
+            "Shared waypoint uploaded."
+        );
+    }
+
+    private static int rename(
+        final ConfluxMapCompanion companion,
+        final ServerCommandSource source,
+        final String id,
+        final String name
+    ) {
+        final SharedWaypointCommandService commands = commands(companion, source);
+        return commands == null
+            ? error(source, "Shared waypoints are disabled on this server.")
+            : result(source, commands.rename(actor(source), id, name), "Shared waypoint renamed.");
+    }
+
+    private static int moveHere(
+        final ConfluxMapCompanion companion,
+        final ServerCommandSource source,
+        final String id
+    ) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        final SharedWaypointCommandService commands = commands(companion, source);
+        if (commands == null) {
+            return error(source, "Shared waypoints are disabled on this server.");
+        }
+        return result(
+            source,
+            commands.moveHere(actor(source), id, position(source.getPlayer())),
+            "Shared waypoint moved."
+        );
+    }
+
+    private static int delete(
+        final ConfluxMapCompanion companion,
+        final ServerCommandSource source,
+        final String id
+    ) {
+        final SharedWaypointCommandService commands = commands(companion, source);
+        return commands == null
+            ? error(source, "Shared waypoints are disabled on this server.")
+            : result(source, commands.delete(actor(source), id), "Shared waypoint deleted.");
+    }
+
+    private static SharedWaypointCommandService commands(
+        final ConfluxMapCompanion companion,
+        final ServerCommandSource source
+    ) {
+        if (!companion.sharedWaypointsEnabled()) {
+            return null;
+        }
+        return new SharedWaypointCommandService(
+            companion.sharedWaypoints(),
+            UUID::randomUUID,
+            mutation -> companion.onSharedWaypointCommandMutation(source.getServer(), mutation)
+        );
+    }
+
+    private static SharedWaypointService.Actor actor(final ServerCommandSource source) {
+        if (source.getEntity() instanceof final ServerPlayerEntity player) {
+            return new SharedWaypointService.Actor(
+                player.getUuid(), MinecraftAccess.playerName(player),
+                MinecraftAccess.hasPermission(source, 2)
+            );
+        }
+        return new SharedWaypointService.Actor(
+            UUID.nameUUIDFromBytes(
+                ("confluxmap-command:" + source.getName()).getBytes(StandardCharsets.UTF_8)
+            ),
+            source.getName(),
+            MinecraftAccess.hasPermission(source, 2)
+        );
+    }
+
+    private static SharedWaypointCommandService.Position position(final ServerPlayerEntity player) {
+        return new SharedWaypointCommandService.Position(
+            DimensionId.parse(player.getServerWorld().getRegistryKey().getValue().toString()),
+            player.getX(), player.getY(), player.getZ()
+        );
+    }
+
+    private static int result(
+        final ServerCommandSource source,
+        final SharedWaypointCommandService.Result result,
+        final String success
+    ) {
+        if (result.applied()) {
+            return feedback(source, success);
+        }
+        return error(source, switch (result.status()) {
+            case INVALID_ID -> "Invalid waypoint ID.";
+            case UNKNOWN_ID -> "Shared waypoint not found.";
+            case AMBIGUOUS_ID -> "Waypoint ID prefix is ambiguous; use the longer ID shown by list.";
+            case FORBIDDEN -> "You do not have permission to manage this shared waypoint.";
+            case REJECTED -> mutationError(result.mutation().error());
+            default -> "Shared waypoint command failed.";
+        });
+    }
+
+    private static String mutationError(final SharedWaypointService.MutationError error) {
+        return switch (error) {
+            case INVALID_REQUEST -> "The waypoint name or position is invalid.";
+            case REVISION_CONFLICT -> "The waypoint changed; run the list command and try again.";
+            case NOT_FOUND -> "Shared waypoint not found.";
+            case FORBIDDEN -> "You do not have permission to manage this shared waypoint.";
+            case WORLD_QUOTA_EXCEEDED -> "The server shared-waypoint limit has been reached.";
+            case PLAYER_QUOTA_EXCEEDED -> "Your shared-waypoint limit has been reached.";
+            case RATE_LIMITED -> "Too many waypoint changes; try again shortly.";
+            case DUPLICATE_LOCATION -> "A shared waypoint already exists at that block.";
+            case PERSISTENCE_FAILED -> "The waypoint could not be saved.";
+            case ID_GENERATION_FAILED -> "The server could not allocate a waypoint ID.";
+            default -> "Shared waypoint command failed: " + error;
+        };
+    }
+
+    private static String coordinate(final double value) {
+        return Double.toString(value);
     }
 
     private static int performance(
@@ -107,6 +317,7 @@ final class ConfluxMapCommands {
                 + ", revision=" + revision
                 + ", worldQuota=" + config.maxSharedWaypointsPerWorld
                 + ", playerQuota=" + config.maxSharedWaypointsPerPlayer
+                + ", nonOperatorManagement=" + config.allowNonOperatorSharedWaypointManagement
         ), false);
         return 1;
     }

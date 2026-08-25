@@ -27,6 +27,15 @@ final class PaperServerConfigIo {
         this.logger = logger;
     }
 
+    /** Directory holding the companion's own files, outside any world folder. */
+    Path directory() {
+        final Path parent = file.getParent();
+        if (parent == null) {
+            throw new IllegalStateException("server config path has no directory: " + file);
+        }
+        return parent;
+    }
+
     ServerConfig load() {
         if (!Files.exists(file)) {
             final ServerConfig fresh = new ServerConfig();

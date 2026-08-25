@@ -44,18 +44,9 @@ final class KeybindActionHandler {
                 configChanged = true;
                 handled = true;
                 break;
-            case ZOOM_IN:
-                if (config.minimapZoomIndex > 0) {
-                    config.minimapZoomIndex--;
-                    configChanged = true;
-                }
-                handled = true;
-                break;
-            case ZOOM_OUT:
-                if (config.minimapZoomIndex < 3) {
-                    config.minimapZoomIndex++;
-                    configChanged = true;
-                }
+            case CYCLE_ZOOM:
+                config.cycleMinimapZoom();
+                configChanged = true;
                 handled = true;
                 break;
             case OPEN_MAP:

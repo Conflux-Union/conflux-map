@@ -53,6 +53,31 @@ class ShadingPipelineRelightTest {
         }
     }
 
+    @Test
+    void gammaUsesVanillasEaseOutQuartAndSupportsTweakerooFullbrightValues() {
+        final float base = ShadingPipeline.daylightScale(0f, 0);
+        final float inverse = 1f - base;
+        final float vanillaBrightened = 1f - inverse * inverse * inverse * inverse;
+
+        assertEquals(base, ShadingPipeline.daylightScale(0f, 0, 0f));
+        assertEquals(vanillaBrightened, ShadingPipeline.daylightScale(0f, 0, 1f));
+        assertEquals(1f, ShadingPipeline.daylightScale(0f, 0, 16f));
+    }
+
+    @Test
+    void relightTracksGammaChangesWithoutRecomposingTheTile() {
+        final float[] ratios = ShadingPipeline.relightRatios(
+            0f, 0f, 0f, 1f, MapColorStyle.CONFLUX
+        );
+        for (int level = 0; level <= 15; level++) {
+            final int baked = ShadingPipeline.applyDaylight(LIT, 0f, level, 0f);
+            final int relit = ShadingPipeline.applyBrightnessMultiplier(baked, ratios[level]);
+            final int direct = ShadingPipeline.applyDaylight(LIT, 0f, level, 1f);
+            final int tolerance = (int) Math.floor(ratios[level] + 1.5f);
+            assertChannelsClose(direct, relit, tolerance, "gamma 0->1 @L" + level);
+        }
+    }
+
     private static void assertChannelsClose(final int expected, final int actual, final int tolerance, final String context) {
         assertEquals(Argb.alpha(expected), Argb.alpha(actual), "alpha " + context);
         assertTrue(

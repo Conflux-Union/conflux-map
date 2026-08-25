@@ -6,8 +6,8 @@ import java.util.UUID;
 
 /**
  * Immutable, storage-agnostic waypoint view consumed by every rendering surface.
- * The source flag is deliberately retained so UI gestures can never mistake a
- * server-owned waypoint for an editable local one.
+ * The source flag is deliberately retained so UI gestures route mutations through
+ * the correct local or server authority.
  */
 public record WaypointRenderEntry(
     UUID id,
@@ -18,8 +18,7 @@ public record WaypointRenderEntry(
     double z,
     int colorArgb,
     Waypoint.Type type,
-    Source source,
-    boolean locked
+    Source source
 ) {
     public enum Source { LOCAL, SHARED }
 
@@ -29,9 +28,6 @@ public record WaypointRenderEntry(
         Objects.requireNonNull(dimensionId, "dimensionId");
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(source, "source");
-        if (source == Source.LOCAL && locked) {
-            throw new IllegalArgumentException("local waypoint cannot be server-locked");
-        }
     }
 
     public boolean local() {

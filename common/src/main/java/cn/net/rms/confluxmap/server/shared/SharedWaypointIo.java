@@ -28,10 +28,10 @@ import org.apache.logging.log4j.Logger;
 
 /**
  * Schema-controlled JSON persistence at {@code <worldRoot>/confluxmap/shared_waypoints.json}.
- * Corrupt schema-1 files are quarantined; future schemas are preserved and explicitly rejected.
+ * Corrupt files are quarantined; future schemas are preserved and explicitly rejected.
  */
 public final class SharedWaypointIo implements SharedWaypointPersistence {
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
 
     private static final long MAX_FILE_BYTES = 8L * 1024L * 1024L;
     private static final int MAX_PERSISTED_WAYPOINTS = 512;
@@ -55,6 +55,7 @@ public final class SharedWaypointIo implements SharedWaypointPersistence {
     private static final class FileShape {
         int schemaVersion;
         long revision;
+        String ownerInstanceId;
         List<Entry> waypoints;
     }
 
@@ -69,19 +70,38 @@ public final class SharedWaypointIo implements SharedWaypointPersistence {
         double z;
         int colorArgb;
         String type;
-        boolean locked;
         long createdAtEpochMs;
         long revision;
     }
 
     private final Path file;
+    private final String ownerInstanceId;
     private final Logger logger;
 
-    /** {@code worldRoot} is the server's {@code WorldSavePath.ROOT}. */
+    /**
+     * {@code worldRoot} is the server's {@code WorldSavePath.ROOT}. Without an owning instance id
+     * an inherited file cannot be recognized, so the copy check stays off; production callers pass
+     * one through the other constructor.
+     */
     public SharedWaypointIo(final Path worldRoot, final Logger logger) {
+        this(worldRoot, null, logger);
+    }
+
+    /**
+     * @param ownerInstanceId identity of the server this file belongs to. It lives in the world
+     *                        folder, so syncing a world to a mirror server copies it; a file
+     *                        stamped with a different owner is that other server's and is set
+     *                        aside rather than served.
+     */
+    public SharedWaypointIo(
+        final Path worldRoot,
+        final String ownerInstanceId,
+        final Logger logger
+    ) {
         this.file = Objects.requireNonNull(worldRoot, "worldRoot")
             .resolve("confluxmap")
             .resolve("shared_waypoints.json");
+        this.ownerInstanceId = ownerInstanceId;
         this.logger = Objects.requireNonNull(logger, "logger");
     }
 
@@ -113,11 +133,22 @@ public final class SharedWaypointIo implements SharedWaypointPersistence {
             if (schemaVersion > SCHEMA_VERSION) {
                 throw new UnsupportedSchemaVersionException(schemaVersion);
             }
-            if (schemaVersion != SCHEMA_VERSION) {
+            if (schemaVersion < 1) {
                 throw new JsonParseException("unsupported shared-waypoint schema " + schemaVersion);
             }
             final FileShape shape = GSON.fromJson(root, FileShape.class);
-            return fromShape(shape);
+            if (shape != null && belongsToAnotherServer(shape.ownerInstanceId)) {
+                return setAsideInheritedCopy(shape.ownerInstanceId);
+            }
+            final SharedWaypointStore.Snapshot snapshot = fromShape(shape);
+            if (schemaVersion < SCHEMA_VERSION) {
+                logger.info(
+                    "Migrating shared waypoints at {} from schema {} to {}",
+                    file, schemaVersion, SCHEMA_VERSION
+                );
+                save(snapshot);
+            }
+            return snapshot;
         } catch (final UnsupportedSchemaVersionException e) {
             throw e;
         } catch (final RuntimeException e) {
@@ -210,20 +241,21 @@ public final class SharedWaypointIo implements SharedWaypointPersistence {
             return new SharedWaypoint(
                 UUID.fromString(entry.id), UUID.fromString(entry.publisherId), entry.publisherName, entry.name,
                 DimensionId.parse(entry.dimensionId), entry.x, entry.y, entry.z, entry.colorArgb,
-                Waypoint.Type.valueOf(entry.type), entry.locked, entry.createdAtEpochMs, entry.revision
+                Waypoint.Type.valueOf(entry.type), entry.createdAtEpochMs, entry.revision
             );
         } catch (final IllegalArgumentException e) {
             throw new JsonParseException("shared waypoint contains an invalid identifier or type", e);
         }
     }
 
-    private static FileShape toShape(final SharedWaypointStore.Snapshot snapshot) throws IOException {
+    private FileShape toShape(final SharedWaypointStore.Snapshot snapshot) throws IOException {
         if (snapshot.waypoints().size() > MAX_PERSISTED_WAYPOINTS) {
             throw new IOException("refusing to persist more than " + MAX_PERSISTED_WAYPOINTS + " shared waypoints");
         }
         final FileShape shape = new FileShape();
         shape.schemaVersion = SCHEMA_VERSION;
         shape.revision = snapshot.revision();
+        shape.ownerInstanceId = ownerInstanceId;
         shape.waypoints = new ArrayList<>(snapshot.waypoints().size());
         final Set<UUID> ids = new HashSet<>();
         for (final SharedWaypoint waypoint : snapshot.waypoints()) {
@@ -258,7 +290,6 @@ public final class SharedWaypointIo implements SharedWaypointPersistence {
         entry.z = waypoint.z();
         entry.colorArgb = waypoint.colorArgb();
         entry.type = waypoint.type().name();
-        entry.locked = waypoint.locked();
         entry.createdAtEpochMs = waypoint.createdAtEpochMs();
         entry.revision = waypoint.revision();
         return entry;
@@ -293,6 +324,33 @@ public final class SharedWaypointIo implements SharedWaypointPersistence {
             );
         }
         logger.warn("Shared waypoint file {} was quarantined; starting empty", file);
+        return emptySnapshot();
+    }
+
+    /**
+     * A file with no recorded owner predates instance ids and is claimed by whichever server opens
+     * it first, so only a mismatch counts as another server's file.
+     */
+    private boolean belongsToAnotherServer(final String fileOwnerInstanceId) {
+        return ownerInstanceId != null
+            && fileOwnerInstanceId != null
+            && !ownerInstanceId.equals(fileOwnerInstanceId);
+    }
+
+    /**
+     * Moves the inherited file aside and starts empty. The copy is kept under a fixed name and
+     * replaced rather than accumulated: every sync brings the origin's file back, and the origin
+     * still holds the authoritative version of what is being replaced.
+     */
+    private SharedWaypointStore.Snapshot setAsideInheritedCopy(final String fileOwnerInstanceId)
+        throws IOException {
+        final Path aside = file.resolveSibling(file.getFileName() + ".bak");
+        Files.move(file, aside, StandardCopyOption.REPLACE_EXISTING);
+        logger.warn(
+            "Shared waypoints at {} belong to server {}, not {}; the world folder looks copied. "
+                + "Set aside as {} and starting an empty list.",
+            file, fileOwnerInstanceId, ownerInstanceId, aside.getFileName()
+        );
         return emptySnapshot();
     }
 

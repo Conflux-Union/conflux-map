@@ -16,27 +16,24 @@ final class WaypointRenderCatalogTest {
     void mergesVisibleLocalAndSharedEntriesWithoutLosingOwnership() {
         final Waypoint local = local("Home", true);
         final Waypoint hidden = local("Hidden", false);
-        final SharedWaypoint shared = shared("Village", false);
-        final SharedWaypoint locked = shared("Spawn", true);
+        final SharedWaypoint shared = shared("Village");
+        final SharedWaypoint spawn = shared("Spawn");
 
         final List<WaypointRenderEntry> entries = WaypointRenderCatalog.merge(
-            List.of(local, hidden), List.of(shared, locked), true, true
+            List.of(local, hidden), List.of(shared, spawn), true, true
         );
 
         assertEquals(3, entries.size());
         assertTrue(entries.get(0).local());
-        assertFalse(entries.get(0).locked());
         assertTrue(entries.get(1).shared());
-        assertFalse(entries.get(1).locked());
         assertTrue(entries.get(2).shared());
-        assertTrue(entries.get(2).locked());
         assertThrows(UnsupportedOperationException.class, () -> entries.clear());
     }
 
     @Test
     void appliesLocalAndSharedMasterVisibilityIndependently() {
         final Waypoint local = local("Home", true);
-        final SharedWaypoint shared = shared("Village", false);
+        final SharedWaypoint shared = shared("Village");
 
         final List<WaypointRenderEntry> localOnly = WaypointRenderCatalog.merge(
             List.of(local), List.of(shared), true, false
@@ -67,7 +64,7 @@ final class WaypointRenderCatalogTest {
             List.of(local("Home", true)), List.of(), true, true
         ).get(0);
         final WaypointRenderEntry nether = WaypointRenderCatalog.merge(
-            List.of(), List.of(shared("Fortress", false)), true, true
+            List.of(), List.of(shared("Fortress")), true, true
         ).get(0);
 
         final List<WaypointRenderEntry> entries = WaypointRenderCatalog.visibleFrom(
@@ -85,7 +82,7 @@ final class WaypointRenderCatalogTest {
             List.of(local("Home", true)), List.of(), true, true
         ).get(0);
         final WaypointRenderEntry nether = WaypointRenderCatalog.merge(
-            List.of(), List.of(shared("Fortress", false)), true, true
+            List.of(), List.of(shared("Fortress")), true, true
         ).get(0);
 
         final List<WaypointRenderEntry> entries = WaypointRenderCatalog.visibleFrom(
@@ -105,7 +102,7 @@ final class WaypointRenderCatalogTest {
     void confinesEndEntriesToTheEndEvenWithCrossDimensionDisplayOn() {
         final WaypointRenderEntry end = new WaypointRenderEntry(
             UUID.randomUUID(), "Island", DimensionId.END, 100.0, 64.0, 200.0,
-            0xFF3366CC, Waypoint.Type.NORMAL, WaypointRenderEntry.Source.LOCAL, false
+            0xFF3366CC, Waypoint.Type.NORMAL, WaypointRenderEntry.Source.LOCAL
         );
 
         assertTrue(WaypointRenderCatalog.visibleFrom(List.of(end), DimensionId.OVERWORLD, true).isEmpty());
@@ -119,10 +116,10 @@ final class WaypointRenderCatalogTest {
         );
     }
 
-    private static SharedWaypoint shared(final String name, final boolean locked) {
+    private static SharedWaypoint shared(final String name) {
         return new SharedWaypoint(
             UUID.randomUUID(), UUID.randomUUID(), "Publisher", name, DimensionId.NETHER,
-            3.0, 70.0, 4.0, 0xFF3366CC, Waypoint.Type.NORMAL, locked, 20L, 1L
+            3.0, 70.0, 4.0, 0xFF3366CC, Waypoint.Type.NORMAL, 20L, 1L
         );
     }
 }

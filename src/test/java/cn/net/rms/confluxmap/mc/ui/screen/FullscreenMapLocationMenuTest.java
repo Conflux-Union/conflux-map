@@ -12,12 +12,21 @@ import org.junit.jupiter.api.Test;
 
 class FullscreenMapLocationMenuTest {
     @Test
-    void exposesTheRequestedActionsInDisplayOrder() {
+    void keepsTheExistingDisplayOrderWhenTeleportIsUnavailable() {
         assertEquals(List.of(
             FullscreenMapLocationMenu.Action.SET_WAYPOINT,
             FullscreenMapLocationMenu.Action.SHARE_LOCATION,
             FullscreenMapLocationMenu.Action.TELEPORT
-        ), FullscreenMapLocationMenu.actions());
+        ), FullscreenMapLocationMenu.actions(false));
+    }
+
+    @Test
+    void putsTeleportFirstWhenItIsAvailable() {
+        assertEquals(List.of(
+            FullscreenMapLocationMenu.Action.TELEPORT,
+            FullscreenMapLocationMenu.Action.SET_WAYPOINT,
+            FullscreenMapLocationMenu.Action.SHARE_LOCATION
+        ), FullscreenMapLocationMenu.actions(true));
     }
 
     @Test

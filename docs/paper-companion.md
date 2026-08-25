@@ -74,8 +74,18 @@ for the plugin lifetime so a late world load cannot change an index already sent
 
 - `/confluxmap performance` shows the current player's completed correction-sync averages.
 - `/confluxmap webmap hide|show` controls whether that player appears on the optional public radar.
+- `/confluxmap waypoints list [page]` lists public waypoints. Each entry includes a standard Xaero
+  share message, so Xaero's Minimap users can add it from chat without installing Conflux Map.
+- `/confluxmap waypoints add <name>` publishes the player's current position.
+- `/confluxmap waypoints edit <id> <name>` renames a public waypoint.
+- `/confluxmap waypoints move <id>` moves a public waypoint to the player's current position.
+- `/confluxmap waypoints delete <id>` deletes a public waypoint.
 - `/confluxmap waypoints status` shows the effective shared-waypoint state and quotas.
 - `/confluxmap waypoints enable` loads storage, atomically persists the setting, then advertises it.
 - `/confluxmap waypoints disable` blocks mutations immediately and persists the setting.
 
-Waypoint administration requires `confluxmap.admin`, granted to operators by default.
+Listing is available to every player. By default, uploading, editing, moving, and deleting require
+`confluxmap.admin`, granted to operators by default. When
+`allowNonOperatorSharedWaypointManagement` is enabled, ordinary players may use those commands only
+for waypoints they published; operators may manage every waypoint. Feature toggles and status
+inspection always require `confluxmap.admin`. The accepted short ID is shown by `waypoints list`.

@@ -20,7 +20,6 @@ public final class WaypointMarkerRenderer {
     private static final int WHITE_TEXT = 0xFFFFFFFF;
     private static final int LIGHT_BACKGROUND_LUMINANCE = 186;
     private static final int SHARED_OUTLINE = 0xFF55DDE0;
-    private static final int LOCKED_OUTLINE = 0xFFFFD166;
     private static final int HEIGHT_BADGE_OUTLINE = 0xFF101010;
     private static final int HEIGHT_BADGE_FILL = 0xFFFFFFFF;
     /** 50% white overlay used to brighten a hovered marker's fill color (fullscreen map only). */
@@ -70,7 +69,6 @@ public final class WaypointMarkerRenderer {
             withAlpha(textColorFor(fill), alpha)
         );
         matrices.pop();
-        drawLockIndicator(matrices, waypoint, x, y, halfSize, alpha);
         drawHeightBadge(matrices, verticalRelation, x, y, halfSize, alpha);
     }
 
@@ -111,29 +109,7 @@ public final class WaypointMarkerRenderer {
         if (!waypoint.shared()) {
             return OUTER_CONTRAST;
         }
-        return waypoint.locked() ? LOCKED_OUTLINE : SHARED_OUTLINE;
-    }
-
-    /** Tiny upright padlock tag; the colored outline alone identifies an unlocked shared point. */
-    private static void drawLockIndicator(
-        final MatrixStack matrices,
-        final WaypointRenderEntry waypoint,
-        final float x,
-        final float y,
-        final float halfSize,
-        final float alpha
-    ) {
-        if (!waypoint.locked()) {
-            return;
-        }
-        final float left = x + halfSize - 1f;
-        final float top = y - halfSize - 2f;
-        final int outline = withAlpha(OUTER_CONTRAST, alpha);
-        final int lock = withAlpha(LOCKED_OUTLINE, alpha);
-        RenderUtil.fillRect(matrices, left, top + 2f, 5f, 4f, outline);
-        RenderUtil.fillRect(matrices, left + 1f, top, 3f, 4f, outline);
-        RenderUtil.fillRect(matrices, left + 1f, top + 3f, 3f, 2f, lock);
-        RenderUtil.fillRect(matrices, left + 2f, top + 1f, 1f, 2f, lock);
+        return SHARED_OUTLINE;
     }
 
     /** Two-tone geometry stays readable over every user-selected waypoint color. */

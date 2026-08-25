@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.color.DaylightModel;
+import cn.net.rms.confluxmap.core.color.MapColorStyle;
+import cn.net.rms.confluxmap.core.color.XaeroMapStyle;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
 import cn.net.rms.confluxmap.core.model.DimensionId;
@@ -21,6 +23,64 @@ import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 
 class TileServiceTerrainDetailTest {
+    @Test
+    void xaeroStyleUsesItsIndependentColorPlanesInsteadOfConfluxDetail() throws InterruptedException {
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final MapWorldService worlds = new MapWorldService();
+            final SessionGuard.Session session = new SessionGuard.Session(
+                1L, new WorldIdentity("local", "xaero-plane"), DimensionId.OVERWORLD
+            );
+            worlds.switchSession(session);
+            worlds.current().put(MapLayer.SURFACE, dualColorLandSnapshot(), SampleSource.REAL_LIVE);
+            final ConfluxConfig config = new ConfluxConfig();
+            config.dynamicLighting = false;
+            config.mapColorStyle = MapColorStyle.XAERO;
+            final TileService tiles = new TileService(worlds, executors, config, new DaylightModel());
+            final TileKey key = new TileKey(
+                session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), 0, 0, 0
+            );
+
+            tiles.requestTile(key);
+            final int actual = drainOne(tiles, key).argbPixels()[5 * RegionColumns.SIZE + 5];
+            final int expected = XaeroMapStyle.applyTerrain(
+                0xFF204060, 63, 63, 63, 1, true, XaeroMapStyle.Shadow.OVERWORLD
+            );
+
+            assertEquals(expected, actual);
+        } finally {
+            executors.shutdown(1000L);
+        }
+    }
+
+    @Test
+    void xaeroStyleUsesXaerosFlatTerrainRendererForCapturedTiles() throws InterruptedException {
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final MapWorldService worlds = new MapWorldService();
+            final SessionGuard.Session session = new SessionGuard.Session(
+                1L, new WorldIdentity("local", "xaero"), DimensionId.OVERWORLD
+            );
+            worlds.switchSession(session);
+            worlds.current().put(MapLayer.SURFACE, landSnapshot(), SampleSource.REAL_LIVE);
+            final ConfluxConfig config = new ConfluxConfig();
+            config.dynamicLighting = false;
+            config.mapColorStyle = MapColorStyle.XAERO;
+            final TileService tiles = new TileService(worlds, executors, config, new DaylightModel());
+            final TileKey key = new TileKey(
+                session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), 0, 0, 0
+            );
+
+            tiles.requestTile(key);
+            final TileUpdate update = drainOne(tiles, key);
+
+            assertEquals(0xFF896A4A, update.argbPixels()[5 * RegionColumns.SIZE + 5]);
+            assertEquals(MapColorStyle.XAERO, update.relight().style());
+        } finally {
+            executors.shutdown(1000L);
+        }
+    }
+
     @Test
     void capturedWaterDarkensItsFloorByRecordedDepth() throws InterruptedException {
         final MapExecutors executors = new MapExecutors();
@@ -67,6 +127,43 @@ class TileServiceTerrainDetailTest {
         return new ChunkSnapshot(
             0, 0, 1L, surfaceY, new String[ChunkSnapshot.COLUMNS], fluidDepth,
             baseArgb, tintArgb, overlayArgb, kind, new byte[ChunkSnapshot.COLUMNS]
+        );
+    }
+
+    private static ChunkSnapshot landSnapshot() {
+        final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
+        Arrays.fill(surfaceY, (short) 63);
+        final int[] baseArgb = new int[ChunkSnapshot.COLUMNS];
+        Arrays.fill(baseArgb, 0xFF806040);
+        final int[] tintArgb = new int[ChunkSnapshot.COLUMNS];
+        Arrays.fill(tintArgb, 0xFFFFFFFF);
+        final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
+        Arrays.fill(kind, (byte) SurfaceKind.LAND.ordinal());
+        return new ChunkSnapshot(
+            0, 0, 1L, surfaceY, new String[ChunkSnapshot.COLUMNS],
+            new byte[ChunkSnapshot.COLUMNS], baseArgb, tintArgb,
+            new int[ChunkSnapshot.COLUMNS], kind, new byte[ChunkSnapshot.COLUMNS]
+        );
+    }
+
+    private static ChunkSnapshot dualColorLandSnapshot() {
+        final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
+        Arrays.fill(surfaceY, (short) 63);
+        final int[] baseArgb = new int[ChunkSnapshot.COLUMNS];
+        Arrays.fill(baseArgb, 0xFFA0B0C0);
+        final int[] xaeroBaseArgb = new int[ChunkSnapshot.COLUMNS];
+        Arrays.fill(xaeroBaseArgb, 0xFF204060);
+        final int[] tintArgb = new int[ChunkSnapshot.COLUMNS];
+        Arrays.fill(tintArgb, 0xFFFFFFFF);
+        final int[] overlayArgb = new int[ChunkSnapshot.COLUMNS];
+        Arrays.fill(overlayArgb, 0xFF00FF00);
+        final int[] xaeroOverlayArgb = new int[ChunkSnapshot.COLUMNS];
+        final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
+        Arrays.fill(kind, (byte) SurfaceKind.LAND.ordinal());
+        return new ChunkSnapshot(
+            0, 0, 1L, Long.MIN_VALUE, surfaceY, new String[ChunkSnapshot.COLUMNS],
+            new byte[ChunkSnapshot.COLUMNS], baseArgb, xaeroBaseArgb, tintArgb,
+            overlayArgb, xaeroOverlayArgb, kind, new byte[ChunkSnapshot.COLUMNS]
         );
     }
 

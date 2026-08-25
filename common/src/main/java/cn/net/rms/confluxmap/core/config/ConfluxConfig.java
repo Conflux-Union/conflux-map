@@ -1,8 +1,9 @@
 package cn.net.rms.confluxmap.core.config;
 
-import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
+import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.loadstate.ChunkLoadDetailMode;
 import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
+import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.core.survey.SurveyReminderSchedule;
 import cn.net.rms.confluxmap.core.util.TileMath;
 
@@ -12,8 +13,10 @@ import cn.net.rms.confluxmap.core.util.TileMath;
  * {@link #SCHEMA_VERSION} and adding a migration in {@link ConfigIo}.
  */
 public final class ConfluxConfig {
-    public static final int SCHEMA_VERSION = 6;
+    public static final int SCHEMA_VERSION = 7;
+    public static final String DEFAULT_TELEPORT_COMMAND = "tp {x} {y} {z}";
     public static final int DEFAULT_MINIMAP_SIZE = 90;
+    public static final int MINIMAP_ZOOM_LEVEL_COUNT = 4;
     public static final int MIN_ANNOTATION_ERASER_SIZE = 4;
     public static final int MAX_ANNOTATION_ERASER_SIZE = 64;
     public static final int DEFAULT_ANNOTATION_ERASER_SIZE = 16;
@@ -29,6 +32,10 @@ public final class ConfluxConfig {
     public static final int MIN_PLAYER_TRAIL_DOT_SIZE = 1;
     public static final int MAX_PLAYER_TRAIL_DOT_SIZE = 8;
     public static final int DEFAULT_PLAYER_TRAIL_DOT_SIZE = 3;
+    /** Mirrors the 300% upper bound: one third of default size. */
+    public static final int MIN_WAYPOINT_LABEL_SCALE_PERCENT = 33;
+    public static final int MAX_WAYPOINT_LABEL_SCALE_PERCENT = 300;
+    public static final int DEFAULT_WAYPOINT_LABEL_SCALE_PERCENT = 100;
     /** Always hide structure icons at the furthest fullscreen-map zoom. */
     public static final double MIN_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM = 0.0625;
     /** Largest fullscreen-map zoom multiplier the renderer can display. */
@@ -48,13 +55,15 @@ public final class ConfluxConfig {
 
     public enum Shape { SQUARE, CIRCLE }
 
+    public enum PlayerMarkerStyle { TRADITIONAL, MODERN }
+
     /**
      * Manual layer override cycled by {@code key.confluxmap.cycle_layer}; see
      * {@code mc.world.LayerSelector} for how each dimension interprets these
-     * (e.g. FORCE_UNDERGROUND means CAVE_AUTO in the Overworld, NETHER_CEILING
-     * in the Nether, and is a no-op in the End).
+     * (e.g. FORCE_UNDERGROUND means CAVE_AUTO in the Overworld and NETHER_CEILING
+     * in the Nether, while FORCE_SLICE selects that dimension's configured fixed Y).
      */
-    public enum LayerOverride { AUTO, FORCE_SURFACE, FORCE_UNDERGROUND }
+    public enum LayerOverride { AUTO, FORCE_SURFACE, FORCE_UNDERGROUND, FORCE_SLICE }
 
     public boolean minimapEnabled = true;
     /** Legacy schema-v1 field. Null after migration and omitted from newly written JSON. */
@@ -67,6 +76,8 @@ public final class ConfluxConfig {
     /** Temporarily moves only the minimap to keep it clear of vanilla HUD elements. */
     public boolean minimapHudAvoidance = true;
     public Shape minimapShape = Shape.SQUARE;
+    /** Code-drawn player marker used on both map surfaces when no resource pack overrides it. */
+    public PlayerMarkerStyle playerMarkerStyle = PlayerMarkerStyle.MODERN;
     public int minimapSize = DEFAULT_MINIMAP_SIZE;
     public boolean minimapRotate = true;
     public int minimapZoomIndex = 1;
@@ -96,15 +107,17 @@ public final class ConfluxConfig {
     public LayerOverride layerOverride = LayerOverride.AUTO;
     /** Minimap/fullscreen-map info line: a small text label naming the currently active layer. */
     public boolean showLayerIndicator = true;
-    /** Fixed-band Y for {@code MapLayer.CAVE_SLICE}; not yet reachable via the cycle keybind (UI deferred). */
+    /** Fixed-band Y for the Overworld fixed-height preset. */
     public int caveSliceY = 32;
-    /** Fixed-band Y for {@code MapLayer.NETHER_SLICE}; not yet reachable via the cycle keybind (UI deferred). */
+    /** Fixed-band Y for the Nether below-bedrock preset. */
     public int netherSliceY = 64;
     /**
      * VoxelMap-style day/night + block-light darkening on the SURFACE layer only (cave/nether/end
      * layers always keep their baked light). Off = exactly today's fixed-brightness rendering.
      */
     public boolean dynamicLighting = true;
+    /** Keeps the historical Conflux renderer by default; XAERO is an explicit presentation choice. */
+    public MapColorStyle mapColorStyle = MapColorStyle.CONFLUX;
 
     public int snapshotBudgetPerTick = 8;
     public int gpuTileCacheLimit = 256;
@@ -143,6 +156,13 @@ public final class ConfluxConfig {
     public boolean waypointLabelsEnabled = true;
     /** Opacity percentage for the waypoint icon in the in-world label; map icons are unchanged. */
     public int waypointIconOpacity = DEFAULT_WAYPOINT_ICON_OPACITY;
+    /** Command template used by the fullscreen map's teleport action. */
+    public String teleportCommand = DEFAULT_TELEPORT_COMMAND;
+    /**
+     * Apparent size of the in-world waypoint label, as a percentage of the distance-compensated
+     * default. Scales the icon plate, background panel, and both text lines together.
+     */
+    public int waypointLabelScalePercent = DEFAULT_WAYPOINT_LABEL_SCALE_PERCENT;
 
     /** Master toggle for the seed-predicted fullscreen-map underlay. */
     public boolean predictionEnabled = true;
@@ -190,6 +210,7 @@ public final class ConfluxConfig {
         c.minimapPositionY = minimapPositionY;
         c.minimapHudAvoidance = minimapHudAvoidance;
         c.minimapShape = minimapShape;
+        c.playerMarkerStyle = playerMarkerStyle;
         c.minimapSize = minimapSize;
         c.minimapRotate = minimapRotate;
         c.minimapZoomIndex = minimapZoomIndex;
@@ -208,6 +229,7 @@ public final class ConfluxConfig {
         c.caveSliceY = caveSliceY;
         c.netherSliceY = netherSliceY;
         c.dynamicLighting = dynamicLighting;
+        c.mapColorStyle = mapColorStyle;
         c.snapshotBudgetPerTick = snapshotBudgetPerTick;
         c.gpuTileCacheLimit = gpuTileCacheLimit;
         c.radarEnabled = radarEnabled;
@@ -228,6 +250,8 @@ public final class ConfluxConfig {
         c.waypointBeamsEnabled = waypointBeamsEnabled;
         c.waypointLabelsEnabled = waypointLabelsEnabled;
         c.waypointIconOpacity = waypointIconOpacity;
+        c.teleportCommand = teleportCommand;
+        c.waypointLabelScalePercent = waypointLabelScalePercent;
         c.predictionEnabled = predictionEnabled;
         c.predictionNetworkSync = predictionNetworkSync;
         c.predictionViewMode = predictionViewMode;
@@ -247,6 +271,11 @@ public final class ConfluxConfig {
         return c;
     }
 
+    /** Advances to the next minimap zoom level, wrapping after the final level. */
+    public void cycleMinimapZoom() {
+        minimapZoomIndex = (minimapZoomIndex + 1) % MINIMAP_ZOOM_LEVEL_COUNT;
+    }
+
     /** Clamp out-of-range values loaded from a hand-edited file. */
     public void normalize() {
         if (schemaVersion < 2) {
@@ -261,6 +290,9 @@ public final class ConfluxConfig {
         if (minimapShape == null) {
             minimapShape = Shape.SQUARE;
         }
+        if (playerMarkerStyle == null) {
+            playerMarkerStyle = PlayerMarkerStyle.MODERN;
+        }
         if (layerOverride == null) {
             layerOverride = LayerOverride.AUTO;
         }
@@ -269,6 +301,9 @@ public final class ConfluxConfig {
         }
         if (chunkLoadDetailMode == null) {
             chunkLoadDetailMode = ChunkLoadDetailMode.BANDS;
+        }
+        if (mapColorStyle == null) {
+            mapColorStyle = MapColorStyle.CONFLUX;
         }
         if (schemaVersion < 3 && playerTrailDurationMinutes != null) {
             final long legacyDurationSeconds = playerTrailDurationMinutes.longValue() * 60L;
@@ -279,7 +314,7 @@ public final class ConfluxConfig {
         }
         playerTrailDurationMinutes = null;
         minimapSize = clamp(minimapSize, 64, 256);
-        minimapZoomIndex = clamp(minimapZoomIndex, 0, 3);
+        minimapZoomIndex = clamp(minimapZoomIndex, 0, MINIMAP_ZOOM_LEVEL_COUNT - 1);
         playerTrailDurationSeconds = clamp(
             playerTrailDurationSeconds,
             MIN_PLAYER_TRAIL_DURATION_SECONDS,
@@ -300,6 +335,13 @@ public final class ConfluxConfig {
         radarMaxEntities = clamp(radarMaxEntities, 1, 500);
         radarIconSize = clamp(radarIconSize, MIN_RADAR_ICON_SIZE, MAX_RADAR_ICON_SIZE);
         waypointRenderDistance = clamp(waypointRenderDistance, 0, 100_000);
+        waypointLabelScalePercent = clamp(
+            waypointLabelScalePercent,
+            MIN_WAYPOINT_LABEL_SCALE_PERCENT, MAX_WAYPOINT_LABEL_SCALE_PERCENT
+        );
+        if (!TeleportCommandTemplate.valid(teleportCommand)) {
+            teleportCommand = DEFAULT_TELEPORT_COMMAND;
+        }
         deathPointsKept = clamp(deathPointsKept, 0, 50);
         waypointIconOpacity = clamp(
             waypointIconOpacity, MIN_WAYPOINT_ICON_OPACITY, MAX_WAYPOINT_ICON_OPACITY

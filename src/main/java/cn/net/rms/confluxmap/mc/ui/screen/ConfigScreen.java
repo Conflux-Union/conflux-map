@@ -7,6 +7,7 @@ import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
@@ -14,6 +15,7 @@ import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.predict.ManualSeedService;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.mc.ui.UiResourceTheme;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -95,6 +97,22 @@ public final class ConfigScreen extends ConfluxScreen {
     }
 
     enum PredictionControl { UNDERLAY, NETWORK_SYNC, STRUCTURES }
+
+    record PlayerMarkerSettingsAccess(boolean resourceOverride) {
+        static PlayerMarkerSettingsAccess from(final boolean resourceOverride) {
+            return new PlayerMarkerSettingsAccess(resourceOverride);
+        }
+
+        boolean controlsActive() {
+            return !resourceOverride;
+        }
+
+        String tooltipKey() {
+            return resourceOverride
+                ? "confluxmap.config.player_marker.disabled_by_resource_pack"
+                : null;
+        }
+    }
 
     record PredictionSettingsAccess(
         boolean underlayDisabledByServer,
@@ -178,6 +196,7 @@ public final class ConfigScreen extends ConfluxScreen {
     private final GameBridge gameBridge;
     private final PredictionState predictionState;
     private final ManualSeedService manualSeedService;
+    private final UiResourceTheme uiTheme;
     private final List<IntSliderInput> sliderInputs = new ArrayList<>();
     private final List<DecimalSliderInput> decimalSliderInputs = new ArrayList<>();
 
@@ -189,6 +208,8 @@ public final class ConfigScreen extends ConfluxScreen {
     private SharedWaypointAvailability sharedAvailability;
     private RadarSettingsAccess radarAccess = RadarSettingsAccess.ALLOWED;
     private PredictionSettingsAccess predictionAccess;
+    private PlayerMarkerSettingsAccess playerMarkerAccess =
+        PlayerMarkerSettingsAccess.from(false);
     private boolean manualSeedAvailable;
 
     public ConfigScreen() {
@@ -206,6 +227,7 @@ public final class ConfigScreen extends ConfluxScreen {
         this.gameBridge = app.gameBridge();
         this.predictionState = app.predictionState();
         this.manualSeedService = app.manualSeedService();
+        this.uiTheme = app.uiResourceTheme();
     }
 
     /** Keep the world (and this session's capture pipeline) running while the screen is open. */
@@ -254,6 +276,13 @@ public final class ConfigScreen extends ConfluxScreen {
             predictionAccess = currentPredictionAccess;
             manualSeedAvailable = currentManualSeedAvailable;
             if (category == Category.PREDICTION) {
+                rebuild();
+            }
+        }
+        final PlayerMarkerSettingsAccess currentPlayerMarkerAccess = playerMarkerSettingsAccess();
+        if (!currentPlayerMarkerAccess.equals(playerMarkerAccess)) {
+            playerMarkerAccess = currentPlayerMarkerAccess;
+            if (category == Category.MINIMAP) {
                 rebuild();
             }
         }
@@ -329,14 +358,26 @@ public final class ConfigScreen extends ConfluxScreen {
         sharedAvailability = sharedWaypoints.availability();
         radarAccess = RadarSettingsAccess.from(companionSession.entityRadarAllowed());
         predictionAccess = predictionSettingsAccess();
+        playerMarkerAccess = playerMarkerSettingsAccess();
         manualSeedAvailable = manualSeedService.available();
         sliderInputs.clear();
         decimalSliderInputs.clear();
         clearChildren();
         addTabs();
         addRows();
+        final int bottomButtonWidth = Math.min(140, Math.max(80, (width - MARGIN * 2 - TAB_GAP) / 2));
+        final int bottomButtonsWidth = bottomButtonWidth * 2 + TAB_GAP;
+        final int bottomButtonsX = width / 2 - bottomButtonsWidth / 2;
         addDrawableChild(Widgets.button(
-            width / 2 - 50, height - BOTTOM_MARGIN + 4, 100, 20,
+            bottomButtonsX, height - BOTTOM_MARGIN + 4, bottomButtonWidth, 20,
+            Texts.translatable("confluxmap.screen.config.hotkeys"),
+            b -> ConfluxMapClient.get().keybinds().openHotkeySettings(this)
+        ));
+        addDrawableChild(Widgets.button(
+            bottomButtonsX + bottomButtonWidth + TAB_GAP,
+            height - BOTTOM_MARGIN + 4,
+            bottomButtonWidth,
+            20,
             Texts.translatable("confluxmap.screen.waypoint.done"), b -> onClose()
         ));
     }
@@ -395,6 +436,18 @@ public final class ConfigScreen extends ConfluxScreen {
                     y, "confluxmap.config.minimap.shape", ConfluxConfig.Shape.values(),
                     () -> config.minimapShape, v -> config.minimapShape = v, ConfigScreen::shapeKey
                 );
+                y = addEnumRow(
+                    y,
+                    "confluxmap.config.player_marker.style",
+                    ConfluxConfig.PlayerMarkerStyle.values(),
+                    () -> config.playerMarkerStyle,
+                    v -> config.playerMarkerStyle = v,
+                    style -> playerMarkerAccess.resourceOverride()
+                        ? "confluxmap.value.player_marker.resource_pack"
+                        : playerMarkerStyleKey(style),
+                    playerMarkerAccess.controlsActive(),
+                    playerMarkerAccess.tooltipKey()
+                );
                 y = addIntSliderRow(
                     y, "confluxmap.config.minimap.size", 64, 256,
                     () -> config.minimapSize, v -> config.minimapSize = v, ConfigScreen::pxText
@@ -445,6 +498,15 @@ public final class ConfigScreen extends ConfluxScreen {
                 );
                 y = addToggleRow(
                     y, "confluxmap.config.map.dynamic_lighting", () -> config.dynamicLighting, v -> config.dynamicLighting = v
+                );
+                y = addEnumRow(
+                    y, "confluxmap.config.map.color_style", MapColorStyle.values(),
+                    () -> config.mapColorStyle,
+                    v -> {
+                        config.mapColorStyle = v;
+                        ConfluxMapClient.get().onMapColorStyleChanged();
+                    },
+                    ConfigScreen::mapColorStyleKey
                 );
                 break;
             case RADAR:
@@ -498,6 +560,14 @@ public final class ConfigScreen extends ConfluxScreen {
                 );
                 break;
             case WAYPOINTS:
+                y = addActionRow(
+                    y,
+                    "confluxmap.config.waypoints.teleport_command",
+                    () -> MinecraftAccess.setScreen(
+                        MinecraftClient.getInstance(),
+                        new TeleportCommandScreen(this, config, configIo)
+                    )
+                );
                 y = addToggleRow(
                     y, "confluxmap.config.waypoints.show_local",
                     () -> config.localWaypointsVisible, v -> config.localWaypointsVisible = v
@@ -540,6 +610,14 @@ public final class ConfigScreen extends ConfluxScreen {
                     y, "confluxmap.config.waypoints.icon_opacity",
                     ConfluxConfig.MIN_WAYPOINT_ICON_OPACITY, ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY,
                     () -> config.waypointIconOpacity, v -> config.waypointIconOpacity = v,
+                    ConfigScreen::percentText
+                );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.waypoints.label_scale",
+                    ConfluxConfig.MIN_WAYPOINT_LABEL_SCALE_PERCENT,
+                    ConfluxConfig.MAX_WAYPOINT_LABEL_SCALE_PERCENT,
+                    () -> config.waypointLabelScalePercent,
+                    v -> config.waypointLabelScalePercent = v,
                     ConfigScreen::percentText
                 );
                 break;
@@ -706,10 +784,9 @@ public final class ConfigScreen extends ConfluxScreen {
             addDrawableChild(Widgets.button(
                 rowX(), y, rowWidth, ROW_HEIGHT - 2, zoomLabel(config.minimapZoomIndex),
                 b -> {
-                    final int next = (config.minimapZoomIndex + 1) % ZOOM_VALUE_KEYS.length;
-                    config.minimapZoomIndex = next;
+                    config.cycleMinimapZoom();
                     configIo.save(config);
-                    b.setMessage(zoomLabel(next));
+                    b.setMessage(zoomLabel(config.minimapZoomIndex));
                 }
             ));
         }
@@ -867,16 +944,16 @@ public final class ConfigScreen extends ConfluxScreen {
         return Texts.translatable("confluxmap.value.px", value).getString();
     }
 
+    private static String percentText(final int value) {
+        return Texts.translatable("confluxmap.value.percent", value).getString();
+    }
+
     private static String blocksText(final int value) {
         return Texts.translatable("confluxmap.value.blocks", value).getString();
     }
 
     private static String secondsText(final int value) {
         return Texts.translatable("confluxmap.value.seconds", value).getString();
-    }
-
-    private static String percentText(final int value) {
-        return Texts.translatable("confluxmap.value.percent", value).getString();
     }
 
     private static String renderDistanceText(final int value) {
@@ -904,8 +981,18 @@ public final class ConfigScreen extends ConfluxScreen {
         );
     }
 
+    private PlayerMarkerSettingsAccess playerMarkerSettingsAccess() {
+        return PlayerMarkerSettingsAccess.from(uiTheme.playerMarker().isPresent());
+    }
+
     private static String shapeKey(final ConfluxConfig.Shape shape) {
         return shape == ConfluxConfig.Shape.CIRCLE ? "confluxmap.config.shape.circle" : "confluxmap.config.shape.square";
+    }
+
+    private static String playerMarkerStyleKey(final ConfluxConfig.PlayerMarkerStyle style) {
+        return style == ConfluxConfig.PlayerMarkerStyle.TRADITIONAL
+            ? "confluxmap.value.player_marker.traditional"
+            : "confluxmap.value.player_marker.modern";
     }
 
     private static String layerOverrideKey(final ConfluxConfig.LayerOverride override) {
@@ -914,9 +1001,17 @@ public final class ConfigScreen extends ConfluxScreen {
                 return "confluxmap.config.layer_override.force_surface";
             case FORCE_UNDERGROUND:
                 return "confluxmap.config.layer_override.force_underground";
+            case FORCE_SLICE:
+                return "confluxmap.config.layer_override.force_slice";
             default:
                 return "confluxmap.config.layer_override.auto";
         }
+    }
+
+    private static String mapColorStyleKey(final MapColorStyle style) {
+        return style == MapColorStyle.XAERO
+            ? "confluxmap.value.map_color_style.xaero"
+            : "confluxmap.value.map_color_style.conflux";
     }
 
     private static String predictionViewModeKey(final PredictionViewMode mode) {

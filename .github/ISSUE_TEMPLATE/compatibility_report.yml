@@ -1,0 +1,101 @@
+name: Compatibility report (English)
+description: Report a conflict with another mod, plugin, loader, or server in English
+title: "[Compatibility]: "
+labels: []
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Compatibility issues are easiest to diagnose when exact versions and a minimal mod or plugin set are provided.
+
+  - type: input
+    id: conflicting-software
+    attributes:
+      label: Conflicting mod, plugin, or software
+      placeholder: Name and exact version
+    validations:
+      required: true
+
+  - type: input
+    id: minecraft-version
+    attributes:
+      label: Minecraft version
+      placeholder: "For example: 1.21.4"
+    validations:
+      required: true
+
+  - type: input
+    id: conflux-map-version
+    attributes:
+      label: Conflux Map version
+      placeholder: Exact release or build identifier
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Complete environment
+      description: Include the loader or server version and all mods or plugins needed to reproduce the conflict.
+      placeholder: |
+        Fabric Loader 0.16.10
+        Fabric API 0.119.2
+        Other Mod 1.0.0
+        Operating system: Arch Linux
+    validations:
+      required: true
+
+  - type: textarea
+    id: symptoms
+    attributes:
+      label: Compatibility symptoms
+      description: Explain what goes wrong when both projects are installed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Install only ...
+        2. Start ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: isolation-result
+    attributes:
+      label: Does the issue disappear when the other project is removed?
+      options:
+        - "Yes"
+        - "No"
+        - Not tested
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, screenshots, or videos
+      description: Drag files here or paste links. Remove passwords, tokens, personal data, and other sensitive information first.
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context
+      description: Include related upstream issues or any other useful details.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched both projects' issue trackers for an existing report.
+          required: true
+        - label: I provided exact versions and the smallest known conflicting setup.
+          required: true
+        - label: I removed sensitive information from logs and attachments.
+          required: true

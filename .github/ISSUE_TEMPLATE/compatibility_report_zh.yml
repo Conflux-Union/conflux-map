@@ -1,0 +1,101 @@
+name: 兼容性报告（中文）
+description: 用中文报告与其他模组、插件、加载器或服务端的冲突
+title: "[Compatibility]: "
+labels: []
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提供准确版本和最小模组或插件组合，可以明显降低兼容性问题的定位难度。
+
+  - type: input
+    id: conflicting-software
+    attributes:
+      label: 发生冲突的模组、插件或软件
+      placeholder: 请填写名称和准确版本
+    validations:
+      required: true
+
+  - type: input
+    id: minecraft-version
+    attributes:
+      label: Minecraft 版本
+      placeholder: "例如：1.21.4"
+    validations:
+      required: true
+
+  - type: input
+    id: conflux-map-version
+    attributes:
+      label: Conflux Map 版本
+      placeholder: 请填写准确的发布版本号或构建标识
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 完整运行环境
+      description: 请填写加载器或服务端版本，以及复现冲突所需的全部模组或插件。
+      placeholder: |
+        Fabric Loader 0.16.10
+        Fabric API 0.119.2
+        其他模组 1.0.0
+        操作系统：Arch Linux
+    validations:
+      required: true
+
+  - type: textarea
+    id: symptoms
+    attributes:
+      label: 冲突表现
+      description: 请说明同时安装两个项目后出现了什么问题。
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 仅安装……
+        2. 启动……
+        3. 观察到……
+    validations:
+      required: true
+
+  - type: dropdown
+    id: isolation-result
+    attributes:
+      label: 移除另一个项目后，问题是否消失？
+      options:
+        - 是
+        - 否
+        - 尚未测试
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志、截图或视频
+      description: 可将文件拖到此处或粘贴链接。请先删除密码、令牌、个人信息及其他敏感内容。
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: 其他信息
+      description: 可补充相关上游 Issue 或其他有用信息。
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我搜索过双方项目的 Issue，没有发现已有报告。
+          required: true
+        - label: 我提供了准确版本和目前已知的最小冲突环境。
+          required: true
+        - label: 我已从日志和附件中删除敏感信息。
+          required: true

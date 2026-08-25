@@ -35,6 +35,24 @@ class NativeChunkNbtScannerTest {
     }
 
     @Test
+    void promotesCarpetAboveTheMotionBlockingSurface() throws IOException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native library unavailable");
+        final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (DataOutputStream output = new DataOutputStream(bytes)) {
+            NbtIo.write(generatedCarpetChunk(), output);
+        }
+
+        final NativeChunkNbtScanner.Chunk chunk = NativeChunkNbtScanner.scan(
+            bytes.toByteArray(), 4
+        );
+
+        assertNotNull(chunk);
+        assertTrue(chunk.generated());
+        assertEquals(1, chunk.samples()[0].surfaceY());
+        assertEquals("minecraft:white_carpet", chunk.samples()[0].surfaceBlock());
+    }
+
+    @Test
     void malformedNbtFailsWithoutEscapingNativeParser() {
         Assumptions.assumeTrue(NativeLib.initForTests(), "native library unavailable");
         final java.util.Random random = new java.util.Random(0xC0FFEE);
@@ -46,6 +64,14 @@ class NativeChunkNbtScannerTest {
     }
 
     private static NbtCompound generatedStoneChunk() {
+        return generatedChunk(false);
+    }
+
+    private static NbtCompound generatedCarpetChunk() {
+        return generatedChunk(true);
+    }
+
+    private static NbtCompound generatedChunk(final boolean carpetCover) {
         final NbtCompound level = new NbtCompound();
         level.putString("Status", "full");
         level.putLong("LastUpdate", 1L);
@@ -65,9 +91,19 @@ class NativeChunkNbtScannerTest {
         stone.putString("Name", "minecraft:stone");
         final NbtList palette = new NbtList();
         palette.add(stone);
+        if (carpetCover) {
+            final NbtCompound carpet = new NbtCompound();
+            carpet.putString("Name", "minecraft:white_carpet");
+            palette.add(carpet);
+        }
         final NbtCompound section = new NbtCompound();
         section.putByte("Y", (byte) 0);
         section.put("Palette", palette);
+        if (carpetCover) {
+            final long[] states = new long[256];
+            Arrays.fill(states, 16, 32, 0x1111111111111111L);
+            section.putLongArray("BlockStates", states);
+        }
         final NbtList sections = new NbtList();
         sections.add(section);
         level.put("Sections", sections);

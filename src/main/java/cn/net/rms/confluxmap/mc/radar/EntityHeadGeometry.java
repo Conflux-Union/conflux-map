@@ -15,7 +15,13 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+//#if MC<12103
+import java.util.function.Function;
+//#endif
 import net.minecraft.client.model.ModelPart;
+//#if MC>=12103
+//$$ import net.minecraft.client.model.ModelTransform;
+//#endif
 //#if MC<12103
 import net.minecraft.client.model.TexturedModelData;
 //#endif
@@ -106,6 +112,48 @@ final class EntityHeadGeometry {
     static float[] project(final EntityModel<?> model, final String entityType, final int cellX, final int cellY) {
         return project(selectParts(model, entityType), entityType, cellX, cellY);
     }
+
+    static float[] projectNeutral(
+        final EntityModel<?> model,
+        final String entityType,
+        final int cellX,
+        final int cellY
+    ) {
+        //#if MC>=12103
+        //$$ final List<ModelPart> modelParts = model.getParts();
+        //$$ final List<ModelTransform> liveTransforms = modelParts.stream()
+        //$$     .map(ModelPart::getTransform)
+        //$$     .toList();
+        //$$ model.resetTransforms();
+        //$$ try {
+        //$$     return project(model, entityType, cellX, cellY);
+        //$$ } finally {
+        //$$     for (int i = 0; i < modelParts.size(); i++) {
+        //$$         modelParts.get(i).setTransform(liveTransforms.get(i));
+        //$$     }
+        //$$ }
+        //#else
+        return projectNeutral(
+            model, entityType, cellX, cellY, EntityHeadGeometry::vanillaDataRoot
+        );
+        //#endif
+    }
+
+    //#if MC<12103
+    static float[] projectNeutral(
+        final EntityModel<?> model,
+        final String entityType,
+        final int cellX,
+        final int cellY,
+        final Function<String, ModelPart> neutralRootResolver
+    ) {
+        final ModelPart dataRoot = neutralRootResolver.apply(entityType);
+        if (dataRoot != null) {
+            return project(selectFromRoot(dataRoot, entityType), entityType, cellX, cellY);
+        }
+        return project(model, entityType, cellX, cellY);
+    }
+    //#endif
 
     /** Projects an already-selected part group; separated so tests can drive raw model trees. */
     static float[] project(

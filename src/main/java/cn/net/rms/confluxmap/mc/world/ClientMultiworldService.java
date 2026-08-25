@@ -15,6 +15,7 @@ import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfile;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfileResolver;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldResolution;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldSignalHasher;
+import cn.net.rms.confluxmap.core.multiworld.ServerAliasResolver;
 import cn.net.rms.confluxmap.core.multiworld.TerrainFingerprintMatcher;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureService;
@@ -58,6 +59,7 @@ public final class ClientMultiworldService {
     private final ClientWorldProfileResolver resolver;
     private final Path cacheRoot;
     private final Executor io;
+    private final ServerAliasResolver aliases;
     private final VelocityServerIdentityQuery velocityQuery = new VelocityServerIdentityQuery(
         VELOCITY_QUERY_TIMEOUT_TICKS
     );
@@ -89,11 +91,28 @@ public final class ClientMultiworldService {
         final Path cacheRoot,
         final Executor io
     ) {
+        this(client, companion, resolver, cacheRoot, io, null);
+    }
+
+    /**
+     * @param aliases maps the typed address onto the namespace owning its data, so profiles are
+     *                listed under the same server id the session stores under; null keeps the
+     *                raw address
+     */
+    public ClientMultiworldService(
+        final MinecraftClient client,
+        final CompanionSession companion,
+        final ClientWorldProfileResolver resolver,
+        final Path cacheRoot,
+        final Executor io,
+        final ServerAliasResolver aliases
+    ) {
         this.client = client;
         this.companion = companion;
         this.resolver = resolver;
         this.cacheRoot = cacheRoot;
         this.io = io;
+        this.aliases = aliases;
     }
 
     public void register() {
@@ -194,8 +213,25 @@ public final class ClientMultiworldService {
         return true;
     }
 
+    /**
+     * Storage namespace the current connection reads and writes under, empty when not connected to
+     * a server. This is the alias-resolved id, not the typed address.
+     */
+    public Optional<String> currentServerId() {
+        if (client == null || client.world == null || client.isInSingleplayer()) {
+            return Optional.empty();
+        }
+        ensureAddressObserved();
+        return Optional.ofNullable(serverId);
+    }
+
     public boolean needsSelection() {
-        return canManageProfiles() && resolution.state() == ClientWorldResolution.State.AMBIGUOUS;
+        return canManageProfiles() && shouldExposeAmbiguity();
+    }
+
+    boolean shouldExposeAmbiguity() {
+        return !companionWorldIdentityAuthoritative()
+            && resolution.state() == ClientWorldResolution.State.AMBIGUOUS;
     }
 
     public List<ClientWorldProfile> profiles() {
@@ -215,6 +251,40 @@ public final class ClientMultiworldService {
         }
         ensureAddressObserved();
         return address == null ? Optional.empty() : companion.resolveWorldIdentity(address);
+    }
+
+    /**
+     * Name the player gave the world the companion is currently serving. Empty when unnamed, when
+     * no companion is active, or when there is no server connection; callers fall back to
+     * {@link #companionWorldOrdinal()}. The raw world UUID is an implementation detail players
+     * have no use for, so it never reaches the UI.
+     */
+    public Optional<String> companionWorldName() {
+        final String worldId = companion.companionWorldId();
+        if (worldId == null) {
+            return Optional.empty();
+        }
+        return currentServerId().flatMap(serverId -> resolver.serverWorldName(serverId, worldId));
+    }
+
+    /** 1-based label for an unnamed companion world; 1 when this server has recorded none yet. */
+    public int companionWorldOrdinal() {
+        final String worldId = companion.companionWorldId();
+        if (aliases == null || worldId == null) {
+            return 1;
+        }
+        return currentServerId()
+            .map(serverId -> Math.max(1, aliases.worldOrdinal(serverId, worldId)))
+            .orElse(1);
+    }
+
+    /** Renames the active companion world, or clears the name when {@code name} is blank. */
+    public void renameCompanionWorld(final String name) {
+        final String worldId = companion.companionWorldId();
+        if (worldId == null) {
+            return;
+        }
+        currentServerId().ifPresent(serverId -> resolver.nameServerWorld(serverId, worldId, name));
     }
 
     /** Session writes stay suspended while an explicit cache migration drains the old cache. */
@@ -581,8 +651,7 @@ public final class ClientMultiworldService {
     }
 
     private void notifyAmbiguity() {
-        if (ambiguityNotified || resolution.state() != ClientWorldResolution.State.AMBIGUOUS
-            || client.player == null) {
+        if (ambiguityNotified || !shouldExposeAmbiguity() || client.player == null) {
             return;
         }
         ambiguityNotified = true;
@@ -663,8 +732,21 @@ public final class ClientMultiworldService {
 
     private void ensureAddressObserved() {
         if (client != null && client.world != null && !client.isInSingleplayer()) {
-            observeAddress(resolveAddress(client));
+            observeAddress(canonicalAddress(resolveAddress(client)));
         }
+    }
+
+    /**
+     * Keeps this service's server namespace identical to the session's. The session tracker hands
+     * an already-resolved address to {@link #resolve(String)}; the paths that read the client
+     * directly resolve it here.
+     */
+    private String canonicalAddress(final String rawAddress) {
+        return aliases == null
+            ? rawAddress
+            : aliases.resolve(
+                rawAddress, companion.companionInstanceId(), companion.companionWorldId()
+            ).canonicalId();
     }
 
     private static String resolveAddress(final MinecraftClient client) {

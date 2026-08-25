@@ -19,7 +19,6 @@ import net.minecraft.client.render.entity.LivingEntityRenderer;
 import net.minecraft.client.render.entity.model.EntityModel;
 //#if MC>=12103
 //$$ import net.minecraft.client.render.entity.state.LivingEntityRenderState;
-//$$ import net.minecraft.entity.EntityPose;
 //#endif
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
@@ -33,6 +32,12 @@ import net.minecraft.util.Identifier;
  */
 public final class EntityIconManager implements AutoCloseable {
     private record AtlasSprite(int slot, float u0, float v0, float u1, float v1) {
+    }
+
+    private record PortraitKey(Identifier entityType, Identifier texture, EntityModel<?> model) {
+    }
+
+    private record ObservedPortrait(PortraitKey key, long checkedAt) {
     }
 
     /** One portrait region and its source kind. Dynamic portraits bind through this manager. */
@@ -60,11 +65,16 @@ public final class EntityIconManager implements AutoCloseable {
     static final int ATLAS_PX = 1024;
     private static final int CELLS_PER_ROW = ATLAS_PX / CELL_PX;
     private static final int SLOT_COUNT = CELLS_PER_ROW * CELLS_PER_ROW;
-    private static final long REFRESH_TICKS = 200;
+    private static final int OBSERVATION_CAPACITY = SLOT_COUNT * 4;
+    private static final long VARIANT_CHECK_TICKS = 200;
+    private static final long RETRY_TICKS = 200;
 
     private final OffscreenCanvas colorAtlas = new OffscreenCanvas();
-    private final IconBakeCache<UUID, AtlasSprite> cache = new IconBakeCache<>(SLOT_COUNT, REFRESH_TICKS);
-    private final Map<UUID, WeakReference<Entity>> liveEntities = new HashMap<>();
+    private final IconBakeCache<PortraitKey, AtlasSprite> cache = new IconBakeCache<>(
+        SLOT_COUNT, RETRY_TICKS
+    );
+    private final Map<PortraitKey, WeakReference<LivingEntity>> liveEntities = new HashMap<>();
+    private final Map<UUID, ObservedPortrait> observedPortraits = new HashMap<>();
 
     private int nextSlot;
     private long clock;
@@ -80,10 +90,10 @@ public final class EntityIconManager implements AutoCloseable {
         if (client.world == null) {
             return;
         }
-        cache.pollNext(clock).ifPresent(key -> bakeOne(client, key, 0f, clock));
+        cache.pollNext(clock).ifPresent(key -> bakeOne(client, key, clock));
     }
 
-    /** Returns a ready portrait or null while its first bake is queued/failed. */
+    /** Returns a ready portrait or null while its first distinct appearance is queued/failed. */
     public FaceIcon iconFor(final Entity entity) {
         if (entity instanceof AbstractClientPlayerEntity) {
             return playerIcon((AbstractClientPlayerEntity) entity);
@@ -91,8 +101,33 @@ public final class EntityIconManager implements AutoCloseable {
         if (!(entity instanceof LivingEntity)) {
             return null;
         }
-        final UUID key = entity.getUuid();
-        liveEntities.put(key, new WeakReference<>(entity));
+        final LivingEntity living = (LivingEntity) entity;
+        final UUID entityId = entity.getUuid();
+        ObservedPortrait observed = observedPortraits.get(entityId);
+        if (observed == null || clock - observed.checkedAt() >= VARIANT_CHECK_TICKS) {
+            PortraitKey key = observed == null ? null : observed.key();
+            try {
+                final PortraitKey resolved = resolvePortrait(MinecraftClient.getInstance(), living, 0f);
+                if (resolved != null) {
+                    key = resolved;
+                }
+            } catch (final RuntimeException e) {
+                ConfluxMapMod.LOGGER.debug(
+                    "Failed to resolve radar portrait appearance for {}", entity.getType(), e
+                );
+            }
+            observed = new ObservedPortrait(key, clock);
+            if (!observedPortraits.containsKey(entityId)
+                && observedPortraits.size() >= OBSERVATION_CAPACITY) {
+                observedPortraits.clear();
+            }
+            observedPortraits.put(entityId, observed);
+        }
+        if (observed == null || observed.key() == null) {
+            return null;
+        }
+        final PortraitKey key = observed.key();
+        liveEntities.put(key, new WeakReference<>(living));
         final AtlasSprite sprite = cache.request(key, clock).orElse(null);
         return sprite == null ? null : dynamicIcon(sprite);
     }
@@ -111,7 +146,7 @@ public final class EntityIconManager implements AutoCloseable {
         resetDynamic();
     }
 
-    /** World/session change: entity UUIDs and their live references no longer belong to this atlas. */
+    /** World/session change: observed entities and their live references no longer belong here. */
     public void onSessionChanged() {
         assert RenderSystem.isOnRenderThread() : "EntityIconManager.onSessionChanged() must run on render thread";
         resetDynamic();
@@ -125,25 +160,24 @@ public final class EntityIconManager implements AutoCloseable {
 
     private void bakeOne(
         final MinecraftClient client,
-        final UUID key,
-        final float tickDelta,
+        final PortraitKey key,
         final long now
     ) {
-        final WeakReference<Entity> reference = liveEntities.get(key);
-        final Entity entity = reference == null ? null : reference.get();
+        final WeakReference<LivingEntity> reference = liveEntities.get(key);
+        final LivingEntity entity = reference == null ? null : reference.get();
         //#if MC>=12108 && MC<12109
         //$$ final boolean wrongWorld = entity == null || entity.getWorld() != client.world;
         //#else
         final boolean wrongWorld = entity == null || entity.getEntityWorld() != client.world;
         //#endif
-        if (!(entity instanceof LivingEntity) || wrongWorld) {
+        if (entity == null || wrongWorld) {
             cache.fail(key, now);
             liveEntities.remove(key);
             return;
         }
         try {
             final AtlasSprite current = cache.value(key).orElse(null);
-            final AtlasSprite baked = bake(client, (LivingEntity) entity, tickDelta, current);
+            final AtlasSprite baked = bake(client, key, current);
             if (baked == null) {
                 cache.fail(key, now);
                 return;
@@ -156,11 +190,10 @@ public final class EntityIconManager implements AutoCloseable {
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
-    private AtlasSprite bake(
+    private PortraitKey resolvePortrait(
         final MinecraftClient client,
         final LivingEntity entity,
-        final float tickDelta,
-        final AtlasSprite current
+        final float tickDelta
     ) {
         final EntityRenderer renderer = client.getEntityRenderDispatcher().getRenderer(entity);
         if (!(renderer instanceof LivingEntityRenderer)) {
@@ -171,22 +204,25 @@ public final class EntityIconManager implements AutoCloseable {
         final Identifier texture;
         //#if MC>=12103
         //$$ final LivingEntityRenderState state = (LivingEntityRenderState) renderer.getAndUpdateRenderState(entity, tickDelta);
-        //$$ neutralizePortraitPose(state);
         //$$ model = portraitModel(livingRenderer, state);
-        //$$ model.setAngles(state);
         //$$ texture = livingRenderer.getTexture(state);
         //#else
         model = (EntityModel) livingRenderer.getModel();
-        model.animateModel(entity, 0f, 0f, 0f);
-        model.setAngles(entity, 0f, 0f, 0f, 0f, 0f);
         texture = renderer.getTexture(entity);
         //#endif
         if (texture == null) {
             return null;
         }
+        return new PortraitKey(Regs.entityTypeId(entity.getType()), texture, model);
+    }
 
-        final float[] geometry = EntityHeadGeometry.project(
-            model, Regs.entityTypeId(entity.getType()).toString(), 0, 0
+    private AtlasSprite bake(
+        final MinecraftClient client,
+        final PortraitKey key,
+        final AtlasSprite current
+    ) {
+        final float[] geometry = EntityHeadGeometry.projectNeutral(
+            key.model(), key.entityType().toString(), 0, 0
         );
         if (geometry.length == 0) {
             return null;
@@ -204,7 +240,7 @@ public final class EntityIconManager implements AutoCloseable {
         colorAtlas.beginPreserving(ATLAS_PX);
         try {
             RenderUtil.clearTargetRect(matrices, column * CELL_PX, row * CELL_PX, CELL_PX, CELL_PX);
-            RenderUtil.bindTexture(client, texture);
+            RenderUtil.bindTexture(client, key.texture());
             RenderUtil.enableTargetScissor(
                 column * CELL_PX, row * CELL_PX, CELL_PX, CELL_PX, ATLAS_PX
             );
@@ -247,8 +283,8 @@ public final class EntityIconManager implements AutoCloseable {
 
     private AtlasSprite allocateSprite() {
         if (nextSlot >= SLOT_COUNT) {
-            // The configured radar cap is below this, but a very long session can accumulate stale
-            // UUIDs. Reset as one atomic generation instead of reusing dirty cells.
+            // A heavily modded session can exceed the atlas' distinct appearance count. Reset as
+            // one atomic generation instead of reusing cells still referenced by cached icons.
             resetDynamic();
         }
         final int slot = nextSlot++;
@@ -263,28 +299,6 @@ public final class EntityIconManager implements AutoCloseable {
         return new AtlasSprite(slot, u0, v0, u1, v1);
     }
 
-    //#if MC>=12103
-    //$$ /** Keeps model/material variants but removes the live entity's transient viewing pose. */
-    //$$ static void neutralizePortraitPose(final LivingEntityRenderState state) {
-    //$$     state.bodyYaw = 0f;
-    //#if MC>=12105
-    //$$     state.relativeHeadYaw = 0f;
-    //$$     state.limbSwingAnimationProgress = 0f;
-    //$$     state.limbSwingAmplitude = 0f;
-    //#else
-    //$$     state.yawDegrees = 0f;
-    //$$     state.limbFrequency = 0f;
-    //$$     state.limbAmplitudeMultiplier = 0f;
-    //#endif
-    //$$     state.pitch = 0f;
-    //$$     state.age = 0f;
-    //$$     state.deathTime = 0f;
-    //$$     state.flipUpsideDown = false;
-    //$$     state.sneaking = false;
-    //$$     state.pose = EntityPose.STANDING;
-    //$$ }
-    //#endif
-
     static float atlasTopV(final int row) {
         return 1f - row / (float) CELLS_PER_ROW;
     }
@@ -296,6 +310,7 @@ public final class EntityIconManager implements AutoCloseable {
     private void resetDynamic() {
         cache.clear();
         liveEntities.clear();
+        observedPortraits.clear();
         colorAtlas.close();
         nextSlot = 0;
     }

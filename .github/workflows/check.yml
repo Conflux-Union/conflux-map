@@ -51,9 +51,9 @@ jobs:
             ${{ runner.os }}-gradle-
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
-      - name: Build for ${{ matrix.minecraft_version }}
-        id: build
-        run: ./gradlew :${{ matrix.minecraft_version }}:build
+      - name: Check ${{ matrix.minecraft_version }}
+        id: check
+        run: ./gradlew :${{ matrix.minecraft_version }}:check
       - name: Connect client to server for ${{ matrix.minecraft_version }}
         timeout-minutes: 12
         env:
@@ -210,7 +210,7 @@ jobs:
         if: always()
         env:
           ARTIFACT_NAME: prediction-quality-${{ matrix.minecraft_version }}
-          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          CHECK_OUTCOME: ${{ steps.check.outcome }}
           MINECRAFT_VERSION: ${{ matrix.minecraft_version }}
           REPORT_PATH: versions/${{ matrix.minecraft_version }}/build/reports/prediction-quality/report.json
         run: |
@@ -218,7 +218,7 @@ jobs:
             {
               echo "## Prediction quality - Minecraft $MINECRAFT_VERSION"
               echo
-              echo "> The build finished with \`$BUILD_OUTCOME\`, but no prediction quality report was generated."
+              echo "> The check finished with \`$CHECK_OUTCOME\`, but no prediction quality report was generated."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -235,7 +235,7 @@ jobs:
 
           aggregate = report["aggregate"]
           version = os.environ["MINECRAFT_VERSION"]
-          outcome = os.environ["BUILD_OUTCOME"]
+          outcome = os.environ["CHECK_OUTCOME"]
           artifact_name = os.environ["ARTIFACT_NAME"]
           artifact_url = (
               f"https://github.com/{os.environ['GITHUB_REPOSITORY']}"
@@ -245,7 +245,7 @@ jobs:
           print(f"## Prediction quality - Minecraft {version}")
           print()
           print(
-              f"Build: **{outcome}** · World seed: `{report['worldSeed']}` · "
+              f"Check: **{outcome}** · World seed: `{report['worldSeed']}` · "
               f"Corpus seed: `{report['corpusSeed']}` · Samples: **{report['sampleCount']}**"
           )
           print()

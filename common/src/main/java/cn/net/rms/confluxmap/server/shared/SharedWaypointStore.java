@@ -150,20 +150,30 @@ public final class SharedWaypointStore {
         return new PreparedMutation(revision, snapshotOf(nextRevision, next), Delta.remove(id, nextRevision));
     }
 
-    synchronized PreparedMutation prepareLocked(final UUID id, final boolean locked) {
-        final SharedWaypoint current = byId.get(Objects.requireNonNull(id, "id"));
-        if (current == null) {
-            throw new IllegalArgumentException("shared waypoint does not exist: " + id);
+    synchronized PreparedMutation prepareUpdate(final SharedWaypoint waypoint) {
+        Objects.requireNonNull(waypoint, "waypoint");
+        if (!byId.containsKey(waypoint.id())) {
+            throw new IllegalArgumentException("shared waypoint does not exist: " + waypoint.id());
         }
         final long nextRevision = Math.addExact(revision, 1);
-        final SharedWaypoint updated = new SharedWaypoint(
-            current.id(), current.publisherId(), current.publisherName(), current.name(), current.dimensionId(),
-            current.x(), current.y(), current.z(), current.colorArgb(), current.type(), locked,
-            current.createdAtEpochMs(), nextRevision
-        );
+        if (waypoint.revision() != nextRevision) {
+            throw new IllegalArgumentException("updated waypoint revision must equal next global revision");
+        }
+        final SharedWaypoint current = byId.get(waypoint.id());
+        final SharedWaypointLocationKey currentLocation = SharedWaypointLocationKey.from(current);
+        final SharedWaypointLocationKey updatedLocation = SharedWaypointLocationKey.from(waypoint);
+        final UUID occupant = idByLocation.get(updatedLocation);
+        if (!updatedLocation.equals(currentLocation)
+            && occupant != null && !occupant.equals(waypoint.id())) {
+            throw new IllegalArgumentException("duplicate shared waypoint location");
+        }
         final Map<UUID, SharedWaypoint> next = new LinkedHashMap<>(byId);
-        next.put(id, updated);
-        return new PreparedMutation(revision, snapshotOf(nextRevision, next), Delta.upsert(updated, nextRevision));
+        next.put(waypoint.id(), waypoint);
+        return new PreparedMutation(
+            revision,
+            snapshotOf(nextRevision, next),
+            Delta.upsert(waypoint, nextRevision)
+        );
     }
 
     synchronized void commit(final PreparedMutation mutation) {

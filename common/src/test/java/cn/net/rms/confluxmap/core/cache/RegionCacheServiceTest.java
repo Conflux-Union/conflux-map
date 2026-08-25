@@ -102,6 +102,35 @@ class RegionCacheServiceTest {
         }
     }
 
+    @Test
+    void readOnlyBrowserNeverMigratesLegacySingleplayerCacheDirectory(@TempDir final Path tempDir)
+        throws IOException {
+        final Path saveRoot = createSave(tempDir.resolve("saves").resolve("New World"));
+        final WorldIdentity world = WorldIdentity.singleplayerSave(saveRoot);
+        final Path legacyDir = tempDir.resolve("local").resolve(world.legacyStorageIds().get(0));
+        final Path currentDir = tempDir.resolve("local").resolve(world.worldId());
+        Files.createDirectories(legacyDir);
+        Files.writeString(legacyDir.resolve("marker"), "legacy cache");
+
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final MapWorldService mapWorlds = new MapWorldService();
+            final TileService tiles = new TileService(
+                mapWorlds, executors, new ConfluxConfig(), new DaylightModel()
+            );
+            final RegionCacheService cache = new RegionCacheService(
+                tempDir, mapWorlds, executors, tiles, LOGGER, true
+            );
+
+            cache.onSessionChanged(new SessionGuard.Session(1L, world, DimensionId.OVERWORLD));
+
+            assertTrue(Files.isRegularFile(legacyDir.resolve("marker")));
+            assertFalse(Files.exists(currentDir));
+        } finally {
+            executors.shutdown(1000L);
+        }
+    }
+
     private static Path createSave(final Path root) throws IOException {
         Files.createDirectories(root);
         Files.writeString(root.resolve("level.dat"), "test save");

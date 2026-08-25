@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.compat.NativeImages;
 import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
+import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.predict.PredictedTileKeys;
@@ -31,8 +32,8 @@ import net.minecraft.client.texture.NativeImageBackedTexture;
  *
  * <p>Each texture also remembers its {@link TileUpdate.Relight} inputs. Tiles whose backing
  * regions are still in the in-memory store recompose through {@code TileService#markSurfaceRelit}
- * when the day/night factor moves, but a region evicted to disk can't recompose - its texture
- * would keep the daylight baked at its last compose forever. {@link #relightStale} closes that
+ * when the day/night factor or gamma moves, but a region evicted to disk can't recompose - its texture
+ * would keep the lightmap state baked at its last compose forever. {@link #relightStale} closes that
  * gap: it rewrites such textures in place with {@link ShadingPipeline#relightRatios}, on the
  * same quantized-bucket cadence the recompose path uses, a bounded number of tiles per frame.
  */
@@ -52,14 +53,16 @@ public final class TileTextureManager {
     private final LinkedHashMap<TileKey, TileTexture> textures = new LinkedHashMap<>(64, 0.75f, true);
 
     /**
-     * A cached tile texture plus the daylight its pixels currently embody: {@code appliedDaylight}
+     * A cached tile texture plus the lightmap state its pixels currently embody: {@code appliedDaylight}
      * starts as the compose-time factor and advances on every in-place re-light; {@code lightLevels}
      * is the per-pixel 0-15 block-light plane. Both stay null/NaN for tiles daylight never touches.
      */
     private static final class TileTexture {
         final NativeImageBackedTexture texture;
         float appliedDaylight = Float.NaN;
+        float appliedGamma = Float.NaN;
         byte[] lightLevels;
+        MapColorStyle lightStyle = MapColorStyle.CONFLUX;
 
         TileTexture(final NativeImageBackedTexture texture) {
             this.texture = texture;
@@ -99,6 +102,9 @@ public final class TileTextureManager {
             entry = new TileTexture(new NativeImageBackedTexture(TILE_SIZE, TILE_SIZE, false));
             //#endif
             textures.put(update.key(), entry);
+            if (!PredictedTileKeys.isPredicted(update.key())) {
+                tiles.retainTile(update.key());
+            }
         }
         final NativeImage image = entry.texture.getImage();
         if (image == null) {
@@ -114,16 +120,28 @@ public final class TileTextureManager {
                 }
             }
         } else if (relight != null && entry.lightLevels != null
-            && !DaylightModel.sameBucket(entry.appliedDaylight, relight.composedDaylight())) {
+            && !DaylightModel.sameBucket(
+                entry.appliedDaylight,
+                entry.appliedGamma,
+                relight.composedDaylight(),
+                relight.composedGamma()
+            )) {
             // Preserved pixels were darkened at an older daylight bucket than the rects about
             // to land; re-light them first so one tile never mixes two buckets.
-            relightPixels(image, entry.lightLevels, entry.appliedDaylight, relight.composedDaylight());
+            relightPixels(
+                image, entry.lightLevels, entry.appliedDaylight,
+                entry.appliedGamma, relight.composedDaylight(), relight.composedGamma(),
+                entry.lightStyle
+            );
         }
         if (relight == null) {
             entry.appliedDaylight = Float.NaN;
+            entry.appliedGamma = Float.NaN;
             entry.lightLevels = null;
         } else {
             entry.appliedDaylight = relight.composedDaylight();
+            entry.appliedGamma = relight.composedGamma();
+            entry.lightStyle = relight.style();
             if (entry.lightLevels == null) {
                 entry.lightLevels = new byte[TILE_SIZE * TILE_SIZE];
             }
@@ -146,36 +164,59 @@ public final class TileTextureManager {
 
     /**
      * Rewrites up to {@link #RELIGHTS_PER_FRAME} resident SURFACE textures whose baked daylight
-     * has drifted a full quantization bucket away from the model's current factor. Tiles the
+     * or gamma has drifted a full quantization bucket away from the model. Tiles the
      * recompose path still reaches get the same value re-baked moments later (the fresh upload
      * simply overwrites this rewrite); tiles it can't reach - the evicted-region case - only
      * ever update through here.
      */
     private void relightStale() {
-        final float target = daylightModel.factor();
+        final DaylightModel.State lighting = daylightModel.state();
+        final float target = lighting.daylight();
+        final float targetGamma = lighting.gamma();
         int budget = RELIGHTS_PER_FRAME;
         for (final Map.Entry<TileKey, TileTexture> mapEntry : textures.entrySet()) {
             if (budget == 0) {
                 return;
             }
             final TileTexture entry = mapEntry.getValue();
-            if (entry.lightLevels == null || DaylightModel.sameBucket(entry.appliedDaylight, target)) {
+            if (entry.lightLevels == null || DaylightModel.sameBucket(
+                entry.appliedDaylight, entry.appliedGamma, target, targetGamma
+            )) {
                 continue;
             }
             final NativeImage image = entry.texture.getImage();
             if (image == null) {
                 continue;
             }
-            relightPixels(image, entry.lightLevels, entry.appliedDaylight, target);
+            relightPixels(
+                image,
+                entry.lightLevels,
+                entry.appliedDaylight,
+                entry.appliedGamma,
+                target,
+                targetGamma,
+                entry.lightStyle
+            );
             entry.appliedDaylight = target;
+            entry.appliedGamma = targetGamma;
             entry.texture.upload();
             budget--;
         }
     }
 
     /** Rewrites every pixel from the daylight it was darkened with to {@code to}, per its block light. */
-    private static void relightPixels(final NativeImage image, final byte[] light, final float from, final float to) {
-        final float[] ratios = ShadingPipeline.relightRatios(from, to);
+    private static void relightPixels(
+        final NativeImage image,
+        final byte[] light,
+        final float fromDaylight,
+        final float fromGamma,
+        final float toDaylight,
+        final float toGamma,
+        final MapColorStyle style
+    ) {
+        final float[] ratios = ShadingPipeline.relightRatios(
+            fromDaylight, fromGamma, toDaylight, toGamma, style
+        );
         for (int y = 0; y < TILE_SIZE; y++) {
             final int row = y * TILE_SIZE;
             for (int x = 0; x < TILE_SIZE; x++) {
@@ -211,6 +252,9 @@ public final class TileTextureManager {
             final Map.Entry<TileKey, TileTexture> oldest = it.next();
             it.remove();
             oldest.getValue().texture.close();
+            // Nothing holds this tile's pixels any more, so the composer must stop refreshing it
+            // and go back to composing it in full when bind() next asks for it.
+            tiles.forgetTile(oldest.getKey());
         }
     }
 
@@ -243,8 +287,9 @@ public final class TileTextureManager {
     /** Render thread, session end: drop every cached tile texture. */
     public void releaseAll() {
         assert RenderSystem.isOnRenderThread() : "TileTextureManager.releaseAll() must run on the render thread";
-        for (final TileTexture entry : textures.values()) {
-            entry.texture.close();
+        for (final Map.Entry<TileKey, TileTexture> entry : textures.entrySet()) {
+            entry.getValue().texture.close();
+            tiles.forgetTile(entry.getKey());
         }
         textures.clear();
         ConfluxMapMod.LOGGER.debug("TileTextureManager: released all tile textures");

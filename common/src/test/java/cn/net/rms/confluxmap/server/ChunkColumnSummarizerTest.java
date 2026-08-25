@@ -11,7 +11,9 @@ class ChunkColumnSummarizerTest {
     void platformAdapterSuppliesColumnsWithoutMinecraftTypes() {
         final ChunkColumnSummarizer summarizer = new ChunkColumnSummarizer(name -> 3);
 
-        final SummaryCodec.Chunk summary = summarizer.summarize(new StoneWithSnowColumn());
+        final SummaryCodec.Chunk summary = summarizer.summarize(
+            new StoneWithCoverColumn("minecraft:snow")
+        );
 
         final SummaryCodec.Column column = summary.columns()[0];
         assertEquals(17L, summary.revision());
@@ -24,7 +26,29 @@ class ChunkColumnSummarizerTest {
         assertEquals("", column.floorMaterialId());
     }
 
-    private static final class StoneWithSnowColumn implements ChunkColumnSource {
+    @Test
+    void carpetAboveTheMotionBlockingSurfaceBecomesTheVisibleMaterial() {
+        final ChunkColumnSummarizer summarizer = new ChunkColumnSummarizer(
+            name -> "minecraft:white_carpet".equals(name) ? 8 : 3
+        );
+
+        final SummaryCodec.Column column = summarizer.summarize(
+            new StoneWithCoverColumn("minecraft:white_carpet")
+        ).columns()[0];
+
+        assertEquals(64, column.surfaceY());
+        assertEquals(SurfaceKind.LAND.ordinal(), column.kind());
+        assertEquals(8, column.mapColorId());
+        assertEquals("minecraft:white_carpet", column.materialId());
+    }
+
+    private static final class StoneWithCoverColumn implements ChunkColumnSource {
+        private final String cover;
+
+        private StoneWithCoverColumn(final String cover) {
+            this.cover = cover;
+        }
+
         @Override
         public boolean generated() {
             return true;
@@ -53,7 +77,7 @@ class ChunkColumnSummarizerTest {
         @Override
         public String blockNameAt(final int x, final int y, final int z) {
             if (y == 64) {
-                return "minecraft:snow";
+                return cover;
             }
             return y == 63 ? "minecraft:stone" : "minecraft:air";
         }

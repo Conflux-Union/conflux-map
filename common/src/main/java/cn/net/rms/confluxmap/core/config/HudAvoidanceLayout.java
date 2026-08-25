@@ -8,14 +8,12 @@ public final class HudAvoidanceLayout {
     /** Keeps the minimap fixed while resolving scoreboard and status-effect transforms. */
     public static Decision resolve(
         final boolean avoidanceEnabled,
-        final int screenWidth,
         final int screenHeight,
         final MinimapPlacement.Layout configuredMinimap,
         final int informationHeight,
-        final int statusEffectTop,
-        final int beneficialEffectCount,
-        final int harmfulEffectCount,
-        final ScoreboardHudAvoidance.Bounds scoreboard
+        final HudRect beneficialEffectRow,
+        final HudRect harmfulEffectRow,
+        final HudRect scoreboard
     ) {
         if (configuredMinimap == null) {
             throw new IllegalArgumentException("configuredMinimap must not be null");
@@ -31,49 +29,51 @@ public final class HudAvoidanceLayout {
             ),
             statusEffectShift(
                 avoidanceEnabled,
-                screenWidth,
                 configuredMinimap,
-                statusEffectTop,
-                beneficialEffectCount,
-                harmfulEffectCount
+                beneficialEffectRow,
+                harmfulEffectRow
             )
         );
     }
 
-    public static ScoreboardHudAvoidance.Transform scoreboardTransform(
+    public static HudTransform scoreboardTransform(
         final boolean avoidanceEnabled,
         final int screenHeight,
         final MinimapPlacement.Layout minimap,
         final int informationHeight,
-        final ScoreboardHudAvoidance.Bounds scoreboard
+        final HudRect scoreboard
     ) {
         return avoidanceEnabled
             ? ScoreboardHudAvoidance.resolve(screenHeight, minimap, informationHeight, scoreboard)
-            : ScoreboardHudAvoidance.Transform.IDENTITY;
+            : HudTransform.IDENTITY;
     }
 
     public static int statusEffectShift(
         final boolean avoidanceEnabled,
-        final int screenWidth,
         final MinimapPlacement.Layout minimap,
-        final int statusEffectTop,
-        final int beneficialEffectCount,
-        final int harmfulEffectCount
+        final HudRect beneficialRow,
+        final HudRect harmfulRow
     ) {
         return avoidanceEnabled
-            ? StatusEffectHudAvoidance.horizontalShift(
-                screenWidth,
-                statusEffectTop,
-                beneficialEffectCount,
-                harmfulEffectCount,
-                minimap
-            )
+            ? StatusEffectHudAvoidance.horizontalShift(minimap, beneficialRow, harmfulRow)
+            : 0;
+    }
+
+    public static int toastShift(
+        final boolean avoidanceEnabled,
+        final int screenHeight,
+        final MinimapPlacement.Layout minimap,
+        final int informationHeight,
+        final HudRect toasts
+    ) {
+        return avoidanceEnabled
+            ? ToastHudAvoidance.verticalShift(screenHeight, minimap, informationHeight, toasts)
             : 0;
     }
 
     public record Decision(
         MinimapPlacement.Layout minimap,
-        ScoreboardHudAvoidance.Transform scoreboardTransform,
+        HudTransform scoreboardTransform,
         int statusEffectShift
     ) {
     }

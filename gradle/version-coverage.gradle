@@ -13,7 +13,7 @@
 
 // Unobfuscated versions have neither side of this check: no intermediary mappings to look names up
 // in, and no remapJar whose output to read. Register the task as a no-op so the check and
-// buildRelease wiring in common.gradle stays uniform across the whole version matrix.
+// build wiring in common.gradle stays uniform across the whole version matrix.
 if (rootProject.mcVersionOf(project.name) >= 260100) {
     tasks.register('checkVersionCoverage') {
         group = 'verification'

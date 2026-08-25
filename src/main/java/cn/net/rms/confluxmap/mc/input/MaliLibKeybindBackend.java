@@ -14,9 +14,7 @@ import fi.dy.masa.malilib.gui.GuiBase;
 import fi.dy.masa.malilib.hotkeys.IKeybind;
 import fi.dy.masa.malilib.hotkeys.IKeybindManager;
 import fi.dy.masa.malilib.hotkeys.IKeybindProvider;
-import fi.dy.masa.malilib.hotkeys.KeyAction;
 import fi.dy.masa.malilib.hotkeys.KeybindMulti;
-import fi.dy.masa.malilib.hotkeys.KeybindSettings;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -55,7 +53,9 @@ final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
         configFile = FabricLoader.getInstance().getConfigDir()
             .resolve(ConfluxMapMod.ID)
             .resolve("malilib-hotkeys.json");
-        configScreenKeybind = KeybindMulti.fromStorageString("", KeybindSettings.DEFAULT);
+        configScreenKeybind = KeybindMulti.fromStorageString(
+            "", MaliLibHotkeyFactory.configScreenSettings()
+        );
         configScreenKeybind.setCallback((keyAction, keybind) -> {
             openHotkeyScreen();
             return true;
@@ -63,7 +63,7 @@ final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
         final ArrayList<ConfigHotkey> orderedHotkeys = new ArrayList<>();
         IKeybind detectedOpenMapKeybind = null;
         for (final KeybindAction action : KeybindAction.values()) {
-            final ConfigHotkey hotkey = createHotkey(action);
+            final ConfigHotkey hotkey = MaliLibHotkeyFactory.create(action);
             hotkey.getKeybind().setCallback((keyAction, keybind) -> actionHandler.trigger(action));
             orderedHotkeys.add(hotkey);
             if (action == KeybindAction.OPEN_MAP) {
@@ -72,27 +72,6 @@ final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
         }
         openMapKeybind = Objects.requireNonNull(detectedOpenMapKeybind, "open map hotkey");
         hotkeys = Collections.unmodifiableList(orderedHotkeys);
-    }
-
-    private static ConfigHotkey createHotkey(final KeybindAction action) {
-        final KeybindSettings settings = action == KeybindAction.OPEN_MAP
-            ? KeybindSettings.create(
-                KeybindSettings.Context.ANY,
-                KeyAction.PRESS,
-                false,
-                true,
-                false,
-                true
-            )
-            : KeybindSettings.DEFAULT;
-        final String displayName = Texts.translatable(action.translationKey()).getString();
-        return new LocalizedMaliLibHotkey(
-            action.configName(),
-            action.maliLibDefaultKeys(),
-            settings,
-            Texts.translatable(action.translationKey() + ".comment").getString(),
-            displayName
-        );
     }
 
     void openHotkeyScreen() {

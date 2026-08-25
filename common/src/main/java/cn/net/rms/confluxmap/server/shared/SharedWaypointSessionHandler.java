@@ -12,6 +12,7 @@ import cn.net.rms.confluxmap.core.net.shared.SnapshotS2C;
 import cn.net.rms.confluxmap.core.net.shared.StatusS2C;
 import cn.net.rms.confluxmap.core.net.shared.SubscribeC2S;
 import cn.net.rms.confluxmap.core.net.shared.UpsertS2C;
+import cn.net.rms.confluxmap.core.net.shared.UpdateC2S;
 import java.time.Clock;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -154,9 +155,9 @@ public final class SharedWaypointSessionHandler {
             }
             session.subscribed = false;
             session.compatible = hello.major() == SharedWaypointProto.PROTO_MAJOR && hello.minor() >= 0;
-            session.negotiatedMinor = session.compatible
-                ? Math.min(hello.minor(), SharedWaypointProto.PROTO_MINOR)
-                : -1;
+            session.negotiatedMinor = hello.minor() < 0
+                ? 0
+                : Math.min(hello.minor(), SharedWaypointProto.PROTO_MINOR);
             session.operator = peer.operator();
             return Dispatch.direct(status(peer, environment, session.compatible, session.negotiatedMinor));
         }
@@ -204,15 +205,26 @@ public final class SharedWaypointSessionHandler {
                 )
             ));
         }
+        if (message instanceof final UpdateC2S update) {
+            if (!environment.enabled()) {
+                return disabled(session, update.operationId(), peer, environment);
+            }
+            return mutation(session, environment.service().update(
+                actor(peer),
+                new SharedWaypointService.UpdateRequest(
+                    update.operationId(), update.expectedRevision(), update.id(), update.name(),
+                    update.dimensionId(), update.x(), update.y(), update.z(), update.color(), update.type()
+                )
+            ));
+        }
         if (message instanceof final LockC2S lock) {
             if (!environment.enabled()) {
                 return disabled(session, lock.operationId(), peer, environment);
             }
-            return mutation(session, environment.service().setLocked(
-                actor(peer),
-                new SharedWaypointService.LockRequest(
-                    lock.operationId(), lock.expectedRevision(), lock.id(), lock.locked()
-                )
+            return Dispatch.direct(new ResultS2C(
+                lock.operationId(),
+                SharedWaypointProto.RESULT_STATUS_REJECTED,
+                SharedWaypointProto.RESULT_ERROR_INVALID_REQUEST
             ));
         }
         return Dispatch.none();
@@ -313,14 +325,16 @@ public final class SharedWaypointSessionHandler {
     ) {
         return new StatusS2C(
             SharedWaypointProto.PROTO_MAJOR,
-            supported ? negotiatedMinor : SharedWaypointProto.PROTO_MINOR,
+            Math.max(0, negotiatedMinor),
             supported,
             supported && environment.enabled(),
             peer.operator(),
             environment.worldId(),
             environment.revision(),
             environment.maxWorld(),
-            environment.maxPlayer()
+            environment.maxPlayer(),
+            environment.service() != null
+                && environment.service().accessPolicy() == SharedWaypointService.AccessPolicy.OWNER_MANAGED
         );
     }
 
@@ -364,15 +378,26 @@ public final class SharedWaypointSessionHandler {
             statusCode(mutation.status()),
             errorCode(mutation.error(), session.negotiatedMinor)
         );
-        final SharedWaypointMessage delta = switch (mutation.delta().kind()) {
-            case UPSERT -> new UpsertS2C(mutation.delta().revision(), mutation.delta().waypoint());
-            case REMOVE -> new RemoveS2C(mutation.delta().revision(), mutation.delta().removedId());
-            case NOOP -> null;
-        };
+        final SharedWaypointMessage delta = deltaMessage(mutation);
         return new Dispatch(
             List.of(result),
             mutation.applied() && !mutation.replayed() ? delta : null
         );
+    }
+
+    /** Converts an applied service mutation into the delta sent to subscribed modded clients. */
+    public static SharedWaypointMessage deltaMessage(
+        final SharedWaypointService.MutationResult mutation
+    ) {
+        Objects.requireNonNull(mutation, "mutation");
+        if (!mutation.applied() || mutation.replayed()) {
+            return null;
+        }
+        return switch (mutation.delta().kind()) {
+            case UPSERT -> new UpsertS2C(mutation.delta().revision(), mutation.delta().waypoint());
+            case REMOVE -> new RemoveS2C(mutation.delta().revision(), mutation.delta().removedId());
+            case NOOP -> null;
+        };
     }
 
     static int statusCode(final SharedWaypointService.MutationStatus status) {

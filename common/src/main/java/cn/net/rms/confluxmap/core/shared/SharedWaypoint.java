@@ -22,7 +22,6 @@ public record SharedWaypoint(
     double z,
     int colorArgb,
     Waypoint.Type type,
-    boolean locked,
     long createdAtEpochMs,
     long revision
 ) {

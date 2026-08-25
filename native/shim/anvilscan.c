@@ -730,6 +730,15 @@ static int cfxIsSnow(const char *name) {
         || strcmp(name, "minecraft:powder_snow") == 0);
 }
 
+static int cfxIsCarpet(const char *name) {
+    if (name == NULL)
+        return 0;
+    const size_t length = strlen(name);
+    static const char suffix[] = "_carpet";
+    return length >= sizeof(suffix) - 1
+        && strcmp(name + length - (sizeof(suffix) - 1), suffix) == 0;
+}
+
 static int cfxIsIce(const char *name) {
     return cfxContains(name, "ice");
 }
@@ -812,7 +821,7 @@ static int cfxSummarizeSample(
         surface = cover;
         fluid_surface = cover;
         promoted_fluid = 1;
-    } else if (cfxIsSnow(cover->name)) {
+    } else if (cfxIsSnow(cover->name) || cfxIsCarpet(cover->name)) {
         surface_y = ground_y + 1;
         surface = cover;
     }

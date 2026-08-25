@@ -122,6 +122,7 @@ public final class NegotiatedMapSync {
             case Proto.MSG_MAP_REGION_SYNC_SUBSCRIBE_C2S,
                  Proto.MSG_MAP_REGION_INVALIDATE_S2C -> MapSyncCapability.REGION_INVALIDATION;
             case Proto.MSG_SERVER_VIEW_DISTANCE_S2C -> MapSyncCapability.SERVER_VIEW_DISTANCE;
+            case Proto.MSG_SERVER_INSTANCE_S2C -> MapSyncCapability.SERVER_INSTANCE;
             default -> null;
         };
         if (required != null && !supports(required)) {

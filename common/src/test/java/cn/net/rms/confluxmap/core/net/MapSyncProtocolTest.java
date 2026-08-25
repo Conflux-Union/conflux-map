@@ -31,6 +31,71 @@ class MapSyncProtocolTest {
     }
 
     @Test
+    void currentHelloSelectsTheServerInstanceCapability() throws Exception {
+        final HelloC2S hello = (HelloC2S) MsgCodec.decode(MsgCodec.encode(
+            MapSyncProtocol.clientHello("0.2.0", PREDICTOR)
+        ));
+
+        final MapSyncProtocol.ServerHandshake handshake =
+            MapSyncProtocol.acceptClient(hello, "0.2.0", PREDICTOR);
+
+        assertTrue(handshake.session().supports(MapSyncCapability.SERVER_INSTANCE));
+    }
+
+    /**
+     * Legacy peers advertise capabilities through predictor tokens, and no released token ever
+     * meant SERVER_INSTANCE. Granting it would send them a message id their codec rejects.
+     */
+    @Test
+    void legacyHelloNeverSelectsTheServerInstanceCapability() {
+        final MapSyncProtocol.ServerHandshake handshake = MapSyncProtocol.acceptClient(
+            new HelloC2S("0.2.0", PREDICTOR + "|sync:1|wire:4.0|patch:4|region:2|source-light:1"),
+            "0.2.0",
+            PREDICTOR
+        );
+
+        assertFalse(handshake.session().supports(MapSyncCapability.SERVER_INSTANCE));
+    }
+
+    /**
+     * The capability check is what actually protects a released client: its codec range stops at
+     * 0x12, so an unguarded send would fail its decode rather than being ignored.
+     */
+    @Test
+    void legacySessionRefusesToEncodeTheServerInstanceMessage() {
+        final NegotiatedMapSync session = MapSyncProtocol.acceptClient(
+            new HelloC2S("0.2.0", PREDICTOR + "|sync:1|wire:4.0|patch:4|region:2|source-light:1"),
+            "0.2.0",
+            PREDICTOR
+        ).session();
+
+        assertThrows(
+            ProtoException.class,
+            () -> session.encodeOutbound(
+                new ServerInstanceS2C("aaaaaaaa-0000-0000-0000-000000000000")
+            )
+        );
+    }
+
+    @Test
+    void capabilityAwareSessionEncodesTheServerInstanceMessage() throws Exception {
+        final HelloC2S hello = (HelloC2S) MsgCodec.decode(MsgCodec.encode(
+            MapSyncProtocol.clientHello("0.2.0", PREDICTOR)
+        ));
+        final NegotiatedMapSync session =
+            MapSyncProtocol.acceptClient(hello, "0.2.0", PREDICTOR).session();
+
+        final byte[] encoded = session.encodeOutbound(
+            new ServerInstanceS2C("aaaaaaaa-0000-0000-0000-000000000000")
+        );
+
+        assertEquals(
+            "aaaaaaaa-0000-0000-0000-000000000000",
+            ((ServerInstanceS2C) MsgCodec.decode(encoded)).instanceId()
+        );
+    }
+
+    @Test
     void predictorMismatchKeepsWireFeaturesButUsesAbsoluteCorrections() {
         final HelloC2S hello = MapSyncProtocol.clientHello("0.2.0", "cb:future|shim:10|base:15");
 

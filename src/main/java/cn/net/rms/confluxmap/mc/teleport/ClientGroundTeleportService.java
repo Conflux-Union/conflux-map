@@ -1,6 +1,10 @@
 package cn.net.rms.confluxmap.mc.teleport;
 
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
+import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.config.TeleportCommandTemplate;
+import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.OptionalInt;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -16,10 +20,15 @@ public final class ClientGroundTeleportService {
     private static final int MAX_WAIT_TICKS = 200;
 
     private final MinecraftClient client;
+    private final ConfluxConfig config;
     private Pending pending;
 
-    public ClientGroundTeleportService(final MinecraftClient client) {
+    public ClientGroundTeleportService(
+        final MinecraftClient client,
+        final ConfluxConfig config
+    ) {
         this.client = client;
+        this.config = config;
     }
 
     public void register() {
@@ -30,6 +39,21 @@ public final class ClientGroundTeleportService {
         pending = null;
     }
 
+    /** Sends the configured command to the waypoint's exact stored coordinates. */
+    public void teleportExact(
+        final double x,
+        final double y,
+        final double z,
+        final DimensionId dimension,
+        final WorldIdentity worldIdentity
+    ) {
+        if (client.world == null || client.player == null) {
+            return;
+        }
+        pending = null;
+        sendCommand(x, y, z, dimension, worldIdentity);
+    }
+
     /**
      * Starts a teleport to any map coordinate. The estimate can come from cubiomes or map cache,
      * but is only used to stage above the predicted terrain while the authoritative client chunk loads.
@@ -37,15 +61,26 @@ public final class ClientGroundTeleportService {
     public void teleport(
         final int blockX,
         final int blockZ,
-        final OptionalInt estimatedPlayerY
+        final OptionalInt estimatedPlayerY,
+        final DimensionId dimension,
+        final WorldIdentity worldIdentity,
+        final boolean direct
     ) {
         final ClientWorld world = client.world;
         if (world == null || client.player == null) {
             return;
         }
+        if (direct) {
+            estimatedPlayerY.ifPresent(y -> sendCommand(
+                centered(blockX), y, centered(blockZ), dimension, worldIdentity
+            ));
+            return;
+        }
         final GroundSample sample = sampleGround(world, blockX, blockZ);
         if (sample.loaded()) {
-            sample.playerY().ifPresent(y -> MinecraftAccess.sendCommand(client, commandAt(blockX, y, blockZ)));
+            sample.playerY().ifPresent(y -> sendCommand(
+                centered(blockX), y, centered(blockZ), dimension, worldIdentity
+            ));
             return;
         }
 
@@ -56,11 +91,16 @@ public final class ClientGroundTeleportService {
             client.player.getX(),
             client.player.getY(),
             client.player.getZ(),
+            dimension,
+            worldIdentity,
             0
         );
-        MinecraftAccess.sendCommand(
-            client,
-            commandAt(blockX, stagingY(estimatedPlayerY, world.getBottomY(), world.getTopY()), blockZ)
+        sendCommand(
+            centered(blockX),
+            stagingY(estimatedPlayerY, world.getBottomY(), world.getTopY()),
+            centered(blockZ),
+            dimension,
+            worldIdentity
         );
     }
 
@@ -76,9 +116,9 @@ public final class ClientGroundTeleportService {
         if (current.waitedTicks() >= MAX_WAIT_TICKS) {
             pending = null;
             if (isInTargetChunk(client.player.getX(), client.player.getZ(), current.blockX(), current.blockZ())) {
-                MinecraftAccess.sendCommand(
-                    client,
-                    commandAt(current.returnX(), current.returnY(), current.returnZ())
+                sendCommand(
+                    current.returnX(), current.returnY(), current.returnZ(),
+                    current.dimension(), current.worldIdentity()
                 );
             }
             return;
@@ -94,14 +134,14 @@ public final class ClientGroundTeleportService {
         }
         pending = null;
         if (sample.playerY().isPresent()) {
-            MinecraftAccess.sendCommand(
-                client,
-                commandAt(current.blockX(), sample.playerY().getAsInt(), current.blockZ())
+            sendCommand(
+                centered(current.blockX()), sample.playerY().getAsInt(), centered(current.blockZ()),
+                current.dimension(), current.worldIdentity()
             );
         } else {
-            MinecraftAccess.sendCommand(
-                client,
-                commandAt(current.returnX(), current.returnY(), current.returnZ())
+            sendCommand(
+                current.returnX(), current.returnY(), current.returnZ(),
+                current.dimension(), current.worldIdentity()
             );
         }
     }
@@ -147,8 +187,19 @@ public final class ClientGroundTeleportService {
         return "tp " + centered(blockX) + " " + playerY + " " + centered(blockZ);
     }
 
-    private static String commandAt(final double x, final double y, final double z) {
-        return "tp " + Double.toString(x) + " " + Double.toString(y) + " " + Double.toString(z);
+    private void sendCommand(
+        final double x,
+        final double y,
+        final double z,
+        final DimensionId dimension,
+        final WorldIdentity worldIdentity
+    ) {
+        MinecraftAccess.sendCommand(
+            client,
+            TeleportCommandTemplate.render(
+                config.teleportCommand, x, y, z, dimension, worldIdentity
+            )
+        );
     }
 
     static boolean isInTargetChunk(
@@ -161,8 +212,8 @@ public final class ClientGroundTeleportService {
             && TileMath.blockToChunk((int) Math.floor(playerZ)) == TileMath.blockToChunk(blockZ);
     }
 
-    private static String centered(final int block) {
-        return Double.toString(block + 0.5);
+    private static double centered(final int block) {
+        return block + 0.5;
     }
 
     private record GroundSample(boolean loaded, OptionalInt playerY) {
@@ -175,10 +226,15 @@ public final class ClientGroundTeleportService {
         double returnX,
         double returnY,
         double returnZ,
+        DimensionId dimension,
+        WorldIdentity worldIdentity,
         int waitedTicks
     ) {
         Pending waitOneTick() {
-            return new Pending(world, blockX, blockZ, returnX, returnY, returnZ, waitedTicks + 1);
+            return new Pending(
+                world, blockX, blockZ, returnX, returnY, returnZ,
+                dimension, worldIdentity, waitedTicks + 1
+            );
         }
     }
 }

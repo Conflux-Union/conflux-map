@@ -209,7 +209,8 @@ public final class MapSyncProtocol {
             || typeId == Proto.MSG_MAP_REGION_INVALIDATE_S2C
             || typeId == Proto.MSG_MAP_COMPATIBILITY_S2C
             || typeId == Proto.MSG_SERVER_VIEW_DISTANCE_S2C
-            || typeId == Proto.MSG_MAP_CAPABILITIES_S2C;
+            || typeId == Proto.MSG_MAP_CAPABILITIES_S2C
+            || typeId == Proto.MSG_SERVER_INSTANCE_S2C;
     }
 
     public static Message decodeServerbound(final byte[] payload) throws ProtoException {
@@ -353,6 +354,10 @@ public final class MapSyncProtocol {
         if (!serverViewDistance) {
             capabilities.remove(MapSyncCapability.SERVER_VIEW_DISTANCE);
         }
+        // Predictor tokens are frozen at the shapes released peers already speak, so any
+        // capability added after them can only be negotiated through caps2. Granting one here
+        // would send a legacy client a message id its codec rejects outright.
+        capabilities.remove(MapSyncCapability.SERVER_INSTANCE);
         return capabilities;
     }
 

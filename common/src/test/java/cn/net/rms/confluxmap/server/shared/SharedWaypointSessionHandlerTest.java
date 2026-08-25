@@ -18,6 +18,7 @@ import cn.net.rms.confluxmap.core.net.shared.SnapshotS2C;
 import cn.net.rms.confluxmap.core.net.shared.StatusS2C;
 import cn.net.rms.confluxmap.core.net.shared.SubscribeC2S;
 import cn.net.rms.confluxmap.core.net.shared.UpsertS2C;
+import cn.net.rms.confluxmap.core.net.shared.UpdateC2S;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import java.time.Clock;
 import java.time.Instant;
@@ -47,6 +48,7 @@ class SharedWaypointSessionHandlerTest {
         final StatusS2C unsupportedStatus = assertInstanceOf(StatusS2C.class, unsupported.direct().get(0));
         assertFalse(unsupportedStatus.supported());
         assertFalse(unsupportedStatus.enabled());
+        assertEquals(0, unsupportedStatus.minor());
         assertFalse(fixture.handler.isCompatible(PLAYER.id()));
 
         final SharedWaypointSessionHandler.Dispatch hello = compatibleHello(fixture, PLAYER);
@@ -140,7 +142,7 @@ class SharedWaypointSessionHandlerTest {
     }
 
     @Test
-    void noopAndIdempotentReplayOnlyReturnResult() {
+    void legacyLockRequestIsRejectedWithoutChangingRevision() {
         final Fixture fixture = fixture(true);
         compatibleHello(fixture, PLAYER);
         final UUID operationId = uuid(110);
@@ -160,22 +162,25 @@ class SharedWaypointSessionHandlerTest {
         assertEquals(1L, fixture.service.snapshot().revision());
 
         compatibleHello(fixture, OPERATOR);
-        final SharedWaypointSessionHandler.Dispatch noop = fixture.handler.handle(
+        final SharedWaypointSessionHandler.Dispatch legacyLock = fixture.handler.handle(
             OPERATOR,
             new LockC2S(uuid(111), created.waypoint().id(), created.waypoint().revision(), false),
             fixture.environment
         );
-        final ResultS2C noopResult = assertInstanceOf(ResultS2C.class, noop.direct().get(0));
-        assertEquals(SharedWaypointProto.RESULT_STATUS_APPLIED, noopResult.statusCode());
-        assertNull(noop.broadcast());
+        final ResultS2C result = assertInstanceOf(ResultS2C.class, legacyLock.direct().get(0));
+        assertEquals(SharedWaypointProto.RESULT_STATUS_REJECTED, result.statusCode());
+        assertEquals(SharedWaypointProto.RESULT_ERROR_INVALID_REQUEST, result.errorCode());
+        assertNull(legacyLock.broadcast());
         assertEquals(1L, fixture.service.snapshot().revision());
     }
 
     @Test
-    void deleteAndLockRequestsUseCurrentOperatorPermissionAndTargetRevision() {
+    void deleteRequestsUseCurrentOperatorPermissionAndTargetRevision() {
         final Fixture fixture = fixture(true);
         compatibleHello(fixture, PLAYER);
         compatibleHello(fixture, OPERATOR);
+        final SharedWaypointSessionHandler.Peer other = peer(3, "Other", false);
+        compatibleHello(fixture, other);
         final UpsertS2C created = assertInstanceOf(
             UpsertS2C.class,
             fixture.handler.handle(
@@ -183,31 +188,11 @@ class SharedWaypointSessionHandlerTest {
             ).broadcast()
         );
 
-        final ResultS2C forbiddenLock = assertInstanceOf(
-            ResultS2C.class,
-            fixture.handler.handle(
-                PLAYER,
-                new LockC2S(uuid(116), created.waypoint().id(), created.waypoint().revision(), true),
-                fixture.environment
-            ).direct().get(0)
-        );
-        assertEquals(SharedWaypointProto.RESULT_ERROR_FORBIDDEN, forbiddenLock.errorCode());
-
-        final UpsertS2C locked = assertInstanceOf(
-            UpsertS2C.class,
-            fixture.handler.handle(
-                OPERATOR,
-                new LockC2S(uuid(117), created.waypoint().id(), created.waypoint().revision(), true),
-                fixture.environment
-            ).broadcast()
-        );
-        assertTrue(locked.waypoint().locked());
-
         final ResultS2C forbiddenDelete = assertInstanceOf(
             ResultS2C.class,
             fixture.handler.handle(
-                PLAYER,
-                new DeleteC2S(uuid(118), locked.waypoint().id(), locked.waypoint().revision()),
+                other,
+                new DeleteC2S(uuid(116), created.waypoint().id(), created.waypoint().revision()),
                 fixture.environment
             ).direct().get(0)
         );
@@ -217,12 +202,38 @@ class SharedWaypointSessionHandlerTest {
             RemoveS2C.class,
             fixture.handler.handle(
                 OPERATOR,
-                new DeleteC2S(uuid(119), locked.waypoint().id(), locked.waypoint().revision()),
+                new DeleteC2S(uuid(119), created.waypoint().id(), created.waypoint().revision()),
                 fixture.environment
             ).broadcast()
         );
-        assertEquals(locked.waypoint().id(), removed.id());
-        assertEquals(3L, removed.revision());
+        assertEquals(created.waypoint().id(), removed.id());
+        assertEquals(2L, removed.revision());
+    }
+
+    @Test
+    void ownerUpdateBroadcastsTheAuthoritativeWaypoint() {
+        final Fixture fixture = fixture(true);
+        compatibleHello(fixture, PLAYER);
+        final UpsertS2C created = assertInstanceOf(
+            UpsertS2C.class,
+            fixture.handler.handle(
+                PLAYER, create(uuid(120), 0L, "Spawn"), fixture.environment
+            ).broadcast()
+        );
+
+        final SharedWaypointSessionHandler.Dispatch dispatch = fixture.handler.handle(
+            PLAYER,
+            new UpdateC2S(
+                uuid(121), created.waypoint().id(), created.waypoint().revision(),
+                "Updated", DimensionId.OVERWORLD, 8d, 70d, 9d, 0xFF3498DB, Waypoint.Type.NORMAL
+            ),
+            fixture.environment
+        );
+
+        final UpsertS2C updated = assertInstanceOf(UpsertS2C.class, dispatch.broadcast());
+        assertEquals("Updated", updated.waypoint().name());
+        assertEquals(DimensionId.OVERWORLD, updated.waypoint().dimensionId());
+        assertEquals(2L, updated.revision());
     }
 
     @Test
@@ -425,6 +436,7 @@ class SharedWaypointSessionHandlerTest {
             clock,
             () -> uuid(ids.getAndIncrement()),
             new SharedWaypointService.Limits(20, 10, 30),
+            SharedWaypointService.AccessPolicy.OWNER_MANAGED,
             event -> { },
             LogManager.getLogger("SharedWaypointSessionHandlerTest")
         );

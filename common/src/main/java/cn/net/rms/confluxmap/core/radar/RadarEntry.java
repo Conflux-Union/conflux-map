@@ -12,6 +12,7 @@ package cn.net.rms.confluxmap.core.radar;
  * @param z world Z at scan time
  * @param yDelta world Y minus the player's world Y at scan time
  * @param category the coarse bucket this entity was classified into
+ * @param entityType the entity type's registry identifier, used to keep marker merging type-safe
  * @param name display name, populated only for {@link RadarCategory#PLAYER} entries; null otherwise
  * @param entityId the client-side entity id, used both as scan-bucket identity and to look up
  *     a live entity reference for smooth per-frame interpolation
@@ -23,6 +24,7 @@ public record RadarEntry(
     double z,
     int yDelta,
     RadarCategory category,
+    String entityType,
     String name,
     int entityId,
     boolean spectator

@@ -15,9 +15,9 @@ public abstract class ClientChunkManagerMixin {
         final WorldChunk chunk = cir.getReturnValue();
         if (chunk != null) {
             //#if MC>=260100
-            //$$ ChunkCaptureHandler.chunkDirty(chunk.getPos().x(), chunk.getPos().z());
+            //$$ ChunkCaptureHandler.chunkLoaded(chunk.getPos().x(), chunk.getPos().z());
             //#else
-            ChunkCaptureHandler.chunkDirty(chunk.getPos().x, chunk.getPos().z);
+            ChunkCaptureHandler.chunkLoaded(chunk.getPos().x, chunk.getPos().z);
             //#endif
         }
     }

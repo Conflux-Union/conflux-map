@@ -365,6 +365,95 @@ public final class RenderUtil {
         //#endif
     }
 
+    /** Maps one horizontal texture strip clockwise around a circular frame. */
+    public static void drawTexturedRing(
+        final MatrixStack matrices,
+        final float centerX,
+        final float centerY,
+        final float outerRadius,
+        final float thickness,
+        final float u0,
+        final float v0,
+        final float u1,
+        final float v1,
+        final int argbColor
+    ) {
+        //#if MC<12105
+        useTintedTextureShader();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        //#endif
+        final int segments = Math.max(32, (int) Math.ceil(outerRadius * Math.PI / 2));
+        final float innerRadius = Math.max(0f, outerRadius - thickness);
+        final float a = Argb.alpha(argbColor) / 255f;
+        final float r = Argb.red(argbColor) / 255f;
+        final float g = Argb.green(argbColor) / 255f;
+        final float b = Argb.blue(argbColor) / 255f;
+        final var model = matrices.peek().getModel();
+        final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, Mesh.tintedTextureFormat());
+        for (int i = 0; i < segments; i++) {
+            final float p0 = i / (float) segments;
+            final float p1 = (i + 1) / (float) segments;
+            final double angle0 = -Math.PI / 2.0 + p0 * Math.PI * 2.0;
+            final double angle1 = -Math.PI / 2.0 + p1 * Math.PI * 2.0;
+            final float sin0 = (float) Math.sin(angle0);
+            final float cos0 = (float) Math.cos(angle0);
+            final float sin1 = (float) Math.sin(angle1);
+            final float cos1 = (float) Math.cos(angle1);
+            final float texU0 = u0 + (u1 - u0) * p0;
+            final float texU1 = u0 + (u1 - u0) * p1;
+
+            texturedVertex(
+                mesh, model,
+                centerX + cos0 * innerRadius, centerY + sin0 * innerRadius,
+                texU0, v1, r, g, b, a
+            );
+            texturedVertex(
+                mesh, model,
+                centerX + cos1 * innerRadius, centerY + sin1 * innerRadius,
+                texU1, v1, r, g, b, a
+            );
+            texturedVertex(
+                mesh, model,
+                centerX + cos1 * outerRadius, centerY + sin1 * outerRadius,
+                texU1, v0, r, g, b, a
+            );
+            texturedVertex(
+                mesh, model,
+                centerX + cos0 * outerRadius, centerY + sin0 * outerRadius,
+                texU0, v0, r, g, b, a
+            );
+        }
+        drawGuiTexturedMesh(mesh);
+    }
+
+    private static void texturedVertex(
+        final Mesh mesh,
+        //#if MC>=11904
+        //$$ final org.joml.Matrix4f model,
+        //#else
+        final Matrix4f model,
+        //#endif
+        final float x,
+        final float y,
+        final float u,
+        final float v,
+        final float r,
+        final float g,
+        final float b,
+        final float a
+    ) {
+        mesh.tintedVertex(model, x, y, 0, u, v, r, g, b, a);
+    }
+
+    private static void drawGuiTexturedMesh(final Mesh mesh) {
+        //#if MC>=12105
+        //$$ mesh.drawGui(RenderPipelines.GUI_TEXTURED);
+        //#else
+        mesh.draw();
+        //#endif
+    }
+
     /**
      * Draws already-projected textured model quads into the current target. The array uses
      * {@code x,y,z,u,v} per vertex and must contain complete groups of four vertices.

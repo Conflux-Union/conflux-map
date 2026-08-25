@@ -86,6 +86,8 @@ public final class MsgCodec {
                 out.writeShort(m.chunks());
             } else if (msg instanceof final MapCapabilitiesS2C m) {
                 encodeMapCapabilitiesS2C(out, m);
+            } else if (msg instanceof final ServerInstanceS2C m) {
+                writeUtf(out, m.instanceId());
             } else {
                 throw new ProtoException("unknown message type: " + msg.getClass().getName());
             }
@@ -123,7 +125,8 @@ public final class MsgCodec {
             || typeId == Proto.MSG_MAP_REGION_INVALIDATE_S2C
             || typeId == Proto.MSG_MAP_COMPATIBILITY_S2C
             || typeId == Proto.MSG_SERVER_VIEW_DISTANCE_S2C
-            || typeId == Proto.MSG_MAP_CAPABILITIES_S2C;
+            || typeId == Proto.MSG_MAP_CAPABILITIES_S2C
+            || typeId == Proto.MSG_SERVER_INSTANCE_S2C;
     }
 
     private static void encodeHelloC2S(final DataOutputStream out, final HelloC2S m) throws IOException, ProtoException {
@@ -541,6 +544,7 @@ public final class MsgCodec {
                 case Proto.MSG_MAP_COMPATIBILITY_S2C -> decodeMapCompatibilityS2C(in);
                 case Proto.MSG_SERVER_VIEW_DISTANCE_S2C -> decodeServerViewDistanceS2C(in);
                 case Proto.MSG_MAP_CAPABILITIES_S2C -> decodeMapCapabilitiesS2C(in);
+                case Proto.MSG_SERVER_INSTANCE_S2C -> new ServerInstanceS2C(readUtf(in));
                 default -> throw new ProtoException("unhandled message type id: 0x" + Integer.toHexString(typeId));
             };
             if (in.available() != 0) {

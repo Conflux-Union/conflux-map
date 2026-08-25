@@ -88,7 +88,8 @@ public final class RadarMarkerRenderer {
         for (int i = 0; i < markers.size(); i++) {
             final Marker marker = markers.get(i);
             candidates.add(new RadarMarkerClusterer.Candidate(
-                i, marker.x(), marker.y(), marker.entry().category(), marker.entry().entityId()
+                i, marker.x(), marker.y(), marker.entry().category(),
+                marker.entry().entityType(), marker.entry().entityId()
             ));
         }
         for (final RadarMarkerClusterer.Cluster cluster
