@@ -9,6 +9,7 @@ import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
@@ -74,12 +75,26 @@ public final class RadarMarkerRenderer {
         final EntityIconManager iconManager,
         final List<Marker> markers
     ) {
+        drawAll(draw, client, config, iconManager, markers, marker -> true);
+    }
+
+    /** Draws radar markers while allowing a screen to suppress markers covered by a modal overlay. */
+    public static void drawAll(
+        final GuiDraw draw,
+        final MinecraftClient client,
+        final ConfluxConfig config,
+        final EntityIconManager iconManager,
+        final List<Marker> markers,
+        final Predicate<Marker> visible
+    ) {
         if (markers.isEmpty()) {
             return;
         }
         if (!config.radarIconsEnabled || markers.size() == 1) {
             for (final Marker marker : markers) {
-                drawMarker(draw, client, config, iconManager, marker);
+                if (visible.test(marker)) {
+                    drawMarker(draw, client, config, iconManager, marker);
+                }
             }
             return;
         }
@@ -104,6 +119,9 @@ public final class RadarMarkerRenderer {
             final Marker positioned = new Marker(
                 marker.entry(), cluster.x(), cluster.y(), marker.yDelta(), marker.live()
             );
+            if (!visible.test(positioned)) {
+                continue;
+            }
             final boolean iconDrawn = drawMarker(
                 draw, client, config, iconManager, positioned
             );

@@ -87,6 +87,7 @@ import cn.net.rms.confluxmap.mc.ui.DisplayModeIconCatalog;
 import cn.net.rms.confluxmap.mc.ui.PlayerMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.PlayerTrailRenderer;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
+import cn.net.rms.confluxmap.mc.ui.world.WaypointHighlightState;
 import cn.net.rms.confluxmap.mc.ui.StructureMarkerRenderer;
 import cn.net.rms.confluxmap.mc.world.ClientChunkLookup;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
@@ -114,6 +115,7 @@ import net.minecraft.client.MinecraftClient;
 //#endif
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.render.GameRenderer;
 //#if MC>=12108
@@ -331,6 +333,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private final FullscreenMapBrowseService mapBrowser;
     private final UiResourceTheme uiTheme;
     private InitialFocus initialFocus;
+    private final WaypointHighlightState waypointHighlightState;
 
     /** World point currently at screen center, and blocks-per-pixel; all mutable, panned/zoomed by input. */
     private double centerX;
@@ -368,12 +371,14 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private int waypointControlsBottom;
     private FullscreenMapLocationMenu.Bounds locationMenuBounds;
     private FullscreenMapLocationMenu.Target locationMenuTarget;
+    private WaypointRenderEntry locationMenuWaypoint;
     private FullscreenMapLocationMenu.Action pendingLocationAction;
     private ButtonWidget setWaypointLocationButton;
     private ButtonWidget shareLocationButton;
     private ButtonWidget teleportLocationButton;
     private String teleportLocationUnavailableKey;
     private final Map<ButtonWidget, String> annotationTooltips = new LinkedHashMap<>();
+    private final Map<ButtonWidget, String> locationActionTooltips = new LinkedHashMap<>();
     private final Map<AnnotationTool, ButtonWidget> annotationToolButtons = new EnumMap<>(AnnotationTool.class);
     private AnnotationToolbarBounds annotationToolbarBounds;
     private AnnotationToolbarBounds annotationColorMenuBounds;
@@ -439,9 +444,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         this.archivedWaypointRenderCatalog = new WaypointRenderCatalog(
             mapBrowser.waypoints(), List::of, config
         );
+        this.waypointHighlightState = app.waypointHighlightState();
 
         final DimensionId dimension = gameBridge.session().dimension();
-        final Optional<PlayerView> player = gameBridge.player();
+        final Optional<PlayerView> player = gameBridge.viewpoint();
         final FullscreenMapViewState.View initialView = viewState.viewForOpening(
             dimension,
             player.isPresent() ? player.get().x() : 0.0,
@@ -465,6 +471,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     protected void init() {
         locationMenuBounds = null;
         locationMenuTarget = null;
+        locationMenuWaypoint = null;
         pendingLocationAction = null;
         final InitialFocus requestedFocus = initialFocus;
         if (requestedFocus != null) {
@@ -526,6 +533,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         shareLocationButton = null;
         teleportLocationButton = null;
         teleportLocationUnavailableKey = null;
+        locationActionTooltips.clear();
         structureSearchButton = null;
         annotationTooltips.clear();
         annotationToolButtons.clear();
@@ -1486,11 +1494,18 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 Texts.translatable(action.translationKey()),
                 ignored -> pendingLocationAction = action
             ));
+            locationActionTooltips.put(button, actionTooltipKey(action));
             button.active = FullscreenMapLocationMenu.actionEnabled(
                 action, playerPresent, heightKnown, teleportCommandAvailable
             );
             if (!viewingLiveWorld() && action == FullscreenMapLocationMenu.Action.SHARE_LOCATION) {
                 button.active = false;
+            }
+            if (action == FullscreenMapLocationMenu.Action.HIGHLIGHT) {
+                button.active = viewingLiveSession()
+                    && (locationMenuWaypoint != null || locationMenuTarget != null);
+            } else if (action == FullscreenMapLocationMenu.Action.CLEAR_HIGHLIGHT) {
+                button.active = waypointHighlightState.active();
             }
             switch (action) {
                 case SET_WAYPOINT -> setWaypointLocationButton = button;
@@ -1859,6 +1874,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         locationMenuTarget = FullscreenMapLocationMenu.targetAt(
             worldX, surfaceYAt(blockX, blockZ), worldZ
         );
+        locationMenuWaypoint = hoveredWaypoint;
         pendingLocationAction = null;
         mapPointerPress = false;
         rebuildWaypointControls();
@@ -1886,11 +1902,31 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private void performPendingLocationAction() {
         final FullscreenMapLocationMenu.Action action = pendingLocationAction;
         final FullscreenMapLocationMenu.Target target = locationMenuTarget;
+        final WaypointRenderEntry waypoint = locationMenuWaypoint;
         if (action == null || target == null) {
             return;
         }
         dismissLocationMenu();
         switch (action) {
+            case HIGHLIGHT -> {
+                if (waypoint != null) {
+                    if (WaypointHighlightState.SELECTED_LOCATION_ID.equals(waypoint.id())) {
+                        waypointHighlightState.target()
+                            .filter(existing -> existing.waypointId() == null)
+                            .ifPresentOrElse(
+                                waypointHighlightState::select,
+                                () -> selectLocationHighlight(target)
+                            );
+                    } else {
+                        waypointHighlightState.selectWaypoint(
+                            waypoint, viewSession().dimension()
+                        );
+                    }
+                } else if (target != null) {
+                    selectLocationHighlight(target);
+                }
+            }
+            case CLEAR_HIGHLIGHT -> waypointHighlightState.clear();
             case SET_WAYPOINT -> target.blockY().ifPresent(y -> MinecraftAccess.setScreen(MinecraftClient.getInstance(),
                 WaypointEditScreen.forCreate(
                     this,
@@ -1914,6 +1950,15 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 );
             }
         }
+    }
+
+    private void selectLocationHighlight(final FullscreenMapLocationMenu.Target target) {
+        final boolean yKnown = target.blockY().isPresent();
+        waypointHighlightState.select(WaypointHighlightState.Target.location(
+            viewSession().dimension(), target.blockX() + 0.5,
+            yKnown ? target.blockY().getAsInt() : WaypointHighlightState.DEFAULT_LOCATION_Y,
+            target.blockZ() + 0.5, yKnown
+        ));
     }
 
     private void shareTemporaryLocation(final FullscreenMapLocationMenu.Target target) {
@@ -1943,6 +1988,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private void dismissLocationMenu() {
         locationMenuBounds = null;
         locationMenuTarget = null;
+        locationMenuWaypoint = null;
         pendingLocationAction = null;
         rebuildWaypointControls();
     }
@@ -2213,7 +2259,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         // This screen owns radarViewRange while it's open (MinimapHudRenderer stops writing it -
         // see its render() javadoc).
         final Optional<PlayerView> radarObserver = viewingLiveSession()
-            ? gameBridge.player(tickDelta)
+            ? gameBridge.viewpoint(tickDelta)
             : Optional.empty();
         if (radarObserver.isPresent()) {
             final PlayerView observer = radarObserver.get();
@@ -2742,6 +2788,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     ) {
         renderTargetDropdown(draw, mouseX, mouseY);
         final Text annotationTooltip = hoveredAnnotationTooltip();
+        final Text locationActionTooltip = hoveredLocationActionTooltip();
         final Text tooltip;
         if (displayModeButton != null && displayModeButton.isHovered()) {
             tooltip = displayModeTooltip();
@@ -2765,6 +2812,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                     ? "confluxmap.map.location_menu.teleport_unavailable"
                     : teleportLocationUnavailableKey
             );
+        } else if (locationActionTooltip != null) {
+            tooltip = locationActionTooltip;
         } else if (structureSearchButton != null && structureSearchButton.isHovered()) {
             tooltip = Texts.translatable(
                 !companion.structureSearchAllowed()
@@ -2788,6 +2837,25 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             return;
         }
         draw.drawTooltip(this, this.textRenderer, tooltip, mouseX, mouseY);
+    }
+
+    private Text hoveredLocationActionTooltip() {
+        for (final Map.Entry<ButtonWidget, String> entry : locationActionTooltips.entrySet()) {
+            if (entry.getKey().isHovered()) {
+                return Texts.translatable(entry.getValue());
+            }
+        }
+        return null;
+    }
+
+    private static String actionTooltipKey(final FullscreenMapLocationMenu.Action action) {
+        return switch (action) {
+            case SET_WAYPOINT -> "confluxmap.map.location_menu.set_waypoint.tooltip";
+            case SHARE_LOCATION -> "confluxmap.map.location_menu.share_location.tooltip";
+            case TELEPORT -> "confluxmap.map.location_menu.teleport.tooltip";
+            case HIGHLIGHT -> "confluxmap.map.location_menu.highlight.tooltip";
+            case CLEAR_HIGHLIGHT -> "confluxmap.map.location_menu.clear_highlight.tooltip";
+        };
     }
 
     private Text hoveredAnnotationTooltip() {
@@ -3306,7 +3374,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         if (!viewingLiveSession() || this.client.world == null) {
             return;
         }
-        final Optional<PlayerView> playerView = gameBridge.player(tickDelta);
+        final Optional<PlayerView> playerView = gameBridge.viewpoint(tickDelta);
         if (playerView.isEmpty()) {
             return;
         }
@@ -3332,7 +3400,28 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             }
             markers.add(new RadarMarkerRenderer.Marker(entry, screenX, screenY, yDelta, live));
         }
-        RadarMarkerRenderer.drawAll(draw, this.client, config, radarIconManager, markers);
+        RadarMarkerRenderer.drawAll(
+            draw, this.client, config, radarIconManager, markers,
+            marker -> !radarMarkerIntersectsUi(marker)
+        );
+    }
+
+    private static int withAlpha(final int color, final float alpha) {
+        final int clamped = Math.round(Math.max(0f, Math.min(1f, alpha)) * 255f);
+        return (clamped << 24) | (color & 0x00FFFFFF);
+    }
+
+    private boolean radarMarkerIntersectsUi(final RadarMarkerRenderer.Marker marker) {
+        final float iconHalf = Math.max(2.5f, config.radarIconSize / 2f);
+        final String name = marker.entry().name();
+        final MapOverlayBounds bounds = MapOverlayBounds.radar(
+            marker.x(), marker.y(), iconHalf,
+            name == null ? 0f : this.textRenderer.getWidth(name),
+            this.textRenderer.fontHeight,
+            marker.entry().category(),
+            config.radarShowPlayerNames
+        );
+        return mapOverlayIntersectsUi(bounds);
     }
 
     private void drawStructures(final GuiDraw draw, final int mouseX, final int mouseY) {
@@ -3368,6 +3457,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         for (final StructureIndex.Marker marker : visibleMarkers) {
             final float screenX = (float) (width / 2.0 + (marker.blockX() - centerX) * pxPerBlock);
             final float screenY = (float) (height / 2.0 + (marker.blockZ() - centerZ) * pxPerBlock);
+            if (mapOverlayIntersectsUi(MapOverlayBounds.structureIcon(screenX, screenY, true))) {
+                continue;
+            }
             final double hoverDistance = Math.hypot(mouseX - screenX, mouseY - screenY);
             if (hoverDistance <= bestHoverDistance) {
                 bestHoverDistance = hoverDistance;
@@ -3381,15 +3473,24 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 continue;
             }
             final boolean hovered = marker.equals(hoveredStructure);
-            StructureMarkerRenderer.draw(draw, marker, screenX, screenY, hovered);
+            final MapOverlayBounds iconBounds = MapOverlayBounds.structureIcon(
+                screenX, screenY, hovered
+            );
+            if (!mapOverlayIntersectsUi(iconBounds)) {
+                StructureMarkerRenderer.draw(draw, marker, screenX, screenY, hovered);
+            }
             if (hovered) {
-                draw.drawTextWithShadow(
-                    this.textRenderer,
-                    Texts.translatable(marker.type().translationKey()),
-                    screenX + 10f,
-                    screenY - 4f,
-                    TEXT_COLOR
+                final var label = Texts.translatable(marker.type().translationKey());
+                final float labelX = screenX + 10f;
+                final float labelY = screenY - 4f;
+                final MapOverlayBounds labelBounds = MapOverlayBounds.text(
+                    labelX, labelY, this.textRenderer.getWidth(label), this.textRenderer.fontHeight
                 );
+                if (!mapOverlayIntersectsUi(labelBounds)) {
+                    draw.drawTextWithShadow(
+                        this.textRenderer, label, labelX, labelY, TEXT_COLOR
+                    );
+                }
             }
         }
     }
@@ -3527,7 +3628,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final DimensionId currentDimension = viewSession().dimension();
         final double pxPerBlock = 1.0 / scale;
         final List<ScreenMarker> markers = new ArrayList<>();
-        for (final WaypointRenderEntry waypoint : viewWaypointRenderCatalog().snapshot(currentDimension)) {
+        final List<WaypointRenderEntry> waypoints = waypointsForRender(currentDimension);
+        for (final WaypointRenderEntry waypoint : waypoints) {
             final float screenX = (float) (width / 2.0 + (waypoint.x() - centerX) * pxPerBlock);
             final float screenY = (float) (height / 2.0 + (waypoint.z() - centerZ) * pxPerBlock);
             if (screenX < -MARKER_HALF_SIZE || screenX > width + MARKER_HALF_SIZE
@@ -3547,23 +3649,128 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             }
         }
         hoveredWaypoint = hovered;
+        final boolean hasHighlight = waypointHighlightState.hasRenderableTarget(
+            waypoints, currentDimension
+        );
 
         for (final ScreenMarker marker : markers) {
             final WaypointRenderEntry waypoint = marker.waypoint();
-            final boolean isHovered = waypoint == hoveredWaypoint;
+            final boolean selected = waypointHighlightState.matchesEntry(waypoint, currentDimension);
+            final boolean isHovered = waypoint == hoveredWaypoint || selected;
             final WaypointVerticalRelation relation = playerView
                 .map(player -> WaypointVerticalRelation.between(waypoint.y(), player.y()))
                 .orElse(WaypointVerticalRelation.NONE);
-            WaypointMarkerRenderer.draw(
-                draw, this.client.textRenderer, waypoint, marker.screenX(), marker.screenY(),
-                MARKER_HALF_SIZE, 1f, isHovered, relation
-            );
-            if (scale <= NAME_LABEL_MAX_SCALE || isHovered) {
-                draw.drawTextWithShadow(
-                    this.textRenderer, waypoint.name(), marker.screenX() + MARKER_HALF_SIZE + 2, marker.screenY() - 4, TEXT_COLOR
+            final float markerLeft = marker.screenX() - MARKER_HALF_SIZE - 1f;
+            final float markerTop = marker.screenY() - MARKER_HALF_SIZE - 1f;
+            final float markerRight = marker.screenX() + MARKER_HALF_SIZE + 1f;
+            final float markerBottom = marker.screenY() + MARKER_HALF_SIZE + 1f;
+            if (!mapOverlayIntersectsUi(markerLeft, markerTop, markerRight, markerBottom)) {
+                WaypointMarkerRenderer.draw(
+                    draw, this.client.textRenderer, waypoint, marker.screenX(), marker.screenY(),
+                    MARKER_HALF_SIZE, visibilityAlpha(selected, hasHighlight), isHovered, relation
                 );
             }
+            if (scale <= NAME_LABEL_MAX_SCALE || isHovered) {
+                final float labelX = marker.screenX() + MARKER_HALF_SIZE + 2;
+                final float labelY = marker.screenY() - 4;
+                final float labelRight = labelX + this.textRenderer.getWidth(waypoint.name());
+                final float labelBottom = labelY + this.textRenderer.fontHeight;
+                if (!mapOverlayIntersectsUi(labelX, labelY, labelRight, labelBottom)) {
+                    draw.drawTextWithShadow(
+                        this.textRenderer, waypoint.name(), labelX, labelY,
+                        withAlpha(TEXT_COLOR, visibilityAlpha(selected, hasHighlight))
+                    );
+                }
+            }
         }
+    }
+
+    private List<WaypointRenderEntry> waypointsForRender(final DimensionId dimension) {
+        final List<WaypointRenderEntry> base = viewWaypointRenderCatalog().snapshot(dimension);
+        final Optional<WaypointHighlightState.Target> target = waypointHighlightState.target()
+            .filter(value -> value.waypointId() == null && value.dimension().equals(dimension));
+        if (target.isEmpty()) {
+            return base;
+        }
+        final List<WaypointRenderEntry> result = new ArrayList<>(base.size() + 1);
+        result.addAll(base);
+        result.add(selectedLocationEntry(target.get()));
+        return result;
+    }
+
+    private WaypointRenderEntry selectedLocationEntry(final WaypointHighlightState.Target target) {
+        return WaypointHighlightState.locationEntry(
+            target,
+            Texts.translatable(
+                WaypointHighlightState.SELECTED_LOCATION_TRANSLATION_KEY
+            ).getString(),
+            target.y(),
+            0xFFFFE066
+        );
+    }
+
+    private float visibilityAlpha(final boolean selected, final boolean hasHighlight) {
+        return selected || !hasHighlight ? 1f : config.waypointHighlightDimOpacity / 100f;
+    }
+
+    private boolean mapOverlayIntersectsUi(final MapOverlayBounds bounds) {
+        return mapOverlayIntersectsUi(
+            bounds.left(), bounds.top(), bounds.right(), bounds.bottom()
+        );
+    }
+
+    /** Keeps map overlays below every visible fullscreen-map control. */
+    private boolean mapOverlayIntersectsUi(
+        final float left,
+        final float top,
+        final float right,
+        final float bottom
+    ) {
+        if (locationMenuBounds != null && intersects(
+            left, top, right, bottom,
+            locationMenuBounds.x(), locationMenuBounds.y(),
+            locationMenuBounds.x() + locationMenuBounds.width(),
+            locationMenuBounds.y() + locationMenuBounds.height()
+        )) {
+            return true;
+        }
+        final TargetDropdown dropdown = targetDropdown();
+        if (dropdown != null && intersects(
+            left, top, right, bottom,
+            dropdown.x() - 1f, dropdown.y() - 1f,
+            dropdown.x() + dropdown.width() + 1f,
+            dropdown.y() + dropdown.height() + 1f
+        )) {
+            return true;
+        }
+        for (final var child : children()) {
+            if (!(child instanceof ClickableWidget widget) || !widget.visible) {
+                continue;
+            }
+            if (intersects(
+                left, top, right, bottom,
+                Widgets.x(widget), Widgets.y(widget),
+                Widgets.x(widget) + widget.getWidth(),
+                Widgets.y(widget) + widget.getHeight()
+            )) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean intersects(
+        final float left,
+        final float top,
+        final float right,
+        final float bottom,
+        final float otherLeft,
+        final float otherTop,
+        final float otherRight,
+        final float otherBottom
+    ) {
+        return right > otherLeft && left < otherRight
+            && bottom > otherTop && top < otherBottom;
     }
 
     /** One waypoint's already-converted, already-viewport-culled screen position for this frame's {@link #drawWaypoints} pass. */

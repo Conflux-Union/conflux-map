@@ -27,6 +27,10 @@ public final class ConfluxConfig {
     public static final int MAX_WAYPOINT_ICON_OPACITY = 100;
     public static final int DEFAULT_WAYPOINT_ICON_OPACITY = 100;
     public static final int DEFAULT_WAYPOINT_RENDER_DISTANCE = 1_000;
+    public static final int MIN_WAYPOINT_HIGHLIGHT_DIM_OPACITY = 0;
+    public static final int MAX_WAYPOINT_HIGHLIGHT_DIM_OPACITY = 100;
+    /** Preserve the previous hard-coded highlight dimming behavior. */
+    public static final int DEFAULT_WAYPOINT_HIGHLIGHT_DIM_OPACITY = 28;
     public static final int MIN_PLAYER_TRAIL_DURATION_SECONDS = 1;
     public static final int MAX_PLAYER_TRAIL_DURATION_SECONDS = 120;
     public static final int DEFAULT_PLAYER_TRAIL_DURATION_SECONDS = 120;
@@ -159,6 +163,8 @@ public final class ConfluxConfig {
     public boolean waypointLabelsEnabled = true;
     /** Opacity percentage for the waypoint icon in the in-world label; map icons are unchanged. */
     public int waypointIconOpacity = DEFAULT_WAYPOINT_ICON_OPACITY;
+    /** Opacity retained by non-highlighted waypoints while a highlight is active. */
+    public int waypointHighlightDimOpacity = DEFAULT_WAYPOINT_HIGHLIGHT_DIM_OPACITY;
     /** Command template used by the fullscreen map's teleport action. */
     public String teleportCommand = DEFAULT_TELEPORT_COMMAND;
     /**
@@ -254,6 +260,7 @@ public final class ConfluxConfig {
         c.waypointBeamsEnabled = waypointBeamsEnabled;
         c.waypointLabelsEnabled = waypointLabelsEnabled;
         c.waypointIconOpacity = waypointIconOpacity;
+        c.waypointHighlightDimOpacity = waypointHighlightDimOpacity;
         c.teleportCommand = teleportCommand;
         c.waypointLabelScalePercent = waypointLabelScalePercent;
         c.predictionEnabled = predictionEnabled;
@@ -349,6 +356,11 @@ public final class ConfluxConfig {
         deathPointsKept = clamp(deathPointsKept, 0, 50);
         waypointIconOpacity = clamp(
             waypointIconOpacity, MIN_WAYPOINT_ICON_OPACITY, MAX_WAYPOINT_ICON_OPACITY
+        );
+        waypointHighlightDimOpacity = clamp(
+            waypointHighlightDimOpacity,
+            MIN_WAYPOINT_HIGHLIGHT_DIM_OPACITY,
+            MAX_WAYPOINT_HIGHLIGHT_DIM_OPACITY
         );
         if (predictionViewMode == null) {
             predictionViewMode = PredictionViewMode.EVERYWHERE;

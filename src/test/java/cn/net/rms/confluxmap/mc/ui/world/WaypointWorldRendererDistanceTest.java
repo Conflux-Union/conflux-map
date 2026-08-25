@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.ui.world;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
@@ -35,7 +36,9 @@ final class WaypointWorldRendererDistanceTest {
             0.0,
             0.0,
             0.0,
-            1_000.0
+            1_000.0,
+            new WaypointHighlightState(),
+            DimensionId.OVERWORLD
         );
 
         assertEquals(waypointId, selection.targetedWaypointId());
@@ -66,11 +69,47 @@ final class WaypointWorldRendererDistanceTest {
             0.0,
             0.0,
             0.0,
-            1_000.0
+            1_000.0,
+            new WaypointHighlightState(),
+            DimensionId.OVERWORLD
         );
 
         assertNull(selection.targetedWaypointId());
         assertEquals(List.of(), selection.candidates());
+    }
+
+    @Test
+    void highlightedWaypointBypassesTheConfiguredDistance() {
+        final WaypointRenderEntry waypoint = new WaypointRenderEntry(
+            UUID.fromString("00000000-0000-0000-0000-000000000003"),
+            "Distant highlight",
+            DimensionId.OVERWORLD,
+            2_000.0,
+            64.0,
+            0.0,
+            0xFFFFFFFF,
+            Waypoint.Type.NORMAL,
+            WaypointRenderEntry.Source.LOCAL
+        );
+        final WaypointHighlightState highlightState = new WaypointHighlightState();
+        highlightState.selectWaypoint(waypoint, DimensionId.OVERWORLD);
+
+        final WaypointWorldRenderer.LabelSelection selection = WaypointWorldRenderer.selectLabels(
+            List.of(waypoint),
+            0.0f,
+            0.0f,
+            Vec3d.ZERO,
+            0.0,
+            0.0,
+            0.0,
+            1_000.0,
+            highlightState,
+            DimensionId.OVERWORLD
+        );
+
+        assertNull(selection.targetedWaypointId());
+        assertTrue(selection.candidates().get(0).selected());
+        assertEquals(waypoint, selection.candidates().get(0).waypoint());
     }
 
     @Test

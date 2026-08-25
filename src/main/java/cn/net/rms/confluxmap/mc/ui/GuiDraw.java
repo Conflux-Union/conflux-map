@@ -142,7 +142,11 @@ public final class GuiDraw {
     }
 
     public void fill(final int x1, final int y1, final int x2, final int y2, final int color) {
+        //#if MC>=12000
+        //$$ context.fill(x1, y1, x2, y2, color);
+        //#else
         RenderUtil.fillRect(matrices(), x1, y1, x2 - x1, y2 - y1, color);
+        //#endif
     }
 
     //#if MC>=12000

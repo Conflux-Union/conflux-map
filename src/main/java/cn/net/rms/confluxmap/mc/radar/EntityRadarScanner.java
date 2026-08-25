@@ -144,15 +144,17 @@ public final class EntityRadarScanner {
         if (self == null || client.world == null) {
             return List.of();
         }
-        final double px = self.getX();
-        final double py = self.getY();
-        final double pz = self.getZ();
+        final Entity cameraEntity = client.getCameraEntity();
+        final Entity observer = cameraEntity != null ? cameraEntity : self;
+        final double ox = observer.getX();
+        final double oy = observer.getY();
+        final double oz = observer.getZ();
         final double bufferedRadius = radius + SCAN_RANGE_BUFFER;
         final double horizontalRangeSq = bufferedRadius * bufferedRadius;
 
         final List<RadarEntry> raw = new ArrayList<>();
         for (final Entity entity : client.world.getEntities()) {
-            if (entity == self) {
+            if (entity == self || entity == observer) {
                 continue;
             }
             // Spectators are kept (flagged for translucent rendering) rather than hidden, and
@@ -166,12 +168,12 @@ public final class EntityRadarScanner {
                 continue;
             }
 
-            final double dx = entity.getX() - px;
-            final double dz = entity.getZ() - pz;
+            final double dx = entity.getX() - ox;
+            final double dz = entity.getZ() - oz;
             if (dx * dx + dz * dz > horizontalRangeSq) {
                 continue;
             }
-            final int yDelta = (int) Math.round(entity.getY() - py);
+            final int yDelta = (int) Math.round(entity.getY() - oy);
             final int verticalRange = (entity instanceof PhantomEntity ? PHANTOM_VERTICAL_RANGE : VERTICAL_RANGE) + SCAN_RANGE_BUFFER;
             if (Math.abs(yDelta) > verticalRange) {
                 continue;
@@ -189,7 +191,7 @@ public final class EntityRadarScanner {
         final RadarFilter filter = new RadarFilter(
             config.radarShowPlayers, config.radarShowHostile, config.radarShowPassive, config.radarShowOther, config.radarMaxEntities
         );
-        return filter.apply(raw, px, pz);
+        return filter.apply(raw, ox, oz);
     }
 
     private static RadarCategory classify(final Entity entity) {
