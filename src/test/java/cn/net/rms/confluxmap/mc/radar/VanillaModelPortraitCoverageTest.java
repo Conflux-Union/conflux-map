@@ -159,35 +159,29 @@ final class VanillaModelPortraitCoverageTest {
     }
 
     @Test
-    void everyVanillaPortraitKeepsEnoughPixelCoverage() {
+    void everyVanillaPortraitFillsAtLeastOneCellAxis() {
         final Map<String, ModelPart> roots = vanillaRoots();
-        final String pigName = roots.containsKey("PigEntityModel") ? "PigEntityModel" : "PigModel";
-        final ModelPart pigRoot = roots.get(pigName);
-        if (pigRoot == null) {
-            throw new IllegalStateException("Could not find the vanilla pig model");
-        }
-        final int pigPixels = portraitPixels(pigName, pigRoot);
         final List<String> outliers = new ArrayList<>();
         roots.forEach((name, root) -> {
-            final int pixels = portraitPixels(name, root);
-            if (pixels > 0 && pixels < pigPixels * 0.75f) {
-                outliers.add(name + "=" + pixels);
+            final int span = portraitLongestSpan(name, root);
+            if (span > 0 && span < 31) {
+                outliers.add(name + "=" + span);
             }
         });
 
         assertEquals(
             List.of(), outliers,
-            "portrait coverage must stay above 75% of pig=" + pigPixels
+            "portrait longest occupied axis must fill at least 31 of 32 pixels"
         );
     }
 
-    private static int portraitPixels(final String name, final ModelPart root) {
+    private static int portraitLongestSpan(final String name, final ModelPart root) {
         final String entityType = entityTypeOf(name);
         final List<ModelPart> parts = EntityHeadGeometry.selectFromRoot(root, entityType);
         if (parts.isEmpty()) {
             return 0;
         }
-        return PortraitPixelCoverage.occupiedPixels(
+        return PortraitPixelCoverage.longestOccupiedSpan(
             EntityHeadGeometry.project(parts, entityType, 0, 0)
         );
     }

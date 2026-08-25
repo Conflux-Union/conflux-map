@@ -6,6 +6,38 @@ final class PortraitPixelCoverage {
     }
 
     static int occupiedPixels(final float[] geometry) {
+        final boolean[][] occupied = occupiedMask(geometry);
+        int count = 0;
+        for (final boolean[] row : occupied) {
+            for (final boolean pixel : row) {
+                if (pixel) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    static int longestOccupiedSpan(final float[] geometry) {
+        final boolean[][] occupied = occupiedMask(geometry);
+        int minX = 32;
+        int minY = 32;
+        int maxX = -1;
+        int maxY = -1;
+        for (int y = 0; y < occupied.length; y++) {
+            for (int x = 0; x < occupied[y].length; x++) {
+                if (occupied[y][x]) {
+                    minX = Math.min(minX, x);
+                    minY = Math.min(minY, y);
+                    maxX = Math.max(maxX, x);
+                    maxY = Math.max(maxY, y);
+                }
+            }
+        }
+        return maxX < 0 ? 0 : Math.max(maxX - minX + 1, maxY - minY + 1);
+    }
+
+    private static boolean[][] occupiedMask(final float[] geometry) {
         final boolean[][] occupied = new boolean[32][32];
         for (int quad = 0; quad < geometry.length; quad += 20) {
             for (int y = 0; y < 32; y++) {
@@ -19,15 +51,7 @@ final class PortraitPixelCoverage {
                 }
             }
         }
-        int count = 0;
-        for (final boolean[] row : occupied) {
-            for (final boolean pixel : row) {
-                if (pixel) {
-                    count++;
-                }
-            }
-        }
-        return count;
+        return occupied;
     }
 
     private static boolean insideTriangle(
