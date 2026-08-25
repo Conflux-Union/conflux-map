@@ -115,6 +115,7 @@ import net.minecraft.client.MinecraftClient;
 //#endif
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.render.GameRenderer;
 //#if MC>=12108
@@ -3403,7 +3404,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
         RadarMarkerRenderer.drawAll(
             draw, this.client, config, radarIconManager, markers,
-            marker -> !radarMarkerIntersectsLocationMenu(marker)
+            marker -> !radarMarkerIntersectsUi(marker)
         );
     }
 
@@ -3412,16 +3413,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         return (clamped << 24) | (color & 0x00FFFFFF);
     }
 
-    private boolean radarMarkerIntersectsLocationMenu(final RadarMarkerRenderer.Marker marker) {
-        if (locationMenuBounds == null) {
-            return false;
-        }
+    private boolean radarMarkerIntersectsUi(final RadarMarkerRenderer.Marker marker) {
         final float iconHalf = Math.max(2.5f, config.radarIconSize / 2f);
         final String name = marker.entry().name();
         final float nameHalf = name == null ? 0f : this.textRenderer.getWidth(name) / 2f;
         final float horizontalRadius = iconHalf + nameHalf + 4f;
         final float verticalRadius = iconHalf + this.textRenderer.fontHeight + 4f;
-        return locationMenuIntersects(
+        return mapOverlayIntersectsUi(
             marker.x() - horizontalRadius,
             marker.y() - verticalRadius,
             marker.x() + horizontalRadius,
@@ -3655,7 +3653,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             final float markerTop = marker.screenY() - MARKER_HALF_SIZE - 1f;
             final float markerRight = marker.screenX() + MARKER_HALF_SIZE + 1f;
             final float markerBottom = marker.screenY() + MARKER_HALF_SIZE + 1f;
-            if (!locationMenuIntersects(markerLeft, markerTop, markerRight, markerBottom)) {
+            if (!mapOverlayIntersectsUi(markerLeft, markerTop, markerRight, markerBottom)) {
                 WaypointMarkerRenderer.draw(
                     draw, this.client.textRenderer, waypoint, marker.screenX(), marker.screenY(),
                     MARKER_HALF_SIZE, visibilityAlpha(selected, hasHighlight), isHovered, relation
@@ -3666,7 +3664,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 final float labelY = marker.screenY() - 4;
                 final float labelRight = labelX + this.textRenderer.getWidth(waypoint.name());
                 final float labelBottom = labelY + this.textRenderer.fontHeight;
-                if (!locationMenuIntersects(labelX, labelY, labelRight, labelBottom)) {
+                if (!mapOverlayIntersectsUi(labelX, labelY, labelRight, labelBottom)) {
                     draw.drawTextWithShadow(
                         this.textRenderer, waypoint.name(), labelX, labelY,
                         withAlpha(TEXT_COLOR, visibilityAlpha(selected, hasHighlight))
@@ -3706,22 +3704,58 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         return selected || !hasHighlight ? 1f : config.waypointHighlightDimOpacity / 100f;
     }
 
-    /** Keeps map marker glyphs and labels out of the active context menu's screen rectangle. */
-    private boolean locationMenuIntersects(
+    /** Keeps map overlays below every visible fullscreen-map control. */
+    private boolean mapOverlayIntersectsUi(
         final float left,
         final float top,
         final float right,
         final float bottom
     ) {
-        if (locationMenuBounds == null) {
-            return false;
+        if (locationMenuBounds != null && intersects(
+            left, top, right, bottom,
+            locationMenuBounds.x(), locationMenuBounds.y(),
+            locationMenuBounds.x() + locationMenuBounds.width(),
+            locationMenuBounds.y() + locationMenuBounds.height()
+        )) {
+            return true;
         }
-        final float menuLeft = locationMenuBounds.x();
-        final float menuTop = locationMenuBounds.y();
-        final float menuRight = menuLeft + locationMenuBounds.width();
-        final float menuBottom = menuTop + locationMenuBounds.height();
-        return right > menuLeft && left < menuRight
-            && bottom > menuTop && top < menuBottom;
+        final TargetDropdown dropdown = targetDropdown();
+        if (dropdown != null && intersects(
+            left, top, right, bottom,
+            dropdown.x() - 1f, dropdown.y() - 1f,
+            dropdown.x() + dropdown.width() + 1f,
+            dropdown.y() + dropdown.height() + 1f
+        )) {
+            return true;
+        }
+        for (final var child : children()) {
+            if (!(child instanceof ClickableWidget widget) || !widget.visible) {
+                continue;
+            }
+            if (intersects(
+                left, top, right, bottom,
+                Widgets.x(widget), Widgets.y(widget),
+                Widgets.x(widget) + widget.getWidth(),
+                Widgets.y(widget) + widget.getHeight()
+            )) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean intersects(
+        final float left,
+        final float top,
+        final float right,
+        final float bottom,
+        final float otherLeft,
+        final float otherTop,
+        final float otherRight,
+        final float otherBottom
+    ) {
+        return right > otherLeft && left < otherRight
+            && bottom > otherTop && top < otherBottom;
     }
 
     /** One waypoint's already-converted, already-viewport-culled screen position for this frame's {@link #drawWaypoints} pass. */
