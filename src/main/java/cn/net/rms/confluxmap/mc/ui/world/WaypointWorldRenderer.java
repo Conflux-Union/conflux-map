@@ -3,14 +3,17 @@ package cn.net.rms.confluxmap.mc.ui.world;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
+import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.util.Argb;
+import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import com.mojang.blaze3d.systems.RenderSystem;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -72,12 +75,13 @@ import net.minecraft.util.math.Vec3d;
  * {@code client.getBufferBuilders().getEntityVertexConsumers()}) which works at any
  * phase and is flushed once at the end of this render pass.
  *
- * <p>Both the beam and the HUD label are proximity-gated: they only render for waypoints
- * within the player's current view distance, so far-away waypoints have no in-world
- * presence until the player travels toward them. {@code config.waypointRenderDistance}
- * (when non-zero) can only tighten that limit, never extend it.
+ * <p>The beam and HUD label have deliberately separate distance rules. Beam geometry only
+ * exists inside the vanilla view distance. Labels use {@code config.waypointRenderDistance}
+ * as their cutoff, including its unlimited mode, and far labels are pulled inside the camera's
+ * far plane along the same sight line so they remain visible after their beam disappears.
  */
 public final class WaypointWorldRenderer {
+    private static final int SELECTED_LOCATION_COLOR = 0xFFFFE066;
     private static final double BEAM_HALF_WIDTH = 0.18;
     private static final float BEAM_CORE_ALPHA = 0.55f;
     /** Same near-camera fade-in constant as the label (waypoint-ux.md S6), applied to horizontal distance from the beam column. */
@@ -98,6 +102,8 @@ public final class WaypointWorldRenderer {
     private static final float LABEL_PANEL_PADDING = 3.0f;
     private static final float LABEL_PANEL_GAP = 1.0f;
     private static final float LABEL_TEXT_REVEAL_START = 0.72f;
+    /** Leaves enough room before the world projection's far plane for the complete billboard. */
+    private static final double LABEL_FAR_PLANE_MARGIN = 0.90;
     private static final int LABEL_BACKGROUND_COLOR = 0xC0101010;
     private static final int LABEL_LOCAL_OUTLINE_COLOR = 0xFF101010;
     private static final int LABEL_SHARED_OUTLINE_COLOR = 0xFF55DDE0;
@@ -110,6 +116,7 @@ public final class WaypointWorldRenderer {
     private final ConfluxConfig config;
     private final GameBridge gameBridge;
     private final WaypointRenderCatalog waypointRenderCatalog;
+    private final WaypointHighlightState waypointHighlightState;
     private final Map<UUID, Float> labelAnimationProgress = new HashMap<>();
     private long lastAnimationNanos;
 
@@ -117,12 +124,14 @@ public final class WaypointWorldRenderer {
         final MinecraftClient client,
         final ConfluxConfig config,
         final GameBridge gameBridge,
-        final WaypointRenderCatalog waypointRenderCatalog
+        final WaypointRenderCatalog waypointRenderCatalog,
+        final WaypointHighlightState waypointHighlightState
     ) {
         this.client = client;
         this.config = config;
         this.gameBridge = gameBridge;
         this.waypointRenderCatalog = waypointRenderCatalog;
+        this.waypointHighlightState = waypointHighlightState;
     }
 
     //#if MC>=12109 && MC<12111
@@ -214,10 +223,16 @@ public final class WaypointWorldRenderer {
         final Vec3d cameraPos = camera.getPos();
         final MatrixStack matrices = context.matrixStack();
         //#endif
-        final double maxDistance = maxVisibleDistance();
+        final double maxDistance = beamVisibleDistance(MinecraftAccess.viewDistance(client));
+        if (maxDistance <= 0.0) {
+            return;
+        }
         final double bottomY = client.world.getBottomY();
         final double topY = client.world.getTopY();
-        final List<WaypointRenderEntry> waypoints = waypointRenderCatalog.snapshot(currentDimension);
+        final List<WaypointRenderEntry> waypoints = waypointsForRender(currentDimension);
+        final boolean hasHighlight = waypointHighlightState.hasRenderableTarget(
+            waypoints, currentDimension
+        );
 
         //#if MC<12105
         RenderSystem.enableDepthTest();
@@ -230,16 +245,19 @@ public final class WaypointWorldRenderer {
             final double worldX = waypoint.x();
             final double worldZ = waypoint.z();
             final double dx = worldX - player.x();
-            final double dy = waypoint.y() - player.y();
             final double dz = worldZ - player.z();
-            final double distance3d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            if (distance3d > maxDistance) {
+            final double renderDistance = waypointHighlightState.renderDistance(
+                waypoint, currentDimension, player.x(), player.y(), player.z()
+            );
+            if (renderDistance > maxDistance) {
                 continue;
             }
             final double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
+            final boolean selected = waypointHighlightState.matchesEntry(waypoint, currentDimension);
             drawBeam(
                 matrices, cameraPos, worldX, worldZ, bottomY, topY,
-                waypoint.colorArgb(), horizontalDistance, maxDistance
+                waypoint.colorArgb(), horizontalDistance, maxDistance,
+                highlightVisibilityAlpha(selected, hasHighlight)
             );
         }
 
@@ -304,24 +322,27 @@ public final class WaypointWorldRenderer {
         final float cameraPitch = camera.getPitch();
         final MatrixStack matrices = context.matrixStack();
         //#endif
-        final double maxDistance = maxVisibleDistance();
-        final List<WaypointRenderEntry> waypoints = waypointRenderCatalog.snapshot(currentDimension);
-        final WaypointRenderEntry targetedWaypoint = targetedWaypoint(
-            waypoints, cameraYaw, cameraPitch, cameraPos, maxDistance
+        final double maxDistance = maxLabelDistance(config.waypointRenderDistance);
+        final double labelProjectionDistance = labelProjectionDistance(
+            MinecraftAccess.viewDistance(client)
+        );
+        final List<WaypointRenderEntry> waypoints = waypointsForRender(currentDimension);
+        final LabelSelection labelSelection = selectLabels(
+            waypoints,
+            cameraYaw,
+            cameraPitch,
+            cameraPos,
+            player.x(),
+            player.y(),
+            player.z(),
+            maxDistance,
+            waypointHighlightState,
+            currentDimension
         );
         final float animationDeltaSeconds = animationDeltaSeconds();
-        final Set<UUID> visibleWaypointIds = new HashSet<>();
+        final Set<UUID> visibleWaypointIds = new HashSet<>(labelSelection.candidates().size());
 
-        for (final WaypointRenderEntry waypoint : waypoints) {
-            final double dx = waypoint.x() - player.x();
-            final double dy = waypoint.y() - player.y();
-            final double dz = waypoint.z() - player.z();
-            if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= maxDistance) {
-                visibleWaypointIds.add(waypoint.id());
-            }
-        }
-
-        if (!visibleWaypointIds.isEmpty()) {
+        if (!labelSelection.candidates().isEmpty()) {
             // Modern LAST keeps the camera view rotation in ModelView while its context stack is
             // local identity. Legacy LAST needs that stale global transform cleared instead.
             //#if MC<260200
@@ -335,26 +356,31 @@ public final class WaypointWorldRenderer {
                 //#if MC<260200
                 final VertexConsumerProvider.Immediate immediate = client.getBufferBuilders().getEntityVertexConsumers();
                 //#endif
-                for (final WaypointRenderEntry waypoint : waypoints) {
-                    if (!visibleWaypointIds.contains(waypoint.id())) {
-                        continue;
-                    }
-                    final double dx = waypoint.x() - player.x();
-                    final double dy = waypoint.y() - player.y();
-                    final double dz = waypoint.z() - player.z();
-                    final double distance3d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                    final boolean targeted = targetedWaypoint != null && targetedWaypoint.id().equals(waypoint.id());
+                for (final LabelCandidate candidate : labelSelection.candidates()) {
+                    final WaypointRenderEntry waypoint = candidate.waypoint();
+                    visibleWaypointIds.add(waypoint.id());
+                    final double renderDistance = candidate.selected()
+                        ? waypointHighlightState.renderDistance(
+                            waypoint, currentDimension, player.x(), player.y(), player.z()
+                        )
+                        : candidate.distance();
+                    final boolean targeted = candidate.selected()
+                        || waypoint.id().equals(labelSelection.targetedWaypointId());
                     final float progress = updateLabelAnimation(waypoint.id(), targeted, animationDeltaSeconds);
                     //#if MC>=260200
                     //$$ drawLabel(
                     //$$     matrices, context.submitNodeCollector(), cameraState.orientation,
                     //$$     cameraPos, waypoint.x(), waypoint.y(), waypoint.z(), waypoint,
-                    //$$     distance3d, progress
+                    //$$     renderDistance, labelProjectionDistance, progress,
+                    //$$     highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight()),
+                    //$$     candidate.selected()
                     //$$ );
                     //#else
                     drawLabel(
                         matrices, immediate, camera, cameraPos, waypoint.x(), waypoint.y(), waypoint.z(),
-                        waypoint, distance3d, progress
+                        waypoint, renderDistance, labelProjectionDistance, progress,
+                        highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight()),
+                        candidate.selected()
                     );
                     //#endif
                 }
@@ -375,50 +401,148 @@ public final class WaypointWorldRenderer {
         labelAnimationProgress.keySet().retainAll(visibleWaypointIds);
     }
 
-    /**
-     * Beams and labels only appear once the player is near the waypoint, where "near"
-     * means within the current view distance (chunks converted to blocks). A non-zero
-     * {@code config.waypointRenderDistance} can tighten the limit but never extend it
-     * past what the player can actually see.
-     */
-    private double maxVisibleDistance() {
-        final double viewDistanceBlocks = MinecraftAccess.viewDistance(client) * 16.0;
-        return config.waypointRenderDistance > 0
-            ? Math.min(config.waypointRenderDistance, viewDistanceBlocks)
-            : viewDistanceBlocks;
+    static double maxLabelDistance(final int configuredDistance) {
+        return configuredDistance > 0 ? configuredDistance : Double.POSITIVE_INFINITY;
     }
 
-    private WaypointRenderEntry targetedWaypoint(
+    static double beamVisibleDistance(final int viewDistanceChunks) {
+        return Math.max(0, viewDistanceChunks) * 16.0;
+    }
+
+    static double labelProjectionDistance(final int viewDistanceChunks) {
+        return Math.max(16.0, beamVisibleDistance(viewDistanceChunks) * LABEL_FAR_PLANE_MARGIN);
+    }
+
+    static double projectedLabelDistance(
+        final double actualDistance,
+        final double projectionDistance
+    ) {
+        return Math.min(Math.max(0.0, actualDistance), Math.max(0.0, projectionDistance));
+    }
+
+    private List<WaypointRenderEntry> waypointsForRender(final DimensionId dimension) {
+        final List<WaypointRenderEntry> base = waypointRenderCatalog.snapshot(dimension);
+        final Optional<WaypointHighlightState.Target> target = waypointHighlightState.target()
+            .filter(value -> value.waypointId() == null && value.dimension().equals(dimension));
+        if (target.isEmpty()) {
+            return base;
+        }
+        final List<WaypointRenderEntry> result = new ArrayList<>(base.size() + 1);
+        result.addAll(base);
+        result.add(selectedTargetEntry(target.get()));
+        return result;
+    }
+
+    private WaypointRenderEntry selectedTargetEntry(final WaypointHighlightState.Target target) {
+        return WaypointHighlightState.locationEntry(
+            target,
+            Texts.translatable(
+                WaypointHighlightState.SELECTED_LOCATION_TRANSLATION_KEY
+            ).getString(),
+            selectedLocationY(target),
+            SELECTED_LOCATION_COLOR
+        );
+    }
+
+    private float highlightVisibilityAlpha(
+        final boolean selected,
+        final boolean hasHighlight
+    ) {
+        return selected || !hasHighlight
+            ? 1f
+            : config.waypointHighlightDimOpacity / 100f;
+    }
+
+    private double selectedLocationY(final WaypointHighlightState.Target target) {
+        final double y = target.yKnown() ? target.y() : WaypointHighlightState.DEFAULT_LOCATION_Y;
+        return MathHelper.clamp(y, client.world.getBottomY(), client.world.getTopY() - 1.0);
+    }
+
+    static LabelSelection selectLabels(
         final List<WaypointRenderEntry> waypoints,
         final float cameraYaw,
         final float cameraPitch,
         final Vec3d cameraPos,
-        final double maxDistance
+        final double playerX,
+        final double playerY,
+        final double playerZ,
+        final double maxDistance,
+        final WaypointHighlightState waypointHighlightState,
+        final DimensionId currentDimension
     ) {
-        WaypointRenderEntry best = null;
+        final double maxDistanceSquared = maxDistance * maxDistance;
+        final List<LabelCandidate> candidates = new ArrayList<>();
+        WaypointRenderEntry targetedWaypoint = null;
+        double targetedDistanceSquared = 0.0;
+        boolean targetedWaypointVisible = false;
+        boolean hasHighlight = false;
         double bestAlignment = -1.0;
         double bestDistance = Double.POSITIVE_INFINITY;
+
         for (final WaypointRenderEntry waypoint : waypoints) {
+            final double playerDx = waypoint.x() - playerX;
+            final double playerDy = waypoint.y() - playerY;
+            final double playerDz = waypoint.z() - playerZ;
+            final double playerDistanceSquared =
+                playerDx * playerDx + playerDy * playerDy + playerDz * playerDz;
+            final boolean selected = waypointHighlightState.matchesEntry(
+                waypoint, currentDimension
+            );
+            hasHighlight |= selected;
+            final boolean withinDistance = playerDistanceSquared <= maxDistanceSquared;
+            if (withinDistance || selected) {
+                candidates.add(new LabelCandidate(waypoint, playerDistanceSquared, selected));
+            }
+
             final double dx = waypoint.x() - cameraPos.x;
             final double dy = waypoint.y() + LABEL_Y_OFFSET - cameraPos.y;
             final double dz = waypoint.z() - cameraPos.z;
             final double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            if (distance <= 0.001 || distance > maxDistance) {
+            if (distance <= 0.001) {
                 continue;
             }
             final double alignment = WaypointHudMotion.alignment(
-                cameraYaw, cameraPitch, dx, dy, dz
+                cameraYaw, cameraPitch, dx, dy, dz, distance
             );
             if (!WaypointHudMotion.insideTargetCone(alignment, distance)) {
                 continue;
             }
             if (alignment > bestAlignment || (alignment == bestAlignment && distance < bestDistance)) {
-                best = waypoint;
+                targetedWaypoint = waypoint;
+                targetedDistanceSquared = playerDistanceSquared;
+                targetedWaypointVisible = withinDistance || selected;
                 bestAlignment = alignment;
                 bestDistance = distance;
             }
         }
-        return best;
+
+        if (targetedWaypoint != null && !targetedWaypointVisible) {
+            candidates.add(new LabelCandidate(
+                targetedWaypoint, targetedDistanceSquared, false
+            ));
+        }
+        return new LabelSelection(
+            List.copyOf(candidates),
+            targetedWaypoint == null ? null : targetedWaypoint.id(),
+            hasHighlight
+        );
+    }
+
+    static record LabelCandidate(
+        WaypointRenderEntry waypoint,
+        double distanceSquared,
+        boolean selected
+    ) {
+        double distance() {
+            return Math.sqrt(distanceSquared);
+        }
+    }
+
+    static record LabelSelection(
+        List<LabelCandidate> candidates,
+        UUID targetedWaypointId,
+        boolean hasHighlight
+    ) {
     }
 
     private float animationDeltaSeconds() {
@@ -460,12 +584,13 @@ public final class WaypointWorldRenderer {
         final double topY,
         final int colorArgb,
         final double horizontalDistance,
-        final double maxDistance
+        final double maxDistance,
+        final float visibilityAlpha
     ) {
         final float nearFade = (float) MathHelper.clamp(horizontalDistance / BEAM_NEAR_FADE_BLOCKS, 0.0, 1.0);
         final float farFactor = (float) MathHelper.clamp(1.0 - horizontalDistance / maxDistance, 0.0, 1.0);
         final float intensify = BEAM_FAR_FLOOR + (1f - BEAM_FAR_FLOOR) * farFactor;
-        final float alpha = BEAM_CORE_ALPHA * nearFade * intensify;
+        final float alpha = BEAM_CORE_ALPHA * nearFade * intensify * visibilityAlpha;
         if (alpha <= 0.01f) {
             return;
         }
@@ -513,15 +638,29 @@ public final class WaypointWorldRenderer {
         final double worldZ,
         final WaypointRenderEntry waypoint,
         final double distance3d,
-        final float animationProgress
+        final double projectionDistance,
+        final float animationProgress,
+        final float visibilityAlpha,
+        final boolean selected
     ) {
         final float nearFade = (float) MathHelper.clamp(distance3d / LABEL_NEAR_FADE_BLOCKS, 0.0, 1.0);
         if (nearFade <= 0.01f) {
             return;
         }
-        // Scale proportionally with distance so the marker keeps a useful apparent size on screen.
+        final double anchorX = worldX - cameraPos.x;
+        final double anchorY = worldY + LABEL_Y_OFFSET - cameraPos.y;
+        final double anchorZ = worldZ - cameraPos.z;
+        final double anchorDistance = Math.sqrt(
+            anchorX * anchorX + anchorY * anchorY + anchorZ * anchorZ
+        );
+        final double renderedDistance = projectedLabelDistance(anchorDistance, projectionDistance);
+        final double projectionScale = anchorDistance > 0.001
+            ? renderedDistance / anchorDistance
+            : 1.0;
+
+        // Scale against the projected distance so pulling a far marker closer does not enlarge it.
         final float scaleMult = (float) MathHelper.clamp(
-            distance3d / LABEL_REFERENCE_DISTANCE, LABEL_MIN_SCALE_MULT, LABEL_MAX_SCALE_MULT
+            renderedDistance / LABEL_REFERENCE_DISTANCE, LABEL_MIN_SCALE_MULT, LABEL_MAX_SCALE_MULT
         );
         // Applied last so the user factor is a plain multiplier on apparent size at every distance.
         final float scale = LABEL_BASE_SCALE * scaleMult * config.waypointLabelScalePercent / 100f;
@@ -542,7 +681,11 @@ public final class WaypointWorldRenderer {
         final float panelWidth = panelFullWidth * panelReveal;
 
         matrices.push();
-        matrices.translate(worldX - cameraPos.x, worldY + LABEL_Y_OFFSET - cameraPos.y, worldZ - cameraPos.z);
+        matrices.translate(
+            anchorX * projectionScale,
+            anchorY * projectionScale,
+            anchorZ * projectionScale
+        );
         //#if MC>=260200
         //$$ matrices.mulPose(cameraRotation);
         //#else
@@ -565,24 +708,28 @@ public final class WaypointWorldRenderer {
             //#if MC>=260200
             //$$ submitRect(
             //$$     plates, matrices, panelX, -LABEL_PANEL_HEIGHT / 2f,
-            //$$     panelWidth, LABEL_PANEL_HEIGHT, withAlpha(LABEL_BACKGROUND_COLOR, nearFade)
+            //$$     panelWidth, LABEL_PANEL_HEIGHT, withAlpha(LABEL_BACKGROUND_COLOR, nearFade * visibilityAlpha)
             //$$ );
             //#else
             RenderUtil.fillRect3D(
                 matrices, panelX, -LABEL_PANEL_HEIGHT / 2f,
-                panelWidth, LABEL_PANEL_HEIGHT, withAlpha(LABEL_BACKGROUND_COLOR, nearFade)
+                panelWidth, LABEL_PANEL_HEIGHT, withAlpha(LABEL_BACKGROUND_COLOR, nearFade * visibilityAlpha)
             );
             //#endif
         }
         //#if MC>=260200
         //$$ drawIcon(
         //$$     matrices, textRenderer, plates, text, waypoint, iconHalfSize,
-        //$$     nearFade * config.waypointIconOpacity / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY
+        //$$     nearFade * config.waypointIconOpacity
+        //$$         / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY * visibilityAlpha,
+        //$$     selected
         //$$ );
         //#else
         drawIcon(
             matrices, textRenderer, immediate, waypoint, iconHalfSize,
-            nearFade * config.waypointIconOpacity / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY
+            nearFade * config.waypointIconOpacity
+                / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY * visibilityAlpha,
+            selected
         );
         //#endif
 
@@ -591,7 +738,7 @@ public final class WaypointWorldRenderer {
         );
         if (textReveal > 0.01f) {
             final float textX = panelX + LABEL_PANEL_PADDING + (1f - textReveal) * 4f;
-            final float textAlpha = nearFade * textReveal;
+            final float textAlpha = nearFade * textReveal * visibilityAlpha;
             //#if MC>=260200
             //$$ submitText(
             //$$     text, matrices, name, textX, -9f,
@@ -629,13 +776,14 @@ public final class WaypointWorldRenderer {
     //#endif
         final WaypointRenderEntry waypoint,
         final float halfSize,
-        final float alpha
+        final float alpha,
+        final boolean selected
     ) {
         final float size = halfSize * 2f;
         //#if MC>=260200
         //$$ submitRect(
         //$$     plates, matrices, -halfSize - 1f, -halfSize - 1f, size + 2f, size + 2f,
-        //$$     withAlpha(outlineColor(waypoint), alpha)
+        //$$     withAlpha(selected ? 0xFFFFE066 : outlineColor(waypoint), alpha)
         //$$ );
         //$$ submitRect(
         //$$     plates, matrices, -halfSize, -halfSize, size, size,
@@ -644,7 +792,7 @@ public final class WaypointWorldRenderer {
         //#else
         RenderUtil.fillRect3D(
             matrices, -halfSize - 1f, -halfSize - 1f, size + 2f, size + 2f,
-            withAlpha(outlineColor(waypoint), alpha)
+            withAlpha(selected ? 0xFFFFE066 : outlineColor(waypoint), alpha)
         );
         RenderUtil.fillRect3D(
             matrices, -halfSize, -halfSize, size, size,

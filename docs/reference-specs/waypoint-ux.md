@@ -473,12 +473,16 @@ through it). Notable rendering rules:
   (3-D straight-line, in blocks; "off"/infinite is a valid setting) beyond
   which a sign is not rendered at all (not faded, not clamped — simply
   skipped), *except* for the one currently-highlighted/"pinged" waypoint,
-  which always renders regardless of distance. **This cutoff applies only
-  to the floating sign layer — the vertical beam layer has no distance
-  cutoff of its own** and is limited only by the game's ordinary render
-  distance. This is a real asymmetry in the reference implementation, not
-  an oversight worth "fixing" silently — decide deliberately whether our
-  beam layer should share the sign layer's cutoff or stay unbounded.
+  which always renders regardless of distance. The configured value is used
+  as the actual cutoff; when it is off, labels have no distance cutoff. Far
+  labels are projected inside the camera's far plane along the same sight
+  line, so they remain visible and show their real distance even after the
+  waypoint's world geometry is clipped. **This cutoff applies only to the
+  floating sign layer — the vertical beam layer has no distance cutoff of
+  its own** and is limited only by the game's ordinary render distance. This
+  is a real asymmetry in the reference implementation, not an oversight
+  worth "fixing" silently — decide deliberately whether our beam layer
+  should share the sign layer's cutoff or stay unbounded.
 - **Toggles are global** (beam on/off, sign on/off), not per-waypoint —
   an individual waypoint has no "show my beam but not my sign" flag of
   its own, only the overall enabled/visibility flag from §1.
@@ -559,8 +563,9 @@ boundary (a function of current zoom level), which is a *different,
 always-on* boundary from this config-driven cutoff. In other words: two
 independent thresholds stack —
 
-1. Config-driven max distance (blocks, optional/infinite by default):
-   beyond this, the waypoint isn't drawn on the minimap in any form.
+1. Config-driven max distance (blocks, 1,000 by default in Conflux Map;
+   setting it to "off"/0 makes it infinite): beyond this, the waypoint
+   isn't drawn on the minimap in any form.
 2. Minimap visible-radius boundary (a function of current zoom): within
    threshold 1 but beyond this, the waypoint is drawn as a clamped edge
    arrow instead of an in-range icon.

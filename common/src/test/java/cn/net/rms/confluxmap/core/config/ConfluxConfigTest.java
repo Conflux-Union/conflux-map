@@ -21,6 +21,11 @@ final class ConfluxConfigTest {
     }
 
     @Test
+    void waypointRenderDistanceIsFiniteByDefault() {
+        assertEquals(1_000, new ConfluxConfig().waypointRenderDistance);
+    }
+
+    @Test
     void radarMarkerMergingIsEnabledByDefault() {
         assertTrue(new ConfluxConfig().radarMergeEnabled);
     }

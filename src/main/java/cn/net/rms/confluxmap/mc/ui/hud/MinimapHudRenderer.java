@@ -40,6 +40,7 @@ import cn.net.rms.confluxmap.mc.ui.UiResourceTheme;
 import cn.net.rms.confluxmap.mc.ui.UiTextureRegion;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
+import cn.net.rms.confluxmap.mc.world.ClientChunkLookup;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import java.util.ArrayList;
 import java.util.List;
@@ -181,7 +182,7 @@ public final class MinimapHudRenderer {
             }
             return;
         }
-        final Optional<PlayerView> playerView = gameBridge.player(tickDelta);
+        final Optional<PlayerView> playerView = gameBridge.viewpoint(tickDelta);
         if (playerView.isEmpty()) {
             tiles.clearViewport();
             radarViewRange.set(0);
@@ -623,7 +624,8 @@ public final class MinimapHudRenderer {
     }
 
     private String biomeName(final PlayerView player) {
-        if (client.world == null) {
+        if (client.world == null
+            || !ClientChunkLookup.isLoaded(client.world, player.blockX(), player.blockZ())) {
             return "";
         }
         final Identifier id = Regs.biomeIdAt(

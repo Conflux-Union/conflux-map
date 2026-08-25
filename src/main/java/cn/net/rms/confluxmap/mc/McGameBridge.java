@@ -7,6 +7,7 @@ import cn.net.rms.confluxmap.core.task.SessionGuard;
 import java.util.Optional;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
+import net.minecraft.entity.Entity;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.MathHelper;
 
@@ -30,12 +31,33 @@ public final class McGameBridge implements GameBridge {
         if (player == null || client.world == null) {
             return Optional.empty();
         }
+        return viewOf(player, tickDelta);
+    }
+
+    @Override
+    public Optional<PlayerView> viewpoint(final float tickDelta) {
+        final ClientPlayerEntity player = client.player;
+        if (player == null || client.world == null) {
+            return Optional.empty();
+        }
+        // Some client-side mods temporarily move the camera into a separate entity (for
+        // example while the player's soul is detached from their body).  Map overlays are
+        // screen-space views, so anchoring them to the player entity in that state makes the
+        // map, markers, and waypoints appear to slide away from the actual view.  Vanilla
+        // normally returns the player here; the fallback keeps this bridge safe during camera
+        // teardown and on versions where no camera entity is available yet.
+        final Entity cameraEntity = client.getCameraEntity();
+        final Entity viewEntity = cameraEntity != null ? cameraEntity : player;
+        return viewOf(viewEntity, tickDelta);
+    }
+
+    private Optional<PlayerView> viewOf(final Entity entity, final float tickDelta) {
         final Identifier dim = client.world.getRegistryKey().getValue();
         return Optional.of(new PlayerView(
-            MathHelper.lerp(tickDelta, player.prevX, player.getX()),
-            MathHelper.lerp(tickDelta, player.prevY, player.getY()),
-            MathHelper.lerp(tickDelta, player.prevZ, player.getZ()),
-            player.getYaw(tickDelta),
+            MathHelper.lerp(tickDelta, entity.prevX, entity.getX()),
+            MathHelper.lerp(tickDelta, entity.prevY, entity.getY()),
+            MathHelper.lerp(tickDelta, entity.prevZ, entity.getZ()),
+            entity.getYaw(tickDelta),
             DimensionId.of(dim.getNamespace(), dim.getPath())
         ));
     }

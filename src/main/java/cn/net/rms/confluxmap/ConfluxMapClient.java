@@ -60,6 +60,7 @@ import cn.net.rms.confluxmap.mc.ui.UiResourceTheme;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapViewState;
 import cn.net.rms.confluxmap.mc.update.UpdateNotifier;
 import cn.net.rms.confluxmap.mc.ui.world.WaypointWorldRenderer;
+import cn.net.rms.confluxmap.mc.ui.world.WaypointHighlightState;
 import cn.net.rms.confluxmap.mc.world.DeathWatcher;
 import cn.net.rms.confluxmap.mc.world.ClientMultiworldService;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
@@ -114,6 +115,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private WaypointRenderCatalog waypointRenderCatalog;
     private DeathWatcher deathWatcher;
     private WaypointWorldRenderer waypointWorldRenderer;
+    private WaypointHighlightState waypointHighlightState;
     private DaylightModel daylightModel;
     private McDaylightTracker daylightTracker;
     private PredictionState predictionState;
@@ -294,6 +296,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         waypointService = new WaypointService(waypointRoot, executors, ConfluxMapMod.LOGGER);
         annotationService = new AnnotationService(annotationRoot, executors, ConfluxMapMod.LOGGER);
         waypointRenderCatalog = new WaypointRenderCatalog(waypointService, sharedWaypoints::list, config);
+        waypointHighlightState = new WaypointHighlightState();
         deathWatcher = new DeathWatcher(gameBridge, config, waypointService);
         uiResourceTheme = new UiResourceTheme();
         minimapHudRenderer = new MinimapHudRenderer(
@@ -301,7 +304,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
             playerTrail, annotationService, layerSelector, waypointRenderCatalog,
             radarViewRange, uiResourceTheme
         );
-        waypointWorldRenderer = new WaypointWorldRenderer(client, config, gameBridge, waypointRenderCatalog);
+        waypointWorldRenderer = new WaypointWorldRenderer(
+            client, config, gameBridge, waypointRenderCatalog, waypointHighlightState
+        );
         fullscreenMapViewState = new FullscreenMapViewState();
         daylightTracker = new McDaylightTracker(
             client,
@@ -325,6 +330,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(playerTrailTracker::onSessionChanged);
         sessionTracker.addListener(fullscreenMapViewState::onSessionChanged);
         sessionTracker.addListener(waypointService::onSessionChanged);
+        sessionTracker.addListener(waypointHighlightState::onSessionChanged);
         sessionTracker.addListener(annotationService::onSessionChanged);
         sessionTracker.addListener(correctionStore::onSessionChanged);
         sessionTracker.addListener(session -> mapSyncClient.reset());
@@ -522,6 +528,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public WaypointRenderCatalog waypointRenderCatalog() {
         return waypointRenderCatalog;
+    }
+
+    public WaypointHighlightState waypointHighlightState() {
+        return waypointHighlightState;
     }
 
     public PredictionState predictionState() {

@@ -244,6 +244,42 @@ class ConfigIoTest {
     }
 
     @Test
+    void waypointHighlightDimOpacityRoundTripsAndClampsInvalidValues(@TempDir final Path tmp)
+        throws IOException {
+        final Path file = tmp.resolve("config.json");
+        final ConfigIo io = new ConfigIo(file, LOGGER);
+        final ConfluxConfig config = new ConfluxConfig();
+        assertEquals(
+            ConfluxConfig.DEFAULT_WAYPOINT_HIGHLIGHT_DIM_OPACITY,
+            config.waypointHighlightDimOpacity
+        );
+        config.waypointHighlightDimOpacity = 42;
+
+        io.save(config);
+        assertEquals(42, io.load().waypointHighlightDimOpacity);
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":2,\"waypointHighlightDimOpacity\":-10}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(
+            ConfluxConfig.MIN_WAYPOINT_HIGHLIGHT_DIM_OPACITY,
+            io.load().waypointHighlightDimOpacity
+        );
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":2,\"waypointHighlightDimOpacity\":150}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(
+            ConfluxConfig.MAX_WAYPOINT_HIGHLIGHT_DIM_OPACITY,
+            io.load().waypointHighlightDimOpacity
+        );
+    }
+
+    @Test
     void waypointLabelScaleRoundTripsAndClampsInvalidValues(@TempDir final Path tmp) throws IOException {
         final Path file = tmp.resolve("config.json");
         final ConfigIo io = new ConfigIo(file, LOGGER);

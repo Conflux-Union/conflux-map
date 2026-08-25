@@ -16,7 +16,9 @@ class FullscreenMapLocationMenuTest {
         assertEquals(List.of(
             FullscreenMapLocationMenu.Action.SET_WAYPOINT,
             FullscreenMapLocationMenu.Action.SHARE_LOCATION,
-            FullscreenMapLocationMenu.Action.TELEPORT
+            FullscreenMapLocationMenu.Action.TELEPORT,
+            FullscreenMapLocationMenu.Action.HIGHLIGHT,
+            FullscreenMapLocationMenu.Action.CLEAR_HIGHLIGHT
         ), FullscreenMapLocationMenu.actions(false));
     }
 
@@ -25,7 +27,9 @@ class FullscreenMapLocationMenuTest {
         assertEquals(List.of(
             FullscreenMapLocationMenu.Action.TELEPORT,
             FullscreenMapLocationMenu.Action.SET_WAYPOINT,
-            FullscreenMapLocationMenu.Action.SHARE_LOCATION
+            FullscreenMapLocationMenu.Action.SHARE_LOCATION,
+            FullscreenMapLocationMenu.Action.HIGHLIGHT,
+            FullscreenMapLocationMenu.Action.CLEAR_HIGHLIGHT
         ), FullscreenMapLocationMenu.actions(true));
     }
 
