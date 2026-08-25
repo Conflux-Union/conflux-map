@@ -31,6 +31,15 @@ public final class McGameBridge implements GameBridge {
         if (player == null || client.world == null) {
             return Optional.empty();
         }
+        return viewOf(player, tickDelta);
+    }
+
+    @Override
+    public Optional<PlayerView> viewpoint(final float tickDelta) {
+        final ClientPlayerEntity player = client.player;
+        if (player == null || client.world == null) {
+            return Optional.empty();
+        }
         // Some client-side mods temporarily move the camera into a separate entity (for
         // example while the player's soul is detached from their body).  Map overlays are
         // screen-space views, so anchoring them to the player entity in that state makes the
@@ -39,12 +48,16 @@ public final class McGameBridge implements GameBridge {
         // teardown and on versions where no camera entity is available yet.
         final Entity cameraEntity = client.getCameraEntity();
         final Entity viewEntity = cameraEntity != null ? cameraEntity : player;
+        return viewOf(viewEntity, tickDelta);
+    }
+
+    private Optional<PlayerView> viewOf(final Entity entity, final float tickDelta) {
         final Identifier dim = client.world.getRegistryKey().getValue();
         return Optional.of(new PlayerView(
-            MathHelper.lerp(tickDelta, viewEntity.prevX, viewEntity.getX()),
-            MathHelper.lerp(tickDelta, viewEntity.prevY, viewEntity.getY()),
-            MathHelper.lerp(tickDelta, viewEntity.prevZ, viewEntity.getZ()),
-            viewEntity.getYaw(tickDelta),
+            MathHelper.lerp(tickDelta, entity.prevX, entity.getX()),
+            MathHelper.lerp(tickDelta, entity.prevY, entity.getY()),
+            MathHelper.lerp(tickDelta, entity.prevZ, entity.getZ()),
+            entity.getYaw(tickDelta),
             DimensionId.of(dim.getNamespace(), dim.getPath())
         ));
     }

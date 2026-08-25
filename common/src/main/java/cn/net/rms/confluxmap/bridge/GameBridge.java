@@ -22,6 +22,18 @@ public interface GameBridge {
         return player(1.0F);
     }
 
+    /**
+     * Active client viewpoint, which may belong to a detached camera entity. Implementations
+     * fall back to {@link #player(float)} while no separate camera entity is available.
+     */
+    default Optional<PlayerView> viewpoint(final float tickDelta) {
+        return player(tickDelta);
+    }
+
+    default Optional<PlayerView> viewpoint() {
+        return viewpoint(1.0F);
+    }
+
     /** Run a task on the render thread (next frame at the latest). */
     void runOnRenderThread(Runnable task);
 }
