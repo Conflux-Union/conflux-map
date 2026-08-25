@@ -134,6 +134,8 @@ public final class ConfluxConfig {
     public int radarMaxEntities = 100;
     /** Entity head and item-form icons instead of plain shaped dots when an in-game icon is available. */
     public boolean radarIconsEnabled = true;
+    /** Merge overlapping markers of the same visible kind into a single counted marker. */
+    public boolean radarMergeEnabled = true;
     /** Screen-pixel size shared by entity faces and item-form radar icons. */
     public int radarIconSize = DEFAULT_RADAR_ICON_SIZE;
     /** 3-D straight-line blocks; 0 means "no cutoff" (see waypoint-ux.md S7). */
@@ -240,6 +242,7 @@ public final class ConfluxConfig {
         c.radarShowPlayerNames = radarShowPlayerNames;
         c.radarMaxEntities = radarMaxEntities;
         c.radarIconsEnabled = radarIconsEnabled;
+        c.radarMergeEnabled = radarMergeEnabled;
         c.radarIconSize = radarIconSize;
         c.waypointRenderDistance = waypointRenderDistance;
         c.localWaypointsVisible = localWaypointsVisible;
