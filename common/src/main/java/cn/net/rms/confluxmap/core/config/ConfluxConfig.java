@@ -20,6 +20,9 @@ public final class ConfluxConfig {
     public static final int MIN_RADAR_ICON_SIZE = 4;
     public static final int MAX_RADAR_ICON_SIZE = 16;
     public static final int DEFAULT_RADAR_ICON_SIZE = 10;
+    public static final int MIN_WAYPOINT_ICON_OPACITY = 0;
+    public static final int MAX_WAYPOINT_ICON_OPACITY = 100;
+    public static final int DEFAULT_WAYPOINT_ICON_OPACITY = 100;
     public static final int MIN_PLAYER_TRAIL_DURATION_SECONDS = 1;
     public static final int MAX_PLAYER_TRAIL_DURATION_SECONDS = 120;
     public static final int DEFAULT_PLAYER_TRAIL_DURATION_SECONDS = 120;
@@ -138,6 +141,8 @@ public final class ConfluxConfig {
     public boolean waypointBeamsEnabled = true;
     /** In-world floating name/distance label above each visible waypoint. */
     public boolean waypointLabelsEnabled = true;
+    /** Opacity percentage for the waypoint icon in the in-world label; map icons are unchanged. */
+    public int waypointIconOpacity = DEFAULT_WAYPOINT_ICON_OPACITY;
 
     /** Master toggle for the seed-predicted fullscreen-map underlay. */
     public boolean predictionEnabled = true;
@@ -222,6 +227,7 @@ public final class ConfluxConfig {
         c.deathPointsKept = deathPointsKept;
         c.waypointBeamsEnabled = waypointBeamsEnabled;
         c.waypointLabelsEnabled = waypointLabelsEnabled;
+        c.waypointIconOpacity = waypointIconOpacity;
         c.predictionEnabled = predictionEnabled;
         c.predictionNetworkSync = predictionNetworkSync;
         c.predictionViewMode = predictionViewMode;
@@ -295,6 +301,9 @@ public final class ConfluxConfig {
         radarIconSize = clamp(radarIconSize, MIN_RADAR_ICON_SIZE, MAX_RADAR_ICON_SIZE);
         waypointRenderDistance = clamp(waypointRenderDistance, 0, 100_000);
         deathPointsKept = clamp(deathPointsKept, 0, 50);
+        waypointIconOpacity = clamp(
+            waypointIconOpacity, MIN_WAYPOINT_ICON_OPACITY, MAX_WAYPOINT_ICON_OPACITY
+        );
         if (predictionViewMode == null) {
             predictionViewMode = PredictionViewMode.EVERYWHERE;
         }

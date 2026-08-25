@@ -151,6 +151,31 @@ class ConfigIoTest {
     }
 
     @Test
+    void waypointIconOpacityRoundTripsAndClampsInvalidValues(@TempDir final Path tmp) throws IOException {
+        final Path file = tmp.resolve("config.json");
+        final ConfigIo io = new ConfigIo(file, LOGGER);
+        final ConfluxConfig config = new ConfluxConfig();
+        config.waypointIconOpacity = 42;
+
+        io.save(config);
+        assertEquals(42, io.load().waypointIconOpacity);
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":2,\"waypointIconOpacity\":-10}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(ConfluxConfig.MIN_WAYPOINT_ICON_OPACITY, io.load().waypointIconOpacity);
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":2,\"waypointIconOpacity\":150}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY, io.load().waypointIconOpacity);
+    }
+
+    @Test
     void playerTrailSettingsRoundTripAndClampInvalidValues(@TempDir final Path tmp) throws IOException {
         final Path file = tmp.resolve("config.json");
         final ConfigIo io = new ConfigIo(file, LOGGER);
