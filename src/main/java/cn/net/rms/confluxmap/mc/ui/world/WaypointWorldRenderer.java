@@ -655,10 +655,6 @@ public final class WaypointWorldRenderer {
     //$$     final Font textRenderer,
     //$$     final FabricOrderedSubmitNodeCollector plates,
     //$$     final FabricOrderedSubmitNodeCollector text,
-    //$$     final WaypointRenderEntry waypoint,
-    //$$     final float halfSize,
-    //$$     final float alpha,
-    //$$     final boolean selected
     //#else
     private static void drawIcon(
         final MatrixStack matrices,
