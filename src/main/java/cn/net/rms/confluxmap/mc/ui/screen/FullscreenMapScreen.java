@@ -379,8 +379,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private String teleportLocationUnavailableKey;
     private final Map<ButtonWidget, String> annotationTooltips = new LinkedHashMap<>();
     private final Map<ButtonWidget, String> locationActionTooltips = new LinkedHashMap<>();
-    private WaypointHighlightState.Target cachedLocationTarget;
-    private WaypointRenderEntry cachedLocationEntry;
     private final Map<AnnotationTool, ButtonWidget> annotationToolButtons = new EnumMap<>(AnnotationTool.class);
     private AnnotationToolbarBounds annotationToolbarBounds;
     private AnnotationToolbarBounds annotationColorMenuBounds;
@@ -3416,15 +3414,14 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private boolean radarMarkerIntersectsUi(final RadarMarkerRenderer.Marker marker) {
         final float iconHalf = Math.max(2.5f, config.radarIconSize / 2f);
         final String name = marker.entry().name();
-        final float nameHalf = name == null ? 0f : this.textRenderer.getWidth(name) / 2f;
-        final float horizontalRadius = iconHalf + nameHalf + 4f;
-        final float verticalRadius = iconHalf + this.textRenderer.fontHeight + 4f;
-        return mapOverlayIntersectsUi(
-            marker.x() - horizontalRadius,
-            marker.y() - verticalRadius,
-            marker.x() + horizontalRadius,
-            marker.y() + verticalRadius
+        final MapOverlayBounds bounds = MapOverlayBounds.radar(
+            marker.x(), marker.y(), iconHalf,
+            name == null ? 0f : this.textRenderer.getWidth(name),
+            this.textRenderer.fontHeight,
+            marker.entry().category(),
+            config.radarShowPlayerNames
         );
+        return mapOverlayIntersectsUi(bounds);
     }
 
     private void drawStructures(final GuiDraw draw, final int mouseX, final int mouseY) {
@@ -3460,6 +3457,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         for (final StructureIndex.Marker marker : visibleMarkers) {
             final float screenX = (float) (width / 2.0 + (marker.blockX() - centerX) * pxPerBlock);
             final float screenY = (float) (height / 2.0 + (marker.blockZ() - centerZ) * pxPerBlock);
+            if (mapOverlayIntersectsUi(MapOverlayBounds.structureIcon(screenX, screenY, true))) {
+                continue;
+            }
             final double hoverDistance = Math.hypot(mouseX - screenX, mouseY - screenY);
             if (hoverDistance <= bestHoverDistance) {
                 bestHoverDistance = hoverDistance;
@@ -3473,15 +3473,24 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 continue;
             }
             final boolean hovered = marker.equals(hoveredStructure);
-            StructureMarkerRenderer.draw(draw, marker, screenX, screenY, hovered);
+            final MapOverlayBounds iconBounds = MapOverlayBounds.structureIcon(
+                screenX, screenY, hovered
+            );
+            if (!mapOverlayIntersectsUi(iconBounds)) {
+                StructureMarkerRenderer.draw(draw, marker, screenX, screenY, hovered);
+            }
             if (hovered) {
-                draw.drawTextWithShadow(
-                    this.textRenderer,
-                    Texts.translatable(marker.type().translationKey()),
-                    screenX + 10f,
-                    screenY - 4f,
-                    TEXT_COLOR
+                final var label = Texts.translatable(marker.type().translationKey());
+                final float labelX = screenX + 10f;
+                final float labelY = screenY - 4f;
+                final MapOverlayBounds labelBounds = MapOverlayBounds.text(
+                    labelX, labelY, this.textRenderer.getWidth(label), this.textRenderer.fontHeight
                 );
+                if (!mapOverlayIntersectsUi(labelBounds)) {
+                    draw.drawTextWithShadow(
+                        this.textRenderer, label, labelX, labelY, TEXT_COLOR
+                    );
+                }
             }
         }
     }
@@ -3640,7 +3649,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             }
         }
         hoveredWaypoint = hovered;
-        final boolean hasHighlight = waypointHighlightState.activeIn(currentDimension);
+        final boolean hasHighlight = waypointHighlightState.hasRenderableTarget(
+            waypoints, currentDimension
+        );
 
         for (final ScreenMarker marker : markers) {
             final WaypointRenderEntry waypoint = marker.waypoint();
@@ -3688,20 +3699,24 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     private WaypointRenderEntry selectedLocationEntry(final WaypointHighlightState.Target target) {
-        if (!target.equals(cachedLocationTarget)) {
-            cachedLocationTarget = target;
-            cachedLocationEntry = new WaypointRenderEntry(
-                WaypointHighlightState.SELECTED_LOCATION_ID,
-                Texts.translatable(WaypointHighlightState.SELECTED_LOCATION_TRANSLATION_KEY).getString(),
-                target.dimension(), target.x(), target.y(), target.z(), 0xFFFFE066,
-                Waypoint.Type.NORMAL, WaypointRenderEntry.Source.LOCAL
-            );
-        }
-        return cachedLocationEntry;
+        return WaypointHighlightState.locationEntry(
+            target,
+            Texts.translatable(
+                WaypointHighlightState.SELECTED_LOCATION_TRANSLATION_KEY
+            ).getString(),
+            target.y(),
+            0xFFFFE066
+        );
     }
 
     private float visibilityAlpha(final boolean selected, final boolean hasHighlight) {
         return selected || !hasHighlight ? 1f : config.waypointHighlightDimOpacity / 100f;
+    }
+
+    private boolean mapOverlayIntersectsUi(final MapOverlayBounds bounds) {
+        return mapOverlayIntersectsUi(
+            bounds.left(), bounds.top(), bounds.right(), bounds.bottom()
+        );
     }
 
     /** Keeps map overlays below every visible fullscreen-map control. */

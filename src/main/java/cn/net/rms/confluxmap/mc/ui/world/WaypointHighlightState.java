@@ -2,7 +2,9 @@ package cn.net.rms.confluxmap.mc.ui.world;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
+import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -40,6 +42,25 @@ public final class WaypointHighlightState {
         }
     }
 
+    public static WaypointRenderEntry locationEntry(
+        final Target target,
+        final String translatedName,
+        final double renderY,
+        final int colorArgb
+    ) {
+        return new WaypointRenderEntry(
+            SELECTED_LOCATION_ID,
+            translatedName,
+            target.dimension(),
+            target.x(),
+            renderY,
+            target.z(),
+            colorArgb,
+            Waypoint.Type.NORMAL,
+            WaypointRenderEntry.Source.LOCAL
+        );
+    }
+
     private Target target;
     private long currentSessionToken = Long.MIN_VALUE;
 
@@ -65,6 +86,30 @@ public final class WaypointHighlightState {
 
     public boolean activeIn(final DimensionId dimension) {
         return target != null && target.dimension().equals(dimension);
+    }
+
+    public boolean hasRenderableTarget(
+        final List<WaypointRenderEntry> waypoints,
+        final DimensionId displayedDimension
+    ) {
+        return activeIn(displayedDimension)
+            && waypoints.stream().anyMatch(waypoint -> matchesEntry(waypoint, displayedDimension));
+    }
+
+    public double renderDistance(
+        final WaypointRenderEntry waypoint,
+        final DimensionId displayedDimension,
+        final double playerX,
+        final double playerY,
+        final double playerZ
+    ) {
+        final double dx = waypoint.x() - playerX;
+        final double dz = waypoint.z() - playerZ;
+        if (target != null && !target.yKnown() && matchesEntry(waypoint, displayedDimension)) {
+            return Math.sqrt(dx * dx + dz * dz);
+        }
+        final double dy = waypoint.y() - playerY;
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
     public boolean matches(final WaypointRenderEntry waypoint, final DimensionId displayedDimension) {
