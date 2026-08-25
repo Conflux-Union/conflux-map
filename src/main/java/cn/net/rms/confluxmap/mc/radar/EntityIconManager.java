@@ -17,6 +17,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Executor;
 import java.util.function.IntBinaryOperator;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
@@ -31,6 +32,7 @@ import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.resource.ResourceManager;
 import net.minecraft.util.Identifier;
 
 /**
@@ -54,6 +56,9 @@ public final class EntityIconManager implements AutoCloseable {
     }
 
     private record ObservedPortrait(PortraitKey key, long checkedAt) {
+    }
+
+    private record TextureRequest(PortraitKey key, int generation) {
     }
 
     /** One portrait region and its source kind. Dynamic portraits bind through this manager. */
@@ -91,11 +96,16 @@ public final class EntityIconManager implements AutoCloseable {
     );
     private final Map<PortraitKey, WeakReference<LivingEntity>> liveEntities = new HashMap<>();
     private final Map<UUID, ObservedPortrait> observedPortraits = new HashMap<>();
-    private final Map<Identifier, NativeImage> sourceTextures = new HashMap<>();
+    private final PortraitTextureLoader<TextureRequest> textureLoader;
     private final Set<Identifier> unreadableSourceTextures = new java.util.HashSet<>();
 
     private int nextSlot;
+    private int generation;
     private long clock;
+
+    public EntityIconManager(final Executor worker) {
+        textureLoader = new PortraitTextureLoader<>(worker);
+    }
 
     /** Registers the one-bake-per-client-tick queue drain. */
     public void register() {
@@ -105,6 +115,7 @@ public final class EntityIconManager implements AutoCloseable {
     private void tick(final MinecraftClient client) {
         assert RenderSystem.isOnRenderThread() : "EntityIconManager.tick() must run on the render thread";
         clock++;
+        textureLoader.poll().ifPresent(result -> finishBake(client, result));
         if (client.world == null) {
             return;
         }
@@ -146,7 +157,10 @@ public final class EntityIconManager implements AutoCloseable {
         }
         final PortraitKey key = observed.key();
         liveEntities.put(key, new WeakReference<>(living));
-        final AtlasSprite sprite = cache.request(key, clock).orElse(null);
+        final TextureRequest request = new TextureRequest(key, generation);
+        final AtlasSprite sprite = textureLoader.isLoading(request)
+            ? cache.value(key).orElse(null)
+            : cache.request(key, clock).orElse(null);
         return sprite == null ? null : dynamicIcon(sprite);
     }
 
@@ -194,17 +208,81 @@ public final class EntityIconManager implements AutoCloseable {
             return;
         }
         try {
-            final AtlasSprite current = cache.value(key).orElse(null);
-            final AtlasSprite baked = bake(client, key, current);
-            if (baked == null) {
+            final float[] geometry = EntityHeadGeometry.projectNeutral(
+                key.model(), key.entityType().toString(), 0, 0
+            );
+            if (geometry.length == 0) {
                 cache.fail(key, now);
                 return;
             }
-            cache.complete(key, baked, now);
+            if (unreadableSourceTextures.contains(key.texture())) {
+                completeBake(client, key, geometry, null);
+                return;
+            }
+            final TextureRequest request = new TextureRequest(key, generation);
+            final ResourceManager resources = client.getResourceManager();
+            textureLoader.request(
+                request, geometry, () -> sourceTexture(resources, key.texture())
+            );
         } catch (final RuntimeException e) {
             cache.fail(key, now);
             ConfluxMapMod.LOGGER.debug("Failed to bake radar portrait for {}", entity.getType(), e);
         }
+    }
+
+    private void finishBake(
+        final MinecraftClient client,
+        final PortraitTextureLoader.Result<TextureRequest> result
+    ) {
+        final TextureRequest request = result.key();
+        if (request.generation() != generation) {
+            return;
+        }
+        final PortraitKey key = request.key();
+        final WeakReference<LivingEntity> reference = liveEntities.get(key);
+        final LivingEntity entity = reference == null ? null : reference.get();
+        //#if MC>=12108 && MC<12109
+        //$$ final boolean wrongWorld = entity == null || entity.getWorld() != client.world;
+        //#else
+        final boolean wrongWorld = entity == null || entity.getEntityWorld() != client.world;
+        //#endif
+        if (entity == null || wrongWorld) {
+            cache.fail(key, clock);
+            liveEntities.remove(key);
+            return;
+        }
+        final int[] visibleBounds;
+        if (result.success()) {
+            visibleBounds = result.visibleBounds();
+        } else {
+            unreadableSourceTextures.add(key.texture());
+            ConfluxMapMod.LOGGER.debug(
+                "Could not inspect radar portrait alpha for {}", key.texture(), result.error()
+            );
+            visibleBounds = null;
+        }
+        try {
+            completeBake(client, key, result.geometry(), visibleBounds);
+        } catch (final RuntimeException e) {
+            cache.fail(key, clock);
+            ConfluxMapMod.LOGGER.debug("Failed to bake radar portrait for {}", entity.getType(), e);
+        }
+    }
+
+    private void completeBake(
+        final MinecraftClient client,
+        final PortraitKey key,
+        final float[] geometry,
+        final int[] visibleBounds
+    ) {
+        final AtlasSprite baked = bake(
+            client, key, cache.value(key).orElse(null), geometry, visibleBounds
+        );
+        if (baked == null) {
+            cache.fail(key, clock);
+            return;
+        }
+        cache.complete(key, baked, clock);
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -237,23 +315,17 @@ public final class EntityIconManager implements AutoCloseable {
     private AtlasSprite bake(
         final MinecraftClient client,
         final PortraitKey key,
-        final AtlasSprite current
+        final AtlasSprite current,
+        final float[] geometry,
+        final int[] visibleBounds
     ) {
-        final float[] geometry = EntityHeadGeometry.projectNeutral(
-            key.model(), key.entityType().toString(), 0, 0
-        );
-        if (geometry.length == 0) {
-            return null;
-        }
         final AtlasSprite sprite = current == null ? allocateSprite() : current;
         if (sprite == null) {
             return null;
         }
         final int column = sprite.slot() % CELLS_PER_ROW;
         final int row = sprite.slot() / CELLS_PER_ROW;
-        final AtlasSprite cropped = cropSprite(
-            sprite, geometry, sourceTexture(client, key.texture())
-        );
+        final AtlasSprite cropped = cropSprite(sprite, geometry, visibleBounds);
         translate(geometry, column * CELL_PX, row * CELL_PX);
 
         final MatrixStack matrices = new MatrixStack();
@@ -320,19 +392,37 @@ public final class EntityIconManager implements AutoCloseable {
         return new AtlasSprite(slot, u0, v0, u1, v1, 1f, 1f);
     }
 
-    private NativeImage sourceTexture(final MinecraftClient client, final Identifier texture) {
-        final NativeImage cached = sourceTextures.get(texture);
-        if (cached != null || unreadableSourceTextures.contains(texture)) {
-            return cached;
+    private static PortraitTextureLoader.SourceImage sourceTexture(
+        final ResourceManager resources,
+        final Identifier texture
+    ) {
+        try (InputStream input = MinecraftAccess.openResource(resources, texture)) {
+            return new NativeSourceImage(NativeImage.read(input));
+        } catch (final IOException e) {
+            throw new IllegalStateException("Could not read " + texture, e);
         }
-        try (InputStream input = MinecraftAccess.openResource(client, texture)) {
-            final NativeImage image = NativeImage.read(input);
-            sourceTextures.put(texture, image);
-            return image;
-        } catch (final IOException | RuntimeException e) {
-            unreadableSourceTextures.add(texture);
-            ConfluxMapMod.LOGGER.debug("Could not inspect radar portrait alpha for {}", texture, e);
-            return null;
+    }
+
+    private record NativeSourceImage(NativeImage image)
+        implements PortraitTextureLoader.SourceImage {
+        @Override
+        public int width() {
+            return image.getWidth();
+        }
+
+        @Override
+        public int height() {
+            return image.getHeight();
+        }
+
+        @Override
+        public int alphaAt(final int x, final int y) {
+            return Argb.alpha(NativeImages.getArgb(image, x, y));
+        }
+
+        @Override
+        public void close() {
+            image.close();
         }
     }
 
@@ -340,15 +430,9 @@ public final class EntityIconManager implements AutoCloseable {
     private static AtlasSprite cropSprite(
         final AtlasSprite sprite,
         final float[] geometry,
-        final NativeImage sourceTexture
+        final int[] visibleBounds
     ) {
-        final int[] visible = sourceTexture == null
-            ? null
-            : visibleBounds(
-                geometry, sourceTexture.getWidth(), sourceTexture.getHeight(),
-                (x, y) -> Argb.alpha(NativeImages.getArgb(sourceTexture, x, y))
-            );
-        final int[] bounds = visible == null ? geometryBounds(geometry) : visible;
+        final int[] bounds = visibleBounds == null ? geometryBounds(geometry) : visibleBounds;
         final int left = bounds[0];
         final int top = bounds[1];
         final int right = bounds[2];
@@ -395,42 +479,57 @@ public final class EntityIconManager implements AutoCloseable {
         int right = 0;
         int bottom = 0;
         for (int quad = 0; quad < geometry.length; quad += 20) {
-            for (final int[] triangle : new int[][] {{0, 1, 2}, {0, 2, 3}}) {
+            for (int triangle = 0; triangle < 2; triangle++) {
+                final int first = 0;
+                final int second = triangle == 0 ? 1 : 2;
+                final int third = triangle == 0 ? 2 : 3;
+                final int a = quad + first * 5;
+                final int b = quad + second * 5;
+                final int c = quad + third * 5;
                 final float minX = Math.min(
-                    geometry[quad + triangle[0] * 5],
-                    Math.min(geometry[quad + triangle[1] * 5], geometry[quad + triangle[2] * 5])
+                    geometry[a], Math.min(geometry[b], geometry[c])
                 );
                 final float minY = Math.min(
-                    geometry[quad + triangle[0] * 5 + 1],
-                    Math.min(geometry[quad + triangle[1] * 5 + 1], geometry[quad + triangle[2] * 5 + 1])
+                    geometry[a + 1], Math.min(geometry[b + 1], geometry[c + 1])
                 );
                 final float maxX = Math.max(
-                    geometry[quad + triangle[0] * 5],
-                    Math.max(geometry[quad + triangle[1] * 5], geometry[quad + triangle[2] * 5])
+                    geometry[a], Math.max(geometry[b], geometry[c])
                 );
                 final float maxY = Math.max(
-                    geometry[quad + triangle[0] * 5 + 1],
-                    Math.max(geometry[quad + triangle[1] * 5 + 1], geometry[quad + triangle[2] * 5 + 1])
+                    geometry[a + 1], Math.max(geometry[b + 1], geometry[c + 1])
                 );
+                final float denominator = (geometry[b + 1] - geometry[c + 1])
+                    * (geometry[a] - geometry[c])
+                    + (geometry[c] - geometry[b]) * (geometry[a + 1] - geometry[c + 1]);
+                if (Math.abs(denominator) < 0.0001f) {
+                    continue;
+                }
                 final int firstX = clamp((int) Math.floor(minX), 0, CELL_PX - 1);
                 final int firstY = clamp((int) Math.floor(minY), 0, CELL_PX - 1);
                 final int lastX = clamp((int) Math.ceil(maxX), 1, CELL_PX);
                 final int lastY = clamp((int) Math.ceil(maxY), 1, CELL_PX);
                 for (int y = firstY; y < lastY; y++) {
                     for (int x = firstX; x < lastX; x++) {
-                        final float[] weights = barycentric(
-                            geometry, quad, triangle, x + 0.5f, y + 0.5f
-                        );
-                        if (weights == null) {
+                        final float px = x + 0.5f;
+                        final float py = y + 0.5f;
+                        final float wa = ((geometry[b + 1] - geometry[c + 1])
+                            * (px - geometry[c])
+                            + (geometry[c] - geometry[b]) * (py - geometry[c + 1]))
+                            / denominator;
+                        final float wb = ((geometry[c + 1] - geometry[a + 1])
+                            * (px - geometry[c])
+                            + (geometry[a] - geometry[c]) * (py - geometry[c + 1]))
+                            / denominator;
+                        final float wc = 1f - wa - wb;
+                        if (wa < -0.0001f || wb < -0.0001f || wc < -0.0001f) {
                             continue;
                         }
-                        float u = 0f;
-                        float v = 0f;
-                        for (int i = 0; i < 3; i++) {
-                            final int vertex = quad + triangle[i] * 5;
-                            u += geometry[vertex + 3] * weights[i];
-                            v += geometry[vertex + 4] * weights[i];
-                        }
+                        final float u = geometry[a + 3] * wa
+                            + geometry[b + 3] * wb
+                            + geometry[c + 3] * wc;
+                        final float v = geometry[a + 4] * wa
+                            + geometry[b + 4] * wb
+                            + geometry[c + 4] * wc;
                         final int textureX = clamp((int) (u * textureWidth), 0, textureWidth - 1);
                         final int textureY = clamp((int) (v * textureHeight), 0, textureHeight - 1);
                         if (alphaAt.applyAsInt(textureX, textureY) <= 8) {
@@ -446,32 +545,6 @@ public final class EntityIconManager implements AutoCloseable {
             }
         }
         return found ? new int[] {left, top, right, bottom} : null;
-    }
-
-    private static float[] barycentric(
-        final float[] geometry,
-        final int quad,
-        final int[] triangle,
-        final float px,
-        final float py
-    ) {
-        final int a = quad + triangle[0] * 5;
-        final int b = quad + triangle[1] * 5;
-        final int c = quad + triangle[2] * 5;
-        final float denominator = (geometry[b + 1] - geometry[c + 1])
-            * (geometry[a] - geometry[c])
-            + (geometry[c] - geometry[b]) * (geometry[a + 1] - geometry[c + 1]);
-        if (Math.abs(denominator) < 0.0001f) {
-            return null;
-        }
-        final float wa = ((geometry[b + 1] - geometry[c + 1]) * (px - geometry[c])
-            + (geometry[c] - geometry[b]) * (py - geometry[c + 1])) / denominator;
-        final float wb = ((geometry[c + 1] - geometry[a + 1]) * (px - geometry[c])
-            + (geometry[a] - geometry[c]) * (py - geometry[c + 1])) / denominator;
-        final float wc = 1f - wa - wb;
-        return wa >= -0.0001f && wb >= -0.0001f && wc >= -0.0001f
-            ? new float[] {wa, wb, wc}
-            : null;
     }
 
     private static int[] normalizedBounds(
@@ -503,14 +576,12 @@ public final class EntityIconManager implements AutoCloseable {
     }
 
     private void resetDynamic() {
+        generation++;
         cache.clear();
         liveEntities.clear();
         observedPortraits.clear();
         colorAtlas.close();
-        for (final NativeImage image : sourceTextures.values()) {
-            image.close();
-        }
-        sourceTextures.clear();
+        textureLoader.clear();
         unreadableSourceTextures.clear();
         nextSlot = 0;
     }

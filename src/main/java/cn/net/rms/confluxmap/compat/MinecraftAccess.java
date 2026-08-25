@@ -11,6 +11,7 @@ import net.minecraft.client.gui.screen.ingame.HandledScreen;
 //#endif
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.resource.ResourceManager;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
 //#if MC>=12111
@@ -151,13 +152,14 @@ public final class MinecraftAccess {
         //#endif
     }
 
-    public static InputStream openResource(final MinecraftClient client, final Identifier id) throws IOException {
+    public static InputStream openResource(final ResourceManager resources, final Identifier id)
+        throws IOException {
         //#if MC>=12000
-        //$$ return client.getResourceManager().getResource(id)
+        //$$ return resources.getResource(id)
         //$$     .orElseThrow(() -> new IOException("missing resource: " + id))
         //$$     .getInputStream();
         //#else
-        return client.getResourceManager().getResource(id).getInputStream();
+        return resources.getResource(id).getInputStream();
         //#endif
     }
 

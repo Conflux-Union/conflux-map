@@ -288,7 +288,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         radarScanner = new EntityRadarScanner(
             client, config, radarViewRange, companionSession::entityRadarAllowed
         );
-        entityIconManager = new EntityIconManager();
+        entityIconManager = new EntityIconManager(executors.workers());
         playerTrail = new PlayerTrail();
         playerTrailTracker = new PlayerTrailTracker(client, config, sessionGuard, playerTrail);
         waypointService = new WaypointService(waypointRoot, executors, ConfluxMapMod.LOGGER);

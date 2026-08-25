@@ -391,7 +391,13 @@ public final class RenderUtil {
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         //#endif
-        final float a = Argb.alpha(argbColor) / 255f;
+        final int diameter = radius * 2 + 1;
+        final int copies = diameter * diameter - 1;
+        // All shifted silhouettes can cover the same target pixel. Give each draw only the
+        // per-layer alpha that converges on the requested fade after source-over accumulation.
+        final float a = Argb.alphaForRepeatedOverdraw(
+            Argb.alpha(argbColor) / 255f, copies
+        );
         final float r = Argb.red(argbColor) / 255f;
         final float g = Argb.green(argbColor) / 255f;
         final float b = Argb.blue(argbColor) / 255f;

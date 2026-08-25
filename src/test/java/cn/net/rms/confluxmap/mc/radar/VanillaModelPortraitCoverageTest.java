@@ -164,7 +164,7 @@ final class VanillaModelPortraitCoverageTest {
         final List<String> outliers = new ArrayList<>();
         roots.forEach((name, root) -> {
             final int span = portraitLongestSpan(name, root);
-            if (span > 0 && span < 31) {
+            if (span < 31) {
                 outliers.add(name + "=" + span);
             }
         });

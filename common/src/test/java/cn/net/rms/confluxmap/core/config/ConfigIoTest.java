@@ -24,16 +24,17 @@ class ConfigIoTest {
     private static final Logger LOGGER = LogManager.getLogger("ConfigIoTest");
 
     @Test
-    void playerIconOutlineChoiceRoundTrips(@TempDir final Path tmp) throws IOException {
+    void playerIconOutlineSettingsRoundTrip(@TempDir final Path tmp) throws IOException {
         final ConfigIo io = new ConfigIo(tmp.resolve("config.json"), LOGGER);
         final ConfluxConfig config = new ConfluxConfig();
         config.radarPlayerIconOutlineEnabled = false;
+        config.radarIconOutlineThickness = 3;
 
         io.save(config);
 
-        assertFalse(io.load().radarPlayerIconOutlineEnabled);
-        assertEquals(ConfluxConfig.DEFAULT_RADAR_ICON_OUTLINE_THICKNESS,
-            new ConfluxConfig().radarIconOutlineThickness);
+        final ConfluxConfig loaded = io.load();
+        assertFalse(loaded.radarPlayerIconOutlineEnabled);
+        assertEquals(3, loaded.radarIconOutlineThickness);
     }
 
     @Test
