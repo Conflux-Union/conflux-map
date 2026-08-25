@@ -5,7 +5,6 @@ import java.util.Set;
 
 /** Minecraft-free projection and sizing policy for model-derived radar portraits. */
 public final class PortraitLayout {
-    private static final float TARGET_SUBJECT_AREA_RATIO = 0.5f;
     private static final Set<String> SIDE_VIEW_TYPES = Set.of(
         "minecraft:cod", "minecraft:salmon", "minecraft:pufferfish", "minecraft:tropical_fish"
     );
@@ -35,9 +34,9 @@ public final class PortraitLayout {
     }
 
     /**
-     * Gives the already-selected subject a stable visual area. Callers must pass the dominant
-     * subject dimensions, not the complete silhouette including thin ears, horns, antennae, or
-     * decorative layers. Long subjects may exceed the cell bounds; the atlas bake clips them.
+     * Fits the already-selected subject into the portrait while preserving its aspect ratio.
+     * Callers must pass the dominant subject dimensions, not the complete silhouette including
+     * thin ears, horns, antennae, or decorative layers.
      */
     public static Fit fit(
         final float rawWidth,
@@ -52,8 +51,7 @@ public final class PortraitLayout {
         if (!(content > 0f)) {
             throw new IllegalArgumentException("portrait padding leaves no content area");
         }
-        final float targetArea = content * content * TARGET_SUBJECT_AREA_RATIO;
-        final float scale = (float) Math.sqrt(targetArea / (rawWidth * rawHeight));
+        final float scale = Math.min(content / rawWidth, content / rawHeight);
         final float width = rawWidth * scale;
         final float height = rawHeight * scale;
         return new Fit(scale, width, height, (cellSize - width) / 2f, (cellSize - height) / 2f);

@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.util;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -34,6 +35,20 @@ class ArgbTest {
         assertEquals(127, Argb.alpha(halved));
         assertEquals(0x20A030, halved & 0x00FFFFFF);
         assertEquals(0xFF20A030, Argb.scaleAlpha(0xFF20A030, 1f));
+    }
+
+    @Test
+    void repeatedOutlineLayersConvergeOnRequestedAlpha() {
+        final float requestedAlpha = 0.49f;
+        final int copies = 8;
+        final float layerAlpha = Argb.alphaForRepeatedOverdraw(requestedAlpha, copies);
+        float composite = 0f;
+        for (int i = 0; i < copies; i++) {
+            composite = layerAlpha + composite * (1f - layerAlpha);
+        }
+
+        assertTrue(layerAlpha < requestedAlpha);
+        assertEquals(requestedAlpha, composite, 0.000001f);
     }
 
     @Test

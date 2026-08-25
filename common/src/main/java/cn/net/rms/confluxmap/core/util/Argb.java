@@ -50,6 +50,21 @@ public final class Argb {
         return a << 24 | (argb & 0x00FFFFFF);
     }
 
+    /**
+     * Alpha for one of several identical source-over layers whose full overlap should retain the
+     * requested opacity instead of compounding beyond it.
+     */
+    public static float alphaForRepeatedOverdraw(final float requestedAlpha, final int copies) {
+        if (copies < 1) {
+            throw new IllegalArgumentException("copies must be positive");
+        }
+        final float alpha = Math.max(0f, Math.min(1f, requestedAlpha));
+        if (alpha == 0f || alpha == 1f || copies == 1) {
+            return alpha;
+        }
+        return (float) (1.0 - Math.pow(1.0 - alpha, 1.0 / copies));
+    }
+
     /** Blend {@code over} onto {@code under} using {@code over}'s alpha, keeping {@code under}'s alpha. */
     public static int blendOver(final int under, final int over) {
         final int a = alpha(over);

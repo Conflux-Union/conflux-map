@@ -81,7 +81,7 @@ final class EntityHeadGeometryTest {
     }
 
     @Test
-    void rabbitSubjectIsComparableToPig() {
+    void rabbitPortraitKeepsCompleteModelGeometry() {
         //#if MC>=260100
         //$$ final ModelPart rabbitRoot = AdultRabbitModel.createBodyLayer().bakeRoot();
         //#elseif MC>=12103
@@ -94,9 +94,11 @@ final class EntityHeadGeometryTest {
             "minecraft:rabbit", 0, 0
         );
 
-        final float pigSubjectArea = subjectQuadArea(projectPig());
-        final float rabbitSubjectArea = subjectQuadArea(rabbit);
-        assertComparableToPig("rabbit", rabbitSubjectArea, pigSubjectArea);
+        assertTrue(rabbit.length > 0);
+        assertTrue(
+            subjectBounds(rabbit)[3] - subjectBounds(rabbit)[1] > 32f,
+            "ears may extend beyond the dominant head crop and are clipped by the atlas cell"
+        );
     }
 
     //#if MC>=11900
@@ -250,6 +252,20 @@ final class EntityHeadGeometryTest {
             }
         }
         return subjectArea;
+    }
+
+    private static float[] subjectBounds(final float[] geometry) {
+        float minX = Float.POSITIVE_INFINITY;
+        float minY = Float.POSITIVE_INFINITY;
+        float maxX = Float.NEGATIVE_INFINITY;
+        float maxY = Float.NEGATIVE_INFINITY;
+        for (int i = 0; i < geometry.length; i += 5) {
+            minX = Math.min(minX, geometry[i]);
+            minY = Math.min(minY, geometry[i + 1]);
+            maxX = Math.max(maxX, geometry[i]);
+            maxY = Math.max(maxY, geometry[i + 1]);
+        }
+        return new float[] {minX, minY, maxX, maxY};
     }
 
 }

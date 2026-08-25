@@ -21,7 +21,9 @@ final class RadarMarkerFallbackTest {
 
         assertTrue(renderer.contains("icon != null && drawIcon("));
         assertTrue(renderer.contains("private static boolean drawIcon("));
-        assertTrue(renderer.contains("if (!iconManager.bindDynamicColor()) {\n                return false;"));
+        assertTrue(renderer.matches(
+            "(?s).*if \\(!iconManager\\.bindDynamicColor\\(\\)\\) \\{\\s+return false;.*"
+        ));
     }
 
     private static Path findProjectRoot() {

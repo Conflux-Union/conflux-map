@@ -365,6 +365,64 @@ public final class RenderUtil {
         //#endif
     }
 
+    /**
+     * Draws a texture-alpha silhouette expanded by {@code radius} GUI pixels. All shifted copies
+     * share one mesh submission; drawing the original texture afterward covers the dark interior,
+     * leaving only the contour around non-transparent pixels.
+     */
+    public static void drawTintedOutline(
+        final MatrixStack matrices,
+        final float x,
+        final float y,
+        final float width,
+        final float height,
+        final float u0,
+        final float v0,
+        final float u1,
+        final float v1,
+        final int radius,
+        final int argbColor
+    ) {
+        if (radius <= 0) {
+            return;
+        }
+        //#if MC<12105
+        useTintedTextureShader();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        //#endif
+        final int diameter = radius * 2 + 1;
+        final int copies = diameter * diameter - 1;
+        // All shifted silhouettes can cover the same target pixel. Give each draw only the
+        // per-layer alpha that converges on the requested fade after source-over accumulation.
+        final float a = Argb.alphaForRepeatedOverdraw(
+            Argb.alpha(argbColor) / 255f, copies
+        );
+        final float r = Argb.red(argbColor) / 255f;
+        final float g = Argb.green(argbColor) / 255f;
+        final float b = Argb.blue(argbColor) / 255f;
+        final var model = matrices.peek().getModel();
+        final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, Mesh.tintedTextureFormat());
+        for (int offsetY = -radius; offsetY <= radius; offsetY++) {
+            for (int offsetX = -radius; offsetX <= radius; offsetX++) {
+                if (offsetX == 0 && offsetY == 0) {
+                    continue;
+                }
+                final float left = x + offsetX;
+                final float top = y + offsetY;
+                mesh.tintedVertex(model, left, top + height, 0, u0, v1, r, g, b, a);
+                mesh.tintedVertex(model, left + width, top + height, 0, u1, v1, r, g, b, a);
+                mesh.tintedVertex(model, left + width, top, 0, u1, v0, r, g, b, a);
+                mesh.tintedVertex(model, left, top, 0, u0, v0, r, g, b, a);
+            }
+        }
+        //#if MC>=12105
+        //$$ mesh.drawGui(RenderPipelines.GUI_TEXTURED);
+        //#else
+        mesh.draw();
+        //#endif
+    }
+
     /** Maps one horizontal texture strip clockwise around a circular frame. */
     public static void drawTexturedRing(
         final MatrixStack matrices,

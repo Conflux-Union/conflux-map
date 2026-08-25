@@ -1,28 +1,38 @@
 package cn.net.rms.confluxmap.mc.radar;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
+import cn.net.rms.confluxmap.compat.NativeImages;
 import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.core.radar.IconBakeCache;
+import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.mixin.AgeableMobEntityRendererAccessor;
 import cn.net.rms.confluxmap.mc.render.OffscreenCanvas;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import com.mojang.blaze3d.systems.RenderSystem;
+import java.io.IOException;
+import java.io.InputStream;
 import java.lang.ref.WeakReference;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Executor;
+import java.util.function.IntBinaryOperator;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.client.render.entity.EntityRenderer;
 import net.minecraft.client.render.entity.LivingEntityRenderer;
 import net.minecraft.client.render.entity.model.EntityModel;
+import net.minecraft.client.texture.NativeImage;
 //#if MC>=12103
 //$$ import net.minecraft.client.render.entity.state.LivingEntityRenderState;
 //#endif
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.resource.ResourceManager;
 import net.minecraft.util.Identifier;
 
 /**
@@ -31,7 +41,15 @@ import net.minecraft.util.Identifier;
  * Callers see one small lookup interface and never handle model or version-specific renderer APIs.
  */
 public final class EntityIconManager implements AutoCloseable {
-    private record AtlasSprite(int slot, float u0, float v0, float u1, float v1) {
+    private record AtlasSprite(
+        int slot,
+        float u0,
+        float v0,
+        float u1,
+        float v1,
+        float widthScale,
+        float heightScale
+    ) {
     }
 
     private record PortraitKey(Identifier entityType, Identifier texture, EntityModel<?> model) {
@@ -40,11 +58,14 @@ public final class EntityIconManager implements AutoCloseable {
     private record ObservedPortrait(PortraitKey key, long checkedAt) {
     }
 
+    private record TextureRequest(PortraitKey key, int generation) {
+    }
+
     /** One portrait region and its source kind. Dynamic portraits bind through this manager. */
     public record FaceIcon(
         Identifier texture, float u0, float v0, float u1, float v1,
         Identifier overlayTexture, float ou0, float ov0, float ou1, float ov1,
-        boolean dynamic
+        boolean dynamic, float widthScale, float heightScale
     ) {
         public boolean hasOverlay() {
             return overlayTexture != null;
@@ -75,9 +96,16 @@ public final class EntityIconManager implements AutoCloseable {
     );
     private final Map<PortraitKey, WeakReference<LivingEntity>> liveEntities = new HashMap<>();
     private final Map<UUID, ObservedPortrait> observedPortraits = new HashMap<>();
+    private final PortraitTextureLoader<TextureRequest> textureLoader;
+    private final Set<Identifier> unreadableSourceTextures = new java.util.HashSet<>();
 
     private int nextSlot;
+    private int generation;
     private long clock;
+
+    public EntityIconManager(final Executor worker) {
+        textureLoader = new PortraitTextureLoader<>(worker);
+    }
 
     /** Registers the one-bake-per-client-tick queue drain. */
     public void register() {
@@ -87,6 +115,7 @@ public final class EntityIconManager implements AutoCloseable {
     private void tick(final MinecraftClient client) {
         assert RenderSystem.isOnRenderThread() : "EntityIconManager.tick() must run on the render thread";
         clock++;
+        textureLoader.poll().ifPresent(result -> finishBake(client, result));
         if (client.world == null) {
             return;
         }
@@ -128,7 +157,10 @@ public final class EntityIconManager implements AutoCloseable {
         }
         final PortraitKey key = observed.key();
         liveEntities.put(key, new WeakReference<>(living));
-        final AtlasSprite sprite = cache.request(key, clock).orElse(null);
+        final TextureRequest request = new TextureRequest(key, generation);
+        final AtlasSprite sprite = textureLoader.isLoading(request)
+            ? cache.value(key).orElse(null)
+            : cache.request(key, clock).orElse(null);
         return sprite == null ? null : dynamicIcon(sprite);
     }
 
@@ -176,17 +208,81 @@ public final class EntityIconManager implements AutoCloseable {
             return;
         }
         try {
-            final AtlasSprite current = cache.value(key).orElse(null);
-            final AtlasSprite baked = bake(client, key, current);
-            if (baked == null) {
+            final float[] geometry = EntityHeadGeometry.projectNeutral(
+                key.model(), key.entityType().toString(), 0, 0
+            );
+            if (geometry.length == 0) {
                 cache.fail(key, now);
                 return;
             }
-            cache.complete(key, baked, now);
+            if (unreadableSourceTextures.contains(key.texture())) {
+                completeBake(client, key, geometry, null);
+                return;
+            }
+            final TextureRequest request = new TextureRequest(key, generation);
+            final ResourceManager resources = client.getResourceManager();
+            textureLoader.request(
+                request, geometry, () -> sourceTexture(resources, key.texture())
+            );
         } catch (final RuntimeException e) {
             cache.fail(key, now);
             ConfluxMapMod.LOGGER.debug("Failed to bake radar portrait for {}", entity.getType(), e);
         }
+    }
+
+    private void finishBake(
+        final MinecraftClient client,
+        final PortraitTextureLoader.Result<TextureRequest> result
+    ) {
+        final TextureRequest request = result.key();
+        if (request.generation() != generation) {
+            return;
+        }
+        final PortraitKey key = request.key();
+        final WeakReference<LivingEntity> reference = liveEntities.get(key);
+        final LivingEntity entity = reference == null ? null : reference.get();
+        //#if MC>=12108 && MC<12109
+        //$$ final boolean wrongWorld = entity == null || entity.getWorld() != client.world;
+        //#else
+        final boolean wrongWorld = entity == null || entity.getEntityWorld() != client.world;
+        //#endif
+        if (entity == null || wrongWorld) {
+            cache.fail(key, clock);
+            liveEntities.remove(key);
+            return;
+        }
+        final int[] visibleBounds;
+        if (result.success()) {
+            visibleBounds = result.visibleBounds();
+        } else {
+            unreadableSourceTextures.add(key.texture());
+            ConfluxMapMod.LOGGER.debug(
+                "Could not inspect radar portrait alpha for {}", key.texture(), result.error()
+            );
+            visibleBounds = null;
+        }
+        try {
+            completeBake(client, key, result.geometry(), visibleBounds);
+        } catch (final RuntimeException e) {
+            cache.fail(key, clock);
+            ConfluxMapMod.LOGGER.debug("Failed to bake radar portrait for {}", entity.getType(), e);
+        }
+    }
+
+    private void completeBake(
+        final MinecraftClient client,
+        final PortraitKey key,
+        final float[] geometry,
+        final int[] visibleBounds
+    ) {
+        final AtlasSprite baked = bake(
+            client, key, cache.value(key).orElse(null), geometry, visibleBounds
+        );
+        if (baked == null) {
+            cache.fail(key, clock);
+            return;
+        }
+        cache.complete(key, baked, clock);
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -219,20 +315,17 @@ public final class EntityIconManager implements AutoCloseable {
     private AtlasSprite bake(
         final MinecraftClient client,
         final PortraitKey key,
-        final AtlasSprite current
+        final AtlasSprite current,
+        final float[] geometry,
+        final int[] visibleBounds
     ) {
-        final float[] geometry = EntityHeadGeometry.projectNeutral(
-            key.model(), key.entityType().toString(), 0, 0
-        );
-        if (geometry.length == 0) {
-            return null;
-        }
         final AtlasSprite sprite = current == null ? allocateSprite() : current;
         if (sprite == null) {
             return null;
         }
         final int column = sprite.slot() % CELLS_PER_ROW;
         final int row = sprite.slot() / CELLS_PER_ROW;
+        final AtlasSprite cropped = cropSprite(sprite, geometry, visibleBounds);
         translate(geometry, column * CELL_PX, row * CELL_PX);
 
         final MatrixStack matrices = new MatrixStack();
@@ -252,7 +345,7 @@ public final class EntityIconManager implements AutoCloseable {
         } finally {
             colorAtlas.end(client);
         }
-        return sprite;
+        return cropped;
     }
 
     //#if MC>=12103
@@ -296,7 +389,182 @@ public final class EntityIconManager implements AutoCloseable {
         // (V=1). Flip the complete atlas row, not only the orientation inside that row.
         final float v0 = atlasTopV(row);
         final float v1 = atlasBottomV(row);
-        return new AtlasSprite(slot, u0, v0, u1, v1);
+        return new AtlasSprite(slot, u0, v0, u1, v1, 1f, 1f);
+    }
+
+    private static PortraitTextureLoader.SourceImage sourceTexture(
+        final ResourceManager resources,
+        final Identifier texture
+    ) {
+        try (InputStream input = MinecraftAccess.openResource(resources, texture)) {
+            return new NativeSourceImage(NativeImage.read(input));
+        } catch (final IOException e) {
+            throw new IllegalStateException("Could not read " + texture, e);
+        }
+    }
+
+    private record NativeSourceImage(NativeImage image)
+        implements PortraitTextureLoader.SourceImage {
+        @Override
+        public int width() {
+            return image.getWidth();
+        }
+
+        @Override
+        public int height() {
+            return image.getHeight();
+        }
+
+        @Override
+        public int alphaAt(final int x, final int y) {
+            return Argb.alpha(NativeImages.getArgb(image, x, y));
+        }
+
+        @Override
+        public void close() {
+            image.close();
+        }
+    }
+
+    /** Tightens atlas sampling and records the aspect-preserving destination rectangle. */
+    private static AtlasSprite cropSprite(
+        final AtlasSprite sprite,
+        final float[] geometry,
+        final int[] visibleBounds
+    ) {
+        final int[] bounds = visibleBounds == null ? geometryBounds(geometry) : visibleBounds;
+        final int left = bounds[0];
+        final int top = bounds[1];
+        final int right = bounds[2];
+        final int bottom = bounds[3];
+        final int width = right - left;
+        final int height = bottom - top;
+        final int column = sprite.slot() % CELLS_PER_ROW;
+        final int row = sprite.slot() / CELLS_PER_ROW;
+        final float longest = Math.max(width, height);
+        return new AtlasSprite(
+            sprite.slot(),
+            (column * CELL_PX + left) / (float) ATLAS_PX,
+            1f - (row * CELL_PX + top) / (float) ATLAS_PX,
+            (column * CELL_PX + right) / (float) ATLAS_PX,
+            1f - (row * CELL_PX + bottom) / (float) ATLAS_PX,
+            width / longest,
+            height / longest
+        );
+    }
+
+    private static int[] geometryBounds(final float[] geometry) {
+        float minX = Float.POSITIVE_INFINITY;
+        float minY = Float.POSITIVE_INFINITY;
+        float maxX = Float.NEGATIVE_INFINITY;
+        float maxY = Float.NEGATIVE_INFINITY;
+        for (int i = 0; i < geometry.length; i += 5) {
+            minX = Math.min(minX, geometry[i]);
+            minY = Math.min(minY, geometry[i + 1]);
+            maxX = Math.max(maxX, geometry[i]);
+            maxY = Math.max(maxY, geometry[i + 1]);
+        }
+        return normalizedBounds(minX, minY, maxX, maxY);
+    }
+
+    static int[] visibleBounds(
+        final float[] geometry,
+        final int textureWidth,
+        final int textureHeight,
+        final IntBinaryOperator alphaAt
+    ) {
+        boolean found = false;
+        int left = CELL_PX;
+        int top = CELL_PX;
+        int right = 0;
+        int bottom = 0;
+        for (int quad = 0; quad < geometry.length; quad += 20) {
+            for (int triangle = 0; triangle < 2; triangle++) {
+                final int first = 0;
+                final int second = triangle == 0 ? 1 : 2;
+                final int third = triangle == 0 ? 2 : 3;
+                final int a = quad + first * 5;
+                final int b = quad + second * 5;
+                final int c = quad + third * 5;
+                final float minX = Math.min(
+                    geometry[a], Math.min(geometry[b], geometry[c])
+                );
+                final float minY = Math.min(
+                    geometry[a + 1], Math.min(geometry[b + 1], geometry[c + 1])
+                );
+                final float maxX = Math.max(
+                    geometry[a], Math.max(geometry[b], geometry[c])
+                );
+                final float maxY = Math.max(
+                    geometry[a + 1], Math.max(geometry[b + 1], geometry[c + 1])
+                );
+                final float denominator = (geometry[b + 1] - geometry[c + 1])
+                    * (geometry[a] - geometry[c])
+                    + (geometry[c] - geometry[b]) * (geometry[a + 1] - geometry[c + 1]);
+                if (Math.abs(denominator) < 0.0001f) {
+                    continue;
+                }
+                final int firstX = clamp((int) Math.floor(minX), 0, CELL_PX - 1);
+                final int firstY = clamp((int) Math.floor(minY), 0, CELL_PX - 1);
+                final int lastX = clamp((int) Math.ceil(maxX), 1, CELL_PX);
+                final int lastY = clamp((int) Math.ceil(maxY), 1, CELL_PX);
+                for (int y = firstY; y < lastY; y++) {
+                    for (int x = firstX; x < lastX; x++) {
+                        final float px = x + 0.5f;
+                        final float py = y + 0.5f;
+                        final float wa = ((geometry[b + 1] - geometry[c + 1])
+                            * (px - geometry[c])
+                            + (geometry[c] - geometry[b]) * (py - geometry[c + 1]))
+                            / denominator;
+                        final float wb = ((geometry[c + 1] - geometry[a + 1])
+                            * (px - geometry[c])
+                            + (geometry[a] - geometry[c]) * (py - geometry[c + 1]))
+                            / denominator;
+                        final float wc = 1f - wa - wb;
+                        if (wa < -0.0001f || wb < -0.0001f || wc < -0.0001f) {
+                            continue;
+                        }
+                        final float u = geometry[a + 3] * wa
+                            + geometry[b + 3] * wb
+                            + geometry[c + 3] * wc;
+                        final float v = geometry[a + 4] * wa
+                            + geometry[b + 4] * wb
+                            + geometry[c + 4] * wc;
+                        final int textureX = clamp((int) (u * textureWidth), 0, textureWidth - 1);
+                        final int textureY = clamp((int) (v * textureHeight), 0, textureHeight - 1);
+                        if (alphaAt.applyAsInt(textureX, textureY) <= 8) {
+                            continue;
+                        }
+                        found = true;
+                        left = Math.min(left, x);
+                        top = Math.min(top, y);
+                        right = Math.max(right, x + 1);
+                        bottom = Math.max(bottom, y + 1);
+                    }
+                }
+            }
+        }
+        return found ? new int[] {left, top, right, bottom} : null;
+    }
+
+    private static int[] normalizedBounds(
+        final float minX,
+        final float minY,
+        final float maxX,
+        final float maxY
+    ) {
+        final int left = clamp((int) Math.floor(minX), 0, CELL_PX - 1);
+        final int top = clamp((int) Math.floor(minY), 0, CELL_PX - 1);
+        return new int[] {
+            left,
+            top,
+            clamp((int) Math.ceil(maxX), left + 1, CELL_PX),
+            clamp((int) Math.ceil(maxY), top + 1, CELL_PX)
+        };
+    }
+
+    private static int clamp(final int value, final int min, final int max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     static float atlasTopV(final int row) {
@@ -308,17 +576,20 @@ public final class EntityIconManager implements AutoCloseable {
     }
 
     private void resetDynamic() {
+        generation++;
         cache.clear();
         liveEntities.clear();
         observedPortraits.clear();
         colorAtlas.close();
+        textureLoader.clear();
+        unreadableSourceTextures.clear();
         nextSlot = 0;
     }
 
     private static FaceIcon dynamicIcon(final AtlasSprite sprite) {
         return new FaceIcon(
             null, sprite.u0(), sprite.v0(), sprite.u1(), sprite.v1(),
-            null, 0f, 0f, 0f, 0f, true
+            null, 0f, 0f, 0f, 0f, true, sprite.widthScale(), sprite.heightScale()
         );
     }
 
@@ -333,7 +604,7 @@ public final class EntityIconManager implements AutoCloseable {
         return new FaceIcon(
             skin, PLAYER_U0, PLAYER_V0, PLAYER_U1, PLAYER_V1,
             skin, HAT_U0, HAT_V0, HAT_U1, HAT_V1,
-            false
+            false, 1f, 1f
         );
     }
 }

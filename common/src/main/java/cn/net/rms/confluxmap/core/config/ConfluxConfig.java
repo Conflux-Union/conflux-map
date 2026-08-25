@@ -23,6 +23,9 @@ public final class ConfluxConfig {
     public static final int MIN_RADAR_ICON_SIZE = 4;
     public static final int MAX_RADAR_ICON_SIZE = 16;
     public static final int DEFAULT_RADAR_ICON_SIZE = 10;
+    public static final int MIN_RADAR_ICON_OUTLINE_THICKNESS = 0;
+    public static final int MAX_RADAR_ICON_OUTLINE_THICKNESS = 4;
+    public static final int DEFAULT_RADAR_ICON_OUTLINE_THICKNESS = 1;
     public static final int MIN_WAYPOINT_ICON_OPACITY = 0;
     public static final int MAX_WAYPOINT_ICON_OPACITY = 100;
     public static final int DEFAULT_WAYPOINT_ICON_OPACITY = 100;
@@ -139,6 +142,10 @@ public final class ConfluxConfig {
     public int radarMaxEntities = 100;
     /** Entity head and item-form icons instead of plain shaped dots when an in-game icon is available. */
     public boolean radarIconsEnabled = true;
+    /** Draw an outline around radar portraits; retained name keeps older config files compatible. */
+    public boolean radarPlayerIconOutlineEnabled = true;
+    /** Radar portrait outline thickness in screen pixels; zero disables the outline. */
+    public int radarIconOutlineThickness = DEFAULT_RADAR_ICON_OUTLINE_THICKNESS;
     /** Merge overlapping markers of the same visible kind into a single counted marker. */
     public boolean radarMergeEnabled = true;
     /** Screen-pixel size shared by entity faces and item-form radar icons. */
@@ -249,6 +256,8 @@ public final class ConfluxConfig {
         c.radarShowPlayerNames = radarShowPlayerNames;
         c.radarMaxEntities = radarMaxEntities;
         c.radarIconsEnabled = radarIconsEnabled;
+        c.radarPlayerIconOutlineEnabled = radarPlayerIconOutlineEnabled;
+        c.radarIconOutlineThickness = radarIconOutlineThickness;
         c.radarMergeEnabled = radarMergeEnabled;
         c.radarIconSize = radarIconSize;
         c.waypointRenderDistance = waypointRenderDistance;
@@ -345,6 +354,11 @@ public final class ConfluxConfig {
         gpuTileCacheLimit = clamp(gpuTileCacheLimit, 16, 2048);
         radarMaxEntities = clamp(radarMaxEntities, 1, 500);
         radarIconSize = clamp(radarIconSize, MIN_RADAR_ICON_SIZE, MAX_RADAR_ICON_SIZE);
+        radarIconOutlineThickness = clamp(
+            radarIconOutlineThickness,
+            MIN_RADAR_ICON_OUTLINE_THICKNESS,
+            MAX_RADAR_ICON_OUTLINE_THICKNESS
+        );
         waypointRenderDistance = clamp(waypointRenderDistance, 0, 100_000);
         waypointLabelScalePercent = clamp(
             waypointLabelScalePercent,

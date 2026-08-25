@@ -8,6 +8,19 @@ import org.junit.jupiter.api.Test;
 
 final class ConfluxConfigTest {
     @Test
+    void playerIconOutlineIsEnabledByDefaultAndSurvivesConfigCopy() {
+        final ConfluxConfig config = new ConfluxConfig();
+
+        assertTrue(config.radarPlayerIconOutlineEnabled);
+        assertEquals(ConfluxConfig.DEFAULT_RADAR_ICON_OUTLINE_THICKNESS,
+            config.radarIconOutlineThickness);
+        config.radarPlayerIconOutlineEnabled = false;
+        config.radarIconOutlineThickness = 4;
+        assertFalse(config.copy().radarPlayerIconOutlineEnabled);
+        assertEquals(4, config.copy().radarIconOutlineThickness);
+    }
+
+    @Test
     void waypointRenderDistanceIsFiniteByDefault() {
         assertEquals(1_000, new ConfluxConfig().waypointRenderDistance);
     }
