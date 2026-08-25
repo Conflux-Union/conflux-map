@@ -3375,7 +3375,27 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             }
             markers.add(new RadarMarkerRenderer.Marker(entry, screenX, screenY, yDelta, live));
         }
-        RadarMarkerRenderer.drawAll(draw, this.client, config, radarIconManager, markers);
+        RadarMarkerRenderer.drawAll(
+            draw, this.client, config, radarIconManager, markers,
+            marker -> !radarMarkerIntersectsLocationMenu(marker)
+        );
+    }
+
+    private boolean radarMarkerIntersectsLocationMenu(final RadarMarkerRenderer.Marker marker) {
+        if (locationMenuBounds == null) {
+            return false;
+        }
+        final float iconHalf = Math.max(2.5f, config.radarIconSize / 2f);
+        final String name = marker.entry().name();
+        final float nameHalf = name == null ? 0f : this.textRenderer.getWidth(name) / 2f;
+        final float horizontalRadius = iconHalf + nameHalf + 4f;
+        final float verticalRadius = iconHalf + this.textRenderer.fontHeight + 4f;
+        return locationMenuIntersects(
+            marker.x() - horizontalRadius,
+            marker.y() - verticalRadius,
+            marker.x() + horizontalRadius,
+            marker.y() + verticalRadius
+        );
     }
 
     private void drawStructures(final GuiDraw draw, final int mouseX, final int mouseY) {
@@ -3613,16 +3633,46 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             final WaypointVerticalRelation relation = playerView
                 .map(player -> WaypointVerticalRelation.between(waypoint.y(), player.y()))
                 .orElse(WaypointVerticalRelation.NONE);
-            WaypointMarkerRenderer.draw(
-                draw, this.client.textRenderer, waypoint, marker.screenX(), marker.screenY(),
-                MARKER_HALF_SIZE, hasHighlight && !selected ? 0.28f : 1f, isHovered, relation
-            );
-            if (scale <= NAME_LABEL_MAX_SCALE || isHovered) {
-                draw.drawTextWithShadow(
-                    this.textRenderer, waypoint.name(), marker.screenX() + MARKER_HALF_SIZE + 2, marker.screenY() - 4, TEXT_COLOR
+            final float markerLeft = marker.screenX() - MARKER_HALF_SIZE - 1f;
+            final float markerTop = marker.screenY() - MARKER_HALF_SIZE - 1f;
+            final float markerRight = marker.screenX() + MARKER_HALF_SIZE + 1f;
+            final float markerBottom = marker.screenY() + MARKER_HALF_SIZE + 1f;
+            if (!locationMenuIntersects(markerLeft, markerTop, markerRight, markerBottom)) {
+                WaypointMarkerRenderer.draw(
+                    draw, this.client.textRenderer, waypoint, marker.screenX(), marker.screenY(),
+                    MARKER_HALF_SIZE, hasHighlight && !selected ? 0.28f : 1f, isHovered, relation
                 );
             }
+            if (scale <= NAME_LABEL_MAX_SCALE || isHovered) {
+                final float labelX = marker.screenX() + MARKER_HALF_SIZE + 2;
+                final float labelY = marker.screenY() - 4;
+                final float labelRight = labelX + this.textRenderer.getWidth(waypoint.name());
+                final float labelBottom = labelY + this.textRenderer.fontHeight;
+                if (!locationMenuIntersects(labelX, labelY, labelRight, labelBottom)) {
+                    draw.drawTextWithShadow(
+                        this.textRenderer, waypoint.name(), labelX, labelY, TEXT_COLOR
+                    );
+                }
+            }
         }
+    }
+
+    /** Keeps map marker glyphs and labels out of the active context menu's screen rectangle. */
+    private boolean locationMenuIntersects(
+        final float left,
+        final float top,
+        final float right,
+        final float bottom
+    ) {
+        if (locationMenuBounds == null) {
+            return false;
+        }
+        final float menuLeft = locationMenuBounds.x();
+        final float menuTop = locationMenuBounds.y();
+        final float menuRight = menuLeft + locationMenuBounds.width();
+        final float menuBottom = menuTop + locationMenuBounds.height();
+        return right > menuLeft && left < menuRight
+            && bottom > menuTop && top < menuBottom;
     }
 
     /** One waypoint's already-converted, already-viewport-culled screen position for this frame's {@link #drawWaypoints} pass. */
