@@ -553,6 +553,20 @@ public final class ConfigScreen extends ConfluxScreen {
                     radarControlsActive, radarTooltipKey
                 );
                 y = addToggleRow(
+                    y, "confluxmap.config.radar.player_icon_outline",
+                    () -> config.radarPlayerIconOutlineEnabled,
+                    v -> config.radarPlayerIconOutlineEnabled = v,
+                    radarControlsActive, radarTooltipKey
+                );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.radar.icon_outline_thickness",
+                    ConfluxConfig.MIN_RADAR_ICON_OUTLINE_THICKNESS,
+                    ConfluxConfig.MAX_RADAR_ICON_OUTLINE_THICKNESS,
+                    () -> config.radarIconOutlineThickness,
+                    v -> config.radarIconOutlineThickness = v,
+                    ConfigScreen::pxText, radarControlsActive, radarTooltipKey
+                );
+                y = addToggleRow(
                     y, "confluxmap.config.radar.merge_enabled",
                     () -> config.radarMergeEnabled, v -> config.radarMergeEnabled = v,
                     radarControlsActive, radarTooltipKey

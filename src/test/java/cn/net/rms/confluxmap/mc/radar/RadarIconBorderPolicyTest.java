@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.mc.radar;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -9,12 +10,21 @@ import org.junit.jupiter.api.Test;
 
 final class RadarIconBorderPolicyTest {
     @Test
-    void radarIconsHaveNoGeneratedOrDrawTimeBorder() throws IOException {
+    void entityPortraitsHaveAConfigurableShapeFollowingOutline() throws IOException {
         final Path root = findProjectRoot();
         final Path radar = root.resolve("src/main/java/cn/net/rms/confluxmap/mc/radar");
         final String renderer = Files.readString(radar.resolve("RadarMarkerRenderer.java"));
         final String manager = Files.readString(radar.resolve("EntityIconManager.java"));
 
+        assertTrue(renderer.contains("config.radarPlayerIconOutlineEnabled"
+            + " ? config.radarIconOutlineThickness : 0"));
+        assertTrue(renderer.contains("if (outlineThickness > 0)"));
+        assertTrue(renderer.contains("drawIconOutline("));
+        assertTrue(renderer.contains("RenderUtil.drawTintedOutline("));
+        assertFalse(renderer.contains("outerWidth"));
+        assertFalse(renderer.contains("outerHeight"));
+        assertTrue(renderer.contains("final float iconWidth = iconSize * icon.widthScale()"));
+        assertTrue(renderer.contains("final float iconHeight = iconSize * icon.heightScale()"));
         assertFalse(renderer.contains("bindItemOutlineTexture"));
         assertFalse(renderer.contains("bindOutlineTexture"));
         assertFalse(renderer.contains("contourBase("));

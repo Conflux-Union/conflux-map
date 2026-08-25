@@ -26,7 +26,8 @@ import net.minecraft.item.ItemStack;
  * {@code FullscreenMapScreen} so both surfaces render radar entries identically. Its visual rules
  * evolved from {@code MinimapHudRenderer}'s original radar-marker drawing - see
  * docs/reference-specs/radar-icons.md secs 2-3 for the VoxelMap-style look this reproduces. All
- * portrait and item icons intentionally render without a generated border.
+ * item icons intentionally render without a generated border; entity portraits have an
+ * independently configurable outline.
  */
 public final class RadarMarkerRenderer {
     private static final int PLAYER_COLOR = 0xFFFFFFFF;
@@ -37,6 +38,7 @@ public final class RadarMarkerRenderer {
 
     private static final int STACK_BADGE_BACKGROUND = 0xD0000000;
     private static final int STACK_BADGE_TEXT = 0xFFFFFFFF;
+    private static final int ICON_OUTLINE = 0xD0000000;
     /** No elevation treatment inside this band - nearby mobs always render fully readable. */
     private static final int DEADZONE = 8;
     private static final int TEXT_COLOR = 0xFFFFFFFF;
@@ -54,6 +56,9 @@ public final class RadarMarkerRenderer {
         int yDelta,
         Entity live
     ) {
+    }
+
+    private record DrawResult(float halfWidth, float halfHeight) {
     }
 
     /**
@@ -104,13 +109,13 @@ public final class RadarMarkerRenderer {
             final Marker positioned = new Marker(
                 marker.entry(), cluster.x(), cluster.y(), marker.yDelta(), marker.live()
             );
-            final boolean iconDrawn = drawMarker(
+            final DrawResult result = drawMarker(
                 draw, client, config, iconManager, positioned
             );
             if (cluster.count() > 1) {
                 drawStackCount(
                     draw, client, positioned.x(), positioned.y(),
-                    iconDrawn ? config.radarIconSize / 2f : 2.5f,
+                    result.halfWidth(), result.halfHeight(),
                     config.radarIconSize, cluster.count(), positioned.entry().spectator()
                 );
             }
@@ -126,7 +131,7 @@ public final class RadarMarkerRenderer {
         );
     }
 
-    private static boolean drawMarker(
+    private static DrawResult drawMarker(
         final GuiDraw draw,
         final MinecraftClient client,
         final ConfluxConfig config,
@@ -146,19 +151,24 @@ public final class RadarMarkerRenderer {
                 : ItemStack.EMPTY;
             if (!itemIcon.isEmpty()) {
                 draw.drawItemIcon(client, itemIcon, x, y, config.radarIconSize);
-                return true;
+                return new DrawResult(config.radarIconSize / 2f, config.radarIconSize / 2f);
             }
             final EntityIconManager.FaceIcon icon = iconManager.iconFor(live);
             if (icon != null && drawIcon(
-                    matrices, client, iconManager, icon, x, y, config.radarIconSize,
-                    yDelta, alphaScale
+                matrices, client, iconManager, icon, x, y, config.radarIconSize,
+                yDelta, alphaScale,
+                config.radarPlayerIconOutlineEnabled ? config.radarIconOutlineThickness : 0
                 )) {
                 if (config.radarShowPlayerNames && entry.category() == RadarCategory.PLAYER && entry.name() != null) {
                     drawCenteredLine(
-                        client, draw, entry.name(), x, y + config.radarIconSize / 2f + 2f, alphaScale
+                        client, draw, entry.name(), x,
+                        y + config.radarIconSize * icon.heightScale() / 2f + 2f, alphaScale
                     );
                 }
-                return true;
+                return new DrawResult(
+                    config.radarIconSize * icon.widthScale() / 2f,
+                    config.radarIconSize * icon.heightScale() / 2f
+                );
             }
         }
         final int color = Argb.scaleAlpha(elevationColor(baseColor(entry.category()), yDelta), alphaScale);
@@ -179,7 +189,7 @@ public final class RadarMarkerRenderer {
                 RenderUtil.fillRect(matrices, x - 1.5f, y - 1.5f, 3f, 3f, color);
                 break;
         }
-        return false;
+        return new DrawResult(2.5f, 2.5f);
     }
 
     private static ItemStack itemIconFor(final Entity entity) {
@@ -219,7 +229,7 @@ public final class RadarMarkerRenderer {
     }
 
     /**
-     * Draws the unframed portrait with the same elevation and spectator alpha as dot markers.
+     * Draws the portrait with the same elevation and spectator alpha as dot markers.
      *
      * @return false when the portrait could not be bound, so the caller still draws its dot
      */
@@ -232,9 +242,13 @@ public final class RadarMarkerRenderer {
         final float y,
         final float iconSize,
         final int yDelta,
-        final float alphaScale
+        final float alphaScale,
+        final int outlineThickness
     ) {
-        final float iconHalfSize = iconSize / 2f;
+        final float iconWidth = iconSize * icon.widthScale();
+        final float iconHeight = iconSize * icon.heightScale();
+        final float iconHalfWidth = iconWidth / 2f;
+        final float iconHalfHeight = iconHeight / 2f;
         final int tint = Argb.scaleAlpha(elevationColor(0xFFFFFFFF, yDelta), alphaScale);
         if (icon.dynamic()) {
             if (!iconManager.bindDynamicColor()) {
@@ -243,18 +257,45 @@ public final class RadarMarkerRenderer {
         } else {
             RenderUtil.bindTexture(client, icon.texture());
         }
+        if (outlineThickness > 0) {
+            drawIconOutline(
+                matrices, icon, x, y, iconWidth, iconHeight,
+                outlineThickness, yDelta, alphaScale
+            );
+        }
         RenderUtil.drawTintedQuad(
-            matrices, x - iconHalfSize, y - iconHalfSize, iconSize, iconSize,
+            matrices, x - iconHalfWidth, y - iconHalfHeight, iconWidth, iconHeight,
             icon.u0(), icon.v0(), icon.u1(), icon.v1(), tint
         );
         if (icon.hasOverlay()) {
             RenderUtil.bindTexture(client, icon.overlayTexture());
             RenderUtil.drawTintedQuad(
-                matrices, x - iconHalfSize, y - iconHalfSize, iconSize, iconSize,
+                matrices, x - iconHalfWidth, y - iconHalfHeight, iconWidth, iconHeight,
                 icon.ou0(), icon.ov0(), icon.ou1(), icon.ov1(), tint
             );
         }
         return true;
+    }
+
+    private static void drawIconOutline(
+        final MatrixStack matrices,
+        final EntityIconManager.FaceIcon icon,
+        final float x,
+        final float y,
+        final float iconWidth,
+        final float iconHeight,
+        final int thickness,
+        final int yDelta,
+        final float alphaScale
+    ) {
+        final int color = Argb.scaleAlpha(
+            elevationColor(ICON_OUTLINE, yDelta), alphaScale
+        );
+        RenderUtil.drawTintedOutline(
+            matrices, x - iconWidth / 2f, y - iconHeight / 2f,
+            iconWidth, iconHeight,
+            icon.u0(), icon.v0(), icon.u1(), icon.v1(), thickness, color
+        );
     }
 
     /** Draws a compact count plate centered on the representative marker's bottom-right corner. */
@@ -263,7 +304,8 @@ public final class RadarMarkerRenderer {
         final MinecraftClient client,
         final float x,
         final float y,
-        final float markerHalfSize,
+        final float markerHalfWidth,
+        final float markerHalfHeight,
         final float iconSize,
         final int count,
         final boolean spectator
@@ -274,8 +316,8 @@ public final class RadarMarkerRenderer {
         final int textWidth = client.textRenderer.getWidth(text);
         final float badgeWidth = textWidth * textScale + 2f;
         final float badgeHeight = client.textRenderer.fontHeight * textScale + 1f;
-        final float centerX = x + markerHalfSize - 0.5f;
-        final float centerY = y + markerHalfSize - 0.5f;
+        final float centerX = x + markerHalfWidth - 0.5f;
+        final float centerY = y + markerHalfHeight - 0.5f;
         final float left = centerX - badgeWidth / 2f;
         final float top = centerY - badgeHeight / 2f;
         RenderUtil.fillRect(

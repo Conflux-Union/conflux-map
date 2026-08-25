@@ -24,6 +24,19 @@ class ConfigIoTest {
     private static final Logger LOGGER = LogManager.getLogger("ConfigIoTest");
 
     @Test
+    void playerIconOutlineChoiceRoundTrips(@TempDir final Path tmp) throws IOException {
+        final ConfigIo io = new ConfigIo(tmp.resolve("config.json"), LOGGER);
+        final ConfluxConfig config = new ConfluxConfig();
+        config.radarPlayerIconOutlineEnabled = false;
+
+        io.save(config);
+
+        assertFalse(io.load().radarPlayerIconOutlineEnabled);
+        assertEquals(ConfluxConfig.DEFAULT_RADAR_ICON_OUTLINE_THICKNESS,
+            new ConfluxConfig().radarIconOutlineThickness);
+    }
+
+    @Test
     void playerMarkerStyleRoundTripsCopiesAndDefaultsSafely(@TempDir final Path tmp)
         throws IOException {
         final Path file = tmp.resolve("config.json");
@@ -101,6 +114,9 @@ class ConfigIoTest {
         assertEquals(MapColorStyle.CONFLUX, loaded.mapColorStyle);
         assertEquals(ConfluxConfig.DEFAULT_RADAR_ICON_SIZE, loaded.radarIconSize);
         assertTrue(loaded.radarMergeEnabled);
+        assertTrue(loaded.radarPlayerIconOutlineEnabled);
+        assertEquals(ConfluxConfig.DEFAULT_RADAR_ICON_OUTLINE_THICKNESS,
+            loaded.radarIconOutlineThickness);
         assertTrue(loaded.playerTrailEnabled);
         assertEquals(
             ConfluxConfig.DEFAULT_PLAYER_TRAIL_DURATION_SECONDS,
@@ -134,6 +150,8 @@ class ConfigIoTest {
         assertTrue(rewritten.contains("\"mapColorStyle\""));
         assertTrue(rewritten.contains("\"radarIconSize\""));
         assertTrue(rewritten.contains("\"radarMergeEnabled\""));
+        assertTrue(rewritten.contains("\"radarPlayerIconOutlineEnabled\""));
+        assertTrue(rewritten.contains("\"radarIconOutlineThickness\""));
         assertTrue(rewritten.contains("\"playerTrailEnabled\""));
         assertTrue(rewritten.contains("\"playerTrailDurationSeconds\""));
         assertFalse(rewritten.contains("\"playerTrailDurationMinutes\""));

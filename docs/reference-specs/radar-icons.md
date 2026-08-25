@@ -156,11 +156,16 @@ coat/marking layers.
 > current entity model into a persistent color atlas. Stable child names select the head group;
 > unfamiliar models fall back through body, cube, segments, and finally the model root. At most
 > one missing portrait is baked per client tick, with the shaped category marker used until it is
-> ready or when a bake cannot be drawn. Dynamic portraits use area-normalized sizing;
+> ready or when a bake cannot be drawn. Dynamic portraits are tightly cropped to their projected
+> geometry, keep the model's aspect ratio, and scale their longest edge to the configured icon
+> size. Their optional outline expands the sampled alpha silhouette rather than framing its
+> rectangular bounds, so long fish stay wide without acquiring a black rectangular box;
 > horse-like long heads use a fixed three-quarter view while fish retain a side view. Bundled,
-> dynamic, player, and item icons all render without a generated surrounding border. Player faces
-> remain direct skin face/hat crops. Dynamic atlas entries are keyed by entity type, resolved
-> texture, and selected model, so entities with the same visual appearance share one bake. Each
+> dynamic and item icons render without a generated surrounding border. Entity faces remain direct
+> model/skin crops and can optionally receive a silhouette-following outline at draw time; the
+> outline applies to all face icons, with configurable enablement and thickness, and updates
+> immediately when toggled. Dynamic atlas entries are keyed by entity type, resolved texture, and
+> selected model, so entities with the same visual appearance share one bake. Each
 > entity's appearance key is rechecked periodically, but an unchanged key is never re-rendered;
 > resource reloads and session changes invalidate the atlas explicitly.
 
