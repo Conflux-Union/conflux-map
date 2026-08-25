@@ -8,11 +8,13 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
+import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -78,6 +80,8 @@ import net.minecraft.util.math.Vec3d;
  * (when non-zero) can only tighten that limit, never extend it.
  */
 public final class WaypointWorldRenderer {
+    private static final UUID SELECTED_LOCATION_ID = new UUID(0x434f4e464c555858L, 0x53454c4543544544L);
+    private static final int SELECTED_LOCATION_COLOR = 0xFFFFE066;
     private static final double BEAM_HALF_WIDTH = 0.18;
     private static final float BEAM_CORE_ALPHA = 0.55f;
     /** Same near-camera fade-in constant as the label (waypoint-ux.md S6), applied to horizontal distance from the beam column. */
@@ -110,6 +114,7 @@ public final class WaypointWorldRenderer {
     private final ConfluxConfig config;
     private final GameBridge gameBridge;
     private final WaypointRenderCatalog waypointRenderCatalog;
+    private final WaypointHighlightState waypointHighlightState;
     private final Map<UUID, Float> labelAnimationProgress = new HashMap<>();
     private long lastAnimationNanos;
 
@@ -117,12 +122,14 @@ public final class WaypointWorldRenderer {
         final MinecraftClient client,
         final ConfluxConfig config,
         final GameBridge gameBridge,
-        final WaypointRenderCatalog waypointRenderCatalog
+        final WaypointRenderCatalog waypointRenderCatalog,
+        final WaypointHighlightState waypointHighlightState
     ) {
         this.client = client;
         this.config = config;
         this.gameBridge = gameBridge;
         this.waypointRenderCatalog = waypointRenderCatalog;
+        this.waypointHighlightState = waypointHighlightState;
     }
 
     //#if MC>=12109 && MC<12111
@@ -217,7 +224,8 @@ public final class WaypointWorldRenderer {
         final double maxDistance = maxVisibleDistance();
         final double bottomY = client.world.getBottomY();
         final double topY = client.world.getTopY();
-        final List<WaypointRenderEntry> waypoints = waypointRenderCatalog.snapshot(currentDimension);
+        final List<WaypointRenderEntry> waypoints = new ArrayList<>(waypointRenderCatalog.snapshot(currentDimension));
+        selectedTargetEntry(currentDimension).ifPresent(waypoints::add);
 
         //#if MC<12105
         RenderSystem.enableDepthTest();
@@ -237,9 +245,12 @@ public final class WaypointWorldRenderer {
                 continue;
             }
             final double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
+            final boolean selected = waypointHighlightState.matches(waypoint, currentDimension)
+                || waypointHighlightState.matches(waypoint.x(), waypoint.z(), currentDimension);
             drawBeam(
                 matrices, cameraPos, worldX, worldZ, bottomY, topY,
-                waypoint.colorArgb(), horizontalDistance, maxDistance
+                waypoint.colorArgb(), horizontalDistance, maxDistance,
+                selected ? 1f : waypointHighlightState.activeIn(currentDimension) ? 0.28f : 1f
             );
         }
 
@@ -305,7 +316,8 @@ public final class WaypointWorldRenderer {
         final MatrixStack matrices = context.matrixStack();
         //#endif
         final double maxDistance = maxVisibleDistance();
-        final List<WaypointRenderEntry> waypoints = waypointRenderCatalog.snapshot(currentDimension);
+        final List<WaypointRenderEntry> waypoints = new ArrayList<>(waypointRenderCatalog.snapshot(currentDimension));
+        selectedTargetEntry(currentDimension).ifPresent(waypoints::add);
         final WaypointRenderEntry targetedWaypoint = targetedWaypoint(
             waypoints, cameraYaw, cameraPitch, cameraPos, maxDistance
         );
@@ -343,18 +355,23 @@ public final class WaypointWorldRenderer {
                     final double dy = waypoint.y() - player.y();
                     final double dz = waypoint.z() - player.z();
                     final double distance3d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                    final boolean targeted = targetedWaypoint != null && targetedWaypoint.id().equals(waypoint.id());
+                    final boolean selected = waypointHighlightState.matches(waypoint, currentDimension)
+                        || waypointHighlightState.matches(waypoint.x(), waypoint.z(), currentDimension);
+                    final boolean targeted = selected
+                        || targetedWaypoint != null && targetedWaypoint.id().equals(waypoint.id());
                     final float progress = updateLabelAnimation(waypoint.id(), targeted, animationDeltaSeconds);
                     //#if MC>=260200
                     //$$ drawLabel(
                     //$$     matrices, context.submitNodeCollector(), cameraState.orientation,
                     //$$     cameraPos, waypoint.x(), waypoint.y(), waypoint.z(), waypoint,
-                    //$$     distance3d, progress
+                    //$$     distance3d, progress,
+                    //$$     selected ? 1f : waypointHighlightState.activeIn(currentDimension) ? 0.28f : 1f
                     //$$ );
                     //#else
                     drawLabel(
                         matrices, immediate, camera, cameraPos, waypoint.x(), waypoint.y(), waypoint.z(),
-                        waypoint, distance3d, progress
+                        waypoint, distance3d, progress,
+                        selected ? 1f : waypointHighlightState.activeIn(currentDimension) ? 0.28f : 1f
                     );
                     //#endif
                 }
@@ -386,6 +403,17 @@ public final class WaypointWorldRenderer {
         return config.waypointRenderDistance > 0
             ? Math.min(config.waypointRenderDistance, viewDistanceBlocks)
             : viewDistanceBlocks;
+    }
+
+    private Optional<WaypointRenderEntry> selectedTargetEntry(final DimensionId dimension) {
+        return waypointHighlightState.target()
+            .filter(target -> target.waypointId() == null && target.dimension().equals(dimension))
+            .map(target -> new WaypointRenderEntry(
+                SELECTED_LOCATION_ID, "Selected location", dimension,
+                target.x(), target.y(), target.z(), SELECTED_LOCATION_COLOR,
+                Waypoint.Type.NORMAL,
+                WaypointRenderEntry.Source.LOCAL
+            ));
     }
 
     private WaypointRenderEntry targetedWaypoint(
@@ -460,12 +488,13 @@ public final class WaypointWorldRenderer {
         final double topY,
         final int colorArgb,
         final double horizontalDistance,
-        final double maxDistance
+        final double maxDistance,
+        final float visibilityAlpha
     ) {
         final float nearFade = (float) MathHelper.clamp(horizontalDistance / BEAM_NEAR_FADE_BLOCKS, 0.0, 1.0);
         final float farFactor = (float) MathHelper.clamp(1.0 - horizontalDistance / maxDistance, 0.0, 1.0);
         final float intensify = BEAM_FAR_FLOOR + (1f - BEAM_FAR_FLOOR) * farFactor;
-        final float alpha = BEAM_CORE_ALPHA * nearFade * intensify;
+        final float alpha = BEAM_CORE_ALPHA * nearFade * intensify * visibilityAlpha;
         if (alpha <= 0.01f) {
             return;
         }
@@ -513,7 +542,8 @@ public final class WaypointWorldRenderer {
         final double worldZ,
         final WaypointRenderEntry waypoint,
         final double distance3d,
-        final float animationProgress
+        final float animationProgress,
+        final float visibilityAlpha
     ) {
         final float nearFade = (float) MathHelper.clamp(distance3d / LABEL_NEAR_FADE_BLOCKS, 0.0, 1.0);
         if (nearFade <= 0.01f) {
@@ -565,24 +595,28 @@ public final class WaypointWorldRenderer {
             //#if MC>=260200
             //$$ submitRect(
             //$$     plates, matrices, panelX, -LABEL_PANEL_HEIGHT / 2f,
-            //$$     panelWidth, LABEL_PANEL_HEIGHT, withAlpha(LABEL_BACKGROUND_COLOR, nearFade)
+            //$$     panelWidth, LABEL_PANEL_HEIGHT, withAlpha(LABEL_BACKGROUND_COLOR, nearFade * visibilityAlpha)
             //$$ );
             //#else
             RenderUtil.fillRect3D(
                 matrices, panelX, -LABEL_PANEL_HEIGHT / 2f,
-                panelWidth, LABEL_PANEL_HEIGHT, withAlpha(LABEL_BACKGROUND_COLOR, nearFade)
+                panelWidth, LABEL_PANEL_HEIGHT, withAlpha(LABEL_BACKGROUND_COLOR, nearFade * visibilityAlpha)
             );
             //#endif
         }
         //#if MC>=260200
         //$$ drawIcon(
         //$$     matrices, textRenderer, plates, text, waypoint, iconHalfSize,
-        //$$     nearFade * config.waypointIconOpacity / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY
+        //$$     nearFade * config.waypointIconOpacity
+        //$$         / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY * visibilityAlpha,
+        //$$     visibilityAlpha >= 1f
         //$$ );
         //#else
         drawIcon(
             matrices, textRenderer, immediate, waypoint, iconHalfSize,
-            nearFade * config.waypointIconOpacity / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY
+            nearFade * config.waypointIconOpacity
+                / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY * visibilityAlpha,
+            visibilityAlpha >= 1f
         );
         //#endif
 
@@ -591,7 +625,7 @@ public final class WaypointWorldRenderer {
         );
         if (textReveal > 0.01f) {
             final float textX = panelX + LABEL_PANEL_PADDING + (1f - textReveal) * 4f;
-            final float textAlpha = nearFade * textReveal;
+            final float textAlpha = nearFade * textReveal * visibilityAlpha;
             //#if MC>=260200
             //$$ submitText(
             //$$     text, matrices, name, textX, -9f,
@@ -621,6 +655,10 @@ public final class WaypointWorldRenderer {
     //$$     final Font textRenderer,
     //$$     final FabricOrderedSubmitNodeCollector plates,
     //$$     final FabricOrderedSubmitNodeCollector text,
+    //$$     final WaypointRenderEntry waypoint,
+    //$$     final float halfSize,
+    //$$     final float alpha,
+    //$$     final boolean selected
     //#else
     private static void drawIcon(
         final MatrixStack matrices,
@@ -629,13 +667,14 @@ public final class WaypointWorldRenderer {
     //#endif
         final WaypointRenderEntry waypoint,
         final float halfSize,
-        final float alpha
+        final float alpha,
+        final boolean selected
     ) {
         final float size = halfSize * 2f;
         //#if MC>=260200
         //$$ submitRect(
         //$$     plates, matrices, -halfSize - 1f, -halfSize - 1f, size + 2f, size + 2f,
-        //$$     withAlpha(outlineColor(waypoint), alpha)
+        //$$     withAlpha(selected ? 0xFFFFE066 : outlineColor(waypoint), alpha)
         //$$ );
         //$$ submitRect(
         //$$     plates, matrices, -halfSize, -halfSize, size, size,
@@ -644,7 +683,7 @@ public final class WaypointWorldRenderer {
         //#else
         RenderUtil.fillRect3D(
             matrices, -halfSize - 1f, -halfSize - 1f, size + 2f, size + 2f,
-            withAlpha(outlineColor(waypoint), alpha)
+            withAlpha(selected ? 0xFFFFE066 : outlineColor(waypoint), alpha)
         );
         RenderUtil.fillRect3D(
             matrices, -halfSize, -halfSize, size, size,

@@ -87,6 +87,7 @@ import cn.net.rms.confluxmap.mc.ui.DisplayModeIconCatalog;
 import cn.net.rms.confluxmap.mc.ui.PlayerMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.PlayerTrailRenderer;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
+import cn.net.rms.confluxmap.mc.ui.world.WaypointHighlightState;
 import cn.net.rms.confluxmap.mc.ui.StructureMarkerRenderer;
 import cn.net.rms.confluxmap.mc.world.ClientChunkLookup;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
@@ -163,6 +164,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
     }
 
+    private static final UUID SELECTED_LOCATION_ID = new UUID(0x434f4e464c555858L, 0x53454c4543544544L);
     private static final double MIN_SCALE = 0.25;
     private static final double MAX_SCALE = 16.0;
     private static final double DEFAULT_SCALE = 2.0;
@@ -331,6 +333,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private final FullscreenMapBrowseService mapBrowser;
     private final UiResourceTheme uiTheme;
     private InitialFocus initialFocus;
+    private final WaypointHighlightState waypointHighlightState;
 
     /** World point currently at screen center, and blocks-per-pixel; all mutable, panned/zoomed by input. */
     private double centerX;
@@ -368,6 +371,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private int waypointControlsBottom;
     private FullscreenMapLocationMenu.Bounds locationMenuBounds;
     private FullscreenMapLocationMenu.Target locationMenuTarget;
+    private WaypointRenderEntry locationMenuWaypoint;
     private FullscreenMapLocationMenu.Action pendingLocationAction;
     private ButtonWidget setWaypointLocationButton;
     private ButtonWidget shareLocationButton;
@@ -439,6 +443,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         this.archivedWaypointRenderCatalog = new WaypointRenderCatalog(
             mapBrowser.waypoints(), List::of, config
         );
+        this.waypointHighlightState = app.waypointHighlightState();
 
         final DimensionId dimension = gameBridge.session().dimension();
         final Optional<PlayerView> player = gameBridge.player();
@@ -465,6 +470,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     protected void init() {
         locationMenuBounds = null;
         locationMenuTarget = null;
+        locationMenuWaypoint = null;
         pendingLocationAction = null;
         final InitialFocus requestedFocus = initialFocus;
         if (requestedFocus != null) {
@@ -1492,6 +1498,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             if (!viewingLiveWorld() && action == FullscreenMapLocationMenu.Action.SHARE_LOCATION) {
                 button.active = false;
             }
+            if (action == FullscreenMapLocationMenu.Action.HIGHLIGHT) {
+                button.active = viewingLiveSession()
+                    && (locationMenuWaypoint != null || locationMenuTarget != null);
+            } else if (action == FullscreenMapLocationMenu.Action.CLEAR_HIGHLIGHT) {
+                button.active = waypointHighlightState.active();
+            }
             switch (action) {
                 case SET_WAYPOINT -> setWaypointLocationButton = button;
                 case SHARE_LOCATION -> shareLocationButton = button;
@@ -1859,6 +1871,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         locationMenuTarget = FullscreenMapLocationMenu.targetAt(
             worldX, surfaceYAt(blockX, blockZ), worldZ
         );
+        locationMenuWaypoint = hoveredWaypoint;
         pendingLocationAction = null;
         mapPointerPress = false;
         rebuildWaypointControls();
@@ -1886,11 +1899,27 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private void performPendingLocationAction() {
         final FullscreenMapLocationMenu.Action action = pendingLocationAction;
         final FullscreenMapLocationMenu.Target target = locationMenuTarget;
+        final WaypointRenderEntry waypoint = locationMenuWaypoint;
         if (action == null || target == null) {
             return;
         }
         dismissLocationMenu();
         switch (action) {
+            case HIGHLIGHT -> {
+                if (waypoint != null) {
+                    waypointHighlightState.selectWaypoint(
+                        waypoint, viewSession().dimension()
+                    );
+                } else if (target != null) {
+                    final boolean yKnown = target.blockY().isPresent();
+                    waypointHighlightState.select(WaypointHighlightState.Target.location(
+                        viewSession().dimension(), target.blockX() + 0.5,
+                        yKnown ? target.blockY().getAsInt() : 0.0,
+                        target.blockZ() + 0.5, yKnown
+                    ));
+                }
+            }
+            case CLEAR_HIGHLIGHT -> waypointHighlightState.clear();
             case SET_WAYPOINT -> target.blockY().ifPresent(y -> MinecraftAccess.setScreen(MinecraftClient.getInstance(),
                 WaypointEditScreen.forCreate(
                     this,
@@ -1943,6 +1972,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private void dismissLocationMenu() {
         locationMenuBounds = null;
         locationMenuTarget = null;
+        locationMenuWaypoint = null;
         pendingLocationAction = null;
         rebuildWaypointControls();
     }
@@ -3527,7 +3557,18 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final DimensionId currentDimension = viewSession().dimension();
         final double pxPerBlock = 1.0 / scale;
         final List<ScreenMarker> markers = new ArrayList<>();
-        for (final WaypointRenderEntry waypoint : viewWaypointRenderCatalog().snapshot(currentDimension)) {
+        final List<WaypointRenderEntry> waypoints = new ArrayList<>(
+            viewWaypointRenderCatalog().snapshot(currentDimension)
+        );
+        waypointHighlightState.target()
+            .filter(target -> target.waypointId() == null && target.dimension().equals(currentDimension))
+            .map(target -> new WaypointRenderEntry(
+                SELECTED_LOCATION_ID, "Selected location", currentDimension,
+                target.x(), target.y(), target.z(), 0xFFFFE066,
+                Waypoint.Type.NORMAL, WaypointRenderEntry.Source.LOCAL
+            ))
+            .ifPresent(waypoints::add);
+        for (final WaypointRenderEntry waypoint : waypoints) {
             final float screenX = (float) (width / 2.0 + (waypoint.x() - centerX) * pxPerBlock);
             final float screenY = (float) (height / 2.0 + (waypoint.z() - centerZ) * pxPerBlock);
             if (screenX < -MARKER_HALF_SIZE || screenX > width + MARKER_HALF_SIZE
@@ -3547,16 +3588,19 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             }
         }
         hoveredWaypoint = hovered;
+        final boolean hasHighlight = waypointHighlightState.activeIn(currentDimension);
 
         for (final ScreenMarker marker : markers) {
             final WaypointRenderEntry waypoint = marker.waypoint();
-            final boolean isHovered = waypoint == hoveredWaypoint;
+            final boolean selected = waypointHighlightState.matches(waypoint, currentDimension)
+                || waypointHighlightState.matches(waypoint.x(), waypoint.z(), currentDimension);
+            final boolean isHovered = waypoint == hoveredWaypoint || selected;
             final WaypointVerticalRelation relation = playerView
                 .map(player -> WaypointVerticalRelation.between(waypoint.y(), player.y()))
                 .orElse(WaypointVerticalRelation.NONE);
             WaypointMarkerRenderer.draw(
                 draw, this.client.textRenderer, waypoint, marker.screenX(), marker.screenY(),
-                MARKER_HALF_SIZE, 1f, isHovered, relation
+                MARKER_HALF_SIZE, hasHighlight && !selected ? 0.28f : 1f, isHovered, relation
             );
             if (scale <= NAME_LABEL_MAX_SCALE || isHovered) {
                 draw.drawTextWithShadow(

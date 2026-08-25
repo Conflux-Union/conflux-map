@@ -17,7 +17,9 @@ final class FullscreenMapLocationMenu {
     enum Action {
         SET_WAYPOINT("confluxmap.map.location_menu.set_waypoint"),
         SHARE_LOCATION("confluxmap.map.location_menu.share_location"),
-        TELEPORT("confluxmap.map.location_menu.teleport");
+        TELEPORT("confluxmap.map.location_menu.teleport"),
+        HIGHLIGHT("confluxmap.map.location_menu.highlight"),
+        CLEAR_HIGHLIGHT("confluxmap.map.location_menu.clear_highlight");
 
         private final String translationKey;
 
@@ -34,7 +36,9 @@ final class FullscreenMapLocationMenu {
     private static final List<Action> TELEPORT_FIRST_ACTIONS = List.of(
         Action.TELEPORT,
         Action.SET_WAYPOINT,
-        Action.SHARE_LOCATION
+        Action.SHARE_LOCATION,
+        Action.HIGHLIGHT,
+        Action.CLEAR_HIGHLIGHT
     );
     private static final int PANEL_HEIGHT = PANEL_PADDING * 2
         + DEFAULT_ACTIONS.size() * BUTTON_HEIGHT
@@ -55,6 +59,9 @@ final class FullscreenMapLocationMenu {
     ) {
         if (!playerPresent) {
             return false;
+        }
+        if (action == Action.HIGHLIGHT || action == Action.CLEAR_HIGHLIGHT) {
+            return true;
         }
         return action == Action.TELEPORT ? teleportCommandAvailable : estimatedHeightKnown;
     }

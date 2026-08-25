@@ -154,6 +154,8 @@
   "confluxmap.map.location_menu.set_waypoint": "Set Waypoint",
   "confluxmap.map.location_menu.share_location": "Share Location",
   "confluxmap.map.location_menu.teleport": "Teleport Here",
+  "confluxmap.map.location_menu.highlight": "Set Navigation Target",
+  "confluxmap.map.location_menu.clear_highlight": "Clear Navigation Target",
   "confluxmap.map.location_menu.temporary_name": "Shared Location",
   "confluxmap.map.location_menu.height_unavailable": "Surface height is unavailable at this location.",
   "confluxmap.map.location_menu.teleport_unavailable": "The teleport command is unavailable.",

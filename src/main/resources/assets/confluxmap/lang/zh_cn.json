@@ -154,6 +154,8 @@
   "confluxmap.map.location_menu.set_waypoint": "设置路径点",
   "confluxmap.map.location_menu.share_location": "分享位置",
   "confluxmap.map.location_menu.teleport": "传送到此处",
+  "confluxmap.map.location_menu.highlight": "设为导航目标",
+  "confluxmap.map.location_menu.clear_highlight": "取消导航目标",
   "confluxmap.map.location_menu.temporary_name": "共享位置",
   "confluxmap.map.location_menu.height_unavailable": "无法确定此处的地表高度。",
   "confluxmap.map.location_menu.teleport_unavailable": "当前无法使用传送命令。",
