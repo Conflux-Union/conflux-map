@@ -26,6 +26,7 @@ public final class ConfluxConfig {
     public static final int MIN_WAYPOINT_ICON_OPACITY = 0;
     public static final int MAX_WAYPOINT_ICON_OPACITY = 100;
     public static final int DEFAULT_WAYPOINT_ICON_OPACITY = 100;
+    public static final int DEFAULT_WAYPOINT_RENDER_DISTANCE = 1_000;
     public static final int MIN_PLAYER_TRAIL_DURATION_SECONDS = 1;
     public static final int MAX_PLAYER_TRAIL_DURATION_SECONDS = 120;
     public static final int DEFAULT_PLAYER_TRAIL_DURATION_SECONDS = 120;
@@ -139,7 +140,7 @@ public final class ConfluxConfig {
     /** Screen-pixel size shared by entity faces and item-form radar icons. */
     public int radarIconSize = DEFAULT_RADAR_ICON_SIZE;
     /** 3-D straight-line blocks; 0 means "no cutoff" (see waypoint-ux.md S7). */
-    public int waypointRenderDistance = 0;
+    public int waypointRenderDistance = DEFAULT_WAYPOINT_RENDER_DISTANCE;
     /** Show private, client-owned waypoints on every map/world rendering surface. */
     public boolean localWaypointsVisible = true;
     /** Show server-synchronized public waypoints on every map/world rendering surface. */

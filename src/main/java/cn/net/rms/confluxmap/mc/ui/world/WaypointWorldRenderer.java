@@ -11,6 +11,7 @@ import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import com.mojang.blaze3d.systems.RenderSystem;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -314,22 +315,20 @@ public final class WaypointWorldRenderer {
             MinecraftAccess.viewDistance(client)
         );
         final List<WaypointRenderEntry> waypoints = waypointRenderCatalog.snapshot(currentDimension);
-        final WaypointRenderEntry targetedWaypoint = targetedWaypoint(
-            waypoints, cameraYaw, cameraPitch, cameraPos, maxDistance
+        final LabelSelection labelSelection = selectLabels(
+            waypoints,
+            cameraYaw,
+            cameraPitch,
+            cameraPos,
+            player.x(),
+            player.y(),
+            player.z(),
+            maxDistance
         );
         final float animationDeltaSeconds = animationDeltaSeconds();
-        final Set<UUID> visibleWaypointIds = new HashSet<>();
+        final Set<UUID> visibleWaypointIds = new HashSet<>(labelSelection.candidates().size());
 
-        for (final WaypointRenderEntry waypoint : waypoints) {
-            final double dx = waypoint.x() - player.x();
-            final double dy = waypoint.y() - player.y();
-            final double dz = waypoint.z() - player.z();
-            if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= maxDistance) {
-                visibleWaypointIds.add(waypoint.id());
-            }
-        }
-
-        if (!visibleWaypointIds.isEmpty()) {
+        if (!labelSelection.candidates().isEmpty()) {
             // Modern LAST keeps the camera view rotation in ModelView while its context stack is
             // local identity. Legacy LAST needs that stale global transform cleared instead.
             //#if MC<260200
@@ -343,15 +342,11 @@ public final class WaypointWorldRenderer {
                 //#if MC<260200
                 final VertexConsumerProvider.Immediate immediate = client.getBufferBuilders().getEntityVertexConsumers();
                 //#endif
-                for (final WaypointRenderEntry waypoint : waypoints) {
-                    if (!visibleWaypointIds.contains(waypoint.id())) {
-                        continue;
-                    }
-                    final double dx = waypoint.x() - player.x();
-                    final double dy = waypoint.y() - player.y();
-                    final double dz = waypoint.z() - player.z();
-                    final double distance3d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                    final boolean targeted = targetedWaypoint != null && targetedWaypoint.id().equals(waypoint.id());
+                for (final LabelCandidate candidate : labelSelection.candidates()) {
+                    final WaypointRenderEntry waypoint = candidate.waypoint();
+                    visibleWaypointIds.add(waypoint.id());
+                    final double distance3d = candidate.distance();
+                    final boolean targeted = waypoint.id().equals(labelSelection.targetedWaypointId());
                     final float progress = updateLabelAnimation(waypoint.id(), targeted, animationDeltaSeconds);
                     //#if MC>=260200
                     //$$ drawLabel(
@@ -402,37 +397,73 @@ public final class WaypointWorldRenderer {
         return Math.min(Math.max(0.0, actualDistance), Math.max(0.0, projectionDistance));
     }
 
-    private WaypointRenderEntry targetedWaypoint(
+    static LabelSelection selectLabels(
         final List<WaypointRenderEntry> waypoints,
         final float cameraYaw,
         final float cameraPitch,
         final Vec3d cameraPos,
+        final double playerX,
+        final double playerY,
+        final double playerZ,
         final double maxDistance
     ) {
-        WaypointRenderEntry best = null;
+        final double maxDistanceSquared = maxDistance * maxDistance;
+        final List<LabelCandidate> candidates = new ArrayList<>();
+        WaypointRenderEntry targetedWaypoint = null;
+        double targetedDistanceSquared = 0.0;
+        boolean targetedWaypointVisible = false;
         double bestAlignment = -1.0;
         double bestDistance = Double.POSITIVE_INFINITY;
+
         for (final WaypointRenderEntry waypoint : waypoints) {
+            final double playerDx = waypoint.x() - playerX;
+            final double playerDy = waypoint.y() - playerY;
+            final double playerDz = waypoint.z() - playerZ;
+            final double playerDistanceSquared =
+                playerDx * playerDx + playerDy * playerDy + playerDz * playerDz;
+            final boolean withinDistance = playerDistanceSquared <= maxDistanceSquared;
+            if (withinDistance) {
+                candidates.add(new LabelCandidate(waypoint, playerDistanceSquared));
+            }
+
             final double dx = waypoint.x() - cameraPos.x;
             final double dy = waypoint.y() + LABEL_Y_OFFSET - cameraPos.y;
             final double dz = waypoint.z() - cameraPos.z;
             final double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            if (distance <= 0.001 || distance > maxDistance) {
+            if (distance <= 0.001) {
                 continue;
             }
             final double alignment = WaypointHudMotion.alignment(
-                cameraYaw, cameraPitch, dx, dy, dz
+                cameraYaw, cameraPitch, dx, dy, dz, distance
             );
             if (!WaypointHudMotion.insideTargetCone(alignment, distance)) {
                 continue;
             }
             if (alignment > bestAlignment || (alignment == bestAlignment && distance < bestDistance)) {
-                best = waypoint;
+                targetedWaypoint = waypoint;
+                targetedDistanceSquared = playerDistanceSquared;
+                targetedWaypointVisible = withinDistance;
                 bestAlignment = alignment;
                 bestDistance = distance;
             }
         }
-        return best;
+
+        if (targetedWaypoint != null && !targetedWaypointVisible) {
+            candidates.add(new LabelCandidate(targetedWaypoint, targetedDistanceSquared));
+        }
+        return new LabelSelection(
+            List.copyOf(candidates),
+            targetedWaypoint == null ? null : targetedWaypoint.id()
+        );
+    }
+
+    static record LabelCandidate(WaypointRenderEntry waypoint, double distanceSquared) {
+        double distance() {
+            return Math.sqrt(distanceSquared);
+        }
+    }
+
+    static record LabelSelection(List<LabelCandidate> candidates, UUID targetedWaypointId) {
     }
 
     private float animationDeltaSeconds() {

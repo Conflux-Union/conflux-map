@@ -1,10 +1,78 @@
 package cn.net.rms.confluxmap.mc.ui.world;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
+import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.waypoint.Waypoint;
+import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
+import java.util.List;
+import java.util.UUID;
+import net.minecraft.util.math.Vec3d;
 import org.junit.jupiter.api.Test;
 
 final class WaypointWorldRendererDistanceTest {
+    @Test
+    void targetedWaypointBypassesTheConfiguredDistance() {
+        final UUID waypointId = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        final WaypointRenderEntry waypoint = new WaypointRenderEntry(
+            waypointId,
+            "Distant target",
+            DimensionId.OVERWORLD,
+            0.0,
+            -1.5,
+            2_000.0,
+            0xFFFFFFFF,
+            Waypoint.Type.NORMAL,
+            WaypointRenderEntry.Source.LOCAL
+        );
+
+        final WaypointWorldRenderer.LabelSelection selection = WaypointWorldRenderer.selectLabels(
+            List.of(waypoint),
+            0.0f,
+            0.0f,
+            Vec3d.ZERO,
+            0.0,
+            0.0,
+            0.0,
+            1_000.0
+        );
+
+        assertEquals(waypointId, selection.targetedWaypointId());
+        assertEquals(List.of(waypoint), selection.candidates().stream()
+            .map(WaypointWorldRenderer.LabelCandidate::waypoint)
+            .toList());
+    }
+
+    @Test
+    void untargetedWaypointBeyondTheConfiguredDistanceIsNotSelected() {
+        final WaypointRenderEntry waypoint = new WaypointRenderEntry(
+            UUID.fromString("00000000-0000-0000-0000-000000000002"),
+            "Distant off-axis",
+            DimensionId.OVERWORLD,
+            2_000.0,
+            0.0,
+            0.0,
+            0xFFFFFFFF,
+            Waypoint.Type.NORMAL,
+            WaypointRenderEntry.Source.LOCAL
+        );
+
+        final WaypointWorldRenderer.LabelSelection selection = WaypointWorldRenderer.selectLabels(
+            List.of(waypoint),
+            0.0f,
+            0.0f,
+            Vec3d.ZERO,
+            0.0,
+            0.0,
+            0.0,
+            1_000.0
+        );
+
+        assertNull(selection.targetedWaypointId());
+        assertEquals(List.of(), selection.candidates());
+    }
+
     @Test
     void configuredDistanceIsNotCappedByVanillaViewDistance() {
         assertEquals(512.0, WaypointWorldRenderer.maxLabelDistance(512));

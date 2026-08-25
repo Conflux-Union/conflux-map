@@ -563,8 +563,9 @@ boundary (a function of current zoom level), which is a *different,
 always-on* boundary from this config-driven cutoff. In other words: two
 independent thresholds stack —
 
-1. Config-driven max distance (blocks, optional/infinite by default):
-   beyond this, the waypoint isn't drawn on the minimap in any form.
+1. Config-driven max distance (blocks, 1,000 by default in Conflux Map;
+   setting it to "off"/0 makes it infinite): beyond this, the waypoint
+   isn't drawn on the minimap in any form.
 2. Minimap visible-radius boundary (a function of current zoom): within
    threshold 1 but beyond this, the waypoint is drawn as a clamped edge
    arrow instead of an in-range icon.
