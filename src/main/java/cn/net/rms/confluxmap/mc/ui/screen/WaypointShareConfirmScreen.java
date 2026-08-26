@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatCodec;
+import cn.net.rms.confluxmap.mc.chat.WaypointChatDiagnostics;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.compat.Widgets;
@@ -235,6 +236,7 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
             errorKey = "confluxmap.screen.waypoint.invalid_share";
             return;
         }
+        WaypointChatDiagnostics.outgoing(confluxPreview, xaeroPreview);
         MinecraftAccess.sendChatMessage(client, confluxPreview);
         MinecraftAccess.sendChatMessage(client, xaeroPreview);
         onClose();
