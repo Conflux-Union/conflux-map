@@ -34,6 +34,34 @@ class FullscreenMapLocationMenuTest {
     }
 
     @Test
+    void replacesCreateActionWithEditForAnExistingWaypoint() {
+        assertEquals(List.of(
+            FullscreenMapLocationMenu.Action.EDIT_WAYPOINT,
+            FullscreenMapLocationMenu.Action.SHARE_LOCATION,
+            FullscreenMapLocationMenu.Action.TELEPORT,
+            FullscreenMapLocationMenu.Action.HIGHLIGHT,
+            FullscreenMapLocationMenu.Action.CLEAR_HIGHLIGHT
+        ), FullscreenMapLocationMenu.actions(false, true));
+        assertEquals(List.of(
+            FullscreenMapLocationMenu.Action.TELEPORT,
+            FullscreenMapLocationMenu.Action.EDIT_WAYPOINT,
+            FullscreenMapLocationMenu.Action.SHARE_LOCATION,
+            FullscreenMapLocationMenu.Action.HIGHLIGHT,
+            FullscreenMapLocationMenu.Action.CLEAR_HIGHLIGHT
+        ), FullscreenMapLocationMenu.actions(true, true));
+    }
+
+    @Test
+    void editActionOnlyDependsOnWaypointPermission() {
+        assertTrue(FullscreenMapLocationMenu.actionEnabled(
+            FullscreenMapLocationMenu.Action.EDIT_WAYPOINT, true, false, false, true
+        ));
+        assertFalse(FullscreenMapLocationMenu.actionEnabled(
+            FullscreenMapLocationMenu.Action.EDIT_WAYPOINT, true, false, false, false
+        ));
+    }
+
+    @Test
     void opensBesideTheCursorWithoutLeavingTheViewport() {
         final FullscreenMapLocationMenu.Bounds topLeft = FullscreenMapLocationMenu.place(20, 20, 320, 240);
         final FullscreenMapLocationMenu.Bounds bottomRight = FullscreenMapLocationMenu.place(315, 235, 320, 240);

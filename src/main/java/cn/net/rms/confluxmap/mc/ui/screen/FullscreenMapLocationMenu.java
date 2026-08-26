@@ -16,6 +16,7 @@ final class FullscreenMapLocationMenu {
 
     enum Action {
         SET_WAYPOINT("confluxmap.map.location_menu.set_waypoint"),
+        EDIT_WAYPOINT("confluxmap.map.location_menu.edit_waypoint"),
         SHARE_LOCATION("confluxmap.map.location_menu.share_location"),
         TELEPORT("confluxmap.map.location_menu.teleport"),
         HIGHLIGHT("confluxmap.map.location_menu.highlight"),
@@ -32,10 +33,30 @@ final class FullscreenMapLocationMenu {
         }
     }
 
-    private static final List<Action> DEFAULT_ACTIONS = List.of(Action.values());
+    private static final List<Action> DEFAULT_ACTIONS = List.of(
+        Action.SET_WAYPOINT,
+        Action.SHARE_LOCATION,
+        Action.TELEPORT,
+        Action.HIGHLIGHT,
+        Action.CLEAR_HIGHLIGHT
+    );
     private static final List<Action> TELEPORT_FIRST_ACTIONS = List.of(
         Action.TELEPORT,
         Action.SET_WAYPOINT,
+        Action.SHARE_LOCATION,
+        Action.HIGHLIGHT,
+        Action.CLEAR_HIGHLIGHT
+    );
+    private static final List<Action> EDIT_ACTIONS = List.of(
+        Action.EDIT_WAYPOINT,
+        Action.SHARE_LOCATION,
+        Action.TELEPORT,
+        Action.HIGHLIGHT,
+        Action.CLEAR_HIGHLIGHT
+    );
+    private static final List<Action> EDIT_TELEPORT_FIRST_ACTIONS = List.of(
+        Action.TELEPORT,
+        Action.EDIT_WAYPOINT,
         Action.SHARE_LOCATION,
         Action.HIGHLIGHT,
         Action.CLEAR_HIGHLIGHT
@@ -51,6 +72,13 @@ final class FullscreenMapLocationMenu {
         return teleportCommandAvailable ? TELEPORT_FIRST_ACTIONS : DEFAULT_ACTIONS;
     }
 
+    static List<Action> actions(final boolean teleportCommandAvailable, final boolean existingWaypoint) {
+        if (!existingWaypoint) {
+            return actions(teleportCommandAvailable);
+        }
+        return teleportCommandAvailable ? EDIT_TELEPORT_FIRST_ACTIONS : EDIT_ACTIONS;
+    }
+
     static boolean actionEnabled(
         final Action action,
         final boolean playerPresent,
@@ -64,6 +92,19 @@ final class FullscreenMapLocationMenu {
             return true;
         }
         return action == Action.TELEPORT ? teleportCommandAvailable : estimatedHeightKnown;
+    }
+
+    static boolean actionEnabled(
+        final Action action,
+        final boolean playerPresent,
+        final boolean estimatedHeightKnown,
+        final boolean teleportCommandAvailable,
+        final boolean waypointEditable
+    ) {
+        if (action == Action.EDIT_WAYPOINT) {
+            return playerPresent && waypointEditable;
+        }
+        return actionEnabled(action, playerPresent, estimatedHeightKnown, teleportCommandAvailable);
     }
 
     static Bounds place(

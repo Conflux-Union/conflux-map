@@ -63,6 +63,10 @@ dependencies {
         // Loom's development remap does not expose the jar-in-jar XaeroLib as a separate mod.
         modRuntimeOnly 'xaero.lib:xaerolib-fabric-1.21.11:1.7.1'
     }
+    // Reproduction profile for issue #87. Version IDs make the compatibility target immutable.
+    if (project.hasProperty('issue87') && mcVersion == 12111) {
+        modRuntimeOnly 'maven.modrinth:Wb5oqrBJ:uQ4oSnyu' // Chat Heads 1.2.8
+    }
     implementation project(':common')
     include project(':common')
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
@@ -125,6 +129,10 @@ loom {
         client {
             property("mixin.debug.export", "true")
             ideConfigGenerated true
+            if (project.hasProperty('issue87') && mcVersion == 12111) {
+                runDir "build/issue-87-client"
+                vmArg "-Dconfluxmap.issue87.debug=true"
+            }
             // Automated smoke tests: -PautoServer makes the client join a local
             // offline server on launch. CI supplies a virtual display for the client.
             if (project.hasProperty('autoServer')) {

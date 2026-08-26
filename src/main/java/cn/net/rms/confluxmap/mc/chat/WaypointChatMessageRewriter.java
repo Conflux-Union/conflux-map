@@ -8,6 +8,9 @@ import java.util.Optional;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Style;
 import net.minecraft.text.Text;
+//#if MC>=12109
+//$$ import net.minecraft.text.TranslatableTextContent;
+//#endif
 import net.minecraft.util.Formatting;
 
 /** Rewrites recognized waypoint shares immediately before they enter the visible chat queue. */
@@ -29,16 +32,47 @@ public final class WaypointChatMessageRewriter {
 
         final WaypointChatCodec.Candidate candidate = parsed.get();
         final MutableText visible = candidate.confluxFormat()
-            ? Texts.literal(WaypointChatCodec.formatCompactMessage(
-                visibleMessage, candidate, dimensionLabel(candidate.dimensionId())
-            ))
+            ? compactConfluxMessage(original, visibleMessage, candidate)
             : Texts.literal("").append(original.shallowCopy());
         final MutableText importAction = Texts.translatable("confluxmap.chat.waypoint.import")
             .setStyle(Style.EMPTY
                 .withColor(Formatting.AQUA)
                 .withUnderline(true)
                 .withClickEvent(Texts.copyToClipboard(payload.get())));
-        return visible.append(Texts.literal(" ")).append(importAction);
+        final Text rewritten = visible.append(Texts.literal(" ")).append(importAction);
+        WaypointChatDiagnostics.rewrite(
+            original, rewritten, receivedDimension, parsed, payload.isPresent()
+        );
+        return rewritten;
+    }
+
+    private static MutableText compactConfluxMessage(
+        final Text original,
+        final String visibleMessage,
+        final WaypointChatCodec.Candidate candidate
+    ) {
+        final String compactLabel = WaypointChatCodec.formatCompactLabel(
+            candidate, dimensionLabel(candidate.dimensionId())
+        );
+        //#if MC>=12109
+        //$$ if (original.getContent() instanceof TranslatableTextContent content
+        //$$     && "chat.type.text".equals(content.getKey())) {
+        //$$     final Object[] originalArgs = content.getArgs();
+        //$$     if (originalArgs.length >= 2) {
+        //$$         final Object[] compactArgs = originalArgs.clone();
+        //$$         compactArgs[1] = Texts.literal(compactLabel);
+        //$$         final MutableText compact = Texts.translatable(content.getKey(), compactArgs)
+        //$$             .setStyle(original.getStyle());
+        //$$         for (final Text sibling : original.getSiblings()) {
+        //$$             compact.append(sibling.copy());
+        //$$         }
+        //$$         return compact;
+        //$$     }
+        //$$ }
+        //#endif
+        return Texts.literal(WaypointChatCodec.formatCompactMessage(
+            visibleMessage, candidate, dimensionLabel(candidate.dimensionId())
+        ));
     }
 
     private static String dimensionLabel(final DimensionId dimension) {
