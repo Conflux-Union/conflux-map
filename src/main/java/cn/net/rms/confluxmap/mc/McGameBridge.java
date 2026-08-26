@@ -57,6 +57,7 @@ public final class McGameBridge implements GameBridge {
             MathHelper.lerp(tickDelta, entity.prevX, entity.getX()),
             MathHelper.lerp(tickDelta, entity.prevY, entity.getY()),
             MathHelper.lerp(tickDelta, entity.prevZ, entity.getZ()),
+            entity.getEyeY(),
             entity.getYaw(tickDelta),
             DimensionId.of(dim.getNamespace(), dim.getPath())
         ));

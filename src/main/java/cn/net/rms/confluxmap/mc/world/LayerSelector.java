@@ -1,10 +1,11 @@
 package cn.net.rms.confluxmap.mc.world;
 
+import cn.net.rms.confluxmap.bridge.GameBridge;
+import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.LightType;
@@ -44,36 +45,43 @@ public final class LayerSelector {
 
     private final MinecraftClient client;
     private final ConfluxConfig config;
+    private final GameBridge gameBridge;
     private final boolean multiCore;
 
     private int debouncedPivotY;
     private int ticksSinceRefresh;
     private volatile Decision current = new Decision(MapLayer.SURFACE, 0);
 
-    public LayerSelector(final MinecraftClient client, final ConfluxConfig config) {
+    public LayerSelector(
+        final MinecraftClient client,
+        final ConfluxConfig config,
+        final GameBridge gameBridge
+    ) {
         this.client = client;
         this.config = config;
+        this.gameBridge = gameBridge;
         this.multiCore = Runtime.getRuntime().availableProcessors() > 1;
     }
 
     /** Main thread, from {@code ChunkCaptureService.onSessionChanged}: reset debounce state for the new session. */
     public void onSessionChanged(final SessionGuard.Session session) {
         ticksSinceRefresh = 0;
-        final ClientPlayerEntity player = session.active() ? client.player : null;
-        debouncedPivotY = player != null ? (int) Math.floor(player.getEyeY()) : 0;
+        debouncedPivotY = session.active()
+            ? gameBridge.viewpoint().map(view -> (int) Math.floor(view.eyeY())).orElse(0)
+            : 0;
         current = new Decision(MapLayer.SURFACE, 0);
     }
 
     /** Main thread, once per client tick. Returns (and publishes for {@link #current()}) the fresh decision. */
     public Decision tick() {
         final ClientWorld world = client.world;
-        final ClientPlayerEntity player = client.player;
-        if (world == null || player == null) {
+        final PlayerView viewpoint = gameBridge.viewpoint().orElse(null);
+        if (world == null || viewpoint == null) {
             current = new Decision(MapLayer.SURFACE, 0);
             return current;
         }
 
-        final int eyeY = (int) Math.floor(player.getEyeY());
+        final int eyeY = (int) Math.floor(viewpoint.eyeY());
         refreshPivot(eyeY);
 
         final DimensionKind kind = classify(world.getDimension());
@@ -93,7 +101,7 @@ public final class LayerSelector {
                 layer = MapLayer.END_SURFACE;
                 break;
             default:
-                layer = resolveOverworld(world, player, eyeY, config.layerOverride);
+                layer = resolveOverworld(world, viewpoint, eyeY, config.layerOverride);
         }
 
         final Decision decision = new Decision(layer, pivotFor(layer, world.getTopY(), debouncedPivotY));
@@ -148,7 +156,7 @@ public final class LayerSelector {
 
     /** §1 Case C: sky-light-gated automatic cave detection, or a manual pin. */
     private MapLayer resolveOverworld(
-        final ClientWorld world, final ClientPlayerEntity player, final int eyeY, final ConfluxConfig.LayerOverride override
+        final ClientWorld world, final PlayerView viewpoint, final int eyeY, final ConfluxConfig.LayerOverride override
     ) {
         if (override == ConfluxConfig.LayerOverride.FORCE_SLICE) {
             return MapLayer.caveSlice(config.caveSliceY);
@@ -159,7 +167,7 @@ public final class LayerSelector {
         if (override == ConfluxConfig.LayerOverride.FORCE_UNDERGROUND) {
             return MapLayer.CAVE_AUTO;
         }
-        final BlockPos pos = new BlockPos(player.getBlockPos().getX(), eyeY, player.getBlockPos().getZ());
+        final BlockPos pos = new BlockPos(viewpoint.blockX(), eyeY, viewpoint.blockZ());
         //#if MC>=260100
         //$$ return world.getBrightness(LightLayer.SKY, pos) <= 0 ? MapLayer.CAVE_AUTO : MapLayer.SURFACE;
         //#else
@@ -169,7 +177,7 @@ public final class LayerSelector {
 
     /**
      * The pivot Y {@link cn.net.rms.confluxmap.mc.snapshot.McChunkSnapshotFactory} should scan
-     * around for {@code layer}: the §2.2-debounced player Y for the player-relative layers, a
+     * around for {@code layer}: the §2.2-debounced viewpoint Y for the player-relative layers, a
      * slice's configured fixed Y, the world's build-limit
      * for the nether-roof pivot, or an unused constant for the two top-down surface layers (kept
      * fixed so drifting player Y never spuriously flags a "layer changed" reseed while surfaced).
