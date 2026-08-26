@@ -210,6 +210,9 @@ public final class ConfluxConfig {
     /** Startup GitHub release probe; drives the chat notice and the fullscreen-map badge. */
     public boolean updateCheckEnabled = true;
 
+    /** Permanent local opt-out for the unsupported-platform startup warning. */
+    public boolean unsupportedPlatformWarningDismissed;
+
     /** Cumulative client-open time used only to schedule the optional survey chat reminder. */
     public long surveyReminderGameOpenMillis;
     /** Cumulative client-open time at which the next survey reminder becomes due. */
@@ -285,6 +288,7 @@ public final class ConfluxConfig {
             : predictionManualSeeds.copy();
         c.predictionDebounceMs = predictionDebounceMs;
         c.updateCheckEnabled = updateCheckEnabled;
+        c.unsupportedPlatformWarningDismissed = unsupportedPlatformWarningDismissed;
         c.surveyReminderGameOpenMillis = surveyReminderGameOpenMillis;
         c.surveyReminderNextPromptAtMillis = surveyReminderNextPromptAtMillis;
         c.surveyReminderDismissed = surveyReminderDismissed;

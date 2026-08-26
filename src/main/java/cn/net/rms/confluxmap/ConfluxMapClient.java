@@ -41,6 +41,7 @@ import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.net.ChunkLoadStateClient;
 import cn.net.rms.confluxmap.mc.net.MapSyncClient;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.mc.platform.UnsupportedPlatformWarningNotifier;
 import cn.net.rms.confluxmap.mc.predict.PredictionBootstrap;
 import cn.net.rms.confluxmap.mc.predict.ManualSeedService;
 import cn.net.rms.confluxmap.mc.predict.PredictionPaletteBuilder;
@@ -134,6 +135,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private UpdateCheckService updateCheck;
     private UpdateNotifier updateNotifier;
     private SurveyReminderNotifier surveyReminderNotifier;
+    private UnsupportedPlatformWarningNotifier unsupportedPlatformWarningNotifier;
     private ClientGroundTeleportService groundTeleportService;
     private Keybinds keybinds;
 
@@ -152,6 +154,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
         );
         config = configIo.load();
         surveyReminderNotifier = new SurveyReminderNotifier(client, config, configIo);
+        unsupportedPlatformWarningNotifier = new UnsupportedPlatformWarningNotifier(
+            client, config, configIo
+        );
+        unsupportedPlatformWarningNotifier.register();
         final Path confluxRoot = FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID);
         final Path cacheRoot = confluxRoot.resolve("cache");
         executors = new MapExecutors();

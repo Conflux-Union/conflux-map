@@ -8,8 +8,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Locale;
-import java.util.Optional;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -97,7 +95,7 @@ public final class NativeLib {
     }
 
     private static Path extract(final Path baseDir) throws IOException {
-        final String target = detectTarget().orElseThrow(() -> new IOException(
+        final String target = PlatformClassifier.current().nativeTarget().orElseThrow(() -> new IOException(
             "unsupported platform: os.name=" + System.getProperty("os.name") + " os.arch=" + System.getProperty("os.arch")
         ));
         final String libName = libFileName(target);
@@ -128,7 +126,7 @@ public final class NativeLib {
      * corruption-recovery test has to use a base directory nothing has loaded from yet.
      */
     static Path resolveExtractedPathForTests(final Path baseDir) throws IOException {
-        final String target = detectTarget().orElseThrow(() -> new IOException(
+        final String target = PlatformClassifier.current().nativeTarget().orElseThrow(() -> new IOException(
             "unsupported platform: os.name=" + System.getProperty("os.name") + " os.arch=" + System.getProperty("os.arch")
         ));
         final String libName = libFileName(target);
@@ -169,29 +167,6 @@ public final class NativeLib {
             hex[i * 2 + 1] = digits[v & 0x0F];
         }
         return new String(hex);
-    }
-
-    private static Optional<String> detectTarget() {
-        final String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        final String osArch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
-        final String arch;
-        if (osArch.equals("x86_64") || osArch.equals("amd64")) {
-            arch = "x86_64";
-        } else if (osArch.equals("aarch64") || osArch.equals("arm64")) {
-            arch = "aarch64";
-        } else {
-            return Optional.empty();
-        }
-        if (osName.contains("win")) {
-            return "x86_64".equals(arch) ? Optional.of("windows-x86_64") : Optional.empty();
-        }
-        if (osName.contains("mac") || osName.contains("darwin")) {
-            return Optional.of("macos-" + arch);
-        }
-        if (osName.contains("linux")) {
-            return Optional.of("linux-" + arch);
-        }
-        return Optional.empty();
     }
 
     private static String libFileName(final String target) {

@@ -39,6 +39,16 @@ final class ConfluxConfigTest {
     }
 
     @Test
+    void unsupportedPlatformWarningDismissalSurvivesConfigCopy() {
+        final ConfluxConfig config = new ConfluxConfig();
+        assertFalse(config.unsupportedPlatformWarningDismissed);
+
+        config.unsupportedPlatformWarningDismissed = true;
+
+        assertTrue(config.copy().unsupportedPlatformWarningDismissed);
+    }
+
+    @Test
     void minimapZoomCyclesThroughEveryLevelAndWraps() {
         final ConfluxConfig config = new ConfluxConfig();
         config.minimapZoomIndex = 0;
