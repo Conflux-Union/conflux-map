@@ -56,12 +56,14 @@ final class WaypointChatDiagnosticsTest {
     //$$     final String inputTree = WaypointChatDiagnostics.describe(original);
     //$$     final String outputTree = WaypointChatDiagnostics.describe(rewritten);
     //$$
-    //$$     assertTrue(inputTree.contains("ObjectTextContent"));
-    //$$     assertTrue(inputTree.contains("PlayerTextObjectContents"));
-    //$$     assertTrue(outputTree.contains("ObjectTextContent"));
-    //$$     assertTrue(outputTree.contains("PlayerTextObjectContents"));
+    //$$     assertTrue(hasPlayerSprite(inputTree), inputTree);
+    //$$     assertTrue(hasPlayerSprite(outputTree), outputTree);
     //$$     assertTrue(rewritten.getString().contains("Home(1,64,2,"));
     //$$     assertFalse(rewritten.getString().contains("[Conflux Map]"));
+    //$$ }
+    //$$
+    //$$ private static boolean hasPlayerSprite(final String tree) {
+    //$$     return tree.contains("PlayerTextObjectContents") || tree.contains("PlayerSprite[");
     //$$ }
     //#endif
 }

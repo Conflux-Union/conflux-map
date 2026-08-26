@@ -131,16 +131,18 @@ public final class WaypointChatDiagnostics {
     }
 
     private static String contentDescription(final Text node) {
-        try {
-            final Method getContent = node.getClass().getMethod("getContent");
-            final Object content = getContent.invoke(node);
-            if (content != null) {
-                return content.getClass().getName() + ":" + sanitize(content.toString());
+        for (final String accessor : new String[] {"getContent", "getContents"}) {
+            try {
+                final Method getContent = node.getClass().getMethod(accessor);
+                final Object content = getContent.invoke(node);
+                if (content != null) {
+                    return content.getClass().getName() + ":" + sanitize(content.toString());
+                }
+            } catch (final NoSuchMethodException ignored) {
+                // Minecraft 26.1 renamed getContent() to getContents().
+            } catch (final IllegalAccessException | InvocationTargetException | RuntimeException e) {
+                return "<unavailable:" + e.getClass().getSimpleName() + ">";
             }
-        } catch (final NoSuchMethodException ignored) {
-            // Minecraft before the TextContent API exposes content through concrete Text classes.
-        } catch (final IllegalAccessException | InvocationTargetException | RuntimeException e) {
-            return "<unavailable:" + e.getClass().getSimpleName() + ">";
         }
         return node.getClass().getName();
     }

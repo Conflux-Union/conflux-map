@@ -8,7 +8,7 @@ import java.util.Optional;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Style;
 import net.minecraft.text.Text;
-//#if MC>=12109 && MC<260100
+//#if MC>=12109
 //$$ import net.minecraft.text.TranslatableTextContent;
 //#endif
 import net.minecraft.util.Formatting;
@@ -54,7 +54,7 @@ public final class WaypointChatMessageRewriter {
         final String compactLabel = WaypointChatCodec.formatCompactLabel(
             candidate, dimensionLabel(candidate.dimensionId())
         );
-        //#if MC>=12109 && MC<260100
+        //#if MC>=12109
         //$$ if (original.getContent() instanceof TranslatableTextContent content
         //$$     && "chat.type.text".equals(content.getKey())) {
         //$$     final Object[] originalArgs = content.getArgs();
