@@ -29,7 +29,7 @@ final class DetachedCameraMapPolicyTest {
         assertTrue(source.contains("final Optional<PlayerView> localPlayer = gameBridge.player(tickDelta);"));
         assertTrue(source.contains("player.x() - viewpoint.x()"));
         assertTrue(source.contains("player.z() - viewpoint.z()"));
-        assertTrue(source.contains("MathHelper.clamp(screenDx, -limit, limit)"));
+        assertTrue(source.contains("clamp(screenDx, -limit, limit)"));
         assertTrue(source.contains("player.yawDegrees() - viewpoint.yawDegrees()"));
     }
 
