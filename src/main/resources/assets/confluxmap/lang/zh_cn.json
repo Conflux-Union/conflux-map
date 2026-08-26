@@ -152,6 +152,7 @@
   "confluxmap.map.target.dimension": "维度",
   "confluxmap.screen.map_view.current_world": "当前世界",
   "confluxmap.map.location_menu.set_waypoint": "设置路径点",
+  "confluxmap.map.location_menu.edit_waypoint": "编辑路径点",
   "confluxmap.map.location_menu.share_location": "分享位置",
   "confluxmap.map.location_menu.teleport": "传送到此处",
   "confluxmap.map.location_menu.temporary_name": "共享位置",

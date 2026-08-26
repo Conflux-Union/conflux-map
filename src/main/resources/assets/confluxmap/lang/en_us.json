@@ -152,6 +152,7 @@
   "confluxmap.map.target.dimension": "Dimension",
   "confluxmap.screen.map_view.current_world": "Current World",
   "confluxmap.map.location_menu.set_waypoint": "Set Waypoint",
+  "confluxmap.map.location_menu.edit_waypoint": "Edit Waypoint",
   "confluxmap.map.location_menu.share_location": "Share Location",
   "confluxmap.map.location_menu.teleport": "Teleport Here",
   "confluxmap.map.location_menu.temporary_name": "Shared Location",

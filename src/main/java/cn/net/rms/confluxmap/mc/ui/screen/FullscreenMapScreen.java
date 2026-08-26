@@ -370,6 +370,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private FullscreenMapLocationMenu.Target locationMenuTarget;
     private FullscreenMapLocationMenu.Action pendingLocationAction;
     private ButtonWidget setWaypointLocationButton;
+    private ButtonWidget editWaypointLocationButton;
     private ButtonWidget shareLocationButton;
     private ButtonWidget teleportLocationButton;
     private String teleportLocationUnavailableKey;
@@ -523,6 +524,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         sharedVisibilityButton = null;
         manageWaypointsButton = null;
         setWaypointLocationButton = null;
+        editWaypointLocationButton = null;
         shareLocationButton = null;
         teleportLocationButton = null;
         teleportLocationUnavailableKey = null;
@@ -1473,8 +1475,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         );
         final boolean teleportCommandAvailable = teleportAccess.available();
         teleportLocationUnavailableKey = teleportAccess.reasonKey();
+        final boolean existingWaypoint = locationMenuTarget.existingWaypoint();
+        final boolean waypointEditable = existingWaypoint && waypointEditable(locationMenuTarget.waypoint());
         final List<FullscreenMapLocationMenu.Action> actions = FullscreenMapLocationMenu.actions(
-            teleportCommandAvailable
+            teleportCommandAvailable, existingWaypoint
         );
         for (int index = 0; index < actions.size(); index++) {
             final FullscreenMapLocationMenu.Action action = actions.get(index);
@@ -1487,13 +1491,14 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 ignored -> pendingLocationAction = action
             ));
             button.active = FullscreenMapLocationMenu.actionEnabled(
-                action, playerPresent, heightKnown, teleportCommandAvailable
+                action, playerPresent, heightKnown, teleportCommandAvailable, waypointEditable
             );
             if (!viewingLiveWorld() && action == FullscreenMapLocationMenu.Action.SHARE_LOCATION) {
                 button.active = false;
             }
             switch (action) {
                 case SET_WAYPOINT -> setWaypointLocationButton = button;
+                case EDIT_WAYPOINT -> editWaypointLocationButton = button;
                 case SHARE_LOCATION -> shareLocationButton = button;
                 case TELEPORT -> teleportLocationButton = button;
             }
@@ -1528,7 +1533,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             );
             if (surfaceY.isPresent()) {
                 locationMenuTarget = FullscreenMapLocationMenu.targetAt(
-                    locationMenuTarget.blockX(), surfaceY, locationMenuTarget.blockZ()
+                    locationMenuTarget.blockX(), surfaceY, locationMenuTarget.blockZ(),
+                    locationMenuTarget.waypoint()
                 );
                 rebuildWaypointControls();
             }
@@ -1849,15 +1855,17 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final double worldZ = centerZ + (mouseY - height / 2.0) * scale;
         final int blockX = (int) Math.floor(worldX);
         final int blockZ = (int) Math.floor(worldZ);
+        final WaypointRenderEntry waypoint = waypointAt(mouseX, mouseY);
         final int menuViewportWidth = width - MARGIN - CONTROL_SIZE - CONTROL_GAP;
         locationMenuBounds = FullscreenMapLocationMenu.place(
             (int) Math.floor(mouseX),
             (int) Math.floor(mouseY),
             menuViewportWidth,
-            height
+            height,
+            FullscreenMapLocationMenu.actions(false, waypoint != null).size()
         );
         locationMenuTarget = FullscreenMapLocationMenu.targetAt(
-            worldX, surfaceYAt(blockX, blockZ), worldZ
+            worldX, surfaceYAt(blockX, blockZ), worldZ, waypoint
         );
         pendingLocationAction = null;
         mapPointerPress = false;
@@ -1901,6 +1909,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                     this::viewWaypointStore
                 )
             ));
+            case EDIT_WAYPOINT -> {
+                if (target.waypoint() != null) {
+                    openWaypointFromLocationMenu(target.waypoint());
+                }
+            }
             case SHARE_LOCATION -> {
                 if (target.blockY().isPresent()) {
                     shareTemporaryLocation(target);
@@ -1945,6 +1958,52 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         locationMenuTarget = null;
         pendingLocationAction = null;
         rebuildWaypointControls();
+    }
+
+    private boolean waypointEditable(final WaypointRenderEntry waypoint) {
+        if (waypoint == null) {
+            return false;
+        }
+        if (waypoint.local()) {
+            final WaypointStore store = viewWaypointStore();
+            return store != null && store.persistenceWritable();
+        }
+        return sharedWaypoints.find(waypoint.id()).map(sharedWaypoints::canUpdate).orElse(false);
+    }
+
+    private void openWaypointFromLocationMenu(final WaypointRenderEntry waypoint) {
+        if (waypoint.local()) {
+            viewWaypointService().list().stream()
+                .filter(local -> local.id.equals(waypoint.id()))
+                .findFirst()
+                .ifPresent(local -> MinecraftAccess.setScreen(
+                    MinecraftClient.getInstance(), WaypointEditScreen.forEdit(
+                        this, local, this::viewWaypointStore
+                    )
+                ));
+            return;
+        }
+        sharedWaypoints.find(waypoint.id())
+            .filter(sharedWaypoints::canUpdate)
+            .ifPresent(shared -> MinecraftAccess.setScreen(
+                MinecraftClient.getInstance(), WaypointEditScreen.forPublicEdit(this, shared)
+            ));
+    }
+
+    private WaypointRenderEntry waypointAt(final double mouseX, final double mouseY) {
+        WaypointRenderEntry closest = null;
+        double closestDistance = HOVER_RADIUS_PX;
+        final double pxPerBlock = 1.0 / scale;
+        for (final WaypointRenderEntry waypoint : viewWaypointRenderCatalog().snapshot(viewSession().dimension())) {
+            final double screenX = width / 2.0 + (waypoint.x() - centerX) * pxPerBlock;
+            final double screenY = height / 2.0 + (waypoint.z() - centerZ) * pxPerBlock;
+            final double distance = Math.hypot(mouseX - screenX, mouseY - screenY);
+            if (distance <= closestDistance) {
+                closestDistance = distance;
+                closest = waypoint;
+            }
+        }
+        return closest;
     }
 
     /**
