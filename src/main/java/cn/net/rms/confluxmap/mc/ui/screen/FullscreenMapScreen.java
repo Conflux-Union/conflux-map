@@ -374,6 +374,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private WaypointRenderEntry locationMenuWaypoint;
     private FullscreenMapLocationMenu.Action pendingLocationAction;
     private ButtonWidget setWaypointLocationButton;
+    private ButtonWidget editWaypointLocationButton;
     private ButtonWidget shareLocationButton;
     private ButtonWidget teleportLocationButton;
     private String teleportLocationUnavailableKey;
@@ -530,6 +531,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         sharedVisibilityButton = null;
         manageWaypointsButton = null;
         setWaypointLocationButton = null;
+        editWaypointLocationButton = null;
         shareLocationButton = null;
         teleportLocationButton = null;
         teleportLocationUnavailableKey = null;
@@ -1481,8 +1483,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         );
         final boolean teleportCommandAvailable = teleportAccess.available();
         teleportLocationUnavailableKey = teleportAccess.reasonKey();
+        final boolean existingWaypoint = locationMenuWaypoint != null;
+        final boolean waypointEditable = existingWaypoint && waypointEditable(locationMenuWaypoint);
         final List<FullscreenMapLocationMenu.Action> actions = FullscreenMapLocationMenu.actions(
-            teleportCommandAvailable
+            teleportCommandAvailable, existingWaypoint
         );
         for (int index = 0; index < actions.size(); index++) {
             final FullscreenMapLocationMenu.Action action = actions.get(index);
@@ -1496,7 +1500,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             ));
             locationActionTooltips.put(button, actionTooltipKey(action));
             button.active = FullscreenMapLocationMenu.actionEnabled(
-                action, playerPresent, heightKnown, teleportCommandAvailable
+                action, playerPresent, heightKnown, teleportCommandAvailable, waypointEditable
             );
             if (!viewingLiveWorld() && action == FullscreenMapLocationMenu.Action.SHARE_LOCATION) {
                 button.active = false;
@@ -1509,8 +1513,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             }
             switch (action) {
                 case SET_WAYPOINT -> setWaypointLocationButton = button;
+                case EDIT_WAYPOINT -> editWaypointLocationButton = button;
                 case SHARE_LOCATION -> shareLocationButton = button;
                 case TELEPORT -> teleportLocationButton = button;
+                case HIGHLIGHT, CLEAR_HIGHLIGHT -> {
+                }
             }
         }
     }
@@ -1937,6 +1944,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                     this::viewWaypointStore
                 )
             ));
+            case EDIT_WAYPOINT -> {
+                if (waypoint != null) {
+                    openWaypointFromLocationMenu(waypoint);
+                }
+            }
             case SHARE_LOCATION -> {
                 if (target.blockY().isPresent()) {
                     shareTemporaryLocation(target);
@@ -1991,6 +2003,36 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         locationMenuWaypoint = null;
         pendingLocationAction = null;
         rebuildWaypointControls();
+    }
+
+    private boolean waypointEditable(final WaypointRenderEntry waypoint) {
+        if (waypoint == null) {
+            return false;
+        }
+        if (waypoint.local()) {
+            final WaypointStore store = viewWaypointStore();
+            return store != null && store.persistenceWritable();
+        }
+        return sharedWaypoints.find(waypoint.id()).map(sharedWaypoints::canUpdate).orElse(false);
+    }
+
+    private void openWaypointFromLocationMenu(final WaypointRenderEntry waypoint) {
+        if (waypoint.local()) {
+            viewWaypointService().list().stream()
+                .filter(local -> local.id.equals(waypoint.id()))
+                .findFirst()
+                .ifPresent(local -> MinecraftAccess.setScreen(
+                    MinecraftClient.getInstance(), WaypointEditScreen.forEdit(
+                        this, local, this::viewWaypointStore
+                    )
+                ));
+            return;
+        }
+        sharedWaypoints.find(waypoint.id())
+            .filter(sharedWaypoints::canUpdate)
+            .ifPresent(shared -> MinecraftAccess.setScreen(
+                MinecraftClient.getInstance(), WaypointEditScreen.forPublicEdit(this, shared)
+            ));
     }
 
     /**
@@ -2851,6 +2893,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static String actionTooltipKey(final FullscreenMapLocationMenu.Action action) {
         return switch (action) {
             case SET_WAYPOINT -> "confluxmap.map.location_menu.set_waypoint.tooltip";
+            case EDIT_WAYPOINT -> "confluxmap.map.location_menu.edit_waypoint.tooltip";
             case SHARE_LOCATION -> "confluxmap.map.location_menu.share_location.tooltip";
             case TELEPORT -> "confluxmap.map.location_menu.teleport.tooltip";
             case HIGHLIGHT -> "confluxmap.map.location_menu.highlight.tooltip";
