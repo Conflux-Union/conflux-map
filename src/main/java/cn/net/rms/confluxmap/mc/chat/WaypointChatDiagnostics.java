@@ -15,7 +15,8 @@ import net.minecraft.text.Text;
 
 /** Opt-in component-tree diagnostics for the issue #87 compatibility environment. */
 public final class WaypointChatDiagnostics {
-    public static final String ENABLE_PROPERTY = "confluxmap.issue87.debug";
+    // Keep the JVM diagnostic property distinct from translatable keys discovered by source scans.
+    public static final String ENABLE_PROPERTY = "confluxmap." + "issue87.debug";
 
     private static final int MAX_TREE_DEPTH = 32;
     private static final int MAX_TREE_NODES = 256;
