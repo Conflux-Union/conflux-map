@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 
 class MinimapHudVisibilityTest {
     @Test
-    void hidesTheHudForFullscreenContainerAndDebugOverlays() {
+    void hidesTheHudForFullscreenContainerAndFullDebugOverlays() {
         assertTrue(MinimapHudVisibility.shouldRender(true, true, false, false, false));
         assertFalse(MinimapHudVisibility.shouldRender(true, true, true, false, false));
         assertFalse(MinimapHudVisibility.shouldRender(true, true, false, true, false));

@@ -172,7 +172,7 @@ public final class MinimapHudRenderer {
             gameBridge.session().active(),
             fullscreenOpen,
             containerOpen,
-            MinecraftAccess.isDebugHudVisible(client)
+            MinecraftAccess.isFullDebugOverlayVisible(client)
         )) {
             // FullscreenMapScreen owns radarViewRange while it's open; otherwise the minimap
             // isn't rendering at all, so there's no visible map surface for the radar to scan.

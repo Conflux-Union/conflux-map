@@ -94,12 +94,13 @@ public final class MinecraftAccess {
         //#endif
     }
 
-    /**
-     * Whether the vanilla debug HUD is visible. BetterF3 renders through the same debug-HUD
-     * state, so this remains a soft compatibility seam with no optional-mod dependency.
-     */
-    public static boolean isDebugHudVisible(final MinecraftClient client) {
-        //#if MC>=12100
+    /** Whether the full vanilla debug overlay is visible. */
+    public static boolean isFullDebugOverlayVisible(final MinecraftClient client) {
+        //#if MC>=260100
+        //$$ return client.debugEntries.isOverlayVisible();
+        //#elseif MC>=12109
+        //$$ return client.debugHudEntryList.isF3Enabled();
+        //#elseif MC>=12100
         //$$ return client.getDebugHud().shouldShowDebugHud();
         //#else
         return client.options.debugEnabled;
