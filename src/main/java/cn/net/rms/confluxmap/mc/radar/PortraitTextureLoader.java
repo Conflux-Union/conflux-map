@@ -25,7 +25,13 @@ final class PortraitTextureLoader<K> {
         void close();
     }
 
-    record Result<K>(K key, float[] geometry, int[] visibleBounds, RuntimeException error) {
+    record Result<K>(
+        K key,
+        float[] geometry,
+        int[] visibleBounds,
+        int visibleArea,
+        RuntimeException error
+    ) {
         boolean success() {
             return error == null;
         }
@@ -51,7 +57,7 @@ final class PortraitTextureLoader<K> {
             executor.execute(() -> inspect(key, geometry, image));
         } catch (final RejectedExecutionException e) {
             inFlight.remove(key);
-            completed.addLast(new Result<>(key, geometry, null, e));
+            completed.addLast(new Result<>(key, geometry, null, 0, e));
         }
         return true;
     }
@@ -76,12 +82,18 @@ final class PortraitTextureLoader<K> {
     ) {
         Result<K> result;
         try (SourceImage image = imageSupplier.get()) {
-            final int[] bounds = EntityIconManager.visibleBounds(
+            final EntityIconManager.VisiblePixels visible = EntityIconManager.visiblePixels(
                 geometry, image.width(), image.height(), image::alphaAt
             );
-            result = new Result<>(key, geometry, bounds, null);
+            result = new Result<>(
+                key,
+                geometry,
+                visible == null ? null : visible.bounds(),
+                visible == null ? 0 : visible.area(),
+                null
+            );
         } catch (final RuntimeException e) {
-            result = new Result<>(key, geometry, null, e);
+            result = new Result<>(key, geometry, null, 0, e);
         }
         synchronized (this) {
             inFlight.remove(key);

@@ -158,8 +158,10 @@ coat/marking layers.
 > than silently turning into a whole-model thumbnail. At most
 > one missing portrait is baked per client tick, with the shaped category marker used until it is
 > ready or when a bake cannot be drawn. Dynamic portraits are tightly cropped to their projected
-> geometry, keep the model's aspect ratio, and scale their longest edge to the configured icon
-> size. Their optional outline expands the sampled alpha silhouette rather than framing its
+> geometry, keep the model's aspect ratio, and scale uniformly until their sampled visible
+> silhouette covers the same screen area as a square icon at the configured size. Thin or long
+> portraits may therefore extend beyond that nominal size without being stretched. Their optional
+> outline expands the sampled alpha silhouette rather than framing its
 > rectangular bounds, so long fish stay wide without acquiring a black rectangular box;
 > horse-family heads reset their local rotation, use a fixed −90° yaw / 35° pitch profile, and fit
 > their complete silhouette. Llamas use the same pose but discard cuboids below the dominant head,

@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.mc.radar;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -30,6 +31,7 @@ class PortraitTextureLoaderTest {
         final PortraitTextureLoader.Result<String> result = loader.poll().orElseThrow();
         assertTrue(result.success());
         assertArrayEquals(new int[] {8, 4, 24, 28}, result.visibleBounds());
+        assertEquals(16 * 24, result.visibleArea());
     }
 
     private static final class FakeImage implements PortraitTextureLoader.SourceImage {

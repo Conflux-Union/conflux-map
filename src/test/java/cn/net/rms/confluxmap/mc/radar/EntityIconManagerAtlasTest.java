@@ -41,6 +41,48 @@ class EntityIconManagerAtlasTest {
     }
 
     @Test
+    void countsTheVisibleSilhouetteAreaOncePerAtlasPixel() {
+        final float[] overlappingQuads = {
+            0f, 0f, 0f, 0f, 0f,
+            32f, 0f, 0f, 1f, 0f,
+            32f, 32f, 0f, 1f, 1f,
+            0f, 32f, 0f, 0f, 1f,
+            0f, 0f, 0f, 0f, 0f,
+            32f, 0f, 0f, 1f, 0f,
+            32f, 32f, 0f, 1f, 1f,
+            0f, 32f, 0f, 0f, 1f
+        };
+
+        final EntityIconManager.VisiblePixels visible = EntityIconManager.visiblePixels(
+            overlappingQuads, 32, 32,
+            (x, y) -> x >= 8 && x < 24 && y >= 4 && y < 28 ? 255 : 0
+        );
+
+        assertArrayEquals(new int[] {8, 4, 24, 28}, visible.bounds());
+        assertEquals(16 * 24, visible.area());
+    }
+
+    @Test
+    void scalesTheVisibleSilhouetteToAFullCellAreaWithoutChangingAspectRatio() {
+        final EntityIconManager.DisplayScale horse = EntityIconManager.displayScale(
+            new int[] {0, 1, 32, 31}, 453
+        );
+        final EntityIconManager.DisplayScale square = EntityIconManager.displayScale(
+            new int[] {0, 0, 32, 32}, 1024
+        );
+        final EntityIconManager.DisplayScale croppedSquare = EntityIconManager.displayScale(
+            new int[] {8, 8, 24, 24}, 256
+        );
+
+        assertEquals(32f / 30f, horse.width() / horse.height(), EPSILON);
+        assertEquals(
+            1f, 453f * horse.width() * horse.height() / (32f * 30f), EPSILON
+        );
+        assertEquals(new EntityIconManager.DisplayScale(1f, 1f), square);
+        assertEquals(new EntityIconManager.DisplayScale(1f, 1f), croppedSquare);
+    }
+
+    @Test
     void visibleBoundsDoesNotAllocatePerCoveredPixel() {
         final float[] quad = {
             0f, 0f, 0f, 0f, 0f,
