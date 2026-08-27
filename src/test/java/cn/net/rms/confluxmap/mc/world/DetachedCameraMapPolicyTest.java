@@ -33,6 +33,19 @@ final class DetachedCameraMapPolicyTest {
         assertTrue(source.contains("player.yawDegrees() - viewpoint.yawDegrees()"));
     }
 
+    @Test
+    void chunkCaptureRefreshFollowsTheActiveCamera() throws Exception {
+        final String source = Files.readString(preprocessedSource(
+            "cn/net/rms/confluxmap/mc/snapshot/ChunkCaptureService.java"
+        ));
+
+        assertTrue(source.contains("final PlayerView viewpoint = gameBridge.viewpoint().orElse(null);"));
+        assertTrue(source.contains("final int viewpointChunkX = viewpoint.blockX() >> 4;"));
+        assertTrue(source.contains("final int viewpointChunkZ = viewpoint.blockZ() >> 4;"));
+        assertTrue(source.contains("reseedViewport(viewpointChunkX, viewpointChunkZ);"));
+        assertTrue(source.contains("chunkBudget, viewpointChunkX, viewpointChunkZ"));
+    }
+
     private static Path preprocessedSource(final String relativePath) throws URISyntaxException {
         Path current = Path.of(
             DetachedCameraMapPolicyTest.class.getProtectionDomain().getCodeSource().getLocation().toURI()

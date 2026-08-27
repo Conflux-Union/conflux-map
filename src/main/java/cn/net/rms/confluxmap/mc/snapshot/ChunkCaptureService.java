@@ -1,6 +1,8 @@
 package cn.net.rms.confluxmap.mc.snapshot;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
+import cn.net.rms.confluxmap.bridge.GameBridge;
+import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.core.cache.RegionCacheService;
 import cn.net.rms.confluxmap.core.cache.RegionDiskCache;
@@ -43,6 +45,7 @@ public final class ChunkCaptureService {
     private static final int LOG_INTERVAL_TICKS = 100;
 
     private final MinecraftClient client;
+    private final GameBridge gameBridge;
     private final ConfluxConfig config;
     private final MapWorldService worlds;
     private final MapExecutors executors;
@@ -63,6 +66,7 @@ public final class ChunkCaptureService {
 
     public ChunkCaptureService(
         final MinecraftClient client,
+        final GameBridge gameBridge,
         final ConfluxConfig config,
         final MapWorldService worlds,
         final MapExecutors executors,
@@ -75,6 +79,7 @@ public final class ChunkCaptureService {
         final LayerSelector layerSelector
     ) {
         this.client = client;
+        this.gameBridge = gameBridge;
         this.config = config;
         this.worlds = worlds;
         this.executors = executors;
@@ -95,7 +100,7 @@ public final class ChunkCaptureService {
      * Main thread, from the session tracker. The initial spawn-area chunk batch
      * arrives before the first session tick, so marks made during the loading
      * phase reference a world this session never saw. Instead of trusting them,
-     * reseed the whole server send-distance square around the player: chunks that are
+     * reseed the whole server send-distance square around the active viewpoint: chunks that are
      * not actually loaded are skipped by the snapshot factory at drain time.
      */
     public void onSessionChanged(final SessionGuard.Session session) {
@@ -108,11 +113,11 @@ public final class ChunkCaptureService {
         if (!session.active()) {
             return;
         }
-        final ClientPlayerEntity player = client.player;
-        if (player == null) {
+        final PlayerView viewpoint = gameBridge.viewpoint().orElse(null);
+        if (viewpoint == null) {
             return;
         }
-        reseedViewport(player.getBlockPos().getX() >> 4, player.getBlockPos().getZ() >> 4);
+        reseedViewport(viewpoint.blockX() >> 4, viewpoint.blockZ() >> 4);
     }
 
     /** Main thread, from packet mixins. */
@@ -222,12 +227,15 @@ public final class ChunkCaptureService {
     private void tick() {
         final MapWorld world = worlds.current();
         final ClientPlayerEntity player = client.player;
-        if (world == null || player == null) {
+        final PlayerView viewpoint = gameBridge.viewpoint().orElse(null);
+        if (world == null || player == null || viewpoint == null) {
             return;
         }
         final long token = world.session().token();
         final int playerChunkX = player.getBlockPos().getX() >> 4;
         final int playerChunkZ = player.getBlockPos().getZ() >> 4;
+        final int viewpointChunkX = viewpoint.blockX() >> 4;
+        final int viewpointChunkZ = viewpoint.blockZ() >> 4;
         final int currentServerViewDistance = serverViewDistance.getAsInt();
         if (currentServerViewDistance != lastServerViewDistance
             || (currentServerViewDistance >= 0
@@ -248,7 +256,7 @@ public final class ChunkCaptureService {
             // Layer (or its floor-scan pivot Y band) changed - reseed so the new layer fills the
             // viewport instead of leaving stale/empty data from whatever was active before.
             lastDecision = decision;
-            reseedViewport(playerChunkX, playerChunkZ);
+            reseedViewport(viewpointChunkX, viewpointChunkZ);
         }
 
         final List<LayerSelector.Decision> capturePlan = capturePlan(
@@ -256,7 +264,7 @@ public final class ChunkCaptureService {
         );
         final int chunkBudget = Math.max(1, config.snapshotBudgetPerTick / capturePlan.size());
         final List<long[]> batch = dirtyChunks.drainNearest(
-            chunkBudget, playerChunkX, playerChunkZ, this::captureReadiness
+            chunkBudget, viewpointChunkX, viewpointChunkZ, this::captureReadiness
         );
         for (final long[] chunkPos : batch) {
             for (final LayerSelector.Decision capture : capturePlan) {
@@ -272,7 +280,7 @@ public final class ChunkCaptureService {
         }
         final RegionDiskCache cache = regionCache.current();
         if (cache != null) {
-            cache.tick(playerChunkX >> 4, playerChunkZ >> 4);
+            cache.tick(viewpointChunkX >> 4, viewpointChunkZ >> 4);
         }
         logPeriodically(world);
     }
