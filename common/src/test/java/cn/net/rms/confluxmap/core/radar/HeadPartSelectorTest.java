@@ -12,6 +12,8 @@ class HeadPartSelectorTest {
     @Test
     void identifiesModelsThatNeedTheirWholeGeometry() {
         assertTrue(HeadPartSelector.usesFullModel("MINECRAFT:SLIME"));
+        assertTrue(HeadPartSelector.usesFullModel("minecraft:sulfur_cube"));
+        assertFalse(HeadPartSelector.usesFullModel("minecraft:ghast"));
         assertFalse(HeadPartSelector.usesFullModel("minecraft:zombie"));
         assertFalse(HeadPartSelector.usesFullModel(null));
     }
@@ -49,6 +51,13 @@ class HeadPartSelectorTest {
         assertEquals(Set.of("root/head"), HeadPartSelector.select("minecraft:llama", List.of(
             "root", "root/head", "root/body", "root/right_hind_leg", "root/chest_right"
         )));
+        for (final String entityType : List.of("minecraft:camel", "minecraft:camel_husk")) {
+            assertEquals(Set.of("root/body"), HeadPartSelector.select(entityType, List.of(
+                "root", "root/body", "root/body/head", "root/body/hump", "root/body/tail",
+                "root/right_front_leg", "root/left_front_leg", "root/right_hind_leg",
+                "root/left_hind_leg"
+            )), entityType);
+        }
         assertEquals(
             Set.of("root/head", "root/right_ear", "root/left_ear", "root/nose"),
             HeadPartSelector.select("minecraft:rabbit", List.of(

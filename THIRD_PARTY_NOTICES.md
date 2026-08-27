@@ -64,7 +64,7 @@ for the clean-room workflow.
 
 | Project | License (as published) | How it was used |
 |---|---|---|
-| [VoxelMap](https://www.curseforge.com/minecraft/mc-mods/voxelmap) / [VoxelMap-Updated](https://modrinth.com/mod/voxelmap-updated) | All Rights Reserved | Behavior reference only: zoom steps, waypoint edge-indicator rules, radar color conventions, cave / nether layer heuristics. |
+| [VoxelMap](https://www.curseforge.com/minecraft/mc-mods/voxelmap) / [VoxelMap-Updated](https://modrinth.com/mod/voxelmap-updated) | All Rights Reserved | Behavior reference only: zoom steps, waypoint edge-indicator rules, radar color and portrait pose/framing conventions, cave / nether layer heuristics. |
 | Xaero's Minimap / Xaero's World Map | All Rights Reserved | Behavior reference only: general minimap / fullscreen-map UX conventions. |
 
 ## Everything else

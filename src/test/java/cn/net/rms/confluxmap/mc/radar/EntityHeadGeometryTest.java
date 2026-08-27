@@ -81,7 +81,7 @@ final class EntityHeadGeometryTest {
     }
 
     @Test
-    void rabbitPortraitKeepsCompleteModelGeometry() {
+    void rabbitPortraitFitsItsEarsInsideTheAtlasCell() {
         //#if MC>=260100
         //$$ final ModelPart rabbitRoot = AdultRabbitModel.createBodyLayer().bakeRoot();
         //#elseif MC>=12103
@@ -95,10 +95,88 @@ final class EntityHeadGeometryTest {
         );
 
         assertTrue(rabbit.length > 0);
-        assertTrue(
-            subjectBounds(rabbit)[3] - subjectBounds(rabbit)[1] > 32f,
-            "ears may extend beyond the dominant head crop and are clipped by the atlas cell"
+        final float[] bounds = subjectBounds(rabbit);
+        assertTrue(bounds[0] >= -0.001f, "rabbit escaped left edge: " + bounds[0]);
+        assertTrue(bounds[1] >= -0.001f, "ears escaped top edge: " + bounds[1]);
+        assertTrue(bounds[2] <= 32.001f, "rabbit escaped right edge: " + bounds[2]);
+        assertTrue(bounds[3] <= 32.001f, "rabbit escaped bottom edge: " + bounds[3]);
+    }
+
+    @Test
+    void horsePortraitFitsMuzzleAndEarsInsideTheAtlasCell() {
+        final ModelData data = new ModelData();
+        final var head = data.getRoot().addChild(
+            "head_parts",
+            ModelPartBuilder.create().uv(0, 0).cuboid(-4f, -4f, -4f, 8f, 8f, 8f),
+            ModelTransform.NONE
         );
+        head.addChild(
+            "muzzle",
+            ModelPartBuilder.create().uv(0, 0).cuboid(-3f, -2f, -8f, 6f, 5f, 8f),
+            ModelTransform.NONE
+        );
+        head.addChild(
+            "left_ear",
+            ModelPartBuilder.create().uv(0, 0).cuboid(-4f, -8f, -1f, 2f, 5f, 2f),
+            ModelTransform.NONE
+        );
+        head.addChild(
+            "right_ear",
+            ModelPartBuilder.create().uv(0, 0).cuboid(2f, -8f, -1f, 2f, 5f, 2f),
+            ModelTransform.NONE
+        );
+        final ModelPart root = TexturedModelData.of(data, 64, 64).createModel();
+        final float[] horse = EntityHeadGeometry.project(
+            List.of(root.getChild("head_parts")), "minecraft:horse", 0, 0
+        );
+        final float[] bounds = subjectBounds(horse);
+
+        assertTrue(horse.length > 0);
+        assertTrue(bounds[0] >= -0.001f, "muzzle escaped left edge: " + bounds[0]);
+        assertTrue(bounds[1] >= -0.001f, "ears escaped top edge: " + bounds[1]);
+        assertTrue(bounds[2] <= 32.001f, "muzzle escaped right edge: " + bounds[2]);
+        assertTrue(bounds[3] <= 32.001f, "ears escaped bottom edge: " + bounds[3]);
+    }
+
+    @Test
+    void llamaUpperFramingRemovesNeckButKeepsFaceDetails() {
+        final ModelData data = new ModelData();
+        final var head = data.getRoot().addChild(
+            "head",
+            ModelPartBuilder.create().uv(0, 0).cuboid(-4f, -4f, -4f, 8f, 8f, 8f),
+            ModelTransform.NONE
+        );
+        head.addChild(
+            "muzzle",
+            ModelPartBuilder.create().uv(0, 0).cuboid(-3f, -2f, -8f, 6f, 4f, 5f),
+            ModelTransform.NONE
+        );
+        head.addChild(
+            "ear",
+            ModelPartBuilder.create().uv(0, 0).cuboid(-3f, -8f, -1f, 2f, 5f, 2f),
+            ModelTransform.NONE
+        );
+        head.addChild(
+            "neck",
+            ModelPartBuilder.create().uv(0, 0).cuboid(-3f, 4f, -2f, 6f, 16f, 4f),
+            ModelTransform.NONE
+        );
+        final ModelPart root = TexturedModelData.of(data, 64, 64).createModel();
+        final List<ModelPart> selected = List.of(root.getChild("head"));
+        final float[] llama = EntityHeadGeometry.project(
+            selected, "minecraft:llama", 0, 0
+        );
+        final float[] complete = EntityHeadGeometry.project(
+            selected, "minecraft:horse", 0, 0
+        );
+
+        assertTrue(llama.length > 0);
+        assertTrue(llama.length < complete.length, "the lower neck must not be rendered");
+        final float[] bounds = subjectBounds(llama);
+        assertTrue(bounds[0] >= -0.001f);
+        assertTrue(bounds[1] >= -0.001f);
+        assertTrue(bounds[2] <= 32.001f);
+        assertTrue(bounds[3] <= 32.001f);
     }
 
     //#if MC>=11900

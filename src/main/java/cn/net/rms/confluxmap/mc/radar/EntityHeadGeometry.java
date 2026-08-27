@@ -83,6 +83,10 @@ final class EntityHeadGeometry {
             return maxZ - minZ;
         }
 
+        float centerY() {
+            return (minY + maxY) / 2f;
+        }
+
         float dominance() {
             // The two thinnest dimensions describe a cuboid's compact cross-section. A long horn
             // therefore stays subordinate, and a zero-depth tendril plane cannot tie a solid head.
@@ -160,21 +164,31 @@ final class EntityHeadGeometry {
             return new float[0];
         }
         final List<RawCuboid> cuboids = new ArrayList<>();
-        final double yawRadians = Math.toRadians(PortraitLayout.viewYawDegrees(entityType));
+        final PortraitLayout.Profile profile = PortraitLayout.profile(entityType);
+        final double yawRadians = Math.toRadians(profile.yawDegrees());
         final float yawCos = (float) Math.cos(yawRadians);
         final float yawSin = (float) Math.sin(yawRadians);
+        final double pitchRadians = Math.toRadians(profile.pitchDegrees());
+        final float pitchCos = (float) Math.cos(pitchRadians);
+        final float pitchSin = (float) Math.sin(pitchRadians);
+        final boolean resetPartRotation = profile.resetPartRotation();
         for (final ModelPart part : parts) {
             final MatrixStack matrices = new MatrixStack();
-            final float pitch = part.pitch;
-            final float yaw = part.yaw;
-            final float roll = part.roll;
-            // Keep the neutral pose chosen by the species model. In particular, horse-like
-            // models pitch their long muzzle into a recognizable silhouette; flattening every
-            // axis makes that muzzle project as a vertical strip. Only discard residual head yaw.
-            part.setAngles(pitch, 0f, roll);
+            final float partPitch = part.pitch;
+            final float partYaw = part.yaw;
+            final float partRoll = part.roll;
+            // VoxelMap resets the selected head-group rotation before applying the portrait pose
+            // globally. Keep child transforms intact: the muzzle and ears live below this part.
+            part.setAngles(
+                resetPartRotation ? 0f : partPitch,
+                resetPartRotation ? 0f : partYaw,
+                resetPartRotation ? 0f : partRoll
+            );
             try {
                 part.forEachCuboid(matrices, (entry, path, index, cuboid) -> {
-                    final RawCuboid converted = readCuboid(entry, cuboid, yawCos, yawSin);
+                    final RawCuboid converted = readCuboid(
+                        entry, cuboid, pitchCos, pitchSin, yawCos, yawSin
+                    );
                     if (converted != null) {
                         cuboids.add(converted);
                     }
@@ -182,7 +196,7 @@ final class EntityHeadGeometry {
             } finally {
                 // Entity models are renderer-owned singletons; do not leak the portrait pose back
                 // into the next world render or another entity that shares this model.
-                part.setAngles(pitch, yaw, roll);
+                part.setAngles(partPitch, partYaw, partRoll);
             }
         }
         if (cuboids.isEmpty()) {
@@ -204,6 +218,17 @@ final class EntityHeadGeometry {
         if (!(largestDominance > 0f)) {
             return new float[0];
         }
+        final PortraitLayout.Framing framing = profile.framing();
+        float dominantBottom = Float.NEGATIVE_INFINITY;
+        for (final RawCuboid cuboid : cuboids) {
+            final float dominance = planarSubject
+                ? cuboid.bounds().projectedDominance()
+                : cuboid.bounds().dominance();
+            if (dominance >= largestDominance * DOMINANT_SCORE_RATIO) {
+                dominantBottom = Math.max(dominantBottom, cuboid.bounds().maxY());
+            }
+        }
+        final List<RawCuboid> subjectCuboids = new ArrayList<>();
         float subjectMinX = Float.POSITIVE_INFINITY;
         float subjectMinY = Float.POSITIVE_INFINITY;
         float subjectMaxX = Float.NEGATIVE_INFINITY;
@@ -212,9 +237,16 @@ final class EntityHeadGeometry {
             final float dominance = planarSubject
                 ? cuboid.bounds().projectedDominance()
                 : cuboid.bounds().dominance();
-            if (dominance < largestDominance * DOMINANT_SCORE_RATIO) {
+            final boolean dominant = dominance >= largestDominance * DOMINANT_SCORE_RATIO;
+            final boolean included = switch (framing) {
+                case COMPLETE -> true;
+                case UPPER_SILHOUETTE -> dominant || cuboid.bounds().centerY() < dominantBottom;
+                case DOMINANT -> dominant;
+            };
+            if (!included) {
                 continue;
             }
+            subjectCuboids.add(cuboid);
             subjectMinX = Math.min(subjectMinX, cuboid.bounds().minX());
             subjectMinY = Math.min(subjectMinY, cuboid.bounds().minY());
             subjectMaxX = Math.max(subjectMaxX, cuboid.bounds().maxX());
@@ -225,7 +257,10 @@ final class EntityHeadGeometry {
         if (!(width > 0f) || !(height > 0f)) {
             return new float[0];
         }
-        final List<RawQuad> quads = cuboids.stream().flatMap(cuboid -> cuboid.quads().stream())
+        final List<RawCuboid> drawnCuboids = framing == PortraitLayout.Framing.UPPER_SILHOUETTE
+            ? subjectCuboids
+            : cuboids;
+        final List<RawQuad> quads = drawnCuboids.stream().flatMap(cuboid -> cuboid.quads().stream())
             .sorted(Comparator.comparingDouble(RawQuad::depth).reversed())
             .toList();
         final PortraitLayout.Fit fit = PortraitLayout.fit(width, height, CELL_PX, CONTENT_PAD);
@@ -454,6 +489,8 @@ final class EntityHeadGeometry {
     private static RawCuboid readCuboid(
         final MatrixStack.Entry entry,
         final ModelPart.Cuboid cuboid,
+        final float pitchCos,
+        final float pitchSin,
         final float yawCos,
         final float yawSin
     ) {
@@ -472,7 +509,9 @@ final class EntityHeadGeometry {
             float depth = 0f;
             for (int i = 0; i < 4; i++) {
                 final Object vertex = Array.get(vertices, i);
-                final RawVertex raw = readVertex(entry, vertex, yawCos, yawSin);
+                final RawVertex raw = readVertex(
+                    entry, vertex, pitchCos, pitchSin, yawCos, yawSin
+                );
                 if (raw == null) {
                     converted.clear();
                     break;
@@ -509,6 +548,8 @@ final class EntityHeadGeometry {
     private static RawVertex readVertex(
         final MatrixStack.Entry entry,
         final Object vertex,
+        final float pitchCos,
+        final float pitchSin,
         final float yawCos,
         final float yawSin
     ) {
@@ -526,9 +567,11 @@ final class EntityHeadGeometry {
         //$$     direct.worldX(), direct.worldY(), direct.worldZ()
         //$$ ).mulPosition(entry.getPositionMatrix());
         //#endif
-        //$$ final float x = transformed.x * yawCos + transformed.z * yawSin;
-        //$$ final float z = -transformed.x * yawSin + transformed.z * yawCos;
-        //$$ return new RawVertex(x, transformed.y, z, direct.u(), direct.v());
+        //$$ final float y = transformed.y * pitchCos - transformed.z * pitchSin;
+        //$$ final float pitchedZ = transformed.y * pitchSin + transformed.z * pitchCos;
+        //$$ final float x = transformed.x * yawCos + pitchedZ * yawSin;
+        //$$ final float z = -transformed.x * yawSin + pitchedZ * yawCos;
+        //$$ return new RawVertex(x, y, z, direct.u(), direct.v());
         //#else
         Object position = null;
         final List<Float> scalars = new ArrayList<>(2);
@@ -557,9 +600,11 @@ final class EntityHeadGeometry {
         //$$ final Vector3f source = (Vector3f) position;
         //$$ final Vector3f transformed = new Vector3f(source).mul(1f / 16f)
         //$$     .mulPosition(entry.getPositionMatrix());
-        //$$ final float x = transformed.x * yawCos + transformed.z * yawSin;
-        //$$ final float z = -transformed.x * yawSin + transformed.z * yawCos;
-        //$$ return new RawVertex(x, transformed.y, z, scalars.get(0), scalars.get(1));
+        //$$ final float y = transformed.y * pitchCos - transformed.z * pitchSin;
+        //$$ final float pitchedZ = transformed.y * pitchSin + transformed.z * pitchCos;
+        //$$ final float x = transformed.x * yawCos + pitchedZ * yawSin;
+        //$$ final float z = -transformed.x * yawSin + pitchedZ * yawCos;
+        //$$ return new RawVertex(x, y, z, scalars.get(0), scalars.get(1));
         //#else
         if (!(position instanceof Vec3f)) {
             return null;
@@ -569,9 +614,11 @@ final class EntityHeadGeometry {
             source.getX() / 16f, source.getY() / 16f, source.getZ() / 16f, 1f
         );
         transformed.transform(entry.getModel());
-        final float x = transformed.getX() * yawCos + transformed.getZ() * yawSin;
-        final float z = -transformed.getX() * yawSin + transformed.getZ() * yawCos;
-        return new RawVertex(x, transformed.getY(), z, scalars.get(0), scalars.get(1));
+        final float y = transformed.getY() * pitchCos - transformed.getZ() * pitchSin;
+        final float pitchedZ = transformed.getY() * pitchSin + transformed.getZ() * pitchCos;
+        final float x = transformed.getX() * yawCos + pitchedZ * yawSin;
+        final float z = -transformed.getX() * yawSin + pitchedZ * yawCos;
+        return new RawVertex(x, y, z, scalars.get(0), scalars.get(1));
         //#endif
         //#endif
     }

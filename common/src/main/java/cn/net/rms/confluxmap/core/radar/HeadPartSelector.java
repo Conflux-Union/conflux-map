@@ -16,10 +16,13 @@ public final class HeadPartSelector {
     private static final Set<String> FULL_MODEL_TYPES = Set.of(
         "minecraft:cod", "minecraft:salmon", "minecraft:pufferfish",
         "minecraft:tropical_fish", "minecraft:slime", "minecraft:magma_cube",
-        "minecraft:ghast"
+        "minecraft:sulfur_cube"
     );
     private static final Set<String> VILLAGER_FACE_TYPES = Set.of(
         "minecraft:villager", "minecraft:zombie_villager", "minecraft:wandering_trader"
+    );
+    private static final Set<String> CAMEL_TYPES = Set.of(
+        "minecraft:camel", "minecraft:camel_husk"
     );
 
     private HeadPartSelector() {
@@ -47,6 +50,15 @@ public final class HeadPartSelector {
             final Set<String> heads = matching(paths, name -> name.equals("head") || name.endsWith("_head"));
             if (!heads.isEmpty()) {
                 return heads;
+            }
+        }
+        if (CAMEL_TYPES.contains(type)) {
+            // The hump is the camel's identifying silhouette. Vanilla keeps head, hump and tail
+            // below body while all four legs remain siblings, so this branch includes exactly the
+            // recognizable upper body without turning the portrait into a whole-mob thumbnail.
+            final String body = firstNamed(paths, "body");
+            if (body != null) {
+                return Set.of(body);
             }
         }
 

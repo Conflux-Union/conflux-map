@@ -154,13 +154,22 @@ coat/marking layers.
 > **Deviation (Conflux Map):** known vanilla mobs and their supported variants first use the
 > bundled 13×15 face sheet. Living entities without a bundled cell are baked lazily from the
 > current entity model into a persistent color atlas. Stable child names select the head group;
-> unfamiliar models fall back through body, cube, segments, and finally the model root. At most
+> unfamiliar models fall back through body, cube, and segments, then use the shaped marker rather
+> than silently turning into a whole-model thumbnail. At most
 > one missing portrait is baked per client tick, with the shaped category marker used until it is
 > ready or when a bake cannot be drawn. Dynamic portraits are tightly cropped to their projected
 > geometry, keep the model's aspect ratio, and scale their longest edge to the configured icon
 > size. Their optional outline expands the sampled alpha silhouette rather than framing its
 > rectangular bounds, so long fish stay wide without acquiring a black rectangular box;
-> horse-like long heads use a fixed three-quarter view while fish retain a side view. Bundled,
+> horse-family heads reset their local rotation, use a fixed −90° yaw / 35° pitch profile, and fit
+> their complete silhouette. Llamas use the same pose but discard cuboids below the dominant head,
+> matching VoxelMap's lower-neck trim without fixed image coordinates. Camels and camel husks use a direct side
+> profile and select vanilla's stable `body` branch, which contains the head, body, hump, and tail
+> while excluding all four legs. Rabbits keep their separately named ears and nose inside the crop.
+> Fish and turtles use a right-side view; parrots, nautiluses, and zombie nautiluses use a left-side
+> view; goats plus hoglin-family heads use their configured pitch. Happy-ghast portraits similarly
+> discard lower tentacle cuboids. VoxelMap-only scale factors are not applied after Conflux's tight
+> normalization because doing so would reduce atlas sampling resolution. Bundled,
 > dynamic and item icons render without a generated surrounding border. Entity faces remain direct
 > model/skin crops and can optionally receive a silhouette-following outline at draw time; the
 > outline applies to all face icons, with configurable enablement and thickness, and updates
