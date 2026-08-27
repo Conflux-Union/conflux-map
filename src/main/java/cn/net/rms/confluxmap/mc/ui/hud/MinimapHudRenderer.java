@@ -80,7 +80,7 @@ public final class MinimapHudRenderer {
     private static final int TEXT_COLOR = 0xFFFFFFFF;
     private static final int PLAYER_MARKER_COLOR = 0xFFFFFFFF;
     private static final float[] BLOCKS_PER_PIXEL = {0.5f, 1f, 2f, 4f};
-    private static final float PLAYER_MARKER_HALF_SIZE = 8f;
+    private static final float PLAYER_MARKER_BOUNDING_RADIUS = (float) Math.hypot(8f, 8f);
     /** Half of the ~7px-across VoxelMap-style diamond/cross marker (deliverable B). */
     private static final float WAYPOINT_MARKER_HALF_SIZE = 3.5f;
 
@@ -351,7 +351,7 @@ public final class MinimapHudRenderer {
         final float sin = (float) Math.sin(radians);
         float screenDx = dx * cos - dz * sin;
         float screenDy = dx * sin + dz * cos;
-        final float limit = size / 2f - PLAYER_MARKER_HALF_SIZE;
+        final float limit = playerMarkerEdgeLimit(size);
         if (config.minimapShape == ConfluxConfig.Shape.CIRCLE) {
             final float distance = (float) Math.sqrt(screenDx * screenDx + screenDy * screenDy);
             if (distance > limit) {
@@ -374,6 +374,10 @@ public final class MinimapHudRenderer {
                 : player.yawDegrees() + 180f,
             PLAYER_MARKER_COLOR
         );
+    }
+
+    static float playerMarkerEdgeLimit(final int size) {
+        return size / 2f - PLAYER_MARKER_BOUNDING_RADIUS;
     }
 
     private void drawPlayerTrail(
