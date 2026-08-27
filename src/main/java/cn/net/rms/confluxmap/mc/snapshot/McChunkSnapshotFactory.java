@@ -62,7 +62,7 @@ public final class McChunkSnapshotFactory {
      * Null if the chunk is not currently loaded. {@code pivotY} is only consulted for
      * layers using the cave-nether-layers.md §2 floor scan (ignored for SURFACE/END_SURFACE,
      * which keep using the world heightmap); see {@link cn.net.rms.confluxmap.mc.world.LayerSelector}
-     * for how callers derive it (debounced player Y, a slice's fixed Y, or the nether-roof pivot).
+     * for how callers derive it (debounced viewpoint Y, a slice's fixed Y, or the nether-roof pivot).
      */
     public ChunkSnapshot snapshot(final int chunkX, final int chunkZ, final MapLayer layer, final int pivotY, final long sessionToken) {
         final ClientWorld world = client.world;

@@ -284,7 +284,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
             () -> companionSession.seedFor(PredictionDimensions.OVERWORLD).isPresent(),
             this::refreshPredictionSource
         );
-        layerSelector = new LayerSelector(client, config);
+        layerSelector = new LayerSelector(client, config, gameBridge);
 
         chunkCapture = new ChunkCaptureService(
             client, config, mapWorlds, executors, tileService, predictionTileService,

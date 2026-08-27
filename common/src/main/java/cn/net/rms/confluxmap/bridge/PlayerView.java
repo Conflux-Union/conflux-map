@@ -7,6 +7,7 @@ public record PlayerView(
     double x,
     double y,
     double z,
+    double eyeY,
     float yawDegrees,
     DimensionId dimension
 ) {

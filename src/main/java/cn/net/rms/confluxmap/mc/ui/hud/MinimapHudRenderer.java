@@ -80,6 +80,7 @@ public final class MinimapHudRenderer {
     private static final int TEXT_COLOR = 0xFFFFFFFF;
     private static final int PLAYER_MARKER_COLOR = 0xFFFFFFFF;
     private static final float[] BLOCKS_PER_PIXEL = {0.5f, 1f, 2f, 4f};
+    private static final float PLAYER_MARKER_BOUNDING_RADIUS = (float) Math.hypot(8f, 8f);
     /** Half of the ~7px-across VoxelMap-style diamond/cross marker (deliverable B). */
     private static final float WAYPOINT_MARKER_HALF_SIZE = 3.5f;
 
@@ -322,17 +323,61 @@ public final class MinimapHudRenderer {
         drawRadar(draw, centerX, centerY, contentSize, mapAngle, player, tickDelta);
         drawCardinals(draw, centerX, centerY, contentSize, mapAngle);
         drawWaypointMarkers(draw, centerX, centerY, contentSize, mapAngle, player);
+        drawLocalPlayerMarker(matrices, player, centerX, centerY, contentSize, rotate, tickDelta);
+        drawInfoText(draw, player, x0, y0, size);
+    }
+
+    /** Draws the real player's position relative to the active map viewpoint. */
+    private void drawLocalPlayerMarker(
+        final MatrixStack matrices,
+        final PlayerView viewpoint,
+        final float centerX,
+        final float centerY,
+        final int size,
+        final boolean rotate,
+        final float tickDelta
+    ) {
+        final Optional<PlayerView> localPlayer = gameBridge.player(tickDelta);
+        if (localPlayer.isEmpty()) {
+            return;
+        }
+        final PlayerView player = localPlayer.get();
+        final float blocksPerPixel = BLOCKS_PER_PIXEL[config.minimapZoomIndex];
+        final float dx = (float) ((player.x() - viewpoint.x()) / blocksPerPixel);
+        final float dz = (float) ((player.z() - viewpoint.z()) / blocksPerPixel);
+        final float mapAngle = rotate ? 180f - viewpoint.yawDegrees() : 0f;
+        final double radians = Math.toRadians(mapAngle);
+        final float cos = (float) Math.cos(radians);
+        final float sin = (float) Math.sin(radians);
+        float screenDx = dx * cos - dz * sin;
+        float screenDy = dx * sin + dz * cos;
+        final float limit = playerMarkerEdgeLimit(size);
+        if (config.minimapShape == ConfluxConfig.Shape.CIRCLE) {
+            final float distance = (float) Math.sqrt(screenDx * screenDx + screenDy * screenDy);
+            if (distance > limit) {
+                screenDx *= limit / distance;
+                screenDy *= limit / distance;
+            }
+        } else {
+            screenDx = MathHelper.clamp(screenDx, -limit, limit);
+            screenDy = MathHelper.clamp(screenDy, -limit, limit);
+        }
         PlayerMarkerRenderer.draw(
             client,
             matrices,
             uiTheme,
             config.playerMarkerStyle,
-            centerX,
-            centerY,
-            rotate ? 0f : player.yawDegrees() + 180f,
+            centerX + screenDx,
+            centerY + screenDy,
+            rotate
+                ? player.yawDegrees() - viewpoint.yawDegrees()
+                : player.yawDegrees() + 180f,
             PLAYER_MARKER_COLOR
         );
-        drawInfoText(draw, player, x0, y0, size);
+    }
+
+    static float playerMarkerEdgeLimit(final int size) {
+        return size / 2f - PLAYER_MARKER_BOUNDING_RADIUS;
     }
 
     private void drawPlayerTrail(
