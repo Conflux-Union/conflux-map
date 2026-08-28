@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
 class ConfigScreenRadarPolicyTest {
@@ -26,5 +29,27 @@ class ConfigScreenRadarPolicyTest {
         assertFalse(access.controlsActive());
         assertEquals("confluxmap.screen.config.radar.disabled_by_server", access.noticeKey());
         assertEquals("confluxmap.screen.config.radar.disabled_by_server", access.tooltipKey());
+    }
+
+    @Test
+    void radarSettingsDoNotExposeRetiredIconAndMergeToggles() throws IOException {
+        final String screen = Files.readString(findProjectRoot().resolve(
+            "src/main/java/cn/net/rms/confluxmap/mc/ui/screen/ConfigScreen.java"
+        ));
+
+        assertFalse(screen.contains("confluxmap.config.radar.icons_enabled"));
+        assertFalse(screen.contains("confluxmap.config.radar.merge_enabled"));
+    }
+
+    private static Path findProjectRoot() {
+        Path current = Path.of("").toAbsolutePath().normalize();
+        while (current != null) {
+            if (Files.isRegularFile(current.resolve("common.gradle"))
+                && Files.isDirectory(current.resolve("src/main/java"))) {
+                return current;
+            }
+            current = current.getParent();
+        }
+        throw new IllegalStateException("Could not locate the Conflux Map project root");
     }
 }

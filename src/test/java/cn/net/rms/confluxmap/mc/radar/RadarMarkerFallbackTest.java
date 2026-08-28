@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.radar;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -24,6 +25,29 @@ final class RadarMarkerFallbackTest {
         assertTrue(renderer.matches(
             "(?s).*if \\(!iconManager\\.bindDynamicColor\\(\\)\\) \\{\\s+return false;.*"
         ));
+    }
+
+    @Test
+    void compactFallbackUsesOneDiamondShapeForEveryNonPlayerCategory() throws IOException {
+        final Path root = findProjectRoot();
+        final String renderer = Files.readString(root.resolve(
+            "src/main/java/cn/net/rms/confluxmap/mc/radar/RadarMarkerRenderer.java"
+        ));
+        final String renderUtil = Files.readString(root.resolve(
+            "src/main/java/cn/net/rms/confluxmap/mc/render/RenderUtil.java"
+        ));
+
+        assertTrue(renderer.contains("private static final float DIAMOND_RADIUS = 2f;"));
+        assertTrue(renderer.contains(
+            "RenderUtil.fillBeveledDiamond(matrices, x, y, DIAMOND_RADIUS, color);"
+        ));
+        assertTrue(renderUtil.contains("public static void fillBeveledDiamond("));
+        assertTrue(renderUtil.contains("final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS"));
+        assertFalse(renderer.contains("RenderUtil.fillDiamond("));
+        assertFalse(renderer.contains(
+            "RenderUtil.fillTriangle(matrices, x, y - 3.5f"
+        ));
+        assertFalse(renderer.contains("RenderUtil.drawRing(matrices, x, y, 2.5f"));
     }
 
     private static Path findProjectRoot() {

@@ -22,8 +22,7 @@ class EntityRadarScannerPolicyTest {
     void forbiddenPolicyHidesAnAlreadyPublishedSnapshot() {
         final List<RadarEntry> current = List.of(
             new RadarEntry(
-                12.0, -4.0, 0, RadarCategory.PLAYER,
-                "minecraft:player", "Player", 7, false
+                12.0, -4.0, 0, RadarCategory.PLAYER, "Alex", 7, false
             )
         );
 

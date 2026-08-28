@@ -14,7 +14,6 @@ import cn.net.rms.confluxmap.core.config.MinimapPlacement;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
-import cn.net.rms.confluxmap.core.radar.RadarCategory;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.tile.TileService;
@@ -532,8 +531,10 @@ public final class MinimapHudRenderer {
     }
 
     /**
-     * Draws one dot per {@link RadarEntry} in {@link #radarScanner}'s latest snapshot. Positions
-     * use the same world-delta * pxPerBlock projection as {@link #drawTiles}, but — like
+     * Draws each {@link RadarEntry} in {@link #radarScanner}'s latest snapshot. Players keep
+     * their portraits; holding the player-list key expands the other colored diamond markers
+     * into portraits or item icons. Positions use the same world-delta * pxPerBlock projection
+     * as {@link #drawTiles}, but — like
      * {@link #drawCardinals}/{@link #drawCardinal} — rotate the offset by {@code mapAngle}
      * explicitly and draw the marker shape unrotated afterward, so markers stay upright
      * regardless of the minimap's current rotation.
@@ -557,11 +558,11 @@ public final class MinimapHudRenderer {
         final float cos = (float) Math.cos(rad);
         final float sin = (float) Math.sin(rad);
         final List<RadarMarkerRenderer.Marker> markers = new ArrayList<>();
-        final boolean showPlayers = MinecraftAccess.isPlayerListKeyPressed(client);
+        final boolean playerListPressed = MinecraftAccess.isPlayerListKeyPressed(client);
+        final RadarMarkerRenderer.Presentation presentation = playerListPressed
+            ? RadarMarkerRenderer.Presentation.detailed(config.radarShowPlayerNames)
+            : RadarMarkerRenderer.Presentation.compact();
         for (final RadarEntry entry : radarScanner.snapshot()) {
-            if (!showPlayers && entry.category() == RadarCategory.PLAYER) {
-                continue;
-            }
             double ex = entry.x();
             double ez = entry.z();
             int yDelta = entry.yDelta();
@@ -583,7 +584,9 @@ public final class MinimapHudRenderer {
             final float y = centerY + dirX * sin + dirY * cos;
             markers.add(new RadarMarkerRenderer.Marker(entry, x, y, yDelta, live));
         }
-        RadarMarkerRenderer.drawAll(draw, client, config, iconManager, markers);
+        RadarMarkerRenderer.drawAll(
+            draw, client, config, iconManager, markers, presentation
+        );
     }
 
     /** Cardinal letters sit on the (possibly rotated) compass ring but are always drawn upright. */

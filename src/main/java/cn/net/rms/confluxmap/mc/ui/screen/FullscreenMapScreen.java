@@ -3407,11 +3407,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     /**
      * Radar entries above the map tiles but below waypoint markers (see {@link #render}), reusing
-     * {@link RadarMarkerRenderer} - the exact same icon/dot drawing {@code MinimapHudRenderer} uses,
-     * so both surfaces look identical. Always north-up (this screen never rotates), and positions
-     * use the same live-interpolated-position-over-scan-snapshot preference as the minimap (see
+     * {@link RadarMarkerRenderer} in detailed mode while the minimap normally uses compact markers.
+     * Always north-up (this screen never rotates), and positions use the same
+     * live-interpolated-position-over-scan-snapshot preference as the minimap (see
      * {@code MinimapHudRenderer#drawRadar}'s javadoc). Category toggles and {@code radarEnabled}
-     * already apply upstream in the scanner, so no extra filtering happens here beyond viewport culling.
+     * already apply upstream in the scanner, so no extra filtering happens here beyond viewport
+     * culling.
      */
     private void drawRadar(final GuiDraw draw, final float tickDelta) {
         if (!viewingLiveSession() || this.client.world == null) {
@@ -3445,6 +3446,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
         RadarMarkerRenderer.drawAll(
             draw, this.client, config, radarIconManager, markers,
+            RadarMarkerRenderer.Presentation.detailed(config.radarShowPlayerNames),
             marker -> !radarMarkerIntersectsUi(marker)
         );
     }

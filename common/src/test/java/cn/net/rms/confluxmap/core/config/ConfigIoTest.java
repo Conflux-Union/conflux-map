@@ -97,7 +97,12 @@ class ConfigIoTest {
     @Test
     void loadFillsMissingFieldsAndRewritesFile(@TempDir final Path tmp) throws IOException {
         final Path file = tmp.resolve("config.json");
-        Files.writeString(file, "{\"schemaVersion\":1,\"minimapSize\":300}", StandardCharsets.UTF_8);
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":7,\"minimapSize\":300,"
+                + "\"radarIconsEnabled\":false,\"radarMergeEnabled\":false}",
+            StandardCharsets.UTF_8
+        );
 
         final ConfluxConfig loaded = new ConfigIo(file, LOGGER).load();
 
@@ -114,7 +119,6 @@ class ConfigIoTest {
         assertEquals(new ConfluxConfig().chunkLoadDetailMode, loaded.chunkLoadDetailMode);
         assertEquals(MapColorStyle.CONFLUX, loaded.mapColorStyle);
         assertEquals(ConfluxConfig.DEFAULT_RADAR_ICON_SIZE, loaded.radarIconSize);
-        assertTrue(loaded.radarMergeEnabled);
         assertTrue(loaded.radarPlayerIconOutlineEnabled);
         assertEquals(ConfluxConfig.DEFAULT_RADAR_ICON_OUTLINE_THICKNESS,
             loaded.radarIconOutlineThickness);
@@ -150,7 +154,8 @@ class ConfigIoTest {
         assertTrue(rewritten.contains("\"chunkLoadDetailMode\""));
         assertTrue(rewritten.contains("\"mapColorStyle\""));
         assertTrue(rewritten.contains("\"radarIconSize\""));
-        assertTrue(rewritten.contains("\"radarMergeEnabled\""));
+        assertFalse(rewritten.contains("\"radarIconsEnabled\""));
+        assertFalse(rewritten.contains("\"radarMergeEnabled\""));
         assertTrue(rewritten.contains("\"radarPlayerIconOutlineEnabled\""));
         assertTrue(rewritten.contains("\"radarIconOutlineThickness\""));
         assertTrue(rewritten.contains("\"playerTrailEnabled\""));

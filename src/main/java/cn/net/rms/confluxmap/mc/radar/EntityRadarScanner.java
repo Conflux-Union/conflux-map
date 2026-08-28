@@ -1,6 +1,5 @@
 package cn.net.rms.confluxmap.mc.radar;
 
-import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.radar.RadarCategory;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
@@ -34,8 +33,8 @@ import net.minecraft.entity.player.PlayerEntity;
  * killer-rabbit-variant special case, and an "Angerable" trait checked against the local
  * player's UUID) used for the actual radar, plus a separate coarser
  * {@link net.minecraft.entity.SpawnGroup}-based classifier used only for VoxelMap's
- * per-species management dialog. M1 has no per-species dialog and no icon system, so this
- * scanner uses a coarser classifier: players stay separate, {@link MobEntity mobs} in
+ * per-species management dialog. Conflux Map has no per-species dialog, so this scanner uses a
+ * coarser classifier: players stay separate, {@link MobEntity mobs} in
  * {@link SpawnGroup#MONSTER} become {@link RadarCategory#HOSTILE}, all remaining mobs become
  * {@link RadarCategory#PASSIVE}, and non-mob entities become {@link RadarCategory#OTHER}. This is
  * simpler and
@@ -180,11 +179,9 @@ public final class EntityRadarScanner {
             }
 
             final RadarCategory category = classify(entity);
-            final String entityType = Regs.entityTypeId(entity.getType()).toString();
             final String name = category == RadarCategory.PLAYER ? entity.getName().getString() : null;
             raw.add(new RadarEntry(
-                entity.getX(), entity.getZ(), yDelta, category, entityType,
-                name, entity.getId(), spectator
+                entity.getX(), entity.getZ(), yDelta, category, name, entity.getId(), spectator
             ));
         }
 

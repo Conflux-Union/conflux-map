@@ -682,6 +682,116 @@ public final class RenderUtil {
     }
 
     /**
+     * Small pixel-style diamond with a top-left highlight, lower-right shading, and a restrained
+     * drop shadow. Every layer is appended to one mesh so dense radar views still issue one draw.
+     */
+    public static void fillBeveledDiamond(
+        final MatrixStack matrices,
+        final float centerX,
+        final float centerY,
+        final float radius,
+        final int argbColor
+    ) {
+        //#if MC<12105
+        useColorShader();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        //#endif
+        final var model = matrices.peek().getModel();
+        final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, VertexFormats.POSITION_COLOR);
+        final int dropShadow = Argb.scaleAlpha(
+            0xA0000000, Argb.alpha(argbColor) / 255f
+        );
+        appendDiamond(
+            mesh, model, centerX + 0.5f, centerY + 0.5f,
+            Math.max(0f, radius - 0.25f), dropShadow
+        );
+        final int topLeft = Argb.blendOver(argbColor, 0x70FFFFFF);
+        final int topRight = Argb.blendOver(argbColor, 0x28FFFFFF);
+        final int bottomRight = Argb.scale(argbColor, 0.5f);
+        final int bottomLeft = Argb.scale(argbColor, 0.72f);
+        appendTriangleQuad(
+            mesh, model,
+            centerX, centerY - radius,
+            centerX - radius, centerY,
+            centerX, centerY,
+            topLeft
+        );
+        appendTriangleQuad(
+            mesh, model,
+            centerX, centerY - radius,
+            centerX, centerY,
+            centerX + radius, centerY,
+            topRight
+        );
+        appendTriangleQuad(
+            mesh, model,
+            centerX, centerY + radius,
+            centerX + radius, centerY,
+            centerX, centerY,
+            bottomRight
+        );
+        appendTriangleQuad(
+            mesh, model,
+            centerX, centerY + radius,
+            centerX, centerY,
+            centerX - radius, centerY,
+            bottomLeft
+        );
+        //#if MC>=12105
+        //$$ mesh.drawGui(RenderPipelines.GUI);
+        //#else
+        mesh.draw();
+        //#endif
+    }
+
+    private static void appendDiamond(
+        final Mesh mesh,
+        final Matrix4f model,
+        final float centerX,
+        final float centerY,
+        final float radius,
+        final int argbColor
+    ) {
+        appendColoredVertex(mesh, model, centerX, centerY + radius, argbColor);
+        appendColoredVertex(mesh, model, centerX + radius, centerY, argbColor);
+        appendColoredVertex(mesh, model, centerX, centerY - radius, argbColor);
+        appendColoredVertex(mesh, model, centerX - radius, centerY, argbColor);
+    }
+
+    private static void appendTriangleQuad(
+        final Mesh mesh,
+        final Matrix4f model,
+        final float x0,
+        final float y0,
+        final float x1,
+        final float y1,
+        final float x2,
+        final float y2,
+        final int argbColor
+    ) {
+        appendColoredVertex(mesh, model, x0, y0, argbColor);
+        appendColoredVertex(mesh, model, x1, y1, argbColor);
+        appendColoredVertex(mesh, model, x2, y2, argbColor);
+        appendColoredVertex(mesh, model, x2, y2, argbColor);
+    }
+
+    private static void appendColoredVertex(
+        final Mesh mesh,
+        final Matrix4f model,
+        final float x,
+        final float y,
+        final int argbColor
+    ) {
+        mesh.vertex(model, x, y, 0).color(
+            Argb.red(argbColor) / 255f,
+            Argb.green(argbColor) / 255f,
+            Argb.blue(argbColor) / 255f,
+            Argb.alpha(argbColor) / 255f
+        ).next();
+    }
+
+    /**
      * Textured disk sampling an {@link OffscreenCanvas}: rim UVs walk the unit circle
      * around (0.5, 0.5), V flipped because FBO row 0 is the bottom. The currently bound
      * texture must be the canvas contents; call between {@link #beginTexturedQuads()} and

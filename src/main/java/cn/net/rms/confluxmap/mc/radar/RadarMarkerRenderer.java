@@ -3,11 +3,9 @@ package cn.net.rms.confluxmap.mc.radar;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.radar.RadarCategory;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
-import cn.net.rms.confluxmap.core.radar.RadarMarkerClusterer;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
 import net.minecraft.client.MinecraftClient;
@@ -22,9 +20,10 @@ import net.minecraft.item.Items;
 import net.minecraft.item.ItemStack;
 
 /**
- * Draws already-projected radar markers (entity head/item icon or shaped-dot fallback,
- * plus optional player name labels and overlap counts), shared by {@code MinimapHudRenderer} and
- * {@code FullscreenMapScreen} so both surfaces render radar entries identically. Its visual rules
+ * Draws already-projected radar markers (entity head/item icon or diamond fallback,
+ * plus optional player name labels), shared by {@code MinimapHudRenderer} and
+ * {@code FullscreenMapScreen} so both surfaces share the same marker visuals while choosing
+ * player-name visibility independently. Its visual rules
  * evolved from {@code MinimapHudRenderer}'s original radar-marker drawing - see
  * docs/reference-specs/radar-icons.md secs 2-3 for the VoxelMap-style look this reproduces. All
  * item icons intentionally render without a generated border; entity portraits have an
@@ -37,9 +36,8 @@ public final class RadarMarkerRenderer {
     private static final int OTHER_COLOR = 0xFFA0A0A0;
     private static final int VERTICAL_WINDOW = 32;
 
-    private static final int STACK_BADGE_BACKGROUND = 0xD0000000;
-    private static final int STACK_BADGE_TEXT = 0xFFFFFFFF;
     private static final int ICON_OUTLINE = 0xD0000000;
+    private static final float DIAMOND_RADIUS = 2f;
     /** No elevation treatment inside this band - nearby mobs always render fully readable. */
     private static final int DEADZONE = 8;
     private static final int TEXT_COLOR = 0xFFFFFFFF;
@@ -59,16 +57,29 @@ public final class RadarMarkerRenderer {
     ) {
     }
 
-    private record DrawResult(float halfWidth, float halfHeight) {
+    /** Surface-selected marker detail level and player-name visibility. */
+    public record Presentation(boolean detailedIcons, boolean showPlayerNames) {
+        private static final Presentation COMPACT = new Presentation(false, false);
+        private static final Presentation DETAILED = new Presentation(true, false);
+        private static final Presentation DETAILED_WITH_NAMES = new Presentation(true, true);
+
+        public static Presentation compact() {
+            return COMPACT;
+        }
+
+        public static Presentation detailed(final boolean showPlayerNames) {
+            return showPlayerNames ? DETAILED_WITH_NAMES : DETAILED;
+        }
     }
 
     /**
-     * Clusters matching non-player icons, moves the remaining overlapping icons apart, then draws
-     * an entity head icon or the entity's normal in-game item icon when available, falling back to
-     * the original shaped dot otherwise. Dropped and flying items use their live stack; other
-     * targets use the same item form as creative pick-block where vanilla exposes one.
+     * Draws each marker at its projected position. Detailed mode uses an entity head or the
+     * entity's normal in-game item icon when available, while compact mode keeps player portraits
+     * and renders every other category as a colored diamond. Dropped and flying items use their
+     * live stack; other targets use the same item form as creative pick-block where vanilla
+     * exposes one.
      *
-     * <p>Spectator-mode entries render every element (icon, dot, name) at
+     * <p>Spectator-mode entries render every element (icon, marker, name) at
      * {@link #SPECTATOR_ALPHA} of its normal alpha, on top of any elevation fading.
      *
      * @param markers visible markers with screen-space positions already projected by the caller
@@ -78,9 +89,10 @@ public final class RadarMarkerRenderer {
         final MinecraftClient client,
         final ConfluxConfig config,
         final EntityIconManager iconManager,
-        final List<Marker> markers
+        final List<Marker> markers,
+        final Presentation presentation
     ) {
-        drawAll(draw, client, config, iconManager, markers, marker -> true);
+        drawAll(draw, client, config, iconManager, markers, presentation, marker -> true);
     }
 
     /** Draws radar markers while allowing a screen to suppress markers covered by a modal overlay. */
@@ -90,71 +102,23 @@ public final class RadarMarkerRenderer {
         final ConfluxConfig config,
         final EntityIconManager iconManager,
         final List<Marker> markers,
+        final Presentation presentation,
         final Predicate<Marker> visible
     ) {
-        if (markers.isEmpty()) {
-            return;
-        }
-        if (!config.radarIconsEnabled || markers.size() == 1) {
-            for (final Marker marker : markers) {
-                if (visible.test(marker)) {
-                    drawMarker(draw, client, config, iconManager, marker);
-                }
-            }
-            return;
-        }
-
-        final List<RadarMarkerClusterer.Candidate> candidates = new ArrayList<>(markers.size());
-        for (int i = 0; i < markers.size(); i++) {
-            final Marker marker = markers.get(i);
-            Object mergeKey = marker.entry().entityType();
-            if (marker.entry().category() == RadarCategory.OTHER && marker.live() != null) {
-                final ItemStack itemIcon = itemIconFor(marker.live());
-                if (!itemIcon.isEmpty()) {
-                    mergeKey = itemIcon.getItem();
-                }
-            }
-            candidates.add(new RadarMarkerClusterer.Candidate(
-                i, marker.x(), marker.y(), marker.entry().category(),
-                mergeKey, marker.entry().entityId()
-            ));
-        }
-        for (final RadarMarkerClusterer.Cluster cluster : clusterCandidates(candidates, config)) {
-            final Marker marker = markers.get(cluster.representativeIndex());
-            final Marker positioned = new Marker(
-                marker.entry(), cluster.x(), cluster.y(), marker.yDelta(), marker.live()
-            );
-            if (!visible.test(positioned)) {
-                continue;
-            }
-            final DrawResult result = drawMarker(
-                draw, client, config, iconManager, positioned
-            );
-            if (cluster.count() > 1) {
-                drawStackCount(
-                    draw, client, positioned.x(), positioned.y(),
-                    result.halfWidth(), result.halfHeight(),
-                    config.radarIconSize, cluster.count(), positioned.entry().spectator()
-                );
+        for (final Marker marker : markers) {
+            if (visible.test(marker)) {
+                drawMarker(draw, client, config, iconManager, marker, presentation);
             }
         }
     }
 
-    static List<RadarMarkerClusterer.Cluster> clusterCandidates(
-        final List<RadarMarkerClusterer.Candidate> candidates,
-        final ConfluxConfig config
-    ) {
-        return RadarMarkerClusterer.cluster(
-            candidates, config.radarIconSize, config.radarMergeEnabled
-        );
-    }
-
-    private static DrawResult drawMarker(
+    private static void drawMarker(
         final GuiDraw draw,
         final MinecraftClient client,
         final ConfluxConfig config,
         final EntityIconManager iconManager,
-        final Marker marker
+        final Marker marker,
+        final Presentation presentation
     ) {
         final RadarEntry entry = marker.entry();
         final float x = marker.x();
@@ -163,13 +127,13 @@ public final class RadarMarkerRenderer {
         final Entity live = marker.live();
         final MatrixStack matrices = draw.matrices();
         final float alphaScale = entry.spectator() ? SPECTATOR_ALPHA : 1f;
-        if (config.radarIconsEnabled && live != null) {
+        if (usesDetailedIcon(entry.category(), presentation) && live != null) {
             final ItemStack itemIcon = entry.category() == RadarCategory.OTHER
                 ? itemIconFor(live)
                 : ItemStack.EMPTY;
             if (!itemIcon.isEmpty()) {
                 draw.drawItemIcon(client, itemIcon, x, y, config.radarIconSize);
-                return new DrawResult(config.radarIconSize / 2f, config.radarIconSize / 2f);
+                return;
             }
             final EntityIconManager.FaceIcon icon = iconManager.iconFor(live);
             if (icon != null && drawIcon(
@@ -177,37 +141,33 @@ public final class RadarMarkerRenderer {
                 yDelta, alphaScale,
                 config.radarPlayerIconOutlineEnabled ? config.radarIconOutlineThickness : 0
                 )) {
-                if (config.radarShowPlayerNames && entry.category() == RadarCategory.PLAYER && entry.name() != null) {
+                if (presentation.showPlayerNames()
+                    && entry.category() == RadarCategory.PLAYER
+                    && entry.name() != null) {
                     drawCenteredLine(
                         client, draw, entry.name(), x,
                         y + config.radarIconSize * icon.heightScale() / 2f + 2f, alphaScale
                     );
                 }
-                return new DrawResult(
-                    config.radarIconSize * icon.widthScale() / 2f,
-                    config.radarIconSize * icon.heightScale() / 2f
-                );
+                return;
             }
         }
         final int color = Argb.scaleAlpha(elevationColor(baseColor(entry.category()), yDelta), alphaScale);
-        switch (entry.category()) {
-            case PLAYER:
-                RenderUtil.fillRect(matrices, x - 2f, y - 2f, 4f, 4f, color);
-                if (config.radarShowPlayerNames && entry.name() != null) {
-                    drawCenteredLine(client, draw, entry.name(), x, y + 3f, alphaScale);
-                }
-                break;
-            case HOSTILE:
-                RenderUtil.fillTriangle(matrices, x, y - 3.5f, x - 3f, y + 2.5f, x + 3f, y + 2.5f, color);
-                break;
-            case PASSIVE:
-                RenderUtil.drawRing(matrices, x, y, 2.5f, 2.5f, color);
-                break;
-            default:
-                RenderUtil.fillRect(matrices, x - 1.5f, y - 1.5f, 3f, 3f, color);
-                break;
+        if (entry.category() == RadarCategory.PLAYER) {
+            RenderUtil.fillRect(matrices, x - 2f, y - 2f, 4f, 4f, color);
+            if (presentation.showPlayerNames() && entry.name() != null) {
+                drawCenteredLine(client, draw, entry.name(), x, y + 3f, alphaScale);
+            }
+        } else {
+            RenderUtil.fillBeveledDiamond(matrices, x, y, DIAMOND_RADIUS, color);
         }
-        return new DrawResult(2.5f, 2.5f);
+    }
+
+    static boolean usesDetailedIcon(
+        final RadarCategory category,
+        final Presentation presentation
+    ) {
+        return category == RadarCategory.PLAYER || presentation.detailedIcons();
     }
 
     private static ItemStack itemIconFor(final Entity entity) {
@@ -247,7 +207,7 @@ public final class RadarMarkerRenderer {
     }
 
     /**
-     * Draws the portrait with the same elevation and spectator alpha as dot markers.
+     * Draws the portrait with the same elevation and spectator alpha as compact markers.
      *
      * @return false when the portrait could not be bound, so the caller still draws its dot
      */
@@ -314,41 +274,6 @@ public final class RadarMarkerRenderer {
             iconWidth, iconHeight,
             icon.u0(), icon.v0(), icon.u1(), icon.v1(), thickness, color
         );
-    }
-
-    /** Draws a compact count plate centered on the representative marker's bottom-right corner. */
-    private static void drawStackCount(
-        final GuiDraw draw,
-        final MinecraftClient client,
-        final float x,
-        final float y,
-        final float markerHalfWidth,
-        final float markerHalfHeight,
-        final float iconSize,
-        final int count,
-        final boolean spectator
-    ) {
-        final String text = Integer.toString(count);
-        final float alphaScale = spectator ? SPECTATOR_ALPHA : 1f;
-        final float textScale = Math.max(0.4f, Math.min(0.65f, iconSize / 16f));
-        final int textWidth = client.textRenderer.getWidth(text);
-        final float badgeWidth = textWidth * textScale + 2f;
-        final float badgeHeight = client.textRenderer.fontHeight * textScale + 1f;
-        final float centerX = x + markerHalfWidth - 0.5f;
-        final float centerY = y + markerHalfHeight - 0.5f;
-        final float left = centerX - badgeWidth / 2f;
-        final float top = centerY - badgeHeight / 2f;
-        RenderUtil.fillRect(
-            draw.matrices(), left, top, badgeWidth, badgeHeight,
-            Argb.scaleAlpha(STACK_BADGE_BACKGROUND, alphaScale)
-        );
-        draw.matrices().push();
-        draw.matrices().translate(left + 1f, top + 0.5f, 0f);
-        draw.matrices().scale(textScale, textScale, 1f);
-        draw.drawTextWithShadow(
-            client.textRenderer, text, 0f, 0f, Argb.scaleAlpha(STACK_BADGE_TEXT, alphaScale)
-        );
-        draw.matrices().pop();
     }
 
     private static int baseColor(final RadarCategory category) {

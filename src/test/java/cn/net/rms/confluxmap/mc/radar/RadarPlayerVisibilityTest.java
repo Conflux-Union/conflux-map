@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 
 final class RadarPlayerVisibilityTest {
     @Test
-    void onlyMinimapPlayerMarkersRequireTheHeldPlayerListKey() throws IOException {
+    void minimapAlwaysShowsPlayersButOnlyRevealsNamesWhilePlayerListKeyIsHeld() throws IOException {
         final Path root = findProjectRoot();
         final String minimap = Files.readString(root.resolve(
             "src/main/java/cn/net/rms/confluxmap/mc/ui/hud/MinimapHudRenderer.java"
@@ -25,9 +25,22 @@ final class RadarPlayerVisibilityTest {
             "if (!showPlayers && entry.category() == RadarCategory.PLAYER)";
 
         assertTrue(minimap.contains(
-            "final boolean showPlayers = MinecraftAccess.isPlayerListKeyPressed(client);"
+            "final boolean playerListPressed = MinecraftAccess.isPlayerListKeyPressed(client);"
         ));
-        assertTrue(minimap.contains(playerFilter));
+        assertTrue(minimap.contains(
+            "final RadarMarkerRenderer.Presentation presentation = playerListPressed\n"
+                + "            ? RadarMarkerRenderer.Presentation.detailed(config.radarShowPlayerNames)\n"
+                + "            : RadarMarkerRenderer.Presentation.compact();"
+        ));
+        assertFalse(minimap.contains(playerFilter));
+        assertTrue(minimap.contains(
+            "RadarMarkerRenderer.drawAll(\n"
+                + "            draw, client, config, iconManager, markers, presentation\n"
+                + "        );"
+        ));
+        assertTrue(renderer.contains(
+            "return category == RadarCategory.PLAYER || presentation.detailedIcons();"
+        ));
         assertFalse(fullscreen.contains("MinecraftAccess.isPlayerListKeyPressed(client)"));
         assertFalse(renderer.contains("MinecraftAccess.isPlayerListKeyPressed(client)"));
     }

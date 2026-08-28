@@ -26,19 +26,6 @@ final class ConfluxConfigTest {
     }
 
     @Test
-    void radarMarkerMergingIsEnabledByDefault() {
-        assertTrue(new ConfluxConfig().radarMergeEnabled);
-    }
-
-    @Test
-    void radarMarkerMergeChoiceSurvivesConfigCopy() {
-        final ConfluxConfig config = new ConfluxConfig();
-        config.radarMergeEnabled = false;
-
-        assertFalse(config.copy().radarMergeEnabled);
-    }
-
-    @Test
     void unsupportedPlatformWarningDismissalSurvivesConfigCopy() {
         final ConfluxConfig config = new ConfluxConfig();
         assertFalse(config.unsupportedPlatformWarningDismissed);

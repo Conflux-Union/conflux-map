@@ -13,7 +13,7 @@ import cn.net.rms.confluxmap.core.util.TileMath;
  * {@link #SCHEMA_VERSION} and adding a migration in {@link ConfigIo}.
  */
 public final class ConfluxConfig {
-    public static final int SCHEMA_VERSION = 7;
+    public static final int SCHEMA_VERSION = 8;
     public static final String DEFAULT_TELEPORT_COMMAND = "tp {x} {y} {z}";
     public static final int DEFAULT_MINIMAP_SIZE = 90;
     public static final int MINIMAP_ZOOM_LEVEL_COUNT = 4;
@@ -140,14 +140,10 @@ public final class ConfluxConfig {
     public boolean radarShowOther = false;
     public boolean radarShowPlayerNames = true;
     public int radarMaxEntities = 100;
-    /** Entity head and item-form icons instead of plain shaped dots when an in-game icon is available. */
-    public boolean radarIconsEnabled = true;
     /** Draw an outline around radar portraits; retained name keeps older config files compatible. */
     public boolean radarPlayerIconOutlineEnabled = true;
     /** Radar portrait outline thickness in screen pixels; zero disables the outline. */
     public int radarIconOutlineThickness = DEFAULT_RADAR_ICON_OUTLINE_THICKNESS;
-    /** Merge overlapping markers of the same visible kind into a single counted marker. */
-    public boolean radarMergeEnabled = true;
     /** Screen-pixel size shared by entity faces and item-form radar icons. */
     public int radarIconSize = DEFAULT_RADAR_ICON_SIZE;
     /** 3-D straight-line blocks; 0 means "no cutoff" (see waypoint-ux.md S7). */
@@ -258,10 +254,8 @@ public final class ConfluxConfig {
         c.radarShowOther = radarShowOther;
         c.radarShowPlayerNames = radarShowPlayerNames;
         c.radarMaxEntities = radarMaxEntities;
-        c.radarIconsEnabled = radarIconsEnabled;
         c.radarPlayerIconOutlineEnabled = radarPlayerIconOutlineEnabled;
         c.radarIconOutlineThickness = radarIconOutlineThickness;
-        c.radarMergeEnabled = radarMergeEnabled;
         c.radarIconSize = radarIconSize;
         c.waypointRenderDistance = waypointRenderDistance;
         c.localWaypointsVisible = localWaypointsVisible;
