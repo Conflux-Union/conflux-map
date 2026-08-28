@@ -26,7 +26,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
+import org.lwjgl.glfw.GLFW;
 
 /** Loaded only after Fabric Loader confirms that MaliLib is present. */
 final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
@@ -64,7 +66,12 @@ final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
         IKeybind detectedOpenMapKeybind = null;
         for (final KeybindAction action : KeybindAction.values()) {
             final ConfigHotkey hotkey = MaliLibHotkeyFactory.create(action);
-            hotkey.getKeybind().setCallback((keyAction, keybind) -> actionHandler.trigger(action));
+            hotkey.getKeybind().setCallback((keyAction, keybind) -> {
+                if (shouldDeferToVanillaDebugShortcut(keybind)) {
+                    return false;
+                }
+                return actionHandler.trigger(action);
+            });
             orderedHotkeys.add(hotkey);
             if (action == KeybindAction.OPEN_MAP) {
                 detectedOpenMapKeybind = hotkey.getKeybind();
@@ -72,6 +79,30 @@ final class MaliLibKeybindBackend implements IKeybindProvider, IConfigHandler {
         }
         openMapKeybind = Objects.requireNonNull(detectedOpenMapKeybind, "open map hotkey");
         hotkeys = Collections.unmodifiableList(orderedHotkeys);
+    }
+
+    private static boolean shouldDeferToVanillaDebugShortcut(final IKeybind keybind) {
+        final MinecraftClient client = MinecraftClient.getInstance();
+        final int debugModifierKey = debugModifierKey(client);
+        return shouldDeferToVanillaDebugShortcut(
+            KeybindMulti.isKeyDown(debugModifierKey),
+            keybind.getKeys().contains(debugModifierKey)
+        );
+    }
+
+    static boolean shouldDeferToVanillaDebugShortcut(
+        final boolean debugModifierHeld,
+        final boolean keybindOwnsDebugModifier
+    ) {
+        return debugModifierHeld && !keybindOwnsDebugModifier;
+    }
+
+    private static int debugModifierKey(final MinecraftClient client) {
+        //#if MC>=12111
+        //$$ return KeybindMulti.getKeyCode(client.options.debugModifierKey);
+        //#else
+        return GLFW.GLFW_KEY_F3;
+        //#endif
     }
 
     void openHotkeyScreen() {

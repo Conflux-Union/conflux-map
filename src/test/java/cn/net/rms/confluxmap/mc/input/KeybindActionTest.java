@@ -89,6 +89,13 @@ final class KeybindActionTest {
     }
 
     @Test
+    void maliLibHotkeysAlwaysYieldToHeldDebugModifierUnlessTheyOwnIt() {
+        assertTrue(MaliLibKeybindBackend.shouldDeferToVanillaDebugShortcut(true, false));
+        assertFalse(MaliLibKeybindBackend.shouldDeferToVanillaDebugShortcut(true, true));
+        assertFalse(MaliLibKeybindBackend.shouldDeferToVanillaDebugShortcut(false, false));
+    }
+
+    @Test
     void everyMaliLibHotkeyHasLocalizedDisplayTextAndTooltip() {
         final Map<String, String> english = translations("en_us");
         final Map<String, String> chinese = translations("zh_cn");
