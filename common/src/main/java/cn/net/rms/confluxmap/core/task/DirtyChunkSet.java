@@ -84,12 +84,10 @@ public final class DirtyChunkSet {
      * {@link Readiness#WAITING} ones are held for a later drain, so the budget goes to
      * chunks that can be sampled now.
      *
-     * <p>Budget still unspent once the scan has taken every sampleable chunk it reached goes
-     * to the held ones, nearest first. Holding them past that point would leave the map's
-     * outermost ring blank while the capture pipeline sits idle - the ring is exactly the part
-     * whose neighbourhood never completes, so waiting for it means waiting forever. What such
-     * a chunk bakes is already clamped to the loaded part of its neighbourhood, and an arriving
-     * neighbour re-marks it for a full-quality resample.
+     * <p>Waiting chunks are not allowed to consume otherwise-idle budget until their hold expires.
+     * Normal streaming usually completes the neighbourhood during that hold, avoiding a partial
+     * snapshot followed immediately by one or more replacement snapshots. The bounded hold still
+     * guarantees that the permanently incomplete outer ring eventually appears.
      */
     public List<long[]> drainNearest(
         final int budget,
@@ -107,7 +105,6 @@ public final class DirtyChunkSet {
             distanceSq(b, centerChunkX, centerChunkZ)
         ));
         final List<long[]> result = new ArrayList<>(Math.min(budget, keys.size()));
-        final List<Long> held = new ArrayList<>();
         for (final long key : keys) {
             if (result.size() >= budget) {
                 break;
@@ -118,18 +115,11 @@ public final class DirtyChunkSet {
             if (state == Readiness.MISSING) {
                 dirty.remove(key);
             } else if (state == Readiness.WAITING && drain - dirty.get(key) < MAX_DEFERRALS) {
-                held.add(key);
+                continue;
             } else {
                 dirty.remove(key);
                 result.add(new long[]{chunkX, chunkZ});
             }
-        }
-        for (final long key : held) {
-            if (result.size() >= budget) {
-                break;
-            }
-            dirty.remove(key);
-            result.add(new long[]{(int) (key >> 32), (int) key});
         }
         return result;
     }

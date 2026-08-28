@@ -46,11 +46,10 @@ import java.util.function.Predicate;
  * queue. Composition itself runs on {@link MapExecutors#workers()}; only
  * {@link #drainUploads(int)} is meant to be called from the render thread.
  *
- * <p>M1 always recomposes a tile from scratch on every dirty event (see
- * {@link TileUpdate}'s javadoc). {@link TileKey#layerId()} carries which
- * {@link MapLayer} a tile belongs to ({@link MapLayer#parse} recovers it);
- * every layer shares this one composition path. During a visible fullscreen/minimap viewport the
- * queue is serialized and uses top-left row-major order; background work retains distance priority.
+ * <p>{@link TileKey#layerId()} carries which {@link MapLayer} a tile belongs to ({@link
+ * MapLayer#parse} recovers it); every layer shares this one composition path. Fine-region
+ * invalidations are merged per tile and recomposed incrementally. Visible work keeps top-left
+ * row-major submission priority while using the full worker pool.
  */
 public final class TileService {
     private static final int UPLOAD_QUEUE_CAPACITY = 64;
@@ -62,8 +61,8 @@ public final class TileService {
     private final DaylightModel daylightModel;
     private final int maxConcurrentCompositions;
 
-    /** Guarded by {@code this}: tiles waiting to be composed, with the session token that requested them. */
-    private final Map<TileKey, Long> dirty = new HashMap<>();
+    /** Guarded by {@code this}: tiles waiting to be composed and the fine regions that changed. */
+    private final Map<TileKey, DirtyWork> dirty = new HashMap<>();
     /** Guarded by {@code this}: tiles currently being composed on a worker. */
     private final Set<TileKey> inFlight = new HashSet<>();
     /**
@@ -80,7 +79,7 @@ public final class TileService {
      */
     private final Set<TileKey> staleTiles = new HashSet<>();
 
-    /** Guarded by {@code this}: bounded, key-deduped upload queue (newest composition wins). */
+    /** Guarded by {@code this}: bounded upload queue with partial updates merged per key. */
     private final LinkedHashMap<TileKey, TileUpdate> uploads = new LinkedHashMap<>();
 
     /** Latest fullscreen viewport. Visible requests use deterministic top-left row-major order. */
@@ -199,7 +198,7 @@ public final class TileService {
             if (!next.contains(key)) {
                 return false;
             }
-            dirty.put(key, token);
+            dirty.merge(key, DirtyWork.full(token), DirtyWork::merge);
             return true;
         });
     }
@@ -286,23 +285,15 @@ public final class TileService {
         if (world == null) {
             return;
         }
-        final SessionGuard.Session session = world.session();
-        for (int lod = 0; lod <= TileMath.MAX_LOD; lod++) {
-            markReliefConsumers(
-                session, dimensionId, layer, lod, chunkX, chunkZ, 16 << lod, token
-            );
-            realCoverageListener.accept(new TileKey(
-                session.world(), dimensionId, layer.cacheId(), lod,
-                Math.floorDiv(chunkX, 16 << lod), Math.floorDiv(chunkZ, 16 << lod)
-            ));
-        }
+        markChunksStored(
+            token, dimensionId, layer, List.of(new RegionUnit(chunkX, chunkZ))
+        );
     }
 
     /**
      * Disk-cache counterpart of {@link #markChunkStored}: one region read may merge up to 256
-     * chunks, so invalidate its affected tiles once instead of issuing the same parent keys 256
-     * times. A LOD-0 region fills a complete tile and therefore touches all eight neighbors;
-     * coarser LODs only include the parent edges that this region actually reaches.
+     * chunks, so invalidate its affected fine-region rectangles once instead of issuing the same
+     * parent keys 256 times. Relief consumers in all eight neighboring regions are included.
      */
     public void markRegionStored(
         final long token,
@@ -311,20 +302,61 @@ public final class TileService {
         final int regionX,
         final int regionZ
     ) {
+        markRegionsStored(
+            token, dimensionId, layer, List.of(new RegionUnit(regionX, regionZ))
+        );
+    }
+
+    /** Batch counterpart of {@link #markChunkStored}; all invalidations are merged before pumping. */
+    public void markChunksStored(
+        final long token,
+        final DimensionId dimensionId,
+        final MapLayer layer,
+        final List<RegionUnit> chunks
+    ) {
         final MapWorld world = mapWorlds.ifCurrent(token);
-        if (world == null) {
+        if (world == null || chunks.isEmpty()) {
             return;
         }
         final SessionGuard.Session session = world.session();
-        for (int lod = 0; lod <= TileMath.MAX_LOD; lod++) {
-            markReliefConsumers(
-                session, dimensionId, layer, lod, regionX, regionZ, 1 << lod, token
-            );
-            realCoverageListener.accept(new TileKey(
-                session.world(), dimensionId, layer.cacheId(), lod,
-                Math.floorDiv(regionX, 1 << lod), Math.floorDiv(regionZ, 1 << lod)
-            ));
+        final Set<TileKey> coverage = new HashSet<>();
+        synchronized (this) {
+            for (final RegionUnit chunk : chunks) {
+                markChunkConsumers(
+                    session, dimensionId, layer, chunk.x, chunk.z, token, coverage
+                );
+            }
         }
+        coverage.forEach(realCoverageListener);
+        pump();
+    }
+
+    /** Batch counterpart of {@link #markRegionStored}; all invalidations are merged before pumping. */
+    public void markRegionsStored(
+        final long token,
+        final DimensionId dimensionId,
+        final MapLayer layer,
+        final List<RegionUnit> regions
+    ) {
+        final MapWorld world = mapWorlds.ifCurrent(token);
+        if (world == null || regions.isEmpty()) {
+            return;
+        }
+        final SessionGuard.Session session = world.session();
+        final Set<TileKey> coverage = new HashSet<>();
+        synchronized (this) {
+            for (final RegionUnit region : regions) {
+                markRegionConsumers(
+                    session, dimensionId, layer, region.x, region.z, token, coverage
+                );
+            }
+        }
+        coverage.forEach(realCoverageListener);
+        pump();
+    }
+
+    /** Integer coordinate pair used by batch invalidation entry points. */
+    public record RegionUnit(int x, int z) {
     }
 
     /**
@@ -418,36 +450,78 @@ public final class TileService {
         }
     }
 
-    private void markReliefConsumers(
+    private void markChunkConsumers(
+        final SessionGuard.Session session,
+        final DimensionId dimensionId,
+        final MapLayer layer,
+        final int chunkX,
+        final int chunkZ,
+        final long token,
+        final Set<TileKey> coverage
+    ) {
+        final int regionX = Math.floorDiv(chunkX, RegionColumns.CHUNKS);
+        final int regionZ = Math.floorDiv(chunkZ, RegionColumns.CHUNKS);
+        final int localX = Math.floorMod(chunkX, RegionColumns.CHUNKS);
+        final int localZ = Math.floorMod(chunkZ, RegionColumns.CHUNKS);
+        final int minDx = localX == 0 ? -1 : 0;
+        final int maxDx = localX == RegionColumns.CHUNKS - 1 ? 1 : 0;
+        final int minDz = localZ == 0 ? -1 : 0;
+        final int maxDz = localZ == RegionColumns.CHUNKS - 1 ? 1 : 0;
+        for (int lod = 0; lod <= TileMath.MAX_LOD; lod++) {
+            for (int dz = minDz; dz <= maxDz; dz++) {
+                for (int dx = minDx; dx <= maxDx; dx++) {
+                    markDirtyRegion(
+                        tileKey(session, dimensionId, layer, lod, regionX + dx, regionZ + dz),
+                        token, regionX + dx, regionZ + dz
+                    );
+                }
+            }
+            final TileKey center = tileKey(
+                session, dimensionId, layer, lod, regionX, regionZ
+            );
+            markDirtyRegion(BiomeTileKeys.toBiome(center), token, regionX, regionZ);
+            coverage.add(center);
+        }
+    }
+
+    private void markRegionConsumers(
+        final SessionGuard.Session session,
+        final DimensionId dimensionId,
+        final MapLayer layer,
+        final int regionX,
+        final int regionZ,
+        final long token,
+        final Set<TileKey> coverage
+    ) {
+        for (int lod = 0; lod <= TileMath.MAX_LOD; lod++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                for (int dx = -1; dx <= 1; dx++) {
+                    markDirtyRegion(
+                        tileKey(session, dimensionId, layer, lod, regionX + dx, regionZ + dz),
+                        token, regionX + dx, regionZ + dz
+                    );
+                }
+            }
+            final TileKey center = tileKey(
+                session, dimensionId, layer, lod, regionX, regionZ
+            );
+            markDirtyRegion(BiomeTileKeys.toBiome(center), token, regionX, regionZ);
+            coverage.add(center);
+        }
+    }
+
+    private static TileKey tileKey(
         final SessionGuard.Session session,
         final DimensionId dimensionId,
         final MapLayer layer,
         final int lod,
-        final int unitX,
-        final int unitZ,
-        final int unitsPerTile,
-        final long token
+        final int regionX,
+        final int regionZ
     ) {
-        final int tileX = Math.floorDiv(unitX, unitsPerTile);
-        final int tileZ = Math.floorDiv(unitZ, unitsPerTile);
-        final int localX = Math.floorMod(unitX, unitsPerTile);
-        final int localZ = Math.floorMod(unitZ, unitsPerTile);
-        final int minDx = localX == 0 ? -1 : 0;
-        final int maxDx = localX == unitsPerTile - 1 ? 1 : 0;
-        final int minDz = localZ == 0 ? -1 : 0;
-        final int maxDz = localZ == unitsPerTile - 1 ? 1 : 0;
-        for (int dz = minDz; dz <= maxDz; dz++) {
-            for (int dx = minDx; dx <= maxDx; dx++) {
-                final TileKey key = new TileKey(
-                    session.world(), dimensionId, layer.cacheId(), lod, tileX + dx, tileZ + dz
-                );
-                markDirty(key, token);
-                if (dx == 0 && dz == 0) {
-                    // Biome mode is a flat colour plane and has no cross-tile relief stencil.
-                    markDirty(BiomeTileKeys.toBiome(key), token);
-                }
-            }
-        }
+        return new TileKey(
+            session.world(), dimensionId, layer.cacheId(), lod,
+            Math.floorDiv(regionX, 1 << lod), Math.floorDiv(regionZ, 1 << lod)
+        );
     }
 
     /**
@@ -515,7 +589,7 @@ public final class TileService {
             if (dirty.containsKey(key) || inFlight.contains(key)) {
                 return;
             }
-            dirty.put(key, session.token());
+            dirty.merge(key, DirtyWork.full(session.token()), DirtyWork::merge);
         }
         pump();
         // A viewport proactively schedules every covered region at higher LODs. Keep this direct
@@ -584,30 +658,34 @@ public final class TileService {
         final int regionsPerTile = 1 << active.lod();
         final long regionsPerTileSquared = (long) regionsPerTile * regionsPerTile;
         final long total = tileWidth * tileHeight * regionsPerTileSquared;
-        int attempted = 0;
-        while (attempted < VIEWPORT_REGION_LOAD_ATTEMPTS) {
-            final long cursor;
-            synchronized (this) {
-                if (!active.equals(viewport) || viewportRegionLoadCursor >= total) {
-                    return;
-                }
-                cursor = viewportRegionLoadCursor;
+        final long cursor;
+        synchronized (this) {
+            if (!active.equals(viewport) || viewportRegionLoadCursor >= total) {
+                return;
             }
-            final long tileIndex = cursor / regionsPerTileSquared;
-            final int regionIndex = (int) (cursor % regionsPerTileSquared);
+            cursor = viewportRegionLoadCursor;
+        }
+        final int offered = (int) Math.min(
+            VIEWPORT_REGION_LOAD_ATTEMPTS, total - cursor
+        );
+        final List<RegionUnit> regions = new ArrayList<>(offered);
+        for (int offset = 0; offset < offered; offset++) {
+            final long index = cursor + offset;
+            final long tileIndex = index / regionsPerTileSquared;
+            final int regionIndex = (int) (index % regionsPerTileSquared);
             final int tileX = active.minTileX() + (int) (tileIndex % tileWidth);
             final int tileZ = active.minTileZ() + (int) (tileIndex / tileWidth);
             final int regionX = tileX * regionsPerTile + regionIndex % regionsPerTile;
             final int regionZ = tileZ * regionsPerTile + regionIndex / regionsPerTile;
-            if (!cache.ensureRegionLoaded(active.layerType(), regionX, regionZ)) {
-                return;
+            regions.add(new RegionUnit(regionX, regionZ));
+        }
+        final int accepted = cache.ensureRegionsLoadedAsync(
+            active.layerType(), regions
+        ).size();
+        synchronized (this) {
+            if (active.equals(viewport) && viewportRegionLoadCursor == cursor) {
+                viewportRegionLoadCursor += accepted;
             }
-            synchronized (this) {
-                if (active.equals(viewport) && viewportRegionLoadCursor == cursor) {
-                    viewportRegionLoadCursor++;
-                }
-            }
-            attempted++;
         }
     }
 
@@ -619,10 +697,25 @@ public final class TileService {
      * the first time it needs it, so composing it now would only burn a worker on something
      * nobody is looking at. A tile that is requested but off screen is remembered in {@link
      * #staleTiles} and recomposed when {@link #setViewport} brings it back into view. Without
-     * those gates every captured chunk recomposes its covering tile at every LOD, and a coarse
-     * tile costs one full LOD-0 compose per region it covers - 256 of them at LOD4.
+     * those gates every captured chunk would schedule its covering tile at every LOD even when
+     * no texture can consume the resulting pixels.
      */
     private void markDirty(final TileKey key, final long token) {
+        markDirty(key, DirtyWork.full(token));
+    }
+
+    private void markDirtyRegion(
+        final TileKey key, final long token, final int regionX, final int regionZ
+    ) {
+        queueDirty(key, DirtyWork.regions(token, regionX, regionZ));
+    }
+
+    private void markDirty(final TileKey key, final DirtyWork work) {
+        queueDirty(key, work);
+        pump();
+    }
+
+    private void queueDirty(final TileKey key, final DirtyWork work) {
         synchronized (this) {
             if (!requestedTiles.contains(key)) {
                 return;
@@ -638,22 +731,20 @@ public final class TileService {
                 // store, so nothing more to do unless it's already done - re-mark dirty is
                 // cheap and safe either way since composeTile() below removes from inFlight
                 // before this lock is next taken.
-                dirty.put(key, token);
+                dirty.merge(key, work, DirtyWork::merge);
                 return;
             }
-            dirty.put(key, token);
+            dirty.merge(key, work, DirtyWork::merge);
         }
-        pump();
     }
 
     private void pump() {
         while (true) {
             final TileKey next;
-            final long token;
+            final DirtyWork work;
             final long generation;
             synchronized (this) {
-                final int compositionLimit = viewport == null ? maxConcurrentCompositions : 1;
-                if (inFlight.size() >= compositionLimit || dirty.isEmpty()) {
+                if (inFlight.size() >= maxConcurrentCompositions || dirty.isEmpty()) {
                     return;
                 }
                 // Every in-flight composition ends in one queued upload. Starting more than the
@@ -666,11 +757,11 @@ public final class TileService {
                 if (next == null) {
                     return;
                 }
-                token = dirty.remove(next);
+                work = dirty.remove(next);
                 generation = compositionGeneration;
                 inFlight.add(next);
             }
-            executors.workers().execute(() -> composeAndFinish(next, token, generation));
+            executors.workers().execute(() -> composeAndFinish(next, work, generation));
         }
     }
 
@@ -716,9 +807,9 @@ public final class TileService {
             || (candidate.tileZ() == current.tileZ() && candidate.tileX() < current.tileX());
     }
 
-    private void composeAndFinish(final TileKey key, final long token, final long generation) {
+    private void composeAndFinish(final TileKey key, final DirtyWork work, final long generation) {
         try {
-            final TileUpdate update = composeTile(key, token);
+            final TileUpdate update = composeTile(key, work);
             if (update != null) {
                 pushUpload(update, generation);
             }
@@ -731,10 +822,13 @@ public final class TileService {
     }
 
     private TileUpdate composeTile(final TileKey key, final long token) {
+        return composeTile(key, DirtyWork.full(token));
+    }
+
+    private TileUpdate composeTile(final TileKey key, final DirtyWork work) {
         final DaylightModel.State lighting = daylightModel.state();
         return composeTile(
-            key,
-            token,
+            key, work,
             config.dynamicLighting,
             lighting.daylight(),
             lighting.gamma()
@@ -748,7 +842,19 @@ public final class TileService {
         final float requestedDaylightFactor,
         final float gamma
     ) {
-        final MapWorld world = mapWorlds.ifCurrent(token);
+        return composeTile(
+            key, DirtyWork.full(token), dynamicLighting, requestedDaylightFactor, gamma
+        );
+    }
+
+    private TileUpdate composeTile(
+        final TileKey key,
+        final DirtyWork work,
+        final boolean dynamicLighting,
+        final float requestedDaylightFactor,
+        final float gamma
+    ) {
+        final MapWorld world = mapWorlds.ifCurrent(work.token);
         if (world == null) {
             return null;
         }
@@ -791,7 +897,7 @@ public final class TileService {
             pixels = composeLodN(
                 store, key, biomeMode, applyAbsoluteHeight,
                 layer.type(), applyDaylight, daylightFactor, gamma, lightPlane, changed,
-                mapColorStyle, xaeroShadow
+                mapColorStyle, xaeroShadow, work.regions
             );
         }
         final TileUpdate.Relight relight = lightPlane == null
@@ -844,15 +950,15 @@ public final class TileService {
 
     /**
      * A LOD-{@code key.lod()} tile covers {@code 2^lod x 2^lod} LOD-0 regions. Each
-     * covered region is composed exactly as at LOD0 (reusing {@link #composeLod0}, so
+     * affected covered region is composed exactly as at LOD0 (reusing {@link #composeLod0}, so
      * cross-region slope shading at every LOD-0 boundary - including ones that fall
      * inside this LOD's tile, not just at its own edges - stays correct), then
      * box-averaged down by {@code 2^lod} (via repeated 2x2 alpha-weighted {@link Argb#average4Weighted}
      * passes, i.e. a small mipmap chain, so a region that is only partly explored downsamples to a
-     * clean translucent value instead of darkening toward black) and stitched into its quadrant of
-     * the 256x256 output. Regions not in memory are skipped AND left out of {@code outChanged},
-     * so the texture cache keeps showing whatever that quadrant held before - regions evicted to
-     * disk between two composes must not be erased from an already-drawn zoomed-out tile.
+     * clean translucent value instead of darkening toward black) and stitched into its quadrant
+     * of the 256x256 output. A full request visits every covered region; an incremental request
+     * visits only its merged dirty-region set. Regions not in memory are skipped AND left out of
+     * {@code outChanged}, so the texture cache preserves those quadrants.
      */
     private static int[] composeLodN(
         final ColumnStore store,
@@ -866,7 +972,8 @@ public final class TileService {
         final byte[] outLight,
         final List<TileUpdate.Rect> outChanged,
         final MapColorStyle mapColorStyle,
-        final XaeroMapStyle.Shadow xaeroShadow
+        final XaeroMapStyle.Shadow xaeroShadow,
+        final Set<Long> dirtyRegions
     ) {
         final int lod = key.lod();
         final int size = RegionColumns.SIZE;
@@ -879,6 +986,9 @@ public final class TileService {
             for (int dx = 0; dx < regionsPerSide; dx++) {
                 final int regionX = baseRegionX + dx;
                 final int regionZ = baseRegionZ + dz;
+                if (dirtyRegions != null && !dirtyRegions.contains(regionKey(regionX, regionZ))) {
+                    continue;
+                }
                 if (store.region(regionX, regionZ) == null) {
                     continue;
                 }
@@ -1265,8 +1375,11 @@ public final class TileService {
                 && expectedGeneration.longValue() != compositionGeneration) {
                 return;
             }
-            uploads.remove(update.key());
-            uploads.put(update.key(), update);
+            final TileUpdate pending = uploads.remove(update.key());
+            uploads.put(
+                update.key(),
+                pending == null ? update : TileUpdate.merge(pending, update)
+            );
             if (uploads.size() <= UPLOAD_QUEUE_CAPACITY) {
                 return;
             }
@@ -1337,5 +1450,38 @@ public final class TileService {
             pump();
         }
         return result;
+    }
+
+    /** Test-support only: number of local-map compositions currently assigned to workers. */
+    public synchronized int inFlightCountForTest() {
+        return inFlight.size();
+    }
+
+    /** Test-support only: whether every local-map composition has drained. */
+    public synchronized boolean isIdleForTest() {
+        return dirty.isEmpty() && inFlight.isEmpty();
+    }
+
+    private static long regionKey(final int regionX, final int regionZ) {
+        return ((long) regionX << 32) | (regionZ & 0xFFFFFFFFL);
+    }
+
+    private record DirtyWork(long token, Set<Long> regions) {
+        static DirtyWork full(final long token) {
+            return new DirtyWork(token, null);
+        }
+
+        static DirtyWork regions(final long token, final int regionX, final int regionZ) {
+            return new DirtyWork(token, Set.of(regionKey(regionX, regionZ)));
+        }
+
+        static DirtyWork merge(final DirtyWork older, final DirtyWork newer) {
+            if (newer.regions == null || older.regions == null) {
+                return full(newer.token);
+            }
+            final Set<Long> merged = new HashSet<>(older.regions);
+            merged.addAll(newer.regions);
+            return new DirtyWork(newer.token, Set.copyOf(merged));
+        }
     }
 }

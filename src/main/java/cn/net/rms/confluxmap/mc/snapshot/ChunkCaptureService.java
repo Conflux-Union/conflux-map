@@ -22,7 +22,10 @@ import cn.net.rms.confluxmap.mc.color.BiomeTintResolver;
 import cn.net.rms.confluxmap.mc.color.SpriteColorSampler;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntSupplier;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -141,7 +144,11 @@ public final class ChunkCaptureService {
      * way to drop it is to take the snapshot again.
      */
     public void markChunkLoaded(final int chunkX, final int chunkZ) {
-        dirtyChunks.markWithLoadedNeighbors(chunkX, chunkZ, this::isChunkLoaded);
+        if (needsTintNeighbors(MinecraftAccess.biomeBlendRadius(client))) {
+            dirtyChunks.markWithLoadedNeighbors(chunkX, chunkZ, this::isChunkLoaded);
+        } else {
+            dirtyChunks.mark(chunkX, chunkZ);
+        }
     }
 
     /**
@@ -158,6 +165,9 @@ public final class ChunkCaptureService {
         if (world == null || !ChunkTintSampler.loaded(world, chunkX, chunkZ)) {
             return DirtyChunkSet.Readiness.MISSING;
         }
+        if (!needsTintNeighbors(MinecraftAccess.biomeBlendRadius(client))) {
+            return DirtyChunkSet.Readiness.READY;
+        }
         for (int dz = -1; dz <= 1; dz++) {
             for (int dx = -1; dx <= 1; dx++) {
                 if ((dx != 0 || dz != 0) && !ChunkTintSampler.loaded(world, chunkX + dx, chunkZ + dz)) {
@@ -166,6 +176,10 @@ public final class ChunkCaptureService {
             }
         }
         return DirtyChunkSet.Readiness.READY;
+    }
+
+    static boolean needsTintNeighbors(final int biomeBlendRadius) {
+        return biomeBlendRadius > 0;
     }
 
     private boolean isChunkLoaded(final int chunkX, final int chunkZ) {
@@ -266,6 +280,9 @@ public final class ChunkCaptureService {
         final List<long[]> batch = dirtyChunks.drainNearest(
             chunkBudget, viewpointChunkX, viewpointChunkZ, this::captureReadiness
         );
+        final List<CapturedSnapshot> captured = new ArrayList<>(
+            batch.size() * capturePlan.size()
+        );
         for (final long[] chunkPos : batch) {
             for (final LayerSelector.Decision capture : capturePlan) {
                 final ChunkSnapshot snapshot = factory.snapshot(
@@ -273,10 +290,12 @@ public final class ChunkCaptureService {
                     capture.layer(), capture.pivotY(), token
                 );
                 if (snapshot != null) {
-                    final MapLayer layer = capture.layer();
-                    executors.workers().execute(() -> storeSnapshot(snapshot, layer));
+                    captured.add(new CapturedSnapshot(snapshot, capture.layer()));
                 }
             }
+        }
+        if (!captured.isEmpty()) {
+            executors.workers().execute(() -> storeSnapshots(captured));
         }
         final RegionDiskCache cache = regionCache.current();
         if (cache != null) {
@@ -318,20 +337,54 @@ public final class ChunkCaptureService {
         return List.of(selected);
     }
 
-    private void storeSnapshot(final ChunkSnapshot snapshot, final MapLayer layer) {
-        final MapWorld world = worlds.ifCurrent(snapshot.sessionToken);
-        if (world != null && world.put(layer, snapshot, SampleSource.REAL_LIVE)) {
-            storedSnapshots.incrementAndGet();
-            tiles.markChunkStored(snapshot.sessionToken, world.session().dimension(), layer, snapshot.chunkX, snapshot.chunkZ);
-            // Non-persistent layers (CAVE_AUTO, NETHER_CURRENT, the Y-slices) never touch disk -
-            // ensureRegionLoaded() also self-guards, but skip the call entirely for clarity here.
-            if (layer.type().persistent()) {
+    private void storeSnapshots(final List<CapturedSnapshot> captured) {
+        final Map<MapLayer, List<TileService.RegionUnit>> stored = new LinkedHashMap<>();
+        MapWorld world = null;
+        for (final CapturedSnapshot capture : captured) {
+            final ChunkSnapshot snapshot = capture.snapshot;
+            if (world == null || world.session().token() != snapshot.sessionToken) {
+                world = worlds.ifCurrent(snapshot.sessionToken);
+            }
+            if (world != null && world.put(capture.layer, snapshot, SampleSource.REAL_LIVE)) {
+                storedSnapshots.incrementAndGet();
+                stored.computeIfAbsent(capture.layer, ignored -> new ArrayList<>())
+                    .add(new TileService.RegionUnit(snapshot.chunkX, snapshot.chunkZ));
+            }
+        }
+        if (world == null) {
+            return;
+        }
+        for (final Map.Entry<MapLayer, List<TileService.RegionUnit>> entry : stored.entrySet()) {
+            final MapLayer layer = entry.getKey();
+            tiles.markChunksStored(
+                world.session().token(), world.session().dimension(), layer, entry.getValue()
+            );
+            if (layer.type().persistent() && regionCache != null) {
                 final RegionDiskCache cache = regionCache.current();
                 if (cache != null) {
-                    cache.ensureRegionLoaded(layer.type(), snapshot.chunkX >> 4, snapshot.chunkZ >> 4);
+                    final List<TileService.RegionUnit> regions = new ArrayList<>();
+                    final LinkedHashSet<Long> seen = new LinkedHashSet<>();
+                    for (final TileService.RegionUnit chunk : entry.getValue()) {
+                        final int regionX = chunk.x() >> 4;
+                        final int regionZ = chunk.z() >> 4;
+                        final long key = ((long) regionX << 32) | (regionZ & 0xFFFFFFFFL);
+                        if (seen.add(key)) {
+                            regions.add(new TileService.RegionUnit(regionX, regionZ));
+                        }
+                    }
+                    cache.ensureRegionsLoadedAsync(layer.type(), regions);
                 }
             }
         }
+    }
+
+    void storeSnapshotsForTest(final List<ChunkSnapshot> snapshots, final MapLayer layer) {
+        storeSnapshots(
+            snapshots.stream().map(snapshot -> new CapturedSnapshot(snapshot, layer)).toList()
+        );
+    }
+
+    private record CapturedSnapshot(ChunkSnapshot snapshot, MapLayer layer) {
     }
 
     private void logPeriodically(final MapWorld world) {

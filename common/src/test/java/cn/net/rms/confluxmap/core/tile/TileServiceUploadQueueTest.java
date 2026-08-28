@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.color.DaylightModel;
+import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
@@ -18,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -29,6 +31,38 @@ import org.junit.jupiter.api.Test;
 class TileServiceUploadQueueTest {
     /** Comfortably past {@code TileService.UPLOAD_QUEUE_CAPACITY}, whatever the render thread does. */
     private static final int REGIONS = 96;
+
+    @Test
+    void visibleViewportUsesEveryCompositionWorker() {
+        final Fixture fixture = new Fixture();
+        final CountDownLatch release = new CountDownLatch(1);
+        try {
+            for (int worker = 0; worker < fixture.executors.workerCount(); worker++) {
+                fixture.executors.workers().execute(() -> {
+                    try {
+                        release.await();
+                    } catch (final InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+            }
+            fixture.tiles.setViewport(
+                MapLayer.SURFACE, 0, 0, fixture.executors.workerCount() - 1, 0, 0
+            );
+            for (int tileX = 0; tileX < fixture.executors.workerCount(); tileX++) {
+                fixture.tiles.requestTile(fixture.key(0, tileX, 0));
+            }
+
+            assertEquals(
+                fixture.executors.workerCount(),
+                fixture.tiles.inFlightCountForTest(),
+                "publishing a viewport must retain worker-pool parallelism"
+            );
+        } finally {
+            release.countDown();
+            fixture.close();
+        }
+    }
 
     @Test
     void everyInvalidatedTileReachesTheRenderThreadWhenCompositionsOutrunUploads() throws InterruptedException {
@@ -94,6 +128,48 @@ class TileServiceUploadQueueTest {
             fixture.tiles.reloadLighting();
 
             assertTrue(fixture.tiles.drainUploads(1).isEmpty());
+        } finally {
+            fixture.close();
+        }
+    }
+
+    @Test
+    void partialUploadsForOneTileAreMergedBeforeRenderDrain() {
+        final Fixture fixture = new Fixture();
+        try {
+            final TileKey key = fixture.key(1, 0, 0);
+            final int[] northWest = blankTile();
+            northWest[0] = 0xFF112233;
+            final int[] southEast = blankTile();
+            southEast[RegionColumns.SIZE * RegionColumns.SIZE - 1] = 0xFF445566;
+            final byte[] firstLight = new byte[RegionColumns.SIZE * RegionColumns.SIZE];
+            firstLight[0] = 7;
+            final byte[] secondLight = new byte[RegionColumns.SIZE * RegionColumns.SIZE];
+            secondLight[RegionColumns.SIZE * RegionColumns.SIZE - 1] = 11;
+            final TileUpdate.Rect first = new TileUpdate.Rect(0, 0, 1, 1);
+            final TileUpdate.Rect second = new TileUpdate.Rect(255, 255, 1, 1);
+
+            fixture.tiles.submitUpload(new TileUpdate(
+                key, northWest, List.of(first),
+                new TileUpdate.Relight(1f, 0f, firstLight, MapColorStyle.CONFLUX)
+            ));
+            fixture.tiles.submitUpload(new TileUpdate(
+                key, southEast, List.of(second),
+                new TileUpdate.Relight(1f, 0f, secondLight, MapColorStyle.CONFLUX)
+            ));
+
+            final TileUpdate merged = fixture.tiles.drainUploads(1).get(0);
+            assertEquals(Set.of(first, second), Set.copyOf(merged.changed()));
+            assertEquals(0xFF112233, merged.argbPixels()[0]);
+            assertEquals(
+                0xFF445566,
+                merged.argbPixels()[RegionColumns.SIZE * RegionColumns.SIZE - 1]
+            );
+            assertEquals(7, merged.relight().lightLevels()[0]);
+            assertEquals(
+                11,
+                merged.relight().lightLevels()[RegionColumns.SIZE * RegionColumns.SIZE - 1]
+            );
         } finally {
             fixture.close();
         }

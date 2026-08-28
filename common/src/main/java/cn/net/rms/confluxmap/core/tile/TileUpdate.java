@@ -2,6 +2,8 @@ package cn.net.rms.confluxmap.core.tile;
 
 import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.model.TileKey;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -62,5 +64,58 @@ public record TileUpdate(
 
     public static TileUpdate fullTile(final TileKey key, final int[] argbPixels, final Relight relight) {
         return new TileUpdate(key, argbPixels, FULL_TILE, relight);
+    }
+
+    /**
+     * Combines two not-yet-uploaded updates for the same tile. Newer rectangles overwrite older
+     * pixels while untouched older rectangles remain present.
+     */
+    public static TileUpdate merge(final TileUpdate older, final TileUpdate newer) {
+        if (!older.key.equals(newer.key)) {
+            throw new IllegalArgumentException("cannot merge updates for different tiles");
+        }
+        final int[] pixels = Arrays.copyOf(older.argbPixels, older.argbPixels.length);
+        copyRects(newer.argbPixels, pixels, newer.changed);
+        final List<Rect> changed = new ArrayList<>(older.changed.size() + newer.changed.size());
+        changed.addAll(older.changed);
+        changed.addAll(newer.changed);
+        return new TileUpdate(older.key, pixels, List.copyOf(changed), mergeRelight(older, newer));
+    }
+
+    private static Relight mergeRelight(final TileUpdate older, final TileUpdate newer) {
+        if (older.relight == null || newer.relight == null
+            || older.relight.composedDaylight != newer.relight.composedDaylight
+            || older.relight.composedGamma != newer.relight.composedGamma
+            || older.relight.style != newer.relight.style) {
+            return newer.relight;
+        }
+        final byte[] levels = Arrays.copyOf(
+            older.relight.lightLevels, older.relight.lightLevels.length
+        );
+        copyRects(newer.relight.lightLevels, levels, newer.changed);
+        return new Relight(
+            newer.relight.composedDaylight,
+            newer.relight.composedGamma,
+            levels,
+            newer.relight.style
+        );
+    }
+
+    private static void copyRects(final int[] source, final int[] target, final List<Rect> rects) {
+        for (final Rect rect : rects) {
+            for (int row = 0; row < rect.height; row++) {
+                final int offset = (rect.y + row) * 256 + rect.x;
+                System.arraycopy(source, offset, target, offset, rect.width);
+            }
+        }
+    }
+
+    private static void copyRects(final byte[] source, final byte[] target, final List<Rect> rects) {
+        for (final Rect rect : rects) {
+            for (int row = 0; row < rect.height; row++) {
+                final int offset = (rect.y + row) * 256 + rect.x;
+                System.arraycopy(source, offset, target, offset, rect.width);
+            }
+        }
     }
 }

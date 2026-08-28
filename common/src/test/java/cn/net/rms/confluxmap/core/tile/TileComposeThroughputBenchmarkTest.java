@@ -23,8 +23,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Measures composition wall-clock through the real {@link TileService} queue: what one tile
- * costs per LOD, and what publishing a viewport (which pins {@code pump()} to a single worker)
- * does to a full screen's worth of tiles. No performance threshold is asserted; the timeout only
+ * costs per LOD, and whether publishing a viewport preserves parallel throughput for a full
+ * screen's worth of tiles. No performance threshold is asserted; the timeout only
  * prevents a wedged queue from hanging the harness.
  */
 @Tag("benchmark")
@@ -74,15 +74,15 @@ class TileComposeThroughputBenchmarkTest {
                 "16 LOD0 tiles, no viewport", parallel / 1e6, parallel / 1e6 / 16
             );
 
-            final long serial = best(() -> {
+            final long visible = best(() -> {
                 tiles.setViewport(MapLayer.SURFACE, 0, 0, REGIONS_PER_SIDE - 1, 0, REGIONS_PER_SIDE - 1);
                 return composeAll(tiles, lod0);
             });
             System.out.printf(
                 "%-34s %9.1f %11.2f%n",
-                "16 LOD0 tiles, viewport published", serial / 1e6, serial / 1e6 / 16
+                "16 LOD0 tiles, viewport published", visible / 1e6, visible / 1e6 / 16
             );
-            System.out.printf("viewport serialization costs %.2fx%n", (double) serial / parallel);
+            System.out.printf("viewport/no-viewport ratio %.2fx%n", (double) visible / parallel);
             tiles.clearViewport();
         } finally {
             executors.shutdown(5000L);

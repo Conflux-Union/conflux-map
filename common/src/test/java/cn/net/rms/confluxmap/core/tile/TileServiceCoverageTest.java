@@ -79,6 +79,83 @@ class TileServiceCoverageTest {
         }
     }
 
+    @Test
+    void lod4ChunkInvalidationRecomposesOnlyItsRegion() throws InterruptedException {
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final MapWorldService mapWorlds = new MapWorldService();
+            final SessionGuard.Session session =
+                new SessionGuard.Session(1L, new WorldIdentity("local", "incremental"), DimensionId.OVERWORLD);
+            mapWorlds.switchSession(session);
+            final MapWorld world = mapWorlds.current();
+            world.put(MapLayer.SURFACE, snapshot(5 * 16 + 8, 5 * 16 + 8), SampleSource.REAL_LIVE);
+            world.put(MapLayer.SURFACE, snapshot(9 * 16 + 8, 9 * 16 + 8), SampleSource.REAL_LIVE);
+            final TileService tiles = new TileService(mapWorlds, executors, new ConfluxConfig(), new DaylightModel());
+            final TileKey lod4 = new TileKey(
+                session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), 4, 0, 0
+            );
+            tiles.setViewport(MapLayer.SURFACE, 4, 0, 0, 0, 0);
+            tiles.requestTile(lod4);
+            drainOne(tiles, lod4);
+
+            tiles.markChunkStored(
+                session.token(), session.dimension(), MapLayer.SURFACE,
+                5 * 16 + 8, 5 * 16 + 8
+            );
+
+            final int subSize = RegionColumns.SIZE >> 4;
+            assertEquals(
+                List.of(new TileUpdate.Rect(5 * subSize, 5 * subSize, subSize, subSize)),
+                drainOne(tiles, lod4).changed()
+            );
+        } finally {
+            executors.shutdown(1000L);
+        }
+    }
+
+    @Test
+    void batchedChunkInvalidationComposesSharedParentOnce() throws InterruptedException {
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final MapWorldService mapWorlds = new MapWorldService();
+            final SessionGuard.Session session =
+                new SessionGuard.Session(1L, new WorldIdentity("local", "batch"), DimensionId.OVERWORLD);
+            mapWorlds.switchSession(session);
+            final MapWorld world = mapWorlds.current();
+            world.put(MapLayer.SURFACE, snapshot(3 * 16 + 8, 3 * 16 + 8), SampleSource.REAL_LIVE);
+            world.put(MapLayer.SURFACE, snapshot(7 * 16 + 8, 7 * 16 + 8), SampleSource.REAL_LIVE);
+            final TileService tiles = new TileService(mapWorlds, executors, new ConfluxConfig(), new DaylightModel());
+            final TileKey lod4 = new TileKey(
+                session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), 4, 0, 0
+            );
+            tiles.setViewport(MapLayer.SURFACE, 4, 0, 0, 0, 0);
+            tiles.requestTile(lod4);
+            drainOne(tiles, lod4);
+
+            tiles.markChunksStored(
+                session.token(),
+                session.dimension(),
+                MapLayer.SURFACE,
+                List.of(
+                    new TileService.RegionUnit(3 * 16 + 8, 3 * 16 + 8),
+                    new TileService.RegionUnit(7 * 16 + 8, 7 * 16 + 8)
+                )
+            );
+
+            final TileUpdate update = drainOne(tiles, lod4);
+            final int subSize = RegionColumns.SIZE >> 4;
+            assertEquals(
+                Set.of(
+                    new TileUpdate.Rect(3 * subSize, 3 * subSize, subSize, subSize),
+                    new TileUpdate.Rect(7 * subSize, 7 * subSize, subSize, subSize)
+                ),
+                Set.copyOf(update.changed())
+            );
+        } finally {
+            executors.shutdown(1000L);
+        }
+    }
+
     private static TileUpdate drainOne(final TileService tiles, final TileKey key) throws InterruptedException {
         final long deadline = System.nanoTime() + 5_000_000_000L;
         while (System.nanoTime() < deadline) {

@@ -20,7 +20,11 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -75,6 +79,10 @@ public final class RegionDiskCache {
     private final Map<RegionSlot, CompletableFuture<Void>> regionLoadCompletions = new ConcurrentHashMap<>();
     /** Bounds queued disk reads when a wide coarse viewport covers hundreds of LOD-0 regions. */
     private final AtomicInteger pendingRegionLoads = new AtomicInteger();
+    /** Guarded by {@code this}: accepted reads waiting for the single IO drain. */
+    private final ArrayDeque<RegionSlot> queuedRegionLoads = new ArrayDeque<>();
+    /** Guarded by {@code this}: whether one IO runnable owns the queue. */
+    private boolean regionLoadDrainScheduled;
     /** Last {@link RegionColumns#version()} successfully written to disk, per (layer, region). */
     private final Map<RegionSlot, Integer> flushedVersion = new ConcurrentHashMap<>();
     private volatile long lastSweepAtMs = System.currentTimeMillis();
@@ -160,24 +168,86 @@ public final class RegionDiskCache {
         regionLoadTouched.add(slot);
         regionLoadCompletions.put(slot, completion);
         pendingRegionLoads.incrementAndGet();
+        queuedRegionLoads.addLast(slot);
+        if (regionLoadDrainScheduled) {
+            return completion;
+        }
+        regionLoadDrainScheduled = true;
         try {
-            io.execute(() -> {
-                try {
-                    loadRegion(layerType, regionX, regionZ);
-                    completion.complete(null);
-                } catch (final RuntimeException e) {
-                    completion.completeExceptionally(e);
-                } finally {
-                    pendingRegionLoads.decrementAndGet();
-                }
-            });
+            io.execute(this::drainRegionLoads);
             return completion;
         } catch (final RejectedExecutionException e) {
+            regionLoadDrainScheduled = false;
+            queuedRegionLoads.removeLastOccurrence(slot);
             pendingRegionLoads.decrementAndGet();
             regionLoadTouched.remove(slot);
             regionLoadCompletions.remove(slot);
             completion.completeExceptionally(e);
             return null;
+        }
+    }
+
+    /**
+     * Atomically offers an ordered region batch to the bounded queue. Holding the cache monitor
+     * across the whole offer prevents the IO drain from splitting one viewport slice into a run
+     * of single-region invalidations.
+     */
+    public synchronized List<CompletableFuture<Void>> ensureRegionsLoadedAsync(
+        final MapLayer.Type layerType,
+        final List<TileService.RegionUnit> regions
+    ) {
+        final List<CompletableFuture<Void>> accepted = new ArrayList<>(regions.size());
+        for (final TileService.RegionUnit region : regions) {
+            final CompletableFuture<Void> completion = ensureRegionLoadedAsync(
+                layerType, region.x(), region.z()
+            );
+            if (completion == null) {
+                break;
+            }
+            accepted.add(completion);
+        }
+        return List.copyOf(accepted);
+    }
+
+    private void drainRegionLoads() {
+        while (true) {
+            final List<RegionSlot> batch;
+            synchronized (this) {
+                if (queuedRegionLoads.isEmpty()) {
+                    regionLoadDrainScheduled = false;
+                    return;
+                }
+                batch = new ArrayList<>(queuedRegionLoads);
+                queuedRegionLoads.clear();
+            }
+            final Map<MapLayer.Type, List<TileService.RegionUnit>> merged =
+                new EnumMap<>(MapLayer.Type.class);
+            final Map<RegionSlot, RuntimeException> failures = new java.util.HashMap<>();
+            for (final RegionSlot slot : batch) {
+                try {
+                    if (loadRegion(slot.layer, slot.regionX, slot.regionZ)) {
+                        merged.computeIfAbsent(slot.layer, ignored -> new ArrayList<>())
+                            .add(new TileService.RegionUnit(slot.regionX, slot.regionZ));
+                    }
+                } catch (final RuntimeException e) {
+                    failures.put(slot, e);
+                }
+            }
+            for (final Map.Entry<MapLayer.Type, List<TileService.RegionUnit>> entry : merged.entrySet()) {
+                tiles.markRegionsStored(
+                    token, dimension, new MapLayer(entry.getKey(), 0), entry.getValue()
+                );
+            }
+            for (final RegionSlot slot : batch) {
+                final CompletableFuture<Void> completion = regionLoadCompletions.get(slot);
+                final RuntimeException failure = failures.get(slot);
+                if (failure == null) {
+                    completion.complete(null);
+                } else {
+                    completion.completeExceptionally(failure);
+                }
+                pendingRegionLoads.decrementAndGet();
+            }
         }
     }
 
@@ -252,10 +322,10 @@ public final class RegionDiskCache {
         });
     }
 
-    private void loadRegion(final MapLayer.Type layerType, final int regionX, final int regionZ) {
+    private boolean loadRegion(final MapLayer.Type layerType, final int regionX, final int regionZ) {
         final Path file = regionFile(layerType, regionX, regionZ);
         if (!Files.exists(file)) {
-            return;
+            return false;
         }
         final RegionFileCodec.RegionData data;
         try (InputStream in = new BufferedInputStream(Files.newInputStream(file))) {
@@ -263,12 +333,12 @@ public final class RegionDiskCache {
         } catch (final IOException | RegionFileCodec.RegionFileException e) {
             logger.warn("cache: region file {} unreadable ({}), quarantining and treating as empty", file, e.toString());
             quarantine(file);
-            return;
+            return false;
         }
 
         final MapWorld world = mapWorlds.ifCurrent(token);
         if (world == null) {
-            return;
+            return false;
         }
         final MapLayer layer = new MapLayer(layerType, 0);
         int merged = 0;
@@ -285,9 +355,10 @@ public final class RegionDiskCache {
             }
         }
         if (merged > 0) {
-            tiles.markRegionStored(token, dimension, layer, regionX, regionZ);
             logger.info("cache: loaded region r.{}.{} layer={} ({} chunks) as REAL_CACHED", regionX, regionZ, layerType.id(), merged);
+            return true;
         }
+        return false;
     }
 
     private static ChunkSnapshot extractChunkSnapshot(

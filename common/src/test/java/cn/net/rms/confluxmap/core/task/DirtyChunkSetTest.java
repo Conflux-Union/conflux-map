@@ -115,7 +115,7 @@ class DirtyChunkSetTest {
     }
 
     @Test
-    void waitingChunksTakeTheBudgetLeftOverAfterTheSampleableOnes() {
+    void waitingChunksDoNotConsumeIdleBudgetBeforeTheirHoldExpires() {
         final DirtyChunkSet dirty = new DirtyChunkSet();
         dirty.mark(1, 0);
         dirty.mark(2, 0);
@@ -126,11 +126,12 @@ class DirtyChunkSetTest {
         );
 
         assertEquals(
-            List.of(key(1, 0), key(3, 0), key(2, 0)),
+            List.of(key(1, 0), key(3, 0)),
             batch.stream().map(DirtyChunkSetTest::keyOf).toList(),
-            "the held chunk is sampled last, but an idle budget must not leave it off the map"
+            "idle capture budget must not bake a chunk just before its streaming neighbours arrive"
         );
-        assertEquals(0, dirty.size());
+        assertEquals(1, dirty.size());
+        assertEquals(Set.of(key(2, 0)), drainAll(dirty, 0, 0));
     }
 
     @Test

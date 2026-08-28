@@ -12,6 +12,7 @@ import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SampleSource;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
+import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.store.MapWorld;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.store.WorldStorageMigration;
@@ -22,11 +23,65 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class RegionCacheViewportLoadTest {
+    @Test
+    void queuedRegionReadsMergeBeforeInvalidatingTheirSharedParent(@TempDir final Path tempDir)
+        throws Exception {
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final SessionGuard.Session session = new SessionGuard.Session(
+                1L, new WorldIdentity("local", "batched-cache-test"), DimensionId.OVERWORLD
+            );
+            final MapWorldService mapWorlds = new MapWorldService();
+            mapWorlds.switchSession(session);
+            final TileService tiles = new TileService(
+                mapWorlds, executors, new ConfluxConfig(), new DaylightModel()
+            );
+            final java.util.ArrayList<Runnable> queued = new java.util.ArrayList<>();
+            final RegionDiskCache cache = new RegionDiskCache(
+                tempDir,
+                session,
+                mapWorlds,
+                queued::add,
+                tiles,
+                LogManager.getLogger("RegionCacheViewportLoadTest")
+            );
+            for (int regionZ = 0; regionZ < 2; regionZ++) {
+                for (int regionX = 0; regionX < 2; regionX++) {
+                    writeRegion(tempDir, session, regionX, regionZ);
+                }
+            }
+            final TileKey parent = new TileKey(
+                session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), 1, 0, 0
+            );
+            tiles.setViewport(MapLayer.SURFACE, 1, 0, 0, 0, 0);
+            tiles.requestTile(parent);
+            drainOne(tiles, parent);
+
+            final List<TileService.RegionUnit> regions = new java.util.ArrayList<>();
+            for (int regionZ = 0; regionZ < 2; regionZ++) {
+                for (int regionX = 0; regionX < 2; regionX++) {
+                    regions.add(new TileService.RegionUnit(regionX, regionZ));
+                }
+            }
+            final List<java.util.concurrent.CompletableFuture<Void>> loads =
+                cache.ensureRegionsLoadedAsync(MapLayer.Type.SURFACE, regions);
+
+            assertEquals(1, queued.size(), "one IO drain must own the whole pending batch");
+            queued.remove(0).run();
+            assertTrue(loads.stream().allMatch(java.util.concurrent.CompletableFuture::isDone));
+            drainOne(tiles, parent);
+            assertTrue(tiles.isIdleForTest());
+        } finally {
+            executors.shutdown(1_000L);
+        }
+    }
+
     @Test
     void regionReadQueueRejectsWorkBeyondItsBound(@TempDir final Path tempDir) {
         final MapExecutors executors = new MapExecutors();
@@ -152,6 +207,20 @@ class RegionCacheViewportLoadTest {
             Thread.sleep(10L);
         }
         throw new AssertionError("coarse viewport did not restore all fine regions");
+    }
+
+    private static void drainOne(final TileService tiles, final TileKey key)
+        throws InterruptedException {
+        final long deadline = System.nanoTime() + 5_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            for (final cn.net.rms.confluxmap.core.tile.TileUpdate update : tiles.drainUploads(64)) {
+                if (update.key().equals(key)) {
+                    return;
+                }
+            }
+            Thread.sleep(10L);
+        }
+        throw new AssertionError("no upload arrived for " + key);
     }
 
     private static void writeRegion(
