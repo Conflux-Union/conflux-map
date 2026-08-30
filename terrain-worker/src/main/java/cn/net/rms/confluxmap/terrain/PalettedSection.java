@@ -23,9 +23,14 @@ public final class PalettedSection {
         }
         if (bits == 0) {
             final int singleton = VarInts.read(input);
-            final int longs = VarInts.read(input);
-            if (longs != 0) {
-                throw new IOException("singleton palette has packed data");
+            if (input.available() != 0) {
+                final int longs = VarInts.read(input);
+                if (longs != 0) {
+                    throw new IOException("singleton palette has packed data");
+                }
+                if (input.available() != 0) {
+                    throw new IOException("trailing paletted-container bytes");
+                }
             }
             final int[] result = new int[size];
             Arrays.fill(result, singleton);
@@ -51,9 +56,12 @@ public final class PalettedSection {
             palette = null;
         }
 
-        final int longCount = VarInts.read(input);
         final int valuesPerLong = 64 / bits;
         final int expectedLongs = (size + valuesPerLong - 1) / valuesPerLong;
+        final int packedBytes = expectedLongs * Long.BYTES;
+        final int longCount = input.available() == packedBytes
+            ? expectedLongs
+            : VarInts.read(input);
         if (longCount != expectedLongs) {
             throw new IOException(
                 "invalid packed palette length " + longCount + ", expected " + expectedLongs
