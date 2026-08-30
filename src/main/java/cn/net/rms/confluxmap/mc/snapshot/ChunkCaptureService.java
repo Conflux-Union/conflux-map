@@ -23,8 +23,8 @@ import cn.net.rms.confluxmap.core.util.ChunkViewport;
 import cn.net.rms.confluxmap.mc.color.BiomeTintResolver;
 import cn.net.rms.confluxmap.mc.color.SpriteColorSampler;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
-import cn.net.rms.confluxmap.terrain.protocol.EncodedChunk;
-import cn.net.rms.confluxmap.terrain.protocol.TerrainResult;
+import cn.net.rms.confluxmap.core.terrain.EncodedChunk;
+import cn.net.rms.confluxmap.core.terrain.TerrainResult;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -337,7 +337,7 @@ public final class ChunkCaptureService {
             lastDecision = decision;
         }
         final MapLayer previousWorkerLayer = workerLayer;
-        if (isProcessFloorLayer(decision.layer())) {
+        if (isWorkerFloorLayer(decision.layer())) {
             workerLayer = decision.layer();
             terrainWorker.updatePivot(decision.pivotY());
         } else {
@@ -380,7 +380,7 @@ public final class ChunkCaptureService {
             config.snapshotBudgetPerTick,
             visibleBatch == null ? 0 : visibleBatch.chunks().size()
         ));
-        final int finishedResults = finishProcessResults(captured, token, tickBudget);
+        final int finishedResults = finishWorkerResults(captured, token, tickBudget);
         int visibleAttempts = 0;
         if (visibleBatch != null) {
             final List<LayerSelector.Decision> visiblePlan = visibleCapturePlan(
@@ -451,7 +451,7 @@ public final class ChunkCaptureService {
         EncodedChunk encoded = null;
         boolean primeTerrain = false;
         for (final LayerSelector.Decision decision : plan) {
-            if (isProcessFloorLayer(decision.layer())) {
+            if (isWorkerFloorLayer(decision.layer())) {
                 if (terrainWorker.hasFreshChunk((int) chunk[0], (int) chunk[1])) {
                     accepted++;
                     continue;
@@ -487,7 +487,7 @@ public final class ChunkCaptureService {
         return accepted == plan.size();
     }
 
-    private int finishProcessResults(
+    private int finishWorkerResults(
         final List<CapturedSnapshot> captured,
         final long token,
         final CaptureTickBudget tickBudget
@@ -515,7 +515,7 @@ public final class ChunkCaptureService {
         return attempts;
     }
 
-    private static boolean isProcessFloorLayer(final MapLayer layer) {
+    private static boolean isWorkerFloorLayer(final MapLayer layer) {
         return layer.type() == MapLayer.Type.CAVE_AUTO
             || layer.type() == MapLayer.Type.CAVE_SLICE
             || layer.type() == MapLayer.Type.NETHER_CURRENT

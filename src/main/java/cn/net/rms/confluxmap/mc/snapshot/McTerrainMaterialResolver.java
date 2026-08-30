@@ -1,6 +1,6 @@
 package cn.net.rms.confluxmap.mc.snapshot;
 
-import cn.net.rms.confluxmap.terrain.protocol.MaterialDescriptor;
+import cn.net.rms.confluxmap.core.terrain.MaterialDescriptor;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;

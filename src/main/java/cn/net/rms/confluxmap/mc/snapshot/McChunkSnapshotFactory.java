@@ -7,8 +7,8 @@ import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.mc.color.BiomeTintResolver;
 import cn.net.rms.confluxmap.mc.color.SpriteColorSampler;
-import cn.net.rms.confluxmap.terrain.protocol.CaveChunkResult;
-import cn.net.rms.confluxmap.terrain.protocol.TerrainResult;
+import cn.net.rms.confluxmap.core.terrain.CaveChunkResult;
+import cn.net.rms.confluxmap.core.terrain.TerrainResult;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
@@ -134,7 +134,7 @@ public final class McChunkSnapshotFactory {
     }
 
     /**
-     * Finishes a process-selected cave chunk without repeating its vertical scan. Only the
+     * Finishes a worker-selected cave chunk without repeating its vertical scan. Only the
      * selected floor and optional overlay positions touch Minecraft state, tint, models and
      * lighting here; a concurrent block change rejects the result so the dirty queue can retry.
      */

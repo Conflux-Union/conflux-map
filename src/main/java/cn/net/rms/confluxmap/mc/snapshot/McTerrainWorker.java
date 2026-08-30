@@ -1,22 +1,18 @@
 package cn.net.rms.confluxmap.mc.snapshot;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
-import cn.net.rms.confluxmap.terrain.client.TerrainWorkerProcess;
-import cn.net.rms.confluxmap.terrain.protocol.EncodedChunk;
-import cn.net.rms.confluxmap.terrain.protocol.MaterialRequest;
-import cn.net.rms.confluxmap.terrain.protocol.TerrainDelta;
-import cn.net.rms.confluxmap.terrain.protocol.TerrainResult;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
+import cn.net.rms.confluxmap.core.terrain.EncodedChunk;
+import cn.net.rms.confluxmap.core.terrain.MaterialRequest;
+import cn.net.rms.confluxmap.core.terrain.TerrainDelta;
+import cn.net.rms.confluxmap.core.terrain.TerrainResult;
+import cn.net.rms.confluxmap.core.terrain.TerrainView;
+import cn.net.rms.confluxmap.core.terrain.TerrainWorker;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
-/** Session-aware owner of the forced terrain child process and its one permitted restart. */
+/** Session-aware owner of the in-process terrain worker and its one permitted restart. */
 final class McTerrainWorker implements AutoCloseable {
     private static final int MAX_REPLAY_CHUNKS = 8192;
     private static final long MAX_REPLAY_BYTES = 96L * 1024L * 1024L;
@@ -25,7 +21,7 @@ final class McTerrainWorker implements AutoCloseable {
     private final LinkedHashMap<Long, EncodedChunk> replay = new LinkedHashMap<>(64, 0.75f, true);
     private final LinkedHashSet<Long> staleReplay = new LinkedHashSet<>();
     private final LinkedHashSet<Integer> pendingMaterials = new LinkedHashSet<>();
-    private TerrainWorkerProcess process;
+    private TerrainWorker worker;
     private long sessionToken;
     private long generation;
     private int pivotY;
@@ -33,8 +29,6 @@ final class McTerrainWorker implements AutoCloseable {
     private boolean paused;
     private boolean active;
     private String fault;
-    private Path workerJar;
-    private Path extractedWorker;
     private long replayBytes;
     private int minChunkX = Integer.MIN_VALUE;
     private int maxChunkX = Integer.MAX_VALUE;
@@ -58,15 +52,11 @@ final class McTerrainWorker implements AutoCloseable {
         paused = false;
         active = false;
         fault = null;
-        ensureProcess();
-        if (process != null && nextSessionToken != 0L) {
+        ensureWorker();
+        if (worker != null && nextSessionToken != 0L) {
             initializePausedSession();
-        } else if (process != null) {
-            try {
-                process.pause();
-            } catch (final IOException pauseFault) {
-                handleFault(pauseFault.getMessage());
-            }
+        } else if (worker != null && !worker.pause()) {
+            handleFault(worker.fault());
         }
     }
 
@@ -99,7 +89,7 @@ final class McTerrainWorker implements AutoCloseable {
         } else {
             active = true;
         }
-        ensureProcess();
+        ensureWorker();
         updateView();
     }
 
@@ -109,19 +99,17 @@ final class McTerrainWorker implements AutoCloseable {
         }
         active = false;
         generation++;
-        if (process == null || paused) {
+        if (worker == null || paused) {
             return;
         }
-        try {
-            process.pause();
-        } catch (final IOException pauseFault) {
-            handleFault(pauseFault.getMessage());
+        if (!worker.pause()) {
+            handleFault(worker.fault());
         }
     }
 
     boolean submit(final EncodedChunk chunk) {
-        ensureProcess();
-        if (paused || process == null) {
+        ensureWorker();
+        if (paused || worker == null) {
             return false;
         }
         final long chunkKey = key(chunk.chunkX(), chunk.chunkZ());
@@ -132,13 +120,11 @@ final class McTerrainWorker implements AutoCloseable {
         replayBytes += chunk.estimatedBytes();
         staleReplay.remove(chunkKey);
         trimReplay();
-        try {
-            process.submit(chunk);
+        if (worker.submit(chunk)) {
             return true;
-        } catch (final IOException sendFault) {
-            handleFault(sendFault.getMessage());
-            return false;
         }
+        handleFault(worker.fault());
+        return false;
     }
 
     boolean prime(final EncodedChunk chunk) {
@@ -156,14 +142,12 @@ final class McTerrainWorker implements AutoCloseable {
         if (removed != null) {
             replayBytes -= removed.estimatedBytes();
         }
-        ensureProcess();
-        if (paused || process == null || sessionToken == 0L) {
+        ensureWorker();
+        if (paused || worker == null || sessionToken == 0L) {
             return;
         }
-        try {
-            process.invalidate(sessionToken, chunkX, chunkZ);
-        } catch (final IOException sendFault) {
-            handleFault(sendFault.getMessage());
+        if (!worker.invalidate(sessionToken, chunkX, chunkZ)) {
+            handleFault(worker.fault());
         }
     }
 
@@ -178,12 +162,11 @@ final class McTerrainWorker implements AutoCloseable {
         if (replay.containsKey(chunkKey)) {
             staleReplay.add(chunkKey);
         }
-        ensureProcess();
-        if (paused || process == null || sessionToken == 0L) {
+        ensureWorker();
+        if (paused || worker == null || sessionToken == 0L) {
             return;
         }
-        try {
-            process.submit(new TerrainDelta(
+        if (!worker.submit(new TerrainDelta(
                 sessionToken,
                 revision,
                 blockX >> 4,
@@ -192,19 +175,18 @@ final class McTerrainWorker implements AutoCloseable {
                 y,
                 blockZ & 15,
                 stateId
-            ));
-        } catch (final IOException sendFault) {
-            handleFault(sendFault.getMessage());
+            ))) {
+            handleFault(worker.fault());
         }
     }
 
     void resolveMaterialRequests() {
-        ensureProcess();
-        if (paused || process == null) {
+        ensureWorker();
+        if (paused || worker == null) {
             return;
         }
         MaterialRequest request;
-        while ((request = process.pollMaterialRequest()) != null) {
+        while ((request = worker.pollMaterialRequest()) != null) {
             pendingMaterials.addAll(request.stateIds());
         }
         if (pendingMaterials.isEmpty()) {
@@ -216,22 +198,20 @@ final class McTerrainWorker implements AutoCloseable {
             batch.add(iterator.next());
             iterator.remove();
         }
-        try {
-            process.submitMaterials(materials.resolve(batch));
-        } catch (final IOException sendFault) {
+        if (!worker.submitMaterials(materials.resolve(batch))) {
             pendingMaterials.addAll(batch);
-            handleFault(sendFault.getMessage());
+            handleFault(worker.fault());
         }
     }
 
     TerrainResult pollResult() {
-        ensureProcess();
-        if (paused || process == null) {
+        ensureWorker();
+        if (paused || worker == null) {
             return null;
         }
         TerrainResult result;
         do {
-            result = process.pollResult();
+            result = worker.pollResult();
             if (result == null) {
                 return null;
             }
@@ -251,11 +231,11 @@ final class McTerrainWorker implements AutoCloseable {
         return fault;
     }
 
-    private void ensureProcess() {
+    private void ensureWorker() {
         if (paused) {
             return;
         }
-        if (process == null) {
+        if (worker == null) {
             if (fault != null) {
                 if (restarted) {
                     paused = true;
@@ -266,13 +246,13 @@ final class McTerrainWorker implements AutoCloseable {
             launch();
             return;
         }
-        if (!process.isHealthy()) {
-            handleFault(process.fault());
+        if (!worker.isHealthy()) {
+            handleFault(worker.fault());
         }
     }
 
     private void handleFault(final String detail) {
-        closeProcess();
+        closeWorker();
         if (restarted) {
             paused = true;
             fault = detail == null ? "terrain worker stopped" : detail;
@@ -282,7 +262,7 @@ final class McTerrainWorker implements AutoCloseable {
         restarted = true;
         fault = detail;
         launch();
-        if (process == null) {
+        if (worker == null) {
             paused = true;
             return;
         }
@@ -299,12 +279,10 @@ final class McTerrainWorker implements AutoCloseable {
         }
         staleReplay.clear();
         for (final EncodedChunk chunk : replay.values()) {
-            try {
-                process.submit(chunk);
-            } catch (final IOException replayFault) {
+            if (!worker.submit(chunk)) {
                 paused = true;
-                fault = replayFault.getMessage();
-                closeProcess();
+                fault = worker.fault();
+                closeWorker();
                 return;
             }
         }
@@ -312,9 +290,9 @@ final class McTerrainWorker implements AutoCloseable {
 
     private void launch() {
         try {
-            process = TerrainWorkerProcess.launch(javaExecutable(), workerJar());
-        } catch (final Exception launchFault) {
-            process = null;
+            worker = new TerrainWorker();
+        } catch (final RuntimeException launchFault) {
+            worker = null;
             fault = launchFault.getMessage();
             if (restarted) {
                 paused = true;
@@ -324,62 +302,31 @@ final class McTerrainWorker implements AutoCloseable {
     }
 
     private void updateView() {
-        if (process == null || paused || sessionToken == 0L) {
+        if (worker == null || paused || sessionToken == 0L) {
             return;
         }
-        try {
-            process.updateView(
-                sessionToken, generation, pivotY,
-                minChunkX, maxChunkX, minChunkZ, maxChunkZ
-            );
-        } catch (final IOException updateFault) {
-            handleFault(updateFault.getMessage());
+        if (!worker.updateView(new TerrainView(
+            sessionToken, generation, pivotY,
+            minChunkX, maxChunkX, minChunkZ, maxChunkZ
+        ))) {
+            handleFault(worker.fault());
         }
     }
 
     private void initializePausedSession() {
-        if (process == null || paused || sessionToken == 0L) {
+        if (worker == null || paused || sessionToken == 0L) {
             return;
         }
-        try {
-            process.updateView(
-                sessionToken, generation, pivotY,
-                minChunkX, maxChunkX, minChunkZ, maxChunkZ
-            );
-            process.pause();
-        } catch (final IOException updateFault) {
-            handleFault(updateFault.getMessage());
+        if (!worker.updateView(new TerrainView(
+            sessionToken, generation, pivotY,
+            minChunkX, maxChunkX, minChunkZ, maxChunkZ
+        ))) {
+            handleFault(worker.fault());
+            return;
         }
-    }
-
-    private static Path javaExecutable() {
-        final boolean windows = System.getProperty("os.name", "")
-            .toLowerCase(java.util.Locale.ROOT).contains("win");
-        return Path.of(System.getProperty("java.home"), "bin", windows ? "java.exe" : "java");
-    }
-
-    private Path workerJar() throws IOException {
-        if (workerJar != null) {
-            return workerJar;
+        if (!worker.pause()) {
+            handleFault(worker.fault());
         }
-        final Path extracted = Files.createTempFile("confluxmap-terrain-worker-", ".jar");
-        try (InputStream input = McTerrainWorker.class.getResourceAsStream(
-            "/assets/confluxmap/worker/terrain-worker.bin"
-        )) {
-            if (input == null) {
-                Files.deleteIfExists(extracted);
-                throw new IOException("embedded terrain worker is unavailable");
-            }
-            Files.copy(input, extracted, StandardCopyOption.REPLACE_EXISTING);
-        }
-        return rememberExtracted(extracted);
-    }
-
-    private Path rememberExtracted(final Path extracted) {
-        extracted.toFile().deleteOnExit();
-        extractedWorker = extracted;
-        workerJar = extracted;
-        return workerJar;
     }
 
     private static long key(final int x, final int z) {
@@ -419,28 +366,16 @@ final class McTerrainWorker implements AutoCloseable {
             && (long) chunkZ <= (long) maxChunkZ + 1L;
     }
 
-    private void closeProcess() {
-        if (process != null) {
-            process.close();
-            process = null;
+    private void closeWorker() {
+        if (worker != null) {
+            worker.close();
+            worker = null;
         }
     }
 
     @Override
     public void close() {
         paused = true;
-        closeProcess();
-        if (extractedWorker != null) {
-            try {
-                Files.deleteIfExists(extractedWorker);
-            } catch (final IOException cleanupFault) {
-                ConfluxMapMod.LOGGER.warn(
-                    "Could not remove temporary terrain worker {}", extractedWorker,
-                    cleanupFault
-                );
-            }
-            extractedWorker = null;
-            workerJar = null;
-        }
+        closeWorker();
     }
 }

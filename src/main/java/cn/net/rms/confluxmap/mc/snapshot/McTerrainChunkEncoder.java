@@ -1,7 +1,7 @@
 package cn.net.rms.confluxmap.mc.snapshot;
 
-import cn.net.rms.confluxmap.terrain.protocol.EncodedChunk;
-import cn.net.rms.confluxmap.terrain.protocol.EncodedSection;
+import cn.net.rms.confluxmap.core.terrain.EncodedChunk;
+import cn.net.rms.confluxmap.core.terrain.EncodedSection;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.util.ArrayList;
