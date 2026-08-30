@@ -226,7 +226,9 @@ public final class McChunkSnapshotFactory {
         }
         System.arraycopy(baseArgb, 0, xaeroBaseArgb, 0, ChunkSnapshot.COLUMNS);
         System.arraycopy(overlayArgb, 0, xaeroOverlayArgb, 0, ChunkSnapshot.COLUMNS);
-        BiomeIdentityCapture.capture(world, pos, baseX, baseZ, surfaceY, biomeId);
+        BiomeIdentityCapture.capture(
+            world, pos, baseX, baseZ, surfaceY, biomeId, tints.biomeIdentityWindow()
+        );
         return new ChunkSnapshot(
             selection.chunkX(), selection.chunkZ(), sessionToken, selection.revision(),
             surfaceY, biomeId, fluidDepth, baseArgb, xaeroBaseArgb, tintArgb,
