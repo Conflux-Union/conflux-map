@@ -54,6 +54,8 @@ import java.util.function.Predicate;
 public final class TileService {
     private static final int UPLOAD_QUEUE_CAPACITY = 64;
     private static final int VIEWPORT_REGION_LOAD_ATTEMPTS = 128;
+    private static final ThreadLocal<ComposeScratch> COMPOSE_SCRATCH =
+        ThreadLocal.withInitial(ComposeScratch::new);
 
     private final MapWorldService mapWorlds;
     private final MapExecutors executors;
@@ -470,16 +472,18 @@ public final class TileService {
         for (int lod = 0; lod <= TileMath.MAX_LOD; lod++) {
             for (int dz = minDz; dz <= maxDz; dz++) {
                 for (int dx = minDx; dx <= maxDx; dx++) {
-                    markDirtyRegion(
+                    markDirtyChunkRegion(
                         tileKey(session, dimensionId, layer, lod, regionX + dx, regionZ + dz),
-                        token, regionX + dx, regionZ + dz
+                        token, chunkX, chunkZ, regionX + dx, regionZ + dz
                     );
                 }
             }
             final TileKey center = tileKey(
                 session, dimensionId, layer, lod, regionX, regionZ
             );
-            markDirtyRegion(BiomeTileKeys.toBiome(center), token, regionX, regionZ);
+            markDirtyChunkRegion(
+                BiomeTileKeys.toBiome(center), token, chunkX, chunkZ, regionX, regionZ
+            );
             coverage.add(center);
         }
     }
@@ -710,6 +714,17 @@ public final class TileService {
         queueDirty(key, DirtyWork.regions(token, regionX, regionZ));
     }
 
+    private void markDirtyChunkRegion(
+        final TileKey key,
+        final long token,
+        final int chunkX,
+        final int chunkZ,
+        final int regionX,
+        final int regionZ
+    ) {
+        queueDirty(key, DirtyWork.chunk(token, chunkX, chunkZ, regionX, regionZ));
+    }
+
     private void markDirty(final TileKey key, final DirtyWork work) {
         queueDirty(key, work);
         pump();
@@ -876,24 +891,48 @@ public final class TileService {
         // SURFACE tiles always carry their re-light inputs, even with dynamic lighting off
         // (compose then leaves pixels undarkened, which is exactly "composed at factor 1.0"),
         // so toggling the setting on relights already-uploaded tiles instead of stranding them.
-        final byte[] lightPlane = !biomeMode && layer.type() == MapLayer.Type.SURFACE
-            ? new byte[RegionColumns.SIZE * RegionColumns.SIZE]
-            : null;
+        final boolean carriesLight = !biomeMode && layer.type() == MapLayer.Type.SURFACE;
         // Only the sub-rects actually composed from in-memory regions are claimed; the
         // texture cache preserves its previous pixels everywhere else, so a recompose can
         // never erase a quadrant whose backing region was evicted to disk in the meantime.
         final List<TileUpdate.Rect> changed = new ArrayList<>();
         final int[] pixels;
+        final byte[] lightPlane;
+        TileUpdate.Rect payloadBounds = null;
         if (key.lod() == 0) {
-            pixels = composeLod0(
+            final TileUpdate.Rect dirtyRect = work.lod0Rect == null
+                ? DirtyWork.FULL_RECT
+                : work.lod0Rect;
+            final boolean packedPatch = work.lod0Rect != null;
+            final ComposeScratch scratch = COMPOSE_SCRATCH.get();
+            final int[] composedPixels = packedPatch
+                ? scratch.outputPixels
+                : new int[RegionColumns.SIZE * RegionColumns.SIZE];
+            final byte[] composedLight = carriesLight
+                ? (packedPatch
+                    ? scratch.outputLight
+                    : new byte[RegionColumns.SIZE * RegionColumns.SIZE])
+                : null;
+            composeLod0(
                 store, key.tileX(), key.tileZ(), biomeMode, applyAbsoluteHeight,
-                layer.type(), applyDaylight, daylightFactor, gamma, lightPlane,
-                mapColorStyle, xaeroShadow
+                layer.type(), applyDaylight, daylightFactor, gamma, composedLight,
+                mapColorStyle, xaeroShadow, dirtyRect, composedPixels
             );
             if (store.region(key.tileX(), key.tileZ()) != null) {
-                changed.add(new TileUpdate.Rect(0, 0, RegionColumns.SIZE, RegionColumns.SIZE));
+                changed.add(dirtyRect);
+            }
+            if (packedPatch && !changed.isEmpty()) {
+                pixels = packRect(composedPixels, dirtyRect);
+                lightPlane = composedLight == null ? null : packRect(composedLight, dirtyRect);
+                payloadBounds = dirtyRect;
+            } else {
+                pixels = composedPixels;
+                lightPlane = composedLight;
             }
         } else {
+            lightPlane = carriesLight
+                ? new byte[RegionColumns.SIZE * RegionColumns.SIZE]
+                : null;
             pixels = composeLodN(
                 store, key, biomeMode, applyAbsoluteHeight,
                 layer.type(), applyDaylight, daylightFactor, gamma, lightPlane, changed,
@@ -903,7 +942,9 @@ public final class TileService {
         final TileUpdate.Relight relight = lightPlane == null
             ? null
             : new TileUpdate.Relight(daylightFactor, gamma, lightPlane, mapColorStyle);
-        return new TileUpdate(key, pixels, List.copyOf(changed), relight);
+        return payloadBounds == null
+            ? new TileUpdate(key, pixels, List.copyOf(changed), relight)
+            : TileUpdate.patch(key, pixels, payloadBounds, relight);
     }
 
     /**
@@ -911,7 +952,7 @@ public final class TileService {
      * {@code outLight}, when non-null, receives the region's per-pixel block-light plane
      * (zeros where untouched) for the tile's {@link TileUpdate.Relight}.
      */
-    private static int[] composeLod0(
+    private static void composeLod0(
         final ColumnStore store,
         final int regionX,
         final int regionZ,
@@ -923,9 +964,10 @@ public final class TileService {
         final float gamma,
         final byte[] outLight,
         final MapColorStyle mapColorStyle,
-        final XaeroMapStyle.Shadow xaeroShadow
+        final XaeroMapStyle.Shadow xaeroShadow,
+        final TileUpdate.Rect dirtyRect,
+        final int[] pixels
     ) {
-        final int[] pixels = new int[RegionColumns.SIZE * RegionColumns.SIZE];
         final RegionColumns region = store.region(regionX, regionZ);
         if (region != null) {
             final RegionNeighborhood neighborhood = new RegionNeighborhood(
@@ -942,10 +984,10 @@ public final class TileService {
             composeRegion(
                 neighborhood, pixels,
                 biomeMode, applyAbsoluteHeight, layerType,
-                applyDaylight, daylightFactor, gamma, outLight, mapColorStyle, xaeroShadow
+                applyDaylight, daylightFactor, gamma, outLight, mapColorStyle, xaeroShadow,
+                dirtyRect
             );
         }
-        return pixels;
     }
 
     /**
@@ -992,11 +1034,13 @@ public final class TileService {
                 if (store.region(regionX, regionZ) == null) {
                     continue;
                 }
-                final byte[] fullLight = outLight == null ? null : new byte[size * size];
-                final int[] full = composeLod0(
+                final ComposeScratch scratch = COMPOSE_SCRATCH.get();
+                final byte[] fullLight = outLight == null ? null : scratch.outputLight;
+                final int[] full = scratch.outputPixels;
+                composeLod0(
                     store, regionX, regionZ, biomeMode, applyAbsoluteHeight,
                     layerType, applyDaylight, daylightFactor, gamma, fullLight,
-                    mapColorStyle, xaeroShadow
+                    mapColorStyle, xaeroShadow, DirtyWork.FULL_RECT, full
                 );
                 final int[] downsampled = downsample(full, size, lod);
                 stitch(downsampled, subSize, outPixels, dx * subSize, dz * subSize);
@@ -1078,6 +1122,34 @@ public final class TileService {
         }
     }
 
+    private static int[] packRect(final int[] source, final TileUpdate.Rect rect) {
+        final int[] packed = new int[rect.width() * rect.height()];
+        for (int row = 0; row < rect.height(); row++) {
+            System.arraycopy(
+                source,
+                (rect.y() + row) * RegionColumns.SIZE + rect.x(),
+                packed,
+                row * rect.width(),
+                rect.width()
+            );
+        }
+        return packed;
+    }
+
+    private static byte[] packRect(final byte[] source, final TileUpdate.Rect rect) {
+        final byte[] packed = new byte[rect.width() * rect.height()];
+        for (int row = 0; row < rect.height(); row++) {
+            System.arraycopy(
+                source,
+                (rect.y() + row) * RegionColumns.SIZE + rect.x(),
+                packed,
+                row * rect.width(),
+                rect.width()
+            );
+        }
+        return packed;
+    }
+
     private static void composeRegion(
         final RegionNeighborhood neighborhood,
         final int[] outPixels,
@@ -1089,29 +1161,37 @@ public final class TileService {
         final float gamma,
         final byte[] outLight,
         final MapColorStyle mapColorStyle,
-        final XaeroMapStyle.Shadow xaeroShadow
+        final XaeroMapStyle.Shadow xaeroShadow,
+        final TileUpdate.Rect dirtyRect
     ) {
         final int size = RegionColumns.SIZE;
-        final short[] surfaceY = new short[size * size];
-        final String[] biomeId = new String[size * size];
-        final byte[] fluidDepth = new byte[size * size];
-        final int[] baseArgb = new int[size * size];
-        final int[] xaeroBaseArgb = new int[size * size];
-        final int[] tintArgb = new int[size * size];
-        final int[] overlayArgb = new int[size * size];
-        final int[] xaeroOverlayArgb = new int[size * size];
-        final byte[] kind = new byte[size * size];
-        final byte[] light = new byte[size * size];
-        neighborhood.center().copyChunkRows(
-            0, size, surfaceY, biomeId, fluidDepth,
+        final ComposeScratch scratch = COMPOSE_SCRATCH.get();
+        final short[] surfaceY = scratch.surfaceY;
+        final String[] biomeId = scratch.biomeId;
+        final byte[] fluidDepth = scratch.fluidDepth;
+        final int[] baseArgb = scratch.baseArgb;
+        final int[] xaeroBaseArgb = scratch.xaeroBaseArgb;
+        final int[] tintArgb = scratch.tintArgb;
+        final int[] overlayArgb = scratch.overlayArgb;
+        final int[] xaeroOverlayArgb = scratch.xaeroOverlayArgb;
+        final byte[] kind = scratch.kind;
+        final byte[] light = scratch.light;
+        final int firstSourceRow = Math.max(0, dirtyRect.y() - 1);
+        final int lastSourceRow = Math.min(size, dirtyRect.y() + dirtyRect.height() + 1);
+        neighborhood.center().copyRowsAtSameOffset(
+            firstSourceRow, lastSourceRow - firstSourceRow,
+            surfaceY, biomeId, fluidDepth,
             baseArgb, xaeroBaseArgb, tintArgb, overlayArgb, xaeroOverlayArgb, kind, light
         );
         if (outLight != null) {
-            System.arraycopy(light, 0, outLight, 0, size * size);
+            for (int z = dirtyRect.y(); z < dirtyRect.y() + dirtyRect.height(); z++) {
+                final int offset = z * size + dirtyRect.x();
+                System.arraycopy(light, offset, outLight, offset, dirtyRect.width());
+            }
         }
 
-        for (int z = 0; z < size; z++) {
-            for (int x = 0; x < size; x++) {
+        for (int z = dirtyRect.y(); z < dirtyRect.y() + dirtyRect.height(); z++) {
+            for (int x = dirtyRect.x(); x < dirtyRect.x() + dirtyRect.width(); x++) {
                 final int idx = z * size + x;
                 final byte k = kind[idx];
                 if (k == SurfaceKind.UNKNOWN.ordinal() || k == SurfaceKind.VOID.ordinal()) {
@@ -1173,7 +1253,7 @@ public final class TileService {
                     composed = LightTint.applyGammaOverBakedLight(
                         composed,
                         light[idx] & 0xFF,
-                        isNetherFloorLayer(layerType),
+                        layerType.isNetherFloor(),
                         gamma
                     );
                 }
@@ -1240,7 +1320,7 @@ public final class TileService {
             ? LightTint.applyGammaOverBakedLight(
                 composed,
                 blockLight & 0xFF,
-                isNetherFloorLayer(layerType),
+                layerType.isNetherFloor(),
                 gamma
             )
             : composed;
@@ -1252,11 +1332,6 @@ public final class TileService {
             || layerType == MapLayer.Type.NETHER_CURRENT
             || layerType == MapLayer.Type.NETHER_SLICE
             || layerType == MapLayer.Type.END_SURFACE;
-    }
-
-    private static boolean isNetherFloorLayer(final MapLayer.Type layerType) {
-        return layerType == MapLayer.Type.NETHER_CURRENT
-            || layerType == MapLayer.Type.NETHER_SLICE;
     }
 
     private static double reliefMultiplier(
@@ -1466,13 +1541,61 @@ public final class TileService {
         return ((long) regionX << 32) | (regionZ & 0xFFFFFFFFL);
     }
 
-    private record DirtyWork(long token, Set<Long> regions) {
+    /** Worker-local planes reused across compositions; no instance escapes into an upload. */
+    private static final class ComposeScratch {
+        private static final int PIXELS = RegionColumns.SIZE * RegionColumns.SIZE;
+
+        final short[] surfaceY = new short[PIXELS];
+        final String[] biomeId = new String[PIXELS];
+        final byte[] fluidDepth = new byte[PIXELS];
+        final int[] baseArgb = new int[PIXELS];
+        final int[] xaeroBaseArgb = new int[PIXELS];
+        final int[] tintArgb = new int[PIXELS];
+        final int[] overlayArgb = new int[PIXELS];
+        final int[] xaeroOverlayArgb = new int[PIXELS];
+        final byte[] kind = new byte[PIXELS];
+        final byte[] light = new byte[PIXELS];
+        final int[] outputPixels = new int[PIXELS];
+        final byte[] outputLight = new byte[PIXELS];
+    }
+
+    private record DirtyWork(long token, Set<Long> regions, TileUpdate.Rect lod0Rect) {
+        private static final TileUpdate.Rect FULL_RECT = new TileUpdate.Rect(
+            0, 0, RegionColumns.SIZE, RegionColumns.SIZE
+        );
+
         static DirtyWork full(final long token) {
-            return new DirtyWork(token, null);
+            return new DirtyWork(token, null, null);
         }
 
         static DirtyWork regions(final long token, final int regionX, final int regionZ) {
-            return new DirtyWork(token, Set.of(regionKey(regionX, regionZ)));
+            return new DirtyWork(token, Set.of(regionKey(regionX, regionZ)), FULL_RECT);
+        }
+
+        static DirtyWork chunk(
+            final long token,
+            final int chunkX,
+            final int chunkZ,
+            final int regionX,
+            final int regionZ
+        ) {
+            final long regionOriginX = (long) regionX * RegionColumns.SIZE;
+            final long regionOriginZ = (long) regionZ * RegionColumns.SIZE;
+            final long chunkOriginX = (long) chunkX * 16L;
+            final long chunkOriginZ = (long) chunkZ * 16L;
+            final int minX = (int) Math.max(0L, chunkOriginX - 1L - regionOriginX);
+            final int minZ = (int) Math.max(0L, chunkOriginZ - 1L - regionOriginZ);
+            final int maxX = (int) Math.min(
+                RegionColumns.SIZE, chunkOriginX + 17L - regionOriginX
+            );
+            final int maxZ = (int) Math.min(
+                RegionColumns.SIZE, chunkOriginZ + 17L - regionOriginZ
+            );
+            return new DirtyWork(
+                token,
+                Set.of(regionKey(regionX, regionZ)),
+                new TileUpdate.Rect(minX, minZ, maxX - minX, maxZ - minZ)
+            );
         }
 
         static DirtyWork merge(final DirtyWork older, final DirtyWork newer) {
@@ -1481,7 +1604,23 @@ public final class TileService {
             }
             final Set<Long> merged = new HashSet<>(older.regions);
             merged.addAll(newer.regions);
-            return new DirtyWork(newer.token, Set.copyOf(merged));
+            return new DirtyWork(
+                newer.token, Set.copyOf(merged), mergeRects(older.lod0Rect, newer.lod0Rect)
+            );
+        }
+
+        private static TileUpdate.Rect mergeRects(
+            final TileUpdate.Rect first, final TileUpdate.Rect second
+        ) {
+            final int minX = Math.min(first.x(), second.x());
+            final int minY = Math.min(first.y(), second.y());
+            final int maxX = Math.max(
+                first.x() + first.width(), second.x() + second.width()
+            );
+            final int maxY = Math.max(
+                first.y() + first.height(), second.y() + second.height()
+            );
+            return new TileUpdate.Rect(minX, minY, maxX - minX, maxY - minY);
         }
     }
 }

@@ -165,6 +165,23 @@ class CubiomesNativeTest {
     }
 
     @Test
+    void netherBiomeSamplingUsesTheRequestedHeight() {
+        try (CubiomesContext ctx = CubiomesContext.create(mc21(), SEED, NETHER, 0)) {
+            assertNotNull(ctx);
+            final int[] lower = new int[256 * 256];
+            final int[] upper = new int[256 * 256];
+
+            assertEquals(0, ctx.biomesAtYStrided(0, 1, -128, -128, 256, 256, 1, lower));
+            assertEquals(0, ctx.biomesAtYStrided(127, 1, -128, -128, 256, 256, 1, upper));
+
+            assertFalse(
+                java.util.Arrays.equals(lower, upper),
+                "Nether biome access must retain its vertical Voronoi dimension"
+            );
+        }
+    }
+
+    @Test
     void spotBiomesShowARealisticMix() {
         // verified against cubiomes 32a72991c22a on 2026-07-20: savanna(35), river(7), forest(4),
         // desert_hills(17), desert(2), ocean(0) - a plausible, non-degenerate mix of land/water.

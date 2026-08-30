@@ -167,6 +167,29 @@ public final class LodSampling {
         return grid;
     }
 
+    /** Samples a flat biome-identity plane at one Nether block Y without predicting terrain. */
+    public static BaselineGrid sampleNetherBiomesAtY(
+        final BaselineSampler sampler,
+        final int lod,
+        final int tileOriginX,
+        final int tileOriginZ,
+        final int blockY
+    ) {
+        final BaselineGrid grid = new BaselineGrid(
+            lod, tileOriginX, tileOriginZ, BIOME_SUB_PER_AXIS[lod]
+        );
+        if (!sampleBiomesAtY(sampler, lod, tileOriginX, tileOriginZ, blockY, grid)) {
+            return null;
+        }
+        java.util.Arrays.fill(grid.terrainY, blockY);
+        java.util.Arrays.fill(grid.baseSurfaceY, blockY);
+        if (grid.supersampled()) {
+            sampleRawSubBiomesAtY(sampler, lod, tileOriginX, tileOriginZ, blockY, grid);
+            java.util.Arrays.fill(grid.subBaseSurfaceY, blockY);
+        }
+        return grid;
+    }
+
     /** Samples only one output-pixel window of the fixed Nether roof baseline. */
     public static BaselineGrid sampleNetherRoofWindow(
         final BaselineSampler sampler,
@@ -661,6 +684,28 @@ public final class LodSampling {
         return true;
     }
 
+    private static boolean sampleBiomesAtY(
+        final BaselineSampler sampler,
+        final int lod,
+        final int tileOriginX,
+        final int tileOriginZ,
+        final int blockY,
+        final BaselineGrid grid
+    ) {
+        final int stride = 1 << lod;
+        final int nativeX0 = tileOriginX + P_MIN * stride;
+        final int nativeZ0 = tileOriginZ + P_MIN * stride;
+        final int[] raw = new int[BaselineGrid.SIZE * BaselineGrid.SIZE];
+        if (!sampler.biomesAtYStrided(
+            blockY, 1, nativeX0, nativeZ0,
+            BaselineGrid.SIZE, BaselineGrid.SIZE, stride, raw
+        )) {
+            return false;
+        }
+        System.arraycopy(raw, 0, grid.biomeId, 0, raw.length);
+        return true;
+    }
+
     /** Coarse Nether pixels use raw 3D-biome samples rather than Overworld surface-biome queries. */
     private static void sampleRawSubBiomes(
         final BaselineSampler sampler,
@@ -680,6 +725,34 @@ public final class LodSampling {
         final int[] raw = new int[width * width];
         final boolean sampled = sampler.biomesStrided(
             scale, nativeX, nativeZ, width, width, stride, raw
+        );
+        for (int z = 0; z < width; z++) {
+            for (int x = 0; x < width; x++) {
+                final int pixel = (z / sub) * BaselineGrid.SIZE + x / sub;
+                grid.subBiomeId[grid.subIndex(pixel, x % sub, z % sub)] = sampled
+                    ? raw[z * width + x]
+                    : grid.biomeId[pixel];
+            }
+        }
+    }
+
+    private static void sampleRawSubBiomesAtY(
+        final BaselineSampler sampler,
+        final int lod,
+        final int tileOriginX,
+        final int tileOriginZ,
+        final int blockY,
+        final BaselineGrid grid
+    ) {
+        final int sub = grid.subPerAxis;
+        final int blocksPerPixel = 1 << lod;
+        final int blockStride = blocksPerPixel / sub;
+        final int width = BaselineGrid.SIZE * sub;
+        final int nativeX = tileOriginX + P_MIN * blocksPerPixel;
+        final int nativeZ = tileOriginZ + P_MIN * blocksPerPixel;
+        final int[] raw = new int[width * width];
+        final boolean sampled = sampler.biomesAtYStrided(
+            blockY, 1, nativeX, nativeZ, width, width, blockStride, raw
         );
         for (int z = 0; z < width; z++) {
             for (int x = 0; x < width; x++) {

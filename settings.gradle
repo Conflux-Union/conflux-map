@@ -43,6 +43,7 @@ plugins {
 }
 include ':common'
 include ':paper'
+include ':terrain-worker'
 file('versions').eachDir { final File dir ->
     final String version = ":$dir.name"
     include version

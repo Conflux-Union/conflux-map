@@ -34,7 +34,7 @@
 #include "finders.h"
 #include "terrain_features.h"
 
-#define CFX_ABI 10
+#define CFX_ABI 11
 #define CFX_NETHER_ROOF_Y 127
 
 #define CFX_OK              0
@@ -71,12 +71,11 @@ static int cfxValidScale(jint scale) {
     return scale == 1 || scale == 4 || scale == 16 || scale == 64 || scale == 256;
 }
 
-static int cfxGenerateBiomes(CfxContext *ctx, int *out, Range r) {
+static int cfxGenerateBiomes(CfxContext *ctx, int *out, Range r, int netherY) {
     if (ctx->dim == DIM_NETHER) {
-        /* The predicted Nether layer represents the top of the bedrock roof. Nether biomes are
-         * three-dimensional: scale 1 takes block coordinates, while every coarser supported scale
-         * addresses the underlying 1:4 noise lattice on Y. */
-        r.y = r.scale == 1 ? CFX_NETHER_ROOF_Y : CFX_NETHER_ROOF_Y / 4;
+        /* Nether biomes are three-dimensional: scale 1 takes block coordinates, while every
+         * coarser supported scale addresses the underlying 1:4 noise lattice on Y. */
+        r.y = r.scale == 1 ? netherY : floordiv(netherY, 4);
     }
     if (ctx->dim == DIM_OVERWORLD && ctx->mc >= MC_1_18
         && (r.scale == 1 || r.scale == 4)) {
@@ -88,7 +87,8 @@ static int cfxGenerateBiomes(CfxContext *ctx, int *out, Range r) {
 }
 
 static int cfxGenerateBiomesStrided(
-    CfxContext *ctx, int scale, int x, int z, int w, int h, int stride, int *sampled
+    CfxContext *ctx, int scale, int x, int z, int w, int h, int stride,
+    int netherY, int *sampled
 ) {
     const int64_t rawWidth64 = (int64_t) (w - 1) * stride + 1;
     const int64_t rawHeight64 = (int64_t) (h - 1) * stride + 1;
@@ -108,7 +108,7 @@ static int cfxGenerateBiomesStrided(
         int *dense = allocCache(&ctx->g, r);
         if (dense == NULL)
             return CFX_ERR_ALLOC;
-        const int err = cfxGenerateBiomes(ctx, dense, r);
+        const int err = cfxGenerateBiomes(ctx, dense, r, netherY);
         if (err != 0)
         {
             free(dense);
@@ -129,7 +129,7 @@ static int cfxGenerateBiomesStrided(
         int *row = allocCache(&ctx->g, r);
         if (row == NULL)
             return CFX_ERR_ALLOC;
-        const int err = cfxGenerateBiomes(ctx, row, r);
+        const int err = cfxGenerateBiomes(ctx, row, r, netherY);
         if (err != 0)
         {
             free(row);
@@ -148,13 +148,13 @@ static int cfxGenerateOverviewBiomes(
 ) {
     if (blockStride < 4)
         return cfxGenerateBiomesStrided(
-            ctx, 1, blockX, blockZ, w, h, blockStride, out
+            ctx, 1, blockX, blockZ, w, h, blockStride, CFX_NETHER_ROOF_Y, out
         );
     if (blockStride % 4 != 0)
         return CFX_ERR_BAD_ARGS;
     return cfxGenerateBiomesStrided(
         ctx, 4, floordiv(blockX, 4), floordiv(blockZ, 4),
-        w, h, blockStride / 4, out
+        w, h, blockStride / 4, CFX_NETHER_ROOF_Y, out
     );
 }
 
@@ -224,7 +224,7 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     if (cache == NULL) {
         return CFX_ERR_ALLOC;
     }
-    const int err = cfxGenerateBiomes(ctx, cache, r);
+    const int err = cfxGenerateBiomes(ctx, cache, r, CFX_NETHER_ROOF_Y);
     if (err != 0) {
         free(cache);
         return CFX_ERR_GENERATION;
@@ -261,13 +261,65 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
         return CFX_ERR_ALLOC;
     }
     const int err = cfxGenerateBiomesStrided(
-        ctx, scale, x, z, w, h, stride, sampled
+        ctx, scale, x, z, w, h, stride, CFX_NETHER_ROOF_Y, sampled
     );
     if (err != CFX_OK) {
         free(sampled);
         return err;
     }
 
+    (*env)->SetIntArrayRegion(env, out, 0, w * h, sampled);
+    free(sampled);
+    return CFX_OK;
+}
+
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxBiomesAtYStrided(
+    JNIEnv *env, jclass clazz, jlong handle, jint blockY, jint scale,
+    jint x, jint z, jint w, jint h, jint stride, jintArray out
+) {
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL)
+        return CFX_ERR_BAD_HANDLE;
+    if (ctx->dim != DIM_NETHER)
+        return CFX_ERR_WRONG_DIM;
+    if (!cfxValidCells(w, h) || stride <= 0)
+        return CFX_ERR_BAD_SIZE;
+    if (!cfxValidScale(scale))
+        return CFX_ERR_BAD_ARGS;
+    const int64_t rawWidth64 = (int64_t) (w - 1) * stride + 1;
+    const int64_t rawHeight64 = (int64_t) (h - 1) * stride + 1;
+    const int64_t lastX = (int64_t) x + (int64_t) (w - 1) * stride;
+    const int64_t lastZ = (int64_t) z + (int64_t) (h - 1) * stride;
+    if (rawWidth64 <= 0 || rawWidth64 > CFX_MAX_CELLS
+        || rawHeight64 <= 0 || rawHeight64 > CFX_MAX_CELLS
+        || (*env)->GetArrayLength(env, out) < w * h)
+        return CFX_ERR_BAD_SIZE;
+    if (lastX < INT32_MIN || lastX > INT32_MAX
+        || lastZ < INT32_MIN || lastZ > INT32_MAX)
+        return CFX_ERR_BAD_ARGS;
+
+    int *sampled = malloc(sizeof(int) * (size_t) w * (size_t) h);
+    if (sampled == NULL)
+        return CFX_ERR_ALLOC;
+    int j, i;
+    for (j = 0; j < h; j++) {
+        const int sampleZ = z + j * stride;
+        for (i = 0; i < w; i++) {
+            const int sampleX = x + i * stride;
+            if (scale == 1) {
+                int x4, y4, z4;
+                voronoiAccess3D(
+                    ctx->g.sha, sampleX, blockY, sampleZ, &x4, &y4, &z4
+                );
+                sampled[j*w+i] = getNetherBiome(&ctx->g.nn, x4, y4, z4, NULL);
+            } else {
+                sampled[j*w+i] = getNetherBiome(
+                    &ctx->g.nn, sampleX, floordiv(blockY, 4), sampleZ, NULL
+                );
+            }
+        }
+    }
     (*env)->SetIntArrayRegion(env, out, 0, w * h, sampled);
     free(sampled);
     return CFX_OK;

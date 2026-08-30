@@ -71,6 +71,16 @@ class DirtyChunkSetTest {
     }
 
     @Test
+    void discardRemovesForegroundWorkFromTheBackgroundQueue() {
+        final DirtyChunkSet dirty = new DirtyChunkSet();
+        dirty.mark(2, -3);
+
+        dirty.discard(2, -3);
+
+        assertEquals(0, dirty.size());
+    }
+
+    @Test
     void drainNearestTakesTheClosestChunksFirst() {
         final DirtyChunkSet dirty = new DirtyChunkSet();
         dirty.mark(10, 0);
@@ -186,6 +196,49 @@ class DirtyChunkSetTest {
             dirty.drainNearest(1, 0, 0, readiness).stream().map(DirtyChunkSetTest::keyOf).toList()
         );
         assertEquals(0, dirty.size());
+    }
+
+    @Test
+    void anExpectedNeighborFallsBackOnceThenWaitsForTheFinalCapture() {
+        final DirtyChunkSet dirty = new DirtyChunkSet();
+        dirty.mark(5, 0);
+
+        for (int drain = 1; drain < DirtyChunkSet.MAX_DEFERRALS; drain++) {
+            assertEquals(
+                List.of(),
+                dirty.drainNearest(
+                    1, 0, 0, (x, z) -> Readiness.AWAITING_NEIGHBORS
+                ),
+                "captured before the fallback deadline"
+            );
+        }
+
+        assertEquals(
+            List.of(key(5, 0)),
+            dirty.drainNearest(
+                1, 0, 0, (x, z) -> Readiness.AWAITING_NEIGHBORS
+            ).stream()
+                .map(DirtyChunkSetTest::keyOf)
+                .toList()
+        );
+
+        dirty.mark(5, 0);
+        for (int drain = 0; drain < DirtyChunkSet.MAX_DEFERRALS * 2; drain++) {
+            assertEquals(
+                List.of(),
+                dirty.drainNearest(
+                    1, 0, 0, (x, z) -> Readiness.AWAITING_NEIGHBORS
+                ),
+                "took the same degraded snapshot more than once"
+            );
+        }
+
+        assertEquals(
+            List.of(key(5, 0)),
+            dirty.drainNearest(1, 0, 0, ALL_READY).stream()
+                .map(DirtyChunkSetTest::keyOf)
+                .toList()
+        );
     }
 
     private static Set<String> drainAll(final DirtyChunkSet dirty, final int centerX, final int centerZ) {

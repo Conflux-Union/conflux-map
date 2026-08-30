@@ -63,6 +63,62 @@ class LodSamplingTest {
     }
 
     @ParameterizedTest
+    @ValueSource(ints = {0, 1, 2, 3, 4})
+    void netherBiomePlaneSamplesTheRequestedHeight(final int lod) {
+        final int[] sampledY = {Integer.MIN_VALUE};
+        final BaselineSampler sampler = new BaselineSampler() {
+            @Override
+            public boolean biomes(
+                final int scale, final int x, final int z, final int w, final int h,
+                final int[] out
+            ) {
+                throw new AssertionError("a height-aware Nether plane must not use the roof sampler");
+            }
+
+            @Override
+            public boolean biomesAtYStrided(
+                final int blockY,
+                final int scale,
+                final int x,
+                final int z,
+                final int w,
+                final int h,
+                final int stride,
+                final int[] out
+            ) {
+                sampledY[0] = blockY;
+                java.util.Arrays.fill(out, 173);
+                return true;
+            }
+
+            @Override
+            public boolean heights(
+                final int x4, final int z4, final int w, final int h, final int[] outY
+            ) {
+                throw new AssertionError("Nether biome prediction must not query Overworld heights");
+            }
+
+            @Override
+            public boolean endHeights(
+                final int x4, final int z4, final int w, final int h, final int[] outY
+            ) {
+                throw new AssertionError("Nether biome prediction must not query End heights");
+            }
+        };
+
+        final BaselineGrid grid = LodSampling.sampleNetherBiomesAtY(
+            sampler, lod, -8192, 4096, 37
+        );
+
+        assertNotNull(grid);
+        assertEquals(37, sampledY[0]);
+        final int center = BaselineGrid.index(128, 128);
+        assertEquals(173, grid.biomeId[center]);
+        assertEquals(37, grid.terrainY[center]);
+        assertEquals(37, grid.baseSurfaceY[center]);
+    }
+
+    @ParameterizedTest
     @ValueSource(ints = {2, 3, 4})
     void netherRoofWindowMatchesTheFullBaseline(final int lod) {
         final int minX = 29;

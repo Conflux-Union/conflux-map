@@ -43,7 +43,9 @@ final class DetachedCameraMapPolicyTest {
         assertTrue(source.contains("final int viewpointChunkX = viewpoint.blockX() >> 4;"));
         assertTrue(source.contains("final int viewpointChunkZ = viewpoint.blockZ() >> 4;"));
         assertTrue(source.contains("reseedViewport(viewpointChunkX, viewpointChunkZ);"));
-        assertTrue(source.contains("chunkBudget, viewpointChunkX, viewpointChunkZ"));
+        assertTrue(source.contains(
+            "tickBudget.maximumCandidates(),\n                viewpointChunkX,\n                viewpointChunkZ"
+        ));
     }
 
     private static Path preprocessedSource(final String relativePath) throws URISyntaxException {

@@ -1,4 +1,5 @@
 {
+  "confluxmap.live_terrain.paused": "实时地形已暂停，请检查日志",
   "key.categories.confluxmap": "Conflux 地图",
   "key.category.confluxmap.controls": "Conflux 地图",
   "key.confluxmap.toggle_minimap": "显示或隐藏小地图",

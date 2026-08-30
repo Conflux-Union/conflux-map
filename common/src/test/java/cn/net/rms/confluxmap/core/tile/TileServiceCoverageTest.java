@@ -9,6 +9,7 @@ import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SampleSource;
+import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.store.MapWorld;
@@ -16,7 +17,10 @@ import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.store.RegionColumns;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
@@ -114,6 +118,92 @@ class TileServiceCoverageTest {
     }
 
     @Test
+    void lod0ChunkInvalidationRecomposesOnlyTheChunkAndReliefBorder()
+        throws InterruptedException {
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final MapWorldService mapWorlds = new MapWorldService();
+            final SessionGuard.Session session = new SessionGuard.Session(
+                1L, new WorldIdentity("local", "lod0-incremental"), DimensionId.OVERWORLD
+            );
+            mapWorlds.switchSession(session);
+            mapWorlds.current().put(
+                MapLayer.SURFACE, snapshot(5, 7), SampleSource.REAL_LIVE
+            );
+            final TileService tiles = new TileService(
+                mapWorlds, executors, new ConfluxConfig(), new DaylightModel()
+            );
+            final TileKey lod0 = new TileKey(
+                session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), 0, 0, 0
+            );
+            tiles.setViewport(MapLayer.SURFACE, 0, 0, 0, 0, 0);
+            tiles.requestTile(lod0);
+            final TileUpdate full = drainOne(tiles, lod0);
+
+            tiles.markChunkStored(
+                session.token(), session.dimension(), MapLayer.SURFACE, 5, 7
+            );
+
+            final TileUpdate partial = drainOne(tiles, lod0);
+            final TileUpdate.Rect expected = new TileUpdate.Rect(
+                5 * 16 - 1, 7 * 16 - 1, 18, 18
+            );
+            assertEquals(List.of(expected), partial.changed());
+            assertEquals(expected, partial.payloadBounds());
+            assertRectEquals(full.argbPixels(), partial, expected);
+        } finally {
+            executors.shutdown(1000L);
+        }
+    }
+
+    @Test
+    void lod0BoundaryInvalidationUpdatesTheAdjacentReliefPixel()
+        throws InterruptedException {
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final MapWorldService mapWorlds = new MapWorldService();
+            final SessionGuard.Session session = new SessionGuard.Session(
+                1L, new WorldIdentity("local", "lod0-boundary"), DimensionId.OVERWORLD
+            );
+            mapWorlds.switchSession(session);
+            mapWorlds.current().put(MapLayer.SURFACE, snapshot(0, 0), SampleSource.REAL_LIVE);
+            mapWorlds.current().put(MapLayer.SURFACE, snapshot(-1, 0), SampleSource.REAL_LIVE);
+            final TileService tiles = new TileService(
+                mapWorlds, executors, new ConfluxConfig(), new DaylightModel()
+            );
+            final TileKey center = new TileKey(
+                session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), 0, 0, 0
+            );
+            final TileKey west = new TileKey(
+                session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), 0, -1, 0
+            );
+            tiles.setViewport(MapLayer.SURFACE, 0, -1, 0, 0, 0);
+            tiles.requestTile(center);
+            drainOne(tiles, center);
+            tiles.requestTile(west);
+            drainOne(tiles, west);
+
+            tiles.markChunkStored(
+                session.token(), session.dimension(), MapLayer.SURFACE, 0, 0
+            );
+
+            final Map<TileKey, TileUpdate> updates = drainAll(
+                tiles, Set.of(center, west)
+            );
+            assertEquals(
+                List.of(new TileUpdate.Rect(0, 0, 17, 17)),
+                updates.get(center).changed()
+            );
+            assertEquals(
+                List.of(new TileUpdate.Rect(255, 0, 1, 17)),
+                updates.get(west).changed()
+            );
+        } finally {
+            executors.shutdown(1000L);
+        }
+    }
+
+    @Test
     void batchedChunkInvalidationComposesSharedParentOnce() throws InterruptedException {
         final MapExecutors executors = new MapExecutors();
         try {
@@ -169,18 +259,56 @@ class TileServiceCoverageTest {
         throw new AssertionError("no upload arrived for " + key);
     }
 
+    private static Map<TileKey, TileUpdate> drainAll(
+        final TileService tiles, final Set<TileKey> keys
+    ) throws InterruptedException {
+        final Map<TileKey, TileUpdate> found = new HashMap<>();
+        final long deadline = System.nanoTime() + 5_000_000_000L;
+        while (System.nanoTime() < deadline && found.size() < keys.size()) {
+            for (final TileUpdate update : tiles.drainUploads(64)) {
+                if (keys.contains(update.key())) {
+                    found.put(update.key(), update);
+                }
+            }
+            Thread.sleep(10L);
+        }
+        if (found.size() != keys.size()) {
+            throw new AssertionError("missing uploads for " + keys);
+        }
+        return found;
+    }
+
+    private static void assertRectEquals(
+        final int[] expected, final TileUpdate actual, final TileUpdate.Rect rect
+    ) {
+        for (int z = rect.y(); z < rect.y() + rect.height(); z++) {
+            for (int x = rect.x(); x < rect.x() + rect.width(); x++) {
+                final int index = z * RegionColumns.SIZE + x;
+                assertEquals(expected[index], actual.pixelAt(x, z), "pixel " + x + "," + z);
+            }
+        }
+    }
+
     private static ChunkSnapshot snapshot(final int chunkX, final int chunkZ) {
+        final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
+        final int[] baseArgb = new int[ChunkSnapshot.COLUMNS];
+        final int[] tintArgb = new int[ChunkSnapshot.COLUMNS];
+        final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
+        Arrays.fill(surfaceY, (short) 64);
+        Arrays.fill(baseArgb, 0xFF609040);
+        Arrays.fill(tintArgb, 0xFFFFFFFF);
+        Arrays.fill(kind, (byte) SurfaceKind.LAND.ordinal());
         return new ChunkSnapshot(
             chunkX,
             chunkZ,
             1L,
-            new short[ChunkSnapshot.COLUMNS],
+            surfaceY,
             new String[ChunkSnapshot.COLUMNS],
             new byte[ChunkSnapshot.COLUMNS],
+            baseArgb,
+            tintArgb,
             new int[ChunkSnapshot.COLUMNS],
-            new int[ChunkSnapshot.COLUMNS],
-            new int[ChunkSnapshot.COLUMNS],
-            new byte[ChunkSnapshot.COLUMNS],
+            kind,
             new byte[ChunkSnapshot.COLUMNS]
         );
     }

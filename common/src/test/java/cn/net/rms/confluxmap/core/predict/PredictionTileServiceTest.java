@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.predict;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -37,6 +38,7 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -114,7 +116,7 @@ class PredictionTileServiceTest {
     }
 
     @Test
-    void composedPredictionExposesItsBiomeForCursorReadout(@TempDir final Path tempDir) throws InterruptedException {
+    void biomePredictionExposesItsBiomeForCursorReadout(@TempDir final Path tempDir) throws InterruptedException {
         Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
         final SessionGuard sessionGuard = new SessionGuard();
         final MapExecutors executors = new MapExecutors();
@@ -128,7 +130,7 @@ class PredictionTileServiceTest {
         sessionGuard.begin(WORLD, DIM);
 
         try {
-            predictionTiles.requestTile(new TileKey(WORLD, DIM, "surface!pred", 2, 0, 0));
+            predictionTiles.requestTile(new TileKey(WORLD, DIM, "surface!biome!pred", 2, 0, 0));
             awaitIdle(predictionTiles, 10_000L);
 
             assertEquals(35, predictionTiles.predictedBiomeAt(DIM, 2, 0, 0).orElse(-1));
@@ -166,6 +168,59 @@ class PredictionTileServiceTest {
             assertEquals(80, predictionTiles.predictedSurfaceYAt(DIM, 2, 0, 0).orElseThrow());
         } finally {
             executors.shutdown(2000);
+        }
+    }
+
+    @Test
+    void cursorBiomeRemainsAvailableWhileRealCoverageRefreshes(
+        @TempDir final Path tempDir
+    ) throws InterruptedException {
+        final SessionGuard sessionGuard = new SessionGuard();
+        final SessionGuard.Session session = sessionGuard.begin(WORLD, DIM);
+        final MapWorldService worlds = new MapWorldService();
+        worlds.switchSession(session);
+        final MapExecutors executors = new MapExecutors();
+        final TileService uploads = new TileService(
+            worlds, executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.FLAT, WorldPreset.DEFAULT);
+        state.setFlatBaseline(new FlatBaseline(1, 63, SurfaceKind.LAND.ordinal(), 11, 0));
+        final PredictionTileService predictionTiles = newService(
+            sessionGuard, state, executors, uploads
+        );
+        predictionTiles.bindCorrectionStore(new CorrectionStore(tempDir));
+        final TileKey key = new TileKey(WORLD, DIM, "surface!pred", 0, 0, 0);
+        final CountDownLatch workersReady = new CountDownLatch(executors.workerCount());
+        final CountDownLatch releaseWorkers = new CountDownLatch(1);
+
+        try {
+            predictionTiles.setViewport(DIM, 0, 0, 0, 0, 0);
+            predictionTiles.requestTile(key);
+            awaitIdle(predictionTiles);
+            assertTrue(predictionTiles.predictedBiomeAt(DIM, 0, 0, 0).isPresent());
+
+            for (int i = 0; i < executors.workerCount(); i++) {
+                executors.workers().execute(() -> {
+                    workersReady.countDown();
+                    try {
+                        releaseWorkers.await();
+                    } catch (final InterruptedException ignored) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+            }
+            assertTrue(workersReady.await(2, TimeUnit.SECONDS));
+
+            predictionTiles.refreshLiveCoverage();
+
+            assertTrue(
+                predictionTiles.predictedBiomeAt(DIM, 0, 0, 0).isPresent(),
+                "cursor biome must not disappear while its predicted tile refreshes"
+            );
+        } finally {
+            releaseWorkers.countDown();
+            executors.shutdown(2000L);
         }
     }
 
@@ -282,6 +337,78 @@ class PredictionTileServiceTest {
             );
         } finally {
             executors.shutdown(2000);
+        }
+    }
+
+    @Test
+    void lowerNetherBiomeLayerComposesAtTheSelectedHeight(
+        @TempDir final Path tempDir
+    ) throws InterruptedException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final SessionGuard sessionGuard = new SessionGuard();
+        final SessionGuard.Session session = sessionGuard.begin(WORLD, DimensionId.NETHER);
+        final MapWorldService worlds = new MapWorldService();
+        worlds.switchSession(session);
+        final MapExecutors executors = new MapExecutors();
+        final TileService uploads = new TileService(
+            worlds, executors, new ConfluxConfig(), new DaylightModel()
+        );
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.DEFAULT, WorldPreset.DEFAULT);
+        state.setSeed(146008555L, McVersions.toCubiomes("1.21.1").orElseThrow());
+        final PredictionTileService predictionTiles = newService(
+            sessionGuard, state, executors, uploads
+        );
+        predictionTiles.bindCorrectionStore(new CorrectionStore(tempDir));
+        predictionTiles.setNetherBiomeY(37);
+        final TileKey key = new TileKey(
+            WORLD, DimensionId.NETHER, "nether!biome!pred", 2, 0, 0
+        );
+
+        try {
+            predictionTiles.requestTile(key);
+            awaitIdle(predictionTiles, 10_000L);
+
+            final TileUpdate update = uploads.drainUploads(8).stream()
+                .filter(candidate -> candidate.key().equals(key))
+                .findFirst()
+                .orElseThrow();
+            assertTrue(Arrays.stream(update.argbPixels()).anyMatch(color -> color != Argb.TRANSPARENT));
+            assertTrue(
+                predictionTiles.predictedBiomeAt(
+                    DimensionId.NETHER, MapLayer.NETHER_CURRENT, 2, 0, 0
+                ).isPresent()
+            );
+
+            predictionTiles.setNetherBiomeY(93);
+            awaitIdle(predictionTiles, 10_000L);
+            final TileUpdate higher = uploads.drainUploads(8).stream()
+                .filter(candidate -> candidate.key().equals(key))
+                .findFirst()
+                .orElseThrow();
+            assertFalse(
+                Arrays.equals(update.argbPixels(), higher.argbPixels()),
+                "changing the selected Nether height must refresh its biome plane"
+            );
+
+            predictionTiles.setViewport(DimensionId.NETHER, 2, 0, 0, 0, 0);
+            assertTrue(worlds.current().put(
+                MapLayer.NETHER_CURRENT, voidSnapshot(session.token()), SampleSource.REAL_LIVE
+            ));
+            uploads.markChunkStored(
+                session.token(), DimensionId.NETHER, MapLayer.NETHER_CURRENT, 0, 0
+            );
+            awaitIdle(predictionTiles, 10_000L);
+            final TileUpdate covered = uploads.drainUploads(64).stream()
+                .filter(candidate -> candidate.key().equals(key))
+                .reduce((first, second) -> second)
+                .orElseThrow();
+            assertEquals(
+                Argb.TRANSPARENT, covered.argbPixels()[0],
+                "captured current-layer coverage must replace the predicted biome pixel"
+            );
+        } finally {
+            executors.shutdown(2000L);
         }
     }
 

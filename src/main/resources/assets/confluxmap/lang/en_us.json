@@ -1,4 +1,5 @@
 {
+  "confluxmap.live_terrain.paused": "Live terrain paused — check the log",
   "key.categories.confluxmap": "Conflux Map",
   "key.category.confluxmap.controls": "Conflux Map",
   "key.confluxmap.toggle_minimap": "Show/Hide Minimap",

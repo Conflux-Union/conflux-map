@@ -308,7 +308,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
         minimapHudRenderer = new MinimapHudRenderer(
             client, config, gameBridge, tileService, tileTextureManager, radarScanner, entityIconManager,
             playerTrail, annotationService, layerSelector, waypointRenderCatalog,
-            radarViewRange, uiResourceTheme
+            radarViewRange, uiResourceTheme, chunkCapture::setMinimapViewport,
+            chunkCapture::liveTerrainPaused
         );
         waypointWorldRenderer = new WaypointWorldRenderer(
             client, config, gameBridge, waypointRenderCatalog, waypointHighlightState
@@ -400,6 +401,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         surveyReminderNotifier.flush();
         configIo.save(config);
         entityIconManager.close();
+        chunkCapture.close();
         //#if MC>=260200
         //$$ Mesh.close();
         //#endif

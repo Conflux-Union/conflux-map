@@ -31,6 +31,10 @@ public record MapLayer(Type type, int param) {
         public boolean persistent() {
             return persistent;
         }
+
+        public boolean isNetherFloor() {
+            return this == NETHER_CURRENT || this == NETHER_SLICE;
+        }
     }
 
     public static final MapLayer SURFACE = new MapLayer(Type.SURFACE, 0);

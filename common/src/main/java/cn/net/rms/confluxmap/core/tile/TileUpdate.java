@@ -3,29 +3,53 @@ package cn.net.rms.confluxmap.core.tile;
 import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 /**
- * One freshly-composed tile, ready for the render thread to upload. {@code argbPixels}
- * is 256x256 (LOD0), row-major, {@code z * 256 + x}. {@code changed} lists the sub-rects
- * this pass actually composed: a tile backed by in-memory data reports the full tile,
- * while a LOD-N compose whose covered regions are only partially resident reports one
- * rect per resident region's quadrant. Pixels outside every rect are unspecified (left
- * at zero) and the texture cache must keep its previous content there - that is what
- * stops a recompose from erasing quadrants whose regions were evicted to disk.
+ * One freshly-composed tile, ready for the render thread to upload. Full updates keep a
+ * 256x256 row-major {@code argbPixels} plane. A single-rectangle patch may instead carry only
+ * that rectangle's packed pixels; {@code payloadBounds} identifies their destination. This
+ * avoids allocating two whole tile planes for every 18x18 live-chunk refresh. {@code changed}
+ * lists the sub-rects this pass actually composed, and the texture cache keeps its previous
+ * content everywhere else.
  */
 public record TileUpdate(
     TileKey key,
     int[] argbPixels,
     List<Rect> changed,
-    Relight relight
+    Relight relight,
+    Rect payloadBounds
 ) {
     /** One composed sub-rect of the 256x256 tile, in tile-pixel coordinates. */
     public record Rect(int x, int y, int width, int height) {
     }
 
     private static final List<Rect> FULL_TILE = List.of(new Rect(0, 0, 256, 256));
+
+    /** Backward-compatible full-plane constructor used by prediction and tests. */
+    public TileUpdate(
+        final TileKey key,
+        final int[] argbPixels,
+        final List<Rect> changed,
+        final Relight relight
+    ) {
+        this(key, argbPixels, changed, relight, null);
+    }
+
+    /** A packed single-rectangle update. Both color and light planes use the rectangle's stride. */
+    public static TileUpdate patch(
+        final TileKey key,
+        final int[] argbPixels,
+        final Rect changed,
+        final Relight relight
+    ) {
+        final int expected = changed.width * changed.height;
+        if (argbPixels.length != expected
+            || (relight != null && relight.lightLevels.length != expected)) {
+            throw new IllegalArgumentException("packed tile patch has the wrong plane size");
+        }
+        return new TileUpdate(key, argbPixels, List.of(changed), relight, changed);
+    }
 
     /**
      * How this tile's pixels can be re-lit in place when the day/night factor or gamma moves on
@@ -63,7 +87,32 @@ public record TileUpdate(
     }
 
     public static TileUpdate fullTile(final TileKey key, final int[] argbPixels, final Relight relight) {
-        return new TileUpdate(key, argbPixels, FULL_TILE, relight);
+        return new TileUpdate(key, argbPixels, FULL_TILE, relight, null);
+    }
+
+    /** Returns one destination pixel regardless of whether this update is full or packed. */
+    public int pixelAt(final int x, final int y) {
+        return argbPixels[sourceIndex(x, y)];
+    }
+
+    /** Returns one destination light level regardless of whether this update is full or packed. */
+    public byte lightLevelAt(final int x, final int y) {
+        if (relight == null) {
+            throw new IllegalStateException("tile update has no relight plane");
+        }
+        return relight.lightLevels[sourceIndex(x, y)];
+    }
+
+    /** Source-plane index for the first pixel of a destination row segment. */
+    public int sourceIndexAt(final int x, final int y) {
+        return sourceIndex(x, y);
+    }
+
+    private int sourceIndex(final int x, final int y) {
+        if (payloadBounds == null) {
+            return y * 256 + x;
+        }
+        return (y - payloadBounds.y) * payloadBounds.width + x - payloadBounds.x;
     }
 
     /**
@@ -74,12 +123,15 @@ public record TileUpdate(
         if (!older.key.equals(newer.key)) {
             throw new IllegalArgumentException("cannot merge updates for different tiles");
         }
-        final int[] pixels = Arrays.copyOf(older.argbPixels, older.argbPixels.length);
-        copyRects(newer.argbPixels, pixels, newer.changed);
+        final int[] pixels = new int[256 * 256];
+        copyRects(older, pixels);
+        copyRects(newer, pixels);
         final List<Rect> changed = new ArrayList<>(older.changed.size() + newer.changed.size());
         changed.addAll(older.changed);
         changed.addAll(newer.changed);
-        return new TileUpdate(older.key, pixels, List.copyOf(changed), mergeRelight(older, newer));
+        return new TileUpdate(
+            older.key, pixels, List.copyOf(changed), mergeRelight(older, newer), null
+        );
     }
 
     private static Relight mergeRelight(final TileUpdate older, final TileUpdate newer) {
@@ -87,12 +139,11 @@ public record TileUpdate(
             || older.relight.composedDaylight != newer.relight.composedDaylight
             || older.relight.composedGamma != newer.relight.composedGamma
             || older.relight.style != newer.relight.style) {
-            return newer.relight;
+            return expandedRelight(newer);
         }
-        final byte[] levels = Arrays.copyOf(
-            older.relight.lightLevels, older.relight.lightLevels.length
-        );
-        copyRects(newer.relight.lightLevels, levels, newer.changed);
+        final byte[] levels = new byte[256 * 256];
+        copyLightRects(older, levels);
+        copyLightRects(newer, levels);
         return new Relight(
             newer.relight.composedDaylight,
             newer.relight.composedGamma,
@@ -101,20 +152,50 @@ public record TileUpdate(
         );
     }
 
-    private static void copyRects(final int[] source, final int[] target, final List<Rect> rects) {
-        for (final Rect rect : rects) {
+    private static Relight expandedRelight(final TileUpdate update) {
+        if (update.relight == null || update.payloadBounds == null) {
+            return update.relight;
+        }
+        final byte[] levels = new byte[256 * 256];
+        copyLightRects(update, levels);
+        return new Relight(
+            update.relight.composedDaylight,
+            update.relight.composedGamma,
+            levels,
+            update.relight.style
+        );
+    }
+
+    private static void copyRects(final TileUpdate source, final int[] target) {
+        for (final Rect rect : source.changed) {
             for (int row = 0; row < rect.height; row++) {
-                final int offset = (rect.y + row) * 256 + rect.x;
-                System.arraycopy(source, offset, target, offset, rect.width);
+                final int targetOffset = (rect.y + row) * 256 + rect.x;
+                if (source.payloadBounds == null) {
+                    System.arraycopy(source.argbPixels, targetOffset, target, targetOffset, rect.width);
+                } else {
+                    final int sourceOffset = (rect.y + row - source.payloadBounds.y)
+                        * source.payloadBounds.width + rect.x - source.payloadBounds.x;
+                    System.arraycopy(source.argbPixels, sourceOffset, target, targetOffset, rect.width);
+                }
             }
         }
     }
 
-    private static void copyRects(final byte[] source, final byte[] target, final List<Rect> rects) {
-        for (final Rect rect : rects) {
+    private static void copyLightRects(final TileUpdate source, final byte[] target) {
+        for (final Rect rect : source.changed) {
             for (int row = 0; row < rect.height; row++) {
-                final int offset = (rect.y + row) * 256 + rect.x;
-                System.arraycopy(source, offset, target, offset, rect.width);
+                final int targetOffset = (rect.y + row) * 256 + rect.x;
+                if (source.payloadBounds == null) {
+                    System.arraycopy(
+                        source.relight.lightLevels, targetOffset, target, targetOffset, rect.width
+                    );
+                } else {
+                    final int sourceOffset = (rect.y + row - source.payloadBounds.y)
+                        * source.payloadBounds.width + rect.x - source.payloadBounds.x;
+                    System.arraycopy(
+                        source.relight.lightLevels, sourceOffset, target, targetOffset, rect.width
+                    );
+                }
             }
         }
     }

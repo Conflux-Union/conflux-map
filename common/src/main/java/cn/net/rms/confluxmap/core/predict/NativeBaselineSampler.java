@@ -50,6 +50,28 @@ public final class NativeBaselineSampler implements BaselineSampler {
     }
 
     @Override
+    public boolean biomesAtYStrided(
+        final int blockY,
+        final int scale,
+        final int x,
+        final int z,
+        final int w,
+        final int h,
+        final int stride,
+        final int[] out
+    ) {
+        try {
+            final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, flags);
+            return ctx != null && ctx.biomesAtYStrided(
+                blockY, scale, x, z, w, h, stride, out
+            ) == 0;
+        } catch (final Throwable fault) {
+            NativeLib.disableForSession(fault);
+            return false;
+        }
+    }
+
+    @Override
     public boolean heights(final int x4, final int z4, final int w, final int h, final int[] outY) {
         try {
             final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, flags);

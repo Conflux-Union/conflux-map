@@ -150,11 +150,17 @@ public final class TileTextureManager {
         for (final TileUpdate.Rect rect : update.changed()) {
             for (int y = rect.y(); y < rect.y() + rect.height(); y++) {
                 final int row = y * TILE_SIZE;
-                for (int x = rect.x(); x < rect.x() + rect.width(); x++) {
-                    NativeImages.setArgb(image, x, y, pixels[row + x]);
+                final int source = update.sourceIndexAt(rect.x(), y);
+                for (int offset = 0; offset < rect.width(); offset++) {
+                    NativeImages.setArgb(
+                        image, rect.x() + offset, y, pixels[source + offset]
+                    );
                 }
                 if (relight != null) {
-                    System.arraycopy(relight.lightLevels(), row + rect.x(), entry.lightLevels, row + rect.x(), rect.width());
+                    System.arraycopy(
+                        relight.lightLevels(), source,
+                        entry.lightLevels, row + rect.x(), rect.width()
+                    );
                 }
             }
         }

@@ -32,4 +32,13 @@ public final class ChunkCaptureHandler {
     public static void blockDirty(final int blockX, final int blockZ) {
         chunkDirty(blockX >> 4, blockZ >> 4);
     }
+
+    public static void blockDirty(
+        final int blockX, final int blockY, final int blockZ, final int stateId
+    ) {
+        final ChunkCaptureService s = service;
+        if (s != null) {
+            s.markBlockDirty(blockX, blockY, blockZ, stateId);
+        }
+    }
 }

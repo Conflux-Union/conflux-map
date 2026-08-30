@@ -7,6 +7,8 @@ import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.mc.color.BiomeTintResolver;
 import cn.net.rms.confluxmap.mc.color.SpriteColorSampler;
+import cn.net.rms.confluxmap.terrain.protocol.CaveChunkResult;
+import cn.net.rms.confluxmap.terrain.protocol.TerrainResult;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
@@ -126,6 +128,107 @@ public final class McChunkSnapshotFactory {
         return new ChunkSnapshot(
             chunkX, chunkZ, sessionToken, world.getTime(), surfaceY, biomeId, fluidDepth,
             baseArgb, xaeroBaseArgb, tintArgb, overlayArgb, xaeroOverlayArgb, kind, light
+        );
+    }
+
+    /**
+     * Finishes a process-selected cave chunk without repeating its vertical scan. Only the
+     * selected floor and optional overlay positions touch Minecraft state, tint, models and
+     * lighting here; a concurrent block change rejects the result so the dirty queue can retry.
+     */
+    public ChunkSnapshot finishFloorSelection(
+        final TerrainResult envelope, final MapLayer layer, final long sessionToken
+    ) {
+        final ClientWorld world = client.world;
+        if (world == null || envelope.sessionToken() != sessionToken) {
+            return null;
+        }
+        final CaveChunkResult selection = envelope.result();
+        final WorldChunk chunk = (WorldChunk) world.getChunkManager().getChunk(
+            selection.chunkX(), selection.chunkZ(), ChunkStatus.FULL, false
+        );
+        if (chunk == null) {
+            return null;
+        }
+
+        final short[] surfaceY = selection.surfaceY().clone();
+        final String[] biomeId = new String[ChunkSnapshot.COLUMNS];
+        final byte[] fluidDepth = new byte[ChunkSnapshot.COLUMNS];
+        final int[] baseArgb = new int[ChunkSnapshot.COLUMNS];
+        final int[] xaeroBaseArgb = new int[ChunkSnapshot.COLUMNS];
+        final int[] tintArgb = new int[ChunkSnapshot.COLUMNS];
+        final int[] overlayArgb = new int[ChunkSnapshot.COLUMNS];
+        final int[] xaeroOverlayArgb = new int[ChunkSnapshot.COLUMNS];
+        final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
+        final byte[] light = new byte[ChunkSnapshot.COLUMNS];
+        java.util.Arrays.fill(tintArgb, 0xFFFFFFFF);
+
+        final BlockPos.Mutable pos = new BlockPos.Mutable();
+        final int baseX = selection.chunkX() << 4;
+        final int baseZ = selection.chunkZ() << 4;
+        final int worldMaxY = world.getTopY();
+        final boolean netherAmbient = isNetherLayer(layer.type());
+        tints.beginChunk(world, selection.chunkX(), selection.chunkZ());
+        for (int z = 0; z < 16; z++) {
+            for (int x = 0; x < 16; x++) {
+                final int index = z * 16 + x;
+                final int expectedFloor = selection.floorStateId()[index];
+                if (expectedFloor < 0) {
+                    writeVoid(
+                        index, selection.pivotY(), surfaceY, kind, baseArgb, tintArgb,
+                        overlayArgb, fluidDepth, light
+                    );
+                    continue;
+                }
+                final int y = surfaceY[index];
+                final int worldX = baseX + x;
+                final int worldZ = baseZ + z;
+                pos.set(worldX, y, worldZ);
+                final BlockState rawFloor = chunk.getBlockState(pos);
+                if (Block.getRawIdFromState(rawFloor) != expectedFloor) {
+                    return null;
+                }
+                final BlockState floor = collapse(rawFloor);
+                final int floorTint = tints.resolve(floor, world, worldX, y, worldZ);
+                int color = Argb.multiply(sampler.colorFor(floor, world, pos), floorTint);
+                if (selection.crossSection()[index]) {
+                    color = Argb.scale(color, CROSS_SECTION_DARKEN);
+                } else {
+                    color = applyLight(color, pos, world, floor.getBlock(), netherAmbient);
+                }
+
+                int overlayColor = Argb.TRANSPARENT;
+                final int expectedOverlay = selection.overlayStateId()[index];
+                if (expectedOverlay >= 0 && y + 1 < worldMaxY) {
+                    pos.set(worldX, y + 1, worldZ);
+                    final BlockState rawOverlay = chunk.getBlockState(pos);
+                    if (Block.getRawIdFromState(rawOverlay) != expectedOverlay) {
+                        return null;
+                    }
+                    final BlockState overlay = collapse(rawOverlay);
+                    final int overlayTint = tints.resolve(
+                        overlay, world, worldX, y + 1, worldZ
+                    );
+                    overlayColor = applyLight(
+                        Argb.multiply(sampler.colorFor(overlay, world, pos), overlayTint),
+                        pos, world, overlay.getBlock(), netherAmbient
+                    );
+                }
+                baseArgb[index] = color;
+                overlayArgb[index] = overlayColor;
+                kind[index] = (byte) classifySurfaceKind(floor.getBlock()).ordinal();
+                light[index] = sampleBlockLightAbove(
+                    world, pos, worldX, y, worldZ, worldMaxY
+                );
+            }
+        }
+        System.arraycopy(baseArgb, 0, xaeroBaseArgb, 0, ChunkSnapshot.COLUMNS);
+        System.arraycopy(overlayArgb, 0, xaeroOverlayArgb, 0, ChunkSnapshot.COLUMNS);
+        BiomeIdentityCapture.capture(world, pos, baseX, baseZ, surfaceY, biomeId);
+        return new ChunkSnapshot(
+            selection.chunkX(), selection.chunkZ(), sessionToken, selection.revision(),
+            surfaceY, biomeId, fluidDepth, baseArgb, xaeroBaseArgb, tintArgb,
+            overlayArgb, xaeroOverlayArgb, kind, light
         );
     }
 
@@ -564,12 +667,12 @@ public final class McChunkSnapshotFactory {
     }
 
     /** §2.1's pivot-scan open test: non-opaque (§1's opacity test) and not lava. */
-    private static boolean isOpenForFloorScan(final BlockState state, final ClientWorld world, final BlockPos pos) {
+    static boolean isOpenForFloorScan(final BlockState state, final ClientWorld world, final BlockPos pos) {
         return !isOpaque(state, world, pos) && state.getBlock() != Blocks.LAVA;
     }
 
     /** §2.1's overhang/foliage overlay eligibility: snow, or anything that isn't air/lava/water. */
-    private static boolean isFloorOverlayCandidate(final BlockState state) {
+    static boolean isFloorOverlayCandidate(final BlockState state) {
         if (state.getBlock() instanceof SnowBlock) {
             return true;
         }

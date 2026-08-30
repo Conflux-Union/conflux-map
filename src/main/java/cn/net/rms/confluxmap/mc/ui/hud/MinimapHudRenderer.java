@@ -19,6 +19,7 @@ import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.trail.PlayerTrail;
 import cn.net.rms.confluxmap.core.trail.PlayerTrailProjection;
+import cn.net.rms.confluxmap.core.util.ChunkViewport;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
@@ -44,6 +45,8 @@ import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
+import java.util.function.BooleanSupplier;
 //#if MC>=260100
 //$$ import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 //#else
@@ -97,6 +100,8 @@ public final class MinimapHudRenderer {
     private final WaypointRenderCatalog waypointRenderCatalog;
     private final RadarViewRange radarViewRange;
     private final UiResourceTheme uiTheme;
+    private final Consumer<ChunkViewport> captureViewportPublisher;
+    private final BooleanSupplier liveTerrainPaused;
 
     public MinimapHudRenderer(
         final MinecraftClient client,
@@ -111,7 +116,9 @@ public final class MinimapHudRenderer {
         final LayerSelector layerSelector,
         final WaypointRenderCatalog waypointRenderCatalog,
         final RadarViewRange radarViewRange,
-        final UiResourceTheme uiTheme
+        final UiResourceTheme uiTheme,
+        final Consumer<ChunkViewport> captureViewportPublisher,
+        final BooleanSupplier liveTerrainPaused
     ) {
         this.client = client;
         this.config = config;
@@ -126,6 +133,8 @@ public final class MinimapHudRenderer {
         this.waypointRenderCatalog = waypointRenderCatalog;
         this.radarViewRange = radarViewRange;
         this.uiTheme = uiTheme;
+        this.captureViewportPublisher = captureViewportPublisher;
+        this.liveTerrainPaused = liveTerrainPaused;
     }
 
     public void register() {
@@ -174,6 +183,7 @@ public final class MinimapHudRenderer {
             containerOpen,
             MinecraftAccess.isFullDebugOverlayVisible(client)
         )) {
+            captureViewportPublisher.accept(null);
             // FullscreenMapScreen owns radarViewRange while it's open; otherwise the minimap
             // isn't rendering at all, so there's no visible map surface for the radar to scan.
             if (!fullscreenOpen) {
@@ -186,6 +196,7 @@ public final class MinimapHudRenderer {
         if (playerView.isEmpty()) {
             tiles.clearViewport();
             radarViewRange.set(0);
+            captureViewportPublisher.accept(null);
             return;
         }
         final PlayerView player = playerView.get();
@@ -248,7 +259,7 @@ public final class MinimapHudRenderer {
                 RenderUtil.rotateZ(fbo, mapAngle);
             }
             RenderUtil.beginTexturedQuads();
-            drawTiles(fbo, contentSize, rotate, player);
+            drawTiles(fbo, contentSize, circle, mapAngle, player);
             fbo.pop();
             drawPlayerTrail(
                 fbo, player,
@@ -295,7 +306,7 @@ public final class MinimapHudRenderer {
             if (rotate) {
                 RenderUtil.rotateZ(matrices, mapAngle);
             }
-            drawTiles(matrices, contentSize, rotate, player);
+            drawTiles(matrices, contentSize, circle, mapAngle, player);
             matrices.pop();
             drawPlayerTrail(matrices, player, centerX, centerY, contentSize, mapAngle);
             if (!visibleAnnotations.isEmpty()) {
@@ -500,10 +511,28 @@ public final class MinimapHudRenderer {
      * in a coordinate space whose origin is the minimap center (the caller has
      * already translated/rotated the matrix). Clipping crops the excess.
      */
-    private void drawTiles(final MatrixStack matrices, final int size, final boolean rotate, final PlayerView player) {
+    private void drawTiles(
+        final MatrixStack matrices,
+        final int size,
+        final boolean circle,
+        final float mapAngle,
+        final PlayerView player
+    ) {
         final float blocksPerPixel = BLOCKS_PER_PIXEL[config.minimapZoomIndex];
         final float pxPerBlock = 1f / blocksPerPixel;
-        final float coverRadius = size / 2f * blocksPerPixel * (rotate ? 1.4143f : 1f) + 8f;
+        final double coverageFactor = captureCoverageFactor(
+            circle ? ConfluxConfig.Shape.CIRCLE : ConfluxConfig.Shape.SQUARE,
+            mapAngle
+        );
+        final float coverRadius = (float) (size / 2f * blocksPerPixel * coverageFactor + 8f);
+        captureViewportPublisher.accept(captureViewport(
+            player.x(),
+            player.z(),
+            size,
+            blocksPerPixel,
+            circle ? ConfluxConfig.Shape.CIRCLE : ConfluxConfig.Shape.SQUARE,
+            mapAngle
+        ));
 
         final int firstTileX = TileMath.blockToTile((int) Math.floor(player.x() - coverRadius));
         final int lastTileX = TileMath.blockToTile((int) Math.ceil(player.x() + coverRadius));
@@ -528,6 +557,30 @@ public final class MinimapHudRenderer {
                 RenderUtil.drawQuad(matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f);
             }
         }
+    }
+
+    static ChunkViewport captureViewport(
+        final double centerX,
+        final double centerZ,
+        final int size,
+        final double blocksPerPixel,
+        final ConfluxConfig.Shape shape,
+        final double mapAngleDegrees
+    ) {
+        final double diameter = size * blocksPerPixel
+            * captureCoverageFactor(shape, mapAngleDegrees)
+            + 16.0;
+        return ChunkViewport.covering(centerX, centerZ, 1, 1, diameter);
+    }
+
+    private static double captureCoverageFactor(
+        final ConfluxConfig.Shape shape, final double mapAngleDegrees
+    ) {
+        if (shape == ConfluxConfig.Shape.CIRCLE) {
+            return 1.0;
+        }
+        final double radians = Math.toRadians(mapAngleDegrees);
+        return Math.abs(Math.cos(radians)) + Math.abs(Math.sin(radians));
     }
 
     /**
@@ -618,7 +671,9 @@ public final class MinimapHudRenderer {
     }
 
     private void drawInfoText(final GuiDraw draw, final PlayerView player, final int x0, final int y0, final int size) {
-        if (!config.showCoordinates && !config.showBiome && !config.showLayerIndicator) {
+        final boolean terrainPaused = liveTerrainPaused.getAsBoolean();
+        if (!config.showCoordinates && !config.showBiome && !config.showLayerIndicator
+            && !terrainPaused) {
             return;
         }
         final int lineHeight = MinimapInformationLayout.LINE_HEIGHT;
@@ -630,6 +685,9 @@ public final class MinimapHudRenderer {
             lines++;
         }
         if (config.showLayerIndicator) {
+            lines++;
+        }
+        if (terrainPaused) {
             lines++;
         }
         final float belowY = y0 + size + MinimapInformationLayout.GAP;
@@ -653,6 +711,15 @@ public final class MinimapHudRenderer {
         }
         if (config.showLayerIndicator) {
             drawCenteredLine(draw, layerIndicatorText(), centerX, y);
+            y += lineHeight;
+        }
+        if (terrainPaused) {
+            drawCenteredLine(
+                draw,
+                Texts.translatable("confluxmap.live_terrain.paused").getString(),
+                centerX,
+                y
+            );
         }
     }
 

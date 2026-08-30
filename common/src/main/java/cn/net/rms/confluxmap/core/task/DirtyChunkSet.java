@@ -2,8 +2,10 @@ package cn.net.rms.confluxmap.core.task;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Chunks whose map data is stale. Filled from packet hooks and drained on the
@@ -12,12 +14,12 @@ import java.util.Map;
  *
  * <p>A drain also asks whether each candidate is worth sampling yet (see {@link
  * Readiness}). Chunks that are loaded but still missing neighbours are held back
- * rather than sampled against data the client does not have - but only against
- * competing work: budget left over once every sampleable chunk has been taken goes
- * to the held ones, and a hold expires outright after {@link #MAX_DEFERRALS} drains.
- * At the edge of the server's send distance the missing neighbours never arrive, and
- * a map that refuses to draw its own outermost ring would be worse than one drawn
- * from a slightly narrower biome blend.
+ * rather than sampled against data the client does not have. A generic {@link
+ * Readiness#WAITING} hold expires after {@link #MAX_DEFERRALS} drains so an unknown edge
+ * cannot stay blank forever. A chunk that reaches the deadline is sampled once with the
+ * caller's edge-safe fallback and remembered in {@link #degraded}; later marks cannot produce
+ * more fallback snapshots, but the chunk remains eligible for one final full-quality capture
+ * after its expected neighbours arrive.
  */
 public final class DirtyChunkSet {
     /**
@@ -36,6 +38,8 @@ public final class DirtyChunkSet {
 
     /** Chunk key to the value of {@link #drains} when it was marked. */
     private final Map<Long, Integer> dirty = new HashMap<>();
+    /** Chunks already returned once while still waiting for neighbours. */
+    private final Set<Long> degraded = new HashSet<>();
 
     /** Drains so far - the clock the {@link #MAX_DEFERRALS} hold is measured against. */
     private int drains;
@@ -47,6 +51,13 @@ public final class DirtyChunkSet {
     /** Marking an already-dirty chunk keeps the drain it was first marked on, so re-marks cannot starve it. */
     public void mark(final int chunkX, final int chunkZ) {
         dirty.putIfAbsent(key(chunkX, chunkZ), drains);
+    }
+
+    /** Removes work already completed by a higher-priority queue. */
+    public void discard(final int chunkX, final int chunkZ) {
+        final long key = key(chunkX, chunkZ);
+        dirty.remove(key);
+        degraded.remove(key);
     }
 
     /**
@@ -73,6 +84,17 @@ public final class DirtyChunkSet {
 
     public void clear() {
         dirty.clear();
+        degraded.clear();
+    }
+
+    /** Keeps only dirty chunks accepted by {@code predicate}. */
+    public void retain(final ChunkPredicate predicate) {
+        dirty.keySet().removeIf(chunk ->
+            !predicate.test((int) (chunk >> 32), (int) chunk.longValue())
+        );
+        degraded.removeIf(chunk ->
+            !predicate.test((int) (chunk >> 32), (int) chunk.longValue())
+        );
     }
 
     /**
@@ -114,10 +136,17 @@ public final class DirtyChunkSet {
             final Readiness state = readiness.of(chunkX, chunkZ);
             if (state == Readiness.MISSING) {
                 dirty.remove(key);
-            } else if (state == Readiness.WAITING && drain - dirty.get(key) < MAX_DEFERRALS) {
+                degraded.remove(key);
+            } else if (state == Readiness.READY) {
+                dirty.remove(key);
+                degraded.remove(key);
+                result.add(new long[]{chunkX, chunkZ});
+            } else if (degraded.contains(key)
+                || drain - dirty.get(key) < MAX_DEFERRALS) {
                 continue;
             } else {
                 dirty.remove(key);
+                degraded.add(key);
                 result.add(new long[]{chunkX, chunkZ});
             }
         }
@@ -148,6 +177,8 @@ public final class DirtyChunkSet {
         READY,
         /** Sampling it now would read data the client does not have yet; try again later. */
         WAITING,
+        /** An expected streaming neighbor is missing; allow at most one degraded fallback. */
+        AWAITING_NEIGHBORS,
         /** Not loaded at all - drop it and wait for the arrival hook to mark it again. */
         MISSING
     }

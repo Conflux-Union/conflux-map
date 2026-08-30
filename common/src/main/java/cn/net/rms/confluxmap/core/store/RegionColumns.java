@@ -120,18 +120,67 @@ public final class RegionColumns {
         final byte[] outKind,
         final byte[] outLight
     ) {
-        final int from = startRow * SIZE;
+        copyRows(
+            startRow, rows, 0,
+            outSurfaceY, outBiomeId, outFluidDepth, outBaseArgb, outXaeroBaseArgb,
+            outTintArgb, outOverlayArgb, outXaeroOverlayArgb, outKind, outLight
+        );
+    }
+
+    /**
+     * Copies consecutive rows into their matching offsets in full-region destination arrays.
+     * Incremental tile composition uses this to retain native region coordinates while reading
+     * only the changed rows and the one-row relief stencil around them.
+     */
+    public synchronized void copyRowsAtSameOffset(
+        final int startRow,
+        final int rows,
+        final short[] outSurfaceY,
+        final String[] outBiomeId,
+        final byte[] outFluidDepth,
+        final int[] outBaseArgb,
+        final int[] outXaeroBaseArgb,
+        final int[] outTintArgb,
+        final int[] outOverlayArgb,
+        final int[] outXaeroOverlayArgb,
+        final byte[] outKind,
+        final byte[] outLight
+    ) {
+        copyRows(
+            startRow, rows, startRow * SIZE,
+            outSurfaceY, outBiomeId, outFluidDepth, outBaseArgb, outXaeroBaseArgb,
+            outTintArgb, outOverlayArgb, outXaeroOverlayArgb, outKind, outLight
+        );
+    }
+
+    /** Caller holds this region's monitor through one of the public copy methods. */
+    private void copyRows(
+        final int startRow,
+        final int rows,
+        final int destinationOffset,
+        final short[] outSurfaceY,
+        final String[] outBiomeId,
+        final byte[] outFluidDepth,
+        final int[] outBaseArgb,
+        final int[] outXaeroBaseArgb,
+        final int[] outTintArgb,
+        final int[] outOverlayArgb,
+        final int[] outXaeroOverlayArgb,
+        final byte[] outKind,
+        final byte[] outLight
+    ) {
+        final int sourceOffset = startRow * SIZE;
         final int length = rows * SIZE;
-        System.arraycopy(surfaceY, from, outSurfaceY, 0, length);
-        System.arraycopy(biomeId, from, outBiomeId, 0, length);
-        System.arraycopy(fluidDepth, from, outFluidDepth, 0, length);
-        System.arraycopy(baseArgb, from, outBaseArgb, 0, length);
-        System.arraycopy(xaeroBaseArgb, from, outXaeroBaseArgb, 0, length);
-        System.arraycopy(tintArgb, from, outTintArgb, 0, length);
-        System.arraycopy(overlayArgb, from, outOverlayArgb, 0, length);
-        System.arraycopy(xaeroOverlayArgb, from, outXaeroOverlayArgb, 0, length);
-        System.arraycopy(kind, from, outKind, 0, length);
-        System.arraycopy(light, from, outLight, 0, length);
+        System.arraycopy(surfaceY, sourceOffset, outSurfaceY, destinationOffset, length);
+        System.arraycopy(biomeId, sourceOffset, outBiomeId, destinationOffset, length);
+        System.arraycopy(fluidDepth, sourceOffset, outFluidDepth, destinationOffset, length);
+        System.arraycopy(baseArgb, sourceOffset, outBaseArgb, destinationOffset, length);
+        System.arraycopy(xaeroBaseArgb, sourceOffset, outXaeroBaseArgb, destinationOffset, length);
+        System.arraycopy(tintArgb, sourceOffset, outTintArgb, destinationOffset, length);
+        System.arraycopy(overlayArgb, sourceOffset, outOverlayArgb, destinationOffset, length);
+        System.arraycopy(xaeroOverlayArgb, sourceOffset, outXaeroOverlayArgb, destinationOffset, length);
+        System.arraycopy(kind, sourceOffset, outKind, destinationOffset, length);
+        System.arraycopy(light, sourceOffset, outLight, destinationOffset, length);
     }
 
     /** Highest real surface at one column, or {@link ChunkSnapshot#NO_SURFACE} for unknown/void. */

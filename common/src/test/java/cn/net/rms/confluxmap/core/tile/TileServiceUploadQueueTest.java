@@ -138,38 +138,24 @@ class TileServiceUploadQueueTest {
         final Fixture fixture = new Fixture();
         try {
             final TileKey key = fixture.key(1, 0, 0);
-            final int[] northWest = blankTile();
-            northWest[0] = 0xFF112233;
-            final int[] southEast = blankTile();
-            southEast[RegionColumns.SIZE * RegionColumns.SIZE - 1] = 0xFF445566;
-            final byte[] firstLight = new byte[RegionColumns.SIZE * RegionColumns.SIZE];
-            firstLight[0] = 7;
-            final byte[] secondLight = new byte[RegionColumns.SIZE * RegionColumns.SIZE];
-            secondLight[RegionColumns.SIZE * RegionColumns.SIZE - 1] = 11;
             final TileUpdate.Rect first = new TileUpdate.Rect(0, 0, 1, 1);
             final TileUpdate.Rect second = new TileUpdate.Rect(255, 255, 1, 1);
 
-            fixture.tiles.submitUpload(new TileUpdate(
-                key, northWest, List.of(first),
-                new TileUpdate.Relight(1f, 0f, firstLight, MapColorStyle.CONFLUX)
+            fixture.tiles.submitUpload(TileUpdate.patch(
+                key, new int[]{0xFF112233}, first,
+                new TileUpdate.Relight(1f, 0f, new byte[]{7}, MapColorStyle.CONFLUX)
             ));
-            fixture.tiles.submitUpload(new TileUpdate(
-                key, southEast, List.of(second),
-                new TileUpdate.Relight(1f, 0f, secondLight, MapColorStyle.CONFLUX)
+            fixture.tiles.submitUpload(TileUpdate.patch(
+                key, new int[]{0xFF445566}, second,
+                new TileUpdate.Relight(1f, 0f, new byte[]{11}, MapColorStyle.CONFLUX)
             ));
 
             final TileUpdate merged = fixture.tiles.drainUploads(1).get(0);
             assertEquals(Set.of(first, second), Set.copyOf(merged.changed()));
-            assertEquals(0xFF112233, merged.argbPixels()[0]);
-            assertEquals(
-                0xFF445566,
-                merged.argbPixels()[RegionColumns.SIZE * RegionColumns.SIZE - 1]
-            );
-            assertEquals(7, merged.relight().lightLevels()[0]);
-            assertEquals(
-                11,
-                merged.relight().lightLevels()[RegionColumns.SIZE * RegionColumns.SIZE - 1]
-            );
+            assertEquals(0xFF112233, merged.pixelAt(0, 0));
+            assertEquals(0xFF445566, merged.pixelAt(255, 255));
+            assertEquals(7, merged.lightLevelAt(0, 0));
+            assertEquals(11, merged.lightLevelAt(255, 255));
         } finally {
             fixture.close();
         }

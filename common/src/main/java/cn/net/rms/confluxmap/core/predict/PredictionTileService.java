@@ -103,6 +103,9 @@ public final class PredictionTileService {
 
     private volatile int viewpointX;
     private volatile int viewpointZ;
+    private volatile int netherBiomeY = PredictionDimensions.NETHER_ROOF_Y;
+    /** Guarded by {@code this}: rejects current-layer compositions started at an older pivot Y. */
+    private long netherBiomeGeneration;
 
     public PredictionTileService(
         final SessionGuard sessionGuard,
@@ -140,23 +143,33 @@ public final class PredictionTileService {
         }
         if (!session.active()
             || !realKey.world().equals(session.world())
-            || !realKey.dimension().equals(session.dimension())
-            || !layer.equals(PredictionDimensions.layer(session.dimension()))) {
+            || !realKey.dimension().equals(session.dimension())) {
             return;
         }
+        boolean queued = false;
         synchronized (this) {
-            queueRealCoverageRefresh(PredictedTileKeys.toPredicted(realKey), session.token());
-            queueRealCoverageRefresh(
-                PredictedTileKeys.toPredicted(BiomeTileKeys.toBiome(realKey)), session.token()
-            );
+            if (isLowerNetherLayer(realKey.dimension(), layer)) {
+                queueRealCoverageRefresh(
+                    PredictedTileKeys.toPredicted(BiomeTileKeys.toBiome(realKey)),
+                    session.token()
+                );
+                queued = true;
+            } else if (layer.equals(PredictionDimensions.layer(session.dimension()))) {
+                queueRealCoverageRefresh(PredictedTileKeys.toPredicted(realKey), session.token());
+                queueRealCoverageRefresh(
+                    PredictedTileKeys.toPredicted(BiomeTileKeys.toBiome(realKey)), session.token()
+                );
+                queued = true;
+            }
         }
-        pump();
+        if (queued) {
+            pump();
+        }
     }
 
     /** Caller must hold the monitor. */
     private void queueRealCoverageRefresh(final TileKey key, final long token) {
         invalidateCachedTileAndAncestors(key);
-        metadataTiles.remove(key);
         if (requestedTiles.contains(key)) {
             staleRealCoverageTiles.add(key);
             if (viewport != null && viewport.contains(key)) {
@@ -194,7 +207,6 @@ public final class PredictionTileService {
                 && viewport.dimension().equals(session.dimension())) {
                 for (final TileKey key : staleViewModeTiles) {
                     if (viewport.contains(key)) {
-                        metadataTiles.remove(key);
                         dirty.put(key, session.token());
                     }
                 }
@@ -216,9 +228,7 @@ public final class PredictionTileService {
         if (BiomeTileKeys.isBiome(key)) {
             return AppliedLighting.NONE;
         }
-        final String realLayer = BiomeTileKeys.realLayerId(
-            PredictedTileKeys.realLayerId(key.layerId())
-        );
+        final String realLayer = BiomeTileKeys.baseLayerId(key);
         final MapLayer.Type layer = MapLayer.parse(realLayer).type();
         final DaylightModel model = daylightModel;
         final DaylightModel.State lighting = model == null
@@ -297,7 +307,9 @@ public final class PredictionTileService {
             return CompletableFuture.failedFuture(new CancellationException("Map session changed"));
         }
         return CompletableFuture.supplyAsync(() -> {
-            final Composition composition = composeTile(key, session.token(), mode);
+            final Composition composition = composeTile(
+                key, session.token(), mode, netherBiomeY
+            );
             if (composition == null) {
                 return null;
             }
@@ -412,7 +424,6 @@ public final class PredictionTileService {
             lowerCoverageGeneration++;
             missingLowerCoverage.clear();
             mipCache.removeCoverage(tile);
-            metadataTiles.remove(tile);
         }
         return true;
     }
@@ -544,7 +555,6 @@ public final class PredictionTileService {
                     continue;
                 }
                 mipCache.removeCoverage(tile);
-                metadataTiles.remove(tile);
             }
         }
         return changed;
@@ -559,8 +569,6 @@ public final class PredictionTileService {
         synchronized (this) {
             lowerCoverageGeneration++;
             missingLowerCoverage.clear();
-            metadataTiles.remove(tile);
-            metadataTiles.remove(BiomeTileKeys.toBiome(tile));
             invalidateCachedTileAndAncestors(tile);
         }
         markDirty(tile, session.token());
@@ -646,6 +654,25 @@ public final class PredictionTileService {
         viewpointZ = blockZ;
     }
 
+    /** Updates the debounced Y used by the live Nether current-layer biome plane. */
+    public void setNetherBiomeY(final int blockY) {
+        final SessionGuard.Session session = sessionGuard.current();
+        synchronized (this) {
+            if (netherBiomeY == blockY) {
+                return;
+            }
+            netherBiomeY = blockY;
+            netherBiomeGeneration++;
+            for (final TileKey key : requestedTiles) {
+                if (isCurrentNetherBiomeKey(key)) {
+                    invalidateCachedTileAndAncestors(key);
+                    dirty.put(key, session.token());
+                }
+            }
+        }
+        pump();
+    }
+
     /** Recompose selected-source tiles after the player's local-authority boundary moves. */
     public void refreshLiveCoverage() {
         final SessionGuard.Session session = sessionGuard.current();
@@ -693,7 +720,6 @@ public final class PredictionTileService {
                             lod, tileX, tileZ
                         );
                         if (mipCache.lowerCoverageValidatedAt(key, viewMode) != PredictionMipCache.MISSING) {
-                            metadataTiles.remove(key);
                             dirty.put(key, session.token());
                         }
                     }
@@ -702,13 +728,11 @@ public final class PredictionTileService {
             if (changed && session.active() && dimension.equals(session.dimension())) {
                 for (final TileKey key : staleViewModeTiles) {
                     if (rect.contains(key)) {
-                        metadataTiles.remove(key);
                         dirty.put(key, session.token());
                     }
                 }
                 for (final TileKey key : staleRealCoverageTiles) {
                     if (rect.contains(key)) {
-                        metadataTiles.remove(key);
                         dirty.put(key, session.token());
                     }
                 }
@@ -737,7 +761,22 @@ public final class PredictionTileService {
         final int blockX,
         final int blockZ
     ) {
-        final PixelLookup lookup = visiblePixelLookup(dimension, lod, blockX, blockZ);
+        return predictedBiomeAt(
+            dimension, PredictionDimensions.layer(dimension), lod, blockX, blockZ
+        );
+    }
+
+    /** Predicted biome on the requested fullscreen layer, including Nether height planes. */
+    public OptionalInt predictedBiomeAt(
+        final DimensionId dimension,
+        final MapLayer layer,
+        final int lod,
+        final int blockX,
+        final int blockZ
+    ) {
+        final PixelLookup lookup = visiblePixelLookup(
+            dimension, layer, lod, blockX, blockZ
+        );
         if (lookup == null) {
             return OptionalInt.empty();
         }
@@ -748,7 +787,7 @@ public final class PredictionTileService {
         if (metadata == null) {
             // GPU textures can outlive viewport metadata. Rehydrate this one tile lazily when the
             // cursor returns to it; requestTile is idempotent while a composition is queued/running.
-            requestTile(lookup.key());
+            requestTile(lookup.requestKey());
             return OptionalInt.empty();
         }
         return OptionalInt.of(Byte.toUnsignedInt(metadata.biomes()[lookup.pixel()]));
@@ -827,6 +866,8 @@ public final class PredictionTileService {
             final TileKey next;
             final long token;
             final long generation;
+            final long netherGeneration;
+            final int netherY;
             synchronized (this) {
                 final int compositionLimit = viewport == null
                     ? maxConcurrentCompositions
@@ -840,9 +881,13 @@ public final class PredictionTileService {
                 }
                 token = dirty.remove(next);
                 generation = reloadGeneration;
+                netherGeneration = netherBiomeGeneration;
+                netherY = netherBiomeY;
                 inFlight.add(next);
             }
-            executors.workers().execute(() -> composeAndFinish(next, token, generation));
+            executors.workers().execute(() -> composeAndFinish(
+                next, token, generation, netherGeneration, netherY
+            ));
         }
     }
 
@@ -886,16 +931,24 @@ public final class PredictionTileService {
             || (candidate.tileZ() == current.tileZ() && candidate.tileX() < current.tileX());
     }
 
-    private void composeAndFinish(final TileKey key, final long token, final long generation) {
+    private void composeAndFinish(
+        final TileKey key,
+        final long token,
+        final long generation,
+        final long netherGeneration,
+        final int netherY
+    ) {
         Composition composition = null;
         try {
-            composition = composeTile(key, token);
+            composition = composeTile(key, token, viewMode, netherY);
         } finally {
             synchronized (this) {
                 if (composition != null && generation == reloadGeneration
+                    && (!isCurrentNetherBiomeKey(key)
+                        || netherGeneration == netherBiomeGeneration)
                     && composition.mode() == viewMode) {
                     requestedTiles.add(key);
-                    metadataTiles.put(key, composition.metadata());
+                    metadataTiles.put(metadataKey(key), composition.metadata());
                     mipCache.put(key, new PredictionMipCache.Tile(
                         composition.update().argbPixels(),
                         composition.metadata().biomes(),
@@ -923,13 +976,14 @@ public final class PredictionTileService {
     }
 
     private Composition composeTile(final TileKey key, final long token) {
-        return composeTile(key, token, viewMode);
+        return composeTile(key, token, viewMode, netherBiomeY);
     }
 
     private Composition composeTile(
         final TileKey key,
         final long token,
-        final PredictionViewMode requestedMode
+        final PredictionViewMode requestedMode,
+        final int currentNetherY
     ) {
         final SessionGuard.Session session = sessionGuard.current();
         if (!sessionGuard.isCurrent(token) || !session.active()
@@ -942,16 +996,20 @@ public final class PredictionTileService {
             return null;
         }
         final MapLayer expectedLayer = PredictionDimensions.layer(key.dimension());
+        final MapLayer requestedLayer;
         try {
-            final MapLayer requestedLayer = MapLayer.parse(BiomeTileKeys.realLayerId(
-                PredictedTileKeys.realLayerId(key.layerId())
-            ));
-            if (!requestedLayer.equals(expectedLayer)) {
-                return null;
-            }
+            requestedLayer = MapLayer.parse(BiomeTileKeys.baseLayerId(key));
         } catch (final IllegalArgumentException e) {
             return null;
         }
+        final boolean lowerNetherBiome = BiomeTileKeys.isBiome(key)
+            && isLowerNetherLayer(key.dimension(), requestedLayer);
+        if (!requestedLayer.equals(expectedLayer) && !lowerNetherBiome) {
+            return null;
+        }
+        final int netherY = requestedLayer.type() == MapLayer.Type.NETHER_SLICE
+            ? requestedLayer.param()
+            : currentNetherY;
 
         final boolean end = PredictionDimensions.isEnd(key.dimension());
         final int lod = key.lod();
@@ -962,7 +1020,8 @@ public final class PredictionTileService {
             : requestedMode;
 
         final PredictionMipCache.Tile lower = mipCache.lowerTile(key, compositionMode);
-        final CorrectionStore store = state.manualSeed() ? null : correctionStore;
+        final CorrectionStore store = lowerNetherBiome || state.manualSeed()
+            ? null : correctionStore;
         final CorrectionTile storedCorrections = store == null
             ? null
             : store.get(key.dimension(), lod, key.tileX(), key.tileZ());
@@ -1012,30 +1071,45 @@ public final class PredictionTileService {
         final BaselineGrid grid;
         final DerivedGrid derived;
         final int baselineMapColorId;
-        final FlatBaseline flat = state.flatBaseline(key.dimension());
-        if (state.preset(key.dimension()) == WorldPreset.FLAT && flat != null) {
-            // Superflat: every column is the same known surface - no seed, no native sampling.
-            grid = flat.toBaselineGrid();
-            derived = flat.toDerivedGrid();
-            baselineMapColorId = flat.mapColorId();
-        } else {
-            final long seed = state.seed();
+        if (lowerNetherBiome) {
             final BaselineSampler sampler = new NativeBaselineSampler(
-                state.mcVersion(), seed, nativeDim, state.cubiomesFlags(key.dimension())
+                state.mcVersion(), state.seed(), nativeDim,
+                state.cubiomesFlags(key.dimension())
             );
-            grid = key.dimension().equals(DimensionId.NETHER)
-                ? LodSampling.sampleNetherRoof(sampler, lod, tileOriginX, tileOriginZ)
-                : LodSampling.sample(sampler, end, lod, tileOriginX, tileOriginZ);
+            grid = LodSampling.sampleNetherBiomesAtY(
+                sampler, lod, tileOriginX, tileOriginZ, netherY
+            );
             if (grid == null) {
                 return null;
             }
             derived = BaselineDeriver.derive(grid);
-            CanopyStylizer.apply(derived, grid, seed, lod, tileOriginX, tileOriginZ);
-            // Terrain mode owns the roof material, while the separate biome composer below owns
-            // biome identity. Treat the fixed Nether plane like a uniform bedrock superflat.
-            baselineMapColorId = key.dimension().equals(DimensionId.NETHER)
-                ? PredictionDimensions.NETHER_ROOF_MAP_COLOR_ID
-                : Proto.MAP_COLOR_NONE;
+            baselineMapColorId = Proto.MAP_COLOR_NONE;
+        } else {
+            final FlatBaseline flat = state.flatBaseline(key.dimension());
+            if (state.preset(key.dimension()) == WorldPreset.FLAT && flat != null) {
+                // Superflat: every column is the same known surface - no seed, no native sampling.
+                grid = flat.toBaselineGrid();
+                derived = flat.toDerivedGrid();
+                baselineMapColorId = flat.mapColorId();
+            } else {
+                final long seed = state.seed();
+                final BaselineSampler sampler = new NativeBaselineSampler(
+                    state.mcVersion(), seed, nativeDim, state.cubiomesFlags(key.dimension())
+                );
+                grid = key.dimension().equals(DimensionId.NETHER)
+                    ? LodSampling.sampleNetherRoof(sampler, lod, tileOriginX, tileOriginZ)
+                    : LodSampling.sample(sampler, end, lod, tileOriginX, tileOriginZ);
+                if (grid == null) {
+                    return null;
+                }
+                derived = BaselineDeriver.derive(grid);
+                CanopyStylizer.apply(derived, grid, seed, lod, tileOriginX, tileOriginZ);
+                // Terrain mode owns the roof material, while the separate biome composer below owns
+                // biome identity. Treat the fixed Nether plane like a uniform bedrock superflat.
+                baselineMapColorId = key.dimension().equals(DimensionId.NETHER)
+                    ? PredictionDimensions.NETHER_ROOF_MAP_COLOR_ID
+                    : Proto.MAP_COLOR_NONE;
+            }
         }
 
         final MapColorStyle style = mapColorStyle;
@@ -1234,7 +1308,10 @@ public final class PredictionTileService {
                         missingLowerCoverage.add(parent);
                     } else {
                         mipCache.put(parent, reduced);
-                        metadataTiles.put(parent, new TileMetadata(reduced.biomes(), reduced.surfaces()));
+                        metadataTiles.put(
+                            metadataKey(parent),
+                            new TileMetadata(reduced.biomes(), reduced.surfaces())
+                        );
                         uploads.submitUpload(TileUpdate.fullTile(parent, reduced.pixels()));
                     }
                 }
@@ -1342,7 +1419,6 @@ public final class PredictionTileService {
                 Math.floorDiv(ancestor.tileX(), 2), Math.floorDiv(ancestor.tileZ(), 2)
             );
             mipCache.remove(ancestor);
-            metadataTiles.remove(ancestor);
         }
     }
 
@@ -1355,7 +1431,6 @@ public final class PredictionTileService {
                 Math.floorDiv(ancestor.tileX(), 2), Math.floorDiv(ancestor.tileZ(), 2)
             );
             mipCache.remove(ancestor);
-            metadataTiles.remove(ancestor);
             if (viewport != null && viewport.contains(ancestor)) {
                 dirty.put(ancestor, token);
             }
@@ -1462,8 +1537,21 @@ public final class PredictionTileService {
         final int blockX,
         final int blockZ
     ) {
+        return visiblePixelLookup(
+            dimension, PredictionDimensions.layer(dimension), lod, blockX, blockZ
+        );
+    }
+
+    private PixelLookup visiblePixelLookup(
+        final DimensionId dimension,
+        final MapLayer layer,
+        final int lod,
+        final int blockX,
+        final int blockZ
+    ) {
         final SessionGuard.Session session = sessionGuard.current();
-        if (!session.active() || !dimension.equals(session.dimension()) || !state.predictable(dimension)) {
+        if (!session.active() || layer == null
+            || !dimension.equals(session.dimension()) || !state.predictable(dimension)) {
             return null;
         }
         final int tileX = TileMath.blockToTile(blockX, lod);
@@ -1476,14 +1564,18 @@ public final class PredictionTileService {
         if (!viewMode.showsPredictedPixels(corrections, pixel, lod)) {
             return null;
         }
-        final MapLayer predictedLayer = PredictionDimensions.layer(dimension);
-        if (predictedLayer == null) {
+        if (!layer.equals(PredictionDimensions.layer(dimension))
+            && !isLowerNetherLayer(dimension, layer)) {
             return null;
         }
-        final String layer = predictedLayer.cacheId();
-        return new PixelLookup(new TileKey(
-            session.world(), dimension, layer + PredictedTileKeys.SUFFIX, lod, tileX, tileZ
-        ), pixel);
+        final TileKey metadataKey = new TileKey(
+            session.world(), dimension, layer.cacheId() + PredictedTileKeys.SUFFIX,
+            lod, tileX, tileZ
+        );
+        final TileKey requestKey = isLowerNetherLayer(dimension, layer)
+            ? BiomeTileKeys.toBiome(metadataKey)
+            : metadataKey;
+        return new PixelLookup(metadataKey, requestKey, pixel);
     }
 
     private record Composition(
@@ -1509,7 +1601,35 @@ public final class PredictionTileService {
         private static final AppliedLighting NONE = new AppliedLighting(Float.NaN, 0f);
     }
 
-    private record PixelLookup(TileKey key, int pixel) {
+    private record PixelLookup(TileKey key, TileKey requestKey, int pixel) {
+    }
+
+    private static TileKey metadataKey(final TileKey key) {
+        final String realLayer = BiomeTileKeys.baseLayerId(key);
+        return new TileKey(
+            key.world(), key.dimension(), realLayer + PredictedTileKeys.SUFFIX,
+            key.lod(), key.tileX(), key.tileZ()
+        );
+    }
+
+    private static boolean isLowerNetherLayer(
+        final DimensionId dimension,
+        final MapLayer layer
+    ) {
+        return dimension.equals(DimensionId.NETHER)
+            && layer.type().isNetherFloor();
+    }
+
+    private static boolean isCurrentNetherBiomeKey(final TileKey key) {
+        if (!key.dimension().equals(DimensionId.NETHER) || !BiomeTileKeys.isBiome(key)) {
+            return false;
+        }
+        try {
+            return MapLayer.parse(BiomeTileKeys.baseLayerId(key)).type()
+                == MapLayer.Type.NETHER_CURRENT;
+        } catch (final IllegalArgumentException e) {
+            return false;
+        }
     }
 
     private record ViewportRect(DimensionId dimension, int lod, int minTileX, int maxTileX, int minTileZ, int maxTileZ) {

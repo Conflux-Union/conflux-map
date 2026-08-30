@@ -44,6 +44,11 @@ sourceSets {
 configurations {
     gametestCompileClasspath.extendsFrom compileClasspath
     gametestRuntimeClasspath.extendsFrom runtimeClasspath
+    terrainWorkerBundle {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
 }
 dependencies {
     // On an unobfuscated version there is nothing to remap into, so loom's mod* configurations
@@ -69,6 +74,7 @@ dependencies {
     }
     implementation project(':common')
     include project(':common')
+    terrainWorkerBundle project(':terrain-worker')
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
     implementation 'org.nanohttpd:nanohttpd-websocket:2.3.1'
     include 'org.nanohttpd:nanohttpd:2.3.1'
@@ -227,12 +233,21 @@ processResources {
     // Bundles the committed native/prebuilt/<target>/ binaries into the jar (and dev classpath)
     // as natives/<target>/<libname>, so NativeLib can find them without any extra toolchain.
     from(rootProject.file('native/prebuilt')) { into 'natives' }
+    from(configurations.terrainWorkerBundle) {
+        into 'assets/confluxmap/worker'
+        // Loom treats every resource ending in .jar as a candidate nested mod and removes files
+        // it did not generate itself. The bytes remain an ordinary executable jar after extraction.
+        rename { 'terrain-worker.bin' }
+    }
 }
 tasks.register('checkModMetadata') {
     group = 'verification'
     description = 'Verifies that expanded mod metadata matches the project version'
     dependsOn tasks.named('processResources')
     inputs.file layout.buildDirectory.file('resources/main/fabric.mod.json')
+    inputs.file layout.buildDirectory.file(
+        'resources/main/assets/confluxmap/worker/terrain-worker.bin'
+    )
     inputs.property 'expectedVersion', project.version.toString()
     inputs.property 'expectedMinecraftDependency', minecraftDependency
     doLast {
@@ -243,6 +258,12 @@ tasks.register('checkModMetadata') {
         }
         if (metadata.depends.minecraft != minecraftDependency) {
             throw new GradleException("Expanded fabric.mod.json Minecraft dependency ${metadata.depends.minecraft} does not match ${minecraftDependency}")
+        }
+        final File worker = layout.buildDirectory.file(
+            'resources/main/assets/confluxmap/worker/terrain-worker.bin'
+        ).get().asFile
+        if (!worker.isFile()) {
+            throw new GradleException("Embedded terrain worker is missing from processed resources")
         }
     }
 }

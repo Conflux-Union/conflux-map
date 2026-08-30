@@ -89,12 +89,12 @@ class CapturePipelineSimulationTest {
                 );
             }
             final List<long[]> batch = dirty.drainNearest(
-                BUDGET, 0, 0, (x, z) -> readiness(loaded, x, z)
+                BUDGET, 0, 0, (x, z) -> readiness(loaded, radius, x, z)
             );
             for (final long[] chunk : batch) {
                 totalSamples++;
                 samplesPerChunk.merge(key(chunk[0], chunk[1]), 1, Integer::sum);
-                if (readiness(loaded, (int) chunk[0], (int) chunk[1]) != Readiness.READY) {
+                if (readiness(loaded, radius, (int) chunk[0], (int) chunk[1]) != Readiness.READY) {
                     degradedSamples++;
                 }
             }
@@ -105,14 +105,21 @@ class CapturePipelineSimulationTest {
         return new Result(samplesPerChunk.size(), totalSamples, degradedSamples, ticks);
     }
 
-    private static Readiness readiness(final Set<Long> loaded, final int chunkX, final int chunkZ) {
+    private static Readiness readiness(
+        final Set<Long> loaded, final int radius, final int chunkX, final int chunkZ
+    ) {
         if (!loaded.contains(key(chunkX, chunkZ))) {
             return Readiness.MISSING;
         }
         for (int dz = -1; dz <= 1; dz++) {
             for (int dx = -1; dx <= 1; dx++) {
-                if ((dx != 0 || dz != 0) && !loaded.contains(key(chunkX + dx, chunkZ + dz))) {
-                    return Readiness.WAITING;
+                final int neighborX = chunkX + dx;
+                final int neighborZ = chunkZ + dz;
+                if ((dx != 0 || dz != 0)
+                    && Math.abs(neighborX) <= radius
+                    && Math.abs(neighborZ) <= radius
+                    && !loaded.contains(key(neighborX, neighborZ))) {
+                    return Readiness.AWAITING_NEIGHBORS;
                 }
             }
         }

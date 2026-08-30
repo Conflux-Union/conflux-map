@@ -64,6 +64,11 @@ final class CubiomesNative {
     /** Strided variant: adjacent output cells are {@code stride} coordinates apart at {@code scale}. */
     static native int cfxBiomesStrided(long handle, int scale, int x, int z, int w, int h, int stride, int[] out);
 
+    /** Nether-only strided biome grid sampled at the requested block Y. */
+    static native int cfxBiomesAtYStrided(
+        long handle, int blockY, int scale, int x, int z, int w, int h, int stride, int[] out
+    );
+
     /**
      * Overworld-only: fills {@code outY} (floored block heights) and {@code outIds} (biome ids)
      * for a {@code w*h} rectangle at 1:4 scale, {@code x4}/{@code z4} being {@code blockX/4} and

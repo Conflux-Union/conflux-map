@@ -41,4 +41,12 @@ public final class BiomeTileKeys {
             ? biomeLayerId.substring(0, biomeLayerId.length() - SUFFIX.length())
             : biomeLayerId;
     }
+
+    /** Removes optional prediction and biome suffixes from a tile key. */
+    public static String baseLayerId(final TileKey key) {
+        final String layerId = PredictedTileKeys.isPredicted(key)
+            ? PredictedTileKeys.realLayerId(key.layerId())
+            : key.layerId();
+        return realLayerId(layerId);
+    }
 }

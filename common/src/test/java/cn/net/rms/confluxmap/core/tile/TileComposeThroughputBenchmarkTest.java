@@ -65,6 +65,16 @@ class TileComposeThroughputBenchmarkTest {
             single(tiles, session, 1, 4);
             single(tiles, session, 2, 16);
 
+            tiles.setViewport(
+                MapLayer.SURFACE, 0, 0, REGIONS_PER_SIDE - 1, 0, REGIONS_PER_SIDE - 1
+            );
+            final TileKey patched = key(session, 0, 1, 1);
+            final long incremental = best(() -> composeChunkPatch(tiles, patched, 20, 20));
+            System.out.printf(
+                "%-34s %9.1f %11.2f%n",
+                "1 LOD0 chunk patch (18x18)", incremental / 1e6, incremental / 1e6
+            );
+
             final long parallel = best(() -> {
                 tiles.clearViewport();
                 return composeAll(tiles, lod0);
@@ -128,6 +138,26 @@ class TileComposeThroughputBenchmarkTest {
             Thread.onSpinWait();
         }
         return System.nanoTime() - start;
+    }
+
+    private static long composeChunkPatch(
+        final TileService tiles, final TileKey key, final int chunkX, final int chunkZ
+    ) throws InterruptedException {
+        tiles.drainUploads(256);
+        final long start = System.nanoTime();
+        tiles.markChunkStored(1L, DimensionId.OVERWORLD, MapLayer.SURFACE, chunkX, chunkZ);
+        final long deadline = start + 60_000_000_000L;
+        while (true) {
+            if (System.nanoTime() > deadline) {
+                throw new AssertionError("chunk patch timed out");
+            }
+            for (final TileUpdate update : tiles.drainUploads(256)) {
+                if (update.key().equals(key)) {
+                    return System.nanoTime() - start;
+                }
+            }
+            Thread.onSpinWait();
+        }
     }
 
     private static TileKey key(

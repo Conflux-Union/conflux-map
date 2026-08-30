@@ -13,6 +13,8 @@ import cn.net.rms.confluxmap.core.model.SampleSource;
 import cn.net.rms.confluxmap.core.predict.PredictionTileService;
 import cn.net.rms.confluxmap.core.store.MapWorld;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
+import cn.net.rms.confluxmap.core.task.CaptureRefreshSweep;
+import cn.net.rms.confluxmap.core.task.CaptureTickBudget;
 import cn.net.rms.confluxmap.core.task.DirtyChunkSet;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
@@ -21,6 +23,8 @@ import cn.net.rms.confluxmap.core.util.ChunkViewport;
 import cn.net.rms.confluxmap.mc.color.BiomeTintResolver;
 import cn.net.rms.confluxmap.mc.color.SpriteColorSampler;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
+import cn.net.rms.confluxmap.terrain.protocol.EncodedChunk;
+import cn.net.rms.confluxmap.terrain.protocol.TerrainResult;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -36,16 +40,18 @@ import net.minecraft.client.world.ClientWorld;
 /**
  * Drives the capture pipeline: packet hooks mark chunks dirty (via
  * {@link ChunkCaptureHandler}); each tick, {@link LayerSelector} decides the
- * one active layer (per cave-nether-layers.md §1), and a bounded number of
- * the nearest dirty chunks is snapshotted into that layer on the main thread
- * and merged into the store on a worker thread, which then tells the {@link
- * TileService} which tile(s) need recomposing. Only one layer is captured at
- * a time; when the active layer (or its floor-scan pivot Y) changes, the
- * whole server send-distance square is reseeded into the new layer, the same way a
- * session change reseeds it.
+ * one active layer (per cave-nether-layers.md §1), and a bounded number of the
+ * nearest dirty chunks is captured into that layer. Surface layers retain the
+ * Minecraft-backed snapshot factory. Cave and Nether floor layers only copy the
+ * chunks' compressed block-state containers on the main thread; a child JVM owns
+ * the vertical scan and latest-pivot cancellation, then the main thread resolves
+ * the selected positions' models, mod tints and light before storing them. The
+ * background server send-distance queue remains best effort. A layer change still
+ * reseeds the whole server send-distance square, the same way a session change does.
  */
 public final class ChunkCaptureService {
     private static final int LOG_INTERVAL_TICKS = 100;
+    private static final long FLOOR_FINISH_BUDGET_NANOS = 2_000_000L;
 
     private final MinecraftClient client;
     private final GameBridge gameBridge;
@@ -58,14 +64,17 @@ public final class ChunkCaptureService {
     private final RegionCacheService regionCache;
     private final LayerSelector layerSelector;
     private final McChunkSnapshotFactory factory;
+    private final McTerrainChunkEncoder terrainEncoder;
+    private final McTerrainWorker terrainWorker;
     private final DirtyChunkSet dirtyChunks = new DirtyChunkSet();
+    private final CaptureRefreshSweep visibleRefresh = new CaptureRefreshSweep();
     private final AtomicLong storedSnapshots = new AtomicLong();
     private long lastLoggedSnapshots = -1;
     private int tickCounter;
     private LayerSelector.Decision lastDecision;
-    private int lastPlayerChunkX = Integer.MIN_VALUE;
-    private int lastPlayerChunkZ = Integer.MIN_VALUE;
-    private int lastServerViewDistance = Integer.MIN_VALUE;
+    private ChunkViewport localCaptureViewport;
+    private volatile ChunkViewport minimapViewport;
+    private MapLayer workerLayer;
 
     public ChunkCaptureService(
         final MinecraftClient client,
@@ -92,6 +101,8 @@ public final class ChunkCaptureService {
         this.regionCache = regionCache;
         this.layerSelector = layerSelector;
         this.factory = new McChunkSnapshotFactory(client, sampler, tintResolver);
+        this.terrainEncoder = new McTerrainChunkEncoder(client);
+        this.terrainWorker = new McTerrainWorker(new McTerrainMaterialResolver(client));
     }
 
     public void register() {
@@ -108,11 +119,13 @@ public final class ChunkCaptureService {
      */
     public void onSessionChanged(final SessionGuard.Session session) {
         dirtyChunks.clear();
+        visibleRefresh.reset();
+        minimapViewport = null;
         layerSelector.onSessionChanged(session);
         lastDecision = null;
-        lastPlayerChunkX = Integer.MIN_VALUE;
-        lastPlayerChunkZ = Integer.MIN_VALUE;
-        lastServerViewDistance = Integer.MIN_VALUE;
+        localCaptureViewport = null;
+        workerLayer = null;
+        terrainWorker.reset(session.active() ? session.token() : 0L, 0);
         if (!session.active()) {
             return;
         }
@@ -125,7 +138,24 @@ public final class ChunkCaptureService {
 
     /** Main thread, from packet mixins. */
     public void markDirty(final int chunkX, final int chunkZ) {
+        markCaptureDirty(chunkX, chunkZ);
+        terrainWorker.invalidate(chunkX, chunkZ);
+    }
+
+    private void markCaptureDirty(final int chunkX, final int chunkZ) {
         dirtyChunks.mark(chunkX, chunkZ);
+        visibleRefresh.markDirty(chunkX, chunkZ);
+    }
+
+    /** Main thread, after a server block update has been applied to the client chunk. */
+    public void markBlockDirty(
+        final int blockX, final int y, final int blockZ, final int stateId
+    ) {
+        markCaptureDirty(blockX >> 4, blockZ >> 4);
+        final ClientWorld world = client.world;
+        if (world != null) {
+            terrainWorker.submitDelta(world.getTime(), blockX, y, blockZ, stateId);
+        }
     }
 
     /**
@@ -144,34 +174,73 @@ public final class ChunkCaptureService {
      * way to drop it is to take the snapshot again.
      */
     public void markChunkLoaded(final int chunkX, final int chunkZ) {
+        terrainWorker.invalidate(chunkX, chunkZ);
         if (needsTintNeighbors(MinecraftAccess.biomeBlendRadius(client))) {
+            for (int dz = -1; dz <= 1; dz++) {
+                for (int dx = -1; dx <= 1; dx++) {
+                    if ((dx != 0 || dz != 0) && isChunkLoaded(chunkX + dx, chunkZ + dz)) {
+                        terrainWorker.invalidate(chunkX + dx, chunkZ + dz);
+                    }
+                }
+            }
             dirtyChunks.markWithLoadedNeighbors(chunkX, chunkZ, this::isChunkLoaded);
+            visibleRefresh.markWithLoadedNeighbors(chunkX, chunkZ, this::isChunkLoaded);
         } else {
             dirtyChunks.mark(chunkX, chunkZ);
+            visibleRefresh.markDirty(chunkX, chunkZ);
         }
+    }
+
+    /** Render thread publishes the bounding chunk rectangle currently visible on the minimap. */
+    public void setMinimapViewport(final ChunkViewport viewport) {
+        minimapViewport = viewport;
     }
 
     /**
      * Whether a dirty chunk is worth sampling this tick. A chunk is only fully sampleable once
      * its 3x3 neighbourhood has arrived - the biome blend and the surrounding terrain reach
      * across the border - so an incomplete neighbourhood is held back rather than baked. The
-     * hold only outranks competing work, and {@link DirtyChunkSet} bounds it either way: the
-     * ring at the edge of the server's send distance never completes, and it still has to reach
-     * the map, with {@link ChunkTintSampler}'s window keeping its border tints honest until an
-     * arriving neighbour re-marks it for a full-quality resample.
+     * server send-distance viewport distinguishes expected streaming neighbours from the outer
+     * ring. Expected neighbours wait without falling back to a throwaway snapshot. The outer
+     * ring is ready immediately and {@link ChunkTintSampler}'s clamped window keeps its border
+     * tint honest without requiring a second capture.
      */
     private DirtyChunkSet.Readiness captureReadiness(final int chunkX, final int chunkZ) {
-        final ClientWorld world = client.world;
-        if (world == null || !ChunkTintSampler.loaded(world, chunkX, chunkZ)) {
+        return captureReadiness(
+            chunkX,
+            chunkZ,
+            localCaptureViewport,
+            this::isChunkLoaded,
+            needsTintNeighbors(MinecraftAccess.biomeBlendRadius(client))
+        );
+    }
+
+    static DirtyChunkSet.Readiness captureReadiness(
+        final int chunkX,
+        final int chunkZ,
+        final ChunkViewport expectedViewport,
+        final DirtyChunkSet.ChunkPredicate loaded,
+        final boolean needsTintNeighbors
+    ) {
+        if (!loaded.test(chunkX, chunkZ)) {
             return DirtyChunkSet.Readiness.MISSING;
         }
-        if (!needsTintNeighbors(MinecraftAccess.biomeBlendRadius(client))) {
+        if (!needsTintNeighbors) {
             return DirtyChunkSet.Readiness.READY;
         }
         for (int dz = -1; dz <= 1; dz++) {
             for (int dx = -1; dx <= 1; dx++) {
-                if ((dx != 0 || dz != 0) && !ChunkTintSampler.loaded(world, chunkX + dx, chunkZ + dz)) {
-                    return DirtyChunkSet.Readiness.WAITING;
+                if (dx == 0 && dz == 0) {
+                    continue;
+                }
+                final int neighborX = chunkX + dx;
+                final int neighborZ = chunkZ + dz;
+                if (!loaded.test(neighborX, neighborZ)
+                    && (expectedViewport == null
+                    || expectedViewport.contains(neighborX, neighborZ))) {
+                    return expectedViewport == null
+                        ? DirtyChunkSet.Readiness.WAITING
+                        : DirtyChunkSet.Readiness.AWAITING_NEIGHBORS;
                 }
             }
         }
@@ -250,47 +319,117 @@ public final class ChunkCaptureService {
         final int playerChunkZ = player.getBlockPos().getZ() >> 4;
         final int viewpointChunkX = viewpoint.blockX() >> 4;
         final int viewpointChunkZ = viewpoint.blockZ() >> 4;
-        final int currentServerViewDistance = serverViewDistance.getAsInt();
-        if (currentServerViewDistance != lastServerViewDistance
-            || (currentServerViewDistance >= 0
-            && (playerChunkX != lastPlayerChunkX || playerChunkZ != lastPlayerChunkZ))) {
-            lastPlayerChunkX = playerChunkX;
-            lastPlayerChunkZ = playerChunkZ;
-            lastServerViewDistance = currentServerViewDistance;
-            tiles.setLocalAuthorityViewport(ChunkViewport.centered(
-                playerChunkX,
-                playerChunkZ,
-                captureViewDistance(MinecraftAccess.viewDistance(client), currentServerViewDistance)
-            ));
+        final ChunkViewport nextCaptureViewport = ChunkViewport.centered(
+            playerChunkX, playerChunkZ, captureViewDistance()
+        );
+        if (!nextCaptureViewport.equals(localCaptureViewport)) {
+            localCaptureViewport = nextCaptureViewport;
+            tiles.setLocalAuthorityViewport(nextCaptureViewport);
             predictionTiles.refreshLiveCoverage();
         }
 
         final LayerSelector.Decision decision = layerSelector.tick();
         if (!decision.equals(lastDecision)) {
-            // Layer (or its floor-scan pivot Y band) changed - reseed so the new layer fills the
-            // viewport instead of leaving stale/empty data from whatever was active before.
+            // A real layer change needs background coverage for its new store. A player-relative
+            // pivot change is handled by visibleRefresh; reseeding the entire server distance on
+            // every two-block Y movement wastes thousands of off-screen snapshots.
+            if (shouldReseedBackground(lastDecision, decision)) {
+                reseedViewport(viewpointChunkX, viewpointChunkZ);
+            }
             lastDecision = decision;
-            reseedViewport(viewpointChunkX, viewpointChunkZ);
+        }
+        final MapLayer previousWorkerLayer = workerLayer;
+        if (isProcessFloorLayer(decision.layer())) {
+            workerLayer = decision.layer();
+            terrainWorker.updatePivot(decision.pivotY());
+        } else {
+            workerLayer = null;
+            if (previousWorkerLayer != null) {
+                terrainWorker.pause();
+            }
         }
 
-        final List<LayerSelector.Decision> capturePlan = capturePlan(
-            decision, client.world.getTopY()
+        terrainWorker.resolveMaterialRequests();
+
+        final int worldTopY = client.world.getTopY();
+        final List<LayerSelector.Decision> backgroundPlan = capturePlan(decision, worldTopY);
+        final int backgroundChunkBudget = Math.max(
+            1, config.snapshotBudgetPerTick / backgroundPlan.size()
         );
-        final int chunkBudget = Math.max(1, config.snapshotBudgetPerTick / capturePlan.size());
-        final List<long[]> batch = dirtyChunks.drainNearest(
-            chunkBudget, viewpointChunkX, viewpointChunkZ, this::captureReadiness
+        final ChunkViewport visible = visibleCaptureViewport(
+            minimapViewport, localCaptureViewport
         );
-        final List<CapturedSnapshot> captured = new ArrayList<>(
-            batch.size() * capturePlan.size()
-        );
-        for (final long[] chunkPos : batch) {
-            for (final LayerSelector.Decision capture : capturePlan) {
-                final ChunkSnapshot snapshot = factory.snapshot(
-                    (int) chunkPos[0], (int) chunkPos[1],
-                    capture.layer(), capture.pivotY(), token
+        if (workerLayer != null) {
+            terrainWorker.updateViewport(visible);
+        }
+        final CaptureTickBudget tickBudget = visible == null
+            ? null
+            : CaptureTickBudget.visible(config.snapshotBudgetPerTick, System::nanoTime);
+        final CaptureRefreshSweep.Batch visibleBatch;
+        if (visible == null) {
+            visibleRefresh.reset();
+            visibleBatch = null;
+        } else {
+            visibleRefresh.updateTarget(decision.layer(), decision.pivotY(), visible);
+            visibleBatch = visibleRefresh.drainNearest(
+                tickBudget.maximumCandidates(),
+                viewpointChunkX,
+                viewpointChunkZ,
+                this::captureReadiness
+            );
+        }
+        final List<CapturedSnapshot> captured = new ArrayList<>(Math.max(
+            config.snapshotBudgetPerTick,
+            visibleBatch == null ? 0 : visibleBatch.chunks().size()
+        ));
+        final int finishedResults = finishProcessResults(captured, token, tickBudget);
+        int visibleAttempts = 0;
+        if (visibleBatch != null) {
+            final List<LayerSelector.Decision> visiblePlan = visibleCapturePlan(
+                new LayerSelector.Decision(visibleBatch.layer(), visibleBatch.pivotY())
+            );
+            for (final long[] chunk : visibleBatch.chunks()) {
+                if (!tickBudget.canCapture(visibleAttempts, finishedResults > 0)) {
+                    visibleRefresh.markDirty((int) chunk[0], (int) chunk[1]);
+                    continue;
+                }
+                visibleAttempts += visiblePlan.size();
+                if (!captureChunk(captured, chunk, visiblePlan, token)) {
+                    visibleRefresh.markDirty((int) chunk[0], (int) chunk[1]);
+                } else if (!hasSecondaryLayer(visibleBatch.layer())) {
+                    dirtyChunks.discard((int) chunk[0], (int) chunk[1]);
+                }
+            }
+        }
+        final boolean canCaptureBackground = tickBudget == null
+            || tickBudget.canCapture(visibleAttempts, finishedResults > 0);
+        final int remainingBackgroundChunks = !canCaptureBackground
+            || visibleAttempts >= config.snapshotBudgetPerTick
+            ? 0
+            : Math.max(
+                1,
+                (config.snapshotBudgetPerTick - visibleAttempts) / backgroundPlan.size()
+            );
+        if (remainingBackgroundChunks > 0 && !visibleRefresh.hasPending()) {
+            final List<long[]> background = dirtyChunks.drainNearest(
+                Math.min(backgroundChunkBudget, remainingBackgroundChunks),
+                viewpointChunkX,
+                viewpointChunkZ,
+                this::captureReadiness
+            );
+            for (final long[] chunk : background) {
+                final List<LayerSelector.Decision> chunkPlan = backgroundCapturePlan(
+                    decision,
+                    worldTopY,
+                    visible != null && visible.contains((int) chunk[0], (int) chunk[1])
                 );
-                if (snapshot != null) {
-                    captured.add(new CapturedSnapshot(snapshot, capture.layer()));
+                if (!captureChunk(
+                    captured,
+                    chunk,
+                    chunkPlan,
+                    token
+                )) {
+                    dirtyChunks.mark((int) chunk[0], (int) chunk[1]);
                 }
             }
         }
@@ -302,6 +441,91 @@ public final class ChunkCaptureService {
             cache.tick(viewpointChunkX >> 4, viewpointChunkZ >> 4);
         }
         logPeriodically(world);
+    }
+
+    private boolean captureChunk(
+        final List<CapturedSnapshot> captured,
+        final long[] chunk,
+        final List<LayerSelector.Decision> plan,
+        final long token
+    ) {
+        int accepted = 0;
+        EncodedChunk encoded = null;
+        boolean primeTerrain = false;
+        for (final LayerSelector.Decision decision : plan) {
+            if (isProcessFloorLayer(decision.layer())) {
+                if (terrainWorker.hasFreshChunk((int) chunk[0], (int) chunk[1])) {
+                    accepted++;
+                    continue;
+                }
+                if (encoded == null) {
+                    encoded = terrainEncoder.capture(
+                        (int) chunk[0], (int) chunk[1], token
+                    );
+                }
+                if (encoded != null && terrainWorker.submit(encoded)) {
+                    accepted++;
+                }
+                continue;
+            }
+            final ChunkSnapshot snapshot = factory.snapshot(
+                (int) chunk[0], (int) chunk[1], decision.layer(), decision.pivotY(), token
+            );
+            if (snapshot != null) {
+                captured.add(new CapturedSnapshot(snapshot, decision.layer()));
+                accepted++;
+                primeTerrain = true;
+            }
+        }
+        if (primeTerrain
+            && !terrainWorker.hasFreshChunk((int) chunk[0], (int) chunk[1])) {
+            if (encoded == null) {
+                encoded = terrainEncoder.capture((int) chunk[0], (int) chunk[1], token);
+            }
+            if (encoded != null) {
+                terrainWorker.prime(encoded);
+            }
+        }
+        return accepted == plan.size();
+    }
+
+    private int finishProcessResults(
+        final List<CapturedSnapshot> captured,
+        final long token,
+        final CaptureTickBudget tickBudget
+    ) {
+        if (workerLayer == null) {
+            return 0;
+        }
+        final long started = System.nanoTime();
+        int attempts = 0;
+        TerrainResult result;
+        while ((tickBudget == null
+            ? attempts == 0 || System.nanoTime() - started < FLOOR_FINISH_BUDGET_NANOS
+            : tickBudget.canFinish(attempts))
+            && (result = terrainWorker.pollResult()) != null) {
+            attempts++;
+            final ChunkSnapshot snapshot = factory.finishFloorSelection(
+                result, workerLayer, token
+            );
+            if (snapshot == null) {
+                markDirty(result.result().chunkX(), result.result().chunkZ());
+            } else {
+                captured.add(new CapturedSnapshot(snapshot, workerLayer));
+            }
+        }
+        return attempts;
+    }
+
+    private static boolean isProcessFloorLayer(final MapLayer layer) {
+        return layer.type() == MapLayer.Type.CAVE_AUTO
+            || layer.type() == MapLayer.Type.CAVE_SLICE
+            || layer.type() == MapLayer.Type.NETHER_CURRENT
+            || layer.type() == MapLayer.Type.NETHER_SLICE;
+    }
+
+    private static boolean hasSecondaryLayer(final MapLayer layer) {
+        return layer.type().isNetherFloor();
     }
 
     private int captureViewDistance() {
@@ -318,6 +542,35 @@ public final class ChunkCaptureService {
     }
 
     /**
+     * Limits visible capture work to the server send-distance square plus its loaded guard ring.
+     * At the largest minimap size/zoom the screen can cover thousands of chunks, while only this
+     * intersection can exist in {@link ClientWorld}; queueing the rest makes every tick sort
+     * coordinates that the snapshot factory can only reject.
+     */
+    static ChunkViewport visibleCaptureViewport(
+        final ChunkViewport visible, final ChunkViewport localAuthority
+    ) {
+        if (visible == null || localAuthority == null) {
+            return null;
+        }
+        final int minChunkX = Math.max(
+            visible.minChunkX(), Math.subtractExact(localAuthority.minChunkX(), 1)
+        );
+        final int maxChunkX = Math.min(
+            visible.maxChunkX(), Math.addExact(localAuthority.maxChunkX(), 1)
+        );
+        final int minChunkZ = Math.max(
+            visible.minChunkZ(), Math.subtractExact(localAuthority.minChunkZ(), 1)
+        );
+        final int maxChunkZ = Math.min(
+            visible.maxChunkZ(), Math.addExact(localAuthority.maxChunkZ(), 1)
+        );
+        return minChunkX > maxChunkX || minChunkZ > maxChunkZ
+            ? null
+            : new ChunkViewport(minChunkX, maxChunkX, minChunkZ, maxChunkZ);
+    }
+
+    /**
      * A below-roof Nether player still needs the persistent roof surface for the fullscreen map.
      * Divide the per-tick chunk batch by this plan's size so normal budgets remain bounded. A
      * configured budget of one deliberately captures one chunk in both layers, making progress on
@@ -327,14 +580,35 @@ public final class ChunkCaptureService {
         final LayerSelector.Decision selected,
         final int worldTopY
     ) {
-        if (selected.layer().type() == MapLayer.Type.NETHER_CURRENT
-            || selected.layer().type() == MapLayer.Type.NETHER_SLICE) {
+        if (selected.layer().type().isNetherFloor()) {
             return List.of(
                 selected,
                 new LayerSelector.Decision(MapLayer.NETHER_CEILING, worldTopY - 1)
             );
         }
         return List.of(selected);
+    }
+
+    static boolean shouldReseedBackground(
+        final LayerSelector.Decision previous,
+        final LayerSelector.Decision current
+    ) {
+        return previous == null || !previous.layer().equals(current.layer());
+    }
+
+    static List<LayerSelector.Decision> visibleCapturePlan(
+        final LayerSelector.Decision selected
+    ) {
+        return List.of(selected);
+    }
+
+    static List<LayerSelector.Decision> backgroundCapturePlan(
+        final LayerSelector.Decision selected,
+        final int worldTopY,
+        final boolean visibleChunk
+    ) {
+        final List<LayerSelector.Decision> plan = capturePlan(selected, worldTopY);
+        return visibleChunk && plan.size() > 1 ? plan.subList(1, plan.size()) : plan;
     }
 
     private void storeSnapshots(final List<CapturedSnapshot> captured) {
@@ -382,6 +656,18 @@ public final class ChunkCaptureService {
         storeSnapshots(
             snapshots.stream().map(snapshot -> new CapturedSnapshot(snapshot, layer)).toList()
         );
+    }
+
+    public boolean liveTerrainPaused() {
+        return terrainWorker.paused();
+    }
+
+    public String liveTerrainFault() {
+        return terrainWorker.fault();
+    }
+
+    public void close() {
+        terrainWorker.close();
     }
 
     private record CapturedSnapshot(ChunkSnapshot snapshot, MapLayer layer) {

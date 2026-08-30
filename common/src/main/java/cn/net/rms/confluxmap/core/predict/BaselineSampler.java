@@ -47,6 +47,24 @@ public interface BaselineSampler {
         return true;
     }
 
+    /**
+     * Nether-only biome grid at one block Y. Coordinates use the same scale and stride convention
+     * as {@link #biomesStrided}; implementations must preserve the Nether biome source's vertical
+     * noise dimension rather than substituting the roof plane.
+     */
+    default boolean biomesAtYStrided(
+        final int blockY,
+        final int scale,
+        final int x,
+        final int z,
+        final int w,
+        final int h,
+        final int stride,
+        final int[] out
+    ) {
+        return false;
+    }
+
     /** Overworld: floored heights for a w*h rectangle at 1:4 scale ({@code x4}/{@code z4} = blockX/4, blockZ/4). */
     boolean heights(int x4, int z4, int w, int h, int[] outY);
 

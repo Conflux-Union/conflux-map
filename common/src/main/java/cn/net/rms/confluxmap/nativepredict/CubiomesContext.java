@@ -52,6 +52,24 @@ public final class CubiomesContext implements AutoCloseable {
         return CubiomesNative.cfxBiomesStrided(handle, scale, x, z, w, h, stride, out);
     }
 
+    /** Nether-only strided biome grid sampled at one block Y. */
+    public int biomesAtYStrided(
+        final int blockY,
+        final int scale,
+        final int x,
+        final int z,
+        final int w,
+        final int h,
+        final int stride,
+        final int[] out
+    ) {
+        requireOpen();
+        requireCapacity(out, w, h);
+        return CubiomesNative.cfxBiomesAtYStrided(
+            handle, blockY, scale, x, z, w, h, stride, out
+        );
+    }
+
     /** Overworld-only: floored block heights (+ biome ids) for a {@code w*h} rectangle at 1:4 scale. */
     public int heights(final int x4, final int z4, final int w, final int h, final int[] outY, final int[] outIds) {
         requireOpen();

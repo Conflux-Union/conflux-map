@@ -1407,7 +1407,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final SessionGuard.Session session = viewSession();
         final MapLayer layer = viewLayer();
         final boolean biome = displayMode() == FullscreenDisplayMode.BIOME;
-        final boolean prediction = predictionActive(layer, session);
+        final boolean prediction = predictionActive(layer, session, biome);
         final AnnotationStore annotations = viewAnnotationStore();
         return new MapExportRequest(
             session,
@@ -1901,7 +1901,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             }
         }
         final SessionGuard.Session session = viewSession();
-        return surfaceLayer.equals(visibleLayer) && predictionActive(surfaceLayer, session)
+        return surfaceLayer.equals(visibleLayer) && predictionActive(surfaceLayer, session, false)
             ? predictionTiles.predictedSurfaceYAt(session.dimension(), currentLod(), blockX, blockZ)
             : OptionalInt.empty();
     }
@@ -3306,28 +3306,36 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final MapLayer layer = viewLayer();
         final String layerId = layer.cacheId();
         final boolean biomeMode = biomeMode();
-        final boolean predictionActive = predictionActive(layer, session);
+        final boolean predictionActive = predictionActive(layer, session, biomeMode);
+        final boolean syncActive = predictionActive(layer, session, false);
         viewTiles().setViewport(layer, lod, firstTileX, lastTileX, firstTileZ, lastTileZ);
         if (predictionActive) {
-            predictionTiles.setViewport(session.dimension(), lod, firstTileX, lastTileX, firstTileZ, lastTileZ);
-            final ChunkViewport mapChunks = ChunkViewport.covering(
-                centerX, centerZ, width, height, scale
-            );
-            final ChunkViewport playerView;
-            if (this.client.player == null) {
-                playerView = null;
-            } else {
-                final int playerChunkX = this.client.player.getBlockPos().getX() >> 4;
-                final int playerChunkZ = this.client.player.getBlockPos().getZ() >> 4;
-                final int advertisedRadius = companion.serverViewDistance();
-                final int radius = advertisedRadius >= 0
-                    ? advertisedRadius : MinecraftAccess.viewDistance(this.client);
-                playerView = ChunkViewport.centered(playerChunkX, playerChunkZ, radius);
+            if (session.dimension().equals(DimensionId.NETHER)) {
+                predictionTiles.setNetherBiomeY(layerSelector.current().pivotY());
             }
-            ConfluxMapClient.get().mapSyncClient().reportViewport(
-                session.dimension(), lod, firstTileX, lastTileX, firstTileZ, lastTileZ,
-                mapChunks, playerView
-            );
+            predictionTiles.setViewport(session.dimension(), lod, firstTileX, lastTileX, firstTileZ, lastTileZ);
+            if (syncActive) {
+                final ChunkViewport mapChunks = ChunkViewport.covering(
+                    centerX, centerZ, width, height, scale
+                );
+                final ChunkViewport playerView;
+                if (this.client.player == null) {
+                    playerView = null;
+                } else {
+                    final int playerChunkX = this.client.player.getBlockPos().getX() >> 4;
+                    final int playerChunkZ = this.client.player.getBlockPos().getZ() >> 4;
+                    final int advertisedRadius = companion.serverViewDistance();
+                    final int radius = advertisedRadius >= 0
+                        ? advertisedRadius : MinecraftAccess.viewDistance(this.client);
+                    playerView = ChunkViewport.centered(playerChunkX, playerChunkZ, radius);
+                }
+                ConfluxMapClient.get().mapSyncClient().reportViewport(
+                    session.dimension(), lod, firstTileX, lastTileX, firstTileZ, lastTileZ,
+                    mapChunks, playerView
+                );
+            } else {
+                ConfluxMapClient.get().mapSyncClient().clearViewport();
+            }
         } else {
             predictionTiles.clearViewport();
             ConfluxMapClient.get().mapSyncClient().clearViewport();
@@ -3395,13 +3403,19 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
     }
 
-    /** Only the dimension's canonical top layer has a predicted/synchronized plane (see {@link #drawTiles}). */
-    private boolean predictionActive(final MapLayer layer, final SessionGuard.Session session) {
+    /** Seed prediction can additionally fill lower Nether biome planes; synchronization stays top-only. */
+    private boolean predictionActive(
+        final MapLayer layer,
+        final SessionGuard.Session session,
+        final boolean biomeMode
+    ) {
         final SessionGuard.Session live = gameBridge.session();
         return config.predictionEnabled
             && session.world().equals(live.world())
             && session.dimension().equals(live.dimension())
-            && layer.equals(PredictionDimensions.layer(session.dimension()))
+            && FullscreenMapLayerPolicy.predictionAllowed(
+                session.dimension(), layer, biomeMode
+            )
             && predictionState.predictable(session.dimension());
     }
 
@@ -4004,11 +4018,16 @@ public final class FullscreenMapScreen extends ConfluxScreen {
      * underlay. Returns null when neither source has a resolvable biome identifier.
      */
     private String cursorBiomeName(final int blockX, final int blockZ) {
+        final SessionGuard.Session session = viewSession();
+        final MapLayer layer = viewLayer();
         final ClientWorld world = this.client.world;
         if (viewingLiveSession() && world != null) {
             final int playerY = gameBridge.player().map(p -> p.blockY()).orElse(world.getBottomY());
+            final int biomeY = FullscreenMapLayerPolicy.biomeSampleY(
+                layer, playerY, layerSelector.current().pivotY()
+            );
             final BlockPos pos = new BlockPos(
-                blockX, MathHelper.clamp(playerY, world.getBottomY(), world.getTopY() - 1), blockZ
+                blockX, MathHelper.clamp(biomeY, world.getBottomY(), world.getTopY() - 1), blockZ
             );
             if (ClientChunkLookup.isLoaded(world, blockX, blockZ)) {
                 final Identifier biomeId = Regs.biomeIdAt(world, pos);
@@ -4017,8 +4036,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 }
             }
         }
+        if (!predictionActive(layer, session, biomeMode())) {
+            return null;
+        }
         final OptionalInt predicted = predictionTiles.predictedBiomeAt(
-            viewSession().dimension(), currentLod(), blockX, blockZ
+            session.dimension(), layer, currentLod(), blockX, blockZ
         );
         if (predicted.isEmpty()) {
             return null;
