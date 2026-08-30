@@ -136,7 +136,7 @@ public final class OffscreenCanvas {
 
     /** Local depth used while the persistent radar atlas is filled from a client tick. */
     public static float atlasDrawPlaneZ() {
-        //#if MC<11904
+        //#if MC<12100
         return -2000f;
         //#else
         //$$ return 0f;

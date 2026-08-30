@@ -11,6 +11,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 //$$ import net.minecraft.client.MinecraftClient;
 //$$ import org.joml.Matrix4f;
 //$$ import org.joml.Vector4f;
+//#elseif MC>=11904
+//$$ import org.joml.Matrix4f;
+//$$ import org.joml.Vector4f;
 //#elseif MC<11904
 import net.minecraft.util.math.Matrix4f;
 import net.minecraft.util.math.Vector4f;
@@ -147,7 +150,22 @@ final class OffscreenCanvasProjectionTest {
     //$$     final int nextMethod = source.indexOf("\n    public ", start + signature.length());
     //$$     return source.substring(start, nextMethod < 0 ? source.length() : nextMethod);
     //$$ }
-    //#elseif MC<11904
+    //#elseif MC>=11904
+    //$$ @Test
+    //$$ void canvasProjectionContainsTheAtlasDrawPlane() throws Exception {
+    //$$     final var method = OffscreenCanvas.class.getDeclaredMethod("canvasProjection", int.class);
+    //$$     method.setAccessible(true);
+    //$$     final Matrix4f projection = (Matrix4f) method.invoke(null, 128);
+    //$$     final Vector4f clip = projection.transform(new Vector4f(
+    //$$         64f, 64f, OffscreenCanvas.atlasDrawPlaneZ(), 1f
+    //$$     ));
+    //$$
+    //$$     assertTrue(
+    //$$         Math.abs(clip.z) <= Math.abs(clip.w),
+    //$$         () -> "atlas draw plane is clipped: z=" + clip.z + ", w=" + clip.w
+    //$$     );
+    //$$ }
+    //#else
     @Test
     void canvasProjectionContainsTheAtlasDrawPlane() throws Exception {
         final var method = OffscreenCanvas.class.getDeclaredMethod("canvasProjection", int.class);
