@@ -6,6 +6,8 @@ on:
       - master
 permissions:
   contents: read
+env:
+  BUILD_VERSION: ${{ github.sha }}
 jobs:
   Get-Versions:
     runs-on: ubuntu-24.04
@@ -51,9 +53,9 @@ jobs:
             ${{ runner.os }}-gradle-
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
-      - name: Check ${{ matrix.minecraft_version }}
+      - name: Build and check ${{ matrix.minecraft_version }}
         id: check
-        run: ./gradlew :${{ matrix.minecraft_version }}:check
+        run: ./gradlew -Pversion="$BUILD_VERSION" :${{ matrix.minecraft_version }}:build
       - name: Connect client to server for ${{ matrix.minecraft_version }}
         timeout-minutes: 12
         env:
@@ -192,6 +194,12 @@ jobs:
 
           grep -Em1 'logged in with entity id [0-9]+ at|joined the game' "$server_output"
           echo "Client-server connection smoke test passed for Minecraft $minecraft_version"
+      - name: Upload build for ${{ matrix.minecraft_version }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: confluxmap-${{ matrix.minecraft_version }}-${{ env.BUILD_VERSION }}
+          path: versions/${{ matrix.minecraft_version }}/build/libs/*.jar
+          if-no-files-found: error
       - name: Upload connection smoke logs for ${{ matrix.minecraft_version }}
         if: always()
         uses: actions/upload-artifact@v5
@@ -335,7 +343,13 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
       - name: Build Paper companion
-        run: ./gradlew :paper:build
+        run: ./gradlew -Pversion="$BUILD_VERSION" :paper:build
+      - name: Upload Paper build
+        uses: actions/upload-artifact@v5
+        with:
+          name: confluxmap-paper-${{ env.BUILD_VERSION }}
+          path: paper/build/libs/*.jar
+          if-no-files-found: error
       - name: Stop Gradle daemon
         if: always()
         run: ./gradlew --stop
