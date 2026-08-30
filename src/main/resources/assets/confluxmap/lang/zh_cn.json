@@ -300,7 +300,7 @@
   "confluxmap.value.map_color_style.xaero": "Xaero",
   "confluxmap.config.radar.enabled": "雷达：%s",
   "confluxmap.config.radar.display_mode": "默认显示：%s",
-  "confluxmap.value.radar_display_mode.dots": "小点",
+  "confluxmap.value.radar_display_mode.dots": "点",
   "confluxmap.value.radar_display_mode.portraits": "实体头像",
   "confluxmap.config.radar.show_players": "显示玩家：%s",
   "confluxmap.config.radar.show_hostile": "显示敌对生物：%s",
