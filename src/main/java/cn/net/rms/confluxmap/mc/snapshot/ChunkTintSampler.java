@@ -31,6 +31,7 @@ final class ChunkTintSampler {
     private final BlockPos.Mutable samplePos = new BlockPos.Mutable();
 
     private BiomeSampleWindow window = BiomeSampleWindow.FULL;
+    private BiomeSampleWindow biomeIdentityWindow = BiomeSampleWindow.FULL;
     private int baseX;
     private int baseZ;
 
@@ -43,7 +44,33 @@ final class ChunkTintSampler {
     void beginChunk(final ClientWorld world, final int chunkX, final int chunkZ) {
         baseX = chunkX << 4;
         baseZ = chunkZ << 4;
-        window = windowFor(world, chunkX, chunkZ);
+        final int blendRadius = MinecraftAccess.biomeBlendRadius(client);
+        final boolean northWest = loaded(world, chunkX - 1, chunkZ - 1);
+        final boolean north = loaded(world, chunkX, chunkZ - 1);
+        final boolean northEast = loaded(world, chunkX + 1, chunkZ - 1);
+        final boolean west = loaded(world, chunkX - 1, chunkZ);
+        final boolean east = loaded(world, chunkX + 1, chunkZ);
+        final boolean southWest = loaded(world, chunkX - 1, chunkZ + 1);
+        final boolean south = loaded(world, chunkX, chunkZ + 1);
+        final boolean southEast = loaded(world, chunkX + 1, chunkZ + 1);
+        final boolean westClear = west && northWest && southWest;
+        final boolean eastClear = east && northEast && southEast;
+        final boolean northClear = north && northWest && northEast;
+        final boolean southClear = south && southWest && southEast;
+        window = BiomeSampleWindow.of(
+            blendRadius, westClear, eastClear, northClear, southClear
+        );
+        biomeIdentityWindow = BiomeSampleWindow.of(
+            BiomeIdentityCapture.VORONOI_BORDER_INSET,
+            westClear,
+            eastClear,
+            northClear,
+            southClear
+        );
+    }
+
+    BiomeSampleWindow biomeIdentityWindow() {
+        return biomeIdentityWindow;
     }
 
     /** The tint for {@code state}, sampled at the window-clamped column of the given position. */
@@ -54,30 +81,6 @@ final class ChunkTintSampler {
             baseZ + window.clampLocalZ(worldZ - baseZ)
         );
         return resolver.resolve(state, world, samplePos);
-    }
-
-    private BiomeSampleWindow windowFor(final ClientWorld world, final int chunkX, final int chunkZ) {
-        final int blendRadius = MinecraftAccess.biomeBlendRadius(client);
-        if (blendRadius <= 0) {
-            return BiomeSampleWindow.FULL;
-        }
-        // A side counts as clear only when all three chunks the blend square can reach on it
-        // are loaded, so a missing diagonal insets both of the sides that touch it.
-        final boolean northWest = loaded(world, chunkX - 1, chunkZ - 1);
-        final boolean north = loaded(world, chunkX, chunkZ - 1);
-        final boolean northEast = loaded(world, chunkX + 1, chunkZ - 1);
-        final boolean west = loaded(world, chunkX - 1, chunkZ);
-        final boolean east = loaded(world, chunkX + 1, chunkZ);
-        final boolean southWest = loaded(world, chunkX - 1, chunkZ + 1);
-        final boolean south = loaded(world, chunkX, chunkZ + 1);
-        final boolean southEast = loaded(world, chunkX + 1, chunkZ + 1);
-        return BiomeSampleWindow.of(
-            blendRadius,
-            west && northWest && southWest,
-            east && northEast && southEast,
-            north && northWest && northEast,
-            south && southWest && southEast
-        );
     }
 
     static boolean loaded(final ClientWorld world, final int chunkX, final int chunkZ) {

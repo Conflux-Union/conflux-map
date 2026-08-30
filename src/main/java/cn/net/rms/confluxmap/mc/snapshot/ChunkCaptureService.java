@@ -174,21 +174,19 @@ public final class ChunkCaptureService {
      * way to drop it is to take the snapshot again.
      */
     public void markChunkLoaded(final int chunkX, final int chunkZ) {
+        // Biome identity has its own two-block Voronoi footprint even when tint blending is
+        // disabled. Revisit loaded neighbours so their temporarily clamped borders recover the
+        // exact biome boundary once this chunk arrives.
         terrainWorker.invalidate(chunkX, chunkZ);
-        if (needsTintNeighbors(MinecraftAccess.biomeBlendRadius(client))) {
-            for (int dz = -1; dz <= 1; dz++) {
-                for (int dx = -1; dx <= 1; dx++) {
-                    if ((dx != 0 || dz != 0) && isChunkLoaded(chunkX + dx, chunkZ + dz)) {
-                        terrainWorker.invalidate(chunkX + dx, chunkZ + dz);
-                    }
+        for (int dz = -1; dz <= 1; dz++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                if ((dx != 0 || dz != 0) && isChunkLoaded(chunkX + dx, chunkZ + dz)) {
+                    terrainWorker.invalidate(chunkX + dx, chunkZ + dz);
                 }
             }
-            dirtyChunks.markWithLoadedNeighbors(chunkX, chunkZ, this::isChunkLoaded);
-            visibleRefresh.markWithLoadedNeighbors(chunkX, chunkZ, this::isChunkLoaded);
-        } else {
-            dirtyChunks.mark(chunkX, chunkZ);
-            visibleRefresh.markDirty(chunkX, chunkZ);
         }
+        dirtyChunks.markWithLoadedNeighbors(chunkX, chunkZ, this::isChunkLoaded);
+        visibleRefresh.markWithLoadedNeighbors(chunkX, chunkZ, this::isChunkLoaded);
     }
 
     /** Render thread publishes the bounding chunk rectangle currently visible on the minimap. */
