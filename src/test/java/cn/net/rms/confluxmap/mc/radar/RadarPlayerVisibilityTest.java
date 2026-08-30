@@ -28,9 +28,9 @@ final class RadarPlayerVisibilityTest {
             "final boolean playerListPressed = MinecraftAccess.isPlayerListKeyPressed(client);"
         ));
         assertTrue(minimap.contains(
-            "final RadarMarkerRenderer.Presentation presentation = playerListPressed\n"
-                + "            ? RadarMarkerRenderer.Presentation.detailed(config.radarShowPlayerNames)\n"
-                + "            : RadarMarkerRenderer.Presentation.compact();"
+            "RadarMarkerRenderer.Presentation.minimap(\n"
+                + "                config.radarDisplayMode, playerListPressed, config.radarShowPlayerNames\n"
+                + "            );"
         ));
         assertFalse(minimap.contains(playerFilter));
         assertTrue(minimap.contains(
@@ -40,6 +40,9 @@ final class RadarPlayerVisibilityTest {
         ));
         assertTrue(renderer.contains(
             "return category == RadarCategory.PLAYER || presentation.detailedIcons();"
+        ));
+        assertTrue(renderer.contains(
+            "return detailed(playerListPressed && showPlayerNames);"
         ));
         assertFalse(fullscreen.contains("MinecraftAccess.isPlayerListKeyPressed(client)"));
         assertFalse(renderer.contains("MinecraftAccess.isPlayerListKeyPressed(client)"));

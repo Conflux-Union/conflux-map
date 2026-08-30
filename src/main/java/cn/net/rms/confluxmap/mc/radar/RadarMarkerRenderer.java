@@ -70,6 +70,18 @@ public final class RadarMarkerRenderer {
         public static Presentation detailed(final boolean showPlayerNames) {
             return showPlayerNames ? DETAILED_WITH_NAMES : DETAILED;
         }
+
+        /** Resolves the configured minimap default plus the temporary player-list expansion. */
+        public static Presentation minimap(
+            final ConfluxConfig.RadarDisplayMode displayMode,
+            final boolean playerListPressed,
+            final boolean showPlayerNames
+        ) {
+            if (displayMode == ConfluxConfig.RadarDisplayMode.DOTS && !playerListPressed) {
+                return compact();
+            }
+            return detailed(playerListPressed && showPlayerNames);
+        }
     }
 
     /**

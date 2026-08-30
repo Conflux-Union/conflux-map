@@ -65,6 +65,8 @@ public final class ConfluxConfig {
 
     public enum PlayerMarkerStyle { TRADITIONAL, MODERN }
 
+    public enum RadarDisplayMode { DOTS, PORTRAITS }
+
     /**
      * Manual layer override cycled by {@code key.confluxmap.cycle_layer}; see
      * {@code mc.world.LayerSelector} for how each dimension interprets these
@@ -132,6 +134,8 @@ public final class ConfluxConfig {
 
     /** Master toggle for the whole entity-radar overlay (docs/reference-specs/radar-icons.md sec 4). */
     public boolean radarEnabled = true;
+    /** Default minimap marker detail; the player-list key can still temporarily expand dots. */
+    public RadarDisplayMode radarDisplayMode = RadarDisplayMode.PORTRAITS;
     public boolean radarShowPlayers = true;
     public boolean radarShowHostile = true;
     /** Spec default for the "neutral" category is off; M1's PASSIVE bucket is that same category. */
@@ -248,6 +252,7 @@ public final class ConfluxConfig {
         c.snapshotBudgetPerTick = snapshotBudgetPerTick;
         c.gpuTileCacheLimit = gpuTileCacheLimit;
         c.radarEnabled = radarEnabled;
+        c.radarDisplayMode = radarDisplayMode;
         c.radarShowPlayers = radarShowPlayers;
         c.radarShowHostile = radarShowHostile;
         c.radarShowPassive = radarShowPassive;
@@ -322,6 +327,9 @@ public final class ConfluxConfig {
         }
         if (mapColorStyle == null) {
             mapColorStyle = MapColorStyle.CONFLUX;
+        }
+        if (radarDisplayMode == null) {
+            radarDisplayMode = RadarDisplayMode.PORTRAITS;
         }
         if (schemaVersion < 3 && playerTrailDurationMinutes != null) {
             final long legacyDurationSeconds = playerTrailDurationMinutes.longValue() * 60L;

@@ -62,7 +62,7 @@ The client provides local maps, waypoints, drawings, and map export as soon as i
 
 ### Entity radar and interface settings
 
-- **Entity radar:** Players, hostile mobs, friendly mobs, and other entities have independent controls. Player portraits stay visible on the minimap, while other entities use category-colored diamond markers until the player-list key is held to expand them into generated mob portraits or item icons. The fullscreen map always uses detailed icons.
+- **Entity radar:** Players, hostile mobs, friendly mobs, and other entities have independent controls. The minimap defaults to generated entity portraits and item icons, or can use compact category-colored dots that expand while the player-list key is held. The fullscreen map always uses detailed icons.
 - **Display customization:** The minimap, waypoints, entity radar, map layers, and information lines all provide detailed display settings. Client settings apply immediately, and sliders accept directly entered values.
 - **UI resource packs:** Toolbar icons and minimap frames can be replaced through normal Minecraft resource packs. Existing Xaero UI packs can reuse compatible minimap-frame and world-map icon assets during migration; see [UI resource packs](docs/reference-specs/ui-resource-packs.md) for the supported paths and limits.
 - **MaliLib key combinations:** With MaliLib installed, Conflux Map supports multi-key combinations and can be managed through the A+C configuration screen.

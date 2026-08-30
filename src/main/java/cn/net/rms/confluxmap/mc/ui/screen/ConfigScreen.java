@@ -517,6 +517,13 @@ public final class ConfigScreen extends ConfluxScreen {
                     () -> config.radarEnabled, v -> config.radarEnabled = v,
                     radarControlsActive, radarTooltipKey
                 );
+                y = addEnumRow(
+                    y, "confluxmap.config.radar.display_mode",
+                    ConfluxConfig.RadarDisplayMode.values(),
+                    () -> config.radarDisplayMode, v -> config.radarDisplayMode = v,
+                    ConfigScreen::radarDisplayModeKey,
+                    radarControlsActive, radarTooltipKey
+                );
                 y = addToggleRow(
                     y, "confluxmap.config.radar.show_players",
                     () -> config.radarShowPlayers, v -> config.radarShowPlayers = v,
@@ -1010,6 +1017,12 @@ public final class ConfigScreen extends ConfluxScreen {
         return style == ConfluxConfig.PlayerMarkerStyle.TRADITIONAL
             ? "confluxmap.value.player_marker.traditional"
             : "confluxmap.value.player_marker.modern";
+    }
+
+    private static String radarDisplayModeKey(final ConfluxConfig.RadarDisplayMode mode) {
+        return mode == ConfluxConfig.RadarDisplayMode.DOTS
+            ? "confluxmap.value.radar_display_mode.dots"
+            : "confluxmap.value.radar_display_mode.portraits";
     }
 
     private static String layerOverrideKey(final ConfluxConfig.LayerOverride override) {

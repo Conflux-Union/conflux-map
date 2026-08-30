@@ -24,6 +24,33 @@ class ConfigIoTest {
     private static final Logger LOGGER = LogManager.getLogger("ConfigIoTest");
 
     @Test
+    void radarDisplayModeDefaultsToPortraitsAndRoundTrips(@TempDir final Path tmp)
+        throws IOException {
+        final Path file = tmp.resolve("config.json");
+        final ConfigIo io = new ConfigIo(file, LOGGER);
+
+        assertEquals(
+            ConfluxConfig.RadarDisplayMode.PORTRAITS,
+            new ConfluxConfig().radarDisplayMode
+        );
+
+        final ConfluxConfig config = new ConfluxConfig();
+        config.radarDisplayMode = ConfluxConfig.RadarDisplayMode.DOTS;
+        io.save(config);
+        assertEquals(ConfluxConfig.RadarDisplayMode.DOTS, io.load().radarDisplayMode);
+
+        Files.writeString(file, "{\"schemaVersion\":8}", StandardCharsets.UTF_8);
+        assertEquals(ConfluxConfig.RadarDisplayMode.PORTRAITS, io.load().radarDisplayMode);
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":8,\"radarDisplayMode\":null}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(ConfluxConfig.RadarDisplayMode.PORTRAITS, io.load().radarDisplayMode);
+    }
+
+    @Test
     void playerIconOutlineSettingsRoundTrip(@TempDir final Path tmp) throws IOException {
         final ConfigIo io = new ConfigIo(tmp.resolve("config.json"), LOGGER);
         final ConfluxConfig config = new ConfluxConfig();

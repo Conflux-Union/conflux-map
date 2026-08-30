@@ -612,9 +612,10 @@ public final class MinimapHudRenderer {
         final float sin = (float) Math.sin(rad);
         final List<RadarMarkerRenderer.Marker> markers = new ArrayList<>();
         final boolean playerListPressed = MinecraftAccess.isPlayerListKeyPressed(client);
-        final RadarMarkerRenderer.Presentation presentation = playerListPressed
-            ? RadarMarkerRenderer.Presentation.detailed(config.radarShowPlayerNames)
-            : RadarMarkerRenderer.Presentation.compact();
+        final RadarMarkerRenderer.Presentation presentation =
+            RadarMarkerRenderer.Presentation.minimap(
+                config.radarDisplayMode, playerListPressed, config.radarShowPlayerNames
+            );
         for (final RadarEntry entry : radarScanner.snapshot()) {
             double ex = entry.x();
             double ez = entry.z();

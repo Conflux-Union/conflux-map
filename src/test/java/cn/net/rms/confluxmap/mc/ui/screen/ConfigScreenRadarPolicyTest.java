@@ -41,6 +41,17 @@ class ConfigScreenRadarPolicyTest {
         assertFalse(screen.contains("confluxmap.config.radar.merge_enabled"));
     }
 
+    @Test
+    void radarSettingsExposeTheDefaultDisplayModeSelector() throws IOException {
+        final String screen = Files.readString(findProjectRoot().resolve(
+            "src/main/java/cn/net/rms/confluxmap/mc/ui/screen/ConfigScreen.java"
+        ));
+
+        assertTrue(screen.contains("confluxmap.config.radar.display_mode"));
+        assertTrue(screen.contains("ConfluxConfig.RadarDisplayMode.values()"));
+        assertTrue(screen.contains("() -> config.radarDisplayMode"));
+    }
+
     private static Path findProjectRoot() {
         Path current = Path.of("").toAbsolutePath().normalize();
         while (current != null) {
