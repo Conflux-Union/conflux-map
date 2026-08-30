@@ -144,11 +144,10 @@ public final class ChunkCaptureService {
      * way to drop it is to take the snapshot again.
      */
     public void markChunkLoaded(final int chunkX, final int chunkZ) {
-        if (needsTintNeighbors(MinecraftAccess.biomeBlendRadius(client))) {
-            dirtyChunks.markWithLoadedNeighbors(chunkX, chunkZ, this::isChunkLoaded);
-        } else {
-            dirtyChunks.mark(chunkX, chunkZ);
-        }
+        // Biome identity has its own two-block Voronoi footprint even when tint blending is
+        // disabled. Revisit loaded neighbours so their temporarily clamped borders recover the
+        // exact biome boundary once this chunk arrives.
+        dirtyChunks.markWithLoadedNeighbors(chunkX, chunkZ, this::isChunkLoaded);
     }
 
     /**

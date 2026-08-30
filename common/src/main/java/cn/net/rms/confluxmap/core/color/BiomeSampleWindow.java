@@ -1,21 +1,20 @@
 package cn.net.rms.confluxmap.core.color;
 
 /**
- * The part of a chunk whose biome-blend square is guaranteed to stay inside chunks the
- * client actually has.
+ * The part of a chunk whose surrounding biome samples are guaranteed to stay inside chunks
+ * the client actually has.
  *
- * <p>A biome tint is an average over a square of {@code blendRadius} blocks around the
- * sampled position, so a column near a chunk border reads biomes out of the adjacent
- * chunks. Positions inside a chunk the client has not received answer with the client's
- * plains fallback biome, which drags the average toward plains-blue water and plains-green
- * grass - a chunk grid of wrong tints baked into whatever was sampled at that moment.
+ * <p>A biome tint averages a square around the sampled position, while vanilla's biome
+ * identity lookup applies a Voronoi offset before reading the quart-biome grid. Both can make
+ * a column near a chunk border read biomes out of an adjacent chunk. Positions inside a chunk
+ * the client has not received answer with the client's plains fallback biome, which can bake
+ * wrong tints or a literal plains identity into the snapshot.
  *
  * <p>This window is the answer for columns that cannot be sampled honestly: instead of
- * averaging in a biome that isn't there, the tint is read from the nearest position whose
- * whole blend square is inside loaded data. Inside a uniform biome that is exactly the
- * right color; across a biome boundary it displaces the boundary by at most
- * {@code blendRadius} blocks, until the missing neighbour arrives and the chunk is
- * sampled again at full quality.
+ * reading a biome that isn't there, the sample is resolved at the nearest position whose
+ * surrounding sample footprint is inside loaded data. Inside a uniform biome that is exactly
+ * the right value; across a biome boundary it displaces the boundary by at most the requested
+ * inset, until the missing neighbour arrives and the chunk is sampled again at full quality.
  *
  * <p>Chunk-local coordinates throughout: 0..15 on both axes.
  */
@@ -39,24 +38,24 @@ public final class BiomeSampleWindow {
 
     /**
      * The window for a chunk whose four sides are clear (side = the three neighbours the
-     * blend square can reach on that side, so "west clear" means west, north-west and
-     * south-west are all loaded). A blocked side is inset by the blend radius, which is
-     * what keeps the square off the missing chunk.
+     * sample footprint can reach on that side, so "west clear" means west, north-west and
+     * south-west are all loaded). A blocked side is inset by the sample radius, which keeps
+     * the lookup off the missing chunk.
      *
      * <p>The inset is capped at {@code LAST / 2} so the window never inverts: vanilla's
      * largest blend radius is 7, which leaves the two center columns.
      */
     public static BiomeSampleWindow of(
-        final int blendRadius,
+        final int sampleRadius,
         final boolean westClear,
         final boolean eastClear,
         final boolean northClear,
         final boolean southClear
     ) {
-        if (blendRadius <= 0 || (westClear && eastClear && northClear && southClear)) {
+        if (sampleRadius <= 0 || (westClear && eastClear && northClear && southClear)) {
             return FULL;
         }
-        final int inset = Math.min(blendRadius, LAST / 2);
+        final int inset = Math.min(sampleRadius, LAST / 2);
         return new BiomeSampleWindow(
             westClear ? 0 : inset,
             eastClear ? LAST : LAST - inset,
