@@ -2,16 +2,17 @@ package cn.net.rms.confluxmap.server.web;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.net.Proto;
 import org.junit.jupiter.api.Test;
 
 final class WebMapConfigTest {
     @Test
-    void defaultsAreLoopbackOnlyAndDisabled() {
+    void defaultsAreEnabledOnLoopbackWithoutPlayerLocations() {
         final WebMapConfig config = new WebMapConfig();
 
-        assertFalse(config.enabled);
+        assertTrue(config.enabled);
         assertEquals("127.0.0.1", config.bindAddress);
         assertEquals(8123, config.port);
         assertFalse(config.sharePlayers);

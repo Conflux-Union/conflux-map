@@ -38,7 +38,7 @@ public final class WaypointRenderCatalog {
     /**
      * Immutable render-ready snapshot of every waypoint visible from the
      * requested dimension. With cross-dimension display enabled
-     * ({@link ConfluxConfig#waypointCrossDimensionEnabled}, off by default)
+     * ({@link ConfluxConfig#waypointCrossDimensionEnabled}, on by default)
      * portal-linked entries are included per {@link DimensionScale#isVisibleFrom}
      * with their horizontal coordinates converted into the requested dimension's
      * coordinate space, so renderers can use x/z as plain world positions;

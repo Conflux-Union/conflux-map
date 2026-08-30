@@ -20,7 +20,7 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
  * Overworld/Nether space - so End waypoints are confined to the End and vice
  * versa. Whether cross-dimension display is active at all is decided by the
  * caller ({@link WaypointRenderCatalog} reads
- * {@code ConfluxConfig.waypointCrossDimensionEnabled}, off by default).
+ * {@code ConfluxConfig.waypointCrossDimensionEnabled}, on by default).
  */
 public final class DimensionScale {
     private static final double NETHER_SCALE = 8.0;

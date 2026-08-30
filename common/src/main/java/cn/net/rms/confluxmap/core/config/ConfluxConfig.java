@@ -138,10 +138,10 @@ public final class ConfluxConfig {
     public RadarDisplayMode radarDisplayMode = RadarDisplayMode.PORTRAITS;
     public boolean radarShowPlayers = true;
     public boolean radarShowHostile = true;
-    /** Spec default for the "neutral" category is off; M1's PASSIVE bucket is that same category. */
-    public boolean radarShowPassive = false;
-    /** Dropped items, vehicles, projectiles, and defensive fallback targets; off by default to limit clutter. */
-    public boolean radarShowOther = false;
+    /** Friendly and neutral mobs; enabled so a fresh install exposes the complete entity radar. */
+    public boolean radarShowPassive = true;
+    /** Dropped items, vehicles, projectiles, and defensive fallback targets. */
+    public boolean radarShowOther = true;
     public boolean radarShowPlayerNames = true;
     public int radarMaxEntities = 100;
     /** Draw an outline around radar portraits; retained name keeps older config files compatible. */
@@ -158,9 +158,9 @@ public final class ConfluxConfig {
     public boolean sharedWaypointsVisible = true;
     /**
      * Show Overworld/Nether waypoints from the portal-linked dimension with the 8:1 coordinate
-     * conversion applied on display (waypoint-ux.md S3). Off keeps exact-dimension display.
+     * conversion applied on display (waypoint-ux.md S3).
      */
-    public boolean waypointCrossDimensionEnabled = false;
+    public boolean waypointCrossDimensionEnabled = true;
     public boolean waypointEdgeIndicatorsEnabled = true;
     /** Death points kept per dimension, oldest auto-pruned; 0 disables creating new ones. */
     public int deathPointsKept = 5;

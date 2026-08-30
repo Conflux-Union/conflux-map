@@ -10,8 +10,8 @@ import cn.net.rms.confluxmap.server.web.WebMapConfig;
  * {@code <configDir>/confluxmap/server.json}. Add fields with defaults only; never
  * rename without bumping {@link #SCHEMA_VERSION}.
  *
- * <p>Security-relevant or not-yet-implemented capabilities default OFF. Map corrections default
- * ON so a fresh server install gets map-sync benefits without extra setup.
+ * <p>Player-facing capabilities default ON when the existing permission, quota, and network
+ * boundaries make that safe. Settings that reveal sensitive server state still default OFF.
  */
 public final class ServerConfig {
     public static final int SCHEMA_VERSION = 6;
@@ -47,9 +47,9 @@ public final class ServerConfig {
     /** Whether cooperating Conflux Map clients may scan and render their entity radar. */
     public boolean allowEntityRadar = true;
     /** Whether the server-owned shared waypoint catalog is enabled. */
-    public boolean shareWaypoints = false;
+    public boolean shareWaypoints = true;
     /** Whether non-operators may create and manage shared waypoints they published. */
-    public boolean allowNonOperatorSharedWaypointManagement = false;
+    public boolean allowNonOperatorSharedWaypointManagement = true;
     /** Maximum shared waypoints retained for one world. */
     public int maxSharedWaypointsPerWorld = SharedWaypointProto.MAX_SNAPSHOT_WAYPOINTS;
     /** Maximum shared waypoints published by one player in one world. */
@@ -66,7 +66,7 @@ public final class ServerConfig {
     public int minRequestIntervalMs = Proto.DEFAULT_MIN_REQ_INTERVAL_MS;
     /** Global live-summary refresh budget in chunks/sec. */
     public int maxChunkSummariesPerSecond = 4_000;
-    /** Optional loopback-first HTTP map. It remains disabled until an operator enables it. */
+    /** Loopback-only HTTP map by default; remote exposure still requires an explicit safe setup. */
     public WebMapConfig webMap = new WebMapConfig();
 
     /** Clamp out-of-range values loaded from a hand-edited file. */

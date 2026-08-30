@@ -2,9 +2,9 @@ package cn.net.rms.confluxmap.server.web;
 
 import cn.net.rms.confluxmap.core.net.Proto;
 
-/** Operator-controlled HTTP boundary for the optional public web map. */
+/** Operator-controlled HTTP boundary for the browser map. */
 public final class WebMapConfig {
-    public boolean enabled = false;
+    public boolean enabled = true;
     public String bindAddress = "127.0.0.1";
     public int port = 8123;
     public boolean allowInsecureRemote = false;

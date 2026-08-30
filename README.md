@@ -62,7 +62,7 @@ The client provides local maps, waypoints, drawings, and map export as soon as i
 
 ### Entity radar and interface settings
 
-- **Entity radar:** Players, hostile mobs, friendly mobs, and other entities have independent controls. The minimap defaults to generated entity portraits and item icons, or can use compact category-colored dots that expand while the player-list key is held. The fullscreen map always uses detailed icons.
+- **Entity radar:** Players, hostile mobs, friendly mobs, and other entities have independent controls and are all shown by default. The minimap defaults to generated entity portraits and item icons, or can use compact category-colored dots that expand while the player-list key is held. The fullscreen map always uses detailed icons.
 - **Display customization:** The minimap, waypoints, entity radar, map layers, and information lines all provide detailed display settings. Client settings apply immediately, and sliders accept directly entered values.
 - **UI resource packs:** Toolbar icons and minimap frames can be replaced through normal Minecraft resource packs. Existing Xaero UI packs can reuse compatible minimap-frame and world-map icon assets during migration; see [UI resource packs](docs/reference-specs/ui-resource-packs.md) for the supported paths and limits.
 - **MaliLib key combinations:** With MaliLib installed, Conflux Map supports multi-key combinations and can be managed through the A+C configuration screen.
@@ -87,9 +87,9 @@ All bindings can be changed in Minecraft's Controls screen under "Conflux Map". 
 
 ## Waypoint usage
 
-Waypoints are shown in the dimension where they were created by default. An optional setting shows Overworld and Nether waypoints in both dimensions; End waypoints remain in the End.
+Overworld and Nether waypoints are shown in both dimensions with 8:1 coordinate conversion by default; this can be disabled in settings. End waypoints remain in the End.
 
-Shared waypoints require the server companion and are disabled by default. A level-2 operator can use `/confluxmap waypoints enable` to enable them, with `disable` and `status` providing the corresponding operations. By default, only operators may upload, edit, move, or delete shared waypoints. Setting `allowNonOperatorSharedWaypointManagement` to `true` lets ordinary players upload waypoints and manage only the entries they published; operators can always manage every entry. Players without Conflux Map can use `/confluxmap waypoints list [page]`, `add`, `edit`, `move`, and `delete` under the same server-authoritative rules. List entries include Xaero's chat-share format for one-click import. Per-world and per-player limits are configurable in `config/confluxmap/server.json`.
+Shared waypoints require the server companion and are enabled by default. Ordinary players can upload waypoints and manage only the entries they published; operators can manage every entry and use `/confluxmap waypoints disable`, `enable`, and `status` to control the feature. Players without Conflux Map can use `/confluxmap waypoints list [page]`, `add`, `edit`, `move`, and `delete` under the same server-authoritative rules. List entries include Xaero's chat-share format for one-click import. Per-world and per-player limits are configurable in `config/confluxmap/server.json`.
 
 Chat coordinate sharing is available on any server without the companion. Before sending, the client previews the outgoing Conflux Map and Xaero messages; coordinates shared by other players can be imported with one click.
 
@@ -104,9 +104,9 @@ All companion-shared content is controlled in `config/confluxmap/server.json`:
 - `shareChunkLoadState` exposes the chunks currently kept loaded by the server. It is disabled by default to reduce exposure of player activity and farm locations.
 - `allowEntityRadar` controls entity-position display in the client Conflux Map minimap.
 - `shareCorrections` sends real-terrain data to clients for correcting predicted maps.
-- `shareWaypoints` enables the shared waypoint list.
-- `allowNonOperatorSharedWaypointManagement` lets ordinary players upload, edit, move, and delete only their own shared waypoints; it defaults to `false`.
-- `webMap.*` controls the web map described in [Features](#features). The default port is `8123`, the default bind address is `127.0.0.1`, and `sharePlayers` controls whether player positions are included. Public access should use an HTTPS reverse proxy that preserves the original `Host` header.
+- `shareWaypoints` enables the shared waypoint list and defaults to `true`.
+- `allowNonOperatorSharedWaypointManagement` defaults to `true` and lets ordinary players upload, edit, move, and delete only their own shared waypoints; operators can always manage every entry.
+- `webMap.*` controls the web map described in [Features](#features) and defaults to enabled. The default port is `8123`, the default bind address is loopback-only at `127.0.0.1`, and player positions remain hidden. Public access should use an HTTPS reverse proxy that preserves the original `Host` header; `sharePlayers` controls whether player positions are included.
 
 These settings allow server operators to manage privacy, bandwidth, and anti-cheat policies. Entity data continues to be sent to clients through normal game behavior; `allowEntityRadar` only disables entity-position display in the client Conflux Map minimap.
 

@@ -116,7 +116,7 @@ approach is a reasonable, low-effort default to carry forward.
 
 > **Deviation (Conflux Map):** the reference implementation applies
 > cross-dimension display unconditionally. Conflux Map gates it behind a
-> client setting (`waypointCrossDimensionEnabled`, off by default): with
+> client setting (`waypointCrossDimensionEnabled`, on by default): with
 > the setting off, a waypoint renders only in its exact stored dimension;
 > with it on, Overworld/Nether waypoints are shown from the linked
 > dimension using the conversion math below. The End is never

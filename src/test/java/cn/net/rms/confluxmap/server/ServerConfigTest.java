@@ -26,7 +26,7 @@ class ServerConfigTest {
     private static final Logger LOGGER = LogManager.getLogger("ServerConfigTest");
 
     @Test
-    void defaultsAreSafe() {
+    void defaultsEnableFeaturesWithoutExposingSensitiveServerState() {
         final ServerConfig c = new ServerConfig();
         assertEquals(ServerConfig.SCHEMA_VERSION, c.schemaVersion);
         // shareSeed defaults OFF for security (plan requirement).
@@ -37,15 +37,15 @@ class ServerConfigTest {
         assertTrue(c.shareCorrections);
         assertFalse(c.shareChunkLoadState);
         assertTrue(c.allowEntityRadar);
-        assertFalse(c.shareWaypoints);
-        assertFalse(c.allowNonOperatorSharedWaypointManagement);
-        assertEquals(
-            cn.net.rms.confluxmap.server.shared.SharedWaypointService.AccessPolicy.OPERATOR_ONLY,
-            c.sharedWaypointAccessPolicy()
-        );
-        c.allowNonOperatorSharedWaypointManagement = true;
+        assertTrue(c.shareWaypoints);
+        assertTrue(c.allowNonOperatorSharedWaypointManagement);
         assertEquals(
             cn.net.rms.confluxmap.server.shared.SharedWaypointService.AccessPolicy.OWNER_MANAGED,
+            c.sharedWaypointAccessPolicy()
+        );
+        c.allowNonOperatorSharedWaypointManagement = false;
+        assertEquals(
+            cn.net.rms.confluxmap.server.shared.SharedWaypointService.AccessPolicy.OPERATOR_ONLY,
             c.sharedWaypointAccessPolicy()
         );
         assertEquals(SharedWaypointProto.MAX_SNAPSHOT_WAYPOINTS, c.maxSharedWaypointsPerWorld);
@@ -59,7 +59,7 @@ class ServerConfigTest {
         );
         assertEquals(256 * 1024, c.maxBytesPerSecondPerPlayer);
         assertEquals(100, c.minRequestIntervalMs);
-        assertFalse(c.webMap.enabled);
+        assertTrue(c.webMap.enabled);
         assertTrue(c.webMap.loopbackOnly());
     }
 
@@ -218,11 +218,12 @@ class ServerConfigTest {
         original.maxTilesPerRequest = 5;
         original.maxBytesPerSecondPerPlayer = 131_072;
         original.minRequestIntervalMs = 500;
-        original.shareWaypoints = true;
+        original.shareWaypoints = false;
+        original.allowNonOperatorSharedWaypointManagement = false;
         original.maxSharedWaypointsPerWorld = 500;
         original.maxSharedWaypointsPerPlayer = 70;
         original.sharedWaypointMutationsPerMinute = 45;
-        original.webMap.enabled = true;
+        original.webMap.enabled = false;
         original.webMap.port = 9123;
         original.webMap.sharePlayers = true;
 
@@ -243,6 +244,10 @@ class ServerConfigTest {
         assertEquals(original.minRequestIntervalMs, loaded.minRequestIntervalMs);
         assertEquals(original.maxChunkSummariesPerSecond, loaded.maxChunkSummariesPerSecond);
         assertEquals(original.shareWaypoints, loaded.shareWaypoints);
+        assertEquals(
+            original.allowNonOperatorSharedWaypointManagement,
+            loaded.allowNonOperatorSharedWaypointManagement
+        );
         assertEquals(original.maxSharedWaypointsPerWorld, loaded.maxSharedWaypointsPerWorld);
         assertEquals(original.maxSharedWaypointsPerPlayer, loaded.maxSharedWaypointsPerPlayer);
         assertEquals(original.sharedWaypointMutationsPerMinute, loaded.sharedWaypointMutationsPerMinute);

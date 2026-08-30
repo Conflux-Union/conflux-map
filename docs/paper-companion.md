@@ -84,8 +84,8 @@ for the plugin lifetime so a late world load cannot change an index already sent
 - `/confluxmap waypoints enable` loads storage, atomically persists the setting, then advertises it.
 - `/confluxmap waypoints disable` blocks mutations immediately and persists the setting.
 
-Listing is available to every player. By default, uploading, editing, moving, and deleting require
-`confluxmap.admin`, granted to operators by default. When
-`allowNonOperatorSharedWaypointManagement` is enabled, ordinary players may use those commands only
-for waypoints they published; operators may manage every waypoint. Feature toggles and status
-inspection always require `confluxmap.admin`. The accepted short ID is shown by `waypoints list`.
+Listing is available to every player. By default, ordinary players may upload, edit, move, and
+delete only waypoints they published; operators may manage every waypoint. Setting
+`allowNonOperatorSharedWaypointManagement` to `false` restricts all mutations to
+`confluxmap.admin`, granted to operators by default. Feature toggles and status inspection always
+require `confluxmap.admin`. The accepted short ID is shown by `waypoints list`.

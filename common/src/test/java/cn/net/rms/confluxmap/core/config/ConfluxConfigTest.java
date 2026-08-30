@@ -8,6 +8,15 @@ import org.junit.jupiter.api.Test;
 
 final class ConfluxConfigTest {
     @Test
+    void playerFacingFeaturesAreEnabledByDefault() {
+        final ConfluxConfig config = new ConfluxConfig();
+
+        assertTrue(config.radarShowPassive);
+        assertTrue(config.radarShowOther);
+        assertTrue(config.waypointCrossDimensionEnabled);
+    }
+
+    @Test
     void playerIconOutlineIsEnabledByDefaultAndSurvivesConfigCopy() {
         final ConfluxConfig config = new ConfluxConfig();
 

@@ -65,6 +65,22 @@ class ConfigIoTest {
     }
 
     @Test
+    void explicitFeatureOptOutsSurviveRoundTrip(@TempDir final Path tmp) throws IOException {
+        final ConfigIo io = new ConfigIo(tmp.resolve("config.json"), LOGGER);
+        final ConfluxConfig config = new ConfluxConfig();
+        config.radarShowPassive = false;
+        config.radarShowOther = false;
+        config.waypointCrossDimensionEnabled = false;
+
+        io.save(config);
+
+        final ConfluxConfig loaded = io.load();
+        assertFalse(loaded.radarShowPassive);
+        assertFalse(loaded.radarShowOther);
+        assertFalse(loaded.waypointCrossDimensionEnabled);
+    }
+
+    @Test
     void playerMarkerStyleRoundTripsCopiesAndDefaultsSafely(@TempDir final Path tmp)
         throws IOException {
         final Path file = tmp.resolve("config.json");
