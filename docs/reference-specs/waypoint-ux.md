@@ -115,10 +115,9 @@ approach is a reasonable, low-effort default to carry forward.
 ## 3. Cross-dimension coordinate conversion
 
 > **Deviation (Conflux Map):** the reference implementation applies
-> cross-dimension display unconditionally. Conflux Map gates it behind a
-> client setting (`waypointCrossDimensionEnabled`, on by default): with
-> the setting off, a waypoint renders only in its exact stored dimension;
-> with it on, Overworld/Nether waypoints are shown from the linked
+> cross-dimension display unconditionally. Conflux Map stores the choice on
+> each waypoint, disabled by default. When enabled, Overworld/Nether
+> waypoints are shown from the linked
 > dimension using the conversion math below. The End is never
 > cross-projected either way. Conflux Map also stores raw local
 > coordinates plus the source dimension instead of the canonical
@@ -373,12 +372,10 @@ minimap. Waypoints scoped to a different dimension are invisible from this
 screen entirely, with no way to reach them except by physically changing
 dimension first.
 
-> **Deviation (Conflux Map):** list dimension scoping follows the same
-> `waypointCrossDimensionEnabled` client setting as waypoint rendering. With
-> the setting off, the management list contains only the current dimension;
-> with it on, the list contains every dimension so those waypoints can be
-> managed without travelling first. This only widens list membership: map and
-> in-world rendering still use the portal-linked conversion rules in §3.
+> **Deviation (Conflux Map):** the management list has its own dimension
+> filter and can show every dimension so waypoints can be managed without
+> travelling first. Cross-dimension rendering remains a per-waypoint choice
+> and still uses the portal-linked conversion rules in §3.
 
 **Edit form fields:**
 
@@ -386,6 +383,7 @@ dimension first.
 - X / Y / Z as three separate numeric text fields, pre-converted for
   display per §3 and re-converted back on save.
 - Enabled toggle.
+- Cross-dimension display toggle (off by default).
 - Icon — opens a grid picker over the built-in icon set (§1); the
   currently-chosen icon is shown enlarged/highlighted in the grid, and
   hovering another shows its name as a tooltip.

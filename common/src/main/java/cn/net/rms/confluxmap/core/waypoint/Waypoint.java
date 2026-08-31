@@ -27,8 +27,37 @@ public final class Waypoint {
     public int colorArgb;
     public String group;
     public boolean visible;
+    public boolean crossDimensionVisible;
     public Type type;
     public final long createdAtEpochMs;
+
+    public Waypoint(
+        final UUID id,
+        final String name,
+        final DimensionId dimensionId,
+        final double x,
+        final double y,
+        final double z,
+        final int colorArgb,
+        final String group,
+        final boolean visible,
+        final boolean crossDimensionVisible,
+        final Type type,
+        final long createdAtEpochMs
+    ) {
+        this.id = Objects.requireNonNull(id, "id");
+        this.name = Objects.requireNonNull(name, "name");
+        this.dimensionId = Objects.requireNonNull(dimensionId, "dimensionId");
+        this.x = x;
+        this.y = y;
+        this.z = z;
+        this.colorArgb = colorArgb;
+        this.group = group == null ? "" : group;
+        this.visible = visible;
+        this.crossDimensionVisible = crossDimensionVisible;
+        this.type = Objects.requireNonNull(type, "type");
+        this.createdAtEpochMs = createdAtEpochMs;
+    }
 
     public Waypoint(
         final UUID id,
@@ -43,17 +72,10 @@ public final class Waypoint {
         final Type type,
         final long createdAtEpochMs
     ) {
-        this.id = Objects.requireNonNull(id, "id");
-        this.name = Objects.requireNonNull(name, "name");
-        this.dimensionId = Objects.requireNonNull(dimensionId, "dimensionId");
-        this.x = x;
-        this.y = y;
-        this.z = z;
-        this.colorArgb = colorArgb;
-        this.group = group == null ? "" : group;
-        this.visible = visible;
-        this.type = Objects.requireNonNull(type, "type");
-        this.createdAtEpochMs = createdAtEpochMs;
+        this(
+            id, name, dimensionId, x, y, z, colorArgb, group, visible, false,
+            type, createdAtEpochMs
+        );
     }
 
     public static Waypoint create(
@@ -67,12 +89,16 @@ public final class Waypoint {
         final Type type
     ) {
         return new Waypoint(
-            UUID.randomUUID(), name, dimensionId, x, y, z, colorArgb, group, true, type, System.currentTimeMillis()
+            UUID.randomUUID(), name, dimensionId, x, y, z, colorArgb, group, true, false,
+            type, System.currentTimeMillis()
         );
     }
 
     /** Deep (field-for-field, but always independent) copy. Never share a live instance across threads. */
     public Waypoint copy() {
-        return new Waypoint(id, name, dimensionId, x, y, z, colorArgb, group, visible, type, createdAtEpochMs);
+        return new Waypoint(
+            id, name, dimensionId, x, y, z, colorArgb, group, visible,
+            crossDimensionVisible, type, createdAtEpochMs
+        );
     }
 }

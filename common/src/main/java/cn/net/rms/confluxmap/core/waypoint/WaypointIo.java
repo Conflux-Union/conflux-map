@@ -62,6 +62,7 @@ public final class WaypointIo {
         int colorArgb;
         String group;
         boolean visible;
+        boolean crossDimensionVisible;
         String type;
         long createdAtEpochMs;
     }
@@ -178,7 +179,8 @@ public final class WaypointIo {
         return new Waypoint(
             id, entry.name, DimensionId.parse(entry.dimensionId),
             entry.x, entry.y, entry.z, entry.colorArgb,
-            entry.group == null ? "" : entry.group, entry.visible, type, entry.createdAtEpochMs
+            entry.group == null ? "" : entry.group, entry.visible, entry.crossDimensionVisible,
+            type, entry.createdAtEpochMs
         );
     }
 
@@ -218,6 +220,7 @@ public final class WaypointIo {
         entry.colorArgb = waypoint.colorArgb;
         entry.group = waypoint.group;
         entry.visible = waypoint.visible;
+        entry.crossDimensionVisible = waypoint.crossDimensionVisible;
         entry.type = waypoint.type.name();
         entry.createdAtEpochMs = waypoint.createdAtEpochMs;
         return entry;

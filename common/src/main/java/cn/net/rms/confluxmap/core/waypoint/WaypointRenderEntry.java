@@ -18,7 +18,8 @@ public record WaypointRenderEntry(
     double z,
     int colorArgb,
     Waypoint.Type type,
-    Source source
+    Source source,
+    boolean crossDimensionVisible
 ) {
     public enum Source { LOCAL, SHARED }
 
@@ -28,6 +29,20 @@ public record WaypointRenderEntry(
         Objects.requireNonNull(dimensionId, "dimensionId");
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(source, "source");
+    }
+
+    public WaypointRenderEntry(
+        final UUID id,
+        final String name,
+        final DimensionId dimensionId,
+        final double x,
+        final double y,
+        final double z,
+        final int colorArgb,
+        final Waypoint.Type type,
+        final Source source
+    ) {
+        this(id, name, dimensionId, x, y, z, colorArgb, type, source, false);
     }
 
     public boolean local() {

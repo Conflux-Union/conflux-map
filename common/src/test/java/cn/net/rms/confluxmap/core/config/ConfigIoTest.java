@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.util.UUID;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.Test;
@@ -70,14 +71,15 @@ class ConfigIoTest {
         final ConfluxConfig config = new ConfluxConfig();
         config.radarShowPassive = false;
         config.radarShowOther = false;
-        config.waypointCrossDimensionEnabled = false;
+        final UUID sharedWaypointId = UUID.randomUUID();
+        config.setSharedWaypointCrossDimensionVisible(sharedWaypointId, true);
 
         io.save(config);
 
         final ConfluxConfig loaded = io.load();
         assertFalse(loaded.radarShowPassive);
         assertFalse(loaded.radarShowOther);
-        assertFalse(loaded.waypointCrossDimensionEnabled);
+        assertTrue(loaded.isSharedWaypointCrossDimensionVisible(sharedWaypointId));
     }
 
     @Test
@@ -143,7 +145,8 @@ class ConfigIoTest {
         Files.writeString(
             file,
             "{\"schemaVersion\":7,\"minimapSize\":300,"
-                + "\"radarIconsEnabled\":false,\"radarMergeEnabled\":false}",
+                + "\"radarIconsEnabled\":false,\"radarMergeEnabled\":false,"
+                + "\"waypointCrossDimensionEnabled\":true}",
             StandardCharsets.UTF_8
         );
 
@@ -199,6 +202,7 @@ class ConfigIoTest {
         assertTrue(rewritten.contains("\"radarIconSize\""));
         assertFalse(rewritten.contains("\"radarIconsEnabled\""));
         assertFalse(rewritten.contains("\"radarMergeEnabled\""));
+        assertFalse(rewritten.contains("\"waypointCrossDimensionEnabled\""));
         assertTrue(rewritten.contains("\"radarPlayerIconOutlineEnabled\""));
         assertTrue(rewritten.contains("\"radarIconOutlineThickness\""));
         assertTrue(rewritten.contains("\"playerTrailEnabled\""));

@@ -32,10 +32,9 @@ import net.minecraft.text.Text;
 
 /**
  * Create/edit form for one waypoint: name, X/Y/Z (raw local coordinates in
- * {@link #dimensionId}; renderers only display it in that exact dimension),
- * an 8-swatch color palette, and a local waypoint-set selector. The dimension itself and
- * the normal/death type are fixed at creation and not editable here, per the
- * implementation brief.
+ * {@link #dimensionId}), cross-dimension visibility, a color palette, and a
+ * local waypoint-set selector. The dimension itself and the normal/death type
+ * are fixed at creation and not editable here, per the implementation brief.
  */
 public final class WaypointEditScreen extends ConfluxScreen {
     private enum CreateTarget { LOCAL, PUBLIC, CHAT }
@@ -78,6 +77,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
     private List<String> setNames = List.of(WaypointSet.DEFAULT_NAME);
     private int selectedSetIndex;
     private final WaypointColorSelection colorSelection;
+    private boolean crossDimensionVisible;
     private String errorKey;
 
     private WaypointEditScreen(
@@ -93,6 +93,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         final int color,
         final String group,
         final boolean visible,
+        final boolean crossDimensionVisible,
         final CreateTarget createTarget,
         final Supplier<WaypointStore> localStoreSupplier,
         final boolean openedFromHotkey,
@@ -111,6 +112,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         this.initialColor = color;
         this.initialGroup = group == null ? WaypointSet.DEFAULT_NAME : group;
         this.initialVisible = visible;
+        this.crossDimensionVisible = crossDimensionVisible;
         this.createTarget = createTarget;
         this.openedFromHotkey = openedFromHotkey;
         this.editingShared = editingShared;
@@ -142,7 +144,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
     ) {
         return new WaypointEditScreen(
             parent, null, dimensionId, Waypoint.Type.NORMAL, System.currentTimeMillis(),
-            "", x, y, z, PRESET_COLORS[5], initialSetName, true,
+            "", x, y, z, PRESET_COLORS[5], initialSetName, true, false,
             CreateTarget.LOCAL, null, false, null
         );
     }
@@ -158,7 +160,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
     ) {
         return new WaypointEditScreen(
             parent, null, dimensionId, Waypoint.Type.NORMAL, System.currentTimeMillis(),
-            "", x, y, z, PRESET_COLORS[5], WaypointSet.DEFAULT_NAME, true,
+            "", x, y, z, PRESET_COLORS[5], WaypointSet.DEFAULT_NAME, true, false,
             CreateTarget.LOCAL, localStoreSupplier, false, null
         );
     }
@@ -172,7 +174,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
     ) {
         return new WaypointEditScreen(
             null, null, dimensionId, Waypoint.Type.NORMAL, System.currentTimeMillis(),
-            "", x, y, z, PRESET_COLORS[5], WaypointSet.DEFAULT_NAME, true,
+            "", x, y, z, PRESET_COLORS[5], WaypointSet.DEFAULT_NAME, true, false,
             CreateTarget.LOCAL, null, true, null
         );
     }
@@ -188,7 +190,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
     ) {
         return new WaypointEditScreen(
             parent, null, dimensionId, Waypoint.Type.NORMAL, System.currentTimeMillis(),
-            name, x, y, z, PRESET_COLORS[5], "", true,
+            name, x, y, z, PRESET_COLORS[5], "", true, false,
             CreateTarget.LOCAL, null, false, null
         );
     }
@@ -215,7 +217,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
     ) {
         return new WaypointEditScreen(
             parent, null, dimensionId, Waypoint.Type.NORMAL, System.currentTimeMillis(),
-            "", x, y, z, PRESET_COLORS[5], "", true, target, null, false, null
+            "", x, y, z, PRESET_COLORS[5], "", true, false, target, null, false, null
         );
     }
 
@@ -223,7 +225,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         return new WaypointEditScreen(
             parent, waypoint.id, waypoint.dimensionId, waypoint.type, waypoint.createdAtEpochMs,
             waypoint.name, waypoint.x, waypoint.y, waypoint.z, waypoint.colorArgb, waypoint.group,
-            waypoint.visible, CreateTarget.LOCAL, null, false, null
+            waypoint.visible, waypoint.crossDimensionVisible, CreateTarget.LOCAL, null, false, null
         );
     }
 
@@ -235,7 +237,8 @@ public final class WaypointEditScreen extends ConfluxScreen {
         return new WaypointEditScreen(
             parent, waypoint.id, waypoint.dimensionId, waypoint.type, waypoint.createdAtEpochMs,
             waypoint.name, waypoint.x, waypoint.y, waypoint.z, waypoint.colorArgb, waypoint.group,
-            waypoint.visible, CreateTarget.LOCAL, localStoreSupplier, false, null
+            waypoint.visible, waypoint.crossDimensionVisible,
+            CreateTarget.LOCAL, localStoreSupplier, false, null
         );
     }
 
@@ -246,7 +249,8 @@ public final class WaypointEditScreen extends ConfluxScreen {
         return new WaypointEditScreen(
             parent, waypoint.id(), waypoint.dimensionId(), waypoint.type(), waypoint.createdAtEpochMs(),
             waypoint.name(), waypoint.x(), waypoint.y(), waypoint.z(), waypoint.colorArgb(), "",
-            true, CreateTarget.PUBLIC, null, false, waypoint
+            true, ConfluxMapClient.get().config().isSharedWaypointCrossDimensionVisible(waypoint.id()),
+            CreateTarget.PUBLIC, null, false, waypoint
         );
     }
 
@@ -318,9 +322,10 @@ public final class WaypointEditScreen extends ConfluxScreen {
             final int x = swatchLeft + i * (SWATCH_SIZE + SWATCH_GAP);
             addColorSwatch(x, 150, () -> color, () -> colorSelection.selectPreset(color));
         }
-        final int customButtonLeft = centerX - CUSTOM_COLOR_WIDTH / 2;
+        final int optionRowLeft = centerX - fieldWidth / 2;
+        final int customButtonLeft = optionRowLeft + SWATCH_SIZE + SWATCH_GAP;
         addColorSwatch(
-            customButtonLeft - SWATCH_GAP - SWATCH_SIZE,
+            optionRowLeft,
             176,
             colorSelection::custom,
             colorSelection::selectCustom
@@ -340,6 +345,20 @@ public final class WaypointEditScreen extends ConfluxScreen {
                 )
             )
         ));
+
+        if (createTarget != CreateTarget.CHAT) {
+            addDrawableChild(Widgets.button(
+                centerX,
+                176,
+                fieldWidth / 2,
+                FIELD_HEIGHT,
+                crossDimensionLabel(),
+                button -> {
+                    crossDimensionVisible = !crossDimensionVisible;
+                    button.setMessage(crossDimensionLabel());
+                }
+            ));
+        }
 
         doneButton = addDrawableChild(Widgets.button(
             centerX - 104, height - 32, 100, FIELD_HEIGHT, Texts.translatable("confluxmap.screen.waypoint.done"), b -> onDone()
@@ -596,7 +615,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
             editingId == null ? UUID.randomUUID() : editingId,
             values.name(), dimensionId, values.x(), values.y(), values.z(),
             colorSelection.selected(), selectedSetName(),
-            initialVisible, type, createdAtEpochMs
+            initialVisible, crossDimensionVisible, type, createdAtEpochMs
         );
         if (editingId == null && createTarget != CreateTarget.LOCAL) {
             final WaypointShareConfirmScreen.Target target = createTarget == CreateTarget.PUBLIC
@@ -613,6 +632,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
                     : reasonKey;
                 return;
             }
+            sharedWaypoints.setCrossDimensionVisible(
+                editingShared.id(), waypoint.crossDimensionVisible
+            );
             MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
             return;
         }
@@ -695,5 +717,14 @@ public final class WaypointEditScreen extends ConfluxScreen {
     private void drawCenteredLabel(final GuiDraw draw, final String text, final int y) {
         final int textWidth = this.textRenderer.getWidth(text);
         draw.drawTextWithShadow(this.textRenderer, text, width / 2f - textWidth / 2f, y, 0xFFFFFFFF);
+    }
+
+    private Text crossDimensionLabel() {
+        return Texts.translatable(
+            "confluxmap.screen.waypoint.cross_dimension",
+            Texts.translatable(
+                crossDimensionVisible ? "confluxmap.value.on" : "confluxmap.value.off"
+            ).getString()
+        );
     }
 }

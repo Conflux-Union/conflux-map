@@ -3,6 +3,8 @@ package cn.net.rms.confluxmap.mc.net.shared;
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.compat.PlayNetworking;
+import cn.net.rms.confluxmap.core.config.ConfigIo;
+import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.net.shared.CreateC2S;
 import cn.net.rms.confluxmap.core.net.shared.DeleteC2S;
 import cn.net.rms.confluxmap.core.net.shared.HelloC2S;
@@ -24,10 +26,12 @@ import cn.net.rms.confluxmap.core.shared.SharedWaypointLocationKey;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.compat.Texts;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -70,7 +74,11 @@ public final class SharedWaypointClient {
         }
     }
 
-    private record PendingOperation(OperationKind kind, SharedWaypointLocationKey createLocation) {
+    private record PendingOperation(
+        OperationKind kind,
+        SharedWaypointLocationKey createLocation,
+        boolean crossDimensionVisible
+    ) {
         private PendingOperation {
             Objects.requireNonNull(kind, "kind");
         }
@@ -88,8 +96,12 @@ public final class SharedWaypointClient {
     }
 
     private final MinecraftClient client;
+    private final ConfluxConfig config;
+    private final ConfigIo configIo;
     private final SharedWaypointClientState stateMachine = new SharedWaypointClientState();
     private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
+    private final Set<SharedWaypointLocationKey> pendingCrossDimensionPreferences =
+        new LinkedHashSet<>();
     private final Map<UUID, PendingOperation> pendingOperations = new LinkedHashMap<>() {
         @Override
         protected boolean removeEldestEntry(final Map.Entry<UUID, PendingOperation> eldest) {
@@ -97,8 +109,14 @@ public final class SharedWaypointClient {
         }
     };
 
-    public SharedWaypointClient(final MinecraftClient client) {
+    public SharedWaypointClient(
+        final MinecraftClient client,
+        final ConfluxConfig config,
+        final ConfigIo configIo
+    ) {
         this.client = Objects.requireNonNull(client, "client");
+        this.config = Objects.requireNonNull(config, "config");
+        this.configIo = Objects.requireNonNull(configIo, "configIo");
     }
 
     public void register() {
@@ -181,7 +199,7 @@ public final class SharedWaypointClient {
         final SharedWaypointLocationKey location = SharedWaypointLocationKey.from(waypoint);
         return sendMutation(
             operationId,
-            new PendingOperation(OperationKind.CREATE, location),
+            new PendingOperation(OperationKind.CREATE, location, waypoint.crossDimensionVisible),
             new CreateC2S(
                 operationId,
                 revision(),
@@ -240,7 +258,7 @@ public final class SharedWaypointClient {
         final UUID operationId = UUID.randomUUID();
         return sendMutation(
             operationId,
-            new PendingOperation(OperationKind.DELETE, null),
+            new PendingOperation(OperationKind.DELETE, null, false),
             deleteMessage(operationId, waypoint)
         );
     }
@@ -252,7 +270,7 @@ public final class SharedWaypointClient {
         final UUID operationId = UUID.randomUUID();
         return sendMutation(
             operationId,
-            new PendingOperation(OperationKind.UPDATE, null),
+            new PendingOperation(OperationKind.UPDATE, null, false),
             updateMessage(operationId, original, updated)
         );
     }
@@ -263,6 +281,11 @@ public final class SharedWaypointClient {
 
     public void removeListener(final Listener listener) {
         listeners.remove(listener);
+    }
+
+    public void setCrossDimensionVisible(final UUID waypointId, final boolean visible) {
+        config.setSharedWaypointCrossDimensionVisible(waypointId, visible);
+        configIo.save(config);
     }
 
     static boolean canManage(
@@ -346,6 +369,7 @@ public final class SharedWaypointClient {
     private void onJoin() {
         final SharedWaypointClientState.View before = stateMachine.view();
         pendingOperations.clear();
+        pendingCrossDimensionPreferences.clear();
         stateMachine.beginConnection(true);
         notifyChanges(before, stateMachine.view());
         if (!send(new HelloC2S(SharedWaypointProto.PROTO_MAJOR, SharedWaypointProto.PROTO_MINOR))) {
@@ -368,6 +392,7 @@ public final class SharedWaypointClient {
             }
             final SharedWaypointClientState.View before = stateMachine.view();
             pendingOperations.clear();
+            pendingCrossDimensionPreferences.clear();
             stateMachine.reset();
             notifyChanges(before, stateMachine.view());
         });
@@ -481,6 +506,11 @@ public final class SharedWaypointClient {
         final boolean rejected = result.statusCode() == SharedWaypointProto.RESULT_STATUS_REJECTED
             && knownError(result.errorCode())
             && result.errorCode() != SharedWaypointProto.RESULT_ERROR_NONE;
+        if (applied && pending.kind() == OperationKind.CREATE
+            && pending.crossDimensionVisible()) {
+            pendingCrossDimensionPreferences.add(pending.createLocation());
+            applyPendingCrossDimensionPreferences(stateMachine.view().list());
+        }
         if (!applied && !rejected) {
             ConfluxMapMod.LOGGER.warn(
                 "shared-waypoint: invalid result codes status={} error={} for operation {}",
@@ -583,6 +613,7 @@ public final class SharedWaypointClient {
         if (before.revision() != after.revision()
             || before.synchronizedSnapshot() != after.synchronizedSnapshot()
             || !before.list().equals(after.list())) {
+            applyPendingCrossDimensionPreferences(after.list());
             for (final Listener listener : listeners) {
                 try {
                     listener.onWaypointsChanged(after.list(), after.revision());
@@ -591,6 +622,29 @@ public final class SharedWaypointClient {
                 }
             }
         }
+    }
+
+    private void applyPendingCrossDimensionPreferences(final List<SharedWaypoint> waypoints) {
+        if (applyPendingCrossDimensionPreferences(
+            pendingCrossDimensionPreferences, waypoints, config
+        )) {
+            configIo.save(config);
+        }
+    }
+
+    static boolean applyPendingCrossDimensionPreferences(
+        final Set<SharedWaypointLocationKey> pending,
+        final List<SharedWaypoint> waypoints,
+        final ConfluxConfig config
+    ) {
+        boolean changed = false;
+        for (final SharedWaypoint waypoint : waypoints) {
+            if (pending.remove(SharedWaypointLocationKey.from(waypoint))) {
+                config.setSharedWaypointCrossDimensionVisible(waypoint.id(), true);
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     private void showMessage(final String translationKey) {

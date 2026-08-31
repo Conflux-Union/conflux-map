@@ -5,12 +5,17 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.net.shared.DeleteC2S;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointClientState;
 import cn.net.rms.confluxmap.core.net.shared.UpdateC2S;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
+import cn.net.rms.confluxmap.core.shared.SharedWaypointLocationKey;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -90,6 +95,21 @@ class SharedWaypointClientTest {
                 waypoint(), PUBLISHER
             )
         );
+    }
+
+    @Test
+    void createdSharedWaypointCrossDimensionPreferenceIsRecordedByReturnedId() {
+        final SharedWaypoint waypoint = waypoint();
+        final Set<SharedWaypointLocationKey> pending = new LinkedHashSet<>(List.of(
+            SharedWaypointLocationKey.from(waypoint)
+        ));
+        final ConfluxConfig config = new ConfluxConfig();
+
+        assertTrue(SharedWaypointClient.applyPendingCrossDimensionPreferences(
+            pending, List.of(waypoint), config
+        ));
+        assertTrue(config.isSharedWaypointCrossDimensionVisible(waypoint.id()));
+        assertTrue(pending.isEmpty());
     }
 
     private static SharedWaypoint waypoint() {

@@ -20,12 +20,14 @@ final class WaypointRenderCatalogTest {
         final SharedWaypoint spawn = shared("Spawn");
 
         final List<WaypointRenderEntry> entries = WaypointRenderCatalog.merge(
-            List.of(local, hidden), List.of(shared, spawn), true, true
+            List.of(local, hidden), List.of(shared, spawn), true, true, id -> id.equals(shared.id())
         );
 
         assertEquals(3, entries.size());
         assertTrue(entries.get(0).local());
         assertTrue(entries.get(1).shared());
+        assertTrue(entries.get(1).crossDimensionVisible());
+        assertFalse(entries.get(2).crossDimensionVisible());
         assertTrue(entries.get(2).shared());
         assertThrows(UnsupportedOperationException.class, () -> entries.clear());
     }
@@ -59,7 +61,7 @@ final class WaypointRenderCatalogTest {
     }
 
     @Test
-    void filtersToTheExactDimensionWhileCrossDimensionDisplayIsOff() {
+    void filtersEachEntryByItsOwnCrossDimensionPreference() {
         final WaypointRenderEntry overworld = WaypointRenderCatalog.merge(
             List.of(local("Home", true)), List.of(), true, true
         ).get(0);
@@ -68,7 +70,7 @@ final class WaypointRenderCatalogTest {
         ).get(0);
 
         final List<WaypointRenderEntry> entries = WaypointRenderCatalog.visibleFrom(
-            List.of(overworld, nether), DimensionId.NETHER, false
+            List.of(overworld, nether), DimensionId.NETHER
         );
 
         assertEquals(List.of("Fortress"), entries.stream().map(WaypointRenderEntry::name).toList());
@@ -77,16 +79,18 @@ final class WaypointRenderCatalogTest {
     }
 
     @Test
-    void convertsPortalLinkedEntriesWhenCrossDimensionDisplayIsOn() {
+    void convertsPortalLinkedEntriesWhenThatEntryAllowsCrossDimensionDisplay() {
+        final Waypoint home = local("Home", true);
+        home.crossDimensionVisible = true;
         final WaypointRenderEntry overworld = WaypointRenderCatalog.merge(
-            List.of(local("Home", true)), List.of(), true, true
+            List.of(home), List.of(), true, true
         ).get(0);
         final WaypointRenderEntry nether = WaypointRenderCatalog.merge(
             List.of(), List.of(shared("Fortress")), true, true
         ).get(0);
 
         final List<WaypointRenderEntry> entries = WaypointRenderCatalog.visibleFrom(
-            List.of(overworld, nether), DimensionId.NETHER, true
+            List.of(overworld, nether), DimensionId.NETHER
         );
 
         assertEquals(List.of("Home", "Fortress"), entries.stream().map(WaypointRenderEntry::name).toList());
@@ -102,11 +106,11 @@ final class WaypointRenderCatalogTest {
     void confinesEndEntriesToTheEndEvenWithCrossDimensionDisplayOn() {
         final WaypointRenderEntry end = new WaypointRenderEntry(
             UUID.randomUUID(), "Island", DimensionId.END, 100.0, 64.0, 200.0,
-            0xFF3366CC, Waypoint.Type.NORMAL, WaypointRenderEntry.Source.LOCAL
+            0xFF3366CC, Waypoint.Type.NORMAL, WaypointRenderEntry.Source.LOCAL, true
         );
 
-        assertTrue(WaypointRenderCatalog.visibleFrom(List.of(end), DimensionId.OVERWORLD, true).isEmpty());
-        assertEquals(1, WaypointRenderCatalog.visibleFrom(List.of(end), DimensionId.END, false).size());
+        assertTrue(WaypointRenderCatalog.visibleFrom(List.of(end), DimensionId.OVERWORLD).isEmpty());
+        assertEquals(1, WaypointRenderCatalog.visibleFrom(List.of(end), DimensionId.END).size());
     }
 
     private static Waypoint local(final String name, final boolean visible) {

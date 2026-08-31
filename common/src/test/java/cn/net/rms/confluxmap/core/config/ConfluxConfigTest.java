@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 final class ConfluxConfigTest {
@@ -13,7 +14,20 @@ final class ConfluxConfigTest {
 
         assertTrue(config.radarShowPassive);
         assertTrue(config.radarShowOther);
-        assertTrue(config.waypointCrossDimensionEnabled);
+    }
+
+    @Test
+    void sharedWaypointCrossDimensionDisplayDefaultsOffAndSurvivesCopy() {
+        final UUID waypointId = UUID.randomUUID();
+        final ConfluxConfig config = new ConfluxConfig();
+
+        assertFalse(config.isSharedWaypointCrossDimensionVisible(waypointId));
+        config.setSharedWaypointCrossDimensionVisible(waypointId, true);
+
+        final ConfluxConfig copy = config.copy();
+        assertTrue(copy.isSharedWaypointCrossDimensionVisible(waypointId));
+        copy.setSharedWaypointCrossDimensionVisible(waypointId, false);
+        assertTrue(config.isSharedWaypointCrossDimensionVisible(waypointId));
     }
 
     @Test

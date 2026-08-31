@@ -6,6 +6,9 @@ import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.core.survey.SurveyReminderSchedule;
 import cn.net.rms.confluxmap.core.util.TileMath;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * All client settings, serialized as one JSON document.
@@ -13,7 +16,7 @@ import cn.net.rms.confluxmap.core.util.TileMath;
  * {@link #SCHEMA_VERSION} and adding a migration in {@link ConfigIo}.
  */
 public final class ConfluxConfig {
-    public static final int SCHEMA_VERSION = 8;
+    public static final int SCHEMA_VERSION = 9;
     public static final String DEFAULT_TELEPORT_COMMAND = "tp {x} {y} {z}";
     public static final int DEFAULT_MINIMAP_SIZE = 90;
     public static final int MINIMAP_ZOOM_LEVEL_COUNT = 4;
@@ -156,11 +159,8 @@ public final class ConfluxConfig {
     public boolean localWaypointsVisible = true;
     /** Show server-synchronized public waypoints on every map/world rendering surface. */
     public boolean sharedWaypointsVisible = true;
-    /**
-     * Show Overworld/Nether waypoints from the portal-linked dimension with the 8:1 coordinate
-     * conversion applied on display (waypoint-ux.md S3).
-     */
-    public boolean waypointCrossDimensionEnabled = true;
+    /** Public waypoint IDs allowed to render from the portal-linked dimension on this client. */
+    public Set<String> sharedWaypointCrossDimensionVisibleIds = new LinkedHashSet<>();
     public boolean waypointEdgeIndicatorsEnabled = true;
     /** Death points kept per dimension, oldest auto-pruned; 0 disables creating new ones. */
     public int deathPointsKept = 5;
@@ -265,7 +265,10 @@ public final class ConfluxConfig {
         c.waypointRenderDistance = waypointRenderDistance;
         c.localWaypointsVisible = localWaypointsVisible;
         c.sharedWaypointsVisible = sharedWaypointsVisible;
-        c.waypointCrossDimensionEnabled = waypointCrossDimensionEnabled;
+        c.sharedWaypointCrossDimensionVisibleIds =
+            sharedWaypointCrossDimensionVisibleIds == null
+                ? new LinkedHashSet<>()
+                : new LinkedHashSet<>(sharedWaypointCrossDimensionVisibleIds);
         c.waypointEdgeIndicatorsEnabled = waypointEdgeIndicatorsEnabled;
         c.deathPointsKept = deathPointsKept;
         c.waypointBeamsEnabled = waypointBeamsEnabled;
@@ -292,6 +295,25 @@ public final class ConfluxConfig {
         c.surveyReminderNextPromptAtMillis = surveyReminderNextPromptAtMillis;
         c.surveyReminderDismissed = surveyReminderDismissed;
         return c;
+    }
+
+    public boolean isSharedWaypointCrossDimensionVisible(final UUID waypointId) {
+        return waypointId != null
+            && sharedWaypointCrossDimensionVisibleIds.contains(waypointId.toString());
+    }
+
+    public void setSharedWaypointCrossDimensionVisible(
+        final UUID waypointId,
+        final boolean visible
+    ) {
+        if (waypointId == null) {
+            return;
+        }
+        if (visible) {
+            sharedWaypointCrossDimensionVisibleIds.add(waypointId.toString());
+        } else {
+            sharedWaypointCrossDimensionVisibleIds.remove(waypointId.toString());
+        }
     }
 
     /** Advances to the next minimap zoom level, wrapping after the final level. */
@@ -330,6 +352,9 @@ public final class ConfluxConfig {
         }
         if (radarDisplayMode == null) {
             radarDisplayMode = RadarDisplayMode.PORTRAITS;
+        }
+        if (sharedWaypointCrossDimensionVisibleIds == null) {
+            sharedWaypointCrossDimensionVisibleIds = new LinkedHashSet<>();
         }
         if (schemaVersion < 3 && playerTrailDurationMinutes != null) {
             final long legacyDurationSeconds = playerTrailDurationMinutes.longValue() * 60L;

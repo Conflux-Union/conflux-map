@@ -260,7 +260,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         clientNetworking.bindMapSync(mapSyncClient);
         clientNetworking.bindChunkLoadStates(chunkLoadStateClient);
         clientNetworking.register();
-        sharedWaypoints = new SharedWaypointClient(client);
+        sharedWaypoints = new SharedWaypointClient(client, config, configIo);
         sharedWaypoints.register();
         groundTeleportService = new ClientGroundTeleportService(client, config);
 

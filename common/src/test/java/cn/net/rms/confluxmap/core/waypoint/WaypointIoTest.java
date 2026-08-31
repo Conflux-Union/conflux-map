@@ -25,6 +25,7 @@ class WaypointIoTest {
             "Home", DimensionId.OVERWORLD, 1.0, 64.0, 2.0,
             0xFF336699, "Bases", Waypoint.Type.NORMAL
         );
+        waypoint.crossDimensionVisible = true;
         final WaypointStore.State state = new WaypointStore.State(
             List.of(new WaypointSet("Bases"), new WaypointSet("Empty")), List.of(waypoint)
         );
@@ -38,7 +39,18 @@ class WaypointIoTest {
         );
         assertEquals(1, loaded.waypoints().size());
         assertEquals("Bases", loaded.waypoints().get(0).group);
+        assertTrue(loaded.waypoints().get(0).crossDimensionVisible);
         assertTrue(Files.readString(file).contains("\"schemaVersion\": 2"));
+    }
+
+    @Test
+    void newWaypointsDefaultToExactDimensionOnly() {
+        final Waypoint waypoint = Waypoint.create(
+            "Home", DimensionId.OVERWORLD, 1.0, 64.0, 2.0,
+            0xFF336699, "Bases", Waypoint.Type.NORMAL
+        );
+
+        assertFalse(waypoint.crossDimensionVisible);
     }
 
     @Test
@@ -68,6 +80,7 @@ class WaypointIoTest {
         assertEquals(DimensionId.NETHER, waypoint.dimensionId);
         assertEquals("Old group", waypoint.group);
         assertEquals(1234L, waypoint.createdAtEpochMs);
+        assertFalse(waypoint.crossDimensionVisible);
     }
 
     @Test

@@ -6,6 +6,8 @@ import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
@@ -32,28 +34,29 @@ public final class WaypointRenderCatalog {
     public List<WaypointRenderEntry> snapshot() {
         final List<Waypoint> local = config.localWaypointsVisible ? localWaypoints.list() : List.of();
         final List<SharedWaypoint> shared = config.sharedWaypointsVisible ? sharedWaypoints.get() : List.of();
-        return merge(local, shared, config.localWaypointsVisible, config.sharedWaypointsVisible);
+        return merge(
+            local, shared, config.localWaypointsVisible, config.sharedWaypointsVisible,
+            config::isSharedWaypointCrossDimensionVisible
+        );
     }
 
     /**
      * Immutable render-ready snapshot of every waypoint visible from the
-     * requested dimension. With cross-dimension display enabled
-     * ({@link ConfluxConfig#waypointCrossDimensionEnabled}, on by default)
-     * portal-linked entries are included per {@link DimensionScale#isVisibleFrom}
+     * requested dimension. Entries that allow cross-dimension display are
+     * included per {@link DimensionScale#isVisibleFrom}
      * with their horizontal coordinates converted into the requested dimension's
      * coordinate space, so renderers can use x/z as plain world positions;
      * {@link WaypointRenderEntry#dimensionId()} keeps the stored dimension for
      * labels and store lookups. Otherwise only exact-dimension entries appear.
      */
     public List<WaypointRenderEntry> snapshot(final DimensionId dimension) {
-        return visibleFrom(snapshot(), dimension, config.waypointCrossDimensionEnabled);
+        return visibleFrom(snapshot(), dimension);
     }
 
     /** Pure visibility filter and coordinate conversion kept public for deterministic unit coverage. */
     public static List<WaypointRenderEntry> visibleFrom(
         final List<WaypointRenderEntry> entries,
-        final DimensionId dimension,
-        final boolean crossDimension
+        final DimensionId dimension
     ) {
         Objects.requireNonNull(entries, "entries");
         Objects.requireNonNull(dimension, "dimension");
@@ -63,7 +66,8 @@ public final class WaypointRenderCatalog {
                 matching.add(entry);
                 continue;
             }
-            if (!crossDimension || !DimensionScale.isVisibleFrom(entry.dimensionId(), dimension)) {
+            if (!entry.crossDimensionVisible()
+                || !DimensionScale.isVisibleFrom(entry.dimensionId(), dimension)) {
                 continue;
             }
             matching.add(new WaypointRenderEntry(
@@ -75,7 +79,8 @@ public final class WaypointRenderCatalog {
                 DimensionScale.convertHorizontal(entry.z(), entry.dimensionId(), dimension),
                 entry.colorArgb(),
                 entry.type(),
-                entry.source()
+                entry.source(),
+                true
             ));
         }
         return List.copyOf(matching);
@@ -88,8 +93,19 @@ public final class WaypointRenderCatalog {
         final boolean localVisible,
         final boolean sharedVisible
     ) {
+        return merge(localWaypoints, sharedWaypoints, localVisible, sharedVisible, ignored -> false);
+    }
+
+    public static List<WaypointRenderEntry> merge(
+        final List<Waypoint> localWaypoints,
+        final List<SharedWaypoint> sharedWaypoints,
+        final boolean localVisible,
+        final boolean sharedVisible,
+        final Predicate<UUID> sharedCrossDimensionVisible
+    ) {
         Objects.requireNonNull(localWaypoints, "localWaypoints");
         Objects.requireNonNull(sharedWaypoints, "sharedWaypoints");
+        Objects.requireNonNull(sharedCrossDimensionVisible, "sharedCrossDimensionVisible");
         final List<WaypointRenderEntry> entries = new ArrayList<>(localWaypoints.size() + sharedWaypoints.size());
 
         if (localVisible) {
@@ -104,7 +120,8 @@ public final class WaypointRenderCatalog {
                         waypoint.z,
                         waypoint.colorArgb,
                         waypoint.type,
-                        WaypointRenderEntry.Source.LOCAL
+                        WaypointRenderEntry.Source.LOCAL,
+                        waypoint.crossDimensionVisible
                     ));
                 }
             }
@@ -120,7 +137,8 @@ public final class WaypointRenderCatalog {
                     waypoint.z(),
                     waypoint.colorArgb(),
                     waypoint.type(),
-                    WaypointRenderEntry.Source.SHARED
+                    WaypointRenderEntry.Source.SHARED,
+                    sharedCrossDimensionVisible.test(waypoint.id())
                 ));
             }
         }

@@ -108,7 +108,8 @@ public final class WaypointListScreen extends ConfluxScreen {
         SharedWaypoint shared,
         int y,
         double distance,
-        String dimensionText
+        String dimensionText,
+        boolean crossDimensionVisible
     ) {
         UUID id() {
             return local != null ? local.id : shared.id();
@@ -131,12 +132,14 @@ public final class WaypointListScreen extends ConfluxScreen {
             if (local != null) {
                 return new WaypointRenderEntry(
                     local.id, local.name, local.dimensionId, local.x, local.y, local.z,
-                    local.colorArgb, local.type, WaypointRenderEntry.Source.LOCAL
+                    local.colorArgb, local.type, WaypointRenderEntry.Source.LOCAL,
+                    crossDimensionVisible
                 );
             }
             return new WaypointRenderEntry(
                 shared.id(), shared.name(), shared.dimensionId(), shared.x(), shared.y(), shared.z(),
-                shared.colorArgb(), shared.type(), WaypointRenderEntry.Source.SHARED
+                shared.colorArgb(), shared.type(), WaypointRenderEntry.Source.SHARED,
+                crossDimensionVisible
             );
         }
     }
@@ -329,7 +332,7 @@ public final class WaypointListScreen extends ConfluxScreen {
             final RowInfo source = sorted.get(i);
             final RowInfo row = new RowInfo(
                 source.local(), source.shared(), listTop() + (i - scrollOffset) * ROW_HEIGHT,
-                source.distance(), source.dimensionText()
+                source.distance(), source.dimensionText(), source.crossDimensionVisible()
             );
             rows.add(row);
             addRowWidgets(row, store);
@@ -693,7 +696,6 @@ public final class WaypointListScreen extends ConfluxScreen {
         final double pz
     ) {
         final List<RowInfo> result = new ArrayList<>();
-        final boolean crossDimension = ConfluxMapClient.get().config().waypointCrossDimensionEnabled;
         if (tab == Tab.LOCAL) {
             for (final Waypoint waypoint : WaypointListFilter.local(
                 waypointService.list(), currentDimension, dimensionFilter
@@ -707,9 +709,10 @@ public final class WaypointListScreen extends ConfluxScreen {
                     0,
                     distance(
                         waypoint.dimensionId, waypoint.x, waypoint.y, waypoint.z,
-                        currentDimension, px, py, pz, crossDimension
+                        currentDimension, px, py, pz, waypoint.crossDimensionVisible
                     ),
-                    dimensionLabel(waypoint.dimensionId)
+                    dimensionLabel(waypoint.dimensionId),
+                    waypoint.crossDimensionVisible
                 ));
             }
             return result;
@@ -717,6 +720,8 @@ public final class WaypointListScreen extends ConfluxScreen {
         for (final SharedWaypoint waypoint : WaypointListFilter.shared(
             sharedWaypoints.list(), currentDimension, dimensionFilter
         )) {
+            final boolean crossDimension =
+                config.isSharedWaypointCrossDimensionVisible(waypoint.id());
             result.add(new RowInfo(
                 null,
                 waypoint,
@@ -725,7 +730,8 @@ public final class WaypointListScreen extends ConfluxScreen {
                     waypoint.dimensionId(), waypoint.x(), waypoint.y(), waypoint.z(),
                     currentDimension, px, py, pz, crossDimension
                 ),
-                dimensionLabel(waypoint.dimensionId())
+                dimensionLabel(waypoint.dimensionId()),
+                crossDimension
             ));
         }
         return result;
