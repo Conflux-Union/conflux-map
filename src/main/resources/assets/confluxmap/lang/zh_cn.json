@@ -118,6 +118,7 @@
   "confluxmap.screen.waypoints.empty_set": "这个路径点集还是空的",
   "confluxmap.screen.waypoints.empty_public": "当前列表还没有共享路径点",
   "confluxmap.screen.waypoints.share": "分享",
+  "confluxmap.screen.waypoints.edit": "编辑",
   "confluxmap.screen.waypoints.locate": "定位",
   "confluxmap.screen.waypoints.teleport": "传送",
   "confluxmap.screen.waypoints.shared_by": "由 %s 分享",

@@ -68,7 +68,7 @@ public final class WaypointListScreen extends ConfluxScreen {
     private static final int ROW_ICON_ACTION_WIDTH = 20;
     private static final int[] LOCAL_ACTION_WIDTHS = {
         ROW_ICON_ACTION_WIDTH, ROW_ICON_ACTION_WIDTH,
-        ROW_ACTION_MAX_WIDTH, ROW_ACTION_MAX_WIDTH, ROW_ACTION_MAX_WIDTH
+        ROW_ACTION_MAX_WIDTH, ROW_ACTION_MAX_WIDTH, ROW_ACTION_MAX_WIDTH, ROW_ACTION_MAX_WIDTH
     };
     private static final int[] SHARED_ACTION_WIDTHS = {
         ROW_ICON_ACTION_WIDTH,
@@ -801,6 +801,18 @@ public final class WaypointListScreen extends ConfluxScreen {
                 SHARE_ICON,
                 button -> openShare(renderedStore, waypoint)
             );
+            final ButtonWidget edit = addDrawableChild(Widgets.button(
+                actions.x(2),
+                actionY,
+                actions.width(2),
+                20,
+                fitButtonLabel(
+                    Texts.translatable("confluxmap.screen.waypoints.edit"),
+                    actions.width(2)
+                ),
+                button -> openEdit(renderedStore, waypoint)
+            ));
+            edit.active = renderedStore != null && renderedStore.persistenceWritable();
         } else {
             final SharedWaypoint waypoint = row.shared();
             addIconAction(
@@ -826,17 +838,18 @@ public final class WaypointListScreen extends ConfluxScreen {
             setDisabledTooltip(edit, sharedWaypoints.updateDisabledReasonKey(waypoint));
         }
 
+        final int trailingActionOffset = row.local() == null ? 0 : 1;
         final boolean pendingThis = row.id().equals(pendingDeleteId);
         final ButtonWidget delete = addDrawableChild(Widgets.button(
-            actions.x(2),
+            actions.x(2 + trailingActionOffset),
             actionY,
-            actions.width(2),
+            actions.width(2 + trailingActionOffset),
             20,
             fitButtonLabel(Texts.translatable(
                 pendingThis
                     ? "confluxmap.screen.waypoints.confirm"
                     : "confluxmap.screen.waypoints.delete"
-            ), actions.width(2)),
+            ), actions.width(2 + trailingActionOffset)),
             button -> delete(renderedStore, row)
         ));
         delete.active = row.shared() == null
@@ -846,25 +859,25 @@ public final class WaypointListScreen extends ConfluxScreen {
             setDisabledTooltip(delete, sharedWaypoints.deleteDisabledReasonKey(row.shared()));
         }
         addDrawableChild(Widgets.button(
-            actions.x(3),
+            actions.x(3 + trailingActionOffset),
             actionY,
-            actions.width(3),
+            actions.width(3 + trailingActionOffset),
             20,
             fitButtonLabel(
                 Texts.translatable("confluxmap.screen.waypoints.locate"),
-                actions.width(3)
+                actions.width(3 + trailingActionOffset)
             ),
             ignored -> locate(row)
         ));
         final TeleportCommandAccess.Result access = teleportAccess(row);
         final ButtonWidget teleport = addDrawableChild(Widgets.button(
-            actions.x(4),
+            actions.x(4 + trailingActionOffset),
             actionY,
-            actions.width(4),
+            actions.width(4 + trailingActionOffset),
             20,
             fitButtonLabel(
                 Texts.translatable("confluxmap.screen.waypoints.teleport"),
-                actions.width(4)
+                actions.width(4 + trailingActionOffset)
             ),
             ignored -> teleport(row)
         ));
@@ -1415,21 +1428,6 @@ public final class WaypointListScreen extends ConfluxScreen {
         if (super.mouseClicked(mouseX, mouseY, button)) {
         //#endif
             return true;
-        }
-        if (button == 0 && tab == Tab.LOCAL) {
-            for (final RowInfo row : rows) {
-                if (row.local() != null
-                    && mouseY >= row.y() && mouseY < row.y() + ROW_HEIGHT
-                    && mouseX >= nameX() && mouseX < nameRight()) {
-                    final WaypointStore currentStore = waypointService.current();
-                    if (currentStore == lastLocalStore
-                        && currentStore != null
-                        && currentStore.persistenceWritable()) {
-                        openEdit(currentStore, row.local());
-                    }
-                    return true;
-                }
-            }
         }
         return false;
     }

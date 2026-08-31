@@ -33,15 +33,16 @@ final class WaypointRowActionLayoutTest {
     void waypointIconsUseNarrowSlotsWhileTextActionsStayWide() {
         final WaypointRowActionLayout layout = WaypointRowActionLayout.create(
             10, 890, 6, 4,
-            new int[] {20, 20, 48, 48, 48}
+            new int[] {20, 20, 48, 48, 48, 48}
         );
 
         assertEquals(20, layout.width(0));
         assertEquals(20, layout.width(1));
         assertEquals(48, layout.width(2));
-        assertEquals(684, layout.x(0));
-        assertEquals(708, layout.x(1));
-        assertEquals(732, layout.x(2));
+        assertEquals(632, layout.x(0));
+        assertEquals(656, layout.x(1));
+        assertEquals(680, layout.x(2));
+        assertEquals(836, layout.x(5));
         assertEquals(890 - 6, layout.right());
     }
 

@@ -118,6 +118,7 @@
   "confluxmap.screen.waypoints.empty_set": "This waypoint set is empty",
   "confluxmap.screen.waypoints.empty_public": "No shared waypoints in this list",
   "confluxmap.screen.waypoints.share": "Share",
+  "confluxmap.screen.waypoints.edit": "Edit",
   "confluxmap.screen.waypoints.locate": "Locate",
   "confluxmap.screen.waypoints.teleport": "Teleport",
   "confluxmap.screen.waypoints.shared_by": "Shared by %s",
