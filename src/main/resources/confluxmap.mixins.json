@@ -9,6 +9,7 @@
   "client": [
     "AgeableMobEntityRendererAccessor",
     "ChatHudMixin",
+    "GameRendererAccessor",
     "ClientChunkManagerMixin",
     "ClientPlayNetworkHandlerMixin",
     "InGameHudMixin",

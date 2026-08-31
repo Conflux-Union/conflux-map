@@ -1,11 +1,15 @@
 package cn.net.rms.confluxmap.mc.ui;
 
+import cn.net.rms.confluxmap.compat.Ids;
+import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.core.waypoint.WaypointVerticalRelation;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.item.ItemStack;
 import net.minecraft.util.math.MathHelper;
 
 /**
@@ -54,8 +58,21 @@ public final class WaypointMarkerRenderer {
         RenderUtil.fillRect(matrices, x - halfSize - 1f, y - halfSize - 1f, plateSize + 2f, plateSize + 2f, outer);
         RenderUtil.fillRect(matrices, x - halfSize, y - halfSize, plateSize, plateSize, fill);
 
-        final String initial = initial(waypoint.name());
-        final int textWidth = textRenderer.getWidth(initial);
+        final ItemStack itemIcon = itemIcon(waypoint.iconItemId());
+        if (!itemIcon.isEmpty()) {
+            draw.drawItemIcon(
+                MinecraftClient.getInstance(),
+                itemIcon,
+                x,
+                y,
+                Math.max(1f, plateSize - 2f)
+            );
+            drawHeightBadge(matrices, verticalRelation, x, y, halfSize, alpha);
+            return;
+        }
+
+        final String markerText = markerText(waypoint.name(), waypoint.markerLabel());
+        final int textWidth = textRenderer.getWidth(markerText);
         final float available = Math.max(1f, plateSize - 2f);
         final float textScale = Math.min(1f, available / Math.max(textWidth, textRenderer.fontHeight));
         matrices.push();
@@ -63,13 +80,33 @@ public final class WaypointMarkerRenderer {
         matrices.scale(textScale, textScale, 1f);
         draw.drawTextWithShadow(
             textRenderer,
-            initial,
+            markerText,
             -textWidth / 2f,
             -textRenderer.fontHeight / 2f,
             withAlpha(textColorFor(fill), alpha)
         );
         matrices.pop();
         drawHeightBadge(matrices, verticalRelation, x, y, halfSize, alpha);
+    }
+
+    public static String markerText(final String name, final String markerLabel) {
+        return markerLabel == null || markerLabel.isBlank()
+            ? initial(name)
+            : markerLabel;
+    }
+
+    public static ItemStack itemIcon(final String itemId) {
+        if (itemId == null || itemId.isEmpty()) {
+            return ItemStack.EMPTY;
+        }
+        try {
+            return Regs.item(Ids.of(itemId))
+                .map(ItemStack::new)
+                .filter(stack -> !stack.isEmpty())
+                .orElse(ItemStack.EMPTY);
+        } catch (final IllegalArgumentException e) {
+            return ItemStack.EMPTY;
+        }
     }
 
     /**

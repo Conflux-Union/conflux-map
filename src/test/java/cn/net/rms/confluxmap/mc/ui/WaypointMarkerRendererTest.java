@@ -21,6 +21,14 @@ final class WaypointMarkerRendererTest {
     }
 
     @Test
+    void customMarkerLabelReplacesTheNameInitial() {
+        assertEquals("HOM", WaypointMarkerRenderer.markerText("Base", "HOM"));
+        assertEquals("\u5bb6\uD83D\uDE80", WaypointMarkerRenderer.markerText("Base", "\u5bb6\uD83D\uDE80"));
+        assertEquals("B", WaypointMarkerRenderer.markerText("Base", ""));
+        assertEquals("B", WaypointMarkerRenderer.markerText("Base", null));
+    }
+
+    @Test
     void skipsUnicodeWhitespaceThatTrimWouldKeep() {
         assertEquals("B", WaypointMarkerRenderer.initial("\u00A0Base"));
         assertEquals("B", WaypointMarkerRenderer.initial("\u3000Base"));

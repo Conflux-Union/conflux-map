@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.server.shared;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
+import cn.net.rms.confluxmap.core.waypoint.WaypointMarkerStyle;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -27,7 +28,9 @@ public final class SharedWaypointValidator {
         double y,
         double z,
         int colorArgb,
-        Waypoint.Type type
+        Waypoint.Type type,
+        String iconItemId,
+        String markerLabel
     ) {
     }
 
@@ -49,7 +52,9 @@ public final class SharedWaypointValidator {
         final double y,
         final double z,
         final int colorArgb,
-        final Waypoint.Type type
+        final Waypoint.Type type,
+        final String iconItemId,
+        final String markerLabel
     ) {
         if (name == null || dimensionId == null || type == null) {
             return Optional.empty();
@@ -67,7 +72,18 @@ public final class SharedWaypointValidator {
             || (colorArgb >>> 24) != 0xFF) {
             return Optional.empty();
         }
-        return Optional.of(new ValidatedCreate(normalizedName, dimensionId, x, y, z, colorArgb, type));
+        final String normalizedIconItemId;
+        final String normalizedMarkerLabel;
+        try {
+            normalizedIconItemId = WaypointMarkerStyle.iconItemId(iconItemId);
+            normalizedMarkerLabel = WaypointMarkerStyle.markerLabel(markerLabel);
+        } catch (final IllegalArgumentException e) {
+            return Optional.empty();
+        }
+        return Optional.of(new ValidatedCreate(
+            normalizedName, dimensionId, x, y, z, colorArgb, type,
+            normalizedIconItemId, normalizedMarkerLabel
+        ));
     }
 
     static boolean validName(final String value) {

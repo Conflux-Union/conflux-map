@@ -62,6 +62,7 @@ import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapViewState;
 import cn.net.rms.confluxmap.mc.update.UpdateNotifier;
 import cn.net.rms.confluxmap.mc.ui.world.WaypointWorldRenderer;
 import cn.net.rms.confluxmap.mc.ui.world.WaypointHighlightState;
+import cn.net.rms.confluxmap.mc.ui.world.WaypointItemHudRenderer;
 import cn.net.rms.confluxmap.mc.world.DeathWatcher;
 import cn.net.rms.confluxmap.mc.world.ClientMultiworldService;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
@@ -117,6 +118,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private DeathWatcher deathWatcher;
     private WaypointWorldRenderer waypointWorldRenderer;
     private WaypointHighlightState waypointHighlightState;
+    private WaypointItemHudRenderer waypointItemHudRenderer;
     private DaylightModel daylightModel;
     private McDaylightTracker daylightTracker;
     private PredictionState predictionState;
@@ -311,8 +313,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
             radarViewRange, uiResourceTheme, chunkCapture::setMinimapViewport,
             chunkCapture::liveTerrainPaused
         );
+        waypointItemHudRenderer = new WaypointItemHudRenderer(client, config);
         waypointWorldRenderer = new WaypointWorldRenderer(
-            client, config, gameBridge, waypointRenderCatalog, waypointHighlightState
+            client, config, gameBridge, waypointRenderCatalog, waypointHighlightState,
+            waypointItemHudRenderer
         );
         fullscreenMapViewState = new FullscreenMapViewState();
         daylightTracker = new McDaylightTracker(
@@ -358,6 +362,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         playerTrailTracker.register();
         minimapHudRenderer.register();
         waypointWorldRenderer.register();
+        waypointItemHudRenderer.register();
         deathWatcher.register();
         daylightTracker.register();
         groundTeleportService.register();
@@ -540,6 +545,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public WaypointHighlightState waypointHighlightState() {
         return waypointHighlightState;
+    }
+
+    public WaypointItemHudRenderer waypointItemHudRenderer() {
+        return waypointItemHudRenderer;
     }
 
     public PredictionState predictionState() {

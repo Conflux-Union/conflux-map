@@ -190,7 +190,8 @@ public final class SharedWaypointSessionHandler {
                 actor(peer),
                 new SharedWaypointService.CreateRequest(
                     create.operationId(), create.expectedRevision(), create.name(), create.dimensionId(),
-                    create.x(), create.y(), create.z(), create.color(), create.type()
+                    create.x(), create.y(), create.z(), create.color(), create.type(),
+                    create.iconItemId(), create.markerLabel()
                 )
             ));
         }
@@ -213,7 +214,8 @@ public final class SharedWaypointSessionHandler {
                 actor(peer),
                 new SharedWaypointService.UpdateRequest(
                     update.operationId(), update.expectedRevision(), update.id(), update.name(),
-                    update.dimensionId(), update.x(), update.y(), update.z(), update.color(), update.type()
+                    update.dimensionId(), update.x(), update.y(), update.z(), update.color(), update.type(),
+                    update.iconItemId(), update.markerLabel()
                 )
             ));
         }
@@ -260,6 +262,14 @@ public final class SharedWaypointSessionHandler {
     public synchronized boolean isSubscribed(final UUID playerId) {
         final Session session = sessions.get(playerId);
         return session != null && session.compatible && session.subscribed && !session.muted;
+    }
+
+    /** Returns this peer's selected wire minor, or the legacy shape before a compatible hello. */
+    public synchronized int negotiatedMinor(final UUID playerId) {
+        final Session session = sessions.get(playerId);
+        return session != null && session.compatible && !session.muted
+            ? session.negotiatedMinor
+            : 0;
     }
 
     /** Records and reports a live permission change for an established compatible session. */

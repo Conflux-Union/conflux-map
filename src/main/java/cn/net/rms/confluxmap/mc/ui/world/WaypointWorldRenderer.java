@@ -39,8 +39,13 @@ import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 //#endif
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
-//#if MC>=260200
+//#if MC>=12109 && MC<260100
+//$$ import net.minecraft.client.render.command.OrderedRenderCommandQueue;
+//#endif
+//#if MC>=260100
 //$$ import net.minecraft.client.renderer.SubmitNodeCollector;
+//#endif
+//#if MC>=260200
 //$$ import net.minecraft.client.renderer.feature.CustomFeatureRenderer;
 //$$ import net.minecraft.client.renderer.feature.TextFeatureRenderer;
 //$$ import net.minecraft.client.renderer.rendertype.RenderTypes;
@@ -89,26 +94,26 @@ public final class WaypointWorldRenderer {
     /** Beam alpha never drops below this fraction of {@link #BEAM_CORE_ALPHA} even at the render-distance edge - "intensifies as you approach" without vanishing far away. */
     private static final float BEAM_FAR_FLOOR = 0.30f;
 
-    private static final double LABEL_Y_OFFSET = 1.5;
+    static final double LABEL_Y_OFFSET = 1.5;
     /** waypoint-ux.md S6 "distance fade-in": alpha ramps 0 -> 1 over the nearest ~5 blocks so the label doesn't pop in right next to the camera. */
-    private static final double LABEL_NEAR_FADE_BLOCKS = 5.0;
-    private static final float LABEL_BASE_SCALE = 0.06f;
-    private static final double LABEL_REFERENCE_DISTANCE = 12.0;
-    private static final float LABEL_MIN_SCALE_MULT = 0.35f;
-    private static final float LABEL_MAX_SCALE_MULT = 170.0f;
-    private static final float LABEL_ICON_COLLAPSED_SIZE = 12.0f;
-    private static final float LABEL_ICON_EXPANDED_SIZE = 18.0f;
-    private static final float LABEL_PANEL_HEIGHT = 20.0f;
-    private static final float LABEL_PANEL_PADDING = 3.0f;
-    private static final float LABEL_PANEL_GAP = 1.0f;
-    private static final float LABEL_TEXT_REVEAL_START = 0.72f;
+    static final double LABEL_NEAR_FADE_BLOCKS = 5.0;
+    static final float LABEL_BASE_SCALE = 0.06f;
+    static final double LABEL_REFERENCE_DISTANCE = 12.0;
+    static final float LABEL_MIN_SCALE_MULT = 0.35f;
+    static final float LABEL_MAX_SCALE_MULT = 170.0f;
+    static final float LABEL_ICON_COLLAPSED_SIZE = 12.0f;
+    static final float LABEL_ICON_EXPANDED_SIZE = 18.0f;
+    static final float LABEL_PANEL_HEIGHT = 20.0f;
+    static final float LABEL_PANEL_PADDING = 3.0f;
+    static final float LABEL_PANEL_GAP = 1.0f;
+    static final float LABEL_TEXT_REVEAL_START = 0.72f;
     /** Leaves enough room before the world projection's far plane for the complete billboard. */
     private static final double LABEL_FAR_PLANE_MARGIN = 0.90;
-    private static final int LABEL_BACKGROUND_COLOR = 0xC0101010;
-    private static final int LABEL_LOCAL_OUTLINE_COLOR = 0xFF101010;
-    private static final int LABEL_SHARED_OUTLINE_COLOR = 0xFF55DDE0;
-    private static final int LABEL_NAME_COLOR = 0xFFFFFFFF;
-    private static final int LABEL_DISTANCE_COLOR = 0xFFC8C8C8;
+    static final int LABEL_BACKGROUND_COLOR = 0xC0101010;
+    static final int LABEL_LOCAL_OUTLINE_COLOR = 0xFF101010;
+    static final int LABEL_SHARED_OUTLINE_COLOR = 0xFF55DDE0;
+    static final int LABEL_NAME_COLOR = 0xFFFFFFFF;
+    static final int LABEL_DISTANCE_COLOR = 0xFFC8C8C8;
     /** LightmapTextureManager.pack(15, 15) - always fully lit, like other UI-ish world markers. */
     private static final int LABEL_LIGHT = 0xF000F0;
 
@@ -117,6 +122,7 @@ public final class WaypointWorldRenderer {
     private final GameBridge gameBridge;
     private final WaypointRenderCatalog waypointRenderCatalog;
     private final WaypointHighlightState waypointHighlightState;
+    private final WaypointItemHudRenderer waypointItemHudRenderer;
     private final Map<UUID, Float> labelAnimationProgress = new HashMap<>();
     private long lastAnimationNanos;
 
@@ -125,13 +131,15 @@ public final class WaypointWorldRenderer {
         final ConfluxConfig config,
         final GameBridge gameBridge,
         final WaypointRenderCatalog waypointRenderCatalog,
-        final WaypointHighlightState waypointHighlightState
+        final WaypointHighlightState waypointHighlightState,
+        final WaypointItemHudRenderer waypointItemHudRenderer
     ) {
         this.client = client;
         this.config = config;
         this.gameBridge = gameBridge;
         this.waypointRenderCatalog = waypointRenderCatalog;
         this.waypointHighlightState = waypointHighlightState;
+        this.waypointItemHudRenderer = waypointItemHudRenderer;
     }
 
     //#if MC>=12109 && MC<12111
@@ -149,9 +157,12 @@ public final class WaypointWorldRenderer {
     //$$     }
     //$$ }
     //$$
-    //$$ public static void onEndMain(final MatrixStack matrices) {
+    //$$ public static void onEndMain(
+    //$$     final MatrixStack matrices,
+    //$$     final OrderedRenderCommandQueue commandQueue
+    //$$ ) {
     //$$     if (active != null) {
-    //$$         active.renderHud(matrices);
+    //$$         active.renderHud(matrices, commandQueue);
     //$$     }
     //$$ }
     //#endif
@@ -269,7 +280,10 @@ public final class WaypointWorldRenderer {
     }
 
     //#if MC>=12109 && MC<12111
-    //$$ private void renderHud(final MatrixStack matrices) {
+    //$$ private void renderHud(
+    //$$     final MatrixStack matrices,
+    //$$     final OrderedRenderCommandQueue commandQueue
+    //$$ ) {
     //#else
     //#if MC>=260100
     //$$ private void renderHud(final LevelRenderContext context) {
@@ -279,17 +293,21 @@ public final class WaypointWorldRenderer {
     //#endif
         if (!config.waypointLabelsEnabled) {
             labelAnimationProgress.clear();
+            waypointItemHudRenderer.publish(List.of());
             return;
         }
         if (!gameBridge.session().active()) {
+            waypointItemHudRenderer.publish(List.of());
             return;
         }
         //#if MC>=12109 && MC<12111
-        //$$ final Optional<PlayerView> playerViewOpt = gameBridge.player(tickDelta());
+        //$$ final float tickDelta = tickDelta();
         //#else
-        final Optional<PlayerView> playerViewOpt = gameBridge.player(tickDelta(context));
+        final float tickDelta = tickDelta(context);
         //#endif
+        final Optional<PlayerView> playerViewOpt = gameBridge.player(tickDelta);
         if (playerViewOpt.isEmpty()) {
+            waypointItemHudRenderer.publish(List.of());
             return;
         }
         final PlayerView player = playerViewOpt.get();
@@ -341,6 +359,7 @@ public final class WaypointWorldRenderer {
         );
         final float animationDeltaSeconds = animationDeltaSeconds();
         final Set<UUID> visibleWaypointIds = new HashSet<>(labelSelection.candidates().size());
+        final List<WaypointItemHudRenderer.Label> itemLabels = new ArrayList<>();
 
         if (!labelSelection.candidates().isEmpty()) {
             // Modern LAST keeps the camera view rotation in ModelView while its context stack is
@@ -367,11 +386,48 @@ public final class WaypointWorldRenderer {
                     final boolean targeted = candidate.selected()
                         || waypoint.id().equals(labelSelection.targetedWaypointId());
                     final float progress = updateLabelAnimation(waypoint.id(), targeted, animationDeltaSeconds);
+                    if (!WaypointMarkerRenderer.itemIcon(waypoint.iconItemId()).isEmpty()) {
+                        itemLabels.add(new WaypointItemHudRenderer.Label(
+                            waypoint,
+                            renderDistance,
+                            labelProjectionDistance,
+                            progress,
+                            highlightVisibilityAlpha(
+                                candidate.selected(), labelSelection.hasHighlight()
+                            ),
+                            candidate.selected()
+                        ));
+                        continue;
+                    }
                     //#if MC>=260200
                     //$$ drawLabel(
                     //$$     matrices, context.submitNodeCollector(), cameraState.orientation,
                     //$$     cameraPos, waypoint.x(), waypoint.y(), waypoint.z(), waypoint,
                     //$$     renderDistance, labelProjectionDistance, progress,
+                    //$$     highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight()),
+                    //$$     candidate.selected()
+                    //$$ );
+                    //#elseif MC>=260100
+                    //$$ drawLabel(
+                    //$$     matrices, immediate, context.submitNodeCollector(), camera,
+                    //$$     cameraPos, waypoint.x(), waypoint.y(), waypoint.z(),
+                    //$$     waypoint, renderDistance, labelProjectionDistance, progress,
+                    //$$     highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight()),
+                    //$$     candidate.selected()
+                    //$$ );
+                    //#elseif MC>=12111
+                    //$$ drawLabel(
+                    //$$     matrices, immediate, context.commandQueue(), camera,
+                    //$$     cameraPos, waypoint.x(), waypoint.y(), waypoint.z(),
+                    //$$     waypoint, renderDistance, labelProjectionDistance, progress,
+                    //$$     highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight()),
+                    //$$     candidate.selected()
+                    //$$ );
+                    //#elseif MC>=12109
+                    //$$ drawLabel(
+                    //$$     matrices, immediate, commandQueue, camera,
+                    //$$     cameraPos, waypoint.x(), waypoint.y(), waypoint.z(),
+                    //$$     waypoint, renderDistance, labelProjectionDistance, progress,
                     //$$     highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight()),
                     //$$     candidate.selected()
                     //$$ );
@@ -398,6 +454,7 @@ public final class WaypointWorldRenderer {
             }
         }
 
+        waypointItemHudRenderer.publish(itemLabels);
         labelAnimationProgress.keySet().retainAll(visibleWaypointIds);
     }
 
@@ -630,6 +687,11 @@ public final class WaypointWorldRenderer {
     private void drawLabel(
         final MatrixStack matrices,
         final VertexConsumerProvider.Immediate immediate,
+    //#if MC>=260100
+        //$$ final SubmitNodeCollector submits,
+    //#elseif MC>=12109
+        //$$ final OrderedRenderCommandQueue commandQueue,
+    //#endif
         final Camera camera,
     //#endif
         final Vec3d cameraPos,
@@ -680,6 +742,9 @@ public final class WaypointWorldRenderer {
         final float panelReveal = MathHelper.clamp(easedProgress / LABEL_TEXT_REVEAL_START, 0f, 1f);
         final float panelWidth = panelFullWidth * panelReveal;
 
+        //#if MC>=260100 && MC<260200
+        //$$ // 26.1 collects item submits separately so they render in the current frame.
+        //#endif
         matrices.push();
         matrices.translate(
             anchorX * projectionScale,
@@ -719,7 +784,21 @@ public final class WaypointWorldRenderer {
         }
         //#if MC>=260200
         //$$ drawIcon(
-        //$$     matrices, textRenderer, plates, text, waypoint, iconHalfSize,
+        //$$     matrices, textRenderer, plates, text, submits, waypoint, iconHalfSize,
+        //$$     nearFade * config.waypointIconOpacity
+        //$$         / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY * visibilityAlpha,
+        //$$     selected
+        //$$ );
+        //#elseif MC>=260100
+        //$$ drawIcon(
+        //$$     matrices, textRenderer, immediate, submits, waypoint, iconHalfSize,
+        //$$     nearFade * config.waypointIconOpacity
+        //$$         / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY * visibilityAlpha,
+        //$$     selected
+        //$$ );
+        //#elseif MC>=12109
+        //$$ drawIcon(
+        //$$     matrices, textRenderer, immediate, commandQueue, waypoint, iconHalfSize,
         //$$     nearFade * config.waypointIconOpacity
         //$$         / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY * visibilityAlpha,
         //$$     selected
@@ -763,16 +842,22 @@ public final class WaypointWorldRenderer {
     }
 
     //#if MC>=260200
-    //$$ private static void drawIcon(
+    //$$ private void drawIcon(
     //$$     final PoseStack matrices,
     //$$     final Font textRenderer,
     //$$     final FabricOrderedSubmitNodeCollector plates,
     //$$     final FabricOrderedSubmitNodeCollector text,
+    //$$     final SubmitNodeCollector submits,
     //#else
-    private static void drawIcon(
+    private void drawIcon(
         final MatrixStack matrices,
         final TextRenderer textRenderer,
         final VertexConsumerProvider.Immediate immediate,
+    //#if MC>=260100
+        //$$ final SubmitNodeCollector submits,
+    //#elseif MC>=12109
+        //$$ final OrderedRenderCommandQueue commandQueue,
+    //#endif
     //#endif
         final WaypointRenderEntry waypoint,
         final float halfSize,
@@ -800,20 +885,23 @@ public final class WaypointWorldRenderer {
         );
         //#endif
 
-        final String initial = initial(waypoint.name());
-        final int initialWidth = textRenderer.getWidth(initial);
+        final String markerText = WaypointMarkerRenderer.markerText(
+            waypoint.name(),
+            waypoint.markerLabel()
+        );
+        final int initialWidth = textRenderer.getWidth(markerText);
         final float available = Math.max(1f, size - 3f);
         final float textScale = Math.min(1f, available / Math.max(initialWidth, textRenderer.fontHeight));
         matrices.push();
         matrices.scale(textScale, textScale, 1f);
         //#if MC>=260200
         //$$ submitText(
-        //$$     text, matrices, initial, -initialWidth / 2f, -textRenderer.lineHeight / 2f,
+        //$$     text, matrices, markerText, -initialWidth / 2f, -textRenderer.lineHeight / 2f,
         //$$     withAlpha(WaypointMarkerRenderer.textColorFor(waypoint.colorArgb()), alpha)
         //$$ );
         //#else
         RenderUtil.drawSeeThroughText(
-            textRenderer, initial, -initialWidth / 2f, -textRenderer.fontHeight / 2f,
+            textRenderer, markerText, -initialWidth / 2f, -textRenderer.fontHeight / 2f,
             withAlpha(WaypointMarkerRenderer.textColorFor(waypoint.colorArgb()), alpha),
             matrices, immediate, LABEL_LIGHT
         );
@@ -872,25 +960,16 @@ public final class WaypointWorldRenderer {
     //$$ }
     //#endif
 
-    private static int withAlpha(final int argb, final float alpha) {
+    static int withAlpha(final int argb, final float alpha) {
         final int a = Math.round(Argb.alpha(argb) * MathHelper.clamp(alpha, 0f, 1f));
         return (a << 24) | (argb & 0x00FFFFFF);
     }
 
-    private static int outlineColor(final WaypointRenderEntry waypoint) {
+    static int outlineColor(final WaypointRenderEntry waypoint) {
         if (!waypoint.shared()) {
             return LABEL_LOCAL_OUTLINE_COLOR;
         }
         return LABEL_SHARED_OUTLINE_COLOR;
-    }
-
-    private static String initial(final String name) {
-        final String trimmed = name == null ? "" : name.trim();
-        if (trimmed.isEmpty()) {
-            return "?";
-        }
-        final int[] codePoints = trimmed.codePoints().limit(1).toArray();
-        return new String(codePoints, 0, codePoints.length);
     }
 
     //#if MC>=12109 && MC<12111

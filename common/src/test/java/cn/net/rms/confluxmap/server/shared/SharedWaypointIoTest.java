@@ -31,7 +31,8 @@ class SharedWaypointIoTest {
             UUID.fromString("00000000-0000-0000-0000-000000000001"),
             UUID.fromString("00000000-0000-0000-0000-000000000002"),
             "PlayerOne", "村庄", DimensionId.OVERWORLD,
-            12.5d, 64d, -8.25d, 0xFF33AA66, Waypoint.Type.NORMAL, 1_234L, 3L
+            12.5d, 64d, -8.25d, 0xFF33AA66, Waypoint.Type.NORMAL,
+            "minecraft:emerald", "村", 1_234L, 3L
         );
 
         io.save(new SharedWaypointStore.Snapshot(3L, List.of(waypoint)));
@@ -46,6 +47,8 @@ class SharedWaypointIoTest {
         assertFalse(json.contains("\"locked\""));
         assertTrue(json.contains("\"publisherId\""));
         assertTrue(json.contains("村庄"));
+        assertTrue(json.contains("\"iconItemId\": \"minecraft:emerald\""));
+        assertTrue(json.contains("\"markerLabel\": \"村\""));
     }
 
     @Test

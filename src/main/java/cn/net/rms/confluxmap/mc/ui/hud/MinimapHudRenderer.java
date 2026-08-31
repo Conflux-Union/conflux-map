@@ -334,7 +334,10 @@ public final class MinimapHudRenderer {
         drawCardinals(draw, centerX, centerY, contentSize, mapAngle);
         drawWaypointMarkers(draw, centerX, centerY, contentSize, mapAngle, player);
         drawCameraMarker(matrices, player, centerX, centerY, rotate);
-        drawLocalPlayerMarker(matrices, player, centerX, centerY, contentSize, rotate, tickDelta);
+        final Optional<PlayerMarkerPlacement> localPlayerMarker = localPlayerMarker(
+            player, centerX, centerY, contentSize, rotate, tickDelta
+        );
+        drawLocalPlayerMarker(matrices, localPlayerMarker, rotate);
         drawInfoText(draw, player, x0, y0, size);
     }
 
@@ -364,6 +367,26 @@ public final class MinimapHudRenderer {
     /** Draws the real player's position relative to the active map viewpoint. */
     private void drawLocalPlayerMarker(
         final MatrixStack matrices,
+        final Optional<PlayerMarkerPlacement> placement,
+        final boolean rotate
+    ) {
+        if (placement.isEmpty()) {
+            return;
+        }
+        final PlayerMarkerPlacement marker = placement.get();
+        PlayerMarkerRenderer.draw(
+            client,
+            matrices,
+            uiTheme,
+            config.playerMarkerStyle,
+            marker.x(),
+            marker.y(),
+            marker.angleDegrees(),
+            PLAYER_MARKER_COLOR
+        );
+    }
+
+    private Optional<PlayerMarkerPlacement> localPlayerMarker(
         final PlayerView viewpoint,
         final float centerX,
         final float centerY,
@@ -373,7 +396,7 @@ public final class MinimapHudRenderer {
     ) {
         final Optional<PlayerView> localPlayer = gameBridge.player(tickDelta);
         if (localPlayer.isEmpty()) {
-            return;
+            return Optional.empty();
         }
         final PlayerView player = localPlayer.get();
         final float blocksPerPixel = BLOCKS_PER_PIXEL[config.minimapZoomIndex];
@@ -396,18 +419,13 @@ public final class MinimapHudRenderer {
             screenDx = MathHelper.clamp(screenDx, -limit, limit);
             screenDy = MathHelper.clamp(screenDy, -limit, limit);
         }
-        PlayerMarkerRenderer.draw(
-            client,
-            matrices,
-            uiTheme,
-            config.playerMarkerStyle,
+        return Optional.of(new PlayerMarkerPlacement(
             centerX + screenDx,
             centerY + screenDy,
             rotate
                 ? player.yawDegrees() - viewpoint.yawDegrees()
-                : player.yawDegrees() + 180f,
-            PLAYER_MARKER_COLOR
-        );
+                : player.yawDegrees() + 180f
+        ));
     }
 
     static float playerMarkerEdgeLimit(final int size) {
@@ -503,32 +521,34 @@ public final class MinimapHudRenderer {
                 ? Math.hypot(screenOffX, screenOffY) <= limit
                 : Math.abs(screenOffX) <= limit && Math.abs(screenOffY) <= limit;
 
+            final float markerX;
+            final float markerY;
             if (inRange) {
-                WaypointMarkerRenderer.draw(
-                    draw, client.textRenderer, waypoint, centerX + screenOffX, centerY + screenOffY,
-                    WAYPOINT_MARKER_HALF_SIZE, 1f, false,
-                    WaypointVerticalRelation.between(waypoint.y(), player.y())
-                );
+                markerX = centerX + screenOffX;
+                markerY = centerY + screenOffY;
             } else if (config.waypointEdgeIndicatorsEnabled) {
                 final float k = circleFrame
                     ? limit / (float) Math.hypot(screenOffX, screenOffY)
                     : limit / Math.max(Math.abs(screenOffX), Math.abs(screenOffY));
-                final float edgeX = screenOffX * k;
-                final float edgeY = screenOffY * k;
-                WaypointMarkerRenderer.draw(
-                    draw,
-                    client.textRenderer,
-                    waypoint,
-                    centerX + edgeX,
-                    centerY + edgeY,
-                    WAYPOINT_MARKER_HALF_SIZE,
-                    1f,
-                    false,
-                    WaypointVerticalRelation.between(waypoint.y(), player.y())
-                );
+                markerX = centerX + screenOffX * k;
+                markerY = centerY + screenOffY * k;
+            } else {
+                continue;
             }
+
+            WaypointMarkerRenderer.draw(
+                draw, client.textRenderer, waypoint, markerX, markerY,
+                WAYPOINT_MARKER_HALF_SIZE, 1f, false,
+                WaypointVerticalRelation.between(waypoint.y(), player.y())
+            );
         }
     }
+
+    private record PlayerMarkerPlacement(
+        float x,
+        float y,
+        float angleDegrees
+    ) {}
 
     /**
      * Tiles are drawn as full 256-block quads positioned relative to the player,

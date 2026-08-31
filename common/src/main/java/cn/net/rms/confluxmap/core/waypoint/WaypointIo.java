@@ -64,6 +64,8 @@ public final class WaypointIo {
         boolean visible;
         boolean crossDimensionVisible;
         String type;
+        String iconItemId;
+        String markerLabel;
         long createdAtEpochMs;
     }
 
@@ -176,12 +178,23 @@ public final class WaypointIo {
         } catch (final IllegalArgumentException e) {
             type = Waypoint.Type.NORMAL;
         }
-        return new Waypoint(
+        final Waypoint waypoint = new Waypoint(
             id, entry.name, DimensionId.parse(entry.dimensionId),
             entry.x, entry.y, entry.z, entry.colorArgb,
             entry.group == null ? "" : entry.group, entry.visible, entry.crossDimensionVisible,
             type, entry.createdAtEpochMs
         );
+        try {
+            waypoint.iconItemId = WaypointMarkerStyle.iconItemId(entry.iconItemId);
+        } catch (final IllegalArgumentException e) {
+            logger.warn("Clearing invalid icon item id on waypoint {}", entry.id);
+        }
+        try {
+            waypoint.markerLabel = WaypointMarkerStyle.markerLabel(entry.markerLabel);
+        } catch (final IllegalArgumentException e) {
+            logger.warn("Clearing invalid marker label on waypoint {}", entry.id);
+        }
+        return waypoint;
     }
 
     private static boolean usesFutureSchema(final JsonObject root) {
@@ -222,6 +235,8 @@ public final class WaypointIo {
         entry.visible = waypoint.visible;
         entry.crossDimensionVisible = waypoint.crossDimensionVisible;
         entry.type = waypoint.type.name();
+        entry.iconItemId = waypoint.iconItemId;
+        entry.markerLabel = waypoint.markerLabel;
         entry.createdAtEpochMs = waypoint.createdAtEpochMs;
         return entry;
     }

@@ -17,6 +17,8 @@ public record WaypointRenderEntry(
     double y,
     double z,
     int colorArgb,
+    String iconItemId,
+    String markerLabel,
     Waypoint.Type type,
     Source source,
     boolean crossDimensionVisible
@@ -27,6 +29,8 @@ public record WaypointRenderEntry(
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(dimensionId, "dimensionId");
+        iconItemId = iconItemId == null ? "" : iconItemId;
+        markerLabel = markerLabel == null ? "" : markerLabel;
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(source, "source");
     }
@@ -42,7 +46,25 @@ public record WaypointRenderEntry(
         final Waypoint.Type type,
         final Source source
     ) {
-        this(id, name, dimensionId, x, y, z, colorArgb, type, source, false);
+        this(id, name, dimensionId, x, y, z, colorArgb, "", "", type, source, false);
+    }
+
+    public WaypointRenderEntry(
+        final UUID id,
+        final String name,
+        final DimensionId dimensionId,
+        final double x,
+        final double y,
+        final double z,
+        final int colorArgb,
+        final Waypoint.Type type,
+        final Source source,
+        final boolean crossDimensionVisible
+    ) {
+        this(
+            id, name, dimensionId, x, y, z, colorArgb, "", "", type, source,
+            crossDimensionVisible
+        );
     }
 
     public boolean local() {

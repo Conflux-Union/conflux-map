@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.net.URISyntaxException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Arrays;
@@ -44,4 +47,36 @@ final class InGameHudMixinTargetTest {
             "the redirect's fill selector must match an invocation in the vanilla scoreboard method"
         );
     }
+
+    //#if MC<11900
+    @Test
+    void waypointItemRenderRestoresTheLegacyCrosshairAtlas() throws Exception {
+        final String source = Files.readString(preprocessedSource());
+
+        assertTrue(source.contains(
+            "RenderSystem.setShaderTexture(0, DrawableHelper.GUI_ICONS_TEXTURE);"
+        ));
+    }
+
+    private static Path preprocessedSource() throws URISyntaxException {
+        Path current = Path.of(
+            InGameHudMixinTargetTest.class.getProtectionDomain().getCodeSource().getLocation().toURI()
+        );
+        while (current != null && !"build".equals(current.getFileName().toString())) {
+            current = current.getParent();
+        }
+        if (current == null) {
+            throw new IllegalStateException("Could not locate the version build directory");
+        }
+        final Path preprocessed = current.resolve(
+            "preprocessed/main/java/cn/net/rms/confluxmap/mixin/InGameHudMixin.java"
+        );
+        if (Files.exists(preprocessed)) {
+            return preprocessed;
+        }
+        return current.getParent().getParent().getParent().resolve(
+            "src/main/java/cn/net/rms/confluxmap/mixin/InGameHudMixin.java"
+        );
+    }
+    //#endif
 }

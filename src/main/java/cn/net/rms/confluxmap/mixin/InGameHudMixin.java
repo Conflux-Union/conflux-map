@@ -1,5 +1,9 @@
 package cn.net.rms.confluxmap.mixin;
 
+//#if MC<11900
+import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.gui.DrawableHelper;
+//#endif
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.compat.GuiTransforms;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
@@ -63,6 +67,44 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class InGameHudMixin {
     @Unique
     private boolean confluxmap$scoreboardTransformed;
+
+    //#if MC<12104
+    @Inject(method = "renderCrosshair", at = @At("HEAD"))
+    //#if MC>=12100
+    //$$ private void confluxmap$renderWaypointItemsBeforeCrosshair(
+    //$$     final DrawContext context,
+    //$$     final net.minecraft.client.render.RenderTickCounter tickCounter,
+    //$$     final CallbackInfo ci
+    //$$ ) {
+    //#elseif MC>=12000
+    //$$ private void confluxmap$renderWaypointItemsBeforeCrosshair(
+    //$$     final DrawContext context,
+    //$$     final CallbackInfo ci
+    //$$ ) {
+    //#else
+    private void confluxmap$renderWaypointItemsBeforeCrosshair(
+        final MatrixStack matrices,
+        final CallbackInfo ci
+    ) {
+    //#endif
+        final ConfluxMapClient app = ConfluxMapClient.get();
+        if (app == null) {
+            return;
+        }
+        //#if MC>=12100
+        //$$ app.waypointItemHudRenderer().renderBeforeCrosshair(context, tickCounter);
+        //#elseif MC>=12000
+        //$$ app.waypointItemHudRenderer().renderBeforeCrosshair(context);
+        //#else
+        app.waypointItemHudRenderer().renderBeforeCrosshair(matrices);
+        //#endif
+        //#if MC<11900
+        // 1.17-1.18 bind the GUI icons before entering renderCrosshair. Rendering an item here
+        // replaces that binding with the item atlas, so restore the texture vanilla expects.
+        RenderSystem.setShaderTexture(0, DrawableHelper.GUI_ICONS_TEXTURE);
+        //#endif
+    }
+    //#endif
 
     //#if MC>=260100
     //$$ @Inject(method = "extractRenderState", at = @At("HEAD"))

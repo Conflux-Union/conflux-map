@@ -14,4 +14,5 @@ final class MinimapPlayerMarkerBoundsTest {
             "the edge inset must contain every corner of the rotated 16x16 marker"
         );
     }
+
 }

@@ -54,6 +54,9 @@ import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.Window;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
+//#if MC>=12000 && MC<12104
+//$$ import org.lwjgl.opengl.GL11;
+//#endif
 //#if MC>=11904
 //$$ import org.joml.Matrix4f;
 //#else
@@ -102,6 +105,16 @@ public final class RenderUtil {
 
     private RenderUtil() {
     }
+
+    //#if MC>=12000 && MC<12104
+    //$$ public static void clearGuiDepth() {
+    //#if MC>=12103
+    //$$     RenderSystem.clear(GL11.GL_DEPTH_BUFFER_BIT);
+    //#else
+    //$$     RenderSystem.clear(GL11.GL_DEPTH_BUFFER_BIT, MinecraftClient.IS_SYSTEM_MAC);
+    //#endif
+    //$$ }
+    //#endif
 
     /** Selects the flat position+texture shader and standard alpha blending, for textured GUI quads. */
     public static void beginTexturedQuads() {
