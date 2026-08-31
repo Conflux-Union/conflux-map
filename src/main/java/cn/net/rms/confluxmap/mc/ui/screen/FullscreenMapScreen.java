@@ -1483,10 +1483,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         );
         final boolean teleportCommandAvailable = teleportAccess.available();
         teleportLocationUnavailableKey = teleportAccess.reasonKey();
-        final boolean existingWaypoint = locationMenuWaypoint != null;
+        final boolean existingWaypoint = FullscreenMapLocationMenu.isSavedWaypoint(
+            locationMenuWaypoint
+        );
         final boolean waypointEditable = existingWaypoint && waypointEditable(locationMenuWaypoint);
         final List<FullscreenMapLocationMenu.Action> actions = FullscreenMapLocationMenu.actions(
-            teleportCommandAvailable, existingWaypoint
+            teleportCommandAvailable, existingWaypoint, locationMenuTargetHighlighted()
         );
         for (int index = 0; index < actions.size(); index++) {
             final FullscreenMapLocationMenu.Action action = actions.get(index);
@@ -1502,10 +1504,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             button.active = FullscreenMapLocationMenu.actionEnabled(
                 action, playerPresent, heightKnown, teleportCommandAvailable, waypointEditable
             );
-            if (!viewingLiveWorld() && action == FullscreenMapLocationMenu.Action.SHARE_LOCATION) {
+            if (!viewingLiveWorld()
+                && (action == FullscreenMapLocationMenu.Action.SHARE_LOCATION
+                    || action == FullscreenMapLocationMenu.Action.SHARE_WAYPOINT)) {
                 button.active = false;
             }
-            if (action == FullscreenMapLocationMenu.Action.HIGHLIGHT) {
+            if (action == FullscreenMapLocationMenu.Action.HIGHLIGHT
+                || action == FullscreenMapLocationMenu.Action.HIGHLIGHT_WAYPOINT) {
                 button.active = viewingLiveSession()
                     && (locationMenuWaypoint != null || locationMenuTarget != null);
             } else if (action == FullscreenMapLocationMenu.Action.CLEAR_HIGHLIGHT) {
@@ -1516,10 +1521,26 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 case EDIT_WAYPOINT -> editWaypointLocationButton = button;
                 case SHARE_LOCATION -> shareLocationButton = button;
                 case TELEPORT -> teleportLocationButton = button;
-                case HIGHLIGHT, CLEAR_HIGHLIGHT -> {
+                case SHARE_WAYPOINT, HIGHLIGHT, HIGHLIGHT_WAYPOINT, CLEAR_HIGHLIGHT -> {
                 }
             }
         }
+    }
+
+    private boolean locationMenuTargetHighlighted() {
+        if (!viewingLiveSession()) {
+            return false;
+        }
+        if (locationMenuWaypoint != null) {
+            return waypointHighlightState.matchesEntry(
+                locationMenuWaypoint, viewSession().dimension()
+            );
+        }
+        return locationMenuTarget != null && waypointHighlightState.matches(
+            locationMenuTarget.blockX() + 0.5,
+            locationMenuTarget.blockZ() + 0.5,
+            viewSession().dimension()
+        );
     }
 
     @Override
@@ -1915,7 +1936,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
         dismissLocationMenu();
         switch (action) {
-            case HIGHLIGHT -> {
+            case HIGHLIGHT, HIGHLIGHT_WAYPOINT -> {
                 if (waypoint != null) {
                     if (WaypointHighlightState.SELECTED_LOCATION_ID.equals(waypoint.id())) {
                         waypointHighlightState.target()
@@ -1952,6 +1973,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             case SHARE_LOCATION -> {
                 if (target.blockY().isPresent()) {
                     shareTemporaryLocation(target);
+                }
+            }
+            case SHARE_WAYPOINT -> {
+                if (waypoint != null) {
+                    shareWaypoint(waypoint);
                 }
             }
             case TELEPORT -> {
@@ -1995,6 +2021,31 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         MinecraftAccess.setScreen(client, new WaypointShareConfirmScreen(
             this, temporary, WaypointShareConfirmScreen.Target.CHAT
         ));
+    }
+
+    private void shareWaypoint(final WaypointRenderEntry waypoint) {
+        final MinecraftClient client = MinecraftClient.getInstance();
+        if (waypoint.local()) {
+            viewWaypointService().list().stream()
+                .filter(local -> local.id.equals(waypoint.id()))
+                .findFirst()
+                .ifPresent(local -> MinecraftAccess.setScreen(
+                    client,
+                    new WaypointShareConfirmScreen(
+                        this, local, WaypointShareConfirmScreen.Target.CHAT
+                    )
+                ));
+            return;
+        }
+        sharedWaypoints.find(waypoint.id()).ifPresent(shared ->
+            MinecraftAccess.setScreen(
+                client,
+                WaypointShareConfirmScreen.forSharedWaypoint(
+                    this,
+                    shared
+                )
+            )
+        );
     }
 
     private void dismissLocationMenu() {
@@ -2896,8 +2947,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             case SET_WAYPOINT -> "confluxmap.map.location_menu.set_waypoint.tooltip";
             case EDIT_WAYPOINT -> "confluxmap.map.location_menu.edit_waypoint.tooltip";
             case SHARE_LOCATION -> "confluxmap.map.location_menu.share_location.tooltip";
+            case SHARE_WAYPOINT -> "confluxmap.map.location_menu.share_waypoint.tooltip";
             case TELEPORT -> "confluxmap.map.location_menu.teleport.tooltip";
             case HIGHLIGHT -> "confluxmap.map.location_menu.highlight.tooltip";
+            case HIGHLIGHT_WAYPOINT -> "confluxmap.map.location_menu.highlight_waypoint.tooltip";
             case CLEAR_HIGHLIGHT -> "confluxmap.map.location_menu.clear_highlight.tooltip";
         };
     }

@@ -17,6 +17,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import net.minecraft.client.MinecraftClient;
@@ -47,6 +48,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
     private static final int FIELD_HEIGHT = 20;
     private static final int SWATCH_SIZE = 20;
     private static final int SWATCH_GAP = 6;
+    private static final int CUSTOM_COLOR_WIDTH = 68;
 
     private final Screen parent;
     private final UUID editingId;
@@ -75,7 +77,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
     private ButtonWidget doneButton;
     private List<String> setNames = List.of(WaypointSet.DEFAULT_NAME);
     private int selectedSetIndex;
-    private int selectedColor;
+    private final WaypointColorSelection colorSelection;
     private String errorKey;
 
     private WaypointEditScreen(
@@ -119,7 +121,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
                 : localStoreSupplier
             : () -> null;
         this.boundLocalStore = this.localStoreSupplier.get();
-        this.selectedColor = color;
+        this.colorSelection = new WaypointColorSelection(color);
     }
 
     /** Prefilled with {@code x/y/z}, taken as-is in the dimension the player is currently viewing/standing in. */
@@ -266,12 +268,17 @@ public final class WaypointEditScreen extends ConfluxScreen {
 
     @Override
     protected void init() {
+        final String draftName = nameField == null ? initialName : nameField.getText();
+        final String draftX = xField == null ? formatCoord(initialX) : xField.getText();
+        final String draftY = yField == null ? formatCoord(initialY) : yField.getText();
+        final String draftZ = zField == null ? formatCoord(initialZ) : zField.getText();
+        final String draftSet = setButton == null ? initialGroup : selectedSetName();
         final int centerX = width / 2;
         final int fieldWidth = 200;
 
         nameField = new TextFieldWidget(this.textRenderer, centerX - fieldWidth / 2, 42, fieldWidth, FIELD_HEIGHT, Text.of(""));
         nameField.setMaxLength(64);
-        nameField.setText(initialName);
+        nameField.setText(draftName);
         addDrawableChild(nameField);
         if (openedFromHotkey) {
             deferInitialFocusUntilNextTick(nameField);
@@ -282,9 +289,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
         final int coordWidth = 62;
         final int coordGap = 7;
         final int coordsLeft = centerX - (coordWidth * 3 + coordGap * 2) / 2;
-        xField = numericField(coordsLeft, 78, coordWidth, formatCoord(initialX));
-        yField = numericField(coordsLeft + coordWidth + coordGap, 78, coordWidth, formatCoord(initialY));
-        zField = numericField(coordsLeft + (coordWidth + coordGap) * 2, 78, coordWidth, formatCoord(initialZ));
+        xField = numericField(coordsLeft, 78, coordWidth, draftX);
+        yField = numericField(coordsLeft + coordWidth + coordGap, 78, coordWidth, draftY);
+        zField = numericField(coordsLeft + (coordWidth + coordGap) * 2, 78, coordWidth, draftZ);
         addDrawableChild(xField);
         addDrawableChild(yField);
         addDrawableChild(zField);
@@ -292,7 +299,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         setButton = null;
         if (createTarget == CreateTarget.LOCAL) {
             setNames = localSetNames();
-            selectedSetIndex = Math.max(0, setNames.indexOf(initialGroup));
+            selectedSetIndex = Math.max(0, setNames.indexOf(draftSet));
             setButton = addDrawableChild(Widgets.button(
                 centerX - fieldWidth / 2,
                 114,
@@ -303,95 +310,36 @@ public final class WaypointEditScreen extends ConfluxScreen {
             ));
         }
 
-        final int totalSwatchWidth = PRESET_COLORS.length * SWATCH_SIZE + (PRESET_COLORS.length - 1) * SWATCH_GAP;
+        final int totalSwatchWidth = PRESET_COLORS.length * SWATCH_SIZE
+            + (PRESET_COLORS.length - 1) * SWATCH_GAP;
         final int swatchLeft = centerX - totalSwatchWidth / 2;
         for (int i = 0; i < PRESET_COLORS.length; i++) {
             final int color = PRESET_COLORS[i];
             final int x = swatchLeft + i * (SWATCH_SIZE + SWATCH_GAP);
-            //#if MC>=260100
-            //$$ addRenderableWidget(new Button(
-            //$$     x, 150, SWATCH_SIZE, SWATCH_SIZE, Texts.literal(""),
-            //$$     b -> selectedColor = color, narration -> narration.get()
-            //$$ ) {
-            //$$     @Override
-            //$$     protected void extractContents(
-            //$$         final GuiGraphicsExtractor context,
-            //$$         final int mouseX,
-            //$$         final int mouseY,
-            //$$         final float delta
-            //$$     ) {
-            //$$         if (useVanillaButtonStyle()) {
-            //$$             extractDefaultSprite(context);
-            //$$         }
-            //$$         renderColorSwatch(GuiDraw.of(context), this, color);
-            //$$     }
-            //$$ });
-            //#elseif MC>=12111
-            //$$ addDrawableChild(new ButtonWidget(
-            //$$     x, 150, SWATCH_SIZE, SWATCH_SIZE, Texts.literal(""),
-            //$$     b -> selectedColor = color, narration -> narration.get()
-            //$$ ) {
-            //$$     @Override
-            //$$     protected void drawIcon(
-            //$$         final DrawContext context,
-            //$$         final int mouseX,
-            //$$         final int mouseY,
-            //$$         final float delta
-            //$$     ) {
-            //$$         if (useVanillaButtonStyle()) {
-            //$$             drawButton(context);
-            //$$         }
-            //$$         renderColorSwatch(GuiDraw.of(context), this, color);
-            //$$     }
-            //$$ });
-            //#elseif MC>=12002
-            //$$ addDrawableChild(new ButtonWidget(
-            //$$     x, 150, SWATCH_SIZE, SWATCH_SIZE, Text.of(""),
-            //$$     b -> selectedColor = color, narration -> narration.get()
-            //$$ ) {
-            //$$     @Override
-            //$$     protected void renderWidget(
-            //$$         final DrawContext context,
-            //$$         final int mouseX,
-            //$$         final int mouseY,
-            //$$         final float delta
-            //$$     ) {
-            //$$         if (useVanillaButtonStyle()) {
-            //$$             super.renderWidget(context, mouseX, mouseY, delta);
-            //$$         }
-            //$$         renderColorSwatch(GuiDraw.of(context), this, color);
-            //$$     }
-            //$$ });
-            //#elseif MC>=12000
-            //$$ addDrawableChild(new ButtonWidget(
-            //$$     x, 150, SWATCH_SIZE, SWATCH_SIZE, Text.of(""),
-            //$$     b -> selectedColor = color, narration -> narration.get()
-            //$$ ) {
-            //$$     @Override
-            //$$     protected void renderButton(
-            //$$         final DrawContext context,
-            //$$         final int mouseX,
-            //$$         final int mouseY,
-            //$$         final float delta
-            //$$     ) {
-            //$$         if (useVanillaButtonStyle()) {
-            //$$             super.renderButton(context, mouseX, mouseY, delta);
-            //$$         }
-            //$$         renderColorSwatch(GuiDraw.of(context), this, color);
-            //$$     }
-            //$$ });
-            //#else
-            addDrawableChild(new ButtonWidget(x, 150, SWATCH_SIZE, SWATCH_SIZE, Text.of(""), b -> selectedColor = color) {
-                @Override
-                public void renderButton(final MatrixStack matrices, final int mouseX, final int mouseY, final float delta) {
-                    if (useVanillaButtonStyle()) {
-                        super.renderButton(matrices, mouseX, mouseY, delta);
-                    }
-                    renderColorSwatch(GuiDraw.of(matrices), this, color);
-                }
-            });
-            //#endif
+            addColorSwatch(x, 150, () -> color, () -> colorSelection.selectPreset(color));
         }
+        final int customButtonLeft = centerX - CUSTOM_COLOR_WIDTH / 2;
+        addColorSwatch(
+            customButtonLeft - SWATCH_GAP - SWATCH_SIZE,
+            176,
+            colorSelection::custom,
+            colorSelection::selectCustom
+        );
+        addDrawableChild(Widgets.button(
+            customButtonLeft,
+            176,
+            CUSTOM_COLOR_WIDTH,
+            SWATCH_SIZE,
+            Texts.translatable("confluxmap.screen.waypoint.color_custom"),
+            button -> MinecraftAccess.setScreen(
+                MinecraftClient.getInstance(),
+                new WaypointColorPickerScreen(
+                    this,
+                    colorSelection.custom(),
+                    colorSelection::updateCustom
+                )
+            )
+        ));
 
         doneButton = addDrawableChild(Widgets.button(
             centerX - 104, height - 32, 100, FIELD_HEIGHT, Texts.translatable("confluxmap.screen.waypoint.done"), b -> onDone()
@@ -429,6 +377,104 @@ public final class WaypointEditScreen extends ConfluxScreen {
         return field;
     }
 
+    private void addColorSwatch(
+        final int x,
+        final int y,
+        final IntSupplier color,
+        final Runnable onPress
+    ) {
+        //#if MC>=260100
+        //$$ addRenderableWidget(new Button(
+        //$$     x, y, SWATCH_SIZE, SWATCH_SIZE, Texts.literal(""),
+        //$$     b -> onPress.run(), narration -> narration.get()
+        //$$ ) {
+        //$$     @Override
+        //$$     protected void extractContents(
+        //$$         final GuiGraphicsExtractor context,
+        //$$         final int mouseX,
+        //$$         final int mouseY,
+        //$$         final float delta
+        //$$     ) {
+        //$$         if (useVanillaButtonStyle()) {
+        //$$             extractDefaultSprite(context);
+        //$$         }
+        //$$         renderColorSwatch(GuiDraw.of(context), this, color.getAsInt());
+        //$$     }
+        //$$ });
+        //#elseif MC>=12111
+        //$$ addDrawableChild(new ButtonWidget(
+        //$$     x, y, SWATCH_SIZE, SWATCH_SIZE, Texts.literal(""),
+        //$$     b -> onPress.run(), narration -> narration.get()
+        //$$ ) {
+        //$$     @Override
+        //$$     protected void drawIcon(
+        //$$         final DrawContext context,
+        //$$         final int mouseX,
+        //$$         final int mouseY,
+        //$$         final float delta
+        //$$     ) {
+        //$$         if (useVanillaButtonStyle()) {
+        //$$             drawButton(context);
+        //$$         }
+        //$$         renderColorSwatch(GuiDraw.of(context), this, color.getAsInt());
+        //$$     }
+        //$$ });
+        //#elseif MC>=12002
+        //$$ addDrawableChild(new ButtonWidget(
+        //$$     x, y, SWATCH_SIZE, SWATCH_SIZE, Text.of(""),
+        //$$     b -> onPress.run(), narration -> narration.get()
+        //$$ ) {
+        //$$     @Override
+        //$$     protected void renderWidget(
+        //$$         final DrawContext context,
+        //$$         final int mouseX,
+        //$$         final int mouseY,
+        //$$         final float delta
+        //$$     ) {
+        //$$         if (useVanillaButtonStyle()) {
+        //$$             super.renderWidget(context, mouseX, mouseY, delta);
+        //$$         }
+        //$$         renderColorSwatch(GuiDraw.of(context), this, color.getAsInt());
+        //$$     }
+        //$$ });
+        //#elseif MC>=12000
+        //$$ addDrawableChild(new ButtonWidget(
+        //$$     x, y, SWATCH_SIZE, SWATCH_SIZE, Text.of(""),
+        //$$     b -> onPress.run(), narration -> narration.get()
+        //$$ ) {
+        //$$     @Override
+        //$$     protected void renderButton(
+        //$$         final DrawContext context,
+        //$$         final int mouseX,
+        //$$         final int mouseY,
+        //$$         final float delta
+        //$$     ) {
+        //$$         if (useVanillaButtonStyle()) {
+        //$$             super.renderButton(context, mouseX, mouseY, delta);
+        //$$         }
+        //$$         renderColorSwatch(GuiDraw.of(context), this, color.getAsInt());
+        //$$     }
+        //$$ });
+        //#else
+        addDrawableChild(new ButtonWidget(
+            x, y, SWATCH_SIZE, SWATCH_SIZE, Text.of(""), b -> onPress.run()
+        ) {
+            @Override
+            public void renderButton(
+                final MatrixStack matrices,
+                final int mouseX,
+                final int mouseY,
+                final float delta
+            ) {
+                if (useVanillaButtonStyle()) {
+                    super.renderButton(matrices, mouseX, mouseY, delta);
+                }
+                renderColorSwatch(GuiDraw.of(matrices), this, color.getAsInt());
+            }
+        });
+        //#endif
+    }
+
     private void renderColorSwatch(final GuiDraw draw, final ButtonWidget button, final int color) {
         final MatrixStack matrices = draw.matrices();
         final int x = Widgets.x(button);
@@ -440,7 +486,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
                 matrices, x + inset, y + inset, swatchSize, swatchSize,
                 color | 0xFF000000
             );
-            if (color == selectedColor) {
+            if (color == colorSelection.selected()) {
                 RenderUtil.fillRect(
                     matrices, x + inset, y + inset, swatchSize, 1, 0xFFFFFFFF
                 );
@@ -459,7 +505,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
             return;
         }
         RenderUtil.fillRect(matrices, x, y, button.getWidth(), button.getHeight(), color | 0xFF000000);
-        if (color == selectedColor) {
+        if (color == colorSelection.selected()) {
             RenderUtil.fillRect(matrices, x - 2, y - 2, button.getWidth() + 4, 2, 0xFFFFFFFF);
             RenderUtil.fillRect(matrices, x - 2, y + button.getHeight(), button.getWidth() + 4, 2, 0xFFFFFFFF);
             RenderUtil.fillRect(matrices, x - 2, y - 2, 2, button.getHeight() + 4, 0xFFFFFFFF);
@@ -549,7 +595,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         final Waypoint waypoint = new Waypoint(
             editingId == null ? UUID.randomUUID() : editingId,
             values.name(), dimensionId, values.x(), values.y(), values.z(),
-            selectedColor, selectedSetName(),
+            colorSelection.selected(), selectedSetName(),
             initialVisible, type, createdAtEpochMs
         );
         if (editingId == null && createTarget != CreateTarget.LOCAL) {

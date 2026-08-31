@@ -1,6 +1,8 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.core.model.MapLayer;
+import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
+import cn.net.rms.confluxmap.mc.ui.world.WaypointHighlightState;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import java.util.List;
 import java.util.OptionalInt;
@@ -18,8 +20,10 @@ final class FullscreenMapLocationMenu {
         SET_WAYPOINT("confluxmap.map.location_menu.set_waypoint"),
         EDIT_WAYPOINT("confluxmap.map.location_menu.edit_waypoint"),
         SHARE_LOCATION("confluxmap.map.location_menu.share_location"),
+        SHARE_WAYPOINT("confluxmap.map.location_menu.share_waypoint"),
         TELEPORT("confluxmap.map.location_menu.teleport"),
         HIGHLIGHT("confluxmap.map.location_menu.highlight"),
+        HIGHLIGHT_WAYPOINT("confluxmap.map.location_menu.highlight_waypoint"),
         CLEAR_HIGHLIGHT("confluxmap.map.location_menu.clear_highlight");
 
         private final String translationKey;
@@ -33,50 +37,32 @@ final class FullscreenMapLocationMenu {
         }
     }
 
-    private static final List<Action> DEFAULT_ACTIONS = List.of(
-        Action.SET_WAYPOINT,
-        Action.SHARE_LOCATION,
-        Action.TELEPORT,
-        Action.HIGHLIGHT,
-        Action.CLEAR_HIGHLIGHT
-    );
-    private static final List<Action> TELEPORT_FIRST_ACTIONS = List.of(
-        Action.TELEPORT,
-        Action.SET_WAYPOINT,
-        Action.SHARE_LOCATION,
-        Action.HIGHLIGHT,
-        Action.CLEAR_HIGHLIGHT
-    );
-    private static final List<Action> EDIT_ACTIONS = List.of(
-        Action.EDIT_WAYPOINT,
-        Action.SHARE_LOCATION,
-        Action.TELEPORT,
-        Action.HIGHLIGHT,
-        Action.CLEAR_HIGHLIGHT
-    );
-    private static final List<Action> EDIT_TELEPORT_FIRST_ACTIONS = List.of(
-        Action.TELEPORT,
-        Action.EDIT_WAYPOINT,
-        Action.SHARE_LOCATION,
-        Action.HIGHLIGHT,
-        Action.CLEAR_HIGHLIGHT
-    );
+    private static final int ACTION_COUNT = 4;
     private static final int PANEL_HEIGHT = PANEL_PADDING * 2
-        + DEFAULT_ACTIONS.size() * BUTTON_HEIGHT
-        + (DEFAULT_ACTIONS.size() - 1) * BUTTON_GAP;
+        + ACTION_COUNT * BUTTON_HEIGHT
+        + (ACTION_COUNT - 1) * BUTTON_GAP;
 
     private FullscreenMapLocationMenu() {
     }
 
-    static List<Action> actions(final boolean teleportCommandAvailable) {
-        return teleportCommandAvailable ? TELEPORT_FIRST_ACTIONS : DEFAULT_ACTIONS;
+    static List<Action> actions(
+        final boolean teleportCommandAvailable,
+        final boolean existingWaypoint,
+        final boolean currentTargetHighlighted
+    ) {
+        final Action edit = existingWaypoint ? Action.EDIT_WAYPOINT : Action.SET_WAYPOINT;
+        final Action share = existingWaypoint ? Action.SHARE_WAYPOINT : Action.SHARE_LOCATION;
+        final Action highlight = currentTargetHighlighted
+            ? Action.CLEAR_HIGHLIGHT
+            : existingWaypoint ? Action.HIGHLIGHT_WAYPOINT : Action.HIGHLIGHT;
+        return teleportCommandAvailable
+            ? List.of(Action.TELEPORT, edit, share, highlight)
+            : List.of(edit, share, Action.TELEPORT, highlight);
     }
 
-    static List<Action> actions(final boolean teleportCommandAvailable, final boolean existingWaypoint) {
-        if (!existingWaypoint) {
-            return actions(teleportCommandAvailable);
-        }
-        return teleportCommandAvailable ? EDIT_TELEPORT_FIRST_ACTIONS : EDIT_ACTIONS;
+    static boolean isSavedWaypoint(final WaypointRenderEntry waypoint) {
+        return waypoint != null
+            && !WaypointHighlightState.SELECTED_LOCATION_ID.equals(waypoint.id());
     }
 
     static boolean actionEnabled(
@@ -88,7 +74,12 @@ final class FullscreenMapLocationMenu {
         if (!playerPresent) {
             return false;
         }
-        if (action == Action.HIGHLIGHT || action == Action.CLEAR_HIGHLIGHT) {
+        if (action == Action.HIGHLIGHT
+            || action == Action.HIGHLIGHT_WAYPOINT
+            || action == Action.CLEAR_HIGHLIGHT) {
+            return true;
+        }
+        if (action == Action.SHARE_WAYPOINT) {
             return true;
         }
         return action == Action.TELEPORT ? teleportCommandAvailable : estimatedHeightKnown;

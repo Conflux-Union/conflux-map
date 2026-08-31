@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
+import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.chat.WaypointChatCodec;
 import cn.net.rms.confluxmap.mc.chat.WaypointChatDiagnostics;
@@ -43,9 +44,18 @@ public final class WaypointShareConfirmScreen extends ConfluxScreen {
 
     public static WaypointShareConfirmScreen forSharedWaypoint(
         final Screen parent,
-        final Waypoint waypoint
+        final SharedWaypoint waypoint
     ) {
-        return new WaypointShareConfirmScreen(parent, waypoint, Target.CHAT, false);
+        return new WaypointShareConfirmScreen(
+            parent,
+            new Waypoint(
+                waypoint.id(), waypoint.name(), waypoint.dimensionId(),
+                waypoint.x(), waypoint.y(), waypoint.z(), waypoint.colorArgb(), "", true,
+                waypoint.type(), waypoint.createdAtEpochMs()
+            ),
+            Target.CHAT,
+            false
+        );
     }
 
     private WaypointShareConfirmScreen(

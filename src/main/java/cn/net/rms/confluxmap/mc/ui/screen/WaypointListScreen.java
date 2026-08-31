@@ -941,7 +941,7 @@ public final class WaypointListScreen extends ConfluxScreen {
     private void openSharedShare(final SharedWaypoint waypoint) {
         MinecraftAccess.setScreen(MinecraftClient.getInstance(), WaypointShareConfirmScreen.forSharedWaypoint(
             this,
-            displayCopy(waypoint)
+            waypoint
         ));
     }
 
@@ -2061,14 +2061,6 @@ public final class WaypointListScreen extends ConfluxScreen {
         final double dz = DimensionScale.convertHorizontal(z, waypointDimension, currentDimension) - pz;
         final double dy = y - py;
         return Math.sqrt(dx * dx + dy * dy + dz * dz);
-    }
-
-    private static Waypoint displayCopy(final SharedWaypoint waypoint) {
-        return new Waypoint(
-            waypoint.id(), waypoint.name(), waypoint.dimensionId(),
-            waypoint.x(), waypoint.y(), waypoint.z(), waypoint.colorArgb(), "", true,
-            waypoint.type(), waypoint.createdAtEpochMs()
-        );
     }
 
     private static String tabKey(final Tab tab) {

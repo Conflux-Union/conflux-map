@@ -4,10 +4,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
+import cn.net.rms.confluxmap.core.waypoint.Waypoint;
+import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
+import cn.net.rms.confluxmap.mc.ui.world.WaypointHighlightState;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import java.util.List;
 import java.util.OptionalInt;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class FullscreenMapLocationMenuTest {
@@ -17,9 +22,8 @@ class FullscreenMapLocationMenuTest {
             FullscreenMapLocationMenu.Action.SET_WAYPOINT,
             FullscreenMapLocationMenu.Action.SHARE_LOCATION,
             FullscreenMapLocationMenu.Action.TELEPORT,
-            FullscreenMapLocationMenu.Action.HIGHLIGHT,
-            FullscreenMapLocationMenu.Action.CLEAR_HIGHLIGHT
-        ), FullscreenMapLocationMenu.actions(false));
+            FullscreenMapLocationMenu.Action.HIGHLIGHT
+        ), FullscreenMapLocationMenu.actions(false, false, false));
     }
 
     @Test
@@ -28,27 +32,66 @@ class FullscreenMapLocationMenuTest {
             FullscreenMapLocationMenu.Action.TELEPORT,
             FullscreenMapLocationMenu.Action.SET_WAYPOINT,
             FullscreenMapLocationMenu.Action.SHARE_LOCATION,
-            FullscreenMapLocationMenu.Action.HIGHLIGHT,
-            FullscreenMapLocationMenu.Action.CLEAR_HIGHLIGHT
-        ), FullscreenMapLocationMenu.actions(true));
+            FullscreenMapLocationMenu.Action.HIGHLIGHT
+        ), FullscreenMapLocationMenu.actions(true, false, false));
     }
 
     @Test
-    void replacesCreateActionWithEditForAnExistingWaypoint() {
+    void replacesLocationActionsWithWaypointActionsForAnExistingWaypoint() {
         assertEquals(List.of(
             FullscreenMapLocationMenu.Action.EDIT_WAYPOINT,
-            FullscreenMapLocationMenu.Action.SHARE_LOCATION,
+            FullscreenMapLocationMenu.Action.SHARE_WAYPOINT,
             FullscreenMapLocationMenu.Action.TELEPORT,
-            FullscreenMapLocationMenu.Action.HIGHLIGHT,
-            FullscreenMapLocationMenu.Action.CLEAR_HIGHLIGHT
-        ), FullscreenMapLocationMenu.actions(false, true));
+            FullscreenMapLocationMenu.Action.HIGHLIGHT_WAYPOINT
+        ), FullscreenMapLocationMenu.actions(false, true, false));
         assertEquals(List.of(
             FullscreenMapLocationMenu.Action.TELEPORT,
             FullscreenMapLocationMenu.Action.EDIT_WAYPOINT,
+            FullscreenMapLocationMenu.Action.SHARE_WAYPOINT,
+            FullscreenMapLocationMenu.Action.HIGHLIGHT_WAYPOINT
+        ), FullscreenMapLocationMenu.actions(true, true, false));
+    }
+
+    @Test
+    void replacesHighlightWithClearOnlyForTheCurrentTarget() {
+        assertEquals(List.of(
+            FullscreenMapLocationMenu.Action.SET_WAYPOINT,
             FullscreenMapLocationMenu.Action.SHARE_LOCATION,
-            FullscreenMapLocationMenu.Action.HIGHLIGHT,
+            FullscreenMapLocationMenu.Action.TELEPORT,
             FullscreenMapLocationMenu.Action.CLEAR_HIGHLIGHT
-        ), FullscreenMapLocationMenu.actions(true, true));
+        ), FullscreenMapLocationMenu.actions(false, false, true));
+        assertEquals(List.of(
+            FullscreenMapLocationMenu.Action.EDIT_WAYPOINT,
+            FullscreenMapLocationMenu.Action.SHARE_WAYPOINT,
+            FullscreenMapLocationMenu.Action.TELEPORT,
+            FullscreenMapLocationMenu.Action.CLEAR_HIGHLIGHT
+        ), FullscreenMapLocationMenu.actions(false, true, true));
+    }
+
+    @Test
+    void syntheticHighlightedLocationIsNotTreatedAsASavedWaypoint() {
+        assertFalse(FullscreenMapLocationMenu.isSavedWaypoint(new WaypointRenderEntry(
+            WaypointHighlightState.SELECTED_LOCATION_ID,
+            "Selected location",
+            DimensionId.OVERWORLD,
+            10.5,
+            64.0,
+            20.5,
+            0xFFFFFFFF,
+            Waypoint.Type.NORMAL,
+            WaypointRenderEntry.Source.LOCAL
+        )));
+        assertTrue(FullscreenMapLocationMenu.isSavedWaypoint(new WaypointRenderEntry(
+            UUID.randomUUID(),
+            "Saved waypoint",
+            DimensionId.OVERWORLD,
+            10.5,
+            64.0,
+            20.5,
+            0xFFFFFFFF,
+            Waypoint.Type.NORMAL,
+            WaypointRenderEntry.Source.LOCAL
+        )));
     }
 
     @Test
@@ -104,6 +147,9 @@ class FullscreenMapLocationMenuTest {
         ));
         assertFalse(FullscreenMapLocationMenu.actionEnabled(
             FullscreenMapLocationMenu.Action.SHARE_LOCATION, true, false, true
+        ));
+        assertTrue(FullscreenMapLocationMenu.actionEnabled(
+            FullscreenMapLocationMenu.Action.SHARE_WAYPOINT, true, false, true
         ));
     }
 
