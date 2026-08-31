@@ -333,8 +333,32 @@ public final class MinimapHudRenderer {
         drawRadar(draw, centerX, centerY, contentSize, mapAngle, player, tickDelta);
         drawCardinals(draw, centerX, centerY, contentSize, mapAngle);
         drawWaypointMarkers(draw, centerX, centerY, contentSize, mapAngle, player);
+        drawCameraMarker(matrices, player, centerX, centerY, rotate);
         drawLocalPlayerMarker(matrices, player, centerX, centerY, contentSize, rotate, tickDelta);
         drawInfoText(draw, player, x0, y0, size);
+    }
+
+    private void drawCameraMarker(
+        final MatrixStack matrices,
+        final PlayerView viewpoint,
+        final float centerX,
+        final float centerY,
+        final boolean rotate
+    ) {
+        if (!gameBridge.isCameraDetached()) {
+            return;
+        }
+        PlayerMarkerRenderer.draw(
+            client,
+            matrices,
+            uiTheme,
+            config.playerMarkerStyle,
+            centerX,
+            centerY,
+            rotate ? 0f : viewpoint.yawDegrees() + 180f,
+            PLAYER_MARKER_COLOR,
+            0.5f
+        );
     }
 
     /** Draws the real player's position relative to the active map viewpoint. */

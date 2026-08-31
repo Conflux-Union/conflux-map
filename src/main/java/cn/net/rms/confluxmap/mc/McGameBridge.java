@@ -51,6 +51,13 @@ public final class McGameBridge implements GameBridge {
         return viewOf(viewEntity, tickDelta);
     }
 
+    @Override
+    public boolean isCameraDetached() {
+        final ClientPlayerEntity player = client.player;
+        final Entity cameraEntity = client.getCameraEntity();
+        return player != null && cameraEntity != null && cameraEntity != player;
+    }
+
     private Optional<PlayerView> viewOf(final Entity entity, final float tickDelta) {
         final Identifier dim = client.world.getRegistryKey().getValue();
         return Optional.of(new PlayerView(

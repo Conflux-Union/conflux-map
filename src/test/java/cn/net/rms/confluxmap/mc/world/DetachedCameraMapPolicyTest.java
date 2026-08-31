@@ -35,6 +35,46 @@ final class DetachedCameraMapPolicyTest {
     }
 
     @Test
+    void bridgeReportsWhetherTheCameraEntityIsDetached() throws Exception {
+        final String bridge = Files.readString(preprocessedSource(
+            "cn/net/rms/confluxmap/mc/McGameBridge.java"
+        ));
+
+        assertTrue(bridge.contains("public boolean isCameraDetached()"));
+        assertTrue(bridge.contains("cameraEntity != null && cameraEntity != player"));
+    }
+
+    @Test
+    void detachedCameraMarkerIsDrawnOnBothLiveMaps() throws Exception {
+        final String minimap = Files.readString(preprocessedSource(
+            "cn/net/rms/confluxmap/mc/ui/hud/MinimapHudRenderer.java"
+        ));
+        final String fullscreen = Files.readString(preprocessedSource(
+            "cn/net/rms/confluxmap/mc/ui/screen/FullscreenMapScreen.java"
+        ));
+        final String minimapMarker = sourceBetween(
+            minimap,
+            "private void drawCameraMarker(",
+            "\n    /** Draws the real player's position"
+        );
+        final String fullscreenMarker = sourceBetween(
+            fullscreen,
+            "private void drawCameraMarker(",
+            "\n    /** Always north-locked"
+        );
+
+        assertTrue(minimap.contains("gameBridge.isCameraDetached()"));
+        assertTrue(minimap.contains("drawCameraMarker("));
+        assertTrue(minimapMarker.contains("0.5f"));
+        assertTrue(fullscreen.contains("gameBridge.isCameraDetached()"));
+        assertTrue(fullscreen.contains("drawCameraMarker("));
+        assertTrue(fullscreenMarker.contains("0.5f"));
+        assertTrue(fullscreen.contains(
+            "private static final int PLAYER_MARKER_COLOR = 0xFFFFFFFF;"
+        ));
+    }
+
+    @Test
     void chunkCaptureRefreshFollowsTheActiveCamera() throws Exception {
         final String source = Files.readString(preprocessedSource(
             "cn/net/rms/confluxmap/mc/snapshot/ChunkCaptureService.java"

@@ -379,6 +379,8 @@
   "confluxmap.screen.structure_search.field": "结构名称",
   "confluxmap.screen.structure_search.prompt": "选择要显示的结构，或定位最近的候选位置",
   "confluxmap.screen.structure_search.master": "显示结构图层：%s",
+  "confluxmap.screen.structure_search.select_all": "全选",
+  "confluxmap.screen.structure_search.select_none": "全不选",
   "confluxmap.screen.structure_search.locate": "定位",
   "confluxmap.screen.structure_search.back": "返回",
   "confluxmap.screen.structure_search.empty": "没有匹配的结构",

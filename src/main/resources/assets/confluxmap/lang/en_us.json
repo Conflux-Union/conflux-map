@@ -379,6 +379,8 @@
   "confluxmap.screen.structure_search.field": "Structure name",
   "confluxmap.screen.structure_search.prompt": "Choose visible structures or locate the nearest candidate",
   "confluxmap.screen.structure_search.master": "Show Structure Layer: %s",
+  "confluxmap.screen.structure_search.select_all": "Select All",
+  "confluxmap.screen.structure_search.select_none": "Select None",
   "confluxmap.screen.structure_search.locate": "Locate",
   "confluxmap.screen.structure_search.back": "Back",
   "confluxmap.screen.structure_search.empty": "No matching structures",

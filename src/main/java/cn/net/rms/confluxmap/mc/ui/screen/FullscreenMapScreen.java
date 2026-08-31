@@ -272,7 +272,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final int LOCATION_MENU_BORDER = 0xFF9A9AA8;
     private static final int TEMPORARY_LOCATION_COLOR = 0xFF3498DB;
     private static final int GRID_COLOR = 0x22FFFFFF;
-    private static final int PLAYER_MARKER_COLOR = 0xFFFFE066;
+    private static final int PLAYER_MARKER_COLOR = 0xFFFFFFFF;
     private static final double MIN_GRID_SPACING_PX = 8.0;
     /** Xaero-style faint dark lattice on chunk borders, understated over both light and dark terrain. */
     private static final int CHUNK_GRID_COLOR = 0x40000000;
@@ -2325,6 +2325,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         drawRadar(draw, tickDelta);
 
         drawWaypoints(draw, mouseX, mouseY, radarObserver);
+        drawCameraMarker(matrices, radarObserver);
         drawPlayerMarker(matrices, tickDelta);
         drawExportSelection(draw, mouseX, mouseY);
         drawDimensionLabel(draw);
@@ -3642,6 +3643,34 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         RenderUtil.fillRect(matrices, screenX, screenY + sizePx - 1f, sizePx, 1f, CHUNK_HIGHLIGHT_BORDER);
         RenderUtil.fillRect(matrices, screenX, screenY, 1f, sizePx, CHUNK_HIGHLIGHT_BORDER);
         RenderUtil.fillRect(matrices, screenX + sizePx - 1f, screenY, 1f, sizePx, CHUNK_HIGHLIGHT_BORDER);
+    }
+
+    /** Draws a translucent marker at the detached camera's world position. */
+    private void drawCameraMarker(
+        final MatrixStack matrices,
+        final Optional<PlayerView> viewpoint
+    ) {
+        if (!viewingLiveSession() || !gameBridge.isCameraDetached()) {
+            return;
+        }
+        if (viewpoint.isEmpty()) {
+            return;
+        }
+        final PlayerView camera = viewpoint.get();
+        final double pxPerBlock = 1.0 / scale;
+        final float screenX = (float) (width / 2.0 + (camera.x() - centerX) * pxPerBlock);
+        final float screenY = (float) (height / 2.0 + (camera.z() - centerZ) * pxPerBlock);
+        PlayerMarkerRenderer.draw(
+            this.client,
+            matrices,
+            uiTheme,
+            config.playerMarkerStyle,
+            screenX,
+            screenY,
+            camera.yawDegrees() + 180f,
+            PLAYER_MARKER_COLOR,
+            0.5f
+        );
     }
 
     /** Always north-locked, so only the arrow itself rotates with the player's facing (mirrors {@code MinimapHudRenderer}'s north-locked mode). */

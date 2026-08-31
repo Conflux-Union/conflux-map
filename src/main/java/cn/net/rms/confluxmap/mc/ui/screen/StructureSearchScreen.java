@@ -30,7 +30,8 @@ final class StructureSearchScreen extends ConfluxScreen {
     private static final int FIELD_WIDTH = 240;
     private static final int FIELD_HEIGHT = 20;
     private static final int MASTER_TOP = 62;
-    private static final int LIST_TOP = 100;
+    private static final int BULK_TOP = 86;
+    private static final int LIST_TOP = 124;
     private static final int ROW_HEIGHT = 24;
     private static final int ICON_SIZE = 16;
     private static final int TOGGLE_WIDTH = 58;
@@ -53,6 +54,8 @@ final class StructureSearchScreen extends ConfluxScreen {
 
     private TextFieldWidget searchField;
     private ButtonWidget masterButton;
+    private ButtonWidget selectAllButton;
+    private ButtonWidget selectNoneButton;
     private String observedQuery = "";
     private int scrollOffset;
     private int filteredCount;
@@ -113,6 +116,23 @@ final class StructureSearchScreen extends ConfluxScreen {
             20,
             masterLabel(),
             ignored -> toggleMasterVisibility()
+        ));
+        final int bulkWidth = (masterWidth - BUTTON_GAP) / 2;
+        selectAllButton = addDrawableChild(Widgets.button(
+            layout.panelCenterX() - masterWidth / 2,
+            BULK_TOP,
+            bulkWidth,
+            20,
+            Texts.translatable("confluxmap.screen.structure_search.select_all"),
+            ignored -> setFilteredVisibility(true)
+        ));
+        selectNoneButton = addDrawableChild(Widgets.button(
+            layout.panelCenterX() - masterWidth / 2 + bulkWidth + BUTTON_GAP,
+            BULK_TOP,
+            masterWidth - bulkWidth - BUTTON_GAP,
+            20,
+            Texts.translatable("confluxmap.screen.structure_search.select_none"),
+            ignored -> setFilteredVisibility(false)
         ));
 
         final int listWidth = Math.max(
@@ -213,6 +233,23 @@ final class StructureSearchScreen extends ConfluxScreen {
         saveConfig();
     }
 
+    private void setFilteredVisibility(final boolean visible) {
+        if (!companion.structureSearchAllowed()) {
+            return;
+        }
+        final List<StructureIndex.StructureType> targets = filteredTypes();
+        if (targets.isEmpty()) {
+            return;
+        }
+        for (final StructureIndex.StructureType type : targets) {
+            config.predictionStructureVisibility.setVisible(
+                structures.mcVersion(), dimension, type, visible
+            );
+            visibilityButtons.get(type).setMessage(visibilityLabel(type));
+        }
+        saveConfig();
+    }
+
     private boolean isVisible(final StructureIndex.StructureType type) {
         return config.predictionStructureVisibility.isVisible(
             structures.mcVersion(), dimension, type
@@ -243,6 +280,14 @@ final class StructureSearchScreen extends ConfluxScreen {
         if (masterButton != null) {
             masterButton.active = allowed;
             setDisabledTooltip(masterButton, reasonKey);
+        }
+        if (selectAllButton != null) {
+            selectAllButton.active = allowed;
+            setDisabledTooltip(selectAllButton, reasonKey);
+        }
+        if (selectNoneButton != null) {
+            selectNoneButton.active = allowed;
+            setDisabledTooltip(selectNoneButton, reasonKey);
         }
         for (final ButtonWidget button : visibilityButtons.values()) {
             button.active = allowed;
@@ -435,7 +480,7 @@ final class StructureSearchScreen extends ConfluxScreen {
         mapPane.render(draw, mouseX, mouseY, tickDelta, layout);
         drawPanelCentered(draw, getTitle().getString(), 12, 0xFFFFFFFF, layout);
         final String prompt = Texts.translatable("confluxmap.screen.structure_search.prompt").getString();
-        drawPanelCentered(draw, prompt, 87, 0xFFBBBBBB, layout);
+        drawPanelCentered(draw, prompt, 111, 0xFFBBBBBB, layout);
         final List<StructureIndex.StructureType> filtered = filteredTypes();
         final int end = Math.min(filtered.size(), scrollOffset + visibleRows());
         StructureSearchScrollBar.drawListSurface(
