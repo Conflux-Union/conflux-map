@@ -131,13 +131,18 @@ class PortraitLayoutTest {
         for (final String entityType : new String[] {
             "minecraft:cod",
             "minecraft:salmon",
+            "minecraft:pufferfish",
             "minecraft:tropical_fish"
         }) {
             final PortraitLayout.Profile profile = PortraitLayout.profile(entityType);
             assertEquals(90f, profile.yawDegrees(), EPSILON, entityType);
             assertEquals(0f, profile.pitchDegrees(), EPSILON, entityType);
             assertTrue(profile.resetPartRotation(), entityType);
-            assertEquals(PortraitLayout.Framing.DOMINANT, profile.framing(), entityType);
+            assertEquals(PortraitLayout.Framing.COMPLETE, profile.framing(), entityType);
+            assertTrue(
+                HeadPartSelector.usesFullModel(entityType),
+                entityType + " must render its complete body"
+            );
         }
 
         final PortraitLayout.Profile happyGhast = PortraitLayout.profile(

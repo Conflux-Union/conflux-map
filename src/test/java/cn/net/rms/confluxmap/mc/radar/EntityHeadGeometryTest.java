@@ -254,6 +254,32 @@ final class EntityHeadGeometryTest {
         assertTrue(geometry.length > 0, "a planar face must not degrade to a category dot");
     }
 
+    @Test
+    void fishPortraitFitsTailAndFinsInsideTheAtlasCell() {
+        final ModelData data = new ModelData();
+        final var body = data.getRoot().addChild(
+            "body",
+            ModelPartBuilder.create().uv(0, 0).cuboid(-2f, -3f, -6f, 4f, 6f, 12f),
+            ModelTransform.NONE
+        );
+        body.addChild(
+            "tail",
+            ModelPartBuilder.create().uv(0, 0).cuboid(0f, -4f, 0f, 0f, 8f, 6f),
+            ModelTransform.pivot(0f, 0f, 6f)
+        );
+        final ModelPart root = TexturedModelData.of(data, 32, 32).createModel();
+        final float[] fish = EntityHeadGeometry.project(
+            List.of(root), "minecraft:tropical_fish", 0, 0
+        );
+        final float[] bounds = subjectBounds(fish);
+
+        assertTrue(fish.length > 0);
+        assertTrue(bounds[0] >= -0.001f, "fish escaped left edge: " + bounds[0]);
+        assertTrue(bounds[1] >= -0.001f, "fin escaped top edge: " + bounds[1]);
+        assertTrue(bounds[2] <= 32.001f, "tail escaped right edge: " + bounds[2]);
+        assertTrue(bounds[3] <= 32.001f, "fin escaped bottom edge: " + bounds[3]);
+    }
+
     //#if MC<12103
     @Test
     void horsePortraitIgnoresTheLiveGrazingPose() {

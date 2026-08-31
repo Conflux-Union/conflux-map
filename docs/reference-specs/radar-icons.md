@@ -168,8 +168,11 @@ coat/marking layers.
 > matching VoxelMap's lower-neck trim without fixed image coordinates. Camels and camel husks use a direct side
 > profile and select vanilla's stable `body` branch, which contains the head, body, hump, and tail
 > while excluding all four legs. Rabbits keep their separately named ears and nose inside the crop.
-> Fish and turtles use a right-side view; parrots, nautiluses, and zombie nautiluses use a left-side
-> view; goats plus hoglin-family heads use their configured pitch. Happy-ghast portraits similarly
+> Fish use a complete right-side silhouette, including fins and tails, while turtles use a
+> complete right-side view; parrots, nautiluses, and zombie nautiluses use a left-side view.
+> Tropical fish select their current small/large model and bake the independently tinted base and
+> pattern textures; pufferfish similarly select the model matching their current inflation state.
+> Goats plus hoglin-family heads use their configured pitch. Happy-ghast portraits similarly
 > discard lower tentacle cuboids. VoxelMap-only scale factors are not applied after Conflux's tight
 > normalization because doing so would reduce atlas sampling resolution. Bundled,
 > dynamic and item icons render without a generated surrounding border. Entity faces remain direct

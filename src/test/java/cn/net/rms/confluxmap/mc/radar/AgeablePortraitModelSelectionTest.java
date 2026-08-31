@@ -20,7 +20,7 @@ final class AgeablePortraitModelSelectionTest {
         )).replace("//$$ ", "");
 
         assertTrue(
-            manager.contains("model = portraitModel(livingRenderer, state);"),
+            manager.contains("model = portraitModel(livingRenderer, entity, state);"),
             "portrait baking must not reuse the last ageable model rendered in the world"
         );
         assertTrue(manager.contains("state.baby"), "mapped versions must select by the baby render state");

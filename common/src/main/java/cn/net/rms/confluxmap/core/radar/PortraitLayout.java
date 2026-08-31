@@ -48,10 +48,10 @@ public final class PortraitLayout {
         0f, 0f, true, Framing.UPPER_SILHOUETTE
     );
     private static final Map<String, Profile> PORTRAIT_PROFILES = Map.ofEntries(
-        Map.entry("minecraft:cod", RIGHT_SIDE_PROFILE),
-        Map.entry("minecraft:salmon", RIGHT_SIDE_PROFILE),
-        Map.entry("minecraft:pufferfish", RIGHT_SIDE_PROFILE),
-        Map.entry("minecraft:tropical_fish", RIGHT_SIDE_PROFILE),
+        Map.entry("minecraft:cod", RIGHT_SIDE_COMPLETE_PROFILE),
+        Map.entry("minecraft:salmon", RIGHT_SIDE_COMPLETE_PROFILE),
+        Map.entry("minecraft:pufferfish", RIGHT_SIDE_COMPLETE_PROFILE),
+        Map.entry("minecraft:tropical_fish", RIGHT_SIDE_COMPLETE_PROFILE),
         Map.entry("minecraft:turtle", RIGHT_SIDE_COMPLETE_PROFILE),
         Map.entry("minecraft:parrot", LEFT_SIDE_COMPLETE_PROFILE),
         Map.entry("minecraft:horse", LONG_HEAD_PROFILE),

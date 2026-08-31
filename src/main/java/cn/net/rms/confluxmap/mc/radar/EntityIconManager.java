@@ -7,6 +7,8 @@ import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.core.radar.IconBakeCache;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.mixin.AgeableMobEntityRendererAccessor;
+import cn.net.rms.confluxmap.mixin.PufferfishEntityRendererAccessor;
+import cn.net.rms.confluxmap.mixin.TropicalFishEntityRendererAccessor;
 import cn.net.rms.confluxmap.mc.render.OffscreenCanvas;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -28,10 +30,13 @@ import net.minecraft.client.render.entity.model.EntityModel;
 import net.minecraft.client.texture.NativeImage;
 //#if MC>=12103
 //$$ import net.minecraft.client.render.entity.state.LivingEntityRenderState;
+//$$ import net.minecraft.client.render.entity.state.TropicalFishEntityRenderState;
 //#endif
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.passive.PufferfishEntity;
+import net.minecraft.entity.passive.TropicalFishEntity;
 import net.minecraft.resource.ResourceManager;
 import net.minecraft.util.Identifier;
 
@@ -52,7 +57,14 @@ public final class EntityIconManager implements AutoCloseable {
     ) {
     }
 
-    private record PortraitKey(Identifier entityType, Identifier texture, EntityModel<?> model) {
+    private record PortraitKey(
+        Identifier entityType,
+        Identifier texture,
+        EntityModel<?> model,
+        Identifier patternTexture,
+        int baseTint,
+        int patternTint
+    ) {
     }
 
     private record ObservedPortrait(PortraitKey key, long checkedAt) {
@@ -310,16 +322,47 @@ public final class EntityIconManager implements AutoCloseable {
         final Identifier texture;
         //#if MC>=12103
         //$$ final LivingEntityRenderState state = (LivingEntityRenderState) renderer.getAndUpdateRenderState(entity, tickDelta);
-        //$$ model = portraitModel(livingRenderer, state);
+        //$$ model = portraitModel(livingRenderer, entity, state);
         //$$ texture = livingRenderer.getTexture(state);
         //#else
-        model = (EntityModel) livingRenderer.getModel();
+        model = portraitModel(livingRenderer, entity);
         texture = renderer.getTexture(entity);
         //#endif
         if (texture == null) {
             return null;
         }
-        return new PortraitKey(Regs.entityTypeId(entity.getType()), texture, model);
+        final TropicalFishPortrait.Appearance appearance;
+        if (entity instanceof TropicalFishEntity) {
+            final TropicalFishEntity fish = (TropicalFishEntity) entity;
+            //#if MC>=12103
+            //$$ final TropicalFishEntityRenderState fishState = (TropicalFishEntityRenderState) state;
+            //$$ appearance = TropicalFishPortrait.appearance(
+            //$$     fishState.variety.asString(), fishState.baseColor, fishState.patternColor
+            //$$ );
+            //#elseif MC>=11903
+            //$$ appearance = TropicalFishPortrait.appearance(
+            //$$     fish.getVariant().asString(),
+            //$$     fish.getBaseColorComponents().getColorComponents(),
+            //$$     fish.getPatternColorComponents().getColorComponents()
+            //$$ );
+            //#else
+            appearance = TropicalFishPortrait.appearance(
+                fish.getVarietyId(),
+                fish.getBaseColorComponents(),
+                fish.getPatternColorComponents()
+            );
+            //#endif
+        } else {
+            appearance = new TropicalFishPortrait.Appearance(null, 0xFFFFFFFF, 0xFFFFFFFF);
+        }
+        return new PortraitKey(
+            Regs.entityTypeId(entity.getType()),
+            texture,
+            model,
+            appearance.patternTexture(),
+            appearance.baseTint(),
+            appearance.patternTint()
+        );
     }
 
     private AtlasSprite bake(
@@ -349,7 +392,11 @@ public final class EntityIconManager implements AutoCloseable {
                 column * CELL_PX, row * CELL_PX, CELL_PX, CELL_PX, ATLAS_PX
             );
             try {
-                RenderUtil.drawProjectedTexturedQuads(matrices, geometry);
+                RenderUtil.drawProjectedTexturedQuads(matrices, geometry, key.baseTint());
+                if (key.patternTexture() != null) {
+                    RenderUtil.bindTexture(client, key.patternTexture());
+                    RenderUtil.drawProjectedTexturedQuads(matrices, geometry, key.patternTint());
+                }
             } finally {
                 RenderUtil.disableScissor();
             }
@@ -362,8 +409,26 @@ public final class EntityIconManager implements AutoCloseable {
     //#if MC>=12103
     //$$ private static EntityModel portraitModel(
     //$$     final LivingEntityRenderer renderer,
+    //$$     final LivingEntity entity,
     //$$     final LivingEntityRenderState state
     //$$ ) {
+    //$$     if (renderer instanceof TropicalFishEntityRendererAccessor
+    //$$         && entity instanceof TropicalFishEntity) {
+    //$$         final TropicalFishEntityRendererAccessor fish =
+    //$$             (TropicalFishEntityRendererAccessor) renderer;
+    //$$         final TropicalFishEntityRenderState fishState =
+    //$$             (TropicalFishEntityRenderState) state;
+    //$$         return (EntityModel) (fishState.variety.getSize() == TropicalFishEntity.Size.SMALL
+    //$$             ? fish.confluxmap$getSmallModel()
+    //$$             : fish.confluxmap$getLargeModel());
+    //$$     }
+    //$$     if (renderer instanceof PufferfishEntityRendererAccessor
+    //$$         && entity instanceof PufferfishEntity) {
+    //$$         return pufferfishModel(
+    //$$             (PufferfishEntityRendererAccessor) renderer,
+    //$$             ((PufferfishEntity) entity).getPuffState()
+    //$$         );
+    //$$     }
     //$$     if (!(renderer instanceof AgeableMobEntityRendererAccessor)) {
     //$$         return (EntityModel) renderer.getModel();
     //$$     }
@@ -377,6 +442,48 @@ public final class EntityIconManager implements AutoCloseable {
     //$$         : ageable.confluxmap$getAdultModel());
     //$$ }
     //#endif
+
+    //#if MC<12103
+    private static EntityModel portraitModel(
+        final LivingEntityRenderer renderer,
+        final LivingEntity entity
+    ) {
+        if (renderer instanceof TropicalFishEntityRendererAccessor
+            && entity instanceof TropicalFishEntity) {
+            final TropicalFishEntityRendererAccessor fish =
+                (TropicalFishEntityRendererAccessor) renderer;
+            final TropicalFishEntity tropicalFish = (TropicalFishEntity) entity;
+            //#if MC>=11903
+            //$$ final boolean small = tropicalFish.getVariant().getSize()
+            //$$     == TropicalFishEntity.Size.SMALL;
+            //#else
+            final boolean small = tropicalFish.getShape() == 0;
+            //#endif
+            return (EntityModel) (small
+                ? fish.confluxmap$getSmallModel()
+                : fish.confluxmap$getLargeModel());
+        }
+        if (renderer instanceof PufferfishEntityRendererAccessor
+            && entity instanceof PufferfishEntity) {
+            return pufferfishModel(
+                (PufferfishEntityRendererAccessor) renderer,
+                ((PufferfishEntity) entity).getPuffState()
+            );
+        }
+        return (EntityModel) renderer.getModel();
+    }
+    //#endif
+
+    private static EntityModel pufferfishModel(
+        final PufferfishEntityRendererAccessor renderer,
+        final int puffState
+    ) {
+        return switch (puffState) {
+            case 0 -> (EntityModel) renderer.confluxmap$getSmallModel();
+            case 1 -> (EntityModel) renderer.confluxmap$getMediumModel();
+            default -> (EntityModel) renderer.confluxmap$getLargeModel();
+        };
+    }
 
     private static void translate(final float[] geometry, final float x, final float y) {
         for (int i = 0; i < geometry.length; i += 5) {

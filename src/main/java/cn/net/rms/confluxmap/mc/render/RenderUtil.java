@@ -516,7 +516,11 @@ public final class RenderUtil {
      * Draws already-projected textured model quads into the current target. The array uses
      * {@code x,y,z,u,v} per vertex and must contain complete groups of four vertices.
      */
-    public static void drawProjectedTexturedQuads(final MatrixStack matrices, final float[] vertices) {
+    public static void drawProjectedTexturedQuads(
+        final MatrixStack matrices,
+        final float[] vertices,
+        final int argbColor
+    ) {
         if (vertices.length == 0) {
             return;
         }
@@ -528,12 +532,16 @@ public final class RenderUtil {
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         //#endif
+        final float a = Argb.alpha(argbColor) / 255f;
+        final float r = Argb.red(argbColor) / 255f;
+        final float g = Argb.green(argbColor) / 255f;
+        final float b = Argb.blue(argbColor) / 255f;
         final var model = matrices.peek().getModel();
         final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, Mesh.tintedTextureFormat());
         for (int i = 0; i < vertices.length; i += 5) {
             mesh.tintedVertex(
                 model, vertices[i], vertices[i + 1], vertices[i + 2],
-                vertices[i + 3], vertices[i + 4], 1f, 1f, 1f, 1f
+                vertices[i + 3], vertices[i + 4], r, g, b, a
             );
         }
         //#if MC>=12105

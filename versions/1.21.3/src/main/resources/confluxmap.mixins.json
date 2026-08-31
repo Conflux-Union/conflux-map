@@ -11,10 +11,12 @@
     "ClientChunkManagerMixin",
     "ClientPlayNetworkHandlerMixin",
     "InGameHudMixin",
+    "PufferfishEntityRendererAccessor",
     "ScreenMixin",
     "StatusEffectHudMixin",
     "ToastEntryMixin",
-    "ToastHudMixin"
+    "ToastHudMixin",
+    "TropicalFishEntityRendererAccessor"
   ],
   "injectors": {
     "defaultRequire": 1
