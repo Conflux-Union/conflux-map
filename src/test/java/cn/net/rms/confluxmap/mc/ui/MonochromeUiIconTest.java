@@ -108,6 +108,14 @@ final class MonochromeUiIconTest {
     }
 
     @Test
+    void hiddenWaypointIconUsesADiagonalSlash() throws IOException {
+        final BufferedImage icon = ImageIO.read(iconPath("waypoint_hidden.png").toFile());
+
+        assertTrue((icon.getRGB(12, 12) >>> 24) > 200);
+        assertTrue((icon.getRGB(51, 51) >>> 24) > 200);
+    }
+
+    @Test
     void everyDisplayModeUsesAProjectOwnedMonochromeIcon() {
         assertEquals(
             "confluxmap:textures/gui/map_terrain.png",
