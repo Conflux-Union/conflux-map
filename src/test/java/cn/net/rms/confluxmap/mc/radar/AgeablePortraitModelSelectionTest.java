@@ -1,6 +1,5 @@
 package cn.net.rms.confluxmap.mc.radar;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -30,19 +29,13 @@ final class AgeablePortraitModelSelectionTest {
     }
 
     @Test
-    void ageableAccessorStartsAtTheFirstDualModelVersion() throws IOException {
+    void ageableAccessorIsRegisteredInTheSharedMixinConfiguration() throws IOException {
         final Path root = findProjectRoot();
-        final String base = Files.readString(root.resolve("src/main/resources/confluxmap.mixins.json"));
-        final String oneTwentyOneOne = Files.readString(root.resolve(
-            "versions/1.21.1/src/main/resources/confluxmap.mixins.json"
-        ));
-        final String oneTwentyOneThree = Files.readString(root.resolve(
-            "versions/1.21.3/src/main/resources/confluxmap.mixins.json"
-        ));
+        final String config = Files.readString(
+            root.resolve("src/main/resources/confluxmap.mixins.json")
+        );
 
-        assertFalse(base.contains("AgeableMobEntityRendererAccessor"));
-        assertFalse(oneTwentyOneOne.contains("AgeableMobEntityRendererAccessor"));
-        assertTrue(oneTwentyOneThree.contains("AgeableMobEntityRendererAccessor"));
+        assertTrue(config.contains("AgeableMobEntityRendererAccessor"));
     }
 
     private static Path findProjectRoot() {

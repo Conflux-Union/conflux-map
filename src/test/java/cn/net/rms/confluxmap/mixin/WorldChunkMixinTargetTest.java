@@ -88,11 +88,14 @@ final class WorldChunkMixinTargetTest {
     }
 
     @Test
-    void packagedServerMixinConfigurationEnablesTheWorldChunkDirtyHook() throws IOException {
+    void packagedMixinConfigurationRegistersEveryConditionalMixin() throws IOException {
         try (InputStream input = WorldChunkMixinTargetTest.class.getClassLoader()
             .getResourceAsStream("confluxmap.mixins.json")) {
             assertNotNull(input, "packaged mixin configuration");
             final String configuration = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+            assertTrue(configuration.contains("\"AgeableMobEntityRendererAccessor\""), configuration);
+            assertTrue(configuration.contains("\"VanillaLayeredBiomeSourceAccessor\""), configuration);
+            assertTrue(configuration.contains("\"WorldRendererMixin\""), configuration);
             assertTrue(configuration.contains("\"WorldChunkMixin\""), configuration);
         }
     }
