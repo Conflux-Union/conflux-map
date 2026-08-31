@@ -28,4 +28,36 @@ final class WaypointRowActionLayoutTest {
         assertEquals(197, layout.x(4));
         assertEquals(244 - 6, layout.right());
     }
+
+    @Test
+    void waypointIconsUseNarrowSlotsWhileTextActionsStayWide() {
+        final WaypointRowActionLayout layout = WaypointRowActionLayout.create(
+            10, 890, 6, 4,
+            new int[] {20, 20, 48, 48, 48}
+        );
+
+        assertEquals(20, layout.width(0));
+        assertEquals(20, layout.width(1));
+        assertEquals(48, layout.width(2));
+        assertEquals(684, layout.x(0));
+        assertEquals(708, layout.x(1));
+        assertEquals(732, layout.x(2));
+        assertEquals(890 - 6, layout.right());
+    }
+
+    @Test
+    void narrowRowsShrinkTextActionsBeforeIconSlots() {
+        final WaypointRowActionLayout layout = WaypointRowActionLayout.create(
+            10, 144, 6, 4,
+            new int[] {20, 20, 48, 48, 48}
+        );
+
+        assertEquals(20, layout.width(0));
+        assertEquals(20, layout.width(1));
+        assertEquals(22, layout.width(2));
+        assertEquals(22, layout.width(3));
+        assertEquals(22, layout.width(4));
+        assertEquals(16, layout.x(0));
+        assertEquals(144 - 6, layout.right());
+    }
 }
