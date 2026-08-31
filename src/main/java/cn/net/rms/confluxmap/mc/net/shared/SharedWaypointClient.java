@@ -147,6 +147,10 @@ public final class SharedWaypointClient {
         return stateMachine.view().synchronizedSnapshot();
     }
 
+    public boolean supportsMarkerStyle() {
+        return stateMachine.negotiatedMinor() >= 3;
+    }
+
     public Optional<SharedWaypoint> find(final UUID id) {
         if (id == null) {
             return Optional.empty();
@@ -191,7 +195,9 @@ public final class SharedWaypointClient {
                 waypoint.y,
                 waypoint.z,
                 waypoint.colorArgb,
-                waypoint.type
+                waypoint.type,
+                waypoint.iconItemId,
+                waypoint.markerLabel
             )
         );
     }
@@ -339,7 +345,8 @@ public final class SharedWaypointClient {
     ) {
         return new UpdateC2S(
             operationId, original.id(), original.revision(), updated.name, updated.dimensionId,
-            updated.x, updated.y, updated.z, updated.colorArgb, updated.type
+            updated.x, updated.y, updated.z, updated.colorArgb, updated.type,
+            updated.iconItemId, updated.markerLabel
         );
     }
 
@@ -402,7 +409,10 @@ public final class SharedWaypointClient {
 
         final SharedWaypointMessage message;
         try {
-            message = SharedWaypointCodec.decodeS2C(payload);
+            message = SharedWaypointCodec.decodeS2C(
+                payload,
+                Math.max(0, stateMachine.negotiatedMinor())
+            );
         } catch (final SharedWaypointProtocolException | RuntimeException e) {
             ConfluxMapMod.LOGGER.warn(
                 "shared-waypoint: undecodable S2C payload ({} bytes): {}",
@@ -530,7 +540,10 @@ public final class SharedWaypointClient {
     private boolean send(final SharedWaypointMessage message) {
         final byte[] payload;
         try {
-            payload = SharedWaypointCodec.encode(message);
+            payload = SharedWaypointCodec.encode(
+                message,
+                Math.max(0, stateMachine.negotiatedMinor())
+            );
         } catch (final SharedWaypointProtocolException | RuntimeException e) {
             ConfluxMapMod.LOGGER.warn(
                 "shared-waypoint: cannot encode {}: {}",

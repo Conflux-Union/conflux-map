@@ -94,6 +94,55 @@ final class WaypointHudProjectionTest {
     //$$     );
     //$$ }
     //$$
+    //$$ @Test
+    //$$ void itemLabelsShareOneFlatHudPass() throws Exception {
+    //$$     final String source = Files.readString(preprocessedSource());
+    //$$     final String hudSource = Files.readString(
+    //$$         preprocessedSource().getParent().resolve("WaypointItemHudRenderer.java")
+    //$$     );
+    //$$
+    //$$     assertFalse(source.contains("ItemStackRenderState"));
+    //$$     assertFalse(source.contains("ItemRenderState"));
+    //$$     assertTrue(
+    //$$         source.contains("itemLabels.add(new WaypointItemHudRenderer.Label("),
+    //$$         "the world pass must publish item-label world anchors instead of screen positions"
+    //$$     );
+    //$$     assertTrue(
+    //$$         hudSource.contains("draw.drawItemIcon(")
+    //$$             && hudSource.contains("draw.drawTextWithShadow("),
+    //$$         "the item, plate, and text must be drawn together in the flat HUD pass"
+    //$$     );
+    //$$ }
+    //$$
+    //$$ @Test
+    //$$ void itemLabelsRenderBeforeTheVanillaCrosshair() throws Exception {
+    //$$     final String hudSource = Files.readString(
+    //$$         preprocessedSource().getParent().resolve("WaypointItemHudRenderer.java")
+    //$$     );
+    //#if MC>=12106
+    //$$     assertTrue(
+    //$$         hudSource.contains("HudElementRegistry.attachElementBefore(")
+    //$$             && hudSource.contains("VanillaHudElements.CROSSHAIR"),
+    //$$         "modern item labels must be registered below the vanilla crosshair"
+    //$$     );
+    //#elseif MC>=12104
+    //$$     assertTrue(
+    //$$         hudSource.contains("attachLayerBefore(")
+    //$$             && hudSource.contains("IdentifiedLayer.CROSSHAIR"),
+    //$$         "layered item labels must be registered below the vanilla crosshair"
+    //$$     );
+    //#else
+    //$$     final String mixinSource = Files.readString(
+    //$$         preprocessedSource().getParent().getParent().getParent().getParent()
+    //$$             .resolve("mixin/InGameHudMixin.java")
+    //$$     );
+    //$$     assertTrue(
+    //$$         mixinSource.contains("waypointItemHudRenderer().renderBeforeCrosshair("),
+    //$$         "legacy item labels must be submitted at renderCrosshair HEAD"
+    //$$     );
+    //#endif
+    //$$ }
+    //$$
     //#if MC>=260200
     //$$ @Test
     //$$ void submittedLabelTextRendersAfterEveryOpaquePlate() throws Exception {
@@ -131,7 +180,7 @@ final class WaypointHudProjectionTest {
     //$$ @Test
     //$$ void submittedHudOmitsTheVerticalRelationBadge() throws Exception {
     //$$     final String source = Files.readString(preprocessedSource());
-    //$$     final String drawIcon = methodBody(source, "\n    private static void drawIcon(");
+    //$$     final String drawIcon = methodBody(source, "\n    private void drawIcon(");
     //$$
     //$$     assertFalse(
     //$$         drawIcon.contains("WaypointVerticalRelation"),

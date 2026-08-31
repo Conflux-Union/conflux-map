@@ -2,6 +2,9 @@ package cn.net.rms.confluxmap.mc.ui;
 
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
+//#if MC<11900
+import com.mojang.blaze3d.systems.RenderSystem;
+//#endif
 import java.util.Optional;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.math.MatrixStack;
@@ -51,20 +54,33 @@ public final class PlayerMarkerRenderer {
         final int fallbackColor
     ) {
         final Optional<UiResourceTheme.PlayerMarkerTexture> texture = theme.playerMarker();
+        //#if MC<11900
+        // Legacy GUI items write depth even though they are conceptually 2D. The local-player
+        // marker is the minimap's top overlay, so it must not participate in that depth buffer.
+        RenderSystem.disableDepthTest();
+        RenderSystem.depthMask(false);
+        //#endif
         matrices.push();
-        matrices.translate(centerX, centerY, 0);
-        RenderUtil.rotateZ(
-            matrices,
-            angle + texture.map(UiResourceTheme.PlayerMarkerTexture::rotationOffset).orElse(0f)
-        );
-        if (texture.isPresent()) {
-            drawTexture(client, matrices, texture.get(), fallbackColor);
-        } else if (fallbackStyle == ConfluxConfig.PlayerMarkerStyle.TRADITIONAL) {
-            drawTraditional(matrices, fallbackColor);
-        } else {
-            drawModern(matrices, fallbackColor);
+        try {
+            matrices.translate(centerX, centerY, 0);
+            RenderUtil.rotateZ(
+                matrices,
+                angle + texture.map(UiResourceTheme.PlayerMarkerTexture::rotationOffset).orElse(0f)
+            );
+            if (texture.isPresent()) {
+                drawTexture(client, matrices, texture.get(), fallbackColor);
+            } else if (fallbackStyle == ConfluxConfig.PlayerMarkerStyle.TRADITIONAL) {
+                drawTraditional(matrices, fallbackColor);
+            } else {
+                drawModern(matrices, fallbackColor);
+            }
+        } finally {
+            matrices.pop();
+            //#if MC<11900
+            RenderSystem.depthMask(true);
+            RenderSystem.enableDepthTest();
+            //#endif
         }
-        matrices.pop();
     }
 
     private static void drawTexture(

@@ -32,6 +32,12 @@ public final class SharedWaypointCodec {
     /** Encodes one known message and enforces the cap for that message's direction. */
     public static byte[] encode(final SharedWaypointMessage message)
         throws SharedWaypointProtocolException {
+        return encode(message, SharedWaypointProto.PROTO_MINOR);
+    }
+
+    /** Encodes one message using the wire shape negotiated with this peer. */
+    public static byte[] encode(final SharedWaypointMessage message, final int negotiatedMinor)
+        throws SharedWaypointProtocolException {
         if (message == null) {
             throw new SharedWaypointProtocolException("null message");
         }
@@ -73,6 +79,7 @@ public final class SharedWaypointCodec {
                 writeCoordinates(out, m.x(), m.y(), m.z());
                 out.writeInt(m.color());
                 writeWaypointType(out, m.type());
+                writeMarkerStyle(out, negotiatedMinor, m.iconItemId(), m.markerLabel());
             } else if (message instanceof final DeleteC2S m) {
                 s2c = false;
                 out.writeByte(SharedWaypointProto.MSG_DELETE_C2S);
@@ -97,17 +104,18 @@ public final class SharedWaypointCodec {
                 writeCoordinates(out, m.x(), m.y(), m.z());
                 out.writeInt(m.color());
                 writeWaypointType(out, m.type());
+                writeMarkerStyle(out, negotiatedMinor, m.iconItemId(), m.markerLabel());
             } else if (message instanceof final SnapshotS2C m) {
                 s2c = true;
                 out.writeByte(SharedWaypointProto.MSG_SNAPSHOT_S2C);
                 out.writeLong(m.revision());
                 writeBoolean(out, m.operator());
-                writeSnapshot(out, m.list());
+                writeSnapshot(out, m.list(), negotiatedMinor);
             } else if (message instanceof final UpsertS2C m) {
                 s2c = true;
                 out.writeByte(SharedWaypointProto.MSG_UPSERT_S2C);
                 out.writeLong(m.revision());
-                writeWaypoint(out, m.waypoint());
+                writeWaypoint(out, m.waypoint(), negotiatedMinor);
             } else if (message instanceof final RemoveS2C m) {
                 s2c = true;
                 out.writeByte(SharedWaypointProto.MSG_REMOVE_S2C);
@@ -139,16 +147,30 @@ public final class SharedWaypointCodec {
     /** Decodes exactly one client-to-server message. */
     public static SharedWaypointMessage decodeC2S(final byte[] payload)
         throws SharedWaypointProtocolException {
-        return decode(payload, false);
+        return decodeC2S(payload, SharedWaypointProto.PROTO_MINOR);
+    }
+
+    public static SharedWaypointMessage decodeC2S(final byte[] payload, final int negotiatedMinor)
+        throws SharedWaypointProtocolException {
+        return decode(payload, false, negotiatedMinor);
     }
 
     /** Decodes exactly one server-to-client message. */
     public static SharedWaypointMessage decodeS2C(final byte[] payload)
         throws SharedWaypointProtocolException {
-        return decode(payload, true);
+        return decodeS2C(payload, SharedWaypointProto.PROTO_MINOR);
     }
 
-    private static SharedWaypointMessage decode(final byte[] payload, final boolean s2c)
+    public static SharedWaypointMessage decodeS2C(final byte[] payload, final int negotiatedMinor)
+        throws SharedWaypointProtocolException {
+        return decode(payload, true, negotiatedMinor);
+    }
+
+    private static SharedWaypointMessage decode(
+        final byte[] payload,
+        final boolean s2c,
+        final int negotiatedMinor
+    )
         throws SharedWaypointProtocolException {
         if (payload == null) {
             throw new SharedWaypointProtocolException("null payload");
@@ -188,7 +210,9 @@ public final class SharedWaypointCodec {
                     readFiniteDouble(in, "y"),
                     readFiniteDouble(in, "z"),
                     in.readInt(),
-                    readWaypointType(in)
+                    readWaypointType(in),
+                    readIconItemId(in, negotiatedMinor),
+                    readMarkerLabel(in, negotiatedMinor)
                 );
                 case SharedWaypointProto.MSG_DELETE_C2S -> new DeleteC2S(
                     readUuid(in), readUuid(in), in.readLong()
@@ -199,13 +223,14 @@ public final class SharedWaypointCodec {
                 case SharedWaypointProto.MSG_UPDATE_C2S -> new UpdateC2S(
                     readUuid(in), readUuid(in), in.readLong(), readUtf(in, "name"),
                     readDimension(in), readFiniteDouble(in, "x"), readFiniteDouble(in, "y"),
-                    readFiniteDouble(in, "z"), in.readInt(), readWaypointType(in)
+                    readFiniteDouble(in, "z"), in.readInt(), readWaypointType(in),
+                    readIconItemId(in, negotiatedMinor), readMarkerLabel(in, negotiatedMinor)
                 );
                 case SharedWaypointProto.MSG_SNAPSHOT_S2C -> new SnapshotS2C(
-                    in.readLong(), readBoolean(in, "operator"), readSnapshot(in)
+                    in.readLong(), readBoolean(in, "operator"), readSnapshot(in, negotiatedMinor)
                 );
                 case SharedWaypointProto.MSG_UPSERT_S2C -> new UpsertS2C(
-                    in.readLong(), readWaypoint(in)
+                    in.readLong(), readWaypoint(in, negotiatedMinor)
                 );
                 case SharedWaypointProto.MSG_REMOVE_S2C -> new RemoveS2C(
                     in.readLong(), readUuid(in)
@@ -228,7 +253,11 @@ public final class SharedWaypointCodec {
         }
     }
 
-    private static void writeSnapshot(final DataOutputStream out, final List<SharedWaypoint> waypoints)
+    private static void writeSnapshot(
+        final DataOutputStream out,
+        final List<SharedWaypoint> waypoints,
+        final int negotiatedMinor
+    )
         throws IOException, SharedWaypointProtocolException {
         if (waypoints.size() > SharedWaypointProto.MAX_SNAPSHOT_WAYPOINTS) {
             throw new SharedWaypointProtocolException(
@@ -238,7 +267,7 @@ public final class SharedWaypointCodec {
         }
         out.writeShort(waypoints.size());
         for (final SharedWaypoint waypoint : waypoints) {
-            writeWaypoint(out, waypoint);
+            writeWaypoint(out, waypoint, negotiatedMinor);
         }
     }
 
@@ -261,7 +290,10 @@ public final class SharedWaypointCodec {
         );
     }
 
-    private static List<SharedWaypoint> readSnapshot(final DataInputStream in)
+    private static List<SharedWaypoint> readSnapshot(
+        final DataInputStream in,
+        final int negotiatedMinor
+    )
         throws IOException, SharedWaypointProtocolException {
         final int count = in.readUnsignedShort();
         if (count > SharedWaypointProto.MAX_SNAPSHOT_WAYPOINTS) {
@@ -272,12 +304,16 @@ public final class SharedWaypointCodec {
         }
         final List<SharedWaypoint> waypoints = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
-            waypoints.add(readWaypoint(in));
+            waypoints.add(readWaypoint(in, negotiatedMinor));
         }
         return waypoints;
     }
 
-    private static void writeWaypoint(final DataOutputStream out, final SharedWaypoint waypoint)
+    private static void writeWaypoint(
+        final DataOutputStream out,
+        final SharedWaypoint waypoint,
+        final int negotiatedMinor
+    )
         throws IOException, SharedWaypointProtocolException {
         if (waypoint == null) {
             throw new SharedWaypointProtocolException("null shared waypoint");
@@ -294,9 +330,13 @@ public final class SharedWaypointCodec {
         writeBoolean(out, false);
         out.writeLong(waypoint.createdAtEpochMs());
         out.writeLong(waypoint.revision());
+        writeMarkerStyle(out, negotiatedMinor, waypoint.iconItemId(), waypoint.markerLabel());
     }
 
-    private static SharedWaypoint readWaypoint(final DataInputStream in)
+    private static SharedWaypoint readWaypoint(
+        final DataInputStream in,
+        final int negotiatedMinor
+    )
         throws IOException, SharedWaypointProtocolException {
         final UUID id = readUuid(in);
         final UUID publisherId = readUuid(in);
@@ -309,10 +349,39 @@ public final class SharedWaypointCodec {
         final int color = in.readInt();
         final Waypoint.Type type = readWaypointType(in);
         readBoolean(in, "legacyLocked");
+        final long createdAtEpochMs = in.readLong();
+        final long revision = in.readLong();
         return new SharedWaypoint(
             id, publisherId, publisherName, name, dimensionId, x, y, z,
-            color, type, in.readLong(), in.readLong()
+            color, type, readIconItemId(in, negotiatedMinor), readMarkerLabel(in, negotiatedMinor),
+            createdAtEpochMs, revision
         );
+    }
+
+    private static void writeMarkerStyle(
+        final DataOutputStream out,
+        final int negotiatedMinor,
+        final String iconItemId,
+        final String markerLabel
+    ) throws IOException, SharedWaypointProtocolException {
+        if (negotiatedMinor >= 3) {
+            writeUtf(out, iconItemId, "iconItemId");
+            writeUtf(out, markerLabel, "markerLabel");
+        }
+    }
+
+    private static String readIconItemId(
+        final DataInputStream in,
+        final int negotiatedMinor
+    ) throws IOException, SharedWaypointProtocolException {
+        return negotiatedMinor >= 3 ? readUtf(in, "iconItemId") : "";
+    }
+
+    private static String readMarkerLabel(
+        final DataInputStream in,
+        final int negotiatedMinor
+    ) throws IOException, SharedWaypointProtocolException {
+        return negotiatedMinor >= 3 ? readUtf(in, "markerLabel") : "";
     }
 
     private static void writeCoordinates(

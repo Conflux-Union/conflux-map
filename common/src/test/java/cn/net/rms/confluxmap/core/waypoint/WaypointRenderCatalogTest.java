@@ -15,8 +15,14 @@ final class WaypointRenderCatalogTest {
     @Test
     void mergesVisibleLocalAndSharedEntriesWithoutLosingOwnership() {
         final Waypoint local = local("Home", true);
+        local.iconItemId = "minecraft:diamond";
+        local.markerLabel = "H";
         final Waypoint hidden = local("Hidden", false);
-        final SharedWaypoint shared = shared("Village");
+        final SharedWaypoint shared = new SharedWaypoint(
+            UUID.randomUUID(), UUID.randomUUID(), "Publisher", "Village", DimensionId.NETHER,
+            3.0, 70.0, 4.0, 0xFF3366CC, Waypoint.Type.NORMAL,
+            "minecraft:emerald", "村", 20L, 1L
+        );
         final SharedWaypoint spawn = shared("Spawn");
 
         final List<WaypointRenderEntry> entries = WaypointRenderCatalog.merge(
@@ -27,6 +33,10 @@ final class WaypointRenderCatalogTest {
         assertTrue(entries.get(0).local());
         assertTrue(entries.get(1).shared());
         assertTrue(entries.get(2).shared());
+        assertEquals("minecraft:diamond", entries.get(0).iconItemId());
+        assertEquals("H", entries.get(0).markerLabel());
+        assertEquals("minecraft:emerald", entries.get(1).iconItemId());
+        assertEquals("村", entries.get(1).markerLabel());
         assertThrows(UnsupportedOperationException.class, () -> entries.clear());
     }
 

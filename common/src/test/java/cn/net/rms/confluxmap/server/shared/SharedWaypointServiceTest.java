@@ -101,7 +101,11 @@ class SharedWaypointServiceTest {
     void createInjectsAuthorityFieldsPersistsThenCommitsAndReplaysIdempotently() {
         final Fixture fixture = fixture(new SharedWaypointService.Limits(20, 10, 30));
         final UUID operationId = uuid(100);
-        final SharedWaypointService.CreateRequest request = createRequest(operationId, 0, "  Home  ");
+        final SharedWaypointService.CreateRequest request = new SharedWaypointService.CreateRequest(
+            operationId, 0, "  Home  ", DimensionId.OVERWORLD,
+            100d, 64d, -8.25d, 0xFF33AA66, Waypoint.Type.NORMAL,
+            "minecraft:diamond", "H\uD83D\uDE80"
+        );
 
         final SharedWaypointService.MutationResult first = fixture.service.create(PLAYER, request);
         final SharedWaypointService.MutationResult replay = fixture.service.create(PLAYER, request);
@@ -115,6 +119,8 @@ class SharedWaypointServiceTest {
         assertEquals(PLAYER.playerId(), waypoint.publisherId());
         assertEquals(PLAYER.playerName(), waypoint.publisherName());
         assertEquals("Home", waypoint.name());
+        assertEquals("minecraft:diamond", waypoint.iconItemId());
+        assertEquals("H\uD83D\uDE80", waypoint.markerLabel());
         assertEquals(10_000L, waypoint.createdAtEpochMs());
         assertEquals(1L, waypoint.revision());
         assertEquals(first.operationId(), replay.operationId());
@@ -314,7 +320,8 @@ class SharedWaypointServiceTest {
             OPERATOR,
             new SharedWaypointService.UpdateRequest(
                 uuid(1_301), created.revision(), created.id(), "  New name  ",
-                DimensionId.NETHER, 20.5d, 70d, -30.25d, 0xFF3498DB, Waypoint.Type.NORMAL
+                DimensionId.NETHER, 20.5d, 70d, -30.25d, 0xFF3498DB, Waypoint.Type.NORMAL,
+                "minecraft:compass", "NEW"
             )
         );
 
@@ -331,6 +338,8 @@ class SharedWaypointServiceTest {
         assertEquals(70d, updated.y());
         assertEquals(-30.25d, updated.z());
         assertEquals(0xFF3498DB, updated.colorArgb());
+        assertEquals("minecraft:compass", updated.iconItemId());
+        assertEquals("NEW", updated.markerLabel());
         assertEquals(2L, updated.revision());
         assertEquals(2, fixture.persistence.saves);
         assertEquals(SharedWaypointService.Action.UPDATE, fixture.audit.get(1).action());
@@ -417,7 +426,9 @@ class SharedWaypointServiceTest {
             new SharedWaypointService.CreateRequest(uuid(142), 0, "Name", DimensionId.OVERWORLD, Double.NaN, 64, 0, 0xFFFFFFFF, Waypoint.Type.NORMAL),
             new SharedWaypointService.CreateRequest(uuid(143), 0, "Name", DimensionId.OVERWORLD, 30_000_000, 64, 0, 0xFFFFFFFF, Waypoint.Type.NORMAL),
             new SharedWaypointService.CreateRequest(uuid(144), 0, "Name", DimensionId.OVERWORLD, 0, 256, 0, 0xFFFFFFFF, Waypoint.Type.NORMAL),
-            new SharedWaypointService.CreateRequest(uuid(145), 0, "Name", DimensionId.OVERWORLD, 0, 64, 0, 0x0033AA66, Waypoint.Type.NORMAL)
+            new SharedWaypointService.CreateRequest(uuid(145), 0, "Name", DimensionId.OVERWORLD, 0, 64, 0, 0x0033AA66, Waypoint.Type.NORMAL),
+            new SharedWaypointService.CreateRequest(uuid(148), 0, "Name", DimensionId.OVERWORLD, 0, 64, 0, 0xFFFFFFFF, Waypoint.Type.NORMAL, "example:diamond", ""),
+            new SharedWaypointService.CreateRequest(uuid(149), 0, "Name", DimensionId.OVERWORLD, 0, 64, 0, 0xFFFFFFFF, Waypoint.Type.NORMAL, "", "FOUR")
         );
 
         for (final SharedWaypointService.CreateRequest request : invalid) {

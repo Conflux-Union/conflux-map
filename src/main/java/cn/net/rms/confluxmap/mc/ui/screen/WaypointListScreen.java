@@ -131,12 +131,14 @@ public final class WaypointListScreen extends ConfluxScreen {
             if (local != null) {
                 return new WaypointRenderEntry(
                     local.id, local.name, local.dimensionId, local.x, local.y, local.z,
-                    local.colorArgb, local.type, WaypointRenderEntry.Source.LOCAL
+                    local.colorArgb, local.iconItemId, local.markerLabel,
+                    local.type, WaypointRenderEntry.Source.LOCAL
                 );
             }
             return new WaypointRenderEntry(
                 shared.id(), shared.name(), shared.dimensionId(), shared.x(), shared.y(), shared.z(),
-                shared.colorArgb(), shared.type(), WaypointRenderEntry.Source.SHARED
+                shared.colorArgb(), shared.iconItemId(), shared.markerLabel(),
+                shared.type(), WaypointRenderEntry.Source.SHARED
             );
         }
     }

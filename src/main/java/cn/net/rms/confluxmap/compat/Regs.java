@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.compat;
 
 import net.minecraft.block.Block;
 import net.minecraft.entity.EntityType;
+import net.minecraft.item.Item;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
@@ -53,6 +54,15 @@ public final class Regs {
         //#endif
     }
 
+    /** The static item registry. */
+    public static Registry<Item> items() {
+        //#if MC>=11903
+        //$$ return Registries.ITEM;
+        //#else
+        return Registry.ITEM;
+        //#endif
+    }
+
     /** The static entity-type registry. */
     public static Registry<EntityType<?>> entityTypes() {
         //#if MC>=11903
@@ -84,6 +94,15 @@ public final class Regs {
         //#endif
     }
 
+    /** Looks an item up by identifier without defaulting an unknown id to air. */
+    public static Optional<Item> item(final Identifier id) {
+        //#if MC>=12105
+        //$$ return items().getOptionalValue(id);
+        //#else
+        return items().getOrEmpty(id);
+        //#endif
+    }
+
     /** Looks an entity type up by identifier without depending on generated constant owners. */
     public static Optional<EntityType<?>> entityType(final Identifier id) {
         //#if MC>=12105
@@ -108,6 +127,15 @@ public final class Regs {
         //$$ return blocks().getKey(block);
         //#else
         return blocks().getId(block);
+        //#endif
+    }
+
+    /** The registry identifier of {@code item}. */
+    public static Identifier itemId(final Item item) {
+        //#if MC>=260100
+        //$$ return items().getKey(item);
+        //#else
+        return items().getId(item);
         //#endif
     }
 

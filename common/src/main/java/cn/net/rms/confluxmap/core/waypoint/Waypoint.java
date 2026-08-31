@@ -28,6 +28,8 @@ public final class Waypoint {
     public String group;
     public boolean visible;
     public Type type;
+    public String iconItemId = "";
+    public String markerLabel = "";
     public final long createdAtEpochMs;
 
     public Waypoint(
@@ -73,6 +75,11 @@ public final class Waypoint {
 
     /** Deep (field-for-field, but always independent) copy. Never share a live instance across threads. */
     public Waypoint copy() {
-        return new Waypoint(id, name, dimensionId, x, y, z, colorArgb, group, visible, type, createdAtEpochMs);
+        final Waypoint copy = new Waypoint(
+            id, name, dimensionId, x, y, z, colorArgb, group, visible, type, createdAtEpochMs
+        );
+        copy.iconItemId = iconItemId;
+        copy.markerLabel = markerLabel;
+        return copy;
     }
 }

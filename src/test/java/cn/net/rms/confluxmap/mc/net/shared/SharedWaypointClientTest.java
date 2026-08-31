@@ -26,6 +26,8 @@ class SharedWaypointClientTest {
             waypoint.id(), "Changed", DimensionId.NETHER, 8d, 70d, 9d,
             0xFF3498DB, "", true, Waypoint.Type.NORMAL, waypoint.createdAtEpochMs()
         );
+        edited.iconItemId = "minecraft:diamond";
+        edited.markerLabel = "NEW";
 
         final DeleteC2S delete = SharedWaypointClient.deleteMessage(operationId, waypoint);
         final UpdateC2S update = SharedWaypointClient.updateMessage(operationId, waypoint, edited);
@@ -34,6 +36,8 @@ class SharedWaypointClientTest {
         assertEquals(37L, update.expectedRevision());
         assertEquals("Changed", update.name());
         assertEquals(DimensionId.NETHER, update.dimensionId());
+        assertEquals("minecraft:diamond", update.iconItemId());
+        assertEquals("NEW", update.markerLabel());
     }
 
     @Test

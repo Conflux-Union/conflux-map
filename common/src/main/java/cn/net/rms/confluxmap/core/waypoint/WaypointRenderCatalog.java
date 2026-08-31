@@ -74,6 +74,8 @@ public final class WaypointRenderCatalog {
                 entry.y(),
                 DimensionScale.convertHorizontal(entry.z(), entry.dimensionId(), dimension),
                 entry.colorArgb(),
+                entry.iconItemId(),
+                entry.markerLabel(),
                 entry.type(),
                 entry.source()
             ));
@@ -103,6 +105,8 @@ public final class WaypointRenderCatalog {
                         waypoint.y,
                         waypoint.z,
                         waypoint.colorArgb,
+                        waypoint.iconItemId,
+                        waypoint.markerLabel,
                         waypoint.type,
                         WaypointRenderEntry.Source.LOCAL
                     ));
@@ -119,6 +123,8 @@ public final class WaypointRenderCatalog {
                     waypoint.y(),
                     waypoint.z(),
                     waypoint.colorArgb(),
+                    waypoint.iconItemId(),
+                    waypoint.markerLabel(),
                     waypoint.type(),
                     WaypointRenderEntry.Source.SHARED
                 ));

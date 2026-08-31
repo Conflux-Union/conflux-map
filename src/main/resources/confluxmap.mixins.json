@@ -8,6 +8,7 @@
   ],
   "client": [
     "ChatHudMixin",
+    "GameRendererAccessor",
     "ClientChunkManagerMixin",
     "ClientPlayNetworkHandlerMixin",
     "InGameHudMixin",

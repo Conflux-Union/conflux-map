@@ -2,6 +2,11 @@ package cn.net.rms.confluxmap.mc.ui;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+//#if MC<11900
+import java.net.URISyntaxException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+//#endif
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -26,6 +31,18 @@ final class PlayerMarkerRendererTest {
         assertTrue(maxX - minX < 11f);
         assertTrue(maxY - minY < 9f);
     }
+
+    //#if MC<11900
+    @Test
+    void playerMarkerIgnoresLegacyGuiItemDepth() throws Exception {
+        final String source = Files.readString(preprocessedSource());
+
+        assertTrue(source.contains("RenderSystem.disableDepthTest();"));
+        assertTrue(source.contains("RenderSystem.depthMask(false);"));
+        assertTrue(source.contains("RenderSystem.depthMask(true);"));
+        assertTrue(source.contains("RenderSystem.enableDepthTest();"));
+    }
+    //#endif
 
     @Test
     void fallbackMarkerJoinsTheArmsWithOutlinedFill() {
@@ -102,4 +119,27 @@ final class PlayerMarkerRendererTest {
             triangle.cx(), triangle.cy()
         );
     }
+
+    //#if MC<11900
+    private static Path preprocessedSource() throws URISyntaxException {
+        Path current = Path.of(
+            PlayerMarkerRendererTest.class.getProtectionDomain().getCodeSource().getLocation().toURI()
+        );
+        while (current != null && !"build".equals(current.getFileName().toString())) {
+            current = current.getParent();
+        }
+        if (current == null) {
+            throw new IllegalStateException("Could not locate the version build directory");
+        }
+        final Path preprocessed = current.resolve(
+            "preprocessed/main/java/cn/net/rms/confluxmap/mc/ui/PlayerMarkerRenderer.java"
+        );
+        if (Files.exists(preprocessed)) {
+            return preprocessed;
+        }
+        return current.getParent().getParent().getParent().resolve(
+            "src/main/java/cn/net/rms/confluxmap/mc/ui/PlayerMarkerRenderer.java"
+        );
+    }
+    //#endif
 }

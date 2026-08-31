@@ -70,6 +70,8 @@ public final class SharedWaypointIo implements SharedWaypointPersistence {
         double z;
         int colorArgb;
         String type;
+        String iconItemId;
+        String markerLabel;
         long createdAtEpochMs;
         long revision;
     }
@@ -241,7 +243,10 @@ public final class SharedWaypointIo implements SharedWaypointPersistence {
             return new SharedWaypoint(
                 UUID.fromString(entry.id), UUID.fromString(entry.publisherId), entry.publisherName, entry.name,
                 DimensionId.parse(entry.dimensionId), entry.x, entry.y, entry.z, entry.colorArgb,
-                Waypoint.Type.valueOf(entry.type), entry.createdAtEpochMs, entry.revision
+                Waypoint.Type.valueOf(entry.type),
+                entry.iconItemId == null ? "" : entry.iconItemId,
+                entry.markerLabel == null ? "" : entry.markerLabel,
+                entry.createdAtEpochMs, entry.revision
             );
         } catch (final IllegalArgumentException e) {
             throw new JsonParseException("shared waypoint contains an invalid identifier or type", e);
@@ -290,6 +295,8 @@ public final class SharedWaypointIo implements SharedWaypointPersistence {
         entry.z = waypoint.z();
         entry.colorArgb = waypoint.colorArgb();
         entry.type = waypoint.type().name();
+        entry.iconItemId = waypoint.iconItemId();
+        entry.markerLabel = waypoint.markerLabel();
         entry.createdAtEpochMs = waypoint.createdAtEpochMs();
         entry.revision = waypoint.revision();
         return entry;

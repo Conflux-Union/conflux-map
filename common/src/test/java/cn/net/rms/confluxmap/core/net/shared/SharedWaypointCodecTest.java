@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.net.shared;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -69,6 +70,54 @@ class SharedWaypointCodecTest {
         assertTrue(((StatusS2C) SharedWaypointCodec.decodeS2C(
             SharedWaypointCodec.encode(legacy)
         )).ownerManagementAllowed());
+    }
+
+    @Test
+    void protocolMinorThreeCarriesMarkerStyleWhileOlderMinorsKeepTheirWireShape()
+        throws Exception {
+        final CreateC2S styledCreate = new CreateC2S(
+            OPERATION_ID, 41L, "Village", DimensionId.NETHER, 1.25, -64.0, 99.5,
+            0xFF12AB34, Waypoint.Type.NORMAL, "minecraft:diamond", "\u5bb6\uD83D\uDE80"
+        );
+        final CreateC2S plainCreate = new CreateC2S(
+            OPERATION_ID, 41L, "Village", DimensionId.NETHER, 1.25, -64.0, 99.5,
+            0xFF12AB34, Waypoint.Type.NORMAL
+        );
+
+        assertTrue(
+            SharedWaypointCodec.encode(styledCreate, 3).length
+                > SharedWaypointCodec.encode(styledCreate, 2).length
+        );
+        assertArrayEquals(
+            SharedWaypointCodec.encode(plainCreate, 2),
+            SharedWaypointCodec.encode(styledCreate, 2)
+        );
+        assertEquals(
+            styledCreate,
+            SharedWaypointCodec.decodeC2S(SharedWaypointCodec.encode(styledCreate, 3), 3)
+        );
+        assertEquals(
+            plainCreate,
+            SharedWaypointCodec.decodeC2S(SharedWaypointCodec.encode(styledCreate, 2), 2)
+        );
+        assertThrows(
+            SharedWaypointProtocolException.class,
+            () -> SharedWaypointCodec.decodeC2S(
+                SharedWaypointCodec.encode(styledCreate, 3),
+                2
+            )
+        );
+
+        final SharedWaypoint styledWaypoint = new SharedWaypoint(
+            WAYPOINT_ID, PUBLISHER_ID, "Builder", "Spawn", DimensionId.OVERWORLD,
+            12.5, -4.25, 88.0, 0xFFAABBCC, Waypoint.Type.NORMAL,
+            "minecraft:compass", "S", 1_721_555_200_000L, 41L
+        );
+        final UpsertS2C upsert = new UpsertS2C(42L, styledWaypoint);
+        assertEquals(
+            upsert,
+            SharedWaypointCodec.decodeS2C(SharedWaypointCodec.encode(upsert, 3), 3)
+        );
     }
 
     @Test

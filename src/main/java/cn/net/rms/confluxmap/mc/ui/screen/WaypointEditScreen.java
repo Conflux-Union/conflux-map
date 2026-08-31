@@ -6,11 +6,13 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
+import cn.net.rms.confluxmap.core.waypoint.WaypointMarkerStyle;
 import cn.net.rms.confluxmap.core.waypoint.WaypointSet;
 import cn.net.rms.confluxmap.core.waypoint.WaypointStore;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
 import java.math.BigDecimal;
@@ -27,6 +29,7 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.item.ItemStack;
 import net.minecraft.text.Text;
 
 /**
@@ -68,14 +71,26 @@ public final class WaypointEditScreen extends ConfluxScreen {
     private final SharedWaypoint editingShared;
 
     private TextFieldWidget nameField;
+    private TextFieldWidget markerLabelField;
     private TextFieldWidget xField;
     private TextFieldWidget yField;
     private TextFieldWidget zField;
     private ButtonWidget setButton;
+    private ButtonWidget markerModeButton;
+    private ButtonWidget iconButton;
+    private ButtonWidget clearIconButton;
     private ButtonWidget doneButton;
     private List<String> setNames = List.of(WaypointSet.DEFAULT_NAME);
     private int selectedSetIndex;
     private int selectedColor;
+    private String selectedIconItemId = "";
+    private String draftName;
+    private String draftX;
+    private String draftY;
+    private String draftZ;
+    private String draftGroup;
+    private String draftMarkerLabel = "";
+    private WaypointMarkerMode markerMode = WaypointMarkerMode.TEXT;
     private String errorKey;
 
     private WaypointEditScreen(
@@ -120,6 +135,11 @@ public final class WaypointEditScreen extends ConfluxScreen {
             : () -> null;
         this.boundLocalStore = this.localStoreSupplier.get();
         this.selectedColor = color;
+        this.draftName = name;
+        this.draftX = formatCoord(x);
+        this.draftY = formatCoord(y);
+        this.draftZ = formatCoord(z);
+        this.draftGroup = this.initialGroup;
     }
 
     /** Prefilled with {@code x/y/z}, taken as-is in the dimension the player is currently viewing/standing in. */
@@ -218,11 +238,12 @@ public final class WaypointEditScreen extends ConfluxScreen {
     }
 
     public static WaypointEditScreen forEdit(final Screen parent, final Waypoint waypoint) {
-        return new WaypointEditScreen(
+        final WaypointEditScreen screen = new WaypointEditScreen(
             parent, waypoint.id, waypoint.dimensionId, waypoint.type, waypoint.createdAtEpochMs,
             waypoint.name, waypoint.x, waypoint.y, waypoint.z, waypoint.colorArgb, waypoint.group,
             waypoint.visible, CreateTarget.LOCAL, null, false, null
         );
+        return withMarkerStyle(screen, waypoint.iconItemId, waypoint.markerLabel);
     }
 
     static WaypointEditScreen forEdit(
@@ -230,22 +251,35 @@ public final class WaypointEditScreen extends ConfluxScreen {
         final Waypoint waypoint,
         final Supplier<WaypointStore> localStoreSupplier
     ) {
-        return new WaypointEditScreen(
+        final WaypointEditScreen screen = new WaypointEditScreen(
             parent, waypoint.id, waypoint.dimensionId, waypoint.type, waypoint.createdAtEpochMs,
             waypoint.name, waypoint.x, waypoint.y, waypoint.z, waypoint.colorArgb, waypoint.group,
             waypoint.visible, CreateTarget.LOCAL, localStoreSupplier, false, null
         );
+        return withMarkerStyle(screen, waypoint.iconItemId, waypoint.markerLabel);
     }
 
     public static WaypointEditScreen forPublicEdit(
         final Screen parent,
         final SharedWaypoint waypoint
     ) {
-        return new WaypointEditScreen(
+        final WaypointEditScreen screen = new WaypointEditScreen(
             parent, waypoint.id(), waypoint.dimensionId(), waypoint.type(), waypoint.createdAtEpochMs(),
             waypoint.name(), waypoint.x(), waypoint.y(), waypoint.z(), waypoint.colorArgb(), "",
             true, CreateTarget.PUBLIC, null, false, waypoint
         );
+        return withMarkerStyle(screen, waypoint.iconItemId(), waypoint.markerLabel());
+    }
+
+    private static WaypointEditScreen withMarkerStyle(
+        final WaypointEditScreen screen,
+        final String iconItemId,
+        final String markerLabel
+    ) {
+        screen.selectedIconItemId = iconItemId;
+        screen.draftMarkerLabel = markerLabel;
+        screen.markerMode = WaypointMarkerMode.initial(iconItemId);
+        return screen;
     }
 
     private static String titleKey(final UUID editingId, final CreateTarget target) {
@@ -269,9 +303,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
         final int centerX = width / 2;
         final int fieldWidth = 200;
 
-        nameField = new TextFieldWidget(this.textRenderer, centerX - fieldWidth / 2, 42, fieldWidth, FIELD_HEIGHT, Text.of(""));
+        nameField = new TextFieldWidget(this.textRenderer, centerX - fieldWidth / 2, 34, fieldWidth, FIELD_HEIGHT, Text.of(""));
         nameField.setMaxLength(64);
-        nameField.setText(initialName);
+        nameField.setText(draftName);
         addDrawableChild(nameField);
         if (openedFromHotkey) {
             deferInitialFocusUntilNextTick(nameField);
@@ -282,9 +316,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
         final int coordWidth = 62;
         final int coordGap = 7;
         final int coordsLeft = centerX - (coordWidth * 3 + coordGap * 2) / 2;
-        xField = numericField(coordsLeft, 78, coordWidth, formatCoord(initialX));
-        yField = numericField(coordsLeft + coordWidth + coordGap, 78, coordWidth, formatCoord(initialY));
-        zField = numericField(coordsLeft + (coordWidth + coordGap) * 2, 78, coordWidth, formatCoord(initialZ));
+        xField = numericField(coordsLeft, 68, coordWidth, draftX);
+        yField = numericField(coordsLeft + coordWidth + coordGap, 68, coordWidth, draftY);
+        zField = numericField(coordsLeft + (coordWidth + coordGap) * 2, 68, coordWidth, draftZ);
         addDrawableChild(xField);
         addDrawableChild(yField);
         addDrawableChild(zField);
@@ -292,10 +326,10 @@ public final class WaypointEditScreen extends ConfluxScreen {
         setButton = null;
         if (createTarget == CreateTarget.LOCAL) {
             setNames = localSetNames();
-            selectedSetIndex = Math.max(0, setNames.indexOf(initialGroup));
+            selectedSetIndex = Math.max(0, setNames.indexOf(draftGroup));
             setButton = addDrawableChild(Widgets.button(
                 centerX - fieldWidth / 2,
-                114,
+                102,
                 fieldWidth,
                 FIELD_HEIGHT,
                 selectedSetLabel(),
@@ -310,7 +344,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
             final int x = swatchLeft + i * (SWATCH_SIZE + SWATCH_GAP);
             //#if MC>=260100
             //$$ addRenderableWidget(new Button(
-            //$$     x, 150, SWATCH_SIZE, SWATCH_SIZE, Texts.literal(""),
+            //$$     x, 136, SWATCH_SIZE, SWATCH_SIZE, Texts.literal(""),
             //$$     b -> selectedColor = color, narration -> narration.get()
             //$$ ) {
             //$$     @Override
@@ -328,7 +362,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
             //$$ });
             //#elseif MC>=12111
             //$$ addDrawableChild(new ButtonWidget(
-            //$$     x, 150, SWATCH_SIZE, SWATCH_SIZE, Texts.literal(""),
+            //$$     x, 136, SWATCH_SIZE, SWATCH_SIZE, Texts.literal(""),
             //$$     b -> selectedColor = color, narration -> narration.get()
             //$$ ) {
             //$$     @Override
@@ -346,7 +380,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
             //$$ });
             //#elseif MC>=12002
             //$$ addDrawableChild(new ButtonWidget(
-            //$$     x, 150, SWATCH_SIZE, SWATCH_SIZE, Text.of(""),
+            //$$     x, 136, SWATCH_SIZE, SWATCH_SIZE, Text.of(""),
             //$$     b -> selectedColor = color, narration -> narration.get()
             //$$ ) {
             //$$     @Override
@@ -364,7 +398,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
             //$$ });
             //#elseif MC>=12000
             //$$ addDrawableChild(new ButtonWidget(
-            //$$     x, 150, SWATCH_SIZE, SWATCH_SIZE, Text.of(""),
+            //$$     x, 136, SWATCH_SIZE, SWATCH_SIZE, Text.of(""),
             //$$     b -> selectedColor = color, narration -> narration.get()
             //$$ ) {
             //$$     @Override
@@ -381,7 +415,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
             //$$     }
             //$$ });
             //#else
-            addDrawableChild(new ButtonWidget(x, 150, SWATCH_SIZE, SWATCH_SIZE, Text.of(""), b -> selectedColor = color) {
+            addDrawableChild(new ButtonWidget(x, 136, SWATCH_SIZE, SWATCH_SIZE, Text.of(""), b -> selectedColor = color) {
                 @Override
                 public void renderButton(final MatrixStack matrices, final int mouseX, final int mouseY, final float delta) {
                     if (useVanillaButtonStyle()) {
@@ -391,6 +425,65 @@ public final class WaypointEditScreen extends ConfluxScreen {
                 }
             });
             //#endif
+        }
+
+        final boolean showMarkerStyle = createTarget != CreateTarget.CHAT;
+        final boolean markerStyleSupported = createTarget == CreateTarget.LOCAL
+            || createTarget == CreateTarget.PUBLIC && sharedWaypoints.supportsMarkerStyle();
+        markerModeButton = addDrawableChild(Widgets.button(
+            centerX - 100,
+            174,
+            80,
+            FIELD_HEIGHT,
+            markerModeLabel(),
+            ignored -> selectNextMarkerMode()
+        ));
+        markerModeButton.active = markerStyleSupported;
+        markerModeButton.visible = showMarkerStyle;
+        markerLabelField = new TextFieldWidget(
+            this.textRenderer,
+            centerX - 16,
+            174,
+            116,
+            FIELD_HEIGHT,
+            Texts.translatable("confluxmap.screen.waypoint.marker_label")
+        );
+        markerLabelField.setMaxLength(6);
+        markerLabelField.setText(draftMarkerLabel);
+        final String[] lastValidMarkerLabel = {draftMarkerLabel};
+        Widgets.setChangedListener(markerLabelField, value -> {
+            if (validMarkerLabel(value)) {
+                lastValidMarkerLabel[0] = value;
+            } else {
+                Widgets.setText(markerLabelField, lastValidMarkerLabel[0]);
+            }
+        });
+        addDrawableChild(markerLabelField);
+        iconButton = addDrawableChild(Widgets.button(
+            centerX - 16,
+            174,
+            78,
+            FIELD_HEIGHT,
+            iconButtonMessage(),
+            ignored -> openIconPicker()
+        ));
+        clearIconButton = addDrawableChild(Widgets.button(
+            centerX + 66,
+            174,
+            34,
+            FIELD_HEIGHT,
+            Texts.translatable("confluxmap.screen.waypoint.icon_clear"),
+            button -> {
+                selectedIconItemId = "";
+                button.active = false;
+            }
+        ));
+        updateMarkerControls(showMarkerStyle, markerStyleSupported);
+        if (!markerStyleSupported) {
+            setDisabledTooltip(markerModeButton, "confluxmap.screen.waypoint.marker_style_unsupported");
+            setDisabledTooltip(markerLabelField, "confluxmap.screen.waypoint.marker_style_unsupported");
+            setDisabledTooltip(iconButton, "confluxmap.screen.waypoint.marker_style_unsupported");
+            setDisabledTooltip(clearIconButton, "confluxmap.screen.waypoint.marker_style_unsupported");
         }
 
         doneButton = addDrawableChild(Widgets.button(
@@ -504,6 +597,66 @@ public final class WaypointEditScreen extends ConfluxScreen {
             : Text.of(name);
     }
 
+    private Text markerModeLabel() {
+        return Texts.translatable(markerMode.translationKey());
+    }
+
+    private static Text iconButtonMessage() {
+        return Texts.literal("");
+    }
+
+    private void selectNextMarkerMode() {
+        markerMode = markerMode.next();
+        markerModeButton.setMessage(markerModeLabel());
+        updateMarkerControls(true, markerModeButton.active);
+    }
+
+    private void updateMarkerControls(
+        final boolean showMarkerStyle,
+        final boolean markerStyleSupported
+    ) {
+        final boolean textMode = markerMode == WaypointMarkerMode.TEXT;
+        markerLabelField.active = markerStyleSupported;
+        markerLabelField.visible = showMarkerStyle && textMode;
+        iconButton.active = markerStyleSupported;
+        iconButton.visible = showMarkerStyle && !textMode;
+        clearIconButton.active = markerStyleSupported && !selectedIconItemId.isEmpty();
+        clearIconButton.visible = showMarkerStyle && !textMode;
+    }
+
+    private void openIconPicker() {
+        captureDraft();
+        MinecraftAccess.setScreen(
+            MinecraftClient.getInstance(),
+            new WaypointIconPickerScreen(this, itemId -> selectedIconItemId = itemId)
+        );
+    }
+
+    private void captureDraft() {
+        draftName = nameField.getText();
+        draftX = xField.getText();
+        draftY = yField.getText();
+        draftZ = zField.getText();
+        draftGroup = selectedSetName();
+        draftMarkerLabel = markerLabelField.getText();
+    }
+
+    @Override
+    //#if MC>=12111
+    //$$ public void resize(final int width, final int height) {
+    //#else
+    public void resize(final MinecraftClient client, final int width, final int height) {
+    //#endif
+        if (nameField != null) {
+            captureDraft();
+        }
+        //#if MC>=12111
+        //$$ super.resize(width, height);
+        //#else
+        super.resize(client, width, height);
+        //#endif
+    }
+
     private String selectedSetName() {
         if (createTarget != CreateTarget.LOCAL || setNames.isEmpty()) {
             return WaypointSet.DEFAULT_NAME;
@@ -552,6 +705,17 @@ public final class WaypointEditScreen extends ConfluxScreen {
             selectedColor, selectedSetName(),
             initialVisible, type, createdAtEpochMs
         );
+        try {
+            waypoint.iconItemId = WaypointMarkerStyle.iconItemId(
+                markerMode.iconItemId(selectedIconItemId)
+            );
+            waypoint.markerLabel = WaypointMarkerStyle.markerLabel(
+                markerMode.markerLabel(markerLabelField.getText())
+            );
+        } catch (final IllegalArgumentException e) {
+            errorKey = "confluxmap.screen.waypoint.error.invalid_marker_label";
+            return;
+        }
         if (editingId == null && createTarget != CreateTarget.LOCAL) {
             final WaypointShareConfirmScreen.Target target = createTarget == CreateTarget.PUBLIC
                 ? WaypointShareConfirmScreen.Target.PUBLIC
@@ -605,7 +769,8 @@ public final class WaypointEditScreen extends ConfluxScreen {
     }
 
     private void refreshDoneButton() {
-        if (doneButton == null || nameField == null || xField == null || yField == null || zField == null) {
+        if (doneButton == null || nameField == null || xField == null || yField == null
+            || zField == null || markerLabelField == null) {
             return;
         }
         final boolean localAvailable = createTarget != CreateTarget.LOCAL
@@ -614,9 +779,20 @@ public final class WaypointEditScreen extends ConfluxScreen {
             || (editingShared == null
                 ? sharedWaypoints.canCreate()
                 : sharedWaypoints.canUpdate(editingShared));
-        doneButton.active = localAvailable && publicAvailable && WaypointFormValidation.error(
-            nameField.getText(), xField.getText(), yField.getText(), zField.getText()
-        ).isEmpty();
+        doneButton.active = localAvailable && publicAvailable
+            && WaypointFormValidation.error(
+                nameField.getText(), xField.getText(), yField.getText(), zField.getText()
+            ).isEmpty()
+            && validMarkerLabel(markerMode.markerLabel(markerLabelField.getText()));
+    }
+
+    private static boolean validMarkerLabel(final String value) {
+        try {
+            WaypointMarkerStyle.markerLabel(value);
+            return true;
+        } catch (final IllegalArgumentException e) {
+            return false;
+        }
     }
 
     private void updatePublicDoneButton() {
@@ -634,16 +810,50 @@ public final class WaypointEditScreen extends ConfluxScreen {
     @Override
     protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
         draw.renderBackground(this, mouseX, mouseY, tickDelta);
-        drawCenteredLabel(draw, getTitle().getString(), 18);
-        drawCenteredLabel(draw, Texts.translatable("confluxmap.screen.waypoint.name").getString(), 32);
-        drawCenteredLabel(draw, Texts.translatable("confluxmap.screen.waypoint.coords").getString(), 68);
+        drawCenteredLabel(draw, getTitle().getString(), 8);
+        drawCenteredLabel(draw, Texts.translatable("confluxmap.screen.waypoint.name").getString(), 24);
+        drawCenteredLabel(draw, Texts.translatable("confluxmap.screen.waypoint.coords").getString(), 58);
         if (createTarget == CreateTarget.LOCAL) {
-            drawCenteredLabel(draw, Texts.translatable("confluxmap.screen.waypoint.set").getString(), 104);
+            drawCenteredLabel(draw, Texts.translatable("confluxmap.screen.waypoint.set").getString(), 92);
         }
-        drawCenteredLabel(draw, Texts.translatable("confluxmap.screen.waypoint.color").getString(), 140);
+        drawCenteredLabel(draw, Texts.translatable("confluxmap.screen.waypoint.color").getString(), 126);
+        if (createTarget != CreateTarget.CHAT) {
+            drawCenteredLabel(
+                draw,
+                Texts.translatable("confluxmap.screen.waypoint.marker_style").getString(),
+                162
+            );
+        }
         if (errorKey != null) {
             drawCenteredLabel(draw, Texts.translatable(errorKey).getString(), height - 50);
         }
+    }
+
+    @Override
+    protected void renderAfterWidgets(
+        final GuiDraw draw,
+        final int mouseX,
+        final int mouseY,
+        final float tickDelta
+    ) {
+        drawSelectedItemIcon(draw);
+    }
+
+    private void drawSelectedItemIcon(final GuiDraw draw) {
+        if (iconButton == null || !iconButton.visible) {
+            return;
+        }
+        final ItemStack stack = WaypointMarkerRenderer.itemIcon(selectedIconItemId);
+        if (stack.isEmpty()) {
+            return;
+        }
+        draw.drawItemIcon(
+            MinecraftClient.getInstance(),
+            stack,
+            Widgets.x(iconButton) + iconButton.getWidth() / 2f,
+            Widgets.y(iconButton) + iconButton.getHeight() / 2f,
+            16
+        );
     }
 
     private void drawCenteredLabel(final GuiDraw draw, final String text, final int y) {

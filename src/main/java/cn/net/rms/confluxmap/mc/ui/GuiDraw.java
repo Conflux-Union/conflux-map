@@ -60,6 +60,22 @@ public final class GuiDraw {
         return matrices;
     }
 
+    public void pushTransform() {
+        matrices.push();
+    }
+
+    public void translate(final float x, final float y) {
+        matrices.translate(x, y, 0f);
+    }
+
+    public void scale(final float x, final float y) {
+        matrices.scale(x, y, 1f);
+    }
+
+    public void popTransform() {
+        matrices.pop();
+    }
+
     /** Draws the item's normal 16px GUI model, scaled and centered on one radar marker. */
     public void drawItemIcon(
         final MinecraftClient client,
@@ -93,6 +109,11 @@ public final class GuiDraw {
         //$$     context.drawItem(stack, 0, 0);
         //$$ } finally {
         //$$     matrices.pop();
+        //#if MC<12104
+        //$$     // DrawContext flushes GUI items at depth 150 through 1.21.3. Release that depth
+        //$$     // so later flat overlays keep their explicit painter's order.
+        //$$     RenderUtil.clearGuiDepth();
+        //#endif
         //$$ }
         //#else
         final MatrixStack modelView = RenderSystem.getModelViewStack();

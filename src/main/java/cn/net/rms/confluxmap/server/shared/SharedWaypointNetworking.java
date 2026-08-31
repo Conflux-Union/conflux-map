@@ -64,7 +64,10 @@ public final class SharedWaypointNetworking {
         }
         final SharedWaypointMessage message;
         try {
-            message = SharedWaypointCodec.decodeC2S(payload);
+            message = SharedWaypointCodec.decodeC2S(
+                payload,
+                sessions.negotiatedMinor(player.getUuid())
+            );
         } catch (final SharedWaypointProtocolException | RuntimeException e) {
             recordMalformed(player, readable, e.getMessage());
             return;
@@ -190,7 +193,7 @@ public final class SharedWaypointNetworking {
         );
     }
 
-    private static void send(
+    private void send(
         final ServerPlayerEntity player,
         final SharedWaypointMessage message
     ) {
@@ -200,7 +203,10 @@ public final class SharedWaypointNetworking {
         }
         final byte[] payload;
         try {
-            payload = SharedWaypointCodec.encode(message);
+            payload = SharedWaypointCodec.encode(
+                message,
+                sessions.negotiatedMinor(player.getUuid())
+            );
         } catch (final SharedWaypointProtocolException | RuntimeException e) {
             ConfluxMapMod.LOGGER.error(
                 "shared-waypoint: failed to encode {} for {}",

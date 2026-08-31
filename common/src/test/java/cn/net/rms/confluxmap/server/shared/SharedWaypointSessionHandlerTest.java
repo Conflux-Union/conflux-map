@@ -90,7 +90,11 @@ class SharedWaypointSessionHandlerTest {
 
         final SharedWaypointSessionHandler.Dispatch dispatch = fixture.handler.handle(
             PLAYER,
-            create(operationId, 0L, "Spawn"),
+            new CreateC2S(
+                operationId, 0L, "Spawn", DimensionId.OVERWORLD,
+                8d, 70d, 9d, 0xFF3498DB, Waypoint.Type.NORMAL,
+                "minecraft:compass", "SP"
+            ),
             fixture.environment
         );
 
@@ -101,6 +105,12 @@ class SharedWaypointSessionHandlerTest {
         final UpsertS2C upsert = assertInstanceOf(UpsertS2C.class, dispatch.broadcast());
         assertEquals(1L, upsert.revision());
         assertEquals("Spawn", upsert.waypoint().name());
+        assertEquals("minecraft:compass", upsert.waypoint().iconItemId());
+        assertEquals("SP", upsert.waypoint().markerLabel());
+        assertEquals(
+            SharedWaypointProto.PROTO_MINOR,
+            fixture.handler.negotiatedMinor(PLAYER.id())
+        );
     }
 
     @Test

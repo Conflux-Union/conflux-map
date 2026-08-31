@@ -25,6 +25,8 @@ class WaypointIoTest {
             "Home", DimensionId.OVERWORLD, 1.0, 64.0, 2.0,
             0xFF336699, "Bases", Waypoint.Type.NORMAL
         );
+        waypoint.iconItemId = "minecraft:diamond";
+        waypoint.markerLabel = "\u5bb6\uD83D\uDE80";
         final WaypointStore.State state = new WaypointStore.State(
             List.of(new WaypointSet("Bases"), new WaypointSet("Empty")), List.of(waypoint)
         );
@@ -38,6 +40,8 @@ class WaypointIoTest {
         );
         assertEquals(1, loaded.waypoints().size());
         assertEquals("Bases", loaded.waypoints().get(0).group);
+        assertEquals("minecraft:diamond", loaded.waypoints().get(0).iconItemId);
+        assertEquals("\u5bb6\uD83D\uDE80", loaded.waypoints().get(0).markerLabel);
         assertTrue(Files.readString(file).contains("\"schemaVersion\": 2"));
     }
 
@@ -68,6 +72,8 @@ class WaypointIoTest {
         assertEquals(DimensionId.NETHER, waypoint.dimensionId);
         assertEquals("Old group", waypoint.group);
         assertEquals(1234L, waypoint.createdAtEpochMs);
+        assertEquals("", waypoint.iconItemId);
+        assertEquals("", waypoint.markerLabel);
     }
 
     @Test
@@ -103,6 +109,34 @@ class WaypointIoTest {
         assertEquals(1, loaded.waypoints().size());
         assertEquals("Kept", loaded.waypoints().get(0).name);
         assertTrue(loaded.persistenceWritable());
+    }
+
+    @Test
+    void invalidMarkerStyleIsClearedWithoutDroppingTheWaypoint(
+        @TempDir final Path tempDir
+    ) throws IOException {
+        final Path file = tempDir.resolve("invalid-style.json");
+        Files.writeString(file, "{\n"
+            + "  \"schemaVersion\": 2,\n"
+            + "  \"waypoints\": [{\n"
+            + "    \"id\": \"00000000-0000-0000-0000-000000000001\",\n"
+            + "    \"name\": \"Kept\",\n"
+            + "    \"dimensionId\": \"minecraft:overworld\",\n"
+            + "    \"x\": 1.0, \"y\": 70.0, \"z\": 2.0,\n"
+            + "    \"colorArgb\": -13408615,\n"
+            + "    \"visible\": true,\n"
+            + "    \"type\": \"NORMAL\",\n"
+            + "    \"iconItemId\": \"example:wand\",\n"
+            + "    \"markerLabel\": \"FOUR\",\n"
+            + "    \"createdAtEpochMs\": 2\n"
+            + "  }]\n"
+            + "}\n");
+
+        final Waypoint waypoint = WaypointIo.load(file, LOGGER).get(0);
+
+        assertEquals("Kept", waypoint.name);
+        assertEquals("", waypoint.iconItemId);
+        assertEquals("", waypoint.markerLabel);
     }
 
     @Test

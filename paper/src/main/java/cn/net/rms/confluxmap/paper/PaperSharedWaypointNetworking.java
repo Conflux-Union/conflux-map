@@ -113,7 +113,10 @@ final class PaperSharedWaypointNetworking implements PluginMessageListener {
         }
         final SharedWaypointMessage message;
         try {
-            message = SharedWaypointCodec.decodeC2S(payload);
+            message = SharedWaypointCodec.decodeC2S(
+                payload,
+                sessions.negotiatedMinor(player.getUniqueId())
+            );
         } catch (final SharedWaypointProtocolException | RuntimeException e) {
             malformed(player, payload.length, e.getMessage());
             return;
@@ -174,7 +177,10 @@ final class PaperSharedWaypointNetworking implements PluginMessageListener {
             messages.send(
                 PaperPluginMessageDispatcher.recipient(plugin, player),
                 CHANNEL,
-                SharedWaypointCodec.encode(message)
+                SharedWaypointCodec.encode(
+                    message,
+                    sessions.negotiatedMinor(player.getUniqueId())
+                )
             );
         } catch (final SharedWaypointProtocolException | RuntimeException e) {
             plugin.getSLF4JLogger().error(

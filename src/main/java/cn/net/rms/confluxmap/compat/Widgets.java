@@ -39,6 +39,14 @@ public final class Widgets {
         //#endif
     }
 
+    public static void setX(final ClickableWidget widget, final int x) {
+        //#if MC>=11904
+        //$$ widget.setX(x);
+        //#else
+        widget.x = x;
+        //#endif
+    }
+
     public static void setY(final ClickableWidget widget, final int y) {
         //#if MC>=11904
         //$$ widget.setY(y);

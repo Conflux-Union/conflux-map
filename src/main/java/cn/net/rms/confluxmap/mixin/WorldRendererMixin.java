@@ -2,10 +2,14 @@ package cn.net.rms.confluxmap.mixin;
 
 //#if MC>=12109 && MC<12111
 //$$ import cn.net.rms.confluxmap.mc.ui.world.WaypointWorldRenderer;
+//$$ import net.minecraft.client.render.command.OrderedRenderCommandQueueImpl;
+//$$ import net.minecraft.client.render.command.RenderDispatcher;
 //$$ import net.minecraft.client.util.math.MatrixStack;
 //$$ import org.spongepowered.asm.mixin.injection.At;
 //$$ import org.spongepowered.asm.mixin.injection.Inject;
 //$$ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+//$$ import org.spongepowered.asm.mixin.Final;
+//$$ import org.spongepowered.asm.mixin.Shadow;
 //#endif
 import net.minecraft.client.render.WorldRenderer;
 import org.spongepowered.asm.mixin.Mixin;
@@ -18,6 +22,11 @@ import org.spongepowered.asm.mixin.Mixin;
 @Mixin(WorldRenderer.class)
 public abstract class WorldRendererMixin {
     //#if MC>=12109 && MC<12111
+    //$$ @Shadow @Final
+    //$$ private OrderedRenderCommandQueueImpl entityRenderCommandQueue;
+    //$$ @Shadow @Final
+    //$$ private RenderDispatcher entityRenderDispatcher;
+    //$$
     //$$ /**
     //$$  * The section render state draws one layer group per call, in OPAQUE, TRANSLUCENT, TRIPWIRE
     //$$  * order, so ordinal 1 is the point matching Fabric's BEFORE_TRANSLUCENT on other versions.
@@ -37,7 +46,8 @@ public abstract class WorldRendererMixin {
     //$$
     //$$ @Inject(method = "method_62214", at = @At("TAIL"))
     //$$ private void confluxmap$endMain(final CallbackInfo ci) {
-    //$$     WaypointWorldRenderer.onEndMain(new MatrixStack());
+    //$$     WaypointWorldRenderer.onEndMain(new MatrixStack(), entityRenderCommandQueue);
+    //$$     entityRenderDispatcher.render();
     //$$ }
     //#endif
 }
