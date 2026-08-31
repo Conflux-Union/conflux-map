@@ -20,7 +20,7 @@
   "key.confluxmap.open_map.comment": "Open or close the fullscreen world map.",
   "key.confluxmap.cycle_layer.comment": "Switch to the next available map layer.",
   "key.confluxmap.waypoints.comment": "Open the waypoint list for the current world.",
-  "key.confluxmap.new_waypoint.comment": "Create a waypoint at the player's current position.",
+  "key.confluxmap.new_waypoint.comment": "Create a waypoint at the current position.",
   "key.confluxmap.toggle_local_waypoints.comment": "Show or hide locally stored waypoints.",
   "key.confluxmap.open_config.comment": "Open the Conflux Map settings screen.",
   "key.confluxmap.cycle_prediction.comment": "Switch the area covered by map autofill.",

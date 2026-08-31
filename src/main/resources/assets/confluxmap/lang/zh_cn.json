@@ -20,7 +20,7 @@
   "key.confluxmap.open_map.comment": "打开或关闭全屏世界地图。",
   "key.confluxmap.cycle_layer.comment": "切换到下一个可用的地图图层。",
   "key.confluxmap.waypoints.comment": "打开当前世界的路径点列表。",
-  "key.confluxmap.new_waypoint.comment": "在玩家当前位置新建路径点。",
+  "key.confluxmap.new_waypoint.comment": "在当前位置新建路径点。",
   "key.confluxmap.toggle_local_waypoints.comment": "显示或隐藏保存在本地的路径点。",
   "key.confluxmap.open_config.comment": "打开 Conflux 地图设置界面。",
   "key.confluxmap.cycle_prediction.comment": "切换地图补全覆盖的区域。",

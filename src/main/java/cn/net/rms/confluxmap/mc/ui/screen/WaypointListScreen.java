@@ -886,11 +886,11 @@ public final class WaypointListScreen extends ConfluxScreen {
                 || !renderedStore.persistenceWritable())) {
             return;
         }
-        final Optional<PlayerView> playerView = gameBridge.player();
+        final Optional<PlayerView> viewpoint = gameBridge.viewpoint();
         final DimensionId dimension = gameBridge.session().dimension();
-        final double x = Math.floor(playerView.map(PlayerView::x).orElse(0.0));
-        final double y = Math.floor(playerView.map(PlayerView::y).orElse(64.0));
-        final double z = Math.floor(playerView.map(PlayerView::z).orElse(0.0));
+        final double x = Math.floor(viewpoint.map(PlayerView::x).orElse(0.0));
+        final double y = Math.floor(viewpoint.map(PlayerView::y).orElse(64.0));
+        final double z = Math.floor(viewpoint.map(PlayerView::z).orElse(0.0));
         MinecraftAccess.setScreen(MinecraftClient.getInstance(),
             tab == Tab.PUBLIC
                 ? WaypointEditScreen.forPublicCreate(this, dimension, x, y, z)

@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.world;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.net.URISyntaxException;
@@ -46,6 +47,38 @@ final class DetachedCameraMapPolicyTest {
         assertTrue(source.contains(
             "tickBudget.maximumCandidates(),\n                viewpointChunkX,\n                viewpointChunkZ"
         ));
+    }
+
+    @Test
+    void currentPositionWaypointCreationFollowsTheActiveCamera() throws Exception {
+        final String hotkeySource = sourceBetween(
+            Files.readString(preprocessedSource("cn/net/rms/confluxmap/mc/input/KeybindActionHandler.java")),
+            "private static boolean openNewWaypointAtViewpoint()",
+            "\n    }\n}"
+        );
+        final String listSource = sourceBetween(
+            Files.readString(preprocessedSource("cn/net/rms/confluxmap/mc/ui/screen/WaypointListScreen.java")),
+            "private void openCreate(",
+            "\n    private void openEdit("
+        );
+
+        assertTrue(hotkeySource.contains(
+            "final Optional<PlayerView> viewpoint = ConfluxMapClient.get().gameBridge().viewpoint();"
+        ));
+        assertTrue(listSource.contains("final Optional<PlayerView> viewpoint = gameBridge.viewpoint();"));
+        assertFalse(hotkeySource.contains(
+            "final Optional<PlayerView> playerView = ConfluxMapClient.get().gameBridge().player();"
+        ));
+        assertFalse(listSource.contains("final Optional<PlayerView> playerView = gameBridge.player();"));
+    }
+
+    private static String sourceBetween(final String source, final String start, final String end) {
+        final int startIndex = source.indexOf(start);
+        final int endIndex = source.indexOf(end, startIndex);
+        if (startIndex < 0 || endIndex < 0) {
+            throw new IllegalArgumentException("Could not locate source range");
+        }
+        return source.substring(startIndex, endIndex);
     }
 
     private static Path preprocessedSource(final String relativePath) throws URISyntaxException {

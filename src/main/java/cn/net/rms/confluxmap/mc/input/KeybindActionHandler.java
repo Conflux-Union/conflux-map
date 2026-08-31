@@ -61,7 +61,7 @@ final class KeybindActionHandler {
                 handled = openScreen(WaypointListScreen.openedFromHotkey());
                 break;
             case NEW_WAYPOINT:
-                handled = openNewWaypointAtPlayer();
+                handled = openNewWaypointAtViewpoint();
                 break;
             case TOGGLE_LOCAL_WAYPOINTS:
                 config.localWaypointsVisible = !config.localWaypointsVisible;
@@ -119,21 +119,21 @@ final class KeybindActionHandler {
         return true;
     }
 
-    private static boolean openNewWaypointAtPlayer() {
+    private static boolean openNewWaypointAtViewpoint() {
         final MinecraftClient client = MinecraftClient.getInstance();
         if (client.player == null || MinecraftAccess.screen(client) != null) {
             return false;
         }
-        final Optional<PlayerView> playerView = ConfluxMapClient.get().gameBridge().player();
-        if (playerView.isEmpty()) {
+        final Optional<PlayerView> viewpoint = ConfluxMapClient.get().gameBridge().viewpoint();
+        if (viewpoint.isEmpty()) {
             return false;
         }
-        final PlayerView player = playerView.get();
+        final PlayerView camera = viewpoint.get();
         MinecraftAccess.setScreen(client, WaypointEditScreen.forHotkeyCreate(
-            player.dimension(),
-            player.blockX(),
-            player.blockY(),
-            player.blockZ()
+            camera.dimension(),
+            camera.blockX(),
+            camera.blockY(),
+            camera.blockZ()
         ));
         return true;
     }
