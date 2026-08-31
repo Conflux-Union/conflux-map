@@ -66,6 +66,9 @@ final class UiResourceThemeTest {
             "waypoint_local_off.png",
             "waypoint_shared.png",
             "waypoint_shared_off.png",
+            "waypoint_visible.png",
+            "waypoint_hidden.png",
+            "waypoint_share.png",
             "world_profile.png"
         );
 
@@ -73,7 +76,7 @@ final class UiResourceThemeTest {
             final Identifier icon = Ids.of("confluxmap", "textures/gui/" + file);
             assertEquals(UiIcon.monochrome(icon), theme.icon(icon), file);
         }
-        assertEquals(31, UiResourceTheme.auditedIconIds().size());
+        assertEquals(34, UiResourceTheme.auditedIconIds().size());
     }
 
     @Test

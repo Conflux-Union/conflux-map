@@ -217,6 +217,9 @@ public final class UiResourceTheme {
         mapNativeIcon(icons, "waypoint_local_off.png");
         mapNativeIcon(icons, "waypoint_shared.png");
         mapNativeIcon(icons, "waypoint_shared_off.png");
+        mapNativeIcon(icons, "waypoint_visible.png");
+        mapNativeIcon(icons, "waypoint_hidden.png");
+        mapNativeIcon(icons, "waypoint_share.png");
         mapNativeIcon(icons, "world_profile.png");
         mapXaeroIcon(icons, "group_waypoints.png", 213, 0, 16, 16);
         mapXaeroIcon(icons, "waypoint_manage.png", 213, 0, 16, 16);
