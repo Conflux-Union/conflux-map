@@ -7,21 +7,6 @@ import org.junit.jupiter.api.Test;
 
 final class StructureCandidateScreenTest {
     @Test
-    void compactWindowStillShowsFourCandidateRows() {
-        assertEquals(4, StructureCandidateScreen.visibleRowsForHeight(240));
-    }
-
-    @Test
-    void splitCandidateRowKeepsEnoughSpaceForCoordinates() {
-        final StructureCandidateScreen.CandidateRowLayout layout =
-            StructureCandidateScreen.candidateRowLayout(188);
-
-        assertEquals(75, layout.coordinateWidth());
-        assertEquals(41, layout.locateWidth());
-        assertEquals(60, layout.waypointWidth());
-    }
-
-    @Test
     void candidateWaypointAlwaysReceivesAYCoordinate() {
         assertEquals(82, FullscreenMapScreen.candidateWaypointY(
             OptionalInt.of(82), OptionalInt.of(70)

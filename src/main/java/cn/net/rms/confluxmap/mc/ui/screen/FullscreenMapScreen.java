@@ -40,6 +40,9 @@ import cn.net.rms.confluxmap.core.net.LoadStateDeltaS2C;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.predict.CubiomesBiomeIds;
+import cn.net.rms.confluxmap.core.predict.BaselineSampler;
+import cn.net.rms.confluxmap.core.predict.BiomeCandidateSearch;
+import cn.net.rms.confluxmap.core.predict.NativeBaselineSampler;
 import cn.net.rms.confluxmap.core.predict.PredictedTileKeys;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
@@ -50,6 +53,7 @@ import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.store.MapWorld;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
+import cn.net.rms.confluxmap.core.store.ColumnStore;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.tile.BiomeTileKeys;
 import cn.net.rms.confluxmap.core.tile.TileService;
@@ -850,7 +854,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final int x = secondaryControlsX();
         int y = top;
         structureSearchButton = addDrawableChild(new MapIconButton(
-            x, y, STRUCTURE_SEARCH_ICON, Texts.translatable("confluxmap.map.structure_search"),
+            x, y, STRUCTURE_SEARCH_ICON, Texts.translatable("confluxmap.map.search"),
             ignored -> openStructureSearch()
         ));
         refreshStructureSearchButton();
@@ -2915,11 +2919,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             tooltip = locationActionTooltip;
         } else if (structureSearchButton != null && structureSearchButton.isHovered()) {
             tooltip = Texts.translatable(
-                !companion.structureSearchAllowed()
-                    ? "confluxmap.map.structure_search.disabled_by_server"
-                    : structureSearchButton.active
-                        ? "confluxmap.map.structure_search.tooltip"
-                        : "confluxmap.map.structure_search.unavailable"
+                structureSearchButton.active
+                    ? "confluxmap.map.search.tooltip"
+                    : "confluxmap.map.search.unavailable"
             );
         } else if (annotationTooltip != null) {
             tooltip = annotationTooltip;
@@ -4192,11 +4194,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         if (structureSearchButton == null) {
             return;
         }
-        final DimensionId dimension = viewSession().dimension();
-        final boolean available = viewingLiveWorld()
-            && companion.structureSearchAllowed()
-            && predictionState.structuresCubiomesBacked(dimension)
-            && !structureMarkers.availableTypes(dimension).isEmpty();
+        final boolean available = viewingLiveWorld();
         structureSearchButton.active = available;
         structureSearchButton.setIcon(
             available ? STRUCTURE_SEARCH_ICON : STRUCTURE_SEARCH_OFF_ICON
@@ -4204,7 +4202,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     private void openStructureSearch() {
-        if (!viewingLiveWorld() || !companion.structureSearchAllowed()) {
+        if (!viewingLiveWorld()) {
             return;
         }
         final DimensionId dimension = viewSession().dimension();
@@ -4230,6 +4228,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         scale = Math.min(scale, DEFAULT_SCALE);
     }
 
+    void focusBiome(final BiomeCandidateSearch.Candidate candidate) {
+        centerX = candidate.blockX();
+        centerZ = candidate.blockZ();
+        scale = Math.min(scale, DEFAULT_SCALE);
+    }
+
     void createWaypointForStructure(
         final StructureIndex.Marker marker,
         final Screen returnScreen
@@ -4246,6 +4250,43 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             candidateWaypointY(surfaceYAt(marker.blockX(), marker.blockZ()), playerY),
             marker.blockZ()
         ));
+    }
+
+    void createWaypointForBiome(
+        final String name,
+        final BiomeCandidateSearch.Candidate candidate,
+        final Screen returnScreen
+    ) {
+        final Optional<PlayerView> player = gameBridge.player();
+        final OptionalInt playerY = player.isPresent()
+            ? OptionalInt.of(player.get().blockY())
+            : OptionalInt.empty();
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), WaypointEditScreen.forCreate(
+            returnScreen,
+            viewSession().dimension(),
+            name,
+            candidate.blockX(),
+            candidateWaypointY(surfaceYAt(candidate.blockX(), candidate.blockZ()), playerY),
+            candidate.blockZ()
+        ));
+    }
+
+    ColumnStore biomeSearchStore() {
+        final MapWorld world = viewMapWorlds().current();
+        final MapLayer layer = PredictionDimensions.layer(viewSession().dimension());
+        return world == null || layer == null ? new ColumnStore() : world.store(layer);
+    }
+
+    BaselineSampler biomeSearchSampler(final DimensionId dimension) {
+        if (!predictionState.cubiomesBacked(dimension)) {
+            return null;
+        }
+        return new NativeBaselineSampler(
+            predictionState.mcVersion(),
+            predictionState.seed(),
+            PredictionDimensions.nativeDim(dimension),
+            predictionState.cubiomesFlags(dimension)
+        );
     }
 
     static int candidateWaypointY(final OptionalInt surfaceY, final OptionalInt playerY) {

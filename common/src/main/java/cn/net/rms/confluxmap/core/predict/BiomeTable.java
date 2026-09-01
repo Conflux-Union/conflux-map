@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.core.predict;
 
+import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import java.util.HashMap;
 import java.util.Map;
@@ -63,6 +64,7 @@ public final class BiomeTable {
 
     private static final Map<Integer, Entry> TABLE = new HashMap<>();
     private static final Map<Integer, Integer> SNOW_LINES = new HashMap<>();
+    private static final Set<Integer> NETHER_IDS = Set.of(8, 170, 171, 172, 173);
     private static final Set<Integer> END_IDS = Set.of(9, 40, 41, 42, 43);
 
     private BiomeTable() {
@@ -81,6 +83,19 @@ public final class BiomeTable {
     /** Whether this cubiomes biome belongs to the End, where Overworld sea-level fill does not apply. */
     public static boolean isEnd(final int cubiomesBiomeId) {
         return END_IDS.contains(cubiomesBiomeId);
+    }
+
+    /** Whether a vanilla biome belongs to the requested generation dimension. */
+    public static boolean supports(final DimensionId dimension, final int cubiomesBiomeId) {
+        if (dimension.equals(DimensionId.NETHER)) {
+            return NETHER_IDS.contains(cubiomesBiomeId);
+        }
+        if (dimension.equals(DimensionId.END)) {
+            return END_IDS.contains(cubiomesBiomeId);
+        }
+        return dimension.equals(DimensionId.OVERWORLD)
+            && !NETHER_IDS.contains(cubiomesBiomeId)
+            && !END_IDS.contains(cubiomesBiomeId);
     }
 
     /**

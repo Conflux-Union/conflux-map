@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.core.model.DimensionId;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
@@ -13,6 +14,15 @@ import org.junit.jupiter.api.Test;
  * {@code biomeExists}/{@code isOverworld}/{@code getDimension} rules.
  */
 class BiomeTableTest {
+    @Test
+    void vanillaBiomesAreRestrictedToTheirGenerationDimension() {
+        assertTrue(BiomeTable.supports(DimensionId.OVERWORLD, 1));
+        assertFalse(BiomeTable.supports(DimensionId.NETHER, 1));
+        assertTrue(BiomeTable.supports(DimensionId.NETHER, 170));
+        assertFalse(BiomeTable.supports(DimensionId.END, 170));
+        assertTrue(BiomeTable.supports(DimensionId.END, 40));
+    }
+
     /** Every id where {@code isOverworld(21, id)} or {@code getDimension(id) == DIM_END} holds, per biomes.c. */
     private static final Set<Integer> EXPECTED_IDS = Set.of(
         // Oceans + rivers.

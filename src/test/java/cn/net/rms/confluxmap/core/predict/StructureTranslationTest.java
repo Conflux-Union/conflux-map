@@ -28,17 +28,29 @@ class StructureTranslationTest {
         assertEquals(english.keySet().stream().filter(key -> key.startsWith("confluxmap.structure.")).count(),
             chinese.keySet().stream().filter(key -> key.startsWith("confluxmap.structure.")).count());
         for (final String key : new String[] {
-            "confluxmap.map.structure_search",
-            "confluxmap.map.structure_search.tooltip",
-            "confluxmap.map.structure_search.unavailable",
+            "confluxmap.map.search",
+            "confluxmap.map.search.tooltip",
+            "confluxmap.map.search.unavailable",
+            "confluxmap.map.structure_search.disabled_by_server",
             "confluxmap.map.structure.candidate_tooltip",
             "confluxmap.map.structure.verified_tooltip",
-            "confluxmap.screen.structure_search.title",
+            "confluxmap.screen.map_search.title",
+            "confluxmap.screen.map_search.mode.structure",
+            "confluxmap.screen.map_search.mode.biome",
             "confluxmap.screen.structure_search.field",
             "confluxmap.screen.structure_search.prompt",
             "confluxmap.screen.structure_search.locate",
             "confluxmap.screen.structure_search.back",
-            "confluxmap.screen.structure_search.empty"
+            "confluxmap.screen.structure_search.empty",
+            "confluxmap.screen.biome_search.field",
+            "confluxmap.screen.biome_search.prompt",
+            "confluxmap.screen.biome_search.empty",
+            "confluxmap.screen.biome_candidates.title",
+            "confluxmap.screen.biome_candidates.searching",
+            "confluxmap.screen.biome_candidates.searching_button",
+            "confluxmap.screen.biome_candidates.not_found",
+            "confluxmap.screen.biome_candidates.not_found_no_prediction",
+            "confluxmap.screen.biome_candidates.failed"
         }) {
             assertTrue(english.containsKey(key), "missing English translation for " + key);
             assertTrue(chinese.containsKey(key), "missing Chinese translation for " + key);

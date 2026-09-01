@@ -1,14 +1,20 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
+import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.core.model.DimensionId;
-import cn.net.rms.confluxmap.core.predict.StructureIndex;
-import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
+import cn.net.rms.confluxmap.core.predict.BaselineSampler;
+import cn.net.rms.confluxmap.core.predict.BiomeCandidateSearch;
+import cn.net.rms.confluxmap.core.predict.BiomeSearchService;
+import cn.net.rms.confluxmap.core.predict.CubiomesBiomeIds;
+import cn.net.rms.confluxmap.core.store.ColumnStore;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.OptionalInt;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.regex.Pattern;
 import net.minecraft.client.MinecraftClient;
 //#if MC>=12109
@@ -16,9 +22,10 @@ import net.minecraft.client.MinecraftClient;
 //#endif
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.util.Identifier;
 
-/** Configurable candidate query and result actions for one structure type. */
-final class StructureCandidateScreen extends ConfluxScreen {
+/** Candidate query and result actions for one biome. */
+final class BiomeCandidateScreen extends ConfluxScreen {
     private static final Pattern INTEGER = Pattern.compile("-?[0-9]*");
     private static final Pattern POSITIVE_INTEGER = Pattern.compile("[0-9]*");
     private static final int DEFAULT_RADIUS = 100_000;
@@ -31,9 +38,8 @@ final class StructureCandidateScreen extends ConfluxScreen {
 
     private final StructureSearchScreen picker;
     private final FullscreenMapScreen map;
-    private final StructureMarkerService structures;
     private final DimensionId dimension;
-    private final StructureIndex.StructureType type;
+    private final Identifier biome;
     private final SplitMapPane mapPane;
     private final List<ButtonWidget> mapButtons = new ArrayList<>();
     private final List<ButtonWidget> waypointButtons = new ArrayList<>();
@@ -42,9 +48,11 @@ final class StructureCandidateScreen extends ConfluxScreen {
     private int centerZ;
     private int radius = DEFAULT_RADIUS;
     private int limit = DEFAULT_LIMIT;
-    private List<StructureIndex.Marker> results = List.of();
+    private List<BiomeCandidateSearch.Candidate> results = List.of();
     private int scrollOffset;
-    private boolean initialQueryComplete;
+    private int queryGeneration;
+    private boolean initialQueryStarted;
+    private boolean searching;
     private boolean draggingScrollBar;
     private double scrollBarGrabOffset;
     private TextFieldWidget centerXField;
@@ -56,22 +64,23 @@ final class StructureCandidateScreen extends ConfluxScreen {
     private int panelContentWidth = 1;
     private String statusKey;
 
-    StructureCandidateScreen(
+    BiomeCandidateScreen(
         final StructureSearchScreen picker,
         final FullscreenMapScreen map,
-        final StructureMarkerService structures,
         final DimensionId dimension,
-        final StructureIndex.StructureType type
+        final Identifier biome
     ) {
-        super(Texts.translatable("confluxmap.screen.structure_candidates.title", localizedName(type)));
+        super(Texts.translatable(
+            "confluxmap.screen.biome_candidates.title",
+            StructureSearchScreen.localizedBiomeName(biome)
+        ));
         this.picker = picker;
         this.map = map;
-        this.structures = structures;
         this.dimension = dimension;
-        this.type = type;
+        this.biome = biome;
         this.mapPane = new SplitMapPane(map);
-        this.centerX = map.centerBlockX();
-        this.centerZ = map.centerBlockZ();
+        centerX = map.centerBlockX();
+        centerZ = map.centerBlockZ();
     }
 
     @Override
@@ -81,17 +90,11 @@ final class StructureCandidateScreen extends ConfluxScreen {
 
     @Override
     protected void init() {
-        if (!initialQueryComplete) {
-            results = structures.findCandidates(type, centerX, centerZ, radius, limit);
-            statusKey = results.isEmpty()
-                ? "confluxmap.screen.structure_candidates.not_found"
-                : null;
-            if (!results.isEmpty()) {
-                map.focusStructure(results.get(0));
-            }
-            initialQueryComplete = true;
-        }
         rebuild();
+        if (!initialQueryStarted) {
+            initialQueryStarted = true;
+            submitSearch();
+        }
     }
 
     private void rebuild() {
@@ -100,10 +103,7 @@ final class StructureCandidateScreen extends ConfluxScreen {
         waypointButtons.clear();
         panelContentWidth = requiredPanelContentWidth();
         final SplitMapLayout layout = splitLayout();
-        fieldWidth = Math.min(
-            FIELD_WIDTH,
-            Math.max(1, (layout.panelContentWidth() - GAP) / 2)
-        );
+        fieldWidth = Math.min(FIELD_WIDTH, Math.max(1, (layout.panelContentWidth() - GAP) / 2));
         final int fieldsWidth = fieldWidth * 2 + GAP;
         final int left = layout.panelCenterX() - fieldsWidth / 2;
         final int right = left + fieldWidth + GAP;
@@ -120,32 +120,32 @@ final class StructureCandidateScreen extends ConfluxScreen {
             88,
             Math.min(100, layout.panelContentWidth()),
             FIELD_HEIGHT,
-            Texts.translatable("confluxmap.screen.structure_candidates.search"),
+            Texts.translatable(searchButtonKey(searching)),
             ignored -> search()
         ));
 
         final CandidateListUi listUi = candidateListUi();
         scrollOffset = listUi.scrollOffset();
         for (int index = 0; index < results.size(); index++) {
-            final StructureIndex.Marker marker = results.get(index);
-            final ButtonWidget mapButton = addDrawableChild(Widgets.button(
+            final BiomeCandidateSearch.Candidate candidate = results.get(index);
+            mapButtons.add(addDrawableChild(Widgets.button(
                 listUi.actionX(),
                 listUi.mapButtonY(index),
                 listUi.actionWidth(),
                 20,
                 Texts.translatable("confluxmap.screen.structure_candidates.map"),
-                ignored -> focus(marker)
-            ));
-            final ButtonWidget waypointButton = addDrawableChild(Widgets.button(
+                ignored -> focus(candidate)
+            )));
+            waypointButtons.add(addDrawableChild(Widgets.button(
                 listUi.actionX(),
                 listUi.waypointButtonY(index),
                 listUi.actionWidth(),
                 20,
                 Texts.translatable("confluxmap.screen.structure_candidates.waypoint"),
-                ignored -> map.createWaypointForStructure(marker, this)
-            ));
-            mapButtons.add(mapButton);
-            waypointButtons.add(waypointButton);
+                ignored -> map.createWaypointForBiome(
+                    StructureSearchScreen.localizedBiomeName(biome), candidate, this
+                )
+            )));
         }
         final int backWidth = Math.min(100, layout.panelContentWidth());
         addDrawableChild(Widgets.button(
@@ -156,31 +156,8 @@ final class StructureCandidateScreen extends ConfluxScreen {
             Texts.translatable("confluxmap.screen.structure_search.back"),
             ignored -> onClose()
         ));
+        searchButton.active = !searching;
         updateRows();
-        updateAccess();
-    }
-
-    private int requiredPanelContentWidth() {
-        final int fieldsWidth = FIELD_WIDTH * 2 + GAP;
-        final int rowWidth = CandidateListUi.preferredContentWidth()
-            + CandidateListUi.scrollBarReservedWidth();
-        int textWidth = this.textRenderer.getWidth(getTitle()) + 16;
-        for (final String key : new String[] {
-            "confluxmap.screen.structure_candidates.center",
-            "confluxmap.screen.structure_candidates.bounds",
-            "confluxmap.screen.structure_candidates.invalid",
-            "confluxmap.screen.structure_candidates.not_found"
-        }) {
-            textWidth = Math.max(
-                textWidth,
-                this.textRenderer.getWidth(Texts.translatable(key)) + 16
-            );
-        }
-        return Math.max(fieldsWidth, Math.max(rowWidth, textWidth));
-    }
-
-    private SplitMapLayout splitLayout() {
-        return new SplitMapLayout(width, height, panelContentWidth);
     }
 
     private TextFieldWidget integerField(
@@ -220,17 +197,83 @@ final class StructureCandidateScreen extends ConfluxScreen {
             statusKey = "confluxmap.screen.structure_candidates.invalid";
             return;
         }
-        results = structures.findCandidates(type, centerX, centerZ, radius, limit);
+        submitSearch();
+    }
+
+    private void submitSearch() {
+        final int generation = ++queryGeneration;
+        final int queryCenterX = centerX;
+        final int queryCenterZ = centerZ;
+        final int queryRadius = radius;
+        final int queryLimit = limit;
+        final ColumnStore store = map.biomeSearchStore();
+        final OptionalInt predictedBiome = biome.getNamespace().equals("minecraft")
+            ? CubiomesBiomeIds.idForName(biome.getPath())
+            : OptionalInt.empty();
+        final BaselineSampler sampler = predictedBiome.isPresent()
+            ? map.biomeSearchSampler(dimension)
+            : null;
+        searching = true;
+        statusKey = "confluxmap.screen.biome_candidates.searching";
         scrollOffset = 0;
-        statusKey = results.isEmpty() ? "confluxmap.screen.structure_candidates.not_found" : null;
-        if (!results.isEmpty()) {
-            map.focusStructure(results.get(0));
+        rebuild();
+        try {
+            ConfluxMapClient.get().executors().workers().execute(() -> {
+                final List<BiomeCandidateSearch.Candidate> found = BiomeSearchService.search(
+                    store,
+                    biome.toString(),
+                    predictedBiome,
+                    sampler,
+                    queryCenterX,
+                    queryCenterZ,
+                    queryRadius,
+                    queryLimit
+                );
+                MinecraftClient.getInstance().execute(() -> acceptResults(
+                    generation, found, sampler != null
+                ));
+            });
+        } catch (final RejectedExecutionException e) {
+            searching = false;
+            statusKey = "confluxmap.screen.biome_candidates.failed";
+            rebuild();
+        }
+    }
+
+    private void acceptResults(
+        final int generation,
+        final List<BiomeCandidateSearch.Candidate> found,
+        final boolean predictionAvailable
+    ) {
+        if (generation != queryGeneration
+            || MinecraftAccess.screen(MinecraftClient.getInstance()) != this) {
+            return;
+        }
+        results = found;
+        searching = false;
+        statusKey = found.isEmpty()
+            ? predictionAvailable
+                ? "confluxmap.screen.biome_candidates.not_found"
+                : "confluxmap.screen.biome_candidates.not_found_no_prediction"
+            : null;
+        if (!found.isEmpty()) {
+            focus(found.get(0));
         }
         rebuild();
     }
 
-    private void focus(final StructureIndex.Marker marker) {
-        map.focusStructure(marker);
+    private void focus(final BiomeCandidateSearch.Candidate candidate) {
+        map.focusBiome(candidate);
+    }
+
+    static String searchButtonKey(final boolean searching) {
+        return searching
+            ? "confluxmap.screen.biome_candidates.searching_button"
+            : "confluxmap.screen.structure_candidates.search";
+    }
+
+    static int statusY(final int screenHeight) {
+        return screenHeight - 36;
     }
 
     private int visibleRows() {
@@ -267,15 +310,19 @@ final class StructureCandidateScreen extends ConfluxScreen {
         }
     }
 
-    private void updateAccess() {
-        final boolean allowed = structures.availableTypes(dimension).contains(type);
-        searchButton.active = allowed;
-        for (final ButtonWidget button : mapButtons) {
-            button.active = allowed;
-        }
-        for (final ButtonWidget button : waypointButtons) {
-            button.active = allowed;
-        }
+    private int requiredPanelContentWidth() {
+        return Math.max(
+            FIELD_WIDTH * 2 + GAP,
+            Math.max(
+                CandidateListUi.preferredContentWidth()
+                    + CandidateListUi.scrollBarReservedWidth(),
+                this.textRenderer.getWidth(getTitle()) + 16
+            )
+        );
+    }
+
+    private SplitMapLayout splitLayout() {
+        return new SplitMapLayout(width, height, panelContentWidth);
     }
 
     @Override
@@ -284,7 +331,6 @@ final class StructureCandidateScreen extends ConfluxScreen {
         Widgets.tick(centerZField);
         Widgets.tick(radiusField);
         Widgets.tick(limitField);
-        updateAccess();
     }
 
     @Override
@@ -370,16 +416,14 @@ final class StructureCandidateScreen extends ConfluxScreen {
     }
 
     @Override
-    //#if MC>=12002
-    //$$ public boolean mouseScrolled(
-    //$$     final double mouseX,
-    //$$     final double mouseY,
-    //$$     final double horizontalAmount,
-    //$$     final double amount
-    //$$ ) {
-    //#else
-    public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
-    //#endif
+    public boolean mouseScrolled(
+        final double mouseX,
+        final double mouseY,
+        //#if MC>=12002
+        //$$ final double horizontalAmount,
+        //#endif
+        final double amount
+    ) {
         final SplitMapLayout layout = splitLayout();
         if (amount != 0 && layout.containsPanel(mouseX, mouseY)
             && results.size() > visibleRows()) {
@@ -399,6 +443,7 @@ final class StructureCandidateScreen extends ConfluxScreen {
 
     @Override
     public void onClose() {
+        queryGeneration++;
         MinecraftAccess.setScreen(MinecraftClient.getInstance(), picker);
     }
 
@@ -412,17 +457,21 @@ final class StructureCandidateScreen extends ConfluxScreen {
         final SplitMapLayout layout = splitLayout();
         mapPane.render(draw, mouseX, mouseY, tickDelta, layout);
         drawCentered(draw, getTitle().getString(), 8, 0xFFFFFFFF);
-        drawCentered(draw, Texts.translatable("confluxmap.screen.structure_candidates.center").getString(), 20, 0xFFBBBBBB);
-        drawCentered(draw, Texts.translatable("confluxmap.screen.structure_candidates.bounds").getString(), 52, 0xFFBBBBBB);
+        drawCentered(draw, Texts.translatable(
+            "confluxmap.screen.structure_candidates.center"
+        ).getString(), 20, 0xFFBBBBBB);
+        drawCentered(draw, Texts.translatable(
+            "confluxmap.screen.structure_candidates.bounds"
+        ).getString(), 52, 0xFFBBBBBB);
         final CandidateListUi listUi = candidateListUi();
         listUi.drawSurface(draw);
         final int end = Math.min(results.size(), scrollOffset + listUi.visibleRows());
         for (int index = scrollOffset; index < end; index++) {
-            final StructureIndex.Marker marker = results.get(index);
+            final BiomeCandidateSearch.Candidate candidate = results.get(index);
             draw.drawTextWithShadow(
                 this.textRenderer,
-                fitToWidth(
-                    CandidateListUi.coordinateText(marker.blockX(), marker.blockZ()),
+                this.textRenderer.trimToWidth(
+                    CandidateListUi.coordinateText(candidate.blockX(), candidate.blockZ()),
                     listUi.textWidth()
                 ),
                 rowX(),
@@ -431,11 +480,11 @@ final class StructureCandidateScreen extends ConfluxScreen {
             );
             draw.drawTextWithShadow(
                 this.textRenderer,
-                fitToWidth(
+                this.textRenderer.trimToWidth(
                     Texts.translatable(
                         "confluxmap.value.blocks",
                         CandidateListUi.distanceInBlocks(
-                            marker.blockX(), marker.blockZ(), centerX, centerZ
+                            candidate.blockX(), candidate.blockZ(), centerX, centerZ
                         )
                     ).getString(),
                     listUi.textWidth()
@@ -446,7 +495,12 @@ final class StructureCandidateScreen extends ConfluxScreen {
             );
         }
         if (statusKey != null) {
-            drawCentered(draw, Texts.translatable(statusKey).getString(), height - 36, 0xFFFF7777);
+            drawCentered(
+                draw,
+                Texts.translatable(statusKey).getString(),
+                statusY(height),
+                0xFFAAAAAA
+            );
         }
         listUi.drawScrollBar(draw);
     }
@@ -479,9 +533,5 @@ final class StructureCandidateScreen extends ConfluxScreen {
         //#else
         return this.textRenderer.trimToWidth(text, maxWidth);
         //#endif
-    }
-
-    private static String localizedName(final StructureIndex.StructureType type) {
-        return Texts.translatable(type.translationKey()).getString();
     }
 }

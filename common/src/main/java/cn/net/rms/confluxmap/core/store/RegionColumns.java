@@ -153,6 +153,15 @@ public final class RegionColumns {
         );
     }
 
+    /** Copies biome identifiers and chunk provenance for read-only location searches. */
+    public synchronized void copyBiomeSearchData(
+        final String[] outBiomeId,
+        final byte[] outChunkSource
+    ) {
+        System.arraycopy(biomeId, 0, outBiomeId, 0, biomeId.length);
+        System.arraycopy(chunkSource, 0, outChunkSource, 0, chunkSource.length);
+    }
+
     /** Caller holds this region's monitor through one of the public copy methods. */
     private void copyRows(
         final int startRow,
