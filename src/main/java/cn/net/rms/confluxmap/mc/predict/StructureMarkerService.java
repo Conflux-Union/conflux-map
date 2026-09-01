@@ -10,11 +10,9 @@ import cn.net.rms.confluxmap.nativepredict.CubiomesContext;
 import cn.net.rms.confluxmap.nativepredict.CubiomesContexts;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.OptionalLong;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 
@@ -75,32 +73,32 @@ public final class StructureMarkerService {
                         final int regionX,
                         final int regionZ
                     ) {
-                        return StructureMarkerService.this.candidates(
+                        return positions(StructureMarkerService.this.detailedCandidates(
                             session, type, regionX, regionZ, regionX, regionZ
-                        );
+                        ));
                     }
 
                     @Override
-                    public long[] candidates(
+                    public StructureIndex.Candidate[] detailedCandidates(
                         final StructureIndex.StructureType type,
                         final int minRegionX,
                         final int minRegionZ,
                         final int maxRegionX,
                         final int maxRegionZ
                     ) {
-                        return StructureMarkerService.this.candidates(
+                        return StructureMarkerService.this.detailedCandidates(
                             session, type, minRegionX, minRegionZ, maxRegionX, maxRegionZ
                         );
                     }
 
                     @Override
-                    public OptionalLong nearest(
+                    public Optional<StructureIndex.Candidate> nearestCandidate(
                         final StructureIndex.StructureType type,
                         final int blockX,
                         final int blockZ,
                         final int maxRadius
                     ) {
-                        return StructureMarkerService.this.nearest(
+                        return StructureMarkerService.this.nearestCandidate(
                             session, type, blockX, blockZ, maxRadius
                         );
                     }
@@ -253,7 +251,7 @@ public final class StructureMarkerService {
         }
     }
 
-    private long[] candidates(
+    private StructureIndex.Candidate[] detailedCandidates(
         final SessionGuard.Session session,
         final StructureIndex.StructureType type,
         final int minRegionX,
@@ -264,11 +262,11 @@ public final class StructureMarkerService {
         if (!structureSearchAllowed.getAsBoolean()
             || !type.supports(prediction.mcVersion(), session.dimension())
             || !prediction.structuresCubiomesBacked(session.dimension())) {
-            return new long[0];
+            return new StructureIndex.Candidate[0];
         }
         final int nativeDim = PredictionDimensions.nativeStructureDim(session.dimension());
         if (nativeDim == Integer.MIN_VALUE) {
-            return new long[0];
+            return new StructureIndex.Candidate[0];
         }
         try {
             final CubiomesContext context = CubiomesContexts.get(
@@ -278,35 +276,32 @@ public final class StructureMarkerService {
                 prediction.cubiomesFlags(session.dimension())
             );
             if (context == null) {
-                return new long[0];
+                return new StructureIndex.Candidate[0];
             }
-            final long[] positions;
-            final int count;
             if (type.globalPlacement()) {
-                positions = new long[128];
-                count = context.strongholds(positions);
-            } else {
-                final long cells = ((long) maxRegionX - minRegionX + 1L)
-                    * ((long) maxRegionZ - minRegionZ + 1L);
-                if (cells <= 0L || cells > 1_048_576L) {
-                    return new long[0];
-                }
-                positions = new long[(int) cells];
-                count = context.viableStructures(
-                    type.nativeId(), minRegionX, minRegionZ, maxRegionX, maxRegionZ, positions
-                );
+                final long[] positions = new long[128];
+                final int count = context.strongholds(positions);
+                return candidates(positions, new int[positions.length], count);
             }
-            if (count <= 0) {
-                return new long[0];
+            final long cells = ((long) maxRegionX - minRegionX + 1L)
+                * ((long) maxRegionZ - minRegionZ + 1L);
+            if (cells <= 0L || cells > 1_048_576L) {
+                return new StructureIndex.Candidate[0];
             }
-            return Arrays.copyOf(positions, Math.min(count, positions.length));
+            final long[] positions = new long[(int) cells];
+            final int[] variants = new int[(int) cells];
+            final int count = context.viableStructures(
+                type.nativeId(), minRegionX, minRegionZ, maxRegionX, maxRegionZ,
+                positions, variants
+            );
+            return candidates(positions, variants, count);
         } catch (final Throwable fault) {
             NativeLib.disableForSession(fault);
-            return new long[0];
+            return new StructureIndex.Candidate[0];
         }
     }
 
-    private OptionalLong nearest(
+    private Optional<StructureIndex.Candidate> nearestCandidate(
         final SessionGuard.Session session,
         final StructureIndex.StructureType type,
         final int blockX,
@@ -316,11 +311,11 @@ public final class StructureMarkerService {
         if (!structureSearchAllowed.getAsBoolean()
             || !type.supports(prediction.mcVersion(), session.dimension())
             || !prediction.structuresCubiomesBacked(session.dimension())) {
-            return OptionalLong.empty();
+            return Optional.empty();
         }
         final int nativeDim = PredictionDimensions.nativeStructureDim(session.dimension());
         if (nativeDim == Integer.MIN_VALUE) {
-            return OptionalLong.empty();
+            return Optional.empty();
         }
         try {
             final CubiomesContext context = CubiomesContexts.get(
@@ -329,14 +324,52 @@ public final class StructureMarkerService {
                 nativeDim,
                 prediction.cubiomesFlags(session.dimension())
             );
-            final long[] result = new long[1];
-            return context != null
-                && context.nearestStructure(type.nativeId(), blockX, blockZ, maxRadius, result)
-                ? OptionalLong.of(result[0])
-                : OptionalLong.empty();
+            if (context == null) {
+                return Optional.empty();
+            }
+            final long[] position = new long[1];
+            final int[] variant = new int[1];
+            if (!context.nearestStructure(
+                type.nativeId(), blockX, blockZ, maxRadius, position, variant
+            )) {
+                return Optional.empty();
+            }
+            return Optional.of(candidate(position[0], variant[0]));
         } catch (final Throwable fault) {
             NativeLib.disableForSession(fault);
-            return OptionalLong.empty();
+            return Optional.empty();
         }
+    }
+
+    private static StructureIndex.Candidate[] candidates(
+        final long[] positions,
+        final int[] variants,
+        final int count
+    ) {
+        if (count <= 0) {
+            return new StructureIndex.Candidate[0];
+        }
+        final int size = Math.min(count, Math.min(positions.length, variants.length));
+        final StructureIndex.Candidate[] candidates = new StructureIndex.Candidate[size];
+        for (int index = 0; index < size; index++) {
+            candidates[index] = candidate(positions[index], variants[index]);
+        }
+        return candidates;
+    }
+
+    private static StructureIndex.Candidate candidate(final long position, final int variant) {
+        return new StructureIndex.Candidate(
+            (int) (position >>> 32), (int) position, variant
+        );
+    }
+
+    private static long[] positions(final StructureIndex.Candidate[] candidates) {
+        final long[] positions = new long[candidates.length];
+        for (int index = 0; index < candidates.length; index++) {
+            final StructureIndex.Candidate candidate = candidates[index];
+            positions[index] = ((long) candidate.blockX() << 32)
+                | (candidate.blockZ() & 0xFFFF_FFFFL);
+        }
+        return positions;
     }
 }

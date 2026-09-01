@@ -34,7 +34,7 @@
 #include "finders.h"
 #include "terrain_features.h"
 
-#define CFX_ABI 11
+#define CFX_ABI 12
 #define CFX_NETHER_ROOF_Y 127
 
 #define CFX_OK              0
@@ -1160,9 +1160,95 @@ static int cfxIsViableStructure(
     return 1;
 }
 
+enum {
+    CFX_VARIANT_END_CITY_SHIP = 1,
+    CFX_VARIANT_IGLOO_BASEMENT = 1,
+    CFX_VARIANT_SHIPWRECK_BEACHED = 1,
+    CFX_VARIANT_VILLAGE_ZOMBIE = 1 << 3,
+    CFX_VARIANT_RUINED_PORTAL_GIANT = 1
+};
+
+static int cfxStructureBiome(CfxContext *ctx, int structType, int blockX, int blockZ) {
+    const int chunkX = blockX >> 4;
+    const int chunkZ = blockZ >> 4;
+    if (ctx->mc >= MC_1_18 && structType == Village) {
+        const int variants[] = {plains, desert, savanna, taiga, snowy_tundra};
+        for (size_t index = 0; index < sizeof(variants) / sizeof(variants[0]); index++) {
+            StructureVariant variant;
+            getVariant(
+                &variant, Village, ctx->mc, ctx->g.seed,
+                blockX, blockZ, variants[index]
+            );
+            const int sampleX = (chunkX * 32 + 2 * variant.x + variant.sx - 1) / 2 >> 2;
+            const int sampleZ = (chunkZ * 32 + 2 * variant.z + variant.sz - 1) / 2 >> 2;
+            const int biome = getBiomeAt(&ctx->g, 0, sampleX, 319 >> 2, sampleZ);
+            if (biome == variants[index] || (biome == meadow && variants[index] == plains)) {
+                return variants[index];
+            }
+        }
+        return -1;
+    }
+    return getBiomeAt(
+        &ctx->g, 4, chunkX * 4 + 2,
+        ctx->dim == DIM_NETHER ? 32 >> 2 : 80 >> 2,
+        chunkZ * 4 + 2
+    );
+}
+
+static int cfxStructureVariant(CfxContext *ctx, int structType, int blockX, int blockZ) {
+    if (structType == End_City) {
+        Piece pieces[END_CITY_PIECES_MAX];
+        const int count = getEndCityPieces(
+            pieces, ctx->g.seed, blockX >> 4, blockZ >> 4
+        );
+        for (int index = 0; index < count; index++) {
+            if (pieces[index].type == END_SHIP) {
+                return CFX_VARIANT_END_CITY_SHIP;
+            }
+        }
+        return 0;
+    }
+
+    int biome = -1;
+    if (structType == Village || structType == Shipwreck
+        || structType == Ruined_Portal || structType == Ruined_Portal_N) {
+        biome = cfxStructureBiome(ctx, structType, blockX, blockZ);
+    }
+    StructureVariant variant;
+    if (!getVariant(
+        &variant, structType, ctx->mc, ctx->g.seed, blockX, blockZ, biome
+    )) {
+        return 0;
+    }
+    switch (structType) {
+    case Village: {
+        int type = 0;
+        switch (variant.biome) {
+        case desert: type = 1; break;
+        case savanna: type = 2; break;
+        case taiga: type = 3; break;
+        case snowy_tundra: type = 4; break;
+        default: break;
+        }
+        return type | (variant.abandoned ? CFX_VARIANT_VILLAGE_ZOMBIE : 0);
+    }
+    case Igloo:
+        return variant.basement ? CFX_VARIANT_IGLOO_BASEMENT : 0;
+    case Shipwreck:
+        return isOceanic(variant.biome) ? 0 : CFX_VARIANT_SHIPWRECK_BEACHED;
+    case Bastion:
+        return variant.start & 3;
+    case Ruined_Portal:
+    case Ruined_Portal_N:
+        return variant.giant ? CFX_VARIANT_RUINED_PORTAL_GIANT : 0;
+    default:
+        return 0;
+    }
+}
+
 JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxViableStructures(
     JNIEnv *env, jclass clazz, jlong handle, jint structType, jint regX0, jint regZ0, jint regX1, jint regZ1,
-    jlongArray out, jint cap
+    jlongArray out, jintArray outVariants, jint cap
 ) {
     (void) clazz;
     CfxContext *ctx = cfxHandle(handle);
@@ -1183,15 +1269,22 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
 
     jint effectiveCap = cap;
     const jsize outLen = (*env)->GetArrayLength(env, out);
+    const jsize variantLen = (*env)->GetArrayLength(env, outVariants);
     if (effectiveCap > outLen) {
         effectiveCap = outLen;
+    }
+    if (effectiveCap > variantLen) {
+        effectiveCap = variantLen;
     }
     if (effectiveCap <= 0) {
         return 0;
     }
 
     jlong *packed = malloc(sizeof(jlong) * (size_t) effectiveCap);
-    if (packed == NULL) {
+    jint *variants = malloc(sizeof(jint) * (size_t) effectiveCap);
+    if (packed == NULL || variants == NULL) {
+        free(packed);
+        free(variants);
         return CFX_ERR_ALLOC;
     }
 
@@ -1202,13 +1295,16 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
             if (getStructurePos(structType, ctx->mc, ctx->g.seed, regX, regZ, &pos)
                 && cfxIsViableStructure(ctx, structType, pos.x, pos.z)) {
                 packed[found] = ((jlong) pos.x << 32) | ((jlong) pos.z & 0xffffffffL);
+                variants[found] = cfxStructureVariant(ctx, structType, pos.x, pos.z);
                 found++;
             }
         }
     }
 
     (*env)->SetLongArrayRegion(env, out, 0, found, packed);
+    (*env)->SetIntArrayRegion(env, outVariants, 0, found, variants);
     free(packed);
+    free(variants);
     return found;
 }
 
@@ -1280,7 +1376,7 @@ static void cfxTryNearestStructure(
 
 JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxNearestStructure(
     JNIEnv *env, jclass clazz, jlong handle, jint structType, jint blockX, jint blockZ,
-    jint maxRadius, jlongArray out
+    jint maxRadius, jlongArray out, jintArray outVariant
 ) {
     (void) clazz;
     CfxContext *ctx = cfxHandle(handle);
@@ -1288,7 +1384,8 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
         return CFX_ERR_BAD_HANDLE;
     }
     if (structType < 0 || structType >= FEATURE_NUM || maxRadius <= 0
-        || (*env)->GetArrayLength(env, out) < 1) {
+        || (*env)->GetArrayLength(env, out) < 1
+        || (*env)->GetArrayLength(env, outVariant) < 1) {
         return CFX_ERR_BAD_ARGS;
     }
 
@@ -1364,7 +1461,9 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
         return 0;
     }
     const jlong packed = ((jlong) best.x << 32) | ((jlong) best.z & 0xffffffffL);
+    const jint variant = cfxStructureVariant(ctx, structType, best.x, best.z);
     (*env)->SetLongArrayRegion(env, out, 0, 1, &packed);
+    (*env)->SetIntArrayRegion(env, outVariant, 0, 1, &variant);
     return 1;
 }
 

@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.core.model.MapLayer;
+import cn.net.rms.confluxmap.core.predict.StructureIndex;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.mc.ui.world.WaypointHighlightState;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
@@ -124,6 +125,16 @@ final class FullscreenMapLocationMenu {
         return new Target((int) Math.floor(worldX), surfaceY, (int) Math.floor(worldZ));
     }
 
+    static Point pointAt(
+        final double worldX,
+        final double worldZ,
+        final StructureIndex.Marker structure
+    ) {
+        return structure == null
+            ? new Point((int) Math.floor(worldX), (int) Math.floor(worldZ))
+            : new Point(structure.blockX(), structure.blockZ());
+    }
+
     static MapLayer topSurfaceLayer(final LayerSelector.DimensionKind dimensionKind) {
         return switch (dimensionKind) {
             case SKY_LIT -> MapLayer.SURFACE;
@@ -148,6 +159,9 @@ final class FullscreenMapLocationMenu {
         boolean contains(final double mouseX, final double mouseY) {
             return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
         }
+    }
+
+    record Point(int blockX, int blockZ) {
     }
 
     record Target(int blockX, OptionalInt surfaceY, int blockZ) {
