@@ -94,6 +94,12 @@ final class WorldChunkMixinTargetTest {
             assertNotNull(input, "packaged mixin configuration");
             final String configuration = new String(input.readAllBytes(), StandardCharsets.UTF_8);
             assertTrue(configuration.contains("\"AgeableMobEntityRendererAccessor\""), configuration);
+            assertTrue(configuration.contains("\"GameRendererAccessor\""), configuration);
+            assertNotNull(
+                WorldChunkMixinTargetTest.class.getClassLoader()
+                    .getResource("cn/net/rms/confluxmap/mixin/GameRendererAccessor.class"),
+                "registered GameRendererAccessor class"
+            );
             assertTrue(configuration.contains("\"VanillaLayeredBiomeSourceAccessor\""), configuration);
             assertTrue(configuration.contains("\"WorldRendererMixin\""), configuration);
             assertTrue(configuration.contains("\"WorldChunkMixin\""), configuration);
