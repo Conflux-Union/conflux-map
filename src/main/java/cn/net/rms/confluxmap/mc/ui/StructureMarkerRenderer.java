@@ -28,6 +28,7 @@ public final class StructureMarkerRenderer {
         StructureIconCatalog.draw(
             draw,
             marker.type(),
+            marker.variant(),
             left + 3,
             top + 3,
             iconSize,

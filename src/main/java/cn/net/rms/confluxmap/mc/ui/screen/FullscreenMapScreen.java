@@ -1891,8 +1891,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
         final double worldX = centerX + (mouseX - width / 2.0) * scale;
         final double worldZ = centerZ + (mouseY - height / 2.0) * scale;
-        final int blockX = (int) Math.floor(worldX);
-        final int blockZ = (int) Math.floor(worldZ);
+        final FullscreenMapLocationMenu.Point point = FullscreenMapLocationMenu.pointAt(
+            worldX, worldZ, hoveredStructure
+        );
+        final int blockX = point.blockX();
+        final int blockZ = point.blockZ();
         final int menuViewportWidth = width - MARGIN - CONTROL_SIZE - CONTROL_GAP;
         locationMenuBounds = FullscreenMapLocationMenu.place(
             (int) Math.floor(mouseX),
@@ -1901,7 +1904,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             height
         );
         locationMenuTarget = FullscreenMapLocationMenu.targetAt(
-            worldX, surfaceYAt(blockX, blockZ), worldZ
+            blockX, surfaceYAt(blockX, blockZ), blockZ
         );
         locationMenuWaypoint = hoveredWaypoint;
         pendingLocationAction = null;
@@ -2928,7 +2931,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 hoveredStructure.state() == StructureIndex.State.VERIFIED
                     ? "confluxmap.map.structure.verified_tooltip"
                     : "confluxmap.map.structure.candidate_tooltip",
-                Texts.translatable(hoveredStructure.type().translationKey()).getString(),
+                Texts.translatable(hoveredStructure.translationKey()).getString(),
                 hoveredStructure.blockX(),
                 hoveredStructure.blockZ()
             );
@@ -3598,7 +3601,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 StructureMarkerRenderer.draw(draw, marker, screenX, screenY, hovered);
             }
             if (hovered) {
-                final var label = Texts.translatable(marker.type().translationKey());
+                final var label = Texts.translatable(marker.translationKey());
                 final float labelX = screenX + 10f;
                 final float labelY = screenY - 4f;
                 final MapOverlayBounds labelBounds = MapOverlayBounds.text(
@@ -4064,7 +4067,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 + (int) Math.floor(hoveredWaypoint.y()) + ", "
                 + (int) Math.floor(hoveredWaypoint.z());
         } else if (hoveredStructure != null) {
-            text = Texts.translatable(hoveredStructure.type().translationKey()).getString()
+            text = Texts.translatable(hoveredStructure.translationKey()).getString()
                 + " · " + hoveredStructure.blockX() + ", " + hoveredStructure.blockZ();
         } else if (loadStateMode()) {
             text = chunkLoadStateCursorText(mouseX, mouseY);
@@ -4241,7 +4244,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         MinecraftAccess.setScreen(MinecraftClient.getInstance(), WaypointEditScreen.forCreate(
             returnScreen,
             viewSession().dimension(),
-            Texts.translatable(marker.type().translationKey()).getString(),
+            Texts.translatable(marker.translationKey()).getString(),
             marker.blockX(),
             candidateWaypointY(surfaceYAt(marker.blockX(), marker.blockZ()), playerY),
             marker.blockZ()

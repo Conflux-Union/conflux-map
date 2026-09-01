@@ -385,6 +385,42 @@ class CubiomesNativeTest {
     }
 
     @Test
+    void viableStructureQueriesReturnPinnedVariantCodes() {
+        try (CubiomesContext ctx = CubiomesContext.create(mc21(), 0L, OVERWORLD, 0)) {
+            assertNotNull(ctx);
+            final long[] positions = new long[2500];
+            final int[] variants = new int[2500];
+            final int count = ctx.viableStructures(
+                VILLAGE, 0, 0, 49, 49, positions, variants
+            );
+            assertTrue(count > 0);
+            assertVariant(positions, variants, count, 272, 944, 0);
+            assertVariant(positions, variants, count, 608, 720, 2);
+            assertVariant(positions, variants, count, 16, 2976, 3);
+            assertVariant(positions, variants, count, 128, 19968, 4);
+            assertVariant(positions, variants, count, 7216, 4032, 8);
+        }
+    }
+
+    private static void assertVariant(
+        final long[] positions,
+        final int[] variants,
+        final int count,
+        final int expectedX,
+        final int expectedZ,
+        final int expectedVariant
+    ) {
+        for (int index = 0; index < count; index++) {
+            if ((int) (positions[index] >> 32) == expectedX
+                && (int) positions[index] == expectedZ) {
+                assertEquals(expectedVariant, variants[index]);
+                return;
+            }
+        }
+        throw new AssertionError("missing structure at " + expectedX + ", " + expectedZ);
+    }
+
+    @Test
     void strongholdsAndNetherFossilsUseDedicatedVanillaPlacementRules() {
         try (CubiomesContext overworld = open(OVERWORLD)) {
             final long[] strongholds = new long[128];

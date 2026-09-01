@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
+import cn.net.rms.confluxmap.core.predict.StructureIndex;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.mc.ui.world.WaypointHighlightState;
@@ -161,6 +162,34 @@ class FullscreenMapLocationMenuTest {
 
         assertEquals(-1, target.blockX());
         assertEquals(-1, target.blockZ());
+    }
+
+    @Test
+    void hoveredStructureSuppliesTheExactRightClickCoordinates() {
+        final FullscreenMapLocationMenu.Point point = FullscreenMapLocationMenu.pointAt(
+            31.75,
+            47.25,
+            new StructureIndex.Marker(
+                StructureIndex.StructureType.VILLAGE,
+                32,
+                48,
+                2,
+                StructureIndex.State.CANDIDATE
+            )
+        );
+
+        assertEquals(32, point.blockX());
+        assertEquals(48, point.blockZ());
+    }
+
+    @Test
+    void emptyMapRightClickKeepsTheCursorCoordinates() {
+        final FullscreenMapLocationMenu.Point point = FullscreenMapLocationMenu.pointAt(
+            -0.1, 8.97, null
+        );
+
+        assertEquals(-1, point.blockX());
+        assertEquals(8, point.blockZ());
     }
 
     @Test

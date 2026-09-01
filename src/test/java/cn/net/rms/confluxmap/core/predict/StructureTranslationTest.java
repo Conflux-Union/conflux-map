@@ -43,6 +43,34 @@ class StructureTranslationTest {
             assertTrue(english.containsKey(key), "missing English translation for " + key);
             assertTrue(chinese.containsKey(key), "missing Chinese translation for " + key);
         }
+
+        for (final String key : new String[] {
+            StructureIndex.StructureType.VILLAGE.variantTranslationKey(0),
+            StructureIndex.StructureType.VILLAGE.variantTranslationKey(1),
+            StructureIndex.StructureType.VILLAGE.variantTranslationKey(2),
+            StructureIndex.StructureType.VILLAGE.variantTranslationKey(3),
+            StructureIndex.StructureType.VILLAGE.variantTranslationKey(4),
+            StructureIndex.StructureType.VILLAGE.variantTranslationKey(8),
+            StructureIndex.StructureType.VILLAGE.variantTranslationKey(9),
+            StructureIndex.StructureType.VILLAGE.variantTranslationKey(10),
+            StructureIndex.StructureType.VILLAGE.variantTranslationKey(11),
+            StructureIndex.StructureType.VILLAGE.variantTranslationKey(12),
+            StructureIndex.StructureType.IGLOO.variantTranslationKey(0),
+            StructureIndex.StructureType.IGLOO.variantTranslationKey(1),
+            StructureIndex.StructureType.SHIPWRECK.variantTranslationKey(0),
+            StructureIndex.StructureType.SHIPWRECK.variantTranslationKey(1),
+            StructureIndex.StructureType.BASTION_REMNANT.variantTranslationKey(0),
+            StructureIndex.StructureType.BASTION_REMNANT.variantTranslationKey(1),
+            StructureIndex.StructureType.BASTION_REMNANT.variantTranslationKey(2),
+            StructureIndex.StructureType.BASTION_REMNANT.variantTranslationKey(3),
+            StructureIndex.StructureType.RUINED_PORTAL.variantTranslationKey(0),
+            StructureIndex.StructureType.RUINED_PORTAL.variantTranslationKey(1),
+            StructureIndex.StructureType.END_CITY.variantTranslationKey(0),
+            StructureIndex.StructureType.END_CITY.variantTranslationKey(1)
+        }) {
+            assertTrue(english.containsKey(key), "missing English translation for " + key);
+            assertTrue(chinese.containsKey(key), "missing Chinese translation for " + key);
+        }
     }
 
     private static Map<String, String> translations(final String locale) {

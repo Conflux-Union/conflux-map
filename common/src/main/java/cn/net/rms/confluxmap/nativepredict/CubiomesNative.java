@@ -157,7 +157,8 @@ final class CubiomesNative {
 
     /** Structure attempts from the region rectangle that also pass cubiomes' viability checks. */
     static native int cfxViableStructures(
-        long handle, int structType, int regX0, int regZ0, int regX1, int regZ1, long[] out, int cap
+        long handle, int structType, int regX0, int regZ0, int regX1, int regZ1,
+        long[] out, int[] outVariants, int cap
     );
 
     /** All strongholds for this seed, ordered by Vanilla's ring iterator. */
@@ -165,7 +166,8 @@ final class CubiomesNative {
 
     /** Nearest viable structure of {@code structType} within {@code maxRadius}; writes one packed position. */
     static native int cfxNearestStructure(
-        long handle, int structType, int blockX, int blockZ, int maxRadius, long[] out
+        long handle, int structType, int blockX, int blockZ, int maxRadius,
+        long[] out, int[] outVariant
     );
 
     /**

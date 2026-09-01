@@ -16,6 +16,40 @@ public final class StructureIconCatalog {
     }
 
     public static Identifier icon(final StructureIndex.StructureType type) {
+        return icon(type, 0);
+    }
+
+    public static Identifier icon(final StructureIndex.StructureType type, final int variant) {
+        final String variantTexture = switch (type) {
+            case VILLAGE -> {
+                if ((variant & 8) != 0) {
+                    yield "item/rotten_flesh";
+                }
+                yield switch (variant & 7) {
+                    case 1 -> "block/chiseled_sandstone";
+                    case 2 -> "block/acacia_log";
+                    case 3 -> "block/spruce_log";
+                    case 4 -> "block/snow";
+                    default -> null;
+                };
+            }
+            case IGLOO -> variant == 1 ? "item/brewing_stand" : null;
+            case SHIPWRECK -> variant == 1 ? "block/sand" : null;
+            case BASTION_REMNANT -> switch (variant) {
+                case 0 -> "block/polished_blackstone_bricks";
+                case 1 -> "block/crimson_nylium";
+                case 2 -> "block/gold_block";
+                case 3 -> "block/blackstone";
+                default -> null;
+            };
+            case RUINED_PORTAL, RUINED_PORTAL_NETHER ->
+                variant == 1 ? "block/obsidian" : null;
+            case END_CITY -> variant == 1 ? "item/elytra" : null;
+            default -> null;
+        };
+        if (variantTexture != null) {
+            return texture(variantTexture);
+        }
         final Identifier icon = ICONS.get(type);
         if (icon == null) {
             throw new IllegalArgumentException("No structure icon for " + type.id());
@@ -31,7 +65,19 @@ public final class StructureIconCatalog {
         final float size,
         final int tint
     ) {
-        RenderUtil.bindTexture(MinecraftClient.getInstance(), icon(type));
+        draw(draw, type, 0, x, y, size, tint);
+    }
+
+    public static void draw(
+        final GuiDraw draw,
+        final StructureIndex.StructureType type,
+        final int variant,
+        final float x,
+        final float y,
+        final float size,
+        final int tint
+    ) {
+        RenderUtil.bindTexture(MinecraftClient.getInstance(), icon(type, variant));
         RenderUtil.drawTintedQuad(draw.matrices(), x, y, size, size, 0f, 0f, 1f, 1f, tint);
     }
 
@@ -68,6 +114,10 @@ public final class StructureIconCatalog {
         final StructureIndex.StructureType type,
         final String texture
     ) {
-        icons.put(type, Ids.of("minecraft", "textures/" + texture + ".png"));
+        icons.put(type, texture(texture));
+    }
+
+    private static Identifier texture(final String path) {
+        return Ids.of("minecraft", "textures/" + path + ".png");
     }
 }

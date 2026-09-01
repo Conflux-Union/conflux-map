@@ -31,7 +31,7 @@ import org.apache.logging.log4j.Logger;
 public final class StructureIndex {
     private static final Logger LOGGER = LogManager.getLogger("ConfluxMap/StructureIndex");
     private static final int MC_1_17_1 = 21;
-    private static final String CACHE_PREFIX = "structures_v3_mc";
+    private static final String CACHE_PREFIX = "structures_v4_mc";
     private static final int MAX_CANDIDATE_QUERY_REGIONS = 1_024;
 
     public enum StructureType {
@@ -91,6 +91,41 @@ public final class StructureIndex {
         public String id() { return id; }
         public String badge() { return badge; }
         public String translationKey() { return "confluxmap.structure." + id; }
+        public String variantTranslationKey(final int variant) {
+            return switch (this) {
+                case VILLAGE -> switch (variant & 15) {
+                    case 1 -> "confluxmap.structure.village.desert";
+                    case 2 -> "confluxmap.structure.village.savanna";
+                    case 3 -> "confluxmap.structure.village.taiga";
+                    case 4 -> "confluxmap.structure.village.snowy";
+                    case 8 -> "confluxmap.structure.village.zombie_plains";
+                    case 9 -> "confluxmap.structure.village.zombie_desert";
+                    case 10 -> "confluxmap.structure.village.zombie_savanna";
+                    case 11 -> "confluxmap.structure.village.zombie_taiga";
+                    case 12 -> "confluxmap.structure.village.zombie_snowy";
+                    default -> "confluxmap.structure.village.plains";
+                };
+                case IGLOO -> variant == 1
+                    ? "confluxmap.structure.igloo.basement"
+                    : "confluxmap.structure.igloo.normal";
+                case SHIPWRECK -> variant == 1
+                    ? "confluxmap.structure.shipwreck.beached"
+                    : "confluxmap.structure.shipwreck.water";
+                case BASTION_REMNANT -> switch (variant) {
+                    case 1 -> "confluxmap.structure.bastion_remnant.hoglin_stable";
+                    case 2 -> "confluxmap.structure.bastion_remnant.treasure";
+                    case 3 -> "confluxmap.structure.bastion_remnant.bridge";
+                    default -> "confluxmap.structure.bastion_remnant.housing";
+                };
+                case RUINED_PORTAL, RUINED_PORTAL_NETHER -> variant == 1
+                    ? "confluxmap.structure.ruined_portal.giant"
+                    : "confluxmap.structure.ruined_portal.normal";
+                case END_CITY -> variant == 1
+                    ? "confluxmap.structure.end_city.ship"
+                    : "confluxmap.structure.end_city.normal";
+                default -> translationKey();
+            };
+        }
         public boolean globalPlacement() { return legacySpacingChunks == 0; }
         public int regionSizeBlocks(final int mcVersion) {
             final int spacing = mcVersion <= MC_1_17_1 ? legacySpacingChunks : modernSpacingChunks;
@@ -115,7 +150,22 @@ public final class StructureIndex {
 
     public enum State { CANDIDATE, VERIFIED, NONEXISTENT }
 
-    public record Marker(StructureType type, int blockX, int blockZ, State state) {
+    public record Candidate(int blockX, int blockZ, int variant) {
+    }
+
+    public record Marker(StructureType type, int blockX, int blockZ, int variant, State state) {
+        public Marker(
+            final StructureType type,
+            final int blockX,
+            final int blockZ,
+            final State state
+        ) {
+            this(type, blockX, blockZ, 0, state);
+        }
+
+        public String translationKey() {
+            return type.variantTranslationKey(variant);
+        }
     }
 
     @FunctionalInterface
@@ -151,6 +201,43 @@ public final class StructureIndex {
             final int maxRadius
         ) {
             return OptionalLong.empty();
+        }
+
+        default Candidate[] detailedCandidates(
+            final StructureType type,
+            final int minRegionX,
+            final int minRegionZ,
+            final int maxRegionX,
+            final int maxRegionZ
+        ) {
+            return unpack(candidates(type, minRegionX, minRegionZ, maxRegionX, maxRegionZ));
+        }
+
+        default Optional<Candidate> nearestCandidate(
+            final StructureType type,
+            final int blockX,
+            final int blockZ,
+            final int maxRadius
+        ) {
+            final OptionalLong packed = nearest(type, blockX, blockZ, maxRadius);
+            return packed.isPresent()
+                ? Optional.of(unpack(packed.getAsLong()))
+                : Optional.empty();
+        }
+
+        private static Candidate[] unpack(final long[] positions) {
+            if (positions == null || positions.length == 0) {
+                return new Candidate[0];
+            }
+            final Candidate[] candidates = new Candidate[positions.length];
+            for (int index = 0; index < positions.length; index++) {
+                candidates[index] = unpack(positions[index]);
+            }
+            return candidates;
+        }
+
+        private static Candidate unpack(final long packed) {
+            return new Candidate((int) (packed >>> 32), (int) packed, 0);
         }
     }
 
@@ -247,7 +334,7 @@ public final class StructureIndex {
                 if (type.globalPlacement()) {
                     final Set<Long> covered = queriedRegions.get(type);
                     if (covered.add(0L)) {
-                        addCandidates(type, provider.candidates(type, 0, 0));
+                        addCandidates(type, provider.detailedCandidates(type, 0, 0, 0, 0));
                     }
                     continue;
                 }
@@ -258,7 +345,7 @@ public final class StructureIndex {
                 final int maxRegionZ = Math.floorDiv(maxBlockZ, regionSize);
                 final Set<Long> covered = queriedRegions.get(type);
                 if (covered.isEmpty()) {
-                    addCandidates(type, provider.candidates(
+                    addCandidates(type, provider.detailedCandidates(
                         type, minRegionX, minRegionZ, maxRegionX, maxRegionZ
                     ));
                     markCovered(covered, minRegionX, minRegionZ, maxRegionX, maxRegionZ);
@@ -270,7 +357,7 @@ public final class StructureIndex {
                         if (covered.contains(region)) {
                             continue;
                         }
-                        addCandidates(type, provider.candidates(type, rx, rz));
+                        addCandidates(type, provider.detailedCandidates(type, rx, rz, rx, rz));
                         covered.add(region);
                     }
                 }
@@ -299,9 +386,9 @@ public final class StructureIndex {
         if (provider == null || !type.supports(mcVersion, dimension) || maxRadius <= 0) {
             return Optional.empty();
         }
-        final OptionalLong located = provider.nearest(type, blockX, blockZ, maxRadius);
+        final Optional<Candidate> located = provider.nearestCandidate(type, blockX, blockZ, maxRadius);
         if (located.isPresent()) {
-            addCandidates(type, new long[] {located.getAsLong()});
+            addCandidates(type, new Candidate[] {located.get()});
         }
         Marker nearest = null;
         double nearestDistance = Double.POSITIVE_INFINITY;
@@ -463,8 +550,12 @@ public final class StructureIndex {
 
     public synchronized void verify(final StructureType type, final int blockX, final int blockZ, final boolean exists) {
         final String key = key(type, blockX, blockZ);
-        if (markers.containsKey(key)) {
-            markers.put(key, new Marker(type, blockX, blockZ, exists ? State.VERIFIED : State.NONEXISTENT));
+        final Marker marker = markers.get(key);
+        if (marker != null) {
+            markers.put(key, new Marker(
+                type, blockX, blockZ, marker.variant(),
+                exists ? State.VERIFIED : State.NONEXISTENT
+            ));
             dirty = true;
         }
     }
@@ -481,6 +572,7 @@ public final class StructureIndex {
                 object.addProperty("type", marker.type().id());
                 object.addProperty("x", marker.blockX());
                 object.addProperty("z", marker.blockZ());
+                object.addProperty("variant", marker.variant());
                 object.addProperty("state", marker.state().name());
                 array.add(object);
             }
@@ -502,12 +594,32 @@ public final class StructureIndex {
             return;
         }
         for (final long packed : positions) {
-            final int x = (int) (packed >>> 32);
-            final int z = (int) packed;
-            if (!markers.containsKey(key(type, x, z))) {
-                markers.put(key(type, x, z), new Marker(type, x, z, State.CANDIDATE));
-                dirty = true;
-            }
+            addCandidate(type, new Candidate((int) (packed >>> 32), (int) packed, 0));
+        }
+    }
+
+    private void addCandidates(final StructureType type, final Candidate[] candidates) {
+        if (candidates == null) {
+            return;
+        }
+        for (final Candidate candidate : candidates) {
+            addCandidate(type, candidate);
+        }
+    }
+
+    private void addCandidate(final StructureType type, final Candidate candidate) {
+        final String key = key(type, candidate.blockX(), candidate.blockZ());
+        final Marker existing = markers.get(key);
+        if (existing == null) {
+            markers.put(key, new Marker(
+                type, candidate.blockX(), candidate.blockZ(), candidate.variant(), State.CANDIDATE
+            ));
+            dirty = true;
+        } else if (existing.variant() != candidate.variant()) {
+            markers.put(key, new Marker(
+                type, candidate.blockX(), candidate.blockZ(), candidate.variant(), existing.state()
+            ));
+            dirty = true;
         }
     }
 
@@ -531,7 +643,8 @@ public final class StructureIndex {
                 }
                 final int x = object.get("x").getAsInt();
                 final int z = object.get("z").getAsInt();
-                markers.put(key(type, x, z), new Marker(type, x, z, state));
+                final int variant = object.has("variant") ? object.get("variant").getAsInt() : 0;
+                markers.put(key(type, x, z), new Marker(type, x, z, variant, state));
             }
         } catch (Exception ignored) {
             // Ignore malformed optional prediction metadata.
@@ -572,7 +685,7 @@ public final class StructureIndex {
         if (!missing) {
             return;
         }
-        addCandidates(type, provider.candidates(type, minRegionX, minRegionZ, maxRegionX, maxRegionZ));
+        addCandidates(type, provider.detailedCandidates(type, minRegionX, minRegionZ, maxRegionX, maxRegionZ));
         markCovered(covered, minRegionX, minRegionZ, maxRegionX, maxRegionZ);
     }
 

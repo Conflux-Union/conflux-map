@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalLong;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -19,6 +20,133 @@ import org.junit.jupiter.api.io.TempDir;
 class StructureIndexTest {
     @TempDir
     Path tempDir;
+
+    @Test
+    void detailedCandidatesKeepTheirVariantAcrossPersistence() {
+        final Path cacheRoot = tempDir.resolve("cache");
+        final WorldIdentity world = WorldIdentity.singleplayer("variant-world");
+        final StructureIndex index = new StructureIndex(
+            cacheRoot,
+            world,
+            DimensionId.OVERWORLD,
+            new StructureIndex.CandidateProvider() {
+                @Override
+                public long[] candidates(
+                    final StructureIndex.StructureType type,
+                    final int regionX,
+                    final int regionZ
+                ) {
+                    return new long[0];
+                }
+
+                @Override
+                public StructureIndex.Candidate[] detailedCandidates(
+                    final StructureIndex.StructureType type,
+                    final int minRegionX,
+                    final int minRegionZ,
+                    final int maxRegionX,
+                    final int maxRegionZ
+                ) {
+                    return type == StructureIndex.StructureType.VILLAGE
+                        ? new StructureIndex.Candidate[] {
+                            new StructureIndex.Candidate(32, 48, 10)
+                        }
+                        : new StructureIndex.Candidate[0];
+                }
+            }
+        );
+
+        final StructureIndex.Marker marker = index.query(
+            0, 128, 0, 128, EnumSet.of(StructureIndex.StructureType.VILLAGE)
+        ).get(0);
+        assertEquals(10, marker.variant());
+        assertEquals("confluxmap.structure.village.zombie_savanna", marker.translationKey());
+        index.save();
+
+        final StructureIndex reloaded = new StructureIndex(
+            cacheRoot,
+            world,
+            DimensionId.OVERWORLD,
+            (type, regionX, regionZ) -> new long[0]
+        );
+        final StructureIndex.Marker persisted = reloaded.query(
+            0, 128, 0, 128, EnumSet.of(StructureIndex.StructureType.VILLAGE)
+        ).get(0);
+        assertEquals(10, persisted.variant());
+        assertEquals("confluxmap.structure.village.zombie_savanna", persisted.translationKey());
+    }
+
+    @Test
+    void nearestDetailedCandidateKeepsItsVariant() {
+        final StructureIndex index = new StructureIndex(
+            tempDir.resolve("cache"),
+            WorldIdentity.singleplayer("nearest-variant-world"),
+            DimensionId.END,
+            new StructureIndex.CandidateProvider() {
+                @Override
+                public long[] candidates(
+                    final StructureIndex.StructureType type,
+                    final int regionX,
+                    final int regionZ
+                ) {
+                    return new long[0];
+                }
+
+                @Override
+                public Optional<StructureIndex.Candidate> nearestCandidate(
+                    final StructureIndex.StructureType type,
+                    final int blockX,
+                    final int blockZ,
+                    final int maxRadius
+                ) {
+                    return Optional.of(new StructureIndex.Candidate(80, 3280, 1));
+                }
+            }
+        );
+
+        final StructureIndex.Marker marker = index.findNearest(
+            StructureIndex.StructureType.END_CITY, 0, 3000, 1000
+        ).orElseThrow();
+
+        assertEquals(1, marker.variant());
+        assertEquals("confluxmap.structure.end_city.ship", marker.translationKey());
+    }
+
+    @Test
+    void variantTranslationKeysDescribeEverySupportedVariant() {
+        assertEquals(
+            "confluxmap.structure.village.snowy",
+            StructureIndex.StructureType.VILLAGE.variantTranslationKey(4)
+        );
+        assertEquals(
+            "confluxmap.structure.village.zombie_taiga",
+            StructureIndex.StructureType.VILLAGE.variantTranslationKey(11)
+        );
+        assertEquals(
+            "confluxmap.structure.igloo.basement",
+            StructureIndex.StructureType.IGLOO.variantTranslationKey(1)
+        );
+        assertEquals(
+            "confluxmap.structure.shipwreck.beached",
+            StructureIndex.StructureType.SHIPWRECK.variantTranslationKey(1)
+        );
+        assertEquals(
+            "confluxmap.structure.bastion_remnant.treasure",
+            StructureIndex.StructureType.BASTION_REMNANT.variantTranslationKey(2)
+        );
+        assertEquals(
+            "confluxmap.structure.ruined_portal.giant",
+            StructureIndex.StructureType.RUINED_PORTAL.variantTranslationKey(1)
+        );
+        assertEquals(
+            "confluxmap.structure.end_city.ship",
+            StructureIndex.StructureType.END_CITY.variantTranslationKey(1)
+        );
+        assertEquals(
+            StructureIndex.StructureType.STRONGHOLD.translationKey(),
+            StructureIndex.StructureType.STRONGHOLD.variantTranslationKey(99)
+        );
+    }
 
     @Test
     void structureMarkersDoNotLeakBetweenWorlds() {

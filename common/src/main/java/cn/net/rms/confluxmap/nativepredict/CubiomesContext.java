@@ -204,9 +204,26 @@ public final class CubiomesContext implements AutoCloseable {
         final int regZ1,
         final long[] out
     ) {
+        return viableStructures(
+            structType, regX0, regZ0, regX1, regZ1, out, new int[out.length]
+        );
+    }
+
+    /** Viable structure attempts with one type-specific variant code per returned position. */
+    public int viableStructures(
+        final int structType,
+        final int regX0,
+        final int regZ0,
+        final int regX1,
+        final int regZ1,
+        final long[] out,
+        final int[] outVariants
+    ) {
         requireOpen();
+        requireCapacity(outVariants, out.length);
         return CubiomesNative.cfxViableStructures(
-            handle, structType, regX0, regZ0, regX1, regZ1, out, out.length
+            handle, structType, regX0, regZ0, regX1, regZ1,
+            out, outVariants, out.length
         );
     }
 
@@ -224,9 +241,26 @@ public final class CubiomesContext implements AutoCloseable {
         final int maxRadius,
         final long[] out
     ) {
+        return nearestStructure(
+            structType, blockX, blockZ, maxRadius, out, new int[out.length]
+        );
+    }
+
+    /** Nearest viable structure and its type-specific variant code. */
+    public boolean nearestStructure(
+        final int structType,
+        final int blockX,
+        final int blockZ,
+        final int maxRadius,
+        final long[] out,
+        final int[] outVariant
+    ) {
         requireOpen();
         requireCapacity(out, 1);
-        return CubiomesNative.cfxNearestStructure(handle, structType, blockX, blockZ, maxRadius, out) == 1;
+        requireCapacity(outVariant, 1);
+        return CubiomesNative.cfxNearestStructure(
+            handle, structType, blockX, blockZ, maxRadius, out, outVariant
+        ) == 1;
     }
 
     /** Generation viability check, including dedicated terrain checks where cubiomes provides one. */
