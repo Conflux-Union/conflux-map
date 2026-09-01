@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.OptionalLong;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -146,6 +147,67 @@ class StructureIndexTest {
             StructureIndex.StructureType.STRONGHOLD.translationKey(),
             StructureIndex.StructureType.STRONGHOLD.variantTranslationKey(99)
         );
+    }
+
+    @Test
+    void exposesEverySearchableStructureVariant() {
+        assertEquals(
+            List.of(0, 1, 2, 3, 4, 8, 9, 10, 11, 12),
+            StructureIndex.StructureType.VILLAGE.variantCodes()
+        );
+        assertEquals(List.of(0, 1), StructureIndex.StructureType.IGLOO.variantCodes());
+        assertEquals(List.of(0, 1), StructureIndex.StructureType.SHIPWRECK.variantCodes());
+        assertEquals(List.of(0, 1, 2, 3), StructureIndex.StructureType.BASTION_REMNANT.variantCodes());
+        assertEquals(List.of(0, 1), StructureIndex.StructureType.RUINED_PORTAL.variantCodes());
+        assertEquals(List.of(0, 1), StructureIndex.StructureType.RUINED_PORTAL_NETHER.variantCodes());
+        assertEquals(List.of(0, 1), StructureIndex.StructureType.END_CITY.variantCodes());
+        assertTrue(StructureIndex.StructureType.STRONGHOLD.variantCodes().isEmpty());
+    }
+
+    @Test
+    void radiusCandidateSearchFiltersVariantsBeforeApplyingTheResultLimit() {
+        final StructureIndex index = new StructureIndex(
+            tempDir.resolve("cache"),
+            WorldIdentity.singleplayer("variant-filter-world"),
+            DimensionId.OVERWORLD,
+            new StructureIndex.CandidateProvider() {
+                @Override
+                public long[] candidates(
+                    final StructureIndex.StructureType type,
+                    final int regionX,
+                    final int regionZ
+                ) {
+                    return new long[0];
+                }
+
+                @Override
+                public StructureIndex.Candidate[] detailedCandidates(
+                    final StructureIndex.StructureType type,
+                    final int minRegionX,
+                    final int minRegionZ,
+                    final int maxRegionX,
+                    final int maxRegionZ
+                ) {
+                    return new StructureIndex.Candidate[] {
+                        new StructureIndex.Candidate(16, 16, 0),
+                        new StructureIndex.Candidate(32, 32, 2)
+                    };
+                }
+            }
+        );
+
+        final List<StructureIndex.Marker> result = index.findCandidates(
+            StructureIndex.StructureType.VILLAGE,
+            0,
+            0,
+            1_000,
+            1,
+            OptionalInt.of(2)
+        );
+
+        assertEquals(1, result.size());
+        assertEquals(2, result.get(0).variant());
+        assertEquals(32, result.get(0).blockX());
     }
 
     @Test

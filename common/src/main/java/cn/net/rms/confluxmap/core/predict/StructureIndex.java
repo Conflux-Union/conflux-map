@@ -22,6 +22,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
 import org.apache.logging.log4j.LogManager;
@@ -124,6 +125,15 @@ public final class StructureIndex {
                     ? "confluxmap.structure.end_city.ship"
                     : "confluxmap.structure.end_city.normal";
                 default -> translationKey();
+            };
+        }
+        public List<Integer> variantCodes() {
+            return switch (this) {
+                case VILLAGE -> List.of(0, 1, 2, 3, 4, 8, 9, 10, 11, 12);
+                case IGLOO, SHIPWRECK, RUINED_PORTAL, RUINED_PORTAL_NETHER, END_CITY ->
+                    List.of(0, 1);
+                case BASTION_REMNANT -> List.of(0, 1, 2, 3);
+                default -> List.of();
             };
         }
         public boolean globalPlacement() { return legacySpacingChunks == 0; }
@@ -462,6 +472,17 @@ public final class StructureIndex {
         final int maxRadius,
         final int limit
     ) {
+        return findCandidates(type, blockX, blockZ, maxRadius, limit, OptionalInt.empty());
+    }
+
+    public synchronized List<Marker> findCandidates(
+        final StructureType type,
+        final int blockX,
+        final int blockZ,
+        final int maxRadius,
+        final int limit,
+        final OptionalInt variant
+    ) {
         if (provider == null || maxRadius <= 0 || limit <= 0
             || !type.supports(mcVersion, dimension)) {
             return List.of();
@@ -475,7 +496,7 @@ public final class StructureIndex {
                 Integer.MAX_VALUE,
                 EnumSet.of(type)
             );
-            return nearestCandidates(type, blockX, blockZ, maxRadius, boundedLimit);
+            return nearestCandidates(type, blockX, blockZ, maxRadius, boundedLimit, variant);
         }
 
         final int regionSize = type.regionSizeBlocks(mcVersion);
@@ -495,14 +516,14 @@ public final class StructureIndex {
             }
             prefetchCandidateArea(type, minBlockX, maxBlockX, minBlockZ, maxBlockZ);
             final List<Marker> result = nearestCandidates(
-                type, blockX, blockZ, maxRadius, boundedLimit
+                type, blockX, blockZ, maxRadius, boundedLimit, variant
             );
             if (result.size() >= boundedLimit || extent >= maxRadius) {
                 return result;
             }
             extent = Math.min((long) maxRadius, extent * 2L);
         }
-        return nearestCandidates(type, blockX, blockZ, maxRadius, boundedLimit);
+        return nearestCandidates(type, blockX, blockZ, maxRadius, boundedLimit, variant);
     }
 
     private List<Marker> nearestCandidates(
@@ -510,11 +531,13 @@ public final class StructureIndex {
         final int blockX,
         final int blockZ,
         final int maxRadius,
-        final int limit
+        final int limit,
+        final OptionalInt variant
     ) {
         final List<Marker> candidates = new ArrayList<>();
         for (final Marker marker : markers.values()) {
             if (marker.type() != type || marker.state() == State.NONEXISTENT
+                || (variant.isPresent() && marker.variant() != variant.getAsInt())
                 || distance(marker, blockX, blockZ) > maxRadius) {
                 continue;
             }

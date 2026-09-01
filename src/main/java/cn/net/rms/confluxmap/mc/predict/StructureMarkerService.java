@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 
@@ -239,9 +240,20 @@ public final class StructureMarkerService {
         final int maxRadius,
         final int limit
     ) {
+        return findCandidates(type, blockX, blockZ, maxRadius, limit, OptionalInt.empty());
+    }
+
+    public synchronized List<StructureIndex.Marker> findCandidates(
+        final StructureIndex.StructureType type,
+        final int blockX,
+        final int blockZ,
+        final int maxRadius,
+        final int limit,
+        final OptionalInt variant
+    ) {
         return current == null || !structureSearchAllowed.getAsBoolean()
             ? List.of()
-            : current.findCandidates(type, blockX, blockZ, maxRadius, limit);
+            : current.findCandidates(type, blockX, blockZ, maxRadius, limit, variant);
     }
 
     public synchronized void flush() {

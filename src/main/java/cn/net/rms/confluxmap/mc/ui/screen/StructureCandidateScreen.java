@@ -7,8 +7,10 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
 import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.mc.ui.StructureIconCatalog;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.OptionalInt;
 import java.util.regex.Pattern;
 import net.minecraft.client.MinecraftClient;
 //#if MC>=12109
@@ -52,9 +54,11 @@ final class StructureCandidateScreen extends ConfluxScreen {
     private TextFieldWidget radiusField;
     private TextFieldWidget limitField;
     private ButtonWidget searchButton;
+    private ButtonWidget variantButton;
     private int fieldWidth;
     private int panelContentWidth = 1;
     private String statusKey;
+    private OptionalInt selectedVariant = OptionalInt.empty();
 
     StructureCandidateScreen(
         final StructureSearchScreen picker,
@@ -82,13 +86,7 @@ final class StructureCandidateScreen extends ConfluxScreen {
     @Override
     protected void init() {
         if (!initialQueryComplete) {
-            results = structures.findCandidates(type, centerX, centerZ, radius, limit);
-            statusKey = results.isEmpty()
-                ? "confluxmap.screen.structure_candidates.not_found"
-                : null;
-            if (!results.isEmpty()) {
-                map.focusStructure(results.get(0));
-            }
+            refreshResults();
             initialQueryComplete = true;
         }
         rebuild();
@@ -115,14 +113,40 @@ final class StructureCandidateScreen extends ConfluxScreen {
         addDrawableChild(centerZField);
         addDrawableChild(radiusField);
         addDrawableChild(limitField);
+        final boolean hasVariants = !type.variantCodes().isEmpty();
+        final int controlsWidth = Math.min(
+            hasVariants ? 204 : 100,
+            layout.panelContentWidth()
+        );
+        final int controlWidth = hasVariants
+            ? Math.max(1, (controlsWidth - GAP) / 2)
+            : controlsWidth;
+        final int controlsLeft = layout.panelCenterX() - controlsWidth / 2;
         searchButton = addDrawableChild(Widgets.button(
-            layout.panelCenterX() - Math.min(100, layout.panelContentWidth()) / 2,
+            controlsLeft,
             88,
-            Math.min(100, layout.panelContentWidth()),
+            controlWidth,
             FIELD_HEIGHT,
             Texts.translatable("confluxmap.screen.structure_candidates.search"),
             ignored -> search()
         ));
+        if (hasVariants) {
+            variantButton = addDrawableChild(Widgets.button(
+                controlsLeft + controlWidth + GAP,
+                88,
+                controlWidth,
+                FIELD_HEIGHT,
+                Texts.translatable(
+                    "confluxmap.screen.structure_candidates.variant",
+                    Texts.translatable(
+                        StructureVariantPickerScreen.labelKey(type, selectedVariant)
+                    )
+                ),
+                ignored -> chooseVariant()
+            ));
+        } else {
+            variantButton = null;
+        }
 
         final CandidateListUi listUi = candidateListUi();
         scrollOffset = listUi.scrollOffset();
@@ -220,13 +244,37 @@ final class StructureCandidateScreen extends ConfluxScreen {
             statusKey = "confluxmap.screen.structure_candidates.invalid";
             return;
         }
-        results = structures.findCandidates(type, centerX, centerZ, radius, limit);
+        refreshResults();
         scrollOffset = 0;
-        statusKey = results.isEmpty() ? "confluxmap.screen.structure_candidates.not_found" : null;
+        rebuild();
+    }
+
+    private void chooseVariant() {
+        MinecraftAccess.setScreen(
+            MinecraftClient.getInstance(),
+            new StructureVariantPickerScreen(
+                this,
+                type,
+                selectedVariant,
+                selected -> {
+                    selectedVariant = selected;
+                    scrollOffset = 0;
+                    refreshResults();
+                }
+            )
+        );
+    }
+
+    private void refreshResults() {
+        results = structures.findCandidates(
+            type, centerX, centerZ, radius, limit, selectedVariant
+        );
+        statusKey = results.isEmpty()
+            ? "confluxmap.screen.structure_candidates.not_found"
+            : null;
         if (!results.isEmpty()) {
             map.focusStructure(results.get(0));
         }
-        rebuild();
     }
 
     private void focus(final StructureIndex.Marker marker) {
@@ -270,6 +318,9 @@ final class StructureCandidateScreen extends ConfluxScreen {
     private void updateAccess() {
         final boolean allowed = structures.availableTypes(dimension).contains(type);
         searchButton.active = allowed;
+        if (variantButton != null) {
+            variantButton.active = allowed;
+        }
         for (final ButtonWidget button : mapButtons) {
             button.active = allowed;
         }
@@ -419,13 +470,26 @@ final class StructureCandidateScreen extends ConfluxScreen {
         final int end = Math.min(results.size(), scrollOffset + listUi.visibleRows());
         for (int index = scrollOffset; index < end; index++) {
             final StructureIndex.Marker marker = results.get(index);
+            final int iconSize = 16;
+            final int textWidth = Math.max(8, listUi.textWidth() - iconSize - GAP);
+            StructureIconCatalog.draw(
+                draw,
+                marker.type(),
+                marker.variant(),
+                rowX(),
+                listUi.rowY(index) + 2,
+                iconSize,
+                0xFFFFFFFF
+            );
             draw.drawTextWithShadow(
                 this.textRenderer,
                 fitToWidth(
-                    CandidateListUi.coordinateText(marker.blockX(), marker.blockZ()),
-                    listUi.textWidth()
+                    Texts.translatable(marker.translationKey()).getString()
+                        + " · "
+                        + CandidateListUi.coordinateText(marker.blockX(), marker.blockZ()),
+                    textWidth
                 ),
-                rowX(),
+                rowX() + iconSize + GAP,
                 listUi.rowY(index) + 6,
                 0xFFFFFFFF
             );
@@ -438,9 +502,9 @@ final class StructureCandidateScreen extends ConfluxScreen {
                             marker.blockX(), marker.blockZ(), centerX, centerZ
                         )
                     ).getString(),
-                    listUi.textWidth()
+                    textWidth
                 ),
-                rowX(),
+                rowX() + iconSize + GAP,
                 listUi.waypointButtonY(index) + 6,
                 0xFFBBBBBB
             );
