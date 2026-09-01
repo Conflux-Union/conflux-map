@@ -29,12 +29,11 @@ import net.minecraft.text.Text;
 final class StructureSearchScreen extends ConfluxScreen {
     private static final int FIELD_WIDTH = 240;
     private static final int FIELD_HEIGHT = 20;
-    private static final int MASTER_TOP = 62;
-    private static final int BULK_TOP = 86;
-    private static final int LIST_TOP = 124;
+    private static final int MASTER_TOP = 78;
+    private static final int LIST_TOP = 102;
     private static final int ROW_HEIGHT = 24;
+    private static final int CHECKBOX_SIZE = 20;
     private static final int ICON_SIZE = 16;
-    private static final int TOGGLE_WIDTH = 58;
     private static final int LOCATE_WIDTH = 62;
     private static final int BUTTON_GAP = 3;
     private static final int SCROLLBAR_WIDTH = 6;
@@ -54,15 +53,13 @@ final class StructureSearchScreen extends ConfluxScreen {
 
     private TextFieldWidget searchField;
     private ButtonWidget masterButton;
-    private ButtonWidget selectAllButton;
-    private ButtonWidget selectNoneButton;
     private String observedQuery = "";
     private int scrollOffset;
     private int filteredCount;
     private int rowX;
     private int rowWidth;
-    private int toggleWidth;
     private int locateWidth;
+    private int panelContentWidth = 1;
     private boolean draggingScrollBar;
     private double scrollBarGrabOffset;
 
@@ -91,8 +88,13 @@ final class StructureSearchScreen extends ConfluxScreen {
 
     @Override
     protected void init() {
+        if (!config.predictionShowStructures) {
+            config.predictionShowStructures = true;
+            saveConfig();
+        }
         visibilityButtons.clear();
         locateButtons.clear();
+        panelContentWidth = requiredPanelContentWidth();
         final SplitMapLayout layout = splitLayout();
         final int fieldWidth = Math.min(FIELD_WIDTH, layout.panelContentWidth());
         searchField = new TextFieldWidget(
@@ -108,46 +110,27 @@ final class StructureSearchScreen extends ConfluxScreen {
         addDrawableChild(searchField);
         setInitialFocus(searchField);
 
-        final int masterWidth = Math.min(240, layout.panelContentWidth());
-        masterButton = addDrawableChild(Widgets.button(
-            layout.panelCenterX() - masterWidth / 2,
-            MASTER_TOP,
-            masterWidth,
-            20,
-            masterLabel(),
-            ignored -> toggleMasterVisibility()
-        ));
-        final int bulkWidth = (masterWidth - BUTTON_GAP) / 2;
-        selectAllButton = addDrawableChild(Widgets.button(
-            layout.panelCenterX() - masterWidth / 2,
-            BULK_TOP,
-            bulkWidth,
-            20,
-            Texts.translatable("confluxmap.screen.structure_search.select_all"),
-            ignored -> setFilteredVisibility(true)
-        ));
-        selectNoneButton = addDrawableChild(Widgets.button(
-            layout.panelCenterX() - masterWidth / 2 + bulkWidth + BUTTON_GAP,
-            BULK_TOP,
-            masterWidth - bulkWidth - BUTTON_GAP,
-            20,
-            Texts.translatable("confluxmap.screen.structure_search.select_none"),
-            ignored -> setFilteredVisibility(false)
-        ));
-
         final int listWidth = Math.max(
             1, layout.panelContentWidth() - SCROLLBAR_GAP - SCROLLBAR_WIDTH
         );
         rowWidth = Math.min(420, listWidth);
         rowX = layout.panelContentLeft() + (listWidth - rowWidth) / 2;
+        masterButton = addDrawableChild(Widgets.button(
+            rowX,
+            MASTER_TOP,
+            CHECKBOX_SIZE,
+            CHECKBOX_SIZE,
+            masterCheckboxLabel(),
+            ignored -> toggleFilteredVisibility()
+        ));
         updateActionWidths();
         for (final StructureIndex.StructureType type : available) {
             final ButtonWidget visibility = addDrawableChild(Widgets.button(
-                rowX + rowWidth - locateWidth - BUTTON_GAP - toggleWidth,
+                rowX,
                 LIST_TOP,
-                toggleWidth,
-                20,
-                visibilityLabel(type),
+                CHECKBOX_SIZE,
+                CHECKBOX_SIZE,
+                checkboxLabel(type),
                 ignored -> toggleTypeVisibility(type)
             ));
             visibilityButtons.put(type, visibility);
@@ -175,14 +158,47 @@ final class StructureSearchScreen extends ConfluxScreen {
     }
 
     private void updateActionWidths() {
-        final int labelAndSpacing = ICON_SIZE + BUTTON_GAP * 3 + 16;
-        final int available = Math.max(2, rowWidth - labelAndSpacing);
-        locateWidth = Math.min(LOCATE_WIDTH, Math.max(1, (available + 1) / 2));
-        toggleWidth = Math.min(TOGGLE_WIDTH, Math.max(1, available - locateWidth));
+        final int labelAndSpacing = CHECKBOX_SIZE + ICON_SIZE + BUTTON_GAP * 4 + 16;
+        locateWidth = Math.min(
+            LOCATE_WIDTH,
+            Math.max(1, rowWidth - labelAndSpacing)
+        );
+    }
+
+    private int requiredPanelContentWidth() {
+        int longestNameWidth = 0;
+        for (final StructureIndex.StructureType type : available) {
+            longestNameWidth = Math.max(
+                longestNameWidth,
+                this.textRenderer.getWidth(localizedName(type))
+            );
+        }
+        final int locateLabelWidth = Math.min(
+            LOCATE_WIDTH,
+            this.textRenderer.getWidth(
+                Texts.translatable("confluxmap.screen.structure_search.locate")
+            ) + 8
+        );
+        final int rowContentWidth = CHECKBOX_SIZE + ICON_SIZE + locateLabelWidth
+            + longestNameWidth + BUTTON_GAP * 4 + SCROLLBAR_GAP + SCROLLBAR_WIDTH;
+        return Math.max(
+            rowContentWidth,
+            Math.max(
+                this.textRenderer.getWidth(getTitle()) + 16,
+                Math.max(
+                    this.textRenderer.getWidth(
+                        Texts.translatable("confluxmap.screen.structure_search.prompt")
+                    ) + 16,
+                    this.textRenderer.getWidth(
+                        Texts.translatable("confluxmap.screen.structure_search.field")
+                    ) + 16
+                )
+            )
+        );
     }
 
     private SplitMapLayout splitLayout() {
-        return new SplitMapLayout(width, height);
+        return new SplitMapLayout(width, height, panelContentWidth);
     }
 
     @Override
@@ -212,15 +228,6 @@ final class StructureSearchScreen extends ConfluxScreen {
         );
     }
 
-    private void toggleMasterVisibility() {
-        if (!companion.structureSearchAllowed()) {
-            return;
-        }
-        config.predictionShowStructures = !config.predictionShowStructures;
-        masterButton.setMessage(masterLabel());
-        saveConfig();
-    }
-
     private void toggleTypeVisibility(final StructureIndex.StructureType type) {
         if (!companion.structureSearchAllowed()) {
             return;
@@ -229,8 +236,13 @@ final class StructureSearchScreen extends ConfluxScreen {
         config.predictionStructureVisibility.setVisible(
             structures.mcVersion(), dimension, type, !visible
         );
-        visibilityButtons.get(type).setMessage(visibilityLabel(type));
+        visibilityButtons.get(type).setMessage(checkboxLabel(type));
+        masterButton.setMessage(masterCheckboxLabel());
         saveConfig();
+    }
+
+    private void toggleFilteredVisibility() {
+        setFilteredVisibility(selectionState().visibilityAfterToggle());
     }
 
     private void setFilteredVisibility(final boolean visible) {
@@ -245,8 +257,9 @@ final class StructureSearchScreen extends ConfluxScreen {
             config.predictionStructureVisibility.setVisible(
                 structures.mcVersion(), dimension, type, visible
             );
-            visibilityButtons.get(type).setMessage(visibilityLabel(type));
+            visibilityButtons.get(type).setMessage(checkboxLabel(type));
         }
+        masterButton.setMessage(masterCheckboxLabel());
         saveConfig();
     }
 
@@ -256,16 +269,23 @@ final class StructureSearchScreen extends ConfluxScreen {
         );
     }
 
-    private Text masterLabel() {
-        return Texts.translatable(
-            "confluxmap.screen.structure_search.master",
-            Texts.translatable(config.predictionShowStructures ? "confluxmap.value.on" : "confluxmap.value.off")
-                .getString()
-        );
+    private StructureSelectionState selectionState() {
+        final List<StructureIndex.StructureType> filtered = filteredTypes();
+        int selected = 0;
+        for (final StructureIndex.StructureType type : filtered) {
+            if (isVisible(type)) {
+                selected++;
+            }
+        }
+        return new StructureSelectionState(selected, filtered.size());
     }
 
-    private Text visibilityLabel(final StructureIndex.StructureType type) {
-        return Texts.translatable(isVisible(type) ? "confluxmap.value.on" : "confluxmap.value.off");
+    private Text masterCheckboxLabel() {
+        return Texts.literal(selectionState().mark());
+    }
+
+    private Text checkboxLabel(final StructureIndex.StructureType type) {
+        return Texts.literal(isVisible(type) ? "✓" : "");
     }
 
     private void saveConfig() {
@@ -278,16 +298,8 @@ final class StructureSearchScreen extends ConfluxScreen {
             ? null
             : "confluxmap.map.structure_search.disabled_by_server";
         if (masterButton != null) {
-            masterButton.active = allowed;
+            masterButton.active = selectionState().enabled(allowed);
             setDisabledTooltip(masterButton, reasonKey);
-        }
-        if (selectAllButton != null) {
-            selectAllButton.active = allowed;
-            setDisabledTooltip(selectAllButton, reasonKey);
-        }
-        if (selectNoneButton != null) {
-            selectNoneButton.active = allowed;
-            setDisabledTooltip(selectNoneButton, reasonKey);
         }
         for (final ButtonWidget button : visibilityButtons.values()) {
             button.active = allowed;
@@ -302,10 +314,15 @@ final class StructureSearchScreen extends ConfluxScreen {
     private void updateRows() {
         if (visibilityButtons.isEmpty()) {
             filteredCount = 0;
+            masterButton.setMessage(masterCheckboxLabel());
+            masterButton.active = false;
             return;
         }
         final List<StructureIndex.StructureType> filtered = filteredTypes();
         filteredCount = filtered.size();
+        final StructureSelectionState selection = selectionState();
+        masterButton.setMessage(Texts.literal(selection.mark()));
+        masterButton.active = selection.enabled(companion.structureSearchAllowed());
         final int visibleRows = visibleRows();
         scrollOffset = Math.max(0, Math.min(scrollOffset, Math.max(0, filtered.size() - visibleRows)));
         for (final ButtonWidget button : visibilityButtons.values()) {
@@ -480,7 +497,7 @@ final class StructureSearchScreen extends ConfluxScreen {
         mapPane.render(draw, mouseX, mouseY, tickDelta, layout);
         drawPanelCentered(draw, getTitle().getString(), 12, 0xFFFFFFFF, layout);
         final String prompt = Texts.translatable("confluxmap.screen.structure_search.prompt").getString();
-        drawPanelCentered(draw, prompt, 111, 0xFFBBBBBB, layout);
+        drawPanelCentered(draw, prompt, 64, 0xFFBBBBBB, layout);
         final List<StructureIndex.StructureType> filtered = filteredTypes();
         final int end = Math.min(filtered.size(), scrollOffset + visibleRows());
         StructureSearchScrollBar.drawListSurface(
@@ -494,16 +511,17 @@ final class StructureSearchScreen extends ConfluxScreen {
         for (int index = scrollOffset; index < end; index++) {
             final StructureIndex.StructureType type = filtered.get(index);
             final int rowY = LIST_TOP + (index - scrollOffset) * ROW_HEIGHT;
-            StructureIconCatalog.draw(draw, type, rowX, rowY + 2, ICON_SIZE, 0xFFFFFFFF);
+            final int iconX = rowX + CHECKBOX_SIZE + BUTTON_GAP;
+            StructureIconCatalog.draw(draw, type, iconX, rowY + 2, ICON_SIZE, 0xFFFFFFFF);
             final int labelWidth = Math.max(
                 8,
-                rowWidth - ICON_SIZE - toggleWidth - locateWidth - BUTTON_GAP * 3
+                rowWidth - CHECKBOX_SIZE - ICON_SIZE - locateWidth - BUTTON_GAP * 4
             );
             final String name = this.textRenderer.trimToWidth(localizedName(type), labelWidth);
             draw.drawTextWithShadow(
                 this.textRenderer,
                 name,
-                rowX + ICON_SIZE + BUTTON_GAP,
+                iconX + ICON_SIZE + BUTTON_GAP,
                 rowY + 6,
                 isVisible(type) ? 0xFFFFFFFF : 0xFF888888
             );

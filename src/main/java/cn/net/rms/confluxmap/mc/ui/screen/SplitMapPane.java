@@ -4,8 +4,8 @@ import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 
 /** Interactive left-hand map pane shared by the structure picker and candidate browser. */
 final class SplitMapPane {
-    private static final int PANEL_BACKGROUND = 0xFF101018;
-    private static final int DIVIDER_COLOR = 0xFF454554;
+    private static final int PANEL_BACKGROUND = 0xB0101018;
+    private static final int DIVIDER_COLOR = 0xB0454554;
 
     private final FullscreenMapScreen map;
     private boolean dragging;

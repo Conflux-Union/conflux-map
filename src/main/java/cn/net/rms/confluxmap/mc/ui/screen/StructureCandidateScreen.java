@@ -63,6 +63,7 @@ final class StructureCandidateScreen extends ConfluxScreen {
     private int fieldWidth;
     private int locateWidth;
     private int waypointWidth;
+    private int panelContentWidth = 1;
     private String statusKey;
 
     StructureCandidateScreen(
@@ -107,6 +108,7 @@ final class StructureCandidateScreen extends ConfluxScreen {
         clearChildren();
         mapButtons.clear();
         waypointButtons.clear();
+        panelContentWidth = requiredPanelContentWidth();
         final SplitMapLayout layout = splitLayout();
         fieldWidth = Math.min(
             FIELD_WIDTH,
@@ -194,8 +196,27 @@ final class StructureCandidateScreen extends ConfluxScreen {
     record CandidateRowLayout(int coordinateWidth, int locateWidth, int waypointWidth) {
     }
 
+    private int requiredPanelContentWidth() {
+        final int fieldsWidth = FIELD_WIDTH * 2 + GAP;
+        final int rowWidth = 80 + MAP_WIDTH + WAYPOINT_WIDTH + GAP * 3
+            + SCROLLBAR_GAP + SCROLLBAR_WIDTH;
+        int textWidth = this.textRenderer.getWidth(getTitle()) + 16;
+        for (final String key : new String[] {
+            "confluxmap.screen.structure_candidates.center",
+            "confluxmap.screen.structure_candidates.bounds",
+            "confluxmap.screen.structure_candidates.invalid",
+            "confluxmap.screen.structure_candidates.not_found"
+        }) {
+            textWidth = Math.max(
+                textWidth,
+                this.textRenderer.getWidth(Texts.translatable(key)) + 16
+            );
+        }
+        return Math.max(fieldsWidth, Math.max(rowWidth, textWidth));
+    }
+
     private SplitMapLayout splitLayout() {
-        return new SplitMapLayout(width, height);
+        return new SplitMapLayout(width, height, panelContentWidth);
     }
 
     private TextFieldWidget integerField(

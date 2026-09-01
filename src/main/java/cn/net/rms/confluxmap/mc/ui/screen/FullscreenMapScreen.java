@@ -339,6 +339,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private double centerX;
     private double centerZ;
     private double scale;
+    private SplitMapLayout embeddedLayout;
 
     /** Recomputed every frame by {@link #drawWaypoints} - the marker nearest the cursor within {@link #HOVER_RADIUS_PX}, or none. */
     private WaypointRenderEntry hoveredWaypoint;
@@ -2311,16 +2312,20 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     ) {
         final int previousWidth = width;
         final int previousHeight = height;
-        width = layout.mapWidth();
+        final double previousCenterX = centerX;
+        final SplitMapLayout previousEmbeddedLayout = embeddedLayout;
+        width = layout.mapRenderWidth();
         height = layout.mapHeight();
+        centerX = layout.renderCenterX(centerX, scale);
+        embeddedLayout = layout;
         final boolean pointerInside = layout.containsMap(mouseX, mouseY);
         final int mapMouseX = pointerInside ? mouseX : (int) layout.mapCenterX();
         final int mapMouseY = pointerInside ? mouseY : (int) layout.mapCenterY();
-        RenderUtil.enableScissor(MinecraftClient.getInstance(), 0, 0, width, height);
         try {
             renderContents(draw, mapMouseX, mapMouseY, tickDelta);
         } finally {
-            RenderUtil.disableScissor();
+            embeddedLayout = previousEmbeddedLayout;
+            centerX = previousCenterX;
             width = previousWidth;
             height = previousHeight;
         }
@@ -4041,7 +4046,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             "confluxmap.map.scale", FullscreenZoomLabel.format(scale)
         ).getString();
         final int textWidth = this.textRenderer.getWidth(text);
-        draw.drawTextWithShadow(this.textRenderer, text, width - MARGIN - textWidth, MARGIN, TEXT_COLOR);
+        final int x = embeddedLayout == null
+            ? width - MARGIN - textWidth
+            : embeddedLayout.mapRightAlignedX(textWidth, MARGIN);
+        draw.drawTextWithShadow(this.textRenderer, text, x, MARGIN, TEXT_COLOR);
     }
 
     /**
