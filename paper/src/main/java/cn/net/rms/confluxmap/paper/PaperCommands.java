@@ -255,7 +255,7 @@ final class PaperCommands implements CommandExecutor, TabCompleter {
 
     private static boolean usage(final CommandSender sender) {
         sender.sendMessage(
-            "Usage: /confluxmap waypoints <list [page]|add <name>|edit <id> <name>|move <id>|delete <id>|lock <id>|unlock <id>>"
+            "Usage: /confluxmap waypoints <list [page]|add <name>|edit <id> <name>|move <id>|delete <id>>"
         );
         return true;
     }
