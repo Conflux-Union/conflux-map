@@ -125,7 +125,10 @@ public final class ConfluxMapCompanion {
         config = configIo.load();
         runtime.deactivate();
         summaries = null;
-        chunkLoadStates = null;
+        // Capture spawn chunks before the companion activates on SERVER_STARTED or LAN publish.
+        chunkLoadStates = config.enabled && config.shareChunkLoadState
+            ? new ChunkLoadStateService()
+            : null;
         sharedWaypoints = null;
         webMap = null;
         webMapBackend = null;
@@ -379,7 +382,6 @@ public final class ConfluxMapCompanion {
         }
         summaries = new RegionSummaryService(config);
         ServerChunkDirtyHandler.bind(summaries);
-        chunkLoadStates = config.shareChunkLoadState ? new ChunkLoadStateService() : null;
         // Corrections can use the same predictor as the client when a bundled native exists;
         // failure is non-fatal and RegionSummaryService falls back to absolute samples.
         NativeLib.init(server.getSavePath(WorldSavePath.ROOT).resolve("confluxmap"));
