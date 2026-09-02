@@ -29,6 +29,9 @@ public final class ConfluxConfig {
     public static final int MIN_RADAR_ICON_OUTLINE_THICKNESS = 0;
     public static final int MAX_RADAR_ICON_OUTLINE_THICKNESS = 4;
     public static final int DEFAULT_RADAR_ICON_OUTLINE_THICKNESS = 1;
+    public static final int MIN_RADAR_PLAYER_HIGHLIGHT_GHOST_SECONDS = 0;
+    public static final int MAX_RADAR_PLAYER_HIGHLIGHT_GHOST_SECONDS = 300;
+    public static final int DEFAULT_RADAR_PLAYER_HIGHLIGHT_GHOST_SECONDS = 30;
     public static final int MIN_WAYPOINT_ICON_OPACITY = 0;
     public static final int MAX_WAYPOINT_ICON_OPACITY = 100;
     public static final int DEFAULT_WAYPOINT_ICON_OPACITY = 100;
@@ -153,6 +156,9 @@ public final class ConfluxConfig {
     public int radarIconOutlineThickness = DEFAULT_RADAR_ICON_OUTLINE_THICKNESS;
     /** Screen-pixel size shared by entity faces and item-form radar icons. */
     public int radarIconSize = DEFAULT_RADAR_ICON_SIZE;
+    /** Retention window for a highlighted player's last position after changing dimension. */
+    public int radarPlayerHighlightGhostSeconds =
+        DEFAULT_RADAR_PLAYER_HIGHLIGHT_GHOST_SECONDS;
     /** 3-D straight-line blocks; 0 means "no cutoff" (see waypoint-ux.md S7). */
     public int waypointRenderDistance = DEFAULT_WAYPOINT_RENDER_DISTANCE;
     /** Show private, client-owned waypoints on every map/world rendering surface. */
@@ -262,6 +268,7 @@ public final class ConfluxConfig {
         c.radarPlayerIconOutlineEnabled = radarPlayerIconOutlineEnabled;
         c.radarIconOutlineThickness = radarIconOutlineThickness;
         c.radarIconSize = radarIconSize;
+        c.radarPlayerHighlightGhostSeconds = radarPlayerHighlightGhostSeconds;
         c.waypointRenderDistance = waypointRenderDistance;
         c.localWaypointsVisible = localWaypointsVisible;
         c.sharedWaypointsVisible = sharedWaypointsVisible;
@@ -389,6 +396,11 @@ public final class ConfluxConfig {
             radarIconOutlineThickness,
             MIN_RADAR_ICON_OUTLINE_THICKNESS,
             MAX_RADAR_ICON_OUTLINE_THICKNESS
+        );
+        radarPlayerHighlightGhostSeconds = clamp(
+            radarPlayerHighlightGhostSeconds,
+            MIN_RADAR_PLAYER_HIGHLIGHT_GHOST_SECONDS,
+            MAX_RADAR_PLAYER_HIGHLIGHT_GHOST_SECONDS
         );
         waypointRenderDistance = clamp(waypointRenderDistance, 0, 100_000);
         waypointLabelScalePercent = clamp(

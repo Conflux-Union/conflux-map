@@ -11,7 +11,8 @@ public enum MapSyncCapability {
     REGION_CORRECTION(4, 1),
     REGION_INVALIDATION(5, 1),
     SERVER_VIEW_DISTANCE(6, 1),
-    SERVER_INSTANCE(7, 1);
+    SERVER_INSTANCE(7, 1),
+    PLAYER_POSITIONS(8, 1);
 
     private final int id;
     private final int version;

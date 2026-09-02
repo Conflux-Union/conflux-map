@@ -1,5 +1,7 @@
 package cn.net.rms.confluxmap.core.radar;
 
+import java.util.UUID;
+
 /**
  * One tracked entity as of the most recent radar scan.
  *
@@ -17,6 +19,7 @@ package cn.net.rms.confluxmap.core.radar;
  *     a live entity reference for smooth per-frame interpolation
  * @param spectator true when the entity was in spectator game mode at scan time; the render
  *     layer draws such entries translucent instead of hiding them
+ * @param playerId stable player identity, populated only for player entries
  */
 public record RadarEntry(
     double x,
@@ -25,6 +28,18 @@ public record RadarEntry(
     RadarCategory category,
     String name,
     int entityId,
-    boolean spectator
+    boolean spectator,
+    UUID playerId
 ) {
+    public RadarEntry(
+        final double x,
+        final double z,
+        final int yDelta,
+        final RadarCategory category,
+        final String name,
+        final int entityId,
+        final boolean spectator
+    ) {
+        this(x, z, yDelta, category, name, entityId, spectator, null);
+    }
 }

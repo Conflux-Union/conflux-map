@@ -201,7 +201,8 @@ public final class EntityRadarScanner {
             final RadarCategory category = classify(entity);
             final String name = category == RadarCategory.PLAYER ? entity.getName().getString() : null;
             raw.add(new RadarEntry(
-                entity.getX(), entity.getZ(), yDelta, category, name, entity.getId(), spectator
+                entity.getX(), entity.getZ(), yDelta, category, name, entity.getId(), spectator,
+                category == RadarCategory.PLAYER ? entity.getUuid() : null
             ));
         }
 

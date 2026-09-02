@@ -62,7 +62,7 @@ The client provides local maps, waypoints, drawings, and map export as soon as i
 
 ### Entity radar and interface settings
 
-- **Entity radar:** Players, hostile mobs, friendly mobs, and other entities have independent controls and are all shown by default. The minimap defaults to generated entity portraits and item icons, or can use compact category-colored dots that expand while the player-list key is held. The fullscreen map always uses detailed icons.
+- **Entity radar:** Players, hostile mobs, friendly mobs, and other entities have independent controls and are all shown by default. With the server companion installed, every online player remains visible beyond vanilla tracking distance and while browsing other dimensions. Right-click a player on the fullscreen map to highlight them on the map and in the world; after they change dimensions, their last position remains briefly as a translucent marker. The minimap defaults to generated entity portraits and item icons, or can use compact category-colored dots that expand while the player-list key is held. The fullscreen map always uses detailed icons.
 - **Display customization:** The minimap, waypoints, entity radar, map layers, and information lines all provide detailed display settings. Client settings apply immediately, and sliders accept directly entered values.
 - **UI resource packs:** Toolbar icons and minimap frames can be replaced through normal Minecraft resource packs. Existing Xaero UI packs can reuse compatible minimap-frame and world-map icon assets during migration; see [UI resource packs](docs/reference-specs/ui-resource-packs.md) for the supported paths and limits.
 - **MaliLib key combinations:** With MaliLib installed, Conflux Map supports multi-key combinations and can be managed through the A+C configuration screen.
@@ -102,13 +102,13 @@ All companion-shared content is controlled in `config/confluxmap/server.json`:
 - `enabled` is the master switch; `checkForUpdates` announces a newer version in the server console at startup.
 - `shareSeed` sends the world seed to clients so they can predict biomes and structures; `allowBiomeMap` and `allowStructureSearch` control the biome map and structure finder independently.
 - `shareChunkLoadState` exposes the chunks currently kept loaded by the server. It is disabled by default to reduce exposure of player activity and farm locations.
-- `allowEntityRadar` controls entity-position display in the client Conflux Map minimap.
+- `allowEntityRadar` defaults to `true` and controls entity radar. When enabled, the companion shares every online player's live position with compatible clients; disabling it stops this position stream and disables the client radar.
 - `shareCorrections` sends real-terrain data to clients for correcting predicted maps.
 - `shareWaypoints` enables the shared waypoint list and defaults to `true`.
 - `allowNonOperatorSharedWaypointManagement` defaults to `true` and lets ordinary players upload, edit, move, and delete only their own shared waypoints; operators can always manage every entry.
 - `webMap.*` controls the web map described in [Features](#features) and defaults to enabled. The default port is `8123`, the default bind address is loopback-only at `127.0.0.1`, and player positions remain hidden. Public access should use an HTTPS reverse proxy that preserves the original `Host` header; `sharePlayers` controls whether player positions are included.
 
-These settings allow server operators to manage privacy, bandwidth, and anti-cheat policies. Entity data continues to be sent to clients through normal game behavior; `allowEntityRadar` only disables entity-position display in the client Conflux Map minimap.
+These settings allow server operators to manage privacy, bandwidth, and anti-cheat policies. Full-server player positions are shared only while `allowEntityRadar` is enabled.
 
 Per-player rate limits and bandwidth budgets are stored in the same configuration file. Players can run `/confluxmap performance` in game to view statistics for their current connection. Paper-specific installation, terrain access, and storage details are available in [`docs/paper-companion.md`](docs/paper-companion.md).
 

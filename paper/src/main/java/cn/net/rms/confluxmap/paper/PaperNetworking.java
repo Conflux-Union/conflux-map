@@ -17,6 +17,7 @@ import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.NegotiatedMapSync;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
+import cn.net.rms.confluxmap.core.net.PlayerPositionsS2C;
 import cn.net.rms.confluxmap.core.net.ServerInstanceS2C;
 import cn.net.rms.confluxmap.core.net.ServerViewDistanceS2C;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
@@ -30,6 +31,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
+import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
@@ -296,6 +299,32 @@ final class PaperNetworking implements PluginMessageListener {
 
     private NegotiatedMapSync session(final Player player) {
         return sessions.getOrDefault(player.getUniqueId(), disabledSession());
+    }
+
+    void broadcastPlayerPositions() {
+        if (!companion.config().allowEntityRadar) {
+            return;
+        }
+        final List<PlayerPositionsS2C.Entry> entries = new ArrayList<>();
+        for (final Player player : Bukkit.getOnlinePlayers()) {
+            final Location location = player.getLocation();
+            entries.add(new PlayerPositionsS2C.Entry(
+                player.getUniqueId(),
+                player.getName(),
+                player.getWorld().getKey().toString(),
+                location.getX(),
+                location.getY(),
+                location.getZ(),
+                player.getGameMode() == GameMode.SPECTATOR
+            ));
+        }
+        final PlayerPositionsS2C snapshot = new PlayerPositionsS2C(entries);
+        for (final Player player : Bukkit.getOnlinePlayers()) {
+            final NegotiatedMapSync session = sessions.get(player.getUniqueId());
+            if (session != null && session.supports(MapSyncCapability.PLAYER_POSITIONS)) {
+                sendNegotiated(player, session, snapshot);
+            }
+        }
     }
 
     private PaperCorrectionService.MessageSender sender(final UUID playerId) {

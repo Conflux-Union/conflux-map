@@ -51,6 +51,8 @@ import cn.net.rms.confluxmap.core.predict.StructureIndex;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
+import cn.net.rms.confluxmap.core.radar.ServerPlayerRadarEntries;
+import cn.net.rms.confluxmap.core.radar.ServerPlayerRadarState;
 import cn.net.rms.confluxmap.core.store.MapWorld;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.store.ColumnStore;
@@ -327,6 +329,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private final CompanionSession companion;
     private final ChunkLoadStateClient chunkLoadStates;
     private final EntityRadarScanner radarScanner;
+    private final ServerPlayerRadarState serverPlayerRadar;
     private final EntityIconManager radarIconManager;
     private final RadarViewRange radarViewRange;
     private final PlayerTrail playerTrail;
@@ -377,6 +380,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private FullscreenMapLocationMenu.Bounds locationMenuBounds;
     private FullscreenMapLocationMenu.Target locationMenuTarget;
     private WaypointRenderEntry locationMenuWaypoint;
+    private UUID locationMenuPlayerId;
+    private ServerPlayerRadarState.PlayerView hoveredRadarPlayer;
     private FullscreenMapLocationMenu.Action pendingLocationAction;
     private ButtonWidget setWaypointLocationButton;
     private ButtonWidget editWaypointLocationButton;
@@ -437,6 +442,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         this.companion = app.companionSession();
         this.chunkLoadStates = app.chunkLoadStateClient();
         this.radarScanner = app.radarScanner();
+        this.serverPlayerRadar = app.serverPlayerRadar();
         this.radarIconManager = app.entityIconManager();
         this.radarViewRange = app.radarViewRange();
         this.playerTrail = app.playerTrail();
@@ -478,6 +484,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         locationMenuBounds = null;
         locationMenuTarget = null;
         locationMenuWaypoint = null;
+        locationMenuPlayerId = null;
         pendingLocationAction = null;
         final InitialFocus requestedFocus = initialFocus;
         if (requestedFocus != null) {
@@ -1489,11 +1496,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final boolean teleportCommandAvailable = teleportAccess.available();
         teleportLocationUnavailableKey = teleportAccess.reasonKey();
         final boolean existingWaypoint = FullscreenMapLocationMenu.isSavedWaypoint(
-            locationMenuWaypoint
+            locationMenuPlayerId == null ? locationMenuWaypoint : null
         );
         final boolean waypointEditable = existingWaypoint && waypointEditable(locationMenuWaypoint);
         final List<FullscreenMapLocationMenu.Action> actions = FullscreenMapLocationMenu.actions(
-            teleportCommandAvailable, existingWaypoint, locationMenuTargetHighlighted()
+            teleportCommandAvailable, existingWaypoint, locationMenuTargetHighlighted(),
+            locationMenuPlayerId != null
         );
         for (int index = 0; index < actions.size(); index++) {
             final FullscreenMapLocationMenu.Action action = actions.get(index);
@@ -1515,26 +1523,35 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 button.active = false;
             }
             if (action == FullscreenMapLocationMenu.Action.HIGHLIGHT
-                || action == FullscreenMapLocationMenu.Action.HIGHLIGHT_WAYPOINT) {
-                button.active = viewingLiveSession()
+                || action == FullscreenMapLocationMenu.Action.HIGHLIGHT_WAYPOINT
+                || action == FullscreenMapLocationMenu.Action.HIGHLIGHT_PLAYER) {
+                button.active = (locationMenuPlayerId != null
+                    ? viewingLiveWorld() : viewingLiveSession())
                     && (locationMenuWaypoint != null || locationMenuTarget != null);
             } else if (action == FullscreenMapLocationMenu.Action.CLEAR_HIGHLIGHT) {
                 button.active = waypointHighlightState.active();
+            } else if (action == FullscreenMapLocationMenu.Action.CLEAR_PLAYER_HIGHLIGHT) {
+                button.active = locationMenuPlayerId != null
+                    && serverPlayerRadar.isHighlighted(locationMenuPlayerId);
             }
             switch (action) {
                 case SET_WAYPOINT -> setWaypointLocationButton = button;
                 case EDIT_WAYPOINT -> editWaypointLocationButton = button;
                 case SHARE_LOCATION -> shareLocationButton = button;
                 case TELEPORT -> teleportLocationButton = button;
-                case SHARE_WAYPOINT, HIGHLIGHT, HIGHLIGHT_WAYPOINT, CLEAR_HIGHLIGHT -> {
+                case SHARE_WAYPOINT, HIGHLIGHT, HIGHLIGHT_WAYPOINT, CLEAR_HIGHLIGHT,
+                     HIGHLIGHT_PLAYER, CLEAR_PLAYER_HIGHLIGHT -> {
                 }
             }
         }
     }
 
     private boolean locationMenuTargetHighlighted() {
-        if (!viewingLiveSession()) {
+        if (!viewingLiveWorld()) {
             return false;
+        }
+        if (locationMenuPlayerId != null) {
+            return serverPlayerRadar.isHighlighted(locationMenuPlayerId);
         }
         if (locationMenuWaypoint != null) {
             return waypointHighlightState.matchesEntry(
@@ -1893,10 +1910,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         if (closingDrawing) {
             selectAnnotationTool(AnnotationTool.SELECT);
         }
-        final double worldX = centerX + (mouseX - width / 2.0) * scale;
-        final double worldZ = centerZ + (mouseY - height / 2.0) * scale;
+        final ServerPlayerRadarState.PlayerView playerTarget = hoveredRadarPlayer;
+        final double worldX = playerTarget == null
+            ? centerX + (mouseX - width / 2.0) * scale : playerTarget.x();
+        final double worldZ = playerTarget == null
+            ? centerZ + (mouseY - height / 2.0) * scale : playerTarget.z();
         final FullscreenMapLocationMenu.Point point = FullscreenMapLocationMenu.pointAt(
-            worldX, worldZ, hoveredStructure
+            worldX, worldZ, playerTarget == null ? hoveredStructure : null
         );
         final int blockX = point.blockX();
         final int blockZ = point.blockZ();
@@ -1908,9 +1928,14 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             height
         );
         locationMenuTarget = FullscreenMapLocationMenu.targetAt(
-            blockX, surfaceYAt(blockX, blockZ), blockZ
+            blockX,
+            playerTarget == null
+                ? surfaceYAt(blockX, blockZ)
+                : OptionalInt.of((int) Math.floor(playerTarget.y()) - 1),
+            blockZ
         );
-        locationMenuWaypoint = hoveredWaypoint;
+        locationMenuPlayerId = playerTarget == null ? null : playerTarget.playerId();
+        locationMenuWaypoint = playerTarget == null ? hoveredWaypoint : null;
         pendingLocationAction = null;
         mapPointerPress = false;
         rebuildWaypointControls();
@@ -1939,12 +1964,14 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final FullscreenMapLocationMenu.Action action = pendingLocationAction;
         final FullscreenMapLocationMenu.Target target = locationMenuTarget;
         final WaypointRenderEntry waypoint = locationMenuWaypoint;
+        final UUID playerId = locationMenuPlayerId;
         if (action == null || target == null) {
             return;
         }
         dismissLocationMenu();
         switch (action) {
             case HIGHLIGHT, HIGHLIGHT_WAYPOINT -> {
+                serverPlayerRadar.clearHighlight();
                 if (waypoint != null) {
                     if (WaypointHighlightState.SELECTED_LOCATION_ID.equals(waypoint.id())) {
                         waypointHighlightState.target()
@@ -1963,6 +1990,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 }
             }
             case CLEAR_HIGHLIGHT -> waypointHighlightState.clear();
+            case HIGHLIGHT_PLAYER -> {
+                if (playerId != null && serverPlayerRadar.highlight(playerId)) {
+                    waypointHighlightState.clear();
+                }
+            }
+            case CLEAR_PLAYER_HIGHLIGHT -> serverPlayerRadar.clearHighlight();
             case SET_WAYPOINT -> target.blockY().ifPresent(y -> MinecraftAccess.setScreen(MinecraftClient.getInstance(),
                 WaypointEditScreen.forCreate(
                     this,
@@ -2060,6 +2093,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         locationMenuBounds = null;
         locationMenuTarget = null;
         locationMenuWaypoint = null;
+        locationMenuPlayerId = null;
         pendingLocationAction = null;
         rebuildWaypointControls();
     }
@@ -2385,7 +2419,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         drawPlayerTrail(matrices);
         drawAnnotations(draw, mouseX, mouseY);
         drawStructures(draw, mouseX, mouseY);
-        drawRadar(draw, tickDelta);
+        drawRadar(draw, tickDelta, mouseX, mouseY);
 
         drawWaypoints(draw, mouseX, mouseY, radarObserver);
         drawCameraMarker(matrices, radarObserver);
@@ -2962,6 +2996,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             case HIGHLIGHT -> "confluxmap.map.location_menu.highlight.tooltip";
             case HIGHLIGHT_WAYPOINT -> "confluxmap.map.location_menu.highlight_waypoint.tooltip";
             case CLEAR_HIGHLIGHT -> "confluxmap.map.location_menu.clear_highlight.tooltip";
+            case HIGHLIGHT_PLAYER -> "confluxmap.map.location_menu.highlight_player.tooltip";
+            case CLEAR_PLAYER_HIGHLIGHT -> "confluxmap.map.location_menu.clear_player_highlight.tooltip";
         };
     }
 
@@ -3492,8 +3528,14 @@ public final class FullscreenMapScreen extends ConfluxScreen {
      * already apply upstream in the scanner, so no extra filtering happens here beyond viewport
      * culling.
      */
-    private void drawRadar(final GuiDraw draw, final float tickDelta) {
-        if (!viewingLiveSession() || this.client.world == null) {
+    private void drawRadar(
+        final GuiDraw draw,
+        final float tickDelta,
+        final int mouseX,
+        final int mouseY
+    ) {
+        hoveredRadarPlayer = null;
+        if (!viewingLiveWorld() || this.client.world == null) {
             return;
         }
         final Optional<PlayerView> playerView = gameBridge.viewpoint(tickDelta);
@@ -3501,9 +3543,36 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             return;
         }
         final PlayerView player = playerView.get();
+        final long nowMs = System.currentTimeMillis();
         final double pxPerBlock = 1.0 / scale;
         final List<RadarMarkerRenderer.Marker> markers = new ArrayList<>();
-        for (final RadarEntry entry : radarScanner.snapshot()) {
+        final DimensionId viewedDimension = viewSession().dimension();
+        final List<RadarEntry> entries = ServerPlayerRadarEntries.merge(
+            viewingLiveSession() ? radarScanner.snapshot() : List.of(),
+            config.radarShowPlayers
+                ? serverPlayerRadar.playersIn(viewedDimension, nowMs)
+                : List.of(),
+            this.client.player == null ? null : this.client.player.getUuid(),
+            viewedDimension.equals(gameBridge.session().dimension()) ? player.y() : Double.NaN
+        );
+        final Optional<ServerPlayerRadarState.HighlightView> highlight =
+            serverPlayerRadar.highlightedIn(
+                viewedDimension,
+                nowMs,
+                config.radarPlayerHighlightGhostSeconds * 1_000L
+            );
+        final List<RadarEntry> visibleEntries;
+        if (highlight.isPresent() && highlight.get().ghost()) {
+            visibleEntries = new ArrayList<>(entries);
+            visibleEntries.add(ServerPlayerRadarEntries.entry(
+                highlight.get().player(),
+                viewedDimension.equals(gameBridge.session().dimension())
+                    ? player.y() : Double.NaN
+            ));
+        } else {
+            visibleEntries = entries;
+        }
+        for (final RadarEntry entry : visibleEntries) {
             double ex = entry.x();
             double ez = entry.z();
             int yDelta = entry.yDelta();
@@ -3514,13 +3583,51 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 yDelta = (int) Math.round(live.getY() - player.y());
             }
 
-            final float screenX = (float) (width / 2.0 + (ex - centerX) * pxPerBlock);
-            final float screenY = (float) (height / 2.0 + (ez - centerZ) * pxPerBlock);
-            if (screenX < -RADAR_CULL_MARGIN || screenX > width + RADAR_CULL_MARGIN
-                || screenY < -RADAR_CULL_MARGIN || screenY > height + RADAR_CULL_MARGIN) {
-                continue;
+            float screenX = (float) (width / 2.0 + (ex - centerX) * pxPerBlock);
+            float screenY = (float) (height / 2.0 + (ez - centerZ) * pxPerBlock);
+            final boolean highlighted = entry.playerId() != null
+                && serverPlayerRadar.isHighlighted(entry.playerId());
+            final boolean outside =
+                screenX < -RADAR_CULL_MARGIN || screenX > width + RADAR_CULL_MARGIN
+                    || screenY < -RADAR_CULL_MARGIN || screenY > height + RADAR_CULL_MARGIN;
+            if (outside) {
+                if (!highlighted) {
+                    continue;
+                }
+                final float dx = screenX - width / 2f;
+                final float dy = screenY - height / 2f;
+                final float xLimit = width / 2f - Math.max(8f, config.radarIconSize);
+                final float yLimit = height / 2f - Math.max(8f, config.radarIconSize);
+                final float factor = Math.min(
+                    dx == 0f ? Float.POSITIVE_INFINITY : xLimit / Math.abs(dx),
+                    dy == 0f ? Float.POSITIVE_INFINITY : yLimit / Math.abs(dy)
+                );
+                screenX = width / 2f + dx * factor;
+                screenY = height / 2f + dy * factor;
             }
-            markers.add(new RadarMarkerRenderer.Marker(entry, screenX, screenY, yDelta, live));
+            final boolean ghost = highlight.isPresent()
+                && highlight.get().ghost()
+                && entry.playerId() != null
+                && entry.playerId().equals(highlight.get().player().playerId());
+            final RadarMarkerRenderer.Marker marker = new RadarMarkerRenderer.Marker(
+                entry,
+                screenX,
+                screenY,
+                yDelta,
+                live,
+                highlighted,
+                ghost,
+                ghost ? highlight.get().destination() : null
+            );
+            markers.add(marker);
+            if (entry.playerId() != null
+                && !radarMarkerIntersectsUi(marker)
+                && Math.hypot(mouseX - screenX, mouseY - screenY)
+                    <= Math.max(8.0, config.radarIconSize / 2.0)) {
+                hoveredRadarPlayer = ghost
+                    ? highlight.get().player()
+                    : serverPlayerRadar.player(entry.playerId(), nowMs).orElse(null);
+            }
         }
         RadarMarkerRenderer.drawAll(
             draw, this.client, config, radarIconManager, markers,

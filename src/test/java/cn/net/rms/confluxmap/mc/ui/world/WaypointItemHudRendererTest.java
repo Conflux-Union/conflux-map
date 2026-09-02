@@ -46,6 +46,24 @@ final class WaypointItemHudRendererTest {
         assertEquals(List.of(), renderer.snapshot());
     }
 
+    @Test
+    void playerLabelsCarryThePortraitIdentity() {
+        final UUID playerId = UUID.randomUUID();
+        final WaypointItemHudRenderer.Label base = label();
+
+        final WaypointItemHudRenderer.Label player = new WaypointItemHudRenderer.Label(
+            base.waypoint(),
+            base.distance3d(),
+            base.projectionDistance(),
+            base.animationProgress(),
+            base.visibilityAlpha(),
+            base.selected(),
+            playerId
+        );
+
+        assertEquals(playerId, player.playerId());
+    }
+
     //#if MC>=12000 && MC<12104
     //$$ @Test
     //$$ void itemIconsReleaseGuiDepthBeforeLaterOverlays() throws Exception {

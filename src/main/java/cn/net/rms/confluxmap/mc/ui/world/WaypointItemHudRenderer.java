@@ -7,7 +7,10 @@ import cn.net.rms.confluxmap.mixin.GameRendererAccessor;
 //#endif
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
+import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
+import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
 import java.util.List;
+import java.util.UUID;
 //#if MC>=12106
 //$$ import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 //$$ import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
@@ -37,11 +40,21 @@ import net.minecraft.util.math.Vec3d;
 public final class WaypointItemHudRenderer {
     private final MinecraftClient client;
     private final ConfluxConfig config;
+    private final EntityIconManager iconManager;
     private List<Label> labels = List.of();
 
     public WaypointItemHudRenderer(final MinecraftClient client, final ConfluxConfig config) {
+        this(client, config, null);
+    }
+
+    public WaypointItemHudRenderer(
+        final MinecraftClient client,
+        final ConfluxConfig config,
+        final EntityIconManager iconManager
+    ) {
         this.client = client;
         this.config = config;
+        this.iconManager = iconManager;
     }
 
     public void register() {
@@ -207,9 +220,23 @@ public final class WaypointItemHudRenderer {
             centerY + iconHalfSize,
             WaypointWorldRenderer.withAlpha(waypoint.colorArgb() | 0xFF000000, plateAlpha)
         );
-        final ItemStack stack = WaypointMarkerRenderer.itemIcon(waypoint.iconItemId());
-        if (!stack.isEmpty()) {
-            draw.drawItemIcon(client, stack, centerX, centerY, iconSize);
+        if (label.playerId() != null) {
+            RadarMarkerRenderer.drawPlayerPortrait(
+                draw,
+                client,
+                iconManager,
+                label.playerId(),
+                centerX,
+                centerY,
+                iconSize,
+                plateAlpha,
+                label.selected()
+            );
+        } else {
+            final ItemStack stack = WaypointMarkerRenderer.itemIcon(waypoint.iconItemId());
+            if (!stack.isEmpty()) {
+                draw.drawItemIcon(client, stack, centerX, centerY, iconSize);
+            }
         }
 
         final float textReveal = MathHelper.clamp(
@@ -323,7 +350,21 @@ public final class WaypointItemHudRenderer {
         double projectionDistance,
         float animationProgress,
         float visibilityAlpha,
-        boolean selected
+        boolean selected,
+        UUID playerId
     ) {
+        public Label(
+            final WaypointRenderEntry waypoint,
+            final double distance3d,
+            final double projectionDistance,
+            final float animationProgress,
+            final float visibilityAlpha,
+            final boolean selected
+        ) {
+            this(
+                waypoint, distance3d, projectionDistance,
+                animationProgress, visibilityAlpha, selected, null
+            );
+        }
     }
 }

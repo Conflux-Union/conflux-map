@@ -3,10 +3,14 @@ package cn.net.rms.confluxmap.mc.radar;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.radar.RadarCategory;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
+import cn.net.rms.confluxmap.core.radar.PlayerRadarDimensionIcon;
+import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.Predicate;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.math.MatrixStack;
@@ -37,6 +41,7 @@ public final class RadarMarkerRenderer {
     private static final int VERTICAL_WINDOW = 32;
 
     private static final int ICON_OUTLINE = 0xD0000000;
+    private static final int HIGHLIGHT_OUTLINE = 0xFFFFE066;
     private static final float DIAMOND_RADIUS = 2f;
     /** No elevation treatment inside this band - nearby mobs always render fully readable. */
     private static final int DEADZONE = 8;
@@ -53,7 +58,10 @@ public final class RadarMarkerRenderer {
         float x,
         float y,
         int yDelta,
-        Entity live
+        Entity live,
+        boolean highlighted,
+        boolean ghost,
+        DimensionId destination
     ) {
     }
 
@@ -107,6 +115,37 @@ public final class RadarMarkerRenderer {
         drawAll(draw, client, config, iconManager, markers, presentation, marker -> true);
     }
 
+    /** Draws one player skin crop for HUD surfaces that do not have a loaded player entity. */
+    public static boolean drawPlayerPortrait(
+        final GuiDraw draw,
+        final MinecraftClient client,
+        final EntityIconManager iconManager,
+        final UUID playerId,
+        final float x,
+        final float y,
+        final float size,
+        final float alpha,
+        final boolean highlighted
+    ) {
+        if (iconManager == null || playerId == null) {
+            return false;
+        }
+        final EntityIconManager.FaceIcon icon = iconManager.iconForPlayer(playerId);
+        return icon != null && drawIcon(
+            draw.matrices(),
+            client,
+            iconManager,
+            icon,
+            x,
+            y,
+            size,
+            0,
+            alpha,
+            highlighted ? 2 : 1,
+            highlighted ? HIGHLIGHT_OUTLINE : ICON_OUTLINE
+        );
+    }
+
     /** Draws radar markers while allowing a screen to suppress markers covered by a modal overlay. */
     public static void drawAll(
         final GuiDraw draw,
@@ -138,20 +177,27 @@ public final class RadarMarkerRenderer {
         final int yDelta = marker.yDelta();
         final Entity live = marker.live();
         final MatrixStack matrices = draw.matrices();
-        final float alphaScale = entry.spectator() ? SPECTATOR_ALPHA : 1f;
-        if (usesDetailedIcon(entry.category(), presentation) && live != null) {
-            final ItemStack itemIcon = entry.category() == RadarCategory.OTHER
+        final float alphaScale = marker.ghost()
+            ? 0.5f : entry.spectator() ? SPECTATOR_ALPHA : 1f;
+        if (usesDetailedIcon(entry.category(), presentation)) {
+            final ItemStack itemIcon = live != null && entry.category() == RadarCategory.OTHER
                 ? itemIconFor(live)
                 : ItemStack.EMPTY;
             if (!itemIcon.isEmpty()) {
                 draw.drawItemIcon(client, itemIcon, x, y, config.radarIconSize);
+                drawDestinationIcon(draw, client, config, marker);
                 return;
             }
-            final EntityIconManager.FaceIcon icon = iconManager.iconFor(live);
+            final EntityIconManager.FaceIcon icon = live != null
+                ? iconManager.iconFor(live)
+                : entry.playerId() == null ? null : iconManager.iconForPlayer(entry.playerId());
             if (icon != null && drawIcon(
                 matrices, client, iconManager, icon, x, y, config.radarIconSize,
                 yDelta, alphaScale,
-                config.radarPlayerIconOutlineEnabled ? config.radarIconOutlineThickness : 0
+                marker.highlighted()
+                    ? Math.max(2, config.radarIconOutlineThickness)
+                    : config.radarPlayerIconOutlineEnabled ? config.radarIconOutlineThickness : 0,
+                marker.highlighted() ? HIGHLIGHT_OUTLINE : ICON_OUTLINE
                 )) {
                 if (presentation.showPlayerNames()
                     && entry.category() == RadarCategory.PLAYER
@@ -161,12 +207,17 @@ public final class RadarMarkerRenderer {
                         y + config.radarIconSize * icon.heightScale() / 2f + 2f, alphaScale
                     );
                 }
+                drawDestinationIcon(draw, client, config, marker);
                 return;
             }
         }
         final int color = Argb.scaleAlpha(elevationColor(baseColor(entry.category()), yDelta), alphaScale);
         if (entry.category() == RadarCategory.PLAYER) {
+            if (marker.highlighted()) {
+                RenderUtil.fillRect(matrices, x - 3f, y - 3f, 6f, 6f, HIGHLIGHT_OUTLINE);
+            }
             RenderUtil.fillRect(matrices, x - 2f, y - 2f, 4f, 4f, color);
+            drawDestinationIcon(draw, client, config, marker);
             if (presentation.showPlayerNames() && entry.name() != null) {
                 drawCenteredLine(client, draw, entry.name(), x, y + 3f, alphaScale);
             }
@@ -233,7 +284,8 @@ public final class RadarMarkerRenderer {
         final float iconSize,
         final int yDelta,
         final float alphaScale,
-        final int outlineThickness
+        final int outlineThickness,
+        final int outlineColor
     ) {
         final float iconWidth = iconSize * icon.widthScale();
         final float iconHeight = iconSize * icon.heightScale();
@@ -250,7 +302,7 @@ public final class RadarMarkerRenderer {
         if (outlineThickness > 0) {
             drawIconOutline(
                 matrices, icon, x, y, iconWidth, iconHeight,
-                outlineThickness, yDelta, alphaScale
+                outlineThickness, yDelta, alphaScale, outlineColor
             );
         }
         RenderUtil.drawTintedQuad(
@@ -276,16 +328,41 @@ public final class RadarMarkerRenderer {
         final float iconHeight,
         final int thickness,
         final int yDelta,
-        final float alphaScale
+        final float alphaScale,
+        final int baseColor
     ) {
         final int color = Argb.scaleAlpha(
-            elevationColor(ICON_OUTLINE, yDelta), alphaScale
+            elevationColor(baseColor, yDelta), alphaScale
         );
         RenderUtil.drawTintedOutline(
             matrices, x - iconWidth / 2f, y - iconHeight / 2f,
             iconWidth, iconHeight,
             icon.u0(), icon.v0(), icon.u1(), icon.v1(), thickness, color
         );
+    }
+
+    private static void drawDestinationIcon(
+        final GuiDraw draw,
+        final MinecraftClient client,
+        final ConfluxConfig config,
+        final Marker marker
+    ) {
+        if (!marker.ghost() || marker.destination() == null) {
+            return;
+        }
+        final ItemStack icon = WaypointMarkerRenderer.itemIcon(
+            PlayerRadarDimensionIcon.itemId(marker.destination())
+        );
+        if (!icon.isEmpty()) {
+            final float size = Math.max(5f, config.radarIconSize * 0.6f);
+            draw.drawItemIcon(
+                client,
+                icon,
+                marker.x() + config.radarIconSize * 0.35f,
+                marker.y() + config.radarIconSize * 0.35f,
+                size
+            );
+        }
     }
 
     private static int baseColor(final RadarCategory category) {

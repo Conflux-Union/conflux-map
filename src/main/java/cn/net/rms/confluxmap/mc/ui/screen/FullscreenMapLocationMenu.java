@@ -25,7 +25,9 @@ final class FullscreenMapLocationMenu {
         TELEPORT("confluxmap.map.location_menu.teleport"),
         HIGHLIGHT("confluxmap.map.location_menu.highlight"),
         HIGHLIGHT_WAYPOINT("confluxmap.map.location_menu.highlight_waypoint"),
-        CLEAR_HIGHLIGHT("confluxmap.map.location_menu.clear_highlight");
+        CLEAR_HIGHLIGHT("confluxmap.map.location_menu.clear_highlight"),
+        HIGHLIGHT_PLAYER("confluxmap.map.location_menu.highlight_player"),
+        CLEAR_PLAYER_HIGHLIGHT("confluxmap.map.location_menu.clear_player_highlight");
 
         private final String translationKey;
 
@@ -51,11 +53,24 @@ final class FullscreenMapLocationMenu {
         final boolean existingWaypoint,
         final boolean currentTargetHighlighted
     ) {
+        return actions(
+            teleportCommandAvailable, existingWaypoint, currentTargetHighlighted, false
+        );
+    }
+
+    static List<Action> actions(
+        final boolean teleportCommandAvailable,
+        final boolean existingWaypoint,
+        final boolean currentTargetHighlighted,
+        final boolean playerTarget
+    ) {
         final Action edit = existingWaypoint ? Action.EDIT_WAYPOINT : Action.SET_WAYPOINT;
         final Action share = existingWaypoint ? Action.SHARE_WAYPOINT : Action.SHARE_LOCATION;
-        final Action highlight = currentTargetHighlighted
-            ? Action.CLEAR_HIGHLIGHT
-            : existingWaypoint ? Action.HIGHLIGHT_WAYPOINT : Action.HIGHLIGHT;
+        final Action highlight = playerTarget
+            ? currentTargetHighlighted ? Action.CLEAR_PLAYER_HIGHLIGHT : Action.HIGHLIGHT_PLAYER
+            : currentTargetHighlighted
+                ? Action.CLEAR_HIGHLIGHT
+                : existingWaypoint ? Action.HIGHLIGHT_WAYPOINT : Action.HIGHLIGHT;
         return teleportCommandAvailable
             ? List.of(Action.TELEPORT, edit, share, highlight)
             : List.of(edit, share, Action.TELEPORT, highlight);
@@ -77,7 +92,9 @@ final class FullscreenMapLocationMenu {
         }
         if (action == Action.HIGHLIGHT
             || action == Action.HIGHLIGHT_WAYPOINT
-            || action == Action.CLEAR_HIGHLIGHT) {
+            || action == Action.CLEAR_HIGHLIGHT
+            || action == Action.HIGHLIGHT_PLAYER
+            || action == Action.CLEAR_PLAYER_HIGHLIGHT) {
             return true;
         }
         if (action == Action.SHARE_WAYPOINT) {

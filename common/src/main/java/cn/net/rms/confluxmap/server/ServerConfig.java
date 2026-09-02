@@ -44,7 +44,10 @@ public final class ServerConfig {
     public boolean shareCorrections = true;
     /** Whether clients may see the server's currently loaded chunks and effective ticket levels. */
     public boolean shareChunkLoadState = false;
-    /** Whether cooperating Conflux Map clients may scan and render their entity radar. */
+    /**
+     * Whether cooperating clients may use entity radar. When enabled, the companion also sends
+     * every online player's position; disabling it stops that stream and hides the client radar.
+     */
     public boolean allowEntityRadar = true;
     /** Whether the server-owned shared waypoint catalog is enabled. */
     public boolean shareWaypoints = true;

@@ -13,6 +13,7 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Encodes and decodes every {@link Message} on the {@link Proto#CHANNEL_ID} channel.
@@ -88,6 +89,8 @@ public final class MsgCodec {
                 encodeMapCapabilitiesS2C(out, m);
             } else if (msg instanceof final ServerInstanceS2C m) {
                 writeUtf(out, m.instanceId());
+            } else if (msg instanceof final PlayerPositionsS2C m) {
+                encodePlayerPositionsS2C(out, m);
             } else {
                 throw new ProtoException("unknown message type: " + msg.getClass().getName());
             }
@@ -126,12 +129,37 @@ public final class MsgCodec {
             || typeId == Proto.MSG_MAP_COMPATIBILITY_S2C
             || typeId == Proto.MSG_SERVER_VIEW_DISTANCE_S2C
             || typeId == Proto.MSG_MAP_CAPABILITIES_S2C
-            || typeId == Proto.MSG_SERVER_INSTANCE_S2C;
+            || typeId == Proto.MSG_SERVER_INSTANCE_S2C
+            || typeId == Proto.MSG_PLAYER_POSITIONS_S2C;
     }
 
     private static void encodeHelloC2S(final DataOutputStream out, final HelloC2S m) throws IOException, ProtoException {
         writeUtf(out, m.modVersion());
         writeUtf(out, m.predictorVersion());
+    }
+
+    private static void encodePlayerPositionsS2C(
+        final DataOutputStream out,
+        final PlayerPositionsS2C message
+    ) throws IOException, ProtoException {
+        if (message.entries().size() > Proto.MAX_PLAYER_POSITION_ENTRIES) {
+            throw new ProtoException("too many player-position entries: " + message.entries().size());
+        }
+        out.writeShort(message.entries().size());
+        for (final PlayerPositionsS2C.Entry entry : message.entries()) {
+            if (entry == null) {
+                throw new ProtoException("null player-position entry");
+            }
+            validatePlayerPosition(entry);
+            out.writeLong(entry.playerId().getMostSignificantBits());
+            out.writeLong(entry.playerId().getLeastSignificantBits());
+            writeUtf(out, entry.name());
+            writeUtf(out, entry.dimensionId());
+            out.writeDouble(entry.x());
+            out.writeDouble(entry.y());
+            out.writeDouble(entry.z());
+            out.writeByte(entry.spectator() ? 1 : 0);
+        }
     }
 
     private static void encodeMapCompatibilityS2C(
@@ -545,6 +573,7 @@ public final class MsgCodec {
                 case Proto.MSG_SERVER_VIEW_DISTANCE_S2C -> decodeServerViewDistanceS2C(in);
                 case Proto.MSG_MAP_CAPABILITIES_S2C -> decodeMapCapabilitiesS2C(in);
                 case Proto.MSG_SERVER_INSTANCE_S2C -> new ServerInstanceS2C(readUtf(in));
+                case Proto.MSG_PLAYER_POSITIONS_S2C -> decodePlayerPositionsS2C(in);
                 default -> throw new ProtoException("unhandled message type id: 0x" + Integer.toHexString(typeId));
             };
             if (in.available() != 0) {
@@ -574,6 +603,50 @@ public final class MsgCodec {
             throw new ProtoException("server view distance above cap: " + chunks);
         }
         return new ServerViewDistanceS2C(chunks);
+    }
+
+    private static PlayerPositionsS2C decodePlayerPositionsS2C(
+        final DataInputStream in
+    ) throws IOException, ProtoException {
+        final int count = in.readUnsignedShort();
+        if (count > Proto.MAX_PLAYER_POSITION_ENTRIES) {
+            throw new ProtoException(
+                "player-position count " + count + " above cap "
+                    + Proto.MAX_PLAYER_POSITION_ENTRIES
+            );
+        }
+        final List<PlayerPositionsS2C.Entry> entries = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            final UUID playerId = new UUID(in.readLong(), in.readLong());
+            final String name = readUtf(in);
+            final String dimensionId = readUtf(in);
+            final double x = in.readDouble();
+            final double y = in.readDouble();
+            final double z = in.readDouble();
+            final int flags = in.readUnsignedByte();
+            if ((flags & ~1) != 0) {
+                throw new ProtoException("unknown player-position flags: " + flags);
+            }
+            final PlayerPositionsS2C.Entry entry = new PlayerPositionsS2C.Entry(
+                playerId, name, dimensionId, x, y, z, (flags & 1) != 0
+            );
+            validatePlayerPosition(entry);
+            entries.add(entry);
+        }
+        return new PlayerPositionsS2C(entries);
+    }
+
+    private static void validatePlayerPosition(
+        final PlayerPositionsS2C.Entry entry
+    ) throws ProtoException {
+        if (entry.name().isEmpty() || entry.dimensionId().isEmpty()) {
+            throw new ProtoException("empty player-position identity field");
+        }
+        if (!Double.isFinite(entry.x())
+            || !Double.isFinite(entry.y())
+            || !Double.isFinite(entry.z())) {
+            throw new ProtoException("non-finite player position");
+        }
     }
 
     private static MapCompatibilityS2C decodeMapCompatibilityS2C(
