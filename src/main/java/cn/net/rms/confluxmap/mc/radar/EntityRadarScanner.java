@@ -13,6 +13,11 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.SpawnGroup;
+import net.minecraft.entity.decoration.AbstractDecorationEntity;
+//#if MC>=12000
+//$$ import net.minecraft.entity.decoration.DisplayEntity;
+//$$ import net.minecraft.entity.decoration.InteractionEntity;
+//#endif
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.mob.PhantomEntity;
 import net.minecraft.entity.player.PlayerEntity;
@@ -138,6 +143,19 @@ public final class EntityRadarScanner {
         return serverAllowed ? current : List.of();
     }
 
+    static boolean isRadarCandidate(final Class<? extends Entity> entityClass) {
+        if (AbstractDecorationEntity.class.isAssignableFrom(entityClass)) {
+            return false;
+        }
+        //#if MC>=12000
+        //$$ if (DisplayEntity.class.isAssignableFrom(entityClass)
+        //$$     || InteractionEntity.class.isAssignableFrom(entityClass)) {
+        //$$     return false;
+        //$$ }
+        //#endif
+        return true;
+    }
+
     private List<RadarEntry> scan(final double radius) {
         final PlayerEntity self = client.player;
         if (self == null || client.world == null) {
@@ -153,7 +171,9 @@ public final class EntityRadarScanner {
 
         final List<RadarEntry> raw = new ArrayList<>();
         for (final Entity entity : client.world.getEntities()) {
-            if (entity == self || entity == observer) {
+            if (entity == self
+                || entity == observer
+                || !isRadarCandidate(entity.getClass())) {
                 continue;
             }
             // Spectators are kept (flagged for translucent rendering) rather than hidden, and
