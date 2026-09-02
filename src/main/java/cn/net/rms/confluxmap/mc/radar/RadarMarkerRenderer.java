@@ -142,7 +142,7 @@ public final class RadarMarkerRenderer {
             0,
             alpha,
             highlighted ? 2 : 1,
-            highlighted ? HIGHLIGHT_OUTLINE : ICON_OUTLINE
+            highlighted
         );
     }
 
@@ -197,7 +197,7 @@ public final class RadarMarkerRenderer {
                 marker.highlighted()
                     ? Math.max(2, config.radarIconOutlineThickness)
                     : config.radarPlayerIconOutlineEnabled ? config.radarIconOutlineThickness : 0,
-                marker.highlighted() ? HIGHLIGHT_OUTLINE : ICON_OUTLINE
+                marker.highlighted()
                 )) {
                 if (presentation.showPlayerNames()
                     && entry.category() == RadarCategory.PLAYER
@@ -285,7 +285,7 @@ public final class RadarMarkerRenderer {
         final int yDelta,
         final float alphaScale,
         final int outlineThickness,
-        final int outlineColor
+        final boolean highlighted
     ) {
         final float iconWidth = iconSize * icon.widthScale();
         final float iconHeight = iconSize * icon.heightScale();
@@ -300,10 +300,17 @@ public final class RadarMarkerRenderer {
             RenderUtil.bindTexture(client, icon.texture());
         }
         if (outlineThickness > 0) {
-            drawIconOutline(
-                matrices, icon, x, y, iconWidth, iconHeight,
-                outlineThickness, yDelta, alphaScale, outlineColor
-            );
+            if (highlighted) {
+                drawHighlightFrame(
+                    matrices, x, y, iconWidth, iconHeight,
+                    outlineThickness, yDelta, alphaScale
+                );
+            } else {
+                drawIconOutline(
+                    matrices, icon, x, y, iconWidth, iconHeight,
+                    outlineThickness, yDelta, alphaScale
+                );
+            }
         }
         RenderUtil.drawTintedQuad(
             matrices, x - iconHalfWidth, y - iconHalfHeight, iconWidth, iconHeight,
@@ -328,16 +335,38 @@ public final class RadarMarkerRenderer {
         final float iconHeight,
         final int thickness,
         final int yDelta,
-        final float alphaScale,
-        final int baseColor
+        final float alphaScale
     ) {
         final int color = Argb.scaleAlpha(
-            elevationColor(baseColor, yDelta), alphaScale
+            elevationColor(ICON_OUTLINE, yDelta), alphaScale
         );
         RenderUtil.drawDarkTextureOutline(
             matrices, x - iconWidth / 2f, y - iconHeight / 2f,
             iconWidth, iconHeight,
             icon.u0(), icon.v0(), icon.u1(), icon.v1(), thickness, Argb.alpha(color) / 255f
+        );
+    }
+
+    private static void drawHighlightFrame(
+        final MatrixStack matrices,
+        final float x,
+        final float y,
+        final float iconWidth,
+        final float iconHeight,
+        final int thickness,
+        final int yDelta,
+        final float alphaScale
+    ) {
+        final int color = Argb.scaleAlpha(
+            elevationColor(HIGHLIGHT_OUTLINE, yDelta), alphaScale
+        );
+        RenderUtil.fillRect(
+            matrices,
+            x - iconWidth / 2f - thickness,
+            y - iconHeight / 2f - thickness,
+            iconWidth + thickness * 2f,
+            iconHeight + thickness * 2f,
+            color
         );
     }
 

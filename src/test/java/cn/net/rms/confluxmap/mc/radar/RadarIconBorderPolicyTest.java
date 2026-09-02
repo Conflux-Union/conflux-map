@@ -22,6 +22,8 @@ final class RadarIconBorderPolicyTest {
         assertTrue(renderer.contains("drawIconOutline("));
         assertTrue(renderer.contains("RenderUtil.drawDarkTextureOutline("));
         assertFalse(renderer.contains("RenderUtil.drawTintedOutline("));
+        assertTrue(renderer.contains("drawHighlightFrame("));
+        assertFalse(renderer.contains("highlighted ? HIGHLIGHT_OUTLINE : ICON_OUTLINE"));
         assertFalse(renderer.contains("outerWidth"));
         assertFalse(renderer.contains("outerHeight"));
         assertTrue(renderer.contains("final float iconWidth = iconSize * icon.widthScale()"));
