@@ -44,6 +44,16 @@ final class ConfluxConfigTest {
     }
 
     @Test
+    void playerHighlightGhostDefaultsToThirtySecondsAndSurvivesCopy() {
+        final ConfluxConfig config = new ConfluxConfig();
+
+        assertEquals(30, config.radarPlayerHighlightGhostSeconds);
+        config.radarPlayerHighlightGhostSeconds = 45;
+
+        assertEquals(45, config.copy().radarPlayerHighlightGhostSeconds);
+    }
+
+    @Test
     void waypointRenderDistanceIsFiniteByDefault() {
         assertEquals(1_000, new ConfluxConfig().waypointRenderDistance);
     }

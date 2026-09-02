@@ -11,6 +11,7 @@ import cn.net.rms.confluxmap.server.shared.SharedWaypointNetworking;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointService;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointStore;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointValidator;
+import cn.net.rms.confluxmap.server.PlayerPositionBroadcastGate;
 import cn.net.rms.confluxmap.server.web.WebMapServer;
 import cn.net.rms.confluxmap.server.web.WebMapPrivacyStore;
 import java.io.IOException;
@@ -51,6 +52,8 @@ public final class ConfluxMapCompanion {
     private volatile FabricWebMapBackend webMapBackend;
     private int webPlayerTicks;
     private volatile WebMapPrivacyStore webMapPrivacy;
+    private final PlayerPositionBroadcastGate playerPositionBroadcast =
+        new PlayerPositionBroadcastGate();
 
     public ConfluxMapCompanion(final ServerConfigIo configIo) {
         this.configIo = configIo;
@@ -111,6 +114,9 @@ public final class ConfluxMapCompanion {
         final ChunkLoadStateService loadStates = chunkLoadStates;
         if (loadStates != null) {
             loadStates.tick(server);
+        }
+        if (playerPositionBroadcast.tick(isEnabled() && config.allowEntityRadar)) {
+            networking.broadcastPlayerPositions(server);
         }
         final FabricWebMapBackend currentWebBackend = webMapBackend;
         if (currentWebBackend != null && (config.webMap.sharePlayers || sharedWaypointsEnabled())

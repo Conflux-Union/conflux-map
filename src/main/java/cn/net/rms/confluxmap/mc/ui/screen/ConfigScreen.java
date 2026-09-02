@@ -574,6 +574,14 @@ public final class ConfigScreen extends ConfluxScreen {
                     () -> config.radarIconSize, v -> config.radarIconSize = v,
                     ConfigScreen::pxText, radarControlsActive, radarTooltipKey
                 );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.radar.player_highlight_ghost_duration",
+                    ConfluxConfig.MIN_RADAR_PLAYER_HIGHLIGHT_GHOST_SECONDS,
+                    ConfluxConfig.MAX_RADAR_PLAYER_HIGHLIGHT_GHOST_SECONDS,
+                    () -> config.radarPlayerHighlightGhostSeconds,
+                    v -> config.radarPlayerHighlightGhostSeconds = v,
+                    ConfigScreen::secondsText, radarControlsActive, radarTooltipKey
+                );
                 break;
             case WAYPOINTS:
                 y = addActionRow(

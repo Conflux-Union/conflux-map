@@ -12,6 +12,7 @@ import cn.net.rms.confluxmap.core.update.GithubReleaseFetcher;
 import cn.net.rms.confluxmap.core.update.UpdateCheckService;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import cn.net.rms.confluxmap.server.ServerConfig;
+import cn.net.rms.confluxmap.server.PlayerPositionBroadcastGate;
 import cn.net.rms.confluxmap.server.web.WebMapServer;
 import cn.net.rms.confluxmap.server.web.WebMapPrivacyStore;
 import cn.net.rms.confluxmap.server.shared.SharedWaypointIo;
@@ -92,6 +93,8 @@ final class PaperCompanion implements Listener {
     private PaperWebMapBackend webMapBackend;
     private int webPlayerTicks;
     private WebMapPrivacyStore webMapPrivacy;
+    private final PlayerPositionBroadcastGate playerPositionBroadcast =
+        new PlayerPositionBroadcastGate();
 
     PaperCompanion(
         final ConfluxMapPaperPlugin plugin,
@@ -427,6 +430,9 @@ final class PaperCompanion implements Listener {
             chunkLoadStates.tick();
         }
         sharedNetworking.tick();
+        if (playerPositionBroadcast.tick(config.allowEntityRadar)) {
+            networking.broadcastPlayerPositions();
+        }
         if (webMapBackend != null && (config.webMap.sharePlayers || sharedWaypointsEnabled())
             && ++webPlayerTicks >= 40) {
             webPlayerTicks = 0;

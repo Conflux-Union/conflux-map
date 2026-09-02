@@ -24,6 +24,7 @@ import java.util.function.IntBinaryOperator;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
+import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.client.render.entity.EntityRenderer;
 import net.minecraft.client.render.entity.LivingEntityRenderer;
 import net.minecraft.client.render.entity.model.EntityModel;
@@ -183,6 +184,26 @@ public final class EntityIconManager implements AutoCloseable {
             ? cache.value(key).orElse(null)
             : cache.request(key, clock).orElse(null);
         return sprite == null ? null : dynamicIcon(sprite);
+    }
+
+    /** Resolves a server-synchronized player portrait without requiring a loaded entity. */
+    public FaceIcon iconForPlayer(final UUID playerId) {
+        final MinecraftClient client = MinecraftClient.getInstance();
+        if (client.getNetworkHandler() == null) {
+            return null;
+        }
+        final PlayerListEntry player = client.getNetworkHandler().getPlayerListEntry(playerId);
+        if (player == null) {
+            return null;
+        }
+        //#if MC>=12109
+        //$$ final Identifier skin = player.getSkinTextures().body().texturePath();
+        //#elseif MC>=12100
+        //$$ final Identifier skin = player.getSkinTextures().texture();
+        //#else
+        final Identifier skin = player.getSkinTexture();
+        //#endif
+        return playerIcon(skin);
     }
 
     public boolean bindDynamicColor() {
@@ -712,6 +733,10 @@ public final class EntityIconManager implements AutoCloseable {
         //#else
         final Identifier skin = player.getSkinTexture();
         //#endif
+        return playerIcon(skin);
+    }
+
+    private static FaceIcon playerIcon(final Identifier skin) {
         return new FaceIcon(
             skin, PLAYER_U0, PLAYER_V0, PLAYER_U1, PLAYER_V1,
             skin, HAT_U0, HAT_V0, HAT_U1, HAT_V1,

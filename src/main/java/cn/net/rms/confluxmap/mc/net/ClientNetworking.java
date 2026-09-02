@@ -18,11 +18,13 @@ import cn.net.rms.confluxmap.core.net.MapRegionPatchS2C;
 import cn.net.rms.confluxmap.core.net.MapSyncProtocol;
 import cn.net.rms.confluxmap.core.net.Message;
 import cn.net.rms.confluxmap.core.net.PolicyUpdateS2C;
+import cn.net.rms.confluxmap.core.net.PlayerPositionsS2C;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.net.ServerInstanceS2C;
 import cn.net.rms.confluxmap.core.net.ServerViewDistanceS2C;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
+import cn.net.rms.confluxmap.core.radar.ServerPlayerRadarState;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
@@ -44,6 +46,7 @@ public final class ClientNetworking {
     private final CompanionSession session;
     private volatile MapSyncClient mapSync;
     private volatile ChunkLoadStateClient chunkLoadStates;
+    private volatile ServerPlayerRadarState playerRadar;
 
     public ClientNetworking(final CompanionSession session) {
         this.session = session;
@@ -61,6 +64,10 @@ public final class ClientNetworking {
 
     public void bindChunkLoadStates(final ChunkLoadStateClient chunkLoadStates) {
         this.chunkLoadStates = chunkLoadStates;
+    }
+
+    public void bindPlayerRadar(final ServerPlayerRadarState playerRadar) {
+        this.playerRadar = playerRadar;
     }
 
     private void onReceive(
@@ -119,6 +126,11 @@ public final class ClientNetworking {
             if (loadStates != null) {
                 loadStates.onDelta(delta);
             }
+        } else if (msg instanceof final PlayerPositionsS2C positions) {
+            final ServerPlayerRadarState radar = playerRadar;
+            if (radar != null && session.entityRadarAllowed()) {
+                radar.accept(positions, System.currentTimeMillis());
+            }
         } else if (msg instanceof final ErrorS2C e) {
             onError(e, payloadBytes);
         } else {
@@ -146,6 +158,10 @@ public final class ClientNetworking {
             final ChunkLoadStateClient loadStates = chunkLoadStates;
             if (loadStates != null) {
                 loadStates.reset();
+            }
+            final ServerPlayerRadarState radar = playerRadar;
+            if (radar != null) {
+                radar.clear();
             }
         });
     }
@@ -211,6 +227,10 @@ public final class ClientNetworking {
         final ChunkLoadStateClient loadStates = chunkLoadStates;
         if (loadStates != null && !updated.flags().chunkLoadStateEnabled()) {
             loadStates.reset();
+        }
+        final ServerPlayerRadarState radar = playerRadar;
+        if (radar != null && updated.flags().entityRadarForbidden()) {
+            radar.clear();
         }
     }
 

@@ -20,6 +20,7 @@ import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.PredictionTileService;
 import cn.net.rms.confluxmap.core.predict.CorrectionStore;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
+import cn.net.rms.confluxmap.core.radar.ServerPlayerRadarState;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.store.NamespaceAdoption;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
@@ -105,6 +106,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private ChunkCaptureService chunkCapture;
     private RadarViewRange radarViewRange;
     private EntityRadarScanner radarScanner;
+    private ServerPlayerRadarState serverPlayerRadar;
     private EntityIconManager entityIconManager;
     private PlayerTrail playerTrail;
     private PlayerTrailTracker playerTrailTracker;
@@ -246,6 +248,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
             config, syncedMaterialResolver::register
         );
         chunkLoadStateClient = new ChunkLoadStateClient(companionSession, clientNetworking);
+        serverPlayerRadar = new ServerPlayerRadarState();
         mapExportService = new MapExportService(
             confluxRoot.resolve("exports"),
             sessionGuard,
@@ -261,6 +264,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(ignored -> mapExportService.tick());
         clientNetworking.bindMapSync(mapSyncClient);
         clientNetworking.bindChunkLoadStates(chunkLoadStateClient);
+        clientNetworking.bindPlayerRadar(serverPlayerRadar);
         clientNetworking.register();
         sharedWaypoints = new SharedWaypointClient(client, config, configIo);
         sharedWaypoints.register();
@@ -309,14 +313,14 @@ public final class ConfluxMapClient implements ClientModInitializer {
         uiResourceTheme = new UiResourceTheme();
         minimapHudRenderer = new MinimapHudRenderer(
             client, config, gameBridge, tileService, tileTextureManager, radarScanner, entityIconManager,
-            playerTrail, annotationService, layerSelector, waypointRenderCatalog,
+            serverPlayerRadar, playerTrail, annotationService, layerSelector, waypointRenderCatalog,
             radarViewRange, uiResourceTheme, chunkCapture::setMinimapViewport,
             chunkCapture::liveTerrainPaused
         );
-        waypointItemHudRenderer = new WaypointItemHudRenderer(client, config);
+        waypointItemHudRenderer = new WaypointItemHudRenderer(client, config, entityIconManager);
         waypointWorldRenderer = new WaypointWorldRenderer(
             client, config, gameBridge, waypointRenderCatalog, waypointHighlightState,
-            waypointItemHudRenderer
+            serverPlayerRadar, waypointItemHudRenderer
         );
         fullscreenMapViewState = new FullscreenMapViewState();
         daylightTracker = new McDaylightTracker(
@@ -337,6 +341,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(chunkCapture::onSessionChanged);
         sessionTracker.addListener(tileService::onSessionChanged);
         sessionTracker.addListener(radarScanner::onSessionChanged);
+        sessionTracker.addListener(serverPlayerRadar::onSessionChanged);
         sessionTracker.addListener(session -> gameBridge.runOnRenderThread(entityIconManager::onSessionChanged));
         sessionTracker.addListener(playerTrailTracker::onSessionChanged);
         sessionTracker.addListener(fullscreenMapViewState::onSessionChanged);
@@ -471,6 +476,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public EntityRadarScanner radarScanner() {
         return radarScanner;
+    }
+
+    public ServerPlayerRadarState serverPlayerRadar() {
+        return serverPlayerRadar;
     }
 
     public RadarViewRange radarViewRange() {

@@ -42,6 +42,18 @@ class MapSyncProtocolTest {
         assertTrue(handshake.session().supports(MapSyncCapability.SERVER_INSTANCE));
     }
 
+    @Test
+    void currentHelloSelectsThePlayerPositionsCapability() throws Exception {
+        final HelloC2S hello = (HelloC2S) MsgCodec.decode(MsgCodec.encode(
+            MapSyncProtocol.clientHello("0.2.0", PREDICTOR)
+        ));
+
+        final MapSyncProtocol.ServerHandshake handshake =
+            MapSyncProtocol.acceptClient(hello, "0.2.0", PREDICTOR);
+
+        assertTrue(handshake.session().supports(MapSyncCapability.PLAYER_POSITIONS));
+    }
+
     /**
      * Legacy peers advertise capabilities through predictor tokens, and no released token ever
      * meant SERVER_INSTANCE. Granting it would send them a message id their codec rejects.
@@ -55,6 +67,17 @@ class MapSyncProtocolTest {
         );
 
         assertFalse(handshake.session().supports(MapSyncCapability.SERVER_INSTANCE));
+    }
+
+    @Test
+    void legacyHelloNeverSelectsThePlayerPositionsCapability() {
+        final MapSyncProtocol.ServerHandshake handshake = MapSyncProtocol.acceptClient(
+            new HelloC2S("0.2.0", PREDICTOR + "|sync:1|wire:4.0|patch:4|region:2|source-light:1"),
+            "0.2.0",
+            PREDICTOR
+        );
+
+        assertFalse(handshake.session().supports(MapSyncCapability.PLAYER_POSITIONS));
     }
 
     /**
@@ -78,6 +101,21 @@ class MapSyncProtocolTest {
     }
 
     @Test
+    void legacySessionRefusesToEncodePlayerPositions() {
+        final NegotiatedMapSync session = MapSyncProtocol.acceptClient(
+            new HelloC2S("0.2.0", PREDICTOR + "|sync:1|wire:4.0|patch:4|region:2|source-light:1"),
+            "0.2.0",
+            PREDICTOR
+        ).session();
+
+        final ProtoException error = assertThrows(
+            ProtoException.class,
+            () -> session.encodeOutbound(new PlayerPositionsS2C(List.of()))
+        );
+        assertTrue(error.getMessage().contains("PLAYER_POSITIONS"));
+    }
+
+    @Test
     void capabilityAwareSessionEncodesTheServerInstanceMessage() throws Exception {
         final HelloC2S hello = (HelloC2S) MsgCodec.decode(MsgCodec.encode(
             MapSyncProtocol.clientHello("0.2.0", PREDICTOR)
@@ -93,6 +131,19 @@ class MapSyncProtocolTest {
             "aaaaaaaa-0000-0000-0000-000000000000",
             ((ServerInstanceS2C) MsgCodec.decode(encoded)).instanceId()
         );
+    }
+
+    @Test
+    void capabilityAwareSessionEncodesPlayerPositions() throws Exception {
+        final HelloC2S hello = (HelloC2S) MsgCodec.decode(MsgCodec.encode(
+            MapSyncProtocol.clientHello("0.2.0", PREDICTOR)
+        ));
+        final NegotiatedMapSync session =
+            MapSyncProtocol.acceptClient(hello, "0.2.0", PREDICTOR).session();
+
+        final byte[] encoded = session.encodeOutbound(new PlayerPositionsS2C(List.of()));
+
+        assertEquals(new PlayerPositionsS2C(List.of()), MsgCodec.decode(encoded));
     }
 
     @Test

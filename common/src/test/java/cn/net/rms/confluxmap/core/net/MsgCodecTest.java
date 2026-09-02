@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -79,6 +80,45 @@ class MsgCodecTest {
 
         assertEquals("3f2504e0-4f89-11d3-9a0c-0305e82c3301", decoded.instanceId());
         assertEquals(Proto.MSG_SERVER_INSTANCE_S2C, decoded.typeId());
+    }
+
+    @Test
+    void playerPositionsRoundTripEveryIdentityAndPositionField() throws ProtoException {
+        final PlayerPositionsS2C original = new PlayerPositionsS2C(List.of(
+            new PlayerPositionsS2C.Entry(
+                UUID.fromString("11111111-2222-3333-4444-555555555555"),
+                "Alex",
+                "minecraft:the_nether",
+                12.25,
+                71.5,
+                -98.75,
+                true
+            )
+        ));
+
+        final PlayerPositionsS2C decoded = (PlayerPositionsS2C) MsgCodec.decode(
+            MsgCodec.encode(original)
+        );
+
+        assertEquals(original, decoded);
+        assertEquals(Proto.MSG_PLAYER_POSITIONS_S2C, decoded.typeId());
+    }
+
+    @Test
+    void playerPositionsRejectNonFiniteCoordinates() {
+        final PlayerPositionsS2C invalid = new PlayerPositionsS2C(List.of(
+            new PlayerPositionsS2C.Entry(
+                UUID.randomUUID(),
+                "Alex",
+                "minecraft:overworld",
+                Double.NaN,
+                64.0,
+                0.0,
+                false
+            )
+        ));
+
+        assertThrows(ProtoException.class, () -> MsgCodec.encode(invalid));
     }
 
     @Test

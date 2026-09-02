@@ -16,6 +16,8 @@ import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
+import cn.net.rms.confluxmap.core.radar.ServerPlayerRadarEntries;
+import cn.net.rms.confluxmap.core.radar.ServerPlayerRadarState;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.trail.PlayerTrail;
 import cn.net.rms.confluxmap.core.trail.PlayerTrailProjection;
@@ -94,6 +96,7 @@ public final class MinimapHudRenderer {
     private final OffscreenCanvas canvas = new OffscreenCanvas();
     private final EntityRadarScanner radarScanner;
     private final EntityIconManager iconManager;
+    private final ServerPlayerRadarState serverPlayerRadar;
     private final PlayerTrail playerTrail;
     private final AnnotationService annotations;
     private final LayerSelector layerSelector;
@@ -111,6 +114,7 @@ public final class MinimapHudRenderer {
         final TileTextureManager textures,
         final EntityRadarScanner radarScanner,
         final EntityIconManager iconManager,
+        final ServerPlayerRadarState serverPlayerRadar,
         final PlayerTrail playerTrail,
         final AnnotationService annotations,
         final LayerSelector layerSelector,
@@ -127,6 +131,7 @@ public final class MinimapHudRenderer {
         this.textures = textures;
         this.radarScanner = radarScanner;
         this.iconManager = iconManager;
+        this.serverPlayerRadar = serverPlayerRadar;
         this.playerTrail = playerTrail;
         this.annotations = annotations;
         this.layerSelector = layerSelector;
@@ -660,7 +665,30 @@ public final class MinimapHudRenderer {
             RadarMarkerRenderer.Presentation.minimap(
                 config.radarDisplayMode, playerListPressed, config.radarShowPlayerNames
             );
-        for (final RadarEntry entry : radarScanner.snapshot()) {
+        final List<ServerPlayerRadarState.PlayerView> serverPlayers =
+            config.radarShowPlayers
+                ? serverPlayerRadar.playersIn(gameBridge.session().dimension(), System.currentTimeMillis())
+                : List.of();
+        final List<RadarEntry> entries = ServerPlayerRadarEntries.merge(
+            radarScanner.snapshot(),
+            serverPlayers,
+            client.player == null ? null : client.player.getUuid(),
+            player.y()
+        );
+        final Optional<ServerPlayerRadarState.HighlightView> highlight =
+            serverPlayerRadar.highlightedIn(
+                gameBridge.session().dimension(),
+                System.currentTimeMillis(),
+                config.radarPlayerHighlightGhostSeconds * 1_000L
+            );
+        final List<RadarEntry> visibleEntries;
+        if (highlight.isPresent() && highlight.get().ghost()) {
+            visibleEntries = new ArrayList<>(entries);
+            visibleEntries.add(ServerPlayerRadarEntries.entry(highlight.get().player(), player.y()));
+        } else {
+            visibleEntries = entries;
+        }
+        for (final RadarEntry entry : visibleEntries) {
             double ex = entry.x();
             double ez = entry.z();
             int yDelta = entry.yDelta();
@@ -675,12 +703,39 @@ public final class MinimapHudRenderer {
 
             final float dirX = (float) ((ex - player.x()) * pxPerBlock);
             final float dirY = (float) ((ez - player.z()) * pxPerBlock);
-            if (dirX * dirX + dirY * dirY > cullRadiusSq) {
-                continue;
+            float screenX = dirX * cos - dirY * sin;
+            float screenY = dirX * sin + dirY * cos;
+            final boolean highlighted = entry.playerId() != null
+                && serverPlayerRadar.isHighlighted(entry.playerId());
+            final boolean outside = dirX * dirX + dirY * dirY > cullRadiusSq;
+            if (outside) {
+                if (!highlighted) {
+                    continue;
+                }
+                final float limit = size / 2f - Math.max(5f, config.radarIconSize / 2f) - 2f;
+                final float divisor = config.minimapShape == ConfluxConfig.Shape.CIRCLE
+                    ? (float) Math.hypot(screenX, screenY)
+                    : Math.max(Math.abs(screenX), Math.abs(screenY));
+                if (divisor > 0f) {
+                    final float factor = limit / divisor;
+                    screenX *= factor;
+                    screenY *= factor;
+                }
             }
-            final float x = centerX + dirX * cos - dirY * sin;
-            final float y = centerY + dirX * sin + dirY * cos;
-            markers.add(new RadarMarkerRenderer.Marker(entry, x, y, yDelta, live));
+            final boolean ghost = highlight.isPresent()
+                && highlight.get().ghost()
+                && entry.playerId() != null
+                && entry.playerId().equals(highlight.get().player().playerId());
+            markers.add(new RadarMarkerRenderer.Marker(
+                entry,
+                centerX + screenX,
+                centerY + screenY,
+                yDelta,
+                live,
+                highlighted,
+                ghost,
+                ghost ? highlight.get().destination() : null
+            ));
         }
         RadarMarkerRenderer.drawAll(
             draw, client, config, iconManager, markers, presentation

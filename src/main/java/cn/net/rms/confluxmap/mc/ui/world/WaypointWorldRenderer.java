@@ -6,6 +6,7 @@ import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.radar.ServerPlayerRadarState;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
@@ -122,6 +123,7 @@ public final class WaypointWorldRenderer {
     private final GameBridge gameBridge;
     private final WaypointRenderCatalog waypointRenderCatalog;
     private final WaypointHighlightState waypointHighlightState;
+    private final ServerPlayerRadarState serverPlayerRadar;
     private final WaypointItemHudRenderer waypointItemHudRenderer;
     private final Map<UUID, Float> labelAnimationProgress = new HashMap<>();
     private long lastAnimationNanos;
@@ -132,6 +134,7 @@ public final class WaypointWorldRenderer {
         final GameBridge gameBridge,
         final WaypointRenderCatalog waypointRenderCatalog,
         final WaypointHighlightState waypointHighlightState,
+        final ServerPlayerRadarState serverPlayerRadar,
         final WaypointItemHudRenderer waypointItemHudRenderer
     ) {
         this.client = client;
@@ -139,6 +142,7 @@ public final class WaypointWorldRenderer {
         this.gameBridge = gameBridge;
         this.waypointRenderCatalog = waypointRenderCatalog;
         this.waypointHighlightState = waypointHighlightState;
+        this.serverPlayerRadar = serverPlayerRadar;
         this.waypointItemHudRenderer = waypointItemHudRenderer;
     }
 
@@ -243,7 +247,7 @@ public final class WaypointWorldRenderer {
         final List<WaypointRenderEntry> waypoints = waypointsForRender(currentDimension);
         final boolean hasHighlight = waypointHighlightState.hasRenderableTarget(
             waypoints, currentDimension
-        );
+        ) || serverPlayerRadar.highlightedPlayerId().isPresent();
 
         //#if MC<12105
         RenderSystem.enableDepthTest();
@@ -264,11 +268,12 @@ public final class WaypointWorldRenderer {
                 continue;
             }
             final double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
-            final boolean selected = waypointHighlightState.matchesEntry(waypoint, currentDimension);
+            final boolean selected = isSelected(waypoint, currentDimension);
             drawBeam(
                 matrices, cameraPos, worldX, worldZ, bottomY, topY,
                 waypoint.colorArgb(), horizontalDistance, maxDistance,
                 highlightVisibilityAlpha(selected, hasHighlight)
+                    * playerHighlightAlpha(waypoint, currentDimension)
             );
         }
 
@@ -355,7 +360,8 @@ public final class WaypointWorldRenderer {
             player.z(),
             maxDistance,
             waypointHighlightState,
-            currentDimension
+            currentDimension,
+            serverPlayerRadar.highlightedPlayerId().orElse(null)
         );
         final float animationDeltaSeconds = animationDeltaSeconds();
         final Set<UUID> visibleWaypointIds = new HashSet<>(labelSelection.candidates().size());
@@ -386,7 +392,10 @@ public final class WaypointWorldRenderer {
                     final boolean targeted = candidate.selected()
                         || waypoint.id().equals(labelSelection.targetedWaypointId());
                     final float progress = updateLabelAnimation(waypoint.id(), targeted, animationDeltaSeconds);
-                    if (!WaypointMarkerRenderer.itemIcon(waypoint.iconItemId()).isEmpty()) {
+                    final UUID playerId = serverPlayerRadar.isHighlighted(waypoint.id())
+                        ? waypoint.id() : null;
+                    if (playerId != null
+                        || !WaypointMarkerRenderer.itemIcon(waypoint.iconItemId()).isEmpty()) {
                         itemLabels.add(new WaypointItemHudRenderer.Label(
                             waypoint,
                             renderDistance,
@@ -394,8 +403,9 @@ public final class WaypointWorldRenderer {
                             progress,
                             highlightVisibilityAlpha(
                                 candidate.selected(), labelSelection.hasHighlight()
-                            ),
-                            candidate.selected()
+                            ) * playerHighlightAlpha(waypoint, currentDimension),
+                            candidate.selected(),
+                            playerId
                         ));
                         continue;
                     }
@@ -404,7 +414,8 @@ public final class WaypointWorldRenderer {
                     //$$     matrices, context.submitNodeCollector(), cameraState.orientation,
                     //$$     cameraPos, waypoint.x(), waypoint.y(), waypoint.z(), waypoint,
                     //$$     renderDistance, labelProjectionDistance, progress,
-                    //$$     highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight()),
+                    //$$     highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight())
+                    //$$         * playerHighlightAlpha(waypoint, currentDimension),
                     //$$     candidate.selected()
                     //$$ );
                     //#elseif MC>=260100
@@ -412,7 +423,8 @@ public final class WaypointWorldRenderer {
                     //$$     matrices, immediate, context.submitNodeCollector(), camera,
                     //$$     cameraPos, waypoint.x(), waypoint.y(), waypoint.z(),
                     //$$     waypoint, renderDistance, labelProjectionDistance, progress,
-                    //$$     highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight()),
+                    //$$     highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight())
+                    //$$         * playerHighlightAlpha(waypoint, currentDimension),
                     //$$     candidate.selected()
                     //$$ );
                     //#elseif MC>=12111
@@ -420,7 +432,8 @@ public final class WaypointWorldRenderer {
                     //$$     matrices, immediate, context.commandQueue(), camera,
                     //$$     cameraPos, waypoint.x(), waypoint.y(), waypoint.z(),
                     //$$     waypoint, renderDistance, labelProjectionDistance, progress,
-                    //$$     highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight()),
+                    //$$     highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight())
+                    //$$         * playerHighlightAlpha(waypoint, currentDimension),
                     //$$     candidate.selected()
                     //$$ );
                     //#elseif MC>=12109
@@ -428,14 +441,16 @@ public final class WaypointWorldRenderer {
                     //$$     matrices, immediate, commandQueue, camera,
                     //$$     cameraPos, waypoint.x(), waypoint.y(), waypoint.z(),
                     //$$     waypoint, renderDistance, labelProjectionDistance, progress,
-                    //$$     highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight()),
+                    //$$     highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight())
+                    //$$         * playerHighlightAlpha(waypoint, currentDimension),
                     //$$     candidate.selected()
                     //$$ );
                     //#else
                     drawLabel(
                         matrices, immediate, camera, cameraPos, waypoint.x(), waypoint.y(), waypoint.z(),
                         waypoint, renderDistance, labelProjectionDistance, progress,
-                        highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight()),
+                        highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight())
+                            * playerHighlightAlpha(waypoint, currentDimension),
                         candidate.selected()
                     );
                     //#endif
@@ -479,15 +494,54 @@ public final class WaypointWorldRenderer {
 
     private List<WaypointRenderEntry> waypointsForRender(final DimensionId dimension) {
         final List<WaypointRenderEntry> base = waypointRenderCatalog.snapshot(dimension);
+        final Optional<ServerPlayerRadarState.HighlightView> playerTarget =
+            serverPlayerRadar.highlightedIn(
+                dimension,
+                System.currentTimeMillis(),
+                config.radarPlayerHighlightGhostSeconds * 1_000L
+            );
         final Optional<WaypointHighlightState.Target> target = waypointHighlightState.target()
             .filter(value -> value.waypointId() == null && value.dimension().equals(dimension));
-        if (target.isEmpty()) {
+        if (target.isEmpty() && playerTarget.isEmpty()) {
             return base;
         }
-        final List<WaypointRenderEntry> result = new ArrayList<>(base.size() + 1);
+        final List<WaypointRenderEntry> result = new ArrayList<>(base.size() + 2);
         result.addAll(base);
-        result.add(selectedTargetEntry(target.get()));
+        target.ifPresent(value -> result.add(selectedTargetEntry(value)));
+        playerTarget.ifPresent(value -> result.add(new WaypointRenderEntry(
+            value.player().playerId(),
+            value.player().name(),
+            dimension,
+            value.player().x(),
+            value.player().y(),
+            value.player().z(),
+            SELECTED_LOCATION_COLOR,
+            Waypoint.Type.NORMAL,
+            WaypointRenderEntry.Source.LOCAL
+        )));
         return result;
+    }
+
+    private boolean isSelected(
+        final WaypointRenderEntry waypoint,
+        final DimensionId dimension
+    ) {
+        return waypointHighlightState.matchesEntry(waypoint, dimension)
+            || serverPlayerRadar.isHighlighted(waypoint.id());
+    }
+
+    private float playerHighlightAlpha(
+        final WaypointRenderEntry waypoint,
+        final DimensionId dimension
+    ) {
+        if (!serverPlayerRadar.isHighlighted(waypoint.id())) {
+            return 1f;
+        }
+        return serverPlayerRadar.highlightedIn(
+            dimension,
+            System.currentTimeMillis(),
+            config.radarPlayerHighlightGhostSeconds * 1_000L
+        ).filter(ServerPlayerRadarState.HighlightView::ghost).isPresent() ? 0.5f : 1f;
     }
 
     private WaypointRenderEntry selectedTargetEntry(final WaypointHighlightState.Target target) {
@@ -527,6 +581,26 @@ public final class WaypointWorldRenderer {
         final WaypointHighlightState waypointHighlightState,
         final DimensionId currentDimension
     ) {
+        return selectLabels(
+            waypoints, cameraYaw, cameraPitch, cameraPos,
+            playerX, playerY, playerZ, maxDistance,
+            waypointHighlightState, currentDimension, null
+        );
+    }
+
+    static LabelSelection selectLabels(
+        final List<WaypointRenderEntry> waypoints,
+        final float cameraYaw,
+        final float cameraPitch,
+        final Vec3d cameraPos,
+        final double playerX,
+        final double playerY,
+        final double playerZ,
+        final double maxDistance,
+        final WaypointHighlightState waypointHighlightState,
+        final DimensionId currentDimension,
+        final UUID highlightedPlayerId
+    ) {
         final double maxDistanceSquared = maxDistance * maxDistance;
         final List<LabelCandidate> candidates = new ArrayList<>();
         WaypointRenderEntry targetedWaypoint = null;
@@ -544,7 +618,7 @@ public final class WaypointWorldRenderer {
                 playerDx * playerDx + playerDy * playerDy + playerDz * playerDz;
             final boolean selected = waypointHighlightState.matchesEntry(
                 waypoint, currentDimension
-            );
+            ) || waypoint.id().equals(highlightedPlayerId);
             hasHighlight |= selected;
             final boolean withinDistance = playerDistanceSquared <= maxDistanceSquared;
             if (withinDistance || selected) {

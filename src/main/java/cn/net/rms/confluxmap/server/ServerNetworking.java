@@ -23,6 +23,7 @@ import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.NegotiatedMapSync;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.ProtoException;
+import cn.net.rms.confluxmap.core.net.PlayerPositionsS2C;
 import cn.net.rms.confluxmap.core.net.ServerInstanceS2C;
 import cn.net.rms.confluxmap.core.net.ServerViewDistanceS2C;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
@@ -277,6 +278,31 @@ public final class ServerNetworking {
 
     private NegotiatedMapSync peerSession(final ServerPlayerEntity player) {
         return peerSessions.getOrDefault(player.getUuid(), disabledSession());
+    }
+
+    void broadcastPlayerPositions(final MinecraftServer server) {
+        if (!companion.config().allowEntityRadar) {
+            return;
+        }
+        final List<PlayerPositionsS2C.Entry> entries = new ArrayList<>();
+        for (final ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            entries.add(new PlayerPositionsS2C.Entry(
+                player.getUuid(),
+                MinecraftAccess.playerName(player),
+                player.getServerWorld().getRegistryKey().getValue().toString(),
+                player.getX(),
+                player.getY(),
+                player.getZ(),
+                player.isSpectator()
+            ));
+        }
+        final PlayerPositionsS2C snapshot = new PlayerPositionsS2C(entries);
+        for (final ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            final NegotiatedMapSync session = peerSessions.get(player.getUuid());
+            if (session != null && session.supports(MapSyncCapability.PLAYER_POSITIONS)) {
+                sendNegotiated(player, session, snapshot);
+            }
+        }
     }
 
     private HelloPolicyS2C buildPolicy(

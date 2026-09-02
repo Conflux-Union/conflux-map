@@ -80,11 +80,13 @@ public final class Proto {
     public static final int MSG_MAP_CAPABILITIES_S2C = 0x12;
     /** S2C: identity of the server instance, sent only to clients advertising support. */
     public static final int MSG_SERVER_INSTANCE_S2C = 0x13;
+    /** S2C: complete online-player position snapshot for the companion radar. */
+    public static final int MSG_PLAYER_POSITIONS_S2C = 0x14;
 
     /** First valid message id; used to range-check the type byte. */
     public static final int MSG_MIN = MSG_HELLO_C2S;
     /** Last valid message id for this proto major version. */
-    public static final int MSG_MAX = MSG_SERVER_INSTANCE_S2C;
+    public static final int MSG_MAX = MSG_PLAYER_POSITIONS_S2C;
 
     // ---- Hard caps (enforced everywhere untrusted bytes cross a boundary) ----
 
@@ -113,6 +115,8 @@ public final class Proto {
 
     /** Maximum entries in one load-state payload; each entry is ten bytes on the wire. */
     public static final int MAX_LOAD_STATE_ENTRIES = 512;
+    /** Maximum online players carried in one radar snapshot. */
+    public static final int MAX_PLAYER_POSITION_ENTRIES = 2_048;
     /** Maximum number of predicted tiles covered by one active correction subscription. */
     public static final int MAX_MAP_SYNC_VIEW_TILES = 256;
     /** Maximum invalidated tiles carried in one server notification. */

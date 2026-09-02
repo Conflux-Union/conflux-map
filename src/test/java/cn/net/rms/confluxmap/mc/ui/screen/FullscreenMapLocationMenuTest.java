@@ -70,6 +70,22 @@ class FullscreenMapLocationMenuTest {
     }
 
     @Test
+    void usesPlayerHighlightActionsWhenRightClickingAPlayer() {
+        assertEquals(List.of(
+            FullscreenMapLocationMenu.Action.SET_WAYPOINT,
+            FullscreenMapLocationMenu.Action.SHARE_LOCATION,
+            FullscreenMapLocationMenu.Action.TELEPORT,
+            FullscreenMapLocationMenu.Action.HIGHLIGHT_PLAYER
+        ), FullscreenMapLocationMenu.actions(false, false, false, true));
+        assertEquals(List.of(
+            FullscreenMapLocationMenu.Action.SET_WAYPOINT,
+            FullscreenMapLocationMenu.Action.SHARE_LOCATION,
+            FullscreenMapLocationMenu.Action.TELEPORT,
+            FullscreenMapLocationMenu.Action.CLEAR_PLAYER_HIGHLIGHT
+        ), FullscreenMapLocationMenu.actions(false, false, true, true));
+    }
+
+    @Test
     void syntheticHighlightedLocationIsNotTreatedAsASavedWaypoint() {
         assertFalse(FullscreenMapLocationMenu.isSavedWaypoint(new WaypointRenderEntry(
             WaypointHighlightState.SELECTED_LOCATION_ID,
