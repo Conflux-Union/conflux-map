@@ -178,8 +178,8 @@ public final class ClientGroundTeleportService {
     }
 
     static OptionalInt groundY(final int motionBlockingHeight, final int bottomY, final int topY) {
-        return motionBlockingHeight > bottomY && motionBlockingHeight <= topY
-            ? OptionalInt.of(motionBlockingHeight)
+        return motionBlockingHeight > bottomY && motionBlockingHeight < topY
+            ? OptionalInt.of(motionBlockingHeight + 1)
             : OptionalInt.empty();
     }
 

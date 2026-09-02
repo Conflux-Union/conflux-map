@@ -16,8 +16,8 @@ class ClientGroundTeleportServiceTest {
     }
 
     @Test
-    void motionBlockingHeightIsUsedAsTheFinalPlayerFeetY() {
-        assertEquals(91, ClientGroundTeleportService.groundY(91, -64, 320).orElseThrow());
+    void motionBlockingTopBlockIsConvertedToPlayerFeetY() {
+        assertEquals(92, ClientGroundTeleportService.groundY(91, -64, 320).orElseThrow());
         assertTrue(ClientGroundTeleportService.groundY(-64, -64, 320).isEmpty());
     }
 
