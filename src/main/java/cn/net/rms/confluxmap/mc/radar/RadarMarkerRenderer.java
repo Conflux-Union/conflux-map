@@ -281,10 +281,10 @@ public final class RadarMarkerRenderer {
         final int color = Argb.scaleAlpha(
             elevationColor(ICON_OUTLINE, yDelta), alphaScale
         );
-        RenderUtil.drawTintedOutline(
+        RenderUtil.drawDarkTextureOutline(
             matrices, x - iconWidth / 2f, y - iconHeight / 2f,
             iconWidth, iconHeight,
-            icon.u0(), icon.v0(), icon.u1(), icon.v1(), thickness, color
+            icon.u0(), icon.v0(), icon.u1(), icon.v1(), thickness, Argb.alpha(color) / 255f
         );
     }
 

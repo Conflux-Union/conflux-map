@@ -379,11 +379,13 @@ public final class RenderUtil {
     }
 
     /**
-     * Draws a texture-alpha silhouette expanded by {@code radius} GUI pixels. All shifted copies
-     * share one mesh submission; drawing the original texture afterward covers the dark interior,
-     * leaving only the contour around non-transparent pixels.
+     * Draws a dark texture-alpha silhouette expanded by {@code radius} GUI pixels. The textured
+     * shader multiplies sampled RGB rather than replacing it, so this helper deliberately emits
+     * black vertices and accepts opacity only. All shifted copies share one mesh submission;
+     * drawing the original texture afterward covers the dark interior, leaving only the contour
+     * around non-transparent pixels.
      */
-    public static void drawTintedOutline(
+    public static void drawDarkTextureOutline(
         final MatrixStack matrices,
         final float x,
         final float y,
@@ -394,7 +396,7 @@ public final class RenderUtil {
         final float u1,
         final float v1,
         final int radius,
-        final int argbColor
+        final float opacity
     ) {
         if (radius <= 0) {
             return;
@@ -408,12 +410,7 @@ public final class RenderUtil {
         final int copies = diameter * diameter - 1;
         // All shifted silhouettes can cover the same target pixel. Give each draw only the
         // per-layer alpha that converges on the requested fade after source-over accumulation.
-        final float a = Argb.alphaForRepeatedOverdraw(
-            Argb.alpha(argbColor) / 255f, copies
-        );
-        final float r = Argb.red(argbColor) / 255f;
-        final float g = Argb.green(argbColor) / 255f;
-        final float b = Argb.blue(argbColor) / 255f;
+        final float a = Argb.alphaForRepeatedOverdraw(opacity, copies);
         final var model = matrices.peek().getModel();
         final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, Mesh.tintedTextureFormat());
         for (int offsetY = -radius; offsetY <= radius; offsetY++) {
@@ -423,10 +420,10 @@ public final class RenderUtil {
                 }
                 final float left = x + offsetX;
                 final float top = y + offsetY;
-                mesh.tintedVertex(model, left, top + height, 0, u0, v1, r, g, b, a);
-                mesh.tintedVertex(model, left + width, top + height, 0, u1, v1, r, g, b, a);
-                mesh.tintedVertex(model, left + width, top, 0, u1, v0, r, g, b, a);
-                mesh.tintedVertex(model, left, top, 0, u0, v0, r, g, b, a);
+                mesh.tintedVertex(model, left, top + height, 0, u0, v1, 0f, 0f, 0f, a);
+                mesh.tintedVertex(model, left + width, top + height, 0, u1, v1, 0f, 0f, 0f, a);
+                mesh.tintedVertex(model, left + width, top, 0, u1, v0, 0f, 0f, 0f, a);
+                mesh.tintedVertex(model, left, top, 0, u0, v0, 0f, 0f, 0f, a);
             }
         }
         //#if MC>=12105
