@@ -291,7 +291,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     /** Blocks-per-pixel threshold below which every marker's name shows continuously, not just on hover (deliverable C). */
     private static final double NAME_LABEL_MAX_SCALE = 2.0;
     private static final double HOVER_RADIUS_PX = 6.0;
-    private static final int MAX_VISIBLE_MARKERS_PER_STRUCTURE = 8;
     private static final double DEFAULT_CREATE_Y = 64.0;
     /** Cursor travel between left-press and left-release below which a hovered marker click edits it, not pans (see {@link #mouseReleased}). */
     private static final double CLICK_DRAG_TOLERANCE_PX = 4.0;
@@ -3674,15 +3673,17 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 dimension,
                 structureMarkers.availableTypes(dimension)
             );
-        final List<StructureIndex.Marker> markers = new ArrayList<>(
-            structureMarkers.queryViewport(minX, maxX, minZ, maxZ, scale, visibleTypes)
+        final int cellSize = StructureMarkerGrid.cellSize(scale);
+        final List<StructureIndex.Marker> visibleMarkers = StructureMarkerGrid.select(
+            structureMarkers.queryViewport(
+                StructureMarkerGrid.minimum(minX, cellSize),
+                StructureMarkerGrid.maximum(maxX, cellSize),
+                StructureMarkerGrid.minimum(minZ, cellSize),
+                StructureMarkerGrid.maximum(maxZ, cellSize),
+                scale, visibleTypes
+            ),
+            cellSize
         );
-        markers.sort(java.util.Comparator.comparingLong(marker -> {
-            final long dx = marker.blockX() - (long) centerX;
-            final long dz = marker.blockZ() - (long) centerZ;
-            return dx * dx + dz * dz;
-        }));
-        final List<StructureIndex.Marker> visibleMarkers = limitStructureMarkers(markers);
         double bestHoverDistance = 8.0;
         for (final StructureIndex.Marker marker : visibleMarkers) {
             final float screenX = (float) (width / 2.0 + (marker.blockX() - centerX) * pxPerBlock);
@@ -3723,23 +3724,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 }
             }
         }
-    }
-
-    private static List<StructureIndex.Marker> limitStructureMarkers(
-        final List<StructureIndex.Marker> nearestFirst
-    ) {
-        final Map<StructureIndex.StructureType, Integer> counts =
-            new EnumMap<>(StructureIndex.StructureType.class);
-        final List<StructureIndex.Marker> visible = new ArrayList<>();
-        for (final StructureIndex.Marker marker : nearestFirst) {
-            final int count = counts.getOrDefault(marker.type(), 0);
-            if (count >= MAX_VISIBLE_MARKERS_PER_STRUCTURE) {
-                continue;
-            }
-            counts.put(marker.type(), count + 1);
-            visible.add(marker);
-        }
-        return visible;
     }
 
     /** Faint lines on LOD-0 tile boundaries (256-block spacing), skipped once they'd be denser than {@link #MIN_GRID_SPACING_PX}. */
