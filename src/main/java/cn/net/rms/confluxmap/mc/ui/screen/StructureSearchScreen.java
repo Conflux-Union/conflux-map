@@ -95,10 +95,7 @@ final class StructureSearchScreen extends ConfluxScreen {
         this.available.sort(Comparator.comparing(StructureSearchScreen::localizedName));
         if (MinecraftClient.getInstance().world != null) {
             for (final Identifier id : Regs.biomes(MinecraftClient.getInstance().world).getIds()) {
-                final OptionalInt cubiomesId = id.getNamespace().equals("minecraft")
-                    ? CubiomesBiomeIds.idForName(id.getPath())
-                    : OptionalInt.empty();
-                if (cubiomesId.isEmpty() || BiomeTable.supports(dimension, cubiomesId.getAsInt())) {
+                if (isBiomeAvailable(dimension, id)) {
                     biomes.add(id);
                 }
             }
@@ -107,6 +104,15 @@ final class StructureSearchScreen extends ConfluxScreen {
         mode = companion.structureSearchAllowed() && !available.isEmpty()
             ? MapSearchMode.STRUCTURE
             : MapSearchMode.BIOME;
+    }
+
+    static boolean isBiomeAvailable(final DimensionId dimension, final Identifier id) {
+        if (!id.getNamespace().equals("minecraft")) {
+            return true;
+        }
+        final OptionalInt cubiomesId = CubiomesBiomeIds.idForName(id.getPath());
+        return cubiomesId.isPresent()
+            && BiomeTable.supports(dimension, cubiomesId.getAsInt());
     }
 
     @Override
