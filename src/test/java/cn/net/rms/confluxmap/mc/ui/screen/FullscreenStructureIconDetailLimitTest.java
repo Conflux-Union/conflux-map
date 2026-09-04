@@ -15,7 +15,7 @@ final class FullscreenStructureIconDetailLimitTest {
             "src/main/java/cn/net/rms/confluxmap/mc/ui/screen/FullscreenMapScreen.java"
         ));
         final int start = source.indexOf("private void drawStructures");
-        final int end = source.indexOf("    private static List<StructureIndex.Marker> limitStructureMarkers", start);
+        final int end = source.indexOf("    private void drawGrid", start);
 
         assertTrue(start >= 0 && end > start, "structure renderer must be present");
         final String renderer = source.substring(start, end);
