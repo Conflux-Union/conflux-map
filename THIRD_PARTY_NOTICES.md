@@ -44,7 +44,7 @@ at `native/jni/`. Both build the optional seed-prediction library under
 
 | Component | License | Role |
 |---|---|---|
-| [cubiomes](https://github.com/Cubitect/cubiomes) by Cubitect | MIT | Git submodule at `native/cubiomes/` pointing to this project's fork [`Conflux-Union/cubiomes`](https://github.com/Conflux-Union/cubiomes), pinned to commit `9afc103`. Compiled with this project's own `native/shim/confluxnative.c` into committed JNI libraries under `native/prebuilt/<target>/`, and with `native/web/confluxpredict.c` into the committed browser WASM predictor. Both are bundled in the jar so prediction does not require a C toolchain at runtime. |
+| [cubiomes](https://github.com/Cubitect/cubiomes) by Cubitect | MIT | Git submodule at `native/cubiomes/` pointing to this project's fork [`Conflux-Union/cubiomes`](https://github.com/Conflux-Union/cubiomes), pinned to commit `ee42600`. Compiled with this project's own `native/shim/confluxnative.c` into committed JNI libraries under `native/prebuilt/<target>/`, and with `native/web/confluxpredict.c` into the committed browser WASM predictor. Both are bundled in the jar so prediction does not require a C toolchain at runtime. |
 | OpenJDK JNI headers (`jni.h`, `jni_md.h`) from a local Eclipse Temurin 21 JDK | GPL-2.0 WITH Classpath-exception-2.0 | Vendored at `native/jni/` so the shim can compile against the JNI ABI. Build-time only; not bundled in the jar. |
 
 ## Bundled assets

@@ -52,6 +52,8 @@
 typedef struct {
     Generator g;
     SurfaceNoise sn; /* Overworld terrain columns and End surface heights. */
+    BlendedNoise netherNoise;
+    int netherNoiseReady;
     int mc;
     int dim;
 } CfxContext;
@@ -1151,6 +1153,13 @@ static int cfxIsViableStructure(
     int blockX,
     int blockZ
 ) {
+    if (structType == Nether_Fossil && ctx->mc >= MC_1_17) {
+        if (!ctx->netherNoiseReady) {
+            initBlendedNoise(&ctx->netherNoise, ctx->g.seed, DIM_NETHER);
+            ctx->netherNoiseReady = 1;
+        }
+        return isViableNetherFossilPos(&ctx->g, &ctx->netherNoise, blockX, blockZ);
+    }
     if (!isViableStructurePos(structType, &ctx->g, blockX, blockZ, 0)) {
         return 0;
     }

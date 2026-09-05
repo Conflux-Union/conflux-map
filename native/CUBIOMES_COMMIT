@@ -1,7 +1,7 @@
 upstream: https://github.com/Cubitect/cubiomes
 fork:     https://github.com/Conflux-Union/cubiomes (this project's fork)
-commit:   9afc1038ea5a7b1fd22c8e7ce18dae46b4ca5891
-commit date: 2026-07-26T13:13:48+08:00
+commit:   ee426009a59685c42fa7994c4b40d90f97636b9f
+commit date: 2026-09-05T13:36:45+08:00
 pinned via: native/cubiomes git submodule (converted from a vendored copy on 2026-07-17)
 license: MIT (see native/cubiomes/LICENSE)
 
@@ -33,6 +33,10 @@ Fork contents on top of upstream master (e61f905):
   - 9afc103 "locate nether fossils" (this project's own addition), which adds
     the Vanilla 1.16+ Nether-fossil structure-set placement and soul-sand-valley
     viability rule used by the complete structure catalog.
+
+  - ee42600 "validate nether fossil terrain and anchor biomes", which adds
+    the default Nether base-column landing check for 1.17.1 through 26.2
+    and the versioned anchor-biome and sea-level rules.
 
 Files compiled from this commit by buildNativesHost/buildNativesAll
 (selected subset):
