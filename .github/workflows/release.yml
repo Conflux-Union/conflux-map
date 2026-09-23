@@ -109,6 +109,12 @@ jobs:
             : > prior-history.txt
           fi
 
+          # The diff itself, embedded in the agent prompt (capped by the
+          # agent): reading it costs zero tool rounds, so small releases can
+          # be answered straight from the prompt.
+          git diff --find-renames "$DIFF_RANGE" \
+            -- "${CHANGELOG_PATHS[@]}" > release-diff.txt
+
           api_get() {
             local path="$1"
             curl --silent --show-error --fail-with-body \
@@ -224,6 +230,7 @@ jobs:
             --commits commit-data.txt \
             --files file-changes.txt \
             --prior-history prior-history.txt \
+            --diff release-diff.txt \
             --references reference-context.json \
             --output mimo-response.json
 
