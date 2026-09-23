@@ -101,6 +101,14 @@ jobs:
           git diff --find-renames --stat "$DIFF_RANGE" \
             -- "${CHANGELOG_PATHS[@]}" > file-changes.txt
 
+          # What earlier releases already shipped, so the agent can tell new
+          # changes from old ones without burning tool rounds on git archaeology.
+          if [[ -n "$PREVIOUS_TAG" ]]; then
+            git log --oneline --no-merges -30 "$PREVIOUS_TAG" > prior-history.txt
+          else
+            : > prior-history.txt
+          fi
+
           api_get() {
             local path="$1"
             curl --silent --show-error --fail-with-body \
@@ -215,6 +223,7 @@ jobs:
             --diff-range "$DIFF_RANGE" \
             --commits commit-data.txt \
             --files file-changes.txt \
+            --prior-history prior-history.txt \
             --references reference-context.json \
             --output mimo-response.json
 
