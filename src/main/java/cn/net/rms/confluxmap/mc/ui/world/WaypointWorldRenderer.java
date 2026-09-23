@@ -36,13 +36,10 @@ import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 //#endif
 //#if MC>=260200
 //#if MC>=260300
-//$$ // 26.3 collectors submit text/backgrounds natively, so the Fabric ordering wrappers
-//$$ // are no longer needed on this path.
 //$$ import net.minecraft.client.renderer.OrderedSubmitNodeCollector;
-//#else
+//#endif
 //$$ import net.fabricmc.fabric.api.client.rendering.v1.FabricOrderedSubmitNodeCollector;
 //$$ import net.fabricmc.fabric.api.client.rendering.v1.SubmitRenderPhases;
-//#endif
 //#endif
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
@@ -59,6 +56,9 @@ import net.minecraft.client.font.TextRenderer;
 //$$ import net.minecraft.network.chat.Component;
 //$$ import org.joml.Matrix4f;
 //$$ import org.joml.Quaternionf;
+//#if MC>=260300
+//$$ import com.mojang.blaze3d.vertex.VertexConsumer;
+//#endif
 //#endif
 import net.minecraft.client.render.Camera;
 //#if MC<260200
@@ -182,7 +182,14 @@ public final class WaypointWorldRenderer {
         //$$ // The beam pipeline writes depth, so it must run after translucent terrain; drawing it
         //$$ // first makes water fail its depth test and disappear where the beam crosses it.
         //#endif
-        //#if MC>=260200
+        //#if MC>=260300
+        //$$ // 26.3 renders classic-translucent terrain inside one render pass that stays open for
+        //$$ // the whole translucent hook, so the beam can no longer issue its own passes there.
+        //$$ // Submitting the beam geometry instead rides executeTranslucentAfterTerrain, which is
+        //$$ // still after translucent terrain - the same slot the event hook used to provide.
+        //$$ LevelRenderEvents.COLLECT_SUBMITS.register(this::renderBeams);
+        //$$ LevelRenderEvents.COLLECT_SUBMITS.register(this::renderHud);
+        //#elseif MC>=260200
         //$$ LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(this::renderBeams);
         //$$ LevelRenderEvents.COLLECT_SUBMITS.register(this::renderHud);
         //#elseif MC>=260100
@@ -244,6 +251,10 @@ public final class WaypointWorldRenderer {
         final Vec3d cameraPos = camera.getPos();
         final MatrixStack matrices = context.matrixStack();
         //#endif
+        //#if MC>=260300
+        //$$ final FabricOrderedSubmitNodeCollector beamSubmits =
+        //$$     (FabricOrderedSubmitNodeCollector) context.submitNodeCollector();
+        //#endif
         final double maxDistance = beamVisibleDistance(MinecraftAccess.viewDistance(client));
         if (maxDistance <= 0.0) {
             return;
@@ -275,12 +286,21 @@ public final class WaypointWorldRenderer {
             }
             final double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
             final boolean selected = isSelected(waypoint, currentDimension);
+            //#if MC>=260300
+            //$$ drawBeam(
+            //$$     matrices, beamSubmits, cameraPos, worldX, worldZ, bottomY, topY,
+            //$$     waypoint.colorArgb(), horizontalDistance, maxDistance,
+            //$$     highlightVisibilityAlpha(selected, hasHighlight)
+            //$$         * playerHighlightAlpha(waypoint, currentDimension)
+            //$$ );
+            //#else
             drawBeam(
                 matrices, cameraPos, worldX, worldZ, bottomY, topY,
                 waypoint.colorArgb(), horizontalDistance, maxDistance,
                 highlightVisibilityAlpha(selected, hasHighlight)
                     * playerHighlightAlpha(waypoint, currentDimension)
             );
+            //#endif
         }
 
         RenderUtil.restoreDefaultBlend();
@@ -712,9 +732,16 @@ public final class WaypointWorldRenderer {
      * that X/Z). Drawn double-sided (no back-face culling, see the caller) so the tube
      * reads correctly from inside or outside.
      */
+    //#if MC>=260300
+    //$$ private void drawBeam(
+    //$$     final PoseStack matrices,
+    //$$     final FabricOrderedSubmitNodeCollector beamSubmits,
+    //$$     final Vec3 cameraPos,
+    //#else
     private void drawBeam(
         final MatrixStack matrices,
         final Vec3d cameraPos,
+    //#endif
         final double worldX,
         final double worldZ,
         final double bottomY,
@@ -738,10 +765,18 @@ public final class WaypointWorldRenderer {
         final float h = (float) BEAM_HALF_WIDTH;
         final float bottom = (float) bottomY;
         final float top = (float) topY;
+        //#if MC>=260300
+        //$$ final PoseStack.Pose pose = matrices.last().copy();
+        //$$ submitBeamSide(beamSubmits, pose, -h, -h, h, -h, bottom, top, color);
+        //$$ submitBeamSide(beamSubmits, pose, h, -h, h, h, bottom, top, color);
+        //$$ submitBeamSide(beamSubmits, pose, h, h, -h, h, bottom, top, color);
+        //$$ submitBeamSide(beamSubmits, pose, -h, h, -h, -h, bottom, top, color);
+        //#else
         drawBeamSide(matrices, -h, -h, h, -h, bottom, top, color);
         drawBeamSide(matrices, h, -h, h, h, bottom, top, color);
         drawBeamSide(matrices, h, h, -h, h, bottom, top, color);
         drawBeamSide(matrices, -h, h, -h, -h, bottom, top, color);
+        //#endif
         matrices.pop();
     }
 
@@ -756,6 +791,49 @@ public final class WaypointWorldRenderer {
         RenderUtil.fillTriangle3D(matrices, x0, bottom, z0, x1, bottom, z1, x1, top, z1, color);
         RenderUtil.fillTriangle3D(matrices, x0, bottom, z0, x1, top, z1, x0, top, z0, color);
     }
+
+    //#if MC>=260300
+    //$$ /**
+    //$$  * {@link #drawBeamSide} as a submitted custom-geometry node in the AFTER_TERRAIN phase:
+    //$$  * 26.3 keeps one render pass open across classic-translucent terrain, so geometry must be
+    //$$  * handed to vanilla's submit pipeline instead of drawing it on the spot. Consecutive nodes
+    //$$  * batch into a single staged draw through the dragon-rays RenderType, the same pipeline the
+    //$$  * immediate path draws with on older versions.
+    //$$  */
+    //$$ private static void submitBeamSide(
+    //$$     final FabricOrderedSubmitNodeCollector beamSubmits,
+    //$$     final PoseStack.Pose pose,
+    //$$     final float x0, final float z0,
+    //$$     final float x1, final float z1,
+    //$$     final float bottom, final float top,
+    //$$     final int color
+    //$$ ) {
+    //$$     beamSubmits.submitCustom(SubmitRenderPhases.AFTER_TERRAIN, new CustomFeatureRenderer.Submit(
+    //$$         pose, RenderTypes.dragonRays(),
+    //$$         (transform, vertices) -> {
+    //$$             emitBeamTriangle(transform, vertices, x0, bottom, z0, x1, bottom, z1, x1, top, z1, color);
+    //$$             emitBeamTriangle(transform, vertices, x0, bottom, z0, x1, top, z1, x0, top, z0, color);
+    //$$         }
+    //$$     ));
+    //$$ }
+    //$$
+    //$$ /** One triangle written twice with opposite winding, the double-sided emission the immediate path uses. */
+    //$$ private static void emitBeamTriangle(
+    //$$     final PoseStack.Pose pose,
+    //$$     final VertexConsumer vertices,
+    //$$     final float x0, final float y0, final float z0,
+    //$$     final float x1, final float y1, final float z1,
+    //$$     final float x2, final float y2, final float z2,
+    //$$     final int color
+    //$$ ) {
+    //$$     vertices.addVertex(pose, x0, y0, z0).setColor(color);
+    //$$     vertices.addVertex(pose, x1, y1, z1).setColor(color);
+    //$$     vertices.addVertex(pose, x2, y2, z2).setColor(color);
+    //$$     vertices.addVertex(pose, x2, y2, z2).setColor(color);
+    //$$     vertices.addVertex(pose, x1, y1, z1).setColor(color);
+    //$$     vertices.addVertex(pose, x0, y0, z0).setColor(color);
+    //$$ }
+    //#endif
 
     /** Camera-facing marker with an interruptible, right-expanding detail panel. */
     //#if MC>=260200
