@@ -23,7 +23,7 @@ final class WaypointRenderCatalogTest {
             3.0, 70.0, 4.0, 0xFF3366CC, Waypoint.Type.NORMAL,
             "minecraft:emerald", "村", 20L, 1L
         );
-        final SharedWaypoint spawn = shared("Spawn");
+        final SharedWaypoint spawn = sharedAt("Spawn", DimensionId.NETHER, 5.0, 71.0, 6.0);
 
         final List<WaypointRenderEntry> entries = WaypointRenderCatalog.merge(
             List.of(local, hidden), List.of(shared, spawn), true, true, id -> id.equals(shared.id())
@@ -123,6 +123,55 @@ final class WaypointRenderCatalogTest {
         assertEquals(1, WaypointRenderCatalog.visibleFrom(List.of(end), DimensionId.END).size());
     }
 
+    @Test
+    void collapsesSharedCopyOntoLocalWaypointAtTheSameBlock() {
+        // The publisher keeps the local original and also receives the server-side copy,
+        // which arrives under a fresh id but at the same block.
+        final SharedWaypoint echo = sharedAt("Home (shared)", DimensionId.OVERWORLD, 1.4, 64.9, 2.7);
+        final SharedWaypoint elsewhere = shared("Fortress");
+
+        final List<WaypointRenderEntry> entries = WaypointRenderCatalog.merge(
+            List.of(local("Home", true)), List.of(echo, elsewhere), true, true, id -> false
+        );
+
+        assertEquals(List.of("Home", "Fortress"), entries.stream().map(WaypointRenderEntry::name).toList());
+        assertTrue(entries.get(0).local());
+    }
+
+    @Test
+    void rendersSharedCopyWhenNoVisibleLocalWaypointOccupiesTheBlock() {
+        final SharedWaypoint echo = sharedAt("Home (shared)", DimensionId.OVERWORLD, 1.9, 64.1, 2.2);
+
+        final List<WaypointRenderEntry> perWaypointHidden = WaypointRenderCatalog.merge(
+            List.of(local("Home", false)), List.of(echo), true, true, id -> false
+        );
+        final List<WaypointRenderEntry> masterHidden = WaypointRenderCatalog.merge(
+            List.of(local("Home", true)), List.of(echo), false, true, id -> false
+        );
+
+        assertEquals(
+            List.of("Home (shared)"),
+            perWaypointHidden.stream().map(WaypointRenderEntry::name).toList()
+        );
+        assertTrue(perWaypointHidden.get(0).shared());
+        assertEquals(
+            List.of("Home (shared)"),
+            masterHidden.stream().map(WaypointRenderEntry::name).toList()
+        );
+    }
+
+    @Test
+    void collapsesDuplicateSharedEntriesAtTheSameBlock() {
+        final SharedWaypoint first = sharedAt("Tower", DimensionId.OVERWORLD, 8.0, 70.0, 9.0);
+        final SharedWaypoint second = sharedAt("Tower (old)", DimensionId.OVERWORLD, 8.5, 70.5, 9.5);
+
+        final List<WaypointRenderEntry> entries = WaypointRenderCatalog.merge(
+            List.of(), List.of(first, second), true, true, id -> false
+        );
+
+        assertEquals(List.of("Tower"), entries.stream().map(WaypointRenderEntry::name).toList());
+    }
+
     private static Waypoint local(final String name, final boolean visible) {
         return new Waypoint(
             UUID.randomUUID(), name, DimensionId.OVERWORLD, 1.0, 64.0, 2.0,
@@ -131,9 +180,19 @@ final class WaypointRenderCatalogTest {
     }
 
     private static SharedWaypoint shared(final String name) {
+        return sharedAt(name, DimensionId.NETHER, 3.0, 70.0, 4.0);
+    }
+
+    private static SharedWaypoint sharedAt(
+        final String name,
+        final DimensionId dimensionId,
+        final double x,
+        final double y,
+        final double z
+    ) {
         return new SharedWaypoint(
-            UUID.randomUUID(), UUID.randomUUID(), "Publisher", name, DimensionId.NETHER,
-            3.0, 70.0, 4.0, 0xFF3366CC, Waypoint.Type.NORMAL, 20L, 1L
+            UUID.randomUUID(), UUID.randomUUID(), "Publisher", name, dimensionId,
+            x, y, z, 0xFF3366CC, Waypoint.Type.NORMAL, 20L, 1L
         );
     }
 }
