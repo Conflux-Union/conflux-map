@@ -14,7 +14,7 @@ import net.minecraft.util.Formatting;
 
 /** Posts the optional survey reminder after enough cumulative client-open time. */
 public final class SurveyReminderNotifier {
-    public static final String SURVEY_URL = "https://survey.rms.net.cn/s/zx6xgPHk1Uj0ex0VcFdAV";
+    public static final String SURVEY_URL = "https://survey.cxu.org.cn/s/zx6xgPHk1Uj0ex0VcFdAV";
 
     private static final long CHECKPOINT_MILLIS = TimeUnit.MINUTES.toMillis(5L);
 
