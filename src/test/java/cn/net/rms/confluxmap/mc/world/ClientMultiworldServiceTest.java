@@ -11,11 +11,14 @@ import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfile;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfileRegistry;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfileResolver;
 import cn.net.rms.confluxmap.core.multiworld.ClientWorldResolution;
+import cn.net.rms.confluxmap.core.multiworld.ServerAliasRegistry;
+import cn.net.rms.confluxmap.core.multiworld.ServerAliasResolver;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
@@ -129,6 +132,64 @@ class ClientMultiworldServiceTest {
         assertFalse(service.shouldExposeAmbiguity());
     }
 
+    @Test
+    void companionWorldsAlwaysIncludeTheWorldTheCompanionIsServing() {
+        final CompanionSession companion = new CompanionSession();
+        final ClientMultiworldService service = service(
+            new ClientWorldProfileResolver(new ClientWorldProfileRegistry(), ids()),
+            companion
+        );
+        service.onGameJoin(11L);
+        service.resolve(ADDRESS).orElseThrow();
+        assertEquals(List.of(), service.companionWorlds());
+
+        companion.onHelloSent();
+        companion.onPolicy(policy("11111111-2222-3333-4444-555555555555"));
+
+        final List<ClientMultiworldService.CompanionWorldView> worlds = service.companionWorlds();
+        assertEquals(1, worlds.size());
+        assertEquals("11111111-2222-3333-4444-555555555555", worlds.get(0).worldId());
+        assertTrue(worlds.get(0).current());
+        assertTrue(worlds.get(0).name().isEmpty());
+    }
+
+    @Test
+    void visitedCompanionWorldsAreListedInFirstSeenOrderAndCanBeRenamed() {
+        final String host = "proxy.example.net";
+        final String firstWorld = "11111111-2222-3333-4444-555555555555";
+        final String secondWorld = "99999999-8888-7777-6666-555555555555";
+        final ServerAliasResolver aliases = new ServerAliasResolver(
+            new ServerAliasRegistry(), id -> false, () -> { }
+        );
+        final CompanionSession companion = new CompanionSession();
+        final ClientMultiworldService service = service(
+            new ClientWorldProfileResolver(new ClientWorldProfileRegistry(), ids()),
+            companion,
+            aliases
+        );
+
+        companion.onHelloSent();
+        companion.onPolicy(policy(firstWorld));
+        aliases.resolve(host, null, firstWorld);
+        service.onGameJoin(11L);
+        service.resolve(host).orElseThrow();
+
+        companion.onPolicy(policy(secondWorld));
+        aliases.resolve(host, null, secondWorld);
+
+        final List<ClientMultiworldService.CompanionWorldView> worlds = service.companionWorlds();
+        assertEquals(2, worlds.size());
+        assertEquals(firstWorld, worlds.get(0).worldId());
+        assertFalse(worlds.get(0).current());
+        assertEquals(1, worlds.get(0).ordinal());
+        assertEquals(secondWorld, worlds.get(1).worldId());
+        assertTrue(worlds.get(1).current());
+        assertEquals(2, worlds.get(1).ordinal());
+
+        service.renameCompanionWorld(firstWorld, "survival");
+        assertEquals(Optional.of("survival"), service.companionWorlds().get(0).name());
+    }
+
     private ClientMultiworldService service(final ClientWorldProfileResolver resolver) {
         return service(resolver, new CompanionSession());
     }
@@ -139,6 +200,26 @@ class ClientMultiworldServiceTest {
     ) {
         return new ClientMultiworldService(
             null, companion, resolver, tempDir.resolve("cache"), Runnable::run
+        );
+    }
+
+    private ClientMultiworldService service(
+        final ClientWorldProfileResolver resolver,
+        final CompanionSession companion,
+        final ServerAliasResolver aliases
+    ) {
+        return new ClientMultiworldService(
+            null, companion, resolver, tempDir.resolve("cache"), Runnable::run, aliases
+        );
+    }
+
+    private static HelloPolicyS2C policy(final String worldId) {
+        return new HelloPolicyS2C(
+            new HelloPolicyS2C.Flags(false, true, false, false, false, false, false, false),
+            worldId,
+            "1.17.1",
+            new HelloPolicyS2C.Budgets(65_536, 8, 300, 4),
+            List.of()
         );
     }
 

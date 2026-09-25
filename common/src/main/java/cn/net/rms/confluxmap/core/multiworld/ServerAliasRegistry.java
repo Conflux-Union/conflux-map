@@ -188,6 +188,12 @@ public final class ServerAliasRegistry {
         return entry == null ? 0 : entry.companionWorldIds().indexOf(worldId) + 1;
     }
 
+    /** World UUIDs this server has advertised, in first-seen order; empty when none are recorded. */
+    public List<String> companionWorldIds(final String canonicalId) {
+        final Entry entry = servers().get(canonicalId);
+        return entry == null ? List.of() : List.copyOf(entry.companionWorldIds());
+    }
+
     public List<String> canonicalIds() {
         return List.copyOf(servers().keySet());
     }

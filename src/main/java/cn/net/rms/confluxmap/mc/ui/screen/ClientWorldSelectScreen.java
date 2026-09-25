@@ -72,8 +72,10 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
     private void rebuild() {
         clearChildren();
         final List<ClientWorldProfile> profiles = worlds.profiles();
+        final List<ClientMultiworldService.CompanionWorldView> companionWorlds =
+            worlds.companionWorlds();
         final boolean authoritative = worlds.companionWorldIdentityAuthoritative();
-        final int authorityRows = authoritative ? 1 : 0;
+        final int authorityRows = companionWorlds.size();
         profileCount = profiles.size() + authorityRows;
         final int visible = visibleRows();
         scrollOffset = Math.max(0, Math.min(scrollOffset, Math.max(0, profileCount - visible)));
@@ -87,17 +89,18 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         final int end = Math.min(profileCount, scrollOffset + visible);
         for (int index = scrollOffset; index < end; index++) {
             final int y = LIST_TOP + (index - scrollOffset) * ROW_HEIGHT;
-            if (authoritative && index == 0) {
+            if (index < authorityRows) {
+                final ClientMultiworldService.CompanionWorldView world = companionWorlds.get(index);
                 final ButtonWidget serverWorld = addDrawableChild(Widgets.button(
                     rowX, y, rowWidth - RENAME_WIDTH - GAP, 20,
-                    Texts.literal("✓ " + companionWorldLabel()),
+                    Texts.literal((world.current() ? "✓ " : "") + companionWorldLabel(world)),
                     ignored -> { }
                 ));
                 serverWorld.active = false;
                 final ButtonWidget renameServerWorld = addDrawableChild(Widgets.button(
                     rowX + rowWidth - RENAME_WIDTH, y, RENAME_WIDTH, 20,
                     Texts.translatable("confluxmap.screen.client_world.rename"),
-                    ignored -> openCompanionWorldNameEditor()
+                    ignored -> openCompanionWorldNameEditor(world)
                 ));
                 renameServerWorld.active = !migrationBusy;
                 continue;
@@ -440,21 +443,23 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
      * The server owns this world's identity, so the only name it can carry is one the player
      * chose. Unnamed worlds are numbered per server rather than shown as their raw UUID.
      */
-    private String companionWorldLabel() {
-        return worlds.companionWorldName().orElseGet(() -> Texts.translatable(
-            "confluxmap.screen.client_world.server_world_unnamed", worlds.companionWorldOrdinal()
+    private String companionWorldLabel(final ClientMultiworldService.CompanionWorldView world) {
+        return world.name().orElseGet(() -> Texts.translatable(
+            "confluxmap.screen.client_world.server_world_unnamed", world.ordinal()
         ).getString());
     }
 
-    private void openCompanionWorldNameEditor() {
+    private void openCompanionWorldNameEditor(
+        final ClientMultiworldService.CompanionWorldView world
+    ) {
         pendingForgetId = null;
         migrationMessage = null;
         migrationError = false;
         MinecraftAccess.setScreen(MinecraftClient.getInstance(), new ClientWorldNameScreen(
             this,
-            worlds.companionWorldName().orElse(null),
+            world.name().orElse(null),
             name -> {
-                worlds.renameCompanionWorld(name);
+                worlds.renameCompanionWorld(world.worldId(), name);
                 rebuild();
             },
             Texts.translatable("confluxmap.screen.client_world.server_world_rename_title"),

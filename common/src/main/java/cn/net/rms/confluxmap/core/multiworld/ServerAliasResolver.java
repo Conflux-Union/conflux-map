@@ -183,6 +183,11 @@ public final class ServerAliasResolver {
         return registry.worldOrdinal(canonicalId, worldId);
     }
 
+    /** World UUIDs seen on this server in first-seen order, for listing server-owned worlds. */
+    public List<String> companionWorlds(final String canonicalId) {
+        return registry.companionWorldIds(canonicalId);
+    }
+
     /** What an address is currently doing, so a caller can offer the one action that applies. */
     public enum AddressState {
         /** Linked to the server asked about. */

@@ -260,8 +260,8 @@ public final class ClientMultiworldService {
 
     /**
      * Name the player gave the world the companion is currently serving. Empty when unnamed, when
-     * no companion is active, or when there is no server connection; callers fall back to
-     * {@link #companionWorldOrdinal()}. The raw world UUID is an implementation detail players
+     * no companion is active, or when there is no server connection; callers fall back to the
+     * unnamed-world ordinal label. The raw world UUID is an implementation detail players
      * have no use for, so it never reaches the UI.
      */
     public Optional<String> companionWorldName() {
@@ -272,24 +272,57 @@ public final class ClientMultiworldService {
         return currentServerId().flatMap(serverId -> resolver.serverWorldName(serverId, worldId));
     }
 
-    /** 1-based label for an unnamed companion world; 1 when this server has recorded none yet. */
-    public int companionWorldOrdinal() {
-        final String worldId = companion.companionWorldId();
-        if (aliases == null || worldId == null) {
-            return 1;
-        }
-        return currentServerId()
-            .map(serverId -> Math.max(1, aliases.worldOrdinal(serverId, worldId)))
-            .orElse(1);
+    /** One server-owned world recorded under the current namespace. */
+    public record CompanionWorldView(
+        String worldId, Optional<String> name, int ordinal, boolean current
+    ) {
     }
 
-    /** Renames the active companion world, or clears the name when {@code name} is blank. */
-    public void renameCompanionWorld(final String name) {
-        final String worldId = companion.companionWorldId();
-        if (worldId == null) {
+    /**
+     * Server-determined worlds recorded under the current namespace, in first-seen order. The
+     * world the companion is serving now is always present even when the alias registry has not
+     * recorded it yet. Empty when no companion is active or no address has been observed.
+     */
+    public List<CompanionWorldView> companionWorlds() {
+        final String currentWorldId = companion.companionWorldId();
+        if (currentWorldId == null) {
+            return List.of();
+        }
+        ensureAddressObserved();
+        final String server = serverId;
+        if (server == null) {
+            return List.of();
+        }
+        final List<String> worldIds = new ArrayList<>(
+            aliases == null ? List.of() : aliases.companionWorlds(server)
+        );
+        if (!worldIds.contains(currentWorldId)) {
+            worldIds.add(currentWorldId);
+        }
+        final List<CompanionWorldView> views = new ArrayList<>(worldIds.size());
+        for (final String worldId : worldIds) {
+            views.add(new CompanionWorldView(
+                worldId,
+                resolver.serverWorldName(server, worldId),
+                Math.max(1, aliases == null ? 1 : aliases.worldOrdinal(server, worldId)),
+                worldId.equals(currentWorldId)
+            ));
+        }
+        return views;
+    }
+
+    /**
+     * Renames a server-owned world recorded on this server, or clears the name when {@code name}
+     * is blank. Worlds the companion is not currently serving may be named too: the record
+     * outlives the visit.
+     */
+    public void renameCompanionWorld(final String worldId, final String name) {
+        Objects.requireNonNull(worldId, "worldId");
+        ensureAddressObserved();
+        if (serverId == null) {
             return;
         }
-        currentServerId().ifPresent(serverId -> resolver.nameServerWorld(serverId, worldId, name));
+        resolver.nameServerWorld(serverId, worldId, name);
     }
 
     /** Session writes stay suspended while an explicit cache migration drains the old cache. */

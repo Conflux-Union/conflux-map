@@ -293,6 +293,23 @@ class ServerAliasResolverTest {
     }
 
     @Test
+    void companionWorldsListTheWorldsOneServerHostedInFirstSeenOrder() {
+        final ServerAliasResolver resolver = resolver();
+        final String canonical = resolver.resolve("mc.example.com", INSTANCE, WORLD_UUID).canonicalId();
+        resolver.resolve("mc.example.com", INSTANCE, OTHER_WORLD_UUID);
+
+        assertEquals(List.of(WORLD_UUID, OTHER_WORLD_UUID), resolver.companionWorlds(canonical));
+    }
+
+    @Test
+    void anUnrecordedServerListsNoCompanionWorlds() {
+        final ServerAliasResolver resolver = resolver();
+        resolver.resolve("mc.example.com", INSTANCE, WORLD_UUID);
+
+        assertEquals(List.of(), resolver.companionWorlds("192.0.2.10"));
+    }
+
+    @Test
     void anUnrecordedWorldHasNoOrdinal() {
         final ServerAliasResolver resolver = resolver();
         final String canonical = resolver.resolve("mc.example.com");
