@@ -44,16 +44,21 @@ public final class WaypointRenderCatalog {
     }
 
     /**
-     * Immutable render-ready snapshot of every waypoint visible from the
-     * requested dimension. Entries that allow cross-dimension display are
-     * included per {@link DimensionScale#isVisibleFrom}
-     * with their horizontal coordinates converted into the requested dimension's
-     * coordinate space, so renderers can use x/z as plain world positions;
-     * {@link WaypointRenderEntry#dimensionId()} keeps the stored dimension for
-     * labels and store lookups. Otherwise only exact-dimension entries appear.
+     * Immutable render-ready snapshot of every waypoint visible from the requested dimension:
+     * exact-dimension entries plus portal-linked entries whose per-waypoint cross-dimension
+     * opt-in allows it, with horizontal coordinates converted into the requested dimension's
+     * coordinate space so renderers can use x/z as plain world positions, while
+     * {@link WaypointRenderEntry#dimensionId()} keeps the stored dimension for labels and
+     * store lookups. When the management screen pins a display dimension
+     * (see {@link ConfluxConfig#waypointViewDimension}), that dimension's set replaces the
+     * current one entirely, projected the same way.
      */
     public List<WaypointRenderEntry> snapshot(final DimensionId dimension) {
-        return visibleFrom(snapshot(), dimension);
+        final DimensionId pinned = config.waypointViewDimensionOrNull();
+        if (pinned == null) {
+            return visibleFrom(snapshot(), dimension);
+        }
+        return viewFrom(snapshot(), pinned, dimension);
     }
 
     /** Pure visibility filter and coordinate conversion kept public for deterministic unit coverage. */
@@ -73,22 +78,70 @@ public final class WaypointRenderCatalog {
                 || !DimensionScale.isVisibleFrom(entry.dimensionId(), dimension)) {
                 continue;
             }
-            matching.add(new WaypointRenderEntry(
-                entry.id(),
-                entry.name(),
-                entry.dimensionId(),
-                DimensionScale.convertHorizontal(entry.x(), entry.dimensionId(), dimension),
-                entry.y(),
-                DimensionScale.convertHorizontal(entry.z(), entry.dimensionId(), dimension),
-                entry.colorArgb(),
-                entry.iconItemId(),
-                entry.markerLabel(),
-                entry.type(),
-                entry.source(),
-                true
-            ));
+            matching.add(projected(entry, dimension));
         }
         return List.copyOf(matching);
+    }
+
+    /**
+     * Pure pinned-view projection kept public for deterministic unit coverage: the entries
+     * stored in {@code viewDimension}, and nothing else, projected into
+     * {@code currentDimension}'s coordinate space. The per-waypoint cross-dimension opt-out is
+     * deliberately ignored here - pinning a dimension in the management screen is an explicit
+     * request to see that dimension's whole set from the other side - and every projected
+     * entry is marked cross-dimension so renderers keep treating it as foreign. Two cases
+     * degrade to the plain visibility filter instead: a view dimension with no portal
+     * correlation to {@code currentDimension} (the End, modded dimensions) would place raw
+     * coordinates meaninglessly on the map, and a pin that owns no entries here - typically
+     * carried over from another world - would otherwise blank every render surface.
+     */
+    public static List<WaypointRenderEntry> viewFrom(
+        final List<WaypointRenderEntry> entries,
+        final DimensionId viewDimension,
+        final DimensionId currentDimension
+    ) {
+        Objects.requireNonNull(entries, "entries");
+        Objects.requireNonNull(viewDimension, "viewDimension");
+        Objects.requireNonNull(currentDimension, "currentDimension");
+        if (viewDimension.equals(currentDimension)
+            || !DimensionScale.isVisibleFrom(viewDimension, currentDimension)) {
+            return visibleFrom(entries, currentDimension);
+        }
+        final List<WaypointRenderEntry> matching = new ArrayList<>(entries.size());
+        for (final WaypointRenderEntry entry : entries) {
+            if (entry.dimensionId().equals(viewDimension)) {
+                matching.add(projected(entry, currentDimension));
+            }
+        }
+        return matching.isEmpty()
+            ? visibleFrom(entries, currentDimension)
+            : List.copyOf(matching);
+    }
+
+    /**
+     * One entry as seen from {@code targetDimension}'s coordinate space: horizontal
+     * coordinates converted, {@link WaypointRenderEntry#crossDimensionVisible() } set so
+     * renderers keep treating it as foreign. Stored dimension is retained for labels and
+     * store lookups; Y is never scaled.
+     */
+    private static WaypointRenderEntry projected(
+        final WaypointRenderEntry entry,
+        final DimensionId targetDimension
+    ) {
+        return new WaypointRenderEntry(
+            entry.id(),
+            entry.name(),
+            entry.dimensionId(),
+            DimensionScale.convertHorizontal(entry.x(), entry.dimensionId(), targetDimension),
+            entry.y(),
+            DimensionScale.convertHorizontal(entry.z(), entry.dimensionId(), targetDimension),
+            entry.colorArgb(),
+            entry.iconItemId(),
+            entry.markerLabel(),
+            entry.type(),
+            entry.source(),
+            true
+        );
     }
 
     /** Pure merge function kept public for deterministic unit coverage. */

@@ -243,6 +243,32 @@ public final class WaypointListScreen extends ConfluxScreen {
         if (this.tab != Tab.LOCAL && !sharedWaypoints.availability().enabled()) {
             this.tab = Tab.LOCAL;
         }
+        this.dimensionFilter = dimensionFilterFromConfig();
+    }
+
+    /**
+     * The dimension dropdown is the single control for both the list scope and the render
+     * surfaces' pinned view dimension (see {@link ConfluxConfig#waypointViewDimension}), so it
+     * opens on the persisted choice. A pin matching the player's current dimension degrades
+     * naturally - rendering there is identical whether pinned or following - and must survive
+     * because it matters again after the next portal. A pin on a dimension this session does
+     * not know is stale (left over from another world), so it heals the stored scope back to
+     * following before the dropdown re-locks it.
+     */
+    private WaypointDimensionFilter dimensionFilterFromConfig() {
+        final DimensionId pinned = config.waypointViewDimensionOrNull();
+        if (pinned == null) {
+            return WaypointDimensionFilter.current();
+        }
+        final DimensionId currentDimension = gameBridge.session().dimension();
+        if (pinned.equals(currentDimension)) {
+            return WaypointDimensionFilter.current();
+        }
+        if (!knownDimensions(currentDimension).contains(pinned)) {
+            writeDimensionScope(ConfluxConfig.WAYPOINT_VIEW_DIMENSION_CURRENT);
+            return WaypointDimensionFilter.current();
+        }
+        return WaypointDimensionFilter.only(pinned);
     }
 
     @Override
@@ -444,12 +470,31 @@ public final class WaypointListScreen extends ConfluxScreen {
 
     private void selectDimensionFilter(final WaypointDimensionFilter selected) {
         dimensionFilter = selected;
+        persistDimensionScope(selected);
         scrollOffset = 0;
         selectedWaypointIds.clear();
         clearPendingActions();
         closeDimensionDropdown();
         closeSetDropdown();
         rebuild();
+    }
+
+    /**
+     * Re-persists the scope on every selection so the render surfaces pick it up after the
+     * screen closes; "current" and "all" both pin nothing and let rendering follow the player.
+     */
+    private void persistDimensionScope(final WaypointDimensionFilter selected) {
+        writeDimensionScope(switch (selected.mode()) {
+            case CURRENT -> ConfluxConfig.WAYPOINT_VIEW_DIMENSION_CURRENT;
+            case ALL -> ConfluxConfig.WAYPOINT_VIEW_DIMENSION_ALL;
+            case ONLY -> selected.dimension().toString();
+        });
+    }
+
+    /** Single write path so dropdown selections and stale-pin healing stay consistent. */
+    private void writeDimensionScope(final String value) {
+        config.waypointViewDimension = value;
+        ConfluxMapClient.get().configIo().save(config);
     }
 
     private void closeDimensionDropdown() {

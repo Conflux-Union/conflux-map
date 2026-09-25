@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.core.config;
 import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.loadstate.ChunkLoadDetailMode;
 import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
+import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.core.survey.SurveyReminderSchedule;
 import cn.net.rms.confluxmap.core.util.TileMath;
@@ -50,6 +51,10 @@ public final class ConfluxConfig {
     public static final int MIN_WAYPOINT_LABEL_SCALE_PERCENT = 33;
     public static final int MAX_WAYPOINT_LABEL_SCALE_PERCENT = 300;
     public static final int DEFAULT_WAYPOINT_LABEL_SCALE_PERCENT = 100;
+    /** {@link #waypointViewDimension} value: render surfaces follow the player's dimension. */
+    public static final String WAYPOINT_VIEW_DIMENSION_CURRENT = "current";
+    /** {@link #waypointViewDimension} value: list scope is every dimension; rendering still follows. */
+    public static final String WAYPOINT_VIEW_DIMENSION_ALL = "all";
     /** Always hide structure icons at the furthest fullscreen-map zoom. */
     public static final double MIN_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM = 0.0625;
     /** Largest fullscreen-map zoom multiplier the renderer can display. */
@@ -185,6 +190,15 @@ public final class ConfluxConfig {
      * default. Scales the icon plate, background panel, and both text lines together.
      */
     public int waypointLabelScalePercent = DEFAULT_WAYPOINT_LABEL_SCALE_PERCENT;
+    /**
+     * Dimension scope picked in the waypoint management screen, persisted so every render
+     * surface can pin one dimension's waypoints: {@link #WAYPOINT_VIEW_DIMENSION_CURRENT},
+     * {@link #WAYPOINT_VIEW_DIMENSION_ALL}, or a dimension id string such as
+     * "minecraft:the_nether". A pinned dimension renders its waypoints converted into the
+     * displayed dimension's coordinate space; only portal-linked pairs (Overworld/Nether)
+     * project, everything else falls back to following the player.
+     */
+    public String waypointViewDimension = WAYPOINT_VIEW_DIMENSION_CURRENT;
 
     /** Master toggle for the seed-predicted fullscreen-map underlay. */
     public boolean predictionEnabled = true;
@@ -284,6 +298,7 @@ public final class ConfluxConfig {
         c.waypointHighlightDimOpacity = waypointHighlightDimOpacity;
         c.teleportCommand = teleportCommand;
         c.waypointLabelScalePercent = waypointLabelScalePercent;
+        c.waypointViewDimension = waypointViewDimension;
         c.predictionEnabled = predictionEnabled;
         c.predictionNetworkSync = predictionNetworkSync;
         c.predictionViewMode = predictionViewMode;
@@ -307,6 +322,20 @@ public final class ConfluxConfig {
     public boolean isSharedWaypointCrossDimensionVisible(final UUID waypointId) {
         return waypointId != null
             && sharedWaypointCrossDimensionVisibleIds.contains(waypointId.toString());
+    }
+
+    /**
+     * The dimension pinned by {@link #waypointViewDimension}, or {@code null} when the render
+     * surfaces should follow the player's dimension ("current" and "all" both follow).
+     */
+    public DimensionId waypointViewDimensionOrNull() {
+        final String value = waypointViewDimension;
+        if (value == null || value.isBlank()
+            || value.equals(WAYPOINT_VIEW_DIMENSION_CURRENT)
+            || value.equals(WAYPOINT_VIEW_DIMENSION_ALL)) {
+            return null;
+        }
+        return DimensionId.parse(value);
     }
 
     public void setSharedWaypointCrossDimensionVisible(
@@ -362,6 +391,11 @@ public final class ConfluxConfig {
         }
         if (sharedWaypointCrossDimensionVisibleIds == null) {
             sharedWaypointCrossDimensionVisibleIds = new LinkedHashSet<>();
+        }
+        // "all" is a legitimate scope the management screen persists (the list may show every
+        // dimension while rendering still follows); only blank values heal back to "current".
+        if (waypointViewDimension == null || waypointViewDimension.isBlank()) {
+            waypointViewDimension = WAYPOINT_VIEW_DIMENSION_CURRENT;
         }
         if (schemaVersion < 3 && playerTrailDurationMinutes != null) {
             final long legacyDurationSeconds = playerTrailDurationMinutes.longValue() * 60L;
