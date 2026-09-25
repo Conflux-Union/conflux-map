@@ -244,6 +244,11 @@ public final class ClientMultiworldService {
         return companion.state() == CompanionSession.State.ACTIVE;
     }
 
+    /** Hashed seed of the world the client is currently in; empty until the first join packet. */
+    public OptionalLong currentSeedHash() {
+        return seedHash;
+    }
+
     /** Returns the server-owned world identity currently controlling map storage, if any. */
     public Optional<WorldIdentity> companionWorldIdentity() {
         if (!companionWorldIdentityAuthoritative()) {

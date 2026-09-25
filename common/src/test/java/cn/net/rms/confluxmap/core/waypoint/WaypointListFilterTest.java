@@ -47,6 +47,17 @@ final class WaypointListFilterTest {
                 WaypointDimensionFilter.only(DimensionId.OVERWORLD)
             ).stream().map(SharedWaypoint::name).toList()
         );
+        assertEquals(
+            List.of("Nether"),
+            WaypointListFilter.siblings(
+                List.of(
+                    new SiblingWaypoint(waypoint("Overworld", DimensionId.OVERWORLD), "Mirror"),
+                    new SiblingWaypoint(waypoint("Nether", DimensionId.NETHER), "Mirror")
+                ),
+                DimensionId.NETHER,
+                WaypointDimensionFilter.current()
+            ).stream().map(sibling -> sibling.waypoint().name).toList()
+        );
     }
 
     @Test

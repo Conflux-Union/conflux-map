@@ -13,7 +13,9 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointClientState;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
+import cn.net.rms.confluxmap.core.waypoint.CrossWorldWaypointService;
 import cn.net.rms.confluxmap.core.waypoint.DimensionScale;
+import cn.net.rms.confluxmap.core.waypoint.SiblingWaypoint;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointDimensionFilter;
 import cn.net.rms.confluxmap.core.waypoint.WaypointListFilter;
@@ -128,22 +130,32 @@ public final class WaypointListScreen extends ConfluxScreen {
     private record RowInfo(
         Waypoint local,
         SharedWaypoint shared,
+        SiblingWaypoint sibling,
         int y,
         double distance,
         String dimensionText,
         boolean crossDimensionVisible
     ) {
         UUID id() {
-            return local != null ? local.id : shared.id();
+            return local != null ? local.id
+                : sibling != null ? sibling.waypoint().id
+                : shared.id();
         }
 
         String name() {
-            return local != null ? local.name : shared.name();
+            return local != null ? local.name
+                : sibling != null ? sibling.waypoint().name
+                : shared.name();
         }
 
         String secondaryText() {
             if (local != null) {
                 return setDisplayName(local.group);
+            }
+            if (sibling != null) {
+                return Texts.translatable(
+                    "confluxmap.screen.waypoints.cross_world_origin", sibling.worldLabel()
+                ).getString();
             }
             return Texts.translatable(
                 "confluxmap.screen.waypoints.shared_by", shared.publisherName()
@@ -158,6 +170,15 @@ public final class WaypointListScreen extends ConfluxScreen {
                     local.type, WaypointRenderEntry.Source.LOCAL, crossDimensionVisible
                 );
             }
+            if (sibling != null) {
+                final Waypoint waypoint = sibling.waypoint();
+                return new WaypointRenderEntry(
+                    waypoint.id, waypoint.name, waypoint.dimensionId, waypoint.x, waypoint.y,
+                    waypoint.z, waypoint.colorArgb, waypoint.iconItemId, waypoint.markerLabel,
+                    waypoint.type, WaypointRenderEntry.Source.SIBLING, crossDimensionVisible,
+                    sibling.worldLabel()
+                );
+            }
             return new WaypointRenderEntry(
                 shared.id(), shared.name(), shared.dimensionId(), shared.x(), shared.y(), shared.z(),
                 shared.colorArgb(), shared.iconItemId(), shared.markerLabel(),
@@ -169,6 +190,7 @@ public final class WaypointListScreen extends ConfluxScreen {
     private final GameBridge gameBridge;
     private final WaypointService waypointService;
     private final SharedWaypointClient sharedWaypoints;
+    private final CrossWorldWaypointService crossWorldWaypoints;
     private final ConfluxConfig config;
     private final ClientGroundTeleportService groundTeleport;
     private final Screen parent;
@@ -235,6 +257,7 @@ public final class WaypointListScreen extends ConfluxScreen {
         this.gameBridge = app.gameBridge();
         this.waypointService = app.waypointService();
         this.sharedWaypoints = app.sharedWaypoints();
+        this.crossWorldWaypoints = app.crossWorldWaypoints();
         this.config = app.config();
         this.groundTeleport = app.groundTeleportService();
         this.parent = parent;
@@ -336,7 +359,7 @@ public final class WaypointListScreen extends ConfluxScreen {
         totalRowCount = sorted.size();
         sorted.sort((a, b) -> Double.compare(a.distance(), b.distance()));
         filteredLocalIds = tab == Tab.LOCAL
-            ? sorted.stream().map(RowInfo::id).toList()
+            ? sorted.stream().filter(row -> row.local() != null).map(RowInfo::id).toList()
             : List.of();
         if (tab == Tab.LOCAL) {
             selectedWaypointIds.retainAll(filteredLocalIds);
@@ -358,7 +381,8 @@ public final class WaypointListScreen extends ConfluxScreen {
         for (int i = scrollOffset; i < end; i++) {
             final RowInfo source = sorted.get(i);
             final RowInfo row = new RowInfo(
-                source.local(), source.shared(), listTop() + (i - scrollOffset) * ROW_HEIGHT,
+                source.local(), source.shared(), source.sibling(),
+                listTop() + (i - scrollOffset) * ROW_HEIGHT,
                 source.distance(), source.dimensionText(), source.crossDimensionVisible()
             );
             rows.add(row);
@@ -370,9 +394,12 @@ public final class WaypointListScreen extends ConfluxScreen {
     }
 
     private static boolean matchesSearch(final RowInfo row, final String query) {
-        final double x = row.local() != null ? row.local().x : row.shared().x();
-        final double y = row.local() != null ? row.local().y : row.shared().y();
-        final double z = row.local() != null ? row.local().z : row.shared().z();
+        final Waypoint owned = row.local() != null ? row.local()
+            : row.sibling() != null ? row.sibling().waypoint()
+            : null;
+        final double x = owned != null ? owned.x : row.shared().x();
+        final double y = owned != null ? owned.y : row.shared().y();
+        final double z = owned != null ? owned.z : row.shared().z();
         return WaypointSearch.matches(
             query, row.name(), row.secondaryText(), row.dimensionText(), x, y, z
         );
@@ -733,6 +760,7 @@ public final class WaypointListScreen extends ConfluxScreen {
                 result.add(new RowInfo(
                     waypoint,
                     null,
+                    null,
                     0,
                     distance(
                         waypoint.dimensionId, waypoint.x, waypoint.y, waypoint.z,
@@ -741,6 +769,28 @@ public final class WaypointListScreen extends ConfluxScreen {
                     dimensionLabel(waypoint.dimensionId),
                     waypoint.crossDimensionVisible
                 ));
+            }
+            // Seed-sibling rows are read-only guests: shown when the toggle is on, never part of
+            // the current store's set filter or batch selection.
+            if (config.localWaypointsVisible && config.crossWorldWaypointsVisible
+                && selectedSetFilter == null) {
+                for (final SiblingWaypoint sibling : WaypointListFilter.siblings(
+                    crossWorldWaypoints.siblings(), currentDimension, dimensionFilter
+                )) {
+                    final Waypoint waypoint = sibling.waypoint();
+                    result.add(new RowInfo(
+                        null,
+                        null,
+                        sibling,
+                        0,
+                        distance(
+                            waypoint.dimensionId, waypoint.x, waypoint.y, waypoint.z,
+                            currentDimension, px, py, pz, waypoint.crossDimensionVisible
+                        ),
+                        dimensionLabel(waypoint.dimensionId),
+                        waypoint.crossDimensionVisible
+                    ));
+                }
             }
             return result;
         }
@@ -752,6 +802,7 @@ public final class WaypointListScreen extends ConfluxScreen {
             result.add(new RowInfo(
                 null,
                 waypoint,
+                null,
                 0,
                 distance(
                     waypoint.dimensionId(), waypoint.x(), waypoint.y(), waypoint.z(),
@@ -814,7 +865,7 @@ public final class WaypointListScreen extends ConfluxScreen {
                 button -> openEdit(renderedStore, waypoint)
             ));
             edit.active = renderedStore != null && renderedStore.persistenceWritable();
-        } else {
+        } else if (row.sibling() == null) {
             final SharedWaypoint waypoint = row.shared();
             addIconAction(
                 actions,
@@ -841,23 +892,28 @@ public final class WaypointListScreen extends ConfluxScreen {
 
         final int trailingActionOffset = row.local() == null ? 0 : 1;
         final boolean pendingThis = row.id().equals(pendingDeleteId);
-        final ButtonWidget delete = addDrawableChild(Widgets.button(
-            actions.x(2 + trailingActionOffset),
-            actionY,
-            actions.width(2 + trailingActionOffset),
-            20,
-            fitButtonLabel(Texts.translatable(
-                pendingThis
-                    ? "confluxmap.screen.waypoints.confirm"
-                    : "confluxmap.screen.waypoints.delete"
-            ), actions.width(2 + trailingActionOffset)),
-            button -> delete(renderedStore, row)
-        ));
-        delete.active = row.shared() == null
-            ? renderedStore != null && renderedStore.persistenceWritable()
-            : sharedWaypoints.availability().ready() && sharedWaypoints.canDelete(row.shared());
-        if (row.shared() != null) {
-            setDisabledTooltip(delete, sharedWaypoints.deleteDisabledReasonKey(row.shared()));
+        // Sibling rows are read-only guests from a seed-sibling world: no delete (or the
+        // selection/share/edit above) - locate and teleport stay, since the coordinates are
+        // real terrain in this world too.
+        if (row.sibling() == null) {
+            final ButtonWidget delete = addDrawableChild(Widgets.button(
+                actions.x(2 + trailingActionOffset),
+                actionY,
+                actions.width(2 + trailingActionOffset),
+                20,
+                fitButtonLabel(Texts.translatable(
+                    pendingThis
+                        ? "confluxmap.screen.waypoints.confirm"
+                        : "confluxmap.screen.waypoints.delete"
+                ), actions.width(2 + trailingActionOffset)),
+                button -> delete(renderedStore, row)
+            ));
+            delete.active = row.shared() == null
+                ? renderedStore != null && renderedStore.persistenceWritable()
+                : sharedWaypoints.availability().ready() && sharedWaypoints.canDelete(row.shared());
+            if (row.shared() != null) {
+                setDisabledTooltip(delete, sharedWaypoints.deleteDisabledReasonKey(row.shared()));
+            }
         }
         addDrawableChild(Widgets.button(
             actions.x(3 + trailingActionOffset),
@@ -1029,6 +1085,9 @@ public final class WaypointListScreen extends ConfluxScreen {
     }
 
     private void delete(final WaypointStore renderedStore, final RowInfo row) {
+        if (row.sibling() != null) {
+            return;
+        }
         if (row.local() != null
             && (renderedStore == null
                 || renderedStore != waypointService.current()

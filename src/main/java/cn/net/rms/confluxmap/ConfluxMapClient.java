@@ -34,6 +34,7 @@ import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.trail.PlayerTrail;
 import cn.net.rms.confluxmap.core.update.GithubReleaseFetcher;
 import cn.net.rms.confluxmap.core.update.UpdateCheckService;
+import cn.net.rms.confluxmap.core.waypoint.CrossWorldWaypointService;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.mc.McGameBridge;
@@ -122,6 +123,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private LayerSelector layerSelector;
     private WaypointService waypointService;
     private AnnotationService annotationService;
+    private CrossWorldWaypointService crossWorldWaypoints;
     private WaypointRenderCatalog waypointRenderCatalog;
     private DeathWatcher deathWatcher;
     private WaypointWorldRenderer waypointWorldRenderer;
@@ -317,7 +319,13 @@ public final class ConfluxMapClient implements ClientModInitializer {
         playerTrailTracker = new PlayerTrailTracker(client, config, sessionGuard, playerTrail);
         waypointService = new WaypointService(waypointRoot, executors, ConfluxMapMod.LOGGER);
         annotationService = new AnnotationService(annotationRoot, executors, ConfluxMapMod.LOGGER);
-        waypointRenderCatalog = new WaypointRenderCatalog(waypointService, sharedWaypoints::list, config);
+        crossWorldWaypoints = new CrossWorldWaypointService(
+            waypointRoot, clientWorldProfiles, config,
+            () -> configIo.save(config), ConfluxMapMod.LOGGER
+        );
+        waypointRenderCatalog = new WaypointRenderCatalog(
+            waypointService, sharedWaypoints::list, crossWorldWaypoints::siblings, config
+        );
         waypointHighlightState = new WaypointHighlightState();
         measureState = new MeasureState();
         deathWatcher = new DeathWatcher(gameBridge, config, waypointService);
@@ -357,6 +365,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(playerTrailTracker::onSessionChanged);
         sessionTracker.addListener(fullscreenMapViewState::onSessionChanged);
         sessionTracker.addListener(waypointService::onSessionChanged);
+        sessionTracker.addListener(session -> crossWorldWaypoints.update(
+            session.active() ? session.world() : null,
+            clientMultiworldService.currentSeedHash()
+        ));
         sessionTracker.addListener(waypointHighlightState::onSessionChanged);
         sessionTracker.addListener(measureState::onSessionChanged);
         sessionTracker.addListener(annotationService::onSessionChanged);
@@ -599,6 +611,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public AnnotationService annotationService() {
         return annotationService;
+    }
+
+    public CrossWorldWaypointService crossWorldWaypoints() {
+        return crossWorldWaypoints;
     }
 
     public WaypointRenderCatalog waypointRenderCatalog() {

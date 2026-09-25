@@ -1597,11 +1597,21 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final String waypointDeleteUnavailableKey = existingWaypoint
             ? waypointDeleteUnavailableKey(waypoint) : null;
         final boolean waypointDeletable = existingWaypoint && waypointDeleteUnavailableKey == null;
-        final List<FullscreenMapLocationMenu.Action> actions = FullscreenMapLocationMenu.actions(
-            teleportCommandAvailable, existingWaypoint,
-            locationMenuTargetHighlighted(waypoint, target, playerId),
-            playerId != null
+        final List<FullscreenMapLocationMenu.Action> actions = new ArrayList<>(
+            FullscreenMapLocationMenu.actions(
+                teleportCommandAvailable, existingWaypoint,
+                locationMenuTargetHighlighted(waypoint, target, playerId),
+                playerId != null
+            )
         );
+        // A seed-sibling waypoint belongs to another world namespace: teleport and highlight
+        // still make sense (same seed, same terrain), but editing, deleting, and publishing
+        // must go through its owning session.
+        if (existingWaypoint && waypoint.sibling()) {
+            actions.removeIf(action -> action == FullscreenMapLocationMenu.Action.EDIT_WAYPOINT
+                || action == FullscreenMapLocationMenu.Action.DELETE_WAYPOINT
+                || action == FullscreenMapLocationMenu.Action.SHARE_WAYPOINT);
+        }
         final List<FullscreenMapLocationMenu.ButtonSpec> specs = new ArrayList<>(actions.size());
         for (final FullscreenMapLocationMenu.Action action : actions) {
             boolean active = FullscreenMapLocationMenu.actionEnabled(
@@ -2307,7 +2317,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     private boolean waypointEditable(final WaypointRenderEntry waypoint) {
-        if (waypoint == null) {
+        if (waypoint == null || waypoint.sibling()) {
             return false;
         }
         if (waypoint.local()) {
@@ -2320,6 +2330,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private String waypointDeleteUnavailableKey(final WaypointRenderEntry waypoint) {
         if (waypoint == null) {
             return "confluxmap.screen.waypoint.public_unavailable";
+        }
+        if (waypoint.sibling()) {
+            return "confluxmap.screen.waypoints.cross_world_read_only";
         }
         if (waypoint.local()) {
             final WaypointStore store = viewWaypointStore();
@@ -4590,7 +4603,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         if (hoveredWaypoint != null) {
             text = (int) Math.floor(hoveredWaypoint.x()) + ", "
                 + (int) Math.floor(hoveredWaypoint.y()) + ", "
-                + (int) Math.floor(hoveredWaypoint.z());
+                + (int) Math.floor(hoveredWaypoint.z())
+                + (hoveredWaypoint.originWorldLabel().isEmpty()
+                    ? ""
+                    : " · " + Texts.translatable(
+                        "confluxmap.screen.waypoints.cross_world_origin",
+                        hoveredWaypoint.originWorldLabel()
+                    ).getString());
         } else if (hoveredStructure != null) {
             text = Texts.translatable(hoveredStructure.translationKey()).getString()
                 + " · " + hoveredStructure.blockX() + ", " + hoveredStructure.blockZ();

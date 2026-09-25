@@ -61,6 +61,7 @@ Vanilla structures in the Overworld, Nether, and End each have a distinct icon a
 - Each dimension records death points automatically: five by default, adjustable from 0 to 50.
 - Waypoints appear in the world as beams, names, and distances; waypoints outside the view are indicated at the screen edge, with a configurable distance limit.
 - Overworld and Nether waypoints are shown in both dimensions using the 1:8 portal coordinate ratio by default, which can be disabled in settings; End waypoints are shown only in the End.
+- On a server whose sub-worlds share one seed, waypoints from those same-seed worlds can be shown in every sub-world. This is off by default and enabled with the "Show Same-Seed World Waypoints" setting.
 - Coordinates shared in chat can be previewed in both Conflux Map and Xaero formats before sending, and coordinates shared by other players can be imported with one click.
 - Waypoints can be imported from Xaero's Minimap and VoxelMap with one click; duplicates are skipped and the original files remain unchanged.
 

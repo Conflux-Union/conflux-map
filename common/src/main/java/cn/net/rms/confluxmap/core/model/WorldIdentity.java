@@ -222,4 +222,9 @@ public final class WorldIdentity {
     public boolean isPresent() {
         return !equals(NONE);
     }
+
+    /** Singleplayer identities live under the reserved {@code local} server namespace. */
+    public boolean isSingleplayer() {
+        return "local".equals(serverId);
+    }
 }

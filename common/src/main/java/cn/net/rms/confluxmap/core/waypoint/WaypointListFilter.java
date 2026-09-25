@@ -31,6 +31,16 @@ public final class WaypointListFilter {
         );
     }
 
+    public static List<SiblingWaypoint> siblings(
+        final List<SiblingWaypoint> waypoints,
+        final DimensionId currentDimension,
+        final WaypointDimensionFilter dimensionFilter
+    ) {
+        return filter(
+            waypoints, sibling -> sibling.waypoint().dimensionId, currentDimension, dimensionFilter
+        );
+    }
+
     private static <T> List<T> filter(
         final List<T> waypoints,
         final Function<T, DimensionId> dimensionOf,

@@ -7,7 +7,8 @@ import java.util.UUID;
 /**
  * Immutable, storage-agnostic waypoint view consumed by every rendering surface.
  * The source flag is deliberately retained so UI gestures route mutations through
- * the correct local or server authority.
+ * the correct local or server authority; sibling entries are client-owned data
+ * from another world namespace and are never mutable from the current session.
  */
 public record WaypointRenderEntry(
     UUID id,
@@ -21,9 +22,10 @@ public record WaypointRenderEntry(
     String markerLabel,
     Waypoint.Type type,
     Source source,
-    boolean crossDimensionVisible
+    boolean crossDimensionVisible,
+    String originWorldLabel
 ) {
-    public enum Source { LOCAL, SHARED }
+    public enum Source { LOCAL, SHARED, SIBLING }
 
     public WaypointRenderEntry {
         Objects.requireNonNull(id, "id");
@@ -33,6 +35,7 @@ public record WaypointRenderEntry(
         markerLabel = markerLabel == null ? "" : markerLabel;
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(source, "source");
+        originWorldLabel = originWorldLabel == null ? "" : originWorldLabel;
     }
 
     public WaypointRenderEntry(
@@ -67,11 +70,35 @@ public record WaypointRenderEntry(
         );
     }
 
+    public WaypointRenderEntry(
+        final UUID id,
+        final String name,
+        final DimensionId dimensionId,
+        final double x,
+        final double y,
+        final double z,
+        final int colorArgb,
+        final String iconItemId,
+        final String markerLabel,
+        final Waypoint.Type type,
+        final Source source,
+        final boolean crossDimensionVisible
+    ) {
+        this(
+            id, name, dimensionId, x, y, z, colorArgb, iconItemId, markerLabel,
+            type, source, crossDimensionVisible, ""
+        );
+    }
+
     public boolean local() {
         return source == Source.LOCAL;
     }
 
     public boolean shared() {
         return source == Source.SHARED;
+    }
+
+    public boolean sibling() {
+        return source == Source.SIBLING;
     }
 }

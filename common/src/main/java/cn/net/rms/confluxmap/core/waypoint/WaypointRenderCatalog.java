@@ -21,6 +21,7 @@ import java.util.function.Supplier;
 public final class WaypointRenderCatalog {
     private final WaypointService localWaypoints;
     private final Supplier<List<SharedWaypoint>> sharedWaypoints;
+    private final Supplier<List<SiblingWaypoint>> siblingWaypoints;
     private final ConfluxConfig config;
 
     public WaypointRenderCatalog(
@@ -28,8 +29,18 @@ public final class WaypointRenderCatalog {
         final Supplier<List<SharedWaypoint>> sharedWaypoints,
         final ConfluxConfig config
     ) {
+        this(localWaypoints, sharedWaypoints, List::of, config);
+    }
+
+    public WaypointRenderCatalog(
+        final WaypointService localWaypoints,
+        final Supplier<List<SharedWaypoint>> sharedWaypoints,
+        final Supplier<List<SiblingWaypoint>> siblingWaypoints,
+        final ConfluxConfig config
+    ) {
         this.localWaypoints = Objects.requireNonNull(localWaypoints, "localWaypoints");
         this.sharedWaypoints = Objects.requireNonNull(sharedWaypoints, "sharedWaypoints");
+        this.siblingWaypoints = Objects.requireNonNull(siblingWaypoints, "siblingWaypoints");
         this.config = Objects.requireNonNull(config, "config");
     }
 
@@ -37,8 +48,12 @@ public final class WaypointRenderCatalog {
     public List<WaypointRenderEntry> snapshot() {
         final List<Waypoint> local = config.localWaypointsVisible ? localWaypoints.list() : List.of();
         final List<SharedWaypoint> shared = config.sharedWaypointsVisible ? sharedWaypoints.get() : List.of();
+        final List<SiblingWaypoint> siblings =
+            config.localWaypointsVisible && config.crossWorldWaypointsVisible
+                ? siblingWaypoints.get()
+                : List.of();
         return merge(
-            local, shared, config.localWaypointsVisible, config.sharedWaypointsVisible,
+            local, shared, siblings, config.localWaypointsVisible, config.sharedWaypointsVisible,
             config::isSharedWaypointCrossDimensionVisible
         );
     }
@@ -85,7 +100,8 @@ public final class WaypointRenderCatalog {
                 entry.markerLabel(),
                 entry.type(),
                 entry.source(),
-                true
+                true,
+                entry.originWorldLabel()
             ));
         }
         return List.copyOf(matching);
@@ -98,7 +114,10 @@ public final class WaypointRenderCatalog {
         final boolean localVisible,
         final boolean sharedVisible
     ) {
-        return merge(localWaypoints, sharedWaypoints, localVisible, sharedVisible, ignored -> false);
+        return merge(
+            localWaypoints, sharedWaypoints, List.of(), localVisible, sharedVisible,
+            ignored -> false
+        );
     }
 
     public static List<WaypointRenderEntry> merge(
@@ -108,15 +127,34 @@ public final class WaypointRenderCatalog {
         final boolean sharedVisible,
         final Predicate<UUID> sharedCrossDimensionVisible
     ) {
+        return merge(
+            localWaypoints, sharedWaypoints, List.of(), localVisible, sharedVisible,
+            sharedCrossDimensionVisible
+        );
+    }
+
+    public static List<WaypointRenderEntry> merge(
+        final List<Waypoint> localWaypoints,
+        final List<SharedWaypoint> sharedWaypoints,
+        final List<SiblingWaypoint> siblingWaypoints,
+        final boolean localVisible,
+        final boolean sharedVisible,
+        final Predicate<UUID> sharedCrossDimensionVisible
+    ) {
         Objects.requireNonNull(localWaypoints, "localWaypoints");
         Objects.requireNonNull(sharedWaypoints, "sharedWaypoints");
+        Objects.requireNonNull(siblingWaypoints, "siblingWaypoints");
         Objects.requireNonNull(sharedCrossDimensionVisible, "sharedCrossDimensionVisible");
-        final List<WaypointRenderEntry> entries = new ArrayList<>(localWaypoints.size() + sharedWaypoints.size());
+        final List<WaypointRenderEntry> entries = new ArrayList<>(
+            localWaypoints.size() + sharedWaypoints.size() + siblingWaypoints.size()
+        );
         // Publishing a waypoint stores a server-side copy under a fresh id, so the publisher
         // (and anyone who kept a private point at the same block) otherwise renders two labels
         // at one spot - and the aim/highlight animation is per entry, so exactly one of the two
         // expands while the other stays collapsed. The server already keys shared waypoints by
         // this block; the render side collapses onto the local entry with the same rule.
+        // Sibling entries join the same collapse last, so the current world's own points always
+        // win a block contested with a seed-sibling world's copy.
         final Set<SharedWaypointLocationKey> renderedBlocks = new HashSet<>(localWaypoints.size() * 2);
 
         if (localVisible) {
@@ -168,6 +206,33 @@ public final class WaypointRenderCatalog {
                     sharedCrossDimensionVisible.test(waypoint.id())
                 ));
             }
+        }
+        for (final SiblingWaypoint sibling : siblingWaypoints) {
+            final Waypoint waypoint = sibling.waypoint();
+            if (!waypoint.visible) {
+                continue;
+            }
+            final SharedWaypointLocationKey block = blockKeyOrNull(
+                waypoint.dimensionId, waypoint.x, waypoint.y, waypoint.z
+            );
+            if (block != null && !renderedBlocks.add(block)) {
+                continue;
+            }
+            entries.add(new WaypointRenderEntry(
+                waypoint.id,
+                waypoint.name,
+                waypoint.dimensionId,
+                waypoint.x,
+                waypoint.y,
+                waypoint.z,
+                waypoint.colorArgb,
+                waypoint.iconItemId,
+                waypoint.markerLabel,
+                waypoint.type,
+                WaypointRenderEntry.Source.SIBLING,
+                waypoint.crossDimensionVisible,
+                sibling.worldLabel()
+            ));
         }
         return List.copyOf(entries);
     }

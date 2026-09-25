@@ -5,13 +5,22 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
+import cn.net.rms.confluxmap.core.task.MapExecutors;
+import cn.net.rms.confluxmap.core.task.SessionGuard;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 final class WaypointRenderCatalogTest {
+    private static final Logger LOGGER = LogManager.getLogger("WaypointRenderCatalogTest");
     @Test
     void mergesVisibleLocalAndSharedEntriesWithoutLosingOwnership() {
         final Waypoint local = local("Home", true);
@@ -170,6 +179,89 @@ final class WaypointRenderCatalogTest {
         );
 
         assertEquals(List.of("Tower"), entries.stream().map(WaypointRenderEntry::name).toList());
+    }
+
+    @Test
+    void mergesVisibleSiblingsWithTheirOriginLabel() {
+        final Waypoint siblingPoint = local("Resource spawn", true);
+        final Waypoint hiddenSibling = local("Hidden elsewhere", false);
+
+        final List<WaypointRenderEntry> entries = WaypointRenderCatalog.merge(
+            List.of(), List.of(),
+            List.of(
+                new SiblingWaypoint(siblingPoint, "资源服"),
+                new SiblingWaypoint(hiddenSibling, "资源服")
+            ),
+            true, true, id -> false
+        );
+
+        assertEquals(1, entries.size());
+        assertTrue(entries.get(0).sibling());
+        assertEquals("资源服", entries.get(0).originWorldLabel());
+    }
+
+    @Test
+    void collapsesSiblingCopyOntoLocalWaypointAtTheSameBlock() {
+        final Waypoint siblingCopy = local("Home (sibling)", true);
+        siblingCopy.x = 1.4;
+        siblingCopy.z = 2.7;
+
+        final List<WaypointRenderEntry> entries = WaypointRenderCatalog.merge(
+            List.of(local("Home", true)), List.of(),
+            List.of(new SiblingWaypoint(siblingCopy, "Mirror")),
+            true, true, id -> false
+        );
+
+        assertEquals(List.of("Home"), entries.stream().map(WaypointRenderEntry::name).toList());
+        assertTrue(entries.get(0).local());
+    }
+
+    @Test
+    void convertsPortalLinkedSiblingsAndKeepsTheirOriginLabel() {
+        final Waypoint siblingPoint = local("Nether side", true);
+        siblingPoint.dimensionId = DimensionId.NETHER;
+        siblingPoint.crossDimensionVisible = true;
+        siblingPoint.x = 8.0;
+        siblingPoint.z = 16.0;
+        final WaypointRenderEntry entry = WaypointRenderCatalog.merge(
+            List.of(), List.of(), List.of(new SiblingWaypoint(siblingPoint, "Mirror")), true, true, id -> false
+        ).get(0);
+
+        final List<WaypointRenderEntry> fromOverworld = WaypointRenderCatalog.visibleFrom(
+            List.of(entry), DimensionId.OVERWORLD
+        );
+
+        assertEquals(1, fromOverworld.size());
+        assertTrue(fromOverworld.get(0).sibling());
+        assertEquals(64.0, fromOverworld.get(0).x());
+        assertEquals(128.0, fromOverworld.get(0).z());
+        assertEquals("Mirror", fromOverworld.get(0).originWorldLabel());
+    }
+
+    @Test
+    void snapshotGatesSiblingsBehindBothToggles(@TempDir final Path tempDir) {
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final WaypointService local = new WaypointService(tempDir, executors, LOGGER);
+            local.onSessionChanged(new SessionGuard.Session(
+                1L, new WorldIdentity("play.example.net", "client-a"), DimensionId.OVERWORLD
+            ));
+            final Waypoint siblingPoint = local("Resource spawn", true);
+            final ConfluxConfig config = new ConfluxConfig();
+            final WaypointRenderCatalog catalog = new WaypointRenderCatalog(
+                local, List::of, () -> List.of(new SiblingWaypoint(siblingPoint, "资源服")), config
+            );
+
+            assertEquals(0, catalog.snapshot().size());
+            config.crossWorldWaypointsVisible = true;
+            assertEquals(List.of("Resource spawn"), catalog.snapshot().stream()
+                .map(WaypointRenderEntry::name).toList());
+            assertTrue(catalog.snapshot().get(0).sibling());
+            config.localWaypointsVisible = false;
+            assertEquals(0, catalog.snapshot().size());
+        } finally {
+            executors.shutdown(1000L);
+        }
     }
 
     private static Waypoint local(final String name, final boolean visible) {

@@ -167,6 +167,14 @@ public final class ConfluxConfig {
     public boolean sharedWaypointsVisible = true;
     /** Public waypoint IDs allowed to render from the portal-linked dimension on this client. */
     public Set<String> sharedWaypointCrossDimensionVisibleIds = new LinkedHashSet<>();
+    /**
+     * Show this world's seed-sibling sub-world waypoints on every rendering surface. Siblings are
+     * other world namespaces under the same server address whose observed hashed seed matches; the
+     * toggle ships off so nothing appears until the player opts in.
+     */
+    public boolean crossWorldWaypointsVisible;
+    /** Latest hashed seed observed per multiplayer world identity; powers sibling grouping. */
+    public CrossWorldSeedObservations crossWorldSeedObservations = new CrossWorldSeedObservations();
     public boolean waypointEdgeIndicatorsEnabled = true;
     /** Death points kept per dimension, oldest auto-pruned; 0 disables creating new ones. */
     public int deathPointsKept = 5;
@@ -276,6 +284,10 @@ public final class ConfluxConfig {
             sharedWaypointCrossDimensionVisibleIds == null
                 ? new LinkedHashSet<>()
                 : new LinkedHashSet<>(sharedWaypointCrossDimensionVisibleIds);
+        c.crossWorldWaypointsVisible = crossWorldWaypointsVisible;
+        c.crossWorldSeedObservations = crossWorldSeedObservations == null
+            ? new CrossWorldSeedObservations()
+            : crossWorldSeedObservations.copy();
         c.waypointEdgeIndicatorsEnabled = waypointEdgeIndicatorsEnabled;
         c.deathPointsKept = deathPointsKept;
         c.waypointBeamsEnabled = waypointBeamsEnabled;
@@ -453,6 +465,11 @@ public final class ConfluxConfig {
             predictionManualSeeds = new ManualSeedConfig();
         } else {
             predictionManualSeeds.normalize();
+        }
+        if (crossWorldSeedObservations == null) {
+            crossWorldSeedObservations = new CrossWorldSeedObservations();
+        } else {
+            crossWorldSeedObservations.normalize();
         }
         predictionDebounceMs = clamp(predictionDebounceMs, 100, 2000);
         surveyReminderGameOpenMillis = Math.max(0L, surveyReminderGameOpenMillis);

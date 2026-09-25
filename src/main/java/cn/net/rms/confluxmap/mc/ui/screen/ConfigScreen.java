@@ -596,6 +596,10 @@ public final class ConfigScreen extends ConfluxScreen {
                     y, "confluxmap.config.waypoints.show_local",
                     () -> config.localWaypointsVisible, v -> config.localWaypointsVisible = v
                 );
+                y = addToggleRow(
+                    y, "confluxmap.config.waypoints.show_cross_world",
+                    () -> config.crossWorldWaypointsVisible, v -> config.crossWorldWaypointsVisible = v
+                );
                 if (sharedAvailability.visible()) {
                     y = addToggleRow(
                         y, "confluxmap.config.waypoints.show_shared",
