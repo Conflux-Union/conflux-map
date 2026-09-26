@@ -137,14 +137,52 @@ final class WaypointRenderCatalogTest {
         // The publisher keeps the local original and also receives the server-side copy,
         // which arrives under a fresh id but at the same block.
         final SharedWaypoint echo = sharedAt("Home (shared)", DimensionId.OVERWORLD, 1.4, 64.9, 2.7);
-        final SharedWaypoint elsewhere = shared("Fortress");
+        final SharedWaypoint elsewhere = sharedAt("Fortress", DimensionId.OVERWORLD, 3.0, 70.0, 4.0);
 
-        final List<WaypointRenderEntry> entries = WaypointRenderCatalog.merge(
-            List.of(local("Home", true)), List.of(echo, elsewhere), true, true, id -> false
+        final List<WaypointRenderEntry> entries = WaypointRenderCatalog.visibleFrom(
+            WaypointRenderCatalog.merge(
+                List.of(local("Home", true)), List.of(echo, elsewhere), true, true, id -> false
+            ),
+            DimensionId.OVERWORLD
         );
 
         assertEquals(List.of("Home", "Fortress"), entries.stream().map(WaypointRenderEntry::name).toList());
         assertTrue(entries.get(0).local());
+    }
+
+    @Test
+    void keepsSharedCopyCrossDimensionWhenLocalAtSameBlockCannotRenderThere() {
+        // The local original and the published copy keep separate cross-dimension switches
+        // (the waypoint's own flag vs the per-id shared allowlist), so the block collapse
+        // must run after the per-view dimension filter: collapsing the shared copy onto the
+        // local entry before it hid the block from every dimension except the waypoint's
+        // own, because the local entry was filtered out while the shared copy was already
+        // dropped.
+        final Waypoint home = local("Home", true);
+        home.crossDimensionVisible = false;
+        final SharedWaypoint echo = sharedAt("Home (shared)", DimensionId.OVERWORLD, 1.4, 64.9, 2.7);
+
+        final List<WaypointRenderEntry> bothToggles = WaypointRenderCatalog.merge(
+            List.of(home), List.of(echo), true, true, id -> id.equals(echo.id())
+        );
+        final List<WaypointRenderEntry> sharedOnly = WaypointRenderCatalog.merge(
+            List.of(home), List.of(echo), false, true, id -> id.equals(echo.id())
+        );
+
+        final List<WaypointRenderEntry> fromNether = WaypointRenderCatalog.visibleFrom(
+            bothToggles, DimensionId.NETHER
+        );
+        assertEquals(1, fromNether.size());
+        assertTrue(fromNether.get(0).shared());
+        // Nether-viewed coordinates are converted for the surviving shared copy.
+        assertEquals(1.4 / 8.0, fromNether.get(0).x());
+        assertEquals(1, WaypointRenderCatalog.visibleFrom(sharedOnly, DimensionId.NETHER).size());
+        // In the waypoint's own dimension the local entry still wins the block.
+        final List<WaypointRenderEntry> fromOverworld = WaypointRenderCatalog.visibleFrom(
+            bothToggles, DimensionId.OVERWORLD
+        );
+        assertEquals(List.of("Home"), fromOverworld.stream().map(WaypointRenderEntry::name).toList());
+        assertTrue(fromOverworld.get(0).local());
     }
 
     @Test
@@ -174,8 +212,9 @@ final class WaypointRenderCatalogTest {
         final SharedWaypoint first = sharedAt("Tower", DimensionId.OVERWORLD, 8.0, 70.0, 9.0);
         final SharedWaypoint second = sharedAt("Tower (old)", DimensionId.OVERWORLD, 8.5, 70.5, 9.5);
 
-        final List<WaypointRenderEntry> entries = WaypointRenderCatalog.merge(
-            List.of(), List.of(first, second), true, true, id -> false
+        final List<WaypointRenderEntry> entries = WaypointRenderCatalog.visibleFrom(
+            WaypointRenderCatalog.merge(List.of(), List.of(first, second), true, true, id -> false),
+            DimensionId.OVERWORLD
         );
 
         assertEquals(List.of("Tower"), entries.stream().map(WaypointRenderEntry::name).toList());
@@ -206,10 +245,13 @@ final class WaypointRenderCatalogTest {
         siblingCopy.x = 1.4;
         siblingCopy.z = 2.7;
 
-        final List<WaypointRenderEntry> entries = WaypointRenderCatalog.merge(
-            List.of(local("Home", true)), List.of(),
-            List.of(new SiblingWaypoint(siblingCopy, "Mirror")),
-            true, true, id -> false
+        final List<WaypointRenderEntry> entries = WaypointRenderCatalog.visibleFrom(
+            WaypointRenderCatalog.merge(
+                List.of(local("Home", true)), List.of(),
+                List.of(new SiblingWaypoint(siblingCopy, "Mirror")),
+                true, true, id -> false
+            ),
+            DimensionId.OVERWORLD
         );
 
         assertEquals(List.of("Home"), entries.stream().map(WaypointRenderEntry::name).toList());
