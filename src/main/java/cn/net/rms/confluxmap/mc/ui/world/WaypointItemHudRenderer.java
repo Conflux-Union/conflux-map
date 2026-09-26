@@ -146,6 +146,7 @@ public final class WaypointItemHudRenderer {
                 screenHeight,
                 verticalFov,
                 renderedDistance,
+                easedProgress,
                 iconSize,
                 config.waypointLabelScalePercent
             ).ifPresent(placement -> drawLabel(draw, label, placement, easedProgress));

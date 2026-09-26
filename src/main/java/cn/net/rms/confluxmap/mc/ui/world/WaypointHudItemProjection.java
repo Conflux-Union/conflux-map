@@ -19,6 +19,7 @@ final class WaypointHudItemProjection {
         final int screenHeight,
         final double verticalFovDegrees,
         final double renderedDistance,
+        final float easedTargetProgress,
         final float markerSize,
         final int scalePercent
     ) {
@@ -47,16 +48,10 @@ final class WaypointHudItemProjection {
             / (2.0 * Math.tan(Math.toRadians(verticalFovDegrees) / 2.0));
         final float centerX = (float) (screenWidth / 2.0 + right / forward * focalLength);
         final float centerY = (float) (screenHeight / 2.0 - up / forward * focalLength);
-        final double scaleMultiplier = Math.max(
-            WaypointWorldRenderer.LABEL_MIN_SCALE_MULT,
-            Math.min(
-                WaypointWorldRenderer.LABEL_MAX_SCALE_MULT,
-                renderedDistance / WaypointWorldRenderer.LABEL_REFERENCE_DISTANCE
-            )
-        );
+        // Same perspective multiplier the 3D label path uses, so both label flavors size identically.
         final float unitScale = (float) (
             WaypointWorldRenderer.LABEL_BASE_SCALE
-                * scaleMultiplier
+                * WaypointWorldRenderer.labelWorldScaleMult(renderedDistance, easedTargetProgress)
                 * focalLength
                 / renderedDistance
                 * scalePercent / 100.0

@@ -91,6 +91,11 @@ import net.minecraft.util.math.Vec3d;
  * exists inside the vanilla view distance. Labels use {@code config.waypointRenderDistance}
  * as their cutoff, including its unlimited mode, and far labels are pulled inside the camera's
  * far plane along the same sight line so they remain visible after their beam disappears.
+ * Label size follows perspective: the legacy constant screen size at or inside the reference
+ * distance, true inverse-distance shrink beyond it, and a far floor that keeps distant
+ * navigation markers readable; aiming at or selecting a label zooms it back to full apparent
+ * size ({@link #labelWorldScaleMult} is the single formula both the 3D text path and the
+ * item-icon HUD path share).
  */
 public final class WaypointWorldRenderer {
     private static final int SELECTED_LOCATION_COLOR = 0xFFFFE066;
@@ -105,8 +110,11 @@ public final class WaypointWorldRenderer {
     /** waypoint-ux.md S6 "distance fade-in": alpha ramps 0 -> 1 over the nearest ~5 blocks so the label doesn't pop in right next to the camera. */
     static final double LABEL_NEAR_FADE_BLOCKS = 5.0;
     static final float LABEL_BASE_SCALE = 0.06f;
+    /** Apparent label size stays at its maximum (the legacy constant screen size) at or closer than this. */
     static final double LABEL_REFERENCE_DISTANCE = 12.0;
-    static final float LABEL_MIN_SCALE_MULT = 0.35f;
+    /** Perspective-shrink floor: apparent size never drops below this fraction of the maximum, however far. */
+    static final float LABEL_FAR_SCREEN_FLOOR = 0.60f;
+    /** Safety ceiling on the world-space multiplier so absurd view distances cannot blow up precision. */
     static final float LABEL_MAX_SCALE_MULT = 170.0f;
     static final float LABEL_ICON_COLLAPSED_SIZE = 12.0f;
     static final float LABEL_ICON_EXPANDED_SIZE = 18.0f;
@@ -518,6 +526,32 @@ public final class WaypointWorldRenderer {
         return Math.min(Math.max(0.0, actualDistance), Math.max(0.0, projectionDistance));
     }
 
+    /** Apparent (post-perspective) label size as a fraction of the legacy constant screen size. */
+    static float labelScreenScaleFactor(final double renderedDistance) {
+        return (float) MathHelper.clamp(
+            LABEL_REFERENCE_DISTANCE / Math.max(renderedDistance, 0.001),
+            LABEL_FAR_SCREEN_FLOOR, 1.0
+        );
+    }
+
+    /**
+     * World-space scale multiplier for a label anchored at {@code renderedDistance}. At or inside
+     * the reference distance it reproduces the legacy constant-screen-size growth (apparent size
+     * at its maximum); beyond it the multiplier holds at 1 - a true perspective object - and then
+     * grows only enough to hold the apparent size at {@link #LABEL_FAR_SCREEN_FLOOR} for far
+     * labels that were pulled closer to stay inside the far plane. {@code easedTargetProgress}
+     * (the eased aim/select animation, 0..1) lerps the apparent size back toward full so the
+     * magnify-on-target effect is not dampened by the distance shrink. The item-icon HUD path
+     * shares this so both label flavors size identically.
+     */
+    static float labelWorldScaleMult(final double renderedDistance, final float easedTargetProgress) {
+        final double perspective = labelScreenScaleFactor(renderedDistance);
+        final double screenFactor = MathHelper.lerp(easedTargetProgress, perspective, 1.0);
+        return (float) MathHelper.clamp(
+            (renderedDistance / LABEL_REFERENCE_DISTANCE) * screenFactor, 0.0, LABEL_MAX_SCALE_MULT
+        );
+    }
+
     private List<WaypointRenderEntry> waypointsForRender(final DimensionId dimension) {
         final List<WaypointRenderEntry> base = waypointRenderCatalog.snapshot(dimension);
         final Optional<ServerPlayerRadarState.HighlightView> playerTarget =
@@ -878,13 +912,15 @@ public final class WaypointWorldRenderer {
             ? renderedDistance / anchorDistance
             : 1.0;
 
-        // Scale against the projected distance so pulling a far marker closer does not enlarge it.
-        final float scaleMult = (float) MathHelper.clamp(
-            renderedDistance / LABEL_REFERENCE_DISTANCE, LABEL_MIN_SCALE_MULT, LABEL_MAX_SCALE_MULT
-        );
+        final float easedProgress = WaypointHudMotion.smoothStep(animationProgress);
+        // Perspective sizing: apparent size peaks at the legacy constant-screen-size look at or
+        // inside the reference distance and shrinks with true 1/d perspective beyond it, floored
+        // far away; the aim/select animation zooms the label back to full apparent size. Scaling
+        // against the projected distance also keeps pulling a far marker closer (far-plane
+        // clamping) from enlarging it.
+        final float scaleMult = labelWorldScaleMult(renderedDistance, easedProgress);
         // Applied last so the user factor is a plain multiplier on apparent size at every distance.
         final float scale = LABEL_BASE_SCALE * scaleMult * config.waypointLabelScalePercent / 100f;
-        final float easedProgress = WaypointHudMotion.smoothStep(animationProgress);
 
         final TextRenderer textRenderer = client.textRenderer;
         final String name = waypoint.name();
