@@ -13,6 +13,12 @@ validated in-process against the same rules release.yml enforces, and an
 invalid submission is fed back to the model for a bounded number of
 retries instead of failing the whole job.
 
+Responses are consumed as a stream so the CI log stays alive while the
+model generates: a heartbeat line showing the output state and an
+output-token estimate (received characters / 4) is printed once per
+second, and the final summary reports input and output tokens, cache
+reads, cache writes, and the resulting cache rate.
+
 The validated submission is serialized into a minimal OpenAI-style
 chat-completion envelope so the existing jq validation in release.yml
 keeps working unchanged.
@@ -25,6 +31,7 @@ in-process mock Messages API; no network access or API key is needed.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import re
@@ -34,8 +41,9 @@ import sys
 import tempfile
 import time
 from collections import deque
+from contextlib import redirect_stdout
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from threading import Thread
+from threading import Lock, Thread
 
 import anthropic
 
@@ -411,6 +419,48 @@ def _log_limited(label: str, text: str, limit: int) -> None:
     _log(f"{label}: {text}")
 
 
+class StreamProgressReporter(Thread):
+    """Prints one heartbeat line per second while a response streams.
+
+    A single model turn can take tens of seconds of silence, which in the
+    Actions log is indistinguishable from a hung job. The heartbeat mimics
+    the agent CLI status line: the current output state plus a rough token
+    estimate of the response so far, at four characters per token. A stall
+    shows up as a frozen token count instead of silence.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(daemon=True)
+        self._lock = Lock()
+        self._label: str | None = None
+        self._chars = 0
+
+    def begin_response(self) -> None:
+        with self._lock:
+            self._label = "waiting"
+            self._chars = 0
+
+    def start_block(self, label: str) -> None:
+        with self._lock:
+            self._label = label
+
+    def add_chars(self, count: int) -> None:
+        with self._lock:
+            self._chars += count
+
+    def end_response(self) -> None:
+        with self._lock:
+            self._label = None
+
+    def run(self) -> None:
+        while True:
+            time.sleep(1)
+            with self._lock:
+                label, chars = self._label, self._chars
+            if label is not None:
+                _log(f"{label} ·⬇️ {chars // 4} tokens")
+
+
 def _execute_tool(
     name: str, tool_input, repo_root: str, home_dir: str, tool_timeout: float
 ) -> str:
@@ -493,6 +543,12 @@ def validate_submission(payload, allowed_reference_ids: set[str]) -> "tuple[dict
     return payload, []
 
 
+def _cache_rate(cache_read: int, input_side_total: int) -> float:
+    """Share of input-side tokens served from cache, in percent:
+    read / (fresh input + cache write + cache read)."""
+    return 100.0 * cache_read / input_side_total if input_side_total else 0.0
+
+
 def run_agent(
     client: anthropic.Anthropic,
     *,
@@ -512,26 +568,71 @@ def run_agent(
     api_calls = 0
     tokens_in = 0
     tokens_out = 0
+    cache_read = 0
+    cache_write = 0
     forced_final = False
     submit_rejections = 0
     text_nudges = 0
+    progress = StreamProgressReporter()
+    progress.start()
 
     def request(investigate: bool):
-        nonlocal api_calls, tokens_in, tokens_out
+        nonlocal api_calls, tokens_in, tokens_out, cache_read, cache_write
         kwargs = dict(model=model, max_tokens=16000, system=system, messages=messages)
         # The submit tool must stay available even once the investigation
         # budget is gone -- it is the only way to finish the run.
         kwargs["tools"] = [SUBMIT_TOOL] + TOOLS if investigate else [SUBMIT_TOOL]
-        # MiMo accepts the Anthropic Messages shape but spells thinking
-        # config without a token budget, so it rides in via extra_body.
-        message = client.messages.create(
+        progress.begin_response()
+        started = time.monotonic()
+        first_delta_at = None
+        # Streamed instead of a single blocking create() so the reporter can
+        # print a per-second heartbeat while the model generates; the final
+        # message is identical. MiMo accepts the Anthropic Messages shape
+        # but spells thinking config without a token budget, so it rides in
+        # via extra_body.
+        with client.messages.stream(
             **kwargs, extra_body={"thinking": {"type": "enabled"}}
-        )
+        ) as stream:
+            for event in stream:
+                if event.type == "content_block_start":
+                    block_type = event.content_block.type
+                    if block_type == "thinking":
+                        progress.start_block("thinking")
+                    elif block_type == "tool_use":
+                        progress.start_block("tool use")
+                    elif block_type == "text":
+                        progress.start_block("text")
+                elif event.type == "content_block_delta":
+                    if first_delta_at is None:
+                        first_delta_at = time.monotonic()
+                    delta = event.delta
+                    if delta.type == "thinking_delta":
+                        progress.add_chars(len(delta.thinking or ""))
+                    elif delta.type == "text_delta":
+                        progress.add_chars(len(delta.text or ""))
+                    elif delta.type == "input_json_delta":
+                        progress.add_chars(len(delta.partial_json or ""))
+            message = stream.get_final_message()
+        progress.end_response()
         api_calls += 1
+        finished = time.monotonic()
+        ttft = (first_delta_at - started) if first_delta_at is not None else (finished - started)
+        generation = (finished - first_delta_at) if first_delta_at is not None else 0.0
         usage = getattr(message, "usage", None)
-        if usage is not None:
-            tokens_in += getattr(usage, "input_tokens", 0) or 0
-            tokens_out += getattr(usage, "output_tokens", 0) or 0
+        call_in = getattr(usage, "input_tokens", 0) or 0
+        call_out = getattr(usage, "output_tokens", 0) or 0
+        call_cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+        call_cache_write = getattr(usage, "cache_creation_input_tokens", 0) or 0
+        tokens_in += call_in
+        tokens_out += call_out
+        cache_read += call_cache_read
+        cache_write += call_cache_write
+        speed = call_out / generation if generation > 0 else 0.0
+        _log(
+            f"request {api_calls}: ttft {ttft:.1f}s, {speed:.1f} tokens/s, "
+            f"input {call_in} (cache read {call_cache_read}, "
+            f"cache write {call_cache_write}), output {call_out}"
+        )
         return message
 
     def echo_assistant(message) -> None:
@@ -581,9 +682,12 @@ def run_agent(
                 submit_block.input, allowed_reference_ids
             )
             if payload is not None:
+                input_side = tokens_in + cache_read + cache_write
                 _log(
                     f"done after {rounds} tool rounds, {api_calls} API calls, "
-                    f"{tokens_in} input + {tokens_out} output tokens"
+                    f"{tokens_in} input + {tokens_out} output tokens, "
+                    f"cache read {cache_read} + cache write {cache_write}, "
+                    f"cache rate {_cache_rate(cache_read, input_side):.1f}%"
                 )
                 return payload
             submit_rejections += 1
@@ -985,15 +1089,18 @@ def self_test() -> int:
             length = int(self.headers.get("Content-Length") or 0)
             body = json.loads(self.rfile.read(length) or b"{}")
             type(self).calls.append(body)
-            raw = json.dumps(type(self).responses.popleft()).encode()
+            payload = message_to_sse(type(self).responses.popleft())
             self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
-            self.wfile.write(raw)
+            self.wfile.write(payload)
 
         def log_message(self, *args):
             pass
+
+    def thinking_block(text: str) -> dict:
+        return {"type": "thinking", "thinking": text, "signature": "mock-signature"}
 
     def text_block(text: str) -> dict:
         return {"type": "text", "text": text}
@@ -1010,13 +1117,92 @@ def self_test() -> int:
             "content": content,
             "stop_reason": stop_reason,
             "stop_sequence": None,
-            "usage": {"input_tokens": 10, "output_tokens": 5},
+            "usage": {
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "cache_creation_input_tokens": 3,
+                "cache_read_input_tokens": 40,
+            },
         }
+
+    def message_to_sse(message: dict) -> bytes:
+        # Re-encode a queued mock message as the Anthropic SSE event stream
+        # the SDK expects from a streaming request.
+        events: list[tuple[str, dict]] = [
+            (
+                "message_start",
+                {
+                    "type": "message_start",
+                    "message": {**message, "content": [], "stop_reason": None},
+                },
+            )
+        ]
+        for index, block in enumerate(message["content"]):
+            if block["type"] == "thinking":
+                seed = {"type": "thinking", "thinking": "", "signature": ""}
+                deltas = [
+                    {"type": "thinking_delta", "thinking": block["thinking"]},
+                    {"type": "signature_delta", "signature": block["signature"]},
+                ]
+            elif block["type"] == "text":
+                seed = {"type": "text", "text": ""}
+                deltas = [{"type": "text_delta", "text": block["text"]}]
+            else:
+                seed = {
+                    "type": "tool_use",
+                    "id": block["id"],
+                    "name": block["name"],
+                    "input": {},
+                }
+                deltas = [
+                    {
+                        "type": "input_json_delta",
+                        "partial_json": json.dumps(block["input"]),
+                    }
+                ]
+            events.append(
+                (
+                    "content_block_start",
+                    {
+                        "type": "content_block_start",
+                        "index": index,
+                        "content_block": seed,
+                    },
+                )
+            )
+            for delta in deltas:
+                events.append(
+                    (
+                        "content_block_delta",
+                        {"type": "content_block_delta", "index": index, "delta": delta},
+                    )
+                )
+            events.append(
+                ("content_block_stop", {"type": "content_block_stop", "index": index})
+            )
+        events.append(
+            (
+                "message_delta",
+                {
+                    "type": "message_delta",
+                    "delta": {
+                        "stop_reason": message["stop_reason"],
+                        "stop_sequence": None,
+                    },
+                    "usage": {"output_tokens": message["usage"]["output_tokens"]},
+                },
+            )
+        )
+        events.append(("message_stop", {"type": "message_stop"}))
+        return "".join(
+            f"event: {name}\ndata: {json.dumps(event)}\n\n" for name, event in events
+        ).encode()
 
     _MockHandler.responses.extend(
         [
             mock_response(
                 [
+                    thinking_block("Planning the investigation."),
                     text_block("Inspecting the repository first."),
                     tool_use("toolu_bash_ok", "bash", {"command": "git log --oneline -3"}),
                     tool_use(
@@ -1092,29 +1278,40 @@ def self_test() -> int:
                 max_retries=0,
                 timeout=30.0,
             )
-            final_submission = run_agent(
-                client,
-                model="mimo-mock",
-                system=system_prompt(8),
-                user_prompt=build_user_prompt(
-                    current="v0.1.6-beta.2",
-                    base="v0.1.6-beta.1",
-                    commit_range="v0.1.6-beta.1..v0.1.6-beta.2",
-                    diff_range="v0.1.6-beta.1..v0.1.6-beta.2",
-                    commit_data=_read_text(commits_path),
-                    file_changes=_read_text(files_path),
-                    references_json=json.dumps(references),
-                    prior_history="abc1234 feat(waypoint): older released change",
-                    diff_excerpt="--- a/src/main/java/X.java\n+++ b/src/main/java/X.java\n",
+            log_buffer = io.StringIO()
+            with redirect_stdout(log_buffer):
+                final_submission = run_agent(
+                    client,
+                    model="mimo-mock",
+                    system=system_prompt(8),
+                    user_prompt=build_user_prompt(
+                        current="v0.1.6-beta.2",
+                        base="v0.1.6-beta.1",
+                        commit_range="v0.1.6-beta.1..v0.1.6-beta.2",
+                        diff_range="v0.1.6-beta.1..v0.1.6-beta.2",
+                        commit_data=_read_text(commits_path),
+                        file_changes=_read_text(files_path),
+                        references_json=json.dumps(references),
+                        prior_history="abc1234 feat(waypoint): older released change",
+                        diff_excerpt="--- a/src/main/java/X.java\n+++ b/src/main/java/X.java\n",
+                        repo_root=repo_root,
+                    ),
                     repo_root=repo_root,
-                ),
-                repo_root=repo_root,
-                max_rounds=8,
-                tool_timeout=15.0,
-                deadline=60.0,
-                allowed_reference_ids={"issue-1"},
-            )
+                    max_rounds=8,
+                    tool_timeout=15.0,
+                    deadline=60.0,
+                    allowed_reference_ids={"issue-1"},
+                )
+            agent_log = log_buffer.getvalue()
             _expect(final_submission == final_answer, "final submission mismatch")
+            _expect(
+                "cache rate" in agent_log and "cache read" in agent_log,
+                "final usage summary is missing the cache fields",
+            )
+            _expect(
+                "ttft" in agent_log and "tokens/s" in agent_log,
+                "per-request line is missing ttft or speed",
+            )
             write_envelope(envelope_path, final_submission)
             with open(envelope_path, encoding="utf-8") as handle:
                 envelope = json.load(handle)
@@ -1164,6 +1361,13 @@ def self_test() -> int:
 
     first_results = tool_results(bodies[1])
     _expect(len(first_results) == 2, "two tool results in second request")
+    assistant_echo = next(
+        m for m in bodies[1]["messages"] if m["role"] == "assistant"
+    )
+    _expect(
+        any(block.get("type") == "thinking" for block in assistant_echo["content"]),
+        "thinking block was not echoed across tool turns",
+    )
     git_result = next(r for r in first_results if r["tool_use_id"] == "toolu_bash_ok")["content"]
     curl_result = next(r for r in first_results if r["tool_use_id"] == "toolu_bash_bad")["content"]
     _expect(git_result.startswith("exit code 0"), "git log did not run")
@@ -1184,6 +1388,9 @@ def self_test() -> int:
         and "duplicates" in submit_rejection,
         "invalid submission was not fed back with all errors",
     )
+
+    _expect(_cache_rate(40, 53) == 4000 / 53, "cache rate math")
+    _expect(_cache_rate(0, 0) == 0.0, "cache rate zero guard")
 
     print("[self-test] agent loop against mock Messages API: ok")
     print("self-test passed")
