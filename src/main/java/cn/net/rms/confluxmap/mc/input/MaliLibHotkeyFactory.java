@@ -23,20 +23,18 @@ final class MaliLibHotkeyFactory {
     }
 
     static KeybindSettings settingsFor(final KeybindAction action) {
-        if (action == KeybindAction.OPEN_MAP) {
-            return KeybindSettings.create(
-                KeybindSettings.Context.ANY,
-                KeyAction.PRESS,
-                true,
-                true,
-                false,
-                true
-            );
-        }
-        return KeybindSettings.PRESS_ALLOWEXTRA;
+        return pressSettings(action == KeybindAction.OPEN_MAP
+            ? KeybindSettings.Context.ANY
+            : KeybindSettings.Context.INGAME
+        );
     }
 
     static KeybindSettings configScreenSettings() {
-        return KeybindSettings.PRESS_ALLOWEXTRA;
+        return pressSettings(KeybindSettings.Context.INGAME);
+    }
+
+    /** Cancelling the key dispatch would swallow the event before sibling mods bound to the same key see it. */
+    private static KeybindSettings pressSettings(final KeybindSettings.Context context) {
+        return KeybindSettings.create(context, KeyAction.PRESS, true, true, false, false);
     }
 }

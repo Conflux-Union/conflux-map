@@ -72,7 +72,7 @@ final class KeybindActionTest {
             );
             assertTrue(settings.isOrderSensitive(), action.configName());
             assertFalse(settings.isExclusive(), action.configName());
-            assertTrue(settings.shouldCancel(), action.configName());
+            assertFalse(settings.shouldCancel(), action.configName());
         }
     }
 
@@ -85,7 +85,7 @@ final class KeybindActionTest {
         assertSame(KeybindSettings.Context.INGAME, settings.getContext());
         assertTrue(settings.isOrderSensitive());
         assertFalse(settings.isExclusive());
-        assertTrue(settings.shouldCancel());
+        assertFalse(settings.shouldCancel());
     }
 
     @Test
