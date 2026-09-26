@@ -6,12 +6,16 @@ script runs a tool-calling agent against the MiMo Anthropic-compatible
 Messages API. The model investigates the checked-out repository with
 read-only tools -- a strictly gated read-only bash command runner and a
 bounded file reader -- until it can decide which changes are player-visible,
-then returns the bilingual changelog JSON that the workflow validates
-and renders downstream.
+then submits the bilingual changelog through a structured submit tool.
+Tool-call input arrives as parsed JSON, so a provider-side truncation can
+never pose as a complete text answer; the submission is additionally
+validated in-process against the same rules release.yml enforces, and an
+invalid submission is fed back to the model for a bounded number of
+retries instead of failing the whole job.
 
-The final answer is written as a minimal OpenAI-style chat-completion
-envelope so the existing jq validation in release.yml keeps working
-unchanged.
+The validated submission is serialized into a minimal OpenAI-style
+chat-completion envelope so the existing jq validation in release.yml
+keeps working unchanged.
 
 Requires the Anthropic SDK (pip install anthropic). Run with --self-test
 to exercise the command gate and the full agent loop against an
@@ -333,6 +337,45 @@ READ_FILE_TOOL = {
 TOOLS = [BASH_TOOL, READ_FILE_TOOL]
 
 
+_SUBMIT_ENTRY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "en": {"type": "string", "description": "English player-facing bullet body"},
+        "zh": {"type": "string", "description": "Faithful Simplified Chinese translation"},
+        "references": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Supporting reference-context ids, empty when none applies",
+        },
+    },
+    "required": ["en", "zh", "references"],
+    "additionalProperties": False,
+}
+
+SUBMIT_TOOL = {
+    "name": "submit",
+    "type": "custom",
+    "description": (
+        "Submit the final bilingual changelog and end the run. The input must be "
+        "the complete changelog object: improvements and fixes arrays whose items "
+        "carry the English bullet in en, its Simplified Chinese translation in zh, "
+        "and every supporting reference id from the reference context in references "
+        "(empty array when none applies). The changelog is only accepted through "
+        "this tool -- never write it as a text message. Do not submit while still "
+        "uncertain; investigate with bash/read_file first."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "improvements": {"type": "array", "items": _SUBMIT_ENTRY_SCHEMA},
+            "fixes": {"type": "array", "items": _SUBMIT_ENTRY_SCHEMA},
+        },
+        "required": ["improvements", "fixes"],
+        "additionalProperties": False,
+    },
+}
+
+
 # --- agent loop --------------------------------------------------------------
 
 
@@ -341,9 +384,21 @@ class AgentError(Exception):
 
 
 WRAPUP_PROMPT = (
-    "The tool budget for this run is exhausted. Do not call any more tools. "
-    "Reply now with exactly one JSON object in the required shape and no prose."
+    "The tool budget for this run is exhausted. Do not call bash or read_file "
+    "again. Call the submit tool now with the complete changelog object as its "
+    "arguments."
 )
+
+SUBMIT_NUDGE_PROMPT = (
+    "Your last message was text, which is discarded. The changelog is only "
+    "accepted through the submit tool. Call submit now with the complete "
+    "changelog object as its arguments."
+)
+
+# Bounds so a confused model or a flaky provider fails loudly instead of
+# looping forever; the wall-clock deadline remains the outer backstop.
+MAX_SUBMIT_REJECTIONS = 3
+MAX_TEXT_NUDGES = 2
 
 
 def _log(message: str) -> None:
@@ -385,6 +440,59 @@ def _execute_tool(
         return f"error: {type(exc).__name__}: {exc}"
 
 
+def validate_submission(payload, allowed_reference_ids: set[str]) -> "tuple[dict | None, list[str]]":
+    """Check a submit payload against the same rules the jq gate in
+    release.yml enforces, so a rejected submission can be retried in-process
+    instead of failing the whole job. Returns (payload, []) when valid and
+    (None, errors) otherwise."""
+    if not isinstance(payload, dict):
+        return None, ["the submission must be a JSON object"]
+    errors: list[str] = []
+    extra_keys = sorted(set(payload) - {"improvements", "fixes"})
+    if extra_keys:
+        errors.append(f"unexpected top-level keys: {', '.join(extra_keys)}")
+    entries = 0
+    for section in ("improvements", "fixes"):
+        items = payload.get(section)
+        if not isinstance(items, list):
+            errors.append(f"{section} must be an array")
+            continue
+        for index, item in enumerate(items):
+            where = f"{section}[{index}]"
+            if not isinstance(item, dict):
+                errors.append(f"{where} must be an object")
+                continue
+            item_extra = sorted(set(item) - {"en", "zh", "references"})
+            if item_extra:
+                errors.append(f"{where} has unexpected keys: {', '.join(item_extra)}")
+            for field in ("en", "zh"):
+                value = item.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    errors.append(f"{where}.{field} must be a non-empty string")
+                elif re.search(r"[\r\n]", value):
+                    errors.append(f"{where}.{field} must not contain line breaks")
+            references = item.get("references")
+            if not isinstance(references, list) or not all(
+                isinstance(reference, str) for reference in references
+            ):
+                errors.append(f"{where}.references must be an array of strings")
+            else:
+                if len(references) != len(set(references)):
+                    errors.append(f"{where}.references contains duplicates")
+                unknown = sorted(set(references) - allowed_reference_ids)
+                if unknown:
+                    errors.append(
+                        f"{where}.references has ids not in the reference "
+                        f"context: {', '.join(unknown)}"
+                    )
+            entries += 1
+    if entries == 0:
+        errors.append("improvements and fixes must not both be empty")
+    if errors:
+        return None, errors
+    return payload, []
+
+
 def run_agent(
     client: anthropic.Anthropic,
     *,
@@ -395,7 +503,8 @@ def run_agent(
     max_rounds: int,
     tool_timeout: float,
     deadline: float,
-) -> str:
+    allowed_reference_ids: set[str],
+) -> dict:
     messages: list[dict] = [{"role": "user", "content": user_prompt}]
     home_dir = tempfile.mkdtemp(prefix="changelog-agent-home-")
     stop_at = time.monotonic() + deadline
@@ -404,12 +513,15 @@ def run_agent(
     tokens_in = 0
     tokens_out = 0
     forced_final = False
+    submit_rejections = 0
+    text_nudges = 0
 
-    def request(include_tools: bool):
+    def request(investigate: bool):
         nonlocal api_calls, tokens_in, tokens_out
         kwargs = dict(model=model, max_tokens=16000, system=system, messages=messages)
-        if include_tools:
-            kwargs["tools"] = TOOLS
+        # The submit tool must stay available even once the investigation
+        # budget is gone -- it is the only way to finish the run.
+        kwargs["tools"] = [SUBMIT_TOOL] + TOOLS if investigate else [SUBMIT_TOOL]
         # MiMo accepts the Anthropic Messages shape but spells thinking
         # config without a token budget, so it rides in via extra_body.
         message = client.messages.create(
@@ -422,6 +534,19 @@ def run_agent(
             tokens_out += getattr(usage, "output_tokens", 0) or 0
         return message
 
+    def echo_assistant(message) -> None:
+        # Echo the assistant turn back verbatim (thinking blocks included;
+        # MiMo recommends keeping them across tool turns).
+        messages.append(
+            {
+                "role": "assistant",
+                "content": [
+                    block.model_dump(exclude_none=True)
+                    for block in message.content
+                ],
+            }
+        )
+
     while True:
         budget_left = (
             rounds < max_rounds and time.monotonic() < stop_at and not forced_final
@@ -430,7 +555,7 @@ def run_agent(
             _log("tool budget exhausted; requesting the final answer")
             messages.append({"role": "user", "content": WRAPUP_PROMPT})
             forced_final = True
-        response = request(include_tools=budget_left)
+        response = request(investigate=budget_left)
         _log(
             f"round {rounds}: stop_reason={response.stop_reason}, "
             f"blocks={[block.type for block in response.content]}"
@@ -442,24 +567,86 @@ def run_agent(
                 _log(f"model thinking: {len(block.thinking)} characters (not shown)")
 
         tool_uses = [block for block in response.content if block.type == "tool_use"]
-        if response.stop_reason == "tool_use" and tool_uses:
+        submits = [block for block in tool_uses if block.name == "submit"]
+        investigations = [block for block in tool_uses if block.name != "submit"]
+
+        if submits:
+            submit_block = submits[0]
+            _log_limited(
+                "submit attempt",
+                json.dumps(submit_block.input, ensure_ascii=False),
+                2000,
+            )
+            payload, errors = validate_submission(
+                submit_block.input, allowed_reference_ids
+            )
+            if payload is not None:
+                _log(
+                    f"done after {rounds} tool rounds, {api_calls} API calls, "
+                    f"{tokens_in} input + {tokens_out} output tokens"
+                )
+                return payload
+            submit_rejections += 1
+            if submit_rejections > MAX_SUBMIT_REJECTIONS:
+                raise AgentError(
+                    "model could not produce a valid submission: " + "; ".join(errors)
+                )
+            _log_limited("submit rejected", "; ".join(errors), 2000)
+            # Keep the conversation well formed: every tool_use of this turn
+            # needs a tool_result before the next request.
+            echo_assistant(response)
+            results = [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": submit_block.id,
+                    "content": (
+                        "error: invalid submission: "
+                        + "; ".join(errors)
+                        + ". Call submit again with the complete, corrected object."
+                    ),
+                }
+            ]
+            for block in submits[1:]:
+                results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": (
+                            "error: submit was already processed this turn; "
+                            "call submit once"
+                        ),
+                    }
+                )
+            if investigations and budget_left:
+                rounds += 1
+            for block in investigations:
+                if budget_left:
+                    _log_limited(
+                        f"tool call {block.name}",
+                        json.dumps(block.input, ensure_ascii=False),
+                        2000,
+                    )
+                    result = _execute_tool(
+                        block.name, block.input, repo_root, home_dir, tool_timeout
+                    )
+                    _log_limited("tool result", result, 2000)
+                else:
+                    result = "error: tool budget exhausted"
+                results.append(
+                    {"type": "tool_result", "tool_use_id": block.id, "content": result}
+                )
+            messages.append({"role": "user", "content": results})
+            continue
+
+        if response.stop_reason == "tool_use" and investigations:
             if not budget_left:
                 raise AgentError(
                     "model attempted another tool call after the tool budget was exhausted"
                 )
             rounds += 1
-            # Echo the assistant turn back verbatim (thinking blocks
-            # included; MiMo recommends keeping them across tool turns).
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": [
-                        block.model_dump(exclude_none=True) for block in response.content
-                    ],
-                }
-            )
+            echo_assistant(response)
             results = []
-            for block in tool_uses:
+            for block in investigations:
                 _log_limited(
                     f"tool call {block.name}",
                     json.dumps(block.input, ensure_ascii=False),
@@ -478,19 +665,28 @@ def run_agent(
         text = "".join(
             block.text for block in response.content if block.type == "text"
         ).strip()
-        if response.stop_reason == "end_turn" and text:
-            _log(
-                f"done after {rounds} tool rounds, {api_calls} API calls, "
-                f"{tokens_in} input + {tokens_out} output tokens"
+        if response.stop_reason == "end_turn":
+            # The changelog only counts when it arrives through submit; a
+            # text answer is nudged back (this is also the path a
+            # provider-truncated completion takes, since it reports
+            # end_turn with partial text).
+            if text_nudges < MAX_TEXT_NUDGES:
+                text_nudges += 1
+                _log("model answered in text; requesting a submit tool call")
+                echo_assistant(response)
+                messages.append({"role": "user", "content": SUBMIT_NUDGE_PROMPT})
+                continue
+            raise AgentError(
+                "model kept answering in text instead of calling submit "
+                f"(stop_reason={response.stop_reason}, text_characters={len(text)})"
             )
-            return text
         raise AgentError(
-            "model stopped without usable content "
+            "model stopped without calling submit "
             f"(stop_reason={response.stop_reason}, text_characters={len(text)})"
         )
 
 
-def write_envelope(path: str, final_text: str) -> None:
+def write_envelope(path: str, submission: dict) -> None:
     # OpenAI-style envelope: release.yml validates and renders this with
     # the same jq it used for the raw chat-completions response.
     envelope = {
@@ -498,7 +694,10 @@ def write_envelope(path: str, final_text: str) -> None:
             {
                 "index": 0,
                 "finish_reason": "stop",
-                "message": {"role": "assistant", "content": final_text},
+                "message": {
+                    "role": "assistant",
+                    "content": json.dumps(submission, ensure_ascii=False),
+                },
             }
         ]
     }
@@ -517,7 +716,7 @@ Investigation. The user message supplies the commit metadata, the complete file-
 
 Content policy. Describe observable player effects rather than code mechanics. Include a change only when the supplied data or your repository investigation supports a concrete player-visible effect; omit it when that effect cannot be described confidently. Omit documentation, tests, CI, build changes, dependency maintenance, internal refactors, generic hardening, and release chores. Never include caching, protocol validation, malformed-input handling, lifecycle safety, storage formats, benchmarks, or CPU and memory claims unless the data explicitly states the player-visible symptom and result. Combine commits that describe the same player-visible change, and place every distinct change in exactly one of improvements or fixes. Do not mention commit hashes, file names, classes, methods, algorithms, internal data tables, fixed lighting directions, or other implementation details. Do not add parenthetical implementation explanations. Do not invent versions, platforms, causes, or outcomes not supported by the supplied data or your investigation.
 
-Final answer. For each change, write an English player-facing bullet body in en and its faithful Simplified Chinese translation in zh. Keep the same meaning in both languages. Add a references array containing every id from the supplied reference context that directly supports that specific change, including both a pull request and its issue when both are clearly related. Use an empty references array when no candidate is clearly related. Before answering, silently check that no item duplicates or restates another item and that every item is understandable without code knowledge. Avoid marketing claims. When you are confident, stop calling tools and return exactly one JSON object and no prose in this shape: {{"improvements": [{{"en": string, "zh": string, "references": [string]}}], "fixes": [{{"en": string, "zh": string, "references": [string]}}]}}. Use empty arrays for empty categories, but the two category arrays must not both be empty. Do not include Markdown bullet markers, headings, links, a release title, or a comparison link in the strings.
+Final answer. For each change, write an English player-facing bullet body in en and its faithful Simplified Chinese translation in zh. Keep the same meaning in both languages. Add a references array containing every id from the supplied reference context that directly supports that specific change, including both a pull request and its issue when both are clearly related. Use an empty references array when no candidate is clearly related. Before answering, silently check that no item duplicates or restates another item and that every item is understandable without code knowledge. Avoid marketing claims. When you are confident, stop investigating and finish by calling the submit tool with exactly one JSON object of this shape as its arguments: {{"improvements": [{{"en": string, "zh": string, "references": [string]}}], "fixes": [{{"en": string, "zh": string, "references": [string]}}]}}. Use empty arrays for empty categories, but the two category arrays must not both be empty. The run only ends through the submit tool: never write the changelog as a text message. Do not include Markdown bullet markers, headings, links, a release title, or a comparison link in the strings.
 
 You have at most {max_rounds} tool rounds in total. Investigate efficiently, prioritize the commits whose player-visible effect is least clear, and stop investigating as soon as you are confident."""
 
@@ -663,7 +862,7 @@ def main(argv=None) -> int:
         max_retries=4,
         timeout=float(args.request_timeout),
     )
-    final_text = run_agent(
+    final_submission = run_agent(
         client,
         model=args.model,
         system=system_prompt(args.max_rounds),
@@ -672,8 +871,13 @@ def main(argv=None) -> int:
         max_rounds=args.max_rounds,
         tool_timeout=float(args.tool_timeout),
         deadline=float(args.max_seconds),
+        allowed_reference_ids={
+            reference["id"]
+            for reference in references
+            if isinstance(reference, dict) and isinstance(reference.get("id"), str)
+        },
     )
-    write_envelope(args.output, final_text)
+    write_envelope(args.output, final_submission)
     _log(f"wrote {args.output}")
     return 0
 
@@ -762,7 +966,16 @@ def self_test() -> int:
         ],
         "fixes": [],
     }
-    expected_final = "```json\n" + json.dumps(final_answer, indent=2) + "\n```"
+    invalid_submission = {
+        "improvements": [
+            {
+                "en": "Broken\nline one",
+                "zh": "坏掉的条目",
+                "references": ["issue-404", "issue-404"],
+            }
+        ],
+        "fixes": [],
+    }
 
     class _MockHandler(BaseHTTPRequestHandler):
         calls: list[dict] = []
@@ -832,7 +1045,18 @@ def self_test() -> int:
                 ],
                 "tool_use",
             ),
-            mock_response([text_block(expected_final)], "end_turn"),
+            # Answers in prose instead of calling submit: must be nudged.
+            mock_response(
+                [text_block("Here is the changelog you asked for.")], "end_turn"
+            ),
+            # Submits an invalid payload: must be rejected with feedback.
+            mock_response(
+                [tool_use("toolu_submit_bad", "submit", invalid_submission)],
+                "tool_use",
+            ),
+            mock_response(
+                [tool_use("toolu_submit_ok", "submit", final_answer)], "tool_use"
+            ),
         ]
     )
 
@@ -868,7 +1092,7 @@ def self_test() -> int:
                 max_retries=0,
                 timeout=30.0,
             )
-            final_text = run_agent(
+            final_submission = run_agent(
                 client,
                 model="mimo-mock",
                 system=system_prompt(8),
@@ -888,13 +1112,15 @@ def self_test() -> int:
                 max_rounds=8,
                 tool_timeout=15.0,
                 deadline=60.0,
+                allowed_reference_ids={"issue-1"},
             )
-            _expect(final_text == expected_final.strip(), "final text mismatch")
-            write_envelope(envelope_path, final_text)
+            _expect(final_submission == final_answer, "final submission mismatch")
+            write_envelope(envelope_path, final_submission)
             with open(envelope_path, encoding="utf-8") as handle:
                 envelope = json.load(handle)
             _expect(
-                envelope["choices"][0]["message"]["content"] == final_text,
+                json.loads(envelope["choices"][0]["message"]["content"])
+                == final_answer,
                 "envelope content mismatch",
             )
     finally:
@@ -902,11 +1128,18 @@ def self_test() -> int:
         server.server_close()
 
     bodies = _MockHandler.calls
-    _expect(len(bodies) == 4, f"expected 4 API calls, got {len(bodies)}")
+    _expect(len(bodies) == 6, f"expected 6 API calls, got {len(bodies)}")
     _expect(bodies[0].get("thinking", {}).get("type") == "enabled", "thinking enabled")
     _expect(
         any(tool.get("name") == "bash" for tool in bodies[0].get("tools", [])),
         "bash tool offered",
+    )
+    _expect(
+        all(
+            any(tool.get("name") == "submit" for tool in body.get("tools", []))
+            for body in bodies
+        ),
+        "submit tool offered on every request",
     )
     _expect(
         "<commit-data>" in bodies[0]["messages"][0]["content"],
@@ -939,6 +1172,18 @@ def self_test() -> int:
     _expect("Guidance for coding agents" in read_result, "read_file content mismatch")
     escape_result = tool_results(bodies[3])[0]["content"]
     _expect("escapes the repository root" in escape_result, "path escape not rejected")
+    nudge = bodies[4]["messages"][-1]
+    _expect(
+        nudge["role"] == "user" and nudge["content"] == SUBMIT_NUDGE_PROMPT,
+        "prose answer was not nudged toward submit",
+    )
+    submit_rejection = tool_results(bodies[5])[0]["content"]
+    _expect(
+        "line breaks" in submit_rejection
+        and "issue-404" in submit_rejection
+        and "duplicates" in submit_rejection,
+        "invalid submission was not fed back with all errors",
+    )
 
     print("[self-test] agent loop against mock Messages API: ok")
     print("self-test passed")
