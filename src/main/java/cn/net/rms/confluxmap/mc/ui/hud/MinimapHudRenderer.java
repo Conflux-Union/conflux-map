@@ -513,46 +513,68 @@ public final class MinimapHudRenderer {
         final DimensionId currentDimension = gameBridge.session().dimension();
 
         for (final WaypointRenderEntry waypoint : waypointRenderCatalog.snapshot(currentDimension)) {
-            final double dx = waypoint.x() - player.x();
-            final double dz = waypoint.z() - player.z();
-            if (config.waypointRenderDistance > 0) {
-                final double dy = waypoint.y() - player.y();
-                if (Math.sqrt(dx * dx + dy * dy + dz * dz) > config.waypointRenderDistance) {
-                    continue;
-                }
-            }
-
-            final float rawX = (float) (dx * pxPerBlock);
-            final float rawY = (float) (dz * pxPerBlock);
-            final float screenOffX = rawX * cos - rawY * sin;
-            final float screenOffY = rawX * sin + rawY * cos;
-
-            final boolean inRange = circleFrame
-                ? Math.hypot(screenOffX, screenOffY) <= limit
-                : Math.abs(screenOffX) <= limit && Math.abs(screenOffY) <= limit;
-
-            final float markerX;
-            final float markerY;
-            if (inRange) {
-                markerX = centerX + screenOffX;
-                markerY = centerY + screenOffY;
-            } else if (config.waypointEdgeIndicatorsEnabled) {
-                final float k = circleFrame
-                    ? limit / (float) Math.hypot(screenOffX, screenOffY)
-                    : limit / Math.max(Math.abs(screenOffX), Math.abs(screenOffY));
-                markerX = centerX + screenOffX * k;
-                markerY = centerY + screenOffY * k;
-            } else {
+            final WaypointMarkerOffset offset = waypointMarkerOffset(
+                waypoint.x() - player.x(),
+                waypoint.z() - player.z(),
+                pxPerBlock,
+                cos,
+                sin,
+                limit,
+                circleFrame,
+                config.waypointEdgeIndicatorsEnabled
+            );
+            if (offset == null) {
                 continue;
             }
 
             WaypointMarkerRenderer.draw(
-                draw, client.textRenderer, waypoint, markerX, markerY,
+                draw, client.textRenderer, waypoint,
+                centerX + offset.x(), centerY + offset.y(),
                 WAYPOINT_MARKER_HALF_SIZE, 1f, false,
                 WaypointVerticalRelation.between(waypoint.y(), player.y())
             );
         }
     }
+
+    /**
+     * Screen offset of one minimap waypoint marker: the rotated, zoom-scaled world
+     * delta, clamped to the frame edge when it lands outside. Deliberately ignores
+     * the configured waypoint visibility distance - that cutoff belongs to the
+     * in-world HUD only; the minimap keeps every waypoint in the dimension
+     * identifiable through its edge indicator. Returns null for off-frame markers
+     * when edge indicators are disabled.
+     */
+    static WaypointMarkerOffset waypointMarkerOffset(
+        final double dx,
+        final double dz,
+        final float pxPerBlock,
+        final float cos,
+        final float sin,
+        final float limit,
+        final boolean circleFrame,
+        final boolean edgeIndicatorsEnabled
+    ) {
+        final float rawX = (float) (dx * pxPerBlock);
+        final float rawY = (float) (dz * pxPerBlock);
+        final float screenOffX = rawX * cos - rawY * sin;
+        final float screenOffY = rawX * sin + rawY * cos;
+
+        final boolean inRange = circleFrame
+            ? Math.hypot(screenOffX, screenOffY) <= limit
+            : Math.abs(screenOffX) <= limit && Math.abs(screenOffY) <= limit;
+        if (inRange) {
+            return new WaypointMarkerOffset(screenOffX, screenOffY);
+        }
+        if (!edgeIndicatorsEnabled) {
+            return null;
+        }
+        final float k = circleFrame
+            ? limit / (float) Math.hypot(screenOffX, screenOffY)
+            : limit / Math.max(Math.abs(screenOffX), Math.abs(screenOffY));
+        return new WaypointMarkerOffset(screenOffX * k, screenOffY * k);
+    }
+
+    record WaypointMarkerOffset(float x, float y) {}
 
     /**
      * Third-party markers from the public API, drawn above waypoints with the same
