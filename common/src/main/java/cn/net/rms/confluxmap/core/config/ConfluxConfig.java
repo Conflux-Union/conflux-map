@@ -182,7 +182,7 @@ public final class ConfluxConfig {
     public boolean waypointBeamsEnabled = true;
     /** In-world floating name/distance label above each visible waypoint. */
     public boolean waypointLabelsEnabled = true;
-    /** Opacity percentage for the waypoint icon in the in-world label; map icons are unchanged. */
+    /** Opacity percentage for the whole in-world waypoint label (icon, expanded panel background and text); map icons are unchanged. */
     public int waypointIconOpacity = DEFAULT_WAYPOINT_ICON_OPACITY;
     /** Opacity retained by non-highlighted waypoints while a highlight is active. */
     public int waypointHighlightDimOpacity = DEFAULT_WAYPOINT_HIGHLIGHT_DIM_OPACITY;

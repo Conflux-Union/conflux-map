@@ -894,6 +894,7 @@ public final class WaypointWorldRenderer {
         if (nearFade <= 0.01f) {
             return;
         }
+        final float labelOpacity = labelOpacityFactor(config);
         final double anchorX = worldX - cameraPos.x;
         final double anchorY = worldY + LABEL_Y_OFFSET - cameraPos.y;
         final double anchorZ = worldZ - cameraPos.z;
@@ -966,41 +967,39 @@ public final class WaypointWorldRenderer {
             //#if MC>=260200
             //$$ submitRect(
             //$$     plates, matrices, panelX, -LABEL_PANEL_HEIGHT / 2f,
-            //$$     panelWidth, LABEL_PANEL_HEIGHT, withAlpha(LABEL_BACKGROUND_COLOR, nearFade * visibilityAlpha)
+            //$$     panelWidth, LABEL_PANEL_HEIGHT,
+            //$$     withAlpha(LABEL_BACKGROUND_COLOR, nearFade * visibilityAlpha * labelOpacity)
             //$$ );
             //#else
             RenderUtil.fillRect3D(
                 matrices, panelX, -LABEL_PANEL_HEIGHT / 2f,
-                panelWidth, LABEL_PANEL_HEIGHT, withAlpha(LABEL_BACKGROUND_COLOR, nearFade * visibilityAlpha)
+                panelWidth, LABEL_PANEL_HEIGHT,
+                withAlpha(LABEL_BACKGROUND_COLOR, nearFade * visibilityAlpha * labelOpacity)
             );
             //#endif
         }
         //#if MC>=260200
         //$$ drawIcon(
         //$$     matrices, textRenderer, plates, text, submits, waypoint, iconHalfSize,
-        //$$     nearFade * config.waypointIconOpacity
-        //$$         / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY * visibilityAlpha,
+        //$$     nearFade * labelOpacity * visibilityAlpha,
         //$$     selected
         //$$ );
         //#elseif MC>=260100
         //$$ drawIcon(
         //$$     matrices, textRenderer, immediate, submits, waypoint, iconHalfSize,
-        //$$     nearFade * config.waypointIconOpacity
-        //$$         / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY * visibilityAlpha,
+        //$$     nearFade * labelOpacity * visibilityAlpha,
         //$$     selected
         //$$ );
         //#elseif MC>=12109
         //$$ drawIcon(
         //$$     matrices, textRenderer, immediate, commandQueue, waypoint, iconHalfSize,
-        //$$     nearFade * config.waypointIconOpacity
-        //$$         / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY * visibilityAlpha,
+        //$$     nearFade * labelOpacity * visibilityAlpha,
         //$$     selected
         //$$ );
         //#else
         drawIcon(
             matrices, textRenderer, immediate, waypoint, iconHalfSize,
-            nearFade * config.waypointIconOpacity
-                / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY * visibilityAlpha,
+            nearFade * labelOpacity * visibilityAlpha,
             selected
         );
         //#endif
@@ -1010,7 +1009,7 @@ public final class WaypointWorldRenderer {
         );
         if (textReveal > 0.01f) {
             final float textX = panelX + LABEL_PANEL_PADDING + (1f - textReveal) * 4f;
-            final float textAlpha = nearFade * textReveal * visibilityAlpha;
+            final float textAlpha = nearFade * textReveal * visibilityAlpha * labelOpacity;
             //#if MC>=260200
             //$$ submitText(
             //$$     text, matrices, name, textX, -9f,
@@ -1191,6 +1190,15 @@ public final class WaypointWorldRenderer {
     //$$ }
     //#endif
     //#endif
+
+    /**
+     * User opacity for the whole in-world waypoint label: icon plates, the expanded panel
+     * background, and the panel text. The panel background keeps its own base alpha
+     * ({@link #LABEL_BACKGROUND_COLOR}); this factor scales whatever the base produces.
+     */
+    static float labelOpacityFactor(final ConfluxConfig config) {
+        return config.waypointIconOpacity / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY;
+    }
 
     static int withAlpha(final int argb, final float alpha) {
         final int a = Math.round(Argb.alpha(argb) * MathHelper.clamp(alpha, 0f, 1f));

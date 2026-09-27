@@ -631,7 +631,7 @@ public final class ConfigScreen extends ConfluxScreen {
                     () -> config.waypointLabelsEnabled, v -> config.waypointLabelsEnabled = v
                 );
                 y = addIntSliderRow(
-                    y, "confluxmap.config.waypoints.icon_opacity",
+                    y, "confluxmap.config.waypoints.label_opacity",
                     ConfluxConfig.MIN_WAYPOINT_ICON_OPACITY, ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY,
                     () -> config.waypointIconOpacity, v -> config.waypointIconOpacity = v,
                     ConfigScreen::percentText

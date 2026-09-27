@@ -187,6 +187,7 @@ public final class WaypointItemHudRenderer {
         final float panelX = centerX + iconHalfSize
             + WaypointWorldRenderer.LABEL_PANEL_GAP * unitScale;
         final float visibilityAlpha = nearFade * label.visibilityAlpha();
+        final float labelOpacity = WaypointWorldRenderer.labelOpacityFactor(config);
         if (panelWidth > 0.5f) {
             fill(
                 draw,
@@ -195,13 +196,12 @@ public final class WaypointItemHudRenderer {
                 panelX + panelWidth,
                 centerY + WaypointWorldRenderer.LABEL_PANEL_HEIGHT * unitScale / 2f,
                 WaypointWorldRenderer.withAlpha(
-                    WaypointWorldRenderer.LABEL_BACKGROUND_COLOR, visibilityAlpha
+                    WaypointWorldRenderer.LABEL_BACKGROUND_COLOR, visibilityAlpha * labelOpacity
                 )
             );
         }
 
-        final float plateAlpha = visibilityAlpha * config.waypointIconOpacity
-            / (float) ConfluxConfig.MAX_WAYPOINT_ICON_OPACITY;
+        final float plateAlpha = visibilityAlpha * labelOpacity;
         fill(
             draw,
             centerX - iconHalfSize - unitScale,
@@ -253,7 +253,7 @@ public final class WaypointItemHudRenderer {
             + WaypointWorldRenderer.LABEL_PANEL_GAP
             + WaypointWorldRenderer.LABEL_PANEL_PADDING
             + (1f - textReveal) * 4f;
-        final float textAlpha = visibilityAlpha * textReveal;
+        final float textAlpha = visibilityAlpha * textReveal * labelOpacity;
         draw.pushTransform();
         draw.translate(centerX, centerY);
         draw.scale(unitScale, unitScale);
