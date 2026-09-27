@@ -12,15 +12,15 @@ final class RadarMarkerPresentationTest {
     void minimapUsesConfiguredDefaultAndPlayerListKeyCanExpandDots() {
         final RadarMarkerRenderer.Presentation portraits =
             RadarMarkerRenderer.Presentation.minimap(
-                ConfluxConfig.RadarDisplayMode.PORTRAITS, false, true
+                ConfluxConfig.RadarDisplayMode.PORTRAITS, false, true, false
             );
         final RadarMarkerRenderer.Presentation dots =
             RadarMarkerRenderer.Presentation.minimap(
-                ConfluxConfig.RadarDisplayMode.DOTS, false, true
+                ConfluxConfig.RadarDisplayMode.DOTS, false, true, false
             );
         final RadarMarkerRenderer.Presentation expandedDots =
             RadarMarkerRenderer.Presentation.minimap(
-                ConfluxConfig.RadarDisplayMode.DOTS, true, true
+                ConfluxConfig.RadarDisplayMode.DOTS, true, true, false
             );
 
         assertTrue(portraits.detailedIcons());
@@ -29,6 +29,38 @@ final class RadarMarkerPresentationTest {
         assertFalse(dots.showPlayerNames());
         assertTrue(expandedDots.detailedIcons());
         assertTrue(expandedDots.showPlayerNames());
+    }
+
+    @Test
+    void alwaysShowNamesRevealsNamesWithoutThePlayerListKey() {
+        final RadarMarkerRenderer.Presentation portraits =
+            RadarMarkerRenderer.Presentation.minimap(
+                ConfluxConfig.RadarDisplayMode.PORTRAITS, false, true, true
+            );
+        final RadarMarkerRenderer.Presentation dots =
+            RadarMarkerRenderer.Presentation.minimap(
+                ConfluxConfig.RadarDisplayMode.DOTS, false, true, true
+            );
+
+        assertTrue(portraits.detailedIcons());
+        assertTrue(portraits.showPlayerNames());
+        assertFalse(dots.detailedIcons());
+        assertTrue(dots.showPlayerNames());
+    }
+
+    @Test
+    void alwaysShowNamesCannotOverrideTheNameMasterSwitch() {
+        final RadarMarkerRenderer.Presentation portraits =
+            RadarMarkerRenderer.Presentation.minimap(
+                ConfluxConfig.RadarDisplayMode.PORTRAITS, false, false, true
+            );
+        final RadarMarkerRenderer.Presentation expandedDots =
+            RadarMarkerRenderer.Presentation.minimap(
+                ConfluxConfig.RadarDisplayMode.DOTS, true, false, true
+            );
+
+        assertFalse(portraits.showPlayerNames());
+        assertFalse(expandedDots.showPlayerNames());
     }
 
     @Test

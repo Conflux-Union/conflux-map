@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 
 final class RadarPlayerVisibilityTest {
     @Test
-    void minimapAlwaysShowsPlayersButOnlyRevealsNamesWhilePlayerListKeyIsHeld() throws IOException {
+    void minimapAlwaysShowsPlayersAndRevealsNamesByPlayerListKeyOrAlwaysToggle() throws IOException {
         final Path root = findProjectRoot();
         final String minimap = Files.readString(root.resolve(
             "src/main/java/cn/net/rms/confluxmap/mc/ui/hud/MinimapHudRenderer.java"
@@ -29,7 +29,8 @@ final class RadarPlayerVisibilityTest {
         ));
         assertTrue(minimap.contains(
             "RadarMarkerRenderer.Presentation.minimap(\n"
-                + "                config.radarDisplayMode, playerListPressed, config.radarShowPlayerNames\n"
+                + "                config.radarDisplayMode, playerListPressed, config.radarShowPlayerNames,\n"
+                + "                config.radarAlwaysShowPlayerNames\n"
                 + "            );"
         ));
         assertFalse(minimap.contains(playerFilter));
@@ -42,7 +43,7 @@ final class RadarPlayerVisibilityTest {
             "return category == RadarCategory.PLAYER || presentation.detailedIcons();"
         ));
         assertTrue(renderer.contains(
-            "return detailed(playerListPressed && showPlayerNames);"
+            "final boolean names = showPlayerNames && (playerListPressed || alwaysShowPlayerNames);"
         ));
         assertFalse(fullscreen.contains("MinecraftAccess.isPlayerListKeyPressed(client)"));
         assertFalse(renderer.contains("MinecraftAccess.isPlayerListKeyPressed(client)"));

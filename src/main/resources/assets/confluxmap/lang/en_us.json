@@ -342,6 +342,7 @@
   "confluxmap.config.radar.show_passive": "Show Friendly Mobs: %s",
   "confluxmap.config.radar.show_other": "Show Items and Other Entities: %s",
   "confluxmap.config.radar.show_player_names": "Show Player Names: %s",
+  "confluxmap.config.radar.always_show_player_names": "Always Show Names on Minimap: %s",
   "confluxmap.config.radar.max_entities": "Radar Target Limit: %s",
   "confluxmap.config.radar.player_icon_outline": "Radar Icon Outline: %s",
   "confluxmap.config.radar.icon_outline_thickness": "Outline Thickness: %s",

@@ -149,6 +149,13 @@ public final class ConfluxConfig {
     /** Dropped items, vehicles, projectiles, and defensive fallback targets. */
     public boolean radarShowOther = true;
     public boolean radarShowPlayerNames = true;
+    /**
+     * Show player name labels on the minimap without holding the player-list key. The
+     * fullscreen map always honors {@link #radarShowPlayerNames}; this only lifts the
+     * minimap's key-held requirement, and {@link #radarShowPlayerNames} stays the master
+     * switch. Ships off to keep the default minimap uncluttered.
+     */
+    public boolean radarAlwaysShowPlayerNames;
     public int radarMaxEntities = 100;
     /** Draw an outline around radar portraits; retained name keeps older config files compatible. */
     public boolean radarPlayerIconOutlineEnabled = true;
@@ -272,6 +279,7 @@ public final class ConfluxConfig {
         c.radarShowPassive = radarShowPassive;
         c.radarShowOther = radarShowOther;
         c.radarShowPlayerNames = radarShowPlayerNames;
+        c.radarAlwaysShowPlayerNames = radarAlwaysShowPlayerNames;
         c.radarMaxEntities = radarMaxEntities;
         c.radarPlayerIconOutlineEnabled = radarPlayerIconOutlineEnabled;
         c.radarIconOutlineThickness = radarIconOutlineThickness;

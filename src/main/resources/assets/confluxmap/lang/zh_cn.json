@@ -342,6 +342,7 @@
   "confluxmap.config.radar.show_passive": "显示友善生物：%s",
   "confluxmap.config.radar.show_other": "显示掉落物及其他实体：%s",
   "confluxmap.config.radar.show_player_names": "显示玩家名称：%s",
+  "confluxmap.config.radar.always_show_player_names": "小地图常显玩家名称：%s",
   "confluxmap.config.radar.max_entities": "雷达目标数量上限：%s",
   "confluxmap.config.radar.player_icon_outline": "雷达图标描边：%s",
   "confluxmap.config.radar.icon_outline_thickness": "描边粗细：%s",

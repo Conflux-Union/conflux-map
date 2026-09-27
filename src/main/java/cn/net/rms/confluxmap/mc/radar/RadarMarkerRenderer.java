@@ -68,6 +68,7 @@ public final class RadarMarkerRenderer {
     /** Surface-selected marker detail level and player-name visibility. */
     public record Presentation(boolean detailedIcons, boolean showPlayerNames) {
         private static final Presentation COMPACT = new Presentation(false, false);
+        private static final Presentation COMPACT_WITH_NAMES = new Presentation(false, true);
         private static final Presentation DETAILED = new Presentation(true, false);
         private static final Presentation DETAILED_WITH_NAMES = new Presentation(true, true);
 
@@ -79,16 +80,23 @@ public final class RadarMarkerRenderer {
             return showPlayerNames ? DETAILED_WITH_NAMES : DETAILED;
         }
 
-        /** Resolves the configured minimap default plus the temporary player-list expansion. */
+        /**
+         * Resolves the configured minimap default plus the temporary player-list expansion.
+         * {@code alwaysShowPlayerNames} lifts the key-held requirement for names; the dots-only
+         * resting state keeps its compact icons but may still carry names (players render
+         * portraits either way).
+         */
         public static Presentation minimap(
             final ConfluxConfig.RadarDisplayMode displayMode,
             final boolean playerListPressed,
-            final boolean showPlayerNames
+            final boolean showPlayerNames,
+            final boolean alwaysShowPlayerNames
         ) {
+            final boolean names = showPlayerNames && (playerListPressed || alwaysShowPlayerNames);
             if (displayMode == ConfluxConfig.RadarDisplayMode.DOTS && !playerListPressed) {
-                return compact();
+                return names ? COMPACT_WITH_NAMES : COMPACT;
             }
-            return detailed(playerListPressed && showPlayerNames);
+            return detailed(names);
         }
     }
 

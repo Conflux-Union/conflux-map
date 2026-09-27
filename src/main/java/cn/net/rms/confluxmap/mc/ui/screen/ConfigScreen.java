@@ -549,6 +549,12 @@ public final class ConfigScreen extends ConfluxScreen {
                     () -> config.radarShowPlayerNames, v -> config.radarShowPlayerNames = v,
                     radarControlsActive, radarTooltipKey
                 );
+                y = addToggleRow(
+                    y, "confluxmap.config.radar.always_show_player_names",
+                    () -> config.radarAlwaysShowPlayerNames,
+                    v -> config.radarAlwaysShowPlayerNames = v,
+                    radarControlsActive, radarTooltipKey
+                );
                 y = addIntSliderRow(
                     y, "confluxmap.config.radar.max_entities", 1, 500,
                     () -> config.radarMaxEntities, v -> config.radarMaxEntities = v,

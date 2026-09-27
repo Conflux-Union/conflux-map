@@ -733,7 +733,8 @@ public final class MinimapHudRenderer {
         final boolean playerListPressed = MinecraftAccess.isPlayerListKeyPressed(client);
         final RadarMarkerRenderer.Presentation presentation =
             RadarMarkerRenderer.Presentation.minimap(
-                config.radarDisplayMode, playerListPressed, config.radarShowPlayerNames
+                config.radarDisplayMode, playerListPressed, config.radarShowPlayerNames,
+                config.radarAlwaysShowPlayerNames
             );
         final List<ServerPlayerRadarState.PlayerView> serverPlayers =
             config.radarShowPlayers
