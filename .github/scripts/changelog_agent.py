@@ -2,8 +2,9 @@
 """Agentic changelog generator for the Release workflow.
 
 Instead of stuffing every piece of context into one passive prompt, this
-script runs a tool-calling agent against the MiMo Anthropic-compatible
-Messages API. The model investigates the checked-out repository with
+script runs a tool-calling agent against an Anthropic-compatible Messages
+API (default endpoint: the cf.api.fan relay serving the MiMo model family;
+override with MIMO_API_BASE / MIMO_MODEL). The model investigates the checked-out repository with
 read-only tools -- a strictly gated read-only bash command runner and a
 bounded file reader -- until it can decide which changes are player-visible,
 then submits the bilingual changelog through a structured submit tool.
@@ -47,7 +48,7 @@ from threading import Lock, Thread
 
 import anthropic
 
-ANTHROPIC_BASE_URL_DEFAULT = "https://api.xiaomimimo.com/anthropic"
+ANTHROPIC_BASE_URL_DEFAULT = "https://cf.api.fan"
 MODEL_DEFAULT = "mimo-v2.6-flash"
 MAX_TOOL_OUTPUT_CHARS = 24_000
 
