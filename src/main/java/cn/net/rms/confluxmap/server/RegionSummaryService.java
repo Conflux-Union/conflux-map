@@ -1049,7 +1049,7 @@ public final class RegionSummaryService {
             );
         } catch (final Exception e) {
             ConfluxMapMod.LOGGER.warn(
-                "companion: patch build failed for tile {},{} lod {} ({})",
+                "[ConfluxMap] companion: patch build failed for tile {},{} lod {} ({})",
                 job.tileX(), job.tileZ(), job.lod(), e.getMessage()
             );
             return unavailable(job, ioNanos, computeNanos);

@@ -104,7 +104,7 @@ public final class ServerNetworking {
             validatePayload(payload);
         } catch (final ProtoException e) {
             ConfluxMapMod.LOGGER.warn(
-                "companion: dropping malformed payload from {} ({})",
+                "[ConfluxMap] companion: dropping malformed payload from {} ({})",
                 MinecraftAccess.playerName(player),
                 e.getMessage()
             );
@@ -130,12 +130,12 @@ public final class ServerNetworking {
                 handleMapRegionSyncSubscribe(server, player, req);
             } else {
                 ConfluxMapMod.LOGGER.warn(
-                    "companion: unexpected {} from {} (server-side handlers expect C2S only)",
+                    "[ConfluxMap] companion: unexpected {} from {} (server-side handlers expect C2S only)",
                     msg.getClass().getSimpleName(), MinecraftAccess.playerName(player)
                 );
             }
         } catch (final ProtoException e) {
-            ConfluxMapMod.LOGGER.warn("companion: undecodable {}-byte payload from {} ({})",
+            ConfluxMapMod.LOGGER.warn("[ConfluxMap] companion: undecodable {}-byte payload from {} ({})",
                 payload.length, MinecraftAccess.playerName(player), e.getMessage());
             recordMalformed(player);
         }
@@ -193,7 +193,7 @@ public final class ServerNetworking {
         final HelloPolicyS2C policy = buildPolicy(server, session);
         send(player, policy);
         ConfluxMapMod.LOGGER.info(
-            "companion: replied HELLO_POLICY to {} (modVersion={} predictorVersion={} corrections={} absolute={} negotiated={} worldId={} seedGranted={})",
+            "[ConfluxMap] companion: replied HELLO_POLICY to {} (modVersion={} predictorVersion={} corrections={} absolute={} negotiated={} worldId={} seedGranted={})",
             MinecraftAccess.playerName(player), hello.modVersion(), hello.predictorVersion(),
             policy.flags().correctionsEnabled(), session.forceAbsolute(),
             handshake.selection() != null, policy.worldId(), policy.flags().seedGranted()
@@ -406,7 +406,7 @@ public final class ServerNetworking {
         try {
             payload = MsgCodec.encode(msg);
         } catch (final ProtoException e) {
-            ConfluxMapMod.LOGGER.error("companion: failed to serialize {}: {}", msg.getClass().getSimpleName(), e.getMessage());
+            ConfluxMapMod.LOGGER.error("[ConfluxMap] companion: failed to serialize {}: {}", msg.getClass().getSimpleName(), e.getMessage());
             return;
         }
         send(player, payload);
@@ -425,7 +425,7 @@ public final class ServerNetworking {
             send(player, session.encodeOutbound(message));
         } catch (final ProtoException e) {
             ConfluxMapMod.LOGGER.warn(
-                "companion: could not encode {} ({})",
+                "[ConfluxMap] companion: could not encode {} ({})",
                 message.getClass().getSimpleName(), e.getMessage()
             );
         }

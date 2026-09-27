@@ -152,7 +152,7 @@ public final class QuadraGenLayouts {
     public static Optional<Config> parse(final Path configPath) {
         if (!Files.isRegularFile(configPath)) {
             ConfluxMapMod.LOGGER.warn(
-                "quadra-gen is loaded but {} is missing; predicted quadrants stay unmasked",
+                "[ConfluxMap] quadra-gen is loaded but {} is missing; predicted quadrants stay unmasked",
                 configPath
             );
             return Optional.empty();
@@ -162,14 +162,14 @@ public final class QuadraGenLayouts {
             config = GSON.fromJson(reader, Config.class);
         } catch (final Exception e) {
             ConfluxMapMod.LOGGER.warn(
-                "quadra-gen config {} is unreadable ({}); predicted quadrants stay unmasked",
+                "[ConfluxMap] quadra-gen config {} is unreadable ({}); predicted quadrants stay unmasked",
                 configPath, e.getMessage()
             );
             return Optional.empty();
         }
         if (config == null || config.schemaVersion == null || config.schemaVersion != 1) {
             ConfluxMapMod.LOGGER.warn(
-                "quadra-gen config {} has an unsupported schema_version ({}); predicted quadrants stay unmasked",
+                "[ConfluxMap] quadra-gen config {} has an unsupported schema_version ({}); predicted quadrants stay unmasked",
                 configPath, config == null || config.schemaVersion == null ? "-" : config.schemaVersion
             );
             return Optional.empty();
@@ -191,7 +191,7 @@ public final class QuadraGenLayouts {
             ));
         } catch (final Exception e) {
             ConfluxMapMod.LOGGER.warn(
-                "quadra-gen config for {} is invalid ({}); predicted quadrants stay unmasked",
+                "[ConfluxMap] quadra-gen config for {} is invalid ({}); predicted quadrants stay unmasked",
                 world.getRegistryKey().getValue(), e.getMessage()
             );
             return Optional.empty();

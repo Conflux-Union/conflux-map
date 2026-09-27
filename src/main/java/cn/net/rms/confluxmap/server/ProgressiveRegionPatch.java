@@ -392,7 +392,7 @@ final class ProgressiveRegionPatch {
                     prepared = baselineFactory.prepare(origin);
                 } catch (final RuntimeException e) {
                     ConfluxMapMod.LOGGER.warn(
-                        "companion: progressive baseline failed for tile {},{} lod {} ({})",
+                        "[ConfluxMap] companion: progressive baseline failed for tile {},{} lod {} ({})",
                         tileX, tileZ, lod, e.getMessage()
                     );
                     prepared = PatchBuilder.PreparedBaseline.absoluteOnly();
@@ -437,7 +437,7 @@ final class ProgressiveRegionPatch {
                     result = patchEncoder.encode(snapshot, sinceRevision, prepared);
                 } catch (final IllegalArgumentException e) {
                     ConfluxMapMod.LOGGER.warn(
-                        "companion: progressive patch too large for tile {},{} lod {} ({})",
+                        "[ConfluxMap] companion: progressive patch too large for tile {},{} lod {} ({})",
                         tileX, tileZ, lod, e.getMessage()
                     );
                     result = PatchBuilder.unavailable();

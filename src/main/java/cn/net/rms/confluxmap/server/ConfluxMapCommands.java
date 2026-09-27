@@ -382,7 +382,7 @@ final class ConfluxMapCommands {
         final ConfluxMapCompanion.SharedWaypointToggleResult result
     ) {
         ConfluxMapMod.LOGGER.info(
-            "shared-waypoint admin actor={} action={} result={}",
+            "[ConfluxMap] shared-waypoint admin actor={} action={} result={}",
             source.getName(),
             action,
             result

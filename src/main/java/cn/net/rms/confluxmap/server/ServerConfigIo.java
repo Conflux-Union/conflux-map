@@ -60,7 +60,7 @@ public final class ServerConfigIo {
             upgradeOnDisk(json, config);
             return config;
         } catch (final IOException | JsonParseException e) {
-            logger.warn("Server config {} unreadable ({}), quarantining and using defaults", file, e.toString());
+            logger.warn("[ConfluxMap] Server config {} unreadable ({}), quarantining and using defaults", file, e.toString());
             quarantine();
             final ServerConfig fresh = new ServerConfig();
             save(fresh);
@@ -82,7 +82,7 @@ public final class ServerConfigIo {
             move(tmp);
             return true;
         } catch (final IOException | RuntimeException e) {
-            logger.error("Failed to save server config to {}", file, e);
+            logger.error("[ConfluxMap] Failed to save server config to {}", file, e);
             return false;
         }
     }
@@ -124,14 +124,14 @@ public final class ServerConfigIo {
     private void upgradeOnDisk(final String onDisk, final ServerConfig config) {
         if (config.schemaVersion > ServerConfig.SCHEMA_VERSION) {
             logger.warn(
-                "Server config {} has schema {} newer than this build's {}; leaving the file untouched",
+                "[ConfluxMap] Server config {} has schema {} newer than this build's {}; leaving the file untouched",
                 file, config.schemaVersion, ServerConfig.SCHEMA_VERSION
             );
             return;
         }
         config.schemaVersion = ServerConfig.SCHEMA_VERSION;
         if (!GSON.toJson(config).equals(onDisk)) {
-            logger.info("Updating server config {} to the current schema (missing fields added)", file);
+            logger.info("[ConfluxMap] Updating server config {} to the current schema (missing fields added)", file);
             saveAtomically(config);
         }
     }
@@ -148,7 +148,7 @@ public final class ServerConfigIo {
         try {
             Files.move(file, file.resolveSibling(file.getFileName() + ".bad"), StandardCopyOption.REPLACE_EXISTING);
         } catch (final IOException e) {
-            logger.warn("Could not quarantine {}", file, e);
+            logger.warn("[ConfluxMap] Could not quarantine {}", file, e);
         }
     }
 }

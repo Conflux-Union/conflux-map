@@ -145,7 +145,7 @@ public final class SharedWaypointIo implements SharedWaypointPersistence {
             final SharedWaypointStore.Snapshot snapshot = fromShape(shape);
             if (schemaVersion < SCHEMA_VERSION) {
                 logger.info(
-                    "Migrating shared waypoints at {} from schema {} to {}",
+                    "[ConfluxMap] Migrating shared waypoints at {} from schema {} to {}",
                     file, schemaVersion, SCHEMA_VERSION
                 );
                 save(snapshot);
@@ -314,7 +314,7 @@ public final class SharedWaypointIo implements SharedWaypointPersistence {
         final String reason,
         final Exception cause
     ) throws IOException {
-        logger.warn("Shared waypoint file {} is corrupt ({}); quarantining", file, reason);
+        logger.warn("[ConfluxMap] Shared waypoint file {} is corrupt ({}); quarantining", file, reason);
         try {
             Files.move(
                 file,
@@ -330,7 +330,7 @@ public final class SharedWaypointIo implements SharedWaypointPersistence {
                 quarantineFailure
             );
         }
-        logger.warn("Shared waypoint file {} was quarantined; starting empty", file);
+        logger.warn("[ConfluxMap] Shared waypoint file {} was quarantined; starting empty", file);
         return emptySnapshot();
     }
 
@@ -354,7 +354,7 @@ public final class SharedWaypointIo implements SharedWaypointPersistence {
         final Path aside = file.resolveSibling(file.getFileName() + ".bak");
         Files.move(file, aside, StandardCopyOption.REPLACE_EXISTING);
         logger.warn(
-            "Shared waypoints at {} belong to server {}, not {}; the world folder looks copied. "
+            "[ConfluxMap] Shared waypoints at {} belong to server {}, not {}; the world folder looks copied. "
                 + "Set aside as {} and starting an empty list.",
             file, fileOwnerInstanceId, ownerInstanceId, aside.getFileName()
         );

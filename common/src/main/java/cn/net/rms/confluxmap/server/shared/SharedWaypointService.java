@@ -314,7 +314,7 @@ public final class SharedWaypointService {
                 valid.add(waypoint);
             } else {
                 logger.warn(
-                    "Quarantining persisted shared waypoint {} in {}: invalid for the active world",
+                    "[ConfluxMap] Quarantining persisted shared waypoint {} in {}: invalid for the active world",
                     waypoint.id(), waypoint.dimensionId()
                 );
             }
@@ -548,7 +548,7 @@ public final class SharedWaypointService {
         try {
             persistence.save(mutation.snapshot());
         } catch (final IOException | RuntimeException e) {
-            logger.error("Shared waypoint persistence failed for operation {} by actor {}", operationId, actor.playerId(), e);
+            logger.error("[ConfluxMap] Shared waypoint persistence failed for operation {} by actor {}", operationId, actor.playerId(), e);
             return finish(player, request, actor, operationId, action, waypointId,
                 rejected(operationId, MutationError.PERSISTENCE_FAILED), now);
         }
@@ -625,7 +625,7 @@ public final class SharedWaypointService {
         try {
             auditSink.record(event);
         } catch (final RuntimeException e) {
-            logger.error("Shared waypoint audit sink failed for operation {} by actor {}", operationId, actor.playerId(), e);
+            logger.error("[ConfluxMap] Shared waypoint audit sink failed for operation {} by actor {}", operationId, actor.playerId(), e);
         }
     }
 

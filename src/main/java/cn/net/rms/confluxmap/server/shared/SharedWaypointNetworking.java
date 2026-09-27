@@ -128,7 +128,7 @@ public final class SharedWaypointNetworking {
     ) {
         final SharedWaypointSessionHandler.MalformedOutcome outcome = sessions.recordMalformed(player.getUuid());
         ConfluxMapMod.LOGGER.warn(
-            "shared-waypoint: dropped malformed {}-byte payload from {} (strike {}/{}, reason={})",
+            "[ConfluxMap] shared-waypoint: dropped malformed {}-byte payload from {} (strike {}/{}, reason={})",
             payloadBytes,
             MinecraftAccess.playerName(player),
             outcome.strikes(),
@@ -137,7 +137,7 @@ public final class SharedWaypointNetworking {
         );
         if (outcome.newlyMuted()) {
             ConfluxMapMod.LOGGER.warn(
-                "shared-waypoint: muted malformed packets from {} until disconnect",
+                "[ConfluxMap] shared-waypoint: muted malformed packets from {} until disconnect",
                 MinecraftAccess.playerName(player)
             );
         }
@@ -209,7 +209,7 @@ public final class SharedWaypointNetworking {
             );
         } catch (final SharedWaypointProtocolException | RuntimeException e) {
             ConfluxMapMod.LOGGER.error(
-                "shared-waypoint: failed to encode {} for {}",
+                "[ConfluxMap] shared-waypoint: failed to encode {} for {}",
                 message.getClass().getSimpleName(),
                 MinecraftAccess.playerName(player),
                 e

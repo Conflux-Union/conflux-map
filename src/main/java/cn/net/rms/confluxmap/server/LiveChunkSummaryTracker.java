@@ -367,7 +367,7 @@ final class LiveChunkSummaryTracker {
             }
         } catch (final RuntimeException e) {
             ConfluxMapMod.LOGGER.warn(
-                "companion: failed to summarize live chunk {},{} in {} ({})",
+                "[ConfluxMap] companion: failed to summarize live chunk {},{} in {} ({})",
                 chunkX, chunkZ, dimension, e.getMessage()
             );
         }
@@ -427,7 +427,7 @@ final class LiveChunkSummaryTracker {
                 disk.saveLiveChunks(key.dimension(), key.regionX(), key.regionZ(), mtime, updates);
             } catch (final IOException e) {
                 ConfluxMapMod.LOGGER.warn(
-                    "companion: failed to persist live summaries for region {},{} in {} ({})",
+                    "[ConfluxMap] companion: failed to persist live summaries for region {},{} in {} ({})",
                     key.regionX(), key.regionZ(), key.dimension(), e.getMessage()
                 );
                 continue;

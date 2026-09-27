@@ -105,7 +105,7 @@ public final class ConfluxMapCompanion {
                 loadStates.onChunkUnload(world, chunk);
             }
         });
-        ConfluxMapMod.LOGGER.info("companion initialized");
+        ConfluxMapMod.LOGGER.info("[ConfluxMap] companion initialized");
     }
 
     private void onServerTick(final MinecraftServer server) {
@@ -155,13 +155,13 @@ public final class ConfluxMapCompanion {
             ));
         }
         if (!config.enabled) {
-            ConfluxMapMod.LOGGER.info("companion disabled by server.json (enabled=false); no HELLO replies");
+            ConfluxMapMod.LOGGER.info("[ConfluxMap] companion disabled by server.json (enabled=false); no HELLO replies");
             return;
         }
         activateIfNeeded(server);
         if (!runtime.isActive()) {
             ConfluxMapMod.LOGGER.info(
-                "companion inactive in local singleplayer; publishing to LAN will activate it"
+                "[ConfluxMap] companion inactive in local singleplayer; publishing to LAN will activate it"
             );
         }
     }
@@ -188,7 +188,7 @@ public final class ConfluxMapCompanion {
         }
         sharedWaypoints = null;
         webMap = null;
-        ConfluxMapMod.LOGGER.info("companion stopping");
+        ConfluxMapMod.LOGGER.info("[ConfluxMap] companion stopping");
     }
 
     private void onServerStopped(final MinecraftServer server) {
@@ -206,7 +206,7 @@ public final class ConfluxMapCompanion {
         runtime.deactivate();
         if (wasActive) {
             worldIds.forget(server);
-            ConfluxMapMod.LOGGER.info("companion stopped");
+            ConfluxMapMod.LOGGER.info("[ConfluxMap] companion stopped");
         }
     }
 
@@ -226,7 +226,7 @@ public final class ConfluxMapCompanion {
             privacy.setHidden(playerId, hidden);
             return true;
         } catch (final IOException e) {
-            ConfluxMapMod.LOGGER.error("could not persist web-map privacy preference", e);
+            ConfluxMapMod.LOGGER.error("[ConfluxMap] could not persist web-map privacy preference", e);
             return false;
         }
     }
@@ -375,7 +375,7 @@ public final class ConfluxMapCompanion {
                 limits,
                 config.sharedWaypointAccessPolicy(),
                 event -> ConfluxMapMod.LOGGER.info(
-                    "shared-waypoint audit operationId={} actorId={} action={} status={} error={} waypointId={} revision={}",
+                    "[ConfluxMap] shared-waypoint audit operationId={} actorId={} action={} status={} error={} waypointId={} revision={}",
                     event.operationId(), event.actorId(), event.action(), event.status(), event.error(),
                     event.waypointId(), event.revision()
                 ),
@@ -383,11 +383,11 @@ public final class ConfluxMapCompanion {
             );
         } catch (final SharedWaypointIo.UnsupportedSchemaVersionException e) {
             ConfluxMapMod.LOGGER.error(
-                "Shared waypoints disabled: {} uses unsupported schema {} (supported={}); file was preserved",
+                "[ConfluxMap] Shared waypoints disabled: {} uses unsupported schema {} (supported={}); file was preserved",
                 io.file(), e.schemaVersion(), SharedWaypointIo.SCHEMA_VERSION
             );
         } catch (final IOException | RuntimeException e) {
-            ConfluxMapMod.LOGGER.error("Shared waypoints disabled: could not initialize {}", io.file(), e);
+            ConfluxMapMod.LOGGER.error("[ConfluxMap] Shared waypoints disabled: could not initialize {}", io.file(), e);
         }
         return null;
     }
@@ -403,7 +403,7 @@ public final class ConfluxMapCompanion {
         summaries.setQuadrantLayouts(quadraLayouts);
         if (!quadraLayouts.isEmpty()) {
             ConfluxMapMod.LOGGER.info(
-                "companion: quadra-gen quadrant layouts active for {}",
+                "[ConfluxMap] companion: quadra-gen quadrant layouts active for {}",
                 quadraLayouts.keySet()
             );
         }
@@ -417,7 +417,7 @@ public final class ConfluxMapCompanion {
         try {
             webMapPrivacy.load();
         } catch (final IOException e) {
-            ConfluxMapMod.LOGGER.error("could not load web-map privacy preferences", e);
+            ConfluxMapMod.LOGGER.error("[ConfluxMap] could not load web-map privacy preferences", e);
         }
         if (config.shareWaypoints) {
             sharedWaypoints = loadSharedWaypoints(server);
@@ -427,16 +427,16 @@ public final class ConfluxMapCompanion {
                 webMapBackend = new FabricWebMapBackend(server, this);
                 webMap = WebMapServer.start(config.webMap, webMapBackend);
                 ConfluxMapMod.LOGGER.info(
-                    "web map listening on {}:{}",
+                    "[ConfluxMap] web map listening on {}:{}",
                     config.webMap.bindAddress, config.webMap.port
                 );
             } catch (final IOException e) {
                 webMapBackend = null;
-                ConfluxMapMod.LOGGER.error("web map failed to start", e);
+                ConfluxMapMod.LOGGER.error("[ConfluxMap] web map failed to start", e);
             }
         }
         ConfluxMapMod.LOGGER.info(
-            "companion ready (shareSeed={} allowBiomeMap={} allowStructureSearch={} shareCorrections={} shareChunkLoadState={} allowEntityRadar={} shareWaypoints={} maxTilesPerRequest={})",
+            "[ConfluxMap] companion ready (shareSeed={} allowBiomeMap={} allowStructureSearch={} shareCorrections={} shareChunkLoadState={} allowEntityRadar={} shareWaypoints={} maxTilesPerRequest={})",
             config.shareSeed, config.allowBiomeMap, config.allowStructureSearch,
             config.shareCorrections, chunkLoadStates != null, config.allowEntityRadar,
             sharedWaypoints != null, config.maxTilesPerRequest
