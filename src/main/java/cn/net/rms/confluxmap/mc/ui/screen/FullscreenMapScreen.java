@@ -59,6 +59,7 @@ import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.radar.ServerPlayerRadarEntries;
 import cn.net.rms.confluxmap.core.radar.ServerPlayerRadarState;
+import cn.net.rms.confluxmap.core.selection.ChunkSelectionMath;
 import cn.net.rms.confluxmap.core.store.MapWorld;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.store.ColumnStore;
@@ -284,6 +285,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final float MEASURE_PREVIEW_STROKE_WIDTH = 1.5f;
     private static final float MEASURE_VERTEX_RADIUS = 3.0f;
     private static final double MEASURE_LABEL_OFFSET_PX = 9.0;
+    /** Region selection: amber stays distinct from the teal measure and blue export overlays. */
+    private static final int REGION_SELECT_FILL = 0x26FFE066;
+    private static final int REGION_SELECT_BORDER = 0xFFFFE066;
+    private static final int REGION_SELECT_LABEL_BACKGROUND = 0xD0181822;
+    private static final int REGION_SELECT_LABEL_PADDING = 3;
+    private static final int REGION_SELECT_LABEL_LINE_GAP = 2;
     private static final int BACKGROUND_COLOR = 0xFF101018;
     private static final int LOAD_STATE_ENTITY_COLOR = 0x7048B85E;
     private static final int LOAD_STATE_BLOCK_COLOR = 0x70D8A83E;
@@ -375,6 +382,19 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private double leftPressX;
     private double leftPressY;
     private boolean mapPointerPress;
+    /**
+     * Right-button press arms a chunk-snapped region selection instead of opening the location
+     * menu: dragging past {@link #CLICK_DRAG_TOLERANCE_PX} starts the rectangle from the anchor
+     * block, releasing without dragging opens the menu (see {@link #mouseReleased}). The
+     * committed {@link #regionSelection} stays highlighted until the next input on this screen.
+     */
+    private boolean regionSelectPress;
+    private boolean regionSelectDragging;
+    private double regionSelectPressX;
+    private double regionSelectPressY;
+    private int regionSelectAnchorX;
+    private int regionSelectAnchorZ;
+    private MapExportBounds regionSelection;
     private final FullscreenMapToolPanel toolPanel = new FullscreenMapToolPanel();
     private SharedWaypointAvailability sharedAvailability;
     private MapIconButton viewGroupButton;
@@ -1767,6 +1787,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     //#else
     public boolean keyPressed(final int keyCode, final int scanCode, final int modifiers) {
     //#endif
+        regionSelection = null;
+        if (regionSelectDragging && keyCode == cn.net.rms.confluxmap.compat.Keys.ESCAPE) {
+            regionSelectDragging = false;
+            regionSelectPress = false;
+            return true;
+        }
         if (exportSelectionScreen != null) {
             //#if MC>=12109
             //$$ if (keyCode == cn.net.rms.confluxmap.compat.Keys.ESCAPE || openMapKey != null && openMapKey.matchesKey(input)) {
@@ -1854,6 +1880,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     //#else
     public boolean mouseClicked(final double mouseX, final double mouseY, final int button) {
     //#endif
+        regionSelection = null;
         if (button == MouseButtons.LEFT && selectTargetDropdownOption(mouseX, mouseY)) {
             mapPointerPress = false;
             return true;
@@ -1943,7 +1970,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             return true;
         }
         if (button == MouseButtons.RIGHT) {
-            openLocationMenu(mouseX, mouseY);
+            // Press only arms; release without dragging opens the menu, dragging selects a
+            // region (see mouseDragged/mouseReleased).
+            regionSelectPress = true;
+            regionSelectPressX = mouseX;
+            regionSelectPressY = mouseY;
             return true;
         }
         if (button == MouseButtons.LEFT) {
@@ -2396,6 +2427,20 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     //#else
     public boolean mouseReleased(final double mouseX, final double mouseY, final int button) {
     //#endif
+        if (button == MouseButtons.RIGHT && regionSelectPress) {
+            regionSelectPress = false;
+            if (regionSelectDragging) {
+                regionSelectDragging = false;
+                final int cursorX = (int) Math.floor(centerX + (mouseX - width / 2.0) * scale);
+                final int cursorZ = (int) Math.floor(centerZ + (mouseY - height / 2.0) * scale);
+                regionSelection = ChunkSelectionMath.betweenBlocks(
+                    regionSelectAnchorX, regionSelectAnchorZ, cursorX, cursorZ
+                );
+            } else if (!isOverMapControls(mouseX, mouseY)) {
+                openLocationMenu(mouseX, mouseY);
+            }
+            return true;
+        }
         if (exportSelectionScreen != null && button == MouseButtons.LEFT && mapPointerPress) {
             mapPointerPress = false;
             if (Math.hypot(mouseX - leftPressX, mouseY - leftPressY) < CLICK_DRAG_TOLERANCE_PX) {
@@ -2509,6 +2554,15 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             }
             return true;
         }
+        if (button == MouseButtons.RIGHT && regionSelectPress) {
+            if (!regionSelectDragging
+                && Math.hypot(mouseX - regionSelectPressX, mouseY - regionSelectPressY) >= CLICK_DRAG_TOLERANCE_PX) {
+                regionSelectDragging = true;
+                regionSelectAnchorX = (int) Math.floor(centerX + (regionSelectPressX - width / 2.0) * scale);
+                regionSelectAnchorZ = (int) Math.floor(centerZ + (regionSelectPressY - height / 2.0) * scale);
+            }
+            return true;
+        }
         if (button == MouseButtons.LEFT && mapPointerPress) {
             // Opposite the drag direction, 1:1 in world-space at the current scale (§4 pan mechanics).
             centerX -= deltaX * scale;
@@ -2563,6 +2617,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     //#else
     public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
     //#endif
+        if (!regionSelectDragging) {
+            regionSelection = null;
+        }
         final TargetDropdown targetDropdown = targetDropdown();
         if (amount != 0 && targetDropdown != null
             && (targetDropdown.contains(mouseX, mouseY)
@@ -2713,6 +2770,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         drawCustomMarkers(draw);
         drawCameraMarker(matrices, radarObserver);
         drawPlayerMarker(matrices, tickDelta);
+        drawRegionSelection(draw, mouseX, mouseY);
         drawMeasureOverlay(draw, mouseX, mouseY);
         drawExportSelection(draw, mouseX, mouseY);
         drawDimensionLabel(draw);
@@ -2769,6 +2827,93 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         RenderUtil.fillRect(matrices, left, bottom - 1f, right - left, 1f, 0xFF66CCFF);
         RenderUtil.fillRect(matrices, left, top, 1f, bottom - top, 0xFF66CCFF);
         RenderUtil.fillRect(matrices, right - 1f, top, 1f, bottom - top, 0xFF66CCFF);
+    }
+
+    /**
+     * Right-drag region selection: a chunk-snapped rectangle with the covered chunk and block
+     * sizes labeled at its center. The rectangle stays highlighted after release until the next
+     * input anywhere on this screen clears {@link #regionSelection}.
+     */
+    private void drawRegionSelection(final GuiDraw draw, final int mouseX, final int mouseY) {
+        final MapExportBounds bounds;
+        if (regionSelectDragging) {
+            final int cursorX = (int) Math.floor(centerX + (mouseX - width / 2.0) * scale);
+            final int cursorZ = (int) Math.floor(centerZ + (mouseY - height / 2.0) * scale);
+            bounds = ChunkSelectionMath.betweenBlocks(
+                regionSelectAnchorX, regionSelectAnchorZ, cursorX, cursorZ
+            );
+        } else if (regionSelection != null) {
+            bounds = regionSelection;
+        } else {
+            return;
+        }
+        final float left = (float) (width / 2.0 + (bounds.minX() - centerX) / scale);
+        final float top = (float) (height / 2.0 + (bounds.minZ() - centerZ) / scale);
+        final float right = (float) (width / 2.0 + ((long) bounds.maxX() + 1L - centerX) / scale);
+        final float bottom = (float) (height / 2.0 + ((long) bounds.maxZ() + 1L - centerZ) / scale);
+        final MatrixStack matrices = draw.matrices();
+        RenderUtil.fillRect(matrices, left, top, right - left, bottom - top, REGION_SELECT_FILL);
+        RenderUtil.fillRect(matrices, left, top, right - left, 1f, REGION_SELECT_BORDER);
+        RenderUtil.fillRect(matrices, left, bottom - 1f, right - left, 1f, REGION_SELECT_BORDER);
+        RenderUtil.fillRect(matrices, left, top, 1f, bottom - top, REGION_SELECT_BORDER);
+        RenderUtil.fillRect(matrices, right - 1f, top, 1f, bottom - top, REGION_SELECT_BORDER);
+        drawRegionSelectionLabel(draw, (left + right) / 2.0, (top + bottom) / 2.0, bounds);
+    }
+
+    private void drawRegionSelectionLabel(
+        final GuiDraw draw,
+        final double x,
+        final double y,
+        final MapExportBounds bounds
+    ) {
+        final String chunks = Texts.translatable(
+            "confluxmap.map.selection.chunks",
+            String.valueOf(ChunkSelectionMath.chunksAcrossX(bounds)),
+            String.valueOf(ChunkSelectionMath.chunksAcrossZ(bounds))
+        ).getString();
+        final String blocks = Texts.translatable(
+            "confluxmap.map.selection.blocks",
+            String.valueOf(bounds.blockWidth()),
+            String.valueOf(bounds.blockHeight())
+        ).getString();
+        final int chunksWidth = this.textRenderer.getWidth(chunks);
+        final int blocksWidth = this.textRenderer.getWidth(blocks);
+        final int textWidth = Math.max(chunksWidth, blocksWidth);
+        final int fontHeight = this.textRenderer.fontHeight;
+        final int plateWidth = textWidth + REGION_SELECT_LABEL_PADDING * 2;
+        final int plateHeight = fontHeight * 2 + REGION_SELECT_LABEL_LINE_GAP + REGION_SELECT_LABEL_PADDING * 2;
+        final float plateLeft = (float) (x - plateWidth / 2.0);
+        final float plateTop = (float) (y - plateHeight / 2.0);
+        if (plateLeft < 0.0f || plateTop < 0.0f
+            || plateLeft + plateWidth > width || plateTop + plateHeight > height) {
+            return;
+        }
+        if (mapOverlayIntersectsUi(
+            plateLeft, plateTop, plateLeft + plateWidth, plateTop + plateHeight
+        )) {
+            return;
+        }
+        draw.fill(
+            (int) plateLeft,
+            (int) plateTop,
+            (int) plateLeft + plateWidth,
+            (int) plateTop + plateHeight,
+            REGION_SELECT_LABEL_BACKGROUND
+        );
+        draw.drawTextWithShadow(
+            this.textRenderer,
+            chunks,
+            plateLeft + REGION_SELECT_LABEL_PADDING + (textWidth - chunksWidth) / 2.0f,
+            plateTop + REGION_SELECT_LABEL_PADDING,
+            TEXT_COLOR
+        );
+        draw.drawTextWithShadow(
+            this.textRenderer,
+            blocks,
+            plateLeft + REGION_SELECT_LABEL_PADDING + (textWidth - blocksWidth) / 2.0f,
+            plateTop + REGION_SELECT_LABEL_PADDING + fontHeight + REGION_SELECT_LABEL_LINE_GAP,
+            TEXT_COLOR
+        );
     }
 
     private void drawPlayerTrail(final MatrixStack matrices) {

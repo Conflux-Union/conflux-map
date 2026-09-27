@@ -316,6 +316,8 @@
   "confluxmap.map.measure.hint": "左键：标点 · 右键 / Ctrl+Z：撤销上一点 · 撤空后退出",
   "confluxmap.map.measure.segment": "%s 格",
   "confluxmap.map.measure.total": "总计：%s",
+  "confluxmap.map.selection.chunks": "%s × %s 区块",
+  "confluxmap.map.selection.blocks": "%s × %s 格",
   "confluxmap.map.annotation.color.tooltip": "设置绘图颜色或为选中标注换色",
   "confluxmap.map.annotation.persistence.tooltip": "存储方式：%s",
   "confluxmap.map.annotation.persistent": "永久保存",

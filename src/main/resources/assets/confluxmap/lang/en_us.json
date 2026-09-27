@@ -316,6 +316,8 @@
   "confluxmap.map.measure.hint": "Left-click: add point · Right-click / Ctrl+Z: remove last · Points stay until undone",
   "confluxmap.map.measure.segment": "%s m",
   "confluxmap.map.measure.total": "Total: %s",
+  "confluxmap.map.selection.chunks": "%s × %s chunks",
+  "confluxmap.map.selection.blocks": "%s × %s blocks",
   "confluxmap.map.annotation.color.tooltip": "Set the drawing color or recolor the selection",
   "confluxmap.map.annotation.persistence.tooltip": "Storage: %s",
   "confluxmap.map.annotation.persistent": "Persistent",
