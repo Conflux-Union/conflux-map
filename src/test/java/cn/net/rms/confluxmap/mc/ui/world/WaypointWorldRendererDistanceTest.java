@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 
 final class WaypointWorldRendererDistanceTest {
     @Test
-    void targetedWaypointBypassesTheConfiguredDistance() {
+    void targetedWaypointBeyondTheConfiguredDistanceIsNotRendered() {
         final UUID waypointId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         final WaypointRenderEntry waypoint = new WaypointRenderEntry(
             waypointId,
@@ -23,6 +23,38 @@ final class WaypointWorldRendererDistanceTest {
             0.0,
             -1.5,
             2_000.0,
+            0xFFFFFFFF,
+            Waypoint.Type.NORMAL,
+            WaypointRenderEntry.Source.LOCAL
+        );
+
+        final WaypointWorldRenderer.LabelSelection selection = WaypointWorldRenderer.selectLabels(
+            List.of(waypoint),
+            0.0f,
+            0.0f,
+            Vec3d.ZERO,
+            0.0,
+            0.0,
+            0.0,
+            1_000.0,
+            new WaypointHighlightState(),
+            DimensionId.OVERWORLD
+        );
+
+        assertNull(selection.targetedWaypointId());
+        assertEquals(List.of(), selection.candidates());
+    }
+
+    @Test
+    void targetedWaypointInsideTheConfiguredDistanceStaysTargeted() {
+        final UUID waypointId = UUID.fromString("00000000-0000-0000-0000-000000000004");
+        final WaypointRenderEntry waypoint = new WaypointRenderEntry(
+            waypointId,
+            "Nearby target",
+            DimensionId.OVERWORLD,
+            0.0,
+            -1.5,
+            64.0,
             0xFFFFFFFF,
             Waypoint.Type.NORMAL,
             WaypointRenderEntry.Source.LOCAL

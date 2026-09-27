@@ -664,8 +664,6 @@ public final class WaypointWorldRenderer {
         final double maxDistanceSquared = maxDistance * maxDistance;
         final List<LabelCandidate> candidates = new ArrayList<>();
         WaypointRenderEntry targetedWaypoint = null;
-        double targetedDistanceSquared = 0.0;
-        boolean targetedWaypointVisible = false;
         boolean hasHighlight = false;
         double bestAlignment = -1.0;
         double bestDistance = Double.POSITIVE_INFINITY;
@@ -680,10 +678,12 @@ public final class WaypointWorldRenderer {
                 waypoint, currentDimension
             ) || waypoint.id().equals(highlightedPlayerId);
             hasHighlight |= selected;
-            final boolean withinDistance = playerDistanceSquared <= maxDistanceSquared;
-            if (withinDistance || selected) {
-                candidates.add(new LabelCandidate(waypoint, playerDistanceSquared, selected));
+            // The configured cutoff hides a label entirely, even when aimed at; only a
+            // selected/highlighted waypoint renders regardless of distance.
+            if (playerDistanceSquared > maxDistanceSquared && !selected) {
+                continue;
             }
+            candidates.add(new LabelCandidate(waypoint, playerDistanceSquared, selected));
 
             final double dx = waypoint.x() - cameraPos.x;
             final double dy = waypoint.y() + LABEL_Y_OFFSET - cameraPos.y;
@@ -700,18 +700,11 @@ public final class WaypointWorldRenderer {
             }
             if (alignment > bestAlignment || (alignment == bestAlignment && distance < bestDistance)) {
                 targetedWaypoint = waypoint;
-                targetedDistanceSquared = playerDistanceSquared;
-                targetedWaypointVisible = withinDistance || selected;
                 bestAlignment = alignment;
                 bestDistance = distance;
             }
         }
 
-        if (targetedWaypoint != null && !targetedWaypointVisible) {
-            candidates.add(new LabelCandidate(
-                targetedWaypoint, targetedDistanceSquared, false
-            ));
-        }
         return new LabelSelection(
             List.copyOf(candidates),
             targetedWaypoint == null ? null : targetedWaypoint.id(),
