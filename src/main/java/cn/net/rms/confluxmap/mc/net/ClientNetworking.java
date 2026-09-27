@@ -6,6 +6,7 @@ import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.compat.PlayNetworking;
 import cn.net.rms.confluxmap.core.net.ErrorS2C;
 import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
+import cn.net.rms.confluxmap.core.net.QuadraLayoutS2C;
 import cn.net.rms.confluxmap.core.net.HelloC2S;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.LoadStateDeltaS2C;
@@ -102,6 +103,8 @@ public final class ClientNetworking {
             session.onServerInstance(serverInstance);
         } else if (msg instanceof final FlatBaselineS2C f) {
             session.onFlatBaselines(f);
+        } else if (msg instanceof final QuadraLayoutS2C q) {
+            session.onQuadraLayouts(q);
         } else if (msg instanceof final PolicyUpdateS2C u) {
             onPolicyUpdate(u);
         } else if (msg instanceof final MapPatchS2C p) {

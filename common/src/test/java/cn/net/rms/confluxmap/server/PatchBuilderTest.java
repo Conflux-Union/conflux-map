@@ -3,12 +3,18 @@ package cn.net.rms.confluxmap.server;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
+import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
+import cn.net.rms.confluxmap.core.predict.BaselineDeriver;
 import cn.net.rms.confluxmap.core.predict.BaselineGrid;
+import cn.net.rms.confluxmap.core.predict.BaselineSampler;
 import cn.net.rms.confluxmap.core.predict.CorrectionTile;
+import cn.net.rms.confluxmap.core.predict.FlatBaseline;
+import cn.net.rms.confluxmap.core.predict.QuadrantLayout;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -211,6 +217,118 @@ class PatchBuilderTest {
         assertEquals(0, unchanged.body().length);
         assertEquals(0, unchanged.recordCount());
     }
+
+    /**
+     * The companion must diff a quadra-gen flat quadrant against that quadrant's uniform surface,
+     * not against the fiction cubiomes sampled there: an untouched glass quadrant produces no
+     * residual records, while the unmasked baseline of the same summary produces one per pixel.
+     */
+    @Test
+    void flatQuadrantMatchesItsLiveSummarySoNoResidualIsSent() throws Exception {
+        // Chunk (0,0) covers pixels 0..15 on both axes - all of it inside the (+X,+Z) quadrant.
+        final SummaryCodec.Chunk glass = chunk(20L, 66, 2);
+        final SummaryTile summary = singleChunkTile(glass);
+        final QuadrantLayout layout = new QuadrantLayout(
+            QuadrantLayout.Style.FLAT, new FlatBaseline(1, 66, SurfaceKind.LAND.ordinal(), 2, 0),
+            QuadrantLayout.Style.NOISE, null,
+            QuadrantLayout.Style.NOISE, null,
+            QuadrantLayout.Style.NOISE, null
+        );
+
+        final PatchBuilder masked = new PatchBuilder();
+        masked.setQuadrantLayouts(Map.of(DimensionId.OVERWORLD, layout));
+        final PatchBuilder.Result residual = masked.buildFromSampler(
+            summary, Long.MIN_VALUE, CONSTANT_LAND_SAMPLER, DimensionId.OVERWORLD, 0L, false
+        );
+
+        assertEquals(Proto.PATCH_MODE_RESIDUAL, residual.mode());
+        assertEquals(0, residual.recordCount(), "a pristine glass quadrant must not be re-sent");
+
+        final PatchBuilder.Result unmasked = new PatchBuilder().buildFromSampler(
+            summary, Long.MIN_VALUE, CONSTANT_LAND_SAMPLER, DimensionId.OVERWORLD, 0L, false
+        );
+        assertTrue(unmasked.recordCount() > 0, "the sampled-noise baseline disagrees with the glass quadrant");
+    }
+
+    /** Only structure-less empty columns summarize out of a cleared quadrant; builds still diff. */
+    @Test
+    void clearedQuadrantsPublishOnlyWhatWasActuallyBuiltThere() throws Exception {
+        final SummaryCodec.Chunk[] chunks = new SummaryCodec.Chunk[SummaryCodec.CHUNKS];
+        Arrays.fill(chunks, SummaryCodec.Chunk.empty());
+        // Chunk (2,0) -> pixels 32..47: (+X,-Z) is cleared, and one platform was built there.
+        chunks[2] = chunk(30L, 80, 11);
+        final SummaryTile summary = new SummaryTile(
+            0, 0, 0, List.of(new SummaryCodec.Region(0, 0, 0L, chunks))
+        );
+        final QuadrantLayout layout = new QuadrantLayout(
+            QuadrantLayout.Style.NOISE, null,
+            QuadrantLayout.Style.CLEARED, null,
+            QuadrantLayout.Style.NOISE, null,
+            QuadrantLayout.Style.NOISE, null
+        );
+
+        final PatchBuilder masked = new PatchBuilder();
+        masked.setQuadrantLayouts(Map.of(DimensionId.OVERWORLD, layout));
+        final PatchBuilder.Result residual = masked.buildFromSampler(
+            summary, Long.MIN_VALUE, CONSTANT_LAND_SAMPLER, DimensionId.OVERWORLD, 0L, false
+        );
+
+        assertEquals(Proto.PATCH_MODE_RESIDUAL, residual.mode());
+        assertEquals(256, residual.recordCount(), "exactly the built platform's 16x16 pixels");
+        assertEquals(
+            80,
+            PatchCodec.decode(residual.body()).sampleAt(2 * 256 + 32).surfaceY()
+        );
+    }
+
+    private static SummaryTile singleChunkTile(final SummaryCodec.Chunk chunk) {
+        final SummaryCodec.Chunk[] chunks = new SummaryCodec.Chunk[SummaryCodec.CHUNKS];
+        Arrays.fill(chunks, SummaryCodec.Chunk.empty());
+        chunks[0] = chunk;
+        return new SummaryTile(0, 0, 0, List.of(new SummaryCodec.Region(0, 0, 0L, chunks)));
+    }
+
+    /** Plains at Y=70 everywhere: a uniform land world any quadrant layout can disagree with. */
+    private static final BaselineSampler CONSTANT_LAND_SAMPLER = new BaselineSampler() {
+        @Override
+        public boolean biomes(final int scale, final int x, final int z, final int w, final int h, final int[] out) {
+            Arrays.fill(out, 0, w * h, 1);
+            return true;
+        }
+
+        @Override
+        public boolean heights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+            Arrays.fill(outY, 0, w * h, 70);
+            return true;
+        }
+
+        @Override
+        public boolean surfaceColumns(
+            final int blockX,
+            final int blockZ,
+            final int w,
+            final int h,
+            final int stride,
+            final int[] outSolidY,
+            final int[] outFluidY,
+            final int[] outSurfaceY,
+            final int[] outFlags
+        ) {
+            for (int index = 0; index < w * h; index++) {
+                outSolidY[index] = 70;
+                outFluidY[index] = BaselineGrid.NO_FLUID;
+                outSurfaceY[index] = 70;
+                outFlags[index] = 0;
+            }
+            return true;
+        }
+
+        @Override
+        public boolean endHeights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+            Arrays.fill(outY, 0, w * h, 70);
+            return true;
+        }
+    };
 
     private static SummaryCodec.Region region(final int rx, final int rz, final int surfaceY) {
         final SummaryCodec.Chunk[] chunks = new SummaryCodec.Chunk[SummaryCodec.CHUNKS];

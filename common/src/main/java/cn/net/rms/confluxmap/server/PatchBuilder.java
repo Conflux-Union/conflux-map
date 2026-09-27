@@ -14,9 +14,11 @@ import cn.net.rms.confluxmap.core.predict.DerivedGrid;
 import cn.net.rms.confluxmap.core.predict.FlatBaseline;
 import cn.net.rms.confluxmap.core.predict.LodSampling;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
+import cn.net.rms.confluxmap.core.predict.QuadrantLayout;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /** Builds one correction patch from summaries and the same deterministic client baseline. */
 public final class PatchBuilder {
@@ -25,7 +27,8 @@ public final class PatchBuilder {
         DerivedGrid derived,
         int mapColorId,
         boolean absolute,
-        MapPixel uniformPixel
+        MapPixel uniformPixel,
+        int[] mapColorOverride
     ) {
         public PreparedBaseline(
             final BaselineGrid baseline,
@@ -33,11 +36,11 @@ public final class PatchBuilder {
             final int mapColorId,
             final boolean absolute
         ) {
-            this(baseline, derived, mapColorId, absolute, null);
+            this(baseline, derived, mapColorId, absolute, null, null);
         }
 
         public static PreparedBaseline absoluteOnly() {
-            return new PreparedBaseline(null, null, Proto.MAP_COLOR_NONE, true, null);
+            return new PreparedBaseline(null, null, Proto.MAP_COLOR_NONE, true, null, null);
         }
 
         public static PreparedBaseline uniform(
@@ -54,9 +57,39 @@ public final class PatchBuilder {
                 new MapPixel(
                     flat.biomeId(), flat.surfaceY(), flat.kind(), flat.mapColorId(),
                     flat.fluidDepth(), MapPixel.MAP_COLOR_NONE
-                )
+                ),
+                null
             );
         }
+    }
+
+    /**
+     * Per-dimension quadrant layouts (quadra-gen). Set once when the owning side starts a world;
+     * the same layouts are published to clients, so the residual baseline the companion diffs
+     * against stays bit-identical to the one each client composes.
+     */
+    private volatile Map<DimensionId, QuadrantLayout> quadrantLayouts = Map.of();
+
+    public void setQuadrantLayouts(final Map<DimensionId, QuadrantLayout> layouts) {
+        this.quadrantLayouts = layouts == null ? Map.of() : Map.copyOf(layouts);
+    }
+
+    /** The layout masking {@code dimension}'s baselines, or {@code null} when it is all-noise. */
+    public QuadrantLayout quadrantLayout(final DimensionId dimension) {
+        return quadrantLayouts.get(dimension);
+    }
+
+    /**
+     * Applies a layout's non-noise quadrants to a freshly derived full baseline. Returns the
+     * resulting per-pixel map-colour override, or {@code null} when this dimension masks nothing.
+     */
+    private QuadrantLayout.Mask applyQuadrants(
+        final DimensionId dimension,
+        final BaselineGrid baseline,
+        final DerivedGrid derived
+    ) {
+        final QuadrantLayout layout = quadrantLayout(dimension);
+        return layout == null ? null : layout.apply(baseline, derived);
     }
 
     public record Result(int mode, long revision, byte[] presence, byte[] body, int recordCount) {
@@ -74,7 +107,7 @@ public final class PatchBuilder {
         }
         return buildWithDerived(
             summary, sinceRevision, baseline, BaselineDeriver.derive(baseline),
-            Proto.MAP_COLOR_NONE, null, absolute
+            Proto.MAP_COLOR_NONE, null, absolute, null
         );
     }
 
@@ -104,7 +137,8 @@ public final class PatchBuilder {
         final DerivedGrid derived,
         final int baselineMapColorId,
         final MapPixel uniformPixel,
-        final boolean absolute
+        final boolean absolute,
+        final int[] mapColorOverride
     ) {
         final byte[] evaluated = new byte[PatchCodec.MASK_BYTES];
         final List<PatchCodec.Sample> records = new ArrayList<>();
@@ -129,7 +163,8 @@ public final class PatchBuilder {
                         baseline.biomeId[baseIndex],
                         derived.surfaceY[baseIndex],
                         derived.kind[baseIndex] & 255,
-                        baselineMapColorId,
+                        mapColorOverride != null && mapColorOverride[pixel] != Proto.MAP_COLOR_NONE
+                            ? mapColorOverride[pixel] : baselineMapColorId,
                         derived.fluidDepth[baseIndex],
                         MapPixel.MAP_COLOR_NONE
                     );
@@ -226,10 +261,14 @@ public final class PatchBuilder {
         }
         final DerivedGrid derived = BaselineDeriver.derive(baseline);
         CanopyStylizer.apply(derived, baseline, seed, summary.lod(), (int) originX, (int) originZ);
+        final QuadrantLayout.Mask quadrants = applyQuadrants(dimension, baseline, derived);
         final int mapColorId = dimension.equals(DimensionId.NETHER)
             ? PredictionDimensions.NETHER_ROOF_MAP_COLOR_ID
             : Proto.MAP_COLOR_NONE;
-        return new PreparedBaseline(baseline, derived, mapColorId, absolute);
+        return new PreparedBaseline(
+            baseline, derived, mapColorId, absolute, null,
+            quadrants == null ? null : quadrants.mapColorOverrides()
+        );
     }
 
     /** Prepares only the coarse output pixels owned by one cropped region page. */
@@ -318,10 +357,18 @@ public final class PatchBuilder {
             derived, baseline, seed, summary.lod(), (int) originX, (int) originZ,
             minPixelX, minPixelZ, maxPixelX, maxPixelZ
         );
+        final QuadrantLayout layout = quadrantLayout(dimension);
+        final QuadrantLayout.Mask quadrants = layout == null ? null
+            : layout.applyWindow(
+                baseline, derived, minPixelX, minPixelZ, maxPixelX, maxPixelZ
+            );
         final int mapColorId = dimension.equals(DimensionId.NETHER)
             ? PredictionDimensions.NETHER_ROOF_MAP_COLOR_ID
             : Proto.MAP_COLOR_NONE;
-        return new PreparedBaseline(baseline, derived, mapColorId, absolute);
+        return new PreparedBaseline(
+            baseline, derived, mapColorId, absolute, null,
+            quadrants == null ? null : quadrants.mapColorOverrides()
+        );
     }
 
     /**
@@ -369,7 +416,8 @@ public final class PatchBuilder {
             prepared.derived(),
             prepared.mapColorId(),
             prepared.uniformPixel(),
-            prepared.absolute()
+            prepared.absolute(),
+            prepared.mapColorOverride()
         );
     }
 

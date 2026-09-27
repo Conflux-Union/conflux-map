@@ -1072,6 +1072,8 @@ public final class PredictionTileService {
         final BaselineGrid grid;
         final DerivedGrid derived;
         final int baselineMapColorId;
+        final QuadrantLayout quadrants = state.quadrantLayout(key.dimension());
+        final QuadrantLayout.Mask quadrantMask;
         if (lowerNetherBiome) {
             final BaselineSampler sampler = new NativeBaselineSampler(
                 state.mcVersion(), state.seed(), nativeDim,
@@ -1083,8 +1085,14 @@ public final class PredictionTileService {
             if (grid == null) {
                 return null;
             }
+            // Only flat quadrants carry a configured uniform biome; cleared quadrants keep the
+            // real sampled biomes quadra-gen preserved.
+            if (quadrants != null) {
+                quadrants.applyBiomes(grid);
+            }
             derived = BaselineDeriver.derive(grid);
             baselineMapColorId = Proto.MAP_COLOR_NONE;
+            quadrantMask = null;
         } else {
             final FlatBaseline flat = state.flatBaseline(key.dimension());
             if (state.preset(key.dimension()) == WorldPreset.FLAT && flat != null) {
@@ -1092,6 +1100,7 @@ public final class PredictionTileService {
                 grid = flat.toBaselineGrid();
                 derived = flat.toDerivedGrid();
                 baselineMapColorId = flat.mapColorId();
+                quadrantMask = null;
             } else {
                 final long seed = state.seed();
                 final BaselineSampler sampler = new NativeBaselineSampler(
@@ -1105,6 +1114,10 @@ public final class PredictionTileService {
                 }
                 derived = BaselineDeriver.derive(grid);
                 CanopyStylizer.apply(derived, grid, seed, lod, tileOriginX, tileOriginZ);
+                // Quadrant layouts (quadra-gen) overwrite their columns after derivation and
+                // canopy, so synthetic trees cannot survive in a cleared or flat quadrant. The
+                // companion's PatchBuilder masks its residual baseline with the same code.
+                quadrantMask = quadrants == null ? null : quadrants.apply(grid, derived);
                 // Terrain mode owns the roof material, while the separate biome composer below owns
                 // biome identity. Treat the fixed Nether plane like a uniform bedrock superflat.
                 baselineMapColorId = key.dimension().equals(DimensionId.NETHER)
@@ -1126,7 +1139,8 @@ public final class PredictionTileService {
                 key.dimension().equals(DimensionId.NETHER)
                     ? LightTint.multiplier(0, 0, true)
                     : 0xFFFFFFFF,
-                syncedMaterials, style, shadow
+                syncedMaterials, style, shadow,
+                quadrantMask == null ? null : quadrantMask.mapColorOverrides()
             );
         final byte[] syncEvaluated = directCorrections == null
             ? new byte[PatchCodec.MASK_BYTES] : directCorrections.copyEvaluated();

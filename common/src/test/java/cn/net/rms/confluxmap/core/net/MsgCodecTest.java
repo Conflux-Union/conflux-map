@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.predict.FlatBaseline;
+import cn.net.rms.confluxmap.core.predict.QuadrantLayout;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -241,6 +242,41 @@ class MsgCodecTest {
         final FlatBaselineS2C decoded = (FlatBaselineS2C) MsgCodec.decode(MsgCodec.encode(original));
         assertIterableEquals(original.entries(), decoded.entries());
         assertEquals(Proto.MSG_FLAT_BASELINE_S2C, decoded.typeId());
+    }
+
+    @Test
+    void quadraLayoutRoundTrips() throws ProtoException {
+        final QuadrantLayout layout = new QuadrantLayout(
+            QuadrantLayout.Style.FLAT, new FlatBaseline(1, -60, 1, 2, 0),
+            QuadrantLayout.Style.CLEARED, null,
+            QuadrantLayout.Style.FLAT, new FlatBaseline(47, 0, 9, 255, 0),
+            QuadrantLayout.Style.NOISE, null
+        );
+        final QuadraLayoutS2C original = new QuadraLayoutS2C(List.of(
+            new QuadraLayoutS2C.Entry(0, layout)
+        ));
+
+        final QuadraLayoutS2C decoded = (QuadraLayoutS2C) MsgCodec.decode(MsgCodec.encode(original));
+
+        assertEquals(Proto.MSG_QUADRA_LAYOUT_S2C, decoded.typeId());
+        assertEquals(1, decoded.entries().size());
+        final QuadrantLayout decodedLayout = decoded.entries().get(0).layout();
+        for (int quadrant = 0; quadrant < 4; quadrant++) {
+            assertEquals(layout.style(quadrant), decodedLayout.style(quadrant));
+            assertEquals(layout.flat(quadrant), decodedLayout.flat(quadrant));
+        }
+        assertEquals(layout.predictsTerrainAt(-1, -1), decodedLayout.predictsTerrainAt(-1, -1));
+    }
+
+    @Test
+    void quadraLayoutRejectsUnknownStyles() {
+        final byte[] framed = new byte[] {
+            (byte) Proto.MSG_QUADRA_LAYOUT_S2C,
+            1,      // entries
+            0,      // dimIndex
+            9, 1, 0, 0 // hostile style ordinal
+        };
+        assertThrows(ProtoException.class, () -> MsgCodec.decode(framed));
     }
 
     @Test

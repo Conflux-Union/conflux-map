@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.mc.predict;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
+import cn.net.rms.confluxmap.core.predict.QuadrantLayout;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
@@ -10,6 +11,7 @@ import cn.net.rms.confluxmap.nativepredict.CubiomesContext;
 import cn.net.rms.confluxmap.nativepredict.CubiomesContexts;
 import cn.net.rms.confluxmap.nativepredict.NativeLib;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
@@ -119,7 +121,7 @@ public final class StructureMarkerService {
     ) {
         return current == null || !structureSearchAllowed.getAsBoolean()
             ? List.of()
-            : current.query(minBlockX, maxBlockX, minBlockZ, maxBlockZ);
+            : filterQuadrants(current.query(minBlockX, maxBlockX, minBlockZ, maxBlockZ));
     }
 
     public synchronized List<StructureIndex.Marker> query(
@@ -158,7 +160,7 @@ public final class StructureMarkerService {
         visible.addAll(includedTypes);
         visible.retainAll(availableTypes(currentDimension));
         visible.removeIf(type -> !type.displaysAt(blocksPerPixel));
-        return current.query(minBlockX, maxBlockX, minBlockZ, maxBlockZ, visible);
+        return filterQuadrants(current.query(minBlockX, maxBlockX, minBlockZ, maxBlockZ, visible));
     }
 
     /**
@@ -187,7 +189,7 @@ public final class StructureMarkerService {
             viewportQueries.clear();
             return List.of();
         }
-        return viewportQueries.request(new StructureViewportQuery.Request(
+        return filterQuadrants(viewportQueries.request(new StructureViewportQuery.Request(
             generation,
             current,
             minBlockX,
@@ -196,7 +198,7 @@ public final class StructureMarkerService {
             maxBlockZ,
             blocksPerPixel,
             visible
-        ));
+        )));
     }
 
     public synchronized EnumSet<StructureIndex.StructureType> availableTypes(final DimensionId dimension) {
@@ -215,9 +217,11 @@ public final class StructureMarkerService {
         final int blockZ,
         final int maxRadius
     ) {
-        return current == null || !structureSearchAllowed.getAsBoolean()
-            ? Optional.empty()
-            : current.findNearest(type, blockX, blockZ, maxRadius);
+        if (current == null || !structureSearchAllowed.getAsBoolean()) {
+            return Optional.empty();
+        }
+        return current.findNearest(type, blockX, blockZ, maxRadius)
+            .filter(marker -> predictsTerrainAt(marker));
     }
 
     /** Returns at most 32 nearest candidates from a bounded native lookup area. */
@@ -229,7 +233,9 @@ public final class StructureMarkerService {
     ) {
         return current == null || !structureSearchAllowed.getAsBoolean()
             ? List.of()
-            : current.findNearestCandidates(type, blockX, blockZ, maxCandidates);
+            : filterQuadrants(
+                current.findNearestCandidates(type, blockX, blockZ, maxCandidates)
+            );
     }
 
     /** Returns candidates inside the requested radius without exceeding the index query budget. */
@@ -253,7 +259,33 @@ public final class StructureMarkerService {
     ) {
         return current == null || !structureSearchAllowed.getAsBoolean()
             ? List.of()
-            : current.findCandidates(type, blockX, blockZ, maxRadius, limit, variant);
+            : filterQuadrants(
+                current.findCandidates(type, blockX, blockZ, maxRadius, limit, variant)
+            );
+    }
+
+    /**
+     * quadra-gen's non-noise quadrants keep structure <em>data</em> but never place structure
+     * content (flat quadrants cancel {@code createStructures} outright), so markers there would
+     * promise structures that do not visibly exist. {@code null} dimension means no session yet.
+     */
+    private boolean predictsTerrainAt(final StructureIndex.Marker marker) {
+        final QuadrantLayout layout = currentDimension == null
+            ? null : prediction.quadrantLayout(currentDimension);
+        return layout == null || layout.predictsTerrainAt(marker.blockX(), marker.blockZ());
+    }
+
+    private List<StructureIndex.Marker> filterQuadrants(final List<StructureIndex.Marker> markers) {
+        if (currentDimension == null || prediction.quadrantLayout(currentDimension) == null) {
+            return markers;
+        }
+        final List<StructureIndex.Marker> visible = new ArrayList<>(markers.size());
+        for (final StructureIndex.Marker marker : markers) {
+            if (predictsTerrainAt(marker)) {
+                visible.add(marker);
+            }
+        }
+        return visible;
     }
 
     public synchronized void flush() {

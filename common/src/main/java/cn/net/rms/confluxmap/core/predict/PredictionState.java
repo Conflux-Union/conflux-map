@@ -23,6 +23,8 @@ public final class PredictionState {
     private volatile WorldPreset netherPreset = WorldPreset.DEFAULT;
     private volatile WorldPreset endPreset = WorldPreset.DEFAULT;
     private volatile FlatBaseline overworldFlatBaseline;
+    private volatile QuadrantLayout overworldQuadrants;
+    private volatile QuadrantLayout netherQuadrants;
     private volatile PredictionPalette palette = PredictionPalette.defaults();
 
     /** Main thread, on session start: the recognized generator preset per predicted dimension. */
@@ -60,6 +62,12 @@ public final class PredictionState {
         this.overworldFlatBaseline = baseline;
     }
 
+    /** Main thread, on session start: quadrant layouts for the dimensions quadra-gen manages. */
+    public void setQuadrantLayouts(final QuadrantLayout overworld, final QuadrantLayout nether) {
+        this.overworldQuadrants = overworld;
+        this.netherQuadrants = nether;
+    }
+
     /** Main thread: nothing is known for the current session (multiplayer without a companion, or session end). */
     public void clear() {
         seedKnown = false;
@@ -70,6 +78,8 @@ public final class PredictionState {
         netherPreset = WorldPreset.DEFAULT;
         endPreset = WorldPreset.DEFAULT;
         overworldFlatBaseline = null;
+        overworldQuadrants = null;
+        netherQuadrants = null;
         palette = PredictionPalette.defaults();
     }
 
@@ -117,6 +127,21 @@ public final class PredictionState {
     /** The superflat overworld's uniform surface, or {@code null} when not flat / not yet known. */
     public FlatBaseline flatBaseline(final DimensionId dimension) {
         return dimension.equals(DimensionId.OVERWORLD) ? overworldFlatBaseline : null;
+    }
+
+    /**
+     * The quadrant layout (quadra-gen) masking {@code dimension}'s predicted baselines, or
+     * {@code null} when the dimension generates uniformly. Worker threads read this while
+     * composing; the reference is replaced wholesale, never mutated.
+     */
+    public QuadrantLayout quadrantLayout(final DimensionId dimension) {
+        if (dimension.equals(DimensionId.OVERWORLD)) {
+            return overworldQuadrants;
+        }
+        if (dimension.equals(DimensionId.NETHER)) {
+            return netherQuadrants;
+        }
+        return null;
     }
 
     /**

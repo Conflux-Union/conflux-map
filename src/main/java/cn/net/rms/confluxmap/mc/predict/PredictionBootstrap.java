@@ -7,13 +7,16 @@ import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.predict.FlatBaseline;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
+import cn.net.rms.confluxmap.core.predict.QuadrantLayout;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
 import cn.net.rms.confluxmap.compat.MinecraftVersion;
 import cn.net.rms.confluxmap.server.FlatWorldBaseline;
+import cn.net.rms.confluxmap.server.QuadraGenLayouts;
 import cn.net.rms.confluxmap.server.WorldPresetDetector;
+import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalLong;
 import net.minecraft.client.MinecraftClient;
@@ -75,6 +78,8 @@ public final class PredictionBootstrap {
         final WorldPreset netherPreset;
         final WorldPreset endPreset;
         final Optional<FlatBaseline> flatBaseline;
+        final QuadrantLayout overworldQuadrants;
+        final QuadrantLayout netherQuadrants;
         final boolean manual;
         if (singleplayer) {
             //#if MC>=260100
@@ -89,6 +94,10 @@ public final class PredictionBootstrap {
             netherPreset = detectLocal(World.NETHER);
             endPreset = detectLocal(World.END);
             flatBaseline = overworldPreset == WorldPreset.FLAT ? localFlatBaseline() : Optional.empty();
+            final Map<cn.net.rms.confluxmap.core.model.DimensionId, QuadrantLayout> local =
+                QuadraGenLayouts.detect(client.getServer(), true);
+            overworldQuadrants = local.get(DimensionId.OVERWORLD);
+            netherQuadrants = local.get(DimensionId.NETHER);
             manual = false;
         } else if (companion.isActive()) {
             // The companion publishes the same vanilla seed for every dim (research R6 confirms
@@ -121,6 +130,8 @@ public final class PredictionBootstrap {
             flatBaseline = overworldPreset == WorldPreset.FLAT
                 ? companion.flatBaselineFor(PredictionDimensions.OVERWORLD)
                 : Optional.empty();
+            overworldQuadrants = companion.quadraLayoutFor(dimIndexOf(DimensionId.OVERWORLD)).orElse(null);
+            netherQuadrants = companion.quadraLayoutFor(dimIndexOf(DimensionId.NETHER)).orElse(null);
         } else {
             final Optional<ManualSeedConfig.Entry> configured = manualSeeds.get(session.world());
             if (configured.isEmpty()) {
@@ -133,9 +144,12 @@ public final class PredictionBootstrap {
             netherPreset = WorldPreset.DEFAULT;
             endPreset = WorldPreset.DEFAULT;
             flatBaseline = Optional.empty();
+            overworldQuadrants = null;
+            netherQuadrants = null;
             manual = true;
         }
         state.setPresets(overworldPreset, netherPreset, endPreset);
+        state.setQuadrantLayouts(overworldQuadrants, netherQuadrants);
         flatBaseline.ifPresent(state::setFlatBaseline);
         if (seedOpt.isPresent()) {
             final java.util.OptionalInt mcVersion = McVersions.toCubiomes(worldgenVersion);
@@ -153,10 +167,11 @@ public final class PredictionBootstrap {
             }
         }
         ConfluxMapMod.LOGGER.debug(
-            "prediction: session bootstrapped (source={} worldgen={} overworld={} nether={} end={} seed={} flat={})",
+            "prediction: session bootstrapped (source={} worldgen={} overworld={} nether={} end={} seed={} flat={} quadrants={}/{})",
             singleplayer ? "singleplayer" : manual ? "manual" : "companion",
             worldgenVersion, overworldPreset, netherPreset, endPreset,
-            state.seedKnown() ? "known" : "none", flatBaseline.isPresent()
+            state.seedKnown() ? "known" : "none", flatBaseline.isPresent(),
+            overworldQuadrants == null ? "-" : "overworld", netherQuadrants == null ? "-" : "nether"
         );
         if (overworldPreset == WorldPreset.FLAT) {
             ConfluxMapMod.LOGGER.info(
@@ -196,5 +211,20 @@ public final class PredictionBootstrap {
             }
         }
         return WorldPreset.DEFAULT;
+    }
+
+    /** HELLO_POLICY's dim-list index for {@code dimension}; -1 when the server does not list it. */
+    private int dimIndexOf(final DimensionId dimension) {
+        final HelloPolicyS2C policy = companion.policy();
+        if (policy == null) {
+            return -1;
+        }
+        final String dimId = dimension.toString();
+        for (int i = 0; i < policy.dims().size(); i++) {
+            if (dimId.equals(policy.dims().get(i).dimId())) {
+                return i;
+            }
+        }
+        return -1;
     }
 }

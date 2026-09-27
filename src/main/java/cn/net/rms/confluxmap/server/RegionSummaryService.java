@@ -20,9 +20,11 @@ import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.net.SummaryCodec;
 import cn.net.rms.confluxmap.core.util.ChunkRegionSlice;
 import cn.net.rms.confluxmap.core.util.TileMath;
+import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.predict.FlatBaseline;
 import cn.net.rms.confluxmap.core.predict.NativeBaselineSampler;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
+import cn.net.rms.confluxmap.core.predict.QuadrantLayout;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import cn.net.rms.confluxmap.compat.MinecraftVersion;
 import cn.net.rms.confluxmap.nativepredict.McVersions;
@@ -244,6 +246,14 @@ public final class RegionSummaryService {
     public RegionSummaryService(final ServerConfig config) {
         this.config = config;
         this.liveChunks = new LiveChunkSummaryTracker(config, summarizer, this::onRegionChanged);
+    }
+
+    /**
+     * Quadra-gen quadrant layouts for this server's lifetime; masked into every residual baseline
+     * so the companion diffs against exactly what each quadrant-aware client predicts.
+     */
+    public void setQuadrantLayouts(final Map<DimensionId, QuadrantLayout> layouts) {
+        patchBuilder.setQuadrantLayouts(layouts);
     }
 
     /** Starts serving a loaded chunk from memory and enrolls it in bounded live refreshes. */

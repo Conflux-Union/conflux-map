@@ -128,6 +128,8 @@ With the companion installed, the whole server shares one live map and one waypo
 
 Client and server versions can be upgraded independently: matching prediction algorithms use compact differential updates, differing algorithms fall back to full-data updates, and older-protocol clients always retain the basic map service.
 
+Servers running [quadra-gen](https://github.com/Fallen-Breath/quadra-gen) are supported automatically: with the companion installed, the predicted map follows its four per-quadrant world styles (natural terrain, flat glass, biome void, and empty void) instead of drawing natural terrain everywhere. In singleplayer, the same applies when quadra-gen manages the world.
+
 The companion also serves a standalone web map that shows explored terrain, predicted terrain, and shared waypoints in a browser. Player positions, names, dimensions, and the interface language are all configurable; players can run `/confluxmap webmap hide` in game to hide themselves from the web map, and `show` to return.
 
 All companion-shared content is controlled in `config/confluxmap/server.json`:

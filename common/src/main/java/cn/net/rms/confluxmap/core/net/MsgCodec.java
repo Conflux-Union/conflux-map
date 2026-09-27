@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.core.net;
 
 import cn.net.rms.confluxmap.core.predict.FlatBaseline;
+import cn.net.rms.confluxmap.core.predict.QuadrantLayout;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -91,6 +92,8 @@ public final class MsgCodec {
                 writeUtf(out, m.instanceId());
             } else if (msg instanceof final PlayerPositionsS2C m) {
                 encodePlayerPositionsS2C(out, m);
+            } else if (msg instanceof final QuadraLayoutS2C m) {
+                encodeQuadraLayoutS2C(out, m);
             } else {
                 throw new ProtoException("unknown message type: " + msg.getClass().getName());
             }
@@ -130,7 +133,8 @@ public final class MsgCodec {
             || typeId == Proto.MSG_SERVER_VIEW_DISTANCE_S2C
             || typeId == Proto.MSG_MAP_CAPABILITIES_S2C
             || typeId == Proto.MSG_SERVER_INSTANCE_S2C
-            || typeId == Proto.MSG_PLAYER_POSITIONS_S2C;
+            || typeId == Proto.MSG_PLAYER_POSITIONS_S2C
+            || typeId == Proto.MSG_QUADRA_LAYOUT_S2C;
     }
 
     private static void encodeHelloC2S(final DataOutputStream out, final HelloC2S m) throws IOException, ProtoException {
@@ -381,6 +385,32 @@ public final class MsgCodec {
         }
     }
 
+    private static void encodeQuadraLayoutS2C(final DataOutputStream out, final QuadraLayoutS2C m) throws IOException, ProtoException {
+        final List<QuadraLayoutS2C.Entry> entries = m.entries();
+        if (entries.isEmpty() || entries.size() > Proto.MAX_DIM_ENTRIES) {
+            throw new ProtoException("quadra layout entry count out of range: " + entries.size());
+        }
+        out.writeByte(entries.size());
+        for (final QuadraLayoutS2C.Entry entry : entries) {
+            out.writeByte(entry.dimIndex());
+            final QuadrantLayout layout = entry.layout();
+            for (int quadrant = 0; quadrant < 4; quadrant++) {
+                out.writeByte(layout.style(quadrant).ordinal());
+            }
+            for (int quadrant = 0; quadrant < 4; quadrant++) {
+                final FlatBaseline flat = layout.flat(quadrant);
+                if (layout.style(quadrant) != QuadrantLayout.Style.FLAT) {
+                    continue;
+                }
+                out.writeByte(flat.biomeId());
+                out.writeShort(flat.surfaceY());
+                out.writeByte(flat.kind());
+                out.writeByte(flat.mapColorId());
+                out.writeByte(flat.fluidDepth());
+            }
+        }
+    }
+
     private static void encodeLoadStateSubscribeC2S(
         final DataOutputStream out,
         final LoadStateSubscribeC2S m
@@ -574,6 +604,7 @@ public final class MsgCodec {
                 case Proto.MSG_MAP_CAPABILITIES_S2C -> decodeMapCapabilitiesS2C(in);
                 case Proto.MSG_SERVER_INSTANCE_S2C -> new ServerInstanceS2C(readUtf(in));
                 case Proto.MSG_PLAYER_POSITIONS_S2C -> decodePlayerPositionsS2C(in);
+                case Proto.MSG_QUADRA_LAYOUT_S2C -> decodeQuadraLayoutS2C(in);
                 default -> throw new ProtoException("unhandled message type id: 0x" + Integer.toHexString(typeId));
             };
             if (in.available() != 0) {
@@ -834,6 +865,42 @@ public final class MsgCodec {
             ));
         }
         return new FlatBaselineS2C(entries);
+    }
+
+    private static QuadraLayoutS2C decodeQuadraLayoutS2C(final DataInputStream in) throws IOException, ProtoException {
+        final int count = in.readUnsignedByte();
+        if (count == 0 || count > Proto.MAX_DIM_ENTRIES) {
+            throw new ProtoException("quadra layout entry count out of range: " + count);
+        }
+        final List<QuadraLayoutS2C.Entry> entries = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            final int dimIndex = in.readUnsignedByte();
+            final QuadrantLayout.Style[] styles = new QuadrantLayout.Style[4];
+            for (int quadrant = 0; quadrant < 4; quadrant++) {
+                final int ordinal = in.readUnsignedByte();
+                if (ordinal >= QuadrantLayout.Style.values().length) {
+                    throw new ProtoException("invalid quadrant style: " + ordinal);
+                }
+                styles[quadrant] = QuadrantLayout.Style.values()[ordinal];
+            }
+            final FlatBaseline[] flats = new FlatBaseline[4];
+            for (int quadrant = 0; quadrant < 4; quadrant++) {
+                if (styles[quadrant] != QuadrantLayout.Style.FLAT) {
+                    continue;
+                }
+                flats[quadrant] = new FlatBaseline(
+                    in.readUnsignedByte(),
+                    in.readShort(),
+                    in.readUnsignedByte(),
+                    in.readUnsignedByte(),
+                    in.readUnsignedByte()
+                );
+            }
+            entries.add(new QuadraLayoutS2C.Entry(dimIndex, new QuadrantLayout(
+                styles[0], flats[0], styles[1], flats[1], styles[2], flats[2], styles[3], flats[3]
+            )));
+        }
+        return new QuadraLayoutS2C(entries);
     }
 
     private static LoadStateSubscribeC2S decodeLoadStateSubscribeC2S(

@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.server;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.predict.QuadrantLayout;
 import cn.net.rms.confluxmap.core.store.ServerInstanceIdStore;
 import cn.net.rms.confluxmap.core.update.GithubReleaseFetcher;
 import cn.net.rms.confluxmap.core.update.UpdateCheckService;
@@ -52,6 +53,8 @@ public final class ConfluxMapCompanion {
     private volatile FabricWebMapBackend webMapBackend;
     private int webPlayerTicks;
     private volatile WebMapPrivacyStore webMapPrivacy;
+    /** Snapshot of quadra-gen's per-dimension quadrant layouts for this server lifetime. */
+    private volatile Map<DimensionId, QuadrantLayout> quadraLayouts = Map.of();
     private final PlayerPositionBroadcastGate playerPositionBroadcast =
         new PlayerPositionBroadcastGate();
 
@@ -131,6 +134,7 @@ public final class ConfluxMapCompanion {
         config = configIo.load();
         runtime.deactivate();
         summaries = null;
+        quadraLayouts = Map.of();
         // Capture spawn chunks before the companion activates on SERVER_STARTED or LAN publish.
         chunkLoadStates = config.enabled && config.shareChunkLoadState
             ? new ChunkLoadStateService()
@@ -195,6 +199,7 @@ public final class ConfluxMapCompanion {
             current.close(server);
         }
         summaries = null;
+        quadraLayouts = Map.of();
         chunkLoadStates = null;
         sharedWaypoints = null;
         webMapBackend = null;
@@ -255,6 +260,11 @@ public final class ConfluxMapCompanion {
 
     public RegionSummaryService summaries() {
         return summaries;
+    }
+
+    /** The quadra-gen layouts detected for this server's lifetime; empty when none managed. */
+    public Map<DimensionId, QuadrantLayout> quadraLayouts() {
+        return quadraLayouts;
     }
 
     public ChunkLoadStateService chunkLoadStates() {
@@ -387,6 +397,16 @@ public final class ConfluxMapCompanion {
             return;
         }
         summaries = new RegionSummaryService(config);
+        // quadra-gen's config is read once per server lifetime (that mod never hot-reloads it);
+        // both the handshake advertisement and the residual-baseline mask share this snapshot.
+        quadraLayouts = QuadraGenLayouts.detect(server, !server.isDedicated());
+        summaries.setQuadrantLayouts(quadraLayouts);
+        if (!quadraLayouts.isEmpty()) {
+            ConfluxMapMod.LOGGER.info(
+                "companion: quadra-gen quadrant layouts active for {}",
+                quadraLayouts.keySet()
+            );
+        }
         ServerChunkDirtyHandler.bind(summaries);
         // Corrections can use the same predictor as the client when a bundled native exists;
         // failure is non-fatal and RegionSummaryService falls back to absolute samples.

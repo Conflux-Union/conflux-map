@@ -15,7 +15,9 @@ import cn.net.rms.confluxmap.core.net.NegotiatedMapSync;
 import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.net.ServerInstanceS2C;
 import cn.net.rms.confluxmap.core.net.ServerViewDistanceS2C;
+import cn.net.rms.confluxmap.core.net.QuadraLayoutS2C;
 import cn.net.rms.confluxmap.core.predict.FlatBaseline;
+import cn.net.rms.confluxmap.core.predict.QuadrantLayout;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import java.util.Optional;
 import java.util.OptionalLong;
@@ -55,6 +57,7 @@ public final class CompanionSession {
     private final AtomicReference<State> state = new AtomicReference<>(State.NONE);
     private volatile HelloPolicyS2C policy;
     private volatile FlatBaselineS2C flatBaselines;
+    private volatile QuadraLayoutS2C quadraLayouts;
     private volatile Message pendingSelection;
     private volatile NegotiatedMapSync negotiatedMapSync;
     private volatile int serverViewDistance = -1;
@@ -68,6 +71,7 @@ public final class CompanionSession {
         state.set(State.HELLO_SENT);
         policy = null;
         flatBaselines = null;
+        quadraLayouts = null;
         pendingSelection = null;
         negotiatedMapSync = null;
         serverViewDistance = -1;
@@ -160,11 +164,17 @@ public final class CompanionSession {
         this.flatBaselines = message;
     }
 
+    /** Called from {@link ClientNetworking}'s receiver: quadrant layouts arrive just before the policy. */
+    public void onQuadraLayouts(final QuadraLayoutS2C message) {
+        this.quadraLayouts = message;
+    }
+
     /** Called from {@link ClientPlayConnectionEvents#DISCONNECT}; forget everything. */
     public void reset() {
         state.set(State.NONE);
         policy = null;
         flatBaselines = null;
+        quadraLayouts = null;
         pendingSelection = null;
         negotiatedMapSync = null;
         serverViewDistance = -1;
@@ -354,6 +364,27 @@ public final class CompanionSession {
         for (final FlatBaselineS2C.Entry entry : current.entries()) {
             if (entry.dimIndex() == dimIndex) {
                 return Optional.of(entry.baseline());
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * The server-advertised quadra-gen layout for dimension index {@code dimIndex}, or empty when
+     * the session is not active or quadra-gen manages nothing there (including servers predating
+     * QUADRA_LAYOUT, which never send the message).
+     */
+    public Optional<QuadrantLayout> quadraLayoutFor(final int dimIndex) {
+        if (state.get() != State.ACTIVE) {
+            return Optional.empty();
+        }
+        final QuadraLayoutS2C current = quadraLayouts;
+        if (current == null) {
+            return Optional.empty();
+        }
+        for (final QuadraLayoutS2C.Entry entry : current.entries()) {
+            if (entry.dimIndex() == dimIndex) {
+                return Optional.of(entry.layout());
             }
         }
         return Optional.empty();

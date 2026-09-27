@@ -15,7 +15,7 @@ public final class PredictorVersion {
     public static final int CFX_ABI = 12;
 
     /** Bumped whenever baseline sampling or derivation (LOD expansion, canopy, kind rules) changes. */
-    public static final int BASELINE_ALGO = 16;
+    public static final int BASELINE_ALGO = 17;
 
     private PredictorVersion() {
     }

@@ -185,6 +185,38 @@ public final class PredictedTileComposer {
         final MapColorStyle mapColorStyle,
         final XaeroMapStyle.Shadow xaeroShadow
     ) {
+        return compose(
+            derived, grid, palette, corrections, viewMode, lod, baselineMapColorId,
+            correctionDerived, correctionGrid, correctionBaselineMapColorId,
+            applyAbsoluteHeight, ambientLightTint, syncedMaterials,
+            mapColorStyle, xaeroShadow, null
+        );
+    }
+
+    /**
+     * Full form with per-output-pixel baseline map colours. {@code baselineMapColorOverride} is
+     * indexed like the output ({@code z * 256 + x}) and holds {@link Proto#MAP_COLOR_NONE}
+     * wherever the scalar {@code baselineMapColorId} still applies; it carries a quadrant layout's
+     * flat-quadrant top blocks, whose colour differs per quadrant inside one mixed tile.
+     */
+    public static int[] compose(
+        final DerivedGrid derived,
+        final BaselineGrid grid,
+        final PredictionPalette palette,
+        final CorrectionTile corrections,
+        final PredictionViewMode viewMode,
+        final int lod,
+        final int baselineMapColorId,
+        final DerivedGrid correctionDerived,
+        final BaselineGrid correctionGrid,
+        final int correctionBaselineMapColorId,
+        final boolean applyAbsoluteHeight,
+        final int ambientLightTint,
+        final SyncedMaterialPalette syncedMaterials,
+        final MapColorStyle mapColorStyle,
+        final XaeroMapStyle.Shadow xaeroShadow,
+        final int[] baselineMapColorOverride
+    ) {
         final int size = BaselineGrid.PIXELS;
         final int[] out = new int[size * size];
         final int[] surface = derived.surfaceY.clone();
@@ -283,7 +315,8 @@ public final class PredictedTileComposer {
                 if (mapColorStyle == MapColorStyle.XAERO) {
                     out[outIdx] = xaeroColor(
                         kind, biomes[idx], fluids[idx], palette, syncedMaterials,
-                        corrected[outIdx], colors[outIdx], floorColors[outIdx], baselineMapColorId,
+                        corrected[outIdx], colors[outIdx], floorColors[outIdx],
+                        effectiveBaseline(baselineMapColorId, baselineMapColorOverride, outIdx),
                         materials[outIdx], floorMaterials[outIdx], overlayMaterials[outIdx],
                         grid.blockX(x), grid.blockZ(z),
                         surface, floorSurface, kinds, x, z, lod, xaeroShadow, ambientLightTint
@@ -310,10 +343,14 @@ public final class PredictedTileComposer {
                     : 0.0;
                 final int composed = corrected[outIdx] || !grid.supersampled()
                     ? baseColor(kind, biomes[idx], fluids[idx], palette, syncedMaterials,
-                        corrected[outIdx], colors[outIdx], floorColors[outIdx], baselineMapColorId,
+                        corrected[outIdx], colors[outIdx], floorColors[outIdx],
+                        effectiveBaseline(baselineMapColorId, baselineMapColorOverride, outIdx),
                         floorReliefMultiplier, materials[outIdx], floorMaterials[outIdx],
                         grid.blockX(x), grid.blockZ(z))
-                    : averagedSubColor(derived, grid, palette, idx, baselineMapColorId);
+                    : averagedSubColor(
+                        derived, grid, palette, idx,
+                        effectiveBaseline(baselineMapColorId, baselineMapColorOverride, outIdx)
+                    );
                 final boolean synchronizedMaterial = corrected[outIdx]
                     && syncedMaterials != null
                     && syncedMaterials.contains(materials[outIdx]);
@@ -331,6 +368,21 @@ public final class PredictedTileComposer {
             }
         }
         return out;
+    }
+
+    /**
+     * The baseline map colour one output pixel should paint from: the quadrant-layout override
+     * when it declares one, otherwise the compose-wide scalar.
+     */
+    private static int effectiveBaseline(
+        final int baselineMapColorId,
+        final int[] override,
+        final int outIdx
+    ) {
+        if (override != null && override[outIdx] != Proto.MAP_COLOR_NONE) {
+            return override[outIdx];
+        }
+        return baselineMapColorId;
     }
 
     private static int xaeroColor(

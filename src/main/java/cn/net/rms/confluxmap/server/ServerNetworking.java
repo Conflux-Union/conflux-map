@@ -27,6 +27,8 @@ import cn.net.rms.confluxmap.core.net.PlayerPositionsS2C;
 import cn.net.rms.confluxmap.core.net.ServerInstanceS2C;
 import cn.net.rms.confluxmap.core.net.ServerViewDistanceS2C;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
+import cn.net.rms.confluxmap.core.net.QuadraLayoutS2C;
+import cn.net.rms.confluxmap.core.predict.QuadrantLayout;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
 import java.util.ArrayList;
@@ -166,6 +168,15 @@ public final class ServerNetworking {
         if (!flatEntries.isEmpty()
             && session.supports(MapSyncCapability.FLAT_BASELINE)) {
             sendNegotiated(player, session, new FlatBaselineS2C(flatEntries));
+        }
+        // QUADRA_LAYOUT goes out in the same pre-policy slot so quadrant-masked prediction is
+        // already active when the session opens; peers without the capability keep unmasked
+        // prediction and their residual diffs fall back to absolute mode via PredictorVersion.
+        if (session.supports(MapSyncCapability.QUADRA_LAYOUT)) {
+            final List<QuadraLayoutS2C.Entry> quadraEntries = buildQuadraLayouts(server);
+            if (!quadraEntries.isEmpty()) {
+                sendNegotiated(player, session, new QuadraLayoutS2C(quadraEntries));
+            }
         }
         if (session.supports(MapSyncCapability.SERVER_VIEW_DISTANCE)) {
             sendNegotiated(player, session, ServerViewDistanceS2C.bounded(
@@ -364,6 +375,26 @@ public final class ServerNetworking {
                 FlatWorldBaseline.of(sw).ifPresent(
                     baseline -> entries.add(new FlatBaselineS2C.Entry(index, baseline))
                 );
+            }
+            dimIndex++;
+        }
+        return entries;
+    }
+
+    /** One entry per quadra-gen-managed dimension, indexed like {@link #buildDimDescriptors}'s list. */
+    private List<QuadraLayoutS2C.Entry> buildQuadraLayouts(final MinecraftServer server) {
+        final Map<DimensionId, QuadrantLayout> layouts = companion.quadraLayouts();
+        final List<QuadraLayoutS2C.Entry> entries = new ArrayList<>(layouts.size());
+        int dimIndex = 0;
+        for (final ServerWorld sw : server.getWorlds()) {
+            final QuadrantLayout layout = layouts.get(
+                DimensionId.of(
+                    sw.getRegistryKey().getValue().getNamespace(),
+                    sw.getRegistryKey().getValue().getPath()
+                )
+            );
+            if (layout != null) {
+                entries.add(new QuadraLayoutS2C.Entry(dimIndex, layout));
             }
             dimIndex++;
         }
