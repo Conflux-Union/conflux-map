@@ -156,6 +156,8 @@ public final class CubiomesBiomeIds {
         put(184, "mangrove_swamp");
         put(185, "cherry_grove");
         put(186, "pale_garden");
+        put(187, "sulfur_caves");
+        put(188, "dappled_forest");
 
         alias(12, "snowy_plains");
         alias(155, "old_growth_birch_forest");

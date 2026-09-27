@@ -14,8 +14,12 @@ public final class PredictorVersion {
     /** Must match {@code CFX_ABI} in {@code native/shim/confluxnative.c}. */
     public static final int CFX_ABI = 12;
 
-    /** Bumped whenever baseline sampling or derivation (LOD expansion, canopy, kind rules) changes. */
-    public static final int BASELINE_ALGO = 17;
+    /**
+     * Bumped whenever baseline sampling or derivation (LOD expansion, canopy, kind rules) changes.
+     * 18: dappled forest and sulfur caves gained real BiomeTable entries instead of the neutral
+     * land fallback, changing predicted pixels for 26.2+ worlds.
+     */
+    public static final int BASELINE_ALGO = 18;
 
     private PredictorVersion() {
     }

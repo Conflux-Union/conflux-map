@@ -245,6 +245,7 @@ public final class BiomeTable {
         final int dripstone_caves = 174, lush_caves = 175, meadow = 177, grove = 178;
         final int snowy_slopes = 179, jagged_peaks = 180, frozen_peaks = 181, stony_peaks = 182;
         final int deep_dark = 183, mangrove_swamp = 184, cherry_grove = 185, pale_garden = 186;
+        final int sulfur_caves = 187, dappled_forest = 188;
 
         final int green = DEFAULT_GRASS_TINT;
         final int foliageGreen = DEFAULT_FOLIAGE_TINT;
@@ -336,6 +337,12 @@ public final class BiomeTable {
         // the climate biomes below instead. Their floors are bare stone, not grass.
         put(fixedGround(0.0, stoneGround), dripstone_caves, deep_dark);
         put(land(0.12, 0xFF64A84A, 0xFF4FA63A), lush_caves);
+        // Sulfur caves: like lush caves its floor grows instead of staying bare stone; the
+        // registry pins an olive grass tint (#aba64f) and sulfuric teal water (#34bf89).
+        put(new Entry(
+            SurfaceKind.LAND, false, 0.0, LAND_BASE, true, 0xFFABA64F,
+            FOLIAGE_BASE, true, foliageGreen, 0xFF34BF89
+        ), sulfur_caves);
         put(land(0.02, 0xFF83B55B, 0xFF63A947), meadow);
         put(new Entry(
             SurfaceKind.SNOW, false, 0.22, SNOW_BASE, false, green,
@@ -368,6 +375,13 @@ public final class BiomeTable {
             SurfaceKind.LAND, false, 0.45, LAND_BASE, true, 0xFF77816E,
             0xFF747972, false, 0xFF747972, DEFAULT_WATER_TINT
         ), pale_garden);
+        // Dappled forest: unlike the two fixed-canopy biomes above, vanilla dyes this biome
+        // through explicit registry tints (grass #df6827, foliage #e68e30, water #375154), so
+        // ground and canopy both stay live-sampled; the seeds below are those registry values.
+        put(new Entry(
+            SurfaceKind.LAND, false, 0.35, LAND_BASE, true, 0xFFDF6827,
+            FOLIAGE_BASE, true, 0xFFE68E30, 0xFF375154
+        ), dappled_forest);
 
         // Nether roof prediction uses biome-coloured terrain as a navigational proxy until real
         // bedrock or player construction data replaces it. These are fixed block-material colours,
