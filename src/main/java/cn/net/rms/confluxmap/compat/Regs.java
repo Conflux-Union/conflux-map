@@ -7,6 +7,7 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
+import net.minecraft.world.chunk.WorldChunk;
 
 //#if MC>=11903
 //$$ import net.minecraft.registry.Registries;
@@ -147,6 +148,32 @@ public final class Regs {
         //$$ return biomes(world).getId(world.getBiome(pos).value());
         //#else
         return biomes(world).getId(world.getBiome(pos));
+        //#endif
+    }
+
+    /**
+     * The registry identifier of the biome stored in {@code chunk}'s own container at block
+     * coords, or null when it has none.
+     *
+     * <p>Unlike {@link #biomeIdAt} this never consults the level: the biome manager's voronoi
+     * lookup reads neighbouring chunks, which from a chunk load/unload listener means querying
+     * the chunk system from inside a chunk transition (under C2ME that re-enters main-thread
+     * task polling until the watchdog kills the server). The stored container is also what the
+     * Anvil and Paper paths sample, so live and disk summaries now agree at biome boundaries.
+     */
+    public static Identifier chunkBiomeIdAt(
+        final World world,
+        final WorldChunk chunk,
+        final int x,
+        final int y,
+        final int z
+    ) {
+        //#if MC>=11903
+        //$$ return chunk.getBiomeForNoiseGen(x >> 2, y >> 2, z >> 2).getKey().map(RegistryKey::getValue).orElse(null);
+        //#elseif MC>=11800
+        //$$ return biomes(world).getId(chunk.getBiomeForNoiseGen(x >> 2, y >> 2, z >> 2).value());
+        //#else
+        return biomes(world).getId(chunk.getBiomeArray().getBiomeForNoiseGen(x >> 2, y >> 2, z >> 2));
         //#endif
     }
 }

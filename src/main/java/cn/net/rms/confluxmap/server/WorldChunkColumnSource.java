@@ -16,7 +16,11 @@ import net.minecraft.world.Heightmap;
 import net.minecraft.world.LightType;
 import net.minecraft.world.chunk.WorldChunk;
 
-/** Main-thread adapter that exposes one loaded {@link WorldChunk} through {@link ChunkColumnSource}. */
+/**
+ * Main-thread adapter that exposes one loaded {@link WorldChunk} through {@link ChunkColumnSource}.
+ * Every read stays on the chunk object: this runs from load/unload listeners, where a level
+ * query can re-enter the chunk system.
+ */
 final class WorldChunkColumnSource implements ChunkColumnSource {
     private final ServerWorld world;
     private final WorldChunk chunk;
@@ -116,8 +120,7 @@ final class WorldChunkColumnSource implements ChunkColumnSource {
         final int worldZ = startZ + z;
         final BiomeSample sample = new BiomeSample(worldX >> 2, y >> 2, worldZ >> 2);
         return biomeIds.computeIfAbsent(sample, ignored -> {
-            pos.set(worldX, y, worldZ);
-            final Identifier id = Regs.biomeIdAt(world, pos);
+            final Identifier id = Regs.chunkBiomeIdAt(world, chunk, worldX, y, worldZ);
             return id == null ? 1 : CubiomesBiomeIds.idForName(id.getPath()).orElse(1);
         });
     }
