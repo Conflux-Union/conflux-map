@@ -17,7 +17,7 @@ permissions:
   pull-requests: read
 jobs:
   Generate-Changelog:
-    uses: Conflux-Union/.github/.github/workflows/changelog.yml@v1
+    uses: Conflux-Union/.github/.github/workflows/changelog.yml@v2
     with:
       tag: ${{ inputs.tag }}
       exclude: |

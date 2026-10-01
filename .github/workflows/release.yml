@@ -36,7 +36,7 @@ jobs:
           echo "tag=$CURRENT_TAG" >> "$GITHUB_OUTPUT"
   Generate-Changelog:
     needs: Validate-Release
-    uses: Conflux-Union/.github/.github/workflows/changelog.yml@v1
+    uses: Conflux-Union/.github/.github/workflows/changelog.yml@v2
     with:
       tag: ${{ needs.Validate-Release.outputs.tag }}
       exclude: |
