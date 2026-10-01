@@ -1,0 +1,42 @@
+name: Changelog preview
+
+# Regenerates the release changelog on demand without running the rest of
+# the release pipeline. Uses the shared Conflux-Union/.github changelog
+# workflow — keep the exclude list in sync with release.yml.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to generate the changelog for, e.g. v0.1.6-beta.6.'
+        required: true
+        type: string
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+jobs:
+  Generate-Changelog:
+    uses: Conflux-Union/.github/.github/workflows/changelog.yml@v1
+    with:
+      tag: ${{ inputs.tag }}
+      exclude: |
+        .github/**
+        .gitignore
+        README.md
+        README-CN.md
+        THIRD_PARTY_NOTICES.md
+        docs/**
+        native/README.md
+        src/test/**
+        common/src/test/**
+        src/gametest/**
+        common/src/main/java/cn/net/rms/confluxmap/core/quality/**
+        build.gradle
+        common.gradle
+        settings.gradle
+        gradle.properties
+        gradle/**
+        versions/**/gradle.properties
+    secrets:
+      mimo-api-key: ${{ secrets.MIMO_API_KEY }}
