@@ -124,6 +124,7 @@ public final class NegotiatedMapSync {
             case Proto.MSG_SERVER_VIEW_DISTANCE_S2C -> MapSyncCapability.SERVER_VIEW_DISTANCE;
             case Proto.MSG_SERVER_INSTANCE_S2C -> MapSyncCapability.SERVER_INSTANCE;
             case Proto.MSG_PLAYER_POSITIONS_S2C -> MapSyncCapability.PLAYER_POSITIONS;
+            case Proto.MSG_QUADRA_LAYOUT_S2C -> MapSyncCapability.QUADRA_LAYOUT;
             default -> null;
         };
         if (required != null && !supports(required)) {

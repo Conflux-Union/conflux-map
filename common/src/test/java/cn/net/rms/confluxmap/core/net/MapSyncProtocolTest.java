@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.core.predict.FlatBaseline;
+import cn.net.rms.confluxmap.core.predict.QuadrantLayout;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -144,6 +146,52 @@ class MapSyncProtocolTest {
         final byte[] encoded = session.encodeOutbound(new PlayerPositionsS2C(List.of()));
 
         assertEquals(new PlayerPositionsS2C(List.of()), MsgCodec.decode(encoded));
+    }
+
+    @Test
+    void quadraLayoutIsClientboundThroughTheNegotiatedSession() throws Exception {
+        // Regression: MSG_QUADRA_LAYOUT_S2C missing from isClientbound made the server-side
+        // sendNegotiated reject the frame as a direction mismatch, so quadrant-masked
+        // prediction silently never reached the client.
+        final HelloC2S hello = (HelloC2S) MsgCodec.decode(MsgCodec.encode(
+            MapSyncProtocol.clientHello("0.2.0", PREDICTOR)
+        ));
+        final NegotiatedMapSync session =
+            MapSyncProtocol.acceptClient(hello, "0.2.0", PREDICTOR).session();
+
+        final QuadraLayoutS2C original = new QuadraLayoutS2C(List.of(
+            new QuadraLayoutS2C.Entry(0, new QuadrantLayout(
+                QuadrantLayout.Style.FLAT, new FlatBaseline(1, -60, 1, 2, 0),
+                QuadrantLayout.Style.CLEARED, null,
+                QuadrantLayout.Style.FLAT, new FlatBaseline(47, 0, 9, 255, 0),
+                QuadrantLayout.Style.NOISE, null
+            ))
+        ));
+
+        final byte[] encoded = session.encodeOutbound(original);
+        final QuadraLayoutS2C decoded = (QuadraLayoutS2C) MsgCodec.decode(encoded);
+
+        assertEquals(Proto.MSG_QUADRA_LAYOUT_S2C, decoded.typeId());
+        assertEquals(1, decoded.entries().size());
+        assertEquals(
+            original.entries().get(0).layout().style(1),
+            decoded.entries().get(0).layout().style(1)
+        );
+    }
+
+    @Test
+    void legacySessionWithoutTheQuadraCapabilityRefusesItsMessage() {
+        final NegotiatedMapSync session = MapSyncProtocol.acceptClient(
+            new HelloC2S("0.2.0", PREDICTOR + "|sync:1|wire:4.0|patch:4|region:2|source-light:1"),
+            "0.2.0",
+            PREDICTOR
+        ).session();
+
+        final ProtoException error = assertThrows(
+            ProtoException.class,
+            () -> session.encodeOutbound(new QuadraLayoutS2C(List.of()))
+        );
+        assertTrue(error.getMessage().contains("QUADRA_LAYOUT"));
     }
 
     @Test
