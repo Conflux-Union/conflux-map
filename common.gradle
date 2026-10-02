@@ -137,12 +137,15 @@ loom {
             }
             // Automated smoke tests: -PautoServer makes the client join a local
             // offline server on launch. CI supplies a virtual display for the client.
+            // -PautoServerPort overrides the default port when it is already taken.
             if (project.hasProperty('autoServer')) {
+                final int autoServerPort = project.hasProperty('autoServerPort')
+                    ? Integer.parseInt(project.property('autoServerPort').toString()) : 25565
                 // Minecraft 1.20.1+ uses Quick Play instead of the legacy server/port options.
                 if (mcVersion >= 12001) {
-                    programArgs '--quickPlayMultiplayer', '127.0.0.1:25565'
+                    programArgs '--quickPlayMultiplayer', "127.0.0.1:${autoServerPort}"
                 } else {
-                    programArgs '--server', '127.0.0.1', '--port', '25565'
+                    programArgs '--server', '127.0.0.1', '--port', String.valueOf(autoServerPort)
                 }
             }
             if (project.hasProperty('connectionSmoke')) {
