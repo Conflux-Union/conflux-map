@@ -141,6 +141,37 @@ class ChunkColumnSummarizerTest {
         assertEquals("", column.overlayMaterialId());
     }
 
+    @Test
+    void glassOverNothingIsPromotedToTheVisibleSurface() {
+        final ChunkColumnSummarizer summarizer = new ChunkColumnSummarizer(name -> 3);
+
+        final SummaryCodec.Column column = summarizer.summarize(new LayeredColumn()
+            .set(-64, "minecraft:white_stained_glass")
+            .motionTopExclusive(-63)
+        ).columns()[0];
+
+        assertEquals(-64, column.surfaceY());
+        assertEquals(SurfaceKind.LAND.ordinal(), column.kind());
+        assertEquals("minecraft:white_stained_glass", column.materialId());
+        assertEquals("", column.overlayMaterialId());
+    }
+
+    @Test
+    void stackedGlassOverNothingKeepsTheTopmostLayerAsTheSurface() {
+        final ChunkColumnSummarizer summarizer = new ChunkColumnSummarizer(name -> 3);
+
+        final SummaryCodec.Column column = summarizer.summarize(new LayeredColumn()
+            .set(70, "minecraft:glass")
+            .set(69, "minecraft:blue_stained_glass")
+            .motionTopExclusive(71)
+        ).columns()[0];
+
+        assertEquals(70, column.surfaceY());
+        assertEquals(SurfaceKind.LAND.ordinal(), column.kind());
+        assertEquals("minecraft:glass", column.materialId());
+        assertEquals("", column.overlayMaterialId());
+    }
+
     private static final class LayeredColumn implements ChunkColumnSource {
         private final java.util.Map<Integer, String> blocks = new java.util.HashMap<>();
         private int motionTop;

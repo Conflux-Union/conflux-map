@@ -84,6 +84,16 @@ public final class ChunkColumnSummarizer {
             surfaceY--;
             surface = blockAt(source, x, surfaceY, z);
         }
+        if (descentTop != null && surface.kind == SurfaceKind.UNKNOWN) {
+            // The light-permeable cover never reached solid ground (quadra-gen's flat glass
+            // quadrant, glass bridges over the void): the cover itself is what a viewer sees.
+            // Promote it to the surface so the synced column renders like the client's
+            // authoritative capture of the same column instead of an unknown air surface
+            // tinted by a glass overlay.
+            surface = classify(descentTop, mapColors);
+            surfaceY = descentTopY;
+            descentTop = null;
+        }
         int fluidSurfaceY = surfaceY;
         BlockInfo fluidSurface = surface;
         boolean promotedFluidCover = false;

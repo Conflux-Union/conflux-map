@@ -14,10 +14,12 @@ import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.CarpetBlock;
 import net.minecraft.block.FlowerBlock;
+import net.minecraft.block.PaneBlock;
 import net.minecraft.block.LeavesBlock;
 import net.minecraft.block.SnowBlock;
 import net.minecraft.block.TallFlowerBlock;
 import net.minecraft.block.TallPlantBlock;
+import net.minecraft.block.TransparentBlock;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.world.ClientWorld;
@@ -289,7 +291,25 @@ public final class McChunkSnapshotFactory {
             state = collapse(chunk.getBlockState(pos));
         }
         if (!isOpaque(state, world, pos)) {
-            // World bottom reached and never found an opaque block: §1 void fallback.
+            // World bottom reached without an opaque block. A glass-family cover that runs out
+            // of world (quadra-gen's flat glass quadrant, glass bridges over the void) is itself
+            // the visible surface - the same promotion the companion's summarizer applies -
+            // instead of the §1 void fallback, which would render the glass transparent.
+            if (isLightPermeableCover(topOverlay)) {
+                writeSurface(
+                    index, worldX, worldZ, topY, pos, world,
+                    topOverlay, topOverlayY, classifySurfaceKind(topOverlay.getBlock()),
+                    null, 0, null, 0, null, 0, false,
+                    surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light,
+                    xaeroBaseArgb, xaeroOverlayArgb
+                );
+                if (isXaeroInvisible(topOverlay)) {
+                    xaeroBaseArgb[index] = Argb.TRANSPARENT;
+                    xaeroOverlayArgb[index] = Argb.TRANSPARENT;
+                }
+                return;
+            }
+            // §1 void fallback.
             writeVoid(index, playerY, surfaceY, kind, baseArgb, tintArgb, overlayArgb, fluidDepth, light);
             return;
         }
@@ -687,6 +707,22 @@ public final class McChunkSnapshotFactory {
     private static boolean isPromotedSurfaceCover(final BlockState state) {
         final Block block = state.getBlock();
         return block instanceof SnowBlock || block instanceof CarpetBlock;
+    }
+
+    /**
+     * The glass family the heightmap counts as the surface but the opacity scan descends
+     * through - the same blocks the companion's {@code ChunkColumnSummarizer} treats as
+     * light-permeable covers. Tinted glass blocks light and stays the surface via opacity.
+     */
+    private static boolean isLightPermeableCover(final BlockState state) {
+        if (state == null) {
+            return false;
+        }
+        final Block block = state.getBlock();
+        if (block == Blocks.TINTED_GLASS) {
+            return false;
+        }
+        return block instanceof TransparentBlock || block instanceof PaneBlock;
     }
 
     /** §2/§6 unified block-type classification, shared by the surface scan and the floor scan. */
