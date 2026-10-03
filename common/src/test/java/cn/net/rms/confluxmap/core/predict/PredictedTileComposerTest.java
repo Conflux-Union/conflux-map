@@ -159,6 +159,83 @@ class PredictedTileComposerTest {
     }
 
     @Test
+    void correctedTranslucentSurfaceMaterialKeepsItsOwnAlpha() {
+        final BaselineGrid grid = flatGrid(1);
+        final DerivedGrid derived = flatDerived(ShadingPipeline.REFERENCE_HEIGHT);
+        final int pixel = 10 * 256 + 10;
+        final CorrectionTile corrections = new CorrectionTile();
+        corrections.applyPatch(
+            1L,
+            new byte[Proto.PATCH_PRESENCE_BYTES],
+            new PatchCodec.Patch(java.util.List.of(new PatchCodec.Sample(
+                pixel, 1, ShadingPipeline.REFERENCE_HEIGHT, SurfaceKind.LAND.ordinal(),
+                8, 0, 255, "minecraft:white_stained_glass", ""
+            ))),
+            Proto.PATCH_MODE_ABSOLUTE,
+            "",
+            1_000L
+        );
+        final SyncedMaterialPalette materials = new SyncedMaterialPalette();
+        // The live sampler averages white stained glass to white RGB at alpha 117. A glass
+        // floor promoted to the visible surface keeps that translucency - it tints the map
+        // background instead of painting an opaque plate - like the authoritative capture.
+        materials.put("minecraft:white_stained_glass", new SyncedMaterialPalette.Sample(
+            0x75FFFFFF,
+            MaterialDetailProfile.flat(),
+            SyncedMaterialPalette.Tint.NONE,
+            0xFFFFFFFF,
+            1
+        ));
+
+        final int[] composed = PredictedTileComposer.compose(
+            derived, grid, PredictionPalette.defaults(), corrections,
+            PredictionViewMode.EVERYWHERE, 0, Proto.MAP_COLOR_NONE,
+            derived, grid, Proto.MAP_COLOR_NONE, true, 0xFFFFFFFF, materials
+        );
+
+        assertEquals(0x75FFFFFF, composed[pixel]);
+    }
+
+    @Test
+    void flatTopMaterialPaintsItsOwnSampleWithoutACorrection() {
+        // Origin (-16, -16) puts local (5, 5) at world (-11, -11) in the -- quadrant and local
+        // (20, 20) at world (4, 4) in the ++ quadrant, so one tile spans both.
+        final BaselineGrid grid = new BaselineGrid(0, -16, -16);
+        Arrays.fill(grid.biomeId, 1);
+        final DerivedGrid derived = flatDerived(ShadingPipeline.REFERENCE_HEIGHT);
+        final int materialPixel = 20 * 256 + 20;
+        final int tablePixel = 5 * 256 + 5;
+        final int[] mapColorOverride = new int[256 * 256];
+        Arrays.fill(mapColorOverride, Proto.MAP_COLOR_NONE);
+        mapColorOverride[materialPixel] = 8;
+        mapColorOverride[tablePixel] = 8;
+        final SyncedMaterialPalette materials = new SyncedMaterialPalette();
+        materials.put("minecraft:white_stained_glass", new SyncedMaterialPalette.Sample(
+            0x75FFFFFF,
+            MaterialDetailProfile.flat(),
+            SyncedMaterialPalette.Tint.NONE,
+            0xFFFFFFFF,
+            1
+        ));
+        final String[] flatTopMaterials = new String[] {
+            "minecraft:white_stained_glass", null, null, null
+        };
+
+        final int[] composed = PredictedTileComposer.compose(
+            derived, grid, PredictionPalette.defaults(), null,
+            PredictionViewMode.EVERYWHERE, 0, Proto.MAP_COLOR_NONE,
+            derived, grid, Proto.MAP_COLOR_NONE, true, 0xFFFFFFFF, materials,
+            MapColorStyle.CONFLUX, XaeroMapStyle.Shadow.OVERWORLD,
+            mapColorOverride, flatTopMaterials
+        );
+
+        // The ++ quadrant paints the glass's own translucent sample, not the opaque map colour.
+        assertEquals(0x75FFFFFF, composed[materialPixel]);
+        // A quadrant with no declared material still paints the opaque map colour.
+        assertEquals(0xFFFFFFFF, composed[tablePixel]);
+    }
+
+    @Test
     void overlayMaterialCompositesOverTheCorrectedSurface() {
         final BaselineGrid grid = flatGrid(1);
         final DerivedGrid derived = flatDerived(ShadingPipeline.REFERENCE_HEIGHT);

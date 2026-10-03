@@ -139,8 +139,14 @@ final class PaperWorldMetadata {
             surfaceY,
             info.kind().ordinal(),
             info.mapColorId(),
-            info.kind() == SurfaceKind.WATER ? Math.min(255, waterDepth) : 0
+            info.kind() == SurfaceKind.WATER ? Math.min(255, waterDepth) : 0,
+            namespaced(surfaceBlock)
         ));
+    }
+
+    /** Flat generator settings may carry bare block names; registry ids are always namespaced. */
+    private static String namespaced(final String block) {
+        return block.contains(":") ? block : "minecraft:" + block;
     }
 
     private static Optional<CompoundTag> generator(final World world) {

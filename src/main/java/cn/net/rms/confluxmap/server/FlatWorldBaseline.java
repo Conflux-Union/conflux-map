@@ -74,7 +74,9 @@ public final class FlatWorldBaseline {
         if (info.kind() == SurfaceKind.UNKNOWN) {
             return new FlatBaseline(biomeId, 0, SurfaceKind.VOID.ordinal(), Proto.MAP_COLOR_NONE, 0);
         }
-        return new FlatBaseline(biomeId, surfaceY, info.kind().ordinal(), info.mapColorId(), 0);
+        return new FlatBaseline(
+            biomeId, surfaceY, info.kind().ordinal(), info.mapColorId(), 0, blockName
+        );
     }
 
     /**

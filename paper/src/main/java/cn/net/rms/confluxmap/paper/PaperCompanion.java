@@ -528,7 +528,7 @@ final class PaperCompanion implements Listener {
                 }
                 final FlatBaseline candidate = new FlatBaseline(
                     column.biomeId(), column.surfaceY(), column.kind(), column.mapColorId(),
-                    column.fluidDepth()
+                    column.fluidDepth(), column.materialId()
                 );
                 if (candidates.size() < 64 || candidates.containsKey(candidate)) {
                     candidates.merge(candidate, 1, Integer::sum);

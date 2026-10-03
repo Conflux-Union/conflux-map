@@ -5,7 +5,8 @@ import java.util.Map;
 
 /** Independently negotiable map-sync contracts. Capability versions are backward-compatible. */
 public enum MapSyncCapability {
-    FLAT_BASELINE(1, 1),
+    /** Version 2 added the flat top block's material id to {@code FLAT_BASELINE_S2C} entries. */
+    FLAT_BASELINE(1, 2),
     LOAD_STATE(2, 1),
     MAP_INVALIDATION(3, 1),
     REGION_CORRECTION(4, 1),
@@ -13,7 +14,8 @@ public enum MapSyncCapability {
     SERVER_VIEW_DISTANCE(6, 1),
     SERVER_INSTANCE(7, 1),
     PLAYER_POSITIONS(8, 1),
-    QUADRA_LAYOUT(9, 1);
+    /** Version 2 added the flat quadrant's top material id to {@code QUADRA_LAYOUT_S2C} entries. */
+    QUADRA_LAYOUT(9, 2);
 
     private final int id;
     private final int version;

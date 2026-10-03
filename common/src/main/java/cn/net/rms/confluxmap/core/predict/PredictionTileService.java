@@ -976,6 +976,11 @@ public final class PredictionTileService {
         }
     }
 
+    /** A whole-dimension flat surface declares the same top material in every quadrant. */
+    private static String[] uniformFlatMaterials(final String topMaterialId) {
+        return new String[] {topMaterialId, topMaterialId, topMaterialId, topMaterialId};
+    }
+
     private Composition composeTile(final TileKey key, final long token) {
         return composeTile(key, token, viewMode, netherBiomeY);
     }
@@ -1100,7 +1105,8 @@ public final class PredictionTileService {
                 grid = flat.toBaselineGrid();
                 derived = flat.toDerivedGrid();
                 baselineMapColorId = flat.mapColorId();
-                quadrantMask = null;
+                quadrantMask = flat.topMaterialId().isEmpty() ? null
+                    : new QuadrantLayout.Mask(null, uniformFlatMaterials(flat.topMaterialId()));
             } else {
                 final long seed = state.seed();
                 final BaselineSampler sampler = new NativeBaselineSampler(
@@ -1140,7 +1146,8 @@ public final class PredictionTileService {
                     ? LightTint.multiplier(0, 0, true)
                     : 0xFFFFFFFF,
                 syncedMaterials, style, shadow,
-                quadrantMask == null ? null : quadrantMask.mapColorOverrides()
+                quadrantMask == null ? null : quadrantMask.mapColorOverrides(),
+                quadrantMask == null ? null : quadrantMask.topMaterials()
             );
         final byte[] syncEvaluated = directCorrections == null
             ? new byte[PatchCodec.MASK_BYTES] : directCorrections.copyEvaluated();

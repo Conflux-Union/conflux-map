@@ -107,9 +107,12 @@ public final class QuadrantLayout {
     /**
      * Result of masking sampled grids: the per-output-pixel {@code baselineMapColorId} overrides a
      * flat quadrant's top block introduces ({@link Proto#MAP_COLOR_NONE} where the scalar still
-     * applies), or {@code null} when no flat quadrant paints a literal map color.
+     * applies), or {@code null} when no flat quadrant paints a literal map color. {@code
+     * topMaterials} carries each quadrant's {@link FlatBaseline#topMaterialId()} ({@code null}
+     * where the quadrant is not flat or has no material) so composition can paint translucent tops
+     * with their own sampled colour.
      */
-    public record Mask(int[] mapColorOverrides) {
+    public record Mask(int[] mapColorOverrides, String[] topMaterials) {
     }
 
     /**
@@ -139,6 +142,7 @@ public final class QuadrantLayout {
             return null;
         }
         int[] overrides = null;
+        String[] topMaterials = null;
         for (int localZ = minPixelZ; localZ <= maxPixelZ; localZ++) {
             for (int localX = minPixelX; localX <= maxPixelX; localX++) {
                 final int i = BaselineGrid.index(localX, localZ);
@@ -168,6 +172,12 @@ public final class QuadrantLayout {
                         }
                         overrides[localZ * BaselineGrid.PIXELS + localX] = flat.mapColorId();
                     }
+                    if (!flat.topMaterialId().isEmpty()) {
+                        if (topMaterials == null) {
+                            topMaterials = new String[4];
+                        }
+                        topMaterials[quadrant] = flat.topMaterialId();
+                    }
                 }
                 if (!grid.supersampled()) {
                     continue;
@@ -191,7 +201,8 @@ public final class QuadrantLayout {
                 }
             }
         }
-        return overrides == null ? null : new Mask(overrides);
+        return overrides == null && topMaterials == null
+            ? null : new Mask(overrides, topMaterials);
     }
 
     private static boolean inOutputPixels(final int local) {

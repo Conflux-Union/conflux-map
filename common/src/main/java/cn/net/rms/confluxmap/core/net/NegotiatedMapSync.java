@@ -96,11 +96,11 @@ public final class NegotiatedMapSync {
             throw new ProtoException("message direction does not match negotiated endpoint");
         }
         requireCapability(message.typeId());
-        return MsgCodec.encode(correctionProfile.prepareOutbound(message));
+        return MsgCodec.encode(correctionProfile.prepareOutbound(message), capabilities);
     }
 
     public Message decodeInbound(final byte[] payload) throws ProtoException {
-        final Message message = MsgCodec.decode(payload);
+        final Message message = MsgCodec.decode(payload, capabilities);
         final boolean clientbound = MapSyncProtocol.isClientbound(message.typeId());
         if ((endpoint == Endpoint.SERVER && clientbound)
             || (endpoint == Endpoint.CLIENT && !clientbound)) {

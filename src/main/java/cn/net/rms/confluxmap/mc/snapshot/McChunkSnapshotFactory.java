@@ -303,6 +303,9 @@ public final class McChunkSnapshotFactory {
                     surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light,
                     xaeroBaseArgb, xaeroOverlayArgb
                 );
+                // The promoted cover keeps its texture's own translucency: a translucent glass
+                // floor over the void tints the map background like the glass tints the world
+                // beneath it, instead of painting an opaque plate.
                 if (isXaeroInvisible(topOverlay)) {
                     xaeroBaseArgb[index] = Argb.TRANSPARENT;
                     xaeroOverlayArgb[index] = Argb.TRANSPARENT;

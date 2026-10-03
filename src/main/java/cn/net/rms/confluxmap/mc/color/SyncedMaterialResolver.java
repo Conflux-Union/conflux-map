@@ -41,19 +41,20 @@ public final class SyncedMaterialResolver {
         }
     }
 
-    public void refresh() {
-        palette.clear();
-        for (final String material : knownMaterials) {
-            sample(material);
-        }
-    }
-
-    private void register(final String materialId) {
+    /** Registers one bare material id (a flat-baseline top block) for palette sampling. */
+    public void register(final String materialId) {
         if (materialId == null || materialId.isEmpty()) {
             return;
         }
         if (knownMaterials.add(materialId) || !palette.contains(materialId)) {
             sample(materialId);
+        }
+    }
+
+    public void refresh() {
+        palette.clear();
+        for (final String material : knownMaterials) {
+            sample(material);
         }
     }
 

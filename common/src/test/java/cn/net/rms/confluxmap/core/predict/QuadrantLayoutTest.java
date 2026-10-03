@@ -16,9 +16,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * of that quadrant reports, and a cleared quadrant must leave nothing to predict.
  */
 class QuadrantLayoutTest {
-    /** (+X,+Z): one layer of stained glass on plains - renders as a literal white plane. */
+    /** (+X,+Z): one layer of stained glass on plains - renders as a translucent glass plane. */
     private static final FlatBaseline GLASS = new FlatBaseline(
-        1, -60, SurfaceKind.LAND.ordinal(), 2, 0
+        1, -60, SurfaceKind.LAND.ordinal(), 2, 0, "minecraft:white_stained_glass"
     );
     /** (-X,+Z): the_void flat with no layers - a flat quadrant that predicts nothing. */
     private static final FlatBaseline VOID_FLAT = new FlatBaseline(
@@ -73,6 +73,10 @@ class QuadrantLayoutTest {
         assertEquals(SurfaceKind.LAND.ordinal(), derived.kind[i] & 0xFF);
         assertEquals(-60, derived.surfaceY[i]);
         assertEquals(2, mask.mapColorOverrides()[10 * BaselineGrid.PIXELS + 10]);
+        assertEquals("minecraft:white_stained_glass",
+            mask.topMaterials()[QuadrantLayout.X_POSITIVE_Z_POSITIVE]);
+        assertNull(mask.topMaterials()[QuadrantLayout.X_POSITIVE_Z_NEGATIVE],
+            "only flat quadrants with a known top block declare a material");
         // A margin column of the same quadrant is masked too (relief reads it).
         final int margin = BaselineGrid.index(BaselineGrid.PIXELS, BaselineGrid.PIXELS);
         assertEquals(-60, grid.terrainY[margin]);

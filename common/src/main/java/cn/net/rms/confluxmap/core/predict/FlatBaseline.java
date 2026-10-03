@@ -13,13 +13,37 @@ import java.util.Arrays;
  * underlay composes from constants, and real-world differences (villages, player builds) arrive
  * as ordinary correction patches diffed against the same uniform sample.
  *
- * @param biomeId    cubiomes-space biome id (equal to the 1.17 raw registry id for vanilla biomes)
- * @param surfaceY   Y of the topmost non-air layer (the water surface for water-topped presets)
- * @param kind       {@link cn.net.rms.confluxmap.core.model.SurfaceKind} ordinal of the top layer
- * @param mapColorId vanilla map color of the top block; {@code 255} = none (render via biome palette)
- * @param fluidDepth consecutive water layers below the surface (0 for solid tops)
+ * @param biomeId       cubiomes-space biome id (equal to the 1.17 raw registry id for vanilla biomes)
+ * @param surfaceY      Y of the topmost non-air layer (the water surface for water-topped presets)
+ * @param kind          {@link cn.net.rms.confluxmap.core.model.SurfaceKind} ordinal of the top layer
+ * @param mapColorId    vanilla map color of the top block; {@code 255} = none (render via biome palette)
+ * @param fluidDepth    consecutive water layers below the surface (0 for solid tops)
+ * @param topMaterialId registry id of the top block; empty when unknown. A translucent top block
+ *                      (a glass floor) renders with its own sampled colour and alpha instead of
+ *                      the opaque map colour, like the authoritative capture of the same column.
  */
-public record FlatBaseline(int biomeId, int surfaceY, int kind, int mapColorId, int fluidDepth) {
+public record FlatBaseline(
+    int biomeId,
+    int surfaceY,
+    int kind,
+    int mapColorId,
+    int fluidDepth,
+    String topMaterialId
+) {
+
+    public FlatBaseline {
+        topMaterialId = topMaterialId == null ? "" : topMaterialId;
+    }
+
+    public FlatBaseline(
+        final int biomeId,
+        final int surfaceY,
+        final int kind,
+        final int mapColorId,
+        final int fluidDepth
+    ) {
+        this(biomeId, surfaceY, kind, mapColorId, fluidDepth, "");
+    }
 
     /** A margin-inclusive grid where every cell is this surface's biome and height. */
     public BaselineGrid toBaselineGrid() {

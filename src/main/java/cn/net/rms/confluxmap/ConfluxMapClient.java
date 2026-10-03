@@ -246,14 +246,15 @@ public final class ConfluxMapClient implements ClientModInitializer {
             cacheRoot.resolve("prediction")
         );
         predictionTileService.bindCorrectionStore(correctionStore);
-        predictionBootstrap = new PredictionBootstrap(
-            client, predictionState, companionSession, config.predictionManualSeeds
-        );
-        clientNetworking = new ClientNetworking(companionSession);
         syncedMaterialResolver = new SyncedMaterialResolver(
             client, spriteColorSampler, biomeTintResolver,
             predictionTileService.syncedMaterials()
         );
+        predictionBootstrap = new PredictionBootstrap(
+            client, predictionState, companionSession, config.predictionManualSeeds,
+            syncedMaterialResolver::register
+        );
+        clientNetworking = new ClientNetworking(companionSession);
         mapSyncClient = new MapSyncClient(
             companionSession, clientNetworking, correctionStore, predictionTileService,
             config, syncedMaterialResolver::register

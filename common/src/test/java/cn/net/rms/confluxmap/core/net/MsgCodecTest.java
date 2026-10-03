@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -237,7 +238,7 @@ class MsgCodecTest {
     void flatBaselineRoundTrips() throws ProtoException {
         final FlatBaselineS2C original = new FlatBaselineS2C(List.of(
             new FlatBaselineS2C.Entry(0, new FlatBaseline(1, 3, 1, 11, 0)),
-            new FlatBaselineS2C.Entry(2, new FlatBaseline(7, 63, 2, 12, 40))
+            new FlatBaselineS2C.Entry(2, new FlatBaseline(7, 63, 2, 12, 40, "minecraft:white_stained_glass"))
         ));
         final FlatBaselineS2C decoded = (FlatBaselineS2C) MsgCodec.decode(MsgCodec.encode(original));
         assertIterableEquals(original.entries(), decoded.entries());
@@ -245,9 +246,25 @@ class MsgCodecTest {
     }
 
     @Test
+    void flatBaselineLegacyShapeOmitsTheTopMaterial() throws ProtoException {
+        final FlatBaselineS2C original = new FlatBaselineS2C(List.of(
+            new FlatBaselineS2C.Entry(0, new FlatBaseline(1, 3, 1, 11, 0, "minecraft:glass"))
+        ));
+        final Map<MapSyncCapability, Integer> legacy = Map.of(MapSyncCapability.FLAT_BASELINE, 1);
+
+        final byte[] payload = MsgCodec.encode(original, legacy);
+        final FlatBaselineS2C decoded = (FlatBaselineS2C) MsgCodec.decode(payload, legacy);
+
+        assertEquals("", decoded.entries().get(0).baseline().topMaterialId());
+        // The version 2 shape decodes the same bytes only with the material appended, so a v1
+        // payload must fail the trailing-bytes check rather than misparse.
+        assertThrows(ProtoException.class, () -> MsgCodec.decode(payload));
+    }
+
+    @Test
     void quadraLayoutRoundTrips() throws ProtoException {
         final QuadrantLayout layout = new QuadrantLayout(
-            QuadrantLayout.Style.FLAT, new FlatBaseline(1, -60, 1, 2, 0),
+            QuadrantLayout.Style.FLAT, new FlatBaseline(1, -60, 1, 2, 0, "minecraft:white_stained_glass"),
             QuadrantLayout.Style.CLEARED, null,
             QuadrantLayout.Style.FLAT, new FlatBaseline(47, 0, 9, 255, 0),
             QuadrantLayout.Style.NOISE, null
@@ -266,6 +283,26 @@ class MsgCodecTest {
             assertEquals(layout.flat(quadrant), decodedLayout.flat(quadrant));
         }
         assertEquals(layout.predictsTerrainAt(-1, -1), decodedLayout.predictsTerrainAt(-1, -1));
+    }
+
+    @Test
+    void quadraLayoutLegacyShapeOmitsTheTopMaterial() throws ProtoException {
+        final QuadrantLayout layout = new QuadrantLayout(
+            QuadrantLayout.Style.FLAT, new FlatBaseline(1, -60, 1, 2, 0, "minecraft:white_stained_glass"),
+            QuadrantLayout.Style.NOISE, null,
+            QuadrantLayout.Style.NOISE, null,
+            QuadrantLayout.Style.NOISE, null
+        );
+        final QuadraLayoutS2C original = new QuadraLayoutS2C(List.of(
+            new QuadraLayoutS2C.Entry(0, layout)
+        ));
+        final Map<MapSyncCapability, Integer> legacy = Map.of(MapSyncCapability.QUADRA_LAYOUT, 1);
+
+        final byte[] payload = MsgCodec.encode(original, legacy);
+        final QuadraLayoutS2C decoded = (QuadraLayoutS2C) MsgCodec.decode(payload, legacy);
+
+        assertEquals("", decoded.entries().get(0).layout().flat(0).topMaterialId());
+        assertThrows(ProtoException.class, () -> MsgCodec.decode(payload));
     }
 
     @Test

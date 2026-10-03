@@ -14,6 +14,7 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -48,6 +49,18 @@ public final class MsgCodec {
 
     /** Serializes {@code msg} to its wire form, including the leading type byte. */
     public static byte[] encode(final Message msg) throws ProtoException {
+        return encode(msg, null);
+    }
+
+    /**
+     * Negotiated form: capability version 1 layout messages omit the flat top material id a
+     * version 2 peer carries, so a server never writes a shape the client's decoder rejects.
+     * {@code negotiated == null} encodes the current (highest) shapes.
+     */
+    public static byte[] encode(
+        final Message msg,
+        final Map<MapSyncCapability, Integer> negotiated
+    ) throws ProtoException {
         final ByteArrayOutputStream rawOut = new ByteArrayOutputStream();
         final DataOutputStream out = new DataOutputStream(rawOut);
         try {
@@ -65,7 +78,7 @@ public final class MsgCodec {
             } else if (msg instanceof final ErrorS2C m) {
                 encodeErrorS2C(out, m);
             } else if (msg instanceof final FlatBaselineS2C m) {
-                encodeFlatBaselineS2C(out, m);
+                encodeFlatBaselineS2C(out, m, carriesTopMaterial(negotiated, MapSyncCapability.FLAT_BASELINE));
             } else if (msg instanceof final LoadStateSubscribeC2S m) {
                 encodeLoadStateSubscribeC2S(out, m);
             } else if (msg instanceof final LoadStateDeltaS2C m) {
@@ -93,7 +106,7 @@ public final class MsgCodec {
             } else if (msg instanceof final PlayerPositionsS2C m) {
                 encodePlayerPositionsS2C(out, m);
             } else if (msg instanceof final QuadraLayoutS2C m) {
-                encodeQuadraLayoutS2C(out, m);
+                encodeQuadraLayoutS2C(out, m, carriesTopMaterial(negotiated, MapSyncCapability.QUADRA_LAYOUT));
             } else {
                 throw new ProtoException("unknown message type: " + msg.getClass().getName());
             }
@@ -368,7 +381,19 @@ public final class MsgCodec {
         writeUtf(out, m.detail());
     }
 
-    private static void encodeFlatBaselineS2C(final DataOutputStream out, final FlatBaselineS2C m) throws IOException, ProtoException {
+    /** Whether the negotiated shape of one layout message carries the flat top material id. */
+    private static boolean carriesTopMaterial(
+        final Map<MapSyncCapability, Integer> negotiated,
+        final MapSyncCapability capability
+    ) {
+        return negotiated == null || negotiated.getOrDefault(capability, 0) >= 2;
+    }
+
+    private static void encodeFlatBaselineS2C(
+        final DataOutputStream out,
+        final FlatBaselineS2C m,
+        final boolean topMaterial
+    ) throws IOException, ProtoException {
         final List<FlatBaselineS2C.Entry> entries = m.entries();
         if (entries.isEmpty() || entries.size() > Proto.MAX_DIM_ENTRIES) {
             throw new ProtoException("flat baseline entry count out of range: " + entries.size());
@@ -382,10 +407,17 @@ public final class MsgCodec {
             out.writeByte(b.kind());
             out.writeByte(b.mapColorId());
             out.writeByte(b.fluidDepth());
+            if (topMaterial) {
+                writeUtf(out, b.topMaterialId());
+            }
         }
     }
 
-    private static void encodeQuadraLayoutS2C(final DataOutputStream out, final QuadraLayoutS2C m) throws IOException, ProtoException {
+    private static void encodeQuadraLayoutS2C(
+        final DataOutputStream out,
+        final QuadraLayoutS2C m,
+        final boolean topMaterial
+    ) throws IOException, ProtoException {
         final List<QuadraLayoutS2C.Entry> entries = m.entries();
         if (entries.isEmpty() || entries.size() > Proto.MAX_DIM_ENTRIES) {
             throw new ProtoException("quadra layout entry count out of range: " + entries.size());
@@ -407,6 +439,9 @@ public final class MsgCodec {
                 out.writeByte(flat.kind());
                 out.writeByte(flat.mapColorId());
                 out.writeByte(flat.fluidDepth());
+                if (topMaterial) {
+                    writeUtf(out, flat.topMaterialId());
+                }
             }
         }
     }
@@ -573,6 +608,18 @@ public final class MsgCodec {
 
     /** Parses exactly one {@link Message} from {@code payload}; throws on any violation. */
     public static Message decode(final byte[] payload) throws ProtoException {
+        return decode(payload, null);
+    }
+
+    /**
+     * Negotiated form: the decoder mirrors {@link #encode(Message, Map)} and only reads the flat
+     * top material id when the peer's capability version carries it. {@code negotiated == null}
+     * decodes the current (highest) shapes.
+     */
+    public static Message decode(
+        final byte[] payload,
+        final Map<MapSyncCapability, Integer> negotiated
+    ) throws ProtoException {
         if (payload.length == 0) {
             throw new ProtoException("empty payload");
         }
@@ -590,7 +637,8 @@ public final class MsgCodec {
                 case Proto.MSG_MAP_PATCH_S2C -> decodeMapPatchS2C(in);
                 case Proto.MSG_POLICY_UPDATE_S2C -> decodePolicyUpdateS2C(in);
                 case Proto.MSG_ERROR_S2C -> decodeErrorS2C(in);
-                case Proto.MSG_FLAT_BASELINE_S2C -> decodeFlatBaselineS2C(in);
+                case Proto.MSG_FLAT_BASELINE_S2C -> decodeFlatBaselineS2C(
+                    in, carriesTopMaterial(negotiated, MapSyncCapability.FLAT_BASELINE));
                 case Proto.MSG_LOAD_STATE_SUBSCRIBE_C2S -> decodeLoadStateSubscribeC2S(in);
                 case Proto.MSG_LOAD_STATE_DELTA_S2C -> decodeLoadStateDeltaS2C(in);
                 case Proto.MSG_MAP_SYNC_SUBSCRIBE_C2S -> decodeMapSyncSubscribeC2S(in);
@@ -604,7 +652,8 @@ public final class MsgCodec {
                 case Proto.MSG_MAP_CAPABILITIES_S2C -> decodeMapCapabilitiesS2C(in);
                 case Proto.MSG_SERVER_INSTANCE_S2C -> new ServerInstanceS2C(readUtf(in));
                 case Proto.MSG_PLAYER_POSITIONS_S2C -> decodePlayerPositionsS2C(in);
-                case Proto.MSG_QUADRA_LAYOUT_S2C -> decodeQuadraLayoutS2C(in);
+                case Proto.MSG_QUADRA_LAYOUT_S2C -> decodeQuadraLayoutS2C(
+                    in, carriesTopMaterial(negotiated, MapSyncCapability.QUADRA_LAYOUT));
                 default -> throw new ProtoException("unhandled message type id: 0x" + Integer.toHexString(typeId));
             };
             if (in.available() != 0) {
@@ -847,7 +896,10 @@ public final class MsgCodec {
         return new ErrorS2C(code, detail);
     }
 
-    private static FlatBaselineS2C decodeFlatBaselineS2C(final DataInputStream in) throws IOException, ProtoException {
+    private static FlatBaselineS2C decodeFlatBaselineS2C(
+        final DataInputStream in,
+        final boolean topMaterial
+    ) throws IOException, ProtoException {
         final int count = in.readUnsignedByte();
         if (count == 0 || count > Proto.MAX_DIM_ENTRIES) {
             throw new ProtoException("flat baseline entry count out of range: " + count);
@@ -860,14 +912,18 @@ public final class MsgCodec {
             final int kind = in.readUnsignedByte();
             final int mapColorId = in.readUnsignedByte();
             final int fluidDepth = in.readUnsignedByte();
+            final String topMaterialId = topMaterial ? readUtf(in) : "";
             entries.add(new FlatBaselineS2C.Entry(
-                dimIndex, new FlatBaseline(biomeId, surfaceY, kind, mapColorId, fluidDepth)
+                dimIndex, new FlatBaseline(biomeId, surfaceY, kind, mapColorId, fluidDepth, topMaterialId)
             ));
         }
         return new FlatBaselineS2C(entries);
     }
 
-    private static QuadraLayoutS2C decodeQuadraLayoutS2C(final DataInputStream in) throws IOException, ProtoException {
+    private static QuadraLayoutS2C decodeQuadraLayoutS2C(
+        final DataInputStream in,
+        final boolean topMaterial
+    ) throws IOException, ProtoException {
         final int count = in.readUnsignedByte();
         if (count == 0 || count > Proto.MAX_DIM_ENTRIES) {
             throw new ProtoException("quadra layout entry count out of range: " + count);
@@ -893,7 +949,8 @@ public final class MsgCodec {
                     in.readShort(),
                     in.readUnsignedByte(),
                     in.readUnsignedByte(),
-                    in.readUnsignedByte()
+                    in.readUnsignedByte(),
+                    topMaterial ? readUtf(in) : ""
                 );
             }
             entries.add(new QuadraLayoutS2C.Entry(dimIndex, new QuadrantLayout(

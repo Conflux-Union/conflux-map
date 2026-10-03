@@ -52,17 +52,50 @@ public final class PredictionBootstrap {
     private final PredictionState state;
     private final CompanionSession companion;
     private final ManualSeedConfig manualSeeds;
+    /** Samples a flat top material into the synced palette before the layouts compose tiles. */
+    private final java.util.function.Consumer<String> flatMaterialRegistrar;
 
     public PredictionBootstrap(
         final MinecraftClient client,
         final PredictionState state,
         final CompanionSession companion,
-        final ManualSeedConfig manualSeeds
+        final ManualSeedConfig manualSeeds,
+        final java.util.function.Consumer<String> flatMaterialRegistrar
     ) {
         this.client = client;
         this.state = state;
         this.companion = companion;
         this.manualSeeds = manualSeeds;
+        this.flatMaterialRegistrar = flatMaterialRegistrar == null
+            ? ignored -> { } : flatMaterialRegistrar;
+    }
+
+    /**
+     * A flat quadrant's or superflat's top block paints through the synced material palette, so
+     * its id must be sampled before the layouts reach the state and tiles compose.
+     */
+    private void registerFlatMaterials(
+        final QuadrantLayout overworldQuadrants,
+        final QuadrantLayout netherQuadrants,
+        final FlatBaseline flatBaseline
+    ) {
+        if (flatBaseline != null) {
+            flatMaterialRegistrar.accept(flatBaseline.topMaterialId());
+        }
+        registerQuadrantMaterials(overworldQuadrants);
+        registerQuadrantMaterials(netherQuadrants);
+    }
+
+    private void registerQuadrantMaterials(final QuadrantLayout layout) {
+        if (layout == null) {
+            return;
+        }
+        for (int quadrant = 0; quadrant < 4; quadrant++) {
+            final FlatBaseline flat = layout.flat(quadrant);
+            if (flat != null) {
+                flatMaterialRegistrar.accept(flat.topMaterialId());
+            }
+        }
     }
 
     /** Main thread, from the session tracker. */
@@ -149,6 +182,7 @@ public final class PredictionBootstrap {
             manual = true;
         }
         state.setPresets(overworldPreset, netherPreset, endPreset);
+        registerFlatMaterials(overworldQuadrants, netherQuadrants, flatBaseline.orElse(null));
         state.setQuadrantLayouts(overworldQuadrants, netherQuadrants);
         flatBaseline.ifPresent(state::setFlatBaseline);
         if (seedOpt.isPresent()) {
