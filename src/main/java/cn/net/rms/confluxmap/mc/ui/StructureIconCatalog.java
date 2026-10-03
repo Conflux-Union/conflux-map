@@ -77,6 +77,9 @@ public final class StructureIconCatalog {
         final float size,
         final int tint
     ) {
+        // Callers queue icon frames and list surfaces as buffered fills; without the flush the
+        // icon would be painted first and covered once those fills reach the screen.
+        draw.flushGui();
         RenderUtil.bindTexture(MinecraftClient.getInstance(), icon(type, variant));
         RenderUtil.drawTintedQuad(draw.matrices(), x, y, size, size, 0f, 0f, 1f, 1f, tint);
     }

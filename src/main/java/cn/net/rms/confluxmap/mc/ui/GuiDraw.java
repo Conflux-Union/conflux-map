@@ -170,6 +170,22 @@ public final class GuiDraw {
         //#endif
     }
 
+    //#if MC>=12000 && MC<12108
+    //$$ /**
+    //$$  * Paints every fill queued through the shared GUI vertex consumers so far. On these
+    //$$  * versions those fills stay buffered until a later flush, which paints them over this
+    //$$  * mod's immediate tessellator draws issued in between; earlier versions fill immediately
+    //$$  * and 1.21.8+ records GUI elements in order, so it is a no-op there.
+    //$$  */
+    //$$ public void flushGui() {
+    //$$     context.draw();
+    //$$ }
+    //#else
+    /** No-op where fills already paint in call order; see the buffered-version variant. */
+    public void flushGui() {
+    }
+    //#endif
+
     //#if MC>=12000
     //$$ public DrawContext context() {
     //$$     return context;
