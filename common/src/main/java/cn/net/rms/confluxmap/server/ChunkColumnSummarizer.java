@@ -281,9 +281,13 @@ public final class ChunkColumnSummarizer {
             || "minecraft:glass_pane".equals(name) || name.endsWith("_stained_glass_pane");
     }
 
-    /** Air never stops the authoritative scan, so the name-based scan must cross it too. */
+    /**
+     * Air never stops the authoritative scan, so the name-based scan must cross it too. Exact
+     * names only: a suffix match would swallow unrelated blocks whose id merely ends in "air".
+     */
     private static boolean isAir(final String name) {
-        return name != null && name.endsWith("air");
+        return "minecraft:air".equals(name) || "minecraft:cave_air".equals(name)
+            || "minecraft:void_air".equals(name);
     }
 
     /**

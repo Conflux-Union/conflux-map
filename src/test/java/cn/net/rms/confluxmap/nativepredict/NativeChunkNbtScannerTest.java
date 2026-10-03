@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.nativepredict;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayOutputStream;
@@ -70,6 +71,48 @@ class NativeChunkNbtScannerTest {
         assertEquals(0, chunk.samples()[0].surfaceY());
         assertEquals("minecraft:stone", chunk.samples()[0].surfaceBlock());
         assertEquals("minecraft:black_stained_glass", chunk.samples()[0].overlayBlock());
+    }
+
+    @Test
+    void glassOverAnAirGapKeepsTheGroundBeneathAsTheSurface() throws IOException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native library unavailable");
+        final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (DataOutputStream output = new DataOutputStream(bytes)) {
+            NbtIo.write(generatedChunk(new String[] {
+                "minecraft:stone", "minecraft:air", "minecraft:white_stained_glass"
+            }, 3), output);
+        }
+
+        final NativeChunkNbtScanner.Chunk chunk = NativeChunkNbtScanner.scan(
+            bytes.toByteArray(), 4
+        );
+
+        assertNotNull(chunk);
+        assertTrue(chunk.generated());
+        assertEquals(0, chunk.samples()[0].surfaceY());
+        assertEquals("minecraft:stone", chunk.samples()[0].surfaceBlock());
+        assertEquals("minecraft:white_stained_glass", chunk.samples()[0].overlayBlock());
+    }
+
+    @Test
+    void glassOverTheVoidIsPromotedToTheVisibleSurface() throws IOException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native library unavailable");
+        final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (DataOutputStream output = new DataOutputStream(bytes)) {
+            NbtIo.write(generatedChunk(new String[] {
+                "minecraft:air", "minecraft:white_stained_glass"
+            }, 2), output);
+        }
+
+        final NativeChunkNbtScanner.Chunk chunk = NativeChunkNbtScanner.scan(
+            bytes.toByteArray(), 4
+        );
+
+        assertNotNull(chunk);
+        assertTrue(chunk.generated());
+        assertEquals(1, chunk.samples()[0].surfaceY());
+        assertEquals("minecraft:white_stained_glass", chunk.samples()[0].surfaceBlock());
+        assertNull(chunk.samples()[0].overlayBlock());
     }
 
     @Test
@@ -208,6 +251,63 @@ class NativeChunkNbtScannerTest {
         palette.add(stone);
         palette.add(top);
         return generatedChunk(palette, motionHeight);
+    }
+
+    /**
+     * @param layers       block name per local layer from the bottom up; identical names share
+     *        one palette entry
+     * @param motionHeight the stored motion-blocking height, one above the top layer
+     */
+    private static NbtCompound generatedChunk(final String[] layers, final int motionHeight) {
+        final java.util.List<String> names = new java.util.ArrayList<>();
+        final int[] layerIndices = new int[layers.length];
+        for (int layer = 0; layer < layers.length; layer++) {
+            final int paletteIndex = names.indexOf(layers[layer]);
+            layerIndices[layer] = paletteIndex >= 0 ? paletteIndex : names.size();
+            names.add(layers[layer]);
+        }
+        final NbtList palette = new NbtList();
+        for (final String name : names) {
+            final NbtCompound entry = new NbtCompound();
+            entry.putString("Name", name);
+            palette.add(entry);
+        }
+        final NbtCompound level = new NbtCompound();
+        level.putString("Status", "full");
+        level.putLong("LastUpdate", 1L);
+
+        final long[] heights = new long[(256 + 6) / 7];
+        long packed = 0L;
+        for (int i = 0; i < 7; i++) {
+            packed |= (long) motionHeight << (i * 9);
+        }
+        Arrays.fill(heights, packed);
+        final NbtCompound heightmaps = new NbtCompound();
+        heightmaps.putLongArray("MOTION_BLOCKING", heights);
+        level.put("Heightmaps", heightmaps);
+        level.putIntArray("Biomes", new int[1_024]);
+
+        final NbtCompound section = new NbtCompound();
+        section.putByte("Y", (byte) 0);
+        section.put("Palette", palette);
+        // 4-bit palette indices, 16 per long: layer i occupies block indexes 256*i..256*i+255,
+        // longs 16*i..16*i+15 with every nibble holding that layer's palette index.
+        final long[] states = new long[256];
+        for (int layer = 0; layer < layers.length; layer++) {
+            long packedLayer = 0L;
+            for (int nibble = 0; nibble < 16; nibble++) {
+                packedLayer |= (long) layerIndices[layer] << (nibble * 4);
+            }
+            Arrays.fill(states, 16 * layer, 16 * layer + 16, packedLayer);
+        }
+        section.putLongArray("BlockStates", states);
+        final NbtList sections = new NbtList();
+        sections.add(section);
+        level.put("Sections", sections);
+
+        final NbtCompound root = new NbtCompound();
+        root.put("Level", level);
+        return root;
     }
 
     private static NbtCompound generatedChunk(final NbtList palette, final int motionHeight) {

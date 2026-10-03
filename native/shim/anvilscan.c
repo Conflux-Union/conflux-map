@@ -788,6 +788,14 @@ static int cfxIsLightPermeable(const char *name) {
         || cfxEndsWith(name, "_stained_glass_pane");
 }
 
+/* Mirrors ChunkColumnSummarizer.isAir: exact vanilla ids, so an unrelated block whose name
+ * merely ends in "air" never gets crossed. */
+static int cfxIsAir(const char *name) {
+    return name != NULL && (strcmp(name, "minecraft:air") == 0
+        || strcmp(name, "minecraft:cave_air") == 0
+        || strcmp(name, "minecraft:void_air") == 0);
+}
+
 /* Mirrors ChunkColumnSummarizer.isOverlayDecoration: non-colliding surface decoration worth
  * an overlay, with air/fluid and bulk foliage (grass, fern) excluded. */
 static int cfxIsOverlayDecoration(const CfxBlockEntry *block) {
@@ -866,14 +874,41 @@ static int cfxSummarizeSample(
     int promoted_fluid = 0;
     const char *overlay_name = NULL;
     const char *descent_top = NULL;
+    const CfxBlockEntry *descent_top_entry = NULL;
+    int descent_top_y = ground_y;
     while (surface_y > chunk->bottom_y
         && cfxIsLightPermeable(cfxBlockAt(chunk, x, surface_y, z)->name)) {
-        if (descent_top == NULL)
-            descent_top = cfxBlockAt(chunk, x, surface_y, z)->name;
+        if (descent_top == NULL) {
+            descent_top_entry = cfxBlockAt(chunk, x, surface_y, z);
+            descent_top = descent_top_entry->name;
+            descent_top_y = surface_y;
+        }
         surface_y--;
         surface = cfxBlockAt(chunk, x, surface_y, z);
         fluid_surface = surface;
         fluid_surface_y = surface_y;
+    }
+    if (descent_top != NULL && cfxIsAir(surface->name)) {
+        /* The cover descent stops at the first non-cover block, and air is not one: a glass
+         * roof or bridge with an air gap above real ground keeps descending through the air
+         * like ChunkColumnSummarizer (and the client's authoritative scan) do. */
+        while (surface_y > chunk->bottom_y
+            && cfxIsAir(cfxBlockAt(chunk, x, surface_y, z)->name)) {
+            surface_y--;
+            surface = cfxBlockAt(chunk, x, surface_y, z);
+            fluid_surface = surface;
+            fluid_surface_y = surface_y;
+        }
+    }
+    if (descent_top != NULL && cfxIsAir(surface->name)) {
+        /* Nothing solid beneath the cover (a glass floor over the void): the cover itself is
+         * the visible surface, not an unknown air column tinted by a glass overlay. */
+        surface = descent_top_entry;
+        surface_y = descent_top_y;
+        fluid_surface = surface;
+        fluid_surface_y = surface_y;
+        descent_top = NULL;
+        descent_top_entry = NULL;
     }
     if (descent_top != NULL) {
         overlay_name = descent_top;
