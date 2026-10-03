@@ -311,6 +311,10 @@ public final class OffscreenCanvas {
         //#if MC<12105
         //$$ blur.setUniforms("Radius", radius);
         //$$ blur.render(framebuffer, ObjectAllocator.TRIVIAL);
+        //$$ // Every post-effect pass ends by unbinding to the default window framebuffer, and
+        //$$ // 1.21.2-1.21.4 GUI drawing targets whatever is bound. Vanilla rebinds the main
+        //$$ // framebuffer right after GameRenderer.renderBlur for exactly this reason.
+        //$$ client.getFramebuffer().beginWrite(false);
         //#elseif MC<12108
         //$$ blur.render(
         //$$     framebuffer, ObjectAllocator.TRIVIAL,
