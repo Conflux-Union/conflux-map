@@ -157,6 +157,23 @@ class ChunkColumnSummarizerTest {
     }
 
     @Test
+    void glassOverAnAirGapKeepsTheGroundBeneathAsTheSurface() {
+        final ChunkColumnSummarizer summarizer = new ChunkColumnSummarizer(name -> 3);
+
+        final SummaryCodec.Column column = summarizer.summarize(new LayeredColumn()
+            .set(70, "minecraft:white_stained_glass")
+            .set(60, "minecraft:stone")
+            .motionTopExclusive(71)
+        ).columns()[0];
+
+        // The authoritative scan descends through the air gap and renders the ground beneath
+        // the glass roof; the synced column must not promote the glass over that ground.
+        assertEquals(60, column.surfaceY());
+        assertEquals("minecraft:stone", column.materialId());
+        assertEquals("minecraft:white_stained_glass", column.overlayMaterialId());
+    }
+
+    @Test
     void stackedGlassOverNothingKeepsTheTopmostLayerAsTheSurface() {
         final ChunkColumnSummarizer summarizer = new ChunkColumnSummarizer(name -> 3);
 

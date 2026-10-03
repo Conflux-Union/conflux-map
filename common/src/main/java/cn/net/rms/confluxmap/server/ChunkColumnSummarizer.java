@@ -85,6 +85,17 @@ public final class ChunkColumnSummarizer {
             surface = blockAt(source, x, surfaceY, z);
         }
         if (descentTop != null && surface.kind == SurfaceKind.UNKNOWN) {
+            // The cover descent stops at the first non-cover block, and air is not one: a glass
+            // roof or bridge with an air gap above real ground must keep descending through the
+            // air like the client's authoritative scan, or the glass would be promoted over
+            // ground the client still renders beneath it.
+            while (surfaceY > source.bottomY()
+                && isAir(source.blockNameAt(x, surfaceY, z))) {
+                surfaceY--;
+                surface = blockAt(source, x, surfaceY, z);
+            }
+        }
+        if (descentTop != null && surface.kind == SurfaceKind.UNKNOWN) {
             // The light-permeable cover never reached solid ground (quadra-gen's flat glass
             // quadrant, glass bridges over the void): the cover itself is what a viewer sees.
             // Promote it to the surface so the synced column renders like the client's
@@ -268,6 +279,11 @@ public final class ChunkColumnSummarizer {
         }
         return "minecraft:glass".equals(name) || name.endsWith("_stained_glass")
             || "minecraft:glass_pane".equals(name) || name.endsWith("_stained_glass_pane");
+    }
+
+    /** Air never stops the authoritative scan, so the name-based scan must cross it too. */
+    private static boolean isAir(final String name) {
+        return name != null && name.endsWith("air");
     }
 
     /**
