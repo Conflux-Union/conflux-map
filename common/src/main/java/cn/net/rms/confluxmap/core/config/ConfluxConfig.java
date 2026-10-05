@@ -193,6 +193,12 @@ public final class ConfluxConfig {
     public int waypointIconOpacity = DEFAULT_WAYPOINT_ICON_OPACITY;
     /** Opacity retained by non-highlighted waypoints while a highlight is active. */
     public int waypointHighlightDimOpacity = DEFAULT_WAYPOINT_HIGHLIGHT_DIM_OPACITY;
+    /**
+     * Show the temporary highlighted map location from the portal-linked dimension with
+     * converted coordinates, and keep that highlight alive across same-world dimension
+     * changes (see {@link cn.net.rms.confluxmap.core.waypoint.DimensionScale}).
+     */
+    public boolean highlightCrossDimensionVisible = true;
     /** Command template used by the fullscreen map's teleport action. */
     public String teleportCommand = DEFAULT_TELEPORT_COMMAND;
     /**
@@ -302,6 +308,7 @@ public final class ConfluxConfig {
         c.waypointLabelsEnabled = waypointLabelsEnabled;
         c.waypointIconOpacity = waypointIconOpacity;
         c.waypointHighlightDimOpacity = waypointHighlightDimOpacity;
+        c.highlightCrossDimensionVisible = highlightCrossDimensionVisible;
         c.teleportCommand = teleportCommand;
         c.waypointLabelScalePercent = waypointLabelScalePercent;
         c.predictionEnabled = predictionEnabled;

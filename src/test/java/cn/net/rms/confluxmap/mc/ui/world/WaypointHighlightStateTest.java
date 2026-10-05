@@ -10,6 +10,7 @@ import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -27,6 +28,107 @@ class WaypointHighlightStateTest {
         assertTrue(state.matches(10.5, -20.5, DimensionId.OVERWORLD));
         assertFalse(state.matches(10.5, -20.5, DimensionId.NETHER));
         assertFalse(state.matches(11.5, -20.5, DimensionId.OVERWORLD));
+    }
+
+    @Test
+    void crossDimensionLocationRendersAtConvertedCoordinatesWhenEnabled() {
+        final WaypointHighlightState state = new WaypointHighlightState(() -> true);
+        state.select(WaypointHighlightState.Target.location(
+            DimensionId.OVERWORLD, 800.5, 64.0, -1600.5, true
+        ));
+
+        final Optional<WaypointHighlightState.Target> projected = state.locationTargetIn(DimensionId.NETHER);
+        assertTrue(projected.isPresent());
+        assertEquals(DimensionId.OVERWORLD, projected.get().dimension());
+        assertEquals(100.0625, projected.get().x(), 0.001);
+        assertEquals(-200.0625, projected.get().z(), 0.001);
+
+        assertTrue(state.matches(100.0625, -200.0625, DimensionId.NETHER));
+        assertFalse(state.matches(101.0625, -200.0625, DimensionId.NETHER));
+        assertTrue(state.matches(800.5, -1600.5, DimensionId.OVERWORLD));
+        assertTrue(state.matchesEntry(
+            entry(WaypointHighlightState.SELECTED_LOCATION_ID, 100.0625, -200.0625),
+            DimensionId.NETHER
+        ));
+        assertTrue(state.hasRenderableTarget(
+            List.of(entry(WaypointHighlightState.SELECTED_LOCATION_ID, 100.0625, -200.0625)),
+            DimensionId.NETHER
+        ));
+    }
+
+    @Test
+    void crossDimensionLocationStaysHiddenWhenDisabled() {
+        final WaypointHighlightState state = new WaypointHighlightState();
+        state.select(WaypointHighlightState.Target.location(
+            DimensionId.OVERWORLD, 800.5, 64.0, -1600.5, true
+        ));
+
+        assertTrue(state.locationTargetIn(DimensionId.NETHER).isEmpty());
+        assertFalse(state.matches(100.0625, -200.0625, DimensionId.NETHER));
+        assertFalse(state.hasRenderableTarget(
+            List.of(entry(WaypointHighlightState.SELECTED_LOCATION_ID, 100.0625, -200.0625)),
+            DimensionId.NETHER
+        ));
+        assertTrue(state.matches(800.5, -1600.5, DimensionId.OVERWORLD));
+    }
+
+    @Test
+    void crossDimensionDisplayNeverProjectsTheEndEitherWay() {
+        final WaypointHighlightState state = new WaypointHighlightState(() -> true);
+        state.select(WaypointHighlightState.Target.location(
+            DimensionId.END, 10.5, 64.0, -20.5, true
+        ));
+
+        assertTrue(state.locationTargetIn(DimensionId.OVERWORLD).isEmpty());
+        assertTrue(state.locationTargetIn(DimensionId.NETHER).isEmpty());
+
+        state.select(WaypointHighlightState.Target.location(
+            DimensionId.OVERWORLD, 10.5, 64.0, -20.5, true
+        ));
+
+        assertTrue(state.locationTargetIn(DimensionId.END).isEmpty());
+    }
+
+    @Test
+    void waypointTargetSelectionStaysConfinedToItsOwnDimensionWhenCrossDimensionEnabled() {
+        final UUID id = UUID.randomUUID();
+        final WaypointHighlightState state = new WaypointHighlightState(() -> true);
+        state.select(WaypointHighlightState.Target.waypoint(
+            entry(id, 10.5, -20.5), DimensionId.OVERWORLD
+        ));
+
+        assertTrue(state.matchesEntry(entry(id, 10.5, -20.5), DimensionId.OVERWORLD));
+        assertFalse(state.matchesEntry(entry(id, 10.5, -20.5), DimensionId.NETHER));
+        assertFalse(state.hasRenderableTarget(List.of(entry(id, 10.5, -20.5)), DimensionId.NETHER));
+    }
+
+    @Test
+    void sameWorldDimensionChangeKeepsTheSelectionWhenCrossDimensionEnabled() {
+        final WaypointHighlightState state = new WaypointHighlightState(() -> true);
+        state.onSessionChanged(new SessionGuard.Session(1L, WORLD, DimensionId.OVERWORLD));
+        state.select(WaypointHighlightState.Target.location(
+            DimensionId.OVERWORLD, 10.5, 64.0, -20.5, true
+        ));
+
+        state.onSessionChanged(new SessionGuard.Session(2L, WORLD, DimensionId.NETHER));
+
+        assertTrue(state.active());
+        assertTrue(state.activeIn(DimensionId.OVERWORLD));
+    }
+
+    @Test
+    void anotherWorldStillClearsTheSelectionWhenCrossDimensionEnabled() {
+        final WaypointHighlightState state = new WaypointHighlightState(() -> true);
+        state.onSessionChanged(new SessionGuard.Session(1L, WORLD, DimensionId.OVERWORLD));
+        state.select(WaypointHighlightState.Target.location(
+            DimensionId.OVERWORLD, 10.5, 64.0, -20.5, true
+        ));
+
+        state.onSessionChanged(new SessionGuard.Session(
+            2L, WorldIdentity.singleplayer("highlight-other"), DimensionId.OVERWORLD
+        ));
+
+        assertFalse(state.active());
     }
 
     @Test

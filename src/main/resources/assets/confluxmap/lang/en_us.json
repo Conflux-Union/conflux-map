@@ -363,6 +363,7 @@
   "confluxmap.config.waypoints.labels_enabled": "Waypoint Labels: %s",
   "confluxmap.config.waypoints.label_opacity": "In-World Waypoint Label Opacity: %s",
   "confluxmap.config.waypoints.highlight_dim_opacity": "Other Waypoint Opacity During Highlight: %s",
+  "confluxmap.config.waypoints.highlight_cross_dimension": "Show Highlight Across Dimensions: %s",
   "confluxmap.config.waypoints.label_scale": "Label Size: %s",
   "confluxmap.config.performance.snapshot_budget": "Map Update Speed: %s",
   "confluxmap.config.performance.gpu_tile_cache_limit": "Loaded Map Area: %s",

@@ -3,7 +3,7 @@ package cn.net.rms.confluxmap.mc.ui.world;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
-import cn.net.rms.confluxmap.compat.Texts;
+
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.radar.ServerPlayerRadarState;
@@ -560,14 +560,14 @@ public final class WaypointWorldRenderer {
                 System.currentTimeMillis(),
                 config.radarPlayerHighlightGhostSeconds * 1_000L
             );
-        final Optional<WaypointHighlightState.Target> target = waypointHighlightState.target()
-            .filter(value -> value.waypointId() == null && value.dimension().equals(dimension));
+        final Optional<WaypointHighlightState.Target> target =
+            waypointHighlightState.locationTargetIn(dimension);
         if (target.isEmpty() && playerTarget.isEmpty()) {
             return base;
         }
         final List<WaypointRenderEntry> result = new ArrayList<>(base.size() + 2);
         result.addAll(base);
-        target.ifPresent(value -> result.add(selectedTargetEntry(value)));
+        target.ifPresent(value -> result.add(selectedTargetEntry(value, dimension)));
         playerTarget.ifPresent(value -> result.add(new WaypointRenderEntry(
             value.player().playerId(),
             value.player().name(),
@@ -604,12 +604,13 @@ public final class WaypointWorldRenderer {
         ).filter(ServerPlayerRadarState.HighlightView::ghost).isPresent() ? 0.5f : 1f;
     }
 
-    private WaypointRenderEntry selectedTargetEntry(final WaypointHighlightState.Target target) {
+    private WaypointRenderEntry selectedTargetEntry(
+        final WaypointHighlightState.Target target,
+        final DimensionId displayedDimension
+    ) {
         return WaypointHighlightState.locationEntry(
             target,
-            Texts.translatable(
-                WaypointHighlightState.SELECTED_LOCATION_TRANSLATION_KEY
-            ).getString(),
+            WaypointHighlightState.locationDisplayName(target, displayedDimension),
             selectedLocationY(target),
             SELECTED_LOCATION_COLOR
         );

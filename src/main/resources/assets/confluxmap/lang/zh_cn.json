@@ -363,6 +363,7 @@
   "confluxmap.config.waypoints.labels_enabled": "路径点标签：%s",
   "confluxmap.config.waypoints.label_opacity": "世界内路径点标签不透明度：%s",
   "confluxmap.config.waypoints.highlight_dim_opacity": "高亮时其他路径点透明度：%s",
+  "confluxmap.config.waypoints.highlight_cross_dimension": "跨维度显示高亮位置：%s",
   "confluxmap.config.waypoints.label_scale": "标签大小：%s",
   "confluxmap.config.performance.snapshot_budget": "地图更新速度：%s",
   "confluxmap.config.performance.gpu_tile_cache_limit": "已加载地图范围：%s",

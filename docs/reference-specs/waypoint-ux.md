@@ -313,7 +313,12 @@ matters for any reason.
   dedicated crosshair/target marker style regardless of its own
   enabled/in-scope state, and is cleared on switching dimensions. Useful
   for "show me this one thing right now" without permanently changing
-  anything.
+  anything. (Conflux Map deviation: the "Show Highlight Across
+  Dimensions" toggle, on by default, instead keeps a highlighted map
+  location alive across same-world dimension changes and renders it from
+  the portal-linked dimension with converted coordinates, labeled with
+  its source dimension; with the toggle off the reference
+  cleared-on-dimension-switch behavior applies.)
 - **Teleport** — issues a teleport to the waypoint's coordinates,
   available only when the player is actually allowed to run teleport
   commands (integrated-singleplayer-with-cheats/op, or a multiplayer

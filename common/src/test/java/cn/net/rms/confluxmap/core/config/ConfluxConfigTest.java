@@ -54,6 +54,16 @@ final class ConfluxConfigTest {
     }
 
     @Test
+    void locationHighlightCrossDimensionDisplayDefaultsOnAndSurvivesCopy() {
+        final ConfluxConfig config = new ConfluxConfig();
+
+        assertTrue(config.highlightCrossDimensionVisible);
+        config.highlightCrossDimensionVisible = false;
+
+        assertFalse(config.copy().highlightCrossDimensionVisible);
+    }
+
+    @Test
     void waypointRenderDistanceIsFiniteByDefault() {
         assertEquals(1_000, new ConfluxConfig().waypointRenderDistance);
     }

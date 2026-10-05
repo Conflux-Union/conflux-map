@@ -4484,23 +4484,27 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     private List<WaypointRenderEntry> waypointsForRender(final DimensionId dimension) {
         final List<WaypointRenderEntry> base = viewWaypointRenderCatalog().snapshot(dimension);
-        final Optional<WaypointHighlightState.Target> target = waypointHighlightState.target()
-            .filter(value -> value.waypointId() == null && value.dimension().equals(dimension));
+        // The highlight belongs to the live world's session; a browsed world's map never
+        // shows it, not even in the highlighted dimension.
+        final Optional<WaypointHighlightState.Target> target = viewingLiveWorld()
+            ? waypointHighlightState.locationTargetIn(dimension)
+            : Optional.empty();
         if (target.isEmpty()) {
             return base;
         }
         final List<WaypointRenderEntry> result = new ArrayList<>(base.size() + 1);
         result.addAll(base);
-        result.add(selectedLocationEntry(target.get()));
+        result.add(selectedLocationEntry(target.get(), dimension));
         return result;
     }
 
-    private WaypointRenderEntry selectedLocationEntry(final WaypointHighlightState.Target target) {
+    private WaypointRenderEntry selectedLocationEntry(
+        final WaypointHighlightState.Target target,
+        final DimensionId displayedDimension
+    ) {
         return WaypointHighlightState.locationEntry(
             target,
-            Texts.translatable(
-                WaypointHighlightState.SELECTED_LOCATION_TRANSLATION_KEY
-            ).getString(),
+            WaypointHighlightState.locationDisplayName(target, displayedDimension),
             target.y(),
             0xFFFFE066
         );

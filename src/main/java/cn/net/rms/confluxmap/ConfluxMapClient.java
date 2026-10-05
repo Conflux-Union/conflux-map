@@ -327,7 +327,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
         waypointRenderCatalog = new WaypointRenderCatalog(
             waypointService, sharedWaypoints::list, crossWorldWaypoints::siblings, config
         );
-        waypointHighlightState = new WaypointHighlightState();
+        waypointHighlightState = new WaypointHighlightState(
+            () -> config.highlightCrossDimensionVisible
+        );
         measureState = new MeasureState();
         deathWatcher = new DeathWatcher(gameBridge, config, waypointService);
         uiResourceTheme = new UiResourceTheme();
