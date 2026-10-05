@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.core.waypoint;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -304,6 +305,56 @@ final class WaypointRenderCatalogTest {
         } finally {
             executors.shutdown(1000L);
         }
+    }
+
+    @Test
+    void crossDimensionYOverridesOnlyTheLinkedDimensionView() {
+        final Waypoint home = local("Home", true);
+        home.crossDimensionVisible = true;
+        home.crossDimensionY = 120.0;
+        final WaypointRenderEntry overworld = WaypointRenderCatalog.merge(
+            List.of(home), List.of(), true, true
+        ).get(0);
+
+        final List<WaypointRenderEntry> fromNether = WaypointRenderCatalog.visibleFrom(
+            List.of(overworld), DimensionId.NETHER
+        );
+        assertEquals(0.125, fromNether.get(0).x());
+        assertEquals(120.0, fromNether.get(0).y());
+
+        final List<WaypointRenderEntry> fromOverworld = WaypointRenderCatalog.visibleFrom(
+            List.of(overworld), DimensionId.OVERWORLD
+        );
+        assertEquals(64.0, fromOverworld.get(0).y());
+    }
+
+    @Test
+    void mergesLocalAndSharedCrossDimensionYOverrides() {
+        final Waypoint home = local("Home", true);
+        home.crossDimensionY = 31.0;
+        final SharedWaypoint fortress = shared("Fortress");
+
+        final List<WaypointRenderEntry> entries = WaypointRenderCatalog.merge(
+            List.of(home), List.of(fortress), List.of(), true, true,
+            id -> true, id -> 8.5
+        );
+
+        assertEquals(31.0, entries.get(0).crossDimensionY());
+        assertEquals(8.5, entries.get(1).crossDimensionY());
+    }
+
+    @Test
+    void nonFiniteCrossDimensionYOverridesFallBackToTheStoredY() {
+        final Waypoint home = local("Home", true);
+        home.crossDimensionVisible = true;
+        home.crossDimensionY = Double.NaN;
+        final WaypointRenderEntry overworld = WaypointRenderCatalog.merge(
+            List.of(home), List.of(), true, true
+        ).get(0);
+
+        assertNull(overworld.crossDimensionY());
+        assertEquals(64.0, WaypointRenderCatalog.visibleFrom(List.of(overworld), DimensionId.NETHER)
+            .get(0).y());
     }
 
     private static Waypoint local(final String name, final boolean visible) {

@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.core.config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.UUID;
@@ -28,6 +29,35 @@ final class ConfluxConfigTest {
         assertTrue(copy.isSharedWaypointCrossDimensionVisible(waypointId));
         copy.setSharedWaypointCrossDimensionVisible(waypointId, false);
         assertTrue(config.isSharedWaypointCrossDimensionVisible(waypointId));
+    }
+
+    @Test
+    void sharedWaypointCrossDimensionYSurvivesCopyAndClearsWithNull() {
+        final UUID waypointId = UUID.randomUUID();
+        final ConfluxConfig config = new ConfluxConfig();
+
+        assertNull(config.sharedWaypointCrossDimensionY(waypointId));
+        config.setSharedWaypointCrossDimensionY(waypointId, 120.0);
+
+        final ConfluxConfig copy = config.copy();
+        assertEquals(120.0, copy.sharedWaypointCrossDimensionY(waypointId));
+        copy.setSharedWaypointCrossDimensionY(waypointId, null);
+        assertEquals(120.0, config.sharedWaypointCrossDimensionY(waypointId));
+
+        config.setSharedWaypointCrossDimensionY(waypointId, null);
+        assertNull(config.sharedWaypointCrossDimensionY(waypointId));
+    }
+
+    @Test
+    void normalizeDropsNonFiniteSharedWaypointCrossDimensionY() {
+        final ConfluxConfig config = new ConfluxConfig();
+        config.sharedWaypointCrossDimensionYById.put("broken", Double.NaN);
+        config.sharedWaypointCrossDimensionYById.put("kept", 64.0);
+
+        config.normalize();
+
+        assertNull(config.sharedWaypointCrossDimensionYById.get("broken"));
+        assertEquals(64.0, config.sharedWaypointCrossDimensionYById.get("kept"));
     }
 
     @Test

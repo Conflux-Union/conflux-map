@@ -23,7 +23,8 @@ public record WaypointRenderEntry(
     Waypoint.Type type,
     Source source,
     boolean crossDimensionVisible,
-    String originWorldLabel
+    String originWorldLabel,
+    Double crossDimensionY
 ) {
     public enum Source { LOCAL, SHARED, SIBLING }
 
@@ -36,6 +37,11 @@ public record WaypointRenderEntry(
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(source, "source");
         originWorldLabel = originWorldLabel == null ? "" : originWorldLabel;
+        // A non-finite override would poison every distance/projection consumer; null
+        // (keep the entry's own Y) is the safe degradation for data no producer validates.
+        crossDimensionY = crossDimensionY != null && Double.isFinite(crossDimensionY)
+            ? crossDimensionY
+            : null;
     }
 
     public WaypointRenderEntry(
@@ -87,6 +93,28 @@ public record WaypointRenderEntry(
         this(
             id, name, dimensionId, x, y, z, colorArgb, iconItemId, markerLabel,
             type, source, crossDimensionVisible, ""
+        );
+    }
+
+    /** Full form without a cross-dimension Y override (the entry's own Y is kept). */
+    public WaypointRenderEntry(
+        final UUID id,
+        final String name,
+        final DimensionId dimensionId,
+        final double x,
+        final double y,
+        final double z,
+        final int colorArgb,
+        final String iconItemId,
+        final String markerLabel,
+        final Waypoint.Type type,
+        final Source source,
+        final boolean crossDimensionVisible,
+        final String originWorldLabel
+    ) {
+        this(
+            id, name, dimensionId, x, y, z, colorArgb, iconItemId, markerLabel,
+            type, source, crossDimensionVisible, originWorldLabel, null
         );
     }
 

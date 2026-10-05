@@ -63,6 +63,7 @@ public final class WaypointIo {
         String group;
         boolean visible;
         boolean crossDimensionVisible;
+        Double crossDimensionY;
         String type;
         String iconItemId;
         String markerLabel;
@@ -184,6 +185,10 @@ public final class WaypointIo {
             entry.group == null ? "" : entry.group, entry.visible, entry.crossDimensionVisible,
             type, entry.createdAtEpochMs
         );
+        waypoint.crossDimensionY =
+            entry.crossDimensionY != null && Double.isFinite(entry.crossDimensionY)
+                ? entry.crossDimensionY
+                : null;
         try {
             waypoint.iconItemId = WaypointMarkerStyle.iconItemId(entry.iconItemId);
         } catch (final IllegalArgumentException e) {
@@ -234,6 +239,10 @@ public final class WaypointIo {
         entry.group = waypoint.group;
         entry.visible = waypoint.visible;
         entry.crossDimensionVisible = waypoint.crossDimensionVisible;
+        entry.crossDimensionY = waypoint.crossDimensionY != null
+            && Double.isFinite(waypoint.crossDimensionY)
+            ? waypoint.crossDimensionY
+            : null;
         entry.type = waypoint.type.name();
         entry.iconItemId = waypoint.iconItemId;
         entry.markerLabel = waypoint.markerLabel;

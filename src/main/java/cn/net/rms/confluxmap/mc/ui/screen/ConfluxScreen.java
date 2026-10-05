@@ -289,10 +289,15 @@ public abstract class ConfluxScreen extends Screen {
      * action is currently available.
      */
     void setLocationMenuTooltip(final ButtonWidget button, final String translationKey) {
+        setHoverTooltip(button, translationKey);
+    }
+
+    /** Tooltip shown on hover, whether or not the control is currently usable. */
+    protected final void setHoverTooltip(final ClickableWidget widget, final String translationKey) {
         if (translationKey == null) {
-            locationMenuTooltipKeys.remove(button);
+            locationMenuTooltipKeys.remove(widget);
         } else {
-            locationMenuTooltipKeys.put(button, translationKey);
+            locationMenuTooltipKeys.put(widget, translationKey);
         }
     }
 

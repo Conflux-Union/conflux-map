@@ -135,6 +135,17 @@ Vertical position (Y) is never scaled, regardless of which dimension a
 waypoint was created in or is being viewed from — a waypoint's Y is always
 displayed and used exactly as stored.
 
+**Deviation (Conflux Map) — optional cross-dimension Y override:** because
+the passthrough above can put a linked-dimension view at a Y that makes no
+sense there (an Overworld mountain top at Y=200 hangs above the Nether's
+0–128 space), the create/edit form shows an optional Y input next to the
+cross-dimension toggle. When set, that value replaces the stored Y for the
+linked-dimension view only (the waypoint's own dimension still uses its
+stored Y); when left empty the passthrough behavior applies. Local and
+sibling waypoints persist the override alongside their coordinates; for
+public waypoints it is a per-viewer preference stored in the client config
+next to the per-id cross-dimension allowlist.
+
 **Storage representation:** rather than storing "the dimension this was
 created in" plus "raw local coordinates" and converting pairwise between
 every possible dimension combination on demand, the reference

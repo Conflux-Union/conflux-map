@@ -13,8 +13,10 @@ import cn.net.rms.confluxmap.core.net.shared.UpdateC2S;
 import cn.net.rms.confluxmap.core.shared.SharedWaypoint;
 import cn.net.rms.confluxmap.core.shared.SharedWaypointLocationKey;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -104,16 +106,35 @@ class SharedWaypointClientTest {
     @Test
     void createdSharedWaypointCrossDimensionPreferenceIsRecordedByReturnedId() {
         final SharedWaypoint waypoint = waypoint();
-        final Set<SharedWaypointLocationKey> pending = new LinkedHashSet<>(List.of(
-            SharedWaypointLocationKey.from(waypoint)
-        ));
+        final SharedWaypointLocationKey location = SharedWaypointLocationKey.from(waypoint);
+        final Set<SharedWaypointLocationKey> pending = new LinkedHashSet<>(List.of(location));
+        final Map<SharedWaypointLocationKey, Double> pendingY = new LinkedHashMap<>(
+            Map.of(location, 120.0)
+        );
         final ConfluxConfig config = new ConfluxConfig();
 
         assertTrue(SharedWaypointClient.applyPendingCrossDimensionPreferences(
-            pending, List.of(waypoint), config
+            pending, pendingY, List.of(waypoint), config
         ));
         assertTrue(config.isSharedWaypointCrossDimensionVisible(waypoint.id()));
+        assertEquals(120.0, config.sharedWaypointCrossDimensionY(waypoint.id()));
         assertTrue(pending.isEmpty());
+        assertTrue(pendingY.isEmpty());
+    }
+
+    @Test
+    void publishEchoWithoutYOverrideClearsAnyStaleOverride() {
+        final SharedWaypoint waypoint = waypoint();
+        final SharedWaypointLocationKey location = SharedWaypointLocationKey.from(waypoint);
+        final Set<SharedWaypointLocationKey> pending = new LinkedHashSet<>(List.of(location));
+        final ConfluxConfig config = new ConfluxConfig();
+        config.setSharedWaypointCrossDimensionY(waypoint.id(), 8.5);
+
+        assertTrue(SharedWaypointClient.applyPendingCrossDimensionPreferences(
+            pending, new LinkedHashMap<>(), List.of(waypoint), config
+        ));
+
+        assertNull(config.sharedWaypointCrossDimensionY(waypoint.id()));
     }
 
     private static SharedWaypoint waypoint() {

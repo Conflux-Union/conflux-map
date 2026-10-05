@@ -219,6 +219,8 @@
   "confluxmap.screen.waypoint.send_chat": "Send to Chat",
   "confluxmap.screen.waypoint.error.name_required": "Enter a waypoint name",
   "confluxmap.screen.waypoint.error.invalid_coordinates": "Enter valid X / Y / Z coordinates",
+  "confluxmap.screen.waypoint.error.invalid_cross_dimension_y": "Enter a valid mapped Y or leave it empty",
+  "confluxmap.screen.waypoint.cross_dimension_y": "Y shown in the linked dimension; empty keeps this waypoint's own Y",
   "confluxmap.screen.waypoint.error.invalid_marker_label": "Marker text must contain at most 3 characters",
   "confluxmap.screen.waypoint.preview.name": "Name: %s",
   "confluxmap.screen.waypoint.preview.dimension": "Dimension: %s",

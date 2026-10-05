@@ -6,7 +6,9 @@ import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.core.survey.SurveyReminderSchedule;
 import cn.net.rms.confluxmap.core.util.TileMath;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -175,6 +177,12 @@ public final class ConfluxConfig {
     /** Public waypoint IDs allowed to render from the portal-linked dimension on this client. */
     public Set<String> sharedWaypointCrossDimensionVisibleIds = new LinkedHashSet<>();
     /**
+     * Per-public-waypoint Y shown when that waypoint renders from the portal-linked dimension
+     * on this client; absent ids keep the waypoint's own Y. Keyed by id string like the
+     * cross-dimension allowlist because the override is the same kind of viewer preference.
+     */
+    public Map<String, Double> sharedWaypointCrossDimensionYById = new LinkedHashMap<>();
+    /**
      * Show this world's seed-sibling sub-world waypoints on every rendering surface. Siblings are
      * other world namespaces under the same server address whose observed hashed seed matches; the
      * toggle ships off so nothing appears until the player opts in.
@@ -298,6 +306,10 @@ public final class ConfluxConfig {
             sharedWaypointCrossDimensionVisibleIds == null
                 ? new LinkedHashSet<>()
                 : new LinkedHashSet<>(sharedWaypointCrossDimensionVisibleIds);
+        c.sharedWaypointCrossDimensionYById =
+            sharedWaypointCrossDimensionYById == null
+                ? new LinkedHashMap<>()
+                : new LinkedHashMap<>(sharedWaypointCrossDimensionYById);
         c.crossWorldWaypointsVisible = crossWorldWaypointsVisible;
         c.crossWorldSeedObservations = crossWorldSeedObservations == null
             ? new CrossWorldSeedObservations()
@@ -350,6 +362,26 @@ public final class ConfluxConfig {
         }
     }
 
+    /** This client's Y override for the public waypoint, or null to keep its own Y. */
+    public Double sharedWaypointCrossDimensionY(final UUID waypointId) {
+        if (waypointId == null) {
+            return null;
+        }
+        return sharedWaypointCrossDimensionYById.get(waypointId.toString());
+    }
+
+    /** Stores (or clears with null) this client's Y override for the public waypoint. */
+    public void setSharedWaypointCrossDimensionY(final UUID waypointId, final Double y) {
+        if (waypointId == null) {
+            return;
+        }
+        if (y == null || !Double.isFinite(y)) {
+            sharedWaypointCrossDimensionYById.remove(waypointId.toString());
+        } else {
+            sharedWaypointCrossDimensionYById.put(waypointId.toString(), y);
+        }
+    }
+
     /** Advances to the next minimap zoom level, wrapping after the final level. */
     public void cycleMinimapZoom() {
         minimapZoomIndex = (minimapZoomIndex + 1) % MINIMAP_ZOOM_LEVEL_COUNT;
@@ -390,6 +422,12 @@ public final class ConfluxConfig {
         if (sharedWaypointCrossDimensionVisibleIds == null) {
             sharedWaypointCrossDimensionVisibleIds = new LinkedHashSet<>();
         }
+        if (sharedWaypointCrossDimensionYById == null) {
+            sharedWaypointCrossDimensionYById = new LinkedHashMap<>();
+        }
+        sharedWaypointCrossDimensionYById.values().removeIf(
+            y -> y == null || !Double.isFinite(y)
+        );
         if (schemaVersion < 3 && playerTrailDurationMinutes != null) {
             final long legacyDurationSeconds = playerTrailDurationMinutes.longValue() * 60L;
             playerTrailDurationSeconds = (int) Math.max(

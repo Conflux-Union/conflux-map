@@ -77,7 +77,8 @@ public final class SharedWaypointClient {
     private record PendingOperation(
         OperationKind kind,
         SharedWaypointLocationKey createLocation,
-        boolean crossDimensionVisible
+        boolean crossDimensionVisible,
+        Double crossDimensionY
     ) {
         private PendingOperation {
             Objects.requireNonNull(kind, "kind");
@@ -102,6 +103,9 @@ public final class SharedWaypointClient {
     private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
     private final Set<SharedWaypointLocationKey> pendingCrossDimensionPreferences =
         new LinkedHashSet<>();
+    /** Publish-echo Y overrides; keyed by location like {@link #pendingCrossDimensionPreferences}. */
+    private final Map<SharedWaypointLocationKey, Double> pendingCrossDimensionYPreferences =
+        new LinkedHashMap<>();
     private final Map<UUID, PendingOperation> pendingOperations = new LinkedHashMap<>() {
         @Override
         protected boolean removeEldestEntry(final Map.Entry<UUID, PendingOperation> eldest) {
@@ -203,7 +207,9 @@ public final class SharedWaypointClient {
         final SharedWaypointLocationKey location = SharedWaypointLocationKey.from(waypoint);
         return sendMutation(
             operationId,
-            new PendingOperation(OperationKind.CREATE, location, waypoint.crossDimensionVisible),
+            new PendingOperation(
+                OperationKind.CREATE, location, waypoint.crossDimensionVisible, waypoint.crossDimensionY
+            ),
             new CreateC2S(
                 operationId,
                 revision(),
@@ -264,7 +270,7 @@ public final class SharedWaypointClient {
         final UUID operationId = UUID.randomUUID();
         return sendMutation(
             operationId,
-            new PendingOperation(OperationKind.DELETE, null, false),
+            new PendingOperation(OperationKind.DELETE, null, false, null),
             deleteMessage(operationId, waypoint)
         );
     }
@@ -276,7 +282,7 @@ public final class SharedWaypointClient {
         final UUID operationId = UUID.randomUUID();
         return sendMutation(
             operationId,
-            new PendingOperation(OperationKind.UPDATE, null, false),
+            new PendingOperation(OperationKind.UPDATE, null, false, null),
             updateMessage(operationId, original, updated)
         );
     }
@@ -291,6 +297,12 @@ public final class SharedWaypointClient {
 
     public void setCrossDimensionVisible(final UUID waypointId, final boolean visible) {
         config.setSharedWaypointCrossDimensionVisible(waypointId, visible);
+        configIo.save(config);
+    }
+
+    /** Stores (or clears with null) this client's Y override for the public waypoint. */
+    public void setCrossDimensionY(final UUID waypointId, final Double y) {
+        config.setSharedWaypointCrossDimensionY(waypointId, y);
         configIo.save(config);
     }
 
@@ -377,6 +389,7 @@ public final class SharedWaypointClient {
         final SharedWaypointClientState.View before = stateMachine.view();
         pendingOperations.clear();
         pendingCrossDimensionPreferences.clear();
+        pendingCrossDimensionYPreferences.clear();
         stateMachine.beginConnection(true);
         notifyChanges(before, stateMachine.view());
         if (!send(new HelloC2S(SharedWaypointProto.PROTO_MAJOR, SharedWaypointProto.PROTO_MINOR))) {
@@ -400,6 +413,7 @@ public final class SharedWaypointClient {
             final SharedWaypointClientState.View before = stateMachine.view();
             pendingOperations.clear();
             pendingCrossDimensionPreferences.clear();
+            pendingCrossDimensionYPreferences.clear();
             stateMachine.reset();
             notifyChanges(before, stateMachine.view());
         });
@@ -519,6 +533,11 @@ public final class SharedWaypointClient {
         if (applied && pending.kind() == OperationKind.CREATE
             && pending.crossDimensionVisible()) {
             pendingCrossDimensionPreferences.add(pending.createLocation());
+            if (pending.crossDimensionY() != null) {
+                pendingCrossDimensionYPreferences.put(
+                    pending.createLocation(), pending.crossDimensionY()
+                );
+            }
             applyPendingCrossDimensionPreferences(stateMachine.view().list());
         }
         if (!applied && !rejected) {
@@ -639,7 +658,7 @@ public final class SharedWaypointClient {
 
     private void applyPendingCrossDimensionPreferences(final List<SharedWaypoint> waypoints) {
         if (applyPendingCrossDimensionPreferences(
-            pendingCrossDimensionPreferences, waypoints, config
+            pendingCrossDimensionPreferences, pendingCrossDimensionYPreferences, waypoints, config
         )) {
             configIo.save(config);
         }
@@ -647,6 +666,7 @@ public final class SharedWaypointClient {
 
     static boolean applyPendingCrossDimensionPreferences(
         final Set<SharedWaypointLocationKey> pending,
+        final Map<SharedWaypointLocationKey, Double> pendingY,
         final List<SharedWaypoint> waypoints,
         final ConfluxConfig config
     ) {
@@ -654,6 +674,9 @@ public final class SharedWaypointClient {
         for (final SharedWaypoint waypoint : waypoints) {
             if (pending.remove(SharedWaypointLocationKey.from(waypoint))) {
                 config.setSharedWaypointCrossDimensionVisible(waypoint.id(), true);
+                config.setSharedWaypointCrossDimensionY(
+                    waypoint.id(), pendingY.remove(SharedWaypointLocationKey.from(waypoint))
+                );
                 changed = true;
             }
         }

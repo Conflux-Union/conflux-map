@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.core.waypoint;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
@@ -45,6 +46,56 @@ class WaypointIoTest {
         assertEquals("minecraft:diamond", loaded.waypoints().get(0).iconItemId);
         assertEquals("\u5bb6\uD83D\uDE80", loaded.waypoints().get(0).markerLabel);
         assertTrue(Files.readString(file).contains("\"schemaVersion\": 2"));
+    }
+
+    @Test
+    void roundTripsCrossDimensionYAndOmitsItWhenUnset(@TempDir final Path tempDir) throws IOException {
+        final Path file = tempDir.resolve("cross-dimension-y.json");
+        final Waypoint overridden = Waypoint.create(
+            "Fortress gate", DimensionId.OVERWORLD, 1.0, 64.0, 2.0,
+            0xFF336699, "Bases", Waypoint.Type.NORMAL
+        );
+        overridden.crossDimensionVisible = true;
+        overridden.crossDimensionY = 120.0;
+        final Waypoint plain = Waypoint.create(
+            "Home", DimensionId.OVERWORLD, 3.0, 70.0, 4.0,
+            0xFF336699, "Bases", Waypoint.Type.NORMAL
+        );
+        plain.crossDimensionVisible = true;
+
+        WaypointIo.save(file, List.of(overridden, plain), LOGGER);
+        final String json = Files.readString(file);
+        // Exactly one occurrence: the unset override keeps the pre-override on-disk shape.
+        assertEquals(1, json.split("\"crossDimensionY\"", -1).length - 1);
+        final List<Waypoint> loaded = WaypointIo.load(file, LOGGER);
+
+        assertEquals(120.0, loaded.get(0).crossDimensionY);
+        assertNull(loaded.get(1).crossDimensionY);
+    }
+
+    @Test
+    void nonFiniteCrossDimensionYFallsBackToTheStoredY(@TempDir final Path tempDir) throws IOException {
+        final Path file = tempDir.resolve("nan-override.json");
+        Files.writeString(file, "{\n"
+            + "  \"schemaVersion\": 2,\n"
+            + "  \"waypoints\": [{\n"
+            + "    \"id\": \"00000000-0000-0000-0000-000000000001\",\n"
+            + "    \"name\": \"Kept\",\n"
+            + "    \"dimensionId\": \"minecraft:overworld\",\n"
+            + "    \"x\": 1.0, \"y\": 70.0, \"z\": 2.0,\n"
+            + "    \"colorArgb\": -13408615,\n"
+            + "    \"visible\": true,\n"
+            + "    \"crossDimensionVisible\": true,\n"
+            + "    \"crossDimensionY\": NaN,\n"
+            + "    \"type\": \"NORMAL\",\n"
+            + "    \"createdAtEpochMs\": 2\n"
+            + "  }]\n"
+            + "}\n");
+
+        final Waypoint waypoint = WaypointIo.load(file, LOGGER).get(0);
+
+        assertEquals("Kept", waypoint.name);
+        assertNull(waypoint.crossDimensionY);
     }
 
     @Test

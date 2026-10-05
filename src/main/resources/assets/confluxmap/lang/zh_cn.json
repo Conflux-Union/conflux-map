@@ -219,6 +219,8 @@
   "confluxmap.screen.waypoint.send_chat": "发送到聊天栏",
   "confluxmap.screen.waypoint.error.name_required": "请输入路径点名称",
   "confluxmap.screen.waypoint.error.invalid_coordinates": "请输入有效的 X / Y / Z 坐标",
+  "confluxmap.screen.waypoint.error.invalid_cross_dimension_y": "请输入有效的映射 Y，或留空",
+  "confluxmap.screen.waypoint.cross_dimension_y": "在关联维度显示的 Y；留空则沿用本路径点自身的 Y",
   "confluxmap.screen.waypoint.error.invalid_marker_label": "标记文字不能超过 3 个字符",
   "confluxmap.screen.waypoint.preview.name": "名称：%s",
   "confluxmap.screen.waypoint.preview.dimension": "维度：%s",

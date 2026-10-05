@@ -1,6 +1,9 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -37,5 +40,26 @@ final class WaypointFormValidationTest {
         assertEquals(64.0, values.y());
         assertEquals(325.0, values.z());
         assertTrue(WaypointFormValidation.error("portal", "0", "0", "0").isEmpty());
+    }
+
+    @Test
+    void optionalCoordinateMapsBlankToNullAndRejectsUnusableText() {
+        assertNull(WaypointFormValidation.optionalCoordinate(null));
+        assertNull(WaypointFormValidation.optionalCoordinate("  "));
+        assertEquals(120.0, WaypointFormValidation.optionalCoordinate(" 120 "));
+        assertEquals(-64.5, WaypointFormValidation.optionalCoordinate("-64.5"));
+
+        assertThrows(
+            NumberFormatException.class,
+            () -> WaypointFormValidation.optionalCoordinate("1e")
+        );
+        assertThrows(
+            NumberFormatException.class,
+            () -> WaypointFormValidation.optionalCoordinate("NaN")
+        );
+        assertFalse(WaypointFormValidation.optionalCoordinateValid("1e"));
+        assertFalse(WaypointFormValidation.optionalCoordinateValid("Infinity"));
+        assertTrue(WaypointFormValidation.optionalCoordinateValid(""));
+        assertTrue(WaypointFormValidation.optionalCoordinateValid("70"));
     }
 }

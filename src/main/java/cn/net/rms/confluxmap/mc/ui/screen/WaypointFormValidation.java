@@ -6,7 +6,8 @@ import java.util.Optional;
 final class WaypointFormValidation {
     enum Error {
         NAME_REQUIRED,
-        INVALID_COORDINATES
+        INVALID_COORDINATES,
+        INVALID_CROSS_DIMENSION_Y
     }
 
     record Values(String name, double x, double y, double z) {
@@ -43,5 +44,29 @@ final class WaypointFormValidation {
         return new Values(
             name.trim(), Double.parseDouble(x), Double.parseDouble(y), Double.parseDouble(z)
         );
+    }
+
+    /**
+     * Blank (or null) maps to null so an untouched field means "no override"; any other
+     * text must parse to a finite double or this throws {@link NumberFormatException}.
+     */
+    static Double optionalCoordinate(final String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        final double parsed = Double.parseDouble(value.trim());
+        if (!Double.isFinite(parsed)) {
+            throw new NumberFormatException(value);
+        }
+        return parsed;
+    }
+
+    static boolean optionalCoordinateValid(final String value) {
+        try {
+            optionalCoordinate(value);
+            return true;
+        } catch (final NumberFormatException ignored) {
+            return false;
+        }
     }
 }

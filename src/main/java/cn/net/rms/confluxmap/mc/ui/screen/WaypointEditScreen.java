@@ -35,9 +35,10 @@ import net.minecraft.text.Text;
 
 /**
  * Create/edit form for one waypoint: name, X/Y/Z (raw local coordinates in
- * {@link #dimensionId}), cross-dimension visibility, a color palette, and a
- * local waypoint-set selector. The dimension itself and the normal/death type
- * are fixed at creation and not editable here, per the implementation brief.
+ * {@link #dimensionId}), cross-dimension visibility with an optional Y override
+ * for the linked-dimension view, a color palette, and a local waypoint-set
+ * selector. The dimension itself and the normal/death type are fixed at creation
+ * and not editable here, per the implementation brief.
  */
 public final class WaypointEditScreen extends ConfluxScreen {
     private enum CreateTarget { LOCAL, PUBLIC, CHAT }
@@ -76,6 +77,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
     private TextFieldWidget xField;
     private TextFieldWidget yField;
     private TextFieldWidget zField;
+    private TextFieldWidget crossDimensionYField;
     private ButtonWidget setButton;
     private ButtonWidget markerModeButton;
     private ButtonWidget iconButton;
@@ -93,6 +95,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
     private String draftZ;
     private String draftGroup;
     private String draftMarkerLabel = "";
+    private String draftCrossDimensionY = "";
     private WaypointMarkerMode markerMode = WaypointMarkerMode.TEXT;
     private boolean deleteConfirmationPending;
     private String errorKey;
@@ -249,7 +252,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
             waypoint.name, waypoint.x, waypoint.y, waypoint.z, waypoint.colorArgb, waypoint.group,
             waypoint.visible, waypoint.crossDimensionVisible, CreateTarget.LOCAL, null, false, null
         );
-        return withMarkerStyle(screen, waypoint.iconItemId, waypoint.markerLabel);
+        return withCrossDimensionY(withMarkerStyle(screen, waypoint.iconItemId, waypoint.markerLabel),
+            waypoint.crossDimensionY
+        );
     }
 
     static WaypointEditScreen forEdit(
@@ -263,7 +268,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
             waypoint.visible, waypoint.crossDimensionVisible,
             CreateTarget.LOCAL, localStoreSupplier, false, null
         );
-        return withMarkerStyle(screen, waypoint.iconItemId, waypoint.markerLabel);
+        return withCrossDimensionY(withMarkerStyle(screen, waypoint.iconItemId, waypoint.markerLabel),
+            waypoint.crossDimensionY
+        );
     }
 
     public static WaypointEditScreen forPublicEdit(
@@ -276,7 +283,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
             true, ConfluxMapClient.get().config().isSharedWaypointCrossDimensionVisible(waypoint.id()),
             CreateTarget.PUBLIC, null, false, waypoint
         );
-        return withMarkerStyle(screen, waypoint.iconItemId(), waypoint.markerLabel());
+        return withCrossDimensionY(withMarkerStyle(screen, waypoint.iconItemId(), waypoint.markerLabel()),
+            ConfluxMapClient.get().config().sharedWaypointCrossDimensionY(waypoint.id())
+        );
     }
 
     private static WaypointEditScreen withMarkerStyle(
@@ -287,6 +296,17 @@ public final class WaypointEditScreen extends ConfluxScreen {
         screen.selectedIconItemId = iconItemId;
         screen.draftMarkerLabel = markerLabel;
         screen.markerMode = WaypointMarkerMode.initial(iconItemId);
+        return screen;
+    }
+
+    private static WaypointEditScreen withCrossDimensionY(
+        final WaypointEditScreen screen,
+        final Double crossDimensionY
+    ) {
+        screen.draftCrossDimensionY =
+            crossDimensionY != null && Double.isFinite(crossDimensionY)
+                ? formatCoord(crossDimensionY)
+                : "";
         return screen;
     }
 
@@ -387,8 +407,21 @@ public final class WaypointEditScreen extends ConfluxScreen {
                 button -> {
                     crossDimensionVisible = !crossDimensionVisible;
                     button.setMessage(crossDimensionLabel());
+                    updateCrossDimensionYVisibility();
                 }
             ));
+            // The toggle text ("Cross-Dimension: ON") already fills the form's right half,
+            // so the optional Y override sits just past the form edge rather than inside it;
+            // it still fits the narrowest 320px GUI layout (field ends at centerX + 144).
+            crossDimensionYField = numericField(centerX + 104, 150, 40, draftCrossDimensionY);
+            crossDimensionYField.visible = crossDimensionVisible;
+            addDrawableChild(crossDimensionYField);
+            setHoverTooltip(
+                crossDimensionYField,
+                "confluxmap.screen.waypoint.cross_dimension_y"
+            );
+        } else {
+            crossDimensionYField = null;
         }
 
         final boolean showMarkerStyle = createTarget != CreateTarget.CHAT;
@@ -715,6 +748,12 @@ public final class WaypointEditScreen extends ConfluxScreen {
         );
     }
 
+    private void updateCrossDimensionYVisibility() {
+        if (crossDimensionYField != null) {
+            crossDimensionYField.visible = crossDimensionVisible;
+        }
+    }
+
     private void captureDraft() {
         draftName = nameField.getText();
         draftX = xField.getText();
@@ -722,6 +761,9 @@ public final class WaypointEditScreen extends ConfluxScreen {
         draftZ = zField.getText();
         draftGroup = selectedSetName();
         draftMarkerLabel = markerLabelField.getText();
+        if (crossDimensionYField != null) {
+            draftCrossDimensionY = crossDimensionYField.getText();
+        }
     }
 
     @Override
@@ -779,15 +821,24 @@ public final class WaypointEditScreen extends ConfluxScreen {
             return;
         }
         errorKey = null;
+        if (crossDimensionYField != null
+            && !WaypointFormValidation.optionalCoordinateValid(crossDimensionYField.getText())) {
+            errorKey = "confluxmap.screen.waypoint.error.invalid_cross_dimension_y";
+            return;
+        }
         final WaypointFormValidation.Values values = WaypointFormValidation.values(
             nameField.getText(), xField.getText(), yField.getText(), zField.getText()
         );
+        final Double crossDimensionY = crossDimensionVisible && crossDimensionYField != null
+            ? WaypointFormValidation.optionalCoordinate(crossDimensionYField.getText())
+            : null;
         final Waypoint waypoint = new Waypoint(
             editingId == null ? UUID.randomUUID() : editingId,
             values.name(), dimensionId, values.x(), values.y(), values.z(),
             colorSelection.selected(), selectedSetName(),
             initialVisible, crossDimensionVisible, type, createdAtEpochMs
         );
+        waypoint.crossDimensionY = crossDimensionY;
         try {
             waypoint.iconItemId = WaypointMarkerStyle.iconItemId(
                 markerMode.iconItemId(selectedIconItemId)
@@ -817,6 +868,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
             sharedWaypoints.setCrossDimensionVisible(
                 editingShared.id(), waypoint.crossDimensionVisible
             );
+            sharedWaypoints.setCrossDimensionY(editingShared.id(), crossDimensionY);
             MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
             return;
         }
@@ -924,6 +976,8 @@ public final class WaypointEditScreen extends ConfluxScreen {
             && WaypointFormValidation.error(
                 nameField.getText(), xField.getText(), yField.getText(), zField.getText()
             ).isEmpty()
+            && (crossDimensionYField == null
+                || WaypointFormValidation.optionalCoordinateValid(crossDimensionYField.getText()))
             && validMarkerLabel(markerMode.markerLabel(markerLabelField.getText()));
     }
 

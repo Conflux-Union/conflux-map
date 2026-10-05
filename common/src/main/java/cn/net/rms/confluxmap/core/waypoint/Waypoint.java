@@ -13,7 +13,9 @@ import java.util.UUID;
  *
  * <p>{@link #x}/{@link #y}/{@link #z} are always the raw local coordinates in
  * {@link #dimensionId} - never pre-converted. {@link DimensionScale} converts
- * on display only when a waypoint is viewed from a different dimension.
+ * on display only when a waypoint is viewed from a different dimension. Y is
+ * never scaled, so a cross-dimension view shows the stored Y as-is unless
+ * {@link #crossDimensionY} overrides it.
  */
 public final class Waypoint {
     public enum Type { NORMAL, DEATH }
@@ -28,6 +30,8 @@ public final class Waypoint {
     public String group;
     public boolean visible;
     public boolean crossDimensionVisible;
+    /** Y shown when this waypoint renders from the portal-linked dimension; null keeps {@link #y}. */
+    public Double crossDimensionY;
     public Type type;
     public String iconItemId = "";
     public String markerLabel = "";
@@ -104,6 +108,7 @@ public final class Waypoint {
         );
         copy.iconItemId = iconItemId;
         copy.markerLabel = markerLabel;
+        copy.crossDimensionY = crossDimensionY;
         return copy;
     }
 }
