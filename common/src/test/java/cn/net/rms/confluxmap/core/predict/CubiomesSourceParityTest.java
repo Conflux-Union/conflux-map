@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import cn.net.rms.confluxmap.core.color.BiomeColorPalette;
+import cn.net.rms.confluxmap.core.util.Argb;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -118,6 +120,29 @@ class CubiomesSourceParityTest {
             + " (" + firstDeclaredNames(missing) + ") by their enum name, so "
             + "PredictionPaletteBuilder would skip their live registry tint samples and the "
             + "underlay would keep the fallback colors forever.");
+    }
+
+    @Test
+    void everyGeneratableBiomeHasADeliberateBiomeViewColor() {
+        // The flat biome view (captured biomeMode tiles and the predicted biome slice) colors
+        // pixels through BiomeColorPalette. When that palette never learned a biome, both
+        // lookup directions fall back to the name hash with different keys, so the two colors
+        // disagree; a deliberate naturalVanillaColor entry makes them equal. This is how the
+        // 26.3 dappled_forest shipped as a transparent hole in the biome view while the three
+        // prediction tables were already fixed.
+        final Set<Integer> missing = new TreeSet<>();
+        for (final long id : generatable) {
+            final int byId = BiomeColorPalette.colorForCubiomes((int) id);
+            if (Argb.alpha(byId) != 255
+                || byId != BiomeColorPalette.color("minecraft:" + firstDeclaredName((int) id))) {
+                missing.add((int) id);
+            }
+        }
+        assertTrue(missing.isEmpty(), () -> "BiomeColorPalette has no deliberate natural color "
+            + "for cubiomes biome id(s) " + missing + " (" + firstDeclaredNames(missing) + ") "
+            + "that the pinned cubiomes commit generates. Extend naturalVanillaColor (see the "
+            + "dappled_forest/sulfur_caves precedents) so the biome view keeps rendering new "
+            + "biomes in a chosen, recognizable color instead of a hash.");
     }
 
     private static String firstDeclaredName(final int id) {

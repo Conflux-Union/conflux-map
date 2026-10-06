@@ -23,9 +23,13 @@ public final class BiomeColorPalette {
                 name
             );
             if (cubiomesId.isPresent()) {
-                return naturalVanillaColor(
+                final int natural = naturalVanillaColor(
                     CubiomesBiomeIds.nameForId(cubiomesId.getAsInt()).orElse(name)
                 );
+                if (natural != Argb.TRANSPARENT) {
+                    return natural;
+                }
+                return fallbackColor(paletteKey);
             }
             final int natural = naturalVanillaColor(name);
             if (natural != Argb.TRANSPARENT) {
@@ -39,6 +43,7 @@ public final class BiomeColorPalette {
     public static int colorForCubiomes(final int cubiomesId) {
         return CubiomesBiomeIds.nameForId(cubiomesId)
             .map(BiomeColorPalette::naturalVanillaColor)
+            .filter(natural -> natural != Argb.TRANSPARENT)
             .orElseGet(() -> fallbackColor("cubiomes:" + cubiomesId));
     }
 
@@ -65,6 +70,10 @@ public final class BiomeColorPalette {
             case "dark_forest", "dark_forest_hills" -> 0xFF35583B;
             case "cherry_grove" -> 0xFFD996A8;
             case "pale_garden" -> 0xFFA8ADA3;
+            // Dappled forest's identity is its explicit registry grass tint, the same value the
+            // terrain underlay live-samples, so the flat biome view matches what dappled ground
+            // actually looks like from above.
+            case "dappled_forest" -> 0xFFDF6827;
             case "taiga", "taiga_hills", "taiga_mountains", "snowy_taiga", "snowy_taiga_hills", "snowy_taiga_mountains" -> 0xFF587660;
             case "giant_tree_taiga", "giant_tree_taiga_hills", "giant_spruce_taiga", "giant_spruce_taiga_hills" -> 0xFF4C6855;
             case "swamp", "swamp_hills" -> 0xFF657447;
@@ -88,6 +97,7 @@ public final class BiomeColorPalette {
             case "mushroom_fields", "mushroom_field_shore" -> 0xFF9B6C8F;
             case "dripstone_caves" -> 0xFF76685B;
             case "lush_caves" -> 0xFF4E8A59;
+            case "sulfur_caves" -> 0xFFABA64F;
             case "deep_dark" -> 0xFF33434A;
             case "the_end", "small_end_islands", "end_midlands", "end_highlands", "end_barrens" -> 0xFF929567;
             case "nether_wastes" -> 0xFFA45A4E;

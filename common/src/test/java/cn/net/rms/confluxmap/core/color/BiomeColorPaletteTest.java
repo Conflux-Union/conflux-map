@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.core.predict.CubiomesBiomeIds;
 import cn.net.rms.confluxmap.core.util.Argb;
 import org.junit.jupiter.api.Test;
 
@@ -37,6 +38,49 @@ class BiomeColorPaletteTest {
         assertEquals(0xFF477FA8, BiomeColorPalette.color("minecraft:ocean"));
         assertEquals(0xFFDDEAF0, BiomeColorPalette.color("minecraft:snowy_plains"));
         assertEquals(0xFFA45A4E, BiomeColorPalette.color("minecraft:nether_wastes"));
+    }
+
+    @Test
+    void modernVanillaBiomesKeepTheirIdentityColor() {
+        assertEquals(0xFFDF6827, BiomeColorPalette.color("minecraft:dappled_forest"));
+        assertEquals(0xFFABA64F, BiomeColorPalette.color("minecraft:sulfur_caves"));
+        assertEquals(
+            BiomeColorPalette.color("minecraft:dappled_forest"),
+            BiomeColorPalette.colorForCubiomes(188)
+        );
+        assertEquals(
+            BiomeColorPalette.color("minecraft:sulfur_caves"),
+            BiomeColorPalette.colorForCubiomes(187)
+        );
+    }
+
+    @Test
+    void everyCubiomesKnownNameAndIdIsOpaque() {
+        // The flat biome view draws captured and predicted pixels from this palette; a name or
+        // id that resolves to transparent punches a hole in the map instead of coloring a biome
+        // (the 26.3 dappled_forest symptom).
+        for (int id = 0; id < 256; id++) {
+            final int byId = BiomeColorPalette.colorForCubiomes(id);
+            assertNotEquals(Argb.TRANSPARENT, byId, "cubiomes id " + id);
+            assertEquals(255, Argb.alpha(byId), "cubiomes id " + id);
+            for (final String name : CubiomesBiomeIds.namesForId(id)) {
+                final int byName = BiomeColorPalette.color("minecraft:" + name);
+                assertNotEquals(Argb.TRANSPARENT, byName, "minecraft:" + name);
+                assertEquals(255, Argb.alpha(byName), "minecraft:" + name);
+            }
+        }
+    }
+
+    @Test
+    void namesMissingFromTheNaturalTableFallBackToAnOpaqueColor() {
+        // A name the natural table never learned must not become a transparent hole; it takes
+        // the stable hash color like any unknown modded biome.
+        final int unmapped = BiomeColorPalette.color("minecraft:the_void");
+        assertNotEquals(Argb.TRANSPARENT, unmapped);
+        assertEquals(255, Argb.alpha(unmapped));
+        final int unmappedId = BiomeColorPalette.colorForCubiomes(200);
+        assertNotEquals(Argb.TRANSPARENT, unmappedId);
+        assertEquals(255, Argb.alpha(unmappedId));
     }
 
     @Test
