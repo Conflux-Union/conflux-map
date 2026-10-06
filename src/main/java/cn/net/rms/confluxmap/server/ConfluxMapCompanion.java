@@ -23,6 +23,7 @@ import java.util.UUID;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.WorldSavePath;
@@ -410,7 +411,10 @@ public final class ConfluxMapCompanion {
         ServerChunkDirtyHandler.bind(summaries);
         // Corrections can use the same predictor as the client when a bundled native exists;
         // failure is non-fatal and RegionSummaryService falls back to absolute samples.
-        NativeLib.init(server.getSavePath(WorldSavePath.ROOT).resolve("confluxmap"));
+        // The library must stay under the game directory, never the world save: a loaded
+        // DLL is locked on Windows and then breaks save-restore tools copying the world.
+        NativeLib.init(FabricLoader.getInstance().getGameDir().resolve(ConfluxMapMod.ID));
+        NativeLib.removeLegacyNativesUnder(server.getSavePath(WorldSavePath.ROOT).resolve("confluxmap"));
         webMapPrivacy = new WebMapPrivacyStore(
             server.getSavePath(WorldSavePath.ROOT).resolve("confluxmap/webmap-hidden.txt")
         );

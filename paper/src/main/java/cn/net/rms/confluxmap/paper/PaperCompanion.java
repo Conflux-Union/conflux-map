@@ -141,7 +141,10 @@ final class PaperCompanion implements Listener {
         chunkLoadStates = config.enabled && config.shareChunkLoadState
             ? new PaperChunkLoadStateService() : null;
         if (config.enabled) {
-            NativeLib.init(primaryWorldRoot.resolve("confluxmap"));
+            // Same game-directory rule as the Fabric companion: a loaded native library
+            // must not live inside the world save, where save-restore tools hit its lock.
+            NativeLib.init(plugin.getDataFolder().toPath());
+            NativeLib.removeLegacyNativesUnder(primaryWorldRoot.resolve("confluxmap"));
             if (config.shareWaypoints) {
                 sharedWaypoints = loadSharedWaypoints();
             }

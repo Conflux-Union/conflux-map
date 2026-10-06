@@ -29,6 +29,30 @@ final class ConfluxMapCompanionLifecycleTest {
         );
     }
 
+    @Test
+    void nativeLibraryIsLoadedFromTheGameDirectoryNotTheWorldSave() throws IOException {
+        final String source = Files.readString(
+            findProjectRoot().resolve(
+                "src/main/java/cn/net/rms/confluxmap/server/ConfluxMapCompanion.java"
+            )
+        );
+        final String activation = between(source, "private void activateIfNeeded(", "\n    }\n}");
+
+        assertTrue(
+            activation.contains("NativeLib.init(FabricLoader.getInstance().getGameDir()"),
+            "the native library must be extracted under the game directory"
+        );
+        assertFalse(
+            activation.contains("NativeLib.init(server.getSavePath("),
+            "a loaded native library is locked on Windows; extracting it into the world save"
+                + " breaks backup tools that restore the save by copying it back"
+        );
+        assertTrue(
+            activation.contains("NativeLib.removeLegacyNativesUnder(server.getSavePath("),
+            "world saves from older versions must have their legacy natives tree cleaned up"
+        );
+    }
+
     private static String between(final String source, final String start, final String end) {
         final int startIndex = source.indexOf(start);
         final int endIndex = source.indexOf(end, startIndex);

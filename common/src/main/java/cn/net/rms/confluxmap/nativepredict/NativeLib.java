@@ -8,6 +8,8 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Comparator;
+import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -92,6 +94,28 @@ public final class NativeLib {
      */
     public static boolean initForTests() {
         return init(Path.of(System.getProperty("java.io.tmpdir"), "confluxmap-native-test"));
+    }
+
+    /**
+     * Best-effort removal of a {@code natives} tree that older versions extracted under
+     * {@code confluxRoot} inside the world save. The extracted library is a platform
+     * binary, not world data: while loaded it is locked on Windows, so backup tools that
+     * restore the save directory by copying fail on it. A missing directory or a file
+     * still locked by another process is silently left behind.
+     */
+    public static void removeLegacyNativesUnder(final Path confluxRoot) {
+        final Path natives = confluxRoot.resolve(RESOURCE_ROOT);
+        try (final Stream<Path> paths = Files.walk(natives)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (final IOException e) {
+                    // Locked by another process; harmless to leave behind.
+                }
+            });
+        } catch (final IOException | RuntimeException e) {
+            // Nothing (or nothing readable) left to clean up.
+        }
     }
 
     private static Path extract(final Path baseDir) throws IOException {
