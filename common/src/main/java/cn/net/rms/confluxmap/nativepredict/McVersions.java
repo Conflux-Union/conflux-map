@@ -40,7 +40,7 @@ public final class McVersions {
 
     static {
         final List<Selection> selections = new ArrayList<>();
-        putSelection(selections, 1, "1.7-1.7.10", "1.7", "1.7.10");
+        putSelection(selections, 10, "1.7-1.7.10", "1.7", "1.7.10");
         putSelection(selections, 11, "1.8-1.8.9", "1.8", "1.8.9");
         putSelection(selections, 12, "1.9-1.9.4", "1.9", "1.9.1", "1.9.2", "1.9.3", "1.9.4");
         putSelection(selections, 13, "1.10-1.10.2", "1.10", "1.10.2");
@@ -66,17 +66,20 @@ public final class McVersions {
         putSelection(selections, 27, "1.21.2-1.21.3", "1.21.2", "1.21.3");
         // MC_1_21_WD: pale garden (winter drop).
         putSelection(selections, 28, "1.21.4", "1.21.4");
-        // MC_1_21_5: pale garden placement widened in 25w02a; unchanged through 1.21.11.
-        putSelection(
-            selections, 29, "1.21.5-1.21.11",
-            "1.21.5", "1.21.6", "1.21.7", "1.21.8", "1.21.9", "1.21.10", "1.21.11"
-        );
+        // MC_1_21_5: pale garden placement widened in 25w02a. The cubiomes 26.3 merge gave
+        // 1.21.6, 1.21.9, and 1.21.11 their own enum entries (finders.c branches at
+        // MC_1_21_9), so each line maps to its exact entry: 1.21.7/1.21.8 are patches of the
+        // 1.21.6 drop, 1.21.10 of the 1.21.9 drop.
+        putSelection(selections, 29, "1.21.5", "1.21.5");
+        putSelection(selections, 30, "1.21.6-1.21.8", "1.21.6", "1.21.7", "1.21.8");
+        putSelection(selections, 31, "1.21.9-1.21.10", "1.21.9", "1.21.10");
+        putSelection(selections, 32, "1.21.11", "1.21.11");
         // 26.1 keeps 1.21.11 worldgen but has its own cubiomes enum entry and version line.
-        putSelection(selections, 30, "26.1-26.1.2", "26.1", "26.1.1", "26.1.2");
+        putSelection(selections, 33, "26.1-26.1.2", "26.1", "26.1.1", "26.1.2");
         // 26.2 adds the Chaos Cubed worldgen family, including sulfur caves.
-        putSelection(selections, 31, "26.2", "26.2");
+        putSelection(selections, 34, "26.2", "26.2");
         // 26.3 adds abandoned camps and shifts the biome tree (btree263).
-        putSelection(selections, 32, "26.3", "26.3");
+        putSelection(selections, 35, "26.3", "26.3");
         SELECTIONS = List.copyOf(selections);
     }
 

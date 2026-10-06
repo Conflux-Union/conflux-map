@@ -423,17 +423,19 @@ class StructureIndexTest {
 
     @Test
     void modernCatalogAddsEveryPost117Structure() {
+        final int mc261 = cn.net.rms.confluxmap.nativepredict.McVersions.toCubiomes("26.1").orElseThrow();
+        final int mc263 = cn.net.rms.confluxmap.nativepredict.McVersions.toCubiomes("26.3").orElseThrow();
         final EnumSet<StructureIndex.StructureType> overworld =
-            StructureIndex.StructureType.availableIn(30, DimensionId.OVERWORLD);
+            StructureIndex.StructureType.availableIn(mc261, DimensionId.OVERWORLD);
 
         assertTrue(overworld.contains(StructureIndex.StructureType.ANCIENT_CITY));
         assertTrue(overworld.contains(StructureIndex.StructureType.TRAIL_RUINS));
         assertTrue(overworld.contains(StructureIndex.StructureType.TRIAL_CHAMBERS));
         // 26.1 keeps the 26.2-era catalog; abandoned camps only join at MC 26.3.
         assertEquals(17, overworld.size());
-        assertEquals(18, StructureIndex.StructureType.availableIn(32, DimensionId.OVERWORLD).size());
+        assertEquals(18, StructureIndex.StructureType.availableIn(mc263, DimensionId.OVERWORLD).size());
         assertTrue(
-            StructureIndex.StructureType.availableIn(32, DimensionId.OVERWORLD)
+            StructureIndex.StructureType.availableIn(mc263, DimensionId.OVERWORLD)
                 .contains(StructureIndex.StructureType.ABANDONED_CAMP));
     }
 

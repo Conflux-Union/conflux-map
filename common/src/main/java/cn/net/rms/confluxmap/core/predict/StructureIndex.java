@@ -32,7 +32,7 @@ import org.apache.logging.log4j.Logger;
 public final class StructureIndex {
     private static final Logger LOGGER = LogManager.getLogger("ConfluxMap/StructureIndex");
     private static final int MC_1_17_1 = 21;
-    private static final int MC_26_3 = 32;
+    private static final int MC_26_3 = 35;
     private static final String CACHE_PREFIX = "structures_v4_mc";
     private static final int MAX_CANDIDATE_QUERY_REGIONS = 1_024;
 

@@ -17,6 +17,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import cn.net.rms.confluxmap.core.color.BiomeColorPalette;
 import cn.net.rms.confluxmap.core.util.Argb;
+import cn.net.rms.confluxmap.nativepredict.McVersions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -45,6 +46,7 @@ import org.junit.jupiter.api.Test;
  */
 class CubiomesSourceParityTest {
     private static Map<String, Long> enumIds;
+    private static Map<String, Long> versionEnumIds;
     private static Set<Long> generatable;
     private static String biomeExistsBody;
 
@@ -57,6 +59,7 @@ class CubiomesSourceParityTest {
             "native/cubiomes is not checked out; skipping cubiomes-source parity"
         );
         enumIds = parseBiomeEnum(block(read(header), "enum BiomeID"));
+        versionEnumIds = parseBiomeEnum(block(read(header), "enum MCVersion"));
         // Anchors proving the enum parser survived a cubiomes reshuffle: implicit numbering,
         // same-line aliases, and the +128 mutated-variant expressions must all resolve.
         assertEquals(0L, enumIds.get("ocean"));
@@ -143,6 +146,97 @@ class CubiomesSourceParityTest {
             + "that the pinned cubiomes commit generates. Extend naturalVanillaColor (see the "
             + "dappled_forest/sulfur_caves precedents) so the biome view keeps rendering new "
             + "biomes in a chosen, recognizable color instead of a hash.");
+    }
+
+    @Test
+    void mcVersionOrdinalsMatchTheVendoredEnum() {
+        // Derives the version-string -> enum-member table straight from cubiomes' own
+        // str2mc (util.c) and the MCVersion ordinals from biomes.h. The 26.3 merge inserted
+        // MC_1_21_6/9/11 entries and silently moved MC_26_3 from 32 to 35, so McVersions
+        // kept handing MC_1_21_11 to setupGenerator and 26.2/26.3 worlds predicted with
+        // 1.21.x worldgen. With the table derived, a cubiomes bump that inserts, reorders,
+        // or adds versions fails here until McVersions deliberately follows.
+        final Path util = repoFile("native/cubiomes/util.c");
+        assertTrue(util != null, "native/cubiomes/util.c is not checked out");
+        final Map<String, String> str2mc = parseStr2mc(read(util));
+        // Anchors proving both parsers survived a cubiomes reshuffle.
+        assertEquals(21L, versionEnumIds.get("MC_1_17_1"));
+        assertEquals(35L, versionEnumIds.get("MC_26_3"));
+        assertTrue(str2mc.size() >= 40, "the str2mc parser lost most of the version table");
+
+        // Documented, deliberate divergences from str2mc for the supported era:
+        // cubiomes' MC_1_19/MC_1_21 line aliases track each line's LAST patch, but a real
+        // 1.19/1.21 release generates the worldgen of its first patch, which is the one a
+        // player selecting that line means (see McVersions' javadoc); "1.21 WD" is a
+        // cubiomes-internal alias this mod has no reason to offer.
+        final Map<String, String> diverging = Map.of(
+            "1.19", "MC_1_19_2",
+            "1.21", "MC_1_21_1"
+        );
+        final java.util.Set<String> unoffered = java.util.Set.of("1.21 WD");
+
+        for (final Map.Entry<String, String> pair : str2mc.entrySet()) {
+            final Long ordinal = versionEnumIds.get(pair.getValue());
+            assertTrue(ordinal != null, "str2mc returns unknown enum member " + pair.getValue());
+            if (ordinal < versionEnumIds.get("MC_1_17_1")) {
+                continue;
+            }
+            if (unoffered.contains(pair.getKey())) {
+                continue;
+            }
+            final String expectedMember = diverging.getOrDefault(pair.getKey(), pair.getValue());
+            final long expected = versionEnumIds.get(expectedMember);
+            final java.util.OptionalInt mapped = McVersions.toCubiomes(pair.getKey());
+            assertTrue(mapped.isPresent(),
+                "McVersions cannot map '" + pair.getKey() + "' (cubiomes str2mc knows it)");
+            assertEquals((int) expected, mapped.getAsInt(),
+                "'" + pair.getKey() + "' must resolve to cubiomes " + expectedMember);
+        }
+
+        // Patch releases cubiomes itself does not name ride their drop's entry by this
+        // mod's own grouping choice - the only hand-maintained pairs left.
+        final Map<String, String> patchRiders = new LinkedHashMap<>();
+        patchRiders.put("1.21.7", "MC_1_21_6");
+        patchRiders.put("1.21.8", "MC_1_21_6");
+        patchRiders.put("1.21.10", "MC_1_21_9");
+        patchRiders.put("26.1.1", "MC_26_1");
+        patchRiders.put("26.1.2", "MC_26_1");
+        for (final Map.Entry<String, String> rider : patchRiders.entrySet()) {
+            assertEquals(versionEnumIds.get(rider.getValue()).intValue(),
+                McVersions.toCubiomes(rider.getKey()).orElseThrow(),
+                "patch '" + rider.getKey() + "' must ride " + rider.getValue());
+        }
+
+        // Every selectable family must use an enum member str2mc (or a rider) can reach.
+        final java.util.Set<Integer> reachableOrdinals = new java.util.HashSet<>();
+        for (final String member : str2mc.values()) {
+            reachableOrdinals.add(versionEnumIds.get(member).intValue());
+        }
+        for (final String member : patchRiders.values()) {
+            reachableOrdinals.add(versionEnumIds.get(member).intValue());
+        }
+        for (final McVersions.Selection selection : McVersions.selections()) {
+            assertTrue(reachableOrdinals.contains(selection.cubiomesVersion()),
+                "selection " + selection.label() + " does not correspond to a cubiomes version");
+        }
+    }
+
+    /** Parses cubiomes' {@code str2mc}: {@code if (!strcmp(s, "26.3")) return MC_26_3;} pairs. */
+    private static Map<String, String> parseStr2mc(final String source) {
+        final String body = block(source, "int str2mc");
+        final java.util.regex.Matcher matcher = java.util.regex.Pattern
+            .compile("if \\(!strcmp\\(s, \"([^\"]+)\"\\)\\)\\s*return (\\w+);")
+            .matcher(body);
+        final Map<String, String> pairs = new LinkedHashMap<>();
+        int consumed = 0;
+        while (matcher.find()) {
+            pairs.put(matcher.group(1), matcher.group(2));
+            consumed = matcher.end();
+        }
+        final String trailer = body.substring(consumed).replaceAll("//[^\n]*", "").trim();
+        assertTrue(trailer.matches("return MC_UNDEF;?"),
+            "str2mc grew a statement shape this parser does not know: " + trailer);
+        return pairs;
     }
 
     private static String firstDeclaredName(final int id) {

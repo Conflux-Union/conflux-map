@@ -104,6 +104,25 @@ class CubiomesNativeTest {
     }
 
     @Test
+    void mc263SamplesDappledForestAtTheUpstreamFixture() {
+        // Upstream's test_biomes_26_3 fixture. Pins the whole version chain: McVersions must
+        // resolve "26.3" to the enum value the loaded native binary treats as MC_26_3. When
+        // the cubiomes 26.3 merge shifted that enum (32 -> 35) without this table following,
+        // 26.3 seeds were generated with MC_1_21_11 worldgen and dappled_forest never
+        // appeared in any prediction.
+        final OptionalInt mc = McVersions.toCubiomes("26.3");
+        assertTrue(mc.isPresent(), "McVersions must know \"26.3\"");
+        try (CubiomesContext ctx = CubiomesContext.create(
+            mc.getAsInt(), -3829811542736183482L, OVERWORLD, 0
+        )) {
+            assertNotNull(ctx, "context creation must succeed for MC_26_3");
+            final int[] out = new int[1];
+            assertEquals(0, ctx.biomes(4, 68148 >> 2, 80990 >> 2, 1, 1, out));
+            assertEquals(188, out[0], "the 26.3 fixture point must sample dappled_forest");
+        }
+    }
+
+    @Test
     void stridedQueriesMatchDenseGridSelection() {
         final int w = 5;
         final int h = 4;
