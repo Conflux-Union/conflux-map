@@ -21,7 +21,6 @@ import net.minecraft.block.TallFlowerBlock;
 import net.minecraft.block.TallPlantBlock;
 import net.minecraft.block.TransparentBlock;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.fluid.FluidState;
 import net.minecraft.state.property.Properties;
@@ -95,15 +94,13 @@ public final class McChunkSnapshotFactory {
         tints.beginChunk(world, chunkX, chunkZ);
 
         if (layer.type() == MapLayer.Type.SURFACE || layer.type() == MapLayer.Type.END_SURFACE) {
-            final ClientPlayerEntity player = client.player;
-            final int playerY = player != null ? player.getBlockPos().getY() : world.getBottomY();
             final Heightmap heightmap = chunk.getHeightmap(Heightmap.Type.MOTION_BLOCKING);
             final int bottomY = world.getBottomY();
             final int topY = world.getTopY();
             for (int z = 0; z < 16; z++) {
                 for (int x = 0; x < 16; x++) {
                     sampleColumn(
-                        chunk, world, pos, baseX, baseZ, x, z, bottomY, topY, playerY, heightmap, z * 16 + x,
+                        chunk, world, pos, baseX, baseZ, x, z, bottomY, topY, heightmap, z * 16 + x,
                         surfaceY, fluidDepth, baseArgb, tintArgb, overlayArgb, kind, light,
                         xaeroBaseArgb, xaeroOverlayArgb
                     );
@@ -248,7 +245,6 @@ public final class McChunkSnapshotFactory {
         final int localZ,
         final int bottomY,
         final int topY,
-        final int playerY,
         final Heightmap heightmap,
         final int index,
         final short[] surfaceY,
@@ -266,7 +262,7 @@ public final class McChunkSnapshotFactory {
 
         int y = heightmap.get(localX, localZ) - 1;
         if (y < bottomY) {
-            writeVoid(index, playerY, surfaceY, kind, baseArgb, tintArgb, overlayArgb, fluidDepth, light);
+            writeVoidColumn(index, surfaceY, kind, baseArgb, tintArgb, overlayArgb, fluidDepth, light);
             return;
         }
         pos.set(worldX, y, worldZ);
@@ -313,7 +309,7 @@ public final class McChunkSnapshotFactory {
                 return;
             }
             // §1 void fallback.
-            writeVoid(index, playerY, surfaceY, kind, baseArgb, tintArgb, overlayArgb, fluidDepth, light);
+            writeVoidColumn(index, surfaceY, kind, baseArgb, tintArgb, overlayArgb, fluidDepth, light);
             return;
         }
 
@@ -806,9 +802,14 @@ public final class McChunkSnapshotFactory {
         //#endif
     }
 
-    private void writeVoid(
+    /**
+     * Floor-scan "no floor found" fallback: keeps the pivot-relative placeholder Y so the
+     * cave/nether layers stay pivot-anchored (see {@link #sampleFloorColumn}). Top-down
+     * surface scans must use {@link #writeVoidColumn} instead - their columns are known-empty.
+     */
+    private static void writeVoid(
         final int index,
-        final int playerY,
+        final int pivotY,
         final short[] surfaceY,
         final byte[] kind,
         final int[] baseArgb,
@@ -817,7 +818,28 @@ public final class McChunkSnapshotFactory {
         final byte[] fluidDepth,
         final byte[] light
     ) {
-        surfaceY[index] = clampSurfaceY(playerY + 1);
+        surfaceY[index] = clampSurfaceY(pivotY + 1);
+        writeVoidColumn(index, surfaceY, kind, baseArgb, tintArgb, overlayArgb, fluidDepth, light);
+    }
+
+    /**
+     * §1 void fallback for the top-down scan: the column is authoritatively empty, so it
+     * stores {@link ChunkSnapshot#NO_SURFACE} instead of a fabricated player-relative Y.
+     * Lookups then read the column as "known, no surface" - position menus report no
+     * height rather than a fake one, and relief shading treats it as an absent neighbor
+     * instead of a fake cliff next to real terrain.
+     */
+    private static void writeVoidColumn(
+        final int index,
+        final short[] surfaceY,
+        final byte[] kind,
+        final int[] baseArgb,
+        final int[] tintArgb,
+        final int[] overlayArgb,
+        final byte[] fluidDepth,
+        final byte[] light
+    ) {
+        surfaceY[index] = ChunkSnapshot.NO_SURFACE;
         kind[index] = (byte) SurfaceKind.VOID.ordinal();
         baseArgb[index] = Argb.TRANSPARENT;
         tintArgb[index] = 0xFFFFFFFF;

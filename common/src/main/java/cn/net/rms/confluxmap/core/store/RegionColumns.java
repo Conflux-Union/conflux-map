@@ -211,15 +211,23 @@ public final class RegionColumns {
     /**
      * Terrain height used by the detailed relief stencil. Land always uses its visible surface;
      * water/ice optionally expose the recorded floor so bathymetry can shade independently below
-     * a flat water surface. {@link ChunkSnapshot#NO_SURFACE} remains the missing-data sentinel.
+     * a flat water surface. Void/unknown columns carry no usable height - the same rule
+     * {@link #surfaceYAt} applies - so legacy cached void columns (stored with a fabricated
+     * pivot-relative Y before the capture writer switched to {@link ChunkSnapshot#NO_SURFACE})
+     * shade as absent neighbors instead of fake cliffs.
      */
     public synchronized short reliefYAt(final int localX, final int localZ, final boolean bathymetry) {
         final int index = localZ * SIZE + localX;
         final short y = surfaceY[index];
-        if (y == ChunkSnapshot.NO_SURFACE || !bathymetry) {
+        final byte surfaceKind = kind[index];
+        if (y == ChunkSnapshot.NO_SURFACE
+            || surfaceKind == SurfaceKind.UNKNOWN.ordinal()
+            || surfaceKind == SurfaceKind.VOID.ordinal()) {
+            return ChunkSnapshot.NO_SURFACE;
+        }
+        if (!bathymetry) {
             return y;
         }
-        final byte surfaceKind = kind[index];
         if (surfaceKind != SurfaceKind.WATER.ordinal() && surfaceKind != SurfaceKind.ICE.ordinal()) {
             return y;
         }

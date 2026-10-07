@@ -7,7 +7,7 @@ package cn.net.rms.confluxmap.core.model;
  */
 public final class ChunkSnapshot {
     public static final int COLUMNS = 256;
-    /** Marker in {@link #surfaceY} for columns a region has never received data for. */
+    /** Marker in {@link #surfaceY} for columns without a surface: never-received and captured void columns. */
     public static final short NO_SURFACE = Short.MIN_VALUE;
 
     public final int chunkX;

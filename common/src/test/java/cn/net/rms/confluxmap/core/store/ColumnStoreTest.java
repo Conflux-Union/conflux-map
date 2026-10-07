@@ -79,6 +79,33 @@ class ColumnStoreTest {
         assertFalse(store.surfaceAt(24, 8).known());
     }
 
+    @Test
+    void noSurfaceVoidColumnIsKnownWithoutAHeight() {
+        final ColumnStore store = new ColumnStore();
+        final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
+        Arrays.fill(surfaceY, ChunkSnapshot.NO_SURFACE);
+        final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
+        Arrays.fill(kind, (byte) SurfaceKind.VOID.ordinal());
+        store.put(snapshot(0, 0, surfaceY, kind), SampleSource.REAL_LIVE);
+
+        final ColumnStore.SurfaceLookup voidColumn = store.surfaceAt(8, 8);
+        assertTrue(voidColumn.known(), "a captured void column is authoritative, not uncaptured");
+        assertTrue(voidColumn.surfaceY().isEmpty());
+    }
+
+    @Test
+    void legacyCachedVoidHeightProvidesNoReliefNeighbor() {
+        final ColumnStore store = new ColumnStore();
+        final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
+        Arrays.fill(surfaceY, (short) 65);
+        final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
+        Arrays.fill(kind, (byte) SurfaceKind.VOID.ordinal());
+        store.put(snapshot(0, 0, surfaceY, kind), SampleSource.REAL_LIVE);
+
+        assertEquals(ChunkSnapshot.NO_SURFACE, store.region(0, 0).reliefYAt(8, 8, false));
+        assertEquals(ChunkSnapshot.NO_SURFACE, store.region(0, 0).reliefYAt(8, 8, true));
+    }
+
     private static ChunkSnapshot snapshot(final int chunkX, final int chunkZ) {
         return snapshot(chunkX, chunkZ, new short[ChunkSnapshot.COLUMNS]);
     }

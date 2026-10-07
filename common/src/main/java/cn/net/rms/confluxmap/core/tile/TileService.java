@@ -1366,12 +1366,18 @@ public final class TileService {
         if (x >= 0 && x < RegionColumns.SIZE && z >= 0 && z < RegionColumns.SIZE) {
             final int index = z * RegionColumns.SIZE + x;
             final short value = localSurfaceY[index];
-            if (value == ChunkSnapshot.NO_SURFACE) {
+            // Void/unknown columns never provide relief height, matching RegionColumns.reliefYAt
+            // and surfaceYAt: legacy cached void columns still carry a fabricated pivot-relative
+            // Y, which must shade as an absent neighbor rather than a fake cliff.
+            final byte k = localKind[index];
+            if (value == ChunkSnapshot.NO_SURFACE
+                || k == SurfaceKind.UNKNOWN.ordinal()
+                || k == SurfaceKind.VOID.ordinal()) {
                 return null;
             }
             if (!bathymetry
-                || (localKind[index] != SurfaceKind.WATER.ordinal()
-                    && localKind[index] != SurfaceKind.ICE.ordinal())) {
+                || (k != SurfaceKind.WATER.ordinal()
+                    && k != SurfaceKind.ICE.ordinal())) {
                 return (int) value;
             }
             return (int) value - (localFluidDepth[index] & 0xFF);
