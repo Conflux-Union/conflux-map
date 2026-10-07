@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.MapLayer;
+import cn.net.rms.confluxmap.mc.world.DimensionLayerPolicy.DimensionKind;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
@@ -28,16 +29,6 @@ public final class LayerSelector {
     private static final int Y_THRESHOLD_SINGLE_CORE = 5;
     private static final int MAX_TICKS_MULTI_CORE = 300;
     private static final int MAX_TICKS_SINGLE_CORE = 3000;
-
-    /** §1's three detection cases, generalized from "has_ceiling"/"has_sky_light" dimension metadata. */
-    public enum DimensionKind {
-        /** Case A: Nether-like (e.g. the Nether itself). */
-        HAS_CEILING,
-        /** Case B: no ceiling and no ambient sky light (e.g. the End). */
-        NO_SKY_NO_CEILING,
-        /** Case C: ordinary sky-lit dimension (e.g. the Overworld). */
-        SKY_LIT
-    }
 
     /** The layer to capture/display this tick, and the pivot Y its floor scan (if any) should use. */
     public record Decision(MapLayer layer, int pivotY) {
@@ -84,7 +75,10 @@ public final class LayerSelector {
         final int eyeY = (int) Math.floor(viewpoint.eyeY());
         refreshPivot(eyeY);
 
-        final DimensionKind kind = classify(world.getDimension());
+        final DimensionKind kind = DimensionLayerPolicy.classify(
+            DimensionLayerPolicy.dimensionId(world),
+            world.getDimension()
+        );
         final MapLayer layer;
         switch (kind) {
             case HAS_CEILING:
@@ -96,9 +90,7 @@ public final class LayerSelector {
                 );
                 break;
             case NO_SKY_NO_CEILING:
-                // §1.2/§4: M1 always renders the End as a plain top-down surface (no player-relative
-                // switching); there is no second End layer for the override cycle to reach either.
-                layer = MapLayer.END_SURFACE;
+                layer = DimensionLayerPolicy.layerFor(kind);
                 break;
             default:
                 layer = resolveOverworld(world, viewpoint, eyeY, config.layerOverride);
@@ -117,7 +109,10 @@ public final class LayerSelector {
     /** Keybind entry point ({@code key.confluxmap.cycle_layer}): advances the override for the current dimension. */
     public void cycleOverride() {
         final ClientWorld world = client.world;
-        final DimensionKind kind = world != null ? classify(world.getDimension()) : DimensionKind.SKY_LIT;
+        final DimensionKind kind = world != null
+            ? DimensionLayerPolicy.classify(
+                DimensionLayerPolicy.dimensionId(world), world.getDimension())
+            : DimensionKind.SKY_LIT;
         config.layerOverride = nextOverride(kind, config.layerOverride);
     }
 
@@ -195,17 +190,6 @@ public final class LayerSelector {
             default:
                 return debouncedPivotY;
         }
-    }
-
-    /** §1's generic classification: has_ceiling, else no-sky-light, else ordinary sky-lit. */
-    public static DimensionKind classify(final DimensionType type) {
-        if (type.hasCeiling()) {
-            return DimensionKind.HAS_CEILING;
-        }
-        if (!type.hasSkyLight()) {
-            return DimensionKind.NO_SKY_NO_CEILING;
-        }
-        return DimensionKind.SKY_LIT;
     }
 
     /** Deliverable A's cycle, with each dimension only offering the states meaningful to it. */

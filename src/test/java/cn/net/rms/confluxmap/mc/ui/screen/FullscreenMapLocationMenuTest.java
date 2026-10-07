@@ -10,7 +10,7 @@ import cn.net.rms.confluxmap.core.predict.StructureIndex;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.mc.ui.world.WaypointHighlightState;
-import cn.net.rms.confluxmap.mc.world.LayerSelector;
+import cn.net.rms.confluxmap.mc.world.DimensionLayerPolicy;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -278,15 +278,15 @@ class FullscreenMapLocationMenuTest {
     void heightLookupUsesTheTopSurfaceLayerForEachDimensionKind() {
         assertEquals(
             MapLayer.SURFACE,
-            FullscreenMapLocationMenu.topSurfaceLayer(LayerSelector.DimensionKind.SKY_LIT)
+            FullscreenMapLocationMenu.topSurfaceLayer(DimensionLayerPolicy.DimensionKind.SKY_LIT)
         );
         assertEquals(
             MapLayer.END_SURFACE,
-            FullscreenMapLocationMenu.topSurfaceLayer(LayerSelector.DimensionKind.NO_SKY_NO_CEILING)
+            FullscreenMapLocationMenu.topSurfaceLayer(DimensionLayerPolicy.DimensionKind.NO_SKY_NO_CEILING)
         );
         assertEquals(
             MapLayer.NETHER_CEILING,
-            FullscreenMapLocationMenu.topSurfaceLayer(LayerSelector.DimensionKind.HAS_CEILING)
+            FullscreenMapLocationMenu.topSurfaceLayer(DimensionLayerPolicy.DimensionKind.HAS_CEILING)
         );
     }
 

@@ -639,7 +639,11 @@ public final class ClientMultiworldService {
     }
 
     private MapLayer terrainProbeLayer() {
-        switch (LayerSelector.classify(client.world.getDimension())) {
+        final DimensionLayerPolicy.DimensionKind kind = DimensionLayerPolicy.classify(
+            DimensionLayerPolicy.dimensionId(client.world),
+            client.world.getDimension()
+        );
+        switch (kind) {
             case HAS_CEILING:
                 return MapLayer.NETHER_CEILING;
             case NO_SKY_NO_CEILING:

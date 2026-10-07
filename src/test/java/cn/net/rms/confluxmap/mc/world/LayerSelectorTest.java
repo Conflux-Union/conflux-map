@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.MapLayer;
+import cn.net.rms.confluxmap.mc.world.DimensionLayerPolicy.DimensionKind;
 import org.junit.jupiter.api.Test;
 
 class LayerSelectorTest {
@@ -53,22 +54,18 @@ class LayerSelectorTest {
     void netherCyclesCurrentRoofAndBelowBedrockPresets() {
         assertEquals(
             ConfluxConfig.LayerOverride.FORCE_UNDERGROUND,
-            LayerSelector.nextOverride(
-                LayerSelector.DimensionKind.HAS_CEILING, ConfluxConfig.LayerOverride.AUTO
-            )
+            LayerSelector.nextOverride(DimensionKind.HAS_CEILING, ConfluxConfig.LayerOverride.AUTO)
         );
         assertEquals(
             ConfluxConfig.LayerOverride.FORCE_SLICE,
             LayerSelector.nextOverride(
-                LayerSelector.DimensionKind.HAS_CEILING,
-                ConfluxConfig.LayerOverride.FORCE_UNDERGROUND
+                DimensionKind.HAS_CEILING, ConfluxConfig.LayerOverride.FORCE_UNDERGROUND
             )
         );
         assertEquals(
             ConfluxConfig.LayerOverride.AUTO,
             LayerSelector.nextOverride(
-                LayerSelector.DimensionKind.HAS_CEILING,
-                ConfluxConfig.LayerOverride.FORCE_SLICE
+                DimensionKind.HAS_CEILING, ConfluxConfig.LayerOverride.FORCE_SLICE
             )
         );
     }
@@ -77,29 +74,24 @@ class LayerSelectorTest {
     void overworldCyclesAutomaticSurfaceCurrentCaveAndFixedHeightPresets() {
         assertEquals(
             ConfluxConfig.LayerOverride.FORCE_SURFACE,
-            LayerSelector.nextOverride(
-                LayerSelector.DimensionKind.SKY_LIT, ConfluxConfig.LayerOverride.AUTO
-            )
+            LayerSelector.nextOverride(DimensionKind.SKY_LIT, ConfluxConfig.LayerOverride.AUTO)
         );
         assertEquals(
             ConfluxConfig.LayerOverride.FORCE_UNDERGROUND,
             LayerSelector.nextOverride(
-                LayerSelector.DimensionKind.SKY_LIT,
-                ConfluxConfig.LayerOverride.FORCE_SURFACE
+                DimensionKind.SKY_LIT, ConfluxConfig.LayerOverride.FORCE_SURFACE
             )
         );
         assertEquals(
             ConfluxConfig.LayerOverride.FORCE_SLICE,
             LayerSelector.nextOverride(
-                LayerSelector.DimensionKind.SKY_LIT,
-                ConfluxConfig.LayerOverride.FORCE_UNDERGROUND
+                DimensionKind.SKY_LIT, ConfluxConfig.LayerOverride.FORCE_UNDERGROUND
             )
         );
         assertEquals(
             ConfluxConfig.LayerOverride.AUTO,
             LayerSelector.nextOverride(
-                LayerSelector.DimensionKind.SKY_LIT,
-                ConfluxConfig.LayerOverride.FORCE_SLICE
+                DimensionKind.SKY_LIT, ConfluxConfig.LayerOverride.FORCE_SLICE
             )
         );
     }

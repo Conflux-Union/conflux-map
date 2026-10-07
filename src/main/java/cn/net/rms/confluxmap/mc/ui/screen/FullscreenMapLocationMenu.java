@@ -5,7 +5,7 @@ import cn.net.rms.confluxmap.core.predict.StructureIndex;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.world.WaypointHighlightState;
-import cn.net.rms.confluxmap.mc.world.LayerSelector;
+import cn.net.rms.confluxmap.mc.world.DimensionLayerPolicy;
 import java.util.List;
 import java.util.OptionalInt;
 import java.util.UUID;
@@ -180,7 +180,7 @@ final class FullscreenMapLocationMenu {
             : new Point(structure.blockX(), structure.blockZ());
     }
 
-    static MapLayer topSurfaceLayer(final LayerSelector.DimensionKind dimensionKind) {
+    static MapLayer topSurfaceLayer(final DimensionLayerPolicy.DimensionKind dimensionKind) {
         return switch (dimensionKind) {
             case SKY_LIT -> MapLayer.SURFACE;
             case NO_SKY_NO_CEILING -> MapLayer.END_SURFACE;
