@@ -1,12 +1,14 @@
 package cn.net.rms.confluxmap.mc.teleport;
 
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
+import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.config.TeleportCommandTemplate;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.OptionalInt;
+import java.util.function.Consumer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
@@ -18,17 +20,31 @@ import net.minecraft.world.chunk.WorldChunk;
 public final class ClientGroundTeleportService {
     static final int STAGING_HEADROOM = 32;
     private static final int MAX_WAIT_TICKS = 200;
+    /** Chat feedback for a resolved chunk with no ground: the player is back at the origin. */
+    static final String GROUND_UNRESOLVED_KEY = "confluxmap.teleport.feedback.ground_unresolved";
+    /** Chat feedback for a wait that expired before the player ever reached the target chunk. */
+    static final String TIMEOUT_KEY = "confluxmap.teleport.feedback.timeout";
 
     private final MinecraftClient client;
     private final ConfluxConfig config;
+    private final Consumer<String> feedback;
     private Pending pending;
 
     public ClientGroundTeleportService(
         final MinecraftClient client,
         final ConfluxConfig config
     ) {
+        this(client, config, key -> sendChatFeedback(client, key));
+    }
+
+    ClientGroundTeleportService(
+        final MinecraftClient client,
+        final ConfluxConfig config,
+        final Consumer<String> feedback
+    ) {
         this.client = client;
         this.config = config;
+        this.feedback = feedback;
     }
 
     public void register() {
@@ -113,37 +129,61 @@ public final class ClientGroundTeleportService {
             pending = null;
             return;
         }
-        if (current.waitedTicks() >= MAX_WAIT_TICKS) {
+        final boolean timedOut = current.waitedTicks() >= MAX_WAIT_TICKS;
+        if (!timedOut) {
+            pending = current.waitOneTick();
+        }
+        final boolean inTargetChunk = isInTargetChunk(
+            client.player.getX(), client.player.getZ(), current.blockX(), current.blockZ()
+        );
+        final GroundSample sample = timedOut || !inTargetChunk
+            ? GroundSample.NOT_LOADED
+            : sampleGround(current.world(), current.blockX(), current.blockZ());
+        final CorrectionStep step = nextCorrectionStep(
+            timedOut, inTargetChunk, sample.loaded(), sample.playerY().isPresent()
+        );
+        if (step.clearsPending()) {
             pending = null;
-            if (isInTargetChunk(client.player.getX(), client.player.getZ(), current.blockX(), current.blockZ())) {
-                sendCommand(
-                    current.returnX(), current.returnY(), current.returnZ(),
-                    current.dimension(), current.worldIdentity()
-                );
-            }
-            return;
         }
-        pending = current.waitOneTick();
-        if (!isInTargetChunk(client.player.getX(), client.player.getZ(), current.blockX(), current.blockZ())) {
-            return;
-        }
-
-        final GroundSample sample = sampleGround(current.world(), current.blockX(), current.blockZ());
-        if (!sample.loaded()) {
-            return;
-        }
-        pending = null;
-        if (sample.playerY().isPresent()) {
+        if (step.sendsTarget()) {
             sendCommand(
                 centered(current.blockX()), sample.playerY().getAsInt(), centered(current.blockZ()),
                 current.dimension(), current.worldIdentity()
             );
-        } else {
+        } else if (step.sendsReturn()) {
             sendCommand(
                 current.returnX(), current.returnY(), current.returnZ(),
                 current.dimension(), current.worldIdentity()
             );
         }
+        if (step.feedbackKey() != null) {
+            feedback.accept(step.feedbackKey());
+        }
+    }
+
+    /**
+     * One correction tick's decision, kept free of Minecraft state so the feedback contract is
+     * unit-testable: keep waiting, commit the resolved ground height, return to the saved origin,
+     * or abandon the wait. {@code feedbackKey} names the chat message for outcomes that used to
+     * resolve silently; null stays silent.
+     */
+    static CorrectionStep nextCorrectionStep(
+        final boolean timedOut,
+        final boolean reachedTargetChunk,
+        final boolean targetChunkLoaded,
+        final boolean groundResolved
+    ) {
+        if (timedOut) {
+            return reachedTargetChunk
+                ? new CorrectionStep(true, false, true, null)
+                : new CorrectionStep(true, false, false, TIMEOUT_KEY);
+        }
+        if (!reachedTargetChunk || !targetChunkLoaded) {
+            return new CorrectionStep(false, false, false, null);
+        }
+        return groundResolved
+            ? new CorrectionStep(true, true, false, null)
+            : new CorrectionStep(true, false, true, GROUND_UNRESOLVED_KEY);
     }
 
     private static GroundSample sampleGround(
@@ -212,11 +252,32 @@ public final class ClientGroundTeleportService {
             && TileMath.blockToChunk((int) Math.floor(playerZ)) == TileMath.blockToChunk(blockZ);
     }
 
+    /** The default feedback sink: one chat line, matching the mod's other client messages. */
+    private static void sendChatFeedback(final MinecraftClient client, final String key) {
+        if (client.player != null) {
+            //#if MC>=260100
+            //$$ client.player.sendSystemMessage(Texts.translatable(key));
+            //#else
+            client.player.sendMessage(Texts.translatable(key), false);
+            //#endif
+        }
+    }
+
     private static double centered(final int block) {
         return block + 0.5;
     }
 
+    /** What one correction tick must do; see {@link #nextCorrectionStep}. */
+    record CorrectionStep(
+        boolean clearsPending,
+        boolean sendsTarget,
+        boolean sendsReturn,
+        String feedbackKey
+    ) {
+    }
+
     private record GroundSample(boolean loaded, OptionalInt playerY) {
+        private static final GroundSample NOT_LOADED = new GroundSample(false, OptionalInt.empty());
     }
 
     private record Pending(
