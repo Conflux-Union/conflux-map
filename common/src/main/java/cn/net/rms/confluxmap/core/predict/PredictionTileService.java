@@ -248,6 +248,23 @@ public final class PredictionTileService {
             }
             return AppliedLighting.NONE;
         }
+        if (layer == MapLayer.Type.END_SURFACE) {
+            // The End plane composes with the zero-light ambient baked in (see composeTile);
+            // the per-column block-light plane replaces it here, matching TileService's
+            // raw END_SURFACE composition. The Xaero style composes without the bake (its
+            // terrain shading adds light, which a ratio replace cannot invert) and takes the
+            // curve applied over the shaded pixel, exactly like captured Xaero End tiles.
+            for (int pixel = 0; pixel < pixels.length; pixel++) {
+                pixels[pixel] = style == MapColorStyle.XAERO
+                    ? LightTint.applyBlockLightTint(
+                        pixels[pixel], blockLight[pixel] & 0xFF, false, gamma
+                    )
+                    : LightTint.applyBlockLightOverAmbient(
+                        pixels[pixel], blockLight[pixel] & 0xFF, false, gamma
+                    );
+            }
+            return AppliedLighting.NONE;
+        }
         if (layer != MapLayer.Type.SURFACE) {
             return AppliedLighting.NONE;
         }
@@ -1144,7 +1161,15 @@ public final class PredictionTileService {
                 !key.dimension().equals(DimensionId.NETHER),
                 key.dimension().equals(DimensionId.NETHER)
                     ? LightTint.multiplier(0, 0, true)
-                    : 0xFFFFFFFF,
+                    : key.dimension().equals(DimensionId.END) && style == MapColorStyle.CONFLUX
+                        // The End owes the cave dark-light contract too: bake the zero-light
+                        // ambient in here (baseline and corrections alike), then the per-column
+                        // block-light plane replaces it in applyLayerLighting. The Xaero style
+                        // bakes nothing - its terrain shading adds light, which the ambient
+                        // ratio-replace cannot invert - and instead takes the curve applied
+                        // over the shaded pixel, exactly like the captured Xaero End tiles.
+                        ? LightTint.multiplier(0, 0, false)
+                        : 0xFFFFFFFF,
                 syncedMaterials, style, shadow,
                 quadrantMask == null ? null : quadrantMask.mapColorOverrides(),
                 quadrantMask == null ? null : quadrantMask.topMaterials()

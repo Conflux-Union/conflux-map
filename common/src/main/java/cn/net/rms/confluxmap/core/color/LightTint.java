@@ -86,7 +86,23 @@ public final class LightTint {
         );
     }
 
-    /** Replaces the static tint baked into a cave/Nether/End pixel with its gamma-aware tint. */
+    /**
+     * Applies the zero-sky-light curve to a raw, never-lit pixel. END_SURFACE snapshots keep raw
+     * colours (their light plane travels in {@code light[]}), so composition multiplies the curve
+     * in here instead of replacing an already-baked tint like {@link #applyGammaOverBakedLight}.
+     */
+    public static int applyBlockLightTint(
+        final int argb,
+        final int blockLevel,
+        final boolean netherAmbient,
+        final float gamma
+    ) {
+        return Argb.multiply(
+            argb, gammaAdjustedMultiplier(clampLevel(blockLevel), netherAmbient, gamma)
+        );
+    }
+
+    /** Replaces the static tint baked into a cave/Nether-floor pixel with its gamma-aware tint. */
     public static int applyGammaOverBakedLight(
         final int argb,
         final int blockLevel,
