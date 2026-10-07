@@ -84,6 +84,89 @@ final class ConfluxConfigTest {
     }
 
     @Test
+    void playerTrailDefaultsToFourSecondsWithinRange() {
+        final ConfluxConfig config = new ConfluxConfig();
+
+        assertEquals(4, config.playerTrailDurationSeconds);
+        assertTrue(config.playerTrailDurationSeconds >= ConfluxConfig.MIN_PLAYER_TRAIL_DURATION_SECONDS);
+        assertTrue(config.playerTrailDurationSeconds <= ConfluxConfig.MAX_PLAYER_TRAIL_DURATION_SECONDS);
+    }
+
+    @Test
+    void normalizeMigratesOldDefaultTrailDurationToFourSeconds() {
+        final ConfluxConfig config = new ConfluxConfig();
+        config.schemaVersion = 9;
+        config.playerTrailDurationSeconds = 120;
+
+        config.normalize();
+
+        assertEquals(4, config.playerTrailDurationSeconds);
+    }
+
+    @Test
+    void normalizeKeepsExplicitTrailDurationsFromOldSchemas() {
+        final ConfluxConfig explicit = new ConfluxConfig();
+        explicit.schemaVersion = 9;
+        explicit.playerTrailDurationSeconds = 30;
+
+        explicit.normalize();
+
+        assertEquals(30, explicit.playerTrailDurationSeconds);
+
+        final ConfluxConfig overMax = new ConfluxConfig();
+        overMax.schemaVersion = 3;
+        overMax.playerTrailDurationSeconds = 1000;
+
+        overMax.normalize();
+
+        assertEquals(ConfluxConfig.MAX_PLAYER_TRAIL_DURATION_SECONDS, overMax.playerTrailDurationSeconds);
+
+        final ConfluxConfig underMin = new ConfluxConfig();
+        underMin.schemaVersion = 3;
+        underMin.playerTrailDurationSeconds = 0;
+
+        underMin.normalize();
+
+        assertEquals(ConfluxConfig.MIN_PLAYER_TRAIL_DURATION_SECONDS, underMin.playerTrailDurationSeconds);
+    }
+
+    @Test
+    void normalizeCollapsesLegacyMinuteDefaultToFourSeconds() {
+        final ConfluxConfig config = new ConfluxConfig();
+        config.schemaVersion = 2;
+        config.playerTrailDurationMinutes = 2;
+
+        config.normalize();
+
+        assertEquals(4, config.playerTrailDurationSeconds);
+        assertNull(config.playerTrailDurationMinutes);
+    }
+
+    @Test
+    void normalizeStillClampsTrailDurationOnCurrentSchema() {
+        final ConfluxConfig overMax = new ConfluxConfig();
+        overMax.playerTrailDurationSeconds = 1000;
+
+        overMax.normalize();
+
+        assertEquals(ConfluxConfig.MAX_PLAYER_TRAIL_DURATION_SECONDS, overMax.playerTrailDurationSeconds);
+
+        final ConfluxConfig underMin = new ConfluxConfig();
+        underMin.playerTrailDurationSeconds = 0;
+
+        underMin.normalize();
+
+        assertEquals(ConfluxConfig.MIN_PLAYER_TRAIL_DURATION_SECONDS, underMin.playerTrailDurationSeconds);
+
+        final ConfluxConfig explicitMax = new ConfluxConfig();
+        explicitMax.playerTrailDurationSeconds = ConfluxConfig.MAX_PLAYER_TRAIL_DURATION_SECONDS;
+
+        explicitMax.normalize();
+
+        assertEquals(ConfluxConfig.MAX_PLAYER_TRAIL_DURATION_SECONDS, explicitMax.playerTrailDurationSeconds);
+    }
+
+    @Test
     void locationHighlightCrossDimensionDisplayDefaultsOnAndSurvivesCopy() {
         final ConfluxConfig config = new ConfluxConfig();
 

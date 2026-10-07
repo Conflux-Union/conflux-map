@@ -18,7 +18,7 @@ import java.util.UUID;
  * {@link #SCHEMA_VERSION} and adding a migration in {@link ConfigIo}.
  */
 public final class ConfluxConfig {
-    public static final int SCHEMA_VERSION = 9;
+    public static final int SCHEMA_VERSION = 10;
     public static final String DEFAULT_TELEPORT_COMMAND = "tp {x} {y} {z}";
     public static final int DEFAULT_MINIMAP_SIZE = 90;
     public static final int MINIMAP_ZOOM_LEVEL_COUNT = 4;
@@ -44,7 +44,7 @@ public final class ConfluxConfig {
     public static final int DEFAULT_WAYPOINT_HIGHLIGHT_DIM_OPACITY = 28;
     public static final int MIN_PLAYER_TRAIL_DURATION_SECONDS = 1;
     public static final int MAX_PLAYER_TRAIL_DURATION_SECONDS = 120;
-    public static final int DEFAULT_PLAYER_TRAIL_DURATION_SECONDS = 120;
+    public static final int DEFAULT_PLAYER_TRAIL_DURATION_SECONDS = 4;
     public static final int MIN_PLAYER_TRAIL_DOT_SIZE = 1;
     public static final int MAX_PLAYER_TRAIL_DOT_SIZE = 8;
     public static final int DEFAULT_PLAYER_TRAIL_DOT_SIZE = 3;
@@ -62,6 +62,8 @@ public final class ConfluxConfig {
     private static final double LEGACY_MIN_PREDICTION_STRUCTURE_ICON_HIDE_SCALE = 0.25;
     /** Schema-v4 upper bound for the now-retired blocks-per-pixel setting. */
     private static final double LEGACY_MAX_PREDICTION_STRUCTURE_ICON_HIDE_SCALE = 16.0;
+    /** Schema-v9 default for the trail retention window, retired as far too long. */
+    private static final int LEGACY_PLAYER_TRAIL_DURATION_SECONDS = 120;
 
     public int schemaVersion = SCHEMA_VERSION;
 
@@ -436,6 +438,11 @@ public final class ConfluxConfig {
             );
         }
         playerTrailDurationMinutes = null;
+        if (schemaVersion < 10 && playerTrailDurationSeconds == LEGACY_PLAYER_TRAIL_DURATION_SECONDS) {
+            // Schema v9 shipped 120 s as the default; only that exact value collapses.
+            // The clamp below still maps out-of-range values to the 120 s maximum.
+            playerTrailDurationSeconds = DEFAULT_PLAYER_TRAIL_DURATION_SECONDS;
+        }
         minimapSize = clamp(minimapSize, 64, 256);
         minimapZoomIndex = clamp(minimapZoomIndex, 0, MINIMAP_ZOOM_LEVEL_COUNT - 1);
         playerTrailDurationSeconds = clamp(
