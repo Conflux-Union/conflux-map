@@ -22,6 +22,9 @@ import java.net.http.HttpResponse;
 import java.net.http.WebSocket;
 import java.net.http.WebSocketHandshakeException;
 import java.nio.ByteBuffer;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Base64;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -32,8 +35,82 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
 final class WebMapServerTest {
+    @TempDir
+    Path configDirectory;
+
+    @Test
+    void customTitleIsEscapedAndChangesTheHomepageEtag() throws Exception {
+        final WebMapConfig config = WebMapConfig.loopbackEphemeral();
+        config.title = "Conflux Map Test <script>&\"'";
+        final String customEtag;
+        try (WebMapServer server = WebMapServer.start(config, new FakeBackend(), configDirectory)) {
+            final HttpResponse<String> response = client().send(
+                HttpRequest.newBuilder(server.uri("/")).GET().build(), HttpResponse.BodyHandlers.ofString()
+            );
+            assertEquals(200, response.statusCode());
+            assertTrue(response.body().contains("<title>Conflux Map Test &lt;script&gt;&amp;&quot;&#39;</title>"));
+            assertFalse(response.body().contains("<script>&"));
+            customEtag = response.headers().firstValue("etag").orElseThrow();
+            final HttpResponse<String> index = client().send(
+                HttpRequest.newBuilder(server.uri("/index.html")).GET().build(), HttpResponse.BodyHandlers.ofString()
+            );
+            assertEquals(response.body(), index.body());
+        }
+        try (WebMapServer server = WebMapServer.start(WebMapConfig.loopbackEphemeral(), new FakeBackend())) {
+            final HttpResponse<String> response = client().send(
+                HttpRequest.newBuilder(server.uri("/")).GET().build(), HttpResponse.BodyHandlers.ofString()
+            );
+            assertTrue(response.body().contains("<title>Conflux Map</title>"));
+            assertFalse(customEtag.equals(response.headers().firstValue("etag").orElseThrow()));
+        }
+    }
+
+    @Test
+    void servesPngBesideConfigWithShortCachingAndConditionalRequests() throws Exception {
+        final byte[] png = Base64.getDecoder().decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQ0AAAAASUVORK5CYII="
+        );
+        Files.write(configDirectory.resolve("favicon.png"), png);
+        final WebMapConfig config = WebMapConfig.loopbackEphemeral();
+        config.favicon = "favicon.png";
+        try (WebMapServer server = WebMapServer.start(config, new FakeBackend(), configDirectory)) {
+            final HttpResponse<byte[]> icon = client().send(
+                HttpRequest.newBuilder(server.uri("/favicon.ico")).GET().build(), HttpResponse.BodyHandlers.ofByteArray()
+            );
+            assertEquals(200, icon.statusCode());
+            assertEquals("image/png", icon.headers().firstValue("content-type").orElseThrow());
+            assertEquals("public, max-age=300", icon.headers().firstValue("cache-control").orElseThrow());
+            assertArrayEquals(png, icon.body());
+            final HttpResponse<String> page = client().send(
+                HttpRequest.newBuilder(server.uri("/")).GET().build(), HttpResponse.BodyHandlers.ofString()
+            );
+            assertTrue(page.body().contains("<link rel=\"icon\" href=\"/favicon.ico\" type=\"image/png\">"));
+            final HttpResponse<byte[]> unchanged = client().send(
+                HttpRequest.newBuilder(server.uri("/favicon.ico"))
+                    .header("If-None-Match", icon.headers().firstValue("etag").orElseThrow()).GET().build(),
+                HttpResponse.BodyHandlers.ofByteArray()
+            );
+            assertEquals(304, unchanged.statusCode());
+        }
+    }
+
+    @Test
+    void missingIconDoesNotPreventServingTheMap() throws Exception {
+        final WebMapConfig config = WebMapConfig.loopbackEphemeral();
+        config.favicon = "missing.png";
+        try (WebMapServer server = WebMapServer.start(config, new FakeBackend(), configDirectory)) {
+            final HttpResponse<String> page = client().send(
+                HttpRequest.newBuilder(server.uri("/")).GET().build(), HttpResponse.BodyHandlers.ofString()
+            );
+            assertEquals(200, page.statusCode());
+            assertFalse(page.body().contains("rel=\"icon\""));
+        }
+    }
+
     @Test
     void predictionManifestExposesTheExplicitlySharedSeedAsAString() throws Exception {
         final FakeBackend backend = new FakeBackend();

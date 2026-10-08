@@ -149,6 +149,14 @@ Conflux Map 是一款 Fabric 平台的小地图与世界地图模组。客户端
 
 每位玩家的流量限制与带宽预算位于同一配置文件。玩家可在游戏内执行 `/confluxmap performance` 查看当前连接的同步统计。Paper 特有的安装与数据存储细节参见 [`docs/paper-companion.md`](docs/paper-companion.md)。
 
+### 网页标题与图标
+
+在 `server.json` 的 `webMap` 中设置 `"title": "Conflux Map"` 和 `"favicon": "favicon.png"`。
+图标只填写文件名，并放在 `server.json` 同一目录（通常为 `config/confluxmap/`），支持 PNG、ICO，最大 1 MiB；不支持路径或网络地址。
+标题为空时使用 `Conflux Map`，图标为空时保持原有无自定义图标行为。图标读取失败会记录警告，不影响地图启动。
+修改后重启服务端；图标的浏览器缓存为五分钟。
+该配置只修改浏览器标签页标题，地图内的 `Conflux Map` 标识保持不变。
+
 ## 构建
 
 需要 JDK 21 或更高版本。Minecraft、映射表、Fabric API，以及 26.x 构建所需的 JDK 25 工具链均由 Gradle 按需下载。

@@ -17,6 +17,7 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.UUID;
@@ -42,6 +43,14 @@ public final class WebMapServer implements AutoCloseable {
         final WebMapConfig requestedConfig,
         final WebMapBackend backend
     ) throws IOException {
+        return start(requestedConfig, backend, null);
+    }
+
+    public static WebMapServer start(
+        final WebMapConfig requestedConfig,
+        final WebMapBackend backend,
+        final Path configDirectory
+    ) throws IOException {
         if (requestedConfig == null || backend == null) {
             throw new IllegalArgumentException("web map config and backend are required");
         }
@@ -49,7 +58,7 @@ public final class WebMapServer implements AutoCloseable {
         if (!requestedConfig.loopbackOnly() && !requestedConfig.allowInsecureRemote) {
             throw new IOException("remote web-map bind requires allowInsecureRemote=true");
         }
-        final Transport transport = new Transport(requestedConfig, backend);
+        final Transport transport = new Transport(requestedConfig, backend, configDirectory);
         transport.start(SOCKET_TIMEOUT_MS, false);
         return new WebMapServer(transport);
     }
@@ -82,15 +91,19 @@ public final class WebMapServer implements AutoCloseable {
         private final WebMapBackend backend;
         private final WebMapConfig config;
         private final Semaphore mapConnections;
+        private final String title;
+        private final WebMapBranding.Icon favicon;
         private final ConcurrentHashMap<UUID, MapSocket> sockets = new ConcurrentHashMap<>();
         private final ConcurrentHashMap<String, AddressBudget> addressBudgets = new ConcurrentHashMap<>();
         private final ConcurrentHashMap<String, StaticAsset> assets = new ConcurrentHashMap<>();
         private final ScheduledExecutorService eventWorker;
 
-        Transport(final WebMapConfig config, final WebMapBackend backend) {
+        Transport(final WebMapConfig config, final WebMapBackend backend, final Path configDirectory) {
             super(config.bindAddress, config.port);
             this.backend = backend;
             this.config = config;
+            title = config.title;
+            favicon = WebMapBranding.loadIcon(config.favicon, configDirectory);
             mapConnections = new Semaphore(config.maxConnections);
             eventWorker = Executors.newSingleThreadScheduledExecutor(runnable -> {
                 final Thread thread = new Thread(runnable, "ConfluxMap-web-events");
@@ -232,7 +245,7 @@ public final class WebMapServer implements AutoCloseable {
             StaticAsset asset = assets.get(assetKey);
             if (asset == null) {
                 try {
-                    asset = loadAsset(path, gzip);
+                    asset = loadAsset(path, gzip, title, favicon);
                 } catch (final IOException e) {
                     return secure(text(
                         Response.Status.INTERNAL_ERROR,
@@ -253,7 +266,8 @@ public final class WebMapServer implements AutoCloseable {
             }
             final Response response = bytes(Response.Status.OK, asset.contentType(), asset.body());
             response.addHeader("Cache-Control", path.startsWith("/vendor/")
-                ? "public, max-age=31536000, immutable" : "no-cache");
+                ? "public, max-age=31536000, immutable"
+                : path.equals("/favicon.ico") ? "public, max-age=300" : "no-cache");
             response.addHeader("ETag", asset.etag());
             if (gzip) response.addHeader("Content-Encoding", "gzip");
             response.addHeader("Vary", "Accept-Encoding");
@@ -513,10 +527,25 @@ public final class WebMapServer implements AutoCloseable {
             .anyMatch(value -> value.equals("gzip") || value.startsWith("gzip;"));
     }
 
-    private static StaticAsset loadAsset(final String path, final boolean gzip) throws IOException {
+    private static StaticAsset loadAsset(
+        final String path, final boolean gzip, final String title, final WebMapBranding.Icon favicon
+    ) throws IOException {
+        if ("/favicon.ico".equals(path) && favicon != null) {
+            return new StaticAsset(favicon.body(), favicon.contentType(), etag(favicon.body()));
+        }
         try (InputStream input = WebMapServer.class.getResourceAsStream("/webmap" + path)) {
             if (input == null) return null;
             byte[] body = input.readAllBytes();
+            if ("/index.html".equals(path)) {
+                String html = new String(body, StandardCharsets.UTF_8).replace(
+                    "<title>Conflux Map</title>", "<title>" + WebMapBranding.escapeHtml(title) + "</title>"
+                );
+                if (favicon != null) {
+                    html = html.replace("</head>", "  <link rel=\"icon\" href=\"/favicon.ico\" type=\""
+                        + favicon.contentType() + "\">\n</head>");
+                }
+                body = html.getBytes(StandardCharsets.UTF_8);
+            }
             if (gzip) {
                 final ByteArrayOutputStream compressed = new ByteArrayOutputStream(body.length / 2);
                 try (GZIPOutputStream output = new GZIPOutputStream(compressed)) {

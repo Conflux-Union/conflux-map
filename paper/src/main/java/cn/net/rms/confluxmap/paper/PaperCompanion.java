@@ -183,7 +183,7 @@ final class PaperCompanion implements Listener {
         if (config.enabled && config.webMap.enabled) {
             try {
                 webMapBackend = new PaperWebMapBackend(plugin, this);
-                webMap = WebMapServer.start(config.webMap, webMapBackend);
+                webMap = WebMapServer.start(config.webMap, webMapBackend, configIo.directory());
                 plugin.getSLF4JLogger().info(
                     "Web map listening on {}:{}",
                     config.webMap.bindAddress, config.webMap.port

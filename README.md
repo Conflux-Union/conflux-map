@@ -149,6 +149,16 @@ All companion-shared content is controlled in `config/confluxmap/server.json`:
 
 Per-player rate limits and bandwidth budgets are stored in the same configuration file. Players can run `/confluxmap performance` in game to see the sync statistics for their own connection. Paper-specific installation and storage details are documented in [`docs/paper-companion.md`](docs/paper-companion.md).
 
+### Web map title and favicon
+
+Set `"title": "Conflux Map"` and `"favicon": "favicon.png"` inside `webMap` in `server.json`.
+Place the icon beside `server.json` (usually `config/confluxmap/`) and specify only its filename.
+PNG and ICO files up to 1 MiB are supported; paths and network URLs are not supported.
+A blank title uses `Conflux Map`; a blank icon preserves the existing behavior without a custom icon.
+An unreadable icon logs a warning without preventing the map from starting.
+Restart the server after changes. Icons have a five-minute browser cache.
+This changes the browser tab title, not the `Conflux Map` label inside the map.
+
 ## Building
 
 Requires JDK 21 or newer. Gradle downloads Minecraft, the mappings, Fabric API, and the JDK 25 toolchain the 26.x builds target, on demand.

@@ -429,7 +429,7 @@ public final class ConfluxMapCompanion {
         if (config.webMap.enabled) {
             try {
                 webMapBackend = new FabricWebMapBackend(server, this);
-                webMap = WebMapServer.start(config.webMap, webMapBackend);
+                webMap = WebMapServer.start(config.webMap, webMapBackend, configIo.directory());
                 ConfluxMapMod.LOGGER.info(
                     "[ConfluxMap] web map listening on {}:{}",
                     config.webMap.bindAddress, config.webMap.port
