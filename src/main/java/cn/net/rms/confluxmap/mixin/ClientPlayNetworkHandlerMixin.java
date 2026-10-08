@@ -1,8 +1,10 @@
 package cn.net.rms.confluxmap.mixin;
 
+import cn.net.rms.confluxmap.mc.portal.PortalScanHandler;
 import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureHandler;
 import cn.net.rms.confluxmap.mc.world.ClientWorldIdentityHandler;
 import net.minecraft.block.Block;
+import net.minecraft.block.BlockState;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.network.packet.s2c.play.BlockUpdateS2CPacket;
 import net.minecraft.network.packet.s2c.play.ChunkDeltaUpdateS2CPacket;
@@ -42,17 +44,22 @@ public abstract class ClientPlayNetworkHandlerMixin {
 
     @Inject(method = "onBlockUpdate", at = @At("TAIL"))
     private void confluxmap$onBlockUpdate(final BlockUpdateS2CPacket packet, final CallbackInfo ci) {
+        final BlockState state = packet.getState();
         ChunkCaptureHandler.blockDirty(
             packet.getPos().getX(), packet.getPos().getY(), packet.getPos().getZ(),
-            Block.getRawIdFromState(packet.getState())
+            Block.getRawIdFromState(state)
+        );
+        PortalScanHandler.blockUpdated(
+            packet.getPos().getX(), packet.getPos().getY(), packet.getPos().getZ(), state
         );
     }
 
     @Inject(method = "onChunkDeltaUpdate", at = @At("TAIL"))
     private void confluxmap$onChunkDeltaUpdate(final ChunkDeltaUpdateS2CPacket packet, final CallbackInfo ci) {
-        packet.visitUpdates((pos, state) -> ChunkCaptureHandler.blockDirty(
-            pos.getX(), pos.getY(), pos.getZ(), Block.getRawIdFromState(state)
-        ));
+        packet.visitUpdates((pos, state) -> {
+            ChunkCaptureHandler.blockDirty(pos.getX(), pos.getY(), pos.getZ(), Block.getRawIdFromState(state));
+            PortalScanHandler.blockUpdated(pos.getX(), pos.getY(), pos.getZ(), state);
+        });
     }
 
     //#if MC>=12103

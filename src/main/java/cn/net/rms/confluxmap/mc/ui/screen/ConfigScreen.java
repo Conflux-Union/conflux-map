@@ -478,6 +478,49 @@ public final class ConfigScreen extends ConfluxScreen {
                 );
                 y = addToggleRow(y, "confluxmap.config.fullmap.chunk_grid", () -> config.fullmapChunkGrid, v -> config.fullmapChunkGrid = v);
                 y = addToggleRow(
+                    y, "confluxmap.config.portals.enabled",
+                    () -> config.portalMarkersEnabled,
+                    v -> {
+                        config.portalMarkersEnabled = v;
+                        if (v) {
+                            ConfluxMapClient.get().portalScanService().requestLoadedChunkScan();
+                        }
+                    }
+                );
+                y = addToggleRow(
+                    y, "confluxmap.config.portals.show_icons",
+                    () -> config.portalIconsEnabled, v -> config.portalIconsEnabled = v
+                );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.portals.icon_size",
+                    ConfluxConfig.MIN_PORTAL_ICON_SIZE, ConfluxConfig.MAX_PORTAL_ICON_SIZE,
+                    () -> config.portalIconSize, v -> config.portalIconSize = v,
+                    ConfigScreen::pxText
+                );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.portals.icon_opacity",
+                    ConfluxConfig.MIN_PORTAL_ICON_OPACITY, ConfluxConfig.MAX_PORTAL_ICON_OPACITY,
+                    () -> config.portalIconOpacity, v -> config.portalIconOpacity = v,
+                    ConfigScreen::percentText
+                );
+                y = addToggleRow(
+                    y, "confluxmap.config.portals.chunk_highlight",
+                    () -> config.portalChunkHighlightEnabled, v -> config.portalChunkHighlightEnabled = v
+                );
+                y = addEnumRow(
+                    y, "confluxmap.config.portals.highlight_color",
+                    ConfluxConfig.PortalHighlightColor.values(),
+                    () -> config.portalHighlightColor, v -> config.portalHighlightColor = v,
+                    ConfigScreen::portalHighlightColorKey
+                );
+                y = addDecimalSliderRow(
+                    y, "confluxmap.config.portals.icon_detail_limit",
+                    ConfluxConfig.MIN_PORTAL_ICON_HIDE_ZOOM, ConfluxConfig.MAX_PORTAL_ICON_HIDE_ZOOM,
+                    DecimalSliderValue.CONTINUOUS,
+                    () -> config.portalIconHideZoom, v -> config.portalIconHideZoom = v,
+                    ConfigScreen::structureIconDetailLimitText, true, null
+                );
+                y = addToggleRow(
                     y, "confluxmap.config.minimap.annotations",
                     () -> config.annotationsOnHud, v -> config.annotationsOnHud = v
                 );
@@ -1007,6 +1050,10 @@ public final class ConfigScreen extends ConfluxScreen {
         return Texts.translatable(
             "confluxmap.value.zoom_multiplier", DecimalSliderInput.format(scale)
         ).getString();
+    }
+
+    private static String portalHighlightColorKey(final ConfluxConfig.PortalHighlightColor color) {
+        return "confluxmap.value.portal.highlight_color." + color.name().toLowerCase(java.util.Locale.ROOT);
     }
 
     private PredictionSettingsAccess predictionSettingsAccess() {

@@ -55,6 +55,10 @@ Once the world seed is available, the Overworld, Nether roof, and End immediatel
 
 Vanilla structures in the Overworld, Nether, and End each have a distinct icon and a category toggle; supported variants such as village biomes, bastion layouts, zombie villages, and End Cities with ships use separate names and icons. The nearest structure can be found by name, or a center, radius, result count, and variant filter can be specified to list candidates within an area and save any of them as a waypoint. Right-clicking a structure icon opens the location menu at its exact generation point.
 
+### Portal markers
+
+Activated nether portals, end portals, and end gateways you have seen are marked on the minimap and the world map. Each portal gets an icon at its position and, optionally, a translucent highlight over the chunk containing it; icon size, opacity, and highlight color are configurable in settings. Markers are remembered per world and per dimension, and a portal dismantled elsewhere disappears once you load its chunk again. Detection is purely client-side, so portals are known only from chunks you have loaded.
+
 ### Waypoints
 
 - Names, colors, and sets; the list supports search, filtering, and batch moving.

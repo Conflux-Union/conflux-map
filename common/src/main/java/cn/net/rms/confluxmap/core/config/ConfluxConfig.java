@@ -58,6 +58,15 @@ public final class ConfluxConfig {
     public static final double MAX_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM = 4.0;
     /** Preserve the old default: hide only at the furthest 0.0625x zoom. */
     public static final double DEFAULT_PREDICTION_STRUCTURE_ICON_HIDE_ZOOM = 0.0625;
+    public static final int MIN_PORTAL_ICON_SIZE = 8;
+    public static final int MAX_PORTAL_ICON_SIZE = 32;
+    public static final int DEFAULT_PORTAL_ICON_SIZE = 14;
+    public static final int MIN_PORTAL_ICON_OPACITY = 0;
+    public static final int MAX_PORTAL_ICON_OPACITY = 100;
+    public static final int DEFAULT_PORTAL_ICON_OPACITY = 90;
+    public static final double MIN_PORTAL_ICON_HIDE_ZOOM = 0.0625;
+    public static final double MAX_PORTAL_ICON_HIDE_ZOOM = 4.0;
+    public static final double DEFAULT_PORTAL_ICON_HIDE_ZOOM = 0.0625;
     /** Schema-v4 lower bound for the now-retired blocks-per-pixel setting. */
     private static final double LEGACY_MIN_PREDICTION_STRUCTURE_ICON_HIDE_SCALE = 0.25;
     /** Schema-v4 upper bound for the now-retired blocks-per-pixel setting. */
@@ -78,6 +87,25 @@ public final class ConfluxConfig {
     public enum PlayerMarkerStyle { TRADITIONAL, MODERN }
 
     public enum RadarDisplayMode { DOTS, PORTRAITS }
+
+    /** Preset portal chunk-highlight fills; the alpha is baked in so a fill stays translucent. */
+    public enum PortalHighlightColor {
+        PURPLE(0x508036C9),
+        GOLD(0x50E5A02B),
+        CYAN(0x5037B7C9),
+        RED(0x50D0483C),
+        GREEN(0x505FA83C);
+
+        private final int argb;
+
+        PortalHighlightColor(final int argb) {
+            this.argb = argb;
+        }
+
+        public int argb() {
+            return argb;
+        }
+    }
 
     /**
      * Manual layer override cycled by {@code key.confluxmap.cycle_layer}; see
@@ -218,6 +246,21 @@ public final class ConfluxConfig {
      * default. Scales the icon plate, background panel, and both text lines together.
      */
     public int waypointLabelScalePercent = DEFAULT_WAYPOINT_LABEL_SCALE_PERCENT;
+
+    /** Master toggle for activated-portal markers (nether/end portals, end gateways) on both map surfaces. */
+    public boolean portalMarkersEnabled = true;
+    /** Draw the portal icon plate at each marker's anchor; the chunk highlight is a separate option. */
+    public boolean portalIconsEnabled = true;
+    /** Portal icon plate size in screen pixels, shared by minimap and fullscreen map. */
+    public int portalIconSize = DEFAULT_PORTAL_ICON_SIZE;
+    /** Portal icon opacity percentage, applied to plate and texture together. */
+    public int portalIconOpacity = DEFAULT_PORTAL_ICON_OPACITY;
+    /** Fill the chunk containing each portal marker with a translucent color. */
+    public boolean portalChunkHighlightEnabled = true;
+    /** Preset fill color for the chunk highlight. */
+    public PortalHighlightColor portalHighlightColor = PortalHighlightColor.PURPLE;
+    /** Hide portal icons at or below this fullscreen-map zoom multiplier. */
+    public double portalIconHideZoom = DEFAULT_PORTAL_ICON_HIDE_ZOOM;
 
     /** Master toggle for the seed-predicted fullscreen-map underlay. */
     public boolean predictionEnabled = true;

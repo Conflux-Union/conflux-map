@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mixin;
 
+import cn.net.rms.confluxmap.mc.portal.PortalScanHandler;
 import cn.net.rms.confluxmap.mc.snapshot.ChunkCaptureHandler;
 import net.minecraft.client.world.ClientChunkManager;
 import net.minecraft.world.chunk.WorldChunk;
@@ -19,6 +20,7 @@ public abstract class ClientChunkManagerMixin {
             //#else
             ChunkCaptureHandler.chunkLoaded(chunk.getPos().x, chunk.getPos().z);
             //#endif
+            PortalScanHandler.chunkLoaded(chunk);
         }
     }
 }

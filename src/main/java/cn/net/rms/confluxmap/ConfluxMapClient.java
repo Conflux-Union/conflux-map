@@ -20,6 +20,7 @@ import cn.net.rms.confluxmap.core.multiworld.ClientWorldProfileResolver;
 import cn.net.rms.confluxmap.core.multiworld.ServerAliasIo;
 import cn.net.rms.confluxmap.core.multiworld.ServerAliasRegistry;
 import cn.net.rms.confluxmap.core.multiworld.ServerAliasResolver;
+import cn.net.rms.confluxmap.core.portal.PortalService;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.PredictionTileService;
@@ -50,6 +51,8 @@ import cn.net.rms.confluxmap.mc.net.ChunkLoadStateClient;
 import cn.net.rms.confluxmap.mc.net.MapSyncClient;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.platform.UnsupportedPlatformWarningNotifier;
+import cn.net.rms.confluxmap.mc.portal.PortalScanHandler;
+import cn.net.rms.confluxmap.mc.portal.PortalScanService;
 import cn.net.rms.confluxmap.mc.predict.PredictionBootstrap;
 import cn.net.rms.confluxmap.mc.predict.ManualSeedService;
 import cn.net.rms.confluxmap.mc.predict.PredictionPaletteBuilder;
@@ -126,6 +129,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private CrossWorldWaypointService crossWorldWaypoints;
     private WaypointRenderCatalog waypointRenderCatalog;
     private DeathWatcher deathWatcher;
+    private PortalService portalService;
+    private PortalScanService portalScanService;
     private WaypointWorldRenderer waypointWorldRenderer;
     private WaypointHighlightState waypointHighlightState;
     private MeasureState measureState;
@@ -188,6 +193,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
             clientWorldProfiles, UUID::randomUUID, () -> clientWorldProfileIo.save(clientWorldProfiles)
         );
         final Path waypointRoot = confluxRoot.resolve("waypoints");
+        final Path portalRoot = confluxRoot.resolve("portals");
         final Path annotationRoot = confluxRoot.resolve("annotations");
         final ServerAliasIo serverAliasIo = new ServerAliasIo(
             FabricLoader.getInstance().getConfigDir().resolve(ConfluxMapMod.ID).resolve("server_aliases.json"),
@@ -212,7 +218,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
         final List<NamespaceAdoption.Store> adoptableStores = List.of(
             new NamespaceAdoption.Store(cacheRoot, ""),
             new NamespaceAdoption.Store(cacheRoot.resolve("prediction"), ""),
-            new NamespaceAdoption.Store(waypointRoot, ".json")
+            new NamespaceAdoption.Store(waypointRoot, ".json"),
+            new NamespaceAdoption.Store(portalRoot, ".json")
         );
         sessionTracker.bindNamespaceAdopter(identity -> NamespaceAdoption.adopt(
             adoptableStores, identity, companionSession.companionWorldId(), ConfluxMapMod.LOGGER
@@ -319,6 +326,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
         playerTrail = new PlayerTrail();
         playerTrailTracker = new PlayerTrailTracker(client, config, sessionGuard, playerTrail);
         waypointService = new WaypointService(waypointRoot, executors, ConfluxMapMod.LOGGER);
+        portalService = new PortalService(portalRoot, executors, ConfluxMapMod.LOGGER);
+        portalScanService = new PortalScanService(client, config, gameBridge, portalService);
+        PortalScanHandler.bind(portalScanService);
         annotationService = new AnnotationService(annotationRoot, executors, ConfluxMapMod.LOGGER);
         crossWorldWaypoints = new CrossWorldWaypointService(
             waypointRoot, clientWorldProfiles, config,
@@ -336,7 +346,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         minimapHudRenderer = new MinimapHudRenderer(
             client, config, gameBridge, tileService, tileTextureManager, radarScanner, entityIconManager,
             serverPlayerRadar, playerTrail, annotationService, layerSelector, waypointRenderCatalog,
-            radarViewRange, uiResourceTheme, customMarkerService, chunkCapture::setMinimapViewport,
+            portalService, radarViewRange, uiResourceTheme, customMarkerService, chunkCapture::setMinimapViewport,
             chunkCapture::liveTerrainPaused
         );
         waypointItemHudRenderer = new WaypointItemHudRenderer(client, config, entityIconManager);
@@ -368,6 +378,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(playerTrailTracker::onSessionChanged);
         sessionTracker.addListener(fullscreenMapViewState::onSessionChanged);
         sessionTracker.addListener(waypointService::onSessionChanged);
+        sessionTracker.addListener(portalService::onSessionChanged);
+        sessionTracker.addListener(portalScanService::onSessionChanged);
         sessionTracker.addListener(session -> crossWorldWaypoints.update(
             session.active() ? session.world() : null,
             clientMultiworldService.currentSeedHash()
@@ -389,6 +401,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.register();
 
         chunkCapture.register();
+        portalScanService.register();
         radarScanner.register();
         entityIconManager.register();
         playerTrailTracker.register();
@@ -610,6 +623,14 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public WaypointService waypointService() {
         return waypointService;
+    }
+
+    public PortalService portalService() {
+        return portalService;
+    }
+
+    public PortalScanService portalScanService() {
+        return portalScanService;
     }
 
     public AnnotationService annotationService() {

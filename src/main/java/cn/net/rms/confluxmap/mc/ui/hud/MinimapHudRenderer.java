@@ -15,6 +15,8 @@ import cn.net.rms.confluxmap.core.config.MinimapPlacement;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
+import cn.net.rms.confluxmap.core.portal.PortalMarker;
+import cn.net.rms.confluxmap.core.portal.PortalService;
 import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.radar.ServerPlayerRadarEntries;
@@ -37,6 +39,7 @@ import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.MapLayerText;
+import cn.net.rms.confluxmap.mc.ui.PortalMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.PlayerMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.PlayerTrailRenderer;
 import cn.net.rms.confluxmap.mc.ui.UiResourceTheme;
@@ -102,6 +105,7 @@ public final class MinimapHudRenderer {
     private final AnnotationService annotations;
     private final LayerSelector layerSelector;
     private final WaypointRenderCatalog waypointRenderCatalog;
+    private final PortalService portals;
     private final RadarViewRange radarViewRange;
     private final UiResourceTheme uiTheme;
     private final CustomMarkerService customMarkers;
@@ -121,6 +125,7 @@ public final class MinimapHudRenderer {
         final AnnotationService annotations,
         final LayerSelector layerSelector,
         final WaypointRenderCatalog waypointRenderCatalog,
+        final PortalService portals,
         final RadarViewRange radarViewRange,
         final UiResourceTheme uiTheme,
         final CustomMarkerService customMarkers,
@@ -139,6 +144,7 @@ public final class MinimapHudRenderer {
         this.annotations = annotations;
         this.layerSelector = layerSelector;
         this.waypointRenderCatalog = waypointRenderCatalog;
+        this.portals = portals;
         this.radarViewRange = radarViewRange;
         this.uiTheme = uiTheme;
         this.customMarkers = customMarkers;
@@ -270,6 +276,13 @@ public final class MinimapHudRenderer {
             RenderUtil.beginTexturedQuads();
             drawTiles(fbo, contentSize, circle, mapAngle, player);
             fbo.pop();
+            fbo.push();
+            fbo.translate(contentSize / 2f, contentSize / 2f, 0);
+            if (rotate) {
+                RenderUtil.rotateZ(fbo, mapAngle);
+            }
+            drawPortalChunkHighlights(fbo, player, contentSize);
+            fbo.pop();
             drawPlayerTrail(
                 fbo, player,
                 contentSize / 2f, contentSize / 2f, contentSize, mapAngle
@@ -317,6 +330,13 @@ public final class MinimapHudRenderer {
             }
             drawTiles(matrices, contentSize, circle, mapAngle, player);
             matrices.pop();
+            matrices.push();
+            matrices.translate(centerX, centerY, 0);
+            if (rotate) {
+                RenderUtil.rotateZ(matrices, mapAngle);
+            }
+            drawPortalChunkHighlights(matrices, player, contentSize);
+            matrices.pop();
             drawPlayerTrail(matrices, player, centerX, centerY, contentSize, mapAngle);
             if (!visibleAnnotations.isEmpty()) {
                 final AnnotationProjection annotationProjection = annotationProjection(
@@ -341,6 +361,7 @@ public final class MinimapHudRenderer {
 
         drawRadar(draw, centerX, centerY, contentSize, mapAngle, player, tickDelta);
         drawCardinals(draw, centerX, centerY, contentSize, mapAngle);
+        drawPortalMarkers(draw, centerX, centerY, contentSize, mapAngle, player);
         drawWaypointMarkers(draw, centerX, centerY, contentSize, mapAngle, player);
         drawCustomMarkers(draw, centerX, centerY, contentSize, mapAngle, player);
         drawCameraMarker(matrices, player, centerX, centerY, rotate);
@@ -575,6 +596,83 @@ public final class MinimapHudRenderer {
     }
 
     record WaypointMarkerOffset(float x, float y) {}
+
+    /**
+     * Translucent fill over each portal-containing chunk, drawn in the tile
+     * pass's own rotated transform (origin at the map center, one axis-aligned
+     * 16-block cell per chunk). The square shape is scissor-clipped and the
+     * circle is disk-clipped by its off-screen canvas, like the tiles beneath.
+     */
+    private void drawPortalChunkHighlights(
+        final MatrixStack matrices,
+        final PlayerView player,
+        final int size
+    ) {
+        if (!config.portalMarkersEnabled || !config.portalChunkHighlightEnabled) {
+            return;
+        }
+        final float pxPerBlock = 1f / BLOCKS_PER_PIXEL[config.minimapZoomIndex];
+        final float sizePx = 16f * pxPerBlock;
+        if (sizePx < 2f) {
+            return;
+        }
+        final float half = size / 2f;
+        for (final PortalMarker marker : portals.list(gameBridge.session().dimension())) {
+            final float left = (float) ((marker.chunkX() * 16.0 - player.x()) * pxPerBlock);
+            final float top = (float) ((marker.chunkZ() * 16.0 - player.z()) * pxPerBlock);
+            if (left > half || top > half || left + sizePx < -half || top + sizePx < -half) {
+                continue;
+            }
+            RenderUtil.fillRect(matrices, left, top, sizePx, sizePx, config.portalHighlightColor.argb());
+        }
+    }
+
+    /**
+     * Portal icon plates with the same manual cos/sin projection as
+     * {@link #drawWaypointMarkers}, culled (not edge-clamped) when off frame:
+     * a portal is a place on the map, not a navigation target the player
+     * steers by. Drawn below waypoints so both remain readable where they meet.
+     */
+    private void drawPortalMarkers(
+        final GuiDraw draw,
+        final float centerX,
+        final float centerY,
+        final int size,
+        final float mapAngle,
+        final PlayerView player
+    ) {
+        if (!config.portalMarkersEnabled || !config.portalIconsEnabled) {
+            return;
+        }
+        final List<PortalMarker> markers = portals.list(gameBridge.session().dimension());
+        if (markers.isEmpty()) {
+            return;
+        }
+        final float pxPerBlock = 1f / BLOCKS_PER_PIXEL[config.minimapZoomIndex];
+        final double rad = Math.toRadians(mapAngle);
+        final float cos = (float) Math.cos(rad);
+        final float sin = (float) Math.sin(rad);
+        final float halfSize = config.portalIconSize / 2f;
+        final float limit = size / 2f - halfSize - 2f;
+        final boolean circleFrame = config.minimapShape == ConfluxConfig.Shape.CIRCLE;
+        for (final PortalMarker marker : markers) {
+            final float rawX = (float) ((marker.anchorX() + 0.5 - player.x()) * pxPerBlock);
+            final float rawY = (float) ((marker.anchorZ() + 0.5 - player.z()) * pxPerBlock);
+            final float screenOffX = rawX * cos - rawY * sin;
+            final float screenOffY = rawX * sin + rawY * cos;
+            final boolean inFrame = circleFrame
+                ? Math.hypot(screenOffX, screenOffY) <= limit
+                : Math.abs(screenOffX) <= limit && Math.abs(screenOffY) <= limit;
+            if (!inFrame) {
+                continue;
+            }
+            PortalMarkerRenderer.draw(
+                draw, marker.kind(),
+                centerX + screenOffX, centerY + screenOffY,
+                config.portalIconSize, config.portalIconOpacity, false
+            );
+        }
+    }
 
     /**
      * Third-party markers from the public API, drawn above waypoints with the same

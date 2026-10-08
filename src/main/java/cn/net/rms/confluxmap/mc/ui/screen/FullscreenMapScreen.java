@@ -45,6 +45,8 @@ import cn.net.rms.confluxmap.core.net.ChunkLoadBand;
 import cn.net.rms.confluxmap.core.net.LoadStateDeltaS2C;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
+import cn.net.rms.confluxmap.core.portal.PortalMarker;
+import cn.net.rms.confluxmap.core.portal.PortalService;
 import cn.net.rms.confluxmap.core.predict.CubiomesBiomeIds;
 import cn.net.rms.confluxmap.core.predict.BaselineSampler;
 import cn.net.rms.confluxmap.core.predict.BiomeCandidateSearch;
@@ -101,6 +103,7 @@ import cn.net.rms.confluxmap.mc.ui.PlayerMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.PlayerTrailRenderer;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.world.WaypointHighlightState;
+import cn.net.rms.confluxmap.mc.ui.PortalMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.StructureMarkerRenderer;
 import cn.net.rms.confluxmap.mc.world.ClientChunkLookup;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
@@ -359,6 +362,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private final RadarViewRange radarViewRange;
     private final PlayerTrail playerTrail;
     private final StructureMarkerService structureMarkers;
+    private final PortalService portals;
     private final UpdateCheckService updateCheck;
     private final ClientGroundTeleportService groundTeleport;
     private final ClientMultiworldService clientMultiworld;
@@ -491,6 +495,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         this.radarViewRange = app.radarViewRange();
         this.playerTrail = app.playerTrail();
         this.structureMarkers = app.structureMarkerService();
+        this.portals = app.portalService();
         this.updateCheck = app.updateCheck();
         this.groundTeleport = app.groundTeleportService();
         this.clientMultiworld = app.clientMultiworldService();
@@ -2794,6 +2799,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         drawPlayerTrail(matrices);
         drawAnnotations(draw, mouseX, mouseY);
         drawStructures(draw, mouseX, mouseY);
+        drawPortals(draw, mouseX, mouseY);
         drawRadar(draw, tickDelta, mouseX, mouseY);
 
         drawWaypoints(draw, mouseX, mouseY, radarObserver);
@@ -4311,6 +4317,91 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                     draw.drawTextWithShadow(
                         this.textRenderer, label, labelX, labelY, TEXT_COLOR
                     );
+                }
+            }
+        }
+    }
+
+    /**
+     * Activated portal markers of the viewed dimension: an optional translucent
+     * fill of each containing chunk, then icon plates at the anchors with the
+     * same hover-label treatment as structure markers. Portals are
+     * client-observed facts, so unlike predicted structures they need no seed
+     * or companion permission - only a live world to belong to.
+     */
+    private void drawPortals(final GuiDraw draw, final int mouseX, final int mouseY) {
+        if (!viewingLiveWorld() || !config.portalMarkersEnabled) {
+            return;
+        }
+        final List<PortalMarker> markers = portals.list(viewSession().dimension());
+        if (markers.isEmpty()) {
+            return;
+        }
+        final double pxPerBlock = 1.0 / scale;
+        if (config.portalChunkHighlightEnabled) {
+            final java.util.HashSet<Long> filledChunks = new java.util.HashSet<>();
+            for (final PortalMarker marker : markers) {
+                if (!filledChunks.add(((long) marker.chunkX() << 32) ^ marker.chunkZ() & 0xFFFFFFFFL)) {
+                    continue;
+                }
+                final float left = (float) (width / 2.0 + (marker.chunkX() * 16.0 - centerX) * pxPerBlock);
+                final float top = (float) (height / 2.0 + (marker.chunkZ() * 16.0 - centerZ) * pxPerBlock);
+                final float sizePx = (float) (16.0 * pxPerBlock);
+                if (sizePx < 2f || left > width || top > height || left + sizePx < 0f || top + sizePx < 0f) {
+                    continue;
+                }
+                RenderUtil.fillRect(
+                    draw.matrices(), left, top, sizePx, sizePx, config.portalHighlightColor.argb()
+                );
+            }
+        }
+        if (!config.portalIconsEnabled
+            || FullscreenZoomLabel.isAtOrBelow(scale, config.portalIconHideZoom)) {
+            return;
+        }
+        PortalMarker hovered = null;
+        double bestHoverDistance = 8.0;
+        for (final PortalMarker marker : markers) {
+            final float screenX = (float) (width / 2.0 + (marker.anchorX() + 0.5 - centerX) * pxPerBlock);
+            final float screenY = (float) (height / 2.0 + (marker.anchorZ() + 0.5 - centerZ) * pxPerBlock);
+            if (screenX < -16 || screenX > width + 16 || screenY < -16 || screenY > height + 16) {
+                continue;
+            }
+            final double hoverDistance = Math.hypot(mouseX - screenX, mouseY - screenY);
+            if (hoverDistance <= bestHoverDistance) {
+                bestHoverDistance = hoverDistance;
+                hovered = marker;
+            }
+        }
+        for (final PortalMarker marker : markers) {
+            final float screenX = (float) (width / 2.0 + (marker.anchorX() + 0.5 - centerX) * pxPerBlock);
+            final float screenY = (float) (height / 2.0 + (marker.anchorZ() + 0.5 - centerZ) * pxPerBlock);
+            if (screenX < -16 || screenX > width + 16 || screenY < -16 || screenY > height + 16) {
+                continue;
+            }
+            final boolean isHovered = marker.equals(hovered);
+            final MapOverlayBounds bounds = new MapOverlayBounds(
+                screenX - config.portalIconSize / 2f,
+                screenY - config.portalIconSize / 2f,
+                screenX + config.portalIconSize / 2f,
+                screenY + config.portalIconSize / 2f
+            );
+            if (mapOverlayIntersectsUi(bounds)) {
+                continue;
+            }
+            PortalMarkerRenderer.draw(
+                draw, marker.kind(), screenX, screenY,
+                config.portalIconSize, config.portalIconOpacity, isHovered
+            );
+            if (isHovered) {
+                final var label = Texts.translatable("confluxmap.portal." + marker.kind().blockId());
+                final float labelX = screenX + 10f;
+                final float labelY = screenY - 4f;
+                final MapOverlayBounds labelBounds = MapOverlayBounds.text(
+                    labelX, labelY, this.textRenderer.getWidth(label), this.textRenderer.fontHeight
+                );
+                if (!mapOverlayIntersectsUi(labelBounds)) {
+                    draw.drawTextWithShadow(this.textRenderer, label, labelX, labelY, TEXT_COLOR);
                 }
             }
         }
