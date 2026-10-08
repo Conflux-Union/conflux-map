@@ -420,6 +420,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private FullscreenMapLocationMenu.Target locationMenuTarget;
     private WaypointRenderEntry locationMenuWaypoint;
     private UUID locationMenuPlayerId;
+    private List<FullscreenMapLocationMenu.ButtonSpec> locationMenuSpecs = List.of();
     private ServerPlayerRadarState.PlayerView hoveredRadarPlayer;
     private FullscreenMapLocationMenu.Action pendingLocationAction;
     private boolean locationMenuDeletePending;
@@ -1561,6 +1562,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final List<FullscreenMapLocationMenu.ButtonSpec> specs = locationMenuButtonSpecs(
             locationMenuTarget, locationMenuWaypoint, locationMenuPlayerId, locationMenuDeletePending
         );
+        locationMenuSpecs = specs;
         for (int index = 0; index < specs.size(); index++) {
             final FullscreenMapLocationMenu.ButtonSpec spec = specs.get(index);
             final ButtonWidget button = addDrawableChild(Widgets.button(
@@ -2209,6 +2211,26 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     /**
+     * Offers the open menu's digit shortcuts to the shared key funnel in
+     * {@link ConfluxScreen}. Runs the same pending-action path as a click, so the delete
+     * confirmation two-step and the post-dispatch rebuild behavior stay identical.
+     */
+    @Override
+    protected boolean embeddedMenuHotkeyPressed(final int keyCode) {
+        if (locationMenuBounds == null) {
+            return false;
+        }
+        final FullscreenMapLocationMenu.Action action =
+            FullscreenMapLocationMenu.actionForHotkey(locationMenuSpecs, keyCode);
+        if (action == null) {
+            return false;
+        }
+        pendingLocationAction = action;
+        performPendingLocationAction();
+        return true;
+    }
+
+    /**
      * Runs one captured location-menu action. Embedded split-map hosts pass themselves as
      * {@code returnTo} so the edit/share screens they open come back to them.
      */
@@ -2349,6 +2371,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         locationMenuTarget = null;
         locationMenuWaypoint = null;
         locationMenuPlayerId = null;
+        locationMenuSpecs = List.of();
         pendingLocationAction = null;
         locationMenuDeletePending = false;
         rebuildWaypointControls();
@@ -3478,6 +3501,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final int mouseY,
         final float tickDelta
     ) {
+        if (locationMenuBounds != null) {
+            FullscreenMapLocationMenu.drawHotkeyHints(
+                draw, this.textRenderer, locationMenuBounds, locationMenuSpecs
+            );
+        }
         renderTargetDropdown(draw, mouseX, mouseY);
         final Text annotationTooltip = hoveredAnnotationTooltip();
         final Text locationActionTooltip = hoveredLocationActionTooltip();

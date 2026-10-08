@@ -17,6 +17,11 @@ public final class Keys {
     //#if MC>=260300
     //$$ public static final int B = InputConstants.KEY_B;
     //$$ public static final int COMMA = InputConstants.KEY_COMMA;
+    //$$ public static final int DIGIT_1 = InputConstants.KEY_1;
+    //$$ public static final int DIGIT_2 = InputConstants.KEY_2;
+    //$$ public static final int DIGIT_3 = InputConstants.KEY_3;
+    //$$ public static final int DIGIT_4 = InputConstants.KEY_4;
+    //$$ public static final int DIGIT_5 = InputConstants.KEY_5;
     //$$ public static final int DOWN = InputConstants.KEY_DOWN;
     //$$ public static final int ENTER = InputConstants.KEY_RETURN;
     //$$ public static final int ESCAPE = InputConstants.KEY_ESCAPE;
@@ -42,6 +47,11 @@ public final class Keys {
     //#else
     public static final int B = org.lwjgl.glfw.GLFW.GLFW_KEY_B;
     public static final int COMMA = org.lwjgl.glfw.GLFW.GLFW_KEY_COMMA;
+    public static final int DIGIT_1 = org.lwjgl.glfw.GLFW.GLFW_KEY_1;
+    public static final int DIGIT_2 = org.lwjgl.glfw.GLFW.GLFW_KEY_2;
+    public static final int DIGIT_3 = org.lwjgl.glfw.GLFW.GLFW_KEY_3;
+    public static final int DIGIT_4 = org.lwjgl.glfw.GLFW.GLFW_KEY_4;
+    public static final int DIGIT_5 = org.lwjgl.glfw.GLFW.GLFW_KEY_5;
     public static final int DOWN = org.lwjgl.glfw.GLFW.GLFW_KEY_DOWN;
     public static final int ENTER = org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER;
     public static final int ESCAPE = org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE;

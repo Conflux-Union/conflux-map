@@ -509,7 +509,13 @@ final class BiomeCandidateScreen extends ConfluxScreen {
         final int mouseY,
         final float tickDelta
     ) {
+        mapPane.drawMenuHotkeys(draw, this.textRenderer);
         candidateListUi().drawOverflowCues(draw);
+    }
+
+    @Override
+    protected boolean embeddedMenuHotkeyPressed(final int keyCode) {
+        return mapPane.menuHotkeyPressed(this, keyCode);
     }
 
     private void drawCentered(final GuiDraw draw, final String text, final int y, final int color) {

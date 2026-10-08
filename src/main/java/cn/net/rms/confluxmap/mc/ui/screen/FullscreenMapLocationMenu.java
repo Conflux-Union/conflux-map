@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
+import cn.net.rms.confluxmap.compat.Keys;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
 import cn.net.rms.confluxmap.core.store.ColumnStore;
@@ -10,6 +11,7 @@ import cn.net.rms.confluxmap.mc.world.DimensionLayerPolicy;
 import java.util.List;
 import java.util.OptionalInt;
 import java.util.UUID;
+import net.minecraft.client.font.TextRenderer;
 
 /** Layout and captured map target for the fullscreen map's right-click location menu. */
 final class FullscreenMapLocationMenu {
@@ -21,6 +23,14 @@ final class FullscreenMapLocationMenu {
     static final int CURSOR_GAP = 2;
     private static final int PANEL_BACKGROUND = 0xF0181822;
     private static final int PANEL_BORDER = 0xFF9A9AA8;
+    private static final int HOTKEY_COLOR = 0xFF55FF55;
+    private static final int HOTKEY_DISABLED_COLOR = 0xFF707070;
+    private static final int HOTKEY_HINT_GAP = 4;
+
+    /** Digit shortcuts for the open menu, one per button in list order. */
+    private static final int[] HOTKEY_KEYS = {
+        Keys.DIGIT_1, Keys.DIGIT_2, Keys.DIGIT_3, Keys.DIGIT_4, Keys.DIGIT_5
+    };
 
     enum Action {
         SET_WAYPOINT("confluxmap.map.location_menu.set_waypoint"),
@@ -194,6 +204,61 @@ final class FullscreenMapLocationMenu {
         draw.fill(x, bottom - 1, right, bottom, PANEL_BORDER);
         draw.fill(x, y, x + 1, bottom, PANEL_BORDER);
         draw.fill(right - 1, y, right, bottom, PANEL_BORDER);
+    }
+
+    /**
+     * Draws each button's digit shortcut at the panel's right edge, on top of the already
+     * rendered buttons: green when the shortcut works, grey when the button is greyed out.
+     */
+    static void drawHotkeyHints(
+        final GuiDraw draw,
+        final TextRenderer font,
+        final Bounds bounds,
+        final List<ButtonSpec> specs
+    ) {
+        for (int index = 0; index < specs.size(); index++) {
+            final String label = hotkeyLabel(index);
+            if (label == null) {
+                return;
+            }
+            final ButtonSpec spec = specs.get(index);
+            final int x = bounds.x() + bounds.width() - PANEL_PADDING - HOTKEY_HINT_GAP
+                - font.getWidth(label);
+            final int y = bounds.buttonY(index) + (BUTTON_HEIGHT - font.fontHeight) / 2;
+            draw.drawTextWithShadow(
+                font, label, x, y, spec.active() ? HOTKEY_COLOR : HOTKEY_DISABLED_COLOR
+            );
+        }
+    }
+
+    /**
+     * The action a digit shortcut would trigger, or null when the key is no menu shortcut,
+     * addresses no button in the live list, or that button is greyed out. The live list is
+     * authoritative: sibling waypoints drop entries and the delete confirmation relabels
+     * one, so indexes must never come from the {@link Action} enum.
+     */
+    static Action actionForHotkey(final List<ButtonSpec> specs, final int keyCode) {
+        final int index = hotkeyIndex(keyCode);
+        if (index < 0 || index >= specs.size()) {
+            return null;
+        }
+        final ButtonSpec spec = specs.get(index);
+        return spec.active() ? spec.action() : null;
+    }
+
+    /** Index of the digit shortcut pressed, or -1 when the key is no menu shortcut. */
+    static int hotkeyIndex(final int keyCode) {
+        for (int index = 0; index < HOTKEY_KEYS.length; index++) {
+            if (HOTKEY_KEYS[index] == keyCode) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    /** The digit shown for a button index, or null when the menu has no shortcut that deep. */
+    static String hotkeyLabel(final int index) {
+        return index >= 0 && index < HOTKEY_KEYS.length ? Integer.toString(index + 1) : null;
     }
 
     /**

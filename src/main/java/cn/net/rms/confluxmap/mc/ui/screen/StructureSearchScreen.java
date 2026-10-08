@@ -709,6 +709,7 @@ final class StructureSearchScreen extends ConfluxScreen {
         final int mouseY,
         final float tickDelta
     ) {
+        mapPane.drawMenuHotkeys(draw, this.textRenderer);
         StructureSearchScrollBar.drawOverflowCues(
             draw,
             rowX - 4,
@@ -719,6 +720,11 @@ final class StructureSearchScreen extends ConfluxScreen {
             visibleRows(),
             scrollOffset
         );
+    }
+
+    @Override
+    protected boolean embeddedMenuHotkeyPressed(final int keyCode) {
+        return mapPane.menuHotkeyPressed(this, keyCode);
     }
 
     private void drawPanelCentered(

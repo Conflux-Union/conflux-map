@@ -2,8 +2,11 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.compat.Keys;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
@@ -362,6 +365,115 @@ class FullscreenMapLocationMenuTest {
             assertTrue(
                 outsideGuard >= 0 && widgetDispatch > outsideGuard && consume > widgetDispatch,
                 name + " must route clicks around the open menu before its widget dispatch"
+            );
+        }
+    }
+
+    @Test
+    void digitShortcutsFollowTheLiveButtonList() {
+        final List<FullscreenMapLocationMenu.ButtonSpec> specs = List.of(
+            new FullscreenMapLocationMenu.ButtonSpec(
+                FullscreenMapLocationMenu.Action.TELEPORT, "teleport", "teleport.tip", true
+            ),
+            new FullscreenMapLocationMenu.ButtonSpec(
+                FullscreenMapLocationMenu.Action.DELETE_WAYPOINT, "delete", "delete.tip", false
+            )
+        );
+
+        assertEquals(
+            FullscreenMapLocationMenu.Action.TELEPORT,
+            FullscreenMapLocationMenu.actionForHotkey(specs, Keys.DIGIT_1)
+        );
+        assertNull(
+            FullscreenMapLocationMenu.actionForHotkey(specs, Keys.DIGIT_2),
+            "a greyed-out button must not fire from its shortcut"
+        );
+        assertNull(
+            FullscreenMapLocationMenu.actionForHotkey(specs, Keys.DIGIT_3),
+            "a shortcut with no button must do nothing"
+        );
+        assertNull(
+            FullscreenMapLocationMenu.actionForHotkey(specs, Keys.ESCAPE),
+            "non-digit keys are not menu shortcuts"
+        );
+    }
+
+    @Test
+    void everyMenuActionHasADigitShortcut() {
+        for (final boolean existingWaypoint : new boolean[] {false, true}) {
+            for (final boolean highlighted : new boolean[] {false, true}) {
+                for (final boolean playerTarget : new boolean[] {false, true}) {
+                    final List<FullscreenMapLocationMenu.Action> actions =
+                        FullscreenMapLocationMenu.actions(existingWaypoint, highlighted, playerTarget);
+                    assertNotNull(
+                        FullscreenMapLocationMenu.hotkeyLabel(actions.size() - 1),
+                        "the menu outgrew its digit shortcuts: " + actions
+                    );
+                }
+            }
+        }
+        assertEquals("1", FullscreenMapLocationMenu.hotkeyLabel(0));
+        assertEquals("5", FullscreenMapLocationMenu.hotkeyLabel(4));
+        assertNull(FullscreenMapLocationMenu.hotkeyLabel(5));
+        assertEquals(0, FullscreenMapLocationMenu.hotkeyIndex(Keys.DIGIT_1));
+        assertEquals(4, FullscreenMapLocationMenu.hotkeyIndex(Keys.DIGIT_5));
+        assertEquals(-1, FullscreenMapLocationMenu.hotkeyIndex(Keys.ESCAPE));
+    }
+
+    @Test
+    void menusTriggerFromDigitKeysWithoutStealingTyping() throws IOException {
+        final Path root = projectRoot();
+        final String base = Files.readString(root.resolve(
+            "src/main/java/cn/net/rms/confluxmap/mc/ui/screen/ConfluxScreen.java"
+        )).replace("\r\n", "\n");
+        assertTrue(
+            base.contains(
+                "!(getFocused() instanceof TextFieldWidget) && embeddedMenuHotkeyPressed(keyCode)"
+            ),
+            "the shared key funnel must offer menu shortcuts only when no text field holds focus"
+        );
+        assertTrue(
+            base.contains("void clearFocusForOpenMenu()"),
+            "the embedded hosts must be able to drop text focus while a menu is open"
+        );
+
+        final String pane = Files.readString(root.resolve(
+            "src/main/java/cn/net/rms/confluxmap/mc/ui/screen/SplitMapPane.java"
+        )).replace("\r\n", "\n");
+        assertTrue(
+            pane.contains("FullscreenMapLocationMenu.actionForHotkey(menuSpecs, keyCode)"),
+            "the split map pane must resolve shortcuts against its live button list"
+        );
+        assertTrue(
+            pane.contains("host.clearFocusForOpenMenu();"),
+            "the pane must keep text focus off the search field while its menu is open"
+        );
+
+        final String fullscreen = Files.readString(root.resolve(
+            "src/main/java/cn/net/rms/confluxmap/mc/ui/screen/FullscreenMapScreen.java"
+        )).replace("\r\n", "\n");
+        assertTrue(
+            fullscreen.contains("FullscreenMapLocationMenu.actionForHotkey(locationMenuSpecs, keyCode)"),
+            "the fullscreen map must resolve shortcuts against its live button list"
+        );
+        assertTrue(
+            fullscreen.contains("FullscreenMapLocationMenu.drawHotkeyHints("),
+            "the fullscreen map must draw the digit hints over its menu buttons"
+        );
+
+        for (final String name : new String[] {
+            "StructureSearchScreen", "StructureCandidateScreen", "BiomeCandidateScreen"
+        }) {
+            final String source = Files.readString(root.resolve(
+                "src/main/java/cn/net/rms/confluxmap/mc/ui/screen/" + name + ".java"
+            )).replace("\r\n", "\n");
+            assertTrue(
+                source.contains("mapPane.menuHotkeyPressed(this, keyCode)"),
+                name + " must route key events into the open menu's shortcuts"
+            );
+            assertTrue(
+                source.contains("mapPane.drawMenuHotkeys(draw, this.textRenderer)"),
+                name + " must draw the digit hints over the open menu's buttons"
             );
         }
     }

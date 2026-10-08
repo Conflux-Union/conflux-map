@@ -7,6 +7,7 @@ import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import java.util.List;
 import java.util.UUID;
+import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.widget.ButtonWidget;
 
 /**
@@ -29,6 +30,7 @@ final class SplitMapPane {
     private UUID menuPlayerId;
     private FullscreenMapLocationMenu.Action pendingMenuAction;
     private boolean menuDeletePending;
+    private List<FullscreenMapLocationMenu.ButtonSpec> menuSpecs = List.of();
 
     SplitMapPane(final FullscreenMapScreen map) {
         this.map = map;
@@ -153,6 +155,7 @@ final class SplitMapPane {
         if (action == FullscreenMapLocationMenu.Action.DELETE_WAYPOINT && !menuDeletePending) {
             menuDeletePending = true;
             host.rebuildForEmbeddedLocationMenu();
+            host.clearFocusForOpenMenu();
             return;
         }
         final FullscreenMapLocationMenu.Target target = menuTarget;
@@ -170,6 +173,7 @@ final class SplitMapPane {
         final List<FullscreenMapLocationMenu.ButtonSpec> specs = map.locationMenuButtonSpecs(
             menuTarget, menuWaypoint, menuPlayerId, menuDeletePending
         );
+        menuSpecs = specs;
         for (int index = 0; index < specs.size(); index++) {
             final FullscreenMapLocationMenu.ButtonSpec spec = specs.get(index);
             final ButtonWidget button = host.hostLocationMenuButton(Widgets.button(
@@ -182,6 +186,32 @@ final class SplitMapPane {
             ));
             button.active = spec.active();
             host.setLocationMenuTooltip(button, spec.tooltipKey());
+        }
+    }
+
+    /**
+     * Offers the open menu's digit shortcuts. Runs the same pending-action path as a click,
+     * so the delete confirmation two-step stays identical; the shared funnel in
+     * {@link ConfluxScreen} guarantees no text field holds focus.
+     */
+    boolean menuHotkeyPressed(final ConfluxScreen host, final int keyCode) {
+        if (!menuOpen()) {
+            return false;
+        }
+        final FullscreenMapLocationMenu.Action action =
+            FullscreenMapLocationMenu.actionForHotkey(menuSpecs, keyCode);
+        if (action == null) {
+            return false;
+        }
+        pendingMenuAction = action;
+        consumePendingMenuAction(host);
+        return true;
+    }
+
+    /** Draws the digit hints for the open menu on top of its rendered buttons. */
+    void drawMenuHotkeys(final GuiDraw draw, final TextRenderer font) {
+        if (menuBounds != null) {
+            FullscreenMapLocationMenu.drawHotkeyHints(draw, font, menuBounds, menuSpecs);
         }
     }
 
@@ -200,6 +230,7 @@ final class SplitMapPane {
         pendingMenuAction = null;
         menuDeletePending = false;
         host.rebuildForEmbeddedLocationMenu();
+        host.clearFocusForOpenMenu();
     }
 
     private void closeMenu(final ConfluxScreen host) {
@@ -209,6 +240,7 @@ final class SplitMapPane {
         menuPlayerId = null;
         pendingMenuAction = null;
         menuDeletePending = false;
+        menuSpecs = List.of();
         host.rebuildForEmbeddedLocationMenu();
     }
 }

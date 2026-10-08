@@ -17,6 +17,7 @@ import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.ClickableWidget;
+import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
 /** Screen base that keeps the MatrixStack-to-DrawContext rewrite at one lifecycle seam. */
@@ -209,6 +210,9 @@ public abstract class ConfluxScreen extends Screen {
     //#else
     public boolean keyPressed(final int keyCode, final int scanCode, final int modifiers) {
     //#endif
+        if (!(getFocused() instanceof TextFieldWidget) && embeddedMenuHotkeyPressed(keyCode)) {
+            return true;
+        }
         if ((keyCode == cn.net.rms.confluxmap.compat.Keys.ENTER || keyCode == cn.net.rms.confluxmap.compat.Keys.KP_ENTER)
             && enterAction != null && enterActionEnabled.getAsBoolean()) {
             enterAction.run();
@@ -219,6 +223,24 @@ public abstract class ConfluxScreen extends Screen {
         //#else
         return super.keyPressed(keyCode, scanCode, modifiers);
         //#endif
+    }
+
+    /**
+     * Offers a digit shortcut for the open embedded location menu. Overridden by the
+     * fullscreen map for its own menu and by split-map hosts for the pane's menu; the
+     * caller guarantees no text field holds focus, so typing always wins.
+     */
+    protected boolean embeddedMenuHotkeyPressed(final int keyCode) {
+        return false;
+    }
+
+    /**
+     * Drops keyboard focus so menu digit shortcuts are not captured by a text input.
+     * Rebuilds re-run the host's {@code init()}, which refocuses its search field, so the
+     * pane calls this after every rebuild that leaves the menu open.
+     */
+    void clearFocusForOpenMenu() {
+        setFocused(null);
     }
 
     protected void renderAfterWidgets(
