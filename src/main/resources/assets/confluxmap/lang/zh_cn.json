@@ -179,7 +179,7 @@
   "confluxmap.map.location_menu.clear_player_highlight.tooltip": "停止追踪当前高亮玩家",
   "confluxmap.map.location_menu.selected_location": "选中位置",
   "confluxmap.map.location_menu.temporary_name": "共享位置",
-  "confluxmap.map.location_menu.height_unavailable": "无法确定此处的地表高度。",
+  "confluxmap.map.location_menu.height_unavailable": "无法确定此处的地表高度，将使用你当前的 Y 坐标。",
   "confluxmap.map.location_menu.teleport_unavailable": "当前无法使用传送命令。",
   "confluxmap.teleport.unavailable.player": "进入世界后才能传送。",
   "confluxmap.teleport.unavailable.position": "无法确定目标位置。",

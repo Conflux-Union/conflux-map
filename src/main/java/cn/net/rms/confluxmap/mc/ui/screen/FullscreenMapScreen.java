@@ -1595,7 +1595,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final UUID playerId,
         final boolean deletePending
     ) {
-        final boolean heightKnown = target.blockY().isPresent();
         final MinecraftClient client = MinecraftClient.getInstance();
         final boolean playerPresent = client.player != null;
         final SessionGuard.Session viewed = viewSession();
@@ -1638,7 +1637,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final List<FullscreenMapLocationMenu.ButtonSpec> specs = new ArrayList<>(actions.size());
         for (final FullscreenMapLocationMenu.Action action : actions) {
             boolean active = FullscreenMapLocationMenu.actionEnabled(
-                action, playerPresent, heightKnown, teleportCommandAvailable,
+                action, playerPresent, teleportCommandAvailable,
                 waypointEditable, waypointDeletable
             );
             String tooltipKey = actionTooltipKey(action);
@@ -2247,12 +2246,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 }
             }
             case CLEAR_PLAYER_HIGHLIGHT -> serverPlayerRadar.clearHighlight();
-            case SET_WAYPOINT -> target.blockY().ifPresent(y -> MinecraftAccess.setScreen(MinecraftClient.getInstance(),
+            case SET_WAYPOINT -> gameBridge.player().ifPresent(player -> MinecraftAccess.setScreen(
+                MinecraftClient.getInstance(),
                 WaypointEditScreen.forCreate(
                     returnTo,
                     viewSession().dimension(),
                     target.blockX(),
-                    y,
+                    target.placementY(player.blockY()),
                     target.blockZ(),
                     this::viewWaypointStore
                 )
@@ -2267,11 +2267,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                     deleteWaypointFromLocationMenu(waypoint);
                 }
             }
-            case SHARE_LOCATION -> {
-                if (target.blockY().isPresent()) {
-                    shareTemporaryLocation(target, returnTo);
-                }
-            }
+            case SHARE_LOCATION -> gameBridge.player().ifPresent(
+                player -> shareTemporaryLocation(target, target.placementY(player.blockY()), returnTo)
+            );
             case SHARE_WAYPOINT -> {
                 if (waypoint != null) {
                     shareWaypoint(waypoint, returnTo);
@@ -2298,19 +2296,17 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     private void shareTemporaryLocation(
         final FullscreenMapLocationMenu.Target target,
+        final int y,
         final Screen returnTo
     ) {
         final MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || target.blockY().isEmpty()) {
-            return;
-        }
         final String name = Texts.translatable("confluxmap.map.location_menu.temporary_name").getString();
         final Waypoint temporary = new Waypoint(
             UUID.randomUUID(),
             name,
             viewSession().dimension(),
             target.blockX(),
-            target.blockY().getAsInt(),
+            y,
             target.blockZ(),
             TEMPORARY_LOCATION_COLOR,
             "",

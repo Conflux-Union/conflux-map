@@ -93,45 +93,29 @@ final class FullscreenMapLocationMenu {
     static boolean actionEnabled(
         final Action action,
         final boolean playerPresent,
-        final boolean estimatedHeightKnown,
         final boolean teleportCommandAvailable
     ) {
-        if (!playerPresent) {
+        if (!playerPresent || action == Action.DELETE_WAYPOINT) {
             return false;
         }
-        if (action == Action.DELETE_WAYPOINT) {
-            return false;
-        }
-        if (action == Action.HIGHLIGHT
-            || action == Action.HIGHLIGHT_WAYPOINT
-            || action == Action.CLEAR_HIGHLIGHT
-            || action == Action.HIGHLIGHT_PLAYER
-            || action == Action.CLEAR_PLAYER_HIGHLIGHT) {
-            return true;
-        }
-        if (action == Action.SHARE_WAYPOINT) {
-            return true;
-        }
-        return action == Action.TELEPORT ? teleportCommandAvailable : estimatedHeightKnown;
+        return action != Action.TELEPORT || teleportCommandAvailable;
     }
 
     static boolean actionEnabled(
         final Action action,
         final boolean playerPresent,
-        final boolean estimatedHeightKnown,
         final boolean teleportCommandAvailable,
         final boolean waypointEditable
     ) {
         if (action == Action.EDIT_WAYPOINT) {
             return playerPresent && waypointEditable;
         }
-        return actionEnabled(action, playerPresent, estimatedHeightKnown, teleportCommandAvailable);
+        return actionEnabled(action, playerPresent, teleportCommandAvailable);
     }
 
     static boolean actionEnabled(
         final Action action,
         final boolean playerPresent,
-        final boolean estimatedHeightKnown,
         final boolean teleportCommandAvailable,
         final boolean waypointEditable,
         final boolean waypointDeletable
@@ -139,9 +123,7 @@ final class FullscreenMapLocationMenu {
         if (action == Action.DELETE_WAYPOINT) {
             return playerPresent && waypointDeletable;
         }
-        return actionEnabled(
-            action, playerPresent, estimatedHeightKnown, teleportCommandAvailable, waypointEditable
-        );
+        return actionEnabled(action, playerPresent, teleportCommandAvailable, waypointEditable);
     }
 
     static Bounds place(
@@ -261,6 +243,11 @@ final class FullscreenMapLocationMenu {
             return ground.surfaceY().isPresent()
                 ? OptionalInt.of(ground.surfaceY().getAsInt() + 1)
                 : OptionalInt.empty();
+        }
+
+        /** Waypoints and shared locations always need a Y, so a column without ground borrows the player's. */
+        int placementY(final int playerY) {
+            return blockY().orElse(playerY);
         }
 
         /**

@@ -131,20 +131,20 @@ class FullscreenMapLocationMenuTest {
     @Test
     void editActionOnlyDependsOnWaypointPermission() {
         assertTrue(FullscreenMapLocationMenu.actionEnabled(
-            FullscreenMapLocationMenu.Action.EDIT_WAYPOINT, true, false, false, true, false
+            FullscreenMapLocationMenu.Action.EDIT_WAYPOINT, true, false, true, false
         ));
         assertFalse(FullscreenMapLocationMenu.actionEnabled(
-            FullscreenMapLocationMenu.Action.EDIT_WAYPOINT, true, false, false, false, true
+            FullscreenMapLocationMenu.Action.EDIT_WAYPOINT, true, false, false, true
         ));
     }
 
     @Test
     void deleteActionOnlyDependsOnWaypointPermission() {
         assertTrue(FullscreenMapLocationMenu.actionEnabled(
-            FullscreenMapLocationMenu.Action.DELETE_WAYPOINT, true, false, false, false, true
+            FullscreenMapLocationMenu.Action.DELETE_WAYPOINT, true, false, false, true
         ));
         assertFalse(FullscreenMapLocationMenu.actionEnabled(
-            FullscreenMapLocationMenu.Action.DELETE_WAYPOINT, true, false, false, true, false
+            FullscreenMapLocationMenu.Action.DELETE_WAYPOINT, true, false, true, false
         ));
     }
 
@@ -212,6 +212,19 @@ class FullscreenMapLocationMenuTest {
     }
 
     @Test
+    void placementYUsesTheSurfaceAboveTheColumnOrThePlayersYWithoutOne() {
+        assertEquals(73, FullscreenMapLocationMenu.targetAt(
+            10.0, OptionalInt.of(72), 20.0
+        ).placementY(100));
+        assertEquals(64, FullscreenMapLocationMenu.targetAt(
+            10.0, ColumnStore.SurfaceLookup.UNKNOWN, 20.0
+        ).placementY(64));
+        assertEquals(64, FullscreenMapLocationMenu.targetAt(
+            10.0, new ColumnStore.SurfaceLookup(true, OptionalInt.empty()), 20.0
+        ).placementY(64));
+    }
+
+    @Test
     void liveSessionsTeleportWithoutAnyGroundAnswerButBrowsedOnesNeedOne() {
         final FullscreenMapLocationMenu.Target unknown = FullscreenMapLocationMenu.targetAt(
             10.0, ColumnStore.SurfaceLookup.UNKNOWN, 20.0
@@ -232,18 +245,31 @@ class FullscreenMapLocationMenuTest {
     }
 
     @Test
-    void teleportAvailabilityDoesNotDependOnEstimatedHeight() {
+    void placementActionsStayEnabledWithoutAGroundAnswer() {
         assertTrue(FullscreenMapLocationMenu.actionEnabled(
-            FullscreenMapLocationMenu.Action.TELEPORT, true, false, true
-        ));
-        assertFalse(FullscreenMapLocationMenu.actionEnabled(
-            FullscreenMapLocationMenu.Action.SET_WAYPOINT, true, false, true
-        ));
-        assertFalse(FullscreenMapLocationMenu.actionEnabled(
-            FullscreenMapLocationMenu.Action.SHARE_LOCATION, true, false, true
+            FullscreenMapLocationMenu.Action.SET_WAYPOINT, true, false
         ));
         assertTrue(FullscreenMapLocationMenu.actionEnabled(
-            FullscreenMapLocationMenu.Action.SHARE_WAYPOINT, true, false, true
+            FullscreenMapLocationMenu.Action.SHARE_LOCATION, true, false
+        ));
+        assertFalse(FullscreenMapLocationMenu.actionEnabled(
+            FullscreenMapLocationMenu.Action.SET_WAYPOINT, false, false
+        ));
+        assertFalse(FullscreenMapLocationMenu.actionEnabled(
+            FullscreenMapLocationMenu.Action.SHARE_LOCATION, false, false
+        ));
+    }
+
+    @Test
+    void teleportFollowsOnlyTheCommandAvailability() {
+        assertTrue(FullscreenMapLocationMenu.actionEnabled(
+            FullscreenMapLocationMenu.Action.TELEPORT, true, true
+        ));
+        assertFalse(FullscreenMapLocationMenu.actionEnabled(
+            FullscreenMapLocationMenu.Action.TELEPORT, true, false
+        ));
+        assertTrue(FullscreenMapLocationMenu.actionEnabled(
+            FullscreenMapLocationMenu.Action.SHARE_WAYPOINT, true, false
         ));
     }
 

@@ -179,7 +179,7 @@
   "confluxmap.map.location_menu.clear_player_highlight.tooltip": "Stop tracking the highlighted player",
   "confluxmap.map.location_menu.selected_location": "Selected location",
   "confluxmap.map.location_menu.temporary_name": "Shared Location",
-  "confluxmap.map.location_menu.height_unavailable": "Surface height is unavailable at this location.",
+  "confluxmap.map.location_menu.height_unavailable": "Surface height is unavailable here; your current Y will be used.",
   "confluxmap.map.location_menu.teleport_unavailable": "The teleport command is unavailable.",
   "confluxmap.teleport.unavailable.player": "Join a world before teleporting.",
   "confluxmap.teleport.unavailable.position": "The target position is unavailable.",
