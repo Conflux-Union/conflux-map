@@ -186,7 +186,6 @@
   "confluxmap.teleport.unavailable.dimension": "当前传送指令无法切换维度。",
   "confluxmap.teleport.unavailable.world": "当前传送指令无法切换子世界。",
   "confluxmap.teleport.unavailable.command": "当前服务器不允许你使用已配置的传送指令。",
-  "confluxmap.teleport.feedback.ground_unresolved": "目标位置没有可以落脚的地面，已将你送回原处。",
   "confluxmap.teleport.feedback.timeout": "等待到达目标位置超时，传送未完成。",
   "confluxmap.screen.waypoint.create": "新建路径点",
   "confluxmap.screen.waypoint.create_public": "新建共享路径点",

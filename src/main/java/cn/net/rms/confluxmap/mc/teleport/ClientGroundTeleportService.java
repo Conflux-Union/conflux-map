@@ -6,6 +6,7 @@ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.config.TeleportCommandTemplate;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
+import cn.net.rms.confluxmap.core.store.ColumnStore;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.OptionalInt;
 import java.util.function.Consumer;
@@ -16,12 +17,14 @@ import net.minecraft.world.Heightmap;
 import net.minecraft.world.chunk.ChunkStatus;
 import net.minecraft.world.chunk.WorldChunk;
 
-/** Pure-client two-stage teleport that resolves the final ground height from the loaded target chunk. */
+/**
+ * Pure-client two-stage teleport that resolves the final ground height from the loaded target
+ * chunk; a column that resolves to void has no height to resolve and lands at the player's
+ * pre-teleport Y instead.
+ */
 public final class ClientGroundTeleportService {
     static final int STAGING_HEADROOM = 32;
     private static final int MAX_WAIT_TICKS = 200;
-    /** Chat feedback for a resolved chunk with no ground: the player is back at the origin. */
-    static final String GROUND_UNRESOLVED_KEY = "confluxmap.teleport.feedback.ground_unresolved";
     /** Chat feedback for a wait that expired before the player ever reached the target chunk. */
     static final String TIMEOUT_KEY = "confluxmap.teleport.feedback.timeout";
 
@@ -71,13 +74,15 @@ public final class ClientGroundTeleportService {
     }
 
     /**
-     * Starts a teleport to any map coordinate. The estimate can come from cubiomes or map cache,
-     * but is only used to stage above the predicted terrain while the authoritative client chunk loads.
+     * Starts a teleport to any map coordinate. The ground estimate can come from cubiomes or
+     * map cache, but is only used to stage above the predicted terrain while the authoritative
+     * client chunk loads. A known void column skips the wait entirely and lands at the
+     * player's pre-teleport Y.
      */
     public void teleport(
         final int blockX,
         final int blockZ,
-        final OptionalInt estimatedPlayerY,
+        final ColumnStore.SurfaceLookup ground,
         final DimensionId dimension,
         final WorldIdentity worldIdentity,
         final boolean direct
@@ -86,17 +91,36 @@ public final class ClientGroundTeleportService {
         if (world == null || client.player == null) {
             return;
         }
+        final boolean voidColumn = ground.known() && ground.surfaceY().isEmpty();
         if (direct) {
-            estimatedPlayerY.ifPresent(y -> sendCommand(
-                centered(blockX), y, centered(blockZ), dimension, worldIdentity
-            ));
+            if (voidColumn) {
+                sendCommand(
+                    centered(blockX), client.player.getY(), centered(blockZ),
+                    dimension, worldIdentity
+                );
+            } else {
+                estimatedPlayerY(ground).ifPresent(y -> sendCommand(
+                    centered(blockX), y, centered(blockZ), dimension, worldIdentity
+                ));
+            }
             return;
         }
         final GroundSample sample = sampleGround(world, blockX, blockZ);
         if (sample.loaded()) {
-            sample.playerY().ifPresent(y -> sendCommand(
-                centered(blockX), y, centered(blockZ), dimension, worldIdentity
-            ));
+            sendCommand(
+                centered(blockX),
+                sample.playerY().isPresent() ? sample.playerY().getAsInt() : client.player.getY(),
+                centered(blockZ),
+                dimension,
+                worldIdentity
+            );
+            return;
+        }
+        if (voidColumn) {
+            sendCommand(
+                centered(blockX), client.player.getY(), centered(blockZ),
+                dimension, worldIdentity
+            );
             return;
         }
 
@@ -113,7 +137,7 @@ public final class ClientGroundTeleportService {
         );
         sendCommand(
             centered(blockX),
-            stagingY(estimatedPlayerY, world.getBottomY(), world.getTopY()),
+            stagingY(estimatedPlayerY(ground), world.getBottomY(), world.getTopY()),
             centered(blockZ),
             dimension,
             worldIdentity
@@ -139,15 +163,15 @@ public final class ClientGroundTeleportService {
         final GroundSample sample = timedOut || !inTargetChunk
             ? GroundSample.NOT_LOADED
             : sampleGround(current.world(), current.blockX(), current.blockZ());
-        final CorrectionStep step = nextCorrectionStep(
-            timedOut, inTargetChunk, sample.loaded(), sample.playerY().isPresent()
-        );
+        final CorrectionStep step = nextCorrectionStep(timedOut, inTargetChunk, sample.loaded());
         if (step.clearsPending()) {
             pending = null;
         }
         if (step.sendsTarget()) {
             sendCommand(
-                centered(current.blockX()), sample.playerY().getAsInt(), centered(current.blockZ()),
+                centered(current.blockX()),
+                sample.playerY().isPresent() ? sample.playerY().getAsInt() : current.returnY(),
+                centered(current.blockZ()),
                 current.dimension(), current.worldIdentity()
             );
         } else if (step.sendsReturn()) {
@@ -162,16 +186,16 @@ public final class ClientGroundTeleportService {
     }
 
     /**
-     * One correction tick's decision, kept free of Minecraft state so the feedback contract is
-     * unit-testable: keep waiting, commit the resolved ground height, return to the saved origin,
-     * or abandon the wait. {@code feedbackKey} names the chat message for outcomes that used to
-     * resolve silently; null stays silent.
+     * One correction tick's decision, kept free of Minecraft state so the landing contract is
+     * unit-testable: keep waiting, land on the resolved ground, land on the saved pre-teleport
+     * Y over a void column, return to the saved origin, or abandon the wait. {@code
+     * feedbackKey} names the chat message for outcomes that used to resolve silently; null
+     * stays silent.
      */
     static CorrectionStep nextCorrectionStep(
         final boolean timedOut,
         final boolean reachedTargetChunk,
-        final boolean targetChunkLoaded,
-        final boolean groundResolved
+        final boolean targetChunkLoaded
     ) {
         if (timedOut) {
             return reachedTargetChunk
@@ -181,9 +205,7 @@ public final class ClientGroundTeleportService {
         if (!reachedTargetChunk || !targetChunkLoaded) {
             return new CorrectionStep(false, false, false, null);
         }
-        return groundResolved
-            ? new CorrectionStep(true, true, false, null)
-            : new CorrectionStep(true, false, true, GROUND_UNRESOLVED_KEY);
+        return new CorrectionStep(true, true, false, null);
     }
 
     private static GroundSample sampleGround(
@@ -215,6 +237,13 @@ public final class ClientGroundTeleportService {
         }
         final long withHeadroom = (long) estimatedPlayerY.getAsInt() + STAGING_HEADROOM;
         return (int) Math.max((long) bottomY + 1L, Math.min(withHeadroom, topY));
+    }
+
+    /** Player-feet Y standing on the estimated surface; empty when the surface is unknown. */
+    static OptionalInt estimatedPlayerY(final ColumnStore.SurfaceLookup ground) {
+        return ground.surfaceY().isPresent()
+            ? OptionalInt.of(ground.surfaceY().getAsInt() + 1)
+            : OptionalInt.empty();
     }
 
     static OptionalInt groundY(final int motionBlockingHeight, final int bottomY, final int topY) {

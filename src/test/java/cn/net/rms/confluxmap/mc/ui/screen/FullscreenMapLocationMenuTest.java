@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
+import cn.net.rms.confluxmap.core.store.ColumnStore;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.mc.ui.world.WaypointHighlightState;
@@ -218,6 +219,17 @@ class FullscreenMapLocationMenuTest {
         );
 
         assertTrue(target.blockY().isEmpty());
+        assertFalse(target.groundKnown());
+    }
+
+    @Test
+    void knownVoidTargetHasNoYButIsAGroundedAnswer() {
+        final FullscreenMapLocationMenu.Target target = FullscreenMapLocationMenu.targetAt(
+            10.0, new ColumnStore.SurfaceLookup(true, OptionalInt.empty()), 20.0
+        );
+
+        assertTrue(target.blockY().isEmpty());
+        assertTrue(target.groundKnown());
     }
 
     @Test

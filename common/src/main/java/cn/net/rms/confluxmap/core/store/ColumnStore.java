@@ -17,7 +17,8 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  */
 public final class ColumnStore {
     public record SurfaceLookup(boolean known, OptionalInt surfaceY) {
-        private static final SurfaceLookup UNKNOWN = new SurfaceLookup(false, OptionalInt.empty());
+        /** No map answer for this column yet; distinct from a known void column, which has no Y. */
+        public static final SurfaceLookup UNKNOWN = new SurfaceLookup(false, OptionalInt.empty());
 
         public SurfaceLookup {
             surfaceY = surfaceY == null ? OptionalInt.empty() : surfaceY;

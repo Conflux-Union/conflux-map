@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.core.store.ColumnStore;
 import java.util.List;
 import java.util.OptionalInt;
 import org.junit.jupiter.api.Test;
@@ -15,6 +16,22 @@ class ClientGroundTeleportServiceTest {
         assertEquals(105, ClientGroundTeleportService.stagingY(OptionalInt.of(73), -64, 320));
         assertEquals(320, ClientGroundTeleportService.stagingY(OptionalInt.empty(), -64, 320));
         assertEquals(320, ClientGroundTeleportService.stagingY(OptionalInt.of(310), -64, 320));
+    }
+
+    @Test
+    void knownSurfaceEstimatesAFeetPositionAndVoidHasNone() {
+        assertEquals(
+            74,
+            ClientGroundTeleportService.estimatedPlayerY(
+                new ColumnStore.SurfaceLookup(true, OptionalInt.of(73))
+            ).orElseThrow()
+        );
+        assertTrue(ClientGroundTeleportService.estimatedPlayerY(
+            new ColumnStore.SurfaceLookup(false, OptionalInt.empty())
+        ).isEmpty());
+        assertTrue(ClientGroundTeleportService.estimatedPlayerY(
+            new ColumnStore.SurfaceLookup(true, OptionalInt.empty())
+        ).isEmpty());
     }
 
     @Test
@@ -35,21 +52,11 @@ class ClientGroundTeleportServiceTest {
     }
 
     @Test
-    void unresolvedGroundFiresGroundUnresolvedAndReturnsToTheOrigin() {
+    void loadedTargetChunkSendsTheTargetCommandAndStaysSilent() {
+        // Ground and a resolved void column share this step: which Y to land on is picked in
+        // tick() from the sample, falling back to the saved pre-teleport Y over void.
         final ClientGroundTeleportService.CorrectionStep step = ClientGroundTeleportService.nextCorrectionStep(
-            false, true, true, false
-        );
-
-        assertTrue(step.clearsPending());
-        assertFalse(step.sendsTarget());
-        assertTrue(step.sendsReturn());
-        assertEquals(ClientGroundTeleportService.GROUND_UNRESOLVED_KEY, step.feedbackKey());
-    }
-
-    @Test
-    void resolvedGroundSendsTheTargetCommandAndStaysSilent() {
-        final ClientGroundTeleportService.CorrectionStep step = ClientGroundTeleportService.nextCorrectionStep(
-            false, true, true, true
+            false, true, true
         );
 
         assertTrue(step.clearsPending());
@@ -61,7 +68,7 @@ class ClientGroundTeleportServiceTest {
     @Test
     void timeoutWithoutReachingTheTargetChunkFiresTheTimeoutKey() {
         final ClientGroundTeleportService.CorrectionStep step = ClientGroundTeleportService.nextCorrectionStep(
-            true, false, false, false
+            true, false, false
         );
 
         assertTrue(step.clearsPending());
@@ -73,10 +80,11 @@ class ClientGroundTeleportServiceTest {
     @Test
     void timeoutWhileInsideTheTargetChunkReturnsToTheOriginWithoutFeedback() {
         final ClientGroundTeleportService.CorrectionStep step = ClientGroundTeleportService.nextCorrectionStep(
-            true, true, false, false
+            true, true, false
         );
 
         assertTrue(step.clearsPending());
+        assertFalse(step.sendsTarget());
         assertTrue(step.sendsReturn());
         assertNull(step.feedbackKey());
     }
@@ -84,10 +92,10 @@ class ClientGroundTeleportServiceTest {
     @Test
     void waitingTicksStaySilent() {
         final ClientGroundTeleportService.CorrectionStep notArrived = ClientGroundTeleportService.nextCorrectionStep(
-            false, false, false, false
+            false, false, false
         );
         final ClientGroundTeleportService.CorrectionStep chunkNotLoaded = ClientGroundTeleportService.nextCorrectionStep(
-            false, true, false, false
+            false, true, false
         );
 
         for (final ClientGroundTeleportService.CorrectionStep step : List.of(notArrived, chunkNotLoaded)) {

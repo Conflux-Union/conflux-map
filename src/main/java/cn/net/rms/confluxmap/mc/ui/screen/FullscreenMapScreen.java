@@ -1606,7 +1606,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             live,
             viewed.world(),
             viewed.dimension(),
-            heightKnown
+            // A known void column is a teleportable position too: it lands at the player's Y.
+            target.groundKnown()
         );
         final boolean teleportCommandAvailable = teleportAccess.available();
         teleportLocationUnavailableKey = teleportAccess.reasonKey();
@@ -1714,13 +1715,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
         sharedAvailability = availability;
         refreshWaypointVisibilityButtons();
-        if (locationMenuTarget != null && locationMenuTarget.blockY().isEmpty()) {
-            final OptionalInt surfaceY = surfaceYAt(
+        if (locationMenuTarget != null && !locationMenuTarget.groundKnown()) {
+            final ColumnStore.SurfaceLookup ground = groundAt(
                 locationMenuTarget.blockX(), locationMenuTarget.blockZ()
             );
-            if (surfaceY.isPresent()) {
+            if (ground.known()) {
                 locationMenuTarget = FullscreenMapLocationMenu.targetAt(
-                    locationMenuTarget.blockX(), surfaceY, locationMenuTarget.blockZ()
+                    locationMenuTarget.blockX(), ground, locationMenuTarget.blockZ()
                 );
                 rebuildWaypointControls();
             }
@@ -2151,8 +2152,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final FullscreenMapLocationMenu.Target target = FullscreenMapLocationMenu.targetAt(
             blockX,
             playerTarget == null
-                ? surfaceYAt(blockX, blockZ)
-                : OptionalInt.of((int) Math.floor(playerTarget.y()) - 1),
+                ? groundAt(blockX, blockZ)
+                : new ColumnStore.SurfaceLookup(
+                    true, OptionalInt.of((int) Math.floor(playerTarget.y()) - 1)
+                ),
             blockZ
         );
         return new FullscreenMapLocationMenu.Capture(
@@ -2160,7 +2163,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         );
     }
 
-    private OptionalInt surfaceYAt(final int blockX, final int blockZ) {
+    /**
+     * Ground answer for one map column: a captured surface (or captured void), else the
+     * predicted surface (or predicted void), else unknown - in which case the prediction tile
+     * holding this column is queued ahead of the viewport order, because a map action may be
+     * waiting on it.
+     */
+    private ColumnStore.SurfaceLookup groundAt(final int blockX, final int blockZ) {
         final MapLayer visibleLayer = viewLayer();
         final DimensionId dimension = viewSession().dimension();
         final MapLayer surfaceLayer = dimension.equals(DimensionId.NETHER)
@@ -2168,15 +2177,15 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             : dimension.equals(DimensionId.END) ? MapLayer.END_SURFACE : MapLayer.SURFACE;
         final MapWorld mapWorld = viewMapWorlds().current();
         if (mapWorld != null) {
-            final var captured = mapWorld.store(surfaceLayer).surfaceAt(blockX, blockZ);
+            final ColumnStore.SurfaceLookup captured = mapWorld.store(surfaceLayer).surfaceAt(blockX, blockZ);
             if (captured.known()) {
-                return captured.surfaceY();
+                return captured;
             }
         }
         final SessionGuard.Session session = viewSession();
         return surfaceLayer.equals(visibleLayer) && predictionActive(surfaceLayer, session, false)
-            ? predictionTiles.predictedSurfaceYAt(session.dimension(), currentLod(), blockX, blockZ)
-            : OptionalInt.empty();
+            ? predictionTiles.predictedSurfaceAt(session.dimension(), currentLod(), blockX, blockZ)
+            : ColumnStore.SurfaceLookup.UNKNOWN;
     }
 
     private void performPendingLocationAction() {
@@ -2269,7 +2278,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             case TELEPORT -> {
                 final SessionGuard.Session viewed = viewSession();
                 groundTeleport.teleport(
-                    target.blockX(), target.blockZ(), target.blockY(),
+                    target.blockX(), target.blockZ(), target.ground(),
                     viewed.dimension(), viewed.world(), !viewingLiveSession()
                 );
             }
@@ -4941,7 +4950,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             viewSession().dimension(),
             Texts.translatable(marker.translationKey()).getString(),
             marker.blockX(),
-            candidateWaypointY(surfaceYAt(marker.blockX(), marker.blockZ()), playerY),
+            candidateWaypointY(groundAt(marker.blockX(), marker.blockZ()).surfaceY(), playerY),
             marker.blockZ()
         ));
     }
@@ -4960,7 +4969,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             viewSession().dimension(),
             name,
             candidate.blockX(),
-            candidateWaypointY(surfaceYAt(candidate.blockX(), candidate.blockZ()), playerY),
+            candidateWaypointY(groundAt(candidate.blockX(), candidate.blockZ()).surfaceY(), playerY),
             candidate.blockZ()
         ));
     }

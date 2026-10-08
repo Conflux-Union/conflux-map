@@ -22,6 +22,7 @@ import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
 import cn.net.rms.confluxmap.core.predict.WorldPreset;
+import cn.net.rms.confluxmap.core.store.ColumnStore;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
@@ -1115,6 +1116,121 @@ class PredictionTileServiceTest {
             predictionTiles.requestTile(key);
             predictionTiles.reloadAll();
             assertTrue(predictionTiles.pendingKeysForTest().contains(key), "reload must requeue an in-flight tile");
+        } finally {
+            release.countDown();
+            executors.shutdown(2000);
+        }
+    }
+
+    @Test
+    void menuTargetTilesComposeAheadOfBackgroundRequests(@TempDir final Path tempDir) throws InterruptedException {
+        final SessionGuard sessionGuard = new SessionGuard();
+        final MapExecutors executors = new MapExecutors();
+        final TileService uploads = new TileService(new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel());
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.FLAT, WorldPreset.DEFAULT);
+        state.setFlatBaseline(new FlatBaseline(1, 63, SurfaceKind.LAND.ordinal(), 11, 0));
+        final PredictionTileService predictionTiles = newService(sessionGuard, state, executors, uploads);
+        predictionTiles.bindCorrectionStore(new CorrectionStore(tempDir));
+        sessionGuard.begin(WORLD, DIM);
+
+        // One latch per worker, and only the first is ever released during the observation:
+        // every remaining composition then serializes through that single freed thread, so
+        // the upload order pins the dispatcher's real choices (not a parallel-compose race).
+        final int cap = executors.workerCount();
+        final CountDownLatch[] releaseWorkers = new CountDownLatch[cap];
+        for (int i = 0; i < cap; i++) {
+            releaseWorkers[i] = new CountDownLatch(1);
+            final CountDownLatch mine = releaseWorkers[i];
+            executors.workers().execute(() -> {
+                try {
+                    mine.await();
+                } catch (final InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+        }
+        Thread.sleep(50);
+
+        final TileKey urgent = new TileKey(WORLD, DIM, "surface!pred", 0, 9, 5);
+        final TileKey near = new TileKey(WORLD, DIM, "surface!pred", 0, 1, 0);
+        final TileKey far = new TileKey(WORLD, DIM, "surface!pred", 0, 2, 0);
+        try {
+            // Fill every composition slot first, so every later request stays queued and the
+            // dispatch order is decided by nearestDirty alone.
+            for (int i = 0; i < cap; i++) {
+                predictionTiles.requestTile(new TileKey(WORLD, DIM, "surface!pred", 0, 100 + i, 100));
+            }
+            predictionTiles.requestTile(near);
+            predictionTiles.requestTile(far);
+            predictionTiles.requestTileUrgently(urgent);
+            final Set<TileKey> pending = predictionTiles.pendingKeysForTest();
+            assertTrue(pending.contains(urgent) && pending.contains(near) && pending.contains(far),
+                "the filler tiles must occupy every slot before the observed requests");
+
+            releaseWorkers[0].countDown();
+            awaitIdle(predictionTiles, 10_000L);
+            final List<TileKey> order = uploads.drainUploads(64).stream()
+                .map(TileUpdate::key)
+                .toList();
+            final int urgentAt = order.indexOf(urgent);
+            final int nearAt = order.indexOf(near);
+            final int farAt = order.indexOf(far);
+            assertTrue(urgentAt >= 0 && nearAt >= 0 && farAt >= 0, "every requested tile must compose");
+            assertTrue(
+                urgentAt < nearAt && nearAt < farAt,
+                "the urgent menu target must compose before background tiles nearer the viewpoint"
+            );
+        } finally {
+            for (final CountDownLatch release : releaseWorkers) {
+                release.countDown();
+            }
+            executors.shutdown(2000);
+        }
+    }
+
+    @Test
+    void surfaceLookupDistinguishesUncomposedTilesAndQueuesThemUrgently(@TempDir final Path tempDir) throws InterruptedException {
+        final SessionGuard sessionGuard = new SessionGuard();
+        final MapExecutors executors = new MapExecutors();
+        final TileService uploads = new TileService(new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel());
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.FLAT, WorldPreset.DEFAULT);
+        state.setFlatBaseline(new FlatBaseline(1, 63, SurfaceKind.LAND.ordinal(), 11, 0));
+        final PredictionTileService predictionTiles = newService(sessionGuard, state, executors, uploads);
+        predictionTiles.bindCorrectionStore(new CorrectionStore(tempDir));
+        sessionGuard.begin(WORLD, DIM);
+        final TileKey key = new TileKey(WORLD, DIM, "surface!pred", 0, 0, 0);
+
+        final CountDownLatch release = new CountDownLatch(1);
+        for (int i = 0; i < executors.workerCount(); i++) {
+            executors.workers().execute(() -> {
+                try {
+                    release.await();
+                } catch (final InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+        }
+        Thread.sleep(50);
+
+        try {
+            // Occupy every composition slot so the observed request stays queued in `dirty`.
+            for (int i = 0; i < executors.workerCount(); i++) {
+                predictionTiles.requestTile(new TileKey(WORLD, DIM, "surface!pred", 0, 100 + i, 100));
+            }
+            final ColumnStore.SurfaceLookup before = predictionTiles.predictedSurfaceAt(DIM, 0, 5, 5);
+            assertFalse(before.known(), "an uncomposed tile must read as unknown, not as void");
+            assertTrue(
+                predictionTiles.pendingKeysForTest().contains(key),
+                "the missing menu-target tile must be queued for composition"
+            );
+
+            release.countDown();
+            awaitIdle(predictionTiles, 10_000L);
+            final ColumnStore.SurfaceLookup after = predictionTiles.predictedSurfaceAt(DIM, 0, 5, 5);
+            assertTrue(after.known());
+            assertEquals(63, after.surfaceY().orElseThrow());
         } finally {
             release.countDown();
             executors.shutdown(2000);

@@ -186,7 +186,6 @@
   "confluxmap.teleport.unavailable.dimension": "The configured command cannot switch dimensions.",
   "confluxmap.teleport.unavailable.world": "The configured command cannot switch sub-worlds.",
   "confluxmap.teleport.unavailable.command": "You cannot use the configured teleport command on this server.",
-  "confluxmap.teleport.feedback.ground_unresolved": "The destination has no ground to land on; you have been returned to where you started.",
   "confluxmap.teleport.feedback.timeout": "Timed out waiting to reach the destination; the teleport was not completed.",
   "confluxmap.screen.waypoint.create": "New Waypoint",
   "confluxmap.screen.waypoint.create_public": "New Shared Waypoint",

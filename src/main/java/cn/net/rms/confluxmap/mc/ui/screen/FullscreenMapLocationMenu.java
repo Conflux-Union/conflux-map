@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
+import cn.net.rms.confluxmap.core.store.ColumnStore;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.world.WaypointHighlightState;
@@ -167,7 +168,17 @@ final class FullscreenMapLocationMenu {
     }
 
     static Target targetAt(final double worldX, final OptionalInt surfaceY, final double worldZ) {
-        return new Target((int) Math.floor(worldX), surfaceY, (int) Math.floor(worldZ));
+        return targetAt(
+            worldX,
+            surfaceY.isPresent()
+                ? new ColumnStore.SurfaceLookup(true, surfaceY)
+                : ColumnStore.SurfaceLookup.UNKNOWN,
+            worldZ
+        );
+    }
+
+    static Target targetAt(final double worldX, final ColumnStore.SurfaceLookup ground, final double worldZ) {
+        return new Target((int) Math.floor(worldX), ground, (int) Math.floor(worldZ));
     }
 
     static Point pointAt(
@@ -238,13 +249,23 @@ final class FullscreenMapLocationMenu {
     record Point(int blockX, int blockZ) {
     }
 
-    record Target(int blockX, OptionalInt surfaceY, int blockZ) {
+    record Target(int blockX, ColumnStore.SurfaceLookup ground, int blockZ) {
         Target {
-            surfaceY = surfaceY == null ? OptionalInt.empty() : surfaceY;
+            ground = ground == null ? ColumnStore.SurfaceLookup.UNKNOWN : ground;
         }
 
         OptionalInt blockY() {
-            return surfaceY.isPresent() ? OptionalInt.of(surfaceY.getAsInt() + 1) : OptionalInt.empty();
+            return ground.surfaceY().isPresent()
+                ? OptionalInt.of(ground.surfaceY().getAsInt() + 1)
+                : OptionalInt.empty();
+        }
+
+        /**
+         * Whether the ground answer is final: a surface to land on, or a known void column
+         * (which teleports at the player's current Y and must not wait for a prediction).
+         */
+        boolean groundKnown() {
+            return ground.known();
         }
     }
 }
