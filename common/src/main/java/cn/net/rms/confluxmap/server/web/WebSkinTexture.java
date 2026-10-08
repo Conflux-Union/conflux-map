@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 /** Decodes the signed Mojang textures property without depending on a platform JSON library. */
 public final class WebSkinTexture {
     private static final Pattern URL = Pattern.compile(
-        "\\\"url\\\"\\s*:\\s*\\\"(https://textures\\.minecraft\\.net/texture/[A-Za-z0-9]+)\\\""
+        "\\\"url\\\"\\s*:\\s*\\\"(https?://textures\\.minecraft\\.net/texture/[A-Za-z0-9]+)\\\""
     );
 
     private WebSkinTexture() {
@@ -20,7 +20,11 @@ public final class WebSkinTexture {
         try {
             final String json = new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
             final Matcher match = URL.matcher(json);
-            final URI result = match.find() ? URI.create(match.group(1)) : null;
+            if (!match.find()) return null;
+            // Mojang profiles can advertise HTTP URLs; always download the official texture over TLS.
+            final String url = match.group(1);
+            final URI result = URI.create(url.startsWith("http://")
+                ? "https://" + url.substring("http://".length()) : url);
             return WebAvatarCache.allowed(result) ? result : null;
         } catch (final IllegalArgumentException e) {
             return null;
