@@ -67,6 +67,7 @@ import cn.net.rms.confluxmap.mc.survey.SurveyReminderNotifier;
 import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
 import cn.net.rms.confluxmap.mc.trail.PlayerTrailTracker;
 import cn.net.rms.confluxmap.mc.ui.hud.MinimapHudRenderer;
+import cn.net.rms.confluxmap.mc.ui.PortalIconReloadListener;
 import cn.net.rms.confluxmap.mc.ui.UiResourceReloadListener;
 import cn.net.rms.confluxmap.mc.ui.UiResourceTheme;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapViewState;
@@ -423,6 +424,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
         );
         ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
             new UiResourceReloadListener(uiResourceTheme)
+        );
+        ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES).registerReloadListener(
+            new PortalIconReloadListener()
         );
 
         updateCheck = new UpdateCheckService(

@@ -164,6 +164,19 @@ public final class MinecraftAccess {
         //#endif
     }
 
+    /** True when the default pack or a loaded resource pack provides the resource. */
+    public static boolean resourceExists(final ResourceManager resources, final Identifier id) {
+        //#if MC>=12000
+        //$$ return resources.getResource(id).isPresent();
+        //#else
+        try {
+            return resources.getResource(id) != null;
+        } catch (final IOException e) {
+            return false;
+        }
+        //#endif
+    }
+
     public static void sendFeedback(
         final ServerCommandSource source,
         final Text message,

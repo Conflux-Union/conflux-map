@@ -9,6 +9,7 @@ import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
+import cn.net.rms.confluxmap.core.portal.PortalKind;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
@@ -32,6 +33,7 @@ import java.util.function.Supplier;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.OrderedText;
 import net.minecraft.text.StringVisitable;
@@ -199,6 +201,12 @@ public final class ConfigScreen extends ConfluxScreen {
     private final UiResourceTheme uiTheme;
     private final List<IntSliderInput> sliderInputs = new ArrayList<>();
     private final List<DecimalSliderInput> decimalSliderInputs = new ArrayList<>();
+    private final List<TextFieldWidget> textFields = new ArrayList<>();
+    private final List<IconTextureLabel> iconTextureLabels = new ArrayList<>();
+
+    /** Static label drawn beside a portal-icon text-field row; the row widget is the field itself. */
+    private record IconTextureLabel(int y, String key) {
+    }
 
     private Category category = Category.MINIMAP;
     private int rowWidth = MAX_ROW_WIDTH;
@@ -252,6 +260,9 @@ public final class ConfigScreen extends ConfluxScreen {
         }
         for (final DecimalSliderInput sliderInput : decimalSliderInputs) {
             sliderInput.tick();
+        }
+        for (final TextFieldWidget field : textFields) {
+            Widgets.tick(field);
         }
         final SharedWaypointAvailability availability = sharedWaypoints.availability();
         if (!availability.equals(sharedAvailability)) {
@@ -312,16 +323,20 @@ public final class ConfigScreen extends ConfluxScreen {
     }
 
     @Override
-    //#if MC>=12002
-    //$$ public boolean mouseScrolled(
-    //$$     final double mouseX,
-    //$$     final double mouseY,
-    //$$     final double horizontalAmount,
-    //$$     final double amount
-    //$$ ) {
-    //#else
-    public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
-    //#endif
+        //#if MC>=12002
+        //$$ public boolean mouseScrolled(
+        //$$     final double mouseX,
+        //$$     final double mouseY,
+        //$$     final double horizontalAmount,
+        //$$     final double amount
+        //$$ ) {
+        //#else
+        public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
+        //#endif
+        // Scrolling rebuilds the rows and would destroy a text field mid-edit.
+        if (getFocused() instanceof TextFieldWidget) {
+            return false;
+        }
         final boolean overRows = mouseX >= rowX() && mouseX <= rowX() + rowWidth + 8
             && mouseY >= rowsTop() && mouseY <= height - BOTTOM_MARGIN;
         if (amount != 0 && overRows) {
@@ -362,6 +377,8 @@ public final class ConfigScreen extends ConfluxScreen {
         manualSeedAvailable = manualSeedService.available();
         sliderInputs.clear();
         decimalSliderInputs.clear();
+        textFields.clear();
+        iconTextureLabels.clear();
         clearChildren();
         addTabs();
         addRows();
@@ -490,6 +507,15 @@ public final class ConfigScreen extends ConfluxScreen {
                 y = addToggleRow(
                     y, "confluxmap.config.portals.show_icons",
                     () -> config.portalIconsEnabled, v -> config.portalIconsEnabled = v
+                );
+                y = addIconTextureRow(
+                    y, "confluxmap.config.portals.icon_texture.nether", PortalKind.NETHER_PORTAL
+                );
+                y = addIconTextureRow(
+                    y, "confluxmap.config.portals.icon_texture.end", PortalKind.END_PORTAL
+                );
+                y = addIconTextureRow(
+                    y, "confluxmap.config.portals.icon_texture.gateway", PortalKind.END_GATEWAY
                 );
                 y = addIntSliderRow(
                     y, "confluxmap.config.portals.icon_size",
@@ -865,6 +891,59 @@ public final class ConfigScreen extends ConfluxScreen {
         return y + ROW_HEIGHT;
     }
 
+    /**
+     * Text row for one portal kind's custom icon texture. The field writes through to the
+     * shared config on every keystroke; {@link #onClose()} persists it. Input is limited to
+     * resource-location characters so nothing invalid can be typed, and a path that no
+     * loaded pack provides falls back to the built-in icon at draw time.
+     */
+    private int addIconTextureRow(final int y, final String labelKey, final PortalKind kind) {
+        if (rowVisible(y)) {
+            final Text label = Texts.translatable(labelKey);
+            final int labelWidth = Math.min(this.textRenderer.getWidth(label) + 6, rowWidth / 2);
+            final TextFieldWidget field = new TextFieldWidget(
+                this.textRenderer, rowX() + labelWidth, y,
+                Math.max(80, rowWidth - labelWidth), ROW_HEIGHT - 2, Texts.literal("")
+            );
+            field.setMaxLength(256);
+            //#if MC>=260100
+            //$$ final String[] lastValid = {config.portalIconTexture(kind)};
+            //$$ field.setResponder(text -> {
+            //$$     if (validIconTextureInput(text)) {
+            //$$         lastValid[0] = text;
+            //$$     } else {
+            //$$         field.setValue(lastValid[0]);
+            //$$     }
+            //$$ });
+            //#else
+            field.setTextPredicate(ConfigScreen::validIconTextureInput);
+            //#endif
+            Widgets.setText(field, config.portalIconTexture(kind));
+            Widgets.setChangedListener(field, text -> config.setPortalIconTexture(kind, text));
+            addDrawableChild(field);
+            setHoverTooltip(field, "confluxmap.config.portals.icon_texture.tooltip");
+            textFields.add(field);
+            iconTextureLabels.add(new IconTextureLabel(y, labelKey));
+        }
+        return y + ROW_HEIGHT;
+    }
+
+    /** Vanilla resource-location charset with at most one namespace separator. */
+    private static boolean validIconTextureInput(final String text) {
+        if (text.indexOf(':') != text.lastIndexOf(':')) {
+            return false;
+        }
+        for (int i = 0; i < text.length(); i++) {
+            final char c = text.charAt(i);
+            final boolean allowed = c == ':' || c == '_' || c == '.' || c == '-' || c == '/'
+                || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+            if (!allowed) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private int addZoomRow(final int y) {
         if (rowVisible(y)) {
             addDrawableChild(Widgets.button(
@@ -1126,6 +1205,14 @@ public final class ConfigScreen extends ConfluxScreen {
         draw.renderBackground(this, mouseX, mouseY, tickDelta);
         final String title = getTitle().getString();
         draw.drawTextWithShadow(this.textRenderer, title, width / 2f - this.textRenderer.getWidth(title) / 2f, 8, 0xFFFFFFFF);
+        for (final IconTextureLabel rowLabel : iconTextureLabels) {
+            final Text label = Texts.translatable(rowLabel.key());
+            draw.drawTextWithShadow(
+                this.textRenderer, label, rowX(),
+                rowLabel.y() + (ROW_HEIGHT - 2 - this.textRenderer.fontHeight) / 2f,
+                0xFFE0E0E0
+            );
+        }
         if (category == Category.RADAR && radarAccess.noticeKey() != null) {
             drawRadarPolicyNotice(draw);
         }

@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.core.config;
 import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.loadstate.ChunkLoadDetailMode;
 import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
+import cn.net.rms.confluxmap.core.portal.PortalKind;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.core.survey.SurveyReminderSchedule;
 import cn.net.rms.confluxmap.core.util.TileMath;
@@ -251,6 +252,12 @@ public final class ConfluxConfig {
     public boolean portalMarkersEnabled = true;
     /** Draw the portal icon plate at each marker's anchor; the chunk highlight is a separate option. */
     public boolean portalIconsEnabled = true;
+    /** Custom nether-portal icon texture (resource location); empty keeps the built-in vanilla stand-in. */
+    public String portalIconTextureNether = "";
+    /** Custom end-portal icon texture (resource location); empty keeps the built-in vanilla stand-in. */
+    public String portalIconTextureEnd = "";
+    /** Custom end-gateway icon texture (resource location); empty keeps the built-in vanilla stand-in. */
+    public String portalIconTextureGateway = "";
     /** Portal icon plate size in screen pixels, shared by minimap and fullscreen map. */
     public int portalIconSize = DEFAULT_PORTAL_ICON_SIZE;
     /** Portal icon opacity percentage, applied to plate and texture together. */
@@ -333,6 +340,16 @@ public final class ConfluxConfig {
         c.mapColorStyle = mapColorStyle;
         c.snapshotBudgetPerTick = snapshotBudgetPerTick;
         c.gpuTileCacheLimit = gpuTileCacheLimit;
+        c.portalMarkersEnabled = portalMarkersEnabled;
+        c.portalIconsEnabled = portalIconsEnabled;
+        c.portalIconTextureNether = portalIconTextureNether;
+        c.portalIconTextureEnd = portalIconTextureEnd;
+        c.portalIconTextureGateway = portalIconTextureGateway;
+        c.portalIconSize = portalIconSize;
+        c.portalIconOpacity = portalIconOpacity;
+        c.portalChunkHighlightEnabled = portalChunkHighlightEnabled;
+        c.portalHighlightColor = portalHighlightColor;
+        c.portalIconHideZoom = portalIconHideZoom;
         c.radarEnabled = radarEnabled;
         c.radarDisplayMode = radarDisplayMode;
         c.radarShowPlayers = radarShowPlayers;
@@ -432,6 +449,25 @@ public final class ConfluxConfig {
     /** Advances to the next minimap zoom level, wrapping after the final level. */
     public void cycleMinimapZoom() {
         minimapZoomIndex = (minimapZoomIndex + 1) % MINIMAP_ZOOM_LEVEL_COUNT;
+    }
+
+    /** Custom icon texture resource location for the portal kind; empty keeps the built-in default. */
+    public String portalIconTexture(final PortalKind kind) {
+        return switch (kind) {
+            case NETHER_PORTAL -> portalIconTextureNether;
+            case END_PORTAL -> portalIconTextureEnd;
+            case END_GATEWAY -> portalIconTextureGateway;
+        };
+    }
+
+    /** Stores (or clears with empty/null) the custom icon texture for the portal kind. */
+    public void setPortalIconTexture(final PortalKind kind, final String texture) {
+        final String trimmed = texture == null ? "" : texture.trim();
+        switch (kind) {
+            case NETHER_PORTAL -> portalIconTextureNether = trimmed;
+            case END_PORTAL -> portalIconTextureEnd = trimmed;
+            case END_GATEWAY -> portalIconTextureGateway = trimmed;
+        }
     }
 
     /** Clamp out-of-range values loaded from a hand-edited file. */
@@ -541,6 +577,19 @@ public final class ConfluxConfig {
             MIN_WAYPOINT_HIGHLIGHT_DIM_OPACITY,
             MAX_WAYPOINT_HIGHLIGHT_DIM_OPACITY
         );
+        portalIconSize = clamp(portalIconSize, MIN_PORTAL_ICON_SIZE, MAX_PORTAL_ICON_SIZE);
+        portalIconOpacity = clamp(portalIconOpacity, MIN_PORTAL_ICON_OPACITY, MAX_PORTAL_ICON_OPACITY);
+        portalIconHideZoom = clamp(
+            portalIconHideZoom,
+            MIN_PORTAL_ICON_HIDE_ZOOM,
+            MAX_PORTAL_ICON_HIDE_ZOOM
+        );
+        if (portalHighlightColor == null) {
+            portalHighlightColor = PortalHighlightColor.PURPLE;
+        }
+        portalIconTextureNether = normalizeIconTexture(portalIconTextureNether);
+        portalIconTextureEnd = normalizeIconTexture(portalIconTextureEnd);
+        portalIconTextureGateway = normalizeIconTexture(portalIconTextureGateway);
         if (predictionViewMode == null) {
             predictionViewMode = PredictionViewMode.EVERYWHERE;
         }
@@ -593,5 +642,10 @@ public final class ConfluxConfig {
     }
     private static double clamp(final double value, final double min, final double max) {
         return Double.isFinite(value) ? Math.max(min, Math.min(max, value)) : min;
+    }
+
+    /** Null-safe trim for hand-edited icon texture fields; empty means the built-in default. */
+    private static String normalizeIconTexture(final String texture) {
+        return texture == null ? "" : texture.trim();
     }
 }

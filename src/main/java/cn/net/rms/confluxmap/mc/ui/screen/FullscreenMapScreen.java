@@ -4390,7 +4390,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 continue;
             }
             PortalMarkerRenderer.draw(
-                draw, marker.kind(), screenX, screenY,
+                draw, marker.kind(), config.portalIconTexture(marker.kind()),
+                screenX, screenY,
                 config.portalIconSize, config.portalIconOpacity, isHovered
             );
             if (isHovered) {

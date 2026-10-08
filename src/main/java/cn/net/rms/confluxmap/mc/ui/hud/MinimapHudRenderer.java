@@ -667,7 +667,7 @@ public final class MinimapHudRenderer {
                 continue;
             }
             PortalMarkerRenderer.draw(
-                draw, marker.kind(),
+                draw, marker.kind(), config.portalIconTexture(marker.kind()),
                 centerX + screenOffX, centerY + screenOffY,
                 config.portalIconSize, config.portalIconOpacity, false
             );

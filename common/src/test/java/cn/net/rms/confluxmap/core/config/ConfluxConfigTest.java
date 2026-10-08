@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.UUID;
+import cn.net.rms.confluxmap.core.portal.PortalKind;
 import org.junit.jupiter.api.Test;
 
 final class ConfluxConfigTest {
@@ -204,5 +205,73 @@ final class ConfluxConfigTest {
         assertEquals(3, config.minimapZoomIndex);
         config.cycleMinimapZoom();
         assertEquals(0, config.minimapZoomIndex);
+    }
+
+    @Test
+    void portalIconTexturesDefaultEmptyAndMapPerKind() {
+        final ConfluxConfig config = new ConfluxConfig();
+        for (final PortalKind kind : PortalKind.values()) {
+            assertEquals("", config.portalIconTexture(kind));
+        }
+
+        config.setPortalIconTexture(
+            PortalKind.NETHER_PORTAL, " minecraft:textures/block/crying_obsidian.png ");
+        config.setPortalIconTexture(PortalKind.END_PORTAL, "custompack:textures/portal/end.png");
+        config.setPortalIconTexture(PortalKind.END_GATEWAY, null);
+
+        assertEquals("minecraft:textures/block/crying_obsidian.png",
+            config.portalIconTextureNether);
+        assertEquals("custompack:textures/portal/end.png",
+            config.portalIconTexture(PortalKind.END_PORTAL));
+        assertEquals("", config.portalIconTextureGateway);
+    }
+
+    @Test
+    void portalSettingsSurviveConfigCopy() {
+        final ConfluxConfig config = new ConfluxConfig();
+        config.portalMarkersEnabled = false;
+        config.portalIconsEnabled = false;
+        config.setPortalIconTexture(PortalKind.NETHER_PORTAL, "minecraft:textures/block/obsidian.png");
+        config.setPortalIconTexture(PortalKind.END_PORTAL, "pack:textures/end.png");
+        config.setPortalIconTexture(PortalKind.END_GATEWAY, "pack:textures/gateway.png");
+        config.portalIconSize = 24;
+        config.portalIconOpacity = 50;
+        config.portalChunkHighlightEnabled = false;
+        config.portalHighlightColor = ConfluxConfig.PortalHighlightColor.GOLD;
+        config.portalIconHideZoom = 1.0;
+
+        final ConfluxConfig copy = config.copy();
+
+        assertFalse(copy.portalMarkersEnabled);
+        assertFalse(copy.portalIconsEnabled);
+        assertEquals("minecraft:textures/block/obsidian.png",
+            copy.portalIconTexture(PortalKind.NETHER_PORTAL));
+        assertEquals("pack:textures/end.png", copy.portalIconTexture(PortalKind.END_PORTAL));
+        assertEquals("pack:textures/gateway.png", copy.portalIconTexture(PortalKind.END_GATEWAY));
+        assertEquals(24, copy.portalIconSize);
+        assertEquals(50, copy.portalIconOpacity);
+        assertFalse(copy.portalChunkHighlightEnabled);
+        assertEquals(ConfluxConfig.PortalHighlightColor.GOLD, copy.portalHighlightColor);
+        assertEquals(1.0, copy.portalIconHideZoom);
+    }
+
+    @Test
+    void normalizeClampsPortalValuesAndDefaultsEmptyTextures() {
+        final ConfluxConfig config = new ConfluxConfig();
+        config.portalIconSize = 9999;
+        config.portalIconOpacity = -5;
+        config.portalIconHideZoom = Double.NaN;
+        config.portalHighlightColor = null;
+        config.portalIconTextureNether = "  pack:textures/nether.png  ";
+        config.portalIconTextureEnd = null;
+
+        config.normalize();
+
+        assertEquals(ConfluxConfig.MAX_PORTAL_ICON_SIZE, config.portalIconSize);
+        assertEquals(ConfluxConfig.MIN_PORTAL_ICON_OPACITY, config.portalIconOpacity);
+        assertEquals(ConfluxConfig.MIN_PORTAL_ICON_HIDE_ZOOM, config.portalIconHideZoom);
+        assertEquals(ConfluxConfig.PortalHighlightColor.PURPLE, config.portalHighlightColor);
+        assertEquals("pack:textures/nether.png", config.portalIconTextureNether);
+        assertEquals("", config.portalIconTextureEnd);
     }
 }
