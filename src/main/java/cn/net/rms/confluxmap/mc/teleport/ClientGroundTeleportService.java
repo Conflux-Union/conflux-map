@@ -252,10 +252,6 @@ public final class ClientGroundTeleportService {
             : OptionalInt.empty();
     }
 
-    static String commandAt(final int blockX, final int playerY, final int blockZ) {
-        return "tp " + centered(blockX) + " " + playerY + " " + centered(blockZ);
-    }
-
     private void sendCommand(
         final double x,
         final double y,

@@ -219,6 +219,35 @@ class ConfigIoTest {
     }
 
     @Test
+    void legacyDefaultTeleportCommandUpgradesOnlyUntouchedValues(@TempDir final Path tmp) throws IOException {
+        final Path file = tmp.resolve("config.json");
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":10,\"teleportCommand\":\"tp {x} {y} {z}\"}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals(
+            ConfluxConfig.DEFAULT_TELEPORT_COMMAND,
+            new ConfigIo(file, LOGGER).load().teleportCommand
+        );
+
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":10,\"teleportCommand\":\"warp {x} {y} {z}\"}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals("warp {x} {y} {z}", new ConfigIo(file, LOGGER).load().teleportCommand);
+
+        // A value deliberately restored after the upgrade must survive later loads.
+        Files.writeString(
+            file,
+            "{\"schemaVersion\":11,\"teleportCommand\":\"tp {x} {y} {z}\"}",
+            StandardCharsets.UTF_8
+        );
+        assertEquals("tp {x} {y} {z}", new ConfigIo(file, LOGGER).load().teleportCommand);
+    }
+
+    @Test
     void loadMigratesEveryLegacyCornerToTheEquivalentFreePosition(@TempDir final Path tmp) throws IOException {
         final Path file = tmp.resolve("config.json");
 

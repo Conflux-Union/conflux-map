@@ -41,11 +41,6 @@ class ClientGroundTeleportServiceTest {
     }
 
     @Test
-    void commandCentersTheTargetBlockIncludingNegativeCoordinates() {
-        assertEquals("tp -0.5 91 8.5", ClientGroundTeleportService.commandAt(-1, 91, 8));
-    }
-
-    @Test
     void correctionWaitsUntilThePlayerReachesTheTargetChunk() {
         assertTrue(ClientGroundTeleportService.isInTargetChunk(-0.5, 8.5, -1, 8));
         assertFalse(ClientGroundTeleportService.isInTargetChunk(32.5, 8.5, -1, 8));

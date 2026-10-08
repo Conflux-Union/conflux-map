@@ -40,6 +40,24 @@ class TeleportCommandTemplateTest {
     }
 
     @Test
+    void shippedDefaultRendersACrossDimensionTeleport() {
+        assertTrue(TeleportCommandTemplate.supportsDimensionSwitch(
+            ConfluxConfig.DEFAULT_TELEPORT_COMMAND
+        ));
+        assertEquals(
+            "execute in minecraft:the_nether run tp @s 12.5 90.0 -3.5",
+            TeleportCommandTemplate.render(
+                ConfluxConfig.DEFAULT_TELEPORT_COMMAND,
+                12.5,
+                90.0,
+                -3.5,
+                DimensionId.NETHER,
+                new WorldIdentity("server", "server-world")
+            )
+        );
+    }
+
+    @Test
     void exposesCommandTreeNameAndRemoteSwitchCapabilities() {
         assertEquals(
             "execute",

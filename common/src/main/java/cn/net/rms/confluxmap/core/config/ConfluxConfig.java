@@ -18,8 +18,8 @@ import java.util.UUID;
  * {@link #SCHEMA_VERSION} and adding a migration in {@link ConfigIo}.
  */
 public final class ConfluxConfig {
-    public static final int SCHEMA_VERSION = 10;
-    public static final String DEFAULT_TELEPORT_COMMAND = "tp {x} {y} {z}";
+    public static final int SCHEMA_VERSION = 11;
+    public static final String DEFAULT_TELEPORT_COMMAND = "execute in {dimension} run tp @s {x} {y} {z}";
     public static final int DEFAULT_MINIMAP_SIZE = 90;
     public static final int MINIMAP_ZOOM_LEVEL_COUNT = 4;
     public static final int MIN_ANNOTATION_ERASER_SIZE = 4;
@@ -64,6 +64,8 @@ public final class ConfluxConfig {
     private static final double LEGACY_MAX_PREDICTION_STRUCTURE_ICON_HIDE_SCALE = 16.0;
     /** Schema-v9 default for the trail retention window, retired as far too long. */
     private static final int LEGACY_PLAYER_TRAIL_DURATION_SECONDS = 120;
+    /** Schema-v10 default teleport command; could not switch dimensions. */
+    private static final String LEGACY_TELEPORT_COMMAND = "tp {x} {y} {z}";
 
     public int schemaVersion = SCHEMA_VERSION;
 
@@ -479,6 +481,11 @@ public final class ConfluxConfig {
             waypointLabelScalePercent,
             MIN_WAYPOINT_LABEL_SCALE_PERCENT, MAX_WAYPOINT_LABEL_SCALE_PERCENT
         );
+        if (schemaVersion < 11 && LEGACY_TELEPORT_COMMAND.equals(teleportCommand)) {
+            // Schema v10 shipped "tp {x} {y} {z}" as the default; only that exact value
+            // upgrades to the cross-dimension default, so a deliberate copy stays put.
+            teleportCommand = DEFAULT_TELEPORT_COMMAND;
+        }
         if (!TeleportCommandTemplate.valid(teleportCommand)) {
             teleportCommand = DEFAULT_TELEPORT_COMMAND;
         }
