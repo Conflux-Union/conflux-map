@@ -1606,8 +1606,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             live,
             viewed.world(),
             viewed.dimension(),
-            // A known void column is a teleportable position too: it lands at the player's Y.
-            target.groundKnown()
+            // A live session can always resolve the landing after the target chunk loads
+            // (ground, or void at the pre-teleport Y); only a browsed session needs a
+            // known height up front.
+            FullscreenMapLocationMenu.teleportPositionKnown(target, viewingLiveSession())
         );
         final boolean teleportCommandAvailable = teleportAccess.available();
         teleportLocationUnavailableKey = teleportAccess.reasonKey();
@@ -1620,7 +1622,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final boolean waypointDeletable = existingWaypoint && waypointDeleteUnavailableKey == null;
         final List<FullscreenMapLocationMenu.Action> actions = new ArrayList<>(
             FullscreenMapLocationMenu.actions(
-                teleportCommandAvailable, existingWaypoint,
+                existingWaypoint,
                 locationMenuTargetHighlighted(waypoint, target, playerId),
                 playerId != null
             )
@@ -2146,7 +2148,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             viewportWidth,
             viewportHeight,
             FullscreenMapLocationMenu.actions(
-                false, existingWaypoint, false, playerTarget != null
+                existingWaypoint, false, playerTarget != null
             ).size()
         );
         final FullscreenMapLocationMenu.Target target = FullscreenMapLocationMenu.targetAt(

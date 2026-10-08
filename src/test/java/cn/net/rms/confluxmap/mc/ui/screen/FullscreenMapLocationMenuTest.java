@@ -53,74 +53,53 @@ class FullscreenMapLocationMenuTest {
     }
 
     @Test
-    void keepsTheExistingDisplayOrderWhenTeleportIsUnavailable() {
-        assertEquals(List.of(
-            FullscreenMapLocationMenu.Action.SET_WAYPOINT,
-            FullscreenMapLocationMenu.Action.SHARE_LOCATION,
-            FullscreenMapLocationMenu.Action.TELEPORT,
-            FullscreenMapLocationMenu.Action.HIGHLIGHT
-        ), FullscreenMapLocationMenu.actions(false, false, false));
-    }
-
-    @Test
-    void putsTeleportFirstWhenItIsAvailable() {
+    void teleportStaysFirstWhetherOrNotTheCommandIsUsable() {
         assertEquals(List.of(
             FullscreenMapLocationMenu.Action.TELEPORT,
             FullscreenMapLocationMenu.Action.SET_WAYPOINT,
             FullscreenMapLocationMenu.Action.SHARE_LOCATION,
             FullscreenMapLocationMenu.Action.HIGHLIGHT
-        ), FullscreenMapLocationMenu.actions(true, false, false));
-    }
-
-    @Test
-    void replacesLocationActionsWithWaypointActionsForAnExistingWaypoint() {
-        assertEquals(List.of(
-            FullscreenMapLocationMenu.Action.EDIT_WAYPOINT,
-            FullscreenMapLocationMenu.Action.DELETE_WAYPOINT,
-            FullscreenMapLocationMenu.Action.SHARE_WAYPOINT,
-            FullscreenMapLocationMenu.Action.TELEPORT,
-            FullscreenMapLocationMenu.Action.HIGHLIGHT_WAYPOINT
-        ), FullscreenMapLocationMenu.actions(false, true, false));
+        ), FullscreenMapLocationMenu.actions(false, false));
         assertEquals(List.of(
             FullscreenMapLocationMenu.Action.TELEPORT,
             FullscreenMapLocationMenu.Action.EDIT_WAYPOINT,
             FullscreenMapLocationMenu.Action.DELETE_WAYPOINT,
             FullscreenMapLocationMenu.Action.SHARE_WAYPOINT,
             FullscreenMapLocationMenu.Action.HIGHLIGHT_WAYPOINT
-        ), FullscreenMapLocationMenu.actions(true, true, false));
+        ), FullscreenMapLocationMenu.actions(true, false));
     }
 
     @Test
     void replacesHighlightWithClearOnlyForTheCurrentTarget() {
         assertEquals(List.of(
+            FullscreenMapLocationMenu.Action.TELEPORT,
             FullscreenMapLocationMenu.Action.SET_WAYPOINT,
             FullscreenMapLocationMenu.Action.SHARE_LOCATION,
-            FullscreenMapLocationMenu.Action.TELEPORT,
             FullscreenMapLocationMenu.Action.CLEAR_HIGHLIGHT
-        ), FullscreenMapLocationMenu.actions(false, false, true));
+        ), FullscreenMapLocationMenu.actions(false, true));
         assertEquals(List.of(
+            FullscreenMapLocationMenu.Action.TELEPORT,
             FullscreenMapLocationMenu.Action.EDIT_WAYPOINT,
             FullscreenMapLocationMenu.Action.DELETE_WAYPOINT,
             FullscreenMapLocationMenu.Action.SHARE_WAYPOINT,
-            FullscreenMapLocationMenu.Action.TELEPORT,
             FullscreenMapLocationMenu.Action.CLEAR_HIGHLIGHT
-        ), FullscreenMapLocationMenu.actions(false, true, true));
+        ), FullscreenMapLocationMenu.actions(true, true));
     }
 
     @Test
     void usesPlayerHighlightActionsWhenRightClickingAPlayer() {
         assertEquals(List.of(
+            FullscreenMapLocationMenu.Action.TELEPORT,
             FullscreenMapLocationMenu.Action.SET_WAYPOINT,
             FullscreenMapLocationMenu.Action.SHARE_LOCATION,
-            FullscreenMapLocationMenu.Action.TELEPORT,
             FullscreenMapLocationMenu.Action.HIGHLIGHT_PLAYER
-        ), FullscreenMapLocationMenu.actions(false, false, false, true));
+        ), FullscreenMapLocationMenu.actions(false, false, true));
         assertEquals(List.of(
+            FullscreenMapLocationMenu.Action.TELEPORT,
             FullscreenMapLocationMenu.Action.SET_WAYPOINT,
             FullscreenMapLocationMenu.Action.SHARE_LOCATION,
-            FullscreenMapLocationMenu.Action.TELEPORT,
             FullscreenMapLocationMenu.Action.CLEAR_PLAYER_HIGHLIGHT
-        ), FullscreenMapLocationMenu.actions(false, false, true, true));
+        ), FullscreenMapLocationMenu.actions(false, true, true));
     }
 
     @Test
@@ -230,6 +209,26 @@ class FullscreenMapLocationMenuTest {
 
         assertTrue(target.blockY().isEmpty());
         assertTrue(target.groundKnown());
+    }
+
+    @Test
+    void liveSessionsTeleportWithoutAnyGroundAnswerButBrowsedOnesNeedOne() {
+        final FullscreenMapLocationMenu.Target unknown = FullscreenMapLocationMenu.targetAt(
+            10.0, ColumnStore.SurfaceLookup.UNKNOWN, 20.0
+        );
+        final FullscreenMapLocationMenu.Target voidColumn = FullscreenMapLocationMenu.targetAt(
+            10.0, new ColumnStore.SurfaceLookup(true, OptionalInt.empty()), 20.0
+        );
+        final FullscreenMapLocationMenu.Target surface = FullscreenMapLocationMenu.targetAt(
+            10.0, OptionalInt.of(63), 20.0
+        );
+
+        assertTrue(FullscreenMapLocationMenu.teleportPositionKnown(unknown, true),
+            "a live session resolves the landing from the loaded target chunk");
+        assertFalse(FullscreenMapLocationMenu.teleportPositionKnown(unknown, false),
+            "a browsed session has no chunk to resolve an unknown target from");
+        assertTrue(FullscreenMapLocationMenu.teleportPositionKnown(voidColumn, false));
+        assertTrue(FullscreenMapLocationMenu.teleportPositionKnown(surface, false));
     }
 
     @Test

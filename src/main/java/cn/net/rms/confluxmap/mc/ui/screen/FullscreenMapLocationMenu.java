@@ -50,17 +50,14 @@ final class FullscreenMapLocationMenu {
     }
 
     static List<Action> actions(
-        final boolean teleportCommandAvailable,
         final boolean existingWaypoint,
         final boolean currentTargetHighlighted
     ) {
-        return actions(
-            teleportCommandAvailable, existingWaypoint, currentTargetHighlighted, false
-        );
+        return actions(existingWaypoint, currentTargetHighlighted, false);
     }
 
+    /** Teleport stays first whether or not the command is currently usable: it only greys out in place. */
     static List<Action> actions(
-        final boolean teleportCommandAvailable,
         final boolean existingWaypoint,
         final boolean currentTargetHighlighted,
         final boolean playerTarget
@@ -73,13 +70,19 @@ final class FullscreenMapLocationMenu {
                 ? Action.CLEAR_HIGHLIGHT
                 : existingWaypoint ? Action.HIGHLIGHT_WAYPOINT : Action.HIGHLIGHT;
         if (existingWaypoint) {
-            return teleportCommandAvailable
-                ? List.of(Action.TELEPORT, Action.EDIT_WAYPOINT, Action.DELETE_WAYPOINT, share, highlight)
-                : List.of(Action.EDIT_WAYPOINT, Action.DELETE_WAYPOINT, share, Action.TELEPORT, highlight);
+            return List.of(Action.TELEPORT, Action.EDIT_WAYPOINT, Action.DELETE_WAYPOINT, share, highlight);
         }
-        return teleportCommandAvailable
-            ? List.of(Action.TELEPORT, edit, share, highlight)
-            : List.of(edit, share, Action.TELEPORT, highlight);
+        return List.of(Action.TELEPORT, edit, share, highlight);
+    }
+
+    /**
+     * Whether teleport has a usable landing answer: resolved ground, or a live session whose
+     * two-stage teleport resolves the ground (or a void column, landing at the pre-teleport Y)
+     * after the target chunk loads. Only browsing a non-live session needs a known height up
+     * front, because there is no client chunk to resolve it from.
+     */
+    static boolean teleportPositionKnown(final Target target, final boolean viewingLiveSession) {
+        return target.groundKnown() || viewingLiveSession;
     }
 
     static boolean isSavedWaypoint(final WaypointRenderEntry waypoint) {
