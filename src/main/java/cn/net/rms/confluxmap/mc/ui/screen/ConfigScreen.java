@@ -41,8 +41,8 @@ import net.minecraft.text.Text;
 
 /**
  * Settings screen exposing every {@link ConfluxConfig} field, grouped into category
- * tabs (Minimap/Layers/Radar/Waypoints/Performance). Built entirely from vanilla
- * widgets, no external config-lib dependency, matching {@link WaypointListScreen}/
+ * tabs (Minimap/Map/Markers/Radar/Waypoints/Prediction/General). Built entirely from
+ * vanilla widgets, no external config-lib dependency, matching {@link WaypointListScreen}/
  * {@link WaypointEditScreen}'s style: plain {@link ButtonWidget}s that cycle through
  * boolean/enum values on click, and paired sliders/numeric fields for int ranges.
  *
@@ -56,11 +56,12 @@ import net.minecraft.text.Text;
 public final class ConfigScreen extends ConfluxScreen {
     private enum Category {
         MINIMAP("confluxmap.screen.config.category.minimap"),
-        LAYERS("confluxmap.screen.config.category.layers"),
+        MAP("confluxmap.screen.config.category.map"),
+        MARKERS("confluxmap.screen.config.category.markers"),
         RADAR("confluxmap.screen.config.category.radar"),
         WAYPOINTS("confluxmap.screen.config.category.waypoints"),
-        PERFORMANCE("confluxmap.screen.config.category.performance"),
-        PREDICTION("confluxmap.screen.config.category.prediction");
+        PREDICTION("confluxmap.screen.config.category.prediction"),
+        GENERAL("confluxmap.screen.config.category.general");
 
         private final String labelKey;
 
@@ -473,27 +474,36 @@ public final class ConfigScreen extends ConfluxScreen {
                 y = addZoomRow(y);
                 y = addToggleRow(y, "confluxmap.config.minimap.show_coordinates", () -> config.showCoordinates, v -> config.showCoordinates = v);
                 y = addToggleRow(y, "confluxmap.config.minimap.show_biome", () -> config.showBiome, v -> config.showBiome = v);
+                break;
+            case MAP:
+                y = addEnumRow(
+                    y, "confluxmap.config.layers.override", ConfluxConfig.LayerOverride.values(),
+                    () -> config.layerOverride, v -> config.layerOverride = v, ConfigScreen::layerOverrideKey
+                );
+                y = addToggleRow(y, "confluxmap.config.layers.show_indicator", () -> config.showLayerIndicator, v -> config.showLayerIndicator = v);
+                y = addIntSliderRow(
+                    y, "confluxmap.config.layers.cave_slice_y", 0, 255,
+                    () -> config.caveSliceY, v -> config.caveSliceY = v, ConfigScreen::plainText
+                );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.layers.nether_slice_y", 0, 127,
+                    () -> config.netherSliceY, v -> config.netherSliceY = v, ConfigScreen::plainText
+                );
                 y = addToggleRow(
-                    y, "confluxmap.config.player_trail.enabled",
-                    () -> config.playerTrailEnabled, v -> config.playerTrailEnabled = v
+                    y, "confluxmap.config.map.dynamic_lighting", () -> config.dynamicLighting, v -> config.dynamicLighting = v
                 );
-                y = addIntSliderRow(
-                    y, "confluxmap.config.player_trail.duration",
-                    ConfluxConfig.MIN_PLAYER_TRAIL_DURATION_SECONDS,
-                    ConfluxConfig.MAX_PLAYER_TRAIL_DURATION_SECONDS,
-                    () -> config.playerTrailDurationSeconds,
-                    v -> config.playerTrailDurationSeconds = v,
-                    ConfigScreen::secondsText
-                );
-                y = addIntSliderRow(
-                    y, "confluxmap.config.player_trail.dot_size",
-                    ConfluxConfig.MIN_PLAYER_TRAIL_DOT_SIZE,
-                    ConfluxConfig.MAX_PLAYER_TRAIL_DOT_SIZE,
-                    () -> config.playerTrailDotSize,
-                    v -> config.playerTrailDotSize = v,
-                    ConfigScreen::pxText
+                y = addEnumRow(
+                    y, "confluxmap.config.map.color_style", MapColorStyle.values(),
+                    () -> config.mapColorStyle,
+                    v -> {
+                        config.mapColorStyle = v;
+                        ConfluxMapClient.get().onMapColorStyleChanged();
+                    },
+                    ConfigScreen::mapColorStyleKey
                 );
                 y = addToggleRow(y, "confluxmap.config.fullmap.chunk_grid", () -> config.fullmapChunkGrid, v -> config.fullmapChunkGrid = v);
+                break;
+            case MARKERS:
                 y = addToggleRow(
                     y, "confluxmap.config.portals.enabled",
                     () -> config.portalMarkersEnabled,
@@ -547,35 +557,28 @@ public final class ConfigScreen extends ConfluxScreen {
                     ConfigScreen::structureIconDetailLimitText, true, null
                 );
                 y = addToggleRow(
-                    y, "confluxmap.config.minimap.annotations",
-                    () -> config.annotationsOnHud, v -> config.annotationsOnHud = v
-                );
-                break;
-            case LAYERS:
-                y = addEnumRow(
-                    y, "confluxmap.config.layers.override", ConfluxConfig.LayerOverride.values(),
-                    () -> config.layerOverride, v -> config.layerOverride = v, ConfigScreen::layerOverrideKey
-                );
-                y = addToggleRow(y, "confluxmap.config.layers.show_indicator", () -> config.showLayerIndicator, v -> config.showLayerIndicator = v);
-                y = addIntSliderRow(
-                    y, "confluxmap.config.layers.cave_slice_y", 0, 255,
-                    () -> config.caveSliceY, v -> config.caveSliceY = v, ConfigScreen::plainText
+                    y, "confluxmap.config.player_trail.enabled",
+                    () -> config.playerTrailEnabled, v -> config.playerTrailEnabled = v
                 );
                 y = addIntSliderRow(
-                    y, "confluxmap.config.layers.nether_slice_y", 0, 127,
-                    () -> config.netherSliceY, v -> config.netherSliceY = v, ConfigScreen::plainText
+                    y, "confluxmap.config.player_trail.duration",
+                    ConfluxConfig.MIN_PLAYER_TRAIL_DURATION_SECONDS,
+                    ConfluxConfig.MAX_PLAYER_TRAIL_DURATION_SECONDS,
+                    () -> config.playerTrailDurationSeconds,
+                    v -> config.playerTrailDurationSeconds = v,
+                    ConfigScreen::secondsText
+                );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.player_trail.dot_size",
+                    ConfluxConfig.MIN_PLAYER_TRAIL_DOT_SIZE,
+                    ConfluxConfig.MAX_PLAYER_TRAIL_DOT_SIZE,
+                    () -> config.playerTrailDotSize,
+                    v -> config.playerTrailDotSize = v,
+                    ConfigScreen::pxText
                 );
                 y = addToggleRow(
-                    y, "confluxmap.config.map.dynamic_lighting", () -> config.dynamicLighting, v -> config.dynamicLighting = v
-                );
-                y = addEnumRow(
-                    y, "confluxmap.config.map.color_style", MapColorStyle.values(),
-                    () -> config.mapColorStyle,
-                    v -> {
-                        config.mapColorStyle = v;
-                        ConfluxMapClient.get().onMapColorStyleChanged();
-                    },
-                    ConfigScreen::mapColorStyleKey
+                    y, "confluxmap.config.minimap.annotations",
+                    () -> config.annotationsOnHud, v -> config.annotationsOnHud = v
                 );
                 break;
             case RADAR:
@@ -733,20 +736,6 @@ public final class ConfigScreen extends ConfluxScreen {
                     ConfigScreen::percentText
                 );
                 break;
-            case PERFORMANCE:
-                y = addIntSliderRow(
-                    y, "confluxmap.config.performance.snapshot_budget", 1, 64,
-                    () -> config.snapshotBudgetPerTick, v -> config.snapshotBudgetPerTick = v, ConfigScreen::plainText
-                );
-                y = addIntSliderRow(
-                    y, "confluxmap.config.performance.gpu_tile_cache_limit", 16, 2048,
-                    () -> config.gpuTileCacheLimit, v -> config.gpuTileCacheLimit = v, ConfigScreen::plainText
-                );
-                y = addToggleRow(
-                    y, "confluxmap.config.performance.update_check",
-                    () -> config.updateCheckEnabled, v -> config.updateCheckEnabled = v
-                );
-                break;
             case PREDICTION:
                 final String underlayReason = predictionAccess.disabledReasonKey(
                     PredictionControl.UNDERLAY
@@ -804,6 +793,20 @@ public final class ConfigScreen extends ConfluxScreen {
                     y, "confluxmap.config.prediction.debounce", 100, 2000,
                     () -> config.predictionDebounceMs, v -> config.predictionDebounceMs = v,
                     ConfigScreen::plainText, underlayReason == null, underlayReason
+                );
+                break;
+            case GENERAL:
+                y = addIntSliderRow(
+                    y, "confluxmap.config.performance.snapshot_budget", 1, 64,
+                    () -> config.snapshotBudgetPerTick, v -> config.snapshotBudgetPerTick = v, ConfigScreen::plainText
+                );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.performance.gpu_tile_cache_limit", 16, 2048,
+                    () -> config.gpuTileCacheLimit, v -> config.gpuTileCacheLimit = v, ConfigScreen::plainText
+                );
+                y = addToggleRow(
+                    y, "confluxmap.config.performance.update_check",
+                    () -> config.updateCheckEnabled, v -> config.updateCheckEnabled = v
                 );
                 break;
             default:
