@@ -24,6 +24,8 @@ final class WebMapConfigTest {
     void normalizeClampsUntrustedOperatorInput() {
         final WebMapConfig config = new WebMapConfig();
         config.bindAddress = " ";
+        config.title = " ";
+        config.favicon = null;
         config.port = 99_999;
         config.maxConnections = -4;
         config.maxBytesPerSecondPerAddress = 1;
@@ -32,6 +34,8 @@ final class WebMapConfigTest {
         config.normalize();
 
         assertEquals("127.0.0.1", config.bindAddress);
+        assertEquals("Conflux Map", config.title);
+        assertEquals("", config.favicon);
         assertEquals(65_535, config.port);
         assertEquals(1, config.maxConnections);
         assertEquals(1024, config.maxBytesPerSecondPerAddress);

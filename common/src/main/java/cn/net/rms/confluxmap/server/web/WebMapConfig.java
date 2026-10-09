@@ -9,6 +9,8 @@ public final class WebMapConfig {
     public int port = 8123;
     public boolean allowInsecureRemote = false;
     public boolean sharePlayers = false;
+    public String title = "Conflux Map";
+    public String favicon = "";
     public int maxConnections = 20;
     public int maxBytesPerSecondPerAddress = Proto.DEFAULT_MAX_BYTES_PER_SEC;
     public int minRequestIntervalMs = Proto.DEFAULT_MIN_REQ_INTERVAL_MS;
@@ -19,6 +21,8 @@ public final class WebMapConfig {
         } else {
             bindAddress = bindAddress.trim();
         }
+        title = title == null || title.isBlank() ? "Conflux Map" : title.trim();
+        favicon = favicon == null ? "" : favicon.trim();
         port = clamp(port, 0, 65_535);
         maxConnections = clamp(maxConnections, 1, 256);
         maxBytesPerSecondPerAddress = clamp(maxBytesPerSecondPerAddress, 1024, 1 << 20);
