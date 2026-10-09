@@ -186,6 +186,10 @@ For bug reports, suggestions, or general discussion, reach us through the offici
 
 GPL-3.0, see [`LICENSE`](LICENSE). Third-party components and behavior references are listed in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
+## Contributors
+
+[![Contributors](https://contrib.rocks/image?repo=Conflux-Union/conflux-map)](https://github.com/Conflux-Union/conflux-map/graphs/contributors)
+
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=Conflux-Union/conflux-map&type=Date)](https://star-history.com/#Conflux-Union/conflux-map&Date)

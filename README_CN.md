@@ -184,6 +184,10 @@ Conflux Map 提供客户端 API（路径点、地图数据查询、自定义地�
 
 GPL-3.0，详见 [`LICENSE`](LICENSE)。第三方组件与参考来源记录于 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 
+## 贡献者
+
+[![Contributors](https://contrib.rocks/image?repo=Conflux-Union/conflux-map)](https://github.com/Conflux-Union/conflux-map/graphs/contributors)
+
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=Conflux-Union/conflux-map&type=Date)](https://star-history.com/#Conflux-Union/conflux-map&Date)
