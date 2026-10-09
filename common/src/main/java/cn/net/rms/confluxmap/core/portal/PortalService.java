@@ -9,6 +9,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import org.apache.logging.log4j.Logger;
 
 /**
@@ -83,7 +85,27 @@ public final class PortalService {
     }
 
     private void saveNow(final WorldIdentity world) {
-        PortalIo.save(fileFor(world), registry.snapshot(), logger);
+        final Path file = fileFor(world);
+        final Map<DimensionId, List<PortalMarker>> snapshot = registry.snapshot();
+        // Queue behind any pending scan save instead of writing from the main
+        // thread: both would write the same .tmp file and race the atomic move,
+        // which can leave a truncated file that the next load quarantines.
+        final Future<?> save = executors.io().submit(() -> PortalIo.save(file, snapshot, logger));
+        boolean interrupted = false;
+        while (true) {
+            try {
+                save.get();
+                break;
+            } catch (final InterruptedException e) {
+                interrupted = true;
+            } catch (final ExecutionException e) {
+                logger.error("Failed to save portal markers for {}", world, e.getCause());
+                break;
+            }
+        }
+        if (interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private Path fileFor(final WorldIdentity world) {
