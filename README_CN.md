@@ -98,7 +98,7 @@ Conflux Map 是一款 Fabric 平台的小地图与世界地图模组。客户端
 | 默认按键 | 功能 |
 |---|---|
 | `H` | 开关小地图 |
-| `]` / `[` | 小地图放大 / 缩小 |
+| `]` | 循环切换小地图缩放 |
 | `M` | 打开全屏地图 |
 | `Y` | 循环切换自动、地表/顶层、当前高度和配置的固定高度图层 |
 | `U` | 打开路径点列表 |
@@ -110,14 +110,13 @@ Conflux Map 是一款 Fabric 平台的小地图与世界地图模组。客户端
 
 ## 共享路径点
 
-共享路径点需要服务端组件，默认启用。普通玩家可以发布全员可见的路径点，并管理自己发布的条目；管理员可以管理所有条目，并可将任意路径点设为标记。标记后的路径点归入「服务器标记」一栏；设置与取消标记、删除任意路径点仅限管理员执行，未标记的路径点由发布者自行删除。
+共享路径点需要服务端组件，默认启用。普通玩家可以发布全员可见的路径点，并管理自己发布的条目；管理员可以管理所有条目。
 
 未安装 Conflux Map 的玩家也可通过命令操作同一份列表：
 
 - `/confluxmap waypoints add <name>`：在当前位置发布路径点
 - `/confluxmap waypoints list [page]`：分页查看，每条附带 Xaero 聊天格式，便于一键导入
 - `/confluxmap waypoints edit <id> <name>` / `move <id>` / `delete <id>`：使用列表显示的短 ID 修改、移动或删除
-- Paper 端额外提供 `lock <id>` 与 `unlock <id>`，用于设置与取消标记
 - 管理员可通过 `/confluxmap waypoints disable`、`enable`、`status` 控制该功能
 
 每个世界与每位玩家可发布的数量上限可在 `config/confluxmap/server.json` 中调整。
@@ -140,7 +139,7 @@ Conflux Map 是一款 Fabric 平台的小地图与世界地图模组。客户端
 所有共享内容由 `config/confluxmap/server.json` 控制：
 
 - `enabled` 为总开关；`checkForUpdates` 在服务端启动时于控制台提示新版本。
-- `shareSeed` 将世界种子发送至客户端，供预测群系与结构使用；`allowBiomeMap` 与 `allowStructureSearch` 分别控制群系图层与结构查找。
+- `shareSeed` 将世界种子发送至客户端，供预测群系与结构使用。默认关闭，因为共享后种子会暴露给所有玩家；`allowBiomeMap` 与 `allowStructureSearch` 分别控制群系图层与结构查找。
 - `shareCorrections` 将服务端掌握的真实地形发送至客户端，用于修正预测结果。
 - `shareChunkLoadState` 公开服务端保持加载的区块，默认关闭，以减少玩家活动与农场位置的暴露。
 - `allowEntityRadar` 默认开启，向客户端发送所有在线玩家的实时位置；关闭后位置流停止，客户端实体雷达不可用。

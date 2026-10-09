@@ -98,7 +98,7 @@ All bindings can be changed in Minecraft's controls screen under "Conflux Map". 
 | Default key | Action |
 |---|---|
 | `H` | Toggle the minimap |
-| `]` / `[` | Minimap zoom in / out |
+| `]` | Cycle minimap zoom |
 | `M` | Open the fullscreen map |
 | `Y` | Cycle automatic, surface/roof, current-height, and configured fixed-height layers |
 | `U` | Open the waypoint list |
@@ -110,14 +110,13 @@ All bindings can be changed in Minecraft's controls screen under "Conflux Map". 
 
 ## Shared waypoints
 
-Shared waypoints require the server companion and are enabled by default. Ordinary players can publish waypoints visible to everyone and manage the entries they published; operators can manage every entry and can mark any waypoint. Marked waypoints move into the "server marks" section; marking, unmarking, and deleting any waypoint are reserved to operators, while unmarked waypoints are deleted by their publisher.
+Shared waypoints require the server companion and are enabled by default. Ordinary players can publish waypoints visible to everyone and manage the entries they published; operators can manage every entry.
 
 Players without Conflux Map can work with the same list through commands:
 
 - `/confluxmap waypoints add <name>` publishes a waypoint at the player's current position
 - `/confluxmap waypoints list [page]` lists entries with pagination, each including an Xaero chat format for one-click import
 - `/confluxmap waypoints edit <id> <name>` / `move <id>` / `delete <id>` rename, move, or delete an entry using the short ID shown in the list
-- Paper additionally provides `lock <id>` and `unlock <id>` for marking and unmarking
 - Operators can control the feature with `/confluxmap waypoints disable`, `enable`, and `status`
 
 Per-world and per-player limits are configured in `config/confluxmap/server.json`.
@@ -140,7 +139,7 @@ The companion also serves a standalone web map that shows explored terrain, pred
 All companion-shared content is controlled in `config/confluxmap/server.json`:
 
 - `enabled` is the master switch; `checkForUpdates` announces a newer version in the server console at startup.
-- `shareSeed` sends the world seed to clients so they can predict biomes and structures; `allowBiomeMap` and `allowStructureSearch` control the biome layer and the structure finder separately.
+- `shareSeed` sends the world seed to clients so they can predict biomes and structures. It is disabled by default because sharing the seed exposes it to every player; `allowBiomeMap` and `allowStructureSearch` control the biome layer and the structure finder separately.
 - `shareCorrections` sends real-terrain data from the server to correct predicted maps.
 - `shareChunkLoadState` exposes the chunks the server keeps loaded. It is disabled by default to reduce exposure of player activity and farm locations.
 - `allowEntityRadar` defaults to `true` and shares every online player's live position with compatible clients; disabling it stops the position stream and turns the client radar off.
