@@ -245,7 +245,7 @@ public final class WebMapServer implements AutoCloseable {
             StaticAsset asset = assets.get(assetKey);
             if (asset == null) {
                 try {
-                    asset = loadAsset(path, gzip, title, favicon);
+                    asset = loadAsset(path, gzip);
                 } catch (final IOException e) {
                     return secure(text(
                         Response.Status.INTERNAL_ERROR,
@@ -277,6 +277,34 @@ public final class WebMapServer implements AutoCloseable {
                     + "script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'"
             );
             return secure(response);
+        }
+
+        private StaticAsset loadAsset(final String path, final boolean gzip) throws IOException {
+            if ("/favicon.ico".equals(path) && favicon != null) {
+                return new StaticAsset(favicon.body(), favicon.contentType(), etag(favicon.body()));
+            }
+            try (InputStream input = WebMapServer.class.getResourceAsStream("/webmap" + path)) {
+                if (input == null) return null;
+                byte[] body = input.readAllBytes();
+                if ("/index.html".equals(path)) {
+                    String html = new String(body, StandardCharsets.UTF_8).replace(
+                        "<title>Conflux Map</title>", "<title>" + WebMapBranding.escapeHtml(title) + "</title>"
+                    );
+                    if (favicon != null) {
+                        html = html.replace("</head>", "  <link rel=\"icon\" href=\"/favicon.ico\" type=\""
+                            + favicon.contentType() + "\">\n</head>");
+                    }
+                    body = html.getBytes(StandardCharsets.UTF_8);
+                }
+                if (gzip) {
+                    final ByteArrayOutputStream compressed = new ByteArrayOutputStream(body.length / 2);
+                    try (GZIPOutputStream output = new GZIPOutputStream(compressed)) {
+                        output.write(body);
+                    }
+                    body = compressed.toByteArray();
+                }
+                return new StaticAsset(body, contentType(path), etag(body));
+            }
         }
 
         private Response methodNotAllowed(final String allowed) {
@@ -525,36 +553,6 @@ public final class WebMapServer implements AutoCloseable {
         return accepted != null && java.util.Arrays.stream(accepted.split(","))
             .map(String::trim)
             .anyMatch(value -> value.equals("gzip") || value.startsWith("gzip;"));
-    }
-
-    private static StaticAsset loadAsset(
-        final String path, final boolean gzip, final String title, final WebMapBranding.Icon favicon
-    ) throws IOException {
-        if ("/favicon.ico".equals(path) && favicon != null) {
-            return new StaticAsset(favicon.body(), favicon.contentType(), etag(favicon.body()));
-        }
-        try (InputStream input = WebMapServer.class.getResourceAsStream("/webmap" + path)) {
-            if (input == null) return null;
-            byte[] body = input.readAllBytes();
-            if ("/index.html".equals(path)) {
-                String html = new String(body, StandardCharsets.UTF_8).replace(
-                    "<title>Conflux Map</title>", "<title>" + WebMapBranding.escapeHtml(title) + "</title>"
-                );
-                if (favicon != null) {
-                    html = html.replace("</head>", "  <link rel=\"icon\" href=\"/favicon.ico\" type=\""
-                        + favicon.contentType() + "\">\n</head>");
-                }
-                body = html.getBytes(StandardCharsets.UTF_8);
-            }
-            if (gzip) {
-                final ByteArrayOutputStream compressed = new ByteArrayOutputStream(body.length / 2);
-                try (GZIPOutputStream output = new GZIPOutputStream(compressed)) {
-                    output.write(body);
-                }
-                body = compressed.toByteArray();
-            }
-            return new StaticAsset(body, contentType(path), etag(body));
-        }
     }
 
     private static String etag(final byte[] body) {

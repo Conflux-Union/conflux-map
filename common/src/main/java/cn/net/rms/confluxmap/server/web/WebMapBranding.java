@@ -16,7 +16,10 @@ final class WebMapBranding {
     static Icon loadIcon(final String filename, final Path configDirectory) {
         if (filename.isEmpty()) return null;
         try {
-            if (configDirectory == null || filename.equals(".") || filename.equals("..")
+            if (configDirectory == null) {
+                throw new IOException("favicon configured without a configuration directory");
+            }
+            if (filename.equals(".") || filename.equals("..")
                 || filename.contains("/") || filename.contains("\\") || filename.contains(":")) {
                 throw new IOException("favicon must be a filename beside server.json");
             }
