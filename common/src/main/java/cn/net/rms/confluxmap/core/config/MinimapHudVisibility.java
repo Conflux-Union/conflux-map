@@ -10,9 +10,10 @@ public final class MinimapHudVisibility {
         final boolean sessionActive,
         final boolean fullscreenOpen,
         final boolean containerOpen,
-        final boolean fullDebugOverlayVisible
+        final boolean fullDebugOverlayVisible,
+        final boolean hudHidden
     ) {
         return minimapEnabled && sessionActive && !fullscreenOpen && !containerOpen
-            && !fullDebugOverlayVisible;
+            && !fullDebugOverlayVisible && !hudHidden;
     }
 }

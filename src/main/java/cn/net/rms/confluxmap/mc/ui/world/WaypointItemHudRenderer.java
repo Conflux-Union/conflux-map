@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 //#if MC<260100
 import cn.net.rms.confluxmap.mixin.GameRendererAccessor;
 //#endif
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
@@ -108,6 +109,11 @@ public final class WaypointItemHudRenderer {
     }
 
     private void draw(final GuiDraw draw, final float tickDelta) {
+        // On versions where this rides the crosshair render, vanilla's own hideGui guard keeps
+        // this from firing under F1; on the Fabric HUD-element paths (1.21.6+) it must check.
+        if (MinecraftAccess.isHudHidden(client)) {
+            return;
+        }
         final Camera camera = camera();
         final Vec3d cameraPos = cameraPosition(camera);
         final float cameraYaw = cameraYaw(camera);

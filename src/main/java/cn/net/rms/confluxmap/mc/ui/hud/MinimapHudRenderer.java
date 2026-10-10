@@ -196,7 +196,8 @@ public final class MinimapHudRenderer {
             gameBridge.session().active(),
             fullscreenOpen,
             containerOpen,
-            MinecraftAccess.isFullDebugOverlayVisible(client)
+            MinecraftAccess.isFullDebugOverlayVisible(client),
+            MinecraftAccess.isHudHidden(client)
         )) {
             captureViewportPublisher.accept(null);
             // FullscreenMapScreen owns radarViewRange while it's open; otherwise the minimap

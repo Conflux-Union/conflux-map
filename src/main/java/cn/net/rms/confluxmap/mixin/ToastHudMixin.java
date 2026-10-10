@@ -159,7 +159,8 @@ public abstract class ToastHudMixin {
             app.gameBridge().session().active(),
             screen instanceof FullscreenMapScreen,
             MinecraftAccess.isContainerScreen(screen),
-            MinecraftAccess.isFullDebugOverlayVisible(client)
+            MinecraftAccess.isFullDebugOverlayVisible(client),
+            MinecraftAccess.isHudHidden(client)
         )) {
             return 0f;
         }

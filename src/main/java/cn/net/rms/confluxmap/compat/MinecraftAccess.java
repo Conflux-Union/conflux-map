@@ -107,6 +107,21 @@ public final class MinecraftAccess {
         //#endif
     }
 
+    /**
+     * Whether the player hid the vanilla HUD with F1. The state lived in the options until
+     * 26.1 (hideGui) and moved to the Hud itself (26.2 toggles it, isHidden reports it), so
+     * HUD-side mods must hide with it — Fabric's HUD callbacks keep firing either way.
+     */
+    public static boolean isHudHidden(final MinecraftClient client) {
+        //#if MC>=260200
+        //$$ return client.gui.hud.isHidden();
+        //#elseif MC>=260100
+        //$$ return client.options.hideGui;
+        //#else
+        return client.options.hudHidden;
+        //#endif
+    }
+
     public static void sendChatMessage(final MinecraftClient client, final String message) {
         //#if MC>=12000
         //$$ if (client.getNetworkHandler() != null) {
