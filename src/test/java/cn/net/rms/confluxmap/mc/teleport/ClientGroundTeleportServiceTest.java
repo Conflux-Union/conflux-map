@@ -100,4 +100,102 @@ class ClientGroundTeleportServiceTest {
             assertNull(step.feedbackKey());
         }
     }
+
+    @Test
+    void capturedColumnsLandOnTheCachedSurfaceInOneCommand() {
+        assertEquals(
+            ClientGroundTeleportService.FirstStage.CAPTURED,
+            ClientGroundTeleportService.firstStage(
+                true, false,
+                new ColumnStore.SurfaceLookup(true, OptionalInt.of(73)),
+                ColumnStore.SurfaceLookup.UNKNOWN
+            )
+        );
+        assertEquals(
+            ClientGroundTeleportService.FirstStage.CAPTURED,
+            ClientGroundTeleportService.firstStage(
+                false, false,
+                new ColumnStore.SurfaceLookup(true, OptionalInt.of(73)),
+                new ColumnStore.SurfaceLookup(true, OptionalInt.of(70))
+            )
+        );
+    }
+
+    @Test
+    void loadedSameDimensionChunksSampleTheLiveGroundFirst() {
+        assertEquals(
+            ClientGroundTeleportService.FirstStage.SAMPLED,
+            ClientGroundTeleportService.firstStage(
+                false, true,
+                new ColumnStore.SurfaceLookup(true, OptionalInt.of(73)),
+                new ColumnStore.SurfaceLookup(true, OptionalInt.of(70))
+            )
+        );
+        // A cross-dimension target has no loadable client chunk to sample.
+        assertEquals(
+            ClientGroundTeleportService.FirstStage.CAPTURED,
+            ClientGroundTeleportService.firstStage(
+                true, true,
+                new ColumnStore.SurfaceLookup(true, OptionalInt.of(73)),
+                ColumnStore.SurfaceLookup.UNKNOWN
+            )
+        );
+    }
+
+    @Test
+    void voidColumnsKeepThePlayerY() {
+        assertEquals(
+            ClientGroundTeleportService.FirstStage.PLAYER_Y,
+            ClientGroundTeleportService.firstStage(
+                false, false,
+                new ColumnStore.SurfaceLookup(true, OptionalInt.empty()),
+                new ColumnStore.SurfaceLookup(true, OptionalInt.empty())
+            )
+        );
+        assertEquals(
+            ClientGroundTeleportService.FirstStage.PLAYER_Y,
+            ClientGroundTeleportService.firstStage(
+                false, false,
+                ColumnStore.SurfaceLookup.UNKNOWN,
+                new ColumnStore.SurfaceLookup(true, OptionalInt.empty())
+            )
+        );
+    }
+
+    @Test
+    void predictedOrUnknownColumnsStageForTheCorrectionTick() {
+        assertEquals(
+            ClientGroundTeleportService.FirstStage.STAGED,
+            ClientGroundTeleportService.firstStage(
+                false, false, ColumnStore.SurfaceLookup.UNKNOWN,
+                new ColumnStore.SurfaceLookup(true, OptionalInt.of(70))
+            )
+        );
+        assertEquals(
+            ClientGroundTeleportService.FirstStage.STAGED,
+            ClientGroundTeleportService.firstStage(
+                false, false, ColumnStore.SurfaceLookup.UNKNOWN, ColumnStore.SurfaceLookup.UNKNOWN
+            )
+        );
+        assertEquals(
+            ClientGroundTeleportService.FirstStage.STAGED,
+            ClientGroundTeleportService.firstStage(
+                true, false, ColumnStore.SurfaceLookup.UNKNOWN, ColumnStore.SurfaceLookup.UNKNOWN
+            )
+        );
+    }
+
+    @Test
+    void underRoofLandingSkipsTheRoofCapAndStandsOnTheFloor() {
+        // Bedrock roof at 127 (double layer at 126), open gap, floor at 80.
+        assertEquals(
+            81,
+            ClientGroundTeleportService.underRoofPlayerY(128, 0, y -> y >= 126 || y == 80)
+                .orElseThrow()
+        );
+        // Terrain welded to the roof all the way down has no landing.
+        assertTrue(ClientGroundTeleportService.underRoofPlayerY(128, 0, y -> true).isEmpty());
+        // An open column down to the bottom has no landing either.
+        assertTrue(ClientGroundTeleportService.underRoofPlayerY(128, 0, y -> false).isEmpty());
+    }
 }

@@ -8,19 +8,26 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.store.ColumnStore;
 import cn.net.rms.confluxmap.core.util.TileMath;
+import cn.net.rms.confluxmap.mc.world.DimensionLayerPolicy;
 import java.util.OptionalInt;
 import java.util.function.Consumer;
+import java.util.function.IntPredicate;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
+import net.minecraft.block.BlockState;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.Heightmap;
 import net.minecraft.world.chunk.ChunkStatus;
 import net.minecraft.world.chunk.WorldChunk;
 
 /**
- * Pure-client two-stage teleport that resolves the final ground height from the loaded target
- * chunk; a column that resolves to void has no height to resolve and lands at the player's
- * pre-teleport Y instead.
+ * Pure-client map teleport. A column the map has captured lands on its cached surface in one
+ * command; a predicted or unknown column stages high above the estimate and waits for the
+ * target chunk to load, then corrects onto the sampled ground (below the roof in ceiling
+ * dimensions). A column that resolves to void has no height to resolve and lands at the
+ * player's pre-teleport Y instead. Cross-dimension waits survive the world swap by rebinding
+ * to the arriving world when its dimension is the pending target.
  */
 public final class ClientGroundTeleportService {
     static final int STAGING_HEADROOM = 32;
@@ -74,83 +81,114 @@ public final class ClientGroundTeleportService {
     }
 
     /**
-     * Starts a teleport to any map coordinate. The ground estimate can come from cubiomes or
-     * map cache, but is only used to stage above the predicted terrain while the authoritative
-     * client chunk loads. A known void column skips the wait entirely and lands at the
-     * player's pre-teleport Y.
+     * Starts a teleport to any map coordinate. {@code captured} is the real map-cache answer
+     * for the column and, when known, is the final landing Y in one command. {@code ground}
+     * may additionally carry a seed-predicted surface, which only ever stages above the
+     * estimate while the authoritative client chunk loads. A column that is void in either
+     * source skips the wait entirely and lands at the player's pre-teleport Y.
      */
     public void teleport(
         final int blockX,
         final int blockZ,
+        final ColumnStore.SurfaceLookup captured,
         final ColumnStore.SurfaceLookup ground,
         final DimensionId dimension,
-        final WorldIdentity worldIdentity,
-        final boolean direct
+        final WorldIdentity worldIdentity
     ) {
         final ClientWorld world = client.world;
         if (world == null || client.player == null) {
             return;
         }
-        final boolean voidColumn = ground.known() && ground.surfaceY().isEmpty();
-        if (direct) {
-            if (voidColumn) {
-                sendCommand(
-                    centered(blockX), client.player.getY(), centered(blockZ),
-                    dimension, worldIdentity
-                );
-            } else {
-                estimatedPlayerY(ground).ifPresent(y -> sendCommand(
-                    centered(blockX), y, centered(blockZ), dimension, worldIdentity
-                ));
-            }
-            return;
-        }
-        final GroundSample sample = sampleGround(world, blockX, blockZ);
-        if (sample.loaded()) {
-            sendCommand(
+        final boolean crossDimension = !DimensionLayerPolicy.dimensionId(world).equals(dimension);
+        final GroundSample sample = crossDimension
+            ? GroundSample.NOT_LOADED
+            : sampleGround(world, blockX, blockZ);
+        switch (firstStage(crossDimension, sample.loaded(), captured, ground)) {
+            case SAMPLED -> sendCommand(
                 centered(blockX),
                 sample.playerY().isPresent() ? sample.playerY().getAsInt() : client.player.getY(),
                 centered(blockZ),
                 dimension,
                 worldIdentity
             );
-            return;
-        }
-        if (voidColumn) {
-            sendCommand(
+            case CAPTURED -> sendCommand(
+                centered(blockX),
+                estimatedPlayerY(captured).orElseThrow(),
+                centered(blockZ),
+                dimension,
+                worldIdentity
+            );
+            case PLAYER_Y -> sendCommand(
                 centered(blockX), client.player.getY(), centered(blockZ),
                 dimension, worldIdentity
             );
-            return;
+            case STAGED -> {
+                pending = new Pending(
+                    world,
+                    blockX,
+                    blockZ,
+                    client.player.getX(),
+                    client.player.getY(),
+                    client.player.getZ(),
+                    dimension,
+                    worldIdentity,
+                    0
+                );
+                sendCommand(
+                    centered(blockX),
+                    stagingY(estimatedPlayerY(ground), world.getBottomY(), world.getTopY()),
+                    centered(blockZ),
+                    dimension,
+                    worldIdentity
+                );
+            }
         }
+    }
 
-        pending = new Pending(
-            world,
-            blockX,
-            blockZ,
-            client.player.getX(),
-            client.player.getY(),
-            client.player.getZ(),
-            dimension,
-            worldIdentity,
-            0
-        );
-        sendCommand(
-            centered(blockX),
-            stagingY(estimatedPlayerY(ground), world.getBottomY(), world.getTopY()),
-            centered(blockZ),
-            dimension,
-            worldIdentity
-        );
+    /**
+     * The first command of a teleport, kept free of Minecraft state so the policy is
+     * unit-testable: a same-dimension loaded chunk samples the live ground; a captured column
+     * lands on its cached surface; a void column (captured or predicted) keeps the player's Y;
+     * everything else stages high and waits for the correction tick.
+     */
+    static FirstStage firstStage(
+        final boolean crossDimension,
+        final boolean targetChunkLoaded,
+        final ColumnStore.SurfaceLookup captured,
+        final ColumnStore.SurfaceLookup ground
+    ) {
+        if (!crossDimension && targetChunkLoaded) {
+            return FirstStage.SAMPLED;
+        }
+        if (captured.known()) {
+            return captured.surfaceY().isPresent() ? FirstStage.CAPTURED : FirstStage.PLAYER_Y;
+        }
+        if (ground.known() && ground.surfaceY().isEmpty()) {
+            return FirstStage.PLAYER_Y;
+        }
+        return FirstStage.STAGED;
     }
 
     private void tick() {
-        final Pending current = pending;
+        Pending current = pending;
         if (current == null) {
             return;
         }
-        if (client.world != current.world() || client.player == null) {
+        if (client.world == null) {
             pending = null;
+            return;
+        }
+        if (client.world != current.world()) {
+            // A cross-dimension staging command just arrived in the target dimension; any
+            // other world swap (portal, disconnect handled by the session listener) cancels.
+            if (!DimensionLayerPolicy.dimensionId(client.world).equals(current.dimension())) {
+                pending = null;
+                return;
+            }
+            current = current.withWorld(client.world);
+            pending = current;
+        }
+        if (client.player == null) {
             return;
         }
         final boolean timedOut = current.waitedTicks() >= MAX_WAIT_TICKS;
@@ -224,7 +262,41 @@ public final class ClientGroundTeleportService {
             Math.floorMod(blockX, 16),
             Math.floorMod(blockZ, 16)
         );
+        if (DimensionLayerPolicy.classify(
+                DimensionLayerPolicy.dimensionId(world), world.getDimension()
+            ) == DimensionLayerPolicy.DimensionKind.HAS_CEILING) {
+            // MOTION_BLOCKING reports the bedrock roof in ceiling dimensions; scan under it.
+            final BlockPos.Mutable pos = new BlockPos.Mutable();
+            final java.util.function.Predicate<BlockState> motionBlocking =
+                Heightmap.Type.MOTION_BLOCKING.getBlockPredicate();
+            return new GroundSample(true, underRoofPlayerY(
+                height,
+                world.getBottomY(),
+                y -> motionBlocking.test(chunk.getBlockState(pos.set(blockX, y, blockZ)))
+            ));
+        }
         return new GroundSample(true, groundY(height, world.getBottomY(), world.getTopY()));
+    }
+
+    /**
+     * Landing Y below a ceiling dimension's roof: skips the roof cap that MOTION_BLOCKING
+     * reports, crosses the open gap beneath it, and stands on the first floor block. A column
+     * solid all the way down (terrain welded to the roof) or open all the way down (void)
+     * has no landing.
+     */
+    static OptionalInt underRoofPlayerY(
+        final int roofTop,
+        final int bottomY,
+        final IntPredicate motionBlocking
+    ) {
+        int y = roofTop - 1;
+        while (y > bottomY && motionBlocking.test(y)) {
+            y--;
+        }
+        while (y > bottomY && !motionBlocking.test(y)) {
+            y--;
+        }
+        return y > bottomY ? OptionalInt.of(y + 1) : OptionalInt.empty();
     }
 
     static int stagingY(
@@ -301,6 +373,14 @@ public final class ClientGroundTeleportService {
     ) {
     }
 
+    /** The first command of a teleport; see {@link #firstStage}. */
+    enum FirstStage {
+        SAMPLED,
+        CAPTURED,
+        PLAYER_Y,
+        STAGED
+    }
+
     private record GroundSample(boolean loaded, OptionalInt playerY) {
         private static final GroundSample NOT_LOADED = new GroundSample(false, OptionalInt.empty());
     }
@@ -320,6 +400,13 @@ public final class ClientGroundTeleportService {
             return new Pending(
                 world, blockX, blockZ, returnX, returnY, returnZ,
                 dimension, worldIdentity, waitedTicks + 1
+            );
+        }
+
+        Pending withWorld(final ClientWorld arriving) {
+            return new Pending(
+                arriving, blockX, blockZ, returnX, returnY, returnZ,
+                dimension, worldIdentity, waitedTicks
             );
         }
     }

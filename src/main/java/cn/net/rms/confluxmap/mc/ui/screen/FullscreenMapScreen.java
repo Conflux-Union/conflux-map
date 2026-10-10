@@ -2178,22 +2178,33 @@ public final class FullscreenMapScreen extends ConfluxScreen {
      * waiting on it.
      */
     private ColumnStore.SurfaceLookup groundAt(final int blockX, final int blockZ) {
-        final MapLayer visibleLayer = viewLayer();
-        final DimensionId dimension = viewSession().dimension();
-        final MapLayer surfaceLayer = dimension.equals(DimensionId.NETHER)
-            ? MapLayer.NETHER_CEILING
-            : dimension.equals(DimensionId.END) ? MapLayer.END_SURFACE : MapLayer.SURFACE;
-        final MapWorld mapWorld = viewMapWorlds().current();
-        if (mapWorld != null) {
-            final ColumnStore.SurfaceLookup captured = mapWorld.store(surfaceLayer).surfaceAt(blockX, blockZ);
-            if (captured.known()) {
-                return captured;
-            }
+        final ColumnStore.SurfaceLookup captured = capturedGroundAt(blockX, blockZ);
+        if (captured.known()) {
+            return captured;
         }
+        final MapLayer surfaceLayer = teleportSurfaceLayer(viewSession().dimension());
         final SessionGuard.Session session = viewSession();
-        return surfaceLayer.equals(visibleLayer) && predictionActive(surfaceLayer, session, false)
+        return surfaceLayer.equals(viewLayer()) && predictionActive(surfaceLayer, session, false)
             ? predictionTiles.predictedSurfaceAt(session.dimension(), currentLod(), blockX, blockZ)
             : ColumnStore.SurfaceLookup.UNKNOWN;
+    }
+
+    /** The layer whose column heights describe where a teleport should land. */
+    private static MapLayer teleportSurfaceLayer(final DimensionId dimension) {
+        return dimension.equals(DimensionId.NETHER)
+            ? MapLayer.NETHER_CEILING
+            : dimension.equals(DimensionId.END) ? MapLayer.END_SURFACE : MapLayer.SURFACE;
+    }
+
+    /** Captured-only ground for teleport decisions: a real column, a real void, or unknown. */
+    private ColumnStore.SurfaceLookup capturedGroundAt(final int blockX, final int blockZ) {
+        final MapWorld mapWorld = viewMapWorlds().current();
+        if (mapWorld == null) {
+            return ColumnStore.SurfaceLookup.UNKNOWN;
+        }
+        return mapWorld
+            .store(teleportSurfaceLayer(viewSession().dimension()))
+            .surfaceAt(blockX, blockZ);
     }
 
     private void performPendingLocationAction() {
@@ -2305,8 +2316,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             case TELEPORT -> {
                 final SessionGuard.Session viewed = viewSession();
                 groundTeleport.teleport(
-                    target.blockX(), target.blockZ(), target.ground(),
-                    viewed.dimension(), viewed.world(), !viewingLiveSession()
+                    target.blockX(), target.blockZ(),
+                    capturedGroundAt(target.blockX(), target.blockZ()),
+                    target.ground(),
+                    viewed.dimension(), viewed.world()
                 );
             }
         }
