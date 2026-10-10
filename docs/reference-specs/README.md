@@ -21,3 +21,4 @@ matter, because they are behavior.
 | [`radar-icons.md`](radar-icons.md) | Entity classification, radar dot rendering, above/below elevation cues, icon mapping. |
 | [`predicted-map.md`](predicted-map.md) | Seed prediction, exact correction snapshots, companion patch wire format. |
 | [`waypoint-storage-formats.md`](waypoint-storage-formats.md) | On-disk waypoint file locations, naming, and line grammars of two third-party minimap mods, for read-only import. |
+| [`map-teleport-y.md`](map-teleport-y.md) | How two third-party minimap mods resolve the teleport Y for map clicks and waypoints: triggers, gating, command shapes, unknown-Y and cross-dimension policies. |
