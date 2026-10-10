@@ -8,17 +8,11 @@ import java.util.Objects;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Supplier;
 
 /** Non-fatal desktop integration used after a PNG export completes. */
 final class MapExportDesktopActions {
-    private static final long HEAP_RESERVE_BYTES = 128L * 1024L * 1024L;
-
-    enum CopyState { IDLE, COPYING, COPIED, SKIPPED, FAILED }
+    enum CopyState { IDLE, COPYING, COPIED, FAILED }
     enum OpenState { IDLE, OPENED, FAILED }
-
-    record MemorySnapshot(long maxMemory, long usedMemory) {
-    }
 
     interface DesktopBridge {
         void copyImage(Path path) throws Exception;
@@ -27,7 +21,6 @@ final class MapExportDesktopActions {
 
     private final DesktopBridge bridge;
     private final Executor executor;
-    private final Supplier<MemorySnapshot> memory;
     private final AtomicLong copyGeneration = new AtomicLong();
     private final AtomicLong openGeneration = new AtomicLong();
     private volatile CopyState copyState = CopyState.IDLE;
@@ -35,26 +28,15 @@ final class MapExportDesktopActions {
     private volatile String copyError;
     private volatile String openError;
 
-    MapExportDesktopActions(
-        final DesktopBridge bridge,
-        final Executor executor,
-        final Supplier<MemorySnapshot> memory
-    ) {
+    MapExportDesktopActions(final DesktopBridge bridge, final Executor executor) {
         this.bridge = Objects.requireNonNull(bridge, "bridge");
         this.executor = Objects.requireNonNull(executor, "executor");
-        this.memory = Objects.requireNonNull(memory, "memory");
     }
 
     static MapExportDesktopActions system() {
         return new MapExportDesktopActions(
             withFallback(new AwtDesktopBridge(), new SystemCommandDesktopBridge()),
-            ForkJoinPool.commonPool(),
-            () -> {
-                final Runtime runtime = Runtime.getRuntime();
-                return new MemorySnapshot(
-                    runtime.maxMemory(), runtime.totalMemory() - runtime.freeMemory()
-                );
-            }
+            ForkJoinPool.commonPool()
         );
     }
 
@@ -95,23 +77,8 @@ final class MapExportDesktopActions {
         };
     }
 
-    void copyImage(final Path output, final int width, final int height) {
+    void copyImage(final Path output) {
         final long generation = copyGeneration.incrementAndGet();
-        final MemorySnapshot snapshot;
-        try {
-            snapshot = memory.get();
-        } catch (final RuntimeException e) {
-            copyError = message(e);
-            copyState = CopyState.FAILED;
-            return;
-        }
-        if (!hasClipboardHeadroom(
-            width, height, snapshot.maxMemory(), snapshot.usedMemory()
-        )) {
-            copyState = CopyState.SKIPPED;
-            copyError = "insufficient memory";
-            return;
-        }
         copyState = CopyState.COPYING;
         copyError = null;
         try {
@@ -187,23 +154,6 @@ final class MapExportDesktopActions {
 
     String openError() {
         return openError;
-    }
-
-    static boolean hasClipboardHeadroom(
-        final int width,
-        final int height,
-        final long maxMemory,
-        final long usedMemory
-    ) {
-        try {
-            final long decodedBytes = Math.multiplyExact(
-                Math.multiplyExact((long) width, height), 4L
-            );
-            return width > 0 && height > 0
-                && maxMemory - usedMemory >= Math.addExact(decodedBytes, HEAP_RESERVE_BYTES);
-        } catch (final ArithmeticException e) {
-            return false;
-        }
     }
 
     private static String message(final Throwable fault) {

@@ -26,8 +26,7 @@ final class MapExportWorkflowTest {
     void completedExportCopiesItsImageAndOffersItsContainingFolder() throws IOException {
         final String source = source("src/main/java/cn/net/rms/confluxmap/mc/ui/screen/MapExportScreen.java");
 
-        assertTrue(source.contains("desktopActions.copyImage("));
-        assertTrue(source.contains("submittedRequest.pixelWidth()"));
+        assertTrue(source.contains("desktopActions.copyImage(status.output())"));
         assertTrue(source.contains("confluxmap.screen.map_export.open_folder"));
         assertTrue(source.contains("desktopActions.openDirectory(status.output())"));
     }

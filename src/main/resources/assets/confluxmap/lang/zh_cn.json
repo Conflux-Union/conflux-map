@@ -572,7 +572,6 @@
   "confluxmap.screen.map_export.open_folder_failed": "无法打开导出文件夹",
   "confluxmap.screen.map_export.clipboard.copying": "正在将图片复制到剪贴板…",
   "confluxmap.screen.map_export.clipboard.copied": "图片已复制到剪贴板",
-  "confluxmap.screen.map_export.clipboard.skipped": "图片已保存；为避免内存不足，未复制到剪贴板",
   "confluxmap.screen.map_export.clipboard.failed": "图片已保存；复制到剪贴板失败",
   "confluxmap.screen.structure_candidates.bounds": "搜索半径 / 结果数量",
   "confluxmap.screen.structure_candidates.waypoint": "添加路径点",

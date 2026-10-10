@@ -1,8 +1,6 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -10,18 +8,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 final class MapExportDesktopActionsTest {
-    @Test
-    void clipboardPreflightPreservesTheHeapReserve() {
-        final long mib = 1024L * 1024L;
-
-        assertTrue(MapExportDesktopActions.hasClipboardHeadroom(
-            1024, 1024, 512 * mib, 100 * mib
-        ));
-        assertFalse(MapExportDesktopActions.hasClipboardHeadroom(
-            8192, 8192, 512 * mib, 200 * mib
-        ));
-    }
-
     @Test
     void copyAndOpenReportDesktopResultsWithoutThrowing() {
         final AtomicReference<Path> copied = new AtomicReference<>();
@@ -38,12 +24,11 @@ final class MapExportDesktopActionsTest {
                     opened.set(path);
                 }
             },
-            Runnable::run,
-            () -> new MapExportDesktopActions.MemorySnapshot(1024L << 20, 0L)
+            Runnable::run
         );
         final Path output = Path.of("/tmp/export.png");
 
-        actions.copyImage(output, 32, 32);
+        actions.copyImage(output);
         actions.openDirectory(output);
 
         assertEquals(output, copied.get());
