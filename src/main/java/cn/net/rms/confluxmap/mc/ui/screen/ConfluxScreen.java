@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.compat.Texts;
+import cn.net.rms.confluxmap.compat.Widgets;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -284,11 +285,17 @@ public abstract class ConfluxScreen extends Screen {
         disabledTooltipKeys.put(widget, translationKey);
     }
 
+    private static boolean pointerOver(final ClickableWidget widget, final int mouseX, final int mouseY) {
+        return mouseX >= Widgets.x(widget) && mouseY >= Widgets.y(widget)
+                && mouseX < Widgets.x(widget) + widget.getWidth()
+                && mouseY < Widgets.y(widget) + widget.getHeight();
+    }
+
     private void renderDisabledTooltip(final GuiDraw draw, final int mouseX, final int mouseY) {
         disabledTooltipKeys.entrySet().removeIf(entry -> !children().contains(entry.getKey()));
         for (final Map.Entry<ClickableWidget, String> entry : disabledTooltipKeys.entrySet()) {
             final ClickableWidget widget = entry.getKey();
-            if (widget.visible && !widget.active && widget.isMouseOver(mouseX, mouseY)) {
+            if (widget.visible && !widget.active && pointerOver(widget, mouseX, mouseY)) {
                 draw.drawTooltip(
                     this,
                     this.textRenderer,
@@ -336,7 +343,7 @@ public abstract class ConfluxScreen extends Screen {
         locationMenuTooltipKeys.entrySet().removeIf(entry -> !children().contains(entry.getKey()));
         for (final Map.Entry<ClickableWidget, String> entry : locationMenuTooltipKeys.entrySet()) {
             final ClickableWidget widget = entry.getKey();
-            if (widget.visible && widget.isMouseOver(mouseX, mouseY)) {
+            if (widget.visible && pointerOver(widget, mouseX, mouseY)) {
                 draw.drawTooltip(
                     this,
                     this.textRenderer,
