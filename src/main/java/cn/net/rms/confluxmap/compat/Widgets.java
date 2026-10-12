@@ -87,4 +87,10 @@ public final class Widgets {
         field.setChangedListener(listener);
         //#endif
     }
+
+    public static void unfocus(final TextFieldWidget field) {
+        //#if MC<11904
+        field.setTextFieldFocused(false);
+        //#endif
+    }
 }

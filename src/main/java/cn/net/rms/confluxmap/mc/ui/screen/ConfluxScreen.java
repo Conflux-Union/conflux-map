@@ -10,6 +10,7 @@ import java.util.function.BooleanSupplier;
 //#if MC>=12000
 //$$ import net.minecraft.client.gui.DrawContext;
 //#else
+import net.minecraft.client.gui.Element;
 import net.minecraft.client.util.math.MatrixStack;
 //#endif
 //#if MC>=12109
@@ -225,6 +226,17 @@ public abstract class ConfluxScreen extends Screen {
         return super.keyPressed(keyCode, scanCode, modifiers);
         //#endif
     }
+
+    //#if MC<11904
+    @Override
+    public void setFocused(final Element element) {
+        final Element previous = getFocused();
+        super.setFocused(element);
+        if (previous != element && previous instanceof TextFieldWidget field) {
+            Widgets.unfocus(field);
+        }
+    }
+    //#endif
 
     /**
      * Offers a digit shortcut for the open embedded location menu. Overridden by the
