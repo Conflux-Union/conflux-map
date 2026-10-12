@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.ui;
 
 import cn.net.rms.confluxmap.mc.render.RenderUtil;
 import com.mojang.blaze3d.systems.RenderSystem;
+import java.util.List;
 //#if MC>=12108
 //$$ import org.joml.Matrix3x2fStack;
 //$$ import org.joml.Matrix4f;
@@ -155,10 +156,13 @@ public final class GuiDraw {
         final int mouseX,
         final int mouseY
     ) {
-        //#if MC>=12000
-        //$$ context.drawTooltip(renderer, text, mouseX, mouseY);
+        final List<OrderedText> lines = renderer.wrapLines(text, Math.max(200, screen.width / 2));
+        //#if MC>=12108
+        //$$ context.drawTooltip(lines, mouseX, mouseY);
+        //#elseif MC>=12000
+        //$$ context.drawOrderedTooltip(renderer, lines, mouseX, mouseY);
         //#else
-        screen.renderTooltip(matrices, text, mouseX, mouseY);
+        screen.renderOrderedTooltip(matrices, lines, mouseX, mouseY);
         //#endif
     }
 
