@@ -288,7 +288,7 @@ public abstract class ConfluxScreen extends Screen {
         disabledTooltipKeys.entrySet().removeIf(entry -> !children().contains(entry.getKey()));
         for (final Map.Entry<ClickableWidget, String> entry : disabledTooltipKeys.entrySet()) {
             final ClickableWidget widget = entry.getKey();
-            if (widget.visible && !widget.active && widget.isHovered()) {
+            if (widget.visible && !widget.active && widget.isMouseOver(mouseX, mouseY)) {
                 draw.drawTooltip(
                     this,
                     this.textRenderer,
@@ -336,7 +336,7 @@ public abstract class ConfluxScreen extends Screen {
         locationMenuTooltipKeys.entrySet().removeIf(entry -> !children().contains(entry.getKey()));
         for (final Map.Entry<ClickableWidget, String> entry : locationMenuTooltipKeys.entrySet()) {
             final ClickableWidget widget = entry.getKey();
-            if (widget.visible && widget.isHovered()) {
+            if (widget.visible && widget.isMouseOver(mouseX, mouseY)) {
                 draw.drawTooltip(
                     this,
                     this.textRenderer,
