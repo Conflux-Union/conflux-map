@@ -490,16 +490,6 @@ final class StructureCandidateScreen extends ConfluxScreen {
                 0xFFFFFFFF
             );
         }
-        final int hovered = listUi.candidateAt(mouseX, mouseY);
-        if (hovered >= 0) {
-            draw.drawTooltip(
-                this,
-                this.textRenderer,
-                Texts.literal(candidateLine(results.get(hovered))),
-                mouseX,
-                mouseY
-            );
-        }
         if (statusKey != null) {
             drawCentered(draw, Texts.translatable(statusKey).getString(), height - 36, 0xFFFF7777);
         }
@@ -515,6 +505,16 @@ final class StructureCandidateScreen extends ConfluxScreen {
     ) {
         mapPane.drawMenuHotkeys(draw, this.textRenderer);
         candidateListUi().drawOverflowCues(draw);
+        final int hovered = candidateListUi().candidateAt(mouseX, mouseY);
+        if (hovered >= 0) {
+            draw.drawTooltip(
+                this,
+                this.textRenderer,
+                Texts.literal(candidateLine(results.get(hovered))),
+                mouseX,
+                mouseY
+            );
+        }
     }
 
     @Override
