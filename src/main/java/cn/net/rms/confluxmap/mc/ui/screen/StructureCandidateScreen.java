@@ -484,22 +484,20 @@ final class StructureCandidateScreen extends ConfluxScreen {
             );
             draw.drawTextWithShadow(
                 this.textRenderer,
-                fitToWidth(
-                    Texts.translatable(marker.translationKey()).getString()
-                        + " · "
-                        + CandidateListUi.coordinateText(marker.blockX(), marker.blockZ())
-                        + " · "
-                        + Texts.translatable(
-                            "confluxmap.value.blocks",
-                            CandidateListUi.distanceInBlocks(
-                                marker.blockX(), marker.blockZ(), centerX, centerZ
-                            )
-                        ).getString(),
-                    textWidth
-                ),
+                fitToWidth(candidateLine(marker), textWidth),
                 rowX() + iconSize + GAP,
                 listUi.rowY(index) + 6,
                 0xFFFFFFFF
+            );
+        }
+        final int hovered = listUi.candidateAt(mouseX, mouseY);
+        if (hovered >= 0) {
+            draw.drawTooltip(
+                this,
+                this.textRenderer,
+                Texts.literal(candidateLine(results.get(hovered))),
+                mouseX,
+                mouseY
             );
         }
         if (statusKey != null) {
@@ -522,6 +520,19 @@ final class StructureCandidateScreen extends ConfluxScreen {
     @Override
     protected boolean embeddedMenuHotkeyPressed(final int keyCode) {
         return mapPane.menuHotkeyPressed(this, keyCode);
+    }
+
+    private String candidateLine(final StructureIndex.Marker marker) {
+        return Texts.translatable(marker.translationKey()).getString()
+            + " · "
+            + CandidateListUi.coordinateText(marker.blockX(), marker.blockZ())
+            + " · "
+            + Texts.translatable(
+                "confluxmap.value.blocks",
+                CandidateListUi.distanceInBlocks(
+                    marker.blockX(), marker.blockZ(), centerX, centerZ
+                )
+            ).getString();
     }
 
     private void drawCentered(final GuiDraw draw, final String text, final int y, final int color) {
