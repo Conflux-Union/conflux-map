@@ -30,6 +30,18 @@ public final class BiomeCandidateSearch {
         final int radius,
         final int limit
     ) {
+        return findExplored(store, targetBiomeId, centerX, centerZ, radius, limit, SearchOrder.NEAREST);
+    }
+
+    public static List<Candidate> findExplored(
+        final ColumnStore store,
+        final String targetBiomeId,
+        final int centerX,
+        final int centerZ,
+        final int radius,
+        final int limit,
+        final SearchOrder order
+    ) {
         final long radiusSquared = (long) radius * radius;
         final List<Candidate> samples = new ArrayList<>();
         for (final RegionColumns region : store.allRegions()) {
@@ -58,9 +70,11 @@ public final class BiomeCandidateSearch {
                         continue;
                     }
                     final int cell = (localZ / 128) * 2 + localX / 128;
+                    final long candidateDistance = distanceSquared(candidate, centerX, centerZ);
                     if (nearestByCell[cell] == null
-                        || distanceSquared(candidate, centerX, centerZ)
-                            < distanceSquared(nearestByCell[cell], centerX, centerZ)) {
+                        || (order == SearchOrder.FARTHEST
+                            ? candidateDistance > distanceSquared(nearestByCell[cell], centerX, centerZ)
+                            : candidateDistance < distanceSquared(nearestByCell[cell], centerX, centerZ))) {
                         nearestByCell[cell] = candidate;
                     }
                 }
@@ -71,7 +85,7 @@ public final class BiomeCandidateSearch {
                 }
             }
         }
-        return select(centerX, centerZ, radius, limit, samples);
+        return select(centerX, centerZ, radius, limit, samples, order);
     }
 
     private static boolean intersects(
@@ -121,11 +135,25 @@ public final class BiomeCandidateSearch {
         final int stride,
         final int[] biomeIds
     ) {
+        return fromGrid(targetBiomeId, originX, originZ, width, height, stride, biomeIds, SearchOrder.NEAREST);
+    }
+
+    public static List<Candidate> fromGrid(
+        final int targetBiomeId,
+        final int originX,
+        final int originZ,
+        final int width,
+        final int height,
+        final int stride,
+        final int[] biomeIds,
+        final SearchOrder order
+    ) {
         final List<Candidate> candidates = new ArrayList<>();
         final boolean[] visited = new boolean[width * height];
         final int[] queue = new int[width * height];
         final int centerGridX = width / 2;
         final int centerGridZ = height / 2;
+        final boolean farthest = order == SearchOrder.FARTHEST;
         for (int start = 0; start < biomeIds.length; start++) {
             if (visited[start] || biomeIds[start] != targetBiomeId) {
                 continue;
@@ -137,8 +165,11 @@ public final class BiomeCandidateSearch {
             visited[start] = true;
             while (head < tail) {
                 final int current = queue[head++];
-                if (gridDistanceSquared(current, width, centerGridX, centerGridZ)
-                    < gridDistanceSquared(best, width, centerGridX, centerGridZ)) {
+                final long bestDistance = gridDistanceSquared(best, width, centerGridX, centerGridZ);
+                final long currentDistance = gridDistanceSquared(current, width, centerGridX, centerGridZ);
+                if (farthest
+                    ? currentDistance > bestDistance
+                    : currentDistance < bestDistance) {
                     best = current;
                 }
                 final int x = current % width;
@@ -199,12 +230,31 @@ public final class BiomeCandidateSearch {
         final int limit,
         final List<Candidate> samples
     ) {
+        return select(centerX, centerZ, radius, limit, samples, SearchOrder.NEAREST);
+    }
+
+    public static List<Candidate> select(
+        final int centerX,
+        final int centerZ,
+        final int radius,
+        final int limit,
+        final List<Candidate> samples,
+        final SearchOrder order
+    ) {
         final long radiusSquared = (long) radius * radius;
         final List<Candidate> sorted = new ArrayList<>(samples);
-        sorted.sort(
-            Comparator.comparing(Candidate::source)
-                .thenComparingLong(candidate -> distanceSquared(candidate, centerX, centerZ))
-        );
+        if (order == SearchOrder.FARTHEST) {
+            sorted.sort(Comparator
+                .comparingLong((Candidate candidate) -> distanceSquared(candidate, centerX, centerZ))
+                .reversed()
+                .thenComparing(Candidate::blockX)
+                .thenComparing(Candidate::blockZ));
+        } else {
+            sorted.sort(
+                Comparator.comparing(Candidate::source)
+                    .thenComparingLong(candidate -> distanceSquared(candidate, centerX, centerZ))
+            );
+        }
         final List<Candidate> selected = new ArrayList<>();
         for (final Candidate candidate : sorted) {
             if (distanceSquared(candidate, centerX, centerZ) > radiusSquared

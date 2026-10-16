@@ -4,6 +4,7 @@ import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.predict.PredictionDimensions;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
 import cn.net.rms.confluxmap.core.predict.QuadrantLayout;
+import cn.net.rms.confluxmap.core.predict.SearchOrder;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
@@ -257,10 +258,22 @@ public final class StructureMarkerService {
         final int limit,
         final OptionalInt variant
     ) {
+        return findCandidates(type, blockX, blockZ, maxRadius, limit, variant, SearchOrder.NEAREST);
+    }
+
+    public synchronized List<StructureIndex.Marker> findCandidates(
+        final StructureIndex.StructureType type,
+        final int blockX,
+        final int blockZ,
+        final int maxRadius,
+        final int limit,
+        final OptionalInt variant,
+        final SearchOrder order
+    ) {
         return current == null || !structureSearchAllowed.getAsBoolean()
             ? List.of()
             : filterQuadrants(
-                current.findCandidates(type, blockX, blockZ, maxRadius, limit, variant)
+                current.findCandidates(type, blockX, blockZ, maxRadius, limit, variant, order)
             );
     }
 

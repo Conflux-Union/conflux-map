@@ -10,6 +10,7 @@ import cn.net.rms.confluxmap.core.predict.BaselineSampler;
 import cn.net.rms.confluxmap.core.predict.BiomeCandidateSearch;
 import cn.net.rms.confluxmap.core.predict.BiomeSearchService;
 import cn.net.rms.confluxmap.core.predict.CubiomesBiomeIds;
+import cn.net.rms.confluxmap.core.predict.SearchOrder;
 import cn.net.rms.confluxmap.core.store.ColumnStore;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import java.util.ArrayList;
@@ -48,6 +49,7 @@ final class BiomeCandidateScreen extends ConfluxScreen {
     private int centerZ;
     private int radius = DEFAULT_RADIUS;
     private int limit = DEFAULT_LIMIT;
+    private SearchOrder order = SearchOrder.NEAREST;
     private List<BiomeCandidateSearch.Candidate> results = List.of();
     private int scrollOffset;
     private int queryGeneration;
@@ -60,6 +62,7 @@ final class BiomeCandidateScreen extends ConfluxScreen {
     private TextFieldWidget radiusField;
     private TextFieldWidget limitField;
     private ButtonWidget searchButton;
+    private ButtonWidget orderButton;
     private int fieldWidth;
     private int panelContentWidth = 1;
     private String statusKey;
@@ -114,13 +117,24 @@ final class BiomeCandidateScreen extends ConfluxScreen {
         addDrawableChild(centerZField);
         addDrawableChild(radiusField);
         addDrawableChild(limitField);
+        final int controlsWidth = Math.min(204, layout.panelContentWidth());
+        final int controlWidth = Math.max(1, (controlsWidth - GAP) / 2);
+        final int controlsLeft = layout.panelCenterX() - controlsWidth / 2;
         searchButton = addDrawableChild(Widgets.button(
-            layout.panelCenterX() - Math.min(100, layout.panelContentWidth()) / 2,
+            controlsLeft,
             88,
-            Math.min(100, layout.panelContentWidth()),
+            controlWidth,
             FIELD_HEIGHT,
             Texts.translatable(searchButtonKey(searching)),
             ignored -> search()
+        ));
+        orderButton = addDrawableChild(Widgets.button(
+            controlsLeft + controlWidth + GAP,
+            88,
+            controlWidth,
+            FIELD_HEIGHT,
+            Texts.translatable(orderLabelKey(order)),
+            ignored -> toggleOrder()
         ));
 
         final CandidateListUi listUi = candidateListUi();
@@ -148,6 +162,10 @@ final class BiomeCandidateScreen extends ConfluxScreen {
             ignored -> onClose()
         ));
         searchButton.active = !searching;
+        if (orderButton != null) {
+            orderButton.active = !searching;
+            orderButton.setMessage(Texts.translatable(orderLabelKey(order)));
+        }
         updateRows();
         mapPane.addMenuButtons(this);
     }
@@ -198,6 +216,7 @@ final class BiomeCandidateScreen extends ConfluxScreen {
         final int queryCenterZ = centerZ;
         final int queryRadius = radius;
         final int queryLimit = limit;
+        final SearchOrder queryOrder = order;
         final ColumnStore store = map.biomeSearchStore();
         final OptionalInt predictedBiome = biome.getNamespace().equals("minecraft")
             ? CubiomesBiomeIds.idForName(biome.getPath())
@@ -219,7 +238,8 @@ final class BiomeCandidateScreen extends ConfluxScreen {
                     queryCenterX,
                     queryCenterZ,
                     queryRadius,
-                    queryLimit
+                    queryLimit,
+                    queryOrder
                 );
                 MinecraftClient.getInstance().execute(() -> acceptResults(
                     generation, found, sampler != null
@@ -256,6 +276,17 @@ final class BiomeCandidateScreen extends ConfluxScreen {
 
     private void focus(final BiomeCandidateSearch.Candidate candidate) {
         map.focusBiome(candidate);
+    }
+
+    private void toggleOrder() {
+        order = order == SearchOrder.FARTHEST ? SearchOrder.NEAREST : SearchOrder.FARTHEST;
+        submitSearch();
+    }
+
+    private static String orderLabelKey(final SearchOrder order) {
+        return order == SearchOrder.FARTHEST
+            ? "confluxmap.screen.structure_candidates.order.farthest"
+            : "confluxmap.screen.structure_candidates.order.nearest";
     }
 
     static String searchButtonKey(final boolean searching) {

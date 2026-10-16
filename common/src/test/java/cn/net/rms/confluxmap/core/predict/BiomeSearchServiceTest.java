@@ -155,6 +155,76 @@ class BiomeSearchServiceTest {
         ), BiomeSearchService.samplePredicted(sampler, 7, 0, 0, 512, 10));
     }
 
+    @Test
+    void farthestSearchOrdersPredictedMatchesByDescendingDistance() {
+        final BaselineSampler sampler = twoPointSampler();
+
+        assertEquals(List.of(
+            new BiomeCandidateSearch.Candidate(
+                200, 0, BiomeCandidateSearch.Source.PREDICTED
+            ),
+            new BiomeCandidateSearch.Candidate(
+                0, 0, BiomeCandidateSearch.Source.PREDICTED
+            )
+        ), BiomeSearchService.search(
+            new ColumnStore(),
+            "minecraft:river",
+            OptionalInt.of(7),
+            sampler,
+            0,
+            0,
+            512,
+            10,
+            SearchOrder.FARTHEST
+        ));
+    }
+
+    private static BaselineSampler twoPointSampler() {
+        return new BaselineSampler() {
+            @Override
+            public boolean biomes(
+                final int scale,
+                final int x,
+                final int z,
+                final int width,
+                final int height,
+                final int[] out
+            ) {
+                for (int row = 0; row < height; row++) {
+                    for (int column = 0; column < width; column++) {
+                        final int blockX = (x + column) * scale;
+                        final int blockZ = (z + row) * scale;
+                        out[row * width + column] =
+                            blockZ == 0 && (blockX == 0 || blockX == 200) ? 7 : 1;
+                    }
+                }
+                return true;
+            }
+
+            @Override
+            public boolean heights(
+                final int x4,
+                final int z4,
+                final int width,
+                final int height,
+                final int[] outY
+            ) {
+                return false;
+            }
+
+            @Override
+            public boolean endHeights(
+                final int x4,
+                final int z4,
+                final int width,
+                final int height,
+                final int[] outY
+            ) {
+                return false;
+            }
+        };
+    }
+
     private static BaselineSampler constantSampler(final int biomeId) {
         return new BaselineSampler() {
             @Override

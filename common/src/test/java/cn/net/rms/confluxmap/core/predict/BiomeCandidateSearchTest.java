@@ -113,6 +113,155 @@ class BiomeCandidateSearchTest {
     }
 
     @Test
+    void farthestSelectionOrdersByDistanceAloneAcrossSources() {
+        assertEquals(List.of(
+            new BiomeCandidateSearch.Candidate(
+                0, -9_000, BiomeCandidateSearch.Source.PREDICTED
+            ),
+            new BiomeCandidateSearch.Candidate(
+                0, -8_000, BiomeCandidateSearch.Source.EXPLORED
+            ),
+            new BiomeCandidateSearch.Candidate(
+                30, 40, BiomeCandidateSearch.Source.EXPLORED
+            )
+        ), BiomeCandidateSearch.select(
+            0,
+            0,
+            10_000,
+            3,
+            List.of(
+                new BiomeCandidateSearch.Candidate(
+                    0, -8_000, BiomeCandidateSearch.Source.EXPLORED
+                ),
+                new BiomeCandidateSearch.Candidate(
+                    0, -9_000, BiomeCandidateSearch.Source.PREDICTED
+                ),
+                new BiomeCandidateSearch.Candidate(
+                    30, 40, BiomeCandidateSearch.Source.EXPLORED
+                )
+            ),
+            SearchOrder.FARTHEST
+        ));
+    }
+
+    @Test
+    void farthestSelectionStillClipsTheRadiusAndEnforcesSeparation() {
+        assertEquals(List.of(
+            new BiomeCandidateSearch.Candidate(
+                0, -9_000, BiomeCandidateSearch.Source.PREDICTED
+            ),
+            new BiomeCandidateSearch.Candidate(
+                0, 0, BiomeCandidateSearch.Source.EXPLORED
+            )
+        ), BiomeCandidateSearch.select(
+            0,
+            0,
+            10_000,
+            4,
+            List.of(
+                new BiomeCandidateSearch.Candidate(
+                    0, -12_000, BiomeCandidateSearch.Source.EXPLORED
+                ),
+                new BiomeCandidateSearch.Candidate(
+                    0, -9_000, BiomeCandidateSearch.Source.PREDICTED
+                ),
+                new BiomeCandidateSearch.Candidate(
+                    0, -8_950, BiomeCandidateSearch.Source.EXPLORED
+                ),
+                new BiomeCandidateSearch.Candidate(
+                    0, 0, BiomeCandidateSearch.Source.EXPLORED
+                )
+            ),
+            SearchOrder.FARTHEST
+        ));
+    }
+
+    @Test
+    void nearestSelectionKeepsExploredPriorityWithDistanceAscending() {
+        assertEquals(List.of(
+            new BiomeCandidateSearch.Candidate(
+                30, 40, BiomeCandidateSearch.Source.EXPLORED
+            ),
+            new BiomeCandidateSearch.Candidate(
+                0, -8_000, BiomeCandidateSearch.Source.EXPLORED
+            ),
+            new BiomeCandidateSearch.Candidate(
+                0, -9_000, BiomeCandidateSearch.Source.PREDICTED
+            )
+        ), BiomeCandidateSearch.select(
+            0,
+            0,
+            10_000,
+            3,
+            List.of(
+                new BiomeCandidateSearch.Candidate(
+                    0, -8_000, BiomeCandidateSearch.Source.EXPLORED
+                ),
+                new BiomeCandidateSearch.Candidate(
+                    0, -9_000, BiomeCandidateSearch.Source.PREDICTED
+                ),
+                new BiomeCandidateSearch.Candidate(
+                    30, 40, BiomeCandidateSearch.Source.EXPLORED
+                )
+            ),
+            SearchOrder.NEAREST
+        ));
+    }
+
+    @Test
+    void farthestPredictedGridPickUsesTheOutermostCellOfEachComponent() {
+        final int[] grid = {1, 7, 7, 7, 7, 1};
+
+        assertEquals(List.of(
+            new BiomeCandidateSearch.Candidate(300, 0, BiomeCandidateSearch.Source.PREDICTED)
+        ), BiomeCandidateSearch.fromGrid(7, 0, 0, 6, 1, 100, grid, SearchOrder.NEAREST));
+        assertEquals(List.of(
+            new BiomeCandidateSearch.Candidate(100, 0, BiomeCandidateSearch.Source.PREDICTED)
+        ), BiomeCandidateSearch.fromGrid(7, 0, 0, 6, 1, 100, grid, SearchOrder.FARTHEST));
+    }
+
+    @Test
+    void farthestExploredSearchPrefersTheOutermostColumnOfEachCell() {
+        final SessionGuard.Session session = new SessionGuard.Session(
+            7L, WorldIdentity.singleplayer("farthest-biome-world"), DimensionId.OVERWORLD
+        );
+        final MapWorld world = new MapWorld(session);
+        world.put(MapLayer.SURFACE, riverColumns(session.token(), 0, 0), SampleSource.REAL_LIVE);
+        world.put(MapLayer.SURFACE, riverColumns(session.token(), 7, 7), SampleSource.REAL_LIVE);
+
+        assertEquals(List.of(
+            new BiomeCandidateSearch.Candidate(0, 0, BiomeCandidateSearch.Source.EXPLORED)
+        ), BiomeCandidateSearch.findExplored(
+            world.store(MapLayer.SURFACE), "minecraft:river", 0, 0, 10_000, 10, SearchOrder.NEAREST
+        ));
+        assertEquals(List.of(
+            new BiomeCandidateSearch.Candidate(127, 127, BiomeCandidateSearch.Source.EXPLORED)
+        ), BiomeCandidateSearch.findExplored(
+            world.store(MapLayer.SURFACE), "minecraft:river", 0, 0, 10_000, 10, SearchOrder.FARTHEST
+        ));
+    }
+
+    private static ChunkSnapshot riverColumns(final long sessionToken, final int chunkX, final int chunkZ) {
+        final String[] biomes = new String[ChunkSnapshot.COLUMNS];
+        Arrays.fill(biomes, "minecraft:river");
+        final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
+        Arrays.fill(surfaceY, (short) 64);
+        return new ChunkSnapshot(
+            chunkX,
+            chunkZ,
+            sessionToken,
+            surfaceY,
+            biomes,
+            new byte[ChunkSnapshot.COLUMNS],
+            new int[ChunkSnapshot.COLUMNS],
+            new int[ChunkSnapshot.COLUMNS],
+            new int[ChunkSnapshot.COLUMNS],
+            new byte[ChunkSnapshot.COLUMNS],
+            new byte[ChunkSnapshot.COLUMNS]
+        );
+    }
+
+    @Test
     void exploredCandidatesComeBeforePredictionAndNearbyDuplicatesCollapse() {
         final List<BiomeCandidateSearch.Candidate> candidates = BiomeCandidateSearch.select(
             0,

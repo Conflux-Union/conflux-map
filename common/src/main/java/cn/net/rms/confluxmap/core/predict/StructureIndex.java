@@ -464,8 +464,10 @@ public final class StructureIndex {
 
     /**
      * Returns the nearest candidates inside a circular search area. Native generation expands
-     * only while the next rectangular batch stays under a fixed region budget, so a large UI
-     * radius cannot stall the client thread.
+     * from the center in rectangular batches that each stay under a fixed region budget: the
+     * square doubles while it fits, then bounded square frames continue outward until the
+     * result count is met or the radius is exhausted, so a large UI radius cannot stall the
+     * client thread.
      */
     public synchronized List<Marker> findCandidates(
         final StructureType type,
@@ -485,11 +487,36 @@ public final class StructureIndex {
         final int limit,
         final OptionalInt variant
     ) {
+        return findCandidates(type, blockX, blockZ, maxRadius, limit, variant, SearchOrder.NEAREST);
+    }
+
+    public synchronized List<Marker> findCandidates(
+        final StructureType type,
+        final int blockX,
+        final int blockZ,
+        final int maxRadius,
+        final int limit,
+        final OptionalInt variant,
+        final SearchOrder order
+    ) {
         if (provider == null || maxRadius <= 0 || limit <= 0
             || !type.supports(mcVersion, dimension)) {
             return List.of();
         }
         final int boundedLimit = Math.min(limit, 100);
+        if (order == SearchOrder.FARTHEST) {
+            if (type.globalPlacement()) {
+                query(
+                    Integer.MIN_VALUE,
+                    Integer.MAX_VALUE,
+                    Integer.MIN_VALUE,
+                    Integer.MAX_VALUE,
+                    EnumSet.of(type)
+                );
+                return outermostCandidates(type, blockX, blockZ, maxRadius, boundedLimit, variant);
+            }
+            return farthestCandidates(type, blockX, blockZ, maxRadius, boundedLimit, variant);
+        }
         if (type.globalPlacement()) {
             query(
                 Integer.MIN_VALUE,
@@ -507,6 +534,7 @@ public final class StructureIndex {
             (long) Math.max(1, (int) Math.ceil(Math.sqrt(boundedLimit))) * regionSize
         );
         long extent = Math.max(1L, initialExtent);
+        long coveredExtent = 0;
         while (true) {
             final int minBlockX = clampBlockCoordinate((long) blockX - extent);
             final int maxBlockX = clampBlockCoordinate((long) blockX + extent);
@@ -517,15 +545,50 @@ public final class StructureIndex {
                 break;
             }
             prefetchCandidateArea(type, minBlockX, maxBlockX, minBlockZ, maxBlockZ);
+            coveredExtent = extent;
             final List<Marker> result = nearestCandidates(
                 type, blockX, blockZ, maxRadius, boundedLimit, variant
             );
-            if (result.size() >= boundedLimit || extent >= maxRadius) {
+            if (nearestAreWithinCoveredArea(result, boundedLimit, coveredExtent, blockX, blockZ)
+                || extent >= maxRadius) {
                 return result;
             }
             extent = Math.min((long) maxRadius, extent * 2L);
         }
+        while (coveredExtent < maxRadius) {
+            final long sideRegions = Math.max(1, (coveredExtent * 2 + regionSize - 1) / regionSize);
+            final long thicknessRegions = Math.max(
+                1, Math.min(sideRegions, MAX_CANDIDATE_QUERY_REGIONS / (8 * sideRegions))
+            );
+            final long outerHalf = Math.min(
+                maxRadius, coveredExtent + thicknessRegions * (long) regionSize
+            );
+            collectFrame(
+                type, blockX, blockZ, coveredExtent, outerHalf, maxRadius, Integer.MAX_VALUE,
+                variant, new ArrayList<>()
+            );
+            coveredExtent = outerHalf;
+            final List<Marker> ringResult = nearestCandidates(
+                type, blockX, blockZ, maxRadius, boundedLimit, variant
+            );
+            if (nearestAreWithinCoveredArea(
+                ringResult, boundedLimit, coveredExtent, blockX, blockZ
+            )) {
+                return ringResult;
+            }
+        }
         return nearestCandidates(type, blockX, blockZ, maxRadius, boundedLimit, variant);
+    }
+
+    private boolean nearestAreWithinCoveredArea(
+        final List<Marker> result,
+        final int limit,
+        final long coveredExtent,
+        final int blockX,
+        final int blockZ
+    ) {
+        return result.size() >= limit
+            && distance(result.get(limit - 1), blockX, blockZ) <= coveredExtent;
     }
 
     private List<Marker> nearestCandidates(
@@ -534,6 +597,42 @@ public final class StructureIndex {
         final int blockZ,
         final int maxRadius,
         final int limit,
+        final OptionalInt variant
+    ) {
+        final List<Marker> candidates = inRadius(type, blockX, blockZ, maxRadius, variant);
+        candidates.sort(Comparator
+            .comparingDouble((Marker marker) -> distance(marker, blockX, blockZ))
+            .thenComparingInt(Marker::blockX)
+            .thenComparingInt(Marker::blockZ));
+        return candidates.size() <= limit
+            ? List.copyOf(candidates)
+            : List.copyOf(candidates.subList(0, limit));
+    }
+
+    /** Picks the farthest in-radius markers; exact because the caller has generated the whole area. */
+    private List<Marker> outermostCandidates(
+        final StructureType type,
+        final int blockX,
+        final int blockZ,
+        final int maxRadius,
+        final int limit,
+        final OptionalInt variant
+    ) {
+        final List<Marker> candidates = inRadius(type, blockX, blockZ, maxRadius, variant);
+        candidates.sort(Comparator
+            .comparingDouble((Marker marker) -> distance(marker, blockX, blockZ)).reversed()
+            .thenComparingInt(Marker::blockX)
+            .thenComparingInt(Marker::blockZ));
+        return candidates.size() <= limit
+            ? List.copyOf(candidates)
+            : List.copyOf(candidates.subList(0, limit));
+    }
+
+    private List<Marker> inRadius(
+        final StructureType type,
+        final int blockX,
+        final int blockZ,
+        final int maxRadius,
         final OptionalInt variant
     ) {
         final List<Marker> candidates = new ArrayList<>();
@@ -545,13 +644,149 @@ public final class StructureIndex {
             }
             candidates.add(marker);
         }
-        candidates.sort(Comparator
-            .comparingDouble((Marker marker) -> distance(marker, blockX, blockZ))
+        return candidates;
+    }
+
+    private List<Marker> farthestCandidates(
+        final StructureType type,
+        final int blockX,
+        final int blockZ,
+        final int maxRadius,
+        final int limit,
+        final OptionalInt variant
+    ) {
+        final int regionSize = type.regionSizeBlocks(mcVersion);
+        final List<Marker> pool = new ArrayList<>();
+        long outerHalf = maxRadius;
+        while (outerHalf > 0 && pool.size() < limit) {
+            final long sideRegions = Math.max(1, (outerHalf * 2 + regionSize - 1) / regionSize);
+            final long thicknessRegions = Math.max(
+                1, Math.min(sideRegions, MAX_CANDIDATE_QUERY_REGIONS / (8 * sideRegions))
+            );
+            final long innerHalf = Math.max(0, outerHalf - thicknessRegions * (long) regionSize);
+            collectFrame(
+                type, blockX, blockZ, innerHalf, outerHalf, maxRadius, limit, variant, pool
+            );
+            outerHalf = innerHalf;
+        }
+        pool.sort(Comparator
+            .comparingDouble((Marker marker) -> distance(marker, blockX, blockZ)).reversed()
             .thenComparingInt(Marker::blockX)
             .thenComparingInt(Marker::blockZ));
-        return candidates.size() <= limit
-            ? List.copyOf(candidates)
-            : List.copyOf(candidates.subList(0, limit));
+        return pool.size() <= limit
+            ? List.copyOf(pool)
+            : List.copyOf(pool.subList(0, limit));
+    }
+
+    private void collectFrame(
+        final StructureType type,
+        final int blockX,
+        final int blockZ,
+        final long innerHalf,
+        final long outerHalf,
+        final int maxRadius,
+        final int limit,
+        final OptionalInt variant,
+        final List<Marker> pool
+    ) {
+        collectStrip(type, blockX, blockZ,
+            blockX - outerHalf, blockX + outerHalf,
+            blockZ - outerHalf, blockZ - innerHalf - 1,
+            maxRadius, limit, variant, pool);
+        if (pool.size() >= limit) {
+            return;
+        }
+        collectStrip(type, blockX, blockZ,
+            blockX - outerHalf, blockX + outerHalf,
+            blockZ + innerHalf + 1, blockZ + outerHalf,
+            maxRadius, limit, variant, pool);
+        if (pool.size() >= limit) {
+            return;
+        }
+        collectStrip(type, blockX, blockZ,
+            blockX - outerHalf, blockX - innerHalf - 1,
+            blockZ - innerHalf, blockZ + innerHalf,
+            maxRadius, limit, variant, pool);
+        if (pool.size() >= limit) {
+            return;
+        }
+        collectStrip(type, blockX, blockZ,
+            blockX + innerHalf + 1, blockX + outerHalf,
+            blockZ - innerHalf, blockZ + innerHalf,
+            maxRadius, limit, variant, pool);
+    }
+
+    private void collectStrip(
+        final StructureType type,
+        final int blockX,
+        final int blockZ,
+        final long minBlockX,
+        final long maxBlockX,
+        final long minBlockZ,
+        final long maxBlockZ,
+        final int maxRadius,
+        final int limit,
+        final OptionalInt variant,
+        final List<Marker> pool
+    ) {
+        if (minBlockX > maxBlockX || minBlockZ > maxBlockZ) {
+            return;
+        }
+        final int regionSize = type.regionSizeBlocks(mcVersion);
+        final long minRegionX = Math.floorDiv(minBlockX, regionSize);
+        final long maxRegionX = Math.floorDiv(maxBlockX, regionSize);
+        final long minRegionZ = Math.floorDiv(minBlockZ, regionSize);
+        final long maxRegionZ = Math.floorDiv(maxBlockZ, regionSize);
+        final long width = maxRegionX - minRegionX + 1;
+        final long height = maxRegionZ - minRegionZ + 1;
+        final long segments = Math.max(
+            1, (width * height + MAX_CANDIDATE_QUERY_REGIONS - 1) / MAX_CANDIDATE_QUERY_REGIONS
+        );
+        for (long segment = 0; segment < segments && pool.size() < limit; segment++) {
+            final long sliceMinRegionX;
+            final long sliceMaxRegionX;
+            final long sliceMinRegionZ;
+            final long sliceMaxRegionZ;
+            if (width >= height) {
+                sliceMinRegionX = minRegionX + segment * width / segments;
+                sliceMaxRegionX = minRegionX + (segment + 1) * width / segments - 1;
+                sliceMinRegionZ = minRegionZ;
+                sliceMaxRegionZ = maxRegionZ;
+            } else {
+                sliceMinRegionX = minRegionX;
+                sliceMaxRegionX = maxRegionX;
+                sliceMinRegionZ = minRegionZ + segment * height / segments;
+                sliceMaxRegionZ = minRegionZ + (segment + 1) * height / segments - 1;
+            }
+            if (sliceMinRegionX > sliceMaxRegionX || sliceMinRegionZ > sliceMaxRegionZ) {
+                continue;
+            }
+            final long sliceMinBlockX = clampBlockCoordinate(sliceMinRegionX * (long) regionSize);
+            final long sliceMaxBlockX = clampBlockCoordinate((sliceMaxRegionX + 1) * (long) regionSize - 1);
+            final long sliceMinBlockZ = clampBlockCoordinate(sliceMinRegionZ * (long) regionSize);
+            final long sliceMaxBlockZ = clampBlockCoordinate((sliceMaxRegionZ + 1) * (long) regionSize - 1);
+            prefetchCandidateArea(
+                type,
+                (int) sliceMinBlockX,
+                (int) sliceMaxBlockX,
+                (int) sliceMinBlockZ,
+                (int) sliceMaxBlockZ
+            );
+            final long scanMinBlockX = Math.max(minBlockX, sliceMinBlockX);
+            final long scanMaxBlockX = Math.min(maxBlockX, sliceMaxBlockX);
+            final long scanMinBlockZ = Math.max(minBlockZ, sliceMinBlockZ);
+            final long scanMaxBlockZ = Math.min(maxBlockZ, sliceMaxBlockZ);
+            for (final Marker marker : markers.values()) {
+                if (marker.type() != type || marker.state() == State.NONEXISTENT
+                    || (variant.isPresent() && marker.variant() != variant.getAsInt())
+                    || marker.blockX() < scanMinBlockX || marker.blockX() > scanMaxBlockX
+                    || marker.blockZ() < scanMinBlockZ || marker.blockZ() > scanMaxBlockZ
+                    || distance(marker, blockX, blockZ) > maxRadius) {
+                    continue;
+                }
+                pool.add(marker);
+            }
+        }
     }
 
     private int regionCount(

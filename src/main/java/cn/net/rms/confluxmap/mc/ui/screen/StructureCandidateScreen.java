@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.compat.MouseButtons;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.predict.SearchOrder;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
 import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
@@ -45,6 +46,7 @@ final class StructureCandidateScreen extends ConfluxScreen {
     private int centerZ;
     private int radius = DEFAULT_RADIUS;
     private int limit = DEFAULT_LIMIT;
+    private SearchOrder order = SearchOrder.NEAREST;
     private List<StructureIndex.Marker> results = List.of();
     private int scrollOffset;
     private boolean initialQueryComplete;
@@ -56,6 +58,7 @@ final class StructureCandidateScreen extends ConfluxScreen {
     private TextFieldWidget limitField;
     private ButtonWidget searchButton;
     private ButtonWidget variantButton;
+    private ButtonWidget orderButton;
     private int fieldWidth;
     private int panelContentWidth = 1;
     private String statusKey;
@@ -114,13 +117,14 @@ final class StructureCandidateScreen extends ConfluxScreen {
         addDrawableChild(radiusField);
         addDrawableChild(limitField);
         final boolean hasVariants = !type.variantCodes().isEmpty();
+        final int controlCount = hasVariants ? 3 : 2;
         final int controlsWidth = Math.min(
-            hasVariants ? 204 : 100,
+            controlCount * 100 + (controlCount - 1) * GAP,
             layout.panelContentWidth()
         );
-        final int controlWidth = hasVariants
-            ? Math.max(1, (controlsWidth - GAP) / 2)
-            : controlsWidth;
+        final int controlWidth = Math.max(
+            1, (controlsWidth - (controlCount - 1) * GAP) / controlCount
+        );
         final int controlsLeft = layout.panelCenterX() - controlsWidth / 2;
         searchButton = addDrawableChild(Widgets.button(
             controlsLeft,
@@ -147,6 +151,14 @@ final class StructureCandidateScreen extends ConfluxScreen {
         } else {
             variantButton = null;
         }
+        orderButton = addDrawableChild(Widgets.button(
+            controlsLeft + (controlCount - 1) * (controlWidth + GAP),
+            88,
+            controlWidth,
+            FIELD_HEIGHT,
+            Texts.translatable(orderLabelKey(order)),
+            ignored -> toggleOrder()
+        ));
 
         final CandidateListUi listUi = candidateListUi();
         scrollOffset = listUi.scrollOffset();
@@ -259,7 +271,7 @@ final class StructureCandidateScreen extends ConfluxScreen {
 
     private void refreshResults() {
         results = structures.findCandidates(
-            type, centerX, centerZ, radius, limit, selectedVariant
+            type, centerX, centerZ, radius, limit, selectedVariant, order
         );
         statusKey = results.isEmpty()
             ? "confluxmap.screen.structure_candidates.not_found"
@@ -267,6 +279,19 @@ final class StructureCandidateScreen extends ConfluxScreen {
         if (!results.isEmpty()) {
             map.focusStructure(results.get(0));
         }
+    }
+
+    private void toggleOrder() {
+        order = order == SearchOrder.FARTHEST ? SearchOrder.NEAREST : SearchOrder.FARTHEST;
+        scrollOffset = 0;
+        refreshResults();
+        rebuild();
+    }
+
+    private static String orderLabelKey(final SearchOrder order) {
+        return order == SearchOrder.FARTHEST
+            ? "confluxmap.screen.structure_candidates.order.farthest"
+            : "confluxmap.screen.structure_candidates.order.nearest";
     }
 
     private void focus(final StructureIndex.Marker marker) {
@@ -312,6 +337,9 @@ final class StructureCandidateScreen extends ConfluxScreen {
         searchButton.active = allowed;
         if (variantButton != null) {
             variantButton.active = allowed;
+        }
+        if (orderButton != null) {
+            orderButton.active = allowed;
         }
         for (final ButtonWidget button : waypointButtons) {
             button.active = allowed;
