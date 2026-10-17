@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
+import cn.net.rms.confluxmap.core.predict.SearchOrder;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.screen.Screen;
@@ -16,6 +17,16 @@ final class CandidateListUi {
     private static final int GAP = 4;
     private static final int SEPARATOR_COLOR = 0xAA777777;
     private static final int PREFERRED_CONTENT_WIDTH = 230;
+
+    static SearchOrder toggledOrder(final SearchOrder order) {
+        return order == SearchOrder.FARTHEST ? SearchOrder.NEAREST : SearchOrder.FARTHEST;
+    }
+
+    static String orderLabelKey(final SearchOrder order) {
+        return order == SearchOrder.FARTHEST
+            ? "confluxmap.screen.structure_candidates.order.farthest"
+            : "confluxmap.screen.structure_candidates.order.nearest";
+    }
 
     private final int rowX;
     private final int rowWidth;

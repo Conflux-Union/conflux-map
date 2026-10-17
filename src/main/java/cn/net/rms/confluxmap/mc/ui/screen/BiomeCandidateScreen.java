@@ -133,7 +133,7 @@ final class BiomeCandidateScreen extends ConfluxScreen {
             88,
             controlWidth,
             FIELD_HEIGHT,
-            Texts.translatable(orderLabelKey(order)),
+            Texts.translatable(CandidateListUi.orderLabelKey(order)),
             ignored -> toggleOrder()
         ));
 
@@ -164,7 +164,7 @@ final class BiomeCandidateScreen extends ConfluxScreen {
         searchButton.active = !searching;
         if (orderButton != null) {
             orderButton.active = !searching;
-            orderButton.setMessage(Texts.translatable(orderLabelKey(order)));
+            orderButton.setMessage(Texts.translatable(CandidateListUi.orderLabelKey(order)));
         }
         updateRows();
         mapPane.addMenuButtons(this);
@@ -279,14 +279,8 @@ final class BiomeCandidateScreen extends ConfluxScreen {
     }
 
     private void toggleOrder() {
-        order = order == SearchOrder.FARTHEST ? SearchOrder.NEAREST : SearchOrder.FARTHEST;
+        order = CandidateListUi.toggledOrder(order);
         submitSearch();
-    }
-
-    private static String orderLabelKey(final SearchOrder order) {
-        return order == SearchOrder.FARTHEST
-            ? "confluxmap.screen.structure_candidates.order.farthest"
-            : "confluxmap.screen.structure_candidates.order.nearest";
     }
 
     static String searchButtonKey(final boolean searching) {

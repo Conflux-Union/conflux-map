@@ -44,7 +44,8 @@ public final class BiomeSearchService {
                 store, targetBiomeId, centerX, centerZ, radius, limit, order
             )
         );
-        if (candidates.size() < limit && predictedBiomeId.isPresent() && sampler != null) {
+        if ((candidates.size() < limit || order == SearchOrder.FARTHEST)
+            && predictedBiomeId.isPresent() && sampler != null) {
             for (final BiomeCandidateSearch.Candidate candidate : samplePredicted(
                 sampler,
                 predictedBiomeId.getAsInt(),

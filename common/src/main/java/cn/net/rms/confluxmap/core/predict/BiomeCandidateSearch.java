@@ -53,7 +53,7 @@ public final class BiomeCandidateSearch {
             final String[] biomeIds = new String[RegionColumns.SIZE * RegionColumns.SIZE];
             final byte[] chunkSources = new byte[RegionColumns.CHUNKS * RegionColumns.CHUNKS];
             region.copyBiomeSearchData(biomeIds, chunkSources);
-            final Candidate[] nearestByCell = new Candidate[4];
+            final Candidate[] bestByCell = new Candidate[4];
             for (int localZ = 0; localZ < RegionColumns.SIZE; localZ++) {
                 for (int localX = 0; localX < RegionColumns.SIZE; localX++) {
                     final int index = localZ * RegionColumns.SIZE + localX;
@@ -71,15 +71,15 @@ public final class BiomeCandidateSearch {
                     }
                     final int cell = (localZ / 128) * 2 + localX / 128;
                     final long candidateDistance = distanceSquared(candidate, centerX, centerZ);
-                    if (nearestByCell[cell] == null
+                    if (bestByCell[cell] == null
                         || (order == SearchOrder.FARTHEST
-                            ? candidateDistance > distanceSquared(nearestByCell[cell], centerX, centerZ)
-                            : candidateDistance < distanceSquared(nearestByCell[cell], centerX, centerZ))) {
-                        nearestByCell[cell] = candidate;
+                            ? candidateDistance > distanceSquared(bestByCell[cell], centerX, centerZ)
+                            : candidateDistance < distanceSquared(bestByCell[cell], centerX, centerZ))) {
+                        bestByCell[cell] = candidate;
                     }
                 }
             }
-            for (final Candidate candidate : nearestByCell) {
+            for (final Candidate candidate : bestByCell) {
                 if (candidate != null) {
                     samples.add(candidate);
                 }

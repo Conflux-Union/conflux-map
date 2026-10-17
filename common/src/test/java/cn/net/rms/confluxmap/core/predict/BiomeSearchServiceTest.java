@@ -2,7 +2,15 @@ package cn.net.rms.confluxmap.core.predict;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
+import cn.net.rms.confluxmap.core.model.DimensionId;
+import cn.net.rms.confluxmap.core.model.MapLayer;
+import cn.net.rms.confluxmap.core.model.SampleSource;
+import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.store.ColumnStore;
+import cn.net.rms.confluxmap.core.store.MapWorld;
+import cn.net.rms.confluxmap.core.task.SessionGuard;
+import java.util.Arrays;
 import java.util.List;
 import java.util.OptionalInt;
 import org.junit.jupiter.api.Test;
@@ -196,6 +204,101 @@ class BiomeSearchServiceTest {
                         final int blockZ = (z + row) * scale;
                         out[row * width + column] =
                             blockZ == 0 && (blockX == 0 || blockX == 200) ? 7 : 1;
+                    }
+                }
+                return true;
+            }
+
+            @Override
+            public boolean heights(
+                final int x4,
+                final int z4,
+                final int width,
+                final int height,
+                final int[] outY
+            ) {
+                return false;
+            }
+
+            @Override
+            public boolean endHeights(
+                final int x4,
+                final int z4,
+                final int width,
+                final int height,
+                final int[] outY
+            ) {
+                return false;
+            }
+        };
+    }
+
+    @Test
+    void farthestSearchSamplesPredictionEvenWhenExploredAloneFillsTheLimit() {
+        final SessionGuard.Session session = new SessionGuard.Session(
+            7L, WorldIdentity.singleplayer("farthest-explored-world"), DimensionId.OVERWORLD
+        );
+        final MapWorld world = new MapWorld(session);
+        world.put(MapLayer.SURFACE, riverColumns(session.token(), 0, 0), SampleSource.REAL_LIVE);
+        world.put(MapLayer.SURFACE, riverColumns(session.token(), 9, 0), SampleSource.REAL_LIVE);
+
+        assertEquals(List.of(
+            new BiomeCandidateSearch.Candidate(
+                9_000, 0, BiomeCandidateSearch.Source.PREDICTED
+            ),
+            new BiomeCandidateSearch.Candidate(
+                159, 15, BiomeCandidateSearch.Source.EXPLORED
+            )
+        ), BiomeSearchService.search(
+            world.store(MapLayer.SURFACE),
+            "minecraft:river",
+            OptionalInt.of(7),
+            pointSampler(7, 9_000, 0),
+            0,
+            0,
+            10_000,
+            2,
+            SearchOrder.FARTHEST
+        ));
+    }
+
+    private static ChunkSnapshot riverColumns(final long sessionToken, final int chunkX, final int chunkZ) {
+        final String[] biomes = new String[ChunkSnapshot.COLUMNS];
+        Arrays.fill(biomes, "minecraft:river");
+        final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
+        Arrays.fill(surfaceY, (short) 64);
+        return new ChunkSnapshot(
+            chunkX,
+            chunkZ,
+            sessionToken,
+            surfaceY,
+            biomes,
+            new byte[ChunkSnapshot.COLUMNS],
+            new int[ChunkSnapshot.COLUMNS],
+            new int[ChunkSnapshot.COLUMNS],
+            new int[ChunkSnapshot.COLUMNS],
+            new byte[ChunkSnapshot.COLUMNS],
+            new byte[ChunkSnapshot.COLUMNS]
+        );
+    }
+
+    private static BaselineSampler pointSampler(final int biomeId, final int matchX, final int matchZ) {
+        return new BaselineSampler() {
+            @Override
+            public boolean biomes(
+                final int scale,
+                final int x,
+                final int z,
+                final int width,
+                final int height,
+                final int[] out
+            ) {
+                for (int row = 0; row < height; row++) {
+                    for (int column = 0; column < width; column++) {
+                        final int blockX = (x + column) * scale;
+                        final int blockZ = (z + row) * scale;
+                        out[row * width + column] =
+                            blockX == matchX && blockZ == matchZ ? biomeId : 1;
                     }
                 }
                 return true;

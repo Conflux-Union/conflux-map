@@ -575,10 +575,7 @@ public final class StructureIndex {
             extent = Math.min((long) maxRadius, extent * 2L);
         }
         while (coveredExtent < maxRadius && walkBudget[0] > 0) {
-            final long sideRegions = Math.max(1, (coveredExtent * 2 + regionSize - 1) / regionSize);
-            final long thicknessRegions = Math.max(
-                1, Math.min(sideRegions, MAX_CANDIDATE_QUERY_REGIONS / (8 * sideRegions))
-            );
+            final long thicknessRegions = frameThicknessRegions(coveredExtent, regionSize);
             final long outerHalf = Math.min(
                 maxRadius, coveredExtent + thicknessRegions * (long) regionSize
             );
@@ -600,6 +597,11 @@ public final class StructureIndex {
         return new CandidateSearch(
             nearestCandidates(type, blockX, blockZ, maxRadius, boundedLimit, variant), complete
         );
+    }
+
+    private long frameThicknessRegions(final long halfExtent, final int regionSize) {
+        final long sideRegions = Math.max(1, (halfExtent * 2 + regionSize - 1) / regionSize);
+        return Math.max(1, Math.min(sideRegions, MAX_CANDIDATE_QUERY_REGIONS / (8 * sideRegions)));
     }
 
     private boolean nearestAreWithinCoveredArea(
@@ -682,10 +684,7 @@ public final class StructureIndex {
         final long[] walkBudget = {MAX_CANDIDATE_WALK_REGIONS};
         long unscannedHalf = maxRadius;
         while (unscannedHalf > 0 && walkBudget[0] > 0) {
-            final long sideRegions = Math.max(1, (unscannedHalf * 2 + regionSize - 1) / regionSize);
-            final long thicknessRegions = Math.max(
-                1, Math.min(sideRegions, MAX_CANDIDATE_QUERY_REGIONS / (8 * sideRegions))
-            );
+            final long thicknessRegions = frameThicknessRegions(unscannedHalf, regionSize);
             final long outerHalf = unscannedHalf;
             unscannedHalf = Math.max(0, unscannedHalf - thicknessRegions * (long) regionSize);
             collectFrame(

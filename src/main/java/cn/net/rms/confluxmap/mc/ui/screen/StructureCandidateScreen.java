@@ -160,7 +160,7 @@ final class StructureCandidateScreen extends ConfluxScreen {
             88,
             controlWidth,
             FIELD_HEIGHT,
-            Texts.translatable(orderLabelKey(order)),
+            Texts.translatable(CandidateListUi.orderLabelKey(order)),
             ignored -> toggleOrder()
         ));
 
@@ -331,14 +331,8 @@ final class StructureCandidateScreen extends ConfluxScreen {
     }
 
     private void toggleOrder() {
-        order = order == SearchOrder.FARTHEST ? SearchOrder.NEAREST : SearchOrder.FARTHEST;
+        order = CandidateListUi.toggledOrder(order);
         submitSearch();
-    }
-
-    private static String orderLabelKey(final SearchOrder order) {
-        return order == SearchOrder.FARTHEST
-            ? "confluxmap.screen.structure_candidates.order.farthest"
-            : "confluxmap.screen.structure_candidates.order.nearest";
     }
 
     private void focus(final StructureIndex.Marker marker) {

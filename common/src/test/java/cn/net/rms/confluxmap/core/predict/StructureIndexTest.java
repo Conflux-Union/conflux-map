@@ -596,6 +596,8 @@ class StructureIndexTest {
         assertTrue(requestedCells.stream().allMatch(cells -> cells <= 1_024L));
         assertTrue(requestedCells.size() > 1,
             "expansion must continue in bounded rings past the doubling cap");
+        assertTrue(requestedCells.stream().mapToLong(Long::longValue).sum() <= 103_424L,
+            "the walk must respect the total region budget");
     }
 
     @Test
