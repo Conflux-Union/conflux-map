@@ -849,12 +849,13 @@ class StructureIndexTest {
         final List<Long> batchRegionCounts = new ArrayList<>();
         final StructureIndex index = countingIndex("farthest-budget-world", batchRegionCounts);
 
-        final List<StructureIndex.Marker> result = index.findCandidates(
+        final StructureIndex.CandidateSearch result = index.searchCandidates(
             StructureIndex.StructureType.MINESHAFT, 0, 0, 4_000, 20, OptionalInt.empty(),
             SearchOrder.FARTHEST
         );
 
-        assertTrue(result.isEmpty());
+        assertTrue(result.markers().isEmpty());
+        assertFalse(result.complete());
         final long totalRegions = batchRegionCounts.stream().mapToLong(Long::longValue).sum();
         assertTrue(totalRegions <= 103_424L, "farthest walk consumed " + totalRegions + " regions");
         assertTrue(batchRegionCounts.stream().allMatch(cells -> cells <= 1_024L));
@@ -865,11 +866,13 @@ class StructureIndexTest {
         final List<Long> batchRegionCounts = new ArrayList<>();
         final StructureIndex index = countingIndex("nearest-budget-world", batchRegionCounts);
 
-        final List<StructureIndex.Marker> result = index.findCandidates(
-            StructureIndex.StructureType.MINESHAFT, 0, 0, 4_000, 20
+        final StructureIndex.CandidateSearch result = index.searchCandidates(
+            StructureIndex.StructureType.MINESHAFT, 0, 0, 4_000, 20, OptionalInt.empty(),
+            SearchOrder.NEAREST
         );
 
-        assertTrue(result.isEmpty());
+        assertTrue(result.markers().isEmpty());
+        assertFalse(result.complete());
         final long totalRegions = batchRegionCounts.stream().mapToLong(Long::longValue).sum();
         assertTrue(totalRegions <= 103_424L, "nearest walk consumed " + totalRegions + " regions");
         assertTrue(batchRegionCounts.stream().allMatch(cells -> cells <= 1_024L));

@@ -270,11 +270,26 @@ public final class StructureMarkerService {
         final OptionalInt variant,
         final SearchOrder order
     ) {
-        return current == null || !structureSearchAllowed.getAsBoolean()
-            ? List.of()
-            : filterQuadrants(
-                current.findCandidates(type, blockX, blockZ, maxRadius, limit, variant, order)
-            );
+        return searchCandidates(type, blockX, blockZ, maxRadius, limit, variant, order).markers();
+    }
+
+    public synchronized StructureIndex.CandidateSearch searchCandidates(
+        final StructureIndex.StructureType type,
+        final int blockX,
+        final int blockZ,
+        final int maxRadius,
+        final int limit,
+        final OptionalInt variant,
+        final SearchOrder order
+    ) {
+        if (current == null || !structureSearchAllowed.getAsBoolean()) {
+            return new StructureIndex.CandidateSearch(List.of(), true);
+        }
+        final StructureIndex.CandidateSearch found =
+            current.searchCandidates(type, blockX, blockZ, maxRadius, limit, variant, order);
+        return new StructureIndex.CandidateSearch(
+            filterQuadrants(found.markers()), found.complete()
+        );
     }
 
     /**

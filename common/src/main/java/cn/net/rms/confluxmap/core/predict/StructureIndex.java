@@ -163,6 +163,9 @@ public final class StructureIndex {
 
     public enum State { CANDIDATE, VERIFIED, NONEXISTENT }
 
+    public record CandidateSearch(List<Marker> markers, boolean complete) {
+    }
+
     public record Candidate(int blockX, int blockZ, int variant) {
     }
 
@@ -464,11 +467,8 @@ public final class StructureIndex {
     }
 
     /**
-     * Returns the nearest candidates inside a circular search area. Native generation expands
-     * from the center in rectangular batches that each stay under a fixed region budget: the
-     * square doubles while it fits, then bounded square frames continue outward until the
-     * result count is met or the radius is exhausted, so a large UI radius cannot stall the
-     * client thread.
+     * Returns the nearest candidates inside a circular search area. See searchCandidates for
+     * the generation bounds and the completeness flag of the query.
      */
     public synchronized List<Marker> findCandidates(
         final StructureType type,
@@ -500,9 +500,21 @@ public final class StructureIndex {
         final OptionalInt variant,
         final SearchOrder order
     ) {
+        return searchCandidates(type, blockX, blockZ, maxRadius, limit, variant, order).markers();
+    }
+
+    public synchronized CandidateSearch searchCandidates(
+        final StructureType type,
+        final int blockX,
+        final int blockZ,
+        final int maxRadius,
+        final int limit,
+        final OptionalInt variant,
+        final SearchOrder order
+    ) {
         if (provider == null || maxRadius <= 0 || limit <= 0
             || !type.supports(mcVersion, dimension)) {
-            return List.of();
+            return new CandidateSearch(List.of(), true);
         }
         final int boundedLimit = Math.min(limit, 100);
         if (order == SearchOrder.FARTHEST) {
@@ -514,7 +526,9 @@ public final class StructureIndex {
                     Integer.MAX_VALUE,
                     EnumSet.of(type)
                 );
-                return outermostCandidates(type, blockX, blockZ, maxRadius, boundedLimit, variant);
+                return new CandidateSearch(
+                    outermostCandidates(type, blockX, blockZ, maxRadius, boundedLimit, variant), true
+                );
             }
             return farthestCandidates(type, blockX, blockZ, maxRadius, boundedLimit, variant);
         }
@@ -526,7 +540,9 @@ public final class StructureIndex {
                 Integer.MAX_VALUE,
                 EnumSet.of(type)
             );
-            return nearestCandidates(type, blockX, blockZ, maxRadius, boundedLimit, variant);
+            return new CandidateSearch(
+                nearestCandidates(type, blockX, blockZ, maxRadius, boundedLimit, variant), true
+            );
         }
 
         final int regionSize = type.regionSizeBlocks(mcVersion);
@@ -554,7 +570,7 @@ public final class StructureIndex {
             );
             if (nearestAreWithinCoveredArea(result, boundedLimit, coveredExtent, blockX, blockZ)
                 || extent >= maxRadius) {
-                return result;
+                return new CandidateSearch(result, true);
             }
             extent = Math.min((long) maxRadius, extent * 2L);
         }
@@ -577,10 +593,13 @@ public final class StructureIndex {
             if (nearestAreWithinCoveredArea(
                 ringResult, boundedLimit, coveredExtent, blockX, blockZ
             )) {
-                return ringResult;
+                return new CandidateSearch(ringResult, true);
             }
         }
-        return nearestCandidates(type, blockX, blockZ, maxRadius, boundedLimit, variant);
+        final boolean complete = walkBudget[0] > 0 || coveredExtent >= maxRadius;
+        return new CandidateSearch(
+            nearestCandidates(type, blockX, blockZ, maxRadius, boundedLimit, variant), complete
+        );
     }
 
     private boolean nearestAreWithinCoveredArea(
@@ -650,7 +669,7 @@ public final class StructureIndex {
         return candidates;
     }
 
-    private List<Marker> farthestCandidates(
+    private CandidateSearch farthestCandidates(
         final StructureType type,
         final int blockX,
         final int blockZ,
@@ -681,9 +700,11 @@ public final class StructureIndex {
                 break;
             }
         }
-        return pool.size() <= limit
-            ? List.copyOf(pool)
-            : List.copyOf(pool.subList(0, limit));
+        final boolean complete = walkBudget[0] > 0 || unscannedHalf == 0;
+        return new CandidateSearch(
+            pool.size() <= limit ? List.copyOf(pool) : List.copyOf(pool.subList(0, limit)),
+            complete
+        );
     }
 
     private void collectFrame(

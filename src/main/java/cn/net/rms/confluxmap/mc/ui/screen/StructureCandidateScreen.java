@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
+import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.compat.MouseButtons;
 import cn.net.rms.confluxmap.compat.Texts;
@@ -13,6 +14,7 @@ import cn.net.rms.confluxmap.mc.ui.StructureIconCatalog;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.OptionalInt;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.regex.Pattern;
 import net.minecraft.client.MinecraftClient;
 //#if MC>=12109
@@ -49,7 +51,9 @@ final class StructureCandidateScreen extends ConfluxScreen {
     private SearchOrder order = SearchOrder.NEAREST;
     private List<StructureIndex.Marker> results = List.of();
     private int scrollOffset;
-    private boolean initialQueryComplete;
+    private boolean initialQueryStarted;
+    private int queryGeneration;
+    private boolean searching;
     private boolean draggingScrollBar;
     private double scrollBarGrabOffset;
     private TextFieldWidget centerXField;
@@ -89,11 +93,11 @@ final class StructureCandidateScreen extends ConfluxScreen {
 
     @Override
     protected void init() {
-        if (!initialQueryComplete) {
-            refreshResults();
-            initialQueryComplete = true;
-        }
         rebuild();
+        if (!initialQueryStarted) {
+            initialQueryStarted = true;
+            submitSearch();
+        }
     }
 
     private void rebuild() {
@@ -248,9 +252,7 @@ final class StructureCandidateScreen extends ConfluxScreen {
             statusKey = "confluxmap.screen.structure_candidates.invalid";
             return;
         }
-        refreshResults();
-        scrollOffset = 0;
-        rebuild();
+        submitSearch();
     }
 
     private void chooseVariant() {
@@ -263,29 +265,74 @@ final class StructureCandidateScreen extends ConfluxScreen {
                 selected -> {
                     selectedVariant = selected;
                     scrollOffset = 0;
-                    refreshResults();
+                    submitSearch();
                 }
             )
         );
     }
 
-    private void refreshResults() {
-        results = structures.findCandidates(
-            type, centerX, centerZ, radius, limit, selectedVariant, order
-        );
-        statusKey = results.isEmpty()
-            ? "confluxmap.screen.structure_candidates.not_found"
-            : null;
-        if (!results.isEmpty()) {
-            map.focusStructure(results.get(0));
+    private void submitSearch() {
+        final int generation = ++queryGeneration;
+        final int queryCenterX = centerX;
+        final int queryCenterZ = centerZ;
+        final int queryRadius = radius;
+        final int queryLimit = limit;
+        final OptionalInt queryVariant = selectedVariant;
+        final SearchOrder queryOrder = order;
+        searching = true;
+        statusKey = "confluxmap.screen.structure_candidates.searching";
+        scrollOffset = 0;
+        rebuild();
+        try {
+            ConfluxMapClient.get().executors().workers().execute(() -> {
+                final StructureIndex.CandidateSearch found;
+                try {
+                    found = structures.searchCandidates(
+                        type, queryCenterX, queryCenterZ, queryRadius, queryLimit,
+                        queryVariant, queryOrder
+                    );
+                } catch (final RuntimeException e) {
+                    MinecraftClient.getInstance().execute(() -> acceptFailure(generation));
+                    return;
+                }
+                MinecraftClient.getInstance().execute(() -> acceptResults(generation, found));
+            });
+        } catch (final RejectedExecutionException e) {
+            searching = false;
+            statusKey = "confluxmap.screen.structure_candidates.failed";
+            rebuild();
         }
+    }
+
+    private void acceptFailure(final int generation) {
+        if (generation != queryGeneration
+            || MinecraftAccess.screen(MinecraftClient.getInstance()) != this) {
+            return;
+        }
+        searching = false;
+        statusKey = "confluxmap.screen.structure_candidates.failed";
+        rebuild();
+    }
+
+    private void acceptResults(final int generation, final StructureIndex.CandidateSearch found) {
+        if (generation != queryGeneration
+            || MinecraftAccess.screen(MinecraftClient.getInstance()) != this) {
+            return;
+        }
+        results = found.markers();
+        searching = false;
+        statusKey = found.complete()
+            ? (results.isEmpty() ? "confluxmap.screen.structure_candidates.not_found" : null)
+            : "confluxmap.screen.structure_candidates.incomplete";
+        if (!results.isEmpty()) {
+            focus(results.get(0));
+        }
+        rebuild();
     }
 
     private void toggleOrder() {
         order = order == SearchOrder.FARTHEST ? SearchOrder.NEAREST : SearchOrder.FARTHEST;
-        scrollOffset = 0;
-        refreshResults();
-        rebuild();
+        submitSearch();
     }
 
     private static String orderLabelKey(final SearchOrder order) {
@@ -333,7 +380,7 @@ final class StructureCandidateScreen extends ConfluxScreen {
     }
 
     private void updateAccess() {
-        final boolean allowed = structures.availableTypes(dimension).contains(type);
+        final boolean allowed = structures.availableTypes(dimension).contains(type) && !searching;
         searchButton.active = allowed;
         if (variantButton != null) {
             variantButton.active = allowed;
@@ -480,6 +527,7 @@ final class StructureCandidateScreen extends ConfluxScreen {
 
     @Override
     public void onClose() {
+        queryGeneration++;
         MinecraftAccess.setScreen(MinecraftClient.getInstance(), picker);
     }
 
