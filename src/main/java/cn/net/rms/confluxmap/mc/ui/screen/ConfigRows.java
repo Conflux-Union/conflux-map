@@ -157,6 +157,11 @@ final class ConfigRows {
                 y = addZoomRow(y);
                 y = addToggleRow(y, "confluxmap.config.minimap.show_coordinates", () -> config.showCoordinates, v -> config.showCoordinates = v);
                 y = addToggleRow(y, "confluxmap.config.minimap.show_biome", () -> config.showBiome, v -> config.showBiome = v);
+                y = addToggleRow(
+                    y,
+                    "confluxmap.config.minimap.show_layer_label",
+                    () -> config.showLayerIndicator, v -> config.showLayerIndicator = v
+                );
                 break;
             case MAP:
                 y = addSectionRow(y, "confluxmap.screen.config.section.layers");
@@ -164,7 +169,6 @@ final class ConfigRows {
                     y, "confluxmap.config.layers.override", ConfluxConfig.LayerOverride.values(),
                     () -> config.layerOverride, v -> config.layerOverride = v, ConfigValueLabels::layerOverrideKey
                 );
-                y = addToggleRow(y, "confluxmap.config.layers.show_indicator", () -> config.showLayerIndicator, v -> config.showLayerIndicator = v);
                 y = addIntSliderRow(
                     y, "confluxmap.config.layers.cave_slice_y", 0, 255,
                     () -> config.caveSliceY, v -> config.caveSliceY = v, ConfigValueLabels::plainText
