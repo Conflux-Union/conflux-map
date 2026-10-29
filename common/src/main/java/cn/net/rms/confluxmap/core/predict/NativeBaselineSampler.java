@@ -40,6 +40,13 @@ public final class NativeBaselineSampler implements BaselineSampler {
     }
 
     @Override
+    public boolean interpolatableOverviewHeights() {
+        // Only the climate-model overview is smooth at half output resolution; the pre-1.18
+        // overview is the frozen reference output and must keep its per-position values.
+        return mcVersion >= CLIMATE_MODEL_MIN;
+    }
+
+    @Override
     public boolean biomes(final int scale, final int x, final int z, final int w, final int h, final int[] out) {
         try {
             final CubiomesContext ctx = CubiomesContexts.get(mcVersion, seed, dim, flags);

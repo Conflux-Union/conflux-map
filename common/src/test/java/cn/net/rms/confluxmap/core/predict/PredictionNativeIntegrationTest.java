@@ -568,6 +568,55 @@ class PredictionNativeIntegrationTest {
     }
 
     /**
+     * The LOD3-4 sub-biome sweep runs on a tile-absolute lattice (anchor solves, biome-uniform
+     * cell copies, exact cells elsewhere), so a window update - expanded to whole lattice cells -
+     * must reproduce the full tile's values pixel for pixel, copied cells included. Window shapes
+     * cover corner/edge positions and odd/even offsets, i.e. every partial-cell expansion path.
+     */
+    @Test
+    void coarseLodWindowsReproduceTheFullTileLatticeSweep() {
+        for (final int lod : new int[] {3, 4}) {
+            final NativeBaselineSampler sampler = new NativeBaselineSampler(mc21(), SEED, 0, 0);
+            final BaselineGrid full = LodSampling.sample(sampler, false, lod, 4096, -8192);
+            assertNotNull(full);
+            assertEquals(2, full.subPerAxis, "LOD" + lod + " must run the supersampled sweep");
+
+            final int[][] windows = {
+                {0, 0, 1, 1},
+                {37, 61, 37, 61},
+                {113, 47, 119, 53},
+                {0, 254, 3, 255},
+                {252, 0, 255, 7},
+            };
+            for (final int[] bounds : windows) {
+                final BaselineGrid window = LodSampling.sampleOverworldWindow(
+                    sampler, lod, 4096, -8192, bounds[0], bounds[1], bounds[2], bounds[3]
+                );
+                assertNotNull(window, "window sampling must succeed: " + java.util.Arrays.toString(bounds));
+                for (int z = bounds[1]; z <= bounds[3]; z++) {
+                    for (int x = bounds[0]; x <= bounds[2]; x++) {
+                        final int index = BaselineGrid.index(x, z);
+                        assertEquals(full.terrainY[index], window.terrainY[index],
+                            "terrain at lod " + lod + " pixel " + x + "," + z);
+                        assertEquals(full.biomeId[index], window.biomeId[index],
+                            "biome at lod " + lod + " pixel " + x + "," + z);
+                        assertEquals(full.surfaceFlags[index], window.surfaceFlags[index],
+                            "surface flags at lod " + lod + " pixel " + x + "," + z);
+                        for (int sz = 0; sz < 2; sz++) {
+                            for (int sx = 0; sx < 2; sx++) {
+                                final int sub = full.subIndex(index, sx, sz);
+                                assertEquals(full.subBiomeId[sub], window.subBiomeId[sub],
+                                    "sub-biome at lod " + lod + " pixel " + x + "," + z
+                                        + " sub " + sx + "," + sz);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Pins the overview terrain estimator against cubiomes' own exact column generation.
      *
      * <p>The estimator lives in {@code native/shim/confluxnative.c} and re-derives four helpers

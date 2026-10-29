@@ -932,6 +932,93 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     return CFX_OK;
 }
 
+/*
+ * Per-call memo for cfxSurfaceBiomes: the biome of a voronoi nucleus is a pure
+ * function of (nucleus, generator state), and fine sampling strides revisit the
+ * same nucleus constantly - measured 10.6x unique-sample reuse at block stride,
+ * 2.9x at stride 2, 1.16-1.17x at the coarse strides. Each call gets one open-
+ * addressing table sized to twice its cells (load factor <= 0.5); entries store
+ * biome+1 so 0 marks an empty slot and biome id 0 (ocean) stays representable.
+ * A hit returns exactly what sampleBiomeNoise returned for the same nucleus,
+ * so results are bit-identical to the unmemoized loop; allocation failure or a
+ * table beyond CFX_NUCLEUS_MEMO_MAX_ENTRIES simply declines and the caller runs
+ * its plain loop. Lives in its own function so the plain sweep below keeps its
+ * exact original shape; strides past CFX_NUCLEUS_MEMO_MAX_STRIDE never reach it
+ * because their nucleus reuse cannot pay for the table.
+ */
+typedef struct {
+    int32_t x4, y4, z4;
+    int32_t biomePlusOne;
+} CfxNucleusEntry;
+
+#define CFX_NUCLEUS_MEMO_MIN_CELLS 64
+#define CFX_NUCLEUS_MEMO_MAX_ENTRIES (1u << 20)
+#define CFX_NUCLEUS_MEMO_MAX_STRIDE 2
+
+static uint32_t cfxNucleusHash(int32_t x4, int32_t y4, int32_t z4)
+{
+    uint64_t h = (uint32_t) x4 * UINT64_C(0x9E3779B97F4A7C15)
+        ^ (uint32_t) y4 * UINT64_C(0xC2B2AE3D27D4EB4F)
+        ^ (uint32_t) z4 * UINT64_C(0x85EBCA77C2B2AE63);
+    h ^= h >> 33;
+    h *= UINT64_C(0xFF51AFD7ED558CCD);
+    h ^= h >> 29;
+    return (uint32_t) (h >> 32);
+}
+
+/* Returns 1 when the batch was filled, 0 when the caller should run unmemoized. */
+static int cfxSurfaceBiomesMemoized(
+    const CfxContext *ctx, int blockX, int blockZ, int w, int h, int stride,
+    const int *terrainY, int *biomes, int cells)
+{
+    if (stride > CFX_NUCLEUS_MEMO_MAX_STRIDE || cells < CFX_NUCLEUS_MEMO_MIN_CELLS)
+        return 0;
+    uint32_t size = 64;
+    while (size < (uint32_t) cells * 2u && size < CFX_NUCLEUS_MEMO_MAX_ENTRIES)
+        size <<= 1;
+    if (size < (uint32_t) cells * 2u)
+        return 0;
+    CfxNucleusEntry *memo = calloc(size, sizeof(CfxNucleusEntry));
+    if (memo == NULL)
+        return 0;
+    const uint32_t mask = size - 1;
+    int j, i;
+    for (j = 0; j < h; j++)
+    {
+        const int sampleZ = (int) ((int64_t) blockZ + (int64_t) j * stride);
+        for (i = 0; i < w; i++)
+        {
+            const int index = j * w + i;
+            const int sampleX = (int) ((int64_t) blockX + (int64_t) i * stride);
+            const int surface = terrainY[index] < 62 ? 62 : terrainY[index];
+            int x4, y4, z4;
+            voronoiAccess3D(ctx->g.sha, sampleX, surface, sampleZ, &x4, &y4, &z4);
+            uint32_t slot = cfxNucleusHash(
+                (int32_t) x4, (int32_t) y4, (int32_t) z4) & mask;
+            while (memo[slot].biomePlusOne != 0)
+            {
+                if (memo[slot].x4 == (int32_t) x4
+                    && memo[slot].y4 == (int32_t) y4
+                    && memo[slot].z4 == (int32_t) z4)
+                    break;
+                slot = (slot + 1) & mask;
+            }
+            if (memo[slot].biomePlusOne != 0)
+            {
+                biomes[index] = memo[slot].biomePlusOne - 1;
+                continue;
+            }
+            biomes[index] = sampleBiomeNoise(&ctx->g.bn, NULL, x4, y4, z4, NULL, 0);
+            memo[slot].x4 = (int32_t) x4;
+            memo[slot].y4 = (int32_t) y4;
+            memo[slot].z4 = (int32_t) z4;
+            memo[slot].biomePlusOne = (int32_t) biomes[index] + 1;
+        }
+    }
+    free(memo);
+    return 1;
+}
+
 JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxSurfaceBiomes(
     JNIEnv *env, jclass clazz, jlong handle,
     jint blockX, jint blockZ, jint w, jint h, jint stride,
@@ -980,6 +1067,15 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
         free(terrainY);
         free(biomes);
         return CFX_ERR_BAD_SIZE;
+    }
+
+    if (cfxSurfaceBiomesMemoized(
+            ctx, blockX, blockZ, w, h, stride, terrainY, biomes, cells))
+    {
+        (*env)->SetIntArrayRegion(env, outBiomeIds, 0, cells, biomes);
+        free(terrainY);
+        free(biomes);
+        return CFX_OK;
     }
 
     int j, i;

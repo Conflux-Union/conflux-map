@@ -254,8 +254,9 @@ class LodSamplingTest {
         assertNotNull(grid);
         assertEquals(1, overviewCells[0], "only the requested output pixel may run terrain prediction");
         assertEquals(
-            5, surfaceBiomeCells[0],
-            "LOD4 samples one center biome plus the requested pixel's four sub-samples"
+            4, surfaceBiomeCells[0],
+            "the pixel's four samples arrive as one 2x2 sweep; its first entry is the centre "
+                + "biome, so no separate centre query may run"
         );
     }
 
