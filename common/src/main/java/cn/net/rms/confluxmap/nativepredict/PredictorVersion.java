@@ -12,10 +12,17 @@ public final class PredictorVersion {
     public static final String CUBIOMES_COMMIT_12 = "f75f0a360e9b";
 
     /** Must match {@code CFX_ABI} in {@code native/shim/confluxnative.c}. */
-    public static final int CFX_ABI = 14;
+    public static final int CFX_ABI = 15;
 
     /**
      * Bumped whenever baseline sampling or derivation (LOD expansion, canopy, kind rules) changes.
+     * 22: 1.18+ LOD2-4 coarse-LOD sampling: anchor-lattice overview solves skip terrain-noise
+     * octaves shorter than half the anchor stride and the jaggedness term where the jaggedness
+     * spline is zero; the waterline band resolves after the sub-biome anchors and leaves
+     * inland mid-band quads (no water-biome anchor nearby, anchors all above sea level +2)
+     * at their reconstruction; LOD2 per-pixel biomes moved onto the anchor-lattice copy/refine
+     * sweep, and cells whose corners are all water biomes with all-deep pixels copy without
+     * refining. LOD0-1 and pre-1.18 output stay bit-identical.
      * 21: 1.18+ exact terrain columns are solved lazily (cells below the deepest reader are
      * never computed - value-identical), the surface search starts one band above the noise-free
      * density-zero crossing instead of at the build limit (a solid floating above crossing+band
@@ -32,7 +39,7 @@ public final class PredictorVersion {
      * 18: dappled forest and sulfur caves gained real BiomeTable entries instead of the neutral
      * land fallback, changing predicted pixels for 26.2+ worlds.
      */
-    public static final int BASELINE_ALGO = 21;
+    public static final int BASELINE_ALGO = 22;
 
     private PredictorVersion() {
     }

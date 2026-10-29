@@ -568,18 +568,21 @@ class PredictionNativeIntegrationTest {
     }
 
     /**
-     * The LOD3-4 sub-biome sweep runs on a tile-absolute lattice (anchor solves, biome-uniform
-     * cell copies, exact cells elsewhere), so a window update - expanded to whole lattice cells -
-     * must reproduce the full tile's values pixel for pixel, copied cells included. Window shapes
-     * cover corner/edge positions and odd/even offsets, i.e. every partial-cell expansion path.
+     * The LOD2-4 biome sweeps run on a tile-absolute lattice (anchor solves, biome-uniform cell
+     * copies, exact cells elsewhere), so a window update - expanded to whole lattice cells -
+     * must reproduce the full tile's values pixel for pixel, copied cells included. Window
+     * shapes cover corner/edge positions and odd/even offsets, i.e. every partial-cell expansion
+     * path, including the widened biome-anchor margin the waterline gate reads.
      */
     @Test
     void coarseLodWindowsReproduceTheFullTileLatticeSweep() {
-        for (final int lod : new int[] {3, 4}) {
+        for (final int lod : new int[] {2, 3, 4}) {
             final NativeBaselineSampler sampler = new NativeBaselineSampler(mc21(), SEED, 0, 0);
             final BaselineGrid full = LodSampling.sample(sampler, false, lod, 4096, -8192);
             assertNotNull(full);
-            assertEquals(2, full.subPerAxis, "LOD" + lod + " must run the supersampled sweep");
+            if (lod >= 3) {
+                assertEquals(2, full.subPerAxis, "LOD" + lod + " must run the supersampled sweep");
+            }
 
             final int[][] windows = {
                 {0, 0, 1, 1},
@@ -602,8 +605,8 @@ class PredictionNativeIntegrationTest {
                             "biome at lod " + lod + " pixel " + x + "," + z);
                         assertEquals(full.surfaceFlags[index], window.surfaceFlags[index],
                             "surface flags at lod " + lod + " pixel " + x + "," + z);
-                        for (int sz = 0; sz < 2; sz++) {
-                            for (int sx = 0; sx < 2; sx++) {
+                        for (int sz = 0; full.supersampled() && sz < full.subPerAxis; sz++) {
+                            for (int sx = 0; sx < full.subPerAxis; sx++) {
                                 final int sub = full.subIndex(index, sx, sz);
                                 assertEquals(full.subBiomeId[sub], window.subBiomeId[sub],
                                     "sub-biome at lod " + lod + " pixel " + x + "," + z

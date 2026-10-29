@@ -181,6 +181,23 @@ public interface BaselineSampler {
     }
 
     /**
+     * Coarse-lattice overview for the LOD2-4 anchor sweeps: same geometry as {@link
+     * #overviewHeights}, but implementations may skip terrain detail finer than the sampling
+     * stride. The default keeps full detail; waterline-band and exact-residual queries always
+     * use {@link #overviewHeights}.
+     */
+    default boolean overviewHeightsCoarse(
+        final int blockX,
+        final int blockZ,
+        final int w,
+        final int h,
+        final int stride,
+        final int[] outTerrainY
+    ) {
+        return overviewHeights(blockX, blockZ, w, h, stride, outTerrainY);
+    }
+
+    /**
      * Resolves final Overworld surface biomes at the supplied terrain heights without generating
      * those heights a second time. Implementations that cannot reuse the height grid return false,
      * and {@link LodSampling} falls back to {@link #biomesStrided}.

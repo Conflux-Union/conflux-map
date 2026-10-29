@@ -42,7 +42,7 @@
 #include "features/end_city.h"
 #include "terrain_features.h"
 
-#define CFX_ABI 14
+#define CFX_ABI 15
 #define CFX_NETHER_ROOF_Y 127
 
 #define CFX_OK              0
@@ -693,7 +693,92 @@ static void cfxTerrainParameters(const BiomeNoise *bn, int cellX, int cellZ, flo
     values[SP_WEIRDNESS] = weirdness;
 }
 
-static double cfxModernTerrainNoise(const SurfaceNoise *sn, int x, int y, int z)
+/*
+ * Octave truncation for the coarse LOD lattices. With the caller's sampling
+ * stride known, terrain-noise octaves whose wavelength is shorter than that
+ * stride cannot show up in the output grid except as aliasing, so the coarse
+ * entry point skips them outright: per octave i the wavelength is
+ * 2^i / (684.412*xzScale) blocks for octmin/octmax and
+ * 2^i / (684.412*xzScale/xzFactor) for octmain, whose finer octaves only steer
+ * the octmin/octmax blend and are therefore held to a quarter of the stride. The
+ * jaggedness term is skipped where the spline output is exactly zero (83% of
+ * solves - the jagged spline vanishes outside peak terrain, and the product
+ * with a zero multiplier is zero anyway) and otherwise sampled over its first
+ * four octaves, which carry ~94% of its energy (per-octave amplitude halves
+ * with xOctaveInit's persistence). The cut keeps one octave beyond the strict
+ * stride Nyquist limit (octmin/octmax at wavelength >= stride/2, octmain at
+ * >= stride/4): the strict cut measured 0.38% ocean-to-land flips on the
+ * visual corpus against a 0.3% gate - one block of ripple moves real
+ * shorelines - while this cut measures 0.15%. Truncation deliberately changes
+ * results at strides >= 8 only; the per-pixel full-detail entry keeps LOD0-1
+ * overviews, the waterline-band solves and the exact-residual anchors at
+ * today's values bit-for-bit.
+ */
+typedef struct {
+    int mainFirst;   /* first octmain octave evaluated */
+    int minMaxFirst; /* first octmin/octmax octave evaluated */
+    int truncated;
+} CfxNoiseDetail;
+
+static const CfxNoiseDetail CFX_DETAIL_FULL = {0, 0, 0};
+
+#define CFX_DETAIL_MIN_STRIDE 8
+#define CFX_JAGGED_KEEP_OCTAVES 4
+
+static CfxNoiseDetail cfxNoiseDetailForStride(const SurfaceNoise *sn, int stride)
+{
+    CfxNoiseDetail d = CFX_DETAIL_FULL;
+    if (stride < CFX_DETAIL_MIN_STRIDE)
+        return d;
+    d.truncated = 1;
+    const double scaledXz = 684.412 * sn->xzScale;
+    double w = 1.0 / scaledXz;
+    while (d.minMaxFirst < 16 && w < (double) stride * 0.5)
+    {
+        w *= 2.0;
+        d.minMaxFirst++;
+    }
+    w = 1.0 / (scaledXz / sn->xzFactor);
+    while (d.mainFirst < 8 && w < (double) stride * 0.25)
+    {
+        w *= 2.0;
+        d.mainFirst++;
+    }
+    return d;
+}
+
+/* sampleDoublePerlin over only the first maxOct octaves (coarsest first). */
+static double cfxSampleDoublePerlinPrefix(
+    const DoublePerlinNoise *dp, double x, double y, double z, int maxOct
+) {
+    const double f = 337.0 / 331.0;
+    double v = 0.0;
+    int i;
+    for (i = 0; i < maxOct && i < dp->octA.octcnt; i++)
+    {
+        const PerlinNoise *p = dp->octA.octaves + i;
+        const double lf = p->lacunarity;
+        v += p->amplitude * samplePerlin(
+            p, maintainPrecision(x * lf), maintainPrecision(y * lf),
+            maintainPrecision(z * lf), 0, 0);
+    }
+    for (i = 0; i < maxOct && i < dp->octB.octcnt; i++)
+    {
+        const PerlinNoise *p = dp->octB.octaves + i;
+        const double lf = p->lacunarity;
+        const double bx = x * f;
+        const double by = y * f;
+        const double bz = z * f;
+        v += p->amplitude * samplePerlin(
+            p, maintainPrecision(bx * lf), maintainPrecision(by * lf),
+            maintainPrecision(bz * lf), 0, 0);
+    }
+    return v * dp->amplitude;
+}
+
+static double cfxModernTerrainNoise(
+    const SurfaceNoise *sn, int x, int y, int z, const CfxNoiseDetail *detail
+)
 {
     const double scaledXz = 684.412 * sn->xzScale;
     const double scaledY = 684.412 * sn->yScale;
@@ -706,10 +791,10 @@ static double cfxModernTerrainNoise(const SurfaceNoise *sn, int x, int y, int z)
     const double smearY = scaledY * 8.0;
     const double mainSmearY = smearY / sn->yFactor;
     double interpolation = 0.0;
-    double frequency = 1.0;
+    double frequency = ldexp(1.0, -detail->mainFirst);
     int i;
 
-    for (i = 0; i < 8; i++)
+    for (i = detail->mainFirst; i < 8; i++)
     {
         interpolation += samplePerlin(&sn->octmain.octaves[i],
             cfxMaintainPrecision(mainX * frequency),
@@ -723,8 +808,8 @@ static double cfxModernTerrainNoise(const SurfaceNoise *sn, int x, int y, int z)
     const double blend = (interpolation / 10.0 + 1.0) * 0.5;
     double lower = 0.0;
     double upper = 0.0;
-    frequency = 1.0;
-    for (i = 0; i < 16; i++)
+    frequency = ldexp(1.0, -detail->minMaxFirst);
+    for (i = detail->minMaxFirst; i < 16; i++)
     {
         const double sx = cfxMaintainPrecision(dx * frequency);
         const double sy = cfxMaintainPrecision(dy * frequency);
@@ -744,7 +829,9 @@ static double cfxModernTerrainNoise(const SurfaceNoise *sn, int x, int y, int z)
 /** Fixed-point rounds solving slopedCheese(y) = 0; 2 converges, 3 adds nothing. */
 #define CFX_OVERVIEW_ITERATIONS 2
 
-static int cfxModernOverviewHeight(const CfxContext *ctx, int x4, int z4)
+static int cfxModernOverviewHeight(
+    const CfxContext *ctx, int x4, int z4, const CfxNoiseDetail *detail
+)
 {
     const BiomeNoise *bn = &ctx->g.bn;
     float values[4];
@@ -752,10 +839,24 @@ static int cfxModernOverviewHeight(const CfxContext *ctx, int x4, int z4)
     const double offset = -0.50375F + getSpline(bn->sp, values);
     const double factor = getSpline(bn->factorSp, values);
     const double jaggedness = getSpline(bn->jaggedSp, values);
-    double jagged = sampleDoublePerlin(&bn->jagged, x4 * 4 * 1500.0, 0.0, z4 * 4 * 1500.0);
-    if (jagged < 0.0)
-        jagged *= 0.5;
-    jagged *= jaggedness;
+    double jagged = 0.0;
+    if (!detail->truncated)
+    {
+        jagged = sampleDoublePerlin(&bn->jagged, x4 * 4 * 1500.0, 0.0, z4 * 4 * 1500.0);
+        if (jagged < 0.0)
+            jagged *= 0.5;
+        jagged *= jaggedness;
+    }
+    else if (jaggedness != 0.0F)
+    {
+        jagged = cfxSampleDoublePerlinPrefix(
+            &bn->jagged, x4 * 4 * 1500.0, 0.0, z4 * 4 * 1500.0,
+            CFX_JAGGED_KEEP_OCTAVES
+        );
+        if (jagged < 0.0)
+            jagged *= 0.5;
+        jagged *= jaggedness;
+    }
 
     /* Zero-crossing of the initial density, i.e. the old NP_DEPTH answer. */
     const double base = 1.0 + offset + jagged;
@@ -767,7 +868,7 @@ static int cfxModernOverviewHeight(const CfxContext *ctx, int x4, int z4)
     for (i = 0; i < CFX_OVERVIEW_ITERATIONS; i++)
     {
         const double noise = cfxModernTerrainNoise(
-            &bn->terrain, x4 * 4, (int) floor(y), z4 * 4
+            &bn->terrain, x4 * 4, (int) floor(y), z4 * 4, detail
         );
         /* Above the crossing the density slope is factor; below it, 4*factor. */
         const double above = 128.0 * (base + noise / factor);
@@ -810,15 +911,11 @@ static int cfxLegacyOverviewHeight(
     return (int) floor(128.0 * (0.53125 + densityOffset + blendedDepth));
 }
 
-JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxOverviewHeights(
-    JNIEnv *env, jclass clazz, jlong handle,
+static jint cfxOverviewHeightsImpl(
+    JNIEnv *env, CfxContext *ctx,
     jint blockX, jint blockZ, jint w, jint h, jint stride,
-    jintArray outTerrainY
+    jintArray outTerrainY, const CfxNoiseDetail *detail
 ) {
-    (void) clazz;
-    CfxContext *ctx = cfxHandle(handle);
-    if (ctx == NULL)
-        return CFX_ERR_BAD_HANDLE;
     if (ctx->dim != DIM_OVERWORLD)
         return CFX_ERR_WRONG_DIM;
     if (!cfxValidCells(w, h) || stride <= 0)
@@ -856,7 +953,7 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
             for (j = 0; j < gridH; j++)
                 for (i = 0; i < gridW; i++)
                     macro[j*gridW+i] = cfxModernOverviewHeight(
-                        ctx, minX4+i, minZ4+j
+                        ctx, minX4+i, minZ4+j, detail
                     );
             for (j = 0; j < h; j++)
             {
@@ -889,8 +986,7 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
                 {
                     const int sampleX = (int)((int64_t)blockX + (int64_t)i*stride);
                     heights[j*w+i] = cfxModernOverviewHeight(
-                        ctx, floordiv(sampleX, 4), floordiv(sampleZ, 4)
-                    );
+                        ctx, floordiv(sampleX, 4), floordiv(sampleZ, 4), detail);
                 }
             }
         }
@@ -930,6 +1026,41 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     (*env)->SetIntArrayRegion(env, outTerrainY, 0, cells, heights);
     free(heights);
     return CFX_OK;
+}
+
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxOverviewHeights(
+    JNIEnv *env, jclass clazz, jlong handle,
+    jint blockX, jint blockZ, jint w, jint h, jint stride,
+    jintArray outTerrainY
+) {
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL)
+        return CFX_ERR_BAD_HANDLE;
+    return cfxOverviewHeightsImpl(
+        env, ctx, blockX, blockZ, w, h, stride, outTerrainY, &CFX_DETAIL_FULL
+    );
+}
+
+/*
+ * Coarse-lattice variant of cfxOverviewHeights for the LOD2-4 anchor sweeps:
+ * same geometry and validation, but terrain-noise octaves shorter than the
+ * sampling stride are skipped (see CfxNoiseDetail). Waterline-band and
+ * exact-residual callers must keep the full-detail entry above.
+ */
+JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxOverviewHeightsCoarse(
+    JNIEnv *env, jclass clazz, jlong handle,
+    jint blockX, jint blockZ, jint w, jint h, jint stride,
+    jintArray outTerrainY
+) {
+    (void) clazz;
+    CfxContext *ctx = cfxHandle(handle);
+    if (ctx == NULL)
+        return CFX_ERR_BAD_HANDLE;
+    const CfxNoiseDetail detail = cfxNoiseDetailForStride(&ctx->g.bn.terrain, stride);
+    return cfxOverviewHeightsImpl(
+        env, ctx, blockX, blockZ, w, h, stride, outTerrainY, &detail
+    );
 }
 
 /*
