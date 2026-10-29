@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.mc.world;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -11,7 +12,7 @@ import org.junit.jupiter.api.Test;
 final class DetachedCameraMapPolicyTest {
     @Test
     void heightSensitiveLayerSelectionUsesTheActiveCamera() throws Exception {
-        final String source = Files.readString(preprocessedSource(
+        final String source = readSource(preprocessedSource(
             "cn/net/rms/confluxmap/mc/world/LayerSelector.java"
         ));
 
@@ -23,7 +24,7 @@ final class DetachedCameraMapPolicyTest {
 
     @Test
     void minimapKeepsTheLocalPlayerMarkerDistinctFromTheCameraViewpoint() throws Exception {
-        final String source = Files.readString(preprocessedSource(
+        final String source = readSource(preprocessedSource(
             "cn/net/rms/confluxmap/mc/ui/hud/MinimapMarkerPainter.java"
         ));
 
@@ -36,7 +37,7 @@ final class DetachedCameraMapPolicyTest {
 
     @Test
     void bridgeReportsWhetherTheCameraEntityIsDetached() throws Exception {
-        final String bridge = Files.readString(preprocessedSource(
+        final String bridge = readSource(preprocessedSource(
             "cn/net/rms/confluxmap/mc/McGameBridge.java"
         ));
 
@@ -46,10 +47,10 @@ final class DetachedCameraMapPolicyTest {
 
     @Test
     void detachedCameraMarkerIsDrawnOnBothLiveMaps() throws Exception {
-        final String minimap = Files.readString(preprocessedSource(
+        final String minimap = readSource(preprocessedSource(
             "cn/net/rms/confluxmap/mc/ui/hud/MinimapMarkerPainter.java"
         ));
-        final String fullscreen = Files.readString(preprocessedSource(
+        final String fullscreen = readSource(preprocessedSource(
             "cn/net/rms/confluxmap/mc/ui/screen/FullscreenMapScreen.java"
         ));
         final String minimapMarker = sourceBetween(
@@ -76,7 +77,7 @@ final class DetachedCameraMapPolicyTest {
 
     @Test
     void chunkCaptureRefreshFollowsTheActiveCamera() throws Exception {
-        final String source = Files.readString(preprocessedSource(
+        final String source = readSource(preprocessedSource(
             "cn/net/rms/confluxmap/mc/snapshot/ChunkCaptureService.java"
         ));
 
@@ -92,12 +93,12 @@ final class DetachedCameraMapPolicyTest {
     @Test
     void currentPositionWaypointCreationFollowsTheActiveCamera() throws Exception {
         final String hotkeySource = sourceBetween(
-            Files.readString(preprocessedSource("cn/net/rms/confluxmap/mc/input/KeybindActionHandler.java")),
+            readSource(preprocessedSource("cn/net/rms/confluxmap/mc/input/KeybindActionHandler.java")),
             "private static boolean openNewWaypointAtViewpoint()",
             "\n    }\n}"
         );
         final String listSource = sourceBetween(
-            Files.readString(preprocessedSource("cn/net/rms/confluxmap/mc/ui/screen/WaypointListScreen.java")),
+            readSource(preprocessedSource("cn/net/rms/confluxmap/mc/ui/screen/WaypointListScreen.java")),
             "private void openCreate(",
             "\n    private void openEdit("
         );
@@ -119,6 +120,11 @@ final class DetachedCameraMapPolicyTest {
             throw new IllegalArgumentException("Could not locate source range");
         }
         return source.substring(startIndex, endIndex);
+    }
+
+    /** Working-tree checkouts may use CRLF; the scanned markers assume LF. */
+    private static String readSource(final Path path) throws IOException {
+        return Files.readString(path).replace("\r\n", "\n");
     }
 
     private static Path preprocessedSource(final String relativePath) throws URISyntaxException {

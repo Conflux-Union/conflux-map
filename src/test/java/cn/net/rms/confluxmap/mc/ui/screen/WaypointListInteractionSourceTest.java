@@ -11,9 +11,10 @@ import org.junit.jupiter.api.Test;
 final class WaypointListInteractionSourceTest {
     @Test
     void waypointsUseAnExplicitEditButtonInsteadOfANameClickTarget() throws IOException {
+        // Working-tree checkouts may use CRLF; the scanned markers assume LF.
         final String source = Files.readString(findProjectRoot().resolve(
             "src/main/java/cn/net/rms/confluxmap/mc/ui/screen/WaypointListScreen.java"
-        ));
+        )).replace("\r\n", "\n");
         final String rowWidgets = sourceBetween(
             source,
             "private void addRowWidgets(",

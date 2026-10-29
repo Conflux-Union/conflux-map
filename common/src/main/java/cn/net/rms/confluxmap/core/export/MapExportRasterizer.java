@@ -204,6 +204,15 @@ public final class MapExportRasterizer {
                     throw runtime;
                 }
                 throw new IllegalStateException("Map tile snapshot failed", e.getCause());
+            } catch (final CancellationException cancellation) {
+                // Modern JDKs report a stored CancellationException as a bare "get"
+                // instead of the original instance; recover the stored reason so the
+                // export failure keeps its message.
+                if (future.handle((value, throwable) -> throwable).join()
+                    instanceof final CancellationException original) {
+                    throw original;
+                }
+                throw cancellation;
             }
         }
     }

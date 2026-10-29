@@ -11,7 +11,8 @@ import org.junit.jupiter.api.Test;
 final class ConfluxMapCompanionLifecycleTest {
     @Test
     void chunkLoadStatesCollectBeforeRuntimeActivation() throws IOException {
-        final String source = Files.readString(
+        // Working-tree checkouts may use CRLF; the scanned markers assume LF.
+        final String source = readSource(
             findProjectRoot().resolve(
                 "src/main/java/cn/net/rms/confluxmap/server/ConfluxMapCompanion.java"
             )
@@ -31,7 +32,7 @@ final class ConfluxMapCompanionLifecycleTest {
 
     @Test
     void nativeLibraryIsLoadedFromTheGameDirectoryNotTheWorldSave() throws IOException {
-        final String source = Files.readString(
+        final String source = readSource(
             findProjectRoot().resolve(
                 "src/main/java/cn/net/rms/confluxmap/server/ConfluxMapCompanion.java"
             )
@@ -51,6 +52,11 @@ final class ConfluxMapCompanionLifecycleTest {
             activation.contains("NativeLib.removeLegacyNativesUnder(server.getSavePath("),
             "world saves from older versions must have their legacy natives tree cleaned up"
         );
+    }
+
+    /** Working-tree checkouts may use CRLF; the scanned markers assume LF. */
+    private static String readSource(final Path path) throws IOException {
+        return Files.readString(path).replace("\r\n", "\n");
     }
 
     private static String between(final String source, final String start, final String end) {

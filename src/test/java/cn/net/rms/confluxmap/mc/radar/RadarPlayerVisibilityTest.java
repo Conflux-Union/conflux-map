@@ -12,15 +12,16 @@ final class RadarPlayerVisibilityTest {
     @Test
     void minimapAlwaysShowsPlayersAndRevealsNamesByPlayerListKeyOrAlwaysToggle() throws IOException {
         final Path root = findProjectRoot();
+        // Working-tree checkouts may use CRLF; the multi-line markers below assume LF.
         final String minimap = Files.readString(root.resolve(
             "src/main/java/cn/net/rms/confluxmap/mc/ui/hud/MinimapRadarPainter.java"
-        ));
+        )).replace("\r\n", "\n");
         final String fullscreen = Files.readString(root.resolve(
             "src/main/java/cn/net/rms/confluxmap/mc/ui/screen/FullscreenMapScreen.java"
-        ));
+        )).replace("\r\n", "\n");
         final String renderer = Files.readString(root.resolve(
             "src/main/java/cn/net/rms/confluxmap/mc/radar/RadarMarkerRenderer.java"
-        ));
+        )).replace("\r\n", "\n");
         final String playerFilter =
             "if (!showPlayers && entry.category() == RadarCategory.PLAYER)";
 
