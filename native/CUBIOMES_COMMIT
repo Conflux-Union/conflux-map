@@ -1,7 +1,7 @@
 upstream: https://github.com/Cubitect/cubiomes (active line: xpple/cubiomes master)
 fork:     https://github.com/Conflux-Union/cubiomes (this project's fork)
-commit:   f75f0a360e9ba3630478eecd0d5935f913e00ef9
-commit date: 2026-09-18T20:38:49+08:00
+commit:   07f8282995189c3e9ea9197acb236452434ada70
+commit date: 2026-10-29T11:25:17+08:00
 pinned via: native/cubiomes git submodule (converted from a vendored copy on 2026-07-17)
 license: MIT (see native/cubiomes/LICENSE)
 
@@ -21,6 +21,11 @@ Fork contents kept on top of upstream master:
     vegetation candidates" (this project's own additions) behind
     mapOverworldSurfaceColumns / mapOverworldSurfaceBiome /
     getChunkNaturalTreeCandidates.
+  - 07f8282 "perf(worldgen): solve modern terrain columns lazily with a
+    banded surface search" (biomenoise.c only): 1.18+ columns solve
+    density cells on demand from the top and start the surface search a
+    fixed band below the noise-free density-zero crossing; pre-1.18
+    generators keep their original path.
   - Nether fossils: upstream 32f6624 now ships its own terrain-validated
     fossil model, so the fork keeps only what upstream lacks - the
     getFeaturePos routing in getStructurePos (upstream leaves fossils
@@ -30,14 +35,17 @@ Fork contents kept on top of upstream master:
     Abandoned_Camp=26, Stronghold=27); StructureIndex in the parent repo
     pins the same ordinals.
 
-Verification for this pin (2026-09-18):
-  - upstream ctest suite (test_biomes/structures/loot/pieces/carvers)
-    passes, including the MC_26_3 cases
-  - the fork's feature_tests harness passes
-  - C smoke: MC_26_3 biome sampling, nether-fossil locate+viability, and
-    abandoned-camp locate all work through the merged library
-  - conflux-map :common:test (1068 tests incl. the 1.7-26.2 native
-    oracle suite against this pin's prebuilt linux-x86_64 library) passes
+Verification for this pin:
+  - upstream ctest suite (test_biomes/structures/loot/pieces/carvers),
+    the fork's feature_tests harness, and C smoke of MC_26_3 biome
+    sampling, nether-fossil locate+viability, and abandoned-camp locate
+    were run at the f75f0a3 merge base (2026-09-18); 07f8282 adds only
+    the lazy-column commit above and changes no biome or structure
+    lookup.
+  - conflux-map :common:test (1395 tests incl. the native oracle suite
+    against this pin's prebuilt linux-x86_64 library) and the
+    :common:benchmark visual corpus (rendered 1.21.4 tiles vs the
+    pre-change baseline) pass, 2026-10-29.
 
 Files compiled from this commit by buildNativesHost/buildNativesAll
 (selected subset):

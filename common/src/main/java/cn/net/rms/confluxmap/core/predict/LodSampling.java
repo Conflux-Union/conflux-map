@@ -1088,7 +1088,8 @@ public final class LodSampling {
     private static boolean allAnchorsWater(
         final int[] anchorBiomes, final int anchorsW, final int localKx, final int localKz
     ) {
-        return BiomeTable.get(anchorBiomes[localKz * anchorsW + localKx + 1]).waterBiome()
+        return BiomeTable.get(anchorBiomes[localKz * anchorsW + localKx]).waterBiome()
+            && BiomeTable.get(anchorBiomes[localKz * anchorsW + localKx + 1]).waterBiome()
             && BiomeTable.get(anchorBiomes[(localKz + 1) * anchorsW + localKx]).waterBiome()
             && BiomeTable.get(anchorBiomes[(localKz + 1) * anchorsW + localKx + 1]).waterBiome();
     }
@@ -1235,8 +1236,7 @@ public final class LodSampling {
                      * corners are all water biomes and whose pixels all sit under the
                      * fluid-decides band copies any corner regardless of which water biome it is.
                      */
-                    copyable = BiomeTable.get(corner).waterBiome()
-                        && allAnchorsWater(anchorBiomes, anchorsW, localKx, localKz)
+                    copyable = allAnchorsWater(anchorBiomes, anchorsW, localKx, localKz)
                         && pixelHeightsDeep(pixelHeights, heightStride, heightBaseRow, heightBaseCol,
                             cz, cx);
                 }
