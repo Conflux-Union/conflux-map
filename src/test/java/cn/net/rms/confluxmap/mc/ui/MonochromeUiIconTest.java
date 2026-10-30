@@ -31,6 +31,7 @@ final class MonochromeUiIconTest {
         "chunk_load_state.png",
         "chunk_load_state_off.png",
         "map_export.png",
+        "map_import.png",
         "structure_search.png",
         "structure_search_off.png",
         "waypoint_local.png",

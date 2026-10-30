@@ -207,6 +207,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final Identifier MAP_EXPORT_ICON = Ids.of(
         "confluxmap", "textures/gui/map_export.png"
     );
+    private static final Identifier MAP_IMPORT_ICON = Ids.of(
+        "confluxmap", "textures/gui/map_import.png"
+    );
     private static final Identifier MAP_SETTINGS_ICON = Ids.of(
         "confluxmap", "textures/gui/map_settings.png"
     );
@@ -328,6 +331,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private MapIconButton structureSearchButton;
     private MapIconButton displayModeButton;
     private MapIconButton mapExportButton;
+    private MapIconButton mapImportButton;
     ButtonWidget clientWorldButton;
     private ButtonWidget worldSelectorButton;
     private ButtonWidget dimensionSelectorButton;
@@ -647,6 +651,14 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         ));
         mapExportButton.active = !mapBrowser.browsing();
         annotationTooltips.put(mapExportButton, "confluxmap.screen.map_export.tooltip");
+        y += CONTROL_SIZE + CONTROL_GAP;
+        mapImportButton = addDrawableChild(new MapIconButton(
+            x, y, MAP_IMPORT_ICON, Texts.translatable("confluxmap.screen.map_import.tooltip"),
+            ignored -> MinecraftAccess.setScreen(
+                MinecraftClient.getInstance(), new XaeroImportScreen(this)
+            )
+        ));
+        annotationTooltips.put(mapImportButton, "confluxmap.screen.map_import.tooltip");
         y += CONTROL_SIZE + CONTROL_GAP;
         if (clientMultiworld.canManageProfiles()) {
             clientWorldButton = addDrawableChild(new MapIconButton(

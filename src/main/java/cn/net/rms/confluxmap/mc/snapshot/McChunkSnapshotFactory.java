@@ -800,7 +800,7 @@ public final class McChunkSnapshotFactory {
     }
 
     /** §2/§6 unified block-type classification, shared by the surface scan and the floor scan. */
-    private static SurfaceKind classifySurfaceKind(final Block surfaceBlock) {
+    static SurfaceKind classifySurfaceKind(final Block surfaceBlock) {
         if (surfaceBlock == Blocks.LAVA) {
             return SurfaceKind.LAVA;
         } else if (surfaceBlock == Blocks.WATER) {
