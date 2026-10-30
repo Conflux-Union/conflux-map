@@ -34,6 +34,7 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.world.Heightmap;
 import net.minecraft.world.LightType;
+import net.minecraft.world.chunk.ChunkSection;
 import net.minecraft.world.chunk.ChunkStatus;
 import net.minecraft.world.chunk.WorldChunk;
 
@@ -727,7 +728,7 @@ public final class McChunkSnapshotFactory {
         if (deferBlockLight) {
             int base = Argb.multiply(solidBase, solidTint);
             if (solidBlock == Blocks.BEDROCK) {
-                final int bedrockCount = countBedrockRoofThickness(chunk, pos, worldX, solidY, worldZ, worldMinY);
+                final int bedrockCount = countBedrockRoofThickness(chunk, localX, solidY, localZ, worldMinY);
                 final float thicknessMultiplier = ShadingPipeline.bedrockThicknessMultiplier(bedrockCount);
                 base = ShadingPipeline.applyBrightnessMultiplier(base, thicknessMultiplier);
             }
@@ -768,22 +769,32 @@ public final class McChunkSnapshotFactory {
     /**
      * Counts bedrock blocks downward across up to 4 layers below solidY [solidY - 1, solidY - 4].
      * solidY itself is already confirmed to be bedrock by the caller, so count starts at 1.
-     * Uses direct block identity without expensive collapse() wrapping.
+     * Extracts target ChunkSection once to probe via local coordinates, avoiding repeated BlockPos
+     * mutations and letting the JIT compiler unroll the bounded for-loop naturally.
      */
     static int countBedrockRoofThickness(
         final WorldChunk chunk,
-        final BlockPos.Mutable pos,
-        final int worldX,
+        final int localX,
         final int solidY,
-        final int worldZ,
+        final int localZ,
         final int worldMinY
     ) {
         int count = 1;
         final int minY = Math.max(worldMinY, solidY - 4);
-        for (int y = solidY - 1; y >= minY; y--) {
-            pos.set(worldX, y, worldZ);
-            if (chunk.getBlockState(pos).isOf(Blocks.BEDROCK)) {
-                count++;
+        final int sectionIndex = chunk.getSectionIndex(solidY);
+        final ChunkSection[] sections = chunk.getSectionArray();
+        if (sectionIndex >= 0 && sectionIndex < sections.length) {
+            final ChunkSection section = sections[sectionIndex];
+            //#if MC>=11800
+            //$$ if (!section.isEmpty()) {
+            //#else
+            if (!ChunkSection.isEmpty(section)) {
+            //#endif
+                for (int y = solidY - 1; y >= minY; y--) {
+                    if (section.getBlockState(localX, y & 15, localZ).isOf(Blocks.BEDROCK)) {
+                        count++;
+                    }
+                }
             }
         }
         return count;
