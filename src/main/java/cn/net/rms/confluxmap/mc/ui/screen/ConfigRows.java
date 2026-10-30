@@ -180,7 +180,10 @@ final class ConfigRows {
                 y = addToggleRow(
                     y, "confluxmap.config.map.bedrock_thickness_shading",
                     () -> config.showNetherCeilingBedrockThickness,
-                    v -> config.showNetherCeilingBedrockThickness = v
+                    v -> {
+                        config.showNetherCeilingBedrockThickness = v;
+                        ConfluxMapClient.get().onBedrockRoofThicknessShadingChanged();
+                    }
                 );
                 y = addEnumRow(
                     y, "confluxmap.config.map.color_style", MapColorStyle.values(),
@@ -194,7 +197,13 @@ final class ConfigRows {
                 y = addIntSliderRow(
                     y, "confluxmap.config.map.quality", 0, ConfluxConfig.MapQuality.values().length - 1,
                     () -> config.mapQuality.ordinal(),
-                    v -> config.mapQuality = ConfluxConfig.MapQuality.values()[Math.max(0, Math.min(ConfluxConfig.MapQuality.values().length - 1, v))],
+                    v -> {
+                        config.mapQuality = ConfluxConfig.MapQuality.values()[Math.max(0, Math.min(ConfluxConfig.MapQuality.values().length - 1, v))];
+                        final ConfluxMapClient client = ConfluxMapClient.get();
+                        if (client != null && client.predictionTileService() != null) {
+                            client.predictionTileService().setMapQuality(config.mapQuality);
+                        }
+                    },
                     ConfigValueLabels::mapQualitySliderText
                 );
                 y = addToggleRow(y, "confluxmap.config.fullmap.chunk_grid", () -> config.fullmapChunkGrid, v -> config.fullmapChunkGrid = v);

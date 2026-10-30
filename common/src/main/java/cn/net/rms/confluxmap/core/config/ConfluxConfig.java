@@ -96,20 +96,26 @@ public final class ConfluxConfig {
      * Scale <= 1.0 is strictly clamped to LOD 0 regardless of setting.
      */
     public enum MapQuality {
-        ULTRA_PERFORMANCE(1.60),
-        PERFORMANCE(1.30),
-        BALANCED(1.00),
-        QUALITY(0.75),
-        ULTRA_QUALITY(0.55);
+        ULTRA_PERFORMANCE(1.60, 64),
+        PERFORMANCE(1.30, 128),
+        BALANCED(1.00, 256),
+        QUALITY(0.75, 512),
+        ULTRA_QUALITY(0.55, 1024);
 
         private final double slope;
+        private final int predictionTileCacheLimit;
 
-        MapQuality(final double slope) {
+        MapQuality(final double slope, final int predictionTileCacheLimit) {
             this.slope = slope;
+            this.predictionTileCacheLimit = predictionTileCacheLimit;
         }
 
         public double slope() {
             return slope;
+        }
+
+        public int predictionTileCacheLimit() {
+            return predictionTileCacheLimit;
         }
     }
 

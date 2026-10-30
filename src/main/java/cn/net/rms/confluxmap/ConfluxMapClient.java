@@ -272,6 +272,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         predictionTileService = new PredictionTileService(sessionGuard, predictionState, executors, tileService);
         predictionTileService.bindDaylightModel(daylightModel);
         predictionTileService.setMapColorStyle(config.mapColorStyle);
+        predictionTileService.setMapQuality(config.mapQuality);
         predictionTileService.setViewMode(config.predictionViewMode);
         correctionStore = new CorrectionStore(
             cacheRoot.resolve("prediction")
@@ -662,6 +663,17 @@ public final class ConfluxMapClient implements ClientModInitializer {
         tileService.reloadMapColorStyle();
         gameBridge.runOnRenderThread(tileTextureManager::releaseAll);
         ConfluxMapMod.LOGGER.info("Map color style changed to {}", config.mapColorStyle);
+    }
+
+    /** Invalidates terrain planes after bedrock roof thickness shading toggle changes. */
+    public void onBedrockRoofThicknessShadingChanged() {
+        predictionTileService.reloadAll();
+        tileService.reloadMapColorStyle();
+        gameBridge.runOnRenderThread(tileTextureManager::releaseAll);
+        if (chunkCapture != null) {
+            chunkCapture.recaptureCurrentView();
+        }
+        ConfluxMapMod.LOGGER.info("Nether ceiling bedrock thickness shading toggled to {}", config.showNetherCeilingBedrockThickness);
     }
 
     /** Re-resolves the active session's seed source after a local seed setting changes. */

@@ -23,6 +23,22 @@ class PredictionMipCacheTest {
         assertEquals(CorrectionProfile.LEGACY_V1, aggregate.correctionProfile());
     }
 
+    @Test
+    void dynamicLimitAdjustmentTrimsExcessTiles() {
+        final PredictionMipCache cache = new PredictionMipCache(4);
+        final cn.net.rms.confluxmap.core.model.DimensionId dim = cn.net.rms.confluxmap.core.model.DimensionId.OVERWORLD;
+        final cn.net.rms.confluxmap.core.model.WorldIdentity world = cn.net.rms.confluxmap.core.model.WorldIdentity.singleplayer("test");
+        for (int i = 0; i < 4; i++) {
+            cache.put(new cn.net.rms.confluxmap.core.model.TileKey(world, dim, "surface!pred", 0, i, 0), tile(CorrectionProfile.SOURCE_LIGHT_V2));
+        }
+        assertEquals(4, cache.size());
+        assertEquals(4, cache.limit());
+
+        cache.setLimit(2);
+        assertEquals(2, cache.size());
+        assertEquals(2, cache.limit());
+    }
+
     private static PredictionMipCache.Tile tile(final CorrectionProfile profile) {
         final int pixels = BaselineGrid.PIXELS * BaselineGrid.PIXELS;
         return new PredictionMipCache.Tile(

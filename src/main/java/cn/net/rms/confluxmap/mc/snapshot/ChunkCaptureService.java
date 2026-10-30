@@ -142,6 +142,14 @@ public final class ChunkCaptureService {
         reseedViewport(viewpoint.blockX() >> 4, viewpoint.blockZ() >> 4);
     }
 
+    /** Re-marks all viewport chunks dirty so a layer-shading policy change takes effect immediately. */
+    public void recaptureCurrentView() {
+        final PlayerView viewpoint = gameBridge.viewpoint().orElse(null);
+        if (viewpoint != null) {
+            reseedViewport(viewpoint.blockX() >> 4, viewpoint.blockZ() >> 4);
+        }
+    }
+
     /** Main thread, from packet mixins. */
     public void markDirty(final int chunkX, final int chunkZ) {
         markCaptureDirty(chunkX, chunkZ);

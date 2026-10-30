@@ -55,7 +55,7 @@ final class PredictionMipCache {
         }
     }
 
-    private final int limit;
+    private int limit;
     private final LinkedHashMap<TileKey, Tile> tiles = new LinkedHashMap<>(32, 0.75f, true);
 
     PredictionMipCache(final int limit) {
@@ -63,6 +63,22 @@ final class PredictionMipCache {
             throw new IllegalArgumentException("prediction mip cache limit must be positive");
         }
         this.limit = limit;
+    }
+
+    synchronized void setLimit(final int newLimit) {
+        if (newLimit <= 0) {
+            throw new IllegalArgumentException("prediction mip cache limit must be positive");
+        }
+        this.limit = newLimit;
+        trim();
+    }
+
+    synchronized int limit() {
+        return limit;
+    }
+
+    synchronized int size() {
+        return tiles.size();
     }
 
     synchronized void clear() {

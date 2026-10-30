@@ -108,7 +108,7 @@ public final class PredictionPaletteBuilder {
         );
         materials.put(
             SurfaceKind.BEDROCK_CEILING,
-            sampler.detailProfileFor(Blocks.BEDROCK.getDefaultState(), world, reference)
+            MaterialDetailProfile.flat()
         );
         materialBaseColors.put(
             SurfaceKind.BEDROCK_CEILING,

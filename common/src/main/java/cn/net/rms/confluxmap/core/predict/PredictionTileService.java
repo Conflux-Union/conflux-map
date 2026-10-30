@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.core.color.LightTint;
 import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
 import cn.net.rms.confluxmap.core.color.XaeroMapStyle;
+import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
@@ -221,6 +222,20 @@ public final class PredictionTileService {
             }
         }
         pump();
+    }
+
+    public void setMapQuality(final ConfluxConfig.MapQuality quality) {
+        if (quality != null) {
+            setCacheLimit(quality.predictionTileCacheLimit());
+        }
+    }
+
+    public void setCacheLimit(final int limit) {
+        mipCache.setLimit(limit);
+    }
+
+    int cacheLimitForTest() {
+        return mipCache.limit();
     }
 
     public PredictionViewMode viewMode() {
@@ -770,6 +785,24 @@ public final class PredictionTileService {
                         dirty.put(key, session.token());
                     }
                 }
+                final MapLayer predictedLayer = PredictionDimensions.layer(dimension);
+                if (predictedLayer != null) {
+                    final String layer = predictedLayer.cacheId();
+                    for (int tileZ = minTileZ - 1; tileZ <= maxTileZ + 1; tileZ++) {
+                        for (int tileX = minTileX - 1; tileX <= maxTileX + 1; tileX++) {
+                            if (rect.contains(tileX, tileZ)) {
+                                continue;
+                            }
+                            final TileKey key = new TileKey(
+                                session.world(), dimension, layer + PredictedTileKeys.SUFFIX,
+                                lod, tileX, tileZ
+                            );
+                            if (!dirty.containsKey(key) && !inFlight.contains(key)) {
+                                dirty.put(key, session.token());
+                            }
+                        }
+                    }
+                }
             }
         }
         pump();
@@ -989,9 +1022,10 @@ public final class PredictionTileService {
 
     /**
      * Caller must hold the monitor. Dispatch tiers stay strict - 0 = user-waited (menu
-     * target), 1 = visible viewport, 2 = background - and each tier keeps its own order:
-     * menu targets row-major, viewport tiles outward from the viewport center, background
-     * tiles viewpoint-nearest first. Row-major breaks equal-distance ties so the pick never
+     * target), 1 = visible viewport, 2 = padded ring around visible viewport,
+     * 3 = background - and each tier keeps its own order: menu targets row-major,
+     * viewport and ring tiles outward from the viewport center, background tiles
+     * viewpoint-nearest first. Row-major breaks equal-distance ties so the pick never
      * depends on {@code dirty}'s hash iteration order.
      */
     private TileKey nearestDirty() {
@@ -1005,9 +1039,10 @@ public final class PredictionTileService {
             if (inFlight.contains(key)) {
                 continue;
             }
-            // 0 = user-waited (menu target), 1 = visible viewport, 2 = background.
+            // 0 = user-waited (menu target), 1 = visible viewport, 2 = padded ring, 3 = background.
             final int tier = urgent.contains(key) ? 0
-                : activeViewport != null && activeViewport.contains(key) ? 1 : 2;
+                : activeViewport != null && activeViewport.contains(key) ? 1
+                : activeViewport != null && activeViewport.containsPadded(key) ? 2 : 3;
             if (tier > bestTier) {
                 continue;
             }
@@ -1030,10 +1065,10 @@ public final class PredictionTileService {
         final int vx,
         final int vz
     ) {
-        if (tier == 1) {
+        if (tier == 1 || tier == 2) {
             return viewport.centerDistanceSq(key);
         }
-        return tier == 2 ? distanceToViewpoint(key, vx, vz) : 0L;
+        return tier == 3 ? distanceToViewpoint(key, vx, vz) : 0L;
     }
 
     private static long distanceToViewpoint(final TileKey key, final int vx, final int vz) {
@@ -1820,16 +1855,24 @@ public final class PredictionTileService {
             if (!dimension.equals(key.dimension()) || lod != key.lod()) {
                 return false;
             }
-            return key.tileX() >= minTileX && key.tileX() <= maxTileX
-                && key.tileZ() >= minTileZ && key.tileZ() <= maxTileZ;
+            return contains(key.tileX(), key.tileZ());
+        }
+
+        boolean contains(final int tileX, final int tileZ) {
+            return tileX >= minTileX && tileX <= maxTileX
+                && tileZ >= minTileZ && tileZ <= maxTileZ;
         }
 
         boolean containsPadded(final TileKey key) {
+            return containsPadded(key, 1);
+        }
+
+        boolean containsPadded(final TileKey key, final int pad) {
             if (!dimension.equals(key.dimension()) || lod != key.lod()) {
                 return false;
             }
-            return key.tileX() >= minTileX - 1 && key.tileX() <= maxTileX + 1
-                && key.tileZ() >= minTileZ - 1 && key.tileZ() <= maxTileZ + 1;
+            return key.tileX() >= minTileX - pad && key.tileX() <= maxTileX + pad
+                && key.tileZ() >= minTileZ - pad && key.tileZ() <= maxTileZ + pad;
         }
 
         /**

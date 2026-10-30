@@ -737,11 +737,18 @@ public final class McChunkSnapshotFactory {
         // synchronized roof pixels use that same representation and calculation.
         final int litColor;
         if (deferBlockLight) {
-            int base = Argb.multiply(solidBase, solidTint);
-            if (solidBlock == Blocks.BEDROCK && bedrockThicknessShading.getAsBoolean()) {
-                final int bedrockCount = countBedrockRoofThickness(chunk, localX, solidY, localZ, worldMinY);
-                final float thicknessMultiplier = ShadingPipeline.bedrockThicknessMultiplier(bedrockCount);
-                base = ShadingPipeline.applyBrightnessMultiplier(base, thicknessMultiplier);
+            final int base;
+            if (solidBlock == Blocks.BEDROCK) {
+                final int pureBedrockBase = sampler.baseColorFor(solidState, world, pos);
+                if (bedrockThicknessShading.getAsBoolean()) {
+                    final int bedrockCount = countBedrockRoofThickness(chunk, localX, solidY, localZ, worldMinY);
+                    final float thicknessMultiplier = ShadingPipeline.bedrockThicknessMultiplier(bedrockCount);
+                    base = ShadingPipeline.applyBrightnessMultiplier(Argb.multiply(pureBedrockBase, solidTint), thicknessMultiplier);
+                } else {
+                    base = Argb.multiply(pureBedrockBase, solidTint);
+                }
+            } else {
+                base = Argb.multiply(solidBase, solidTint);
             }
             litColor = applyAmbientLight(base, netherAmbient);
         } else {
