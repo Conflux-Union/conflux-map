@@ -59,8 +59,7 @@ public final class BiomeCandidateSearch {
                     final int index = localZ * RegionColumns.SIZE + localX;
                     final int chunkIndex = (localZ / 16) * RegionColumns.CHUNKS + localX / 16;
                     if (!targetBiomeId.equals(biomeIds[index])
-                        || SampleSource.byOrdinal(chunkSources[chunkIndex]).priority()
-                            < SampleSource.REAL_CACHED.priority()) {
+                        || !SampleSource.byOrdinal(chunkSources[chunkIndex]).isExplored()) {
                         continue;
                     }
                     final Candidate candidate = new Candidate(

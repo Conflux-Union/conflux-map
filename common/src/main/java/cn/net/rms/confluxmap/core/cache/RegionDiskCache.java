@@ -345,17 +345,18 @@ public final class RegionDiskCache {
         for (int chunkLocalZ = 0; chunkLocalZ < RegionColumns.CHUNKS; chunkLocalZ++) {
             for (int chunkLocalX = 0; chunkLocalX < RegionColumns.CHUNKS; chunkLocalX++) {
                 final int chunkIndex = chunkLocalZ * RegionColumns.CHUNKS + chunkLocalX;
-                if (SampleSource.byOrdinal(data.chunkSourceOrdinal()[chunkIndex]) == SampleSource.UNKNOWN) {
+                final SampleSource stored = SampleSource.byOrdinal(data.chunkSourceOrdinal()[chunkIndex]);
+                if (!stored.isExplored()) {
                     continue;
                 }
                 final ChunkSnapshot snapshot = extractChunkSnapshot(data, chunkLocalX, chunkLocalZ, token);
-                if (world.put(layer, snapshot, SampleSource.REAL_CACHED)) {
+                if (world.put(layer, snapshot, stored)) {
                     merged++;
                 }
             }
         }
         if (merged > 0) {
-            logger.info("cache: loaded region r.{}.{} layer={} ({} chunks) as REAL_CACHED", regionX, regionZ, layerType.id(), merged);
+            logger.info("cache: loaded region r.{}.{} layer={} ({} chunks) from disk", regionX, regionZ, layerType.id(), merged);
             return true;
         }
         return false;
@@ -447,6 +448,23 @@ public final class RegionDiskCache {
         }
     }
 
+    /**
+     * Flushes one region immediately if it holds unwritten changes. The terrain
+     * import calls this after materializing a region so bulk imports never pin
+     * more than a region or two of column data in memory.
+     */
+    public synchronized boolean flushRegionIfDirty(final MapLayer.Type layerType, final int regionX, final int regionZ) {
+        final MapWorld world = mapWorlds.ifCurrent(token);
+        if (world == null) {
+            return false;
+        }
+        final RegionColumns region = world.store(new MapLayer(layerType, 0)).region(regionX, regionZ);
+        if (region == null) {
+            return false;
+        }
+        return flushIfDirty(region, layerType).written();
+    }
+
     private FlushResult flushIfDirty(final RegionColumns region, final MapLayer.Type type) {
         final RegionSlot slot = new RegionSlot(type, region.regionX, region.regionZ);
         final int versionAtDecision = region.version();
@@ -523,32 +541,9 @@ public final class RegionDiskCache {
             surfaceY, fluidDepth, kind, biomeId,
             baseArgb, xaeroBaseArgb, tintArgb, overlayArgb, xaeroOverlayArgb, light
         );
-        return writeAtomic(regionFile(type, region.regionX, region.regionZ), data, type.ordinal()) ? copiedVersion : -1;
-    }
-
-    private boolean writeAtomic(final Path file, final RegionFileCodec.RegionData data, final int layerOrdinal) {
-        try {
-            Files.createDirectories(file.getParent());
-            final Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-            try (FileOutputStream fos = new FileOutputStream(tmp.toFile())) {
-                RegionFileCodec.encode(fos, layerOrdinal, data);
-                fos.flush();
-                fos.getChannel().force(true);
-            }
-            move(tmp, file);
-            return true;
-        } catch (final IOException e) {
-            logger.warn("cache: failed to write region file {} ({})", file, e.toString());
-            return false;
-        }
-    }
-
-    private static void move(final Path tmp, final Path file) throws IOException {
-        try {
-            Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (final AtomicMoveNotSupportedException e) {
-            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
-        }
+        return RegionFileWriter.writeAtomic(
+            regionFile(type, region.regionX, region.regionZ), data, type.ordinal(), logger
+        ) ? copiedVersion : -1;
     }
 
     private void quarantine(final Path file) {

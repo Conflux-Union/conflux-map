@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.core.cache;
 
+import cn.net.rms.confluxmap.core.model.SampleSource;
 import cn.net.rms.confluxmap.core.store.RegionColumns;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -26,13 +27,15 @@ import java.util.zip.InflaterInputStream;
  * </pre>
  *
  * <p>The compressed body starts with a UTF biome-identifier dictionary, followed by fixed-width
- * column records: {@code i16 surfaceY, u8 fluidDepth, u8 kind, u16 biomeIndex, i32 baseArgb,
+ * column records: {@code i16 surfaceY, u8 fluidDepth, u8 kind, u16 biomeIdx, i32 baseArgb,
  * i32 xaeroBaseArgb, i32 biomeTint, i32 overlayArgb, i32 xaeroOverlayArgb, u8 light}.
  * Biome index 0 means unknown; other values are
  * one-based dictionary indexes. Schema 3 introduced this stable identity plane; schema 4 adds
  * each chunk's world source revision to the uncompressed table. Schema 5 retains the raw texture
  * average needed by Xaero rendering. Schema 6 separates Xaero-filtered overlays so decorative
- * plants hidden by Xaero do not inherit Conflux detail noise. Older schemas remain readable;
+ * plants hidden by Xaero do not inherit Conflux detail noise. Schema 7 renumbers the source
+ * ordinals to make room for {@link SampleSource#IMPORTED} between PREDICTED and REAL_CACHED;
+ * schemas 3-6 store the old numbering and are remapped on decode. Older schemas remain readable;
  * schemas 3/4 fall back to baseArgb and schemas 3-5 start with an empty Xaero overlay plane.
  *
  * <p>All multi-byte integers are big-endian (plain {@link DataOutputStream}/
@@ -42,7 +45,7 @@ import java.util.zip.InflaterInputStream;
 public final class RegionFileCodec {
     public static final byte[] MAGIC = {'C', 'F', 'R', 'M'};
     public static final int FORMAT_VERSION = 1;
-    public static final int SCHEMA_VERSION = 6;
+    public static final int SCHEMA_VERSION = 7;
     private static final int MIN_SUPPORTED_SCHEMA_VERSION = 3;
     /** Discriminates the on-disk record family; 0 = the fixed-width column layout described above. */
     public static final int SOURCE_CLASS = 0;
@@ -287,6 +290,10 @@ public final class RegionFileCodec {
             if (schemaVersion >= 4) {
                 chunkSourceRevision[i] = header.readLong();
             }
+            if (schemaVersion < 7) {
+                // Schemas 3-6 predate SampleSource.IMPORTED: 2 was REAL_CACHED, 3 was REAL_LIVE.
+                chunkSourceOrdinal[i] = remapLegacySourceOrdinal(chunkSourceOrdinal[i]);
+            }
         }
 
         final short[] surfaceY = new short[COLUMN_COUNT];
@@ -340,6 +347,18 @@ public final class RegionFileCodec {
             surfaceY, fluidDepth, kind, biomeId, baseArgb, xaeroBaseArgb,
             biomeTint, overlayArgb, xaeroOverlayArgb, light
         );
+    }
+
+    /**
+     * Legacy chunk tables store the pre-IMPORTED enum numbering; shift cached/live
+     * sources up so ordinal decoding matches the current enum.
+     */
+    private static byte remapLegacySourceOrdinal(final byte stored) {
+        return switch (stored) {
+            case 2 -> (byte) SampleSource.REAL_CACHED.ordinal();
+            case 3 -> (byte) SampleSource.REAL_LIVE.ordinal();
+            default -> stored;
+        };
     }
 
     private static long[] unknownRevisions() {
