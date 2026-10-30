@@ -171,6 +171,11 @@ public final class ShadingPipeline {
         return (argb & 0xFF000000) | r << 16 | g << 8 | b;
     }
 
+    /** Brightness multiplier for bedrock roof thickness: 1 layer = 1.15, 3 layers = 1.00, 5 layers = 0.85. */
+    public static float bedrockThicknessMultiplier(final int count) {
+        return 1.0f + (3 - count) * 0.075f;
+    }
+
     /** Multiplies RGB brightness while preserving hue and alpha. */
     public static int applyBrightnessMultiplier(final int argb, final double factor) {
         if (factor == 1.0) {

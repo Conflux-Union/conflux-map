@@ -593,6 +593,12 @@ These extensions are shared by minimap, fullscreen map, prediction, and PNG
 export composition. Cave, Nether, and End layers retain their existing surface
 selection and light sampling, then receive the same local relief. The Nether
 ceiling omits absolute-height tint but retains symmetric local relief.
+Additionally, when sampling the Nether ceiling (`NETHER_CEILING`) and hitting
+bedrock (`Blocks.BEDROCK`), the top-down bedrock thickness (1–5 layers in the
+`[solidY - 4, solidY]` range) modulates base brightness with a smooth factor
+`1.0 + (3 - count) * 0.075` (1 layer = 1.15, 2 layers = 1.075, 3 layers = 1.00,
+4 layers = 0.925, 5 layers = 0.85). If the roof is broken or covered by another
+block, ordinary floor-scan penetration applies without forced bedrock shading.
 
 ## Confidence notes
 

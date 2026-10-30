@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.mc.snapshot;
 import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.core.color.LightTint;
 import cn.net.rms.confluxmap.core.color.OverlayVisibility;
+import cn.net.rms.confluxmap.core.color.ShadingPipeline;
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
@@ -724,7 +725,13 @@ public final class McChunkSnapshotFactory {
         // synchronized roof pixels use that same representation and calculation.
         final int litColor;
         if (deferBlockLight) {
-            litColor = applyAmbientLight(Argb.multiply(solidBase, solidTint), netherAmbient);
+            int base = Argb.multiply(solidBase, solidTint);
+            if (solidBlock == Blocks.BEDROCK) {
+                final int bedrockCount = countBedrockRoofThickness(chunk, pos, worldX, solidY, worldZ, worldMinY, worldMaxY);
+                final float thicknessMultiplier = ShadingPipeline.bedrockThicknessMultiplier(bedrockCount);
+                base = ShadingPipeline.applyBrightnessMultiplier(base, thicknessMultiplier);
+            }
+            litColor = applyAmbientLight(base, netherAmbient);
             light[index] = sampleBlockLightAbove(
                 world, pos, worldX, solidY, worldZ, worldMaxY
             );
@@ -756,6 +763,28 @@ public final class McChunkSnapshotFactory {
         tintArgb[index] = 0xFFFFFFFF;
         overlayArgb[index] = overlayColor;
         fluidDepth[index] = 0;
+    }
+
+    /** Counts bedrock blocks downward across up to 5 layers [solidY, solidY - 4] within world bounds. */
+    static int countBedrockRoofThickness(
+        final WorldChunk chunk,
+        final BlockPos.Mutable pos,
+        final int worldX,
+        final int solidY,
+        final int worldZ,
+        final int worldMinY,
+        final int worldMaxY
+    ) {
+        int count = 0;
+        final int minY = Math.max(worldMinY, solidY - 4);
+        final int maxY = Math.min(worldMaxY - 1, solidY);
+        for (int y = maxY; y >= minY; y--) {
+            pos.set(worldX, y, worldZ);
+            if (collapse(chunk.getBlockState(pos)).getBlock() == Blocks.BEDROCK) {
+                count++;
+            }
+        }
+        return count;
     }
 
     /** §2.1's pivot-scan open test: non-opaque (§1's opacity test) and not lava. */

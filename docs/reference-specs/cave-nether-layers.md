@@ -211,7 +211,8 @@ same `log10(|diff|/8 + 1)` curve (divided by 3 instead of 1.8) is added on top.
   *upward* branch (when the pivot itself starts embedded in rock), and that branch is capped
   at 10 blocks — so a solid roof with no gap within 10 blocks of the pivot simply yields "no
   floor found" (rendered transparent, Section 5), never the underside of the roof drawn as
-  if it were terrain.
+  if it were terrain. When viewing the dedicated Nether ceiling layer (`NETHER_CEILING`),
+  the downward probe inspects bedrock thickness (1–5 layers) to shade bedrock brightness.
 - **Layer selection below the ceiling:** there is no separate "which layer" step distinct
   from the general floor scan — whatever opaque or lava surface is nearest the pivot Y (up or
   down) is shown. This naturally favors terrain, structures, or lava-lake surfaces close to

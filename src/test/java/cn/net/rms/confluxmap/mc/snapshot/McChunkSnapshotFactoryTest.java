@@ -165,4 +165,13 @@ class McChunkSnapshotFactoryTest {
         assertTrue(collapsed.isOf(Blocks.WATER));
         assertFalse(McChunkSnapshotFactory.isSeafloorCapturable(collapsed));
     }
+
+    @Test
+    void bedrockThicknessMultiplierValues() {
+        assertEquals(1.15f, cn.net.rms.confluxmap.core.color.ShadingPipeline.bedrockThicknessMultiplier(1), 1e-6f);
+        assertEquals(1.075f, cn.net.rms.confluxmap.core.color.ShadingPipeline.bedrockThicknessMultiplier(2), 1e-6f);
+        assertEquals(1.00f, cn.net.rms.confluxmap.core.color.ShadingPipeline.bedrockThicknessMultiplier(3), 1e-6f);
+        assertEquals(0.925f, cn.net.rms.confluxmap.core.color.ShadingPipeline.bedrockThicknessMultiplier(4), 1e-6f);
+        assertEquals(0.85f, cn.net.rms.confluxmap.core.color.ShadingPipeline.bedrockThicknessMultiplier(5), 1e-6f);
+    }
 }

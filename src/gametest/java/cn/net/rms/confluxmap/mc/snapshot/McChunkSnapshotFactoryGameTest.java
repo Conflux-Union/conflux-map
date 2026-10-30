@@ -51,4 +51,23 @@ public final class McChunkSnapshotFactoryGameTest implements FabricGameTest {
         }
         context.complete();
     }
+
+    //#if MC>=12105
+    //$$ @GameTest(maxTicks = 20)
+    //#elseif MC>=12000
+    //$$ @GameTest(templateName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = 20)
+    //#else
+    @GameTest(structureName = FabricGameTest.EMPTY_STRUCTURE, tickLimit = 20)
+    //#endif
+    public void bedrockThicknessMultiplierFormula(final TestContext context) {
+        final float[] expected = {1.15f, 1.075f, 1.00f, 0.925f, 0.85f};
+        for (int i = 1; i <= 5; i++) {
+            final float multiplier = cn.net.rms.confluxmap.core.color.ShadingPipeline.bedrockThicknessMultiplier(i);
+            if (Math.abs(multiplier - expected[i - 1]) > 1e-5f) {
+                GameTestCompat.fail(context, "unexpected bedrock multiplier for layer " + i + ": " + multiplier);
+                return;
+            }
+        }
+        context.complete();
+    }
 }
