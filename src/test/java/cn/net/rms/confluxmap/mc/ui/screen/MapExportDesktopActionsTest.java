@@ -32,9 +32,8 @@ final class MapExportDesktopActionsTest {
         actions.openDirectory(output);
 
         assertEquals(output, copied.get());
-        // Production resolves the opened directory to an absolute path; on Windows a
-        // root-relative path such as \tmp gains its drive letter in that step.
-        assertEquals(output.getParent().toAbsolutePath(), opened.get());
+        // Mirrors production's output.toAbsolutePath().getParent(); on Windows /tmp is drive-relative.
+        assertEquals(output.toAbsolutePath().getParent(), opened.get());
         assertEquals(MapExportDesktopActions.CopyState.COPIED, actions.copyState());
         assertEquals(MapExportDesktopActions.OpenState.OPENED, actions.openState());
     }
