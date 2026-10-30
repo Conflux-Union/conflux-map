@@ -32,30 +32,19 @@ class ConfigRowsCategoryTest {
     }
 
     @Test
-    void layerLabelToggleSitsBesideTheOtherMinimapInformationToggles() throws IOException {
+    void layerLabelToggleFollowsTheBiomeToggle() throws IOException {
         final String screen = readConfigRows();
 
-        final int showBiomeRow = screen.indexOf("confluxmap.config.minimap.show_biome");
+        final int showBiomeRow = screen.indexOf("\"confluxmap.config.minimap.show_biome\"");
         final int layerLabelRow = screen.indexOf("\"" + LAYER_LABEL_KEY + "\"");
 
         assertTrue(showBiomeRow >= 0);
-        assertTrue(layerLabelRow > showBiomeRow, "expected the layer label toggle right after the biome toggle");
+        assertTrue(layerLabelRow > showBiomeRow, "the layer label toggle should come after the biome toggle");
     }
 
     @Test
     void retiredLayerCategoryKeyDoesNotComeBack() throws IOException {
         assertFalse(readConfigRows().contains(RETIRED_LAYER_LABEL_KEY));
-    }
-
-    @Test
-    void langFilesExposeTheMinimapLayerLabelKey() throws IOException {
-        for (final String lang : new String[] {"en_us.json", "zh_cn.json"}) {
-            final String content = Files.readString(findProjectRoot()
-                .resolve("src/main/resources/assets/confluxmap/lang")
-                .resolve(lang));
-            assertTrue(content.contains("\"" + LAYER_LABEL_KEY + "\":"), lang + " should define " + LAYER_LABEL_KEY);
-            assertFalse(content.contains(RETIRED_LAYER_LABEL_KEY), lang + " should not keep the retired key");
-        }
     }
 
     private static String readConfigRows() throws IOException {

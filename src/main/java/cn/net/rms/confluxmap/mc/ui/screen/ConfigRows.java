@@ -157,11 +157,7 @@ final class ConfigRows {
                 y = addZoomRow(y);
                 y = addToggleRow(y, "confluxmap.config.minimap.show_coordinates", () -> config.showCoordinates, v -> config.showCoordinates = v);
                 y = addToggleRow(y, "confluxmap.config.minimap.show_biome", () -> config.showBiome, v -> config.showBiome = v);
-                y = addToggleRow(
-                    y,
-                    "confluxmap.config.minimap.show_layer_label",
-                    () -> config.showLayerIndicator, v -> config.showLayerIndicator = v
-                );
+                y = addToggleRow(y, "confluxmap.config.minimap.show_layer_label", () -> config.showLayerIndicator, v -> config.showLayerIndicator = v);
                 break;
             case MAP:
                 y = addSectionRow(y, "confluxmap.screen.config.section.layers");
