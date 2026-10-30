@@ -15,6 +15,10 @@ class BedrockThicknessTest {
         assertEquals(1.00f, ShadingPipeline.bedrockThicknessMultiplier(3), 1e-6f, "3 layers must be 1.00");
         assertEquals(0.925f, ShadingPipeline.bedrockThicknessMultiplier(4), 1e-6f, "4 layers must be 0.925");
         assertEquals(0.85f, ShadingPipeline.bedrockThicknessMultiplier(5), 1e-6f, "5 layers must be 0.85");
+
+        // Defensive clamping tests
+        assertEquals(1.15f, ShadingPipeline.bedrockThicknessMultiplier(0), 1e-6f, "< 1 clamped to 1");
+        assertEquals(0.85f, ShadingPipeline.bedrockThicknessMultiplier(9), 1e-6f, "> 5 clamped to 5");
     }
 
     @Test
