@@ -727,7 +727,7 @@ public final class McChunkSnapshotFactory {
         if (deferBlockLight) {
             int base = Argb.multiply(solidBase, solidTint);
             if (solidBlock == Blocks.BEDROCK) {
-                final int bedrockCount = countBedrockRoofThickness(chunk, pos, worldX, solidY, worldZ, worldMinY, worldMaxY);
+                final int bedrockCount = countBedrockRoofThickness(chunk, pos, worldX, solidY, worldZ, worldMinY);
                 final float thicknessMultiplier = ShadingPipeline.bedrockThicknessMultiplier(bedrockCount);
                 base = ShadingPipeline.applyBrightnessMultiplier(base, thicknessMultiplier);
             }
@@ -765,22 +765,24 @@ public final class McChunkSnapshotFactory {
         fluidDepth[index] = 0;
     }
 
-    /** Counts bedrock blocks downward across up to 5 layers [solidY, solidY - 4] within world bounds. */
+    /**
+     * Counts bedrock blocks downward across up to 4 layers below solidY [solidY - 1, solidY - 4].
+     * solidY itself is already confirmed to be bedrock by the caller, so count starts at 1.
+     * Uses direct block identity without expensive collapse() wrapping.
+     */
     static int countBedrockRoofThickness(
         final WorldChunk chunk,
         final BlockPos.Mutable pos,
         final int worldX,
         final int solidY,
         final int worldZ,
-        final int worldMinY,
-        final int worldMaxY
+        final int worldMinY
     ) {
-        int count = 0;
+        int count = 1;
         final int minY = Math.max(worldMinY, solidY - 4);
-        final int maxY = Math.min(worldMaxY - 1, solidY);
-        for (int y = maxY; y >= minY; y--) {
+        for (int y = solidY - 1; y >= minY; y--) {
             pos.set(worldX, y, worldZ);
-            if (collapse(chunk.getBlockState(pos)).getBlock() == Blocks.BEDROCK) {
+            if (chunk.getBlockState(pos).isOf(Blocks.BEDROCK)) {
                 count++;
             }
         }
