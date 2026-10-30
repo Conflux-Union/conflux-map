@@ -386,6 +386,7 @@
   "confluxmap.config.layers.cave_slice_y": "Fixed Cave Height: %s",
   "confluxmap.config.layers.nether_slice_y": "Fixed Nether Height: %s",
   "confluxmap.config.map.dynamic_lighting": "Dynamic Lighting: %s",
+  "confluxmap.config.map.bedrock_thickness_shading": "Show Nether Ceiling Bedrock Thickness: %s",
   "confluxmap.config.map.color_style": "Map Color Style: %s",
   "confluxmap.value.map_color_style.conflux": "Conflux",
   "confluxmap.value.map_color_style.xaero": "Xaero",

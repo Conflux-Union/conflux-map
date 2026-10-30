@@ -206,6 +206,8 @@ public final class ConfluxConfig {
      * layers always keep their baked light). Off = exactly today's fixed-brightness rendering.
      */
     public boolean dynamicLighting = true;
+    /** Shade Nether ceiling bedrock brightness based on 1–5 layer column thickness. Off = uniform bedrock color. */
+    public boolean showNetherCeilingBedrockThickness = true;
     /** Keeps the historical Conflux renderer by default; XAERO is an explicit presentation choice. */
     public MapColorStyle mapColorStyle = MapColorStyle.CONFLUX;
     /** Map quality level controlling LOD scale transition points. */
@@ -398,6 +400,7 @@ public final class ConfluxConfig {
         c.caveSliceY = caveSliceY;
         c.netherSliceY = netherSliceY;
         c.dynamicLighting = dynamicLighting;
+        c.showNetherCeilingBedrockThickness = showNetherCeilingBedrockThickness;
         c.mapColorStyle = mapColorStyle;
         c.mapQuality = mapQuality;
         c.snapshotBudgetPerTick = snapshotBudgetPerTick;

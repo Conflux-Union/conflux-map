@@ -103,7 +103,9 @@ public final class ChunkCaptureService {
         this.serverViewDistance = serverViewDistance;
         this.regionCache = regionCache;
         this.layerSelector = layerSelector;
-        this.factory = new McChunkSnapshotFactory(client, sampler, tintResolver);
+        this.factory = new McChunkSnapshotFactory(
+            client, sampler, tintResolver, () -> config.showNetherCeilingBedrockThickness
+        );
         this.terrainEncoder = new McTerrainChunkEncoder(client);
         this.terrainWorker = new McTerrainWorker(new McTerrainMaterialResolver(client));
     }

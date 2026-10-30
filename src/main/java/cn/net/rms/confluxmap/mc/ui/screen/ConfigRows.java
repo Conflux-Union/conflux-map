@@ -177,6 +177,11 @@ final class ConfigRows {
                 y = addToggleRow(
                     y, "confluxmap.config.map.dynamic_lighting", () -> config.dynamicLighting, v -> config.dynamicLighting = v
                 );
+                y = addToggleRow(
+                    y, "confluxmap.config.map.bedrock_thickness_shading",
+                    () -> config.showNetherCeilingBedrockThickness,
+                    v -> config.showNetherCeilingBedrockThickness = v
+                );
                 y = addEnumRow(
                     y, "confluxmap.config.map.color_style", MapColorStyle.values(),
                     () -> config.mapColorStyle,

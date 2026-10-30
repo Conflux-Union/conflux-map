@@ -55,15 +55,26 @@ public final class McChunkSnapshotFactory {
     private final MinecraftClient client;
     private final SpriteColorSampler sampler;
     private final ChunkTintSampler tints;
+    private final java.util.function.BooleanSupplier bedrockThicknessShading;
 
     public McChunkSnapshotFactory(
         final MinecraftClient client,
         final SpriteColorSampler sampler,
         final BiomeTintResolver tintResolver
     ) {
+        this(client, sampler, tintResolver, () -> true);
+    }
+
+    public McChunkSnapshotFactory(
+        final MinecraftClient client,
+        final SpriteColorSampler sampler,
+        final BiomeTintResolver tintResolver,
+        final java.util.function.BooleanSupplier bedrockThicknessShading
+    ) {
         this.client = client;
         this.sampler = sampler;
         this.tints = new ChunkTintSampler(client, tintResolver);
+        this.bedrockThicknessShading = bedrockThicknessShading;
     }
 
     /**
@@ -727,7 +738,7 @@ public final class McChunkSnapshotFactory {
         final int litColor;
         if (deferBlockLight) {
             int base = Argb.multiply(solidBase, solidTint);
-            if (solidBlock == Blocks.BEDROCK) {
+            if (solidBlock == Blocks.BEDROCK && bedrockThicknessShading.getAsBoolean()) {
                 final int bedrockCount = countBedrockRoofThickness(chunk, localX, solidY, localZ, worldMinY);
                 final float thicknessMultiplier = ShadingPipeline.bedrockThicknessMultiplier(bedrockCount);
                 base = ShadingPipeline.applyBrightnessMultiplier(base, thicknessMultiplier);
