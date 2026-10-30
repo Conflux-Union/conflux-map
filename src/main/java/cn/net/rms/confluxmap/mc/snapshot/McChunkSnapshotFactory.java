@@ -733,17 +733,14 @@ public final class McChunkSnapshotFactory {
                 base = ShadingPipeline.applyBrightnessMultiplier(base, thicknessMultiplier);
             }
             litColor = applyAmbientLight(base, netherAmbient);
-            light[index] = sampleBlockLightAbove(
-                world, pos, worldX, solidY, worldZ, worldMaxY
-            );
         } else {
             litColor = applyLight(
                 Argb.multiply(solidBase, solidTint), pos, world, solidBlock, netherAmbient
             );
-            light[index] = sampleBlockLightAbove(
-                world, pos, worldX, solidY, worldZ, worldMaxY
-            );
         }
+        light[index] = sampleBlockLightAbove(
+            world, pos, worldX, solidY, worldZ, worldMaxY
+        );
 
         int overlayColor = Argb.TRANSPARENT;
         if (solidY + 1 < worldMaxY) {
