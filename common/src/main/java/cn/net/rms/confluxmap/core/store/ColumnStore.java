@@ -60,20 +60,16 @@ public final class ColumnStore {
         return regions.size();
     }
 
-    /** Whether this chunk has authoritative cached or live map data in memory. */
+    /** Whether this chunk has observed map data (imported, cached or live) in memory. */
     public boolean hasRealChunk(final int chunkX, final int chunkZ) {
         final RegionColumns region = region(chunkX >> 4, chunkZ >> 4);
-        return region != null
-            && region.chunkSource(chunkX & 15, chunkZ & 15).priority()
-                >= SampleSource.REAL_CACHED.priority();
+        return region != null && region.chunkSource(chunkX & 15, chunkZ & 15).isExplored();
     }
 
     /** Comparable Minecraft world revision, or {@link Long#MIN_VALUE} for legacy cached chunks. */
     public long realChunkSourceRevision(final int chunkX, final int chunkZ) {
         final RegionColumns region = region(chunkX >> 4, chunkZ >> 4);
-        if (region == null
-            || region.chunkSource(chunkX & 15, chunkZ & 15).priority()
-                < SampleSource.REAL_CACHED.priority()) {
+        if (region == null || !region.chunkSource(chunkX & 15, chunkZ & 15).isExplored()) {
             return Long.MIN_VALUE;
         }
         return region.chunkSourceRevision(chunkX & 15, chunkZ & 15);
@@ -96,7 +92,7 @@ public final class ColumnStore {
         final int chunkLocalX = Math.floorMod(TileMath.blockToChunk(blockX), RegionColumns.CHUNKS);
         final int chunkLocalZ = Math.floorMod(TileMath.blockToChunk(blockZ), RegionColumns.CHUNKS);
         if (region.chunkSource(chunkLocalX, chunkLocalZ).priority()
-                < SampleSource.REAL_CACHED.priority()) {
+                < SampleSource.IMPORTED.priority()) {
             return SurfaceLookup.UNKNOWN;
         }
         final short surfaceY = region.surfaceYAt(
@@ -117,7 +113,7 @@ public final class ColumnStore {
         final int chunkLocalX = Math.floorMod(TileMath.blockToChunk(blockX), RegionColumns.CHUNKS);
         final int chunkLocalZ = Math.floorMod(TileMath.blockToChunk(blockZ), RegionColumns.CHUNKS);
         if (region.chunkSource(chunkLocalX, chunkLocalZ).priority()
-                < SampleSource.REAL_CACHED.priority()) {
+                < SampleSource.IMPORTED.priority()) {
             return Optional.empty();
         }
         final String biome = region.biomeIdAt(

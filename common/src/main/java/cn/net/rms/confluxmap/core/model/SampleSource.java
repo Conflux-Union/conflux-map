@@ -7,8 +7,10 @@ package cn.net.rms.confluxmap.core.model;
 public enum SampleSource {
     UNKNOWN(0),
     PREDICTED(1),
-    REAL_CACHED(2),
-    REAL_LIVE(3);
+    /** Terrain imported from an external world-map data source; loses to every captured source. */
+    IMPORTED(2),
+    REAL_CACHED(3),
+    REAL_LIVE(4);
 
     private final int priority;
 
@@ -22,6 +24,15 @@ public enum SampleSource {
 
     public boolean overrides(final SampleSource existing) {
         return priority >= existing.priority;
+    }
+
+    /**
+     * Whether this source represents observed terrain rather than a projection:
+     * imported and captured data both answer location/teleport/biome queries,
+     * predictions do not.
+     */
+    public boolean isExplored() {
+        return priority >= IMPORTED.priority;
     }
 
     private static final SampleSource[] VALUES = values();

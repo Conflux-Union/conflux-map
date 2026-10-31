@@ -13,6 +13,8 @@ import cn.net.rms.confluxmap.core.color.DaylightModel;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.export.MapExportService;
+import cn.net.rms.confluxmap.core.xaeroimport.XaeroImportService;
+import cn.net.rms.confluxmap.mc.snapshot.XaeroSnapshotBaker;
 import cn.net.rms.confluxmap.core.export.ServiceMapExportTileSource;
 import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
 import cn.net.rms.confluxmap.core.measure.MeasureState;
@@ -157,6 +159,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private PredictionState predictionState;
     private PredictionTileService predictionTileService;
     private MapExportService mapExportService;
+    private XaeroImportService xaeroImportService;
     private PredictionBootstrap predictionBootstrap;
     private ManualSeedService manualSeedService;
     private PredictionPaletteBuilder predictionPaletteBuilder;
@@ -308,6 +311,9 @@ public final class ConfluxMapClient implements ClientModInitializer {
             )
         );
         ClientTickEvents.END_CLIENT_TICK.register(ignored -> mapExportService.tick());
+        xaeroImportService = new XaeroImportService(
+            mapWorlds, regionCache, tileService, cacheRoot, new XaeroSnapshotBaker(client), ConfluxMapMod.LOGGER
+        );
         clientNetworking.bindMapSync(mapSyncClient);
         clientNetworking.bindChunkLoadStates(chunkLoadStateClient);
         clientNetworking.bindPlayerRadar(serverPlayerRadar);
@@ -728,6 +734,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public MapExportService mapExportService() {
         return mapExportService;
+    }
+
+    public XaeroImportService xaeroImportService() {
+        return xaeroImportService;
     }
 
     public StructureMarkerService structureMarkerService() {
