@@ -11,6 +11,15 @@ import org.junit.jupiter.api.Test;
 
 final class ConfluxConfigTest {
     @Test
+    void mapQualityPredictionTileCacheLimitsMatchExpectedSteps() {
+        assertEquals(64, ConfluxConfig.MapQuality.ULTRA_PERFORMANCE.predictionTileCacheLimit());
+        assertEquals(128, ConfluxConfig.MapQuality.PERFORMANCE.predictionTileCacheLimit());
+        assertEquals(256, ConfluxConfig.MapQuality.BALANCED.predictionTileCacheLimit());
+        assertEquals(384, ConfluxConfig.MapQuality.QUALITY.predictionTileCacheLimit());
+        assertEquals(512, ConfluxConfig.MapQuality.ULTRA_QUALITY.predictionTileCacheLimit());
+    }
+
+    @Test
     void playerFacingFeaturesAreEnabledByDefault() {
         final ConfluxConfig config = new ConfluxConfig();
 

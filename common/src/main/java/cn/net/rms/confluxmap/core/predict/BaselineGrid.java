@@ -22,6 +22,13 @@ public final class BaselineGrid {
 
     /** Sentinel for {@link #terrainY}: no surface here (End void between islands). */
     public static final int NO_SURFACE = Integer.MIN_VALUE;
+    /**
+     * Short-domain twin of {@link #NO_SURFACE} for the packed per-tile surface plane.
+     * {@code (short) NO_SURFACE} is <b>0</b> (a valid Y), so the two sentinels must be mapped
+     * explicitly - never by a narrowing cast.
+     */
+    public static final short NO_SURFACE_SHORT = Short.MIN_VALUE;
+
     /** Sentinel for {@link #fluidY}: this column has no base fluid surface. */
     public static final int NO_FLUID = Integer.MIN_VALUE;
     /** {@link #surfaceFlags} bit: the base visible surface is fluid rather than solid terrain. */

@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.core.color.LightTint;
 import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.color.ShadingPipeline;
 import cn.net.rms.confluxmap.core.color.XaeroMapStyle;
+import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
@@ -72,6 +73,13 @@ public final class PredictionTileService {
      * screen background bled through as black gaps; center-out ordering still picks the next tile.
      */
     private static final int VISIBLE_CONCURRENCY = 6;
+
+    /** Dispatch tiers, lowest first: user-waited, visible viewport, padded ring, background. */
+    private static final int TIER_URGENT = 0;
+    private static final int TIER_VISIBLE = 1;
+    private static final int TIER_RING = 2;
+    private static final int TIER_BACKGROUND = 3;
+
     private volatile CorrectionStore correctionStore;
     private volatile DaylightModel daylightModel;
     private volatile PredictionViewMode viewMode = PredictionViewMode.EVERYWHERE;
@@ -223,6 +231,20 @@ public final class PredictionTileService {
         pump();
     }
 
+    public void setMapQuality(final ConfluxConfig.MapQuality quality) {
+        if (quality != null) {
+            setCacheLimit(quality.predictionTileCacheLimit());
+        }
+    }
+
+    public void setCacheLimit(final int limit) {
+        mipCache.setLimit(limit);
+    }
+
+    int cacheLimitForTest() {
+        return mipCache.limit();
+    }
+
     public PredictionViewMode viewMode() {
         return viewMode;
     }
@@ -310,12 +332,6 @@ public final class PredictionTileService {
                     composedDaylight, composedGamma, blockLight, style
                 )
             );
-    }
-
-    private static long[] unknownPixelRevisions() {
-        final long[] revisions = new long[PatchCodec.PIXELS];
-        java.util.Arrays.fill(revisions, Long.MIN_VALUE);
-        return revisions;
     }
 
     /**
@@ -552,6 +568,9 @@ public final class PredictionTileService {
         }
         synchronized (this) {
             mipCache.removeCoverage(tile);
+            // The biome twin reads the same patch, and an exact cache hit would otherwise keep
+            // serving the pixels of the correction this call just replaced.
+            mipCache.removeCoverage(BiomeTileKeys.toBiome(tile));
         }
         return true;
     }
@@ -581,6 +600,8 @@ public final class PredictionTileService {
                     continue;
                 }
                 mipCache.removeCoverage(tile);
+                // Same reason as applyPartialCorrection: the biome twin carries the coverage too.
+                mipCache.removeCoverage(BiomeTileKeys.toBiome(tile));
             }
         }
         return changed;
@@ -596,6 +617,10 @@ public final class PredictionTileService {
             lowerCoverageGeneration++;
             missingLowerCoverage.clear();
             invalidateCachedTileAndAncestors(tile);
+            // The biome twin composes from the same patch, so its cached pixels are stale for the
+            // same reason. Dropping them here is what stops an exact cache hit from resurrecting a
+            // correction the store has already replaced or cleared.
+            invalidateCachedTileAndAncestors(BiomeTileKeys.toBiome(tile));
         }
         markDirty(tile, session.token());
         markBiomeDirtyIfRequested(BiomeTileKeys.toBiome(tile), session.token());
@@ -775,6 +800,64 @@ public final class PredictionTileService {
         pump();
     }
 
+    /**
+     * Schedules low-priority preloading for the 1-tile outer ring around the current visible viewport.
+     * Safe to call after visible tiles are bound/requested.
+     */
+    public void preloadViewportPaddedRing() {
+        preloadViewportPaddedRing(null);
+    }
+
+    /**
+     * Schedules low-priority preloading for the 1-tile outer ring around the current visible viewport,
+     * targeting the specified layer namespace (or the dimension's default predicted layer when null).
+     */
+    public void preloadViewportPaddedRing(final String targetLayerId) {
+        final SessionGuard.Session session = sessionGuard.current();
+        final ViewportRect rect;
+        synchronized (this) {
+            rect = viewport;
+            if (rect == null || !session.active() || !rect.dimension().equals(session.dimension())
+                || !state.predictable(rect.dimension())) {
+                return;
+            }
+            final String layer;
+            if (targetLayerId != null && !targetLayerId.isEmpty()) {
+                layer = targetLayerId;
+            } else {
+                final MapLayer predictedLayer = PredictionDimensions.layer(rect.dimension());
+                if (predictedLayer == null) {
+                    return;
+                }
+                layer = predictedLayer.cacheId();
+            }
+            final String predictedLayerId = layer.endsWith(PredictedTileKeys.SUFFIX)
+                ? layer
+                : layer + PredictedTileKeys.SUFFIX;
+            for (int tileZ = rect.minTileZ() - 1; tileZ <= rect.maxTileZ() + 1; tileZ++) {
+                for (int tileX = rect.minTileX() - 1; tileX <= rect.maxTileX() + 1; tileX++) {
+                    if (rect.contains(tileX, tileZ)) {
+                        continue;
+                    }
+                    final TileKey key = new TileKey(
+                        session.world(), rect.dimension(), predictedLayerId,
+                        rect.lod(), tileX, tileZ
+                    );
+                    // Called every frame: a ring tile that already composed at this LOD and view
+                    // mode has nothing left to prefetch. Without this check the whole ring would be
+                    // recomposed (and re-uploaded) once per frame, which is exactly the kind of
+                    // background load that starves the visible tiles.
+                    if (dirty.containsKey(key) || inFlight.contains(key)
+                        || mipCache.exact(key, viewMode) != null) {
+                        continue;
+                    }
+                    dirty.put(key, session.token());
+                }
+            }
+        }
+        pump();
+    }
+
     /** Clears fullscreen ordering after the screen closes. */
     public void clearViewport() {
         synchronized (this) {
@@ -884,7 +967,7 @@ public final class PredictionTileService {
             }
             return ColumnStore.SurfaceLookup.UNKNOWN;
         }
-        final int surfaceY = metadata.surfaces()[lookup.pixel()];
+        final int surfaceY = metadata.surfaceYAt(lookup.pixel());
         return surfaceY == BaselineGrid.NO_SURFACE
             ? new ColumnStore.SurfaceLookup(true, OptionalInt.empty())
             : new ColumnStore.SurfaceLookup(true, OptionalInt.of(surfaceY));
@@ -988,10 +1071,29 @@ public final class PredictionTileService {
     }
 
     /**
+     * Tier of one queued tile; caller must hold the monitor. Only the visible viewport earns
+     * worker slots ahead of everything else - the ring and background tiers are prefetch.
+     */
+    private int dispatchTier(final TileKey key) {
+        if (urgent.contains(key)) {
+            return TIER_URGENT;
+        }
+        final ViewportRect activeViewport = viewport;
+        if (activeViewport == null) {
+            return TIER_BACKGROUND;
+        }
+        if (activeViewport.contains(key)) {
+            return TIER_VISIBLE;
+        }
+        return activeViewport.containsPadded(key) ? TIER_RING : TIER_BACKGROUND;
+    }
+
+    /**
      * Caller must hold the monitor. Dispatch tiers stay strict - 0 = user-waited (menu
-     * target), 1 = visible viewport, 2 = background - and each tier keeps its own order:
-     * menu targets row-major, viewport tiles outward from the viewport center, background
-     * tiles viewpoint-nearest first. Row-major breaks equal-distance ties so the pick never
+     * target), 1 = visible viewport, 2 = padded ring around visible viewport,
+     * 3 = background - and each tier keeps its own order: menu targets row-major,
+     * viewport and ring tiles outward from the viewport center, background tiles
+     * viewpoint-nearest first. Row-major breaks equal-distance ties so the pick never
      * depends on {@code dirty}'s hash iteration order.
      */
     private TileKey nearestDirty() {
@@ -1005,9 +1107,7 @@ public final class PredictionTileService {
             if (inFlight.contains(key)) {
                 continue;
             }
-            // 0 = user-waited (menu target), 1 = visible viewport, 2 = background.
-            final int tier = urgent.contains(key) ? 0
-                : activeViewport != null && activeViewport.contains(key) ? 1 : 2;
+            final int tier = dispatchTier(key);
             if (tier > bestTier) {
                 continue;
             }
@@ -1030,10 +1130,10 @@ public final class PredictionTileService {
         final int vx,
         final int vz
     ) {
-        if (tier == 1) {
+        if (tier == 1 || tier == 2) {
             return viewport.centerDistanceSq(key);
         }
-        return tier == 2 ? distanceToViewpoint(key, vx, vz) : 0L;
+        return tier == 3 ? distanceToViewpoint(key, vx, vz) : 0L;
     }
 
     private static long distanceToViewpoint(final TileKey key, final int vx, final int vz) {
@@ -1067,11 +1167,12 @@ public final class PredictionTileService {
                     requestedTiles.add(key);
                     metadataTiles.put(metadataKey(key), composition.metadata());
                     mipCache.put(key, new PredictionMipCache.Tile(
+                        key.lod(),
                         composition.update().argbPixels(),
                         composition.metadata().biomes(),
                         composition.metadata().surfaces(),
                         composition.syncEvaluated(),
-                        composition.syncSourceRevisions(),
+                        composition.syncChunkSourceRevisions(),
                         composition.blockLight(),
                         composition.composedDaylight(),
                         composition.composedGamma(),
@@ -1142,7 +1243,13 @@ public final class PredictionTileService {
             ? PredictionViewMode.EVERYWHERE
             : requestedMode;
 
-        final PredictionMipCache.Tile lower = mipCache.lowerTile(key, compositionMode);
+        // Two cache planes are checked in cost order: this tile's own last composition (identical
+        // pixels, nothing to aggregate) and then the four children aggregated to this LOD. Both
+        // let the tile skip native sampling, canopy styling and colouring entirely, which is what
+        // keeps a re-requested (re-evicted texture, view-mode re-entry, LOD return) tile cheap.
+        final PredictionMipCache.Tile exact = mipCache.exact(key, compositionMode);
+        final PredictionMipCache.Tile lower = exact != null
+            ? null : mipCache.lowerTile(key, compositionMode);
         final CorrectionStore store = lowerNetherBiome || state.manualSeed()
             ? null : correctionStore;
         final CorrectionTile storedCorrections = store == null
@@ -1157,36 +1264,35 @@ public final class PredictionTileService {
             ? 0L
             : directCorrections.reusableValidatedAtMillis();
         final long nowMillis = millisClock.getAsLong();
-        final boolean lowerFresh = lower != null
-            && lower.isVisuallyReusableAt(nowMillis, CORRECTION_REUSE_TTL_MS);
-        if (lowerFresh && (!directHasServerState
-            || directValidatedAt == 0L
-            || lower.freshnessValidatedAtMillis() >= directValidatedAt)) {
+        final PredictionMipCache.Tile reusable = reusableCacheTile(
+            exact, lower, nowMillis, directHasServerState, directValidatedAt
+        );
+        if (reusable != null) {
             final Composition composition = new Composition(
                 tileUpdate(
                     key,
-                    lower.pixels(),
-                    lower.blockLight(),
-                    lower.composedDaylight(),
-                    lower.composedGamma(),
+                    reusable.pixels(),
+                    reusable.blockLight(),
+                    reusable.composedDaylight(),
+                    reusable.composedGamma(),
                     mapColorStyle
                 ),
-                new TileMetadata(lower.biomes(), lower.surfaces()),
-                lower.syncEvaluated(),
-                lower.syncSourceRevisions(),
-                lower.blockLight(),
-                lower.composedDaylight(),
-                lower.composedGamma(),
-                lower.mode(),
-                lower.hasServerState(),
-                lower.freshnessValidatedAtMillis(),
-                lower.serverCoverageValidatedAtMillis(),
-                lower.correctionProfile()
+                new TileMetadata(reusable.biomes(), reusable.surfaces()),
+                reusable.syncEvaluated(),
+                reusable.syncChunkSourceRevisions(),
+                reusable.blockLight(),
+                reusable.composedDaylight(),
+                reusable.composedGamma(),
+                reusable.mode(),
+                reusable.hasServerState(),
+                reusable.freshnessValidatedAtMillis(),
+                reusable.serverCoverageValidatedAtMillis(),
+                reusable.correctionProfile()
             );
             uploads.maskPredictedPixels(
                 realKey(key), composition.update().argbPixels(),
-                lower.syncEvaluated(), lower.syncSourceRevisions(),
-                lower.correctionProfile()
+                reusable.syncEvaluated(), reusable.syncChunkSourceRevisions(),
+                reusable.correctionProfile()
             );
             return composition;
         }
@@ -1298,12 +1404,15 @@ public final class PredictionTileService {
             );
         final byte[] syncEvaluated = directCorrections == null
             ? new byte[PatchCodec.MASK_BYTES] : directCorrections.copyEvaluated();
-        final long[] syncSourceRevisions = directCorrections == null
-            ? unknownPixelRevisions() : directCorrections.copyPixelSourceRevisions();
+        // No server differential means no column can be an evaluated sync pixel, so the
+        // chunk-granular revision plane is left unallocated instead of being filled with
+        // Long.MIN_VALUE.
+        final long[] syncChunkSourceRevisions = directCorrections == null
+            ? null : directCorrections.copyChunkSourceRevisions();
         final byte[] blockLight = directCorrections == null
             ? new byte[PatchCodec.PIXELS] : directCorrections.copyBlockLight();
         uploads.maskPredictedPixels(
-            realKey(key), pixels, syncEvaluated, syncSourceRevisions,
+            realKey(key), pixels, syncEvaluated, syncChunkSourceRevisions,
             directCorrections == null
                 ? CorrectionProfile.LEGACY_V1 : directCorrections.correctionProfile()
         );
@@ -1321,7 +1430,7 @@ public final class PredictionTileService {
                 surfaceYs(derived, directCorrections, derived)
             ),
             syncEvaluated,
-            syncSourceRevisions,
+            syncChunkSourceRevisions,
             blockLight,
             composedDaylight,
             composedGamma,
@@ -1332,6 +1441,39 @@ public final class PredictionTileService {
             directCorrections == null
                 ? CorrectionProfile.LEGACY_V1 : directCorrections.correctionProfile()
         );
+    }
+
+    /**
+     * Picks the cheapest cache source that is still allowed to stand in for a fresh composition,
+     * preferring the tile's own previous result over an aggregated parent. A hit must be inside the
+     * correction reuse window and must not be older than the committed server state already waiting
+     * for this tile - otherwise the cached (possibly predicted-only) pixels would outrank newer
+     * authoritative data on screen.
+     */
+    private static PredictionMipCache.Tile reusableCacheTile(
+        final PredictionMipCache.Tile exact,
+        final PredictionMipCache.Tile lower,
+        final long nowMillis,
+        final boolean directHasServerState,
+        final long directValidatedAt
+    ) {
+        if (isReusable(exact, nowMillis, directHasServerState, directValidatedAt)) {
+            return exact;
+        }
+        return isReusable(lower, nowMillis, directHasServerState, directValidatedAt) ? lower : null;
+    }
+
+    private static boolean isReusable(
+        final PredictionMipCache.Tile tile,
+        final long nowMillis,
+        final boolean directHasServerState,
+        final long directValidatedAt
+    ) {
+        return tile != null
+            && tile.isVisuallyReusableAt(nowMillis, CORRECTION_REUSE_TTL_MS)
+            && (!directHasServerState
+                || directValidatedAt == 0L
+                || tile.freshnessValidatedAtMillis() >= directValidatedAt);
     }
 
     private static TileKey realKey(final TileKey predictedKey) {
@@ -1557,16 +1699,17 @@ public final class PredictionTileService {
                 children[childZ * 2 + childX] = child;
             }
         }
-        return PredictionMipCache.aggregate(children, mode);
+        return PredictionMipCache.aggregate(children, mode, parent.lod());
     }
 
     private static PredictionMipCache.Tile mipTile(final Composition composition) {
         return new PredictionMipCache.Tile(
+            composition.update().key().lod(),
             composition.update().argbPixels(),
             composition.metadata().biomes(),
             composition.metadata().surfaces(),
             composition.syncEvaluated(),
-            composition.syncSourceRevisions(),
+            composition.syncChunkSourceRevisions(),
             composition.blockLight(),
             composition.composedDaylight(),
             composition.composedGamma(),
@@ -1652,15 +1795,16 @@ public final class PredictionTileService {
         return biomes;
     }
 
-    private static int[] surfaceYs(
+    private static short[] surfaceYs(
         final DerivedGrid derived,
         final CorrectionTile corrections,
         final DerivedGrid correctionDerived
     ) {
-        final int[] surfaces = new int[BaselineGrid.PIXELS * BaselineGrid.PIXELS];
+        final short[] surfaces = new short[BaselineGrid.PIXELS * BaselineGrid.PIXELS];
         for (int z = 0; z < BaselineGrid.PIXELS; z++) {
             for (int x = 0; x < BaselineGrid.PIXELS; x++) {
-                surfaces[z * BaselineGrid.PIXELS + x] = derived.surfaceY[BaselineGrid.index(x, z)];
+                surfaces[z * BaselineGrid.PIXELS + x] =
+                    packedSurfaceY(derived.surfaceY[BaselineGrid.index(x, z)]);
             }
         }
         if (corrections != null) {
@@ -1669,9 +1813,9 @@ public final class PredictionTileService {
                 final byte[] evaluated = correctionPatch.evaluated();
                 for (int pixel = 0; pixel < surfaces.length; pixel++) {
                     if ((evaluated[pixel >>> 3] & (1 << (pixel & 7))) != 0) {
-                        surfaces[pixel] = correctionDerived.surfaceY[
+                        surfaces[pixel] = packedSurfaceY(correctionDerived.surfaceY[
                             BaselineGrid.index(pixel & 255, pixel >>> 8)
-                        ];
+                        ]);
                     }
                 }
             }
@@ -1679,20 +1823,42 @@ public final class PredictionTileService {
                 final SurfaceKind sampleKind = SurfaceKind.byOrdinal(sample.kind());
                 final int pixel = sample.pixelIndex();
                 if (sampleKind == SurfaceKind.UNKNOWN) {
-                    surfaces[pixel] = derived.surfaceY[
+                    surfaces[pixel] = packedSurfaceY(derived.surfaceY[
                         BaselineGrid.index(pixel & 255, pixel >>> 8)
-                    ];
+                    ]);
                 } else if (sampleKind == SurfaceKind.VOID) {
                     // The wire carries a short-domain sentinel here; the lookup reads back
                     // against BaselineGrid.NO_SURFACE, and a synchronized void column must
                     // surface as "known, no surface" to teleport staging.
-                    surfaces[pixel] = BaselineGrid.NO_SURFACE;
+                    surfaces[pixel] = BaselineGrid.NO_SURFACE_SHORT;
                 } else {
-                    surfaces[pixel] = sample.surfaceY();
+                    surfaces[pixel] = packedSurfaceY(sample.surfaceY());
                 }
             }
         }
         return surfaces;
+    }
+
+    /**
+     * Maps the int-domain surface height onto the packed short plane. {@code (short) NO_SURFACE}
+     * is {@code 0} - a perfectly valid Y - so the sentinel is translated, never narrowed.
+     */
+    private static short packedSurfaceY(final int surfaceY) {
+        if (surfaceY == BaselineGrid.NO_SURFACE) {
+            return BaselineGrid.NO_SURFACE_SHORT;
+        }
+        if (surfaceY < Short.MIN_VALUE + 1 || surfaceY > Short.MAX_VALUE) {
+            // Only a corrupt/unknown-domain sample can land here; keep it "no surface" rather
+            // than wrap it into a plausible-looking height.
+            return BaselineGrid.NO_SURFACE_SHORT;
+        }
+        return (short) surfaceY;
+    }
+
+    public synchronized Set<TileKey> queuedOrInFlightKeysForTest() {
+        final Set<TileKey> keys = new HashSet<>(dirty.keySet());
+        keys.addAll(inFlight);
+        return keys;
     }
 
     /** Test-support only: a snapshot of currently-queued (not yet in-flight) predicted tile keys. */
@@ -1757,7 +1923,7 @@ public final class PredictionTileService {
         TileUpdate update,
         TileMetadata metadata,
         byte[] syncEvaluated,
-        long[] syncSourceRevisions,
+        long[] syncChunkSourceRevisions,
         byte[] blockLight,
         float composedDaylight,
         float composedGamma,
@@ -1769,7 +1935,15 @@ public final class PredictionTileService {
     ) {
     }
 
-    private record TileMetadata(byte[] biomes, int[] surfaces) {
+    private record TileMetadata(byte[] biomes, short[] surfaces) {
+        /**
+         * Int-domain surface height, or {@link BaselineGrid#NO_SURFACE}. Keeping this as the only
+         * read seam means callers never compare against the packed short sentinel.
+         */
+        int surfaceYAt(final int pixel) {
+            final short packed = surfaces[pixel];
+            return packed == BaselineGrid.NO_SURFACE_SHORT ? BaselineGrid.NO_SURFACE : packed;
+        }
     }
 
     private record AppliedLighting(float daylight, float gamma) {
@@ -1820,16 +1994,24 @@ public final class PredictionTileService {
             if (!dimension.equals(key.dimension()) || lod != key.lod()) {
                 return false;
             }
-            return key.tileX() >= minTileX && key.tileX() <= maxTileX
-                && key.tileZ() >= minTileZ && key.tileZ() <= maxTileZ;
+            return contains(key.tileX(), key.tileZ());
+        }
+
+        boolean contains(final int tileX, final int tileZ) {
+            return tileX >= minTileX && tileX <= maxTileX
+                && tileZ >= minTileZ && tileZ <= maxTileZ;
         }
 
         boolean containsPadded(final TileKey key) {
+            return containsPadded(key, 1);
+        }
+
+        boolean containsPadded(final TileKey key, final int pad) {
             if (!dimension.equals(key.dimension()) || lod != key.lod()) {
                 return false;
             }
-            return key.tileX() >= minTileX - 1 && key.tileX() <= maxTileX + 1
-                && key.tileZ() >= minTileZ - 1 && key.tileZ() <= maxTileZ + 1;
+            return key.tileX() >= minTileX - pad && key.tileX() <= maxTileX + pad
+                && key.tileZ() >= minTileZ - pad && key.tileZ() <= maxTileZ + pad;
         }
 
         /**

@@ -371,7 +371,11 @@ public final class TileService {
         );
     }
 
-    /** Keeps prediction below available real sources while allowing newer synchronized chunks through. */
+    /**
+     * Keeps prediction below available real sources while allowing newer synchronized chunks
+     * through. The revision plane is chunk-granular: one cell per correction chunk at the
+     * tile's LOD, because a chunk's pixels share a single source revision.
+     */
     public void maskPredictedPixels(
         final TileKey realKey,
         final int[] predictedPixels,
@@ -382,7 +386,7 @@ public final class TileService {
             realKey,
             predictedPixels,
             corrections == null ? null : corrections.copyEvaluated(),
-            corrections == null ? null : corrections.copyPixelSourceRevisions(),
+            corrections == null ? null : corrections.copyChunkSourceRevisions(),
             profile
         );
     }
@@ -391,7 +395,7 @@ public final class TileService {
         final TileKey realKey,
         final int[] predictedPixels,
         final byte[] syncEvaluated,
-        final long[] syncSourceRevisions,
+        final long[] syncChunkSourceRevisions,
         final CorrectionProfile profile
     ) {
         if (predictedPixels.length != RegionColumns.SIZE * RegionColumns.SIZE) {
@@ -400,9 +404,10 @@ public final class TileService {
         if (syncEvaluated != null && syncEvaluated.length != PatchCodec.MASK_BYTES) {
             throw new IllegalArgumentException("sync evaluated mask has the wrong length");
         }
-        if (syncSourceRevisions != null
-            && syncSourceRevisions.length != RegionColumns.SIZE * RegionColumns.SIZE) {
-            throw new IllegalArgumentException("sync source revisions have the wrong length");
+        final int chunksPerTile = 16 << realKey.lod();
+        if (syncChunkSourceRevisions != null
+            && syncChunkSourceRevisions.length != chunksPerTile * chunksPerTile) {
+            throw new IllegalArgumentException("sync chunk source revisions have the wrong length");
         }
         final MapWorld world = mapWorlds.current();
         if (world == null
@@ -412,7 +417,6 @@ public final class TileService {
         }
         final MapLayer layer = MapLayer.parse(BiomeTileKeys.realLayerId(realKey.layerId()));
         final ColumnStore store = world.store(layer);
-        final int chunksPerTile = 16 << realKey.lod();
         final int pixelsPerChunk = 16 >> realKey.lod();
         final int baseChunkX = realKey.tileX() * chunksPerTile;
         final int baseChunkZ = realKey.tileZ() * chunksPerTile;
@@ -430,6 +434,9 @@ public final class TileService {
                 final long localRevision = localPresent
                     ? store.realChunkSourceRevision(chunkX, chunkZ)
                     : MapSourceSelector.UNKNOWN_REVISION;
+                final long syncChunkRevision = syncChunkSourceRevisions == null
+                    ? MapSourceSelector.UNKNOWN_REVISION
+                    : syncChunkSourceRevisions[chunkDz * chunksPerTile + chunkDx];
                 final int pixelX = chunkDx * pixelsPerChunk;
                 final int pixelZ = chunkDz * pixelsPerChunk;
                 for (int dz = 0; dz < pixelsPerChunk; dz++) {
@@ -438,8 +445,8 @@ public final class TileService {
                         final int pixel = row + pixelX + dx;
                         final boolean syncPresent = syncEvaluated != null
                             && (syncEvaluated[pixel >>> 3] & (1 << (pixel & 7))) != 0;
-                        final long syncRevision = syncPresent && syncSourceRevisions != null
-                            ? syncSourceRevisions[pixel]
+                        final long syncRevision = syncPresent
+                            ? syncChunkRevision
                             : MapSourceSelector.UNKNOWN_REVISION;
                         if (locallyAuthoritative || !MapSourceSelector.syncWins(
                             localPresent, localRevision, syncPresent, syncRevision, profile

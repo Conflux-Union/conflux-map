@@ -446,17 +446,6 @@ public final class CorrectionTile {
         return blockLight.clone();
     }
 
-    public synchronized long[] copyPixelSourceRevisions() {
-        final long[] revisions = new long[PIXELS];
-        Arrays.fill(revisions, Long.MIN_VALUE);
-        for (int pixel = 0; pixel < PIXELS; pixel++) {
-            if ((evaluated[pixel >>> 3] & (1 << (pixel & 7))) != 0) {
-                revisions[pixel] = sourceRevisionForPixel(pixel);
-            }
-        }
-        return revisions;
-    }
-
     public synchronized int blockLightAt(final int pixelIndex) {
         return blockLight[pixelIndex] & 0xFF;
     }

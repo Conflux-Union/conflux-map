@@ -1928,6 +1928,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final boolean biomeMode = biomeMode();
         final boolean predictionActive = predictionActive(layer, session, biomeMode);
         final boolean syncActive = predictionActive(layer, session, false);
+        // The padded ring is prefetch. It is ordered *after* this frame's visible tiles have been
+        // bound (and therefore requested), so a preload never competes with a tile the user is
+        // already looking at for worker slots or upload slots.
+        final boolean preloadPaddedRing = updateViewport && predictionActive;
         if (updateViewport) {
             viewTiles().setViewport(layer, lod, firstTileX, lastTileX, firstTileZ, lastTileZ);
             if (predictionActive) {
@@ -1989,6 +1993,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 firstTileZ, lastTileZ, pxPerBlock, blocksPerTile, biomeMode
             );
         }
+
+        if (preloadPaddedRing) {
+            // Only now: every visible predicted tile above has been bound, so every one of them is
+            // already queued/in flight ahead of the ring.
+            predictionTiles.preloadViewportPaddedRing(biomeMode ? layerId + "!biome" : layerId);
+        }
     }
 
     private void drawPredictedTiles(
@@ -2010,7 +2020,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                     session.world(), session.dimension(), layerId, lod, tileX, tileZ
                 );
                 final TileKey key = biomeMode ? BiomeTileKeys.toBiome(terrainKey) : terrainKey;
-                if (textures.bind(PredictedTileKeys.toPredicted(key))) {
+                final TileKey predictedKey = PredictedTileKeys.toPredicted(key);
+                if (textures.bind(predictedKey)) {
                     final float screenX = (float) (
                         width / 2.0 + (key.originBlockX() - centerX) * pxPerBlock
                     );
@@ -2018,10 +2029,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                         height / 2.0 + (key.originBlockZ() - centerZ) * pxPerBlock
                     );
                     final float quadSize = (float) (blocksPerTile * pxPerBlock);
-                    RenderUtil.drawTintedQuad(
-                        matrices, screenX, screenY, quadSize, quadSize,
-                        0f, 0f, 1f, 1f, 0xFFFFFFFF
-                    );
+                    RenderUtil.drawQuad(matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f);
                 }
             }
         }

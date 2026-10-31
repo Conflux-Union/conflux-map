@@ -12,12 +12,18 @@ import java.util.LinkedHashMap;
 final class PredictionMipCache {
     static final long MISSING = Long.MIN_VALUE;
 
+    /** Cells per cache-tile side at {@code lod}; every cell covers one correction chunk. */
+    static int chunksPerSide(final int lod) {
+        return 16 << lod;
+    }
+
     record Tile(
+        int lod,
         int[] pixels,
         byte[] biomes,
-        int[] surfaces,
+        short[] surfaces,
         byte[] syncEvaluated,
-        long[] syncSourceRevisions,
+        long[] syncChunkSourceRevisions,
         byte[] blockLight,
         float composedDaylight,
         float composedGamma,
@@ -29,11 +35,18 @@ final class PredictionMipCache {
     ) {
         Tile {
             final int expected = BaselineGrid.PIXELS * BaselineGrid.PIXELS;
-            if (pixels == null || pixels.length != expected
+            final int expectedChunks = chunksPerSide(lod) * chunksPerSide(lod);
+            if (lod < 0 || lod > TileMath.MAX_LOD
+                || pixels == null || pixels.length != expected
                 || biomes == null || biomes.length != expected
                 || surfaces == null || surfaces.length != expected
                 || syncEvaluated == null || syncEvaluated.length != PatchCodec.MASK_BYTES
-                || syncSourceRevisions == null || syncSourceRevisions.length != expected
+                // null is the "no server revision anywhere in this tile" form: a tile composed
+                // without a server differential can never carry an evaluated sync pixel, so the
+                // revision plane is not allocated at all. Non-null planes are chunk-granular
+                // ((16<<lod)^2 cells) because a chunk's pixels share one source revision; the
+                // per-pixel form would cost 512 KiB on every corrected tile.
+                || (syncChunkSourceRevisions != null && syncChunkSourceRevisions.length != expectedChunks)
                 || blockLight == null || blockLight.length != expected
                 || mode == null || correctionProfile == null) {
                 throw new IllegalArgumentException("invalid prediction mip tile");
@@ -55,7 +68,7 @@ final class PredictionMipCache {
         }
     }
 
-    private final int limit;
+    private int limit;
     private final LinkedHashMap<TileKey, Tile> tiles = new LinkedHashMap<>(32, 0.75f, true);
 
     PredictionMipCache(final int limit) {
@@ -63,6 +76,19 @@ final class PredictionMipCache {
             throw new IllegalArgumentException("prediction mip cache limit must be positive");
         }
         this.limit = limit;
+    }
+
+    synchronized void setLimit(final int newLimit) {
+        this.limit = Math.max(1, newLimit);
+        trim();
+    }
+
+    synchronized int limit() {
+        return limit;
+    }
+
+    synchronized int size() {
+        return tiles.size();
     }
 
     synchronized void clear() {
@@ -87,7 +113,7 @@ final class PredictionMipCache {
             return null;
         }
         final Tile[] children = children(parent, mode);
-        return children == null ? null : aggregate(children, mode);
+        return children == null ? null : aggregate(children, mode, parent.lod());
     }
 
     synchronized Tile exact(final TileKey key, final PredictionViewMode mode) {
@@ -141,7 +167,7 @@ final class PredictionMipCache {
         if (children == null) {
             return null;
         }
-        final Tile aggregate = aggregate(children, mode);
+        final Tile aggregate = aggregate(children, mode, key.lod());
         tiles.put(key, aggregate);
         trim();
         return aggregate;
@@ -174,14 +200,17 @@ final class PredictionMipCache {
         );
     }
 
-    static Tile aggregate(final Tile[] children, final PredictionViewMode mode) {
+    static Tile aggregate(final Tile[] children, final PredictionViewMode mode, final int parentLod) {
         final int[] pixels = new int[BaselineGrid.PIXELS * BaselineGrid.PIXELS];
         final byte[] biomes = new byte[pixels.length];
-        final int[] surfaces = new int[pixels.length];
+        final short[] surfaces = new short[pixels.length];
         final byte[] syncEvaluated = new byte[PatchCodec.MASK_BYTES];
-        final long[] syncSourceRevisions = new long[pixels.length];
-        java.util.Arrays.fill(syncSourceRevisions, Long.MIN_VALUE);
+        // Allocated only when at least one child carries revision data, so a parent built purely
+        // from client-side predictions keeps the null (unallocated) form.
+        long[] syncChunkSourceRevisions = null;
         final byte[] blockLight = new byte[pixels.length];
+        final int parentChunksPerSide = chunksPerSide(parentLod);
+        final int parentSamplesPerChunk = BaselineGrid.PIXELS / parentChunksPerSide;
         final float composedDaylight = children[0].composedDaylight();
         final float composedGamma = children[0].composedGamma();
         for (int z = 0; z < BaselineGrid.PIXELS; z++) {
@@ -211,9 +240,17 @@ final class PredictionMipCache {
                     && evaluated(child, i2) && evaluated(child, i3);
                 if (allSync) {
                     PatchCodec.setEvaluated(syncEvaluated, out);
-                    syncSourceRevisions[out] = maxKnown(
-                        child.syncSourceRevisions()[i0], child.syncSourceRevisions()[i1],
-                        child.syncSourceRevisions()[i2], child.syncSourceRevisions()[i3]
+                    if (syncChunkSourceRevisions == null) {
+                        syncChunkSourceRevisions = new long[parentChunksPerSide * parentChunksPerSide];
+                        java.util.Arrays.fill(syncChunkSourceRevisions, Long.MIN_VALUE);
+                    }
+                    // One parent chunk covers exactly one child chunk at every LOD, so every
+                    // pixel of a cell writes the same value and plain assignment is exact.
+                    final int cell = (z / parentSamplesPerChunk) * parentChunksPerSide
+                        + x / parentSamplesPerChunk;
+                    syncChunkSourceRevisions[cell] = maxKnown(
+                        revision(child, i0), revision(child, i1),
+                        revision(child, i2), revision(child, i3)
                     );
                 }
                 blockLight[out] = (byte) (((child.blockLight()[i0] & 0xFF)
@@ -241,11 +278,12 @@ final class PredictionMipCache {
             }
         }
         return new Tile(
+            parentLod,
             pixels,
             biomes,
             surfaces,
             syncEvaluated,
-            syncSourceRevisions,
+            syncChunkSourceRevisions,
             blockLight,
             composedDaylight,
             composedGamma,
@@ -259,6 +297,17 @@ final class PredictionMipCache {
 
     private static boolean evaluated(final Tile tile, final int pixel) {
         return (tile.syncEvaluated()[pixel >>> 3] & (1 << (pixel & 7))) != 0;
+    }
+
+    /** Null-tolerant chunk-cell read for one pixel: an unallocated plane means "unknown". */
+    private static long revision(final Tile tile, final int pixel) {
+        final long[] revisions = tile.syncChunkSourceRevisions();
+        if (revisions == null) {
+            return Long.MIN_VALUE;
+        }
+        final int chunks = chunksPerSide(tile.lod());
+        final int samplesPerChunk = BaselineGrid.PIXELS / chunks;
+        return revisions[(pixel >>> 8) / samplesPerChunk * chunks + (pixel & 255) / samplesPerChunk];
     }
 
     private static long maxKnown(final long a, final long b, final long c, final long d) {
@@ -291,17 +340,17 @@ final class PredictionMipCache {
         return best;
     }
 
-    private static int averageSurface(final int s0, final int s1, final int s2, final int s3) {
-        final int[] values = {s0, s1, s2, s3};
+    private static short averageSurface(final short s0, final short s1, final short s2, final short s3) {
+        final short[] values = {s0, s1, s2, s3};
         long sum = 0L;
         int count = 0;
-        for (final int value : values) {
-            if (value != BaselineGrid.NO_SURFACE) {
+        for (final short value : values) {
+            if (value != BaselineGrid.NO_SURFACE_SHORT) {
                 sum += value;
                 count++;
             }
         }
-        return count == 0 ? BaselineGrid.NO_SURFACE : (int) Math.floorDiv(sum, count);
+        return count == 0 ? BaselineGrid.NO_SURFACE_SHORT : (short) Math.floorDiv(sum, count);
     }
 
     private void trim() {
