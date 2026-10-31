@@ -20,7 +20,9 @@ import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.render.OffscreenCanvas;
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
+import cn.net.rms.confluxmap.mc.render.RenderTargetState;
+import cn.net.rms.confluxmap.mc.render.TextureBinds;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
@@ -226,19 +228,19 @@ public final class MinimapHudRenderer {
             final MatrixStack fbo = new MatrixStack();
             final float unit = canvasPx / (float) contentSize;
             fbo.scale(unit, unit, 1f);
-            RenderUtil.fillRect(fbo, 0, 0, contentSize, contentSize, BACKGROUND_COLOR);
+            GuiShapes.fillRect(fbo, 0, 0, contentSize, contentSize, BACKGROUND_COLOR);
             fbo.push();
             fbo.translate(contentSize / 2f, contentSize / 2f, 0);
             if (rotate) {
-                RenderUtil.rotateZ(fbo, mapAngle);
+                GuiShapes.rotateZ(fbo, mapAngle);
             }
-            RenderUtil.beginTexturedQuads();
+            TextureBinds.beginTexturedQuads();
             tilePainter.drawTiles(fbo, contentSize, circle, mapAngle, player, minimapBlocksPerPixel);
             fbo.pop();
             fbo.push();
             fbo.translate(contentSize / 2f, contentSize / 2f, 0);
             if (rotate) {
-                RenderUtil.rotateZ(fbo, mapAngle);
+                GuiShapes.rotateZ(fbo, mapAngle);
             }
             markerPainter.drawPortalChunkHighlights(fbo, player, contentSize, minimapBlocksPerPixel);
             fbo.pop();
@@ -259,9 +261,9 @@ public final class MinimapHudRenderer {
             }
             canvas.end(client);
 
-            RenderUtil.beginTexturedQuads();
+            TextureBinds.beginTexturedQuads();
             canvas.bindTexture();
-            RenderUtil.drawTexturedDisk(matrices, centerX, centerY, contentSize / 2f);
+            GuiShapes.drawTexturedDisk(matrices, centerX, centerY, contentSize / 2f);
             chromePainter.drawFrame(matrices, x0, y0, size, true, minimapFrame);
             AnnotationRenderer.drawLabels(
                 draw,
@@ -275,24 +277,24 @@ public final class MinimapHudRenderer {
                 AnnotationRenderer.ClipShape.CIRCLE
             );
         } else {
-            RenderUtil.fillRect(
+            GuiShapes.fillRect(
                 matrices, viewport.x(), viewport.y(), contentSize, contentSize, BACKGROUND_COLOR
             );
-            RenderUtil.enableScissor(
+            RenderTargetState.enableScissor(
                 client, viewport.x(), viewport.y(), contentSize, contentSize
             );
-            RenderUtil.beginTexturedQuads();
+            TextureBinds.beginTexturedQuads();
             matrices.push();
             matrices.translate(centerX, centerY, 0);
             if (rotate) {
-                RenderUtil.rotateZ(matrices, mapAngle);
+                GuiShapes.rotateZ(matrices, mapAngle);
             }
             tilePainter.drawTiles(matrices, contentSize, circle, mapAngle, player, minimapBlocksPerPixel);
             matrices.pop();
             matrices.push();
             matrices.translate(centerX, centerY, 0);
             if (rotate) {
-                RenderUtil.rotateZ(matrices, mapAngle);
+                GuiShapes.rotateZ(matrices, mapAngle);
             }
             markerPainter.drawPortalChunkHighlights(matrices, player, contentSize, minimapBlocksPerPixel);
             matrices.pop();
@@ -314,7 +316,7 @@ public final class MinimapHudRenderer {
                     AnnotationRenderer.ClipShape.RECTANGLE
                 );
             }
-            RenderUtil.disableScissor();
+            RenderTargetState.disableScissor();
             chromePainter.drawFrame(matrices, x0, y0, size, false, minimapFrame);
         }
 

@@ -1,6 +1,6 @@
 package cn.net.rms.confluxmap.mc.ui.hud;
 
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import net.minecraft.client.util.math.MatrixStack;
 
 /** Draws the supported Xaero square-frame atlas layout after its texture is bound. */
@@ -45,7 +45,7 @@ final class XaeroMinimapFrameRenderer {
         if (width <= 0f || height <= 0f) {
             return;
         }
-        RenderUtil.drawTintedQuad(
+        GuiShapes.drawTintedQuad(
             matrices, x, y, width, height,
             sourceX / ATLAS_SIZE, sourceY / ATLAS_SIZE,
             (sourceX + sourceWidth) / ATLAS_SIZE,

@@ -14,56 +14,14 @@ import java.util.Optional;
 //#elseif MC<260100
 //$$ import net.minecraft.client.gl.UniformType;
 //#endif
-//#endif
-import net.minecraft.client.MinecraftClient;
-//#if MC<260200
-import net.minecraft.client.font.TextRenderer;
-//#endif
-import net.minecraft.client.render.GameRenderer;
-//#if MC>=12108
-//$$ import com.mojang.blaze3d.textures.GpuTextureView;
-//$$ import com.mojang.blaze3d.vertex.VertexFormat;
-//$$ import net.minecraft.client.gl.Framebuffer;
-//$$ import net.minecraft.client.gl.RenderPipelines;
-//$$ import net.minecraft.client.gui.ScreenRect;
-//$$ import net.minecraft.client.gui.render.state.GuiRenderState;
-//$$ import net.minecraft.client.texture.TextureSetup;
-//#if MC>=12111
-//$$ import com.mojang.blaze3d.textures.AddressMode;
-//$$ import com.mojang.blaze3d.textures.FilterMode;
-//$$ import net.minecraft.client.gl.GpuSampler;
-//#endif
-//#elseif MC>=12105
-//$$ import com.mojang.blaze3d.textures.GpuTexture;
-//$$ import com.mojang.blaze3d.vertex.VertexFormat;
-//$$ import net.minecraft.client.gl.Framebuffer;
 //$$ import net.minecraft.client.gl.RenderPipelines;
 //#elseif MC>=12103
 //$$ import net.minecraft.client.gl.ShaderProgramKeys;
 //#endif
-//#if MC>=12105
-//$$ import com.mojang.blaze3d.systems.RenderPass;
-//#endif
-//#if MC<260200
-import net.minecraft.client.render.VertexConsumerProvider;
-//#endif
-//#if MC<12105
-import net.minecraft.client.render.VertexFormat;
-//#endif
-//#if MC<12109
-//#if MC>=12108
-//$$ import net.minecraft.client.render.RawProjectionMatrix;
-//#endif
-//#if MC>=12103
-//$$ import com.mojang.blaze3d.systems.ProjectionType;
-//#elseif MC>=12000
-//$$ import com.mojang.blaze3d.systems.VertexSorter;
-//#endif
-//#endif
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.render.GameRenderer;
 import net.minecraft.client.render.VertexFormats;
-import net.minecraft.client.util.Window;
 import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.Identifier;
 //#if MC<12104
 import org.lwjgl.opengl.GL11;
 //#endif
@@ -79,55 +37,18 @@ import net.minecraft.util.math.Vec3f;
 //#endif
 
 /**
- * Core-shader helpers for drawing dynamically-generated textures (map tiles) as flat GUI quads.
- * Render thread only; every call here assumes a current GL context.
- *
- * <p>The version differences live in {@link Mesh} (batch setup/teardown) and in the extra
- * mappings for the {@code GameRenderer} shader accessors, so the geometry below is one shared
+ * Flat GUI and world-space shape emission shared by the screens, HUD, radar, and world
+ * overlay passes. Render thread only; every call here assumes a current GL context. The
+ * version differences live in {@link Mesh} (batch setup/teardown) and in the extra
+ * mappings for the {@code GameRenderer} shader accessors, so the geometry is one shared
  * copy across every supported Minecraft version.
  */
-public final class RenderUtil {
+public final class GuiShapes {
     //#if MC>=12105
     //$$ private static final RenderPipeline GUI_PRESERVE_DESTINATION_ALPHA =
     //$$     createGuiPreserveDestinationAlphaPipeline();
     //$$ private static final RenderPipeline GUI_REPLACE = createGuiReplacePipeline();
     //#endif
-    //#if MC>=12108 && MC<12109
-    //$$ private static RawProjectionMatrix beamProjection;
-    //#endif
-    //#if MC<12109
-    // Private copy: the live matrix RenderSystem.getModelViewMatrix() returns is a stack
-    // slot the next frame's world pass mutates in place, so the snapshot must not alias it.
-    //#if MC>=11904
-    //$$ private static final org.joml.Matrix4f worldViewMatrix = new org.joml.Matrix4f();
-    //#else
-    private static net.minecraft.util.math.Matrix4f worldViewMatrix;
-    //#endif
-    private static boolean worldViewCaptured;
-    //#endif
-    //#if MC>=12105
-    //$$ private static Framebuffer drawTarget;
-    //$$ private static boolean scissorEnabled;
-    //$$ private static int scissorX;
-    //$$ private static int scissorY;
-    //$$ private static int scissorWidth;
-    //$$ private static int scissorHeight;
-    //#if MC>=12108
-    //$$ private static GuiRenderState guiState;
-    //$$ private static GpuTextureView boundTexture;
-    //$$ // The GUI renderer clips in scaled GUI units, the render pass in framebuffer pixels.
-    //$$ private static int guiScissorX;
-    //$$ private static int guiScissorY;
-    //$$ private static int guiScissorWidth;
-    //$$ private static int guiScissorHeight;
-    //#endif
-    //#if MC>=12111
-    //$$ private static GpuSampler boundSampler;
-    //#endif
-    //#endif
-
-    private RenderUtil() {
-    }
 
     //#if MC<12104
     public static void clearGuiDepth() {
@@ -137,124 +58,6 @@ public final class RenderUtil {
         RenderSystem.clear(GL11.GL_DEPTH_BUFFER_BIT, MinecraftClient.IS_SYSTEM_MAC);
     //#endif
     }
-    //#endif
-
-    /** Selects the flat position+texture shader and standard alpha blending, for textured GUI quads. */
-    public static void beginTexturedQuads() {
-        //#if MC<12105
-        useTextureShader();
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        //#endif
-    }
-
-    public static void bindTexture(final int glId) {
-        //#if MC<12105
-        RenderSystem.setShaderTexture(0, glId);
-        //#endif
-    }
-
-    //#if MC>=12111
-    //$$ public static void bindTexture(final GpuTextureView texture) {
-    //$$     bindTexture(
-    //$$         texture,
-    //$$         RenderSystem.getSamplerCache().get(
-    //$$             AddressMode.CLAMP_TO_EDGE,
-    //$$             AddressMode.CLAMP_TO_EDGE,
-    //$$             FilterMode.NEAREST,
-    //$$             FilterMode.NEAREST,
-    //$$             false
-    //$$         )
-    //$$     );
-    //$$ }
-    //$$
-    //$$ public static void bindTexture(final GpuTextureView texture, final GpuSampler sampler) {
-    //$$     boundTexture = texture;
-    //$$     boundSampler = sampler;
-    //$$ }
-    //$$
-    //$$ static GpuTextureView boundTexture() {
-    //$$     return boundTexture;
-    //$$ }
-    //$$
-    //$$ static GpuSampler boundSampler() {
-    //$$     return boundSampler;
-    //$$ }
-    //#elseif MC>=12108
-    //$$ public static void bindTexture(final GpuTextureView texture) {
-    //$$     // Immediate canvas batches read the bind back off RenderSystem; recorded GUI elements
-    //$$     // carry their own TextureSetup, so the view has to survive until the batch is finished.
-    //$$     boundTexture = texture;
-    //$$     RenderSystem.setShaderTexture(0, texture);
-    //$$ }
-    //#elseif MC>=12105
-    //$$ public static void bindTexture(final GpuTexture texture) {
-    //$$     RenderSystem.setShaderTexture(0, texture);
-    //$$ }
-    //#endif
-
-    //#if MC>=12105
-    //$$ static Framebuffer drawTarget() {
-    //#if MC>=260200
-    //$$     return drawTarget == null
-    //$$         ? Minecraft.getInstance().gameRenderer.mainRenderTarget()
-    //$$         : drawTarget;
-    //#else
-    //$$     return drawTarget == null ? MinecraftClient.getInstance().getFramebuffer() : drawTarget;
-    //#endif
-    //$$ }
-    //$$
-    //$$ static void setDrawTarget(final Framebuffer target) {
-    //$$     drawTarget = target;
-    //$$ }
-    //$$
-    //$$ static void applyScissor(final RenderPass pass) {
-    //$$     if (scissorEnabled) {
-    //$$         pass.enableScissor(scissorX, scissorY, scissorWidth, scissorHeight);
-    //$$     }
-    //$$ }
-    //#endif
-
-    //#if MC>=12108
-    //$$ /**
-    //$$  * Points GUI-space batches at the element list the game is currently collecting. Set once
-    //$$  * per {@code GuiDraw}, which is the only way into this mod's screen and HUD drawing.
-    //$$  */
-    //$$ public static void setGuiState(final GuiRenderState state) {
-    //$$     guiState = state;
-    //$$ }
-    //$$
-    //$$ /** Null while an {@link OffscreenCanvas} owns the draws - those target its own framebuffer. */
-    //$$ static GuiRenderState guiState() {
-    //$$     return drawTarget == null ? guiState : null;
-    //$$ }
-    //$$
-    //$$ static ScreenRect guiScissor() {
-    //$$     return scissorEnabled
-    //$$         ? new ScreenRect(guiScissorX, guiScissorY, guiScissorWidth, guiScissorHeight)
-    //$$         : null;
-    //$$ }
-    //$$
-    //$$ static TextureSetup guiTextureSetup(final boolean textured) {
-    //$$     if (!textured || boundTexture == null) {
-    //$$         return TextureSetup.empty();
-    //$$     }
-    //#if MC>=12111
-    //$$     return TextureSetup.of(boundTexture, boundSampler);
-    //#else
-    //$$     return TextureSetup.of(boundTexture);
-    //#endif
-    //$$ }
-    //#endif
-
-    //#if MC>=260300
-    //$$ /**
-    //$$  * 26.3 pipelines must be compiled before a render pass accepts them; the game's
-    //$$  * fallback cache owns the live compiler and is refreshed on every shader reload.
-    //$$  */
-    //$$ static com.mojang.renderpearl.api.pipeline.CompiledRenderPipeline compiled(final RenderPipeline pipeline) {
-    //$$     return RenderSystem.fallbackPipelineCache.get(pipeline);
-    //$$ }
     //#endif
 
     public static void rotateZ(final MatrixStack matrices, final float degrees) {
@@ -269,216 +72,9 @@ public final class RenderUtil {
         //#endif
     }
 
-    //#if MC<12109
-    /**
-     * Captures the world pass's global ModelView: vanilla installs the view matrix (camera
-     * rotation, plus view bobbing/hurt tilt) on the global stack at the start of world
-     * rendering and pops it again right before the render method returns - which is exactly
-     * where {@code WorldRenderEvents.END} fires. A read-only {@code LAST} listener (still
-     * inside the world pass) calls this so the END passes can reinstall the exact matrix.
-     */
-    public static void snapshotWorldViewModelView() {
-        //#if MC>=11904
-        //$$ worldViewMatrix.set(RenderSystem.getModelViewMatrix());
-        //#else
-        worldViewMatrix = RenderSystem.getModelViewMatrix().copy();
-        //#endif
-        worldViewCaptured = true;
-    }
-
-    /**
-     * Installs the view matrix captured by {@link #snapshotWorldViewModelView()} as the global
-     * ModelView. World-anchored waypoint geometry drawn at {@code WorldRenderEvents.END}
-     * transforms through it, so without this the view rotation is missing and the geometry
-     * lands in the wrong place on screen. Falls back to identity before the first capture.
-     * Pairs with {@link #popModelView()}.
-     */
-    public static void pushWorldViewSnapshot() {
-        //#if MC>=12005
-        //$$ RenderSystem.getModelViewStack().pushMatrix().identity();
-        //$$ if (worldViewCaptured) {
-        //$$     RenderSystem.getModelViewStack().mul(worldViewMatrix);
-        //$$ }
-        //#else
-        final MatrixStack modelViewStack = RenderSystem.getModelViewStack();
-        modelViewStack.push();
-        final var top = modelViewStack.peek().getModel();
-        //#if MC>=11904
-        //$$ // 1.19.4-1.20.4 keep the legacy MatrixStack but with JOML entries.
-        //$$ top.identity().mul(worldViewMatrix);
-        //#else
-        top.loadIdentity();
-        if (worldViewCaptured) {
-            top.multiply(worldViewMatrix);
-        }
-        //#endif
-        //#endif
-        //#if MC<12103
-        RenderSystem.applyModelViewMatrix();
-        //#endif
-    }
-
-    /**
-     * Saves the projection that was active on entry and installs the world pass's
-     * perspective projection. Needed at {@code WorldRenderEvents.END}: deferred shader packs
-     * finalize from the same method return and leave the global projection pointing at their
-     * composite passes. {@link #restoreProjection()} puts the saved one back.
-     */
-    public static void applyWorldProjection(
-        //#if MC<12000
-        final net.minecraft.util.math.Matrix4f projection
-        //#else
-        //$$ final org.joml.Matrix4f projection
-        //#endif
-    ) {
-        // setProjectionMatrix overwrites without saving; restoreProjectionMatrix only puts
-        // back what backupProjectionMatrix stored, so the save must be explicit here.
-        RenderSystem.backupProjectionMatrix();
-        //#if MC>=12108
-        //$$ if (beamProjection == null) {
-        //$$     beamProjection = new RawProjectionMatrix("Conflux Map waypoint projection");
-        //$$ }
-        //$$ RenderSystem.setProjectionMatrix(beamProjection.set(projection), ProjectionType.PERSPECTIVE);
-        //#elseif MC>=12103
-        //$$ RenderSystem.setProjectionMatrix(projection, ProjectionType.PERSPECTIVE);
-        //#elseif MC>=12000
-        //$$ RenderSystem.setProjectionMatrix(projection, VertexSorter.BY_Z);
-        //#else
-        RenderSystem.setProjectionMatrix(projection);
-        //#endif
-    }
-
-    /** Puts back the projection saved by {@link #applyWorldProjection}. */
-    public static void restoreProjection() {
-        RenderSystem.restoreProjectionMatrix();
-    }
-    //#endif
-
-    //#if MC>=11904 && MC<12109
-    //$$ /** Row-major dump of a matrix, for waypoint render diagnostics. */
-    //$$ public static String debugMatrix(final org.joml.Matrix4f matrix) {
-    //$$     return String.format(
-    //$$         java.util.Locale.ROOT,
-    //$$         "%.3f %.3f %.3f %.3f / %.3f %.3f %.3f %.3f / %.3f %.3f %.3f %.3f / %.3f %.3f %.3f %.3f",
-    //$$         matrix.m00(), matrix.m01(), matrix.m02(), matrix.m03(),
-    //$$         matrix.m10(), matrix.m11(), matrix.m12(), matrix.m13(),
-    //$$         matrix.m20(), matrix.m21(), matrix.m22(), matrix.m23(),
-    //$$         matrix.m30(), matrix.m31(), matrix.m32(), matrix.m33()
-    //$$     );
-    //$$ }
-    //$$
-    //$$ /** The world view matrix captured by {@link #snapshotWorldViewModelView()}, or null. */
-    //$$ public static org.joml.Matrix4f capturedWorldViewMatrix() {
-    //$$     return worldViewCaptured ? worldViewMatrix : null;
-    //$$ }
-    //$$
-    //$$ /**
-    //$$  * Where a camera-relative anchor lands on screen under the current waypoint pass's
-    //$$  * projection and captured view. Exact on 1.20.5+, where the context matrix stack is
-    //$$  * identity at END (the anchor's own translate is already folded into rel); on
-    //$$  * 1.19.4-1.20.4 it ignores the context stack's rotation, so treat the screen
-    //$$  * position there as approximate. Returns an empty string behind the camera.
-    //$$  */
-    //$$ public static String debugProjectAnchor(
-    //$$     final org.joml.Matrix4f projection,
-    //$$     final org.joml.Matrix4f view,
-    //$$     final double relX,
-    //$$     final double relY,
-    //$$     final double relZ,
-    //$$     final MinecraftClient client
-    //$$ ) {
-    //$$     final org.joml.Matrix4f mvp = new org.joml.Matrix4f(projection).mul(view);
-    //$$     final org.joml.Vector4f clip = mvp.transform(new org.joml.Vector4f(
-    //$$         (float) relX, (float) relY, (float) relZ, 1.0f));
-    //$$     if (Math.abs(clip.w) <= 1.0e-6f) {
-    //$$         return "";
-    //$$     }
-    //$$     final Window window = client.getWindow();
-    //$$     return String.format(
-    //$$         java.util.Locale.ROOT,
-    //$$         " anchorRel=(%.2f, %.2f, %.2f) ndc=(%.3f, %.3f) screen=(%d, %d)",
-    //$$         relX, relY, relZ, clip.x / clip.w, clip.y / clip.w,
-    //$$         Math.round((clip.x / clip.w * 0.5f + 0.5f) * window.getFramebufferWidth()),
-    //$$         Math.round((0.5f - clip.y / clip.w * 0.5f) * window.getFramebufferHeight())
-    //$$     );
-    //$$ }
-    //#endif
-
-    /** Saves the world ModelView and normalizes only the legacy LAST-event state. */
-    public static void pushWorldHudModelView() {
-        //#if MC>=12005
-        //$$ RenderSystem.getModelViewStack().pushMatrix();
-        //#else
-        final MatrixStack modelViewStack = RenderSystem.getModelViewStack();
-        modelViewStack.push();
-        modelViewStack.loadIdentity();
-        //#endif
-        //#if MC<12103
-        RenderSystem.applyModelViewMatrix();
-        //#endif
-    }
-
-
-    /** Restores the global model-view saved by {@link #pushWorldHudModelView()}. */
-    public static void popModelView() {
-        //#if MC>=12005
-        //$$ RenderSystem.getModelViewStack().popMatrix();
-        //#else
-        RenderSystem.getModelViewStack().pop();
-        //#endif
-        //#if MC<12103
-        RenderSystem.applyModelViewMatrix();
-        //#endif
-    }
-
-    //#if MC<260200
-    /** Draws fully-lit marker text through the versioned text-layer argument. */
-    public static void drawSeeThroughText(
-        final TextRenderer textRenderer,
-        final String text,
-        final float x,
-        final float y,
-        final int color,
-        final MatrixStack matrices,
-        final VertexConsumerProvider.Immediate immediate,
-        final int light
-    ) {
-        //#if MC>=12000
-        //$$ textRenderer.draw(
-        //$$     text, x, y, color, false, matrices.peek().getPositionMatrix(), immediate,
-        //$$     TextRenderer.TextLayerType.SEE_THROUGH, 0, light
-        //$$ );
-        //#else
-        textRenderer.draw(
-            text, x, y, color, false, matrices.peek().getModel(), immediate, true, 0, light
-        );
-        //#endif
-    }
-    //#endif
-
-    /**
-     * Binds an already-vanilla-managed texture (player skin, mob texture, etc.) by identifier.
-     *
-     * <p>Core shaders sample what {@code RenderSystem.setShaderTexture} points at, not the
-     * legacy {@code TextureManager} bind - using the latter leaves unit 0 on whatever was
-     * drawn last (map tiles), which is exactly the "icons show dark terrain" bug.
-     */
-    public static void bindTexture(final MinecraftClient client, final Identifier id) {
-        //#if MC>=12111
-        //$$ final var texture = client.getTextureManager().getTexture(id);
-        //$$ bindTexture(texture.getGlTextureView(), texture.getSampler());
-        //#elseif MC>=12108
-        //$$ bindTexture(client.getTextureManager().getTexture(id).getGlTextureView());
-        //#elseif MC>=12105
-        //$$ RenderSystem.setShaderTexture(0, client.getTextureManager().getTexture(id).getGlTexture());
-        //#else
-        RenderSystem.setShaderTexture(0, id);
-        //#endif
-    }
-
     /**
      * Draws one axis-aligned textured quad in GUI space. Must be called between
-     * {@link #beginTexturedQuads()} and a bound texture ({@link #bindTexture(int)}).
+     * {@link TextureBinds#beginTexturedQuads()} and a bound texture ({@link TextureBinds#bindTexture(int)}).
      */
     public static void drawQuad(
         final MatrixStack matrices,
@@ -511,7 +107,7 @@ public final class RenderUtil {
 
     /**
      * Self-contained (sets its own shader/blend, unlike {@link #drawQuad} which expects
-     * {@link #beginTexturedQuads()} to have been called by a tile-drawing loop) single-texture
+     * {@link TextureBinds#beginTexturedQuads()} to have been called by a tile-drawing loop) single-texture
      * quad with a per-vertex ARGB tint, multiplied over the sampled texture color. Used for radar
      * entity icons: alpha carries the above/below elevation fade, RGB carries the brightness dim,
      * matching the plain {@link #fillRect}/{@link #fillTriangle}/{@link #drawRing} markers'
@@ -758,79 +354,6 @@ public final class RenderUtil {
         //#endif
     }
 
-    /**
-     * Enables the GL scissor test for a rectangle given in GUI (scaled) coordinates,
-     * converting to framebuffer pixels via the window's current scale factor.
-     */
-    public static void enableScissor(
-        final MinecraftClient client,
-        final int guiX,
-        final int guiY,
-        final int guiWidth,
-        final int guiHeight
-    ) {
-        final Window window = client.getWindow();
-        final double scale = window.getScaleFactor();
-        final int fbHeight = window.getFramebufferHeight();
-        final int x = (int) Math.round(guiX * scale);
-        final int w = (int) Math.round(guiWidth * scale);
-        final int h = (int) Math.round(guiHeight * scale);
-        final int y = fbHeight - (int) Math.round((guiY + guiHeight) * scale);
-        //#if MC>=12105
-        //$$ scissorEnabled = true;
-        //$$ scissorX = x;
-        //$$ scissorY = y;
-        //$$ scissorWidth = w;
-        //$$ scissorHeight = h;
-        //#if MC>=12108
-        //$$ guiScissorX = guiX;
-        //$$ guiScissorY = guiY;
-        //$$ guiScissorWidth = guiWidth;
-        //$$ guiScissorHeight = guiHeight;
-        //#endif
-        //#else
-        RenderSystem.enableScissor(x, y, w, h);
-        //#endif
-    }
-
-    /** Enables scissoring in the pixel coordinates of the currently bound off-screen target. */
-    public static void enableTargetScissor(
-        final int targetX,
-        final int targetY,
-        final int width,
-        final int height,
-        final int targetHeight
-    ) {
-        final int scissorY = targetScissorY(targetY, height, targetHeight);
-        //#if MC>=12105
-        //$$ scissorEnabled = true;
-        //$$ scissorX = targetX;
-        //$$ RenderUtil.scissorY = scissorY;
-        //$$ scissorWidth = width;
-        //$$ scissorHeight = height;
-        //#if MC>=12108
-        //$$ guiScissorX = targetX;
-        //$$ guiScissorY = targetY;
-        //$$ guiScissorWidth = width;
-        //$$ guiScissorHeight = height;
-        //#endif
-        //#else
-        RenderSystem.enableScissor(targetX, scissorY, width, height);
-        //#endif
-    }
-
-    static int targetScissorY(final int targetY, final int height, final int targetHeight) {
-        return targetHeight - targetY - height;
-    }
-
-    public static void disableScissor() {
-        //#if MC>=12105
-        //$$ scissorEnabled = false;
-        //#else
-        RenderSystem.disableScissor();
-        //#endif
-    }
-
     /** Flat-colored filled triangle in GUI space (player arrow etc.). */
     public static void fillTriangle(
         final MatrixStack matrices,
@@ -985,7 +508,7 @@ public final class RenderUtil {
     /**
      * Textured disk sampling an {@link OffscreenCanvas}: rim UVs walk the unit circle
      * around (0.5, 0.5), V flipped because FBO row 0 is the bottom. The currently bound
-     * texture must be the canvas contents; call between {@link #beginTexturedQuads()} and
+     * texture must be the canvas contents; call between {@link TextureBinds#beginTexturedQuads()} and
      * a bound texture.
      */
     public static void drawTexturedDisk(
@@ -1086,67 +609,6 @@ public final class RenderUtil {
             mesh.vertex(model, centerX + cos * outerRadius, centerY + sin * outerRadius, 0).color(r, g, b, a).next();
             mesh.vertex(model, centerX + cos * inner, centerY + sin * inner, 0).color(r, g, b, a).next();
         }
-        mesh.draw();
-        //#endif
-    }
-
-    /**
-     * Selects the flat position+color shader and additive-ish blending
-     * ({@code src*alpha + dst*1}), for glow-style translucent 3D geometry like waypoint
-     * beams (see {@code mc.ui.world.WaypointWorldRenderer}). Unlike {@link #fillTriangle}
-     * and {@link #fillRect}, this does not reset itself on every draw call - callers issue
-     * this once, draw as many {@link #fillTriangle3D} calls as needed, then restore normal
-     * blending with {@link #restoreDefaultBlend()} when done.
-     */
-    public static void beginAdditiveTriangles() {
-        //#if MC<12105
-        useColorShader();
-        RenderSystem.enableBlend();
-        RenderSystem.blendFuncSeparate(
-            com.mojang.blaze3d.platform.GlStateManager.SrcFactor.SRC_ALPHA,
-            com.mojang.blaze3d.platform.GlStateManager.DstFactor.ONE,
-            com.mojang.blaze3d.platform.GlStateManager.SrcFactor.ONE,
-            com.mojang.blaze3d.platform.GlStateManager.DstFactor.ZERO
-        );
-        //#endif
-    }
-
-    /** Restores standard alpha blending after {@link #beginAdditiveTriangles()}. */
-    public static void restoreDefaultBlend() {
-        //#if MC<12105
-        RenderSystem.defaultBlendFunc();
-        //#endif
-    }
-
-    /**
-     * Flat-colored filled triangle with three independent coordinates, for true 3D
-     * world-space geometry drawn from a {@code WorldRenderEvents} callback (unlike
-     * {@link #fillTriangle}, which always draws on the local matrix's Z=0 plane for flat
-     * GUI shapes). Assumes the shader and blend state are already set up by the caller -
-     * see {@link #beginAdditiveTriangles()}.
-     */
-    public static void fillTriangle3D(
-        final MatrixStack matrices,
-        final float x0, final float y0, final float z0,
-        final float x1, final float y1, final float z1,
-        final float x2, final float y2, final float z2,
-        final int argbColor
-    ) {
-        final float a = Argb.alpha(argbColor) / 255f;
-        final float r = Argb.red(argbColor) / 255f;
-        final float g = Argb.green(argbColor) / 255f;
-        final float b = Argb.blue(argbColor) / 255f;
-        final var model = matrices.peek().getModel();
-        final Mesh mesh = Mesh.begin(Mesh.Mode.TRIANGLES, VertexFormats.POSITION_COLOR);
-        mesh.vertex(model, x0, y0, z0).color(r, g, b, a).next();
-        mesh.vertex(model, x1, y1, z1).color(r, g, b, a).next();
-        mesh.vertex(model, x2, y2, z2).color(r, g, b, a).next();
-        //#if MC>=12105
-        //$$ mesh.vertex(model, x2, y2, z2).color(r, g, b, a).next();
-        //$$ mesh.vertex(model, x1, y1, z1).color(r, g, b, a).next();
-        //$$ mesh.vertex(model, x0, y0, z0).color(r, g, b, a).next();
-        //$$ mesh.draw(RenderPipelines.RENDERTYPE_LIGHTNING_DRAGON_RAYS);
-        //#else
         mesh.draw();
         //#endif
     }
@@ -1402,7 +864,7 @@ public final class RenderUtil {
      * ShaderProgram), so these three cannot be expressed as extra mappings and fork here instead.
      */
 
-    private static void useTextureShader() {
+    public static void useTextureShader() {
         //#if MC>=12105
         //$$ // Pipeline selection happens at draw time.
         //#elseif MC>=12103
@@ -1414,7 +876,7 @@ public final class RenderUtil {
         //#endif
     }
 
-    private static void useColorShader() {
+    public static void useColorShader() {
         //#if MC>=12105
         //$$ // Pipeline selection happens at draw time.
         //#elseif MC>=12103

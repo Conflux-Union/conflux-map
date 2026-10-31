@@ -12,7 +12,7 @@ final class WaypointBeamBoundsTest {
     void beamsSpanTheActiveWorldVerticalBounds() throws Exception {
         //#if MC>=12100
         //$$ final String source = Files.readString(preprocessedSource());
-        //$$ final String renderBeams = methodBody(source, "\n    private void renderBeams(", "\n    private void renderHud(");
+        //$$ final String renderBeams = methodBody(source, "\n    void renderBeams(", "\n    void renderHud(");
         //$$
         //$$ assertTrue(
         //$$     renderBeams.matches(

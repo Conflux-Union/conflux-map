@@ -5,7 +5,8 @@ import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.config.MinimapInformationLayout;
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
+import cn.net.rms.confluxmap.mc.render.TextureBinds;
 import cn.net.rms.confluxmap.mc.ui.BiomeLabels;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.MapLayerText;
@@ -156,10 +157,10 @@ final class MinimapChromePainter {
     }
 
     private void drawBorder(final MatrixStack matrices, final int x0, final int y0, final int size) {
-        RenderUtil.fillRect(matrices, x0, y0, size, BORDER_THICKNESS, BORDER_COLOR);
-        RenderUtil.fillRect(matrices, x0, y0 + size - BORDER_THICKNESS, size, BORDER_THICKNESS, BORDER_COLOR);
-        RenderUtil.fillRect(matrices, x0, y0, BORDER_THICKNESS, size, BORDER_COLOR);
-        RenderUtil.fillRect(matrices, x0 + size - BORDER_THICKNESS, y0, BORDER_THICKNESS, size, BORDER_COLOR);
+        GuiShapes.fillRect(matrices, x0, y0, size, BORDER_THICKNESS, BORDER_COLOR);
+        GuiShapes.fillRect(matrices, x0, y0 + size - BORDER_THICKNESS, size, BORDER_THICKNESS, BORDER_COLOR);
+        GuiShapes.fillRect(matrices, x0, y0, BORDER_THICKNESS, size, BORDER_COLOR);
+        GuiShapes.fillRect(matrices, x0 + size - BORDER_THICKNESS, y0, BORDER_THICKNESS, size, BORDER_COLOR);
     }
 
     void drawFrame(
@@ -172,7 +173,7 @@ final class MinimapChromePainter {
     ) {
         if (selected.isEmpty()) {
             if (circle) {
-                RenderUtil.drawRing(
+                GuiShapes.drawRing(
                     matrices, x0 + size / 2f, y0 + size / 2f,
                     size / 2f, BORDER_THICKNESS, BORDER_COLOR
                 );
@@ -184,14 +185,14 @@ final class MinimapChromePainter {
 
         final UiResourceTheme.MinimapFrame frame = selected.get();
         final UiTextureRegion texture = frame.texture();
-        RenderUtil.bindTexture(client, texture.texture());
+        TextureBinds.bindTexture(client, texture.texture());
         if (frame.layout() == UiResourceTheme.Layout.OVERLAY) {
-            RenderUtil.drawTintedQuad(
+            GuiShapes.drawTintedQuad(
                 matrices, x0, y0, size, size,
                 texture.u0(), texture.v0(), texture.u1(), texture.v1(), 0xFFFFFFFF
             );
         } else if (frame.layout() == UiResourceTheme.Layout.XAERO_CIRCLE) {
-            RenderUtil.drawTexturedRing(
+            GuiShapes.drawTexturedRing(
                 matrices, x0 + size / 2f, y0 + size / 2f, size / 2f,
                 4f, texture.u0(), texture.v0(), texture.u1(), texture.v1(), 0xFFFFFFFF
             );

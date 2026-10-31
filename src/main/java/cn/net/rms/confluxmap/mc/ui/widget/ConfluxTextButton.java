@@ -7,7 +7,8 @@ import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.UiIcon;
 import cn.net.rms.confluxmap.mc.ui.UiResourceTheme;
 import cn.net.rms.confluxmap.mc.ui.UiTextureRegion;
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
+import cn.net.rms.confluxmap.mc.render.TextureBinds;
 import net.minecraft.client.MinecraftClient;
 //#if MC>=12000
 //$$ import net.minecraft.client.gui.DrawContext;
@@ -186,8 +187,8 @@ public final class ConfluxTextButton extends ButtonWidget {
         final UiResourceTheme theme = app == null ? null : app.uiResourceTheme();
         final UiIcon resolved = theme == null ? UiIcon.monochrome(icon) : theme.icon(icon);
         final UiTextureRegion texture = resolved.region();
-        RenderUtil.bindTexture(MinecraftClient.getInstance(), texture.texture());
-        RenderUtil.drawTintedQuad(
+        TextureBinds.bindTexture(MinecraftClient.getInstance(), texture.texture());
+        GuiShapes.drawTintedQuad(
             draw.matrices(),
             Widgets.x(this) + (getWidth() - ICON_SIZE) / 2,
             Widgets.y(this) + (getHeight() - ICON_SIZE) / 2,

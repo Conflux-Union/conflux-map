@@ -5,7 +5,7 @@ import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.core.waypoint.WaypointVerticalRelation;
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.util.math.MatrixStack;
@@ -55,8 +55,8 @@ public final class WaypointMarkerRenderer {
         final int fill = fillColor(waypoint.colorArgb(), alpha, hovered);
         final int outer = withAlpha(outlineColor(waypoint), alpha);
         final float plateSize = halfSize * 2f;
-        RenderUtil.fillRect(matrices, x - halfSize - 1f, y - halfSize - 1f, plateSize + 2f, plateSize + 2f, outer);
-        RenderUtil.fillRect(matrices, x - halfSize, y - halfSize, plateSize, plateSize, fill);
+        GuiShapes.fillRect(matrices, x - halfSize - 1f, y - halfSize - 1f, plateSize + 2f, plateSize + 2f, outer);
+        GuiShapes.fillRect(matrices, x - halfSize, y - halfSize, plateSize, plateSize, fill);
 
         final ItemStack itemIcon = itemIcon(waypoint.iconItemId());
         if (!itemIcon.isEmpty()) {
@@ -166,16 +166,16 @@ public final class WaypointMarkerRenderer {
         final int outline = withAlpha(HEIGHT_BADGE_OUTLINE, alpha);
         final int fill = withAlpha(HEIGHT_BADGE_FILL, alpha);
         if (relation == WaypointVerticalRelation.LEVEL) {
-            RenderUtil.fillRect(matrices, centerX - 2.5f, centerY - 2.5f, 5f, 5f, outline);
-            RenderUtil.fillRect(matrices, centerX - 1.5f, centerY - 1.5f, 3f, 3f, fill);
+            GuiShapes.fillRect(matrices, centerX - 2.5f, centerY - 2.5f, 5f, 5f, outline);
+            GuiShapes.fillRect(matrices, centerX - 1.5f, centerY - 1.5f, 3f, 3f, fill);
             return;
         }
         final float tipY = relation == WaypointVerticalRelation.ABOVE ? centerY - 2.5f : centerY + 2.5f;
         final float baseY = relation == WaypointVerticalRelation.ABOVE ? centerY + 2f : centerY - 2f;
-        RenderUtil.fillTriangle(matrices, centerX, tipY, centerX - 2.5f, baseY, centerX + 2.5f, baseY, outline);
+        GuiShapes.fillTriangle(matrices, centerX, tipY, centerX - 2.5f, baseY, centerX + 2.5f, baseY, outline);
         final float innerTipY = relation == WaypointVerticalRelation.ABOVE ? centerY - 1.2f : centerY + 1.2f;
         final float innerBaseY = relation == WaypointVerticalRelation.ABOVE ? centerY + 1f : centerY - 1f;
-        RenderUtil.fillTriangle(matrices, centerX, innerTipY, centerX - 1.2f, innerBaseY, centerX + 1.2f, innerBaseY, fill);
+        GuiShapes.fillTriangle(matrices, centerX, innerTipY, centerX - 1.2f, innerBaseY, centerX + 1.2f, innerBaseY, fill);
     }
 
     private static int withAlpha(final int argb, final float alpha) {

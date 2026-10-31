@@ -8,7 +8,7 @@ import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.util.ChunkViewport;
 import cn.net.rms.confluxmap.core.util.TileMath;
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import java.util.function.Consumer;
@@ -115,7 +115,7 @@ final class MinimapTilePainter {
                 final float screenX = (float) ((key.originBlockX() - player.x()) * pxPerBlock);
                 final float screenY = (float) ((key.originBlockZ() - player.z()) * pxPerBlock);
                 final float quadSize = TileMath.TILE_SIZE * pxPerBlock;
-                RenderUtil.drawQuad(matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f);
+                GuiShapes.drawQuad(matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f);
             }
         }
     }

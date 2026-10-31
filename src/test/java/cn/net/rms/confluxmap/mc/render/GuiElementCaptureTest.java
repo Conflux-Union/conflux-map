@@ -35,15 +35,15 @@ final class GuiElementCaptureTest {
     //$$
     //$$ @AfterEach
     //$$ void clearGuiState() {
-    //$$     RenderUtil.setGuiState(null);
+    //$$     RenderTargetState.setGuiState(null);
     //$$ }
     //$$
     //$$ @Test
     //$$ void guiFillIsRecordedInsteadOfDrawn() {
     //$$     final RecordingState state = new RecordingState();
-    //$$     RenderUtil.setGuiState(state);
+    //$$     RenderTargetState.setGuiState(state);
     //$$
-    //$$     RenderUtil.fillRect(new MatrixStack(), 10f, 20f, 30f, 40f, 0xFF204060);
+    //$$     GuiShapes.fillRect(new MatrixStack(), 10f, 20f, 30f, 40f, 0xFF204060);
     //$$
     //$$     assertEquals(1, state.elements.size());
     //$$     final SimpleGuiElementRenderState element = state.elements.get(0);
@@ -54,11 +54,11 @@ final class GuiElementCaptureTest {
     //$$ @Test
     //$$ void recordedGeometryCarriesTheCallersTransform() {
     //$$     final RecordingState state = new RecordingState();
-    //$$     RenderUtil.setGuiState(state);
+    //$$     RenderTargetState.setGuiState(state);
     //$$     final MatrixStack matrices = new MatrixStack();
     //$$     matrices.translate(100f, 200f, 0f);
     //$$
-    //$$     RenderUtil.fillRect(matrices, 10f, 20f, 30f, 40f, 0xFF204060);
+    //$$     GuiShapes.fillRect(matrices, 10f, 20f, 30f, 40f, 0xFF204060);
     //$$
     //$$     final SimpleGuiElementRenderState element = state.elements.get(0);
     //$$     assertEquals(new ScreenRect(110, 220, 30, 40), element.bounds());

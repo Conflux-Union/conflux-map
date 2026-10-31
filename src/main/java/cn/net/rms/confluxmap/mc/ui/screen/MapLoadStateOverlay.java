@@ -88,7 +88,7 @@ import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
 import cn.net.rms.confluxmap.mc.teleport.TeleportCommandAccess;
@@ -232,7 +232,7 @@ final class MapLoadStateOverlay {
             );
             final float screenX = (float) rect.x();
             final float screenY = (float) rect.y();
-            RenderUtil.fillRect(
+            GuiShapes.fillRect(
                 matrices, screenX, screenY, chunkSize, chunkSize, loadStateColor(entry.band())
             );
             if (style.drawOutline()) {
@@ -267,10 +267,10 @@ final class MapLoadStateOverlay {
         final float y,
         final float size
     ) {
-        RenderUtil.fillRect(matrices, x, y, size, 1f, LOAD_STATE_OUTLINE_COLOR);
-        RenderUtil.fillRect(matrices, x, y + size - 1f, size, 1f, LOAD_STATE_OUTLINE_COLOR);
-        RenderUtil.fillRect(matrices, x, y, 1f, size, LOAD_STATE_OUTLINE_COLOR);
-        RenderUtil.fillRect(matrices, x + size - 1f, y, 1f, size, LOAD_STATE_OUTLINE_COLOR);
+        GuiShapes.fillRect(matrices, x, y, size, 1f, LOAD_STATE_OUTLINE_COLOR);
+        GuiShapes.fillRect(matrices, x, y + size - 1f, size, 1f, LOAD_STATE_OUTLINE_COLOR);
+        GuiShapes.fillRect(matrices, x, y, 1f, size, LOAD_STATE_OUTLINE_COLOR);
+        GuiShapes.fillRect(matrices, x + size - 1f, y, 1f, size, LOAD_STATE_OUTLINE_COLOR);
     }
 
     void drawChunkLoadStateLegend(final GuiDraw draw) {

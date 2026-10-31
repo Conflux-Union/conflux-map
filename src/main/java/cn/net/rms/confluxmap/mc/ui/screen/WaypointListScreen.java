@@ -28,7 +28,7 @@ import cn.net.rms.confluxmap.core.waypoint.list.SharedWaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.WaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.WaypointRow;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
 import cn.net.rms.confluxmap.mc.teleport.TeleportCommandAccess;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
@@ -1809,7 +1809,7 @@ public final class WaypointListScreen extends ConfluxScreen {
                 continue;
             }
             final RowInfo info = row.waypoint();
-            RenderUtil.fillRect(
+            GuiShapes.fillRect(
                 matrices,
                 contentLeft(),
                 info.y() + 1,
@@ -1893,7 +1893,7 @@ public final class WaypointListScreen extends ConfluxScreen {
         final boolean hovered,
         final boolean searchActive
     ) {
-        RenderUtil.fillRect(
+        GuiShapes.fillRect(
             matrices,
             contentLeft(),
             header.y() + 1,

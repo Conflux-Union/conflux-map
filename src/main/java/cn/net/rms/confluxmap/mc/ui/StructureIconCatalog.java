@@ -2,7 +2,8 @@ package cn.net.rms.confluxmap.mc.ui;
 
 import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.core.predict.StructureIndex;
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
+import cn.net.rms.confluxmap.mc.render.TextureBinds;
 import java.util.EnumMap;
 import java.util.Map;
 import net.minecraft.client.MinecraftClient;
@@ -80,8 +81,8 @@ public final class StructureIconCatalog {
         // Callers queue icon frames and list surfaces as buffered fills; without the flush the
         // icon would be painted first and covered once those fills reach the screen.
         draw.flushGui();
-        RenderUtil.bindTexture(MinecraftClient.getInstance(), icon(type, variant));
-        RenderUtil.drawTintedQuad(draw.matrices(), x, y, size, size, 0f, 0f, 1f, 1f, tint);
+        TextureBinds.bindTexture(MinecraftClient.getInstance(), icon(type, variant));
+        GuiShapes.drawTintedQuad(draw.matrices(), x, y, size, size, 0f, 0f, 1f, 1f, tint);
     }
 
     private static Map<StructureIndex.StructureType, Identifier> icons() {

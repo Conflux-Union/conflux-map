@@ -3,7 +3,8 @@ package cn.net.rms.confluxmap.mc.ui;
 import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.util.Argb;
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
+import cn.net.rms.confluxmap.mc.render.TextureBinds;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
@@ -54,7 +55,7 @@ public final class PlayerMarkerRenderer {
         matrices.push();
         try {
             matrices.translate(centerX, centerY, 0);
-            RenderUtil.rotateZ(
+            GuiShapes.rotateZ(
                 matrices,
                 angle + texture.rotationOffset()
             );
@@ -82,8 +83,8 @@ public final class PlayerMarkerRenderer {
         final float opacity
     ) {
         final UiTextureRegion texture = marker.texture();
-        RenderUtil.beginTexturedQuads();
-        RenderUtil.bindTexture(client, texture.texture());
+        TextureBinds.beginTexturedQuads();
+        TextureBinds.bindTexture(client, texture.texture());
         if (marker.tintWithFallbackColor()) {
             drawTintedTexture(
                 matrices,
@@ -104,7 +105,7 @@ public final class PlayerMarkerRenderer {
             drawTintedTexture(matrices, marker, 0f, colorAtOpacity(0xFFFFFFFF, opacity));
             return;
         }
-        RenderUtil.drawQuad(
+        GuiShapes.drawQuad(
             matrices,
             marker.x(),
             marker.y(),
@@ -124,7 +125,7 @@ public final class PlayerMarkerRenderer {
         final int color
     ) {
         final UiTextureRegion texture = marker.texture();
-        RenderUtil.drawTintedQuad(
+        GuiShapes.drawTintedQuad(
             matrices,
             marker.x(),
             marker.y() + offsetY,

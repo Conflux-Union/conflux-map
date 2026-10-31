@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 final class OffscreenCanvasProjectionTest {
     @Test
     void targetScissorMatchesTheCanvasYAxis() {
-        assertEquals(928, RenderUtil.targetScissorY(64, 32, 1024));
+        assertEquals(928, RenderTargetState.targetScissorY(64, 32, 1024));
     }
 
     //#if MC>=12100

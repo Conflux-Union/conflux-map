@@ -178,7 +178,7 @@ public final class Mesh {
      */
     public static Mesh beginGui(final Mode mode, final VertexFormat format) {
         //#if MC>=12108
-        //$$ final GuiRenderState guiState = RenderUtil.guiState();
+        //$$ final GuiRenderState guiState = RenderTargetState.guiState();
         //$$ if (guiState != null) {
         //$$     return new Mesh(guiState, format == tintedTextureFormat());
         //$$ }
@@ -307,8 +307,8 @@ public final class Mesh {
     //$$     if (buffer == null) {
     //$$         guiState.addGuiElement(new CapturedGuiElement(
     //$$             pipeline,
-    //$$             RenderUtil.guiTextureSetup(textured),
-    //$$             RenderUtil.guiScissor(),
+    //$$             TextureBinds.guiTextureSetup(textured),
+    //$$             RenderTargetState.guiScissor(),
     //$$             vertices,
     //$$             vertexCount,
     //$$             textured
@@ -319,8 +319,8 @@ public final class Mesh {
     //$$     if (buffer == null) {
     //$$         guiState.addSimpleElement(new CapturedGuiElement(
     //$$             pipeline,
-    //$$             RenderUtil.guiTextureSetup(textured),
-    //$$             RenderUtil.guiScissor(),
+    //$$             TextureBinds.guiTextureSetup(textured),
+    //$$             RenderTargetState.guiScissor(),
     //$$             vertices,
     //$$             vertexCount,
     //$$             textured
@@ -337,7 +337,7 @@ public final class Mesh {
     //$$     try {
     //$$         IMMEDIATE.upload();
     //$$         final StagedVertexBuffer.ExecuteInfo info = IMMEDIATE.getExecuteInfo(stagedDraw);
-    //$$         final var target = RenderUtil.drawTarget();
+    //$$         final var target = RenderTargetState.drawTarget();
     //$$         final var dynamicTransforms = RenderSystem.getDynamicUniforms().writeTransform(
     //$$             RenderSystem.getModelViewMatrixCopy()
     //$$         );
@@ -352,16 +352,16 @@ public final class Mesh {
     //$$             target.hasDepth() ? target.getDepthTextureView() : null,
     //$$             OptionalDouble.empty()
     //$$         )) {
-    //$$             pass.setPipeline(RenderUtil.compiled(pipeline));
+    //$$             pass.setPipeline(RenderTargetState.compiled(pipeline));
     //$$             RenderSystem.bindDefaultUniforms(pass);
     //$$             pass.setUniform("DynamicTransforms", dynamicTransforms);
     //$$             pass.setVertexBuffer(0, info.vertexBuffer().slice());
-    //$$             RenderUtil.applyScissor(pass);
+    //$$             RenderTargetState.applyScissor(pass);
     //$$             if (BindGroupLayout.flattenUniforms(pipeline.getBindGroupLayouts()).stream()
     //$$                     .anyMatch(layout -> layout.name().equals("Sampler0"))
-    //$$                 && RenderUtil.boundTexture() != null
-    //$$                 && RenderUtil.boundSampler() != null) {
-    //$$                 pass.setUniform("Sampler0", RenderUtil.boundTexture(), RenderUtil.boundSampler());
+    //$$                 && TextureBinds.boundTexture() != null
+    //$$                 && TextureBinds.boundSampler() != null) {
+    //$$                 pass.setUniform("Sampler0", TextureBinds.boundTexture(), TextureBinds.boundSampler());
     //$$             }
     //#else
     //$$             target.useDepth ? target.getDepthTextureView() : null,
@@ -371,11 +371,11 @@ public final class Mesh {
     //$$             RenderSystem.bindDefaultUniforms(pass);
     //$$             pass.setUniform("DynamicTransforms", dynamicTransforms);
     //$$             pass.setVertexBuffer(0, info.vertexBuffer().slice());
-    //$$             RenderUtil.applyScissor(pass);
+    //$$             RenderTargetState.applyScissor(pass);
     //$$             if (BindGroupLayout.flattenSamplers(pipeline.getBindGroupLayouts()).contains("Sampler0")
-    //$$                 && RenderUtil.boundTexture() != null
-    //$$                 && RenderUtil.boundSampler() != null) {
-    //$$                 pass.bindTexture("Sampler0", RenderUtil.boundTexture(), RenderUtil.boundSampler());
+    //$$                 && TextureBinds.boundTexture() != null
+    //$$                 && TextureBinds.boundSampler() != null) {
+    //$$                 pass.bindTexture("Sampler0", TextureBinds.boundTexture(), TextureBinds.boundSampler());
     //$$             }
     //#endif
     //$$             pass.setIndexBuffer(info.indexBuffer(), info.indexType());
@@ -401,7 +401,7 @@ public final class Mesh {
     //$$                 .uploadImmediateIndexBuffer(built.getSortedBuffer());
     //$$             indexType = built.getDrawParameters().indexType();
     //$$         }
-    //$$         final var target = RenderUtil.drawTarget();
+    //$$         final var target = RenderTargetState.drawTarget();
     //#if MC>=12111
     //$$         final var dynamicTransforms = RenderSystem.getDynamicUniforms().write(
     //$$             RenderSystem.getModelViewMatrix(),
@@ -450,12 +450,12 @@ public final class Mesh {
     //$$             pass.setUniform("DynamicTransforms", dynamicTransforms);
     //#endif
     //$$             pass.setVertexBuffer(0, vertexBuffer);
-    //$$             RenderUtil.applyScissor(pass);
+    //$$             RenderTargetState.applyScissor(pass);
     //#if MC>=12111
     //$$             if (pipeline.getSamplers().contains("Sampler0")
-    //$$                 && RenderUtil.boundTexture() != null
-    //$$                 && RenderUtil.boundSampler() != null) {
-    //$$                 pass.bindTexture("Sampler0", RenderUtil.boundTexture(), RenderUtil.boundSampler());
+    //$$                 && TextureBinds.boundTexture() != null
+    //$$                 && TextureBinds.boundSampler() != null) {
+    //$$                 pass.bindTexture("Sampler0", TextureBinds.boundTexture(), TextureBinds.boundSampler());
     //$$             }
     //#else
     //$$             for (int i = 0; i < RenderSystem.TEXTURE_COUNT; i++) {

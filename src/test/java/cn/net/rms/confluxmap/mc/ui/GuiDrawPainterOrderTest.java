@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,7 +23,7 @@ final class GuiDrawPainterOrderTest {
         //#else
         final int drawItem = source.indexOf("client.getItemRenderer().renderInGui(stack, 0, 0);");
         //#endif
-        final int clearDepth = source.indexOf("RenderUtil.clearGuiDepth();", drawItem);
+        final int clearDepth = source.indexOf("GuiShapes.clearGuiDepth();", drawItem);
 
         assertTrue(drawItem >= 0, "the version's depthful item renderer must be present");
         assertTrue(
@@ -36,11 +36,11 @@ final class GuiDrawPainterOrderTest {
     @Test
     void depthBarrierExistsOnlyWhileVanillaItemsUseGuiDepth() {
         //#if MC<12104
-        assertDoesNotThrow(() -> RenderUtil.class.getDeclaredMethod("clearGuiDepth"));
+        assertDoesNotThrow(() -> GuiShapes.class.getDeclaredMethod("clearGuiDepth"));
         //#else
         //$$ assertThrows(
         //$$     NoSuchMethodException.class,
-        //$$     () -> RenderUtil.class.getDeclaredMethod("clearGuiDepth")
+        //$$     () -> GuiShapes.class.getDeclaredMethod("clearGuiDepth")
         //$$ );
         //#endif
     }
@@ -53,7 +53,7 @@ final class GuiDrawPainterOrderTest {
                 1,
                 files.filter(path -> path.toString().endsWith(".java"))
                     .map(GuiDrawPainterOrderTest::readString)
-                    .filter(source -> source.contains("RenderUtil.clearGuiDepth();"))
+                    .filter(source -> source.contains("GuiShapes.clearGuiDepth();"))
                     .count(),
                 "only GuiDraw may release depth between GUI components"
             );

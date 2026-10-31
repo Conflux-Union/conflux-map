@@ -4,7 +4,8 @@ import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.compat.Ids;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.core.portal.PortalKind;
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
+import cn.net.rms.confluxmap.mc.render.TextureBinds;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -127,8 +128,8 @@ public final class PortalMarkerRenderer {
         // Buffered fills queued earlier would paint over the texture; flush first
         // (same ordering note as StructureIconCatalog.draw).
         draw.flushGui();
-        RenderUtil.bindTexture(MinecraftClient.getInstance(), texture(kind, configuredTexture));
-        RenderUtil.drawTintedQuad(
+        TextureBinds.bindTexture(MinecraftClient.getInstance(), texture(kind, configuredTexture));
+        GuiShapes.drawTintedQuad(
             draw.matrices(), left + inset, top + inset, inner, inner,
             0f, 0f, 1f, 1f, alpha(0xFFFFFFFF, opacity)
         );

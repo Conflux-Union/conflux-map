@@ -88,7 +88,7 @@ import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
 import cn.net.rms.confluxmap.mc.teleport.TeleportCommandAccess;
@@ -592,23 +592,23 @@ final class MapAnnotationController {
         final int displayedColor = opensMenu ? selectedAnnotationColor() : color;
         final int inset = screen.uiTheme.useVanillaButtonStyle() ? 3 : 0;
         final int swatchSize = button.getWidth() - inset * 2;
-        RenderUtil.fillRect(
+        GuiShapes.fillRect(
             draw.matrices(), x + inset, y + inset, swatchSize, swatchSize,
             displayedColor | 0xFF000000
         );
         if (opensMenu ? annotationColorMenuOpen : color == selectedAnnotationColor()) {
             final int border = screen.uiTheme.useVanillaButtonStyle() ? 1 : 2;
-            RenderUtil.fillRect(
+            GuiShapes.fillRect(
                 draw.matrices(), x + inset, y + inset, swatchSize, border, 0xFFFFFFFF
             );
-            RenderUtil.fillRect(
+            GuiShapes.fillRect(
                 draw.matrices(), x + inset, y + inset + swatchSize - border,
                 swatchSize, border, 0xFFFFFFFF
             );
-            RenderUtil.fillRect(
+            GuiShapes.fillRect(
                 draw.matrices(), x + inset, y + inset, border, swatchSize, 0xFFFFFFFF
             );
-            RenderUtil.fillRect(
+            GuiShapes.fillRect(
                 draw.matrices(), x + inset + swatchSize - border, y + inset,
                 border, swatchSize, 0xFFFFFFFF
             );
@@ -982,7 +982,7 @@ final class MapAnnotationController {
         if (annotationTool == AnnotationTool.ERASER
             && !screen.locationMenu.isOpen()
             && !screen.isOverMapControls(mouseX, mouseY)) {
-            RenderUtil.drawRing(
+            GuiShapes.drawRing(
                 draw.matrices(),
                 mouseX,
                 mouseY,
@@ -1015,7 +1015,7 @@ final class MapAnnotationController {
         }
         for (final AnnotationPoint point : points) {
             final AnnotationProjection.ScreenPoint at = projection.project(point);
-            RenderUtil.fillBeveledDiamond(
+            GuiShapes.fillBeveledDiamond(
                 matrices, (float) at.x(), (float) at.y(), MEASURE_VERTEX_RADIUS, MEASURE_VERTEX_COLOR
             );
         }

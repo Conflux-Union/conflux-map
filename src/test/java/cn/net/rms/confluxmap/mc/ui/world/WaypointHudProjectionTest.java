@@ -18,10 +18,11 @@ final class WaypointHudProjectionTest {
     //$$ @Test
     //$$ void lastRenderHudKeepsWorldRendererCameraView() throws Exception {
     //$$     final String source = Files.readString(preprocessedSource());
-    //$$     final String renderHud = methodBody(source, "private void renderHud(final WorldRenderContext context)");
-    //$$     final String renderUtil = Files.readString(preprocessedRenderUtilSource());
+    //$$     final String renderHud = methodBody(source, "void renderHud(final OverlayFrame frame)");
+    //$$     final String labelPass = Files.readString(preprocessedLabelPassSource());
+    //$$     final String worldMatrices = Files.readString(preprocessedWorldMatricesSource());
     //$$     final String pushModelView = methodBody(
-    //$$         renderUtil, "public static void pushWorldHudModelView()"
+    //$$         worldMatrices, "public static void pushWorldHudModelView()"
     //$$     );
     //$$
     //$$     assertFalse(
@@ -29,8 +30,8 @@ final class WaypointHudProjectionTest {
     //$$         "LAST already stores the camera view rotation in ModelView; clearing it moves forward waypoints out of clip space"
     //$$     );
     //$$     assertTrue(
-    //$$         renderHud.contains("pushWorldViewSnapshot") || renderHud.contains("pushWorldHudModelView"),
-    //$$         "renderHud must enter the version-aware world HUD ModelView scope: the END pass reinstalls the captured world view, the in-pass phases save it"
+    //$$         labelPass.contains("pushWorldViewSnapshot") || labelPass.contains("pushWorldHudModelView"),
+    //$$         "the label pass must enter the version-aware world HUD ModelView scope: the END pass reinstalls the captured world view, the in-pass phases save it"
     //$$     );
     //$$     assertTrue(
     //$$         pushModelView.contains("getModelViewStack().pushMatrix()"),
@@ -75,13 +76,11 @@ final class WaypointHudProjectionTest {
     //$$
     //$$ @Test
     //$$ void modernLabelQuadFacesTheCamera() throws Exception {
-    //$$     final String source = Files.readString(preprocessedLabelPainterSource());
-    //$$     final String drawLabel = methodBody(
-    //$$         source, "\n    void drawLabel("
-    //$$     );
+    //$$     final String labelPass = Files.readString(preprocessedLabelPassSource());
+    //$$     final String billboard = methodBody(labelPass, "public void billboard(");
     //$$
     //$$     assertTrue(
-    //$$         drawLabel.contains("matrices.scale(scale, -scale, scale)"),
+    //$$         billboard.contains("matrices.scale(scale, -scale, scale)"),
     //$$         "modern waypoint labels need vanilla's positive X billboard scale so culling keeps their quads"
     //$$     );
     //$$     assertTrue(
@@ -112,6 +111,37 @@ final class WaypointHudProjectionTest {
     //$$             && hudSource.contains("draw.drawTextWithShadow("),
     //$$         "the item, plate, and text must be drawn together in the flat HUD pass"
     //$$     );
+    //$$ }
+    //$$
+    //$$ @Test
+    //$$ void hudItemLabelsProjectThroughTheCapturedSwayMatrices() throws Exception {
+    //$$     final String hudSource = Files.readString(
+    //$$         preprocessedSource().getParent().resolve("WaypointItemHudRenderer.java")
+    //$$     );
+    //$$     final String worldMatrices = Files.readString(preprocessedWorldMatricesSource());
+    //$$
+    //$$     assertTrue(
+    //$$         hudSource.contains("WaypointHudFrameMatrices.current()"),
+    //$$         "the HUD item pass must read the world pass's captured matrices"
+    //$$     );
+    //$$     assertTrue(
+    //$$         countOccurrences(hudSource, "WaypointHudItemProjection.project(") >= 2,
+    //$$         "the captured-matrix path and the hand-rolled basis fallback must both stay wired"
+    //$$     );
+    //$$     assertTrue(
+    //$$         worldMatrices.contains("WaypointHudFrameMatrices.update(")
+    //$$             && worldMatrices.contains("clearHudFrame"),
+    //$$         "the world-pass capture must commit into the HUD snapshot and support cleanup"
+    //$$     );
+    //$$ }
+    //$$
+    //$$ private static int countOccurrences(final String haystack, final String needle) {
+    //$$     int count = 0;
+    //$$     for (int index = haystack.indexOf(needle); index >= 0;
+    //$$         index = haystack.indexOf(needle, index + 1)) {
+    //$$         count++;
+    //$$     }
+    //$$     return count;
     //$$ }
     //$$
     //$$ @Test
@@ -146,36 +176,33 @@ final class WaypointHudProjectionTest {
     //#if MC>=260200
     //$$ @Test
     //$$ void submittedLabelTextRendersAfterEveryOpaquePlate() throws Exception {
-    //$$     final String source = Files.readString(preprocessedLabelPainterSource());
-    //$$     final String drawLabel = methodBody(source, "\n    void drawLabel(");
+    //$$     final String labelPass = Files.readString(preprocessedLabelPassSource());
     //$$
     //$$     assertTrue(
-    //$$         drawLabel.contains("final FabricOrderedSubmitNodeCollector plates =")
-    //$$             && drawLabel.contains("(FabricOrderedSubmitNodeCollector) submits.order(0)"),
+    //$$         labelPass.contains("(FabricOrderedSubmitNodeCollector) frame.labelSubmits.order(0)"),
     //$$         "26.2 must submit panels and marker colors into the earlier order"
     //$$     );
     //$$     assertTrue(
-    //$$         drawLabel.contains("final FabricOrderedSubmitNodeCollector text =")
-    //$$             && drawLabel.contains("(FabricOrderedSubmitNodeCollector) submits.order(1)"),
+    //$$         labelPass.contains("(FabricOrderedSubmitNodeCollector) frame.labelSubmits.order(1)"),
     //$$         "26.2 must submit marker initials and labels after opaque plates"
     //$$     );
     //$$ }
     //$$
     //$$ @Test
     //$$ void submittedHudRendersAfterTheWaterMask() throws Exception {
-    //$$     final String source = Files.readString(preprocessedLabelPainterSource());
-    //$$     final String submitRect = methodBody(source, "\n    private static void submitRect(");
-    //$$     final String submitText = methodBody(source, "\n    private static void submitText(");
+    //$$     final String labelPass = Files.readString(preprocessedLabelPassSource());
+    //$$     final String submitRect = methodBody(labelPass, "\n    private void submitRect(");
+    //$$     final String submitText = methodBody(labelPass, "\n    private void submitText(");
     //$$
     //#if MC>=260300
     //$$     // 26.3 collectors submit text phases natively; the water-mask ordering the
     //$$     // ALWAYS_ON_TOP phase used to provide is the vanilla text phase's own.
     //$$     assertTrue(
-    //$$         submitRect.contains("submits.submitTextBackground("),
+    //$$         submitRect.contains("plateSubmits.submitTextBackground("),
     //$$         "26.3 waypoint plates must render through the collector's text-background phase"
     //$$     );
     //$$     assertTrue(
-    //$$         submitText.contains("submits.submitText("),
+    //$$         submitText.contains("textSubmits.submitText("),
     //$$         "26.3 waypoint text must render through the collector's text phase"
     //$$     );
     //#else
@@ -209,14 +236,15 @@ final class WaypointHudProjectionTest {
     //#if MC>=260100
     //$$ @Test
     //$$ void waypointBeamRendersAfterTranslucentTerrain() throws Exception {
-    //$$     final String source = Files.readString(preprocessedSource());
+    //$$     final String source = Files.readString(preprocessedEventsSource());
     //$$
     //$$     assertTrue(
-    //$$         source.contains("LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(this::renderBeams);"),
+    //$$         source.contains("LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(context ->")
+    //$$             && source.contains("renderer.renderBeams(beamFrame(context)));"),
     //$$         "waypoint beams must not write depth before translucent terrain such as water"
     //$$     );
     //$$     assertFalse(
-    //$$         source.contains("LevelRenderEvents.BEFORE_TRANSLUCENT_TERRAIN.register(this::renderBeams);"),
+    //$$         source.contains("LevelRenderEvents.BEFORE_TRANSLUCENT_TERRAIN.register(context ->"),
     //$$         "drawing the depth-writing beam before water reproduces the missing water surface"
     //$$     );
     //$$ }
@@ -262,8 +290,16 @@ final class WaypointHudProjectionTest {
     //$$     return preprocessedSource().getParent().resolve("WaypointLabelPainter.java");
     //$$ }
     //$$
-    //$$ private static Path preprocessedRenderUtilSource() throws URISyntaxException {
-    //$$     return preprocessedSource().getParent().getParent().getParent().resolve("render/RenderUtil.java");
+    //$$ private static Path preprocessedLabelPassSource() throws URISyntaxException {
+    //$$     return preprocessedSource().getParent().resolve("LabelPass.java");
+    //$$ }
+    //$$
+    //$$ private static Path preprocessedEventsSource() throws URISyntaxException {
+    //$$     return preprocessedSource().getParent().resolve("WorldOverlayEvents.java");
+    //$$ }
+    //$$
+    //$$ private static Path preprocessedWorldMatricesSource() throws URISyntaxException {
+    //$$     return preprocessedSource().getParent().getParent().getParent().resolve("render/WorldMatrices.java");
     //$$ }
     //$$
     //$$ private static String methodBody(final String source, final String signature) {

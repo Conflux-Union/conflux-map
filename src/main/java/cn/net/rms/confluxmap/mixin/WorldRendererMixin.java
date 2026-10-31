@@ -2,7 +2,7 @@ package cn.net.rms.confluxmap.mixin;
 
 //#if MC>=12109 && MC<12111
 //$$ import cn.net.rms.confluxmap.ConfluxMapMod;
-//$$ import cn.net.rms.confluxmap.mc.ui.world.WaypointWorldRenderer;
+//$$ import cn.net.rms.confluxmap.mc.ui.world.WorldOverlayEvents;
 //$$ import net.minecraft.client.render.command.OrderedRenderCommandQueueImpl;
 //$$ import net.minecraft.client.render.command.RenderDispatcher;
 //$$ import net.minecraft.client.util.math.MatrixStack;
@@ -13,13 +13,25 @@ package cn.net.rms.confluxmap.mixin;
 //$$ import org.spongepowered.asm.mixin.Shadow;
 //$$ import org.spongepowered.asm.mixin.Unique;
 //#endif
+//#if MC>=260100 && MC<260200
+//$$ import cn.net.rms.confluxmap.ConfluxMapMod;
+//$$ import cn.net.rms.confluxmap.mc.ui.world.WorldOverlayEvents;
+//$$ import org.spongepowered.asm.mixin.injection.At;
+//$$ import org.spongepowered.asm.mixin.injection.Inject;
+//$$ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+//$$ import org.spongepowered.asm.mixin.Unique;
+//#endif
 import net.minecraft.client.render.WorldRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 
 /**
- * Supplies the two world render callbacks the waypoint renderer needs on the 1.21.9 line, where
- * Fabric API ships no world render events at all: 1.21.9 rewrote world rendering and the events
- * only returned in 1.21.11. Every other version registers with Fabric and this mixin is empty.
+ * Supplies the world render callbacks the waypoint overlay needs where Fabric's events cannot
+ * provide them: on the 1.21.9 line, which ships no world render events at all, it drives the
+ * BEFORE_TRANSLUCENT-equivalent section hook and the main-pass tail; on 26.1 it draws the beams
+ * at {@code renderLevel}'s RETURN because vanilla consumes no submit nodes after the terrain
+ * events there, so the captured path the 26.2 beam uses cannot render. They drive
+ * {@link WorldOverlayEvents}, the same seam every other version reaches through its Fabric
+ * event registration; on those versions this mixin is empty.
  */
 @Mixin(WorldRenderer.class)
 public abstract class WorldRendererMixin {
@@ -50,9 +62,9 @@ public abstract class WorldRendererMixin {
     //$$     if (confluxmap$waypointWorldRenderFaulted) {
     //$$         return;
     //$$     }
-    //$$     try {
-    //$$         WaypointWorldRenderer.onBeforeTranslucent(new MatrixStack());
-    //$$     } catch (final Throwable fault) {
+//$$     try {
+//$$         WorldOverlayEvents.onBeforeTranslucent(new MatrixStack());
+//$$     } catch (final Throwable fault) {
     //$$         confluxmap$waypointWorldRenderFaulted = true;
     //$$         ConfluxMapMod.LOGGER.error(
     //$$             "waypoint world rendering disabled after a fault", fault
@@ -63,9 +75,9 @@ public abstract class WorldRendererMixin {
     //$$ @Inject(method = "method_62214", at = @At("TAIL"))
     //$$ private void confluxmap$endMain(final CallbackInfo ci) {
     //$$     if (!confluxmap$waypointWorldRenderFaulted) {
-    //$$         try {
-    //$$             WaypointWorldRenderer.onEndMain(new MatrixStack(), entityRenderCommandQueue);
-    //$$         } catch (final Throwable fault) {
+//$$         try {
+//$$             WorldOverlayEvents.onEndMain(new MatrixStack(), entityRenderCommandQueue);
+//$$         } catch (final Throwable fault) {
     //$$             confluxmap$waypointWorldRenderFaulted = true;
     //$$             ConfluxMapMod.LOGGER.error(
     //$$                 "waypoint world rendering disabled after a fault", fault
@@ -73,6 +85,33 @@ public abstract class WorldRendererMixin {
     //$$         }
     //$$     }
     //$$     entityRenderDispatcher.render();
+    //$$ }
+    //#endif
+
+    //#if MC>=260100 && MC<260200
+    //$$ /** Per-frame callbacks; the first fault disables waypoint rendering for the session. */
+    //$$ @Unique
+    //$$ private static boolean confluxmap$waypointWorldRenderFaulted;
+    //$$
+    //$$ /**
+    //$$  * Draws the beams at {@code renderLevel}'s RETURN: the frame graph has finished (a
+    //$$  * deferred pack's finalize included), so the draw lands on the finished frame the way
+    //$$  * the pre-1.21.9 END passes do, while the view snapshot taken mid-pass keeps the
+    //$$  * geometry camera-aligned.
+    //$$  */
+    //$$ @Inject(method = "renderLevel", at = @At("RETURN"))
+    //$$ private void confluxmap$drawWaypointsAtLevelReturn(final CallbackInfo ci) {
+    //$$     if (confluxmap$waypointWorldRenderFaulted) {
+    //$$         return;
+    //$$     }
+    //$$     try {
+    //$$         WorldOverlayEvents.onLevelReturn();
+    //$$     } catch (final Throwable fault) {
+    //$$         confluxmap$waypointWorldRenderFaulted = true;
+    //$$         ConfluxMapMod.LOGGER.error(
+    //$$             "waypoint world rendering disabled after a fault", fault
+    //$$         );
+    //$$     }
     //$$ }
     //#endif
 }

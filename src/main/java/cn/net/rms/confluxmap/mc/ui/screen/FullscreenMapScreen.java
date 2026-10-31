@@ -88,7 +88,8 @@ import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
+import cn.net.rms.confluxmap.mc.render.TextureBinds;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
 import cn.net.rms.confluxmap.mc.teleport.TeleportCommandAccess;
@@ -1271,7 +1272,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         height = layout.mapHeight();
         centerX = layout.renderCenterX(centerX, scale);
         try {
-            RenderUtil.fillRect(matrices, 0, 0, width, height, BACKGROUND_COLOR);
+            GuiShapes.fillRect(matrices, 0, 0, width, height, BACKGROUND_COLOR);
             drawGrid(matrices);
             drawTiles(matrices, false);
         } finally {
@@ -1318,7 +1319,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             radarViewRange.set(0);
         }
 
-        RenderUtil.fillRect(matrices, 0, 0, width, height, BACKGROUND_COLOR);
+        GuiShapes.fillRect(matrices, 0, 0, width, height, BACKGROUND_COLOR);
         drawGrid(matrices);
         drawTiles(matrices);
         if (loadStateMode()) {
@@ -1375,11 +1376,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final float right = (float) (width / 2.0 + ((long) bounds.maxX() + 1L - centerX) / scale);
         final float bottom = (float) (height / 2.0 + ((long) bounds.maxZ() + 1L - centerZ) / scale);
         final MatrixStack matrices = draw.matrices();
-        RenderUtil.fillRect(matrices, left, top, right - left, bottom - top, REGION_SELECT_FILL);
-        RenderUtil.fillRect(matrices, left, top, right - left, 1f, REGION_SELECT_BORDER);
-        RenderUtil.fillRect(matrices, left, bottom - 1f, right - left, 1f, REGION_SELECT_BORDER);
-        RenderUtil.fillRect(matrices, left, top, 1f, bottom - top, REGION_SELECT_BORDER);
-        RenderUtil.fillRect(matrices, right - 1f, top, 1f, bottom - top, REGION_SELECT_BORDER);
+        GuiShapes.fillRect(matrices, left, top, right - left, bottom - top, REGION_SELECT_FILL);
+        GuiShapes.fillRect(matrices, left, top, right - left, 1f, REGION_SELECT_BORDER);
+        GuiShapes.fillRect(matrices, left, bottom - 1f, right - left, 1f, REGION_SELECT_BORDER);
+        GuiShapes.fillRect(matrices, left, top, 1f, bottom - top, REGION_SELECT_BORDER);
+        GuiShapes.fillRect(matrices, right - 1f, top, 1f, bottom - top, REGION_SELECT_BORDER);
         drawRegionSelectionLabel(draw, (left + right) / 2.0, (top + bottom) / 2.0, bounds);
     }
 
@@ -1774,25 +1775,25 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 uiTheme.useVanillaButtonStyle()
             );
             if (visual.background() != 0) {
-                RenderUtil.fillRect(
+                GuiShapes.fillRect(
                     matrices, x, y, getWidth(), getHeight(), visual.background()
                 );
             }
             if (visual.border() != 0) {
-                RenderUtil.fillRect(matrices, x, y, getWidth(), 1, visual.border());
-                RenderUtil.fillRect(
+                GuiShapes.fillRect(matrices, x, y, getWidth(), 1, visual.border());
+                GuiShapes.fillRect(
                     matrices, x, y + getHeight() - 1, getWidth(), 1, visual.border()
                 );
-                RenderUtil.fillRect(matrices, x, y, 1, getHeight(), visual.border());
-                RenderUtil.fillRect(
+                GuiShapes.fillRect(matrices, x, y, 1, getHeight(), visual.border());
+                GuiShapes.fillRect(
                     matrices, x + getWidth() - 1, y, 1, getHeight(), visual.border()
                 );
             }
             final int iconX = x + (getWidth() - CONTROL_ICON_SIZE) / 2;
             final int iconY = y + (getHeight() - CONTROL_ICON_SIZE) / 2;
             final UiTextureRegion texture = resolvedIcon.region();
-            RenderUtil.bindTexture(MinecraftClient.getInstance(), texture.texture());
-            RenderUtil.drawTintedQuad(
+            TextureBinds.bindTexture(MinecraftClient.getInstance(), texture.texture());
+            GuiShapes.drawTintedQuad(
                 matrices,
                 iconX,
                 iconY,
@@ -1965,7 +1966,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             }
         }
 
-        RenderUtil.beginTexturedQuads();
+        TextureBinds.beginTexturedQuads();
         for (int tileZ = firstTileZ; tileZ <= lastTileZ; tileZ++) {
             for (int tileX = firstTileX; tileX <= lastTileX; tileX++) {
                 final TileKey terrainKey = new TileKey(
@@ -1976,7 +1977,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                     final float screenX = (float) (width / 2.0 + (key.originBlockX() - centerX) * pxPerBlock);
                     final float screenY = (float) (height / 2.0 + (key.originBlockZ() - centerZ) * pxPerBlock);
                     final float quadSize = (float) (blocksPerTile * pxPerBlock);
-                    RenderUtil.drawQuad(matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f);
+                    GuiShapes.drawQuad(matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f);
                 }
             }
         }
@@ -2018,7 +2019,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                         height / 2.0 + (key.originBlockZ() - centerZ) * pxPerBlock
                     );
                     final float quadSize = (float) (blocksPerTile * pxPerBlock);
-                    RenderUtil.drawTintedQuad(
+                    GuiShapes.drawTintedQuad(
                         matrices, screenX, screenY, quadSize, quadSize,
                         0f, 0f, 1f, 1f, 0xFFFFFFFF
                     );
@@ -2279,7 +2280,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 if (sizePx < 2f || left > width || top > height || left + sizePx < 0f || top + sizePx < 0f) {
                     continue;
                 }
-                RenderUtil.fillRect(
+                GuiShapes.fillRect(
                     draw.matrices(), left, top, sizePx, sizePx, config.portalHighlightColor.argb()
                 );
             }
@@ -2348,13 +2349,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final int lastLineX = TileMath.blockToTile((int) Math.ceil(centerX + width / 2.0 * scale));
         for (int tx = firstLineX; tx <= lastLineX + 1; tx++) {
             final float screenX = (float) (width / 2.0 + (tx * (double) TileMath.TILE_SIZE - centerX) * pxPerBlock);
-            RenderUtil.fillRect(matrices, screenX, 0f, 1f, height, GRID_COLOR);
+            GuiShapes.fillRect(matrices, screenX, 0f, 1f, height, GRID_COLOR);
         }
         final int firstLineZ = TileMath.blockToTile((int) Math.floor(centerZ - height / 2.0 * scale));
         final int lastLineZ = TileMath.blockToTile((int) Math.ceil(centerZ + height / 2.0 * scale));
         for (int tz = firstLineZ; tz <= lastLineZ + 1; tz++) {
             final float screenY = (float) (height / 2.0 + (tz * (double) TileMath.TILE_SIZE - centerZ) * pxPerBlock);
-            RenderUtil.fillRect(matrices, 0f, screenY, width, 1f, GRID_COLOR);
+            GuiShapes.fillRect(matrices, 0f, screenY, width, 1f, GRID_COLOR);
         }
     }
 
@@ -2381,13 +2382,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final int lastChunkX = TileMath.blockToChunk((int) Math.ceil(centerX + width / 2.0 * scale));
         for (int cx = firstChunkX; cx <= lastChunkX + 1; cx++) {
             final float screenX = (float) (width / 2.0 + (cx * 16.0 - centerX) * pxPerBlock);
-            RenderUtil.fillRect(matrices, screenX, 0f, 1f, height, CHUNK_GRID_COLOR);
+            GuiShapes.fillRect(matrices, screenX, 0f, 1f, height, CHUNK_GRID_COLOR);
         }
         final int firstChunkZ = TileMath.blockToChunk((int) Math.floor(centerZ - height / 2.0 * scale));
         final int lastChunkZ = TileMath.blockToChunk((int) Math.ceil(centerZ + height / 2.0 * scale));
         for (int cz = firstChunkZ; cz <= lastChunkZ + 1; cz++) {
             final float screenY = (float) (height / 2.0 + (cz * 16.0 - centerZ) * pxPerBlock);
-            RenderUtil.fillRect(matrices, 0f, screenY, width, 1f, CHUNK_GRID_COLOR);
+            GuiShapes.fillRect(matrices, 0f, screenY, width, 1f, CHUNK_GRID_COLOR);
         }
 
         drawHoveredChunkHighlight(matrices, mouseX, mouseY, pxPerBlock);
@@ -2403,11 +2404,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final float screenY = (float) (height / 2.0 + (chunkZ * 16.0 - centerZ) * pxPerBlock);
         final float sizePx = (float) (16.0 * pxPerBlock);
 
-        RenderUtil.fillRect(matrices, screenX, screenY, sizePx, sizePx, CHUNK_HIGHLIGHT_FILL);
-        RenderUtil.fillRect(matrices, screenX, screenY, sizePx, 1f, CHUNK_HIGHLIGHT_BORDER);
-        RenderUtil.fillRect(matrices, screenX, screenY + sizePx - 1f, sizePx, 1f, CHUNK_HIGHLIGHT_BORDER);
-        RenderUtil.fillRect(matrices, screenX, screenY, 1f, sizePx, CHUNK_HIGHLIGHT_BORDER);
-        RenderUtil.fillRect(matrices, screenX + sizePx - 1f, screenY, 1f, sizePx, CHUNK_HIGHLIGHT_BORDER);
+        GuiShapes.fillRect(matrices, screenX, screenY, sizePx, sizePx, CHUNK_HIGHLIGHT_FILL);
+        GuiShapes.fillRect(matrices, screenX, screenY, sizePx, 1f, CHUNK_HIGHLIGHT_BORDER);
+        GuiShapes.fillRect(matrices, screenX, screenY + sizePx - 1f, sizePx, 1f, CHUNK_HIGHLIGHT_BORDER);
+        GuiShapes.fillRect(matrices, screenX, screenY, 1f, sizePx, CHUNK_HIGHLIGHT_BORDER);
+        GuiShapes.fillRect(matrices, screenX + sizePx - 1f, screenY, 1f, sizePx, CHUNK_HIGHLIGHT_BORDER);
     }
 
     /** Draws a translucent marker at the detached camera's world position. */

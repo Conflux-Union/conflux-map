@@ -1,52 +1,26 @@
 package cn.net.rms.confluxmap.mc.ui.world;
 
-import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.bridge.PlayerView;
 import cn.net.rms.confluxmap.compat.MinecraftAccess;
-
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.radar.ServerPlayerRadarState;
+import cn.net.rms.confluxmap.core.task.SessionGuard;
 import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.WorldMatrices;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
-import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-//#if MC>=260100
-//$$ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
-//$$ import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
-//#elseif MC>=12111
-//$$ import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderContext;
-//$$ import net.fabricmc.fabric.api.client.rendering.v1.world.WorldRenderEvents;
-//#elseif MC>=12109
-//$$ // 1.21.9's Fabric API has no world render events; WorldRendererMixin supplies them instead.
-//#else
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
-//#endif
-//#if MC>=260200
-//$$ import net.fabricmc.fabric.api.client.rendering.v1.FabricOrderedSubmitNodeCollector;
-//#endif
 import net.minecraft.client.MinecraftClient;
-//#if MC>=12109 && MC<260100
-//$$ import net.minecraft.client.render.command.OrderedRenderCommandQueue;
-//#endif
-import net.minecraft.client.render.Camera;
-//#if MC<260200
-import net.minecraft.client.render.VertexConsumerProvider;
-//#endif
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
@@ -55,38 +29,16 @@ import net.minecraft.util.math.Vec3d;
  * have NO in-world presence"): a vertical translucent beam at each visible waypoint's
  * column, and a camera-facing name/distance label floating above it.
  *
- * <p>This class is the version-conditional event plumbing and per-frame orchestration:
- * it registers the render hooks, collects the waypoints to render (including highlight
- * ghosts and selected-location synthetic entries), selects which labels exist, and
- * animates the aim/select reveal. The beam geometry lives in {@link WaypointBeamPainter},
- * the 3D label billboard in {@link WaypointLabelPainter}, and the shared distance/scale
- * math and label styling in {@link WaypointLabelMetrics}/{@link WaypointLabelStyle}.
- *
- * <p>On versions with the classic {@code WorldRenderEvents} (before 1.21.9) both the beam and
- * the HUD marker run at {@code WorldRenderEvents.END}, after the whole world pass: deferred
- * shader packs (Photon and family) finalize from {@code LevelRenderer.render}'s RETURN and
- * rewrite the color attachment from the gbuffer, erasing anything drawn inside the world pass,
- * so drawing at END puts the waypoints on the finished frame. The beam still participates in
- * world occlusion by depth-testing against the completed scene depth buffer, while the labels
- * draw afterwards with depth testing disabled so world content cannot hide player-facing
- * navigation information. On 1.21.9 and later the events moved into main-pass positions the
- * packs rewrite, and no Iris dev environment exists for those lines yet, so the beam still
- * rides a terrain-adjacent phase there. The END context stack's rotation is
- * version-dependent: 1.17.1/1.18.2 still carry the camera rotation, which the reinstalled
- * snapshot would apply a second time (the MC<12001 gates below bake through a fresh
- * identity stack); 1.20.1 must keep the context stack because its LAST fires after vanilla
- * already popped the world view, leaving the snapshot ~identity; on 1.20.6+ Fabric captures
- * the stack at vanilla's only bare {@code new MatrixStack()}, so it is identity at END
- * anyway. In fabric-rendering-v1 1.10.1 (bundled with the
- * installed fabric-api 0.46.1+1.17), {@link WorldRenderContext#consumers()} is {@code
- * null} at this phase and its matrix stack carries no pre-existing camera translation -
- * both are handled here: the beam is drawn with plain {@code Tessellator}/{@code
- * BufferBuilder} calls ({@code RenderUtil#fillTriangle3D}) instead of a vertex consumer,
- * and every position is explicitly translated by {@code worldPos - camera.getPos()}
- * before drawing. The label's text/background instead opens its own {@link
- * VertexConsumerProvider.Immediate} (the same one vanilla uses for entity nametags,
- * {@code client.getBufferBuilders().getEntityVertexConsumers()}) which works at any
- * phase and is flushed once at the end of this render pass.
+ * <p>This class is the version-free per-frame orchestrator: it collects the waypoints to
+ * render (including highlight ghosts and selected-location synthetic entries), selects
+ * which labels exist, animates the aim/select reveal, and decides alphas and what gets
+ * published to the item-icon HUD flavor. Every version difference lives behind the seams it
+ * drives: {@link WorldOverlayEvents} registers the render hook for the running Minecraft
+ * line and adapts its native context into an {@link OverlayFrame}; {@link BeamPass} and
+ * {@link LabelPass} own the per-version state brackets and submit paths around the passes.
+ * The beam geometry lives in {@link WaypointBeamPainter}, the 3D label billboard in {@link
+ * WaypointLabelPainter}, and the shared distance/scale math and label styling in {@link
+ * WaypointLabelMetrics}/{@link WaypointLabelStyle}.
  *
  * <p>The beam and HUD label have deliberately separate distance rules (see
  * {@link WaypointLabelMetrics}). Label size follows perspective, and aiming at or
@@ -95,19 +47,6 @@ import net.minecraft.util.math.Vec3d;
 public final class WaypointWorldRenderer {
     private static final int SELECTED_LOCATION_COLOR = 0xFFFFE066;
 
-    /**
-     * Waypoint world-render diagnostics switch: {@code -Dconfluxmap.debugWaypointRender=true}
-     * or {@code CONFLUXMAP_DEBUG_RENDER=1} (Gradle launches inherit env vars, not -D flags).
-     * Emits rate-limited logs of the camera, the global matrices, and where the first
-     * waypoint lands on screen, so render placement bugs can be located from the log
-     * instead of screenshot-by-screenshot.
-     */
-    private static final boolean DEBUG_RENDER =
-        Boolean.getBoolean("confluxmap.debugWaypointRender")
-            || "1".equals(System.getenv("CONFLUXMAP_DEBUG_RENDER"));
-    /** Per-phase rate limit: a shared timestamp would let the first phase of a frame starve the rest. */
-    private static final Map<String, Long> lastDebugLogNanos = new HashMap<>();
-
     private final MinecraftClient client;
     private final ConfluxConfig config;
     private final GameBridge gameBridge;
@@ -115,9 +54,11 @@ public final class WaypointWorldRenderer {
     private final WaypointHighlightState waypointHighlightState;
     private final ServerPlayerRadarState serverPlayerRadar;
     private final WaypointItemHudRenderer waypointItemHudRenderer;
-    private final WaypointLabelPainter labelPainter;
+    private final BeamPass beamPass;
+    private final LabelPass labelPass;
     private final Map<UUID, Float> labelAnimationProgress = new HashMap<>();
     private long lastAnimationNanos;
+    private SessionGuard.Session lastSnapshotSession;
 
     public WaypointWorldRenderer(
         final MinecraftClient client,
@@ -135,187 +76,27 @@ public final class WaypointWorldRenderer {
         this.waypointHighlightState = waypointHighlightState;
         this.serverPlayerRadar = serverPlayerRadar;
         this.waypointItemHudRenderer = waypointItemHudRenderer;
-        this.labelPainter = new WaypointLabelPainter(client, config);
+        this.beamPass = BeamPass.of();
+        this.labelPass = LabelPass.of(client, config);
     }
-
-    //#if MC>=12109 && MC<12111
-    //$$ /**
-    //$$  * The 1.21.9 line is the one Minecraft generation Fabric API ships no world render events
-    //$$  * for: the world renderer was rewritten in 1.21.9 and the events only came back, under
-    //$$  * {@code rendering.v1.world}, in 1.21.11. WorldRendererMixin drives these two entry points
-    //$$  * instead, so only the plumbing differs from every other version.
-    //$$  */
-    //$$ private static WaypointWorldRenderer active;
-    //$$
-    //$$ public static void onBeforeTranslucent(final MatrixStack matrices) {
-    //$$     if (active != null) {
-    //$$         active.renderBeams(matrices);
-    //$$     }
-    //$$ }
-    //$$
-    //$$ public static void onEndMain(
-    //$$     final MatrixStack matrices,
-    //$$     final OrderedRenderCommandQueue commandQueue
-    //$$ ) {
-    //$$     if (active != null) {
-    //$$         active.renderHud(matrices, commandQueue);
-    //$$     }
-    //$$ }
-    //#endif
 
     public void register() {
-        //#if MC>=260100
-        //$$ // The beam pipeline writes depth, so it must run after translucent terrain; drawing it
-        //$$ // first makes water fail its depth test and disappear where the beam crosses it.
-        //#endif
-        //#if MC>=260300
-        //$$ // 26.3 renders classic-translucent terrain inside one render pass that stays open for
-        //$$ // the whole translucent hook, so the beam can no longer issue its own passes there.
-        //$$ // Submitting the beam geometry instead rides executeTranslucentAfterTerrain, which is
-        //$$ // still after translucent terrain - the same slot the event hook used to provide.
-        //$$ LevelRenderEvents.COLLECT_SUBMITS.register(this::renderBeams);
-        //$$ LevelRenderEvents.COLLECT_SUBMITS.register(this::renderHud);
-        //#elseif MC>=260200
-        //$$ LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(this::renderBeams);
-        //$$ LevelRenderEvents.COLLECT_SUBMITS.register(this::renderHud);
-        //#elseif MC>=260100
-        //$$ LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(this::renderBeams);
-        //$$ LevelRenderEvents.END_MAIN.register(this::renderHud);
-        //#elseif MC>=12111
-        //$$ WorldRenderEvents.BEFORE_TRANSLUCENT.register(this::renderBeams);
-        //$$ WorldRenderEvents.END_MAIN.register(this::renderHud);
-        //#elseif MC>=12109
-        //$$ active = this;
-        //#else
-        // Deferred shading packs (Photon and family) run their finalize passes from
-        // LevelRenderer.render's RETURN and rewrite the whole color attachment from the
-        // gbuffer, erasing anything drawn inside the world pass (AFTER_TRANSLUCENT/LAST) -
-        // including this beam and its labels. WorldRenderEvents.END fires at that same
-        // RETURN, after the pack's finalize, so both draw on the finished frame instead:
-        // the beam depth-tests against the completed scene depth buffer, and the labels
-        // draw after it with depth testing disabled. Vanilla pops the world view matrix
-        // off the global ModelView just before that same RETURN, so the LAST listener
-        // (still inside the world pass) captures it read-only for the END passes to
-        // reinstall; it draws nothing, so the deferred erase cannot affect it.
-        WorldRenderEvents.LAST.register(this::captureWorldView);
-        WorldRenderEvents.END.register(this::renderBeams);
-        WorldRenderEvents.END.register(this::renderHud);
-        //#endif
+        WorldOverlayEvents.register(this);
     }
 
-    //#if MC<12109
-    /** Read-only LAST listener: records the world view matrix for the END passes (see RenderUtil). */
-    private void captureWorldView(final WorldRenderContext context) {
-        RenderUtil.snapshotWorldViewModelView();
-        debugRenderState("last-capture", null, null, null, null);
-    }
-    //#endif
-
-    //#if MC<12109
-    /**
-     * One rate-limited diagnostics line per waypoint render pass: camera state, the view
-     * matrix in force for this mod's draws, and the screen position the given camera-relative
-     * anchor projects to under the pass's matrices. Compare lines across passes (or against
-     * where the waypoint actually shows on screen) to place render bugs without screenshot
-     * loops. {@code projection} is the world projection the caller installed; {@code Object}
-     * keeps the signature compiling on versions without JOML.
-     */
-    private void debugRenderState(
-        final String phase,
-        final Camera camera,
-        final MatrixStack matrices,
-        final Object projection,
-        final double[] anchorRel
-    ) {
-        if (!DEBUG_RENDER) {
-            return;
-        }
-        final long now = System.nanoTime();
-        final Long lastLog = lastDebugLogNanos.get(phase);
-        if (lastLog != null && now - lastLog < 2_000_000_000L) {
-            return;
-        }
-        lastDebugLogNanos.put(phase, now);
-        final StringBuilder line = new StringBuilder(384).append("[wp-render] ").append(phase);
-        if (camera != null) {
-            line.append(String.format(Locale.ROOT,
-                " cam=(%.2f, %.2f, %.2f) yaw=%.1f pitch=%.1f",
-                camera.getPos().x, camera.getPos().y, camera.getPos().z,
-                camera.getYaw(), camera.getPitch()));
-        }
-        //#if MC>=11904 && MC<12109
-        //$$ final org.joml.Matrix4f view = RenderUtil.capturedWorldViewMatrix();
-        //$$ if (view != null) {
-        //$$     line.append(" view=").append(RenderUtil.debugMatrix(view));
-        //$$ }
-        //$$ if (matrices != null && projection != null && view != null && anchorRel != null) {
-        //$$     line.append(RenderUtil.debugProjectAnchor(
-        //$$         (org.joml.Matrix4f) projection, view,
-        //$$         anchorRel[0], anchorRel[1], anchorRel[2], client));
-        //$$ }
-        //#endif
-        ConfluxMapMod.LOGGER.info("{}", line);
-    }
-    //#endif
-
-    //#if MC>=12109 && MC<12111
-    //$$ private void renderBeams(final MatrixStack matrices) {
-    //#else
-    //#if MC>=260100
-    //$$ private void renderBeams(final LevelRenderContext context) {
-    //#else
-    private void renderBeams(final WorldRenderContext context) {
-    //#endif
-    //#endif
+    void renderBeams(final OverlayFrame frame) {
         if (!config.waypointBeamsEnabled) {
             return;
         }
         if (!gameBridge.session().active()) {
             return;
         }
-        //#if MC>=12109 && MC<12111
-        //$$ final Optional<PlayerView> playerViewOpt = gameBridge.player(tickDelta());
-        //#else
-        final Optional<PlayerView> playerViewOpt = gameBridge.player(tickDelta(context));
-        //#endif
+        final Optional<PlayerView> playerViewOpt = gameBridge.player(frame.tickDelta);
         if (playerViewOpt.isEmpty()) {
             return;
         }
         final PlayerView player = playerViewOpt.get();
         final DimensionId currentDimension = gameBridge.session().dimension();
-        //#if MC>=260200
-        //$$ final Camera camera = client.gameRenderer.mainCamera();
-        //$$ final Vec3 cameraPos = camera.position();
-        //$$ final PoseStack matrices = context.poseStack();
-        //#elseif MC>=12111
-        //$$ final Camera camera = client.gameRenderer.getCamera();
-        //$$ final Vec3d cameraPos = camera.getCameraPos();
-        //#if MC>=260100
-        //$$ final PoseStack matrices = context.poseStack();
-        //#else
-        //$$ final MatrixStack matrices = context.matrices();
-        //#endif
-        //#elseif MC>=12109
-        //$$ final Camera camera = client.gameRenderer.getCamera();
-        //$$ final Vec3d cameraPos = camera.getCameraPos();
-        //#else
-        final Camera camera = context.camera();
-        final Vec3d cameraPos = camera.getPos();
-        //#if MC<12001
-        // 1.17.1/1.18.2 only: the END context stack still carries the camera
-        // rotation while the END pass also reinstalls the LAST-captured view,
-        // so baking through it rotates every vertex twice. Do NOT widen onto
-        // 1.20.1: its snapshot is ~identity and the context stack is its only
-        // rotation source.
-        final MatrixStack matrices = new MatrixStack();
-        //#else
-        //$$ final MatrixStack matrices = context.matrixStack();
-        //#endif
-        //#endif
-        //#if MC>=260300
-        //$$ final FabricOrderedSubmitNodeCollector beamSubmits =
-        //$$     (FabricOrderedSubmitNodeCollector) context.submitNodeCollector();
-        //#endif
         final double maxDistance = WaypointLabelMetrics.beamVisibleDistance(
             MinecraftAccess.viewDistance(client)
         );
@@ -329,24 +110,7 @@ public final class WaypointWorldRenderer {
             waypoints, currentDimension
         ) || serverPlayerRadar.highlightedPlayerId().isPresent();
 
-        //#if MC<12105
-        RenderSystem.enableDepthTest();
-        RenderSystem.depthMask(false);
-        RenderSystem.disableCull();
-        //#endif
-        //#if MC<12109
-        // END runs after the pack's finalize, which leaves the global projection pointing at
-        // its composite passes, and after vanilla popped the world view matrix off the global
-        // ModelView; reinstall the projection and the view captured at LAST for the beam and
-        // put both back afterwards.
-        RenderUtil.applyWorldProjection(context.projectionMatrix());
-        RenderUtil.pushWorldViewSnapshot();
-        //#endif
-        //#if MC<12109
-        debugRenderState("end-beam", camera, matrices, context.projectionMatrix(), null);
-        //#endif
-        RenderUtil.beginAdditiveTriangles();
-
+        beamPass.beginPass(frame);
         for (final WaypointRenderEntry waypoint : waypoints) {
             final double worldX = waypoint.x();
             final double worldZ = waypoint.z();
@@ -360,46 +124,24 @@ public final class WaypointWorldRenderer {
             }
             final double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
             final boolean selected = isSelected(waypoint, currentDimension);
-            //#if MC>=260300
-            //$$ WaypointBeamPainter.drawBeam(
-            //$$     matrices, beamSubmits, cameraPos, worldX, worldZ, bottomY, topY,
-            //$$     waypoint.colorArgb(), horizontalDistance, maxDistance,
-            //$$     highlightVisibilityAlpha(selected, hasHighlight)
-            //$$         * playerHighlightAlpha(waypoint, currentDimension)
-            //$$ );
-            //#else
-            WaypointBeamPainter.drawBeam(
-                matrices, cameraPos, worldX, worldZ, bottomY, topY,
+            beamPass.draw(
+                worldX, worldZ, bottomY, topY,
                 waypoint.colorArgb(), horizontalDistance, maxDistance,
                 highlightVisibilityAlpha(selected, hasHighlight)
                     * playerHighlightAlpha(waypoint, currentDimension)
             );
-            //#endif
         }
-
-        RenderUtil.restoreDefaultBlend();
-        //#if MC<12109
-        RenderUtil.popModelView();
-        RenderUtil.restoreProjection();
-        //#endif
-        //#if MC<12105
-        RenderSystem.enableCull();
-        RenderSystem.depthMask(true);
-        //#endif
+        beamPass.endPass();
     }
 
-    //#if MC>=12109 && MC<12111
-    //$$ private void renderHud(
-    //$$     final MatrixStack matrices,
-    //$$     final OrderedRenderCommandQueue commandQueue
-    //$$ ) {
-    //#else
-    //#if MC>=260100
-    //$$ private void renderHud(final LevelRenderContext context) {
-    //#else
-    private void renderHud(final WorldRenderContext context) {
-    //#endif
-    //#endif
+    void renderHud(final OverlayFrame frame) {
+        // A new session or dimension invalidates the HUD label matrices captured during the
+        // previous world pass; the current pass re-captures them right after this.
+        final SessionGuard.Session session = gameBridge.session();
+        if (!session.equals(lastSnapshotSession)) {
+            lastSnapshotSession = session;
+            WorldMatrices.clearHudFrame();
+        }
         if (!config.waypointLabelsEnabled) {
             labelAnimationProgress.clear();
             waypointItemHudRenderer.publish(List.of());
@@ -409,53 +151,13 @@ public final class WaypointWorldRenderer {
             waypointItemHudRenderer.publish(List.of());
             return;
         }
-        //#if MC>=12109 && MC<12111
-        //$$ final float tickDelta = tickDelta();
-        //#else
-        final float tickDelta = tickDelta(context);
-        //#endif
-        final Optional<PlayerView> playerViewOpt = gameBridge.player(tickDelta);
+        final Optional<PlayerView> playerViewOpt = gameBridge.player(frame.tickDelta);
         if (playerViewOpt.isEmpty()) {
             waypointItemHudRenderer.publish(List.of());
             return;
         }
         final PlayerView player = playerViewOpt.get();
         final DimensionId currentDimension = gameBridge.session().dimension();
-        //#if MC>=260200
-        //$$ final var cameraState = context.levelState().cameraRenderState;
-        //$$ final Vec3 cameraPos = cameraState.pos;
-        //$$ final float cameraYaw = cameraState.yRot;
-        //$$ final float cameraPitch = cameraState.xRot;
-        //$$ final PoseStack matrices = context.poseStack();
-        //#elseif MC>=12111
-        //$$ final Camera camera = client.gameRenderer.getCamera();
-        //$$ final Vec3d cameraPos = camera.getCameraPos();
-        //$$ final float cameraYaw = camera.getYaw();
-        //$$ final float cameraPitch = camera.getPitch();
-        //#if MC>=260100
-        //$$ final PoseStack matrices = context.poseStack();
-        //#else
-        //$$ final MatrixStack matrices = context.matrices();
-        //#endif
-        //#elseif MC>=12109
-        //$$ final Camera camera = client.gameRenderer.getCamera();
-        //$$ final Vec3d cameraPos = camera.getCameraPos();
-        //$$ final float cameraYaw = camera.getYaw();
-        //$$ final float cameraPitch = camera.getPitch();
-        //#else
-        final Camera camera = context.camera();
-        final Vec3d cameraPos = camera.getPos();
-        final float cameraYaw = camera.getYaw();
-        final float cameraPitch = camera.getPitch();
-        // Same gate and rationale as renderBeams: the label billboard and its plate
-        // bake through this stack, so they must not inherit the 1.17.1/1.18.2 double
-        // rotation either.
-        //#if MC<12001
-        final MatrixStack matrices = new MatrixStack();
-        //#else
-        //$$ final MatrixStack matrices = context.matrixStack();
-        //#endif
-        //#endif
         final double maxDistance = WaypointLabelMetrics.maxLabelDistance(config.waypointRenderDistance);
         final double labelProjectionDistance = WaypointLabelMetrics.labelProjectionDistance(
             MinecraftAccess.viewDistance(client)
@@ -463,9 +165,9 @@ public final class WaypointWorldRenderer {
         final List<WaypointRenderEntry> waypoints = waypointsForRender(currentDimension);
         final LabelSelection labelSelection = selectLabels(
             waypoints,
-            cameraYaw,
-            cameraPitch,
-            cameraPos,
+            frame.cameraYaw,
+            frame.cameraPitch,
+            frame.cameraPos,
             player.x(),
             player.y(),
             player.z(),
@@ -479,28 +181,17 @@ public final class WaypointWorldRenderer {
         final List<WaypointItemHudRenderer.Label> itemLabels = new ArrayList<>();
 
         if (!labelSelection.candidates().isEmpty()) {
-            //#if MC<12109
-            // Same state repair as the beam pass: reinstall the world projection and the view
-            // matrix vanilla popped before END, so world-anchored labels keep their rotation.
-            RenderUtil.applyWorldProjection(context.projectionMatrix());
-            RenderUtil.pushWorldViewSnapshot();
-            final LabelCandidate first = labelSelection.candidates().get(0);
-            debugRenderState("end-hud", camera, matrices, context.projectionMatrix(), new double[] {
-                first.waypoint().x() - cameraPos.x,
-                first.waypoint().y() + WaypointLabelMetrics.LABEL_Y_OFFSET - cameraPos.y,
-                first.waypoint().z() - cameraPos.z
-            });
-            //#elseif MC<260200
-            //$$ RenderUtil.pushWorldHudModelView();
-            //#endif
+            labelPass.beginPass(frame);
+            if (WorldOverlayEvents.debugRenderEnabled()) {
+                final LabelCandidate first = labelSelection.candidates().get(0);
+                WorldOverlayEvents.renderState("end-hud", frame, new double[] {
+                    first.waypoint().x() - frame.cameraPos.x,
+                    first.waypoint().y() + WaypointLabelMetrics.LABEL_Y_OFFSET - frame.cameraPos.y,
+                    first.waypoint().z() - frame.cameraPos.z
+                });
+            }
+            labelPass.beginLabels();
             try {
-                //#if MC<12105
-                RenderSystem.disableDepthTest();
-                RenderSystem.depthMask(false);
-                //#endif
-                //#if MC<260200
-                final VertexConsumerProvider.Immediate immediate = client.getBufferBuilders().getEntityVertexConsumers();
-                //#endif
                 for (final LabelCandidate candidate : labelSelection.candidates()) {
                     final WaypointRenderEntry waypoint = candidate.waypoint();
                     visibleWaypointIds.add(waypoint.id());
@@ -529,66 +220,17 @@ public final class WaypointWorldRenderer {
                         ));
                         continue;
                     }
-                    //#if MC>=260200
-                    //$$ labelPainter.drawLabel(
-                    //$$     matrices, context.submitNodeCollector(), cameraState.orientation,
-                    //$$     cameraPos, waypoint.x(), waypoint.y(), waypoint.z(), waypoint,
-                    //$$     renderDistance, labelProjectionDistance, progress,
-                    //$$     highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight())
-                    //$$         * playerHighlightAlpha(waypoint, currentDimension),
-                    //$$     candidate.selected()
-                    //$$ );
-                    //#elseif MC>=260100
-                    //$$ labelPainter.drawLabel(
-                    //$$     matrices, immediate, context.submitNodeCollector(), camera,
-                    //$$     cameraPos, waypoint.x(), waypoint.y(), waypoint.z(),
-                    //$$     waypoint, renderDistance, labelProjectionDistance, progress,
-                    //$$     highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight())
-                    //$$         * playerHighlightAlpha(waypoint, currentDimension),
-                    //$$     candidate.selected()
-                    //$$ );
-                    //#elseif MC>=12111
-                    //$$ labelPainter.drawLabel(
-                    //$$     matrices, immediate, context.commandQueue(), camera,
-                    //$$     cameraPos, waypoint.x(), waypoint.y(), waypoint.z(),
-                    //$$     waypoint, renderDistance, labelProjectionDistance, progress,
-                    //$$     highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight())
-                    //$$         * playerHighlightAlpha(waypoint, currentDimension),
-                    //$$     candidate.selected()
-                    //$$ );
-                    //#elseif MC>=12109
-                    //$$ labelPainter.drawLabel(
-                    //$$     matrices, immediate, commandQueue, camera,
-                    //$$     cameraPos, waypoint.x(), waypoint.y(), waypoint.z(),
-                    //$$     waypoint, renderDistance, labelProjectionDistance, progress,
-                    //$$     highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight())
-                    //$$         * playerHighlightAlpha(waypoint, currentDimension),
-                    //$$     candidate.selected()
-                    //$$ );
-                    //#else
-                    labelPainter.drawLabel(
-                        matrices, immediate, camera, cameraPos, waypoint.x(), waypoint.y(), waypoint.z(),
+                    labelPass.drawLabel(
+                        waypoint.x(), waypoint.y(), waypoint.z(),
                         waypoint, renderDistance, labelProjectionDistance, progress,
                         highlightVisibilityAlpha(candidate.selected(), labelSelection.hasHighlight())
                             * playerHighlightAlpha(waypoint, currentDimension),
                         candidate.selected()
                     );
-                    //#endif
                 }
-                //#if MC<260200
-                immediate.draw();
-                //#endif
+                labelPass.endLabels();
             } finally {
-                //#if MC<12105
-                RenderSystem.depthMask(true);
-                RenderSystem.enableDepthTest();
-                //#endif
-                //#if MC<12109
-                RenderUtil.popModelView();
-                RenderUtil.restoreProjection();
-                //#elseif MC<260200
-                //$$ RenderUtil.popModelView();
-                //#endif
+                labelPass.endPass();
             }
         }
 
@@ -794,23 +436,5 @@ public final class WaypointWorldRenderer {
             labelAnimationProgress.put(waypointId, next);
         }
         return next;
-    }
-
-    //#if MC>=12109 && MC<12111
-    //$$ private static float tickDelta() {
-    //#else
-    //#if MC>=260100
-    //$$ private static float tickDelta(final LevelRenderContext context) {
-    //#else
-    private static float tickDelta(final WorldRenderContext context) {
-    //#endif
-    //#endif
-        //#if MC>=12109
-        //$$ return MinecraftClient.getInstance().getRenderTickCounter().getTickProgress(false);
-        //#elseif MC>=12100
-        //$$ return context.tickCounter().getTickDelta(false);
-        //#else
-        return context.tickDelta();
-        //#endif
     }
 }

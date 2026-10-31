@@ -9,7 +9,7 @@ import cn.net.rms.confluxmap.core.annotation.CircleAnnotationGeometry;
 import cn.net.rms.confluxmap.core.annotation.FreehandAnnotationGeometry;
 import cn.net.rms.confluxmap.core.annotation.LineAnnotationGeometry;
 import cn.net.rms.confluxmap.core.annotation.RectangleAnnotationGeometry;
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import java.util.List;
 import java.util.UUID;
 import net.minecraft.client.font.TextRenderer;
@@ -139,7 +139,7 @@ public final class AnnotationRenderer {
             final AnnotationProjection.ScreenPoint center = projection.project(circle.center());
             final float radius = (float) (circle.radius() / projection.blocksPerPixel());
             if (radius > 0.0f) {
-                RenderUtil.drawRing(matrices, (float) center.x(), (float) center.y(), radius, width, color);
+                GuiShapes.drawRing(matrices, (float) center.x(), (float) center.y(), radius, width, color);
             }
         } else if (geometry instanceof final RectangleAnnotationGeometry rectangle) {
             final AnnotationPoint min = rectangle.min();
@@ -189,7 +189,7 @@ public final class AnnotationRenderer {
         final float y2 = (float) end.y() - py;
         final float x3 = (float) start.x() - px;
         final float y3 = (float) start.y() - py;
-        RenderUtil.fillTriangle(matrices, x0, y0, x1, y1, x2, y2, color);
-        RenderUtil.fillTriangle(matrices, x0, y0, x2, y2, x3, y3, color);
+        GuiShapes.fillTriangle(matrices, x0, y0, x1, y1, x2, y2, color);
+        GuiShapes.fillTriangle(matrices, x0, y0, x2, y2, x3, y3, color);
     }
 }

@@ -20,8 +20,8 @@ final class RadarIconBorderPolicyTest {
             + " ? config.radarIconOutlineThickness : 0"));
         assertTrue(renderer.contains("if (outlineThickness > 0)"));
         assertTrue(renderer.contains("drawIconOutline("));
-        assertTrue(renderer.contains("RenderUtil.drawDarkTextureOutline("));
-        assertFalse(renderer.contains("RenderUtil.drawTintedOutline("));
+        assertTrue(renderer.contains("GuiShapes.drawDarkTextureOutline("));
+        assertFalse(renderer.contains("GuiShapes.drawTintedOutline("));
         assertTrue(renderer.contains("drawHighlightFrame("));
         assertFalse(renderer.contains("highlighted ? HIGHLIGHT_OUTLINE : ICON_OUTLINE"));
         assertFalse(renderer.contains("outerWidth"));

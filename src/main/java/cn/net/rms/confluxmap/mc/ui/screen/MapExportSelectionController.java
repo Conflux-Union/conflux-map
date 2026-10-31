@@ -88,7 +88,7 @@ import cn.net.rms.confluxmap.mc.predict.StructureMarkerService;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
 import cn.net.rms.confluxmap.mc.radar.EntityRadarScanner;
 import cn.net.rms.confluxmap.mc.radar.RadarMarkerRenderer;
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
 import cn.net.rms.confluxmap.mc.teleport.TeleportCommandAccess;
@@ -332,10 +332,10 @@ final class MapExportSelectionController {
         final float right = (float) (screen.width / 2.0 + ((long) maxX + 1L - screen.centerX) / screen.scale);
         final float bottom = (float) (screen.height / 2.0 + ((long) maxZ + 1L - screen.centerZ) / screen.scale);
         final MatrixStack matrices = draw.matrices();
-        RenderUtil.fillRect(matrices, left, top, right - left, bottom - top, 0x303399FF);
-        RenderUtil.fillRect(matrices, left, top, right - left, 1f, 0xFF66CCFF);
-        RenderUtil.fillRect(matrices, left, bottom - 1f, right - left, 1f, 0xFF66CCFF);
-        RenderUtil.fillRect(matrices, left, top, 1f, bottom - top, 0xFF66CCFF);
-        RenderUtil.fillRect(matrices, right - 1f, top, 1f, bottom - top, 0xFF66CCFF);
+        GuiShapes.fillRect(matrices, left, top, right - left, bottom - top, 0x303399FF);
+        GuiShapes.fillRect(matrices, left, top, right - left, 1f, 0xFF66CCFF);
+        GuiShapes.fillRect(matrices, left, bottom - 1f, right - left, 1f, 0xFF66CCFF);
+        GuiShapes.fillRect(matrices, left, top, 1f, bottom - top, 0xFF66CCFF);
+        GuiShapes.fillRect(matrices, right - 1f, top, 1f, bottom - top, 0xFF66CCFF);
     }
 }

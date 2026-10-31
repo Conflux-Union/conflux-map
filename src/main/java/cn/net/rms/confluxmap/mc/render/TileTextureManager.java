@@ -281,11 +281,11 @@ public final class TileTextureManager {
             return false;
         }
         //#if MC>=12108
-        //$$ RenderUtil.bindTexture(entry.texture.getGlTextureView());
+        //$$ TextureBinds.bindTexture(entry.texture.getGlTextureView());
         //#elseif MC>=12105
-        //$$ RenderUtil.bindTexture(entry.texture.getGlTexture());
+        //$$ TextureBinds.bindTexture(entry.texture.getGlTexture());
         //#else
-        RenderUtil.bindTexture(entry.texture.getGlId());
+        TextureBinds.bindTexture(entry.texture.getGlId());
         //#endif
         return true;
     }

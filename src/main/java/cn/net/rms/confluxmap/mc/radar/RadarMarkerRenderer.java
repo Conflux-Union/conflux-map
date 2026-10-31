@@ -6,7 +6,8 @@ import cn.net.rms.confluxmap.core.radar.RadarEntry;
 import cn.net.rms.confluxmap.core.radar.PlayerRadarDimensionIcon;
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.util.Argb;
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
+import cn.net.rms.confluxmap.mc.render.TextureBinds;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import java.util.List;
@@ -222,15 +223,15 @@ public final class RadarMarkerRenderer {
         final int color = Argb.scaleAlpha(elevationColor(baseColor(entry.category()), yDelta), alphaScale);
         if (entry.category() == RadarCategory.PLAYER) {
             if (marker.highlighted()) {
-                RenderUtil.fillRect(matrices, x - 3f, y - 3f, 6f, 6f, HIGHLIGHT_OUTLINE);
+                GuiShapes.fillRect(matrices, x - 3f, y - 3f, 6f, 6f, HIGHLIGHT_OUTLINE);
             }
-            RenderUtil.fillRect(matrices, x - 2f, y - 2f, 4f, 4f, color);
+            GuiShapes.fillRect(matrices, x - 2f, y - 2f, 4f, 4f, color);
             drawDestinationIcon(draw, client, config, marker);
             if (presentation.showPlayerNames() && entry.name() != null) {
                 drawCenteredLine(client, draw, entry.name(), x, y + 3f, alphaScale);
             }
         } else {
-            RenderUtil.fillBeveledDiamond(matrices, x, y, DIAMOND_RADIUS, color);
+            GuiShapes.fillBeveledDiamond(matrices, x, y, DIAMOND_RADIUS, color);
         }
     }
 
@@ -305,7 +306,7 @@ public final class RadarMarkerRenderer {
                 return false;
             }
         } else {
-            RenderUtil.bindTexture(client, icon.texture());
+            TextureBinds.bindTexture(client, icon.texture());
         }
         if (outlineThickness > 0) {
             if (highlighted) {
@@ -320,13 +321,13 @@ public final class RadarMarkerRenderer {
                 );
             }
         }
-        RenderUtil.drawTintedQuad(
+        GuiShapes.drawTintedQuad(
             matrices, x - iconHalfWidth, y - iconHalfHeight, iconWidth, iconHeight,
             icon.u0(), icon.v0(), icon.u1(), icon.v1(), tint
         );
         if (icon.hasOverlay()) {
-            RenderUtil.bindTexture(client, icon.overlayTexture());
-            RenderUtil.drawTintedQuad(
+            TextureBinds.bindTexture(client, icon.overlayTexture());
+            GuiShapes.drawTintedQuad(
                 matrices, x - iconHalfWidth, y - iconHalfHeight, iconWidth, iconHeight,
                 icon.ou0(), icon.ov0(), icon.ou1(), icon.ov1(), tint
             );
@@ -348,7 +349,7 @@ public final class RadarMarkerRenderer {
         final int color = Argb.scaleAlpha(
             elevationColor(ICON_OUTLINE, yDelta), alphaScale
         );
-        RenderUtil.drawDarkTextureOutline(
+        GuiShapes.drawDarkTextureOutline(
             matrices, x - iconWidth / 2f, y - iconHeight / 2f,
             iconWidth, iconHeight,
             icon.u0(), icon.v0(), icon.u1(), icon.v1(), thickness, Argb.alpha(color) / 255f
@@ -368,7 +369,7 @@ public final class RadarMarkerRenderer {
         final int color = Argb.scaleAlpha(
             elevationColor(HIGHLIGHT_OUTLINE, yDelta), alphaScale
         );
-        RenderUtil.fillRect(
+        GuiShapes.fillRect(
             matrices,
             x - iconWidth / 2f - thickness,
             y - iconHeight / 2f - thickness,

@@ -2,7 +2,8 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.mc.render.OffscreenCanvas;
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
+import cn.net.rms.confluxmap.mc.render.TextureBinds;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import java.util.function.Consumer;
 import net.minecraft.client.MinecraftClient;
@@ -43,10 +44,10 @@ final class SplitMapBlur {
                 return false;
             }
 
-            RenderUtil.beginTexturedQuads();
+            TextureBinds.beginTexturedQuads();
             canvas.bindTextureLinear();
             final float panelU = layout.panelLeft() / (float) layout.screenWidth();
-            RenderUtil.drawQuad(
+            GuiShapes.drawQuad(
                 draw.matrices(),
                 layout.panelLeft(), 0f, layout.panelWidth(), layout.screenHeight(),
                 panelU, 1f, 1f, 0f

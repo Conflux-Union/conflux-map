@@ -12,7 +12,7 @@ import cn.net.rms.confluxmap.core.trail.PlayerTrailProjection;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.core.waypoint.WaypointVerticalRelation;
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.PortalMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.PlayerMarkerRenderer;
@@ -287,7 +287,7 @@ final class MinimapMarkerPainter {
             if (left > half || top > half || left + sizePx < -half || top + sizePx < -half) {
                 continue;
             }
-            RenderUtil.fillRect(matrices, left, top, sizePx, sizePx, config.portalHighlightColor.argb());
+            GuiShapes.fillRect(matrices, left, top, sizePx, sizePx, config.portalHighlightColor.argb());
         }
     }
 

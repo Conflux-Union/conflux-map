@@ -7,7 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 //#if MC>=12105
-//$$ import cn.net.rms.confluxmap.mc.render.RenderUtil;
+//$$ import cn.net.rms.confluxmap.mc.render.GuiShapes;
 //$$ import com.mojang.blaze3d.pipeline.RenderPipeline;
 //#if MC>=260300
 //$$ // Inactive //$$ lines pass through earlier links verbatim without mapping, so this
@@ -26,17 +26,17 @@ final class PlayerTrailAlphaCompositingTest {
         final String renderer = Files.readString(projectRoot.resolve(
             "src/main/java/cn/net/rms/confluxmap/mc/ui/PlayerTrailRenderer.java"
         ));
-        final String renderUtil = Files.readString(projectRoot.resolve(
-            "src/main/java/cn/net/rms/confluxmap/mc/render/RenderUtil.java"
+        final String guiShapes = Files.readString(projectRoot.resolve(
+            "src/main/java/cn/net/rms/confluxmap/mc/render/GuiShapes.java"
         ));
 
         assertTrue(
-            renderer.contains("RenderUtil.fillRectsPreservingDestinationAlpha(matrices, dots);"),
+            renderer.contains("GuiShapes.fillRectsPreservingDestinationAlpha(matrices, dots);"),
             "trail dots must not replace the off-screen minimap's destination alpha"
         );
 
         final String publicHelper = methodBody(
-            renderUtil,
+            guiShapes,
             "public static void fillRectsPreservingDestinationAlpha("
         );
         assertTrue(
@@ -48,7 +48,7 @@ final class PlayerTrailAlphaCompositingTest {
     //#if MC>=12105
     //$$ @Test
     //$$ void trailPipelineWritesFadingRgbButPreservesDestinationAlpha() throws Exception {
-    //$$     final Field field = RenderUtil.class.getDeclaredField("GUI_PRESERVE_DESTINATION_ALPHA");
+    //$$     final Field field = GuiShapes.class.getDeclaredField("GUI_PRESERVE_DESTINATION_ALPHA");
     //$$     field.setAccessible(true);
     //$$     final RenderPipeline pipeline = (RenderPipeline) field.get(null);
     //#if MC>=260300
@@ -72,11 +72,11 @@ final class PlayerTrailAlphaCompositingTest {
     @Test
     void legacyTrailBlendWritesFadingRgbButPreservesDestinationAlpha() throws IOException {
         final Path projectRoot = findProjectRoot();
-        final String renderUtil = Files.readString(projectRoot.resolve(
-            "src/main/java/cn/net/rms/confluxmap/mc/render/RenderUtil.java"
+        final String guiShapes = Files.readString(projectRoot.resolve(
+            "src/main/java/cn/net/rms/confluxmap/mc/render/GuiShapes.java"
         ));
         final String fillMethod = methodBody(
-            renderUtil,
+            guiShapes,
             "private static void fillRects("
         );
         final String activeLegacySource = fillMethod.lines()

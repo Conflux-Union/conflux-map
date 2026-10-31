@@ -16,7 +16,7 @@ import cn.net.rms.confluxmap.core.waypoint.list.SharedWaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.WaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.WaypointRow;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
-import cn.net.rms.confluxmap.mc.render.RenderUtil;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.compat.Texts;
@@ -705,34 +705,34 @@ public final class WaypointEditScreen extends ConfluxScreen {
         if (useVanillaButtonStyle()) {
             final int inset = 3;
             final int swatchSize = button.getWidth() - inset * 2;
-            RenderUtil.fillRect(
+            GuiShapes.fillRect(
                 matrices, x + inset, y + inset, swatchSize, swatchSize,
                 color | 0xFF000000
             );
             if (color == colorSelection.selected()) {
-                RenderUtil.fillRect(
+                GuiShapes.fillRect(
                     matrices, x + inset, y + inset, swatchSize, 1, 0xFFFFFFFF
                 );
-                RenderUtil.fillRect(
+                GuiShapes.fillRect(
                     matrices, x + inset, y + inset + swatchSize - 1,
                     swatchSize, 1, 0xFFFFFFFF
                 );
-                RenderUtil.fillRect(
+                GuiShapes.fillRect(
                     matrices, x + inset, y + inset, 1, swatchSize, 0xFFFFFFFF
                 );
-                RenderUtil.fillRect(
+                GuiShapes.fillRect(
                     matrices, x + inset + swatchSize - 1, y + inset,
                     1, swatchSize, 0xFFFFFFFF
                 );
             }
             return;
         }
-        RenderUtil.fillRect(matrices, x, y, button.getWidth(), button.getHeight(), color | 0xFF000000);
+        GuiShapes.fillRect(matrices, x, y, button.getWidth(), button.getHeight(), color | 0xFF000000);
         if (color == colorSelection.selected()) {
-            RenderUtil.fillRect(matrices, x - 2, y - 2, button.getWidth() + 4, 2, 0xFFFFFFFF);
-            RenderUtil.fillRect(matrices, x - 2, y + button.getHeight(), button.getWidth() + 4, 2, 0xFFFFFFFF);
-            RenderUtil.fillRect(matrices, x - 2, y - 2, 2, button.getHeight() + 4, 0xFFFFFFFF);
-            RenderUtil.fillRect(matrices, x + button.getWidth(), y - 2, 2, button.getHeight() + 4, 0xFFFFFFFF);
+            GuiShapes.fillRect(matrices, x - 2, y - 2, button.getWidth() + 4, 2, 0xFFFFFFFF);
+            GuiShapes.fillRect(matrices, x - 2, y + button.getHeight(), button.getWidth() + 4, 2, 0xFFFFFFFF);
+            GuiShapes.fillRect(matrices, x - 2, y - 2, 2, button.getHeight() + 4, 0xFFFFFFFF);
+            GuiShapes.fillRect(matrices, x + button.getWidth(), y - 2, 2, button.getHeight() + 4, 0xFFFFFFFF);
         }
     }
 

@@ -137,14 +137,14 @@ public final class OffscreenCanvas {
         //$$         framebuffer.getColorTexture(), new Vector4f(0f, 0f, 0f, 0f)
         //$$     );
         //$$ }
-        //$$ RenderUtil.setDrawTarget(framebuffer);
+        //$$ RenderTargetState.setDrawTarget(framebuffer);
         //#elseif MC>=12105
         //$$ if (created || clear) {
         //$$     RenderSystem.getDevice().createCommandEncoder().clearColorTexture(
         //$$         framebuffer.getColorAttachment(), 0
         //$$     );
         //$$ }
-        //$$ RenderUtil.setDrawTarget(framebuffer);
+        //$$ RenderTargetState.setDrawTarget(framebuffer);
         //#elseif MC>=12103
         //$$ if (created || clear) {
         //$$     framebuffer.setClearColor(0f, 0f, 0f, 0f);
@@ -232,7 +232,7 @@ public final class OffscreenCanvas {
     /** Unbind; restores the main framebuffer and vanilla's GUI projection. */
     public void end(final MinecraftClient client) {
         //#if MC>=12105
-        //$$ RenderUtil.setDrawTarget(null);
+        //$$ RenderTargetState.setDrawTarget(null);
         //#else
         framebuffer.endWrite();
         client.getFramebuffer().beginWrite(true);
@@ -257,18 +257,18 @@ public final class OffscreenCanvas {
     /** Binds the canvas contents for sampling; row 0 is the BOTTOM (flip V when sampling). */
     public void bindTexture() {
         //#if MC>=12108
-        //$$ RenderUtil.bindTexture(framebuffer.getColorAttachmentView());
+        //$$ TextureBinds.bindTexture(framebuffer.getColorAttachmentView());
         //#elseif MC>=12105
-        //$$ RenderUtil.bindTexture(framebuffer.getColorAttachment());
+        //$$ TextureBinds.bindTexture(framebuffer.getColorAttachment());
         //#else
-        RenderUtil.bindTexture(framebuffer.getColorAttachment());
+        TextureBinds.bindTexture(framebuffer.getColorAttachment());
         //#endif
     }
 
     /** Binds the canvas with bilinear filtering for scaled GUI effects. */
     public void bindTextureLinear() {
         //#if MC>=12111
-        //$$ RenderUtil.bindTexture(
+        //$$ TextureBinds.bindTexture(
         //$$     framebuffer.getColorAttachmentView(),
         //$$     RenderSystem.getSamplerCache().get(
         //$$         com.mojang.blaze3d.textures.AddressMode.CLAMP_TO_EDGE,
@@ -280,13 +280,13 @@ public final class OffscreenCanvas {
         //$$ );
         //#elseif MC>=12108
         //$$ framebuffer.setFilter(FilterMode.LINEAR);
-        //$$ RenderUtil.bindTexture(framebuffer.getColorAttachmentView());
+        //$$ TextureBinds.bindTexture(framebuffer.getColorAttachmentView());
         //#elseif MC>=12105
         //$$ framebuffer.setFilter(FilterMode.LINEAR);
-        //$$ RenderUtil.bindTexture(framebuffer.getColorAttachment());
+        //$$ TextureBinds.bindTexture(framebuffer.getColorAttachment());
         //#else
         framebuffer.setTexFilter(GL11.GL_LINEAR);
-        RenderUtil.bindTexture(framebuffer.getColorAttachment());
+        TextureBinds.bindTexture(framebuffer.getColorAttachment());
         //#endif
     }
 
