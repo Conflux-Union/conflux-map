@@ -47,6 +47,7 @@ final class MonochromeUiIconTest {
         "annotation_select.png",
         "annotation_line.png",
         "annotation_circle.png",
+        "annotation_clear.png",
         "annotation_rectangle.png",
         "annotation_freehand.png",
         "annotation_eraser.png",

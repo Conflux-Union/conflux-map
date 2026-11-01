@@ -395,6 +395,7 @@
   "confluxmap.map.annotation.label.tooltip": "编辑选中标注的文字",
   "confluxmap.map.annotation.undo.tooltip": "撤销标注修改（Ctrl+Z）",
   "confluxmap.map.annotation.redo.tooltip": "重做标注修改（Ctrl+Y）",
+  "confluxmap.map.annotation.clear.tooltip": "清空当前维度的所有绘图",
   "confluxmap.config.layers.override": "地图图层：%s",
   "confluxmap.config.layers.cave_slice_y": "洞穴固定高度：%s",
   "confluxmap.config.layers.nether_slice_y": "下界固定高度：%s",
