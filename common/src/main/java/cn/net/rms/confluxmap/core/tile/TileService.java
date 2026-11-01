@@ -884,6 +884,7 @@ public final class TileService {
         final boolean biomeMode = BiomeTileKeys.isBiome(key);
         final MapLayer layer = MapLayer.parse(BiomeTileKeys.realLayerId(key.layerId()));
         final MapColorStyle mapColorStyle = config.mapColorStyle;
+        final int voidColor = config.voidColumnColor.argb();
         final XaeroMapStyle.Shadow xaeroShadow = XaeroMapStyle.shadowFor(key.dimension());
         final ColumnStore store = world.store(layer);
         // The roof view is block-accurate and lives around one almost-flat Y. Keep the shared,
@@ -924,7 +925,7 @@ public final class TileService {
             composeLod0(
                 store, key.tileX(), key.tileZ(), biomeMode, applyAbsoluteHeight,
                 layer.type(), applyDaylight, daylightFactor, gamma, composedLight,
-                mapColorStyle, xaeroShadow, dirtyRect, composedPixels
+                mapColorStyle, xaeroShadow, voidColor, dirtyRect, composedPixels
             );
             if (store.region(key.tileX(), key.tileZ()) != null) {
                 changed.add(dirtyRect);
@@ -944,7 +945,7 @@ public final class TileService {
             pixels = composeLodN(
                 store, key, biomeMode, applyAbsoluteHeight,
                 layer.type(), applyDaylight, daylightFactor, gamma, lightPlane, changed,
-                mapColorStyle, xaeroShadow, work.regions
+                mapColorStyle, xaeroShadow, voidColor, work.regions
             );
         }
         final TileUpdate.Relight relight = lightPlane == null
@@ -973,6 +974,7 @@ public final class TileService {
         final byte[] outLight,
         final MapColorStyle mapColorStyle,
         final XaeroMapStyle.Shadow xaeroShadow,
+        final int voidColor,
         final TileUpdate.Rect dirtyRect,
         final int[] pixels
     ) {
@@ -993,7 +995,7 @@ public final class TileService {
                 neighborhood, pixels,
                 biomeMode, applyAbsoluteHeight, layerType,
                 applyDaylight, daylightFactor, gamma, outLight, mapColorStyle, xaeroShadow,
-                dirtyRect
+                voidColor, dirtyRect
             );
         }
     }
@@ -1023,6 +1025,7 @@ public final class TileService {
         final List<TileUpdate.Rect> outChanged,
         final MapColorStyle mapColorStyle,
         final XaeroMapStyle.Shadow xaeroShadow,
+        final int voidColor,
         final Set<Long> dirtyRegions
     ) {
         final int lod = key.lod();
@@ -1048,7 +1051,7 @@ public final class TileService {
                 composeLod0(
                     store, regionX, regionZ, biomeMode, applyAbsoluteHeight,
                     layerType, applyDaylight, daylightFactor, gamma, fullLight,
-                    mapColorStyle, xaeroShadow, DirtyWork.FULL_RECT, full
+                    mapColorStyle, xaeroShadow, voidColor, DirtyWork.FULL_RECT, full
                 );
                 final int[] downsampled = downsample(full, size, lod);
                 stitch(downsampled, subSize, outPixels, dx * subSize, dz * subSize);
@@ -1170,6 +1173,7 @@ public final class TileService {
         final byte[] outLight,
         final MapColorStyle mapColorStyle,
         final XaeroMapStyle.Shadow xaeroShadow,
+        final int voidColor,
         final TileUpdate.Rect dirtyRect
     ) {
         final int size = RegionColumns.SIZE;
@@ -1202,8 +1206,12 @@ public final class TileService {
             for (int x = dirtyRect.x(); x < dirtyRect.x() + dirtyRect.width(); x++) {
                 final int idx = z * size + x;
                 final byte k = kind[idx];
-                if (k == SurfaceKind.UNKNOWN.ordinal() || k == SurfaceKind.VOID.ordinal()) {
+                if (k == SurfaceKind.UNKNOWN.ordinal()) {
                     outPixels[idx] = Argb.TRANSPARENT;
+                    continue;
+                }
+                if (k == SurfaceKind.VOID.ordinal()) {
+                    outPixels[idx] = voidColor;
                     continue;
                 }
                 if (biomeMode) {

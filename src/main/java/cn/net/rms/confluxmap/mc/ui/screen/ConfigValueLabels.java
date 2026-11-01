@@ -72,6 +72,10 @@ final class ConfigValueLabels {
         return "confluxmap.value.portal.highlight_color." + color.name().toLowerCase(java.util.Locale.ROOT);
     }
 
+    static String voidColumnColorKey(final ConfluxConfig.VoidColumnColor color) {
+        return "confluxmap.value.map.void_color." + color.name().toLowerCase(java.util.Locale.ROOT);
+    }
+
     static String shapeKey(final ConfluxConfig.Shape shape) {
         return shape == ConfluxConfig.Shape.CIRCLE ? "confluxmap.config.shape.circle" : "confluxmap.config.shape.square";
     }

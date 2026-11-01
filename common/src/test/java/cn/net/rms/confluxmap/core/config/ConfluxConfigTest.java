@@ -305,6 +305,7 @@ final class ConfluxConfigTest {
         config.portalChunkHighlightEnabled = false;
         config.portalHighlightColor = ConfluxConfig.PortalHighlightColor.GOLD;
         config.portalIconHideZoom = 1.0;
+        config.voidColumnColor = ConfluxConfig.VoidColumnColor.DARK_SLATE;
 
         final ConfluxConfig copy = config.copy();
 
@@ -319,6 +320,7 @@ final class ConfluxConfigTest {
         assertFalse(copy.portalChunkHighlightEnabled);
         assertEquals(ConfluxConfig.PortalHighlightColor.GOLD, copy.portalHighlightColor);
         assertEquals(1.0, copy.portalIconHideZoom);
+        assertEquals(ConfluxConfig.VoidColumnColor.DARK_SLATE, copy.voidColumnColor);
     }
 
     @Test
@@ -347,6 +349,7 @@ final class ConfluxConfigTest {
         config.portalIconOpacity = -5;
         config.portalIconHideZoom = Double.NaN;
         config.portalHighlightColor = null;
+        config.voidColumnColor = null;
         config.portalIconTextureNether = "  pack:textures/nether.png  ";
         config.portalIconTextureEnd = null;
 
@@ -356,6 +359,7 @@ final class ConfluxConfigTest {
         assertEquals(ConfluxConfig.MIN_PORTAL_ICON_OPACITY, config.portalIconOpacity);
         assertEquals(ConfluxConfig.MIN_PORTAL_ICON_HIDE_ZOOM, config.portalIconHideZoom);
         assertEquals(ConfluxConfig.PortalHighlightColor.PURPLE, config.portalHighlightColor);
+        assertEquals(ConfluxConfig.VoidColumnColor.DARK_INDIGO, config.voidColumnColor);
         assertEquals("pack:textures/nether.png", config.portalIconTextureNether);
         assertEquals("", config.portalIconTextureEnd);
     }

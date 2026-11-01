@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.color.XaeroMapStyle;
 import cn.net.rms.confluxmap.core.color.LightTint;
@@ -120,6 +121,27 @@ class PredictedTileComposerTest {
 
         assertEquals(Argb.TRANSPARENT, composed[0]);
         assertNotEquals(Argb.TRANSPARENT, composed[1], "uncorrected pixels keep the prediction");
+    }
+
+    /** Seam guard: predicted void must match the captured map's configured void paint exactly. */
+    @Test
+    void voidPaintsTheSameColorAsTheCapturedMapWhileUnknownStaysTransparent() {
+        final BaselineGrid grid = flatGrid(1);
+        final DerivedGrid derived = flatDerived(80);
+        derived.kind[BaselineGrid.index(0, 0)] = (byte) SurfaceKind.VOID.ordinal();
+        derived.kind[BaselineGrid.index(1, 0)] = (byte) SurfaceKind.UNKNOWN.ordinal();
+
+        final int[] pixels = PredictedTileComposer.compose(
+            derived, grid, PredictionPalette.defaults(), null,
+            PredictionViewMode.EVERYWHERE, 0, Proto.MAP_COLOR_NONE,
+            derived, grid, Proto.MAP_COLOR_NONE,
+            true, 0xFFFFFFFF, null,
+            MapColorStyle.CONFLUX, XaeroMapStyle.Shadow.OVERWORLD, null, null,
+            ConfluxConfig.VoidColumnColor.DARK_INDIGO.argb()
+        );
+
+        assertEquals(ConfluxConfig.VoidColumnColor.DARK_INDIGO.argb(), pixels[0]);
+        assertEquals(Argb.TRANSPARENT, pixels[1], "unexplored stays transparent");
     }
 
     private static BaselineGrid flatGrid(final int biome) {
