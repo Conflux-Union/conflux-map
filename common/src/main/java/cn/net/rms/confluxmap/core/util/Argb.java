@@ -44,6 +44,17 @@ public final class Argb {
         return (argb & 0xFF000000) | r << 16 | g << 8 | b;
     }
 
+    /**
+     * Packs an RGB color with the alpha channel derived from an opacity percent in
+     * [0, 100]; out-of-range percents clamp. The percent maps up (ceiling) instead of
+     * truncating so legacy hard-coded alphas survive the percent round-trip exactly
+     * (0x80 at 50%, 0x40 at 25%).
+     */
+    public static int withAlphaPercent(final int rgb, final int opacityPercent) {
+        final int percent = Math.max(0, Math.min(100, opacityPercent));
+        return ((percent * 255 + 99) / 100) << 24 | (rgb & 0x00FFFFFF);
+    }
+
     /** Scale the alpha channel by {@code factor} in [0, 1], keeping RGB. */
     public static int scaleAlpha(final int argb, final float factor) {
         final int a = clampChannel((int) (alpha(argb) * factor));

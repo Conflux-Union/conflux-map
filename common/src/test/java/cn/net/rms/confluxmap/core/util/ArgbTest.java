@@ -38,6 +38,18 @@ class ArgbTest {
     }
 
     @Test
+    void withAlphaPercentReproducesLegacyAlphasAndClamps() {
+        // The chunk-grid and minimap-plate settings replace hard-coded alphas with a
+        // percent; their defaults must keep the exact old look (25% -> 0x40, 50% -> 0x80).
+        assertEquals(0x00000000, Argb.withAlphaPercent(0x000000, 0));
+        assertEquals(0x40000000, Argb.withAlphaPercent(0x000000, 25));
+        assertEquals(0x80101018, Argb.withAlphaPercent(0x101018, 50));
+        assertEquals(0xFF101018, Argb.withAlphaPercent(0x101018, 100));
+        assertEquals(0x00FFFFFF, Argb.withAlphaPercent(0xFFFFFF, -1));
+        assertEquals(0xFFFFFFFF, Argb.withAlphaPercent(0xFFFFFF, 101));
+    }
+
+    @Test
     void repeatedOutlineLayersConvergeOnRequestedAlpha() {
         final float requestedAlpha = 0.49f;
         final int copies = 8;

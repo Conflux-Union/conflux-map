@@ -71,6 +71,7 @@ import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.trail.PlayerTrail;
 import cn.net.rms.confluxmap.core.trail.PlayerTrailProjection;
 import cn.net.rms.confluxmap.core.update.UpdateCheckService;
+import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.core.util.TileViewport;
 import cn.net.rms.confluxmap.core.util.ChunkViewport;
@@ -229,11 +230,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private static final int REGION_SELECT_LABEL_PADDING = 3;
     private static final int REGION_SELECT_LABEL_LINE_GAP = 2;
     static final int BACKGROUND_COLOR = 0xFF101018;
-    private static final int GRID_COLOR = 0x22FFFFFF;
     private static final int PLAYER_MARKER_COLOR = 0xFFFFFFFF;
-    private static final double MIN_GRID_SPACING_PX = 8.0;
-    /** Xaero-style faint dark lattice on chunk borders, understated over both light and dark terrain. */
-    private static final int CHUNK_GRID_COLOR = 0x40000000;
     private static final int CHUNK_HIGHLIGHT_FILL = 0x22FFFFFF;
     private static final int CHUNK_HIGHLIGHT_BORDER = 0x66FFFFFF;
     /** Below this on-screen chunk width, skip the chunk grid/highlight entirely to avoid moire noise when zoomed out. */
@@ -1285,7 +1282,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         centerX = layout.renderCenterX(centerX, scale);
         try {
             GuiShapes.fillRect(matrices, 0, 0, width, height, BACKGROUND_COLOR);
-            drawGrid(matrices);
             drawTiles(matrices, false);
         } finally {
             centerX = previousCenterX;
@@ -1332,7 +1328,6 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
 
         GuiShapes.fillRect(matrices, 0, 0, width, height, BACKGROUND_COLOR);
-        drawGrid(matrices);
         drawTiles(matrices);
         if (loadStateMode()) {
             loadStateOverlay.drawChunkLoadStateOverlay(draw);
@@ -2361,38 +2356,18 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
     }
 
-    /** Faint lines on LOD-0 tile boundaries (256-block spacing), skipped once they'd be denser than {@link #MIN_GRID_SPACING_PX}. */
-    private void drawGrid(final MatrixStack matrices) {
-        final double pxPerBlock = 1.0 / scale;
-        final double spacingPx = TileMath.TILE_SIZE * pxPerBlock;
-        if (spacingPx < MIN_GRID_SPACING_PX) {
-            return;
-        }
-        final int firstLineX = TileMath.blockToTile((int) Math.floor(centerX - width / 2.0 * scale));
-        final int lastLineX = TileMath.blockToTile((int) Math.ceil(centerX + width / 2.0 * scale));
-        for (int tx = firstLineX; tx <= lastLineX + 1; tx++) {
-            final float screenX = (float) (width / 2.0 + (tx * (double) TileMath.TILE_SIZE - centerX) * pxPerBlock);
-            GuiShapes.fillRect(matrices, screenX, 0f, 1f, height, GRID_COLOR);
-        }
-        final int firstLineZ = TileMath.blockToTile((int) Math.floor(centerZ - height / 2.0 * scale));
-        final int lastLineZ = TileMath.blockToTile((int) Math.ceil(centerZ + height / 2.0 * scale));
-        for (int tz = firstLineZ; tz <= lastLineZ + 1; tz++) {
-            final float screenY = (float) (height / 2.0 + (tz * (double) TileMath.TILE_SIZE - centerZ) * pxPerBlock);
-            GuiShapes.fillRect(matrices, 0f, screenY, width, 1f, GRID_COLOR);
-        }
-    }
-
     /**
      * Faint chunk-border lattice (Xaero-World-Map-style: thin, low-alpha, dark - readable over
      * both light and dark terrain) plus a highlight on the chunk under the cursor. Drawn after
-     * the map tiles but before waypoint markers. Guarded by {@link ConfluxConfig#fullmapChunkGrid}
-     * and skipped once a chunk would render under {@link #MIN_CHUNK_GRID_SPACING_PX} wide, to
-     * avoid moire noise when zoomed far out.
+     * the map tiles but before waypoint markers. Guarded by {@link ConfluxConfig#fullmapChunkGrid},
+     * tinted to {@link ConfluxConfig#fullmapChunkGridOpacity}, and skipped once a chunk would
+     * render under {@link #MIN_CHUNK_GRID_SPACING_PX} wide, to avoid moire noise when zoomed far out.
      */
     private void drawChunkGrid(final MatrixStack matrices, final int mouseX, final int mouseY) {
         if (!config.fullmapChunkGrid) {
             return;
         }
+        final int chunkGridColor = Argb.withAlphaPercent(0x000000, config.fullmapChunkGridOpacity);
         final double pxPerBlock = 1.0 / scale;
         final double chunkSpacingPx = 16.0 * pxPerBlock;
         if (chunkSpacingPx < MIN_CHUNK_GRID_SPACING_PX) {
@@ -2405,13 +2380,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final int lastChunkX = TileMath.blockToChunk((int) Math.ceil(centerX + width / 2.0 * scale));
         for (int cx = firstChunkX; cx <= lastChunkX + 1; cx++) {
             final float screenX = (float) (width / 2.0 + (cx * 16.0 - centerX) * pxPerBlock);
-            GuiShapes.fillRect(matrices, screenX, 0f, 1f, height, CHUNK_GRID_COLOR);
+            GuiShapes.fillRect(matrices, screenX, 0f, 1f, height, chunkGridColor);
         }
         final int firstChunkZ = TileMath.blockToChunk((int) Math.floor(centerZ - height / 2.0 * scale));
         final int lastChunkZ = TileMath.blockToChunk((int) Math.ceil(centerZ + height / 2.0 * scale));
         for (int cz = firstChunkZ; cz <= lastChunkZ + 1; cz++) {
             final float screenY = (float) (height / 2.0 + (cz * 16.0 - centerZ) * pxPerBlock);
-            GuiShapes.fillRect(matrices, 0f, screenY, width, 1f, CHUNK_GRID_COLOR);
+            GuiShapes.fillRect(matrices, 0f, screenY, width, 1f, chunkGridColor);
         }
 
         drawHoveredChunkHighlight(matrices, mouseX, mouseY, pxPerBlock);
