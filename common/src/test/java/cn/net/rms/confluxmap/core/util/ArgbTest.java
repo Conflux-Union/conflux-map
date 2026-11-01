@@ -38,14 +38,15 @@ class ArgbTest {
     }
 
     @Test
-    void withAlphaPercentMatchesHistoricHalfAlphaAndClampsOutOfRange() {
-        // The minimap backing plate alpha comes from a 0-100 percent setting; 50% must
-        // round to the historical 0x80 plate so the default keeps today's rendering.
-        assertEquals(0x00101018, Argb.withAlphaPercent(0x101018, 0));
+    void withAlphaPercentReproducesLegacyAlphasAndClamps() {
+        // The chunk-grid and minimap-plate settings replace hard-coded alphas with a
+        // percent; their defaults must keep the exact old look (25% -> 0x40, 50% -> 0x80).
+        assertEquals(0x00000000, Argb.withAlphaPercent(0x000000, 0));
+        assertEquals(0x40000000, Argb.withAlphaPercent(0x000000, 25));
         assertEquals(0x80101018, Argb.withAlphaPercent(0x101018, 50));
         assertEquals(0xFF101018, Argb.withAlphaPercent(0x101018, 100));
-        assertEquals(0x00101018, Argb.withAlphaPercent(0x101018, -5));
-        assertEquals(0xFF101018, Argb.withAlphaPercent(0x101018, 200));
+        assertEquals(0x00FFFFFF, Argb.withAlphaPercent(0xFFFFFF, -1));
+        assertEquals(0xFFFFFFFF, Argb.withAlphaPercent(0xFFFFFF, 101));
     }
 
     @Test

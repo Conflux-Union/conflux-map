@@ -347,6 +347,7 @@
   "confluxmap.config.player_trail.duration": "Trail Duration: %s",
   "confluxmap.config.player_trail.dot_size": "Trail Dot Size: %s",
   "confluxmap.config.fullmap.chunk_grid": "Chunk Grid: %s",
+  "confluxmap.config.fullmap.chunk_grid_opacity": "Chunk Grid Opacity: %s",
   "confluxmap.config.portals.enabled": "Portal Markers: %s",
   "confluxmap.config.portals.show_icons": "Portal Icons: %s",
   "confluxmap.config.portals.icon_texture.nether": "Nether Portal Icon",

@@ -202,6 +202,10 @@ public final class ConfluxConfig {
     public int playerTrailDotSize = DEFAULT_PLAYER_TRAIL_DOT_SIZE;
     /** Fullscreen map only: subtle chunk-border grid with a highlight on the hovered chunk. */
     public boolean fullmapChunkGrid = true;
+    /** Fullscreen map only: chunk-grid line opacity in percent; 25 reproduces the old 0x40 alpha. */
+    public int fullmapChunkGridOpacity = 25;
+    public static final int MIN_FULLMAP_CHUNK_GRID_OPACITY = 0;
+    public static final int MAX_FULLMAP_CHUNK_GRID_OPACITY = 100;
     /** Copy the private annotation layer onto the minimap HUD. Fullscreen annotations remain visible. */
     public boolean annotationsOnHud = true;
     /** Fullscreen annotation eraser diameter in screen pixels. */
@@ -410,6 +414,7 @@ public final class ConfluxConfig {
         c.playerTrailDurationSeconds = playerTrailDurationSeconds;
         c.playerTrailDotSize = playerTrailDotSize;
         c.fullmapChunkGrid = fullmapChunkGrid;
+        c.fullmapChunkGridOpacity = fullmapChunkGridOpacity;
         c.annotationsOnHud = annotationsOnHud;
         c.annotationEraserSize = annotationEraserSize;
         c.fullscreenDisplayMode = fullscreenDisplayMode;
@@ -732,6 +737,8 @@ public final class ConfluxConfig {
         if (portalHighlightColor == null) {
             portalHighlightColor = PortalHighlightColor.PURPLE;
         }
+        fullmapChunkGridOpacity = Math.max(
+            MIN_FULLMAP_CHUNK_GRID_OPACITY, Math.min(MAX_FULLMAP_CHUNK_GRID_OPACITY, fullmapChunkGridOpacity));
         portalIconTextureNether = normalizeIconTexture(portalIconTextureNether);
         portalIconTextureEnd = normalizeIconTexture(portalIconTextureEnd);
         portalIconTextureGateway = normalizeIconTexture(portalIconTextureGateway);
