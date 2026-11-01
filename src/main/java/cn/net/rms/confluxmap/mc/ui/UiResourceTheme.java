@@ -192,6 +192,7 @@ public final class UiResourceTheme {
     private static Map<Identifier, UiIcon> xaeroIcons() {
         final Map<Identifier, UiIcon> icons = new HashMap<>();
         mapNativeIcon(icons, "annotation_circle.png");
+        mapNativeIcon(icons, "annotation_clear.png");
         mapNativeIcon(icons, "annotation_collapse.png");
         mapNativeIcon(icons, "annotation_drawing.png");
         mapNativeIcon(icons, "annotation_eraser.png");

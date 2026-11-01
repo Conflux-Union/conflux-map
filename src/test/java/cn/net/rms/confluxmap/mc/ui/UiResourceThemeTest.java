@@ -41,6 +41,7 @@ final class UiResourceThemeTest {
         final UiResourceTheme theme = theme(false, true, false, false, Set.of());
         final List<String> nativeOnly = List.of(
             "annotation_circle.png",
+            "annotation_clear.png",
             "annotation_collapse.png",
             "annotation_drawing.png",
             "annotation_eraser.png",
@@ -78,7 +79,7 @@ final class UiResourceThemeTest {
             final Identifier icon = Ids.of("confluxmap", "textures/gui/" + file);
             assertEquals(UiIcon.monochrome(icon), theme.icon(icon), file);
         }
-        assertEquals(36, UiResourceTheme.auditedIconIds().size());
+        assertEquals(37, UiResourceTheme.auditedIconIds().size());
     }
 
     @Test

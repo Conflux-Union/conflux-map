@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.DimensionId;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -88,6 +89,39 @@ class AnnotationStoreTest {
         assertTrue(store.redo());
         assertTrue(store.list().isEmpty());
         assertFalse(store.canRedo());
+    }
+
+    @Test
+    void clearCurrentDimensionSemantics() {
+        final Annotation persistent = line(
+            UUID.randomUUID(), DimensionId.OVERWORLD, 0, AnnotationPersistence.PERSISTENT
+        );
+        final Annotation transientOverworld = line(
+            UUID.randomUUID(), DimensionId.OVERWORLD, 2, AnnotationPersistence.TRANSIENT
+        );
+        final Annotation nether = line(
+            UUID.randomUUID(), DimensionId.NETHER, 0, AnnotationPersistence.PERSISTENT
+        );
+        final AnnotationStore store = new AnnotationStore(
+            WORLD, new AnnotationStore.State(List.of(persistent, transientOverworld, nether))
+        );
+
+        final List<UUID> cleared = new ArrayList<>();
+        for (final Annotation annotation : store.list(DimensionId.OVERWORLD)) {
+            cleared.add(annotation.id());
+        }
+        assertEquals(2, store.removeAll(cleared));
+
+        assertTrue(store.list(DimensionId.OVERWORLD).isEmpty());
+        assertEquals(List.of(nether), store.list(DimensionId.NETHER));
+
+        assertTrue(store.undo());
+        assertEquals(List.of(persistent, transientOverworld), store.list(DimensionId.OVERWORLD));
+        assertEquals(List.of(nether), store.list(DimensionId.NETHER));
+
+        assertTrue(store.redo());
+        assertTrue(store.list(DimensionId.OVERWORLD).isEmpty());
+        assertEquals(List.of(nether), store.list(DimensionId.NETHER));
     }
 
     @Test

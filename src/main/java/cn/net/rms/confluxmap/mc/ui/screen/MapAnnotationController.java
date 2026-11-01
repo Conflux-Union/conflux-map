@@ -199,6 +199,9 @@ final class MapAnnotationController {
     private static final Identifier ANNOTATION_REDO_ICON = Ids.of(
         "confluxmap", "textures/gui/annotation_redo.png"
     );
+    private static final Identifier ANNOTATION_CLEAR_ICON = Ids.of(
+        "confluxmap", "textures/gui/annotation_clear.png"
+    );
     private static final Identifier MEASURE_ICON = Ids.of(
         "confluxmap", "textures/gui/measure.png"
     );
@@ -226,6 +229,7 @@ final class MapAnnotationController {
     private ButtonWidget annotationLabelButton;
     private ButtonWidget annotationUndoButton;
     private ButtonWidget annotationRedoButton;
+    private ButtonWidget annotationClearButton;
     private ButtonWidget measureButton;
     private boolean annotationColorMenuOpen;
     private AnnotationTool annotationTool = AnnotationTool.SELECT;
@@ -270,6 +274,7 @@ final class MapAnnotationController {
         annotationLabelButton = null;
         annotationUndoButton = null;
         annotationRedoButton = null;
+        annotationClearButton = null;
         measureButton = null;
         screen.annotationToolbarBounds = null;
         screen.annotationColorMenuBounds = null;
@@ -319,7 +324,7 @@ final class MapAnnotationController {
 
         void rebuildAnnotationControls(final int desiredTop) {
 
-        final int controlCount = AnnotationTool.values().length + 6;
+        final int controlCount = AnnotationTool.values().length + 7;
         final int stride = ANNOTATION_CONTROL_SIZE + ANNOTATION_CONTROL_GAP;
         final int availableToolbarWidth = screen.width - MARGIN * 2 - CONTROL_GAP - CONTROL_SIZE;
         final int maxToolColumns = Math.max(
@@ -426,6 +431,14 @@ final class MapAnnotationController {
             ANNOTATION_REDO_ICON,
             "confluxmap.map.annotation.redo.tooltip",
             ignored -> redoAnnotationChange()
+        );
+        index++;
+        annotationClearButton = addAnnotationIconButton(
+            controlX(left, stride, rows, index),
+            controlY(top, stride, rows, index),
+            ANNOTATION_CLEAR_ICON,
+            "confluxmap.map.annotation.clear.tooltip",
+            ignored -> clearCurrentDimensionAnnotations()
         );
         if (annotationColorMenuOpen) {
             rebuildAnnotationColorMenu();
@@ -644,6 +657,10 @@ final class MapAnnotationController {
         if (annotationRedoButton != null) {
             annotationRedoButton.active = store != null && store.canRedo();
         }
+        if (annotationClearButton != null) {
+            annotationClearButton.active = store != null
+                && !store.list(screen.viewSession().dimension()).isEmpty();
+        }
     }
 
     private static Identifier annotationToolIcon(final AnnotationTool tool) {
@@ -745,6 +762,21 @@ final class MapAnnotationController {
     void redoAnnotationChange() {
         final AnnotationStore store = screen.viewAnnotationStore();
         if (store != null && store.redo()) {
+            clearMissingSelection(store);
+            refreshAnnotationControls();
+        }
+    }
+
+    private void clearCurrentDimensionAnnotations() {
+        final AnnotationStore store = screen.viewAnnotationStore();
+        if (store == null) {
+            return;
+        }
+        final List<UUID> ids = new ArrayList<>();
+        for (final Annotation annotation : store.list(screen.viewSession().dimension())) {
+            ids.add(annotation.id());
+        }
+        if (store.removeAll(ids) > 0) {
             clearMissingSelection(store);
             refreshAnnotationControls();
         }
