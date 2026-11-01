@@ -194,6 +194,15 @@ final class ConfigRows {
                     },
                     ConfigValueLabels::mapColorStyleKey
                 );
+                y = addEnumRow(
+                    y, "confluxmap.config.map.void_color", ConfluxConfig.VoidColumnColor.values(),
+                    () -> config.voidColumnColor,
+                    v -> {
+                        config.voidColumnColor = v;
+                        ConfluxMapClient.get().onVoidColumnColorChanged();
+                    },
+                    ConfigValueLabels::voidColumnColorKey
+                );
                 y = addIntSliderRow(
                     y, "confluxmap.config.map.quality", 0, ConfluxConfig.MapQuality.values().length - 1,
                     () -> config.mapQuality.ordinal(),

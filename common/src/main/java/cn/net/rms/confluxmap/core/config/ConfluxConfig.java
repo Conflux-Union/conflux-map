@@ -6,6 +6,7 @@ import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
 import cn.net.rms.confluxmap.core.portal.PortalKind;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
 import cn.net.rms.confluxmap.core.survey.SurveyReminderSchedule;
+import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -147,6 +148,29 @@ public final class ConfluxConfig {
     }
 
     /**
+     * Preset fills for scanned VOID columns (End island surroundings, void-world servers), so
+     * explored void reads differently from never-scanned (UNKNOWN) columns. Every non-OFF preset
+     * is fully opaque: LOD downsampling treats transparent as unexplored and excludes its RGB, so
+     * an opaque void color must stay opaque or composed void would darken terrain averages.
+     */
+    public enum VoidColumnColor {
+        OFF(Argb.TRANSPARENT),
+        DARK_INDIGO(0xFF2A1F45),
+        DARK_SLATE(0xFF1F2E33),
+        XAERO_VIOLET(0xFF0A0017);
+
+        private final int argb;
+
+        VoidColumnColor(final int argb) {
+            this.argb = argb;
+        }
+
+        public int argb() {
+            return argb;
+        }
+    }
+
+    /**
      * Manual layer override cycled by {@code key.confluxmap.cycle_layer}; see
      * {@code mc.world.LayerSelector} for how each dimension interprets these
      * (e.g. FORCE_UNDERGROUND means CAVE_AUTO in the Overworld and NETHER_CEILING
@@ -222,6 +246,8 @@ public final class ConfluxConfig {
     public boolean showNetherCeilingBedrockThickness = true;
     /** Keeps the historical Conflux renderer by default; XAERO is an explicit presentation choice. */
     public MapColorStyle mapColorStyle = MapColorStyle.CONFLUX;
+    /** Paint for scanned VOID columns; OFF keeps them transparent like unexplored ones. */
+    public VoidColumnColor voidColumnColor = VoidColumnColor.DARK_INDIGO;
     /** Map quality level controlling LOD scale transition points. */
     public MapQuality mapQuality = MapQuality.BALANCED;
 
@@ -414,6 +440,7 @@ public final class ConfluxConfig {
         c.dynamicLighting = dynamicLighting;
         c.showNetherCeilingBedrockThickness = showNetherCeilingBedrockThickness;
         c.mapColorStyle = mapColorStyle;
+        c.voidColumnColor = voidColumnColor;
         c.mapQuality = mapQuality;
         c.snapshotBudgetPerTick = snapshotBudgetPerTick;
         c.recaptureHoldoffTicks = recaptureHoldoffTicks;
@@ -721,6 +748,9 @@ public final class ConfluxConfig {
         );
         if (portalHighlightColor == null) {
             portalHighlightColor = PortalHighlightColor.PURPLE;
+        }
+        if (voidColumnColor == null) {
+            voidColumnColor = VoidColumnColor.DARK_INDIGO;
         }
         portalIconTextureNether = normalizeIconTexture(portalIconTextureNether);
         portalIconTextureEnd = normalizeIconTexture(portalIconTextureEnd);

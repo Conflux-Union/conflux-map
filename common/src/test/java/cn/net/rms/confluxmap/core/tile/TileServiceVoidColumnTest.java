@@ -15,6 +15,7 @@ import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.store.MapWorldService;
 import cn.net.rms.confluxmap.core.task.MapExecutors;
 import cn.net.rms.confluxmap.core.task.SessionGuard;
+import cn.net.rms.confluxmap.core.util.Argb;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -56,17 +57,98 @@ class TileServiceVoidColumnTest {
     }
 
     @Test
-    void theVoidColumnItselfComposesTransparent() throws InterruptedException {
+    void theVoidColumnComposesInTheConfiguredColorWhileUnknownStaysTransparent()
+        throws InterruptedException {
         final MapExecutors executors = new MapExecutors();
         try {
             final ChunkSnapshot snapshot = voidSurroundedSnapshot();
             assertEquals(
-                0, composePixel(executors, snapshot, 0),
-                "a captured void column stays fully transparent"
+                ConfluxConfig.VoidColumnColor.DARK_INDIGO.argb(),
+                composePixel(executors, snapshot, 0),
+                "a captured void column paints the default preset"
+            );
+            assertEquals(
+                Argb.TRANSPARENT,
+                composePixel(executors, snapshot, 0, 0, ConfluxConfig.VoidColumnColor.OFF),
+                "the OFF preset keeps the old fully transparent void"
+            );
+            assertEquals(
+                Argb.TRANSPARENT,
+                composePixel(executors, singleLandColumnSnapshot(), 0),
+                "a never-scanned column stays transparent so void and unexplored stay distinct"
             );
         } finally {
             executors.shutdown(1000L);
         }
+    }
+
+    /**
+     * The LOD contract behind opaque void presets: {@code average4Weighted} excludes only
+     * transparent (unexplored) RGB, so an opaque void pixel must join the 2x2 downsample at
+     * full weight, exactly like terrain.
+     */
+    @Test
+    void opaqueVoidColorKeepsFullWeightInLodDownsampling() throws InterruptedException {
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final ChunkSnapshot snapshot = voidColorMixSnapshot();
+            final int land0 = composePixel(
+                executors, snapshot, 0, 0, ConfluxConfig.VoidColumnColor.XAERO_VIOLET
+            );
+            final int land1 = composePixel(
+                executors, snapshot, 1, 0, ConfluxConfig.VoidColumnColor.XAERO_VIOLET
+            );
+            final int lod1Pixel = composePixel(
+                executors, snapshot, 0, 1, ConfluxConfig.VoidColumnColor.XAERO_VIOLET
+            );
+            assertEquals(
+                Argb.average4Weighted(
+                    land0, land1,
+                    ConfluxConfig.VoidColumnColor.XAERO_VIOLET.argb(), Argb.TRANSPARENT
+                ),
+                lod1Pixel,
+                "the void quadrant must weight the LOD-1 average like terrain, not like unexplored"
+            );
+        } finally {
+            executors.shutdown(1000L);
+        }
+    }
+
+    /**
+     * One chunk whose top-left 2x2 block mixes two land columns, one void column, and one
+     * never-received column; everything else is void so those four pixels decide the LOD-1
+     * average at tile pixel (0,0).
+     */
+    private static ChunkSnapshot voidColorMixSnapshot() {
+        final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
+        final int[] baseArgb = new int[ChunkSnapshot.COLUMNS];
+        final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
+        for (int i = 0; i < ChunkSnapshot.COLUMNS; i++) {
+            surfaceY[i] = ChunkSnapshot.NO_SURFACE;
+            kind[i] = (byte) SurfaceKind.VOID.ordinal();
+        }
+        surfaceY[0] = 70;
+        baseArgb[0] = LAND_BASE;
+        kind[0] = (byte) SurfaceKind.LAND.ordinal();
+        surfaceY[1] = 70;
+        baseArgb[1] = LAND_BASE;
+        kind[1] = (byte) SurfaceKind.LAND.ordinal();
+        kind[17] = (byte) SurfaceKind.UNKNOWN.ordinal();
+        return withTint(surfaceY, baseArgb, kind);
+    }
+
+    private static ChunkSnapshot withTint(
+        final short[] surfaceY,
+        final int[] baseArgb,
+        final byte[] kind
+    ) {
+        final int[] tintArgb = new int[ChunkSnapshot.COLUMNS];
+        java.util.Arrays.fill(tintArgb, 0xFFFFFFFF);
+        return new ChunkSnapshot(
+            0, 0, 1L, surfaceY, new String[ChunkSnapshot.COLUMNS],
+            new byte[ChunkSnapshot.COLUMNS], baseArgb, tintArgb,
+            new int[ChunkSnapshot.COLUMNS], kind, new byte[ChunkSnapshot.COLUMNS]
+        );
     }
 
     /** Center land column; every neighbor is the void encoding the capture writer produces. */
@@ -152,6 +234,17 @@ class TileServiceVoidColumnTest {
         final ChunkSnapshot snapshot,
         final int pixelIndex
     ) throws InterruptedException {
+        return composePixel(executors, snapshot, pixelIndex, 0, null);
+    }
+
+    /** {@code voidColor} {@code null} keeps the config default. */
+    private static int composePixel(
+        final MapExecutors executors,
+        final ChunkSnapshot snapshot,
+        final int pixelIndex,
+        final int lod,
+        final ConfluxConfig.VoidColumnColor voidColor
+    ) throws InterruptedException {
         final MapWorldService mapWorlds = new MapWorldService();
         final SessionGuard.Session session = new SessionGuard.Session(
             1L, new WorldIdentity("local", "world"), DimensionId.OVERWORLD
@@ -160,9 +253,12 @@ class TileServiceVoidColumnTest {
         mapWorlds.current().put(MapLayer.SURFACE, snapshot, SampleSource.REAL_LIVE);
         final ConfluxConfig config = new ConfluxConfig();
         config.dynamicLighting = false;
+        if (voidColor != null) {
+            config.voidColumnColor = voidColor;
+        }
         final TileService tiles = new TileService(mapWorlds, executors, config, new DaylightModel());
         final TileKey terrain = new TileKey(
-            session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), 0, 0, 0
+            session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), lod, 0, 0
         );
         tiles.requestTile(terrain);
         final long deadline = System.nanoTime() + 5_000_000_000L;

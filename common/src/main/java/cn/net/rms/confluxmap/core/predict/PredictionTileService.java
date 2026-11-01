@@ -82,6 +82,7 @@ public final class PredictionTileService {
     private volatile DaylightModel daylightModel;
     private volatile PredictionViewMode viewMode = PredictionViewMode.EVERYWHERE;
     private volatile MapColorStyle mapColorStyle = MapColorStyle.CONFLUX;
+    private volatile ConfluxConfig.VoidColumnColor voidColumnColor = ConfluxConfig.VoidColumnColor.OFF;
 
     /** Guarded by {@code this}: tiles waiting to be composed, with the session token that requested them. */
     private final Map<TileKey, Long> dirty = new HashMap<>();
@@ -208,6 +209,10 @@ public final class PredictionTileService {
 
     public void setMapColorStyle(final MapColorStyle style) {
         mapColorStyle = style == null ? MapColorStyle.CONFLUX : style;
+    }
+
+    public void setVoidColumnColor(final ConfluxConfig.VoidColumnColor color) {
+        voidColumnColor = color == null ? ConfluxConfig.VoidColumnColor.OFF : color;
     }
 
     public SyncedMaterialPalette syncedMaterials() {
@@ -1434,7 +1439,8 @@ public final class PredictionTileService {
     ) {
         if (BiomeTileKeys.isBiome(key)) {
             return PredictedBiomeComposer.compose(
-                derived, grid, directCorrections, compositionMode, key.lod(), derived, grid
+                derived, grid, directCorrections, compositionMode, key.lod(), derived, grid,
+                voidColumnColor.argb()
             );
         }
         final MapColorStyle style = mapColorStyle;
@@ -1446,7 +1452,8 @@ public final class PredictionTileService {
             ambientLightTint(key, style),
             syncedMaterials, style, XaeroMapStyle.shadowFor(key.dimension()),
             quadrantMask == null ? null : quadrantMask.mapColorOverrides(),
-            quadrantMask == null ? null : quadrantMask.topMaterials()
+            quadrantMask == null ? null : quadrantMask.topMaterials(),
+            voidColumnColor.argb()
         );
     }
 

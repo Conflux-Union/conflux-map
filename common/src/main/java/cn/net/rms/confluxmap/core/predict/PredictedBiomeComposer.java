@@ -18,7 +18,7 @@ public final class PredictedBiomeComposer {
         final int lod
     ) {
         return compose(
-            derived, grid, corrections, viewMode, lod, derived, grid
+            derived, grid, corrections, viewMode, lod, derived, grid, Argb.TRANSPARENT
         );
     }
 
@@ -30,6 +30,23 @@ public final class PredictedBiomeComposer {
         final int lod,
         final DerivedGrid correctionDerived,
         final BaselineGrid correctionGrid
+    ) {
+        return compose(
+            derived, grid, corrections, viewMode, lod, correctionDerived, correctionGrid,
+            Argb.TRANSPARENT
+        );
+    }
+
+    /** {@code voidColor} is the terrain composer's configured VOID paint, keeping both views seamless. */
+    public static int[] compose(
+        final DerivedGrid derived,
+        final BaselineGrid grid,
+        final CorrectionTile corrections,
+        final PredictionViewMode viewMode,
+        final int lod,
+        final DerivedGrid correctionDerived,
+        final BaselineGrid correctionGrid,
+        final int voidColor
     ) {
         final int size = BaselineGrid.PIXELS;
         final int[] pixels = new int[size * size];
@@ -73,8 +90,12 @@ public final class PredictedBiomeComposer {
                 final SurfaceKind kind = corrected[pixel]
                     ? SurfaceKind.byOrdinal(correctedKind[pixel])
                     : SurfaceKind.byOrdinal(derived.kind[gridIndex]);
-                if (kind == SurfaceKind.UNKNOWN || kind == SurfaceKind.VOID) {
+                if (kind == SurfaceKind.UNKNOWN) {
                     pixels[pixel] = Argb.TRANSPARENT;
+                    continue;
+                }
+                if (kind == SurfaceKind.VOID) {
+                    pixels[pixel] = voidColor;
                     continue;
                 }
                 final int biomeId = corrected[pixel]

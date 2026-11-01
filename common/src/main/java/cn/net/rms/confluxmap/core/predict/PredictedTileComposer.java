@@ -253,6 +253,40 @@ public final class PredictedTileComposer {
         final int[] baselineMapColorOverride,
         final String[] flatTopMaterials
     ) {
+        return compose(
+            derived, grid, palette, corrections, viewMode, lod, baselineMapColorId,
+            correctionDerived, correctionGrid, correctionBaselineMapColorId,
+            applyAbsoluteHeight, ambientLightTint, syncedMaterials,
+            mapColorStyle, xaeroShadow, baselineMapColorOverride, flatTopMaterials,
+            Argb.TRANSPARENT
+        );
+    }
+
+    /**
+     * Full form with the configured paint for VOID columns, shared with the captured map so the
+     * scanned and predicted planes cannot seam where they meet. Transparent (the OFF preset)
+     * keeps the previous invisible-void behavior.
+     */
+    public static int[] compose(
+        final DerivedGrid derived,
+        final BaselineGrid grid,
+        final PredictionPalette palette,
+        final CorrectionTile corrections,
+        final PredictionViewMode viewMode,
+        final int lod,
+        final int baselineMapColorId,
+        final DerivedGrid correctionDerived,
+        final BaselineGrid correctionGrid,
+        final int correctionBaselineMapColorId,
+        final boolean applyAbsoluteHeight,
+        final int ambientLightTint,
+        final SyncedMaterialPalette syncedMaterials,
+        final MapColorStyle mapColorStyle,
+        final XaeroMapStyle.Shadow xaeroShadow,
+        final int[] baselineMapColorOverride,
+        final String[] flatTopMaterials,
+        final int voidColor
+    ) {
         final int size = BaselineGrid.PIXELS;
         final int[] out = new int[size * size];
         final int[] surface = derived.surfaceY.clone();
@@ -343,8 +377,12 @@ public final class PredictedTileComposer {
                     continue;
                 }
                 final SurfaceKind kind = SurfaceKind.byOrdinal(kinds[idx]);
-                if (kind == SurfaceKind.UNKNOWN || kind == SurfaceKind.VOID) {
+                if (kind == SurfaceKind.UNKNOWN) {
                     out[outIdx] = Argb.TRANSPARENT;
+                    continue;
+                }
+                if (kind == SurfaceKind.VOID) {
+                    out[outIdx] = voidColor;
                     continue;
                 }
 

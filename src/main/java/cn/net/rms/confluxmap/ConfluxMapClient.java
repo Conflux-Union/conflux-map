@@ -275,6 +275,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         predictionTileService = new PredictionTileService(sessionGuard, predictionState, executors, tileService);
         predictionTileService.bindDaylightModel(daylightModel);
         predictionTileService.setMapColorStyle(config.mapColorStyle);
+        predictionTileService.setVoidColumnColor(config.voidColumnColor);
         predictionTileService.setMapQuality(config.mapQuality);
         predictionTileService.setViewMode(config.predictionViewMode);
         correctionStore = new CorrectionStore(
@@ -669,6 +670,15 @@ public final class ConfluxMapClient implements ClientModInitializer {
         tileService.reloadMapColorStyle();
         gameBridge.runOnRenderThread(tileTextureManager::releaseAll);
         ConfluxMapMod.LOGGER.info("Map color style changed to {}", config.mapColorStyle);
+    }
+
+    /** Invalidates every rendered terrain plane after the void-column color changes. */
+    public void onVoidColumnColorChanged() {
+        predictionTileService.setVoidColumnColor(config.voidColumnColor);
+        predictionTileService.reloadAll();
+        tileService.invalidateCompositions();
+        gameBridge.runOnRenderThread(tileTextureManager::releaseAll);
+        ConfluxMapMod.LOGGER.info("Void column color changed to {}", config.voidColumnColor);
     }
 
     /** Invalidates terrain planes after the Nether ceiling bedrock thickness toggle changes. */

@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.core.predict;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import cn.net.rms.confluxmap.core.color.BiomeColorPalette;
+import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.SurfaceKind;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
@@ -45,5 +46,24 @@ class PredictedBiomeComposerTest {
         );
         assertEquals(Argb.TRANSPARENT, pixels[2], "void prediction remains transparent");
         assertEquals(BiomeColorPalette.colorForCubiomes(1), pixels[3]);
+    }
+
+    /** Seam guard: the biome view must paint void exactly like the terrain composers do. */
+    @Test
+    void voidPaintsTheConfiguredColorWhileUnknownStaysTransparent() {
+        final BaselineGrid grid = new BaselineGrid();
+        final DerivedGrid derived = new DerivedGrid();
+        Arrays.fill(grid.biomeId, 1);
+        Arrays.fill(derived.kind, (byte) SurfaceKind.LAND.ordinal());
+        derived.kind[BaselineGrid.index(2, 0)] = (byte) SurfaceKind.VOID.ordinal();
+        derived.kind[BaselineGrid.index(3, 0)] = (byte) SurfaceKind.UNKNOWN.ordinal();
+
+        final int[] pixels = PredictedBiomeComposer.compose(
+            derived, grid, null, PredictionViewMode.EVERYWHERE, 0, derived, grid,
+            ConfluxConfig.VoidColumnColor.DARK_INDIGO.argb()
+        );
+
+        assertEquals(ConfluxConfig.VoidColumnColor.DARK_INDIGO.argb(), pixels[2]);
+        assertEquals(Argb.TRANSPARENT, pixels[3]);
     }
 }

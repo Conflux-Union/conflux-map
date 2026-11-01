@@ -40,6 +40,15 @@ public final class GeneratedTileComposer {
         final Grid grid,
         final PredictionPalette palette
     ) {
+        return compose(grid, palette, Argb.TRANSPARENT);
+    }
+
+    /** {@code voidColor} matches the captured and predicted composers so views stay seamless. */
+    public static PredictionQualityEvaluator.TileData compose(
+        final Grid grid,
+        final PredictionPalette palette,
+        final int voidColor
+    ) {
         final int[] pixels = new int[grid.width() * grid.height()];
         final byte[] visibleKind = grid.kind().clone();
         for (int z = 0; z < grid.height(); z++) {
@@ -47,8 +56,12 @@ public final class GeneratedTileComposer {
                 final int index = z * grid.width() + x;
                 final SurfaceKind kind = visibleKind(grid, index);
                 visibleKind[index] = (byte) kind.ordinal();
-                if (kind == SurfaceKind.UNKNOWN || kind == SurfaceKind.VOID) {
+                if (kind == SurfaceKind.UNKNOWN) {
                     pixels[index] = Argb.TRANSPARENT;
+                    continue;
+                }
+                if (kind == SurfaceKind.VOID) {
+                    pixels[index] = voidColor;
                     continue;
                 }
                 final double heightShade = ShadingPipeline.detailedHeightShade(
