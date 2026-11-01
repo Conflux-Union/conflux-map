@@ -331,6 +331,7 @@
   "confluxmap.config.minimap.position": "Adjust Minimap Position...",
   "confluxmap.config.minimap.hud_avoidance": "Avoid HUD Overlap: %s",
   "confluxmap.config.minimap.shape": "Shape: %s",
+  "confluxmap.config.minimap.background_opacity": "Background Opacity: %s",
   "confluxmap.config.player_marker.style": "Player Marker: %s",
   "confluxmap.value.player_marker.traditional": "Traditional",
   "confluxmap.value.player_marker.modern": "New",

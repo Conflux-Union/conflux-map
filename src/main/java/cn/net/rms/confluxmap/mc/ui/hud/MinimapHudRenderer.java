@@ -15,6 +15,7 @@ import cn.net.rms.confluxmap.core.api.CustomMarkerService;
 import cn.net.rms.confluxmap.core.portal.PortalService;
 import cn.net.rms.confluxmap.core.radar.RadarViewRange;
 import cn.net.rms.confluxmap.core.radar.ServerPlayerRadarState;
+import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.ChunkViewport;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.mc.radar.EntityIconManager;
@@ -64,7 +65,7 @@ import net.minecraft.client.util.math.MatrixStack;
  * (frame, cardinals, info text).
  */
 public final class MinimapHudRenderer {
-    private static final int BACKGROUND_COLOR = 0x80101018;
+    private static final int BACKGROUND_RGB = 0x101018;
     private static final float[] BLOCKS_PER_PIXEL = {0.5f, 1f, 2f, 4f};
 
     private final MinecraftClient client;
@@ -197,6 +198,7 @@ public final class MinimapHudRenderer {
         final int x0 = placement.x();
         final int y0 = placement.y();
         final boolean circle = config.minimapShape == ConfluxConfig.Shape.CIRCLE;
+        final int backgroundColor = Argb.withAlphaPercent(BACKGROUND_RGB, config.minimapBackgroundOpacity);
         final Optional<UiResourceTheme.MinimapFrame> minimapFrame = uiTheme.minimapFrame(circle);
         final int contentInset = minimapFrame
             .map(UiResourceTheme.MinimapFrame::contentInset)
@@ -228,7 +230,7 @@ public final class MinimapHudRenderer {
             final MatrixStack fbo = new MatrixStack();
             final float unit = canvasPx / (float) contentSize;
             fbo.scale(unit, unit, 1f);
-            GuiShapes.fillRect(fbo, 0, 0, contentSize, contentSize, BACKGROUND_COLOR);
+            GuiShapes.fillRect(fbo, 0, 0, contentSize, contentSize, backgroundColor);
             fbo.push();
             fbo.translate(contentSize / 2f, contentSize / 2f, 0);
             if (rotate) {
@@ -278,7 +280,7 @@ public final class MinimapHudRenderer {
             );
         } else {
             GuiShapes.fillRect(
-                matrices, viewport.x(), viewport.y(), contentSize, contentSize, BACKGROUND_COLOR
+                matrices, viewport.x(), viewport.y(), contentSize, contentSize, backgroundColor
             );
             RenderTargetState.enableScissor(
                 client, viewport.x(), viewport.y(), contentSize, contentSize

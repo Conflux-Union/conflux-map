@@ -322,6 +322,25 @@ final class ConfluxConfigTest {
     }
 
     @Test
+    void minimapBackgroundOpacityDefaultsToHistoricHalfAlphaSurvivesCopyAndClamps() {
+        final ConfluxConfig config = new ConfluxConfig();
+
+        assertEquals(ConfluxConfig.DEFAULT_MINIMAP_BACKGROUND_OPACITY, config.minimapBackgroundOpacity);
+        config.minimapBackgroundOpacity = 30;
+        assertEquals(30, config.copy().minimapBackgroundOpacity);
+
+        final ConfluxConfig overMax = new ConfluxConfig();
+        overMax.minimapBackgroundOpacity = 150;
+        overMax.normalize();
+        assertEquals(ConfluxConfig.MAX_MINIMAP_BACKGROUND_OPACITY, overMax.minimapBackgroundOpacity);
+
+        final ConfluxConfig underMin = new ConfluxConfig();
+        underMin.minimapBackgroundOpacity = -5;
+        underMin.normalize();
+        assertEquals(ConfluxConfig.MIN_MINIMAP_BACKGROUND_OPACITY, underMin.minimapBackgroundOpacity);
+    }
+
+    @Test
     void normalizeClampsPortalValuesAndDefaultsEmptyTextures() {
         final ConfluxConfig config = new ConfluxConfig();
         config.portalIconSize = 9999;

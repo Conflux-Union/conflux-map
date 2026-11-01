@@ -23,6 +23,10 @@ public final class ConfluxConfig {
     public static final String DEFAULT_TELEPORT_COMMAND = "execute in {dimension} run tp @s {x} {y} {z}";
     public static final int DEFAULT_MINIMAP_SIZE = 90;
     public static final int MINIMAP_ZOOM_LEVEL_COUNT = 4;
+    public static final int MIN_MINIMAP_BACKGROUND_OPACITY = 0;
+    public static final int MAX_MINIMAP_BACKGROUND_OPACITY = 100;
+    /** Matches the historical hard-coded 0x80 backing plate alpha. */
+    public static final int DEFAULT_MINIMAP_BACKGROUND_OPACITY = 50;
     public static final int MIN_ANNOTATION_ERASER_SIZE = 4;
     public static final int MAX_ANNOTATION_ERASER_SIZE = 64;
     public static final int DEFAULT_ANNOTATION_ERASER_SIZE = 16;
@@ -182,6 +186,8 @@ public final class ConfluxConfig {
     public PlayerMarkerStyle playerMarkerStyle = PlayerMarkerStyle.MODERN;
     public int minimapSize = DEFAULT_MINIMAP_SIZE;
     public boolean minimapRotate = true;
+    /** Backing plate opacity percentage under the minimap tiles; the plate RGB stays fixed. */
+    public int minimapBackgroundOpacity = DEFAULT_MINIMAP_BACKGROUND_OPACITY;
     public int minimapZoomIndex = 1;
     public boolean showCoordinates = true;
     public boolean showBiome = true;
@@ -396,6 +402,7 @@ public final class ConfluxConfig {
         c.playerMarkerStyle = playerMarkerStyle;
         c.minimapSize = minimapSize;
         c.minimapRotate = minimapRotate;
+        c.minimapBackgroundOpacity = minimapBackgroundOpacity;
         c.minimapZoomIndex = minimapZoomIndex;
         c.showCoordinates = showCoordinates;
         c.showBiome = showBiome;
@@ -656,6 +663,9 @@ public final class ConfluxConfig {
         }
         minimapSize = clamp(minimapSize, 64, 256);
         minimapZoomIndex = clamp(minimapZoomIndex, 0, MINIMAP_ZOOM_LEVEL_COUNT - 1);
+        minimapBackgroundOpacity = clamp(
+            minimapBackgroundOpacity, MIN_MINIMAP_BACKGROUND_OPACITY, MAX_MINIMAP_BACKGROUND_OPACITY
+        );
         playerTrailDurationSeconds = clamp(
             playerTrailDurationSeconds,
             MIN_PLAYER_TRAIL_DURATION_SECONDS,

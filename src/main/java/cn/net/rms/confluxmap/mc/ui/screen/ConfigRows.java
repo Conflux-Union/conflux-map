@@ -137,6 +137,12 @@ final class ConfigRows {
                     y, "confluxmap.config.minimap.shape", ConfluxConfig.Shape.values(),
                     () -> config.minimapShape, v -> config.minimapShape = v, ConfigValueLabels::shapeKey
                 );
+                y = addIntSliderRow(
+                    y, "confluxmap.config.minimap.background_opacity",
+                    ConfluxConfig.MIN_MINIMAP_BACKGROUND_OPACITY, ConfluxConfig.MAX_MINIMAP_BACKGROUND_OPACITY,
+                    () -> config.minimapBackgroundOpacity, v -> config.minimapBackgroundOpacity = v,
+                    ConfigValueLabels::percentText
+                );
                 y = addEnumRow(
                     y,
                     "confluxmap.config.player_marker.style",

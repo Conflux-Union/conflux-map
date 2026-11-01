@@ -38,6 +38,17 @@ class ArgbTest {
     }
 
     @Test
+    void withAlphaPercentMatchesHistoricHalfAlphaAndClampsOutOfRange() {
+        // The minimap backing plate alpha comes from a 0-100 percent setting; 50% must
+        // round to the historical 0x80 plate so the default keeps today's rendering.
+        assertEquals(0x00101018, Argb.withAlphaPercent(0x101018, 0));
+        assertEquals(0x80101018, Argb.withAlphaPercent(0x101018, 50));
+        assertEquals(0xFF101018, Argb.withAlphaPercent(0x101018, 100));
+        assertEquals(0x00101018, Argb.withAlphaPercent(0x101018, -5));
+        assertEquals(0xFF101018, Argb.withAlphaPercent(0x101018, 200));
+    }
+
+    @Test
     void repeatedOutlineLayersConvergeOnRequestedAlpha() {
         final float requestedAlpha = 0.49f;
         final int copies = 8;

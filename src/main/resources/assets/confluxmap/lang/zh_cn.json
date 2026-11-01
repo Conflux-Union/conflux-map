@@ -331,6 +331,7 @@
   "confluxmap.config.minimap.position": "调整小地图位置……",
   "confluxmap.config.minimap.hud_avoidance": "自动避让 HUD：%s",
   "confluxmap.config.minimap.shape": "形状：%s",
+  "confluxmap.config.minimap.background_opacity": "背景不透明度：%s",
   "confluxmap.config.player_marker.style": "玩家箭头：%s",
   "confluxmap.value.player_marker.traditional": "传统",
   "confluxmap.value.player_marker.modern": "新版",
