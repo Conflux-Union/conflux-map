@@ -17,8 +17,13 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.Identifier;
 
-/** Shared text or icon button that keeps the Conflux style unless a text control is reskinned. */
-public final class ConfluxTextButton extends ButtonWidget {
+/**
+ * Shared text or icon button that keeps the Conflux style unless a text control is reskinned.
+ * Open for small subclasses that need to hook the two self-drawn layers ({@link
+ * #drawContents} body, {@link #drawForeground} label) without touching the
+ * version-gated vanilla-style render seams.
+ */
+public class ConfluxTextButton extends ButtonWidget {
     private static final int ICON_SIZE = 16;
     private static final int BACKGROUND = 0xE0181818;
     private static final int HOVER_BACKGROUND = 0xF02A2A2A;
@@ -145,7 +150,7 @@ public final class ConfluxTextButton extends ButtonWidget {
     }
     //#endif
 
-    private void drawContents(final GuiDraw draw) {
+    protected void drawContents(final GuiDraw draw) {
         final int x = Widgets.x(this);
         final int y = Widgets.y(this);
         final int right = x + getWidth();
@@ -164,7 +169,7 @@ public final class ConfluxTextButton extends ButtonWidget {
         drawForeground(draw);
     }
 
-    private void drawForeground(final GuiDraw draw) {
+    protected void drawForeground(final GuiDraw draw) {
         if (icon == null) {
             drawText(draw);
         } else {

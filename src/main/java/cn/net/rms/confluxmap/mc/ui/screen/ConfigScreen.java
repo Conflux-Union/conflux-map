@@ -8,11 +8,14 @@ import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.net.shared.SharedWaypointAvailability;
 import cn.net.rms.confluxmap.core.predict.PredictionState;
+import cn.net.rms.confluxmap.core.util.Easing;
+import cn.net.rms.confluxmap.core.util.Stagger;
 import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.predict.ManualSeedService;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.UiResourceTheme;
+import java.util.List;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.screen.Screen;
@@ -69,6 +72,11 @@ public final class ConfigScreen extends ConfluxScreen {
     private static final int BOTTOM_MARGIN = 30;
     private static final int RADAR_NOTICE_PADDING = 4;
     private static final int NOTICE_TEXT_COLOR = 0xFFFFAA00;
+    /**
+     * Share of the row fade's timeline that each row waits behind the previous one; the
+     * slices compress per-row fades by the same factor, so all rows still finish together.
+     */
+    private static final float ROW_STAGGER_FRACTION = 0.25f;
 
     private final Screen parent;
     private final ConfluxConfig config;
@@ -92,6 +100,8 @@ public final class ConfigScreen extends ConfluxScreen {
     PlayerMarkerSettingsAccess playerMarkerAccess =
         PlayerMarkerSettingsAccess.from(false);
     boolean manualSeedAvailable;
+    /** True while the open reveal should still drive the rows' staggered fade-in. */
+    private boolean rowFadeArmed;
 
     public ConfigScreen() {
         this(null);
@@ -123,6 +133,10 @@ public final class ConfigScreen extends ConfluxScreen {
         rowWidth = Math.min(MAX_ROW_WIDTH, width - MARGIN * 2);
         scrollOffset = 0;
         manualSeedAvailable = manualSeedService.available();
+        // Arm for a real open only: a resize re-init lands on a settled reveal, and a
+        // parent screen reopened from a child replays its reveal after init, so neither
+        // may re-stagger the rows — those fade with the screen like every other widget.
+        rowFadeArmed = config.uiTransitionsEnabled && revealOpening();
         rebuild();
     }
 
@@ -308,6 +322,37 @@ public final class ConfigScreen extends ConfluxScreen {
         return addDrawableChild(widget);
     }
 
+    /**
+     * Drives the rows' staggered fade-in through the open reveal's shared progress, sliced
+     * per row so the buttons appear top to bottom. Runs after the reveal frame has set the
+     * uniform widget alpha, so the per-row values win for this frame. A rebuild mid-fade
+     * hands its new buttons the current progress, and the first non-opening frame restores
+     * the exact pre-flight rows — a settled screen then pays a single flag check per frame.
+     */
+    private void applyRowStagger() {
+        if (!rowFadeArmed) {
+            return;
+        }
+        final List<RowButton> buttons = rows.rowButtons();
+        if (!revealOpening()) {
+            // The reveal landed or a close fade took over. Un-scope the rows so the
+            // screen's own fade handles both render channels from here — on a close-fade
+            // frame a scoped row would stay opaque while the screen dims.
+            rowFadeArmed = false;
+            for (final RowButton button : buttons) {
+                button.settleRowAlpha();
+            }
+            return;
+        }
+        final float progress = revealProgress();
+        final int count = buttons.size();
+        for (int index = 0; index < count; index++) {
+            buttons.get(index).setRowAlpha(
+                Easing.easeOutCubic(Stagger.slice(progress, index, count, ROW_STAGGER_FRACTION))
+            );
+        }
+    }
+
     private PredictionSettingsAccess predictionSettingsAccess() {
         final boolean singleplayer = MinecraftClient.getInstance().isInSingleplayer();
         final boolean seedIndependentUnderlay = predictionState.flatBaseline(
@@ -329,6 +374,7 @@ public final class ConfigScreen extends ConfluxScreen {
 
     @Override
     protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
+        applyRowStagger();
         draw.renderBackground(this, mouseX, mouseY, tickDelta);
         final String title = getTitle().getString();
         draw.drawTextWithShadow(this.textRenderer, title, width / 2f - this.textRenderer.getWidth(title) / 2f, 8, 0xFFFFFFFF);

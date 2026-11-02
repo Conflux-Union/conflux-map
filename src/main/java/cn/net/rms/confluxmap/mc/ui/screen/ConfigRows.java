@@ -24,7 +24,6 @@ import java.util.function.IntFunction;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
@@ -50,6 +49,8 @@ final class ConfigRows {
     private final List<TextFieldWidget> textFields = new ArrayList<>();
     private final List<IconTextureLabel> iconTextureLabels = new ArrayList<>();
     private final List<SectionLabel> sectionLabels = new ArrayList<>();
+    /** Row buttons in build order; the screen's open stagger slices its progress across them. */
+    private final List<RowButton> rowButtons = new ArrayList<>();
 
     /** Static label drawn beside a portal-icon text-field row; the row widget is the field itself. */
     private record IconTextureLabel(int y, String key) {
@@ -72,6 +73,12 @@ final class ConfigRows {
         textFields.clear();
         iconTextureLabels.clear();
         sectionLabels.clear();
+        rowButtons.clear();
+    }
+
+    /** The rebuilt row's buttons, top to bottom, for the screen's open stagger. */
+    List<RowButton> rowButtons() {
+        return rowButtons;
     }
 
     void tickInputs() {
@@ -635,7 +642,7 @@ final class ConfigRows {
         final String disabledTooltipKey
     ) {
         if (screen.rowVisible(y)) {
-            final ButtonWidget button = screen.addRowWidget(Widgets.button(
+            final RowButton button = screen.addRowWidget(new RowButton(
                 screen.rowX(), y, screen.rowWidth, ConfigScreen.ROW_HEIGHT - 2,
                 ConfigValueLabels.boolLabel(labelKey, getter.getAsBoolean()),
                 b -> {
@@ -647,6 +654,7 @@ final class ConfigRows {
             ));
             button.active = active;
             screen.setDisabledTooltip(button, disabledTooltipKey);
+            rowButtons.add(button);
         }
         return y + ConfigScreen.ROW_HEIGHT;
     }
@@ -699,7 +707,7 @@ final class ConfigRows {
         final String hoverTooltipKey
     ) {
         if (screen.rowVisible(y)) {
-            final ButtonWidget button = screen.addRowWidget(Widgets.button(
+            final RowButton button = screen.addRowWidget(new RowButton(
                 screen.rowX(), y, screen.rowWidth, ConfigScreen.ROW_HEIGHT - 2,
                 ConfigValueLabels.enumLabel(labelKey, getter.get(), valueKeyFn),
                 b -> {
@@ -712,6 +720,7 @@ final class ConfigRows {
             button.active = active;
             screen.setDisabledTooltip(button, disabledTooltipKey);
             screen.setHoverTooltip(button, hoverTooltipKey);
+            rowButtons.add(button);
         }
         return y + ConfigScreen.ROW_HEIGHT;
     }
@@ -771,7 +780,7 @@ final class ConfigRows {
 
     private int addZoomRow(final int y) {
         if (screen.rowVisible(y)) {
-            screen.addRowWidget(Widgets.button(
+            final RowButton button = screen.addRowWidget(new RowButton(
                 screen.rowX(), y, screen.rowWidth, ConfigScreen.ROW_HEIGHT - 2,
                 ConfigValueLabels.zoomLabel(config.minimapZoomIndex),
                 b -> {
@@ -780,6 +789,7 @@ final class ConfigRows {
                     b.setMessage(ConfigValueLabels.zoomLabel(config.minimapZoomIndex));
                 }
             ));
+            rowButtons.add(button);
         }
         return y + ConfigScreen.ROW_HEIGHT;
     }
@@ -796,12 +806,13 @@ final class ConfigRows {
         final String disabledTooltipKey
     ) {
         if (screen.rowVisible(y)) {
-            final ButtonWidget button = screen.addRowWidget(Widgets.button(
+            final RowButton button = screen.addRowWidget(new RowButton(
                 screen.rowX(), y, screen.rowWidth, ConfigScreen.ROW_HEIGHT - 2,
                 Texts.translatable(labelKey), ignored -> action.run()
             ));
             button.active = active;
             screen.setDisabledTooltip(button, disabledTooltipKey);
+            rowButtons.add(button);
         }
         return y + ConfigScreen.ROW_HEIGHT;
     }

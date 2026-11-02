@@ -184,6 +184,20 @@ public abstract class ConfluxScreen extends Screen {
         revealClock.reset();
     }
 
+    /**
+     * Raw progress of this screen's reveal in [0, 1]; 1 fully open, 0 fully closed — for
+     * callers slicing their own sub-progress off the open transition. The clock stays with
+     * the reveal frame, so readers must run inside the render pass.
+     */
+    float revealProgress() {
+        return reveal.progress();
+    }
+
+    /** True only while the open reveal is climbing; a close fade or a settled screen is false. */
+    boolean revealOpening() {
+        return reveal.phase() == ScreenReveal.Phase.OPENING;
+    }
+
     private void finishPendingCloseNow() {
         reveal.finishNow();
         completePendingClose();
