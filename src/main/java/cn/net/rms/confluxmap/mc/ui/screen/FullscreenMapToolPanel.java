@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.mc.ui.anim.PopupReveal;
 import java.util.List;
+import net.minecraft.client.gui.widget.ButtonWidget;
 
 /** Exclusive primary-tool group state for the fullscreen map. */
 final class FullscreenMapToolPanel {
@@ -12,8 +13,12 @@ final class FullscreenMapToolPanel {
         ACTIONS
     }
 
-    /** One flying expansion button: the widget plus the slot it settles into. */
-    record FlyingButton(FullscreenMapScreen.MapIconButton button, int settleX, int settleY) {
+    /**
+     * One flying expansion button: the widget plus the slot it settles into. A plain
+     * {@link ButtonWidget}, because the drawing grid's color swatch is an anonymous
+     * subclass rather than a map icon button.
+     */
+    record FlyingButton(ButtonWidget button, int settleX, int settleY) {
     }
 
     /** A collapsed group's buttons still flying back into their group button. */
