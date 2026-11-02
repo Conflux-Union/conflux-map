@@ -1533,7 +1533,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 centerX, centerZ, width / 2.0, height / 2.0, scale, 0.0, width, height
             ),
             config.playerTrailDurationSeconds,
-            config.playerTrailDotSize
+            config.playerTrailDotSize,
+            1f
         );
     }
 
@@ -2256,7 +2257,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         RadarMarkerRenderer.drawAll(
             draw, this.client, config, radarIconManager, markers,
             RadarMarkerRenderer.Presentation.detailed(config.radarShowPlayerNames),
-            marker -> !radarMarkerIntersectsUi(marker)
+            marker -> !radarMarkerIntersectsUi(marker),
+            1f
         );
     }
 

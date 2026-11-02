@@ -121,7 +121,7 @@ public final class RadarMarkerRenderer {
         final List<Marker> markers,
         final Presentation presentation
     ) {
-        drawAll(draw, client, config, iconManager, markers, presentation, marker -> true);
+        drawAll(draw, client, config, iconManager, markers, presentation, marker -> true, 1f);
     }
 
     /** Draws one player skin crop for HUD surfaces that do not have a loaded player entity. */
@@ -163,11 +163,12 @@ public final class RadarMarkerRenderer {
         final EntityIconManager iconManager,
         final List<Marker> markers,
         final Presentation presentation,
-        final Predicate<Marker> visible
+        final Predicate<Marker> visible,
+        final float fadeAlpha
     ) {
         for (final Marker marker : markers) {
             if (visible.test(marker)) {
-                drawMarker(draw, client, config, iconManager, marker, presentation);
+                drawMarker(draw, client, config, iconManager, marker, presentation, fadeAlpha);
             }
         }
     }
@@ -178,7 +179,8 @@ public final class RadarMarkerRenderer {
         final ConfluxConfig config,
         final EntityIconManager iconManager,
         final Marker marker,
-        final Presentation presentation
+        final Presentation presentation,
+        final float fadeAlpha
     ) {
         final RadarEntry entry = marker.entry();
         final float x = marker.x();
@@ -186,8 +188,8 @@ public final class RadarMarkerRenderer {
         final int yDelta = marker.yDelta();
         final Entity live = marker.live();
         final MatrixStack matrices = draw.matrices();
-        final float alphaScale = marker.ghost()
-            ? 0.5f : entry.spectator() ? SPECTATOR_ALPHA : 1f;
+        final float alphaScale = (marker.ghost()
+            ? 0.5f : entry.spectator() ? SPECTATOR_ALPHA : 1f) * fadeAlpha;
         if (usesDetailedIcon(entry.category(), presentation)) {
             final ItemStack itemIcon = live != null && entry.category() == RadarCategory.OTHER
                 ? itemIconFor(live)
@@ -223,7 +225,8 @@ public final class RadarMarkerRenderer {
         final int color = Argb.scaleAlpha(elevationColor(baseColor(entry.category()), yDelta), alphaScale);
         if (entry.category() == RadarCategory.PLAYER) {
             if (marker.highlighted()) {
-                GuiShapes.fillRect(matrices, x - 3f, y - 3f, 6f, 6f, HIGHLIGHT_OUTLINE);
+                GuiShapes.fillRect(
+                    matrices, x - 3f, y - 3f, 6f, 6f, Argb.scaleAlpha(HIGHLIGHT_OUTLINE, fadeAlpha));
             }
             GuiShapes.fillRect(matrices, x - 2f, y - 2f, 4f, 4f, color);
             drawDestinationIcon(draw, client, config, marker);

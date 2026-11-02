@@ -1,6 +1,8 @@
 package cn.net.rms.confluxmap.mc.ui.anim;
 
-/** Pure easing and speed-tier math shared by the interface transitions. */
+import cn.net.rms.confluxmap.core.util.Easing;
+
+/** Speed-tier math for the interface transitions; easing lives in {@link Easing}. */
 public final class UiMotion {
     /** Reveal durations per speed tier, in seconds. */
     public static final float FAST = 0.12f;
@@ -8,13 +10,6 @@ public final class UiMotion {
     public static final float RELAXED = 0.26f;
 
     private UiMotion() {
-    }
-
-    /** Decelerating ease in [0, 1]; out-of-range inputs clamp first. */
-    public static float easeOutCubic(final float progress) {
-        final float clamped = Math.max(0.0f, Math.min(1.0f, progress));
-        final float remaining = 1.0f - clamped;
-        return 1.0f - remaining * remaining * remaining;
     }
 
     /**

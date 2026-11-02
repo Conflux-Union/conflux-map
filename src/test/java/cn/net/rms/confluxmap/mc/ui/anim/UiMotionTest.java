@@ -6,15 +6,6 @@ import org.junit.jupiter.api.Test;
 
 final class UiMotionTest {
     @Test
-    void easeOutCubicMatchesOneMinusCubeAndClamps() {
-        assertEquals(0.0f, UiMotion.easeOutCubic(0.0f));
-        assertEquals(0.5f, UiMotion.easeOutCubic(0.20629947f), 1e-5f);
-        assertEquals(1.0f, UiMotion.easeOutCubic(1.0f));
-        assertEquals(0.0f, UiMotion.easeOutCubic(-0.5f));
-        assertEquals(1.0f, UiMotion.easeOutCubic(1.5f));
-    }
-
-    @Test
     void advanceMovesTowardOneAndClamps() {
         assertEquals(0.5f, UiMotion.advance(0.0f, 0.09f, UiMotion.STANDARD), 1e-5f);
         assertEquals(1.0f, UiMotion.advance(0.9f, 0.09f, UiMotion.STANDARD));

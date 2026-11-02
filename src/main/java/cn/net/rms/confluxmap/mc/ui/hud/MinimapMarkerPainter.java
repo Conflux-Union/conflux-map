@@ -154,7 +154,8 @@ final class MinimapMarkerPainter {
         final float centerY,
         final int size,
         final float mapAngle,
-        final float blocksPerPixel
+        final float blocksPerPixel,
+        final float alpha
     ) {
         if (!config.playerTrailEnabled) {
             return;
@@ -167,7 +168,8 @@ final class MinimapMarkerPainter {
                 blocksPerPixel, mapAngle, size, size
             ),
             config.playerTrailDurationSeconds,
-            config.playerTrailDotSize
+            config.playerTrailDotSize,
+            alpha
         );
     }
 

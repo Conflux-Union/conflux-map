@@ -275,7 +275,8 @@ public final class MinimapHudRenderer {
             fbo.pop();
             markerPainter.drawPlayerTrail(
                 fbo, player,
-                contentSize / 2f, contentSize / 2f, contentSize, mapAngle, minimapBlocksPerPixel
+                contentSize / 2f, contentSize / 2f, contentSize, mapAngle, minimapBlocksPerPixel,
+                1f
             );
             if (!visibleAnnotations.isEmpty()) {
                 AnnotationRenderer.drawGeometry(
@@ -331,7 +332,7 @@ public final class MinimapHudRenderer {
             }
             markerPainter.drawPortalChunkHighlights(matrices, player, contentSize, minimapBlocksPerPixel, fadeAlpha);
             matrices.pop();
-            markerPainter.drawPlayerTrail(matrices, player, centerX, centerY, contentSize, mapAngle, minimapBlocksPerPixel);
+            markerPainter.drawPlayerTrail(matrices, player, centerX, centerY, contentSize, mapAngle, minimapBlocksPerPixel, fadeAlpha);
             if (!visibleAnnotations.isEmpty()) {
                 final AnnotationProjection annotationProjection = annotationProjection(
                     player, centerX, centerY, contentSize, mapAngle, minimapBlocksPerPixel
@@ -354,7 +355,7 @@ public final class MinimapHudRenderer {
             chromePainter.drawFrame(matrices, x0, y0, size, false, minimapFrame, fadeAlpha);
         }
 
-        radarPainter.drawRadar(draw, centerX, centerY, contentSize, mapAngle, player, tickDelta, minimapBlocksPerPixel);
+        radarPainter.drawRadar(draw, centerX, centerY, contentSize, mapAngle, player, tickDelta, minimapBlocksPerPixel, fadeAlpha);
         chromePainter.drawCardinals(draw, centerX, centerY, contentSize, mapAngle, fadeAlpha);
         markerPainter.drawPortalMarkers(draw, centerX, centerY, contentSize, mapAngle, player, minimapBlocksPerPixel, fadeAlpha);
         markerPainter.drawWaypointMarkers(draw, centerX, centerY, contentSize, mapAngle, player, minimapBlocksPerPixel, fadeAlpha);

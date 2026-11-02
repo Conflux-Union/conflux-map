@@ -1,5 +1,7 @@
 package cn.net.rms.confluxmap.mc.ui.anim;
 
+import cn.net.rms.confluxmap.core.util.Easing;
+
 /**
  * Show/hide progress for one popup surface. Unlike {@link ScreenReveal} this has no phases:
  * the target is a boolean and each tick moves progress toward it, so reversing mid-flight
@@ -28,7 +30,7 @@ public final class PopupReveal {
 
     /** Eased progress in [0, 1]; 1 is fully shown, 0 fully hidden. */
     public float eased() {
-        return UiMotion.easeOutCubic(progress);
+        return Easing.easeOutCubic(progress);
     }
 
     /** Jumps to the target state, ending any per-frame cost. */

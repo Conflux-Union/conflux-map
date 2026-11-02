@@ -1,5 +1,7 @@
 package cn.net.rms.confluxmap.mc.ui.anim;
 
+import cn.net.rms.confluxmap.core.util.Easing;
+
 /**
  * Reveal state machine for one screen's open/close transition. Progress runs 0..1 in both
  * phases: OPENING climbs from 0, CLOSING falls back toward 0 from wherever it stands, so a
@@ -52,7 +54,7 @@ public final class ScreenReveal {
 
     /** Eased progress for rendering; use even while OPEN (it is 1 there). */
     public float eased() {
-        return UiMotion.easeOutCubic(progress);
+        return Easing.easeOutCubic(progress);
     }
 
     /** Raw progress in [0, 1]; 1 fully open, 0 fully closed. */
