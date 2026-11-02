@@ -47,6 +47,11 @@ public final class PopupReveal {
         return Easing.easeOutCubic(progress);
     }
 
+    /** Raw progress in [0, 1]; 1 fully shown, 0 fully hidden — for callers slicing sub-progress. */
+    public float progress() {
+        return progress;
+    }
+
     /** Jumps to the target state, ending any per-frame cost. */
     public void finishNow() {
         progress = open ? 1.0f : 0.0f;
