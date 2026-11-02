@@ -8,6 +8,7 @@ import cn.net.rms.confluxmap.compat.PlayNetworking;
 import cn.net.rms.confluxmap.core.net.BiomeLangReqC2S;
 import cn.net.rms.confluxmap.core.net.BiomeLangS2C;
 import cn.net.rms.confluxmap.core.net.ErrorS2C;
+import cn.net.rms.confluxmap.core.net.FeatureRestrictionsS2C;
 import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
 import cn.net.rms.confluxmap.core.net.QuadraLayoutS2C;
 import cn.net.rms.confluxmap.core.net.HelloC2S;
@@ -112,6 +113,8 @@ public final class ClientNetworking {
             session.onFlatBaselines(f);
         } else if (msg instanceof final QuadraLayoutS2C q) {
             session.onQuadraLayouts(q);
+        } else if (msg instanceof final FeatureRestrictionsS2C r) {
+            session.onFeatureRestrictions(r);
         } else if (msg instanceof final PolicyUpdateS2C u) {
             onPolicyUpdate(u);
         } else if (msg instanceof final MapPatchS2C p) {

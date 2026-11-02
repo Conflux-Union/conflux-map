@@ -14,6 +14,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.BooleanSupplier;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.DeathScreen;
@@ -40,13 +41,20 @@ public final class DeathWatcher {
     private final GameBridge gameBridge;
     private final ConfluxConfig config;
     private final WaypointService waypoints;
+    private final BooleanSupplier serverPolicyAllowsWaypoints;
 
     private boolean deathScreenWasOpen;
 
-    public DeathWatcher(final GameBridge gameBridge, final ConfluxConfig config, final WaypointService waypoints) {
+    public DeathWatcher(
+        final GameBridge gameBridge,
+        final ConfluxConfig config,
+        final WaypointService waypoints,
+        final BooleanSupplier serverPolicyAllowsWaypoints
+    ) {
         this.gameBridge = gameBridge;
         this.config = config;
         this.waypoints = waypoints;
+        this.serverPolicyAllowsWaypoints = serverPolicyAllowsWaypoints;
     }
 
     public void register() {
@@ -63,7 +71,7 @@ public final class DeathWatcher {
     }
 
     private void onDeath() {
-        if (config.deathPointsKept <= 0) {
+        if (config.deathPointsKept <= 0 || !serverPolicyAllowsWaypoints.getAsBoolean()) {
             return;
         }
         final WaypointStore store = waypoints.current();

@@ -37,6 +37,10 @@ class ServerConfigTest {
         assertTrue(c.shareCorrections);
         assertFalse(c.shareChunkLoadState);
         assertTrue(c.allowEntityRadar);
+        assertTrue(c.allowMinimap);
+        assertTrue(c.allowWorldMap);
+        assertTrue(c.allowWaypoints);
+        assertTrue(c.allowPrediction);
         assertTrue(c.shareWaypoints);
         assertTrue(c.allowNonOperatorSharedWaypointManagement);
         assertEquals(

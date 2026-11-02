@@ -36,6 +36,11 @@ public final class Proto {
      * independent capabilities in the unchanged HELLO frame and receive the extensible 0x12
      * selection. Capability-aware clients receive the server chunk-send radius in 0x11, while
      * released peers continue to use their existing policy fingerprint.
+     *
+     * <p>Additive S2C message ids (0x11 through 0x19) intentionally leave the minor at 0: legacy
+     * {@code wire:} tokens match {@code major.minor} exactly, so a minor bump would knock every
+     * released legacy-token peer out of residual sync. Older clients drop unknown type ids, which
+     * is how 0x19 (client feature restrictions) ships without a wire change.
      */
     public static final int PROTO_MAJOR = 4;
     public static final int PROTO_MINOR = 0;
@@ -90,11 +95,17 @@ public final class Proto {
     public static final int MSG_BIOME_LANG_S2C = 0x17;
     /** S2C: one page of the generated-region manifest for a server-initiated full sync. */
     public static final int MSG_MAP_FULL_SYNC_MANIFEST_S2C = 0x18;
+    /**
+     * S2C: client feature restrictions the server enforces on cooperating clients (minimap,
+     * world map, waypoints, prediction). Sent just before {@link #MSG_HELLO_POLICY_S2C} and
+     * only when at least one feature is forbidden; absence keeps every feature allowed.
+     */
+    public static final int MSG_FEATURE_RESTRICTIONS_S2C = 0x19;
 
     /** First valid message id; used to range-check the type byte. */
     public static final int MSG_MIN = MSG_HELLO_C2S;
     /** Last valid message id for this proto major version. */
-    public static final int MSG_MAX = MSG_MAP_FULL_SYNC_MANIFEST_S2C;
+    public static final int MSG_MAX = MSG_FEATURE_RESTRICTIONS_S2C;
 
     // ---- Hard caps (enforced everywhere untrusted bytes cross a boundary) ----
 

@@ -282,6 +282,33 @@ final class WaypointRenderCatalogTest {
     }
 
     @Test
+    void serverPolicyGateHidesEverySnapshotSource(@TempDir final Path tempDir) {
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final WaypointService local = new WaypointService(tempDir, executors, LOGGER);
+            local.onSessionChanged(new SessionGuard.Session(
+                1L, new WorldIdentity("play.example.net", "client-a"), DimensionId.OVERWORLD
+            ));
+            local.current().add(local("Home", true));
+            final SharedWaypoint shared = sharedAt("Village", DimensionId.OVERWORLD, 5.0, 71.0, 6.0);
+            final ConfluxConfig config = new ConfluxConfig();
+            final WaypointRenderCatalog catalog = new WaypointRenderCatalog(
+                local, () -> List.of(shared), List::of, config, () -> false
+            );
+
+            assertEquals(0, catalog.snapshot().size());
+            assertEquals(0, catalog.snapshot(DimensionId.OVERWORLD).size());
+
+            final WaypointRenderCatalog allowed = new WaypointRenderCatalog(
+                local, () -> List.of(shared), List::of, config, () -> true
+            );
+            assertEquals(2, allowed.snapshot().size());
+        } finally {
+            executors.shutdown(1000L);
+        }
+    }
+
+    @Test
     void snapshotGatesSiblingsBehindBothToggles(@TempDir final Path tempDir) {
         final MapExecutors executors = new MapExecutors();
         try {

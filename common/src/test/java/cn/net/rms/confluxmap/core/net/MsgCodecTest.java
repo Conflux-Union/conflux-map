@@ -85,6 +85,25 @@ class MsgCodecTest {
     }
 
     @Test
+    void featureRestrictionsRoundTripEveryCombination() throws ProtoException {
+        for (int bits = 0; bits < 16; bits++) {
+            final FeatureRestrictionsS2C original = new FeatureRestrictionsS2C(
+                (bits & 1) != 0,
+                (bits & 2) != 0,
+                (bits & 4) != 0,
+                (bits & 8) != 0
+            );
+            final FeatureRestrictionsS2C decoded = (FeatureRestrictionsS2C) MsgCodec.decode(
+                MsgCodec.encode(original)
+            );
+            assertEquals(original, decoded);
+            assertEquals(bits != 0, !decoded.isEmpty());
+            assertEquals(Proto.MSG_FEATURE_RESTRICTIONS_S2C, decoded.typeId());
+        }
+        assertTrue(FeatureRestrictionsS2C.none().isEmpty());
+    }
+
+    @Test
     void playerPositionsRoundTripEveryIdentityAndPositionField() throws ProtoException {
         final PlayerPositionsS2C original = new PlayerPositionsS2C(List.of(
             new PlayerPositionsS2C.Entry(

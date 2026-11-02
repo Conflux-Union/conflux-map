@@ -40,11 +40,17 @@ final class KeybindActionHandler {
         final boolean handled;
         switch (action) {
             case TOGGLE_MINIMAP:
+                if (!minimapAllowed()) {
+                    return false;
+                }
                 config.minimapEnabled = !config.minimapEnabled;
                 configChanged = true;
                 handled = true;
                 break;
             case CYCLE_ZOOM:
+                if (!minimapAllowed()) {
+                    return false;
+                }
                 config.cycleMinimapZoom();
                 configChanged = true;
                 handled = true;
@@ -53,17 +59,29 @@ final class KeybindActionHandler {
                 handled = toggleMapScreen();
                 break;
             case CYCLE_LAYER:
+                if (!minimapAllowed()) {
+                    return false;
+                }
                 layerSelector.cycleOverride();
                 configChanged = true;
                 handled = true;
                 break;
             case OPEN_WAYPOINTS:
+                if (!waypointsAllowed()) {
+                    return false;
+                }
                 handled = openScreen(WaypointListScreen.openedFromHotkey());
                 break;
             case NEW_WAYPOINT:
+                if (!waypointsAllowed()) {
+                    return false;
+                }
                 handled = openNewWaypointAtViewpoint();
                 break;
             case TOGGLE_LOCAL_WAYPOINTS:
+                if (!waypointsAllowed()) {
+                    return false;
+                }
                 config.localWaypointsVisible = !config.localWaypointsVisible;
                 configChanged = true;
                 handled = true;
@@ -72,12 +90,18 @@ final class KeybindActionHandler {
                 handled = openScreen(new ConfigScreen());
                 break;
             case CYCLE_PREDICTION:
+                if (!predictionAllowed()) {
+                    return false;
+                }
                 config.predictionViewMode = config.predictionViewMode.next();
                 ConfluxMapClient.get().predictionTileService().setViewMode(config.predictionViewMode);
                 configChanged = true;
                 handled = true;
                 break;
             case RELOAD_PREDICTION:
+                if (!predictionAllowed()) {
+                    return false;
+                }
                 ConfluxMapClient.get().reloadPredictionTiles();
                 handled = true;
                 break;
@@ -90,6 +114,18 @@ final class KeybindActionHandler {
         return handled;
     }
 
+    private static boolean minimapAllowed() {
+        return ConfluxMapClient.get().companionSession().minimapAllowed();
+    }
+
+    private static boolean waypointsAllowed() {
+        return ConfluxMapClient.get().companionSession().waypointsAllowed();
+    }
+
+    private static boolean predictionAllowed() {
+        return ConfluxMapClient.get().companionSession().predictionAllowed();
+    }
+
     private boolean toggleMapScreen() {
         final MinecraftClient client = MinecraftClient.getInstance();
         if (MinecraftAccess.screen(client) instanceof FullscreenMapScreen) {
@@ -97,6 +133,9 @@ final class KeybindActionHandler {
             return true;
         }
         if (client.player == null || MinecraftAccess.screen(client) != null) {
+            return false;
+        }
+        if (!ConfluxMapClient.get().companionSession().worldMapAllowed()) {
             return false;
         }
         if (ConfluxMapClient.get().clientMultiworldService().needsSelection()) {

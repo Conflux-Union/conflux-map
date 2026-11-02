@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.api;
 
+import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.api.ActionApi;
 import cn.net.rms.confluxmap.api.MapDataApi.ApiLayer;
 import cn.net.rms.confluxmap.bridge.GameBridge;
@@ -89,6 +90,9 @@ public final class FabricActionApi implements ActionApi {
             return;
         }
         onMain(() -> {
+            if (!ConfluxMapClient.get().companionSession().waypointsAllowed()) {
+                return;
+            }
             final Waypoint waypoint = findWaypoint(waypointId);
             if (waypoint != null && client.player != null && MinecraftAccess.screen(client) == null) {
                 MinecraftAccess.setScreen(client, WaypointEditScreen.forEdit(null, waypoint));

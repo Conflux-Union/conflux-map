@@ -337,7 +337,7 @@ public abstract class InGameHudMixin {
         final ConfluxConfig config = app.config();
         final var screen = MinecraftAccess.screen(client);
         if (!MinimapHudVisibility.shouldRender(
-            config.minimapEnabled,
+            config.minimapEnabled && app.companionSession().minimapAllowed(),
             app.gameBridge().session().active(),
             screen instanceof FullscreenMapScreen,
             MinecraftAccess.isContainerScreen(screen),

@@ -121,7 +121,14 @@ final class ConfigRows {
         int y = rowsTop - screen.scrollOffset;
         switch (screen.category) {
             case MINIMAP:
-                y = addToggleRow(y, "confluxmap.config.minimap.enabled", () -> config.minimapEnabled, v -> config.minimapEnabled = v);
+                y = addToggleRow(
+                    y, "confluxmap.config.minimap.enabled",
+                    () -> config.minimapEnabled, v -> config.minimapEnabled = v,
+                    !screen.minimapRestrictedByServer,
+                    screen.minimapRestrictedByServer
+                        ? "confluxmap.screen.config.minimap.disabled_by_server"
+                        : null
+                );
                 y = addActionRow(
                     y,
                     "confluxmap.config.minimap.position",
@@ -401,22 +408,27 @@ final class ConfigRows {
                     () -> config.teleportCloseMap, v -> config.teleportCloseMap = v
                 );
                 y = addSectionRow(y, "confluxmap.screen.config.section.visibility");
+                final boolean waypointsUsable = !screen.waypointsRestrictedByServer;
+                final String waypointsTooltip = waypointsUsable
+                    ? null : "confluxmap.screen.config.waypoints.disabled_by_server";
                 y = addToggleRow(
                     y, "confluxmap.config.waypoints.show_local",
-                    () -> config.localWaypointsVisible, v -> config.localWaypointsVisible = v
+                    () -> config.localWaypointsVisible, v -> config.localWaypointsVisible = v,
+                    waypointsUsable, waypointsTooltip
                 );
                 y = addToggleRow(
                     y, "confluxmap.config.waypoints.show_cross_world",
-                    () -> config.crossWorldWaypointsVisible, v -> config.crossWorldWaypointsVisible = v
+                    () -> config.crossWorldWaypointsVisible, v -> config.crossWorldWaypointsVisible = v,
+                    waypointsUsable, waypointsTooltip
                 );
                 if (screen.sharedAvailability.visible()) {
                     y = addToggleRow(
                         y, "confluxmap.config.waypoints.show_shared",
                         () -> config.sharedWaypointsVisible, v -> config.sharedWaypointsVisible = v,
-                        screen.sharedAvailability.ready(),
+                        waypointsUsable && screen.sharedAvailability.ready(),
                         screen.sharedAvailability.disabledByServer()
                             ? "confluxmap.shared_waypoints.disabled_by_server"
-                            : null
+                            : waypointsTooltip
                     );
                 }
                 y = addSectionRow(y, "confluxmap.screen.config.section.waypoint_list");

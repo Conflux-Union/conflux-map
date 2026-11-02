@@ -604,7 +604,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 MinecraftClient.getInstance(), new WaypointListScreen(this, WaypointListScreen.Tab.LOCAL)
             )
         ));
-        manageWaypointsButton.active = viewingLiveWorld();
+        manageWaypointsButton.active = viewingLiveWorld()
+            && ConfluxMapClient.get().companionSession().waypointsAllowed();
         annotationToolbarBounds = new AnnotationToolbarBounds(
             x, top, CONTROL_SIZE, y + CONTROL_SIZE - top
         );
@@ -2054,6 +2055,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     ) {
         final SessionGuard.Session live = gameBridge.session();
         return config.predictionEnabled
+            && ConfluxMapClient.get().companionSession().predictionAllowed()
             && session.world().equals(live.world())
             && session.dimension().equals(live.dimension())
             && FullscreenMapLayerPolicy.predictionAllowed(
@@ -2734,6 +2736,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final StructureIndex.Marker marker,
         final Screen returnScreen
     ) {
+        if (!ConfluxMapClient.get().companionSession().waypointsAllowed()) {
+            return;
+        }
         final Optional<PlayerView> player = gameBridge.player();
         final OptionalInt playerY = player.isPresent()
             ? OptionalInt.of(player.get().blockY())
@@ -2753,6 +2758,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final BiomeCandidateSearch.Candidate candidate,
         final Screen returnScreen
     ) {
+        if (!ConfluxMapClient.get().companionSession().waypointsAllowed()) {
+            return;
+        }
         final Optional<PlayerView> player = gameBridge.player();
         final OptionalInt playerY = player.isPresent()
             ? OptionalInt.of(player.get().blockY())

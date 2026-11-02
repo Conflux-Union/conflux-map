@@ -513,17 +513,22 @@ final class MapLocationMenuController {
                 }
             }
             case CLEAR_PLAYER_HIGHLIGHT -> screen.serverPlayerRadar.clearHighlight();
-            case SET_WAYPOINT -> screen.gameBridge.player().ifPresent(player -> MinecraftAccess.setScreen(
-                MinecraftClient.getInstance(),
-                WaypointEditScreen.forCreate(
-                    returnTo,
-                    screen.viewSession().dimension(),
-                    target.blockX(),
-                    target.placementY(player.blockY()),
-                    target.blockZ(),
-                    screen::viewWaypointStore
-                )
-            ));
+            case SET_WAYPOINT -> {
+                if (!ConfluxMapClient.get().companionSession().waypointsAllowed()) {
+                    return;
+                }
+                screen.gameBridge.player().ifPresent(player -> MinecraftAccess.setScreen(
+                    MinecraftClient.getInstance(),
+                    WaypointEditScreen.forCreate(
+                        returnTo,
+                        screen.viewSession().dimension(),
+                        target.blockX(),
+                        target.placementY(player.blockY()),
+                        target.blockZ(),
+                        screen::viewWaypointStore
+                    )
+                ));
+            }
             case EDIT_WAYPOINT -> {
                 if (waypoint != null) {
                     openWaypointFromLocationMenu(waypoint, returnTo);

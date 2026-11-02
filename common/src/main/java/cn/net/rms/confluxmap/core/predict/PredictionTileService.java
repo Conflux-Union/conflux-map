@@ -36,6 +36,7 @@ import java.util.OptionalInt;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
 
 /**
@@ -81,6 +82,7 @@ public final class PredictionTileService {
     private volatile CorrectionStore correctionStore;
     private volatile DaylightModel daylightModel;
     private volatile PredictionViewMode viewMode = PredictionViewMode.EVERYWHERE;
+    private volatile BooleanSupplier serverPolicyAllowsPrediction = () -> true;
     private volatile MapColorStyle mapColorStyle = MapColorStyle.CONFLUX;
     private volatile ConfluxConfig.VoidColumnColor voidColumnColor = ConfluxConfig.VoidColumnColor.OFF;
 
@@ -238,6 +240,23 @@ public final class PredictionTileService {
             }
         }
         pump();
+    }
+
+    /**
+     * Server feature gate for the prediction underlay. When the companion forbids prediction,
+     * every composition and cache read resolves to {@link PredictionViewMode#VISITED_ONLY}, which
+     * emits no predicted pixels: the underlay vanishes while the locally captured REAL layer and
+     * the upload queue keep working. The supplier stays {@code () -> true} on the common side;
+     * only the client wires the companion policy in.
+     */
+    public void setServerPolicyAllowsPrediction(final BooleanSupplier allowed) {
+        serverPolicyAllowsPrediction = allowed == null ? () -> true : allowed;
+    }
+
+    private PredictionViewMode effectiveViewMode() {
+        return serverPolicyAllowsPrediction.getAsBoolean()
+            ? viewMode
+            : PredictionViewMode.VISITED_ONLY;
     }
 
     public void setMapQuality(final ConfluxConfig.MapQuality quality) {
@@ -789,7 +808,7 @@ public final class PredictionTileService {
                             session.world(), dimension, layer + PredictedTileKeys.SUFFIX,
                             lod, tileX, tileZ
                         );
-                        if (mipCache.lowerCoverageValidatedAt(key, viewMode) != PredictionMipCache.MISSING) {
+                        if (mipCache.lowerCoverageValidatedAt(key, effectiveViewMode()) != PredictionMipCache.MISSING) {
                             dirty.put(key, session.token());
                         }
                     }
@@ -859,7 +878,7 @@ public final class PredictionTileService {
                     // recomposed (and re-uploaded) once per frame, which is exactly the kind of
                     // background load that starves the visible tiles.
                     if (dirty.containsKey(key) || inFlight.contains(key)
-                        || mipCache.exact(key, viewMode) != null
+                        || mipCache.exact(key, effectiveViewMode()) != null
                         || nonCacheableTiles.contains(key)) {
                         continue;
                     }
@@ -1205,7 +1224,7 @@ public final class PredictionTileService {
     }
 
     private Composition composeTile(final TileKey key, final long token) {
-        return composeTile(key, token, viewMode, netherBiomeY);
+        return composeTile(key, token, effectiveViewMode(), netherBiomeY);
     }
 
     private Composition composeTile(
@@ -1244,9 +1263,11 @@ public final class PredictionTileService {
         final int lod = key.lod();
         final int tileOriginX = key.originBlockX();
         final int tileOriginZ = key.originBlockZ();
-        final PredictionViewMode compositionMode = requestedMode == null
-            ? PredictionViewMode.EVERYWHERE
-            : requestedMode;
+        // Clamped here so every entry path (setViewMode, snapshotTile, background composition)
+        // lands on the same cache-keyed mode.
+        final PredictionViewMode compositionMode = serverPolicyAllowsPrediction.getAsBoolean()
+            ? requestedMode == null ? PredictionViewMode.EVERYWHERE : requestedMode
+            : PredictionViewMode.VISITED_ONLY;
 
         // Two cache planes are checked in cost order: this tile's own last composition (identical
         // pixels, nothing to aggregate) and then the four children aggregated to this LOD. Both
@@ -1684,12 +1705,12 @@ public final class PredictionTileService {
         final TileKey parent = new TileKey(
             session.world(), dimension, layer + PredictedTileKeys.SUFFIX, lod, tileX, tileZ
         );
-        final PredictionMipCache.Tile exact = mipCache.exact(parent, viewMode);
+        final PredictionMipCache.Tile exact = mipCache.exact(parent, effectiveViewMode());
         final long exactValidatedAt = exact == null ? PredictionMipCache.MISSING
             : exact.serverCoverageValidatedAtMillis();
         final long validatedAt = exactValidatedAt != PredictionMipCache.MISSING
             ? exactValidatedAt
-            : mipCache.lowerCoverageValidatedAt(parent, viewMode);
+            : mipCache.lowerCoverageValidatedAt(parent, effectiveViewMode());
         return validatedAt > 0L
             && nowMillis >= validatedAt
             && nowMillis - validatedAt <= CORRECTION_REUSE_TTL_MS;
@@ -1737,10 +1758,10 @@ public final class PredictionTileService {
 
     /** Caller must hold the monitor. */
     private boolean freshLowerCoverageAt(final TileKey parent, final long nowMillis) {
-        final PredictionMipCache.Tile exact = mipCache.exact(parent, viewMode);
+        final PredictionMipCache.Tile exact = mipCache.exact(parent, effectiveViewMode());
         final long validatedAt = exact != null && exact.serverCoverageValidatedAtMillis() > 0L
             ? exact.serverCoverageValidatedAtMillis()
-            : mipCache.lowerCoverageValidatedAt(parent, viewMode);
+            : mipCache.lowerCoverageValidatedAt(parent, effectiveViewMode());
         return validatedAt > 0L
             && nowMillis >= validatedAt
             && nowMillis - validatedAt <= CORRECTION_REUSE_TTL_MS;
@@ -1787,7 +1808,7 @@ public final class PredictionTileService {
         try {
             final long nowMillis = millisClock.getAsLong();
             if (hasFreshPersistedChildren(parent, token, nowMillis)) {
-                reduced = reduceFreshChildren(parent, token, nowMillis, viewMode);
+                reduced = reduceFreshChildren(parent, token, nowMillis, effectiveViewMode());
             }
             if (reduced != null) {
                 // The reduced tile is planar, so its upload re-shades through the same seam a
@@ -1801,7 +1822,7 @@ public final class PredictionTileService {
                 reconstructGrids(reduced, cachedGrid, cachedDerived);
                 final QuadrantLayout.Mask quadrantMask =
                     reapplyCachedLayering(parent, cachedGrid, cachedDerived);
-                reducedPixels = shade(parent, cachedDerived, cachedGrid, null, viewMode, quadrantMask);
+                reducedPixels = shade(parent, cachedDerived, cachedGrid, null, effectiveViewMode(), quadrantMask);
                 applyLayerLighting(parent, reducedPixels, reduced.blockLight(), mapColorStyle);
                 reducedMetadata = new TileMetadata(
                     biomeIds(cachedGrid, null, cachedGrid),
@@ -2076,7 +2097,7 @@ public final class PredictionTileService {
         final int pixel = pixelZ * TileMath.TILE_SIZE + pixelX;
         final CorrectionStore store = state.manualSeed() ? null : correctionStore;
         final CorrectionTile corrections = store == null ? null : store.get(dimension, lod, tileX, tileZ);
-        if (!viewMode.showsPredictedPixels(corrections, pixel, lod)) {
+        if (!effectiveViewMode().showsPredictedPixels(corrections, pixel, lod)) {
             return null;
         }
         if (!layer.equals(PredictionDimensions.layer(dimension))

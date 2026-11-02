@@ -169,6 +169,35 @@ class PredictionTileServiceTest {
     }
 
     @Test
+    void serverPolicyGateBehavesLikeVisitedOnlyForLookups(@TempDir final Path tempDir) throws InterruptedException {
+        Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
+        final SessionGuard sessionGuard = new SessionGuard();
+        final MapExecutors executors = new MapExecutors();
+        final TileService uploads = new TileService(new MapWorldService(), executors, new ConfluxConfig(), new DaylightModel());
+        final PredictionState state = new PredictionState();
+        state.setPresets(WorldPreset.DEFAULT, WorldPreset.DEFAULT);
+        state.setSeed(146008555L, McVersions.toCubiomes("1.17").orElseThrow());
+        final PredictionTileService predictionTiles = newService(sessionGuard, state, executors, uploads);
+        predictionTiles.setViewMode(PredictionViewMode.EVERYWHERE);
+        sessionGuard.begin(WORLD, DIM);
+
+        try {
+            predictionTiles.requestTile(new TileKey(WORLD, DIM, "surface!biome!pred", 2, 0, 0));
+            awaitIdle(predictionTiles, 10_000L);
+            assertTrue(predictionTiles.predictedBiomeAt(DIM, 2, 0, 0).isPresent());
+
+            predictionTiles.setServerPolicyAllowsPrediction(() -> false);
+            assertTrue(predictionTiles.predictedBiomeAt(DIM, 2, 0, 0).isEmpty());
+            assertTrue(predictionTiles.predictedSurfaceYAt(DIM, 2, 0, 0).isEmpty());
+
+            predictionTiles.setServerPolicyAllowsPrediction(() -> true);
+            assertTrue(predictionTiles.predictedBiomeAt(DIM, 2, 0, 0).isPresent());
+        } finally {
+            executors.shutdown(2000);
+        }
+    }
+
+    @Test
     void biomePredictionExposesItsBiomeForCursorReadout(@TempDir final Path tempDir) throws InterruptedException {
         Assumptions.assumeTrue(NativeLib.initForTests(), "native prediction library unavailable on this platform");
         final SessionGuard sessionGuard = new SessionGuard();

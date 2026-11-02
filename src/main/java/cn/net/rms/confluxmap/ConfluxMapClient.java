@@ -278,6 +278,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         predictionTileService.setVoidColumnColor(config.voidColumnColor);
         predictionTileService.setMapQuality(config.mapQuality);
         predictionTileService.setViewMode(config.predictionViewMode);
+        predictionTileService.setServerPolicyAllowsPrediction(companionSession::predictionAllowed);
         correctionStore = new CorrectionStore(
             cacheRoot.resolve("prediction")
         );
@@ -370,7 +371,8 @@ public final class ConfluxMapClient implements ClientModInitializer {
             () -> configIo.save(config), ConfluxMapMod.LOGGER
         );
         waypointRenderCatalog = new WaypointRenderCatalog(
-            waypointService, sharedWaypoints::list, crossWorldWaypoints::siblings, config
+            waypointService, sharedWaypoints::list, crossWorldWaypoints::siblings, config,
+            companionSession::waypointsAllowed
         );
         localWaypointListModel = new LocalWaypointListModel(
             waypointService::current,
@@ -391,13 +393,13 @@ public final class ConfluxMapClient implements ClientModInitializer {
             () -> config.highlightCrossDimensionVisible
         );
         measureState = new MeasureState();
-        deathWatcher = new DeathWatcher(gameBridge, config, waypointService);
+        deathWatcher = new DeathWatcher(gameBridge, config, waypointService, companionSession::waypointsAllowed);
         uiResourceTheme = new UiResourceTheme();
         minimapHudRenderer = new MinimapHudRenderer(
             client, config, gameBridge, tileService, tileTextureManager, radarScanner, entityIconManager,
             serverPlayerRadar, playerTrail, annotationService, layerSelector, waypointRenderCatalog,
             portalService, radarViewRange, uiResourceTheme, customMarkerService, chunkCapture::setMinimapViewport,
-            chunkCapture::liveTerrainPaused
+            chunkCapture::liveTerrainPaused, companionSession::minimapAllowed
         );
         waypointItemHudRenderer = new WaypointItemHudRenderer(client, config, entityIconManager);
         waypointWorldRenderer = new WaypointWorldRenderer(
