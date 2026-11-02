@@ -9,6 +9,7 @@ import cn.net.rms.confluxmap.core.portal.PortalMarker;
 import cn.net.rms.confluxmap.core.portal.PortalService;
 import cn.net.rms.confluxmap.core.trail.PlayerTrail;
 import cn.net.rms.confluxmap.core.trail.PlayerTrailProjection;
+import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderCatalog;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.core.waypoint.WaypointVerticalRelation;
@@ -73,7 +74,8 @@ final class MinimapMarkerPainter {
         final PlayerView viewpoint,
         final float centerX,
         final float centerY,
-        final boolean rotate
+        final boolean rotate,
+        final float alpha
     ) {
         if (!gameBridge.isCameraDetached()) {
             return;
@@ -86,8 +88,8 @@ final class MinimapMarkerPainter {
             centerX,
             centerY,
             rotate ? 0f : viewpoint.yawDegrees() + 180f,
-            PLAYER_MARKER_COLOR,
-            0.5f
+            Argb.scaleAlpha(PLAYER_MARKER_COLOR, alpha),
+            0.5f * alpha
         );
     }
 
@@ -100,7 +102,8 @@ final class MinimapMarkerPainter {
         final int size,
         final boolean rotate,
         final float tickDelta,
-        final float blocksPerPixel
+        final float blocksPerPixel,
+        final float alpha
     ) {
         final Optional<PlayerView> localPlayer = gameBridge.player(tickDelta);
         if (localPlayer.isEmpty()) {
@@ -136,7 +139,7 @@ final class MinimapMarkerPainter {
             rotate
                 ? player.yawDegrees() - viewpoint.yawDegrees()
                 : player.yawDegrees() + 180f,
-            PLAYER_MARKER_COLOR
+            Argb.scaleAlpha(PLAYER_MARKER_COLOR, alpha)
         );
     }
 
@@ -185,7 +188,8 @@ final class MinimapMarkerPainter {
         final int size,
         final float mapAngle,
         final PlayerView player,
-        final float blocksPerPixel
+        final float blocksPerPixel,
+        final float alpha
     ) {
         final float pxPerBlock = 1f / blocksPerPixel;
         final double rad = Math.toRadians(mapAngle);
@@ -214,7 +218,7 @@ final class MinimapMarkerPainter {
             WaypointMarkerRenderer.draw(
                 draw, client.textRenderer, waypoint,
                 centerX + offset.x(), centerY + offset.y(),
-                WAYPOINT_MARKER_HALF_SIZE, 1f, false,
+                WAYPOINT_MARKER_HALF_SIZE, alpha, false,
                 WaypointVerticalRelation.between(waypoint.y(), player.y())
             );
         }
@@ -266,11 +270,20 @@ final class MinimapMarkerPainter {
      * 16-block cell per chunk). The square shape is scissor-clipped and the
      * circle is disk-clipped by its off-screen canvas, like the tiles beneath.
      */
+    /**
+     * Translucent fill over each portal-containing chunk, drawn in the tile
+     * pass's own rotated transform (origin at the map center, one axis-aligned
+     * 16-block cell per chunk). The square shape is scissor-clipped and the
+     * circle is disk-clipped by its off-screen canvas, like the tiles beneath.
+     * {@code alpha} carries the HUD fade; the circle caller passes 1 because the
+     * canvas composite's disk tint already fades whatever lands in the canvas.
+     */
     void drawPortalChunkHighlights(
         final MatrixStack matrices,
         final PlayerView player,
         final int size,
-        final float blocksPerPixel
+        final float blocksPerPixel,
+        final float alpha
     ) {
         if (!config.portalMarkersEnabled || !config.portalChunkHighlightEnabled) {
             return;
@@ -280,6 +293,7 @@ final class MinimapMarkerPainter {
         if (sizePx < 2f) {
             return;
         }
+        final int highlightColor = Argb.scaleAlpha(config.portalHighlightColor.argb(), alpha);
         final float half = size / 2f;
         for (final PortalMarker marker : portals.list(gameBridge.session().dimension())) {
             final float left = (float) ((marker.chunkX() * 16.0 - player.x()) * pxPerBlock);
@@ -287,7 +301,7 @@ final class MinimapMarkerPainter {
             if (left > half || top > half || left + sizePx < -half || top + sizePx < -half) {
                 continue;
             }
-            GuiShapes.fillRect(matrices, left, top, sizePx, sizePx, config.portalHighlightColor.argb());
+            GuiShapes.fillRect(matrices, left, top, sizePx, sizePx, highlightColor);
         }
     }
 
@@ -304,7 +318,8 @@ final class MinimapMarkerPainter {
         final int size,
         final float mapAngle,
         final PlayerView player,
-        final float blocksPerPixel
+        final float blocksPerPixel,
+        final float alpha
     ) {
         if (!config.portalMarkersEnabled || !config.portalIconsEnabled) {
             return;
@@ -334,7 +349,7 @@ final class MinimapMarkerPainter {
             PortalMarkerRenderer.draw(
                 draw, marker.kind(), config.portalIconTexture(marker.kind()),
                 centerX + screenOffX, centerY + screenOffY,
-                config.portalIconSize, config.portalIconOpacity, false
+                config.portalIconSize, Math.round(config.portalIconOpacity * alpha), false
             );
         }
     }
@@ -352,7 +367,8 @@ final class MinimapMarkerPainter {
         final int size,
         final float mapAngle,
         final PlayerView player,
-        final float blocksPerPixel
+        final float blocksPerPixel,
+        final float alpha
     ) {
         final List<WaypointRenderEntry> entries = customMarkers.renderEntries(
             gameBridge.session().dimension(), true
@@ -377,7 +393,7 @@ final class MinimapMarkerPainter {
             WaypointMarkerRenderer.draw(
                 draw, client.textRenderer, marker,
                 centerX + screenOffX, centerY + screenOffY,
-                WAYPOINT_MARKER_HALF_SIZE, 1f, false,
+                WAYPOINT_MARKER_HALF_SIZE, alpha, false,
                 WaypointVerticalRelation.between(marker.y(), player.y())
             );
         }

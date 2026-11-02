@@ -2,12 +2,22 @@ package cn.net.rms.confluxmap.mc.ui;
 
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.mc.render.GuiShapes;
+import cn.net.rms.confluxmap.mc.render.Mesh;
 import cn.net.rms.confluxmap.mc.render.RenderTargetState;
 import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.List;
 //#if MC>=12108
 //$$ import org.joml.Matrix3x2fStack;
 //$$ import org.joml.Matrix4f;
+//#endif
+//#if MC>=12105
+//$$ import net.minecraft.client.gl.RenderPipelines;
+//#endif
+//#if MC>=12103 && MC<12105
+//$$ import net.minecraft.client.gl.ShaderProgramKeys;
+//#endif
+//#if MC<12103
+import net.minecraft.client.render.GameRenderer;
 //#endif
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
@@ -33,6 +43,8 @@ public final class GuiDraw {
      */
     private static final float FULL_ALPHA = 1.0f;
     private static float revealAlpha = FULL_ALPHA;
+    /** Untinted textured-draw tint; matching it keeps those draws on their fast path. */
+    private static final int OPAQUE_TINT = 0xFFFFFFFF;
 
     private final MatrixStack matrices;
     //#if MC>=12000
@@ -148,6 +160,113 @@ public final class GuiDraw {
     private static int revealed(final int color) {
         return revealAlpha == FULL_ALPHA ? color : Argb.scaleAlpha(color, revealAlpha);
     }
+
+    /**
+     * Texture-backed counterpart to the color outlets: one axis-aligned textured quad carrying
+     * an ARGB tint over the sampled texture. Texture draws that bypass this class's instance
+     * methods (the minimap's map tiles) route through here so a fade scales them like every
+     * fill and text, instead of special-casing the call sites. An opaque tint is exactly
+     * {@link GuiShapes#drawQuad} - the pre-transition fast path.
+     */
+    public static void drawTexturedQuad(
+        final MatrixStack matrices,
+        final float x,
+        final float y,
+        final float width,
+        final float height,
+        final float u0,
+        final float v0,
+        final float u1,
+        final float v1,
+        final int argbTint
+    ) {
+        if (argbTint == OPAQUE_TINT) {
+            GuiShapes.drawQuad(matrices, x, y, width, height, u0, v0, u1, v1);
+            return;
+        }
+        GuiShapes.drawTintedQuad(matrices, x, y, width, height, u0, v0, u1, v1, argbTint);
+    }
+
+    /**
+     * Tinted counterpart to {@link GuiShapes#drawTexturedDisk} for fading the minimap's circular
+     * canvas composite, whose sampled canvas carries the whole map content. An opaque tint
+     * delegates unchanged; the faded branch repeats that method's fan geometry and legacy shader
+     * selection because GuiShapes has no tinted disk variant to delegate to.
+     */
+    public static void drawTexturedDisk(
+        final MatrixStack matrices,
+        final float centerX,
+        final float centerY,
+        final float radius,
+        final int argbTint
+    ) {
+        if (argbTint == OPAQUE_TINT) {
+            GuiShapes.drawTexturedDisk(matrices, centerX, centerY, radius);
+            return;
+        }
+        final float a = Argb.alpha(argbTint) / 255f;
+        final float r = Argb.red(argbTint) / 255f;
+        final float g = Argb.green(argbTint) / 255f;
+        final float b = Argb.blue(argbTint) / 255f;
+        final var model = matrices.peek().getModel();
+        final int segments = 48;
+        //#if MC>=12105
+        //$$ final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, Mesh.tintedTextureFormat());
+        //$$ for (int i = 0; i < segments; i++) {
+        //$$     final double angle0 = 2.0 * Math.PI * i / segments;
+        //$$     final double angle1 = 2.0 * Math.PI * (i + 1) / segments;
+        //$$     final float cos0 = (float) Math.cos(angle0);
+        //$$     final float sin0 = (float) Math.sin(angle0);
+        //$$     final float cos1 = (float) Math.cos(angle1);
+        //$$     final float sin1 = (float) Math.sin(angle1);
+        //$$     // Same backwards-wound segment quads as GuiShapes.drawTexturedDisk.
+        //$$     mesh.tintedVertex(model, centerX, centerY, 0, 0.5f, 0.5f, r, g, b, a);
+        //$$     mesh.tintedVertex(
+        //$$         model, centerX + cos1 * radius, centerY + sin1 * radius, 0,
+        //$$         0.5f + 0.5f * cos1, 0.5f - 0.5f * sin1, r, g, b, a
+        //$$     );
+        //$$     mesh.tintedVertex(
+        //$$         model, centerX + cos0 * radius, centerY + sin0 * radius, 0,
+        //$$         0.5f + 0.5f * cos0, 0.5f - 0.5f * sin0, r, g, b, a
+        //$$     );
+        //$$     mesh.tintedVertex(model, centerX, centerY, 0, 0.5f, 0.5f, r, g, b, a);
+        //$$ }
+        //$$ mesh.drawGui(RenderPipelines.GUI_TEXTURED);
+        //#else
+        useTintedTextureShader();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.disableCull();
+        final Mesh mesh = Mesh.begin(Mesh.Mode.TRIANGLE_FAN, Mesh.tintedTextureFormat());
+        mesh.tintedVertex(model, centerX, centerY, 0, 0.5f, 0.5f, r, g, b, a);
+        for (int i = 0; i <= segments; i++) {
+            final double angle = 2.0 * Math.PI * i / segments;
+            final float cos = (float) Math.cos(angle);
+            final float sin = (float) Math.sin(angle);
+            mesh.tintedVertex(
+                model, centerX + cos * radius, centerY + sin * radius, 0,
+                0.5f + 0.5f * cos, 0.5f - 0.5f * sin, r, g, b, a
+            );
+        }
+        mesh.draw();
+        RenderSystem.enableCull();
+        //#endif
+    }
+
+    //#if MC<12105
+    /** Legacy twin of GuiShapes' private tinted-texture shader selection, which has no accessor. */
+    private static void useTintedTextureShader() {
+        //#if MC>=12103
+        //$$ RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
+        //#elseif MC>=12100
+        //$$ RenderSystem.setShader(GameRenderer::getPositionTexColorProgram);
+        //#elseif MC>=12000
+        //$$ RenderSystem.setShader(GameRenderer::getPositionColorTexProgram);
+        //#else
+        RenderSystem.setShader(GameRenderer::getPositionColorTexShader);
+        //#endif
+    }
+    //#endif
 
     /**
      * Fills one axis-aligned rect in float coordinates through this GuiDraw's own transform,

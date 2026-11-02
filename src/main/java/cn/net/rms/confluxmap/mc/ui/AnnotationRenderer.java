@@ -9,6 +9,7 @@ import cn.net.rms.confluxmap.core.annotation.CircleAnnotationGeometry;
 import cn.net.rms.confluxmap.core.annotation.FreehandAnnotationGeometry;
 import cn.net.rms.confluxmap.core.annotation.LineAnnotationGeometry;
 import cn.net.rms.confluxmap.core.annotation.RectangleAnnotationGeometry;
+import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import java.util.List;
 import java.util.UUID;
@@ -32,16 +33,30 @@ public final class AnnotationRenderer {
         final AnnotationProjection projection,
         final UUID selectedId
     ) {
+        drawGeometry(matrices, annotations, projection, selectedId, 1f);
+    }
+
+    /** {@code alpha} scales every stroke so the minimap HUD can fade its annotation pass. */
+    public static void drawGeometry(
+        final MatrixStack matrices,
+        final List<Annotation> annotations,
+        final AnnotationProjection projection,
+        final UUID selectedId,
+        final float alpha
+    ) {
         for (final Annotation annotation : annotations) {
             if (!projection.mayBeVisible(annotation.geometry().bounds(), SELECTED_STROKE_WIDTH)) {
                 continue;
             }
             if (annotation.id().equals(selectedId)) {
-                drawGeometry(matrices, annotation.geometry(), projection, SELECTED_STROKE_WIDTH, SELECTED_OUTLINE);
+                drawGeometry(
+                    matrices, annotation.geometry(), projection, SELECTED_STROKE_WIDTH,
+                    Argb.scaleAlpha(SELECTED_OUTLINE, alpha)
+                );
             }
             drawGeometry(
                 matrices, annotation.geometry(), projection, STROKE_WIDTH,
-                annotation.style().colorArgb()
+                Argb.scaleAlpha(annotation.style().colorArgb(), alpha)
             );
         }
     }
@@ -56,6 +71,25 @@ public final class AnnotationRenderer {
         final double clipWidth,
         final double clipHeight,
         final ClipShape clipShape
+    ) {
+        drawLabels(
+            draw, textRenderer, annotations, projection,
+            clipX, clipY, clipWidth, clipHeight, clipShape, 1f
+        );
+    }
+
+    /** {@code alpha} scales the label color so the minimap HUD can fade its annotation pass. */
+    public static void drawLabels(
+        final GuiDraw draw,
+        final TextRenderer textRenderer,
+        final List<Annotation> annotations,
+        final AnnotationProjection projection,
+        final double clipX,
+        final double clipY,
+        final double clipWidth,
+        final double clipHeight,
+        final ClipShape clipShape,
+        final float alpha
     ) {
         for (final Annotation annotation : annotations) {
             if (annotation.label().isEmpty()
@@ -77,7 +111,7 @@ public final class AnnotationRenderer {
                 annotation.label(),
                 (float) left,
                 (float) top,
-                annotation.style().colorArgb() | 0xFF000000
+                Argb.scaleAlpha(annotation.style().colorArgb() | 0xFF000000, alpha)
             );
         }
     }

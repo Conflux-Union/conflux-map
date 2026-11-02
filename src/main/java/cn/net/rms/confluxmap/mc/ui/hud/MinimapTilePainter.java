@@ -6,10 +6,11 @@ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.model.MapLayer;
 import cn.net.rms.confluxmap.core.model.TileKey;
 import cn.net.rms.confluxmap.core.tile.TileService;
+import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.ChunkViewport;
 import cn.net.rms.confluxmap.core.util.TileMath;
-import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.render.TileTextureManager;
+import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import java.util.function.Consumer;
 import net.minecraft.client.util.math.MatrixStack;
@@ -70,7 +71,9 @@ final class MinimapTilePainter {
     /**
      * Tiles are drawn as full 256-block quads positioned relative to the player,
      * in a coordinate space whose origin is the minimap center (the caller has
-     * already translated/rotated the matrix). Clipping crops the excess.
+     * already translated/rotated the matrix). Clipping crops the excess. {@code alpha}
+     * carries the HUD fade; the circle caller passes 1 and lets the canvas composite's
+     * disk tint fade the tiles once, instead of twice.
      */
     void drawTiles(
         final MatrixStack matrices,
@@ -78,9 +81,11 @@ final class MinimapTilePainter {
         final boolean circle,
         final float mapAngle,
         final PlayerView player,
-        final float blocksPerPixel
+        final float blocksPerPixel,
+        final float alpha
     ) {
         final float pxPerBlock = 1f / blocksPerPixel;
+        final int tint = Argb.scaleAlpha(0xFFFFFFFF, alpha);
         final double coverageFactor = captureCoverageFactor(
             circle ? ConfluxConfig.Shape.CIRCLE : ConfluxConfig.Shape.SQUARE,
             mapAngle
@@ -115,7 +120,9 @@ final class MinimapTilePainter {
                 final float screenX = (float) ((key.originBlockX() - player.x()) * pxPerBlock);
                 final float screenY = (float) ((key.originBlockZ() - player.z()) * pxPerBlock);
                 final float quadSize = TileMath.TILE_SIZE * pxPerBlock;
-                GuiShapes.drawQuad(matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f);
+                GuiDraw.drawTexturedQuad(
+                    matrices, screenX, screenY, quadSize, quadSize, 0f, 0f, 1f, 1f, tint
+                );
             }
         }
     }

@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.ui.hud;
 
+import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import net.minecraft.client.util.math.MatrixStack;
 
@@ -10,24 +11,27 @@ final class XaeroMinimapFrameRenderer {
     private XaeroMinimapFrameRenderer() {
     }
 
+    /** {@code alpha} carries the minimap HUD's fade; at 1 the tint stays opaque. */
     static void drawSquare(
         final MatrixStack matrices,
         final int x,
         final int y,
-        final int size
+        final int size,
+        final float alpha
     ) {
+        final int tint = Argb.scaleAlpha(0xFFFFFFFF, alpha);
         final float corner = Math.min(16f, size / 2f);
         final float middle = Math.max(0f, size - corner * 2f);
-        drawPart(matrices, x, y, corner, corner, 192, 97, 16, 16);
-        drawPart(matrices, x + corner, y, middle, corner, 0, 0, 226, 16);
-        drawPart(matrices, x + size - corner, y, corner, corner, 192, 113, 16, 16);
-        drawPart(matrices, x, y + corner, corner, middle, 0, 97, 16, 113);
-        drawPart(matrices, x + size - corner, y + corner, corner, middle, 16, 97, 16, 113);
-        drawPart(matrices, x, y + size - corner, corner, corner, 192, 129, 16, 16);
-        drawPart(matrices, x + corner, y + size - corner, middle, corner, 0, 16, 226, 16);
+        drawPart(matrices, x, y, corner, corner, 192, 97, 16, 16, tint);
+        drawPart(matrices, x + corner, y, middle, corner, 0, 0, 226, 16, tint);
+        drawPart(matrices, x + size - corner, y, corner, corner, 192, 113, 16, 16, tint);
+        drawPart(matrices, x, y + corner, corner, middle, 0, 97, 16, 113, tint);
+        drawPart(matrices, x + size - corner, y + corner, corner, middle, 16, 97, 16, 113, tint);
+        drawPart(matrices, x, y + size - corner, corner, corner, 192, 129, 16, 16, tint);
+        drawPart(matrices, x + corner, y + size - corner, middle, corner, 0, 16, 226, 16, tint);
         drawPart(
             matrices, x + size - corner, y + size - corner,
-            corner, corner, 192, 145, 16, 16
+            corner, corner, 192, 145, 16, 16, tint
         );
     }
 
@@ -40,7 +44,8 @@ final class XaeroMinimapFrameRenderer {
         final int sourceX,
         final int sourceY,
         final int sourceWidth,
-        final int sourceHeight
+        final int sourceHeight,
+        final int tint
     ) {
         if (width <= 0f || height <= 0f) {
             return;
@@ -50,7 +55,7 @@ final class XaeroMinimapFrameRenderer {
             sourceX / ATLAS_SIZE, sourceY / ATLAS_SIZE,
             (sourceX + sourceWidth) / ATLAS_SIZE,
             (sourceY + sourceHeight) / ATLAS_SIZE,
-            0xFFFFFFFF
+            tint
         );
     }
 }
