@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.ui.anim;
 
+import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.util.Easing;
 
 /** Speed-tier math for the interface transitions; easing lives in {@link Easing}. */
@@ -28,14 +29,14 @@ public final class UiMotion {
     }
 
     /**
-     * Duration for a tier name; matches the {@code ConfluxConfig.UiTransitionSpeed} enum
-     * names, with unknown or null tiers falling back to {@link #STANDARD}.
+     * Duration for a speed tier; a null tier falls back to {@link #STANDARD} (config
+     * normalization also guarantees a non-null value).
      */
-    public static float durationSeconds(final String tier) {
-        if ("FAST".equals(tier)) {
+    public static float durationSeconds(final ConfluxConfig.UiTransitionSpeed tier) {
+        if (tier == ConfluxConfig.UiTransitionSpeed.FAST) {
             return FAST;
         }
-        if ("RELAXED".equals(tier)) {
+        if (tier == ConfluxConfig.UiTransitionSpeed.RELAXED) {
             return RELAXED;
         }
         return STANDARD;

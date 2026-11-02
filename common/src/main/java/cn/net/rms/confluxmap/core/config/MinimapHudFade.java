@@ -45,9 +45,4 @@ public final class MinimapHudFade {
     public float alpha() {
         return Easing.easeOutCubic(progress);
     }
-
-    /** True when no animation is in flight (progress sits exactly at 0 or 1). */
-    public boolean settled() {
-        return progress <= 0.0f || progress >= 1.0f;
-    }
 }

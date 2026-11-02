@@ -29,7 +29,7 @@ import cn.net.rms.confluxmap.core.waypoint.list.WaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.WaypointRow;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.ui.anim.PopupReveal;
-import cn.net.rms.confluxmap.mc.ui.anim.TransitionClock;
+import cn.net.rms.confluxmap.mc.ui.anim.PopupRevealFrame;
 import cn.net.rms.confluxmap.mc.ui.anim.UiMotion;
 import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
@@ -107,8 +107,6 @@ public final class WaypointListScreen extends ConfluxScreen {
     private static final int DROPDOWN_SCROLLBAR_WIDTH = 6;
     private static final int DROPDOWN_ACTION_HEIGHT = 22;
     private static final int SET_MEMBER_INDENT = 10;
-    /** Anchor-relative slide of a dropdown reveal: popups settle downward out of their trigger. */
-    private static final float DROPDOWN_SLIDE_PIXELS = 3.0f;
     private static final String COLLAPSED_ARROW = "\u25b8";
     private static final String EXPANDED_ARROW = "\u25be";
 
@@ -213,7 +211,6 @@ public final class WaypointListScreen extends ConfluxScreen {
     private boolean dimensionDropdownOpen;
     /** Reveal of the dimension dropdown; host state survives {@link #rebuild()} widget swaps. */
     private final PopupReveal dimensionDropdownReveal = new PopupReveal();
-    private final TransitionClock dimensionDropdownClock = new TransitionClock();
     private int dimensionDropdownX;
     private int dimensionDropdownWidth;
     private List<WaypointDimensionFilter> dimensionDropdownOptions = List.of();
@@ -226,7 +223,6 @@ public final class WaypointListScreen extends ConfluxScreen {
      */
     private GroupDropdown renderedGroupDropdown;
     private final PopupReveal groupDropdownReveal = new PopupReveal();
-    private final TransitionClock groupDropdownClock = new TransitionClock();
     private int dropdownScrollOffset;
     private int dropdownKeyboardIndex;
     private boolean draggingDropdownScrollbar;
@@ -677,21 +673,7 @@ public final class WaypointListScreen extends ConfluxScreen {
 
     /** True while a close fade may still draw: transitions on and the reveal in flight. */
     private boolean dropdownFadeVisible(final PopupReveal reveal) {
-        return config.uiTransitionsEnabled && reveal.animating();
-    }
-
-    /**
-     * Advances one popup reveal for this frame. Disabled transitions snap to the settled
-     * state so their render path stays exactly the pre-animation one. Dropdowns open only
-     * through user input, always after this screen's own open reveal has settled, so this
-     * never overlaps the single static reveal alpha ConfluxScreen installs.
-     */
-    private void tickPopupReveal(final PopupReveal reveal, final TransitionClock clock) {
-        if (!config.uiTransitionsEnabled) {
-            reveal.finishNow();
-        } else if (reveal.animating()) {
-            reveal.tick(clock.tick(), UiMotion.durationSeconds(config.uiTransitionSpeed.name()));
-        }
+        return reveal.fadeVisible(config.uiTransitionsEnabled);
     }
 
     private String dimensionFilterLabel(
@@ -2026,21 +2008,19 @@ public final class WaypointListScreen extends ConfluxScreen {
     }
 
     private void renderDimensionDropdown(final GuiDraw draw, final int mouseX, final int mouseY) {
-        tickPopupReveal(dimensionDropdownReveal, dimensionDropdownClock);
+        dimensionDropdownReveal.tick(
+            config.uiTransitionsEnabled,
+            UiMotion.durationSeconds(config.uiTransitionSpeed)
+        );
         final DropdownGeometry dropdown = dimensionDropdownRenderGeometry();
         if (dropdown == null || dropdown.visibleRows() <= 0) {
             return;
         }
-        final boolean revealFrame = dropdownFadeVisible(dimensionDropdownReveal);
-        if (revealFrame) {
-            beginDropdownRevealTransform(draw, dimensionDropdownReveal.eased());
-        }
-        try {
+        try (PopupRevealFrame frame = PopupRevealFrame.fadeAndSlide(
+            draw, dropdownFadeVisible(dimensionDropdownReveal), dimensionDropdownReveal.eased(),
+            0f, PopupRevealFrame.ANCHOR_SLIDE_PIXELS, List.of()
+        )) {
             drawDimensionDropdown(draw, mouseX, mouseY, dropdown);
-        } finally {
-            if (revealFrame) {
-                endDropdownRevealTransform(draw);
-            }
         }
     }
 
@@ -2127,34 +2107,20 @@ public final class WaypointListScreen extends ConfluxScreen {
     }
 
     private void renderGroupDropdown(final GuiDraw draw, final int mouseX, final int mouseY) {
-        tickPopupReveal(groupDropdownReveal, groupDropdownClock);
+        groupDropdownReveal.tick(
+            config.uiTransitionsEnabled,
+            UiMotion.durationSeconds(config.uiTransitionSpeed)
+        );
         final DropdownGeometry dropdown = groupDropdownRenderGeometry();
         if (dropdown == null || dropdown.visibleRows() <= 0) {
             return;
         }
-        final boolean revealFrame = dropdownFadeVisible(groupDropdownReveal);
-        if (revealFrame) {
-            beginDropdownRevealTransform(draw, groupDropdownReveal.eased());
-        }
-        try {
+        try (PopupRevealFrame frame = PopupRevealFrame.fadeAndSlide(
+            draw, dropdownFadeVisible(groupDropdownReveal), groupDropdownReveal.eased(),
+            0f, PopupRevealFrame.ANCHOR_SLIDE_PIXELS, List.of()
+        )) {
             drawGroupDropdown(draw, mouseX, mouseY, dropdown);
-        } finally {
-            if (revealFrame) {
-                endDropdownRevealTransform(draw);
-            }
         }
-    }
-
-    /** Slides the popup to its anchor-relative start and installs the reveal alpha. */
-    private void beginDropdownRevealTransform(final GuiDraw draw, final float eased) {
-        GuiDraw.beginReveal(eased);
-        draw.pushTransform();
-        draw.translate(0f, (eased - 1.0f) * DROPDOWN_SLIDE_PIXELS);
-    }
-
-    private void endDropdownRevealTransform(final GuiDraw draw) {
-        draw.popTransform();
-        GuiDraw.endReveal();
     }
 
     private void drawGroupDropdown(

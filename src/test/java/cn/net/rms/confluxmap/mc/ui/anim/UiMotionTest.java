@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.mc.ui.anim;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import org.junit.jupiter.api.Test;
 
 final class UiMotionTest {
@@ -15,12 +16,16 @@ final class UiMotionTest {
     }
 
     @Test
-    void tierDurationsMatchConstantsAndUnknownFallsBackToStandard() {
-        assertEquals(UiMotion.FAST, UiMotion.durationSeconds("FAST"));
-        assertEquals(UiMotion.STANDARD, UiMotion.durationSeconds("STANDARD"));
-        assertEquals(UiMotion.RELAXED, UiMotion.durationSeconds("RELAXED"));
-        assertEquals(UiMotion.STANDARD, UiMotion.durationSeconds("fast"));
-        assertEquals(UiMotion.STANDARD, UiMotion.durationSeconds("nonsense"));
+    void tierDurationsMatchConstantsAndNullFallsBackToStandard() {
+        assertEquals(UiMotion.FAST, UiMotion.durationSeconds(ConfluxConfig.UiTransitionSpeed.FAST));
+        assertEquals(
+            UiMotion.STANDARD,
+            UiMotion.durationSeconds(ConfluxConfig.UiTransitionSpeed.STANDARD)
+        );
+        assertEquals(
+            UiMotion.RELAXED,
+            UiMotion.durationSeconds(ConfluxConfig.UiTransitionSpeed.RELAXED)
+        );
         assertEquals(UiMotion.STANDARD, UiMotion.durationSeconds(null));
     }
 }

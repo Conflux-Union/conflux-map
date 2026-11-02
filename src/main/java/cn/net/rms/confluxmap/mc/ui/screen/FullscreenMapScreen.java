@@ -133,7 +133,6 @@ import net.minecraft.client.MinecraftClient;
 //$$ import net.minecraft.client.gui.Click;
 //$$ import net.minecraft.client.input.KeyInput;
 //#endif
-import net.minecraft.client.gui.Element;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.font.TextRenderer;
@@ -332,7 +331,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private MapIconButton displayModeButton;
     private MapIconButton mapExportButton;
     private MapIconButton mapImportButton;
-    ButtonWidget clientWorldButton;
+    MapIconButton clientWorldButton;
     private ButtonWidget worldSelectorButton;
     private ButtonWidget dimensionSelectorButton;
     private int waypointControlsBottom;
@@ -341,6 +340,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     AnnotationToolbarBounds annotationToolbarBounds;
     AnnotationToolbarBounds annotationColorMenuBounds;
     private FullscreenDisplayMode controlsDisplayMode;
+    /** Buttons of the currently expanded tool group, recorded where each rebuild creates them. */
+    private final List<MapIconButton> expansionButtons = new ArrayList<>();
     /** Last alpha applied to the expanded tool group's buttons; 1 leaves them untouched. */
     private float expandedGroupAlpha = 1.0f;
     /** Exclusive with every {@link AnnotationTool}: while on, left-click places measure points instead of drawing. */
@@ -416,6 +417,29 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         return 0.96f;
     }
 
+    //#if MC>=260100
+    //$$ @Override
+    //$$ protected void renderVanillaBackground(
+    //$$     final GuiGraphicsExtractor context,
+    //$$     final int mouseX,
+    //$$     final int mouseY,
+    //$$     final float tickDelta
+    //$$ ) {
+    //$$     // The map fills the window with its own reveal-faded background; the vanilla dim
+    //$$     // would sit under it and resurface once the fade starts.
+    //$$ }
+    //#elseif MC>=12002
+    //$$ @Override
+    //$$ protected void renderVanillaBackground(
+    //$$     final DrawContext context,
+    //$$     final int mouseX,
+    //$$     final int mouseY,
+    //$$     final float tickDelta
+    //$$ ) {
+    //$$     // Same as above; this era extracts the dim before the render pass.
+    //$$ }
+    //#endif
+
     static FullscreenMapScreen focusedOnWaypoint(
         final DimensionId dimension,
         final double x,
@@ -455,6 +479,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     void rebuildWaypointControls() {
         clearChildren();
+        expansionButtons.clear();
         sharedAvailability = viewSharedAvailability();
         localVisibilityButton = null;
         sharedVisibilityButton = null;
@@ -561,25 +586,22 @@ public final class FullscreenMapScreen extends ConfluxScreen {
      * Fades the expanded tool group's buttons in through their own widget alpha, which
      * reaches both the vanilla button texture and the icon contents. The buttons are
      * clickable at their settled positions for the whole fade (closing keeps today's
-     * instant path: the rebuild removes the widgets outright). Only groups whose controls
-     * sit in the secondary column animate; the drawing group lays out a grid elsewhere and
+     * instant path: the rebuild removes the widgets outright). Only the secondary-column
+     * groups record their buttons here; the drawing group lays out a grid elsewhere and
      * keeps the instant path.
      */
     private void applyToolGroupReveal() {
         toolPanel.tickReveal(
             config.uiTransitionsEnabled,
-            UiMotion.durationSeconds(config.uiTransitionSpeed.name())
+            UiMotion.durationSeconds(config.uiTransitionSpeed)
         );
         final float alpha = toolPanel.revealAnimating() ? toolPanel.revealEased() : 1.0f;
         if (alpha == expandedGroupAlpha) {
             return;
         }
         expandedGroupAlpha = alpha;
-        final int expandedX = secondaryControlsX();
-        for (final Element child : children()) {
-            if (child instanceof MapIconButton button && Widgets.x(button) == expandedX) {
-                button.setAlpha(alpha);
-            }
+        for (final MapIconButton button : expansionButtons) {
+            button.setAlpha(alpha);
         }
     }
 
@@ -598,6 +620,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 Texts.translatable(displayModeValueKey(mode)),
                 ignored -> setDisplayMode(mode)
             ));
+            expansionButtons.add(button);
             button.setSelected(displayMode() == mode);
             button.active = available;
             annotationTooltips.put(button, displayModeValueKey(mode));
@@ -622,6 +645,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 refreshWaypointVisibilityButtons();
             }
         ));
+        expansionButtons.add(localVisibilityButton);
         y += CONTROL_SIZE + CONTROL_GAP;
         if (sharedAvailability.visible()) {
             sharedVisibilityButton = addDrawableChild(new MapIconButton(
@@ -631,6 +655,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                     refreshWaypointVisibilityButtons();
                 }
             ));
+            expansionButtons.add(sharedVisibilityButton);
             y += CONTROL_SIZE + CONTROL_GAP;
         }
         refreshWaypointVisibilityButtons();
@@ -641,6 +666,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 MinecraftClient.getInstance(), new WaypointListScreen(this, WaypointListScreen.Tab.LOCAL)
             )
         ));
+        expansionButtons.add(manageWaypointsButton);
         manageWaypointsButton.active = viewingLiveWorld();
         annotationToolbarBounds = new AnnotationToolbarBounds(
             x, top, CONTROL_SIZE, y + CONTROL_SIZE - top
@@ -678,12 +704,14 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             x, y, STRUCTURE_SEARCH_ICON, Texts.translatable("confluxmap.map.search"),
             ignored -> openStructureSearch()
         ));
+        expansionButtons.add(structureSearchButton);
         refreshStructureSearchButton();
         y += CONTROL_SIZE + CONTROL_GAP;
         mapExportButton = addDrawableChild(new MapIconButton(
             x, y, MAP_EXPORT_ICON, Texts.translatable("confluxmap.screen.map_export.tooltip"),
             ignored -> exportControls.openMapExport()
         ));
+        expansionButtons.add(mapExportButton);
         mapExportButton.active = !mapBrowser.browsing();
         annotationTooltips.put(mapExportButton, "confluxmap.screen.map_export.tooltip");
         y += CONTROL_SIZE + CONTROL_GAP;
@@ -693,6 +721,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 MinecraftClient.getInstance(), new XaeroImportScreen(this)
             )
         ));
+        expansionButtons.add(mapImportButton);
         annotationTooltips.put(mapImportButton, "confluxmap.screen.map_import.tooltip");
         y += CONTROL_SIZE + CONTROL_GAP;
         if (clientMultiworld.canManageProfiles()) {
@@ -705,6 +734,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                     MinecraftClient.getInstance(), new ClientWorldSelectScreen(this, openMapKey, false)
                 )
             ));
+            expansionButtons.add(clientWorldButton);
             annotationTooltips.put(clientWorldButton, "confluxmap.map.client_world");
             y += CONTROL_SIZE + CONTROL_GAP;
         }
@@ -1651,7 +1681,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
     }
 
-    final class MapIconButton extends ButtonWidget {
+    final class MapIconButton extends ButtonWidget implements SelfFadingWidget {
         private Identifier icon;
         private boolean selected;
 
@@ -1750,7 +1780,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         //$$         y,
         //$$         getWidth(),
         //$$         getHeight(),
-        //$$         ((int) (alpha * 255.0f) << 24) | 0x00FFFFFF
+        //$$         ((int) (alpha * GuiShapes.revealAlpha() * 255.0f) << 24) | 0x00FFFFFF
         //$$     );
         //$$     drawContents(GuiDraw.of(context), x, y);
         //$$ }
@@ -1773,7 +1803,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         //$$         y,
         //$$         getWidth(),
         //$$         getHeight(),
-        //$$         ((int) (alpha * 255.0f) << 24) | 0x00FFFFFF
+        //$$         ((int) (alpha * GuiShapes.revealAlpha() * 255.0f) << 24) | 0x00FFFFFF
         //$$     );
         //$$     context.draw();
         //$$     drawContents(GuiDraw.of(context), x, y);
@@ -1790,7 +1820,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         //$$     final Identifier background = !active
         //$$         ? Ids.of("widget/button_disabled")
         //$$         : isHovered() ? Ids.of("widget/button_highlighted") : Ids.of("widget/button");
-        //$$     context.setShaderColor(1.0f, 1.0f, 1.0f, alpha);
+        //$$     context.setShaderColor(1.0f, 1.0f, 1.0f, alpha * GuiShapes.revealAlpha());
         //$$     context.drawGuiTexture(background, x, y, getWidth(), getHeight());
         //$$     context.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
         //$$     context.draw();
@@ -1803,7 +1833,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         //$$     final int mouseY,
         //$$     final float delta
         //$$ ) {
-        //$$     context.setShaderColor(1.0f, 1.0f, 1.0f, alpha);
+        //$$     context.setShaderColor(1.0f, 1.0f, 1.0f, alpha * GuiShapes.revealAlpha());
         //$$     final int v = 46 + (!active ? 0 : isHovered() ? 2 : 1) * 20;
         //$$     final int x = Widgets.x(this);
         //$$     final int y = Widgets.y(this);
@@ -1831,7 +1861,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         ) {
             RenderSystem.setShader(GameRenderer::getPositionTexShader);
             RenderSystem.setShaderTexture(0, WIDGETS_TEXTURE);
-            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, alpha);
+            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, alpha * GuiShapes.revealAlpha());
             RenderSystem.enableBlend();
             RenderSystem.defaultBlendFunc();
             RenderSystem.enableDepthTest();
@@ -1858,7 +1888,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 uiTheme.useVanillaButtonStyle()
             );
             // The tool-group reveal fades buttons through the widget alpha; the vanilla
-            // texture path already carries it, these custom surfaces scale it themselves.
+            // texture paths above fold it in, these custom surfaces scale it themselves,
+            // and a screen-level reveal frame multiplies the shape layer on top of both.
             // alpha is 1 outside reveals, so the steady state keeps its exact colors.
             final int background = alpha == 1.0f
                 ? visual.background()

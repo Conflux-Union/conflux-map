@@ -2,22 +2,12 @@ package cn.net.rms.confluxmap.mc.ui;
 
 import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.mc.render.GuiShapes;
-import cn.net.rms.confluxmap.mc.render.Mesh;
 import cn.net.rms.confluxmap.mc.render.RenderTargetState;
 import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.List;
 //#if MC>=12108
 //$$ import org.joml.Matrix3x2fStack;
 //$$ import org.joml.Matrix4f;
-//#endif
-//#if MC>=12105
-//$$ import net.minecraft.client.gl.RenderPipelines;
-//#endif
-//#if MC>=12103 && MC<12105
-//$$ import net.minecraft.client.gl.ShaderProgramKeys;
-//#endif
-//#if MC<12103
-import net.minecraft.client.render.GameRenderer;
 //#endif
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
@@ -38,11 +28,11 @@ import net.minecraft.text.Text;
 public final class GuiDraw {
     /**
      * Reveal alpha for the interface transitions, applied by {@link #beginReveal} around one
-     * screen's render pass. Render-thread-only like the rest of the GUI state; 1 keeps every
-     * color outlet on its original fast path.
+     * screen's render pass. The value lives in {@link GuiShapes} so the shape primitives
+     * scale the same colors this class's own context-routed outlets do; 1 keeps every
+     * outlet on its original fast path.
      */
     private static final float FULL_ALPHA = 1.0f;
-    private static float revealAlpha = FULL_ALPHA;
     /** Untinted textured-draw tint; matching it keeps those draws on their fast path. */
     private static final int OPAQUE_TINT = 0xFFFFFFFF;
 
@@ -88,17 +78,34 @@ public final class GuiDraw {
 
     public void pushTransform() {
         matrices.push();
+        //#if MC>=12108
+        //$$ // popTransform pops the context pose too, so push its level here or the pop runs
+        //$$ // off the bottom of the JOML stack; the absolute fold keeps nesting idempotent.
+        //$$ context.getMatrices().pushMatrix();
+        //$$ foldContextPose();
+        //#endif
     }
 
     public void translate(final float x, final float y) {
         matrices.translate(x, y, 0f);
+        //#if MC>=12108
+        //$$ // Re-fold: mid-scope transforms must reach context-routed draws too.
+        //$$ foldContextPose();
+        //#endif
     }
 
     public void scale(final float x, final float y) {
         matrices.scale(x, y, 1f);
+        //#if MC>=12108
+        //$$ // Re-fold: mid-scope transforms must reach context-routed draws too.
+        //$$ foldContextPose();
+        //#endif
     }
 
     public void popTransform() {
+        //#if MC>=12108
+        //$$ context.getMatrices().popMatrix();
+        //#endif
         matrices.pop();
     }
 
@@ -131,10 +138,8 @@ public final class GuiDraw {
      */
     public void applyToContextPose() {
         //#if MC>=12108
-        //$$ final Matrix3x2fStack pose = context.getMatrices();
-        //$$ pose.pushMatrix();
-        //$$ final Matrix4f model = matrices.peek().getPositionMatrix();
-        //$$ pose.set(model.m00(), model.m01(), model.m10(), model.m11(), model.m30(), model.m31());
+        //$$ context.getMatrices().pushMatrix();
+        //$$ foldContextPose();
         //#endif
     }
 
@@ -144,21 +149,31 @@ public final class GuiDraw {
         //#endif
     }
 
+    //#if MC>=12108
+    //$$ /** Overwrites the context pose with this stack's current 2D transform (absolute, not relative). */
+    //$$ private void foldContextPose() {
+    //$$     final Matrix3x2fStack pose = context.getMatrices();
+    //$$     final Matrix4f model = matrices.peek().getPositionMatrix();
+    //$$     pose.set(model.m00(), model.m01(), model.m10(), model.m11(), model.m30(), model.m31());
+    //$$ }
+    //#endif
+
     /**
-     * Multiplies the alpha of every color this class emits until {@link #endReveal()}, so a
-     * screen reveal can fade its own fills and text in. Item icons are exempt (their model
-     * render has no per-call color to scale).
+     * Multiplies the alpha of every color this class and {@link GuiShapes} emit until
+     * {@link #endReveal()}, so a screen reveal fades its own fills, text, and shape draws
+     * alike. Item icons are exempt (their model render has no per-call color to scale).
      */
     public static void beginReveal(final float alpha) {
-        revealAlpha = Math.max(0.0f, Math.min(FULL_ALPHA, alpha));
+        GuiShapes.setRevealAlpha(Math.max(0.0f, Math.min(FULL_ALPHA, alpha)));
     }
 
     public static void endReveal() {
-        revealAlpha = FULL_ALPHA;
+        GuiShapes.setRevealAlpha(FULL_ALPHA);
     }
 
+    /** Scales one caller-supplied color by the active reveal; context-routed outlets use this. */
     private static int revealed(final int color) {
-        return revealAlpha == FULL_ALPHA ? color : Argb.scaleAlpha(color, revealAlpha);
+        return GuiShapes.revealAlpha() == FULL_ALPHA ? color : Argb.scaleAlpha(color, GuiShapes.revealAlpha());
     }
 
     /**
@@ -188,87 +203,6 @@ public final class GuiDraw {
     }
 
     /**
-     * Tinted counterpart to {@link GuiShapes#drawTexturedDisk} for fading the minimap's circular
-     * canvas composite, whose sampled canvas carries the whole map content. An opaque tint
-     * delegates unchanged; the faded branch repeats that method's fan geometry and legacy shader
-     * selection because GuiShapes has no tinted disk variant to delegate to.
-     */
-    public static void drawTexturedDisk(
-        final MatrixStack matrices,
-        final float centerX,
-        final float centerY,
-        final float radius,
-        final int argbTint
-    ) {
-        if (argbTint == OPAQUE_TINT) {
-            GuiShapes.drawTexturedDisk(matrices, centerX, centerY, radius);
-            return;
-        }
-        final float a = Argb.alpha(argbTint) / 255f;
-        final float r = Argb.red(argbTint) / 255f;
-        final float g = Argb.green(argbTint) / 255f;
-        final float b = Argb.blue(argbTint) / 255f;
-        final var model = matrices.peek().getModel();
-        final int segments = 48;
-        //#if MC>=12105
-        //$$ final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, Mesh.tintedTextureFormat());
-        //$$ for (int i = 0; i < segments; i++) {
-        //$$     final double angle0 = 2.0 * Math.PI * i / segments;
-        //$$     final double angle1 = 2.0 * Math.PI * (i + 1) / segments;
-        //$$     final float cos0 = (float) Math.cos(angle0);
-        //$$     final float sin0 = (float) Math.sin(angle0);
-        //$$     final float cos1 = (float) Math.cos(angle1);
-        //$$     final float sin1 = (float) Math.sin(angle1);
-        //$$     // Same backwards-wound segment quads as GuiShapes.drawTexturedDisk.
-        //$$     mesh.tintedVertex(model, centerX, centerY, 0, 0.5f, 0.5f, r, g, b, a);
-        //$$     mesh.tintedVertex(
-        //$$         model, centerX + cos1 * radius, centerY + sin1 * radius, 0,
-        //$$         0.5f + 0.5f * cos1, 0.5f - 0.5f * sin1, r, g, b, a
-        //$$     );
-        //$$     mesh.tintedVertex(
-        //$$         model, centerX + cos0 * radius, centerY + sin0 * radius, 0,
-        //$$         0.5f + 0.5f * cos0, 0.5f - 0.5f * sin0, r, g, b, a
-        //$$     );
-        //$$     mesh.tintedVertex(model, centerX, centerY, 0, 0.5f, 0.5f, r, g, b, a);
-        //$$ }
-        //$$ mesh.drawGui(RenderPipelines.GUI_TEXTURED);
-        //#else
-        useTintedTextureShader();
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.disableCull();
-        final Mesh mesh = Mesh.begin(Mesh.Mode.TRIANGLE_FAN, Mesh.tintedTextureFormat());
-        mesh.tintedVertex(model, centerX, centerY, 0, 0.5f, 0.5f, r, g, b, a);
-        for (int i = 0; i <= segments; i++) {
-            final double angle = 2.0 * Math.PI * i / segments;
-            final float cos = (float) Math.cos(angle);
-            final float sin = (float) Math.sin(angle);
-            mesh.tintedVertex(
-                model, centerX + cos * radius, centerY + sin * radius, 0,
-                0.5f + 0.5f * cos, 0.5f - 0.5f * sin, r, g, b, a
-            );
-        }
-        mesh.draw();
-        RenderSystem.enableCull();
-        //#endif
-    }
-
-    //#if MC<12105
-    /** Legacy twin of GuiShapes' private tinted-texture shader selection, which has no accessor. */
-    private static void useTintedTextureShader() {
-        //#if MC>=12103
-        //$$ RenderSystem.setShader(ShaderProgramKeys.POSITION_TEX_COLOR);
-        //#elseif MC>=12100
-        //$$ RenderSystem.setShader(GameRenderer::getPositionTexColorProgram);
-        //#elseif MC>=12000
-        //$$ RenderSystem.setShader(GameRenderer::getPositionColorTexProgram);
-        //#else
-        RenderSystem.setShader(GameRenderer::getPositionColorTexShader);
-        //#endif
-    }
-    //#endif
-
-    /**
      * Fills one axis-aligned rect in float coordinates through this GuiDraw's own transform,
      * without rounding. Unlike {@link #fill(int, int, int, int, int)} this carries transforms
      * pushed with {@link #pushTransform()} (the context's own fill would drop them on 1.21.8+),
@@ -282,7 +216,8 @@ public final class GuiDraw {
         final float y2,
         final int color
     ) {
-        GuiShapes.fillRect(matrices, x1, y1, x2 - x1, y2 - y1, revealed(color));
+        // GuiShapes applies the reveal alpha itself; pre-scaling here would double it.
+        GuiShapes.fillRect(matrices, x1, y1, x2 - x1, y2 - y1, color);
     }
 
     /** Draws the item's normal 16px GUI model, scaled and centered on one marker position. */
@@ -386,7 +321,7 @@ public final class GuiDraw {
         //#if MC>=12000
         //$$ context.fill(x1, y1, x2, y2, revealed(color));
         //#else
-        GuiShapes.fillRect(matrices(), x1, y1, x2 - x1, y2 - y1, revealed(color));
+        GuiShapes.fillRect(matrices(), x1, y1, x2 - x1, y2 - y1, color);
         //#endif
     }
 
@@ -409,7 +344,7 @@ public final class GuiDraw {
         //#else
         // No gui_overlay layer before 1.20; releasing the glyph depth is the only way through.
         GuiShapes.clearGuiDepth();
-        GuiShapes.fillRect(matrices(), x1, y1, x2 - x1, y2 - y1, revealed(color));
+        GuiShapes.fillRect(matrices(), x1, y1, x2 - x1, y2 - y1, color);
         //#endif
     }
 
@@ -489,7 +424,7 @@ public final class GuiDraw {
         //$$ context.draw();
         //$$ return result;
         //#else
-        return renderer.drawWithShadow(matrices, text, x, y, color);
+        return renderer.drawWithShadow(matrices, text, x, y, revealed(color));
         //#endif
     }
 
@@ -521,7 +456,7 @@ public final class GuiDraw {
         //$$ context.draw();
         //$$ return result;
         //#else
-        return renderer.drawWithShadow(matrices, text, x, y, color);
+        return renderer.drawWithShadow(matrices, text, x, y, revealed(color));
         //#endif
     }
 
@@ -553,7 +488,7 @@ public final class GuiDraw {
         //$$ context.draw();
         //$$ return result;
         //#else
-        return renderer.drawWithShadow(matrices, text, x, y, color);
+        return renderer.drawWithShadow(matrices, text, x, y, revealed(color));
         //#endif
     }
 }

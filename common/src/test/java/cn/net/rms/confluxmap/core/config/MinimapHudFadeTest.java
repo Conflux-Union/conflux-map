@@ -1,17 +1,14 @@
 package cn.net.rms.confluxmap.core.config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
 class MinimapHudFadeTest {
     @Test
-    void startsHiddenAndSettled() {
+    void startsHidden() {
         final MinimapHudFade fade = new MinimapHudFade();
         assertEquals(0.0f, fade.alpha());
-        assertTrue(fade.settled());
     }
 
     @Test
@@ -20,10 +17,8 @@ class MinimapHudFadeTest {
         fade.tick(true, false, 0.09f, 0.18f);
         // Halfway progress eases to 1 - 0.5^3, same curve as the screens' reveal.
         assertEquals(0.875f, fade.alpha(), 1e-5);
-        assertFalse(fade.settled());
         fade.tick(true, false, 0.09f, 0.18f);
         assertEquals(1.0f, fade.alpha());
-        assertTrue(fade.settled());
     }
 
     @Test
@@ -34,7 +29,6 @@ class MinimapHudFadeTest {
         assertEquals(0.875f, fade.alpha(), 1e-5);
         fade.tick(false, false, 1.0f, 0.18f);
         assertEquals(0.0f, fade.alpha());
-        assertTrue(fade.settled());
     }
 
     @Test
@@ -42,7 +36,6 @@ class MinimapHudFadeTest {
         final MinimapHudFade fade = new MinimapHudFade();
         fade.tick(true, true, 0.0f, 0.18f);
         assertEquals(1.0f, fade.alpha());
-        assertTrue(fade.settled());
         fade.tick(false, true, 0.0f, 0.18f);
         assertEquals(0.0f, fade.alpha());
     }

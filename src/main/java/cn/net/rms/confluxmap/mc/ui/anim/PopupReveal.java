@@ -3,17 +3,31 @@ package cn.net.rms.confluxmap.mc.ui.anim;
 import cn.net.rms.confluxmap.core.util.Easing;
 
 /**
- * Show/hide progress for one popup surface. Unlike {@link ScreenReveal} this has no phases:
- * the target is a boolean and each tick moves progress toward it, so reversing mid-flight
- * just turns the popup around from where it stands.
+ * Show/hide progress for one popup surface, with its own frame clock. Unlike
+ * {@link ScreenReveal} this has no phases: the target is a boolean and each tick moves
+ * progress toward it, so reversing mid-flight just turns the popup around from where it
+ * stands. Hosts keep one instance so widget rebuilds cannot drop the animation state.
  */
 public final class PopupReveal {
     private float progress;
     private boolean open;
+    private final TransitionClock clock = new TransitionClock();
 
     /** Sets the target state; progress keeps its current value and ticks toward it. */
     public void setOpen(final boolean open) {
         this.open = open;
+    }
+
+    /**
+     * Advances one render frame toward the target. Disabled transitions snap to the settled
+     * state so the render path stays exactly the pre-animation one.
+     */
+    public void tick(final boolean transitionsEnabled, final float durationSeconds) {
+        if (!transitionsEnabled) {
+            finishNow();
+        } else if (animating()) {
+            tick(clock.tick(), durationSeconds);
+        }
     }
 
     /** Moves progress one {@code deltaSeconds} step toward the current target. */
@@ -43,7 +57,8 @@ public final class PopupReveal {
         return open ? progress < 1.0f : progress > 0.0f;
     }
 
-    public boolean open() {
-        return open;
+    /** True while a close fade may still draw: transitions on and the reveal in flight. */
+    public boolean fadeVisible(final boolean transitionsEnabled) {
+        return transitionsEnabled && animating();
     }
 }

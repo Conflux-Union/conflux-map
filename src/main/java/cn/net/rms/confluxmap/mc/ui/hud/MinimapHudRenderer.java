@@ -181,7 +181,7 @@ public final class MinimapHudRenderer {
             targetVisible,
             !config.uiTransitionsEnabled || !sessionActive,
             fadeClock.tick(),
-            UiMotion.durationSeconds(config.uiTransitionSpeed.name())
+            UiMotion.durationSeconds(config.uiTransitionSpeed)
         );
         if (fade.alpha() <= 0.0f) {
             tilePainter.publishEmptyViewport();
@@ -293,7 +293,7 @@ public final class MinimapHudRenderer {
 
             TextureBinds.beginTexturedQuads();
             canvas.bindTexture();
-            GuiDraw.drawTexturedDisk(
+            GuiShapes.drawTexturedDisk(
                 matrices, centerX, centerY, contentSize / 2f, Argb.scaleAlpha(0xFFFFFFFF, fadeAlpha)
             );
             chromePainter.drawFrame(matrices, x0, y0, size, true, minimapFrame, fadeAlpha);

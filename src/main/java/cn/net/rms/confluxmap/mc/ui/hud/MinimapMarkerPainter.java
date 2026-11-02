@@ -271,12 +271,6 @@ final class MinimapMarkerPainter {
      * pass's own rotated transform (origin at the map center, one axis-aligned
      * 16-block cell per chunk). The square shape is scissor-clipped and the
      * circle is disk-clipped by its off-screen canvas, like the tiles beneath.
-     */
-    /**
-     * Translucent fill over each portal-containing chunk, drawn in the tile
-     * pass's own rotated transform (origin at the map center, one axis-aligned
-     * 16-block cell per chunk). The square shape is scissor-clipped and the
-     * circle is disk-clipped by its off-screen canvas, like the tiles beneath.
      * {@code alpha} carries the HUD fade; the circle caller passes 1 because the
      * canvas composite's disk tint already fades whatever lands in the canvas.
      */

@@ -10,8 +10,10 @@ import cn.net.rms.confluxmap.mc.ui.anim.TransitionClock;
 import cn.net.rms.confluxmap.mc.ui.anim.UiMotion;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
+import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.BooleanSupplier;
 //#if MC>=12000
@@ -35,6 +37,7 @@ import net.minecraft.text.Text;
 public abstract class ConfluxScreen extends Screen {
     private final Map<ClickableWidget, String> disabledTooltipKeys = new IdentityHashMap<>();
     private final Map<ClickableWidget, String> locationMenuTooltipKeys = new LinkedHashMap<>();
+    private final List<ButtonWidget> embeddedLocationMenuButtons = new ArrayList<>();
     private final HotkeyFocusDelay initialFocusDelay = new HotkeyFocusDelay();
     private Runnable enterAction;
     private BooleanSupplier enterActionEnabled = () -> false;
@@ -74,7 +77,7 @@ public abstract class ConfluxScreen extends Screen {
             return false;
         }
         if (reveal.animating()) {
-            reveal.tick(revealClock.tick(), UiMotion.durationSeconds(config.uiTransitionSpeed.name()));
+            reveal.tick(revealClock.tick(), UiMotion.durationSeconds(config.uiTransitionSpeed));
         }
         // A fade that just landed holds its fully-closed pose (alpha 0) until tick()
         // performs the deferred switch, so the screen never flashes open again in the
@@ -85,17 +88,34 @@ public abstract class ConfluxScreen extends Screen {
         }
         final float eased = reveal.eased();
         final float startScale = revealStartScale();
-        draw.beginScreenTransform(startScale + (1.0f - startScale) * eased, width, height);
+        // The pose fold pushes the context level the screen transform's translates re-fold
+        // onto, so it must run first on 1.21.8+; endRevealFrame restores in mirror order.
         draw.applyToContextPose();
+        draw.beginScreenTransform(startScale + (1.0f - startScale) * eased, width, height);
         GuiDraw.beginReveal(eased);
+        applyWidgetReveal(eased);
         return true;
     }
 
     /** Undoes {@link #beginRevealFrame}; call only when it returned true. */
     private void endRevealFrame(final GuiDraw draw) {
+        applyWidgetReveal(1.0f);
         GuiDraw.endReveal();
         draw.restoreContextPose();
         draw.endScreenTransform();
+    }
+
+    /**
+     * Fades the screen's vanilla-rendered widgets through their own alpha during a reveal
+     * frame — the color outlets never see them. Widgets that fade themselves through the
+     * shape layer opt out via {@link SelfFadingWidget}, so the two channels do not compound.
+     */
+    private void applyWidgetReveal(final float alpha) {
+        for (final var child : children()) {
+            if (child instanceof ClickableWidget widget && !(child instanceof SelfFadingWidget)) {
+                widget.setAlpha(alpha);
+            }
+        }
     }
 
     /** True while the screen is already invisible and only waiting for tick() to switch. */
@@ -658,7 +678,16 @@ public abstract class ConfluxScreen extends Screen {
 
     /** Adds one embedded location-menu button to this screen's widget layer. */
     ButtonWidget hostLocationMenuButton(final ButtonWidget button) {
+        embeddedLocationMenuButtons.add(button);
         return addDrawableChild(button);
+    }
+
+    /**
+     * The embedded pane's current menu buttons, so its reveal frame can fade them alongside
+     * the panel; rebuilt from empty on every embedded-menu rebuild.
+     */
+    List<ButtonWidget> embeddedLocationMenuButtons() {
+        return embeddedLocationMenuButtons;
     }
 
     /**
@@ -683,6 +712,7 @@ public abstract class ConfluxScreen extends Screen {
      * re-armed its delete confirmation.
      */
     void rebuildForEmbeddedLocationMenu() {
+        embeddedLocationMenuButtons.clear();
         clearChildren();
         init();
     }

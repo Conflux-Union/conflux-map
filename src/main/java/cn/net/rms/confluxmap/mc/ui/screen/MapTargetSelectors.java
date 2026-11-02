@@ -101,7 +101,7 @@ import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
 import cn.net.rms.confluxmap.mc.ui.DisplayModeIconCatalog;
 import cn.net.rms.confluxmap.mc.ui.PlayerMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.anim.PopupReveal;
-import cn.net.rms.confluxmap.mc.ui.anim.TransitionClock;
+import cn.net.rms.confluxmap.mc.ui.anim.PopupRevealFrame;
 import cn.net.rms.confluxmap.mc.ui.anim.UiMotion;
 import cn.net.rms.confluxmap.mc.ui.PlayerTrailRenderer;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
@@ -160,15 +160,12 @@ final class MapTargetSelectors {
     private static final int TARGET_SELECTOR_GAP = 4;
     private static final int TARGET_DROPDOWN_ROW_HEIGHT = 18;
     private static final int TARGET_DROPDOWN_MAX_ROWS = 8;
-    /** Anchor-relative slide of the dropdown reveal: it settles downward out of its trigger. */
-    private static final float DROPDOWN_SLIDE_PIXELS = 3.0f;
 
     private final FullscreenMapScreen screen;
     private TargetSelector openTargetSelector;
     private int targetDropdownScrollOffset;
     /** Reveal of the target dropdown; both selectors share it since only one opens at a time. */
     private final PopupReveal reveal = new PopupReveal();
-    private final TransitionClock revealClock = new TransitionClock();
     /** Last dropdown drawn, kept across a close so the fade-out has geometry and rows. */
     private TargetDropdown renderedDropdown;
     private List<?> renderedDropdownOptions = List.of();
@@ -450,7 +447,10 @@ final class MapTargetSelectors {
         final int mouseX,
         final int mouseY
     ) {
-        tickDropdownReveal();
+        final boolean transitionsEnabled = screen.config.uiTransitionsEnabled;
+        // The dropdown opens through the selector buttons, always after the screen's own
+        // open reveal has settled, so installing this alpha never overlaps ConfluxScreen's.
+        reveal.tick(transitionsEnabled, UiMotion.durationSeconds(screen.config.uiTransitionSpeed));
         final TargetDropdown live = targetDropdown();
         if (live != null) {
             renderedDropdown = live;
@@ -460,20 +460,17 @@ final class MapTargetSelectors {
             );
             targetDropdownScrollOffset = renderedDropdownScrollOffset;
         }
-        final boolean fadeVisible = dropdownFadeVisible();
+        final boolean fadeVisible = reveal.fadeVisible(transitionsEnabled);
         final TargetDropdown dropdown = live != null
             ? live
             : fadeVisible ? renderedDropdown : null;
         if (dropdown == null || (fadeVisible && renderedDropdownOptions.isEmpty())) {
             return;
         }
-        final boolean revealFrame = fadeVisible;
-        if (revealFrame) {
-            GuiDraw.beginReveal(reveal.eased());
-            draw.pushTransform();
-            draw.translate(0f, (reveal.eased() - 1.0f) * DROPDOWN_SLIDE_PIXELS);
-        }
-        try {
+        try (PopupRevealFrame frame = PopupRevealFrame.fadeAndSlide(
+            draw, fadeVisible, reveal.eased(),
+            0f, PopupRevealFrame.ANCHOR_SLIDE_PIXELS, List.of()
+        )) {
             drawTargetDropdown(
                 draw,
                 mouseX,
@@ -482,34 +479,7 @@ final class MapTargetSelectors {
                 renderedDropdownOptions,
                 renderedDropdownScrollOffset
             );
-        } finally {
-            if (revealFrame) {
-                draw.popTransform();
-                GuiDraw.endReveal();
-            }
         }
-    }
-
-    /**
-     * The dropdown opens through the selector buttons, always after the screen's own open
-     * reveal has settled, so this never overlaps the single static reveal alpha
-     * ConfluxScreen installs. Disabled transitions snap to the settled state so the render
-     * path stays exactly the pre-animation one.
-     */
-    private void tickDropdownReveal() {
-        if (!screen.config.uiTransitionsEnabled) {
-            reveal.finishNow();
-        } else if (reveal.animating()) {
-            reveal.tick(
-                revealClock.tick(),
-                UiMotion.durationSeconds(screen.config.uiTransitionSpeed.name())
-            );
-        }
-    }
-
-    /** True while the close fade may still draw: transitions on and the reveal in flight. */
-    private boolean dropdownFadeVisible() {
-        return screen.config.uiTransitionsEnabled && reveal.animating();
     }
 
     private void drawTargetDropdown(

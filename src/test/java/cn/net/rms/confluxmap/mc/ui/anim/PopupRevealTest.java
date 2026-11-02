@@ -11,7 +11,6 @@ final class PopupRevealTest {
     void freshPopupIsHiddenAndNotAnimating() {
         final PopupReveal popup = new PopupReveal();
 
-        assertFalse(popup.open());
         assertFalse(popup.animating());
         assertEquals(0.0f, popup.eased());
     }
@@ -47,5 +46,30 @@ final class PopupRevealTest {
         popup.tick(UiMotion.STANDARD, UiMotion.STANDARD);
         assertFalse(popup.animating());
         assertEquals(0.0f, popup.eased(), 1e-6f);
+    }
+
+    @Test
+    void disabledTransitionsSnapSettledAndNeverReportAFade() {
+        final PopupReveal popup = new PopupReveal();
+        popup.setOpen(true);
+        popup.tick(false, UiMotion.STANDARD);
+
+        assertEquals(1.0f, popup.eased(), 1e-6f);
+        assertFalse(popup.animating());
+        assertFalse(popup.fadeVisible(false));
+    }
+
+    @Test
+    void fadeVisibleCombinesTransitionsEnabledWithAnimation() {
+        final PopupReveal popup = new PopupReveal();
+        popup.setOpen(true);
+        popup.tick(0.01f, UiMotion.STANDARD);
+
+        assertTrue(popup.animating());
+        assertTrue(popup.fadeVisible(true));
+        assertFalse(popup.fadeVisible(false));
+
+        popup.tick(UiMotion.STANDARD, UiMotion.STANDARD);
+        assertFalse(popup.fadeVisible(true));
     }
 }
