@@ -296,7 +296,7 @@ public final class WaypointListScreen extends ConfluxScreen {
 
     @Override
     public void onClose() {
-        MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
+        requestClose(parent);
     }
 
     @Override
@@ -1502,6 +1502,9 @@ public final class WaypointListScreen extends ConfluxScreen {
     //#else
     public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
     //#endif
+        if (isClosing()) {
+            return true;
+        }
         final DropdownGeometry dimensionDropdown = dimensionDropdownGeometry();
         if (amount != 0 && dimensionDropdown != null
             && (dimensionDropdown.containsPopup(mouseX, mouseY)
@@ -1549,6 +1552,9 @@ public final class WaypointListScreen extends ConfluxScreen {
     //#else
     public boolean mouseClicked(final double mouseX, final double mouseY, final int button) {
     //#endif
+        if (isClosing()) {
+            return true;
+        }
         final DropdownGeometry dimensionDropdown = dimensionDropdownGeometry();
         if (button == MouseButtons.LEFT && dimensionDropdown != null) {
             if (dimensionDropdown.containsPopup(mouseX, mouseY)) {
@@ -1680,6 +1686,9 @@ public final class WaypointListScreen extends ConfluxScreen {
     //#else
     public boolean mouseReleased(final double mouseX, final double mouseY, final int button) {
     //#endif
+        if (isClosing()) {
+            return true;
+        }
         if (button == MouseButtons.LEFT && draggingDropdownScrollbar) {
             draggingDropdownScrollbar = false;
             return true;
@@ -1695,8 +1704,14 @@ public final class WaypointListScreen extends ConfluxScreen {
     //#if MC>=12109
     //$$ public boolean keyPressed(final KeyInput input) {
     //$$     final int keyCode = input.key();
+    //$$     if (swallowWhileClosing(input)) {
+    //$$         return true;
+    //$$     }
     //#else
     public boolean keyPressed(final int keyCode, final int scanCode, final int modifiers) {
+        if (swallowWhileClosing(keyCode, scanCode)) {
+            return true;
+        }
     //#endif
         if (dimensionDropdownOpen) {
             if (keyCode == 256) {

@@ -480,7 +480,7 @@ final class BiomeCandidateScreen extends ConfluxScreen {
     @Override
     public void onClose() {
         queryGeneration++;
-        MinecraftAccess.setScreen(MinecraftClient.getInstance(), picker);
+        requestClose(picker);
     }
 
     @Override

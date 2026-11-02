@@ -767,9 +767,20 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         return false;
     }
 
-    /** Funnel point for every close path (ESC via the default {@code keyPressed}, or M below). */
+    /**
+     * Funnel point for every close path (ESC via the default {@code keyPressed}, or M
+     * below). The map always closes to the world, so with transitions on this defers both
+     * the switch and the cleanup until the fade lands — the viewport clears must not run
+     * while the map is still fading over them — while a second close request finishes
+     * immediately instead of restarting.
+     */
     @Override
     public void onClose() {
+        requestClose(null, this::releaseMapView);
+    }
+
+    /** Detaches the live map pipeline and persists view state; runs exactly once per close. */
+    private void releaseMapView() {
         viewState.rememberScale(viewSession().dimension(), scale);
         chunkLoadStates.deactivate();
         tiles.clearViewport();
@@ -778,8 +789,19 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         ConfluxMapClient.get().mapSyncClient().clearViewport();
         structureMarkers.flush();
         mapBrowser.clear();
-        super.onClose();
     }
+
+    @Override
+    //#if MC>=12109
+    //$$ protected boolean isCloseInterruptKey(final KeyInput input) {
+    //$$     return super.isCloseInterruptKey(input) || openMapKey != null && openMapKey.matchesKey(input);
+    //$$ }
+    //#else
+    protected boolean isCloseInterruptKey(final int keyCode, final int scanCode) {
+        return super.isCloseInterruptKey(keyCode, scanCode)
+            || openMapKey != null && openMapKey.matchesKey(keyCode, scanCode);
+    }
+    //#endif
 
     @Override
     public void removed() {
@@ -801,8 +823,14 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     //$$ public boolean keyPressed(final KeyInput input) {
     //$$     final int keyCode = input.key();
     //$$     final int modifiers = input.modifiers();
+    //$$     if (swallowWhileClosing(input)) {
+    //$$         return true;
+    //$$     }
     //#else
     public boolean keyPressed(final int keyCode, final int scanCode, final int modifiers) {
+        if (swallowWhileClosing(keyCode, scanCode)) {
+            return true;
+        }
     //#endif
         regionSelection = null;
         if (regionSelectDragging && keyCode == cn.net.rms.confluxmap.compat.Keys.ESCAPE) {
@@ -896,6 +924,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     //#else
     public boolean mouseClicked(final double mouseX, final double mouseY, final int button) {
     //#endif
+        if (isClosing()) {
+            return true;
+        }
         regionSelection = null;
         if (button == MouseButtons.LEFT && selectors.selectTargetDropdownOption(mouseX, mouseY)) {
             mapPointerPress = false;
@@ -1084,6 +1115,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     //#else
     public boolean mouseReleased(final double mouseX, final double mouseY, final int button) {
     //#endif
+        if (isClosing()) {
+            return true;
+        }
         if (button == MouseButtons.RIGHT && regionSelectPress) {
             regionSelectPress = false;
             if (regionSelectDragging) {
@@ -1207,6 +1241,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     //#else
     public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
     //#endif
+        if (isClosing()) {
+            return true;
+        }
         if (!regionSelectDragging) {
             regionSelection = null;
         }

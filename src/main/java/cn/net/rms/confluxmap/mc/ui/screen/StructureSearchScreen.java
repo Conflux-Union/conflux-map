@@ -297,7 +297,7 @@ final class StructureSearchScreen extends ConfluxScreen {
 
     @Override
     public void onClose() {
-        MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
+        requestClose(parent);
     }
 
     private void locate(final StructureIndex.StructureType type) {

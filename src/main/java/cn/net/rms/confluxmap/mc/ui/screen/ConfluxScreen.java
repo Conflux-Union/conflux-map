@@ -2,7 +2,9 @@ package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.mc.ui.anim.ScreenCloseFlow;
 import cn.net.rms.confluxmap.mc.ui.anim.ScreenReveal;
 import cn.net.rms.confluxmap.mc.ui.anim.TransitionClock;
 import cn.net.rms.confluxmap.mc.ui.anim.UiMotion;
@@ -19,8 +21,10 @@ import net.minecraft.client.gui.Element;
 import net.minecraft.client.util.math.MatrixStack;
 //#endif
 //#if MC>=12109
+//$$ import net.minecraft.client.gui.Click;
 //$$ import net.minecraft.client.input.KeyInput;
 //#endif
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.gui.widget.ClickableWidget;
@@ -37,6 +41,12 @@ public abstract class ConfluxScreen extends Screen {
     private ClickableWidget deferredInitialFocus;
     private final ScreenReveal reveal = new ScreenReveal();
     private final TransitionClock revealClock = new TransitionClock();
+    // Close orchestration state: requestClose arms all three together, and whatever
+    // finally performs the switch (fade completion, interrupt or removed()) clears them
+    // together, so the deferred cleanup runs exactly once.
+    private boolean closePending;
+    private Screen closeTarget;
+    private Runnable closeCleanup;
 
     protected ConfluxScreen(final Text title) {
         super(title);
@@ -63,11 +73,14 @@ public abstract class ConfluxScreen extends Screen {
             reveal.finishNow();
             return false;
         }
-        if (!reveal.animating()) {
-            return false;
+        if (reveal.animating()) {
+            reveal.tick(revealClock.tick(), UiMotion.durationSeconds(config.uiTransitionSpeed.name()));
         }
-        reveal.tick(revealClock.tick(), UiMotion.durationSeconds(config.uiTransitionSpeed.name()));
-        if (!reveal.animating()) {
+        // A fade that just landed holds its fully-closed pose (alpha 0) until tick()
+        // performs the deferred switch, so the screen never flashes open again in the
+        // frames between the last fade step and the switch; the settled OPEN fast path
+        // still skips straight through.
+        if (!reveal.animating() && !holdingClosedPose()) {
             return false;
         }
         final float eased = reveal.eased();
@@ -83,6 +96,118 @@ public abstract class ConfluxScreen extends Screen {
         GuiDraw.endReveal();
         draw.restoreContextPose();
         draw.endScreenTransform();
+    }
+
+    /** True while the screen is already invisible and only waiting for tick() to switch. */
+    private boolean holdingClosedPose() {
+        return closePending && reveal.phase() == ScreenReveal.Phase.CLOSED;
+    }
+
+    /**
+     * Closes this screen through the transition orchestration. Closing to the world fades
+     * out in place and defers the real switch until the fade lands; closing to a parent
+     * screen switches instantly and has the parent replay its own open reveal.
+     */
+    protected final void requestClose(final Screen target) {
+        requestClose(target, null);
+    }
+
+    /**
+     * {@code cleanup} runs just before the target screen takes over. Pass the work that
+     * must still observe this screen's live state (viewport clears, flushes); it runs
+     * exactly once — when the fade lands, or in {@code removed()} when the screen was
+     * force-replaced before the fade could finish. A second request while a fade is
+     * already running only cuts it short; the first request's cleanup wins.
+     */
+    protected final void requestClose(final Screen target, final Runnable cleanup) {
+        final ConfluxConfig config = ConfluxMapClient.get().config();
+        switch (ScreenCloseFlow.decideClose(config.uiTransitionsEnabled, target != null, closePending)) {
+            case DEFER_FADE -> {
+                reveal.beginClose();
+                closeTarget = target;
+                closeCleanup = cleanup;
+                closePending = true;
+            }
+            case FINISH_PENDING_FADE -> finishPendingCloseNow();
+            case SWITCH_NOW_REOPEN_TARGET -> {
+                disarmPendingClose();
+                if (cleanup != null) {
+                    cleanup.run();
+                }
+                MinecraftAccess.setScreen(MinecraftClient.getInstance(), target);
+                if (target instanceof ConfluxScreen parent) {
+                    parent.reopen();
+                }
+            }
+            case SWITCH_NOW -> {
+                disarmPendingClose();
+                if (cleanup != null) {
+                    cleanup.run();
+                }
+                closeNow(target);
+            }
+        }
+    }
+
+    /** True while this screen is fading out and has not handed control to its target yet. */
+    public boolean isClosing() {
+        return closePending;
+    }
+
+    /**
+     * Replays this screen's open reveal. Called on the parent screen a child just closed
+     * back to, so round-trip navigation reads as one motion instead of stacking a second
+     * fade onto the already-settled screen.
+     */
+    void reopen() {
+        reveal.beginOpen();
+        revealClock.reset();
+    }
+
+    private void finishPendingCloseNow() {
+        reveal.finishNow();
+        completePendingClose();
+    }
+
+    /** Clears armed close state without running anything; the caller takes over the close. */
+    private void disarmPendingClose() {
+        closeTarget = null;
+        closeCleanup = null;
+        closePending = false;
+    }
+
+    /** Runs the deferred cleanup and hands control to the target recorded at request time. */
+    private void completePendingClose() {
+        final Screen target = closeTarget;
+        final Runnable cleanup = closeCleanup;
+        disarmPendingClose();
+        if (cleanup != null) {
+            cleanup.run();
+        }
+        closeNow(target);
+    }
+
+    private void closeNow(final Screen target) {
+        if (target == null) {
+            // Vanilla's own close-to-world switch, so per-version onClose behavior stays intact.
+            super.onClose();
+        } else {
+            MinecraftAccess.setScreen(MinecraftClient.getInstance(), target);
+        }
+    }
+
+    @Override
+    public void removed() {
+        // Death, a world change or another mod can force-replace this screen before the
+        // fade lands, and removed() then runs with the switch already made. Flush the
+        // deferred cleanup here so it still happens exactly once, without switching
+        // screens from inside this callback.
+        final Runnable cleanup = closeCleanup;
+        disarmPendingClose();
+        if (cleanup != null) {
+            cleanup.run();
+        }
+        super.removed();
     }
     //#if MC>=12000
     //$$ /**
@@ -112,6 +237,12 @@ public abstract class ConfluxScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
+        // The deferred switch lands in a tick, not inside render: a stable phase for
+        // setScreen, and until it happens the screen stays current, so the HUD-yield
+        // checks that read the active screen keep yielding through the whole fade.
+        if (holdingClosedPose()) {
+            completePendingClose();
+        }
         if (deferredInitialFocus == null) {
             return;
         }
@@ -280,8 +411,14 @@ public abstract class ConfluxScreen extends Screen {
     //#if MC>=12109
     //$$ public boolean keyPressed(final KeyInput input) {
     //$$     final int keyCode = input.key();
+    //$$     if (swallowWhileClosing(input)) {
+    //$$         return true;
+    //$$     }
     //#else
     public boolean keyPressed(final int keyCode, final int scanCode, final int modifiers) {
+        if (swallowWhileClosing(keyCode, scanCode)) {
+            return true;
+        }
     //#endif
         if (!(getFocused() instanceof TextFieldWidget) && embeddedMenuHotkeyPressed(keyCode)) {
             return true;
@@ -297,6 +434,99 @@ public abstract class ConfluxScreen extends Screen {
         return super.keyPressed(keyCode, scanCode, modifiers);
         //#endif
     }
+
+    /**
+     * While a close fade is pending, keyboard input is swallowed so a dying screen cannot
+     * trigger actions — except the interrupt keys, which cut the fade short: a rapid
+     * double-press of ESC or of the keybind that opened the screen must never wait out
+     * the animation. Subclasses that override this should route their first key handling
+     * through it before their own branches.
+     */
+    //#if MC>=12109
+    //$$ protected final boolean swallowWhileClosing(final KeyInput input) {
+    //$$     if (!closePending) {
+    //$$         return false;
+    //$$     }
+    //$$     if (isCloseInterruptKey(input)) {
+    //$$         finishPendingCloseNow();
+    //$$     }
+    //$$     return true;
+    //$$ }
+    //$$
+    //$$ /** ESC ends the fade immediately; subclasses widen this with their own open key. */
+    //$$ protected boolean isCloseInterruptKey(final KeyInput input) {
+    //$$     return input.key() == cn.net.rms.confluxmap.compat.Keys.ESCAPE;
+    //$$ }
+    //#else
+    protected final boolean swallowWhileClosing(final int keyCode, final int scanCode) {
+        if (!closePending) {
+            return false;
+        }
+        if (isCloseInterruptKey(keyCode, scanCode)) {
+            finishPendingCloseNow();
+        }
+        return true;
+    }
+
+    /** ESC ends the fade immediately; subclasses widen this with their own open key. */
+    protected boolean isCloseInterruptKey(final int keyCode, final int scanCode) {
+        return keyCode == cn.net.rms.confluxmap.compat.Keys.ESCAPE;
+    }
+    //#endif
+
+    @Override
+    //#if MC>=12109
+    //$$ public boolean mouseClicked(final Click click, final boolean doubledClick) {
+    //$$     if (isClosing()) {
+    //$$         return true;
+    //$$     }
+    //$$     return super.mouseClicked(click, doubledClick);
+    //$$ }
+    //$$
+    //$$ @Override
+    //$$ public boolean mouseReleased(final Click click) {
+    //$$     if (isClosing()) {
+    //$$         return true;
+    //$$     }
+    //$$     return super.mouseReleased(click);
+    //$$ }
+    //#else
+    public boolean mouseClicked(final double mouseX, final double mouseY, final int button) {
+        if (isClosing()) {
+            return true;
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    public boolean mouseReleased(final double mouseX, final double mouseY, final int button) {
+        if (isClosing()) {
+            return true;
+        }
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+    //#endif
+
+    @Override
+    //#if MC>=12002
+    //$$ public boolean mouseScrolled(
+    //$$     final double mouseX,
+    //$$     final double mouseY,
+    //$$     final double horizontalAmount,
+    //$$     final double amount
+    //$$ ) {
+    //$$     if (isClosing()) {
+    //$$         return true;
+    //$$     }
+    //$$     return super.mouseScrolled(mouseX, mouseY, horizontalAmount, amount);
+    //$$ }
+    //#else
+    public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
+        if (isClosing()) {
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, amount);
+    }
+    //#endif
 
     //#if MC<11904
     @Override

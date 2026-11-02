@@ -1,6 +1,5 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
-import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.ConfluxMapClient;
 import cn.net.rms.confluxmap.bridge.GameBridge;
 import cn.net.rms.confluxmap.compat.Texts;
@@ -200,6 +199,9 @@ public final class ConfigScreen extends ConfluxScreen {
         //#else
         public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
         //#endif
+        if (isClosing()) {
+            return true;
+        }
         // Scrolling rebuilds the rows and would destroy a text field mid-edit.
         if (getFocused() instanceof TextFieldWidget) {
             return false;
@@ -229,11 +231,7 @@ public final class ConfigScreen extends ConfluxScreen {
     @Override
     public void onClose() {
         configIo.save(config);
-        if (parent == null) {
-            super.onClose();
-        } else {
-            MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
-        }
+        requestClose(parent);
     }
 
     /** Rebuilds every row; also callable from a row's own click handler (e.g. to reveal a follow-up row). */

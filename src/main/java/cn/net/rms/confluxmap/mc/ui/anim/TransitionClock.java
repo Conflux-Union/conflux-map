@@ -27,6 +27,15 @@ public final class TransitionClock {
         this.nanoTime = nanoTime;
     }
 
+    /**
+     * Clears the running delta sequence so the next {@link #tick()} starts fresh and
+     * returns zero, instead of charging a replayed transition with the idle time that
+     * passed since the previous animation stopped.
+     */
+    public void reset() {
+        started = false;
+    }
+
     /** Seconds since the previous call, capped at {@value #MAX_DELTA_SECONDS}s; first call returns 0. */
     public float tick() {
         final long now = nanoTime.getAsLong();
