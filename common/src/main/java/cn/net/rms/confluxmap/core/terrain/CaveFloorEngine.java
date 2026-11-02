@@ -12,40 +12,13 @@ public final class CaveFloorEngine {
         final int requestedPivotY,
         final Map<Integer, MaterialDescriptor> materials
     ) throws MissingMaterialsException {
-        final int[] stateIds = volume.stateIds();
-        Set<Integer> missing = null;
-        boolean hasLast = false;
-        int lastStateId = 0;
-        // Insertion-order 4-slot cache storing ONLY confirmed-present state IDs (hits do not reorder).
-        // Initialized to Long.MIN_VALUE so no 32-bit int stateId (even negative or MIN_VALUE) can collide.
-        long k0 = Long.MIN_VALUE, k1 = Long.MIN_VALUE, k2 = Long.MIN_VALUE, k3 = Long.MIN_VALUE;
-
-        for (int i = 0; i < stateIds.length; i++) {
-            final int stateId = stateIds[i];
-            if (hasLast && stateId == lastStateId) {
-                continue;
-            }
-            if (stateId == k0 || stateId == k1 || stateId == k2 || stateId == k3) {
-                lastStateId = stateId;
-                hasLast = true;
-                continue;
-            }
-            lastStateId = stateId;
-            hasLast = true;
-            if (materials.containsKey(stateId)) {
-                // Invariant: ONLY present IDs enter the hot slots. Never cache misses here.
-                k3 = k2;
-                k2 = k1;
-                k1 = k0;
-                k0 = stateId;
-            } else {
-                if (missing == null) {
-                    missing = new HashSet<>();
-                }
+        final Set<Integer> missing = new HashSet<>();
+        for (final int stateId : volume.stateIds()) {
+            if (!materials.containsKey(stateId)) {
                 missing.add(stateId);
             }
         }
-        if (missing != null) {
+        if (!missing.isEmpty()) {
             throw new MissingMaterialsException(missing);
         }
 
