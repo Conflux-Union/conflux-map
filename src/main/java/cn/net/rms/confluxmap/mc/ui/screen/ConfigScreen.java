@@ -452,8 +452,8 @@ public final class ConfigScreen extends ConfluxScreen {
     /**
      * One frame of the running act. Act 1 slices its progress across the retiring rows in
      * reverse build order — bottom row first, collecting upward — and act 2 replays the
-     * open stagger's build-order slices; rows without a button ride the shared progress
-     * through their widget alpha.
+     * open stagger's build-order slices across every row, buttons and rows without a
+     * button alike.
      */
     private void applyActAlphas() {
         final float progress = actReveal.progress();
@@ -468,24 +468,44 @@ public final class ConfigScreen extends ConfluxScreen {
                     if (widget instanceof RowButton button) {
                         button.setRowAlpha(alpha);
                     } else {
-                        widget.setAlpha(alpha);
+                        widget.setAlpha(Math.max(alpha, ConfluxScreen.WIDGET_ALPHA_FLOOR));
+                        if (widget instanceof TextFieldWidget field) {
+                            field.visible = alpha >= ConfluxScreen.FIELD_VISIBLE_THRESHOLD;
+                        }
                     }
                 }
             }
             return;
         }
-        final List<RowButton> buttons = rows.rowButtons();
-        final int count = buttons.size();
+        applyRowSlices(progress);
+    }
+
+    /**
+     * Slices one stagger progress across the rows in build order and stores each row's
+     * fade on its slot. A row button renders with the slice on both render channels; a
+     * row without a button — a slider, an icon-texture field — fades its widgets through
+     * the same slice, so those rows queue with the buttons instead of riding the faster
+     * uniform screen reveal and surfacing before the rows around them.
+     */
+    private void applyRowSlices(final float progress) {
+        final List<ConfigRows.RowSlot> slots = rows.rowSlots();
+        final int count = slots.size();
         for (int index = 0; index < count; index++) {
-            buttons.get(index).setRowAlpha(
-                Easing.easeOutCubic(Stagger.slice(progress, index, count, ROW_STAGGER_FRACTION))
+            final float alpha = Easing.easeOutCubic(
+                Stagger.slice(progress, index, count, ROW_STAGGER_FRACTION)
             );
-        }
-        final float shared = actReveal.eased();
-        for (final ConfigRows.RowSlot slot : rows.rowSlots()) {
+            final ConfigRows.RowSlot slot = slots.get(index);
+            slot.setFade(alpha);
             for (final ClickableWidget widget : slot.widgets()) {
-                if (!(widget instanceof RowButton)) {
-                    widget.setAlpha(shared);
+                if (widget instanceof RowButton button) {
+                    button.setRowAlpha(alpha);
+                } else {
+                    // The floor keeps a slider's vanilla-folded message out of the forced-
+                    // opaque zone while its row waits; see ConfluxScreen.WIDGET_ALPHA_FLOOR.
+                    widget.setAlpha(Math.max(alpha, ConfluxScreen.WIDGET_ALPHA_FLOOR));
+                    if (widget instanceof TextFieldWidget field) {
+                        field.visible = alpha >= ConfluxScreen.FIELD_VISIBLE_THRESHOLD;
+                    }
                 }
             }
         }
@@ -501,25 +521,11 @@ public final class ConfigScreen extends ConfluxScreen {
                 switchTo(landing.target());
             }
             case SETTLE -> {
-                settleRevealActRows();
+                settleRowSlots();
                 retiring = null;
                 actReveal = null;
             }
             case NONE -> {
-            }
-        }
-    }
-
-    /** Hands the reveal act's rows back to the inherited path, like the open stagger's settle. */
-    private void settleRevealActRows() {
-        for (final RowButton button : rows.rowButtons()) {
-            button.settleRowAlpha();
-        }
-        for (final ConfigRows.RowSlot slot : rows.rowSlots()) {
-            for (final ClickableWidget widget : slot.widgets()) {
-                if (!(widget instanceof RowButton)) {
-                    widget.setAlpha(1.0f);
-                }
             }
         }
     }
@@ -529,7 +535,7 @@ public final class ConfigScreen extends ConfluxScreen {
      * moves them: a scoped row would keep its private alpha while the screen dims around it.
      */
     private void abandonTabSwitch() {
-        settleRevealActRows();
+        settleRowSlots();
         if (retiring != null) {
             for (final ConfigRows.RowSlot slot : retiring.rows()) {
                 for (final ClickableWidget widget : slot.widgets()) {
@@ -537,6 +543,9 @@ public final class ConfigScreen extends ConfluxScreen {
                         button.settleRowAlpha();
                     } else {
                         widget.setAlpha(1.0f);
+                        if (widget instanceof TextFieldWidget field) {
+                            field.visible = true;
+                        }
                     }
                 }
             }
@@ -547,27 +556,13 @@ public final class ConfigScreen extends ConfluxScreen {
     }
 
     /**
-     * Label alpha for the live label lists: during act 2 a label follows its row — the
-     * staggered button alpha, or the shared fade for rows without a button — and any other
-     * frame leaves the exact color (the screen reveal scales labels on its own).
+     * Label alpha while a row stagger drives the rows — the open's or a tab switch's act 2.
+     * The label reads the same slot fade its row's widgets render with, so a header or a
+     * slider caption appears with its row instead of popping early on the faster uniform
+     * reveal that the un-scoped widgets would otherwise follow.
      */
-    private float actLabelAlpha(final ConfigRows.RowSlot slot) {
-        if (slot.button() != null) {
-            return slot.button().rowAlpha();
-        }
-        return actReveal.eased();
-    }
-
-    /**
-     * Label alpha during the open stagger: a row button drives its labels with the row's
-     * own slice, and a row without one rides the uniform reveal its widgets fade on — so
-     * no gray header surfaces at full color while the rows under it are still fading in.
-     */
-    private float openLabelAlpha(final ConfigRows.RowSlot slot) {
-        if (slot.button() != null) {
-            return slot.button().rowAlpha();
-        }
-        return revealEased();
+    private float slotFadeAlpha(final ConfigRows.RowSlot slot) {
+        return slot.fade();
     }
 
     /** Label alpha for the retiring snapshot: the followed row's reverse-order fade. */
@@ -599,9 +594,9 @@ public final class ConfigScreen extends ConfluxScreen {
 
     /**
      * Drives the rows' staggered fade-in through the open reveal's shared progress, sliced
-     * per row so the buttons appear top to bottom. Runs after the reveal frame has set the
+     * per row so the rows appear top to bottom. Runs after the reveal frame has set the
      * uniform widget alpha, so the per-row values win for this frame. A rebuild mid-fade
-     * hands its new buttons the current progress, and the first non-opening frame restores
+     * hands its new rows the current progress, and the first non-opening frame restores
      * the exact pre-flight rows — a settled screen then pays a single flag check per frame.
      */
     private void applyRowStagger() {
@@ -616,13 +611,7 @@ public final class ConfigScreen extends ConfluxScreen {
             return;
         }
         final float progress = revealProgress();
-        final List<RowButton> buttons = rows.rowButtons();
-        final int count = buttons.size();
-        for (int index = 0; index < count; index++) {
-            buttons.get(index).setRowAlpha(
-                Easing.easeOutCubic(Stagger.slice(progress, index, count, ROW_STAGGER_FRACTION))
-            );
-        }
+        applyRowSlices(progress);
     }
 
     /** Disarms the open stagger and hands its rows back to the inherited path. */
@@ -631,8 +620,28 @@ public final class ConfigScreen extends ConfluxScreen {
             return;
         }
         rowFadeArmed = false;
-        for (final RowButton button : rows.rowButtons()) {
-            button.settleRowAlpha();
+        settleRowSlots();
+    }
+
+    /**
+     * Restores every live row to the inherited path: the slot fade reset and every widget
+     * back to full alpha, so the screen's own fades — close fade, uniform reveal — move
+     * all rows as one. Covers rows without a button too: their alpha was scoped by the
+     * stagger and must not stay frozen at the last slice.
+     */
+    private void settleRowSlots() {
+        for (final ConfigRows.RowSlot slot : rows.rowSlots()) {
+            slot.setFade(1.0f);
+            if (slot.button() != null) {
+                slot.button().settleRowAlpha();
+            } else {
+                for (final ClickableWidget widget : slot.widgets()) {
+                    widget.setAlpha(1.0f);
+                    if (widget instanceof TextFieldWidget field) {
+                        field.visible = true;
+                    }
+                }
+            }
         }
     }
 
@@ -666,9 +675,9 @@ public final class ConfigScreen extends ConfluxScreen {
             // During act 1 the snapshot replaces the live lists: before a rebuild they hold
             // exactly the labels that are retiring, after one they hold the rebuilt tab's.
             final ConfigRows.RowAlpha labelAlpha =
-                tabSwitch.phase() == TabSwitchFlow.Phase.REVEALING
-                    ? this::actLabelAlpha
-                    : rowFadeArmed ? this::openLabelAlpha : ConfigRows.RowAlpha.OPAQUE;
+                tabSwitch.phase() == TabSwitchFlow.Phase.REVEALING || rowFadeArmed
+                    ? this::slotFadeAlpha
+                    : ConfigRows.RowAlpha.FOLLOW_SCREEN;
             rows.drawIconTextureLabels(draw, labelAlpha);
             rows.drawSectionLabels(draw, labelAlpha);
         } else {

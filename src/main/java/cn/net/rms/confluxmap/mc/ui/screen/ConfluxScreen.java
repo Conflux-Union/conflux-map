@@ -106,6 +106,23 @@ public abstract class ConfluxScreen extends Screen {
     }
 
     /**
+     * Floor for widget alphas during transitions. Vanilla TextRenderer rewrites any text
+     * color whose alpha top bits are zero back to fully opaque (1.17.1
+     * {@code tweakTransparency}), so a widget alpha of exactly 0 flashes a slider's folded
+     * message at full brightness. The floor is invisible but keeps the fold out of that zone.
+     */
+    static final float WIDGET_ALPHA_FLOOR = 0.02f;
+
+    /**
+     * A {@code TextFieldWidget} never consumes widget alpha, so its box and text cannot fade;
+     * during transitions it is visibility-gated at this row-fade instead. The threshold sits
+     * low on purpose: the box and the label beside it switch while still near-invisible, so
+     * the switch reads as the row's ends rather than a mid-fade pop, and the label never
+     * outlives its box.
+     */
+    static final float FIELD_VISIBLE_THRESHOLD = 0.1f;
+
+    /**
      * Fades the screen's vanilla-rendered widgets through their own alpha during a reveal
      * frame — the color outlets never see them. Widgets that fade themselves through the
      * shape layer opt out via {@link SelfFadingWidget}, so the two channels do not compound.
@@ -113,7 +130,10 @@ public abstract class ConfluxScreen extends Screen {
     private void applyWidgetReveal(final float alpha) {
         for (final var child : children()) {
             if (child instanceof ClickableWidget widget && !(child instanceof SelfFadingWidget)) {
-                widget.setAlpha(alpha);
+                widget.setAlpha(Math.max(alpha, WIDGET_ALPHA_FLOOR));
+                if (widget instanceof TextFieldWidget field) {
+                    field.visible = alpha >= FIELD_VISIBLE_THRESHOLD;
+                }
             }
         }
     }
@@ -196,15 +216,6 @@ public abstract class ConfluxScreen extends Screen {
     /** True only while the open reveal is climbing; a close fade or a settled screen is false. */
     boolean revealOpening() {
         return reveal.phase() == ScreenReveal.Phase.OPENING;
-    }
-
-    /**
-     * Eased alpha of this screen's reveal — the same value the frame-wide reveal and the
-     * uniform widget alpha run on — for callers aligning their own fades with it. 1 on a
-     * settled screen; readers must run inside the render pass like {@link #revealProgress()}.
-     */
-    float revealEased() {
-        return reveal.eased();
     }
 
     private void finishPendingCloseNow() {

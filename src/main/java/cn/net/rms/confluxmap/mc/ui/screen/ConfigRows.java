@@ -43,8 +43,44 @@ final class ConfigRows {
     private static final int SECTION_LINE_COLOR = 0xFF3A3A3A;
     private static final int ICON_TEXT_COLOR = 0xFFE0E0E0;
 
-    /** One built row: every widget that fades together during a tab switch, in build order. */
-    record RowSlot(int y, RowButton button, List<ClickableWidget> widgets) {
+    /**
+     * One built row: every widget that fades together during a tab switch or the open
+     * stagger, in build order. The slot carries the row's current fade alpha so the
+     * drawn labels beside it read the exact value the widgets render with — button rows
+     * keep {@link RowButton#rowAlpha()} in lockstep, rows without a button have the
+     * screen drive their widgets' alpha and this field together.
+     */
+    static final class RowSlot {
+        private final int y;
+        private final RowButton button;
+        private final List<ClickableWidget> widgets;
+        private float fade = 1.0f;
+
+        RowSlot(final int y, final RowButton button, final List<ClickableWidget> widgets) {
+            this.y = y;
+            this.button = button;
+            this.widgets = widgets;
+        }
+
+        int y() {
+            return y;
+        }
+
+        RowButton button() {
+            return button;
+        }
+
+        List<ClickableWidget> widgets() {
+            return widgets;
+        }
+
+        float fade() {
+            return fade;
+        }
+
+        void setFade(final float fade) {
+            this.fade = fade;
+        }
     }
 
     /** One drawn label captured for the retire act, plus the row whose fade drives its alpha. */
@@ -59,8 +95,13 @@ final class ConfigRows {
     interface RowAlpha {
         float alphaOf(RowSlot row);
 
-        /** The no-transition source: every label keeps its exact color. */
-        RowAlpha OPAQUE = row -> 1.0f;
+        /**
+         * The no-transition source: every label follows the screen's own reveal alpha.
+         * On a settled screen that is 1.0 and labels keep their exact color; during a
+         * close fade or a replayed open the labels dim with the screen like everything
+         * else instead of holding full brightness over the fading rows.
+         */
+        RowAlpha FOLLOW_SCREEN = row -> GuiShapes.revealAlpha();
     }
 
     private final ConfigScreen screen;
@@ -72,9 +113,7 @@ final class ConfigRows {
     private final List<TextFieldWidget> textFields = new ArrayList<>();
     private final List<IconTextureLabel> iconTextureLabels = new ArrayList<>();
     private final List<SectionLabel> sectionLabels = new ArrayList<>();
-    /** Row buttons in build order; the screen's open stagger slices its progress across them. */
-    private final List<RowButton> rowButtons = new ArrayList<>();
-    /** Rows in build order; the screen's tab-switch acts fade each slot as one unit. */
+    /** Rows in build order; the open stagger and the tab-switch acts fade each slot as one unit. */
     private final List<RowSlot> rowSlots = new ArrayList<>();
 
     /** Static label drawn beside a portal-icon text-field row; the row widget is the field itself. */
@@ -98,16 +137,10 @@ final class ConfigRows {
         textFields.clear();
         iconTextureLabels.clear();
         sectionLabels.clear();
-        rowButtons.clear();
         rowSlots.clear();
     }
 
-    /** The rebuilt row's buttons, top to bottom, for the screen's open stagger. */
-    List<RowButton> rowButtons() {
-        return rowButtons;
-    }
-
-    /** The rebuilt rows, top to bottom; the screen's tab-switch acts fade each slot as one unit. */
+    /** The rebuilt rows, top to bottom; the open stagger and the tab-switch acts fade each slot as one unit. */
     List<RowSlot> rowSlots() {
         return rowSlots;
     }
@@ -166,33 +199,46 @@ final class ConfigRows {
     /**
      * Draws the icon-texture labels beside their fields. Each label fades with the row slot
      * at its own y, so during a tab-switch act or the open stagger it follows its field;
-     * with no fade running the source is {@link RowAlpha#OPAQUE} and the exact color
+     * with no fade running the source is {@link RowAlpha#FOLLOW_SCREEN} and the exact color
      * survives.
      */
     void drawIconTextureLabels(final GuiDraw draw, final RowAlpha alpha) {
         for (final IconTextureLabel rowLabel : iconTextureLabels) {
             final RowSlot field = rowAt(rowLabel.y());
-            drawIconTextureLabel(
-                draw, rowLabel.y(), rowLabel.key(),
-                field != null ? alpha.alphaOf(field) : 1.0f
-            );
+            float fade = field != null ? alpha.alphaOf(field) : GuiShapes.revealAlpha();
+            if (field != null && fieldGatedOff(field)) {
+                // The box is visibility-gated (a TextFieldWidget cannot fade), so the label
+                // must not outlive it: drop the label the moment its field drops.
+                fade = 0f;
+            }
+            drawIconTextureLabel(draw, rowLabel.y(), rowLabel.key(), fade);
         }
+    }
+
+    /** True when every fading widget of the field row is visibility-gated off. */
+    private static boolean fieldGatedOff(final RowSlot slot) {
+        for (final ClickableWidget widget : slot.widgets()) {
+            if (widget instanceof TextFieldWidget field && field.visible) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
      * Draws the section headers with their divider lines. Each fades with the first row
      * under it, so during a tab-switch act or the open stagger the header keeps its group;
-     * with no act running the source is {@link RowAlpha#OPAQUE} and the exact colors
+     * with no act running the source is {@link RowAlpha#FOLLOW_SCREEN} and the exact colors
      * survive.
      */
     void drawSectionLabels(final GuiDraw draw, final RowAlpha alpha) {
         for (final SectionLabel section : sectionLabels) {
             // A header at the viewport edge can have no visible row under it; it then
-            // has no row fade to follow and stays at full color.
+            // has no row fade to follow and dims with the screen like every other label.
             final RowSlot follow = firstRowBelow(section.y());
             drawSectionLabel(
                 draw, section.y(), section.key(),
-                follow != null ? alpha.alphaOf(follow) : 1.0f
+                follow != null ? alpha.alphaOf(follow) : GuiShapes.revealAlpha()
             );
         }
     }
@@ -205,7 +251,12 @@ final class ConfigRows {
      */
     void drawRetiringLabels(final GuiDraw draw, final RetireSnapshot snapshot, final RowAlpha alpha) {
         for (final RetiringLabel label : snapshot.labels()) {
-            final float fade = label.followRow() != null ? alpha.alphaOf(label.followRow()) : 1.0f;
+            float fade = label.followRow() != null
+                ? alpha.alphaOf(label.followRow())
+                : GuiShapes.revealAlpha();
+            if (label.iconTexture() && label.followRow() != null && fieldGatedOff(label.followRow())) {
+                fade = 0f;
+            }
             if (label.iconTexture()) {
                 drawIconTextureLabel(draw, label.y(), label.key(), fade);
             } else {
@@ -790,7 +841,6 @@ final class ConfigRows {
             ));
             button.active = active;
             screen.setDisabledTooltip(button, disabledTooltipKey);
-            rowButtons.add(button);
             rowSlots.add(new RowSlot(y, button, List.of(button)));
         }
         return y + ConfigScreen.ROW_HEIGHT;
@@ -857,7 +907,6 @@ final class ConfigRows {
             button.active = active;
             screen.setDisabledTooltip(button, disabledTooltipKey);
             screen.setHoverTooltip(button, hoverTooltipKey);
-            rowButtons.add(button);
             rowSlots.add(new RowSlot(y, button, List.of(button)));
         }
         return y + ConfigScreen.ROW_HEIGHT;
@@ -928,7 +977,6 @@ final class ConfigRows {
                     b.setMessage(ConfigValueLabels.zoomLabel(config.minimapZoomIndex));
                 }
             ));
-            rowButtons.add(button);
             rowSlots.add(new RowSlot(y, button, List.of(button)));
         }
         return y + ConfigScreen.ROW_HEIGHT;
@@ -952,7 +1000,6 @@ final class ConfigRows {
             ));
             button.active = active;
             screen.setDisabledTooltip(button, disabledTooltipKey);
-            rowButtons.add(button);
             rowSlots.add(new RowSlot(y, button, List.of(button)));
         }
         return y + ConfigScreen.ROW_HEIGHT;

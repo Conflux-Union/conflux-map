@@ -171,9 +171,21 @@ public final class GuiDraw {
         GuiShapes.setRevealAlpha(FULL_ALPHA);
     }
 
-    /** Scales one caller-supplied color by the active reveal; context-routed outlets use this. */
+    /**
+     * Scales one caller-supplied color by the active reveal; context-routed outlets use this.
+     * The scaled alpha never lands in vanilla TextRenderer's forced-opaque zone: 1.17.1's
+     * {@code tweakTransparency} rewrites any color whose alpha top bits are zero back to fully
+     * opaque, which would flash scoped text at full brightness exactly when its fade sits at
+     * zero. The 4/255 floor stays invisible but keeps the rewrite from firing.
+     */
+    private static final int MIN_REVEALED_ALPHA = 4 << 24;
+
     private static int revealed(final int color) {
-        return GuiShapes.revealAlpha() == FULL_ALPHA ? color : Argb.scaleAlpha(color, GuiShapes.revealAlpha());
+        if (GuiShapes.revealAlpha() == FULL_ALPHA) {
+            return color;
+        }
+        final int scaled = Argb.scaleAlpha(color, GuiShapes.revealAlpha());
+        return (scaled & 0xFC000000) == 0 ? scaled | MIN_REVEALED_ALPHA : scaled;
     }
 
     /**
