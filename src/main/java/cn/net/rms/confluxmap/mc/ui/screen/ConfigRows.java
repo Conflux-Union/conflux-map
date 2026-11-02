@@ -9,6 +9,7 @@ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.portal.PortalKind;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -163,10 +164,10 @@ final class ConfigRows {
     }
 
     /**
-     * Draws the icon-texture labels beside their fields. Each label pre-multiplies its
-     * color by the fade of the row slot at its own y, so during a tab-switch act it follows
-     * its field; with no act running the source is {@link RowAlpha#OPAQUE} and the exact
-     * color survives.
+     * Draws the icon-texture labels beside their fields. Each label fades with the row slot
+     * at its own y, so during a tab-switch act or the open stagger it follows its field;
+     * with no fade running the source is {@link RowAlpha#OPAQUE} and the exact color
+     * survives.
      */
     void drawIconTextureLabels(final GuiDraw draw, final RowAlpha alpha) {
         for (final IconTextureLabel rowLabel : iconTextureLabels) {
@@ -179,9 +180,9 @@ final class ConfigRows {
     }
 
     /**
-     * Draws the section headers with their divider lines. Each pre-multiplies its colors by
-     * the fade of the first row under it, so during a tab-switch act the header keeps its
-     * group; with no act running the source is {@link RowAlpha#OPAQUE} and the exact colors
+     * Draws the section headers with their divider lines. Each fades with the first row
+     * under it, so during a tab-switch act or the open stagger the header keeps its group;
+     * with no act running the source is {@link RowAlpha#OPAQUE} and the exact colors
      * survive.
      */
     void drawSectionLabels(final GuiDraw draw, final RowAlpha alpha) {
@@ -198,8 +199,8 @@ final class ConfigRows {
 
     /**
      * Draws a retire snapshot's labels while their rows fade out: section headers with
-     * their divider lines, and the portal icon-texture labels, each pre-multiplied by its
-     * followed row's fade. Used instead of the live lists during act 1 — a rebuild clears
+     * their divider lines, and the portal icon-texture labels, each fading with its
+     * followed row. Used instead of the live lists during act 1 — a rebuild clears
      * those mid-act, and before one they hold exactly the labels that are retiring.
      */
     void drawRetiringLabels(final GuiDraw draw, final RetireSnapshot snapshot, final RowAlpha alpha) {
@@ -213,36 +214,44 @@ final class ConfigRows {
         }
     }
 
-    /** One section header's label and divider line, pre-multiplied by a row's fade. */
+    /**
+     * One section header's label and divider line, faded through a row-scoped reveal. The
+     * scope is absolute like {@code RowButton}'s: pre-multiplying the color would fade the
+     * label twice during the open stagger, where the frame-wide reveal is already running.
+     */
     private void drawSectionLabel(final GuiDraw draw, final int y, final String key, final float fade) {
-        final Text label = Texts.translatable(key);
-        final int textY = y + 1;
-        draw.drawTextWithShadow(
-            screen.textRenderer(), label, screen.rowX(), textY, faded(SECTION_TEXT_COLOR, fade)
-        );
-        final int lineY = textY + screen.textRenderer().fontHeight + 2;
-        draw.fill(
-            screen.rowX(), lineY, screen.rowX() + screen.rowWidth, lineY + 1,
-            faded(SECTION_LINE_COLOR, fade)
-        );
-    }
-
-    /** One icon-texture label beside its field row, pre-multiplied by a row's fade. */
-    private void drawIconTextureLabel(final GuiDraw draw, final int y, final String key, final float fade) {
-        final Text label = Texts.translatable(key);
-        draw.drawTextWithShadow(
-            screen.textRenderer(), label, screen.rowX(),
-            y + (ConfigScreen.ROW_HEIGHT - 2 - screen.textRenderer().fontHeight) / 2f,
-            faded(ICON_TEXT_COLOR, fade)
-        );
-    }
-
-    /** Scales one label color's alpha channel by a row's fade; a full fade keeps the exact color. */
-    private static int faded(final int argb, final float alpha) {
-        if (alpha >= 1.0f) {
-            return argb;
+        final float ambient = GuiShapes.revealAlpha();
+        GuiDraw.beginReveal(fade);
+        try {
+            final Text label = Texts.translatable(key);
+            final int textY = y + 1;
+            draw.drawTextWithShadow(
+                screen.textRenderer(), label, screen.rowX(), textY, SECTION_TEXT_COLOR
+            );
+            final int lineY = textY + screen.textRenderer().fontHeight + 2;
+            draw.fill(
+                screen.rowX(), lineY, screen.rowX() + screen.rowWidth, lineY + 1,
+                SECTION_LINE_COLOR
+            );
+        } finally {
+            GuiDraw.beginReveal(ambient);
         }
-        return ((int) ((argb >>> 24) * alpha + 0.5f) << 24) | (argb & 0xFFFFFF);
+    }
+
+    /** One icon-texture label beside its field row, faded through the same row-scoped reveal. */
+    private void drawIconTextureLabel(final GuiDraw draw, final int y, final String key, final float fade) {
+        final float ambient = GuiShapes.revealAlpha();
+        GuiDraw.beginReveal(fade);
+        try {
+            final Text label = Texts.translatable(key);
+            draw.drawTextWithShadow(
+                screen.textRenderer(), label, screen.rowX(),
+                y + (ConfigScreen.ROW_HEIGHT - 2 - screen.textRenderer().fontHeight) / 2f,
+                ICON_TEXT_COLOR
+            );
+        } finally {
+            GuiDraw.beginReveal(ambient);
+        }
     }
 
     /**

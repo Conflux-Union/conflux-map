@@ -558,6 +558,18 @@ public final class ConfigScreen extends ConfluxScreen {
         return actReveal.eased();
     }
 
+    /**
+     * Label alpha during the open stagger: a row button drives its labels with the row's
+     * own slice, and a row without one rides the uniform reveal its widgets fade on — so
+     * no gray header surfaces at full color while the rows under it are still fading in.
+     */
+    private float openLabelAlpha(final ConfigRows.RowSlot slot) {
+        if (slot.button() != null) {
+            return slot.button().rowAlpha();
+        }
+        return revealEased();
+    }
+
     /** Label alpha for the retiring snapshot: the followed row's reverse-order fade. */
     private float retiringLabelAlpha(final ConfigRows.RowSlot slot) {
         final List<ConfigRows.RowSlot> retiringRows = retiring.rows();
@@ -656,7 +668,7 @@ public final class ConfigScreen extends ConfluxScreen {
             final ConfigRows.RowAlpha labelAlpha =
                 tabSwitch.phase() == TabSwitchFlow.Phase.REVEALING
                     ? this::actLabelAlpha
-                    : ConfigRows.RowAlpha.OPAQUE;
+                    : rowFadeArmed ? this::openLabelAlpha : ConfigRows.RowAlpha.OPAQUE;
             rows.drawIconTextureLabels(draw, labelAlpha);
             rows.drawSectionLabels(draw, labelAlpha);
         } else {

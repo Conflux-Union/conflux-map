@@ -198,6 +198,15 @@ public abstract class ConfluxScreen extends Screen {
         return reveal.phase() == ScreenReveal.Phase.OPENING;
     }
 
+    /**
+     * Eased alpha of this screen's reveal — the same value the frame-wide reveal and the
+     * uniform widget alpha run on — for callers aligning their own fades with it. 1 on a
+     * settled screen; readers must run inside the render pass like {@link #revealProgress()}.
+     */
+    float revealEased() {
+        return reveal.eased();
+    }
+
     private void finishPendingCloseNow() {
         reveal.finishNow();
         completePendingClose();
