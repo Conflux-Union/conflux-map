@@ -100,6 +100,9 @@ import cn.net.rms.confluxmap.mc.ui.UiTextureRegion;
 import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
 import cn.net.rms.confluxmap.mc.ui.DisplayModeIconCatalog;
 import cn.net.rms.confluxmap.mc.ui.PlayerMarkerRenderer;
+import cn.net.rms.confluxmap.mc.ui.anim.PopupReveal;
+import cn.net.rms.confluxmap.mc.ui.anim.TransitionClock;
+import cn.net.rms.confluxmap.mc.ui.anim.UiMotion;
 import cn.net.rms.confluxmap.mc.ui.PlayerTrailRenderer;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.world.WaypointHighlightState;
@@ -157,10 +160,19 @@ final class MapTargetSelectors {
     private static final int TARGET_SELECTOR_GAP = 4;
     private static final int TARGET_DROPDOWN_ROW_HEIGHT = 18;
     private static final int TARGET_DROPDOWN_MAX_ROWS = 8;
+    /** Anchor-relative slide of the dropdown reveal: it settles downward out of its trigger. */
+    private static final float DROPDOWN_SLIDE_PIXELS = 3.0f;
 
     private final FullscreenMapScreen screen;
     private TargetSelector openTargetSelector;
     private int targetDropdownScrollOffset;
+    /** Reveal of the target dropdown; both selectors share it since only one opens at a time. */
+    private final PopupReveal reveal = new PopupReveal();
+    private final TransitionClock revealClock = new TransitionClock();
+    /** Last dropdown drawn, kept across a close so the fade-out has geometry and rows. */
+    private TargetDropdown renderedDropdown;
+    private List<?> renderedDropdownOptions = List.of();
+    private int renderedDropdownScrollOffset;
     private Map<WorldIdentity, String> targetWorldLabels = Map.of();
     private List<WorldIdentity> targetWorldOptions = List.of();
     private List<DimensionId> targetDimensionOptions = List.of();
@@ -193,6 +205,7 @@ final class MapTargetSelectors {
     void closeDropdown() {
         openTargetSelector = null;
         targetDropdownScrollOffset = 0;
+        reveal.setOpen(false);
     }
 
     void clearButtons() {
@@ -274,6 +287,7 @@ final class MapTargetSelectors {
     private void toggleTargetSelector(final TargetSelector selector) {
         openTargetSelector = openTargetSelector == selector ? null : selector;
         targetDropdownScrollOffset = 0;
+        reveal.setOpen(openTargetSelector != null);
     }
 
     private Map<WorldIdentity, String> worldLabels() {
@@ -404,6 +418,7 @@ final class MapTargetSelectors {
         if (isTargetOptionSelected(option)) {
             openTargetSelector = null;
             targetDropdownScrollOffset = 0;
+            reveal.setOpen(false);
             return;
         }
         final SessionGuard.Session viewed = screen.viewSession();
@@ -427,6 +442,7 @@ final class MapTargetSelectors {
         }
         openTargetSelector = null;
         targetDropdownScrollOffset = 0;
+        reveal.setOpen(false);
     }
 
     void renderTargetDropdown(
@@ -434,14 +450,76 @@ final class MapTargetSelectors {
         final int mouseX,
         final int mouseY
     ) {
-        final TargetDropdown dropdown = targetDropdown();
-        if (dropdown == null) {
+        tickDropdownReveal();
+        final TargetDropdown live = targetDropdown();
+        if (live != null) {
+            renderedDropdown = live;
+            renderedDropdownOptions = targetOptions();
+            renderedDropdownScrollOffset = DropdownScroll.clamp(
+                targetDropdownScrollOffset, live.optionCount(), live.visibleRows()
+            );
+            targetDropdownScrollOffset = renderedDropdownScrollOffset;
+        }
+        final boolean fadeVisible = dropdownFadeVisible();
+        final TargetDropdown dropdown = live != null
+            ? live
+            : fadeVisible ? renderedDropdown : null;
+        if (dropdown == null || (fadeVisible && renderedDropdownOptions.isEmpty())) {
             return;
         }
-        final List<?> options = targetOptions();
-        targetDropdownScrollOffset = DropdownScroll.clamp(
-            targetDropdownScrollOffset, options.size(), dropdown.visibleRows()
-        );
+        final boolean revealFrame = fadeVisible;
+        if (revealFrame) {
+            GuiDraw.beginReveal(reveal.eased());
+            draw.pushTransform();
+            draw.translate(0f, (reveal.eased() - 1.0f) * DROPDOWN_SLIDE_PIXELS);
+        }
+        try {
+            drawTargetDropdown(
+                draw,
+                mouseX,
+                mouseY,
+                dropdown,
+                renderedDropdownOptions,
+                renderedDropdownScrollOffset
+            );
+        } finally {
+            if (revealFrame) {
+                draw.popTransform();
+                GuiDraw.endReveal();
+            }
+        }
+    }
+
+    /**
+     * The dropdown opens through the selector buttons, always after the screen's own open
+     * reveal has settled, so this never overlaps the single static reveal alpha
+     * ConfluxScreen installs. Disabled transitions snap to the settled state so the render
+     * path stays exactly the pre-animation one.
+     */
+    private void tickDropdownReveal() {
+        if (!screen.config.uiTransitionsEnabled) {
+            reveal.finishNow();
+        } else if (reveal.animating()) {
+            reveal.tick(
+                revealClock.tick(),
+                UiMotion.durationSeconds(screen.config.uiTransitionSpeed.name())
+            );
+        }
+    }
+
+    /** True while the close fade may still draw: transitions on and the reveal in flight. */
+    private boolean dropdownFadeVisible() {
+        return screen.config.uiTransitionsEnabled && reveal.animating();
+    }
+
+    private void drawTargetDropdown(
+        final GuiDraw draw,
+        final int mouseX,
+        final int mouseY,
+        final TargetDropdown dropdown,
+        final List<?> options,
+        final int offset
+    ) {
         draw.fillPopup(
             dropdown.x() - 1,
             dropdown.y() - 1,
@@ -450,7 +528,7 @@ final class MapTargetSelectors {
             0xFF000000
         );
         for (int visibleIndex = 0; visibleIndex < dropdown.visibleRows(); visibleIndex++) {
-            final int optionIndex = targetDropdownScrollOffset + visibleIndex;
+            final int optionIndex = offset + visibleIndex;
             if (optionIndex >= options.size()) {
                 break;
             }
@@ -495,7 +573,7 @@ final class MapTargetSelectors {
             dropdown.height(),
             options.size(),
             dropdown.visibleRows(),
-            targetDropdownScrollOffset
+            offset
         );
     }
 }

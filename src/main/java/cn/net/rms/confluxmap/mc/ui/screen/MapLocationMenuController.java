@@ -100,6 +100,9 @@ import cn.net.rms.confluxmap.mc.ui.UiTextureRegion;
 import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
 import cn.net.rms.confluxmap.mc.ui.DisplayModeIconCatalog;
 import cn.net.rms.confluxmap.mc.ui.PlayerMarkerRenderer;
+import cn.net.rms.confluxmap.mc.ui.anim.PopupReveal;
+import cn.net.rms.confluxmap.mc.ui.anim.TransitionClock;
+import cn.net.rms.confluxmap.mc.ui.anim.UiMotion;
 import cn.net.rms.confluxmap.mc.ui.PlayerTrailRenderer;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.world.WaypointHighlightState;
@@ -155,6 +158,8 @@ import static cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen.*;
  */
 final class MapLocationMenuController {
     private static final int TEMPORARY_LOCATION_COLOR = 0xFF3498DB;
+    /** Anchor-relative slide of the panel reveal: it settles downward out of the cursor. */
+    private static final float MENU_SLIDE_PIXELS = 3.0f;
 
     private final FullscreenMapScreen screen;
     MapLocationMenuController(final FullscreenMapScreen screen) {
@@ -168,6 +173,11 @@ final class MapLocationMenuController {
     private List<FullscreenMapLocationMenu.ButtonSpec> locationMenuSpecs = List.of();
     private FullscreenMapLocationMenu.Action pendingLocationAction;
     private boolean locationMenuDeletePending;
+    /** Reveal of the menu panel; lives here so widget-list rebuilds cannot drop it. */
+    private final PopupReveal reveal = new PopupReveal();
+    private final TransitionClock revealClock = new TransitionClock();
+    /** Panel geometry kept across a dismiss so the close fade keeps drawing it. */
+    private FullscreenMapLocationMenu.Bounds fadingMenuBounds;
     private ButtonWidget setWaypointLocationButton;
     private ButtonWidget editWaypointLocationButton;
     private ButtonWidget shareLocationButton;
@@ -208,6 +218,9 @@ final class MapLocationMenuController {
         locationMenuPlayerId = null;
         pendingLocationAction = null;
         locationMenuDeletePending = false;
+        // A reset invalidates the panel's whole context, so it snaps instead of fading.
+        reveal.finishNow();
+        fadingMenuBounds = null;
     }
 
     void clearButtons() {
@@ -410,6 +423,7 @@ final class MapLocationMenuController {
         locationMenuPlayerId = capture.playerId();
         pendingLocationAction = null;
         locationMenuDeletePending = false;
+        reveal.setOpen(true);
         screen.mapPointerPress = false;
         screen.rebuildWaypointControls();
     }
@@ -684,6 +698,7 @@ final class MapLocationMenuController {
     }
 
     void dismissLocationMenu() {
+        fadingMenuBounds = locationMenuBounds;
         locationMenuBounds = null;
         locationMenuTarget = null;
         locationMenuWaypoint = null;
@@ -691,6 +706,7 @@ final class MapLocationMenuController {
         locationMenuSpecs = List.of();
         pendingLocationAction = null;
         locationMenuDeletePending = false;
+        reveal.setOpen(false);
         screen.rebuildWaypointControls();
     }
 
@@ -758,10 +774,50 @@ final class MapLocationMenuController {
             .ifPresent(screen.sharedWaypoints::delete);
     }
     void drawLocationMenu(final GuiDraw draw) {
-        if (locationMenuBounds == null) {
+        tickMenuReveal();
+        final FullscreenMapLocationMenu.Bounds bounds = locationMenuBounds != null
+            ? locationMenuBounds
+            : menuFadeVisible() ? fadingMenuBounds : null;
+        if (bounds == null) {
             return;
         }
-        FullscreenMapLocationMenu.drawPanel(draw, locationMenuBounds);
+        final boolean revealFrame = menuFadeVisible();
+        if (revealFrame) {
+            final float eased = reveal.eased();
+            GuiDraw.beginReveal(eased);
+            draw.pushTransform();
+            draw.translate(0f, (eased - 1.0f) * MENU_SLIDE_PIXELS);
+        }
+        try {
+            FullscreenMapLocationMenu.drawPanel(draw, bounds);
+        } finally {
+            if (revealFrame) {
+                draw.popTransform();
+                GuiDraw.endReveal();
+            }
+        }
+    }
+
+    /**
+     * The menu's buttons are vanilla widgets and stay opaque during the reveal - only the
+     * panel and its hints move, the same grammar as the screen-level reveal. The menu opens
+     * through user input, long after the screen's own open reveal has settled, so this never
+     * overlaps the single static reveal alpha ConfluxScreen installs.
+     */
+    private void tickMenuReveal() {
+        if (!screen.config.uiTransitionsEnabled) {
+            reveal.finishNow();
+        } else if (reveal.animating()) {
+            reveal.tick(
+                revealClock.tick(),
+                UiMotion.durationSeconds(screen.config.uiTransitionSpeed.name())
+            );
+        }
+    }
+
+    /** True while the close fade may still draw: transitions on and the reveal in flight. */
+    private boolean menuFadeVisible() {
+        return screen.config.uiTransitionsEnabled && reveal.animating();
     }
     Text hoveredLocationActionTooltip() {
         for (final Map.Entry<ButtonWidget, String> entry : locationActionTooltips.entrySet()) {

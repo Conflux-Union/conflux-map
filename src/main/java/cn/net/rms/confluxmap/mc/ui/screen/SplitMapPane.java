@@ -5,6 +5,9 @@ import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.mc.ui.anim.PopupReveal;
+import cn.net.rms.confluxmap.mc.ui.anim.TransitionClock;
+import cn.net.rms.confluxmap.mc.ui.anim.UiMotion;
 import java.util.List;
 import java.util.UUID;
 import net.minecraft.client.font.TextRenderer;
@@ -20,9 +23,22 @@ final class SplitMapPane {
     private static final int PANEL_BACKGROUND = 0xB0101018;
     private static final int BLURRED_PANEL_BACKGROUND = 0x70101018;
     private static final int DIVIDER_COLOR = 0xB0454554;
+    /** Anchor-relative slide of the panel reveal: it settles away from the map divider. */
+    private static final float PANEL_SLIDE_PIXELS = 3.0f;
+    /** Anchor-relative slide of the menu panel reveal: it settles downward out of the cursor. */
+    private static final float MENU_SLIDE_PIXELS = 3.0f;
 
     private final FullscreenMapScreen map;
     private boolean dragging;
+
+    /**
+     * Reveal of the search panel itself. It exists as soon as its screen does, so the fade
+     * comes from the screen's own open reveal - both start on the first frame with the same
+     * config tier, and installing this site's own alpha would clobber ConfluxScreen's single
+     * static value for everything drawn after the pane. Only the slide lives here.
+     */
+    private final PopupReveal paneReveal = new PopupReveal();
+    private final TransitionClock paneClock = new TransitionClock();
 
     private FullscreenMapLocationMenu.Bounds menuBounds;
     private FullscreenMapLocationMenu.Target menuTarget;
@@ -31,9 +47,15 @@ final class SplitMapPane {
     private FullscreenMapLocationMenu.Action pendingMenuAction;
     private boolean menuDeletePending;
     private List<FullscreenMapLocationMenu.ButtonSpec> menuSpecs = List.of();
+    /** Reveal of the embedded location menu panel; host state survives widget rebuilds. */
+    private final PopupReveal menuReveal = new PopupReveal();
+    private final TransitionClock menuClock = new TransitionClock();
+    /** Panel geometry kept across a close so the fade-out has something to draw. */
+    private FullscreenMapLocationMenu.Bounds fadingMenuBounds;
 
     SplitMapPane(final FullscreenMapScreen map) {
         this.map = map;
+        paneReveal.setOpen(true);
     }
 
     void render(
@@ -44,20 +66,89 @@ final class SplitMapPane {
         final SplitMapLayout layout
     ) {
         map.renderEmbedded(draw, mouseX, mouseY, tickDelta, layout);
-        final boolean blurred = map.renderEmbeddedPanelBlur(draw, layout);
-        draw.fill(
-            layout.panelLeft(), 0,
-            layout.screenWidth(), layout.screenHeight(),
-            blurred ? BLURRED_PANEL_BACKGROUND : PANEL_BACKGROUND
-        );
+        tickPaneReveal();
+        final boolean revealFrame = paneFadeVisible();
+        if (revealFrame) {
+            draw.pushTransform();
+            draw.translate((paneReveal.eased() - 1.0f) * PANEL_SLIDE_PIXELS, 0f);
+        }
+        try {
+            final boolean blurred = map.renderEmbeddedPanelBlur(draw, layout);
+            draw.fill(
+                layout.panelLeft(), 0,
+                layout.screenWidth(), layout.screenHeight(),
+                blurred ? BLURRED_PANEL_BACKGROUND : PANEL_BACKGROUND
+            );
+        } finally {
+            if (revealFrame) {
+                draw.popTransform();
+            }
+        }
         draw.fill(
             layout.panelLeft(), 0,
             layout.panelLeft() + 1, layout.screenHeight(),
             DIVIDER_COLOR
         );
-        if (menuOpen()) {
-            FullscreenMapLocationMenu.drawPanel(draw, menuBounds);
+        drawMenuPanel(draw);
+    }
+
+    /**
+     * Only the slide lives here; the alpha comes from the screen reveal (see
+     * {@link #paneReveal}). On 1.21.8+ the context's own fill drops pushed transforms, so
+     * there the backdrop quad slides while the translucent panel fill stays put - a 3px
+     * difference behind an active fade.
+     */
+    private void tickPaneReveal() {
+        if (!map.config.uiTransitionsEnabled) {
+            paneReveal.finishNow();
+        } else if (paneReveal.animating()) {
+            paneReveal.tick(
+                paneClock.tick(),
+                UiMotion.durationSeconds(map.config.uiTransitionSpeed.name())
+            );
         }
+    }
+
+    /** True while the slide may run: transitions on and the reveal in flight. */
+    private boolean paneFadeVisible() {
+        return map.config.uiTransitionsEnabled && paneReveal.animating();
+    }
+
+    private void drawMenuPanel(final GuiDraw draw) {
+        if (!map.config.uiTransitionsEnabled) {
+            menuReveal.finishNow();
+        } else if (menuReveal.animating()) {
+            menuReveal.tick(
+                menuClock.tick(),
+                UiMotion.durationSeconds(map.config.uiTransitionSpeed.name())
+            );
+        }
+        final FullscreenMapLocationMenu.Bounds bounds = menuBounds != null
+            ? menuBounds
+            : menuFadeVisible() ? fadingMenuBounds : null;
+        if (bounds == null) {
+            return;
+        }
+        final boolean revealFrame = menuFadeVisible();
+        if (revealFrame) {
+            final float eased = menuReveal.eased();
+            GuiDraw.beginReveal(eased);
+            draw.pushTransform();
+            draw.translate(0f, (eased - 1.0f) * MENU_SLIDE_PIXELS);
+        }
+        try {
+            FullscreenMapLocationMenu.drawPanel(draw, bounds);
+        } finally {
+            if (revealFrame) {
+                draw.popTransform();
+                GuiDraw.endReveal();
+            }
+        }
+    }
+
+    /** True while the menu close fade may still draw: transitions on and reveal in flight. */
+    private boolean menuFadeVisible() {
+        return map.config.uiTransitionsEnabled && menuReveal.animating();
     }
 
     boolean mouseClicked(
@@ -229,11 +320,13 @@ final class SplitMapPane {
         menuPlayerId = capture.playerId();
         pendingMenuAction = null;
         menuDeletePending = false;
+        menuReveal.setOpen(true);
         host.rebuildForEmbeddedLocationMenu();
         host.clearFocusForOpenMenu();
     }
 
     private void closeMenu(final ConfluxScreen host) {
+        fadingMenuBounds = menuBounds;
         menuBounds = null;
         menuTarget = null;
         menuWaypoint = null;
@@ -241,6 +334,7 @@ final class SplitMapPane {
         pendingMenuAction = null;
         menuDeletePending = false;
         menuSpecs = List.of();
+        menuReveal.setOpen(false);
         host.rebuildForEmbeddedLocationMenu();
     }
 }

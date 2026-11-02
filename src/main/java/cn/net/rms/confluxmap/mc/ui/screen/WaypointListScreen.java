@@ -28,6 +28,9 @@ import cn.net.rms.confluxmap.core.waypoint.list.SharedWaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.WaypointListModel;
 import cn.net.rms.confluxmap.core.waypoint.list.WaypointRow;
 import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
+import cn.net.rms.confluxmap.mc.ui.anim.PopupReveal;
+import cn.net.rms.confluxmap.mc.ui.anim.TransitionClock;
+import cn.net.rms.confluxmap.mc.ui.anim.UiMotion;
 import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
 import cn.net.rms.confluxmap.mc.teleport.TeleportCommandAccess;
@@ -104,6 +107,8 @@ public final class WaypointListScreen extends ConfluxScreen {
     private static final int DROPDOWN_SCROLLBAR_WIDTH = 6;
     private static final int DROPDOWN_ACTION_HEIGHT = 22;
     private static final int SET_MEMBER_INDENT = 10;
+    /** Anchor-relative slide of a dropdown reveal: popups settle downward out of their trigger. */
+    private static final float DROPDOWN_SLIDE_PIXELS = 3.0f;
     private static final String COLLAPSED_ARROW = "\u25b8";
     private static final String EXPANDED_ARROW = "\u25be";
 
@@ -206,12 +211,22 @@ public final class WaypointListScreen extends ConfluxScreen {
     private GroupRef sharedMoveTarget = GroupRef.ungrouped(false);
     private WaypointDimensionFilter dimensionFilter = WaypointDimensionFilter.current();
     private boolean dimensionDropdownOpen;
+    /** Reveal of the dimension dropdown; host state survives {@link #rebuild()} widget swaps. */
+    private final PopupReveal dimensionDropdownReveal = new PopupReveal();
+    private final TransitionClock dimensionDropdownClock = new TransitionClock();
     private int dimensionDropdownX;
     private int dimensionDropdownWidth;
     private List<WaypointDimensionFilter> dimensionDropdownOptions = List.of();
     private int dimensionDropdownScrollOffset;
     private int dimensionDropdownKeyboardIndex;
     private GroupDropdown openGroupDropdown;
+    /**
+     * Group dropdown whose popup is on screen, kept across a close so the fade-out can keep
+     * drawing it while {@code openGroupDropdown} already answers hit-testing as closed.
+     */
+    private GroupDropdown renderedGroupDropdown;
+    private final PopupReveal groupDropdownReveal = new PopupReveal();
+    private final TransitionClock groupDropdownClock = new TransitionClock();
     private int dropdownScrollOffset;
     private int dropdownKeyboardIndex;
     private boolean draggingDropdownScrollbar;
@@ -571,6 +586,7 @@ public final class WaypointListScreen extends ConfluxScreen {
         } else {
             closeGroupDropdown();
             dimensionDropdownOpen = true;
+            dimensionDropdownReveal.setOpen(true);
             dimensionDropdownKeyboardIndex = Math.max(
                 0, dimensionDropdownOptions.indexOf(dimensionFilter)
             );
@@ -595,8 +611,9 @@ public final class WaypointListScreen extends ConfluxScreen {
 
     private void closeDimensionDropdown() {
         dimensionDropdownOpen = false;
-        dimensionDropdownScrollOffset = 0;
-        dimensionDropdownKeyboardIndex = 0;
+        // Scroll and highlight stay put so the close fade keeps rendering the same rows;
+        // reopening reinitializes both from the selected filter.
+        dimensionDropdownReveal.setOpen(false);
         draggingDropdownScrollbar = false;
     }
 
@@ -628,8 +645,24 @@ public final class WaypointListScreen extends ConfluxScreen {
         );
     }
 
+    /** Hit-testing view of the dimension dropdown: only the open one exists. */
     private DropdownGeometry dimensionDropdownGeometry() {
-        if (!dimensionDropdownOpen || dimensionDropdownWidth <= 0) {
+        return dimensionDropdownOpen ? buildDimensionDropdownGeometry() : null;
+    }
+
+    /**
+     * Drawing view of the dimension dropdown: unlike hit-testing, a closing popup keeps its
+     * geometry while the close fade is still running.
+     */
+    private DropdownGeometry dimensionDropdownRenderGeometry() {
+        if (!dimensionDropdownOpen && !dropdownFadeVisible(dimensionDropdownReveal)) {
+            return null;
+        }
+        return buildDimensionDropdownGeometry();
+    }
+
+    private DropdownGeometry buildDimensionDropdownGeometry() {
+        if (dimensionDropdownWidth <= 0) {
             return null;
         }
         return new DropdownGeometry(
@@ -640,6 +673,25 @@ public final class WaypointListScreen extends ConfluxScreen {
             dimensionDropdownVisibleRows(),
             0
         );
+    }
+
+    /** True while a close fade may still draw: transitions on and the reveal in flight. */
+    private boolean dropdownFadeVisible(final PopupReveal reveal) {
+        return config.uiTransitionsEnabled && reveal.animating();
+    }
+
+    /**
+     * Advances one popup reveal for this frame. Disabled transitions snap to the settled
+     * state so their render path stays exactly the pre-animation one. Dropdowns open only
+     * through user input, always after this screen's own open reveal has settled, so this
+     * never overlaps the single static reveal alpha ConfluxScreen installs.
+     */
+    private void tickPopupReveal(final PopupReveal reveal, final TransitionClock clock) {
+        if (!config.uiTransitionsEnabled) {
+            reveal.finishNow();
+        } else if (reveal.animating()) {
+            reveal.tick(clock.tick(), UiMotion.durationSeconds(config.uiTransitionSpeed.name()));
+        }
     }
 
     private String dimensionFilterLabel(
@@ -954,13 +1006,15 @@ public final class WaypointListScreen extends ConfluxScreen {
         } else {
             closeDimensionDropdown();
             openGroupDropdown = dropdown;
-            dropdownKeyboardIndex = Math.max(0, groupDropdownOptions().indexOf(
+            renderedGroupDropdown = dropdown;
+            groupDropdownReveal.setOpen(true);
+            dropdownKeyboardIndex = Math.max(0, groupDropdownOptions(dropdown).indexOf(
                 dropdown == GroupDropdown.FILTER ? groupFilter() : moveTarget()
             ));
             dropdownScrollOffset = DropdownScroll.ensureVisible(
                 dropdownKeyboardIndex,
-                groupDropdownOptions().size(),
-                dropdownVisibleRows()
+                groupDropdownOptions(dropdown).size(),
+                groupDropdownVisibleRows(dropdown)
             );
             draggingDropdownScrollbar = false;
         }
@@ -969,8 +1023,9 @@ public final class WaypointListScreen extends ConfluxScreen {
 
     private void closeGroupDropdown() {
         openGroupDropdown = null;
-        dropdownScrollOffset = 0;
-        dropdownKeyboardIndex = 0;
+        // Scroll and highlight stay put so the close fade keeps rendering the same rows;
+        // reopening reinitializes both from the current selection.
+        groupDropdownReveal.setOpen(false);
         draggingDropdownScrollbar = false;
     }
 
@@ -978,43 +1033,59 @@ public final class WaypointListScreen extends ConfluxScreen {
      * Dropdown options of the active tab: the move target lists every group
      * including ungrouped, the filter additionally offers "All" as a null head.
      */
-    private List<GroupRef> groupDropdownOptions() {
+    private List<GroupRef> groupDropdownOptions(final GroupDropdown dropdown) {
         final List<GroupRef> options = new ArrayList<>();
-        if (openGroupDropdown == GroupDropdown.FILTER) {
+        if (dropdown == GroupDropdown.FILTER) {
             options.add(null);
         }
         options.addAll(activeModel().groupsForDisplay());
         return options;
     }
 
-    private int dropdownVisibleRows() {
-        final int popupY = dropdownTriggerY() + TOOLBAR_HEIGHT;
-        final int actionHeight = openGroupDropdown == GroupDropdown.FILTER ? DROPDOWN_ACTION_HEIGHT : 0;
+    private int groupDropdownVisibleRows(final GroupDropdown dropdown) {
+        final int popupY = groupDropdownTriggerY(dropdown) + TOOLBAR_HEIGHT;
+        final int actionHeight = dropdown == GroupDropdown.FILTER ? DROPDOWN_ACTION_HEIGHT : 0;
         final int availableHeight = height - BOTTOM_MARGIN - popupY - actionHeight;
         final int rowsByHeight = Math.max(1, availableHeight / DROPDOWN_ROW_HEIGHT);
-        return Math.min(groupDropdownOptions().size(), Math.min(DROPDOWN_MAX_VISIBLE_ROWS, rowsByHeight));
+        return Math.min(
+            groupDropdownOptions(dropdown).size(), Math.min(DROPDOWN_MAX_VISIBLE_ROWS, rowsByHeight)
+        );
     }
 
+    /** Hit-testing view of the group dropdown: only the open one exists. */
     private DropdownGeometry groupDropdownGeometry() {
-        if (openGroupDropdown == null) {
-            return null;
-        }
-        final int x = openGroupDropdown == GroupDropdown.FILTER ? filterDropdownX : moveDropdownX;
-        final int dropdownWidth = openGroupDropdown == GroupDropdown.FILTER
+        return openGroupDropdown == null ? null : buildGroupDropdownGeometry(openGroupDropdown);
+    }
+
+    /**
+     * Drawing view of the group dropdown: unlike hit-testing, a closing popup keeps its
+     * geometry while the close fade is still running.
+     */
+    private DropdownGeometry groupDropdownRenderGeometry() {
+        final GroupDropdown dropdown = openGroupDropdown != null
+            ? openGroupDropdown
+            : dropdownFadeVisible(groupDropdownReveal) ? renderedGroupDropdown : null;
+        return dropdown == null ? null : buildGroupDropdownGeometry(dropdown);
+    }
+
+    private DropdownGeometry buildGroupDropdownGeometry(final GroupDropdown dropdown) {
+        final int x = dropdown == GroupDropdown.FILTER ? filterDropdownX : moveDropdownX;
+        final int dropdownWidth = dropdown == GroupDropdown.FILTER
             ? filterDropdownWidth
             : moveDropdownWidth;
         if (dropdownWidth <= 0) {
             return null;
         }
-        final int actionHeight = openGroupDropdown == GroupDropdown.FILTER ? DROPDOWN_ACTION_HEIGHT : 0;
+        final int actionHeight = dropdown == GroupDropdown.FILTER ? DROPDOWN_ACTION_HEIGHT : 0;
         return new DropdownGeometry(
-            x, dropdownTriggerY(), dropdownWidth, dropdownTriggerY() + TOOLBAR_HEIGHT,
-            dropdownVisibleRows(), actionHeight
+            x, groupDropdownTriggerY(dropdown), dropdownWidth,
+            groupDropdownTriggerY(dropdown) + TOOLBAR_HEIGHT,
+            groupDropdownVisibleRows(dropdown), actionHeight
         );
     }
 
-    private int dropdownTriggerY() {
-        return openGroupDropdown == GroupDropdown.FILTER ? filterDropdownY : moveDropdownY;
+    private int groupDropdownTriggerY(final GroupDropdown dropdown) {
+        return dropdown == GroupDropdown.FILTER ? filterDropdownY : moveDropdownY;
     }
 
     private void selectGroupDropdownOption(final GroupRef option) {
@@ -1054,7 +1125,7 @@ public final class WaypointListScreen extends ConfluxScreen {
         if (openGroupDropdown == null) {
             return;
         }
-        final List<GroupRef> options = groupDropdownOptions();
+        final List<GroupRef> options = groupDropdownOptions(openGroupDropdown);
         if (options.isEmpty()) {
             closeGroupDropdown();
             return;
@@ -1064,7 +1135,7 @@ public final class WaypointListScreen extends ConfluxScreen {
             dropdownScrollOffset,
             dropdownKeyboardIndex,
             options.size(),
-            dropdownVisibleRows()
+            groupDropdownVisibleRows(openGroupDropdown)
         );
     }
 
@@ -1524,7 +1595,7 @@ public final class WaypointListScreen extends ConfluxScreen {
             dropdownScrollOffset = DropdownScroll.afterWheel(
                 dropdownScrollOffset,
                 amount,
-                groupDropdownOptions().size(),
+                groupDropdownOptions(openGroupDropdown).size(),
                 groupDropdown.visibleRows()
             );
             return true;
@@ -1585,7 +1656,7 @@ public final class WaypointListScreen extends ConfluxScreen {
         final DropdownGeometry groupDropdown = groupDropdownGeometry();
         if (button == MouseButtons.LEFT && groupDropdown != null) {
             if (groupDropdown.containsPopup(mouseX, mouseY)) {
-                final List<GroupRef> options = groupDropdownOptions();
+                final List<GroupRef> options = groupDropdownOptions(openGroupDropdown);
                 final int optionBottom = groupDropdown.popupY() + groupDropdown.optionHeight();
                 if (mouseY < optionBottom
                     && options.size() > groupDropdown.visibleRows()
@@ -1666,7 +1737,7 @@ public final class WaypointListScreen extends ConfluxScreen {
                 dropdownScrollOffset = dropdownScrollFromMouse(
                     mouseY,
                     groupDropdown,
-                    groupDropdownOptions().size()
+                    groupDropdownOptions(openGroupDropdown).size()
                 );
                 return true;
             }
@@ -1747,7 +1818,7 @@ public final class WaypointListScreen extends ConfluxScreen {
             }
         }
         if (openGroupDropdown != null) {
-            final List<GroupRef> options = groupDropdownOptions();
+            final List<GroupRef> options = groupDropdownOptions(openGroupDropdown);
             if (keyCode == 256) {
                 closeGroupDropdown();
                 rebuild();
@@ -1765,7 +1836,7 @@ public final class WaypointListScreen extends ConfluxScreen {
                     dropdownScrollOffset,
                     dropdownKeyboardIndex,
                     options.size(),
-                    dropdownVisibleRows()
+                    groupDropdownVisibleRows(openGroupDropdown)
                 );
                 return true;
             }
@@ -1955,10 +2026,30 @@ public final class WaypointListScreen extends ConfluxScreen {
     }
 
     private void renderDimensionDropdown(final GuiDraw draw, final int mouseX, final int mouseY) {
-        final DropdownGeometry dropdown = dimensionDropdownGeometry();
+        tickPopupReveal(dimensionDropdownReveal, dimensionDropdownClock);
+        final DropdownGeometry dropdown = dimensionDropdownRenderGeometry();
         if (dropdown == null || dropdown.visibleRows() <= 0) {
             return;
         }
+        final boolean revealFrame = dropdownFadeVisible(dimensionDropdownReveal);
+        if (revealFrame) {
+            beginDropdownRevealTransform(draw, dimensionDropdownReveal.eased());
+        }
+        try {
+            drawDimensionDropdown(draw, mouseX, mouseY, dropdown);
+        } finally {
+            if (revealFrame) {
+                endDropdownRevealTransform(draw);
+            }
+        }
+    }
+
+    private void drawDimensionDropdown(
+        final GuiDraw draw,
+        final int mouseX,
+        final int mouseY,
+        final DropdownGeometry dropdown
+    ) {
         dimensionDropdownScrollOffset = DropdownScroll.clamp(
             dimensionDropdownScrollOffset,
             dimensionDropdownOptions.size(),
@@ -2036,11 +2127,46 @@ public final class WaypointListScreen extends ConfluxScreen {
     }
 
     private void renderGroupDropdown(final GuiDraw draw, final int mouseX, final int mouseY) {
-        final DropdownGeometry dropdown = groupDropdownGeometry();
+        tickPopupReveal(groupDropdownReveal, groupDropdownClock);
+        final DropdownGeometry dropdown = groupDropdownRenderGeometry();
         if (dropdown == null || dropdown.visibleRows() <= 0) {
             return;
         }
-        final List<GroupRef> options = groupDropdownOptions();
+        final boolean revealFrame = dropdownFadeVisible(groupDropdownReveal);
+        if (revealFrame) {
+            beginDropdownRevealTransform(draw, groupDropdownReveal.eased());
+        }
+        try {
+            drawGroupDropdown(draw, mouseX, mouseY, dropdown);
+        } finally {
+            if (revealFrame) {
+                endDropdownRevealTransform(draw);
+            }
+        }
+    }
+
+    /** Slides the popup to its anchor-relative start and installs the reveal alpha. */
+    private void beginDropdownRevealTransform(final GuiDraw draw, final float eased) {
+        GuiDraw.beginReveal(eased);
+        draw.pushTransform();
+        draw.translate(0f, (eased - 1.0f) * DROPDOWN_SLIDE_PIXELS);
+    }
+
+    private void endDropdownRevealTransform(final GuiDraw draw) {
+        draw.popTransform();
+        GuiDraw.endReveal();
+    }
+
+    private void drawGroupDropdown(
+        final GuiDraw draw,
+        final int mouseX,
+        final int mouseY,
+        final DropdownGeometry dropdown
+    ) {
+        final GroupDropdown source = openGroupDropdown != null
+            ? openGroupDropdown
+            : renderedGroupDropdown;
+        final List<GroupRef> options = groupDropdownOptions(source);
         dropdownScrollOffset = DropdownScroll.clamp(
             dropdownScrollOffset, options.size(), dropdown.visibleRows()
         );
@@ -2067,7 +2193,7 @@ public final class WaypointListScreen extends ConfluxScreen {
             final GroupRef option = options.get(optionIndex);
             final boolean selected = Objects.equals(
                 option,
-                openGroupDropdown == GroupDropdown.FILTER ? groupFilter() : moveTarget()
+                source == GroupDropdown.FILTER ? groupFilter() : moveTarget()
             );
             final boolean keyboardFocused = optionIndex == dropdownKeyboardIndex;
             draw.fillPopup(

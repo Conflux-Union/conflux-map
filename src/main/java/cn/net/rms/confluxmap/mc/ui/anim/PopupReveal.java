@@ -31,6 +31,11 @@ public final class PopupReveal {
         return UiMotion.easeOutCubic(progress);
     }
 
+    /** Jumps to the target state, ending any per-frame cost. */
+    public void finishNow() {
+        progress = open ? 1.0f : 0.0f;
+    }
+
     /** True while progress has not settled on the target. */
     public boolean animating() {
         return open ? progress < 1.0f : progress > 0.0f;
