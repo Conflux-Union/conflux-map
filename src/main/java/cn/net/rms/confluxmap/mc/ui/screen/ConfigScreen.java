@@ -15,6 +15,10 @@ import cn.net.rms.confluxmap.mc.net.shared.SharedWaypointClient;
 import cn.net.rms.confluxmap.mc.predict.ManualSeedService;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.UiResourceTheme;
+import cn.net.rms.confluxmap.mc.ui.anim.PopupReveal;
+import cn.net.rms.confluxmap.mc.ui.anim.TabSwitchFlow;
+import cn.net.rms.confluxmap.mc.ui.anim.UiMotion;
+import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
@@ -102,6 +106,14 @@ public final class ConfigScreen extends ConfluxScreen {
     boolean manualSeedAvailable;
     /** True while the open reveal should still drive the rows' staggered fade-in. */
     private boolean rowFadeArmed;
+    /** Pure two-act tab-switch state: the screen executes its decisions. */
+    private final TabSwitchFlow<Category> tabSwitch = new TabSwitchFlow<>();
+    /** Reveal of the act currently running; recreated at every act start. */
+    private PopupReveal actReveal;
+    /** The previous tab's rows and labels, kept fading until the retire act lands. */
+    private ConfigRows.RetireSnapshot retiring;
+    /** The tab bar's buttons in {@link Category} order, for the instant highlight move. */
+    private final List<ButtonWidget> tabButtons = new ArrayList<>();
 
     public ConfigScreen() {
         this(null);
@@ -213,7 +225,9 @@ public final class ConfigScreen extends ConfluxScreen {
         //#else
         public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
         //#endif
-        if (isClosing()) {
+        if (isClosing() || tabSwitch.phase() == TabSwitchFlow.Phase.RETIRING) {
+            // While act 1 retires the old rows, a scroll rebuild would lay fresh
+            // old-category rows under the fading snapshot.
             return true;
         }
         // Scrolling rebuilds the rows and would destroy a text field mid-edit.
@@ -258,7 +272,18 @@ public final class ConfigScreen extends ConfluxScreen {
         rows.clearInputs();
         clearChildren();
         addTabs();
+        if (tabSwitch.phase() == TabSwitchFlow.Phase.RETIRING) {
+            // Act 1 owns the rows: the old ones are fading from the snapshot, so no new
+            // rows may surface under them and the scrollbar stays with the retiring tab.
+            reAddRetiringWidgets();
+            addBottomButtons();
+            return;
+        }
         contentHeight = rows.addRows() + scrollOffset - rowsTop();
+        addBottomButtons();
+    }
+
+    private void addBottomButtons() {
         final int bottomButtonWidth = Math.min(140, Math.max(80, (width - MARGIN * 2 - TAB_GAP) / 2));
         final int bottomButtonsWidth = bottomButtonWidth * 2 + TAB_GAP;
         final int bottomButtonsX = width / 2 - bottomButtonsWidth / 2;
@@ -276,24 +301,42 @@ public final class ConfigScreen extends ConfluxScreen {
         ));
     }
 
+    /**
+     * Puts the retiring rows back into the widget list after a mid-act rebuild dropped
+     * them, so they keep fading where they stood; they stay inactive until the act lands.
+     */
+    private void reAddRetiringWidgets() {
+        if (retiring == null) {
+            return;
+        }
+        for (final ConfigRows.RowSlot slot : retiring.rows()) {
+            for (final ClickableWidget widget : slot.widgets()) {
+                addDrawableChild(widget);
+            }
+        }
+    }
+
     private void addTabs() {
         final Category[] categories = Category.values();
         final ConfigTabLayout layout = tabLayout();
         final int startX = width / 2 - layout.totalWidth() / 2;
+        // The highlight follows the machine's view, not the category field: during act 1
+        // the field stays on the old tab, and a mid-act rebuild must not undo the instant
+        // highlight move the click already made.
+        final Category highlighted = tabSwitch.highlighted(category);
+        tabButtons.clear();
         for (int index = 0; index < categories.length; index++) {
             final Category c = categories[index];
-            final Text label = c == category
-                ? Texts.literal("[" + Texts.translatable(c.labelKey).getString() + "]")
-                : Texts.translatable(c.labelKey);
             final ButtonWidget tab = Widgets.button(
                 startX + index % layout.columns() * (layout.tabWidth() + TAB_GAP),
                 TAB_Y + index / layout.columns() * (TAB_HEIGHT + TAB_GAP),
                 layout.tabWidth(),
                 TAB_HEIGHT,
-                label,
+                tabLabel(c, c == highlighted),
                 b -> selectCategory(c)
             );
             addDrawableChild(tab);
+            tabButtons.add(tab);
         }
     }
 
@@ -304,9 +347,229 @@ public final class ConfigScreen extends ConfluxScreen {
     }
 
     private void selectCategory(final Category c) {
+        switch (tabSwitch.click(c, category, config.uiTransitionsEnabled)) {
+            case NONE -> {
+            }
+            case REBUILD_NOW -> {
+                // No animation: drop any half-run act state with the instant rebuild.
+                retiring = null;
+                actReveal = null;
+                switchTo(c);
+            }
+            case BEGIN_RETIRE -> {
+                highlightTab(c);
+                beginRetireAct();
+            }
+            case FAST_FORWARD -> {
+                highlightTab(c);
+                // Cut the running act short; the next render frame lands it into the
+                // queued tab's rebuild.
+                actReveal.finishNow();
+            }
+        }
+    }
+
+    /** Swaps the rows in place: the transitions-off path and the pre-transition behavior. */
+    private void switchTo(final Category c) {
         category = c;
         scrollOffset = 0;
         rebuild();
+    }
+
+    private static Text tabLabel(final Category c, final boolean selected) {
+        return selected
+            ? Texts.literal("[" + Texts.translatable(c.labelKey).getString() + "]")
+            : Texts.translatable(c.labelKey);
+    }
+
+    /**
+     * Moves the tab bar's {@code [label]} highlight to the clicked tab at the click
+     * instant, so the feedback never waits out the two acts; the landing rebuild recreates
+     * the same labels from the new category.
+     */
+    private void highlightTab(final Category c) {
+        final Category[] categories = Category.values();
+        for (int index = 0; index < tabButtons.size(); index++) {
+            tabButtons.get(index).setMessage(tabLabel(categories[index], categories[index] == c));
+        }
+    }
+
+    /**
+     * Opens act 1: the current rows stop being clickable and get snapshotted so a rebuild
+     * cannot drop them mid-fade, their reveal starts falling from full alpha, and the old
+     * category stays current until the landing rebuild — so tick-driven policy rebuilds
+     * keep serving the retiring tab instead of racing the act.
+     */
+    private void beginRetireAct() {
+        // A switch starting inside the open reveal takes the rows over; settling the open
+        // stagger first keeps the two drivers from fighting over the same rows.
+        settleOpenRowStagger();
+        retiring = rows.takeRetireSnapshot();
+        boolean focusedIsRetiring = false;
+        for (final ConfigRows.RowSlot slot : retiring.rows()) {
+            for (final ClickableWidget widget : slot.widgets()) {
+                widget.active = false;
+                focusedIsRetiring |= getFocused() == widget;
+            }
+        }
+        if (focusedIsRetiring) {
+            setFocused(null);
+        }
+        // The rows stood at full alpha, so the retire act falls from there.
+        actReveal = PopupReveal.fallingFrom(
+            1.0f, UiMotion.durationSeconds(config.uiTransitionSpeed)
+        );
+    }
+
+    /**
+     * Drives the two-act tab switch: ticks the running act's reveal, applies its per-row
+     * alphas before the widgets draw, and lands a finished act — the retire act rebuilds
+     * for the queued tab and starts the reveal act, a settled reveal hands the rows back
+     * to the inherited path. An idle screen pays a single phase check per frame, and a
+     * close fade takes the rows over like the open stagger does.
+     */
+    private void applyTabSwitch() {
+        if (tabSwitch.phase() == TabSwitchFlow.Phase.IDLE) {
+            return;
+        }
+        if (isClosing()) {
+            abandonTabSwitch();
+            return;
+        }
+        actReveal.tick(config.uiTransitionsEnabled, UiMotion.durationSeconds(config.uiTransitionSpeed));
+        if (actReveal.animating()) {
+            applyActAlphas();
+            return;
+        }
+        landTabSwitch();
+        if (actReveal != null && actReveal.animating()) {
+            // The landing rebuilt fresh rows; their first drawn frame starts the new act
+            // at zero instead of flashing in at full alpha.
+            applyActAlphas();
+        }
+    }
+
+    /**
+     * One frame of the running act. Act 1 slices its progress across the retiring rows in
+     * reverse build order — bottom row first, collecting upward — and act 2 replays the
+     * open stagger's build-order slices; rows without a button ride the shared progress
+     * through their widget alpha.
+     */
+    private void applyActAlphas() {
+        final float progress = actReveal.progress();
+        if (tabSwitch.phase() == TabSwitchFlow.Phase.RETIRING) {
+            final List<ConfigRows.RowSlot> retiringRows = retiring.rows();
+            final int count = retiringRows.size();
+            for (int index = 0; index < count; index++) {
+                final float alpha = Easing.easeOutCubic(
+                    Stagger.slice(progress, count - 1 - index, count, ROW_STAGGER_FRACTION)
+                );
+                for (final ClickableWidget widget : retiringRows.get(index).widgets()) {
+                    if (widget instanceof RowButton button) {
+                        button.setRowAlpha(alpha);
+                    } else {
+                        widget.setAlpha(alpha);
+                    }
+                }
+            }
+            return;
+        }
+        final List<RowButton> buttons = rows.rowButtons();
+        final int count = buttons.size();
+        for (int index = 0; index < count; index++) {
+            buttons.get(index).setRowAlpha(
+                Easing.easeOutCubic(Stagger.slice(progress, index, count, ROW_STAGGER_FRACTION))
+            );
+        }
+        final float shared = actReveal.eased();
+        for (final ConfigRows.RowSlot slot : rows.rowSlots()) {
+            for (final ClickableWidget widget : slot.widgets()) {
+                if (!(widget instanceof RowButton)) {
+                    widget.setAlpha(shared);
+                }
+            }
+        }
+    }
+
+    private void landTabSwitch() {
+        final TabSwitchFlow.Landing<Category> landing = tabSwitch.land();
+        switch (landing.action()) {
+            case REBUILD_AND_REVEAL -> {
+                retiring = null;
+                actReveal = new PopupReveal();
+                actReveal.setOpen(true);
+                switchTo(landing.target());
+            }
+            case SETTLE -> {
+                settleRevealActRows();
+                retiring = null;
+                actReveal = null;
+            }
+            case NONE -> {
+            }
+        }
+    }
+
+    /** Hands the reveal act's rows back to the inherited path, like the open stagger's settle. */
+    private void settleRevealActRows() {
+        for (final RowButton button : rows.rowButtons()) {
+            button.settleRowAlpha();
+        }
+        for (final ConfigRows.RowSlot slot : rows.rowSlots()) {
+            for (final ClickableWidget widget : slot.widgets()) {
+                if (!(widget instanceof RowButton)) {
+                    widget.setAlpha(1.0f);
+                }
+            }
+        }
+    }
+
+    /**
+     * Hands every act-driven row back to the inherited path so the screen's own close fade
+     * moves them: a scoped row would keep its private alpha while the screen dims around it.
+     */
+    private void abandonTabSwitch() {
+        settleRevealActRows();
+        if (retiring != null) {
+            for (final ConfigRows.RowSlot slot : retiring.rows()) {
+                for (final ClickableWidget widget : slot.widgets()) {
+                    if (widget instanceof RowButton button) {
+                        button.settleRowAlpha();
+                    } else {
+                        widget.setAlpha(1.0f);
+                    }
+                }
+            }
+            retiring = null;
+        }
+        tabSwitch.reset();
+        actReveal = null;
+    }
+
+    /**
+     * Label alpha for the live label lists: during act 2 a label follows its row — the
+     * staggered button alpha, or the shared fade for rows without a button — and any other
+     * frame leaves the exact color (the screen reveal scales labels on its own).
+     */
+    private float actLabelAlpha(final ConfigRows.RowSlot slot) {
+        if (slot.button() != null) {
+            return slot.button().rowAlpha();
+        }
+        return actReveal.eased();
+    }
+
+    /** Label alpha for the retiring snapshot: the followed row's reverse-order fade. */
+    private float retiringLabelAlpha(final ConfigRows.RowSlot slot) {
+        final List<ConfigRows.RowSlot> retiringRows = retiring.rows();
+        for (int index = 0; index < retiringRows.size(); index++) {
+            if (retiringRows.get(index) == slot) {
+                return Easing.easeOutCubic(Stagger.slice(
+                    actReveal.progress(), retiringRows.size() - 1 - index, retiringRows.size(),
+                    ROW_STAGGER_FRACTION
+                ));
+            }
+        }
+        return 1.0f;
     }
 
     int rowX() {
@@ -333,23 +596,31 @@ public final class ConfigScreen extends ConfluxScreen {
         if (!rowFadeArmed) {
             return;
         }
-        final List<RowButton> buttons = rows.rowButtons();
         if (!revealOpening()) {
             // The reveal landed or a close fade took over. Un-scope the rows so the
             // screen's own fade handles both render channels from here — on a close-fade
             // frame a scoped row would stay opaque while the screen dims.
-            rowFadeArmed = false;
-            for (final RowButton button : buttons) {
-                button.settleRowAlpha();
-            }
+            settleOpenRowStagger();
             return;
         }
         final float progress = revealProgress();
+        final List<RowButton> buttons = rows.rowButtons();
         final int count = buttons.size();
         for (int index = 0; index < count; index++) {
             buttons.get(index).setRowAlpha(
                 Easing.easeOutCubic(Stagger.slice(progress, index, count, ROW_STAGGER_FRACTION))
             );
+        }
+    }
+
+    /** Disarms the open stagger and hands its rows back to the inherited path. */
+    private void settleOpenRowStagger() {
+        if (!rowFadeArmed) {
+            return;
+        }
+        rowFadeArmed = false;
+        for (final RowButton button : rows.rowButtons()) {
+            button.settleRowAlpha();
         }
     }
 
@@ -374,12 +645,23 @@ public final class ConfigScreen extends ConfluxScreen {
 
     @Override
     protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
+        applyTabSwitch();
         applyRowStagger();
         draw.renderBackground(this, mouseX, mouseY, tickDelta);
         final String title = getTitle().getString();
         draw.drawTextWithShadow(this.textRenderer, title, width / 2f - this.textRenderer.getWidth(title) / 2f, 8, 0xFFFFFFFF);
-        rows.drawIconTextureLabels(draw);
-        rows.drawSectionLabels(draw);
+        if (retiring == null) {
+            // During act 1 the snapshot replaces the live lists: before a rebuild they hold
+            // exactly the labels that are retiring, after one they hold the rebuilt tab's.
+            final ConfigRows.RowAlpha labelAlpha =
+                tabSwitch.phase() == TabSwitchFlow.Phase.REVEALING
+                    ? this::actLabelAlpha
+                    : ConfigRows.RowAlpha.OPAQUE;
+            rows.drawIconTextureLabels(draw, labelAlpha);
+            rows.drawSectionLabels(draw, labelAlpha);
+        } else {
+            rows.drawRetiringLabels(draw, retiring, this::retiringLabelAlpha);
+        }
         if (category == Category.RADAR && radarAccess.noticeKey() != null) {
             drawRadarPolicyNotice(draw);
         }

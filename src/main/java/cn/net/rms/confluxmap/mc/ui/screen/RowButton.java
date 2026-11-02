@@ -43,6 +43,11 @@ final class RowButton extends ConfluxTextButton {
         setAlpha(alpha);
     }
 
+    /** The row's current fade alpha; 1.0 once handed back, so drawn labels can follow it. */
+    float rowAlpha() {
+        return rowAlpha;
+    }
+
     /**
      * Hands the row back to the screen's own fades — the uniform widget alpha and the
      * frame-wide reveal — once the stagger no longer drives it, so close fades and every

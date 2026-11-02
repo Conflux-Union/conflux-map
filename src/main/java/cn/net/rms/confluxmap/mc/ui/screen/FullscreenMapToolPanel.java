@@ -61,12 +61,7 @@ final class FullscreenMapToolPanel {
         final float fromProgress,
         final float durationSeconds
     ) {
-        // A fresh reveal cannot be seeded directly, so advance an opening one to the
-        // starting progress and flip it: it now falls from exactly where the group stood.
-        final PopupReveal flight = new PopupReveal();
-        flight.setOpen(true);
-        flight.tick(fromProgress * durationSeconds, durationSeconds);
-        flight.setOpen(false);
+        final PopupReveal flight = PopupReveal.fallingFrom(fromProgress, durationSeconds);
         retiring = new RetiringFlight(List.copyOf(buttons), originX, originY, flight);
     }
 

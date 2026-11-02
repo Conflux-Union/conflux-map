@@ -19,6 +19,20 @@ public final class PopupReveal {
     }
 
     /**
+     * A reveal already falling from {@code fromProgress} — the progress a surface stood at
+     * when its collapse began — so a group closed mid-open returns from where it stands. A
+     * fresh reveal cannot be seeded directly, so this advances an opening one to that
+     * progress and flips it.
+     */
+    public static PopupReveal fallingFrom(final float fromProgress, final float durationSeconds) {
+        final PopupReveal reveal = new PopupReveal();
+        reveal.setOpen(true);
+        reveal.tick(fromProgress * durationSeconds, durationSeconds);
+        reveal.setOpen(false);
+        return reveal;
+    }
+
+    /**
      * Advances one render frame toward the target. Disabled transitions snap to the settled
      * state so the render path stays exactly the pre-animation one.
      */
