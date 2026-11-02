@@ -539,8 +539,14 @@ final class StructureSearchScreen extends ConfluxScreen {
     //$$     final double mouseX = click.x();
     //$$     final double mouseY = click.y();
     //$$     final int button = click.button();
+    //$$     if (isClosing()) {
+    //$$         return true;
+    //$$     }
     //#else
     public boolean mouseClicked(final double mouseX, final double mouseY, final int button) {
+        if (isClosing()) {
+            return true;
+        }
     //#endif
         if (mapPane.menuOpen() && !mapPane.menuContains(mouseX, mouseY)) {
             mapPane.menuClickedOutside(this, mouseX, mouseY, button, splitLayout());
