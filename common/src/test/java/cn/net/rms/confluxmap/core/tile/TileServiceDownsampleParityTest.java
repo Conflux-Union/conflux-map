@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 
 class TileServiceDownsampleParityTest {
     @Test
-    void endToEndLod1AndLod2ComposeMatchesDownsampleFormula() throws InterruptedException {
+    void endToEndLod1ThroughLod3MatchesWeightedAverageFormulaAndExercisesPingPongScratch() throws InterruptedException {
         final MapExecutors executors = new MapExecutors();
         try {
             final MapWorldService mapWorlds = new MapWorldService();
@@ -30,16 +30,15 @@ class TileServiceDownsampleParityTest {
             );
             mapWorlds.switchSession(session);
 
-            // Construct 4 chunks in region (0,0) with distinct flat colors
-            final int c00 = 0xFF112233;
-            final int c10 = 0xFF445566;
-            final int c01 = 0xFF778899;
-            final int c11 = 0xFFAABBCC;
+            // Construct 4 chunks in region (0,0) with alternating columns (cEven, cOdd)
+            // to ensure every 2x2 and 4x4 downsampling block mixes distinct colors geometrically.
+            final int cEven = 0xFF224466;
+            final int cOdd = 0xFF88AACC;
 
-            mapWorlds.current().put(MapLayer.SURFACE, solidChunk(0, 0, c00), SampleSource.REAL_LIVE);
-            mapWorlds.current().put(MapLayer.SURFACE, solidChunk(1, 0, c10), SampleSource.REAL_LIVE);
-            mapWorlds.current().put(MapLayer.SURFACE, solidChunk(0, 1, c01), SampleSource.REAL_LIVE);
-            mapWorlds.current().put(MapLayer.SURFACE, solidChunk(1, 1, c11), SampleSource.REAL_LIVE);
+            mapWorlds.current().put(MapLayer.SURFACE, stripedChunk(0, 0, cEven, cOdd), SampleSource.REAL_LIVE);
+            mapWorlds.current().put(MapLayer.SURFACE, stripedChunk(1, 0, cEven, cOdd), SampleSource.REAL_LIVE);
+            mapWorlds.current().put(MapLayer.SURFACE, stripedChunk(0, 1, cEven, cOdd), SampleSource.REAL_LIVE);
+            mapWorlds.current().put(MapLayer.SURFACE, stripedChunk(1, 1, cEven, cOdd), SampleSource.REAL_LIVE);
 
             final ConfluxConfig config = new ConfluxConfig();
             config.dynamicLighting = false;
@@ -47,14 +46,18 @@ class TileServiceDownsampleParityTest {
                 mapWorlds, executors, config, new DaylightModel()
             );
 
-            // 1. Request LOD0 to inspect the base rendered pixel at (0,0)
+            // 1. Request LOD0 to inspect the base rendered pixel values for even and odd columns
             final TileKey lod0Key = new TileKey(
                 session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), 0, 0, 0
             );
             service.requestTile(lod0Key);
             final TileUpdate lod0Update = awaitUpdate(service, lod0Key);
             assertNotNull(lod0Update);
-            final int basePixel00 = lod0Update.pixelAt(0, 0);
+            final int baseEven = lod0Update.pixelAt(0, 0);
+            final int baseOdd = lod0Update.pixelAt(1, 0);
+
+            // Hand-computed mathematical expectation for any 2x2 block mixing 2 even and 2 odd columns
+            final int expectedDownsampled = Argb.average4Weighted(baseEven, baseOdd, baseEven, baseOdd);
 
             // 2. Request LOD1 (steps = 1: writes to downsampleA).
             // Request twice to verify idempotence and absence of thread-local state drift.
@@ -69,15 +72,11 @@ class TileServiceDownsampleParityTest {
             final TileUpdate lod1Second = awaitUpdate(service, lod1Key);
             assertNotNull(lod1Second);
 
-            assertEquals(basePixel00, lod1First.pixelAt(0, 0),
-                "Flat uniform region (0,0) must preserve uniform downsampled color at origin");
+            assertEquals(expectedDownsampled, lod1First.pixelAt(0, 0),
+                "LOD1 downsampled pixel must mathematically match Argb.average4Weighted of the 2x2 source block");
 
-            final int[] p1 = lod1First.argbPixels();
-            final int[] p2 = lod1Second.argbPixels();
-            assertEquals(p1.length, p2.length);
-            for (int i = 0; i < p1.length; i++) {
-                assertEquals(p1[i], p2[i], "Mismatch at index " + i);
-            }
+            assertArrayEqualsExact(lod1First.argbPixels(), lod1Second.argbPixels(),
+                "Consecutive LOD1 compositions must be bit-identical");
 
             // 3. Request LOD2 (steps = 2: step 0 writes A, step 1 writes downsampleB).
             // Directly exercises the downsampleB ping-pong branch.
@@ -87,8 +86,8 @@ class TileServiceDownsampleParityTest {
             service.requestTile(lod2Key);
             final TileUpdate lod2Update = awaitUpdate(service, lod2Key);
             assertNotNull(lod2Update);
-            assertEquals(basePixel00, lod2Update.pixelAt(0, 0),
-                "LOD2 (2 ping-pong steps via downsampleB) must preserve uniform origin pixel");
+            assertEquals(expectedDownsampled, lod2Update.pixelAt(0, 0),
+                "LOD2 (2 ping-pong steps via downsampleB) must preserve expected downsampled pixel");
 
             // 4. Request LOD3 (steps = 3: A -> B -> A).
             // Exercises 3-step ping-pong alternation back into downsampleA.
@@ -98,21 +97,32 @@ class TileServiceDownsampleParityTest {
             service.requestTile(lod3Key);
             final TileUpdate lod3Update = awaitUpdate(service, lod3Key);
             assertNotNull(lod3Update);
-            assertEquals(basePixel00, lod3Update.pixelAt(0, 0),
-                "LOD3 (3 ping-pong steps A -> B -> A) must preserve uniform origin pixel");
+            assertEquals(expectedDownsampled, lod3Update.pixelAt(0, 0),
+                "LOD3 (3 ping-pong steps A -> B -> A) must preserve expected downsampled pixel");
+
         } finally {
             executors.shutdown(1000L);
         }
     }
 
-    private static ChunkSnapshot solidChunk(final int cx, final int cz, final int argb) {
+    private static void assertArrayEqualsExact(final int[] expected, final int[] actual, final String message) {
+        assertEquals(expected.length, actual.length, message + " (length mismatch)");
+        for (int i = 0; i < expected.length; i++) {
+            if (expected[i] != actual[i]) {
+                assertEquals(expected[i], actual[i], message + " at index " + i);
+            }
+        }
+    }
+
+    private static ChunkSnapshot stripedChunk(final int cx, final int cz, final int cEven, final int cOdd) {
         final short[] surfaceY = new short[ChunkSnapshot.COLUMNS];
         final int[] baseArgb = new int[ChunkSnapshot.COLUMNS];
         final int[] tintArgb = new int[ChunkSnapshot.COLUMNS];
         final byte[] kind = new byte[ChunkSnapshot.COLUMNS];
         for (int i = 0; i < ChunkSnapshot.COLUMNS; i++) {
             surfaceY[i] = 70;
-            baseArgb[i] = argb;
+            // Alternating columns so every 2x2 box has 2 even and 2 odd pixels
+            baseArgb[i] = ((i % 16) % 2 == 0) ? cEven : cOdd;
             tintArgb[i] = 0xFFFFFFFF;
             kind[i] = (byte) SurfaceKind.LAND.ordinal();
         }
