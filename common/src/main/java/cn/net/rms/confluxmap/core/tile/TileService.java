@@ -1064,7 +1064,15 @@ public final class TileService {
         return outPixels;
     }
 
-    /** Repeated 2x2 box-average halving, {@code steps} times: {@code size -> size >> steps}. */
+    /**
+     * Repeated 2x2 box-average halving, {@code steps} times: {@code size -> size >> steps}.
+     *
+     * <p><b>Memory contract:</b> When {@code steps > 0}, the returned array is a borrowed
+     * worker-local scratch buffer ({@code downsampleA} or {@code downsampleB}) of fixed capacity
+     * {@code PIXELS / 4} (16384). Only the first {@code (size >> steps)^2} elements are valid.
+     * Callers must consume the contents immediately (e.g. via {@link #stitch}) and must never
+     * retain the array reference or use {@code array.length} as dimensions.
+     */
     private static int[] downsample(final int[] src, final int size, final int steps, final ComposeScratch scratch) {
         if (steps <= 0) {
             return src;
@@ -1105,6 +1113,10 @@ public final class TileService {
      * 0-15 levels. A plain average (no alpha weighting) is enough here - the levels only
      * steer how strongly a re-light darkens each pixel, and at coarse LODs a torch is a
      * sub-pixel detail either way.
+     *
+     * <p><b>Memory contract:</b> Follows the same scratch-buffer pooling rules as {@link #downsample}.
+     * Block light levels are canonically in the range {@code 0..15}; {@code & 0xFF} defensively prevents
+     * negative sign extension if signed bytes are manipulated.
      */
     private static byte[] downsampleLight(final byte[] src, final int size, final int steps, final ComposeScratch scratch) {
         if (steps <= 0) {

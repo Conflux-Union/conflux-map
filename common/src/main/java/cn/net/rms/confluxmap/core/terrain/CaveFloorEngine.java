@@ -14,20 +14,26 @@ public final class CaveFloorEngine {
     ) throws MissingMaterialsException {
         final int[] stateIds = volume.stateIds();
         Set<Integer> missing = null;
-        int lastStateId = Integer.MIN_VALUE;
-        int k0 = -1, k1 = -1, k2 = -1, k3 = -1;
+        boolean hasLast = false;
+        int lastStateId = 0;
+        // 4-slot LRU cache storing ONLY confirmed-present state IDs.
+        // Initialized to Long.MIN_VALUE so no 32-bit int stateId (even negative or MIN_VALUE) can collide.
+        long k0 = Long.MIN_VALUE, k1 = Long.MIN_VALUE, k2 = Long.MIN_VALUE, k3 = Long.MIN_VALUE;
 
         for (int i = 0; i < stateIds.length; i++) {
             final int stateId = stateIds[i];
-            if (stateId == lastStateId) {
+            if (hasLast && stateId == lastStateId) {
                 continue;
             }
             if (stateId == k0 || stateId == k1 || stateId == k2 || stateId == k3) {
                 lastStateId = stateId;
+                hasLast = true;
                 continue;
             }
             lastStateId = stateId;
+            hasLast = true;
             if (materials.containsKey(stateId)) {
+                // Invariant: ONLY present IDs enter the hot slots. Never cache misses here.
                 k3 = k2;
                 k2 = k1;
                 k1 = k0;
@@ -39,7 +45,7 @@ public final class CaveFloorEngine {
                 missing.add(stateId);
             }
         }
-        if (missing != null && !missing.isEmpty()) {
+        if (missing != null) {
             throw new MissingMaterialsException(missing);
         }
 

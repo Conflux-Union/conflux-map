@@ -47,6 +47,11 @@ public final class ShadingPipeline {
     /** Sentinel representing an absent or invalid height column, avoiding heap allocation. */
     public static final int NO_HEIGHT = Integer.MIN_VALUE;
 
+    /**
+     * Precomputed radius for height-shading curve lookup table.
+     * Minecraft surface heights typically range from -64 to 320 (or modded up to ±512 around REFERENCE_HEIGHT 80).
+     * Diff values within [-512, 512] cover all standard terrain in L1 data cache; larger deltas fall back to Math.log10.
+     */
     private static final int HEIGHT_LUT_RADIUS = 512;
     private static final double[] HEIGHT_LUT_ALONE = new double[HEIGHT_LUT_RADIUS * 2 + 1];
     private static final double[] HEIGHT_LUT_WITH_SLOPE = new double[HEIGHT_LUT_RADIUS * 2 + 1];
