@@ -1035,6 +1035,7 @@ public final class TileService {
         final int baseRegionX = key.tileX() << lod;
         final int baseRegionZ = key.tileZ() << lod;
         final int[] outPixels = new int[size * size];
+        final ComposeScratch scratch = COMPOSE_SCRATCH.get();
         for (int dz = 0; dz < regionsPerSide; dz++) {
             for (int dx = 0; dx < regionsPerSide; dx++) {
                 final int regionX = baseRegionX + dx;
@@ -1045,7 +1046,6 @@ public final class TileService {
                 if (store.region(regionX, regionZ) == null) {
                     continue;
                 }
-                final ComposeScratch scratch = COMPOSE_SCRATCH.get();
                 final byte[] fullLight = outLight == null ? null : scratch.outputLight;
                 final int[] full = scratch.outputPixels;
                 composeLod0(
@@ -1053,10 +1053,10 @@ public final class TileService {
                     layerType, applyDaylight, daylightFactor, gamma, fullLight,
                     mapColorStyle, xaeroShadow, voidColor, DirtyWork.FULL_RECT, full
                 );
-                final int[] downsampled = downsample(full, size, lod);
+                final int[] downsampled = downsample(full, size, lod, scratch);
                 stitch(downsampled, subSize, outPixels, dx * subSize, dz * subSize);
                 if (outLight != null) {
-                    stitchLight(downsampleLight(fullLight, size, lod), subSize, outLight, dx * subSize, dz * subSize);
+                    stitchLight(downsampleLight(fullLight, size, lod, scratch), subSize, outLight, dx * subSize, dz * subSize);
                 }
                 outChanged.add(new TileUpdate.Rect(dx * subSize, dz * subSize, subSize, subSize));
             }
@@ -1065,12 +1065,15 @@ public final class TileService {
     }
 
     /** Repeated 2x2 box-average halving, {@code steps} times: {@code size -> size >> steps}. */
-    private static int[] downsample(final int[] src, final int size, final int steps) {
+    private static int[] downsample(final int[] src, final int size, final int steps, final ComposeScratch scratch) {
+        if (steps <= 0) {
+            return src;
+        }
         int[] current = src;
         int currentSize = size;
         for (int step = 0; step < steps; step++) {
             final int nextSize = currentSize / 2;
-            final int[] next = new int[nextSize * nextSize];
+            final int[] next = (step % 2 == 0) ? scratch.downsampleA : scratch.downsampleB;
             for (int z = 0; z < nextSize; z++) {
                 final int z0 = z * 2;
                 final int z1 = z0 + 1;
@@ -1103,20 +1106,23 @@ public final class TileService {
      * steer how strongly a re-light darkens each pixel, and at coarse LODs a torch is a
      * sub-pixel detail either way.
      */
-    private static byte[] downsampleLight(final byte[] src, final int size, final int steps) {
+    private static byte[] downsampleLight(final byte[] src, final int size, final int steps, final ComposeScratch scratch) {
+        if (steps <= 0) {
+            return src;
+        }
         byte[] current = src;
         int currentSize = size;
         for (int step = 0; step < steps; step++) {
             final int nextSize = currentSize / 2;
-            final byte[] next = new byte[nextSize * nextSize];
+            final byte[] next = (step % 2 == 0) ? scratch.downsampleLightA : scratch.downsampleLightB;
             for (int z = 0; z < nextSize; z++) {
                 final int z0 = z * 2;
                 final int z1 = z0 + 1;
                 for (int x = 0; x < nextSize; x++) {
                     final int x0 = x * 2;
                     final int x1 = x0 + 1;
-                    final int sum = current[z0 * currentSize + x0] + current[z0 * currentSize + x1]
-                        + current[z1 * currentSize + x0] + current[z1 * currentSize + x1];
+                    final int sum = (current[z0 * currentSize + x0] & 0xFF) + (current[z0 * currentSize + x1] & 0xFF)
+                        + (current[z1 * currentSize + x0] & 0xFF) + (current[z1 * currentSize + x1] & 0xFF);
                     next[z * nextSize + x] = (byte) ((sum + 2) >> 2);
                 }
             }
@@ -1313,13 +1319,13 @@ public final class TileService {
         if (waterOrIce) {
             // Shoulders whose neighbour region is absent are filled from the axial
             // opposite (see reliefMultiplier) so the floor keeps its slope light.
-            final Integer north =
+            final int north =
                 reliefHeight(x, z - 1, true, surfaceY, fluidDepth, kind, neighborhood);
-            final Integer northWest =
+            final int northWest =
                 reliefHeight(x - 1, z - 1, true, surfaceY, fluidDepth, kind, neighborhood);
-            final Integer south =
+            final int south =
                 reliefHeight(x, z + 1, true, surfaceY, fluidDepth, kind, neighborhood);
-            final Integer southEast =
+            final int southEast =
                 reliefHeight(x + 1, z + 1, true, surfaceY, fluidDepth, kind, neighborhood);
             int shadedFloor = overlayArgb[idx] == Argb.TRANSPARENT
                 ? Argb.TRANSPARENT
@@ -1334,13 +1340,13 @@ public final class TileService {
             );
             composed = ShadingPipeline.compositeOver(tintedBase, shadedFloor);
         } else {
-            final Integer north =
+            final int north =
                 reliefHeight(x, z - 1, false, surfaceY, fluidDepth, kind, neighborhood);
-            final Integer northWest =
+            final int northWest =
                 reliefHeight(x - 1, z - 1, false, surfaceY, fluidDepth, kind, neighborhood);
-            final Integer south =
+            final int south =
                 reliefHeight(x, z + 1, false, surfaceY, fluidDepth, kind, neighborhood);
-            final Integer southEast =
+            final int southEast =
                 reliefHeight(x + 1, z + 1, false, surfaceY, fluidDepth, kind, neighborhood);
             final int shadedBase = XaeroMapStyle.applyTerrain(
                 tintedBase, surface,
@@ -1389,25 +1395,25 @@ public final class TileService {
         final byte[] localKind,
         final RegionNeighborhood neighborhood
     ) {
-        final Integer centerHeight =
+        final int centerHeight =
             reliefHeight(x, z, bathymetry, localSurfaceY, localFluidDepth, localKind, neighborhood);
-        if (centerHeight == null) {
+        if (centerHeight == ShadingPipeline.NO_HEIGHT) {
             return 1.0;
         }
         // Region-edge columns lose shoulders to absent neighbour regions; filling them from
         // the axial opposite keeps slope shading alive to the last column instead of
         // collapsing the whole pixel flat (a one-texel bright band on region borders).
-        final Integer litWest =
+        final int litWest =
             reliefHeight(x - 1, z, bathymetry, localSurfaceY, localFluidDepth, localKind, neighborhood);
-        final Integer litSouth =
+        final int litSouth =
             reliefHeight(x, z + 1, bathymetry, localSurfaceY, localFluidDepth, localKind, neighborhood);
-        final Integer litDiagonal =
+        final int litDiagonal =
             reliefHeight(x - 1, z + 1, bathymetry, localSurfaceY, localFluidDepth, localKind, neighborhood);
-        final Integer darkEast =
+        final int darkEast =
             reliefHeight(x + 1, z, bathymetry, localSurfaceY, localFluidDepth, localKind, neighborhood);
-        final Integer darkNorth =
+        final int darkNorth =
             reliefHeight(x, z - 1, bathymetry, localSurfaceY, localFluidDepth, localKind, neighborhood);
-        final Integer darkDiagonal =
+        final int darkDiagonal =
             reliefHeight(x + 1, z - 1, bathymetry, localSurfaceY, localFluidDepth, localKind, neighborhood);
         return ShadingPipeline.directionalReliefMultiplier(
             ShadingPipeline.filledShoulder(litWest, darkEast, centerHeight),
@@ -1420,7 +1426,7 @@ public final class TileService {
         );
     }
 
-    private static Integer reliefHeight(
+    private static int reliefHeight(
         final int x,
         final int z,
         final boolean bathymetry,
@@ -1439,7 +1445,7 @@ public final class TileService {
             if (value == ChunkSnapshot.NO_SURFACE
                 || k == SurfaceKind.UNKNOWN.ordinal()
                 || k == SurfaceKind.VOID.ordinal()) {
-                return null;
+                return ShadingPipeline.NO_HEIGHT;
             }
             if (!bathymetry
                 || (k != SurfaceKind.WATER.ordinal()
@@ -1452,12 +1458,12 @@ public final class TileService {
         final int regionDz = z < 0 ? -1 : z >= RegionColumns.SIZE ? 1 : 0;
         final RegionColumns region = neighborhood.at(regionDx, regionDz);
         if (region == null) {
-            return null;
+            return ShadingPipeline.NO_HEIGHT;
         }
         final int localX = Math.floorMod(x, RegionColumns.SIZE);
         final int localZ = Math.floorMod(z, RegionColumns.SIZE);
         final short value = region.reliefYAt(localX, localZ, bathymetry);
-        return value == ChunkSnapshot.NO_SURFACE ? null : (int) value;
+        return value == ChunkSnapshot.NO_SURFACE ? ShadingPipeline.NO_HEIGHT : (int) value;
     }
 
     private record RegionNeighborhood(
@@ -1629,6 +1635,11 @@ public final class TileService {
         final byte[] light = new byte[PIXELS];
         final int[] outputPixels = new int[PIXELS];
         final byte[] outputLight = new byte[PIXELS];
+
+        final int[] downsampleA = new int[PIXELS / 4];
+        final int[] downsampleB = new int[PIXELS / 4];
+        final byte[] downsampleLightA = new byte[PIXELS / 4];
+        final byte[] downsampleLightB = new byte[PIXELS / 4];
     }
 
     private record DirtyWork(long token, Set<Long> regions, TileUpdate.Rect lod0Rect) {

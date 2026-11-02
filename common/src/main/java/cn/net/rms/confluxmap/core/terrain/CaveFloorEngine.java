@@ -12,13 +12,34 @@ public final class CaveFloorEngine {
         final int requestedPivotY,
         final Map<Integer, MaterialDescriptor> materials
     ) throws MissingMaterialsException {
-        final Set<Integer> missing = new HashSet<>();
-        for (final int stateId : volume.stateIds()) {
-            if (!materials.containsKey(stateId)) {
+        final int[] stateIds = volume.stateIds();
+        Set<Integer> missing = null;
+        int lastStateId = Integer.MIN_VALUE;
+        int k0 = -1, k1 = -1, k2 = -1, k3 = -1;
+
+        for (int i = 0; i < stateIds.length; i++) {
+            final int stateId = stateIds[i];
+            if (stateId == lastStateId) {
+                continue;
+            }
+            if (stateId == k0 || stateId == k1 || stateId == k2 || stateId == k3) {
+                lastStateId = stateId;
+                continue;
+            }
+            lastStateId = stateId;
+            if (materials.containsKey(stateId)) {
+                k3 = k2;
+                k2 = k1;
+                k1 = k0;
+                k0 = stateId;
+            } else {
+                if (missing == null) {
+                    missing = new HashSet<>();
+                }
                 missing.add(stateId);
             }
         }
-        if (!missing.isEmpty()) {
+        if (missing != null && !missing.isEmpty()) {
             throw new MissingMaterialsException(missing);
         }
 

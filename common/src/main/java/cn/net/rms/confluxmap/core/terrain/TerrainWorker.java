@@ -42,6 +42,7 @@ public final class TerrainWorker implements AutoCloseable {
     );
     private final CaveFloorEngine engine = new CaveFloorEngine();
     private final Map<Integer, MaterialDescriptor> materials = new HashMap<>();
+    private volatile Map<Integer, MaterialDescriptor> materialSnapshot = Map.of();
     private final LinkedHashMap<Long, CachedChunk> chunks = new LinkedHashMap<>(
         64, 0.75f, true
     );
@@ -197,6 +198,7 @@ public final class TerrainWorker implements AutoCloseable {
                 chunks.clear();
                 cachedBytes = 0L;
                 materials.clear();
+                materialSnapshot = Map.of();
                 requestedMaterials.clear();
                 cachedSessionToken = next.sessionToken();
             }
@@ -246,6 +248,7 @@ public final class TerrainWorker implements AutoCloseable {
         synchronized (stateLock) {
             materials.putAll(additions);
             requestedMaterials.removeAll(additions.keySet());
+            materialSnapshot = Map.copyOf(materials);
         }
         final TerrainView target = view;
         if (target != null) {
@@ -338,10 +341,7 @@ public final class TerrainWorker implements AutoCloseable {
             return;
         }
         try {
-            final Map<Integer, MaterialDescriptor> materialSnapshot;
-            synchronized (stateLock) {
-                materialSnapshot = Map.copyOf(materials);
-            }
+            final Map<Integer, MaterialDescriptor> materialSnapshot = this.materialSnapshot;
             final ChunkVolume decoded = chunk.decode();
             if (decoded == null) {
                 return;

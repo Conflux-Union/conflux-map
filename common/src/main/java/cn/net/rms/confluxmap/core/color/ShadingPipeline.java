@@ -44,12 +44,32 @@ public final class ShadingPipeline {
     private static final float SEAFLOOR_DARKEN_RANGE_BLOCKS = 48f;
     private static final float SEAFLOOR_MIN_BRIGHTNESS = 0.25f;
 
+    /** Sentinel representing an absent or invalid height column, avoiding heap allocation. */
+    public static final int NO_HEIGHT = Integer.MIN_VALUE;
+
+    private static final int HEIGHT_LUT_RADIUS = 512;
+    private static final double[] HEIGHT_LUT_ALONE = new double[HEIGHT_LUT_RADIUS * 2 + 1];
+    private static final double[] HEIGHT_LUT_WITH_SLOPE = new double[HEIGHT_LUT_RADIUS * 2 + 1];
+
+    static {
+        for (int diff = -HEIGHT_LUT_RADIUS; diff <= HEIGHT_LUT_RADIUS; diff++) {
+            final int idx = diff + HEIGHT_LUT_RADIUS;
+            final double shadeAlone = Math.log10(Math.abs(diff) / HEIGHT_STEP + 1.0) / K_ALONE;
+            final double shadeWithSlope = Math.log10(Math.abs(diff) / HEIGHT_STEP + 1.0) / K_WITH_SLOPE;
+            HEIGHT_LUT_ALONE[idx] = diff < 0 ? -shadeAlone : shadeAlone;
+            HEIGHT_LUT_WITH_SLOPE[idx] = diff < 0 ? -shadeWithSlope : shadeWithSlope;
+        }
+    }
+
     private ShadingPipeline() {
     }
 
     /** §4 absolute-height term. {@code slopeAlsoActive} selects the gentler K used when combined with slope. */
     public static double heightShade(final int columnHeight, final int referenceHeight, final boolean slopeAlsoActive) {
         final int diff = columnHeight - referenceHeight;
+        if (diff >= -HEIGHT_LUT_RADIUS && diff <= HEIGHT_LUT_RADIUS) {
+            return slopeAlsoActive ? HEIGHT_LUT_WITH_SLOPE[diff + HEIGHT_LUT_RADIUS] : HEIGHT_LUT_ALONE[diff + HEIGHT_LUT_RADIUS];
+        }
         final double k = slopeAlsoActive ? K_WITH_SLOPE : K_ALONE;
         final double shade = Math.log10(Math.abs(diff) / HEIGHT_STEP + 1.0) / k;
         return diff < 0 ? -shade : shade;
@@ -83,6 +103,27 @@ public final class ShadingPipeline {
             || darkEast == null || darkNorth == null || darkDiagonal == null) {
             return 1.0;
         }
+        return directionalReliefMultiplier(
+            litWest.intValue(), litSouth.intValue(), litDiagonal.intValue(),
+            darkEast.intValue(), darkNorth.intValue(), darkDiagonal.intValue(),
+            blocksPerPixel
+        );
+    }
+
+    /** Primitive overload avoiding heap boxing during hot-loop tile composition. */
+    public static double directionalReliefMultiplier(
+        final int litWest,
+        final int litSouth,
+        final int litDiagonal,
+        final int darkEast,
+        final int darkNorth,
+        final int darkDiagonal,
+        final int blocksPerPixel
+    ) {
+        if (litWest == NO_HEIGHT || litSouth == NO_HEIGHT || litDiagonal == NO_HEIGHT
+            || darkEast == NO_HEIGHT || darkNorth == NO_HEIGHT || darkDiagonal == NO_HEIGHT) {
+            return 1.0;
+        }
         if (blocksPerPixel <= 0) {
             throw new IllegalArgumentException("blocksPerPixel must be positive");
         }
@@ -104,10 +145,21 @@ public final class ShadingPipeline {
         final Integer opposite,
         final int centerHeight
     ) {
-        if (shoulder != null) {
+        final int s = shoulder == null ? NO_HEIGHT : shoulder.intValue();
+        final int o = opposite == null ? NO_HEIGHT : opposite.intValue();
+        return filledShoulder(s, o, centerHeight);
+    }
+
+    /** Primitive overload avoiding heap boxing during hot-loop tile composition. */
+    public static int filledShoulder(
+        final int shoulder,
+        final int opposite,
+        final int centerHeight
+    ) {
+        if (shoulder != NO_HEIGHT) {
             return shoulder;
         }
-        if (opposite == null) {
+        if (opposite == NO_HEIGHT) {
             return centerHeight;
         }
         return centerHeight + Math.max(-1, Math.min(1, centerHeight - opposite));
@@ -125,7 +177,12 @@ public final class ShadingPipeline {
      * in which case the term is flat/zero.
      */
     public static double slopeShade(final int columnHeight, final Integer neighborHeight) {
-        if (neighborHeight == null) {
+        return slopeShade(columnHeight, neighborHeight == null ? NO_HEIGHT : neighborHeight.intValue());
+    }
+
+    /** Primitive overload avoiding heap boxing during hot-loop tile composition. */
+    public static double slopeShade(final int columnHeight, final int neighborHeight) {
+        if (neighborHeight == NO_HEIGHT) {
             return 0.0;
         }
         if (neighborHeight > columnHeight) {
