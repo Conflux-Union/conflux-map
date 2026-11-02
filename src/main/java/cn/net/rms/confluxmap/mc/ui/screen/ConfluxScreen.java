@@ -71,8 +71,10 @@ public abstract class ConfluxScreen extends Screen {
      * pre-transition render path.
      */
     private boolean beginRevealFrame(final GuiDraw draw) {
-        final ConfluxConfig config = ConfluxMapClient.get().config();
-        if (!config.uiTransitionsEnabled) {
+        final ConfluxMapClient app = ConfluxMapClient.get();
+        final ConfluxConfig config = app == null ? null : app.config();
+        // Unit tests render screens with no mod client; transitions are simply off.
+        if (config == null || !config.uiTransitionsEnabled) {
             reveal.finishNow();
             return false;
         }
@@ -160,8 +162,10 @@ public abstract class ConfluxScreen extends Screen {
      * already running only cuts it short; the first request's cleanup wins.
      */
     protected final void requestClose(final Screen target, final Runnable cleanup) {
-        final ConfluxConfig config = ConfluxMapClient.get().config();
-        switch (ScreenCloseFlow.decideClose(config.uiTransitionsEnabled, target != null, closePending)) {
+        final ConfluxMapClient app = ConfluxMapClient.get();
+        final ConfluxConfig config = app == null ? null : app.config();
+        // Same seam as beginRevealFrame: without a loaded config there is no close fade.
+        switch (ScreenCloseFlow.decideClose(config != null && config.uiTransitionsEnabled, target != null, closePending)) {
             case DEFER_FADE -> {
                 reveal.beginClose();
                 closeTarget = target;
