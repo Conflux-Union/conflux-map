@@ -10,15 +10,26 @@ final class CaveFloorEngineBenchmarkTest {
     void cachedViewportPivotThroughput() throws Exception {
         final int height = 384;
         final int[] states = new int[height * 256];
+        // Interleaved states across layers representing typical subterranean chunk composition
         for (int y = 0; y < height; y++) {
-            final int state = y % 24 == 0 ? 2 : 0;
-            java.util.Arrays.fill(states, y * 256, (y + 1) * 256, state);
+            final int baseState = (y % 16 == 0) ? (y % 7) : 0;
+            for (int z = 0; z < 16; z++) {
+                for (int x = 0; x < 16; x++) {
+                    final int s = (x + z) % 8 == 0 ? ((x + y) % 7) : baseState;
+                    states[y * 256 + z * 16 + x] = s;
+                }
+            }
         }
         final ChunkVolume chunk = new ChunkVolume(0, 0, 1L, -64, height, states);
         final CaveFloorEngine engine = new CaveFloorEngine();
         final Map<Integer, MaterialDescriptor> materials = Map.of(
             0, new MaterialDescriptor(true, false),
-            2, new MaterialDescriptor(false, false)
+            1, new MaterialDescriptor(false, false),
+            2, new MaterialDescriptor(false, false),
+            3, new MaterialDescriptor(false, false),
+            4, new MaterialDescriptor(false, false),
+            5, new MaterialDescriptor(true, false),
+            6, new MaterialDescriptor(false, false)
         );
         for (int i = 0; i < 20; i++) {
             engine.select(chunk, 160, materials);

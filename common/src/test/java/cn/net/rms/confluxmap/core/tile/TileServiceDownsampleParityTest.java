@@ -47,15 +47,17 @@ class TileServiceDownsampleParityTest {
                 mapWorlds, executors, config, new DaylightModel()
             );
 
-            // Request LOD0
+            // 1. Request LOD0 to inspect the base rendered pixel at (0,0)
             final TileKey lod0Key = new TileKey(
                 session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), 0, 0, 0
             );
             service.requestTile(lod0Key);
             final TileUpdate lod0Update = awaitUpdate(service, lod0Key);
             assertNotNull(lod0Update);
+            final int basePixel00 = lod0Update.pixelAt(0, 0);
 
-            // Request LOD1 twice to verify thread-local ping-pong scratch consistency without state leakage
+            // 2. Request LOD1 (steps = 1: writes to downsampleA).
+            // Request twice to verify idempotence and absence of thread-local state drift.
             final TileKey lod1Key = new TileKey(
                 session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), 1, 0, 0
             );
@@ -67,13 +69,37 @@ class TileServiceDownsampleParityTest {
             final TileUpdate lod1Second = awaitUpdate(service, lod1Key);
             assertNotNull(lod1Second);
 
-            // Consecutive compositions must produce identical pixels
+            assertEquals(basePixel00, lod1First.pixelAt(0, 0),
+                "Flat uniform region (0,0) must preserve uniform downsampled color at origin");
+
             final int[] p1 = lod1First.argbPixels();
             final int[] p2 = lod1Second.argbPixels();
             assertEquals(p1.length, p2.length);
             for (int i = 0; i < p1.length; i++) {
                 assertEquals(p1[i], p2[i], "Mismatch at index " + i);
             }
+
+            // 3. Request LOD2 (steps = 2: step 0 writes A, step 1 writes downsampleB).
+            // Directly exercises the downsampleB ping-pong branch.
+            final TileKey lod2Key = new TileKey(
+                session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), 2, 0, 0
+            );
+            service.requestTile(lod2Key);
+            final TileUpdate lod2Update = awaitUpdate(service, lod2Key);
+            assertNotNull(lod2Update);
+            assertEquals(basePixel00, lod2Update.pixelAt(0, 0),
+                "LOD2 (2 ping-pong steps via downsampleB) must preserve uniform origin pixel");
+
+            // 4. Request LOD3 (steps = 3: A -> B -> A).
+            // Exercises 3-step ping-pong alternation back into downsampleA.
+            final TileKey lod3Key = new TileKey(
+                session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), 3, 0, 0
+            );
+            service.requestTile(lod3Key);
+            final TileUpdate lod3Update = awaitUpdate(service, lod3Key);
+            assertNotNull(lod3Update);
+            assertEquals(basePixel00, lod3Update.pixelAt(0, 0),
+                "LOD3 (3 ping-pong steps A -> B -> A) must preserve uniform origin pixel");
         } finally {
             executors.shutdown(1000L);
         }

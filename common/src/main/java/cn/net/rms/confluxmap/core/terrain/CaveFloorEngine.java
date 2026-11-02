@@ -16,7 +16,7 @@ public final class CaveFloorEngine {
         Set<Integer> missing = null;
         boolean hasLast = false;
         int lastStateId = 0;
-        // 4-slot LRU cache storing ONLY confirmed-present state IDs.
+        // Insertion-order 4-slot cache storing ONLY confirmed-present state IDs (hits do not reorder).
         // Initialized to Long.MIN_VALUE so no 32-bit int stateId (even negative or MIN_VALUE) can collide.
         long k0 = Long.MIN_VALUE, k1 = Long.MIN_VALUE, k2 = Long.MIN_VALUE, k3 = Long.MIN_VALUE;
 

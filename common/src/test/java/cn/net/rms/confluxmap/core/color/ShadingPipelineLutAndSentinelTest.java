@@ -98,4 +98,16 @@ class ShadingPipelineLutAndSentinelTest {
         assertEquals(-1.0 / 8.0, ShadingPipeline.slopeShade(70, 65));
         assertEquals(0.0, ShadingPipeline.slopeShade(70, 70));
     }
+
+    @Test
+    void boxedOverloadsMapNullToNoHeightProperly() {
+        // filledShoulder(Integer, Integer, int)
+        assertEquals(70, ShadingPipeline.filledShoulder((Integer) null, (Integer) null, 70));
+        assertEquals(70, ShadingPipeline.filledShoulder((Integer) null, Integer.valueOf(70), 70));
+        assertEquals(85, ShadingPipeline.filledShoulder(Integer.valueOf(85), (Integer) null, 70));
+
+        // slopeShade(int, Integer)
+        assertEquals(0.0, ShadingPipeline.slopeShade(70, (Integer) null));
+        assertEquals(1.0 / 8.0, ShadingPipeline.slopeShade(70, Integer.valueOf(75)));
+    }
 }
