@@ -542,6 +542,17 @@ final class ConfigRows {
                 );
                 break;
             case GENERAL:
+                y = addSectionRow(y, "confluxmap.screen.config.section.interface");
+                y = addToggleRow(
+                    y, "confluxmap.config.interface.animations",
+                    () -> config.uiTransitionsEnabled, v -> config.uiTransitionsEnabled = v
+                );
+                y = addEnumRow(
+                    y, "confluxmap.config.interface.animation_speed",
+                    ConfluxConfig.UiTransitionSpeed.values(),
+                    () -> config.uiTransitionSpeed, v -> config.uiTransitionSpeed = v,
+                    ConfigValueLabels::uiTransitionSpeedKey
+                );
                 y = addIntSliderRow(
                     y, "confluxmap.config.performance.snapshot_budget", 1, 64,
                     () -> config.snapshotBudgetPerTick, v -> config.snapshotBudgetPerTick = v, ConfigValueLabels::plainText

@@ -405,6 +405,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         scale = initialView.scale();
     }
 
+    @Override
+    protected float revealStartScale() {
+        // The fullscreen map fills the window, so it needs a deeper dip than dialogs
+        // for the settle-in to read at all.
+        return 0.96f;
+    }
+
     static FullscreenMapScreen focusedOnWaypoint(
         final DimensionId dimension,
         final double x,

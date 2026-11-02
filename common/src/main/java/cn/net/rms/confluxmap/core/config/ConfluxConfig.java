@@ -20,7 +20,7 @@ import java.util.UUID;
  * {@link #SCHEMA_VERSION} and adding a migration in {@link ConfigIo}.
  */
 public final class ConfluxConfig {
-    public static final int SCHEMA_VERSION = 12;
+    public static final int SCHEMA_VERSION = 13;
     public static final String DEFAULT_TELEPORT_COMMAND = "execute in {dimension} run tp @s {x} {y} {z}";
     public static final int DEFAULT_MINIMAP_SIZE = 90;
     public static final int MINIMAP_ZOOM_LEVEL_COUNT = 4;
@@ -194,6 +194,9 @@ public final class ConfluxConfig {
      * setting lives under the general performance group.
      */
     public enum WorkerThreadMode { AUTO, ALL_THREADS, CUSTOM }
+
+    /** Reveal duration tier for the interface transitions; names serialize verbatim. */
+    public enum UiTransitionSpeed { FAST, STANDARD, RELAXED }
 
     public boolean minimapEnabled = true;
     /** Legacy schema-v1 field. Null after migration and omitted from newly written JSON. */
@@ -410,6 +413,11 @@ public final class ConfluxConfig {
     /** Startup GitHub release probe; drives the chat notice and the fullscreen-map badge. */
     public boolean updateCheckEnabled = true;
 
+    /** Fade-and-scale reveal when the mod's own screens and popups open. */
+    public boolean uiTransitionsEnabled = true;
+    /** Reveal duration tier for {@link #uiTransitionsEnabled}. */
+    public UiTransitionSpeed uiTransitionSpeed = UiTransitionSpeed.STANDARD;
+
     /** Permanent local opt-out for the unsupported-platform startup warning. */
     public boolean unsupportedPlatformWarningDismissed;
 
@@ -528,6 +536,8 @@ public final class ConfluxConfig {
             : predictionManualSeeds.copy();
         c.predictionDebounceMs = predictionDebounceMs;
         c.updateCheckEnabled = updateCheckEnabled;
+        c.uiTransitionsEnabled = uiTransitionsEnabled;
+        c.uiTransitionSpeed = uiTransitionSpeed;
         c.unsupportedPlatformWarningDismissed = unsupportedPlatformWarningDismissed;
         c.surveyReminderGameOpenMillis = surveyReminderGameOpenMillis;
         c.surveyReminderNextPromptAtMillis = surveyReminderNextPromptAtMillis;
@@ -813,6 +823,9 @@ public final class ConfluxConfig {
             crossWorldSeedObservations.normalize();
         }
         predictionDebounceMs = clamp(predictionDebounceMs, 100, 2000);
+        if (uiTransitionSpeed == null) {
+            uiTransitionSpeed = UiTransitionSpeed.STANDARD;
+        }
         surveyReminderGameOpenMillis = Math.max(0L, surveyReminderGameOpenMillis);
         if (surveyReminderNextPromptAtMillis <= 0L) {
             surveyReminderNextPromptAtMillis = SurveyReminderSchedule.FIRST_DELAY_MILLIS;

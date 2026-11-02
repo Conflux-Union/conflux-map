@@ -343,6 +343,31 @@ final class ConfluxConfigTest {
     }
 
     @Test
+    void uiTransitionDefaultsSurviveCopyAndMigrateFromSchema12() {
+        final ConfluxConfig config = new ConfluxConfig();
+
+        assertTrue(config.uiTransitionsEnabled);
+        assertEquals(ConfluxConfig.UiTransitionSpeed.STANDARD, config.uiTransitionSpeed);
+
+        config.uiTransitionsEnabled = false;
+        config.uiTransitionSpeed = ConfluxConfig.UiTransitionSpeed.RELAXED;
+        final ConfluxConfig copy = config.copy();
+        assertFalse(copy.uiTransitionsEnabled);
+        assertEquals(ConfluxConfig.UiTransitionSpeed.RELAXED, copy.uiTransitionSpeed);
+
+        // A v12 file predates both fields and Gson keeps the constructor default for
+        // absent ones; the null-normalize still guards hand-edited files and must settle
+        // the tier without touching the deliberately disabled toggle.
+        final ConfluxConfig legacy = new ConfluxConfig();
+        legacy.schemaVersion = 12;
+        legacy.uiTransitionsEnabled = false;
+        legacy.uiTransitionSpeed = null;
+        legacy.normalize();
+        assertFalse(legacy.uiTransitionsEnabled);
+        assertEquals(ConfluxConfig.UiTransitionSpeed.STANDARD, legacy.uiTransitionSpeed);
+    }
+
+    @Test
     void normalizeClampsPortalValuesAndDefaultsEmptyTextures() {
         final ConfluxConfig config = new ConfluxConfig();
         config.portalIconSize = 9999;

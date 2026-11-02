@@ -1,6 +1,11 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
+import cn.net.rms.confluxmap.ConfluxMapClient;
+import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.mc.ui.anim.ScreenReveal;
+import cn.net.rms.confluxmap.mc.ui.anim.TransitionClock;
+import cn.net.rms.confluxmap.mc.ui.anim.UiMotion;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
 import java.util.IdentityHashMap;
@@ -30,6 +35,55 @@ public abstract class ConfluxScreen extends Screen {
     private Runnable enterAction;
     private BooleanSupplier enterActionEnabled = () -> false;
     private ClickableWidget deferredInitialFocus;
+    private final ScreenReveal reveal = new ScreenReveal();
+    private final TransitionClock revealClock = new TransitionClock();
+
+    protected ConfluxScreen(final Text title) {
+        super(title);
+        reveal.beginOpen();
+    }
+
+    /**
+     * Scale the screen starts its reveal from; heavier screens can dip lower for a more
+     * visible settle.
+     */
+    protected float revealStartScale() {
+        return 1.0f - 0.02f;
+    }
+
+    /**
+     * Opens one reveal frame around the whole render pass: ticks the open animation, then
+     * installs the center scale and reveal alpha. Returns false without touching anything
+     * unless the animation is actually in flight, so a settled screen keeps the exact
+     * pre-transition render path.
+     */
+    private boolean beginRevealFrame(final GuiDraw draw) {
+        final ConfluxConfig config = ConfluxMapClient.get().config();
+        if (!config.uiTransitionsEnabled) {
+            reveal.finishNow();
+            return false;
+        }
+        if (!reveal.animating()) {
+            return false;
+        }
+        reveal.tick(revealClock.tick(), UiMotion.durationSeconds(config.uiTransitionSpeed.name()));
+        if (!reveal.animating()) {
+            return false;
+        }
+        final float eased = reveal.eased();
+        final float startScale = revealStartScale();
+        draw.beginScreenTransform(startScale + (1.0f - startScale) * eased, width, height);
+        draw.applyToContextPose();
+        GuiDraw.beginReveal(eased);
+        return true;
+    }
+
+    /** Undoes {@link #beginRevealFrame}; call only when it returned true. */
+    private void endRevealFrame(final GuiDraw draw) {
+        GuiDraw.endReveal();
+        draw.restoreContextPose();
+        draw.endScreenTransform();
+    }
     //#if MC>=12000
     //$$ /**
     //$$  * Screen.render owns the widget loop, but its implicit background must not cover
@@ -38,10 +92,6 @@ public abstract class ConfluxScreen extends Screen {
     //$$  */
     //$$ private boolean renderingVanillaWidgets;
     //#endif
-
-    protected ConfluxScreen(final Text title) {
-        super(title);
-    }
 
     /** Leaves a new text field unfocused until the opening key's character event has drained. */
     protected final void deferInitialFocusUntilNextTick(final ClickableWidget widget) {
@@ -82,18 +132,25 @@ public abstract class ConfluxScreen extends Screen {
     //$$     final float tickDelta
     //$$ ) {
     //$$     final GuiDraw draw = GuiDraw.of(context);
-    //$$     renderContents(draw, mouseX, mouseY, tickDelta);
-    //$$     // 26.1 renamed the retained-mode entry points but kept the ordering: the background is
-    //$$     // extracted before the widget list is walked.
-    //$$     renderingVanillaWidgets = true;
+    //$$     final boolean revealFrame = beginRevealFrame(draw);
     //$$     try {
-    //$$         super.extractRenderState(context, mouseX, mouseY, tickDelta);
+    //$$         renderContents(draw, mouseX, mouseY, tickDelta);
+    //$$         // 26.1 renamed the retained-mode entry points but kept the ordering: the background is
+    //$$         // extracted before the widget list is walked.
+    //$$         renderingVanillaWidgets = true;
+    //$$         try {
+    //$$             super.extractRenderState(context, mouseX, mouseY, tickDelta);
+    //$$         } finally {
+    //$$             renderingVanillaWidgets = false;
+    //$$         }
+    //$$         renderAfterWidgets(draw, mouseX, mouseY, tickDelta);
+    //$$         renderDisabledTooltip(draw, mouseX, mouseY);
+    //$$         renderLocationMenuTooltip(draw, mouseX, mouseY);
     //$$     } finally {
-    //$$         renderingVanillaWidgets = false;
+    //$$         if (revealFrame) {
+    //$$             endRevealFrame(draw);
+    //$$         }
     //$$     }
-    //$$     renderAfterWidgets(draw, mouseX, mouseY, tickDelta);
-    //$$     renderDisabledTooltip(draw, mouseX, mouseY);
-    //$$     renderLocationMenuTooltip(draw, mouseX, mouseY);
     //$$ }
     //$$
     //$$ @Override
@@ -125,17 +182,24 @@ public abstract class ConfluxScreen extends Screen {
     //$$     final float tickDelta
     //$$ ) {
     //$$     final GuiDraw draw = GuiDraw.of(context);
-    //$$     renderContents(draw, mouseX, mouseY, tickDelta);
-    //$$     // Modern Screen.render invokes renderBackground before iterating its private widget list.
-    //$$     renderingVanillaWidgets = true;
+    //$$     final boolean revealFrame = beginRevealFrame(draw);
     //$$     try {
-    //$$         super.render(context, mouseX, mouseY, tickDelta);
+    //$$         renderContents(draw, mouseX, mouseY, tickDelta);
+    //$$         // Modern Screen.render invokes renderBackground before iterating its private widget list.
+    //$$         renderingVanillaWidgets = true;
+    //$$         try {
+    //$$             super.render(context, mouseX, mouseY, tickDelta);
+    //$$         } finally {
+    //$$             renderingVanillaWidgets = false;
+    //$$         }
+    //$$         renderAfterWidgets(draw, mouseX, mouseY, tickDelta);
+    //$$         renderDisabledTooltip(draw, mouseX, mouseY);
+    //$$         renderLocationMenuTooltip(draw, mouseX, mouseY);
     //$$     } finally {
-    //$$         renderingVanillaWidgets = false;
+    //$$         if (revealFrame) {
+    //$$             endRevealFrame(draw);
+    //$$         }
     //$$     }
-    //$$     renderAfterWidgets(draw, mouseX, mouseY, tickDelta);
-    //$$     renderDisabledTooltip(draw, mouseX, mouseY);
-    //$$     renderLocationMenuTooltip(draw, mouseX, mouseY);
     //$$ }
     //$$
     //#if MC>=12002
@@ -180,11 +244,18 @@ public abstract class ConfluxScreen extends Screen {
         final float tickDelta
     ) {
         final GuiDraw draw = GuiDraw.of(matrices);
-        renderContents(draw, mouseX, mouseY, tickDelta);
-        super.render(matrices, mouseX, mouseY, tickDelta);
-        renderAfterWidgets(draw, mouseX, mouseY, tickDelta);
-        renderDisabledTooltip(draw, mouseX, mouseY);
-        renderLocationMenuTooltip(draw, mouseX, mouseY);
+        final boolean revealFrame = beginRevealFrame(draw);
+        try {
+            renderContents(draw, mouseX, mouseY, tickDelta);
+            super.render(matrices, mouseX, mouseY, tickDelta);
+            renderAfterWidgets(draw, mouseX, mouseY, tickDelta);
+            renderDisabledTooltip(draw, mouseX, mouseY);
+            renderLocationMenuTooltip(draw, mouseX, mouseY);
+        } finally {
+            if (revealFrame) {
+                endRevealFrame(draw);
+            }
+        }
     }
     //#endif
 

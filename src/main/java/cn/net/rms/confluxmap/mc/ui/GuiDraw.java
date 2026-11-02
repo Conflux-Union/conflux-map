@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.mc.ui;
 
+import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.render.RenderTargetState;
 import com.mojang.blaze3d.systems.RenderSystem;
@@ -25,6 +26,14 @@ import net.minecraft.text.Text;
 
 /** Version-neutral GUI draw state shared by screens, HUD callbacks, and marker renderers. */
 public final class GuiDraw {
+    /**
+     * Reveal alpha for the interface transitions, applied by {@link #beginReveal} around one
+     * screen's render pass. Render-thread-only like the rest of the GUI state; 1 keeps every
+     * color outlet on its original fast path.
+     */
+    private static final float FULL_ALPHA = 1.0f;
+    private static float revealAlpha = FULL_ALPHA;
+
     private final MatrixStack matrices;
     //#if MC>=12000
     //$$ private final DrawContext context;
@@ -82,6 +91,65 @@ public final class GuiDraw {
     }
 
     /**
+     * Scales all subsequently drawn content around the screen center for one reveal frame;
+     * pair with {@link #endScreenTransform()}. Explicit dimensions keep this testable and
+     * usable from HUD callers too.
+     */
+    public void beginScreenTransform(
+        final float scaleFactor,
+        final float screenWidth,
+        final float screenHeight
+    ) {
+        matrices.push();
+        translate(screenWidth / 2f, screenHeight / 2f);
+        scale(scaleFactor, scaleFactor);
+        translate(-screenWidth / 2f, -screenHeight / 2f);
+    }
+
+    public void endScreenTransform() {
+        matrices.pop();
+    }
+
+    /**
+     * Installs this GuiDraw's transform as the context's own pose so draws that bypass this
+     * class (vanilla's widget pass, {@link #fill} on 1.21.8+) still land transformed. No-op
+     * below 1.21.8, where the context and this GuiDraw already share one MatrixStack; on
+     * 1.21.8+ this GuiDraw owns its stack, so the 2x3 pose is folded in exactly like
+     * {@code withTextPose} does for text. Pair with {@link #restoreContextPose()}.
+     */
+    public void applyToContextPose() {
+        //#if MC>=12108
+        //$$ final Matrix3x2fStack pose = context.getMatrices();
+        //$$ pose.pushMatrix();
+        //$$ final Matrix4f model = matrices.peek().getPositionMatrix();
+        //$$ pose.set(model.m00(), model.m01(), model.m10(), model.m11(), model.m30(), model.m31());
+        //#endif
+    }
+
+    public void restoreContextPose() {
+        //#if MC>=12108
+        //$$ context.getMatrices().popMatrix();
+        //#endif
+    }
+
+    /**
+     * Multiplies the alpha of every color this class emits until {@link #endReveal()}, so a
+     * screen reveal can fade its own fills and text in. Item icons are exempt (their model
+     * render has no per-call color to scale).
+     */
+    public static void beginReveal(final float alpha) {
+        revealAlpha = Math.max(0.0f, Math.min(FULL_ALPHA, alpha));
+    }
+
+    public static void endReveal() {
+        revealAlpha = FULL_ALPHA;
+    }
+
+    private static int revealed(final int color) {
+        return revealAlpha == FULL_ALPHA ? color : Argb.scaleAlpha(color, revealAlpha);
+    }
+
+    /**
      * Fills one axis-aligned rect in float coordinates through this GuiDraw's own transform,
      * without rounding. Unlike {@link #fill(int, int, int, int, int)} this carries transforms
      * pushed with {@link #pushTransform()} (the context's own fill would drop them on 1.21.8+),
@@ -95,7 +163,7 @@ public final class GuiDraw {
         final float y2,
         final int color
     ) {
-        GuiShapes.fillRect(matrices, x1, y1, x2 - x1, y2 - y1, color);
+        GuiShapes.fillRect(matrices, x1, y1, x2 - x1, y2 - y1, revealed(color));
     }
 
     /** Draws the item's normal 16px GUI model, scaled and centered on one marker position. */
@@ -197,9 +265,9 @@ public final class GuiDraw {
 
     public void fill(final int x1, final int y1, final int x2, final int y2, final int color) {
         //#if MC>=12000
-        //$$ context.fill(x1, y1, x2, y2, color);
+        //$$ context.fill(x1, y1, x2, y2, revealed(color));
         //#else
-        GuiShapes.fillRect(matrices(), x1, y1, x2 - x1, y2 - y1, color);
+        GuiShapes.fillRect(matrices(), x1, y1, x2 - x1, y2 - y1, revealed(color));
         //#endif
     }
 
@@ -215,14 +283,14 @@ public final class GuiDraw {
     public void fillPopup(final int x1, final int y1, final int x2, final int y2, final int color) {
         //#if MC>=12108
         //$$ // Overlap with an earlier element already starts a nearer recorded layer.
-        //$$ context.fill(x1, y1, x2, y2, color);
+        //$$ context.fill(x1, y1, x2, y2, revealed(color));
         //#elseif MC>=12000
         //$$ // Vanilla's own tooltip path: depth test ALWAYS, no depth write.
-        //$$ context.fill(RenderLayer.getGuiOverlay(), x1, y1, x2, y2, color);
+        //$$ context.fill(RenderLayer.getGuiOverlay(), x1, y1, x2, y2, revealed(color));
         //#else
         // No gui_overlay layer before 1.20; releasing the glyph depth is the only way through.
         GuiShapes.clearGuiDepth();
-        GuiShapes.fillRect(matrices(), x1, y1, x2 - x1, y2 - y1, color);
+        GuiShapes.fillRect(matrices(), x1, y1, x2 - x1, y2 - y1, revealed(color));
         //#endif
     }
 
@@ -281,21 +349,21 @@ public final class GuiDraw {
         final int color
     ) {
         //#if MC>=260100
-        //$$ withTextPose(x, y, () -> context.text(renderer, text, 0, 0, color));
+        //$$ withTextPose(x, y, () -> context.text(renderer, text, 0, 0, revealed(color)));
         //$$ return (int) x + renderer.width(text);
         //#elseif MC>=12108
-        //$$ withTextPose(x, y, () -> context.drawTextWithShadow(renderer, text, 0, 0, color));
+        //$$ withTextPose(x, y, () -> context.drawTextWithShadow(renderer, text, 0, 0, revealed(color)));
         //$$ return (int) x + renderer.getWidth(text);
         //#elseif MC>=12103
         //$$ final int[] result = {0};
         //$$ context.draw(vertexConsumers -> result[0] = renderer.draw(
-        //$$     text, x, y, color, true, matrices().peek().getPositionMatrix(),
+        //$$     text, x, y, revealed(color), true, matrices().peek().getPositionMatrix(),
         //$$     vertexConsumers, TextLayerType.NORMAL, 0, 15728880
         //$$ ));
         //$$ return result[0];
         //#elseif MC>=12000
         //$$ final int result = renderer.draw(
-        //$$     text, x, y, color, true, matrices().peek().getPositionMatrix(),
+        //$$     text, x, y, revealed(color), true, matrices().peek().getPositionMatrix(),
         //$$     context.getVertexConsumers(), TextLayerType.NORMAL, 0, 15728880,
         //$$     renderer.isRightToLeft()
         //$$ );
@@ -314,21 +382,21 @@ public final class GuiDraw {
         final int color
     ) {
         //#if MC>=260100
-        //$$ withTextPose(x, y, () -> context.text(renderer, text, 0, 0, color));
+        //$$ withTextPose(x, y, () -> context.text(renderer, text, 0, 0, revealed(color)));
         //$$ return (int) x + renderer.width(text);
         //#elseif MC>=12108
-        //$$ withTextPose(x, y, () -> context.drawTextWithShadow(renderer, text, 0, 0, color));
+        //$$ withTextPose(x, y, () -> context.drawTextWithShadow(renderer, text, 0, 0, revealed(color)));
         //$$ return (int) x + renderer.getWidth(text);
         //#elseif MC>=12103
         //$$ final int[] result = {0};
         //$$ context.draw(vertexConsumers -> result[0] = renderer.draw(
-        //$$     text, x, y, color, true, matrices().peek().getPositionMatrix(),
+        //$$     text, x, y, revealed(color), true, matrices().peek().getPositionMatrix(),
         //$$     vertexConsumers, TextLayerType.NORMAL, 0, 15728880
         //$$ ));
         //$$ return result[0];
         //#elseif MC>=12000
         //$$ final int result = renderer.draw(
-        //$$     text, x, y, color, true, matrices().peek().getPositionMatrix(),
+        //$$     text, x, y, revealed(color), true, matrices().peek().getPositionMatrix(),
         //$$     context.getVertexConsumers(), TextLayerType.NORMAL, 0, 15728880
         //$$ );
         //$$ context.draw();
@@ -346,21 +414,21 @@ public final class GuiDraw {
         final int color
     ) {
         //#if MC>=260100
-        //$$ withTextPose(x, y, () -> context.text(renderer, text, 0, 0, color));
+        //$$ withTextPose(x, y, () -> context.text(renderer, text, 0, 0, revealed(color)));
         //$$ return (int) x + renderer.width(text);
         //#elseif MC>=12108
-        //$$ withTextPose(x, y, () -> context.drawTextWithShadow(renderer, text, 0, 0, color));
+        //$$ withTextPose(x, y, () -> context.drawTextWithShadow(renderer, text, 0, 0, revealed(color)));
         //$$ return (int) x + renderer.getWidth(text);
         //#elseif MC>=12103
         //$$ final int[] result = {0};
         //$$ context.draw(vertexConsumers -> result[0] = renderer.draw(
-        //$$     text, x, y, color, true, matrices().peek().getPositionMatrix(),
+        //$$     text, x, y, revealed(color), true, matrices().peek().getPositionMatrix(),
         //$$     vertexConsumers, TextLayerType.NORMAL, 0, 15728880
         //$$ ));
         //$$ return result[0];
         //#elseif MC>=12000
         //$$ final int result = renderer.draw(
-        //$$     text, x, y, color, true, matrices().peek().getPositionMatrix(),
+        //$$     text, x, y, revealed(color), true, matrices().peek().getPositionMatrix(),
         //$$     context.getVertexConsumers(), TextLayerType.NORMAL, 0, 15728880
         //$$ );
         //$$ context.draw();
