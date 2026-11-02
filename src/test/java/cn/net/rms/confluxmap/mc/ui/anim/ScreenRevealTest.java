@@ -35,7 +35,7 @@ final class ScreenRevealTest {
     void partialOpenEasesProgress() {
         final ScreenReveal reveal = new ScreenReveal();
         reveal.beginOpen();
-        reveal.tick(0.09f, UiMotion.STANDARD);
+        reveal.tick(UiMotion.STANDARD / 2, UiMotion.STANDARD);
 
         assertEquals(0.5f, reveal.progress(), 1e-5f);
         assertEquals(0.875f, reveal.eased(), 1e-5f);
@@ -46,7 +46,7 @@ final class ScreenRevealTest {
     void finishNowJumpsToTheOpenTerminalState() {
         final ScreenReveal reveal = new ScreenReveal();
         reveal.beginOpen();
-        reveal.tick(0.05f, UiMotion.STANDARD);
+        reveal.tick(UiMotion.STANDARD / 4, UiMotion.STANDARD);
         reveal.finishNow();
 
         assertEquals(ScreenReveal.Phase.OPEN, reveal.phase());
@@ -58,17 +58,17 @@ final class ScreenRevealTest {
     void closeLifecycleFallsBackFromCurrentProgressToClosed() {
         final ScreenReveal reveal = new ScreenReveal();
         reveal.beginOpen();
-        reveal.tick(0.09f, UiMotion.STANDARD);
+        reveal.tick(UiMotion.STANDARD / 2, UiMotion.STANDARD);
         reveal.beginClose();
 
         assertEquals(ScreenReveal.Phase.CLOSING, reveal.phase());
         assertTrue(reveal.animating());
 
-        reveal.tick(0.036f, UiMotion.STANDARD);
+        reveal.tick(UiMotion.STANDARD / 5, UiMotion.STANDARD);
         assertEquals(0.3f, reveal.progress(), 1e-5f);
         assertTrue(reveal.animating());
 
-        reveal.tick(0.36f, UiMotion.STANDARD);
+        reveal.tick(UiMotion.STANDARD * 2, UiMotion.STANDARD);
         assertEquals(ScreenReveal.Phase.CLOSED, reveal.phase());
         assertFalse(reveal.animating());
         assertEquals(0.0f, reveal.eased(), 1e-6f);
@@ -78,7 +78,7 @@ final class ScreenRevealTest {
     void beginCloseWhileOpeningReversesFromCurrentProgress() {
         final ScreenReveal reveal = new ScreenReveal();
         reveal.beginOpen();
-        reveal.tick(0.045f, UiMotion.STANDARD);
+        reveal.tick(UiMotion.STANDARD / 4, UiMotion.STANDARD);
         reveal.beginClose();
 
         assertEquals(0.25f, reveal.progress(), 1e-5f);

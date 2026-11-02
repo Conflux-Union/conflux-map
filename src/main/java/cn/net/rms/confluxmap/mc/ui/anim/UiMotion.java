@@ -6,9 +6,9 @@ import cn.net.rms.confluxmap.core.util.Easing;
 /** Speed-tier math for the interface transitions; easing lives in {@link Easing}. */
 public final class UiMotion {
     /** Reveal durations per speed tier, in seconds. */
-    public static final float FAST = 0.12f;
-    public static final float STANDARD = 0.18f;
-    public static final float RELAXED = 0.26f;
+    public static final float FAST = 0.18f;
+    public static final float STANDARD = 0.28f;
+    public static final float RELAXED = 0.40f;
 
     private UiMotion() {
     }

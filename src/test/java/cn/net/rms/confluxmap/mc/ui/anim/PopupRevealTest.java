@@ -21,7 +21,7 @@ final class PopupRevealTest {
         popup.setOpen(true);
         assertTrue(popup.animating());
 
-        popup.tick(0.09f, UiMotion.STANDARD);
+        popup.tick(UiMotion.STANDARD / 2, UiMotion.STANDARD);
         assertEquals(0.875f, popup.eased(), 1e-5f);
         assertTrue(popup.animating());
 
@@ -34,13 +34,13 @@ final class PopupRevealTest {
     void reversingMidFlightTurnsThePopupAroundFromWhereItStands() {
         final PopupReveal popup = new PopupReveal();
         popup.setOpen(true);
-        popup.tick(0.09f, UiMotion.STANDARD);
+        popup.tick(UiMotion.STANDARD / 2, UiMotion.STANDARD);
         popup.setOpen(false);
 
         assertEquals(0.875f, popup.eased(), 1e-5f);
         assertTrue(popup.animating());
 
-        popup.tick(0.045f, UiMotion.STANDARD);
+        popup.tick(UiMotion.STANDARD / 4, UiMotion.STANDARD);
         assertEquals(0.578125f, popup.eased(), 1e-4f);
 
         popup.tick(UiMotion.STANDARD, UiMotion.STANDARD);

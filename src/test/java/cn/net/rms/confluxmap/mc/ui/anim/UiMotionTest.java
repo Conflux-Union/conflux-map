@@ -8,8 +8,9 @@ import org.junit.jupiter.api.Test;
 final class UiMotionTest {
     @Test
     void advanceMovesTowardOneAndClamps() {
-        assertEquals(0.5f, UiMotion.advance(0.0f, 0.09f, UiMotion.STANDARD), 1e-5f);
-        assertEquals(1.0f, UiMotion.advance(0.9f, 0.09f, UiMotion.STANDARD));
+        // Deltas are tier fractions so tuning the constants keeps these assertions exact.
+        assertEquals(0.5f, UiMotion.advance(0.0f, UiMotion.STANDARD / 2, UiMotion.STANDARD), 1e-5f);
+        assertEquals(1.0f, UiMotion.advance(0.9f, UiMotion.STANDARD / 2, UiMotion.STANDARD));
         assertEquals(0.25f, UiMotion.advance(0.25f, -1.0f, UiMotion.STANDARD));
         assertEquals(1.0f, UiMotion.advance(0.0f, 1.0f, 0.0f));
         assertEquals(1.0f, UiMotion.advance(0.0f, 1.0f, -0.5f));
