@@ -624,8 +624,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     /**
      * The expanded group's own button, where its children fly out from and back to. The
-     * drawing group has no flight: it lays out its grid elsewhere and keeps the instant
-     * path.
+     * drawing grid flies from its group button too; its layout lives in the annotation
+     * controller.
      */
     private MapIconButton expandedGroupButton() {
         final FullscreenMapToolPanel.Group group = toolPanel.openGroup();
@@ -634,6 +634,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
         if (group == FullscreenMapToolPanel.Group.WAYPOINTS) {
             return waypointGroupButton;
+        }
+        if (group == FullscreenMapToolPanel.Group.DRAWING) {
+            return drawingGroupButton;
         }
         if (group == FullscreenMapToolPanel.Group.ACTIONS) {
             return actionsGroupButton;
@@ -727,7 +730,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final int originX,
         final int originY
     ) {
-        final MapIconButton button = flying.button();
+        final ButtonWidget button = flying.button();
         // Alpha follows the shared cubic so it stays within [0, 1]; the position takes the
         // back curve, whose rebound past the slot is what makes the landing read.
         button.setAlpha(Easing.easeOutCubic(buttonProgress));
@@ -751,8 +754,11 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
     }
 
-    /** Records an expansion button's settle slot where its rebuild creates it. */
-    private void trackExpansionButton(final MapIconButton button) {
+    /**
+     * Records an expansion button's settle slot where its rebuild creates it. Package-private:
+     * the annotation controller tracks the drawing grid's controls through the same seam.
+     */
+    void trackExpansionButton(final ButtonWidget button) {
         expansionButtons.add(new FullscreenMapToolPanel.FlyingButton(
             button,
             Widgets.x(button),
@@ -767,7 +773,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             return false;
         }
         for (final FullscreenMapToolPanel.FlyingButton flying : retiring.buttons()) {
-            final MapIconButton button = flying.button();
+            final ButtonWidget button = flying.button();
             if (mouseX >= Widgets.x(button) && mouseX < Widgets.x(button) + button.getWidth()
                 && mouseY >= Widgets.y(button) && mouseY < Widgets.y(button) + button.getHeight()) {
                 return true;
