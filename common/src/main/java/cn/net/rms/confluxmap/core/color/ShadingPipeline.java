@@ -108,15 +108,15 @@ public final class ShadingPipeline {
             || darkEast == null || darkNorth == null || darkDiagonal == null) {
             return 1.0;
         }
-        return directionalReliefMultiplier(
+        return directionalReliefMultiplierWithSentinels(
             litWest.intValue(), litSouth.intValue(), litDiagonal.intValue(),
             darkEast.intValue(), darkNorth.intValue(), darkDiagonal.intValue(),
             blocksPerPixel
         );
     }
 
-    /** Primitive overload avoiding heap boxing during hot-loop tile composition. */
-    public static double directionalReliefMultiplier(
+    /** Primitive variant using {@link #NO_HEIGHT} for absent shoulders. */
+    public static double directionalReliefMultiplierWithSentinels(
         final int litWest,
         final int litSouth,
         final int litDiagonal,
@@ -150,13 +150,13 @@ public final class ShadingPipeline {
         final Integer opposite,
         final int centerHeight
     ) {
-        final int s = shoulder == null ? NO_HEIGHT : shoulder.intValue();
-        final int o = opposite == null ? NO_HEIGHT : opposite.intValue();
-        return filledShoulder(s, o, centerHeight);
+        final int shoulderHeight = shoulder == null ? NO_HEIGHT : shoulder.intValue();
+        final int oppositeHeight = opposite == null ? NO_HEIGHT : opposite.intValue();
+        return filledShoulderWithSentinels(shoulderHeight, oppositeHeight, centerHeight);
     }
 
-    /** Primitive overload avoiding heap boxing during hot-loop tile composition. */
-    public static int filledShoulder(
+    /** Primitive variant using {@link #NO_HEIGHT} for absent shoulders. */
+    public static int filledShoulderWithSentinels(
         final int shoulder,
         final int opposite,
         final int centerHeight

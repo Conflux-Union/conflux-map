@@ -1343,8 +1343,8 @@ public final class TileService {
                 ? Argb.TRANSPARENT
                 : XaeroMapStyle.applyTerrain(
                     overlayArgb[idx], floor,
-                    ShadingPipeline.filledShoulder(north, south, floor),
-                    ShadingPipeline.filledShoulder(northWest, southEast, floor),
+                    ShadingPipeline.filledShoulderWithSentinels(north, south, floor),
+                    ShadingPipeline.filledShoulderWithSentinels(northWest, southEast, floor),
                     1, true, shadow
                 );
             shadedFloor = ShadingPipeline.applyBrightnessMultiplier(
@@ -1362,8 +1362,8 @@ public final class TileService {
                 reliefHeight(x + 1, z + 1, false, surfaceY, fluidDepth, kind, neighborhood);
             final int shadedBase = XaeroMapStyle.applyTerrain(
                 tintedBase, surface,
-                ShadingPipeline.filledShoulder(north, south, surface),
-                ShadingPipeline.filledShoulder(northWest, southEast, surface),
+                ShadingPipeline.filledShoulderWithSentinels(north, south, surface),
+                ShadingPipeline.filledShoulderWithSentinels(northWest, southEast, surface),
                 1, true, shadow
             );
             composed = ShadingPipeline.compositeOver(overlayArgb[idx], shadedBase);
@@ -1427,13 +1427,13 @@ public final class TileService {
             reliefHeight(x, z - 1, bathymetry, localSurfaceY, localFluidDepth, localKind, neighborhood);
         final int darkDiagonal =
             reliefHeight(x + 1, z - 1, bathymetry, localSurfaceY, localFluidDepth, localKind, neighborhood);
-        return ShadingPipeline.directionalReliefMultiplier(
-            ShadingPipeline.filledShoulder(litWest, darkEast, centerHeight),
-            ShadingPipeline.filledShoulder(litSouth, darkNorth, centerHeight),
-            ShadingPipeline.filledShoulder(litDiagonal, darkDiagonal, centerHeight),
-            ShadingPipeline.filledShoulder(darkEast, litWest, centerHeight),
-            ShadingPipeline.filledShoulder(darkNorth, litSouth, centerHeight),
-            ShadingPipeline.filledShoulder(darkDiagonal, litDiagonal, centerHeight),
+        return ShadingPipeline.directionalReliefMultiplierWithSentinels(
+            ShadingPipeline.filledShoulderWithSentinels(litWest, darkEast, centerHeight),
+            ShadingPipeline.filledShoulderWithSentinels(litSouth, darkNorth, centerHeight),
+            ShadingPipeline.filledShoulderWithSentinels(litDiagonal, darkDiagonal, centerHeight),
+            ShadingPipeline.filledShoulderWithSentinels(darkEast, litWest, centerHeight),
+            ShadingPipeline.filledShoulderWithSentinels(darkNorth, litSouth, centerHeight),
+            ShadingPipeline.filledShoulderWithSentinels(darkDiagonal, litDiagonal, centerHeight),
             1
         );
     }

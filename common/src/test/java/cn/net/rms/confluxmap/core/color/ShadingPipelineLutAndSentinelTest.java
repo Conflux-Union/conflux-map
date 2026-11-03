@@ -60,12 +60,12 @@ class ShadingPipelineLutAndSentinelTest {
         final int no = ShadingPipeline.NO_HEIGHT;
 
         // Exactly one shoulder missing (NO_HEIGHT) among the 6 samples must return 1.0 (neutral)
-        assertEquals(1.0, ShadingPipeline.directionalReliefMultiplier(no, valid, valid, valid, valid, valid, 1));
-        assertEquals(1.0, ShadingPipeline.directionalReliefMultiplier(valid, no, valid, valid, valid, valid, 1));
-        assertEquals(1.0, ShadingPipeline.directionalReliefMultiplier(valid, valid, no, valid, valid, valid, 1));
-        assertEquals(1.0, ShadingPipeline.directionalReliefMultiplier(valid, valid, valid, no, valid, valid, 1));
-        assertEquals(1.0, ShadingPipeline.directionalReliefMultiplier(valid, valid, valid, valid, no, valid, 1));
-        assertEquals(1.0, ShadingPipeline.directionalReliefMultiplier(valid, valid, valid, valid, valid, no, 1));
+        assertEquals(1.0, ShadingPipeline.directionalReliefMultiplierWithSentinels(no, valid, valid, valid, valid, valid, 1));
+        assertEquals(1.0, ShadingPipeline.directionalReliefMultiplierWithSentinels(valid, no, valid, valid, valid, valid, 1));
+        assertEquals(1.0, ShadingPipeline.directionalReliefMultiplierWithSentinels(valid, valid, no, valid, valid, valid, 1));
+        assertEquals(1.0, ShadingPipeline.directionalReliefMultiplierWithSentinels(valid, valid, valid, no, valid, valid, 1));
+        assertEquals(1.0, ShadingPipeline.directionalReliefMultiplierWithSentinels(valid, valid, valid, valid, no, valid, 1));
+        assertEquals(1.0, ShadingPipeline.directionalReliefMultiplierWithSentinels(valid, valid, valid, valid, valid, no, 1));
 
         // Null-wrapper compatibility overload must match primitive behavior
         assertEquals(1.0, ShadingPipeline.directionalReliefMultiplier(null, valid, valid, valid, valid, valid, 1));
@@ -76,19 +76,19 @@ class ShadingPipelineLutAndSentinelTest {
         final int no = ShadingPipeline.NO_HEIGHT;
 
         // When shoulder is present, return it directly
-        assertEquals(85, ShadingPipeline.filledShoulder(85, no, 70));
-        assertEquals(85, ShadingPipeline.filledShoulder(85, 90, 70));
+        assertEquals(85, ShadingPipeline.filledShoulderWithSentinels(85, no, 70));
+        assertEquals(85, ShadingPipeline.filledShoulderWithSentinels(85, 90, 70));
 
         // When shoulder is absent and opposite is absent, return centerHeight flat
-        assertEquals(70, ShadingPipeline.filledShoulder(no, no, 70));
+        assertEquals(70, ShadingPipeline.filledShoulderWithSentinels(no, no, 70));
 
         // When shoulder is absent, extrapolate from opposite clamped to 1 block
         // centerHeight - opposite = 70 - 75 = -5 -> clamped to -1 -> 70 + (-1) = 69
-        assertEquals(69, ShadingPipeline.filledShoulder(no, 75, 70));
+        assertEquals(69, ShadingPipeline.filledShoulderWithSentinels(no, 75, 70));
         // centerHeight - opposite = 70 - 65 = +5 -> clamped to +1 -> 70 + 1 = 71
-        assertEquals(71, ShadingPipeline.filledShoulder(no, 65, 70));
+        assertEquals(71, ShadingPipeline.filledShoulderWithSentinels(no, 65, 70));
         // centerHeight - opposite = 70 - 70 = 0 -> clamped to 0 -> 70
-        assertEquals(70, ShadingPipeline.filledShoulder(no, 70, 70));
+        assertEquals(70, ShadingPipeline.filledShoulderWithSentinels(no, 70, 70));
     }
 
     @Test
@@ -97,6 +97,23 @@ class ShadingPipelineLutAndSentinelTest {
         assertEquals(1.0 / 8.0, ShadingPipeline.slopeShade(70, 75));
         assertEquals(-1.0 / 8.0, ShadingPipeline.slopeShade(70, 65));
         assertEquals(0.0, ShadingPipeline.slopeShade(70, 70));
+    }
+
+    @Test
+    void boxedMethodsAcceptMixedPrimitiveAndBoxedHeights() {
+        final Integer shoulder = Integer.valueOf(75);
+        final Integer opposite = Integer.valueOf(68);
+        final Integer missing = null;
+
+        assertEquals(70, ShadingPipeline.filledShoulder(70, opposite, 70));
+        assertEquals(75, ShadingPipeline.filledShoulder(shoulder, 68, 70));
+        assertEquals(71, ShadingPipeline.filledShoulder(missing, 68, 70));
+        assertEquals(1.15, ShadingPipeline.directionalReliefMultiplier(
+            shoulder, 75, 75, 71, 71, 71, 4
+        ));
+        assertEquals(1.0, ShadingPipeline.directionalReliefMultiplier(
+            missing, 75, 75, 71, 71, 71, 4
+        ));
     }
 
     @Test
