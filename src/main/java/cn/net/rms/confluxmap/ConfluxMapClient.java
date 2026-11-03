@@ -512,7 +512,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
             customMarkerService,
             new FabricActionApi(
                 client, gameBridge, config, configIo, keybinds, waypointService,
-                groundTeleportService, layerSelector, sessionGuard
+                groundTeleportService, layerSelector, sessionGuard, companionSession
             ),
             sharedWaypoints::list,
             sharedWaypoints::availability

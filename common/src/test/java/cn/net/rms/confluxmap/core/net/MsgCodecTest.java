@@ -104,6 +104,25 @@ class MsgCodecTest {
     }
 
     @Test
+    void restrictionMessagesRoundTripWithoutChangingTheEmptyMessageFrame() throws ProtoException {
+        assertArrayEquals(new byte[] {0x19, 3}, MsgCodec.encode(
+            new FeatureRestrictionsS2C(true, true, false, false)
+        ));
+        final FeatureRestrictionsS2C message = new FeatureRestrictionsS2C(
+            true, true, false, false, "Maps are disabled. 🌍"
+        );
+        assertEquals(message, MsgCodec.decode(MsgCodec.encode(message)));
+        assertEquals("", ((FeatureRestrictionsS2C) MsgCodec.decode(new byte[] {0x19, 3})).message());
+        assertThrows(ProtoException.class, () -> MsgCodec.encode(new FeatureRestrictionsS2C(
+            true, true, false, false, "x".repeat(Proto.MAX_UTF8_BYTES + 1)
+        )));
+        final byte[] encoded = MsgCodec.encode(message);
+        assertThrows(ProtoException.class, () -> MsgCodec.decode(Arrays.copyOf(encoded, encoded.length - 1)));
+        assertThrows(ProtoException.class, () -> MsgCodec.decode(new byte[] {0x19, 3, 0, 1, (byte) 0xFF}));
+        assertThrows(ProtoException.class, () -> MsgCodec.decode(new byte[] {0x19, 3, 0, 0, 1}));
+    }
+
+    @Test
     void playerPositionsRoundTripEveryIdentityAndPositionField() throws ProtoException {
         final PlayerPositionsS2C original = new PlayerPositionsS2C(List.of(
             new PlayerPositionsS2C.Entry(

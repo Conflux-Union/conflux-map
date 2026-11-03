@@ -431,6 +431,8 @@
   "confluxmap.config.radar.icon_size": "雷达图标大小：%s",
   "confluxmap.config.radar.player_highlight_ghost_duration": "跨维度高亮记忆时长：%s",
   "confluxmap.screen.config.radar.disabled_by_server": "此服务器已禁用实体雷达",
+  "confluxmap.screen.restriction.title": "服务器已禁用地图",
+  "confluxmap.screen.restriction.message": "此服务器不允许使用这项地图功能。",
   "confluxmap.screen.config.minimap.disabled_by_server": "此服务器已禁用小地图",
   "confluxmap.screen.config.waypoints.disabled_by_server": "此服务器已禁用路径点",
   "confluxmap.screen.config.prediction.forbidden_by_server": "此服务器已禁用预测图层",

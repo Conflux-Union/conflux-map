@@ -17,8 +17,22 @@ public record FeatureRestrictionsS2C(
     boolean minimapForbidden,
     boolean worldMapForbidden,
     boolean waypointsForbidden,
-    boolean predictionForbidden
+    boolean predictionForbidden,
+    String message
 ) implements Message {
+    public FeatureRestrictionsS2C {
+        message = message == null ? "" : message;
+    }
+
+    public FeatureRestrictionsS2C(
+        final boolean minimapForbidden,
+        final boolean worldMapForbidden,
+        final boolean waypointsForbidden,
+        final boolean predictionForbidden
+    ) {
+        this(minimapForbidden, worldMapForbidden, waypointsForbidden, predictionForbidden, "");
+    }
+
     /** The no-restriction projection; also what peers infer from a missing frame. */
     public static FeatureRestrictionsS2C none() {
         return new FeatureRestrictionsS2C(false, false, false, false);

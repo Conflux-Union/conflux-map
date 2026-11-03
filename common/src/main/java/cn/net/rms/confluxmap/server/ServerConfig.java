@@ -77,6 +77,7 @@ public final class ServerConfig {
      * predicted tiles even on servers that share the seed for map-sync corrections.
      */
     public boolean allowPrediction = true;
+    public String restrictionMessage = "";
     /** Whether the server-owned shared waypoint catalog is enabled. */
     public boolean shareWaypoints = true;
     /** Whether non-operators may create and manage shared waypoints they published. */
@@ -102,6 +103,18 @@ public final class ServerConfig {
 
     /** Clamp out-of-range values loaded from a hand-edited file. */
     public void normalize() {
+        restrictionMessage = restrictionMessage == null ? "" : restrictionMessage.strip();
+        int messageEnd = 0;
+        int messageBytes = 0;
+        while (messageEnd < restrictionMessage.length()) {
+            final int codePoint = restrictionMessage.codePointAt(messageEnd);
+            messageBytes += codePoint <= 0x7F ? 1 : codePoint <= 0x7FF ? 2 : codePoint <= 0xFFFF ? 3 : 4;
+            if (messageBytes > Proto.MAX_UTF8_BYTES) {
+                break;
+            }
+            messageEnd += Character.charCount(codePoint);
+        }
+        restrictionMessage = restrictionMessage.substring(0, messageEnd);
         if (webMap == null) {
             webMap = new WebMapConfig();
         }

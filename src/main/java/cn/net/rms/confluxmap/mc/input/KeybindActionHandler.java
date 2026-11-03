@@ -8,6 +8,7 @@ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.mc.ui.screen.ConfigScreen;
 import cn.net.rms.confluxmap.mc.ui.screen.ClientWorldSelectScreen;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
+import cn.net.rms.confluxmap.mc.ui.screen.ServerRestrictionScreen;
 import cn.net.rms.confluxmap.mc.ui.screen.WaypointEditScreen;
 import cn.net.rms.confluxmap.mc.ui.screen.WaypointListScreen;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
@@ -41,7 +42,10 @@ final class KeybindActionHandler {
         switch (action) {
             case TOGGLE_MINIMAP:
                 if (!minimapAllowed()) {
-                    return false;
+                    MinecraftAccess.setScreen(MinecraftClient.getInstance(), new ServerRestrictionScreen(
+                        ConfluxMapClient.get().companionSession().restrictionMessage()
+                    ));
+                    return true;
                 }
                 config.minimapEnabled = !config.minimapEnabled;
                 configChanged = true;
@@ -136,7 +140,10 @@ final class KeybindActionHandler {
             return false;
         }
         if (!ConfluxMapClient.get().companionSession().worldMapAllowed()) {
-            return false;
+            MinecraftAccess.setScreen(client, new ServerRestrictionScreen(
+                ConfluxMapClient.get().companionSession().restrictionMessage()
+            ));
+            return true;
         }
         if (ConfluxMapClient.get().clientMultiworldService().needsSelection()) {
             MinecraftAccess.setScreen(client, new ClientWorldSelectScreen(null, vanillaOpenMapKey, true));

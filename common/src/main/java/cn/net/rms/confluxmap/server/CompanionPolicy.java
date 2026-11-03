@@ -20,7 +20,8 @@ public final class CompanionPolicy {
             config.enabled && !config.allowMinimap,
             config.enabled && !config.allowWorldMap,
             config.enabled && !config.allowWaypoints,
-            config.enabled && !config.allowPrediction
+            config.enabled && !config.allowPrediction,
+            config.restrictionMessage
         );
     }
 

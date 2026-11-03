@@ -415,6 +415,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     @Override
     protected void init() {
+        if (applyServerRestriction()) {
+            return;
+        }
         locationMenu.reset();
         // init() reruns on resize; announce the open event exactly once per screen life.
         if (!openAnnounced) {
@@ -714,6 +717,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     @Override
     public void tick() {
         super.tick();
+        if (applyServerRestriction()) {
+            return;
+        }
         if (!chunkLoadStates.available() && chunkLoadStates.snapshot().active()) {
             chunkLoadStates.reset();
         }
@@ -737,6 +743,15 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             rebuildWaypointControls();
         }
         refreshStructureSearchButton();
+    }
+
+    private boolean applyServerRestriction() {
+        final Screen permitted = ServerRestrictionScreen.resolve(this, companion);
+        if (permitted == this) {
+            return false;
+        }
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), permitted);
+        return true;
     }
 
     private Text visibilityTooltip(final boolean local) {
@@ -1266,6 +1281,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     boolean renderEmbeddedPanelBlur(final GuiDraw draw, final SplitMapLayout layout) {
+        if (!companion.worldMapAllowed()) {
+            return false;
+        }
         return embeddedBlur.render(
             draw, this.client, layout, matrices -> renderEmbeddedBackdrop(matrices, layout)
         );
@@ -1307,6 +1325,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     @Override
     protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
+        if (!companion.worldMapAllowed()) {
+            return;
+        }
         final MatrixStack matrices = draw.matrices();
         final TileService visibleTiles = viewTiles();
         if (mapBrowser.browsing()) {

@@ -317,6 +317,10 @@ public final class CompanionSession {
         return state.get() != State.ACTIVE || !featureRestrictions.worldMapForbidden();
     }
 
+    public String restrictionMessage() {
+        return state.get() == State.ACTIVE ? featureRestrictions.message() : "";
+    }
+
     /** Whether local waypoints (list, editor, in-world rendering) are permitted; see {@link #minimapAllowed()}. */
     public boolean waypointsAllowed() {
         return state.get() != State.ACTIVE || !featureRestrictions.waypointsForbidden();

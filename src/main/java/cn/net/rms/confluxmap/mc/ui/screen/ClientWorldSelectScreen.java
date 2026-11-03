@@ -325,11 +325,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
         }
         if (waitingToOpenMap && ConfluxMapClient.get().sessionGuard().current().active()) {
             waitingToOpenMap = false;
-            if (ConfluxMapClient.get().companionSession().worldMapAllowed()) {
-                MinecraftAccess.setScreen(MinecraftClient.getInstance(), new FullscreenMapScreen(openMapKey));
-            } else {
-                MinecraftAccess.setScreen(MinecraftClient.getInstance(), null);
-            }
+            MinecraftAccess.setScreen(MinecraftClient.getInstance(), new FullscreenMapScreen(openMapKey));
         }
     }
 

@@ -1,6 +1,7 @@
 package cn.net.rms.confluxmap.server;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.net.FeatureRestrictionsS2C;
@@ -10,6 +11,18 @@ class CompanionPolicyRestrictionsTest {
     @Test
     void defaultConfigProjectsNoRestrictions() {
         assertTrue(CompanionPolicy.configuredRestrictions(new ServerConfig()).isEmpty());
+    }
+
+    @Test
+    void restrictionMessageIsBoundedWithoutSplittingUnicodeCharacters() {
+        final ServerConfig config = new ServerConfig();
+        config.allowWorldMap = false;
+        config.restrictionMessage = "🌍".repeat(100);
+        config.normalize();
+        assertEquals("🌍".repeat(64), CompanionPolicy.configuredRestrictions(config).message());
+        config.restrictionMessage = null;
+        config.normalize();
+        assertEquals("", CompanionPolicy.configuredRestrictions(config).message());
     }
 
     @Test

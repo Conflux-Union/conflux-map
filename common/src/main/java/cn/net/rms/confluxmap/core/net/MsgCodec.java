@@ -116,6 +116,9 @@ public final class MsgCodec {
                 encodeMapFullSyncManifestS2C(out, m);
             } else if (msg instanceof final FeatureRestrictionsS2C m) {
                 out.writeByte(restrictionBits(m));
+                if (!m.message().isEmpty()) {
+                    writeUtf(out, m.message());
+                }
             } else {
                 throw new ProtoException("unknown message type: " + msg.getClass().getName());
             }
@@ -720,7 +723,8 @@ public final class MsgCodec {
                         (bits & 1) != 0,
                         (bits & 2) != 0,
                         (bits & 4) != 0,
-                        (bits & 8) != 0
+                        (bits & 8) != 0,
+                        in.available() == 0 ? "" : readUtf(in)
                     );
                 }
                 default -> throw new ProtoException("unhandled message type id: 0x" + Integer.toHexString(typeId));

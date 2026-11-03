@@ -42,7 +42,8 @@ public interface ActionApi {
     enum TeleportResult {
         STARTED,
         NO_WAYPOINT,
-        NO_SESSION
+        NO_SESSION,
+        FORBIDDEN_BY_SERVER
     }
 
     enum LayerOverride {

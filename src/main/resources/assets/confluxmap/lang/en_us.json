@@ -431,6 +431,8 @@
   "confluxmap.config.radar.icon_size": "Radar Icon Size: %s",
   "confluxmap.config.radar.player_highlight_ghost_duration": "Cross-dimension Highlight Memory: %s",
   "confluxmap.screen.config.radar.disabled_by_server": "Entity radar is disabled by this server",
+  "confluxmap.screen.restriction.title": "Map disabled by server",
+  "confluxmap.screen.restriction.message": "This server does not allow this map feature.",
   "confluxmap.screen.config.minimap.disabled_by_server": "The minimap is disabled by this server",
   "confluxmap.screen.config.waypoints.disabled_by_server": "Waypoints are disabled by this server",
   "confluxmap.screen.config.prediction.forbidden_by_server": "The prediction underlay is disabled by this server",
