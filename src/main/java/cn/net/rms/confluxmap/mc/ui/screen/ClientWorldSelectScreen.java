@@ -488,12 +488,12 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
 
     private void finishSelection() {
         if (parent != null) {
-            MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
+            requestClose(parent);
         } else if (openMapAfterSelection) {
             waitingToOpenMap = true;
             rebuild();
         } else {
-            MinecraftAccess.setScreen(MinecraftClient.getInstance(), null);
+            requestClose(null);
         }
     }
 
@@ -512,6 +512,9 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
     //#else
     public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
     //#endif
+        if (isClosing()) {
+            return true;
+        }
         final int rowWidth = Math.min(440, Math.max(250, width - 24));
         final boolean overList = mouseX >= width / 2 - rowWidth / 2
             && mouseX <= width / 2 + rowWidth / 2 + 6
@@ -530,7 +533,7 @@ public final class ClientWorldSelectScreen extends ConfluxScreen {
 
     @Override
     public void onClose() {
-        MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
+        requestClose(parent);
     }
 
     @Override

@@ -7,6 +7,7 @@ import cn.net.rms.confluxmap.core.annotation.Annotation;
 import cn.net.rms.confluxmap.core.annotation.AnnotationProjection;
 import cn.net.rms.confluxmap.core.annotation.AnnotationService;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
+import cn.net.rms.confluxmap.core.config.MinimapHudFade;
 import cn.net.rms.confluxmap.core.config.MinimapHudVisibility;
 import cn.net.rms.confluxmap.core.config.MinimapPlacement;
 import cn.net.rms.confluxmap.core.tile.TileService;
@@ -28,6 +29,8 @@ import cn.net.rms.confluxmap.mc.render.TileTextureManager;
 import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import cn.net.rms.confluxmap.mc.ui.UiResourceTheme;
+import cn.net.rms.confluxmap.mc.ui.anim.TransitionClock;
+import cn.net.rms.confluxmap.mc.ui.anim.UiMotion;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 import cn.net.rms.confluxmap.mc.world.LayerSelector;
 import java.util.List;
@@ -62,7 +65,9 @@ import net.minecraft.client.util.math.MatrixStack;
  * delegates the actual drawing to {@link MinimapTilePainter} (tiles and the capture
  * viewport), {@link MinimapMarkerPainter} (waypoint/portal/player markers and the
  * trail), {@link MinimapRadarPainter} (entity radar), and {@link MinimapChromePainter}
- * (frame, cardinals, info text).
+ * (frame, cardinals, info text). Show/hide animates through {@link MinimapHudFade}:
+ * the pass keeps rendering (everything scaled by the fade alpha) until it settles at 0,
+ * so the published viewport stays continuous across the transition.
  */
 public final class MinimapHudRenderer {
     private static final int BACKGROUND_RGB = 0x101018;
@@ -75,6 +80,8 @@ public final class MinimapHudRenderer {
     private final OffscreenCanvas canvas = new OffscreenCanvas();
     private final UiResourceTheme uiTheme;
     private final BooleanSupplier serverPolicyAllowsMinimap;
+    private final TransitionClock fadeClock = new TransitionClock();
+    private final MinimapHudFade fade = new MinimapHudFade();
 
     private final MinimapTilePainter tilePainter;
     private final MinimapMarkerPainter markerPainter;
@@ -160,14 +167,26 @@ public final class MinimapHudRenderer {
         tilePainter.beginFrame();
         final boolean fullscreenOpen = MinecraftAccess.screen(client) instanceof FullscreenMapScreen;
         final boolean containerOpen = MinecraftAccess.isContainerScreen(MinecraftAccess.screen(client));
-        if (!MinimapHudVisibility.shouldRender(
+        final boolean sessionActive = gameBridge.session().active();
+        final boolean targetVisible = MinimapHudVisibility.shouldRender(
             config.minimapEnabled && serverPolicyAllowsMinimap.getAsBoolean(),
-            gameBridge.session().active(),
+            sessionActive,
             fullscreenOpen,
             containerOpen,
             MinecraftAccess.isFullDebugOverlayVisible(client),
             MinecraftAccess.isHudHidden(client)
-        )) {
+        );
+        // A session switch must never blend one world's map into the next, so it jumps
+        // instead of fading. While a fade is in flight the pass below keeps rendering
+        // scaled by the alpha - and keeps publishing the real viewport - until the fade
+        // settles at 0 and the hard-hide cleanup runs.
+        fade.tick(
+            targetVisible,
+            !config.uiTransitionsEnabled || !sessionActive,
+            fadeClock.tick(),
+            UiMotion.durationSeconds(config.uiTransitionSpeed)
+        );
+        if (fade.alpha() <= 0.0f) {
             tilePainter.publishEmptyViewport();
             // FullscreenMapScreen owns radarViewRange while it's open; otherwise the minimap
             // isn't rendering at all, so there's no visible map surface for the radar to scan.
@@ -185,6 +204,7 @@ public final class MinimapHudRenderer {
             return;
         }
         final PlayerView player = playerView.get();
+        final float fadeAlpha = fade.alpha();
 
         tilePainter.setViewpoint(player.blockX(), player.blockZ());
 
@@ -219,12 +239,19 @@ public final class MinimapHudRenderer {
             : List.of();
 
         final float minimapBlocksPerPixel = BLOCKS_PER_PIXEL[config.minimapZoomIndex];
-        radarPainter.updateViewRange(contentSize, minimapBlocksPerPixel, circle);
+        // While fading out under an open fullscreen map, FullscreenMapScreen owns
+        // radarViewRange (same rule as the settled-hidden path), so leave its range alone;
+        // the disappearing icons draw from the scanner's last snapshot instead.
+        if (!fullscreenOpen) {
+            radarPainter.updateViewRange(contentSize, minimapBlocksPerPixel, circle);
+        }
 
         if (circle) {
             // Real geometric clipping: render the square map into an off-screen canvas,
             // then sample it back as a textured disk. Unlike destination-alpha masking
             // this cannot leak outside the circle regardless of framebuffer state.
+            // The fade stays out of the canvas draws: the disk tint below already scales
+            // the whole composite once.
             final int canvasPx = Math.max(
                 64,
                 (int) Math.round(contentSize * client.getWindow().getScaleFactor())
@@ -240,18 +267,19 @@ public final class MinimapHudRenderer {
                 GuiShapes.rotateZ(fbo, mapAngle);
             }
             TextureBinds.beginTexturedQuads();
-            tilePainter.drawTiles(fbo, contentSize, circle, mapAngle, player, minimapBlocksPerPixel);
+            tilePainter.drawTiles(fbo, contentSize, circle, mapAngle, player, minimapBlocksPerPixel, 1f);
             fbo.pop();
             fbo.push();
             fbo.translate(contentSize / 2f, contentSize / 2f, 0);
             if (rotate) {
                 GuiShapes.rotateZ(fbo, mapAngle);
             }
-            markerPainter.drawPortalChunkHighlights(fbo, player, contentSize, minimapBlocksPerPixel);
+            markerPainter.drawPortalChunkHighlights(fbo, player, contentSize, minimapBlocksPerPixel, 1f);
             fbo.pop();
             markerPainter.drawPlayerTrail(
                 fbo, player,
-                contentSize / 2f, contentSize / 2f, contentSize, mapAngle, minimapBlocksPerPixel
+                contentSize / 2f, contentSize / 2f, contentSize, mapAngle, minimapBlocksPerPixel,
+                1f
             );
             if (!visibleAnnotations.isEmpty()) {
                 AnnotationRenderer.drawGeometry(
@@ -268,8 +296,10 @@ public final class MinimapHudRenderer {
 
             TextureBinds.beginTexturedQuads();
             canvas.bindTexture();
-            GuiShapes.drawTexturedDisk(matrices, centerX, centerY, contentSize / 2f);
-            chromePainter.drawFrame(matrices, x0, y0, size, true, minimapFrame);
+            GuiShapes.drawTexturedDisk(
+                matrices, centerX, centerY, contentSize / 2f, Argb.scaleAlpha(0xFFFFFFFF, fadeAlpha)
+            );
+            chromePainter.drawFrame(matrices, x0, y0, size, true, minimapFrame, fadeAlpha);
             AnnotationRenderer.drawLabels(
                 draw,
                 client.textRenderer,
@@ -279,11 +309,13 @@ public final class MinimapHudRenderer {
                 viewport.y(),
                 contentSize,
                 contentSize,
-                AnnotationRenderer.ClipShape.CIRCLE
+                AnnotationRenderer.ClipShape.CIRCLE,
+                fadeAlpha
             );
         } else {
             GuiShapes.fillRect(
-                matrices, viewport.x(), viewport.y(), contentSize, contentSize, backgroundColor
+                matrices, viewport.x(), viewport.y(), contentSize, contentSize,
+                Argb.scaleAlpha(backgroundColor, fadeAlpha)
             );
             RenderTargetState.enableScissor(
                 client, viewport.x(), viewport.y(), contentSize, contentSize
@@ -294,21 +326,21 @@ public final class MinimapHudRenderer {
             if (rotate) {
                 GuiShapes.rotateZ(matrices, mapAngle);
             }
-            tilePainter.drawTiles(matrices, contentSize, circle, mapAngle, player, minimapBlocksPerPixel);
+            tilePainter.drawTiles(matrices, contentSize, circle, mapAngle, player, minimapBlocksPerPixel, fadeAlpha);
             matrices.pop();
             matrices.push();
             matrices.translate(centerX, centerY, 0);
             if (rotate) {
                 GuiShapes.rotateZ(matrices, mapAngle);
             }
-            markerPainter.drawPortalChunkHighlights(matrices, player, contentSize, minimapBlocksPerPixel);
+            markerPainter.drawPortalChunkHighlights(matrices, player, contentSize, minimapBlocksPerPixel, fadeAlpha);
             matrices.pop();
-            markerPainter.drawPlayerTrail(matrices, player, centerX, centerY, contentSize, mapAngle, minimapBlocksPerPixel);
+            markerPainter.drawPlayerTrail(matrices, player, centerX, centerY, contentSize, mapAngle, minimapBlocksPerPixel, fadeAlpha);
             if (!visibleAnnotations.isEmpty()) {
                 final AnnotationProjection annotationProjection = annotationProjection(
                     player, centerX, centerY, contentSize, mapAngle, minimapBlocksPerPixel
                 );
-                AnnotationRenderer.drawGeometry(matrices, visibleAnnotations, annotationProjection, null);
+                AnnotationRenderer.drawGeometry(matrices, visibleAnnotations, annotationProjection, null, fadeAlpha);
                 AnnotationRenderer.drawLabels(
                     draw,
                     client.textRenderer,
@@ -318,23 +350,24 @@ public final class MinimapHudRenderer {
                     viewport.y(),
                     contentSize,
                     contentSize,
-                    AnnotationRenderer.ClipShape.RECTANGLE
+                    AnnotationRenderer.ClipShape.RECTANGLE,
+                    fadeAlpha
                 );
             }
             RenderTargetState.disableScissor();
-            chromePainter.drawFrame(matrices, x0, y0, size, false, minimapFrame);
+            chromePainter.drawFrame(matrices, x0, y0, size, false, minimapFrame, fadeAlpha);
         }
 
-        radarPainter.drawRadar(draw, centerX, centerY, contentSize, mapAngle, player, tickDelta, minimapBlocksPerPixel);
-        chromePainter.drawCardinals(draw, centerX, centerY, contentSize, mapAngle);
-        markerPainter.drawPortalMarkers(draw, centerX, centerY, contentSize, mapAngle, player, minimapBlocksPerPixel);
-        markerPainter.drawWaypointMarkers(draw, centerX, centerY, contentSize, mapAngle, player, minimapBlocksPerPixel);
-        markerPainter.drawCustomMarkers(draw, centerX, centerY, contentSize, mapAngle, player, minimapBlocksPerPixel);
-        markerPainter.drawCameraMarker(matrices, player, centerX, centerY, rotate);
+        radarPainter.drawRadar(draw, centerX, centerY, contentSize, mapAngle, player, tickDelta, minimapBlocksPerPixel, fadeAlpha);
+        chromePainter.drawCardinals(draw, centerX, centerY, contentSize, mapAngle, fadeAlpha);
+        markerPainter.drawPortalMarkers(draw, centerX, centerY, contentSize, mapAngle, player, minimapBlocksPerPixel, fadeAlpha);
+        markerPainter.drawWaypointMarkers(draw, centerX, centerY, contentSize, mapAngle, player, minimapBlocksPerPixel, fadeAlpha);
+        markerPainter.drawCustomMarkers(draw, centerX, centerY, contentSize, mapAngle, player, minimapBlocksPerPixel, fadeAlpha);
+        markerPainter.drawCameraMarker(matrices, player, centerX, centerY, rotate, fadeAlpha);
         markerPainter.drawLocalPlayerMarker(
-            matrices, player, centerX, centerY, contentSize, rotate, tickDelta, minimapBlocksPerPixel
+            matrices, player, centerX, centerY, contentSize, rotate, tickDelta, minimapBlocksPerPixel, fadeAlpha
         );
-        chromePainter.drawInfoText(draw, player, x0, y0, size);
+        chromePainter.drawInfoText(draw, player, x0, y0, size, fadeAlpha);
     }
 
     private AnnotationProjection annotationProjection(

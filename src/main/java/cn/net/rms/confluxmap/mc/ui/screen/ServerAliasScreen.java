@@ -249,7 +249,7 @@ public final class ServerAliasScreen extends ConfluxScreen {
 
     @Override
     public void onClose() {
-        MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
+        requestClose(parent);
     }
 
     @Override

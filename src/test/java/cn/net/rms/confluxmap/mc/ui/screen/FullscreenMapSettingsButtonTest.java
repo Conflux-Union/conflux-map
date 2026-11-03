@@ -47,7 +47,7 @@ final class FullscreenMapSettingsButtonTest {
             "    void rebuild()"
         );
         assertTrue(
-            close.contains("MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);"),
+            close.contains("requestClose(parent);"),
             "closing map settings must restore the fullscreen map"
         );
     }

@@ -1,6 +1,5 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
-import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.config.MinimapPlacement;
@@ -74,15 +73,21 @@ public final class MinimapPositionScreen extends ConfluxScreen {
     @Override
     public void onClose() {
         configIo.save(config);
-        MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
+        requestClose(parent);
     }
 
     @Override
     //#if MC>=12109
     //$$ public boolean keyPressed(final KeyInput input) {
     //$$     final int keyCode = input.key();
+    //$$     if (swallowWhileClosing(input)) {
+    //$$         return true;
+    //$$     }
     //#else
     public boolean keyPressed(final int keyCode, final int scanCode, final int modifiers) {
+        if (swallowWhileClosing(keyCode, scanCode)) {
+            return true;
+        }
     //#endif
         int deltaX = 0;
         int deltaY = 0;

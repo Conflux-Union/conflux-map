@@ -37,7 +37,7 @@ final class RadarPlayerVisibilityTest {
         assertFalse(minimap.contains(playerFilter));
         assertTrue(minimap.contains(
             "RadarMarkerRenderer.drawAll(\n"
-                + "            draw, client, config, iconManager, markers, presentation\n"
+                + "            draw, client, config, iconManager, markers, presentation, marker -> true, fadeAlpha\n"
                 + "        );"
         ));
         assertTrue(renderer.contains(

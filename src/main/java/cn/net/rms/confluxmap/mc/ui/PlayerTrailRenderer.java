@@ -21,7 +21,8 @@ public final class PlayerTrailRenderer {
         final PlayerTrail trail,
         final PlayerTrailProjection projection,
         final int durationSeconds,
-        final int dotSize
+        final int dotSize,
+        final float fadeAlpha
     ) {
         final long nowNanos = System.nanoTime();
         final long retentionNanos = TimeUnit.SECONDS.toNanos(durationSeconds);
@@ -34,7 +35,7 @@ public final class PlayerTrailRenderer {
             }
             final long ageNanos = Math.max(0L, nowNanos - sample.recordedAtNanos());
             final double remaining = Math.max(0.0, 1.0 - ageNanos / (double) retentionNanos);
-            final int alpha = Math.max(1, (int) Math.round(MAX_ALPHA * remaining));
+            final int alpha = Math.max(1, (int) Math.round(MAX_ALPHA * remaining * fadeAlpha));
             dots.add(new GuiShapes.ColoredRect(
                 (float) point.x() - dotSize / 2f,
                 (float) point.y() - dotSize / 2f,

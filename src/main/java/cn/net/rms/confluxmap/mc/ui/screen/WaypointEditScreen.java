@@ -1037,7 +1037,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
                     : permission.reasonKey();
                 return;
             }
-            MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
+            requestClose(parent);
             return;
         }
         if (explicitLocalStore) {
@@ -1052,7 +1052,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
                     store.update(waypoint);
                 }
             }
-            MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
+            requestClose(parent);
             return;
         }
         final boolean applied = editingId == null
@@ -1064,11 +1064,11 @@ public final class WaypointEditScreen extends ConfluxScreen {
         }
         // An applied=false with permission granted means the target vanished mid-edit;
         // closing mirrors the store's historical silent no-op update.
-        MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
+        requestClose(parent);
     }
 
     private void onCancel() {
-        MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
+        requestClose(parent);
     }
 
     private Text deleteButtonMessage() {
@@ -1106,7 +1106,7 @@ public final class WaypointEditScreen extends ConfluxScreen {
         } else {
             localModel.deleteWaypoint(editingRow);
         }
-        MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
+        requestClose(parent);
     }
 
     @Override
@@ -1114,13 +1114,13 @@ public final class WaypointEditScreen extends ConfluxScreen {
         super.tick();
         if (createTarget == CreateTarget.LOCAL
             && boundLocalStore != localStoreSupplier.get()) {
-            MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
+            requestClose(parent);
             return;
         }
         if (createTarget == CreateTarget.PUBLIC) {
             final SharedWaypointAvailability availability = sharedWaypoints.availability();
             if (!availability.visible()) {
-                MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
+                requestClose(parent);
                 return;
             }
             updatePublicDoneButton();

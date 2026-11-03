@@ -5,6 +5,7 @@ import cn.net.rms.confluxmap.compat.Regs;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.config.MinimapInformationLayout;
+import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.render.TextureBinds;
 import cn.net.rms.confluxmap.mc.ui.BiomeLabels;
@@ -45,15 +46,23 @@ final class MinimapChromePainter {
     }
 
     /** Cardinal letters sit on the (possibly rotated) compass ring but are always drawn upright. */
-    void drawCardinals(final GuiDraw draw, final float centerX, final float centerY, final int size, final float mapAngle) {
+    void drawCardinals(
+        final GuiDraw draw,
+        final float centerX,
+        final float centerY,
+        final int size,
+        final float mapAngle,
+        final float alpha
+    ) {
         final float radius = size / 2f - 7f;
         final double rad = Math.toRadians(mapAngle);
         final float cos = (float) Math.cos(rad);
         final float sin = (float) Math.sin(rad);
-        drawCardinal(draw, "N", centerX, centerY, 0f, -radius, cos, sin);
-        drawCardinal(draw, "E", centerX, centerY, radius, 0f, cos, sin);
-        drawCardinal(draw, "S", centerX, centerY, 0f, radius, cos, sin);
-        drawCardinal(draw, "W", centerX, centerY, -radius, 0f, cos, sin);
+        final int textColor = Argb.scaleAlpha(TEXT_COLOR, alpha);
+        drawCardinal(draw, "N", centerX, centerY, 0f, -radius, cos, sin, textColor);
+        drawCardinal(draw, "E", centerX, centerY, radius, 0f, cos, sin, textColor);
+        drawCardinal(draw, "S", centerX, centerY, 0f, radius, cos, sin, textColor);
+        drawCardinal(draw, "W", centerX, centerY, -radius, 0f, cos, sin, textColor);
     }
 
     private void drawCardinal(
@@ -64,15 +73,23 @@ final class MinimapChromePainter {
         final float dirX,
         final float dirY,
         final float cos,
-        final float sin
+        final float sin,
+        final int textColor
     ) {
         final float x = centerX + dirX * cos - dirY * sin;
         final float y = centerY + dirX * sin + dirY * cos;
         final int width = client.textRenderer.getWidth(letter);
-        draw.drawTextWithShadow(client.textRenderer, letter, x - width / 2f, y - 4f, TEXT_COLOR);
+        draw.drawTextWithShadow(client.textRenderer, letter, x - width / 2f, y - 4f, textColor);
     }
 
-    void drawInfoText(final GuiDraw draw, final PlayerView player, final int x0, final int y0, final int size) {
+    void drawInfoText(
+        final GuiDraw draw,
+        final PlayerView player,
+        final int x0,
+        final int y0,
+        final int size,
+        final float alpha
+    ) {
         final boolean terrainPaused = liveTerrainPaused.getAsBoolean();
         if (!config.showCoordinates && !config.showBiome && !config.showLayerIndicator
             && !terrainPaused) {
@@ -101,18 +118,18 @@ final class MinimapChromePainter {
 
         if (config.showCoordinates) {
             final String coords = player.blockX() + ", " + player.blockY() + ", " + player.blockZ();
-            drawCenteredLine(draw, coords, centerX, y);
+            drawCenteredLine(draw, coords, centerX, y, alpha);
             y += lineHeight;
         }
         if (config.showBiome) {
             final String biome = biomeName(player);
             if (!biome.isEmpty()) {
-                drawCenteredLine(draw, biome, centerX, y);
+                drawCenteredLine(draw, biome, centerX, y, alpha);
             }
             y += lineHeight;
         }
         if (config.showLayerIndicator) {
-            drawCenteredLine(draw, layerIndicatorText(), centerX, y);
+            drawCenteredLine(draw, layerIndicatorText(), centerX, y, alpha);
             y += lineHeight;
         }
         if (terrainPaused) {
@@ -120,7 +137,8 @@ final class MinimapChromePainter {
                 draw,
                 Texts.translatable("confluxmap.live_terrain.paused").getString(),
                 centerX,
-                y
+                y,
+                alpha
             );
         }
     }
@@ -131,13 +149,19 @@ final class MinimapChromePainter {
         return MapLayerText.label(decision.layer(), decision.pivotY());
     }
 
-    private void drawCenteredLine(final GuiDraw draw, final String text, final float centerX, final float y) {
+    private void drawCenteredLine(
+        final GuiDraw draw,
+        final String text,
+        final float centerX,
+        final float y,
+        final float alpha
+    ) {
         final int width = client.textRenderer.getWidth(text);
         final float x = Math.max(
             0,
             Math.min(client.getWindow().getScaledWidth() - width, centerX - width / 2f)
         );
-        draw.drawTextWithShadow(client.textRenderer, text, x, y, TEXT_COLOR);
+        draw.drawTextWithShadow(client.textRenderer, text, x, y, Argb.scaleAlpha(TEXT_COLOR, alpha));
     }
 
     private String biomeName(final PlayerView player) {
@@ -156,29 +180,38 @@ final class MinimapChromePainter {
         return BiomeLabels.displayName(id);
     }
 
-    private void drawBorder(final MatrixStack matrices, final int x0, final int y0, final int size) {
-        GuiShapes.fillRect(matrices, x0, y0, size, BORDER_THICKNESS, BORDER_COLOR);
-        GuiShapes.fillRect(matrices, x0, y0 + size - BORDER_THICKNESS, size, BORDER_THICKNESS, BORDER_COLOR);
-        GuiShapes.fillRect(matrices, x0, y0, BORDER_THICKNESS, size, BORDER_COLOR);
-        GuiShapes.fillRect(matrices, x0 + size - BORDER_THICKNESS, y0, BORDER_THICKNESS, size, BORDER_COLOR);
+    private void drawBorder(
+        final MatrixStack matrices,
+        final int x0,
+        final int y0,
+        final int size,
+        final int borderColor
+    ) {
+        GuiShapes.fillRect(matrices, x0, y0, size, BORDER_THICKNESS, borderColor);
+        GuiShapes.fillRect(matrices, x0, y0 + size - BORDER_THICKNESS, size, BORDER_THICKNESS, borderColor);
+        GuiShapes.fillRect(matrices, x0, y0, BORDER_THICKNESS, size, borderColor);
+        GuiShapes.fillRect(matrices, x0 + size - BORDER_THICKNESS, y0, BORDER_THICKNESS, size, borderColor);
     }
 
+    /** {@code alpha} carries the HUD fade; at 1 every color keeps its constant. */
     void drawFrame(
         final MatrixStack matrices,
         final int x0,
         final int y0,
         final int size,
         final boolean circle,
-        final Optional<UiResourceTheme.MinimapFrame> selected
+        final Optional<UiResourceTheme.MinimapFrame> selected,
+        final float alpha
     ) {
+        final int borderColor = Argb.scaleAlpha(BORDER_COLOR, alpha);
         if (selected.isEmpty()) {
             if (circle) {
                 GuiShapes.drawRing(
                     matrices, x0 + size / 2f, y0 + size / 2f,
-                    size / 2f, BORDER_THICKNESS, BORDER_COLOR
+                    size / 2f, BORDER_THICKNESS, borderColor
                 );
             } else {
-                drawBorder(matrices, x0, y0, size);
+                drawBorder(matrices, x0, y0, size, borderColor);
             }
             return;
         }
@@ -189,15 +222,17 @@ final class MinimapChromePainter {
         if (frame.layout() == UiResourceTheme.Layout.OVERLAY) {
             GuiShapes.drawTintedQuad(
                 matrices, x0, y0, size, size,
-                texture.u0(), texture.v0(), texture.u1(), texture.v1(), 0xFFFFFFFF
+                texture.u0(), texture.v0(), texture.u1(), texture.v1(),
+                Argb.scaleAlpha(0xFFFFFFFF, alpha)
             );
         } else if (frame.layout() == UiResourceTheme.Layout.XAERO_CIRCLE) {
             GuiShapes.drawTexturedRing(
                 matrices, x0 + size / 2f, y0 + size / 2f, size / 2f,
-                4f, texture.u0(), texture.v0(), texture.u1(), texture.v1(), 0xFFFFFFFF
+                4f, texture.u0(), texture.v0(), texture.u1(), texture.v1(),
+                Argb.scaleAlpha(0xFFFFFFFF, alpha)
             );
         } else {
-            XaeroMinimapFrameRenderer.drawSquare(matrices, x0, y0, size);
+            XaeroMinimapFrameRenderer.drawSquare(matrices, x0, y0, size, alpha);
         }
     }
 }

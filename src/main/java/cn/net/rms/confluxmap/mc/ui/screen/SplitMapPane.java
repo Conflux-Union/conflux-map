@@ -5,6 +5,9 @@ import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.core.waypoint.WaypointRenderEntry;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
+import cn.net.rms.confluxmap.mc.ui.anim.PopupReveal;
+import cn.net.rms.confluxmap.mc.ui.anim.PopupRevealFrame;
+import cn.net.rms.confluxmap.mc.ui.anim.UiMotion;
 import java.util.List;
 import java.util.UUID;
 import net.minecraft.client.font.TextRenderer;
@@ -24,6 +27,14 @@ final class SplitMapPane {
     private final FullscreenMapScreen map;
     private boolean dragging;
 
+    /**
+     * Reveal of the search panel itself. It exists as soon as its screen does, so the fade
+     * comes from the screen's own open reveal - both start on the first frame with the same
+     * config tier, and installing this site's own alpha would clobber ConfluxScreen's single
+     * static value for everything drawn after the pane. Only the slide lives here.
+     */
+    private final PopupReveal paneReveal = new PopupReveal();
+
     private FullscreenMapLocationMenu.Bounds menuBounds;
     private FullscreenMapLocationMenu.Target menuTarget;
     private WaypointRenderEntry menuWaypoint;
@@ -31,9 +42,19 @@ final class SplitMapPane {
     private FullscreenMapLocationMenu.Action pendingMenuAction;
     private boolean menuDeletePending;
     private List<FullscreenMapLocationMenu.ButtonSpec> menuSpecs = List.of();
+    /** Reveal of the embedded location menu panel; host state survives widget rebuilds. */
+    private final PopupReveal menuReveal = new PopupReveal();
+    /** Panel geometry kept across a close so the fade-out has something to draw. */
+    private FullscreenMapLocationMenu.Bounds fadingMenuBounds;
+    /**
+     * Screen the open menu belongs to, kept for the close fade so the frame can still fade
+     * its buttons; the pane lives and dies with one host screen.
+     */
+    private ConfluxScreen menuHost;
 
     SplitMapPane(final FullscreenMapScreen map) {
         this.map = map;
+        paneReveal.setOpen(true);
     }
 
     void render(
@@ -44,20 +65,53 @@ final class SplitMapPane {
         final SplitMapLayout layout
     ) {
         map.renderEmbedded(draw, mouseX, mouseY, tickDelta, layout);
-        final boolean blurred = map.renderEmbeddedPanelBlur(draw, layout);
-        draw.fill(
-            layout.panelLeft(), 0,
-            layout.screenWidth(), layout.screenHeight(),
-            blurred ? BLURRED_PANEL_BACKGROUND : PANEL_BACKGROUND
+        paneReveal.tick(
+            map.config.uiTransitionsEnabled,
+            UiMotion.durationSeconds(map.config.uiTransitionSpeed)
         );
+        // Only the slide lives here (see paneReveal); the screen's reveal alpha covers it.
+        try (PopupRevealFrame frame = PopupRevealFrame.slideOnly(
+            draw, paneReveal.fadeVisible(map.config.uiTransitionsEnabled), paneReveal.eased(),
+            -PopupRevealFrame.ANCHOR_SLIDE_PIXELS, 0f
+        )) {
+            final boolean blurred = map.renderEmbeddedPanelBlur(draw, layout);
+            draw.fill(
+                layout.panelLeft(), 0,
+                layout.screenWidth(), layout.screenHeight(),
+                blurred ? BLURRED_PANEL_BACKGROUND : PANEL_BACKGROUND
+            );
+        }
         draw.fill(
             layout.panelLeft(), 0,
             layout.panelLeft() + 1, layout.screenHeight(),
             DIVIDER_COLOR
         );
-        if (menuOpen()) {
-            FullscreenMapLocationMenu.drawPanel(draw, menuBounds);
+        drawMenuPanel(draw);
+    }
+
+    private void drawMenuPanel(final GuiDraw draw) {
+        menuReveal.tick(
+            map.config.uiTransitionsEnabled,
+            UiMotion.durationSeconds(map.config.uiTransitionSpeed)
+        );
+        final FullscreenMapLocationMenu.Bounds bounds = menuBounds != null
+            ? menuBounds
+            : menuFadeVisible() ? fadingMenuBounds : null;
+        if (bounds == null) {
+            return;
         }
+        // menuHost is set by the same openMenu that produced these bounds or their fading twin.
+        try (PopupRevealFrame frame = PopupRevealFrame.fadeAndSlide(
+            draw, menuFadeVisible(), menuReveal.eased(),
+            0f, PopupRevealFrame.ANCHOR_SLIDE_PIXELS, menuHost.embeddedLocationMenuButtons()
+        )) {
+            FullscreenMapLocationMenu.drawPanel(draw, bounds);
+        }
+    }
+
+    /** True while the menu close fade may still draw: transitions on and reveal in flight. */
+    private boolean menuFadeVisible() {
+        return map.config.uiTransitionsEnabled && menuReveal.animating();
     }
 
     boolean mouseClicked(
@@ -229,11 +283,14 @@ final class SplitMapPane {
         menuPlayerId = capture.playerId();
         pendingMenuAction = null;
         menuDeletePending = false;
+        menuReveal.setOpen(true);
+        menuHost = host;
         host.rebuildForEmbeddedLocationMenu();
         host.clearFocusForOpenMenu();
     }
 
     private void closeMenu(final ConfluxScreen host) {
+        fadingMenuBounds = menuBounds;
         menuBounds = null;
         menuTarget = null;
         menuWaypoint = null;
@@ -241,6 +298,7 @@ final class SplitMapPane {
         pendingMenuAction = null;
         menuDeletePending = false;
         menuSpecs = List.of();
+        menuReveal.setOpen(false);
         host.rebuildForEmbeddedLocationMenu();
     }
 }

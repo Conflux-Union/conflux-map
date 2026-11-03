@@ -42,6 +42,7 @@ public final class TerrainWorker implements AutoCloseable {
     );
     private final CaveFloorEngine engine = new CaveFloorEngine();
     private final Map<Integer, MaterialDescriptor> materials = new HashMap<>();
+    private volatile Map<Integer, MaterialDescriptor> materialSnapshot = Map.of();
     private final LinkedHashMap<Long, CachedChunk> chunks = new LinkedHashMap<>(
         64, 0.75f, true
     );
@@ -196,8 +197,7 @@ public final class TerrainWorker implements AutoCloseable {
             if (cachedSessionToken != next.sessionToken()) {
                 chunks.clear();
                 cachedBytes = 0L;
-                materials.clear();
-                requestedMaterials.clear();
+                clearMaterials();
                 cachedSessionToken = next.sessionToken();
             }
             view = next;
@@ -244,14 +244,27 @@ public final class TerrainWorker implements AutoCloseable {
 
     private void acceptMaterials(final Map<Integer, MaterialDescriptor> additions) {
         synchronized (stateLock) {
-            materials.putAll(additions);
-            requestedMaterials.removeAll(additions.keySet());
+            addMaterials(additions);
         }
         final TerrainView target = view;
         if (target != null) {
             computation.getQueue().clear();
             scheduleAll(target, epoch.get());
         }
+    }
+
+    /** Caller must hold {@link #stateLock}. Updates the canonical map and volatile snapshot together. */
+    private void addMaterials(final Map<Integer, MaterialDescriptor> additions) {
+        materials.putAll(additions);
+        requestedMaterials.removeAll(additions.keySet());
+        materialSnapshot = Map.copyOf(materials);
+    }
+
+    /** Caller must hold {@link #stateLock}. Clears materials and resets snapshot to empty. */
+    private void clearMaterials() {
+        materials.clear();
+        requestedMaterials.clear();
+        materialSnapshot = Map.of();
     }
 
     private void invalidateChunk(
@@ -338,10 +351,7 @@ public final class TerrainWorker implements AutoCloseable {
             return;
         }
         try {
-            final Map<Integer, MaterialDescriptor> materialSnapshot;
-            synchronized (stateLock) {
-                materialSnapshot = Map.copyOf(materials);
-            }
+            final Map<Integer, MaterialDescriptor> materialSnapshot = this.materialSnapshot;
             final ChunkVolume decoded = chunk.decode();
             if (decoded == null) {
                 return;
