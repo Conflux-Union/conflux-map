@@ -71,6 +71,7 @@ import cn.net.rms.confluxmap.core.tile.TileService;
 import cn.net.rms.confluxmap.core.trail.PlayerTrail;
 import cn.net.rms.confluxmap.core.trail.PlayerTrailProjection;
 import cn.net.rms.confluxmap.core.update.UpdateCheckService;
+import cn.net.rms.confluxmap.core.util.Argb;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.core.util.TileViewport;
 import cn.net.rms.confluxmap.core.util.ChunkViewport;
@@ -380,6 +381,7 @@ final class MapAnnotationController {
                 );
             }
             annotationToolButtons.put(tool, button);
+            screen.trackExpansionButton(button);
             index++;
         }
         measureButton = addAnnotationIconButton(
@@ -389,13 +391,14 @@ final class MapAnnotationController {
             "confluxmap.map.measure.tooltip",
             ignored -> selectMeasureTool()
         );
+        screen.trackExpansionButton(measureButton);
         index++;
-        addColorButton(
+        screen.trackExpansionButton(addColorButton(
             controlX(left, stride, rows, index),
             controlY(top, stride, rows, index),
             selectedAnnotationColor(),
             true
-        );
+        ));
         index++;
         annotationPersistenceButton = screen.addWidget(screen.iconButton(
             controlX(left, stride, rows, index),
@@ -408,6 +411,7 @@ final class MapAnnotationController {
         screen.annotationTooltips.put(
             annotationPersistenceButton, "confluxmap.map.annotation.persistence.tooltip"
         );
+        screen.trackExpansionButton(annotationPersistenceButton);
         index++;
         annotationLabelButton = addAnnotationIconButton(
             controlX(left, stride, rows, index),
@@ -416,6 +420,7 @@ final class MapAnnotationController {
             "confluxmap.map.annotation.label.tooltip",
             ignored -> editSelectedAnnotationLabel()
         );
+        screen.trackExpansionButton(annotationLabelButton);
         index++;
         annotationUndoButton = addAnnotationIconButton(
             controlX(left, stride, rows, index),
@@ -424,6 +429,7 @@ final class MapAnnotationController {
             "confluxmap.map.annotation.undo.tooltip",
             ignored -> undoAnnotationChange()
         );
+        screen.trackExpansionButton(annotationUndoButton);
         index++;
         annotationRedoButton = addAnnotationIconButton(
             controlX(left, stride, rows, index),
@@ -432,6 +438,7 @@ final class MapAnnotationController {
             "confluxmap.map.annotation.redo.tooltip",
             ignored -> redoAnnotationChange()
         );
+        screen.trackExpansionButton(annotationRedoButton);
         index++;
         annotationClearButton = addAnnotationIconButton(
             controlX(left, stride, rows, index),
@@ -440,6 +447,7 @@ final class MapAnnotationController {
             "confluxmap.map.annotation.clear.tooltip",
             ignored -> clearCurrentDimensionAnnotations()
         );
+        screen.trackExpansionButton(annotationClearButton);
         if (annotationColorMenuOpen) {
             rebuildAnnotationColorMenu();
         }
@@ -494,7 +502,8 @@ final class MapAnnotationController {
         return button;
     }
 
-    private void addColorButton(
+    /** Creates one color-swatch button; the toolbar tracks it, the color menu does not. */
+    private ButtonWidget addColorButton(
         final int x,
         final int y,
         final int color,
@@ -515,7 +524,7 @@ final class MapAnnotationController {
         //$$         if (screen.uiTheme.useVanillaButtonStyle()) {
         //$$             extractDefaultSprite(context);
         //$$         }
-        //$$         renderAnnotationColorButton(GuiDraw.of(context), this, color, opensMenu);
+        //$$         renderAnnotationColorButton(GuiDraw.of(context), this, color, opensMenu, alpha);
         //$$     }
         //$$ });
         //#elseif MC>=12111
@@ -533,7 +542,7 @@ final class MapAnnotationController {
         //$$         if (screen.uiTheme.useVanillaButtonStyle()) {
         //$$             drawButton(context);
         //$$         }
-        //$$         renderAnnotationColorButton(GuiDraw.of(context), this, color, opensMenu);
+        //$$         renderAnnotationColorButton(GuiDraw.of(context), this, color, opensMenu, alpha);
         //$$     }
         //$$ });
         //#elseif MC>=12002
@@ -551,7 +560,7 @@ final class MapAnnotationController {
         //$$         if (screen.uiTheme.useVanillaButtonStyle()) {
         //$$             super.renderWidget(context, mouseX, mouseY, delta);
         //$$         }
-        //$$         renderAnnotationColorButton(GuiDraw.of(context), this, color, opensMenu);
+        //$$         renderAnnotationColorButton(GuiDraw.of(context), this, color, opensMenu, alpha);
         //$$     }
         //$$ });
         //#elseif MC>=12000
@@ -569,7 +578,7 @@ final class MapAnnotationController {
         //$$         if (screen.uiTheme.useVanillaButtonStyle()) {
         //$$             super.renderButton(context, mouseX, mouseY, delta);
         //$$         }
-        //$$         renderAnnotationColorButton(GuiDraw.of(context), this, color, opensMenu);
+        //$$         renderAnnotationColorButton(GuiDraw.of(context), this, color, opensMenu, alpha);
         //$$     }
         //$$ });
         //#else
@@ -587,18 +596,25 @@ final class MapAnnotationController {
                 if (screen.uiTheme.useVanillaButtonStyle()) {
                     super.renderButton(matrices, mouseX, mouseY, delta);
                 }
-                renderAnnotationColorButton(GuiDraw.of(matrices), this, color, opensMenu);
+                renderAnnotationColorButton(GuiDraw.of(matrices), this, color, opensMenu, alpha);
             }
         });
         //#endif
         screen.annotationTooltips.put(button, "confluxmap.map.annotation.color.tooltip");
+        return button;
     }
 
+    /**
+     * Draws one color swatch. The custom fills scale by the widget alpha so the flight
+     * fades the swatch like its vanilla-styled base; the shape layer folds a screen-level
+     * reveal on top, and alpha is 1 outside reveals so colors stay exact.
+     */
     private void renderAnnotationColorButton(
         final GuiDraw draw,
         final ButtonWidget button,
         final int color,
-        final boolean opensMenu
+        final boolean opensMenu,
+        final float alpha
     ) {
         final int x = Widgets.x(button);
         final int y = Widgets.y(button);
@@ -607,23 +623,24 @@ final class MapAnnotationController {
         final int swatchSize = button.getWidth() - inset * 2;
         GuiShapes.fillRect(
             draw.matrices(), x + inset, y + inset, swatchSize, swatchSize,
-            displayedColor | 0xFF000000
+            Argb.scaleAlpha(displayedColor | 0xFF000000, alpha)
         );
         if (opensMenu ? annotationColorMenuOpen : color == selectedAnnotationColor()) {
-            final int border = screen.uiTheme.useVanillaButtonStyle() ? 1 : 2;
+            final int border = Argb.scaleAlpha(0xFFFFFFFF, alpha);
+            final int borderWidth = screen.uiTheme.useVanillaButtonStyle() ? 1 : 2;
             GuiShapes.fillRect(
-                draw.matrices(), x + inset, y + inset, swatchSize, border, 0xFFFFFFFF
+                draw.matrices(), x + inset, y + inset, swatchSize, borderWidth, border
             );
             GuiShapes.fillRect(
-                draw.matrices(), x + inset, y + inset + swatchSize - border,
-                swatchSize, border, 0xFFFFFFFF
+                draw.matrices(), x + inset, y + inset + swatchSize - borderWidth,
+                swatchSize, borderWidth, border
             );
             GuiShapes.fillRect(
-                draw.matrices(), x + inset, y + inset, border, swatchSize, 0xFFFFFFFF
+                draw.matrices(), x + inset, y + inset, borderWidth, swatchSize, border
             );
             GuiShapes.fillRect(
-                draw.matrices(), x + inset + swatchSize - border, y + inset,
-                border, swatchSize, 0xFFFFFFFF
+                draw.matrices(), x + inset + swatchSize - borderWidth, y + inset,
+                borderWidth, swatchSize, border
             );
         }
     }

@@ -1,6 +1,5 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
-import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
 import cn.net.rms.confluxmap.core.config.ConfigIo;
@@ -82,7 +81,7 @@ final class TeleportCommandScreen extends ConfluxScreen {
 
     @Override
     public void onClose() {
-        MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
+        requestClose(parent);
     }
 
     @Override

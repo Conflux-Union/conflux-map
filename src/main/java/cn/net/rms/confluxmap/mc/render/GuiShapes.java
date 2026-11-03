@@ -50,6 +50,26 @@ public final class GuiShapes {
     //$$ private static final RenderPipeline GUI_REPLACE = createGuiReplacePipeline();
     //#endif
 
+    /**
+     * Alpha multiplier of the interface transitions' reveal frames, applied to every color
+     * emitted here so a fading screen scales its fills, tints, and textures alike. Set only
+     * through {@code GuiDraw.beginReveal}/{@code endReveal}, which pair it in a try/finally;
+     * 1 keeps every color on the unchanged fast path. Render thread only.
+     */
+    private static float revealAlpha = 1.0f;
+
+    public static void setRevealAlpha(final float alpha) {
+        revealAlpha = Math.max(0.0f, Math.min(1.0f, alpha));
+    }
+
+    public static float revealAlpha() {
+        return revealAlpha;
+    }
+
+    private static int reveal(final int argbColor) {
+        return revealAlpha == 1.0f ? argbColor : Argb.scaleAlpha(argbColor, revealAlpha);
+    }
+
     //#if MC<12104
     public static void clearGuiDepth() {
     //#if MC>=12103
@@ -87,6 +107,15 @@ public final class GuiShapes {
         final float u1,
         final float v1
     ) {
+        if (revealAlpha != 1.0f) {
+            // POSITION_TEXTURE carries no per-vertex color, so a reveal frame reroutes
+            // through the tinted twin instead of touching global shader color state.
+            drawTintedQuad(
+                matrices, x, y, width, height, u0, v0, u1, v1,
+                Argb.scaleAlpha(0xFFFFFFFF, revealAlpha)
+            );
+            return;
+        }
         final var model = matrices.peek().getModel();
         //#if MC>=12105
         //$$ final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, Mesh.tintedTextureFormat());
@@ -130,10 +159,11 @@ public final class GuiShapes {
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         //#endif
-        final float a = Argb.alpha(argbColor) / 255f;
-        final float r = Argb.red(argbColor) / 255f;
-        final float g = Argb.green(argbColor) / 255f;
-        final float b = Argb.blue(argbColor) / 255f;
+        final int revealedColor = reveal(argbColor);
+        final float a = Argb.alpha(revealedColor) / 255f;
+        final float r = Argb.red(revealedColor) / 255f;
+        final float g = Argb.green(revealedColor) / 255f;
+        final float b = Argb.blue(revealedColor) / 255f;
         final var model = matrices.peek().getModel();
         final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, Mesh.tintedTextureFormat());
         mesh.tintedVertex(model, x, y + height, 0, u0, v1, r, g, b, a);
@@ -179,7 +209,7 @@ public final class GuiShapes {
         final int copies = diameter * diameter - 1;
         // All shifted silhouettes can cover the same target pixel. Give each draw only the
         // per-layer alpha that converges on the requested fade after source-over accumulation.
-        final float a = Argb.alphaForRepeatedOverdraw(opacity, copies);
+        final float a = Argb.alphaForRepeatedOverdraw(opacity * revealAlpha, copies);
         final var model = matrices.peek().getModel();
         final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, Mesh.tintedTextureFormat());
         for (int offsetY = -radius; offsetY <= radius; offsetY++) {
@@ -222,10 +252,11 @@ public final class GuiShapes {
         //#endif
         final int segments = Math.max(32, (int) Math.ceil(outerRadius * Math.PI / 2));
         final float innerRadius = Math.max(0f, outerRadius - thickness);
-        final float a = Argb.alpha(argbColor) / 255f;
-        final float r = Argb.red(argbColor) / 255f;
-        final float g = Argb.green(argbColor) / 255f;
-        final float b = Argb.blue(argbColor) / 255f;
+        final int revealedColor = reveal(argbColor);
+        final float a = Argb.alpha(revealedColor) / 255f;
+        final float r = Argb.red(revealedColor) / 255f;
+        final float g = Argb.green(revealedColor) / 255f;
+        final float b = Argb.blue(revealedColor) / 255f;
         final var model = matrices.peek().getModel();
         final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, Mesh.tintedTextureFormat());
         for (int i = 0; i < segments; i++) {
@@ -311,9 +342,10 @@ public final class GuiShapes {
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         //#endif
-        final float a = Argb.alpha(argbColor) / 255f;
-        final float r = Argb.red(argbColor) / 255f;
-        final float g = Argb.green(argbColor) / 255f;
+        final int revealedColor = reveal(argbColor);
+        final float a = Argb.alpha(revealedColor) / 255f;
+        final float r = Argb.red(revealedColor) / 255f;
+        final float g = Argb.green(revealedColor) / 255f;
         final float b = Argb.blue(argbColor) / 255f;
         final var model = matrices.peek().getModel();
         final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, Mesh.tintedTextureFormat());
@@ -367,10 +399,11 @@ public final class GuiShapes {
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         //#endif
-        final float a = Argb.alpha(argbColor) / 255f;
-        final float r = Argb.red(argbColor) / 255f;
-        final float g = Argb.green(argbColor) / 255f;
-        final float b = Argb.blue(argbColor) / 255f;
+        final int revealedColor = reveal(argbColor);
+        final float a = Argb.alpha(revealedColor) / 255f;
+        final float r = Argb.red(revealedColor) / 255f;
+        final float g = Argb.green(revealedColor) / 255f;
+        final float b = Argb.blue(revealedColor) / 255f;
         final var model = matrices.peek().getModel();
         //#if MC>=12105
         //$$ final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, VertexFormats.POSITION_COLOR);
@@ -413,17 +446,18 @@ public final class GuiShapes {
         //#endif
         final var model = matrices.peek().getModel();
         final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, VertexFormats.POSITION_COLOR);
+        final int revealedColor = reveal(argbColor);
         final int dropShadow = Argb.scaleAlpha(
-            0xA0000000, Argb.alpha(argbColor) / 255f
+            0xA0000000, Argb.alpha(revealedColor) / 255f
         );
         appendDiamond(
             mesh, model, centerX + 0.5f, centerY + 0.5f,
             Math.max(0f, radius - 0.25f), dropShadow
         );
-        final int topLeft = Argb.blendOver(argbColor, 0x70FFFFFF);
-        final int topRight = Argb.blendOver(argbColor, 0x28FFFFFF);
-        final int bottomRight = Argb.scale(argbColor, 0.5f);
-        final int bottomLeft = Argb.scale(argbColor, 0.72f);
+        final int topLeft = Argb.blendOver(revealedColor, 0x70FFFFFF);
+        final int topRight = Argb.blendOver(revealedColor, 0x28FFFFFF);
+        final int bottomRight = Argb.scale(revealedColor, 0.5f);
+        final int bottomLeft = Argb.scale(revealedColor, 0.72f);
         appendTriangleQuad(
             mesh, model,
             centerX, centerY - radius,
@@ -517,6 +551,35 @@ public final class GuiShapes {
         final float centerY,
         final float radius
     ) {
+        if (revealAlpha != 1.0f) {
+            // The untinted fan has no per-vertex color to scale; reroute through the
+            // tinted twin so a reveal frame fades the composite.
+            drawTexturedDisk(
+                matrices, centerX, centerY, radius,
+                Argb.scaleAlpha(0xFFFFFFFF, revealAlpha)
+            );
+            return;
+        }
+        drawTexturedDisk(matrices, centerX, centerY, radius, 0xFFFFFFFF);
+    }
+
+    /**
+     * Tinted twin of the disk fan: an ARGB tint multiplied over the sampled canvas. The
+     * minimap HUD passes its fade alpha; a reveal frame scales the tint here.
+     */
+    public static void drawTexturedDisk(
+        final MatrixStack matrices,
+        final float centerX,
+        final float centerY,
+        final float radius,
+        final int argbTint
+    ) {
+        final int revealedTint = reveal(argbTint);
+        final boolean opaque = revealedTint == 0xFFFFFFFF;
+        final float a = Argb.alpha(revealedTint) / 255f;
+        final float r = Argb.red(revealedTint) / 255f;
+        final float g = Argb.green(revealedTint) / 255f;
+        final float b = Argb.blue(revealedTint) / 255f;
         final var model = matrices.peek().getModel();
         //#if MC>=12105
         //$$ final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, Mesh.tintedTextureFormat());
@@ -530,31 +593,63 @@ public final class GuiShapes {
         //$$     final float sin1 = (float) Math.sin(angle1);
         //$$     // Wound backwards through the segment so the fan matches the front-facing
         //$$     // order of fillRect; the legacy path called disableCull here instead.
-        //$$     mesh.tintedVertex(model, centerX, centerY, 0, 0.5f, 0.5f, 1f, 1f, 1f, 1f);
-        //$$     mesh.tintedVertex(
-        //$$         model, centerX + cos1 * radius, centerY + sin1 * radius, 0,
-        //$$         0.5f + 0.5f * cos1, 0.5f - 0.5f * sin1, 1f, 1f, 1f, 1f
-        //$$     );
-        //$$     mesh.tintedVertex(
-        //$$         model, centerX + cos0 * radius, centerY + sin0 * radius, 0,
-        //$$         0.5f + 0.5f * cos0, 0.5f - 0.5f * sin0, 1f, 1f, 1f, 1f
-        //$$     );
-        //$$     mesh.tintedVertex(model, centerX, centerY, 0, 0.5f, 0.5f, 1f, 1f, 1f, 1f);
+        //$$     if (opaque) {
+        //$$         mesh.tintedVertex(model, centerX, centerY, 0, 0.5f, 0.5f, 1f, 1f, 1f, 1f);
+        //$$         mesh.tintedVertex(
+        //$$             model, centerX + cos1 * radius, centerY + sin1 * radius, 0,
+        //$$             0.5f + 0.5f * cos1, 0.5f - 0.5f * sin1, 1f, 1f, 1f, 1f
+        //$$         );
+        //$$         mesh.tintedVertex(
+        //$$             model, centerX + cos0 * radius, centerY + sin0 * radius, 0,
+        //$$             0.5f + 0.5f * cos0, 0.5f - 0.5f * sin0, 1f, 1f, 1f, 1f
+        //$$         );
+        //$$         mesh.tintedVertex(model, centerX, centerY, 0, 0.5f, 0.5f, 1f, 1f, 1f, 1f);
+        //$$     } else {
+        //$$         mesh.tintedVertex(model, centerX, centerY, 0, 0.5f, 0.5f, r, g, b, a);
+        //$$         mesh.tintedVertex(
+        //$$             model, centerX + cos1 * radius, centerY + sin1 * radius, 0,
+        //$$             0.5f + 0.5f * cos1, 0.5f - 0.5f * sin1, r, g, b, a
+        //$$         );
+        //$$         mesh.tintedVertex(
+        //$$             model, centerX + cos0 * radius, centerY + sin0 * radius, 0,
+        //$$             0.5f + 0.5f * cos0, 0.5f - 0.5f * sin0, r, g, b, a
+        //$$         );
+        //$$         mesh.tintedVertex(model, centerX, centerY, 0, 0.5f, 0.5f, r, g, b, a);
+        //$$     }
         //$$ }
         //$$ mesh.drawGui(RenderPipelines.GUI_TEXTURED);
         //#else
         RenderSystem.disableCull();
-        final Mesh mesh = Mesh.begin(Mesh.Mode.TRIANGLE_FAN, VertexFormats.POSITION_TEXTURE);
-        mesh.vertex(model, centerX, centerY, 0).texture(0.5f, 0.5f).next();
-        final int segments = 48;
-        for (int i = 0; i <= segments; i++) {
-            final double angle = 2.0 * Math.PI * i / segments;
-            final float cos = (float) Math.cos(angle);
-            final float sin = (float) Math.sin(angle);
-            mesh.vertex(model, centerX + cos * radius, centerY + sin * radius, 0)
-                .texture(0.5f + 0.5f * cos, 0.5f - 0.5f * sin).next();
+        if (opaque) {
+            final Mesh mesh = Mesh.begin(Mesh.Mode.TRIANGLE_FAN, VertexFormats.POSITION_TEXTURE);
+            mesh.vertex(model, centerX, centerY, 0).texture(0.5f, 0.5f).next();
+            final int segments = 48;
+            for (int i = 0; i <= segments; i++) {
+                final double angle = 2.0 * Math.PI * i / segments;
+                final float cos = (float) Math.cos(angle);
+                final float sin = (float) Math.sin(angle);
+                mesh.vertex(model, centerX + cos * radius, centerY + sin * radius, 0)
+                    .texture(0.5f + 0.5f * cos, 0.5f - 0.5f * sin).next();
+            }
+            mesh.draw();
+        } else {
+            useTintedTextureShader();
+            RenderSystem.enableBlend();
+            RenderSystem.defaultBlendFunc();
+            final Mesh mesh = Mesh.begin(Mesh.Mode.TRIANGLE_FAN, Mesh.tintedTextureFormat());
+            mesh.tintedVertex(model, centerX, centerY, 0, 0.5f, 0.5f, r, g, b, a);
+            final int segments = 48;
+            for (int i = 0; i <= segments; i++) {
+                final double angle = 2.0 * Math.PI * i / segments;
+                final float cos = (float) Math.cos(angle);
+                final float sin = (float) Math.sin(angle);
+                mesh.tintedVertex(
+                    model, centerX + cos * radius, centerY + sin * radius, 0,
+                    0.5f + 0.5f * cos, 0.5f - 0.5f * sin, r, g, b, a
+                );
+            }
+            mesh.draw();
         }
-        mesh.draw();
         RenderSystem.enableCull();
         //#endif
     }
@@ -573,10 +668,11 @@ public final class GuiShapes {
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         //#endif
-        final float a = Argb.alpha(argbColor) / 255f;
-        final float r = Argb.red(argbColor) / 255f;
-        final float g = Argb.green(argbColor) / 255f;
-        final float b = Argb.blue(argbColor) / 255f;
+        final int revealedColor = reveal(argbColor);
+        final float a = Argb.alpha(revealedColor) / 255f;
+        final float r = Argb.red(revealedColor) / 255f;
+        final float g = Argb.green(revealedColor) / 255f;
+        final float b = Argb.blue(revealedColor) / 255f;
         final var model = matrices.peek().getModel();
         //#if MC>=12105
         //$$ final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, VertexFormats.POSITION_COLOR);
@@ -656,7 +752,10 @@ public final class GuiShapes {
         final var model = matrices.peek().getModel();
         final Mesh mesh = Mesh.beginGui(Mesh.Mode.QUADS, VertexFormats.POSITION_COLOR);
         for (final ColoredRect rect : rects) {
-            appendRect(mesh, model, rect.x(), rect.y(), rect.width(), rect.height(), rect.argbColor());
+            appendRect(
+                mesh, model, rect.x(), rect.y(), rect.width(), rect.height(),
+                reveal(rect.argbColor())
+            );
         }
         //#if MC>=12105
         //$$ mesh.drawGui(
@@ -825,7 +924,7 @@ public final class GuiShapes {
         final Mesh mesh = gui
             ? Mesh.beginGui(Mesh.Mode.QUADS, VertexFormats.POSITION_COLOR)
             : Mesh.begin(Mesh.Mode.QUADS, VertexFormats.POSITION_COLOR);
-        appendRect(mesh, model, x, y, width, height, argbColor);
+        appendRect(mesh, model, x, y, width, height, reveal(argbColor));
         //#if MC>=12105
         //$$ if (gui) {
         //$$     mesh.drawGui(RenderPipelines.GUI);

@@ -84,7 +84,8 @@ final class MinimapRadarPainter {
         final float mapAngle,
         final PlayerView player,
         final float tickDelta,
-        final float blocksPerPixel
+        final float blocksPerPixel,
+        final float fadeAlpha
     ) {
         if (!config.radarEnabled || client.world == null) {
             return;
@@ -174,7 +175,7 @@ final class MinimapRadarPainter {
             ));
         }
         RadarMarkerRenderer.drawAll(
-            draw, client, config, iconManager, markers, presentation
+            draw, client, config, iconManager, markers, presentation, marker -> true, fadeAlpha
         );
     }
 }

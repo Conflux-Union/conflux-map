@@ -9,6 +9,7 @@ import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.color.MapColorStyle;
 import cn.net.rms.confluxmap.core.portal.PortalKind;
 import cn.net.rms.confluxmap.core.predict.PredictionViewMode;
+import cn.net.rms.confluxmap.mc.render.GuiShapes;
 import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -24,7 +25,7 @@ import java.util.function.IntFunction;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.ClickableWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
@@ -40,6 +41,68 @@ import net.minecraft.text.Text;
 final class ConfigRows {
     private static final int SECTION_TEXT_COLOR = 0xFFA0A0A0;
     private static final int SECTION_LINE_COLOR = 0xFF3A3A3A;
+    private static final int ICON_TEXT_COLOR = 0xFFE0E0E0;
+
+    /**
+     * One built row: every widget that fades together during a tab switch or the open
+     * stagger, in build order. The slot carries the row's current fade alpha so the
+     * drawn labels beside it read the exact value the widgets render with — button rows
+     * keep {@link RowButton#rowAlpha()} in lockstep, rows without a button have the
+     * screen drive their widgets' alpha and this field together.
+     */
+    static final class RowSlot {
+        private final int y;
+        private final RowButton button;
+        private final List<ClickableWidget> widgets;
+        private float fade = 1.0f;
+
+        RowSlot(final int y, final RowButton button, final List<ClickableWidget> widgets) {
+            this.y = y;
+            this.button = button;
+            this.widgets = widgets;
+        }
+
+        int y() {
+            return y;
+        }
+
+        RowButton button() {
+            return button;
+        }
+
+        List<ClickableWidget> widgets() {
+            return widgets;
+        }
+
+        float fade() {
+            return fade;
+        }
+
+        void setFade(final float fade) {
+            this.fade = fade;
+        }
+    }
+
+    /** One drawn label captured for the retire act, plus the row whose fade drives its alpha. */
+    record RetiringLabel(int y, String key, RowSlot followRow, boolean iconTexture) {
+    }
+
+    /** Immutable copy of a tab's rows and labels, alive across the landing rebuild. */
+    record RetireSnapshot(List<RowSlot> rows, List<RetiringLabel> labels) {
+    }
+
+    /** Resolves the fade alpha a drawn label inherits from a row. */
+    interface RowAlpha {
+        float alphaOf(RowSlot row);
+
+        /**
+         * The no-transition source: every label follows the screen's own reveal alpha.
+         * On a settled screen that is 1.0 and labels keep their exact color; during a
+         * close fade or a replayed open the labels dim with the screen like everything
+         * else instead of holding full brightness over the fading rows.
+         */
+        RowAlpha FOLLOW_SCREEN = row -> GuiShapes.revealAlpha();
+    }
 
     private final ConfigScreen screen;
     private final ConfluxConfig config;
@@ -50,6 +113,8 @@ final class ConfigRows {
     private final List<TextFieldWidget> textFields = new ArrayList<>();
     private final List<IconTextureLabel> iconTextureLabels = new ArrayList<>();
     private final List<SectionLabel> sectionLabels = new ArrayList<>();
+    /** Rows in build order; the open stagger and the tab-switch acts fade each slot as one unit. */
+    private final List<RowSlot> rowSlots = new ArrayList<>();
 
     /** Static label drawn beside a portal-icon text-field row; the row widget is the field itself. */
     private record IconTextureLabel(int y, String key) {
@@ -72,6 +137,51 @@ final class ConfigRows {
         textFields.clear();
         iconTextureLabels.clear();
         sectionLabels.clear();
+        rowSlots.clear();
+    }
+
+    /** The rebuilt rows, top to bottom; the open stagger and the tab-switch acts fade each slot as one unit. */
+    List<RowSlot> rowSlots() {
+        return rowSlots;
+    }
+
+    /**
+     * Freezes the current rows and their drawn labels for the retire act. The snapshot's
+     * widget lists are copied so the landing rebuild's {@code clearInputs()} cannot drop
+     * what is still fading, and each label keeps the row whose fade it follows: the first
+     * row under a section header, the same-row field for an icon-texture label.
+     */
+    RetireSnapshot takeRetireSnapshot() {
+        final List<RowSlot> frozenRows = new ArrayList<>(rowSlots.size());
+        for (final RowSlot slot : rowSlots) {
+            frozenRows.add(new RowSlot(slot.y(), slot.button(), List.copyOf(slot.widgets())));
+        }
+        final List<RetiringLabel> frozenLabels = new ArrayList<>();
+        for (final SectionLabel section : sectionLabels) {
+            frozenLabels.add(new RetiringLabel(section.y(), section.key(), firstRowBelow(section.y()), false));
+        }
+        for (final IconTextureLabel icon : iconTextureLabels) {
+            frozenLabels.add(new RetiringLabel(icon.y(), icon.key(), rowAt(icon.y()), true));
+        }
+        return new RetireSnapshot(List.copyOf(frozenRows), List.copyOf(frozenLabels));
+    }
+
+    private RowSlot firstRowBelow(final int y) {
+        for (final RowSlot slot : rowSlots) {
+            if (slot.y() > y) {
+                return slot;
+            }
+        }
+        return null;
+    }
+
+    private RowSlot rowAt(final int y) {
+        for (final RowSlot slot : rowSlots) {
+            if (slot.y() == y) {
+                return slot;
+            }
+        }
+        return null;
     }
 
     void tickInputs() {
@@ -86,28 +196,112 @@ final class ConfigRows {
         }
     }
 
-    void drawIconTextureLabels(final GuiDraw draw) {
+    /**
+     * Draws the icon-texture labels beside their fields. Each label fades with the row slot
+     * at its own y, so during a tab-switch act or the open stagger it follows its field;
+     * with no fade running the source is {@link RowAlpha#FOLLOW_SCREEN} and the exact color
+     * survives.
+     */
+    void drawIconTextureLabels(final GuiDraw draw, final RowAlpha alpha) {
         for (final IconTextureLabel rowLabel : iconTextureLabels) {
-            final Text label = Texts.translatable(rowLabel.key());
-            draw.drawTextWithShadow(
-                screen.textRenderer(), label, screen.rowX(),
-                rowLabel.y() + (ConfigScreen.ROW_HEIGHT - 2 - screen.textRenderer().fontHeight) / 2f,
-                0xFFE0E0E0
+            final RowSlot field = rowAt(rowLabel.y());
+            float fade = field != null ? alpha.alphaOf(field) : GuiShapes.revealAlpha();
+            if (field != null && fieldGatedOff(field)) {
+                // The box is visibility-gated (a TextFieldWidget cannot fade), so the label
+                // must not outlive it: drop the label the moment its field drops.
+                fade = 0f;
+            }
+            drawIconTextureLabel(draw, rowLabel.y(), rowLabel.key(), fade);
+        }
+    }
+
+    /** True when every fading widget of the field row is visibility-gated off. */
+    private static boolean fieldGatedOff(final RowSlot slot) {
+        for (final ClickableWidget widget : slot.widgets()) {
+            if (widget instanceof TextFieldWidget field && field.visible) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Draws the section headers with their divider lines. Each fades with the first row
+     * under it, so during a tab-switch act or the open stagger the header keeps its group;
+     * with no act running the source is {@link RowAlpha#FOLLOW_SCREEN} and the exact colors
+     * survive.
+     */
+    void drawSectionLabels(final GuiDraw draw, final RowAlpha alpha) {
+        for (final SectionLabel section : sectionLabels) {
+            // A header at the viewport edge can have no visible row under it; it then
+            // has no row fade to follow and dims with the screen like every other label.
+            final RowSlot follow = firstRowBelow(section.y());
+            drawSectionLabel(
+                draw, section.y(), section.key(),
+                follow != null ? alpha.alphaOf(follow) : GuiShapes.revealAlpha()
             );
         }
     }
 
-    void drawSectionLabels(final GuiDraw draw) {
-        for (final SectionLabel section : sectionLabels) {
-            final Text label = Texts.translatable(section.key());
-            final int textY = section.y() + 1;
+    /**
+     * Draws a retire snapshot's labels while their rows fade out: section headers with
+     * their divider lines, and the portal icon-texture labels, each fading with its
+     * followed row. Used instead of the live lists during act 1 — a rebuild clears
+     * those mid-act, and before one they hold exactly the labels that are retiring.
+     */
+    void drawRetiringLabels(final GuiDraw draw, final RetireSnapshot snapshot, final RowAlpha alpha) {
+        for (final RetiringLabel label : snapshot.labels()) {
+            float fade = label.followRow() != null
+                ? alpha.alphaOf(label.followRow())
+                : GuiShapes.revealAlpha();
+            if (label.iconTexture() && label.followRow() != null && fieldGatedOff(label.followRow())) {
+                fade = 0f;
+            }
+            if (label.iconTexture()) {
+                drawIconTextureLabel(draw, label.y(), label.key(), fade);
+            } else {
+                drawSectionLabel(draw, label.y(), label.key(), fade);
+            }
+        }
+    }
+
+    /**
+     * One section header's label and divider line, faded through a row-scoped reveal. The
+     * scope is absolute like {@code RowButton}'s: pre-multiplying the color would fade the
+     * label twice during the open stagger, where the frame-wide reveal is already running.
+     */
+    private void drawSectionLabel(final GuiDraw draw, final int y, final String key, final float fade) {
+        final float ambient = GuiShapes.revealAlpha();
+        GuiDraw.beginReveal(fade);
+        try {
+            final Text label = Texts.translatable(key);
+            final int textY = y + 1;
             draw.drawTextWithShadow(
                 screen.textRenderer(), label, screen.rowX(), textY, SECTION_TEXT_COLOR
             );
             final int lineY = textY + screen.textRenderer().fontHeight + 2;
             draw.fill(
-                screen.rowX(), lineY, screen.rowX() + screen.rowWidth, lineY + 1, SECTION_LINE_COLOR
+                screen.rowX(), lineY, screen.rowX() + screen.rowWidth, lineY + 1,
+                SECTION_LINE_COLOR
             );
+        } finally {
+            GuiDraw.beginReveal(ambient);
+        }
+    }
+
+    /** One icon-texture label beside its field row, faded through the same row-scoped reveal. */
+    private void drawIconTextureLabel(final GuiDraw draw, final int y, final String key, final float fade) {
+        final float ambient = GuiShapes.revealAlpha();
+        GuiDraw.beginReveal(fade);
+        try {
+            final Text label = Texts.translatable(key);
+            draw.drawTextWithShadow(
+                screen.textRenderer(), label, screen.rowX(),
+                y + (ConfigScreen.ROW_HEIGHT - 2 - screen.textRenderer().fontHeight) / 2f,
+                ICON_TEXT_COLOR
+            );
+        } finally {
+            GuiDraw.beginReveal(ambient);
         }
     }
 
@@ -542,6 +736,17 @@ final class ConfigRows {
                 );
                 break;
             case GENERAL:
+                y = addSectionRow(y, "confluxmap.screen.config.section.interface");
+                y = addToggleRow(
+                    y, "confluxmap.config.interface.animations",
+                    () -> config.uiTransitionsEnabled, v -> config.uiTransitionsEnabled = v
+                );
+                y = addEnumRow(
+                    y, "confluxmap.config.interface.animation_speed",
+                    ConfluxConfig.UiTransitionSpeed.values(),
+                    () -> config.uiTransitionSpeed, v -> config.uiTransitionSpeed = v,
+                    ConfigValueLabels::uiTransitionSpeedKey
+                );
                 y = addIntSliderRow(
                     y, "confluxmap.config.performance.snapshot_budget", 1, 64,
                     () -> config.snapshotBudgetPerTick, v -> config.snapshotBudgetPerTick = v, ConfigValueLabels::plainText
@@ -624,7 +829,7 @@ final class ConfigRows {
         final String disabledTooltipKey
     ) {
         if (screen.rowVisible(y)) {
-            final ButtonWidget button = screen.addRowWidget(Widgets.button(
+            final RowButton button = screen.addRowWidget(new RowButton(
                 screen.rowX(), y, screen.rowWidth, ConfigScreen.ROW_HEIGHT - 2,
                 ConfigValueLabels.boolLabel(labelKey, getter.getAsBoolean()),
                 b -> {
@@ -636,6 +841,7 @@ final class ConfigRows {
             ));
             button.active = active;
             screen.setDisabledTooltip(button, disabledTooltipKey);
+            rowSlots.add(new RowSlot(y, button, List.of(button)));
         }
         return y + ConfigScreen.ROW_HEIGHT;
     }
@@ -688,7 +894,7 @@ final class ConfigRows {
         final String hoverTooltipKey
     ) {
         if (screen.rowVisible(y)) {
-            final ButtonWidget button = screen.addRowWidget(Widgets.button(
+            final RowButton button = screen.addRowWidget(new RowButton(
                 screen.rowX(), y, screen.rowWidth, ConfigScreen.ROW_HEIGHT - 2,
                 ConfigValueLabels.enumLabel(labelKey, getter.get(), valueKeyFn),
                 b -> {
@@ -701,6 +907,7 @@ final class ConfigRows {
             button.active = active;
             screen.setDisabledTooltip(button, disabledTooltipKey);
             screen.setHoverTooltip(button, hoverTooltipKey);
+            rowSlots.add(new RowSlot(y, button, List.of(button)));
         }
         return y + ConfigScreen.ROW_HEIGHT;
     }
@@ -738,6 +945,7 @@ final class ConfigRows {
             screen.setHoverTooltip(field, "confluxmap.config.portals.icon_texture.tooltip");
             textFields.add(field);
             iconTextureLabels.add(new IconTextureLabel(y, labelKey));
+            rowSlots.add(new RowSlot(y, null, List.of(field)));
         }
         return y + ConfigScreen.ROW_HEIGHT;
     }
@@ -760,7 +968,7 @@ final class ConfigRows {
 
     private int addZoomRow(final int y) {
         if (screen.rowVisible(y)) {
-            screen.addRowWidget(Widgets.button(
+            final RowButton button = screen.addRowWidget(new RowButton(
                 screen.rowX(), y, screen.rowWidth, ConfigScreen.ROW_HEIGHT - 2,
                 ConfigValueLabels.zoomLabel(config.minimapZoomIndex),
                 b -> {
@@ -769,6 +977,7 @@ final class ConfigRows {
                     b.setMessage(ConfigValueLabels.zoomLabel(config.minimapZoomIndex));
                 }
             ));
+            rowSlots.add(new RowSlot(y, button, List.of(button)));
         }
         return y + ConfigScreen.ROW_HEIGHT;
     }
@@ -785,12 +994,13 @@ final class ConfigRows {
         final String disabledTooltipKey
     ) {
         if (screen.rowVisible(y)) {
-            final ButtonWidget button = screen.addRowWidget(Widgets.button(
+            final RowButton button = screen.addRowWidget(new RowButton(
                 screen.rowX(), y, screen.rowWidth, ConfigScreen.ROW_HEIGHT - 2,
                 Texts.translatable(labelKey), ignored -> action.run()
             ));
             button.active = active;
             screen.setDisabledTooltip(button, disabledTooltipKey);
+            rowSlots.add(new RowSlot(y, button, List.of(button)));
         }
         return y + ConfigScreen.ROW_HEIGHT;
     }
@@ -883,6 +1093,7 @@ final class ConfigRows {
             screen.setDisabledTooltip(sliderInput.input(), disabledTooltipKey);
             screen.setHoverTooltip(sliderInput.slider(), hoverTooltipKey);
             screen.setHoverTooltip(sliderInput.input(), hoverTooltipKey);
+            rowSlots.add(new RowSlot(y, null, List.of(sliderInput.slider(), sliderInput.input())));
         }
         return y + ConfigScreen.ROW_HEIGHT;
     }
@@ -922,6 +1133,7 @@ final class ConfigRows {
             screen.addRowWidget(sliderInput.input());
             screen.setDisabledTooltip(sliderInput.slider(), disabledTooltipKey);
             screen.setDisabledTooltip(sliderInput.input(), disabledTooltipKey);
+            rowSlots.add(new RowSlot(y, null, List.of(sliderInput.slider(), sliderInput.input())));
         }
         return y + ConfigScreen.ROW_HEIGHT;
     }

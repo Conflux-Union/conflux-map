@@ -100,6 +100,9 @@ import cn.net.rms.confluxmap.mc.ui.UiTextureRegion;
 import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
 import cn.net.rms.confluxmap.mc.ui.DisplayModeIconCatalog;
 import cn.net.rms.confluxmap.mc.ui.PlayerMarkerRenderer;
+import cn.net.rms.confluxmap.mc.ui.anim.PopupReveal;
+import cn.net.rms.confluxmap.mc.ui.anim.PopupRevealFrame;
+import cn.net.rms.confluxmap.mc.ui.anim.UiMotion;
 import cn.net.rms.confluxmap.mc.ui.PlayerTrailRenderer;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.world.WaypointHighlightState;
@@ -168,6 +171,12 @@ final class MapLocationMenuController {
     private List<FullscreenMapLocationMenu.ButtonSpec> locationMenuSpecs = List.of();
     private FullscreenMapLocationMenu.Action pendingLocationAction;
     private boolean locationMenuDeletePending;
+    /** Reveal of the menu panel; lives here so widget-list rebuilds cannot drop it. */
+    private final PopupReveal reveal = new PopupReveal();
+    /** Panel geometry kept across a dismiss so the close fade keeps drawing it. */
+    private FullscreenMapLocationMenu.Bounds fadingMenuBounds;
+    /** The menu's current buttons, so the reveal frame fades them with the panel. */
+    private final List<ButtonWidget> menuButtons = new ArrayList<>();
     private ButtonWidget setWaypointLocationButton;
     private ButtonWidget editWaypointLocationButton;
     private ButtonWidget shareLocationButton;
@@ -208,6 +217,9 @@ final class MapLocationMenuController {
         locationMenuPlayerId = null;
         pendingLocationAction = null;
         locationMenuDeletePending = false;
+        // A reset invalidates the panel's whole context, so it snaps instead of fading.
+        reveal.finishNow();
+        fadingMenuBounds = null;
     }
 
     void clearButtons() {
@@ -216,6 +228,7 @@ final class MapLocationMenuController {
         shareLocationButton = null;
         teleportLocationButton = null;
         teleportLocationUnavailableKey = null;
+        menuButtons.clear();
         locationActionTooltips.clear();
     }
 
@@ -272,6 +285,7 @@ final class MapLocationMenuController {
                 ignored -> pendingLocationAction = spec.action()
             ));
             locationActionTooltips.put(button, spec.tooltipKey());
+            menuButtons.add(button);
             button.active = spec.active();
             switch (spec.action()) {
                 case SET_WAYPOINT -> setWaypointLocationButton = button;
@@ -410,6 +424,7 @@ final class MapLocationMenuController {
         locationMenuPlayerId = capture.playerId();
         pendingLocationAction = null;
         locationMenuDeletePending = false;
+        reveal.setOpen(true);
         screen.mapPointerPress = false;
         screen.rebuildWaypointControls();
     }
@@ -684,6 +699,7 @@ final class MapLocationMenuController {
     }
 
     void dismissLocationMenu() {
+        fadingMenuBounds = locationMenuBounds;
         locationMenuBounds = null;
         locationMenuTarget = null;
         locationMenuWaypoint = null;
@@ -691,6 +707,7 @@ final class MapLocationMenuController {
         locationMenuSpecs = List.of();
         pendingLocationAction = null;
         locationMenuDeletePending = false;
+        reveal.setOpen(false);
         screen.rebuildWaypointControls();
     }
 
@@ -758,10 +775,24 @@ final class MapLocationMenuController {
             .ifPresent(screen.sharedWaypoints::delete);
     }
     void drawLocationMenu(final GuiDraw draw) {
-        if (locationMenuBounds == null) {
+        reveal.tick(
+            screen.config.uiTransitionsEnabled,
+            UiMotion.durationSeconds(screen.config.uiTransitionSpeed)
+        );
+        final FullscreenMapLocationMenu.Bounds bounds = locationMenuBounds != null
+            ? locationMenuBounds
+            : reveal.fadeVisible(screen.config.uiTransitionsEnabled) ? fadingMenuBounds : null;
+        if (bounds == null) {
             return;
         }
-        FullscreenMapLocationMenu.drawPanel(draw, locationMenuBounds);
+        // The menu opens through user input, long after the screen's own open reveal has
+        // settled, so installing this alpha never overlaps the one ConfluxScreen holds.
+        try (PopupRevealFrame frame = PopupRevealFrame.fadeAndSlide(
+            draw, reveal.fadeVisible(screen.config.uiTransitionsEnabled), reveal.eased(),
+            0f, PopupRevealFrame.ANCHOR_SLIDE_PIXELS, menuButtons
+        )) {
+            FullscreenMapLocationMenu.drawPanel(draw, bounds);
+        }
     }
     Text hoveredLocationActionTooltip() {
         for (final Map.Entry<ButtonWidget, String> entry : locationActionTooltips.entrySet()) {

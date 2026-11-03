@@ -72,6 +72,8 @@ import cn.net.rms.confluxmap.core.trail.PlayerTrail;
 import cn.net.rms.confluxmap.core.trail.PlayerTrailProjection;
 import cn.net.rms.confluxmap.core.update.UpdateCheckService;
 import cn.net.rms.confluxmap.core.util.Argb;
+import cn.net.rms.confluxmap.core.util.Easing;
+import cn.net.rms.confluxmap.core.util.Stagger;
 import cn.net.rms.confluxmap.core.util.TileMath;
 import cn.net.rms.confluxmap.core.util.TileViewport;
 import cn.net.rms.confluxmap.core.util.ChunkViewport;
@@ -104,6 +106,7 @@ import cn.net.rms.confluxmap.mc.ui.AnnotationRenderer;
 import cn.net.rms.confluxmap.mc.ui.DisplayModeIconCatalog;
 import cn.net.rms.confluxmap.mc.ui.PlayerMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.PlayerTrailRenderer;
+import cn.net.rms.confluxmap.mc.ui.anim.UiMotion;
 import cn.net.rms.confluxmap.mc.ui.WaypointMarkerRenderer;
 import cn.net.rms.confluxmap.mc.ui.world.WaypointHighlightState;
 import cn.net.rms.confluxmap.mc.ui.PortalMarkerRenderer;
@@ -176,6 +179,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     static final int CONTROL_SIZE = 22;
     private static final int CONTROL_ICON_SIZE = 16;
     static final int CONTROL_GAP = 3;
+    /**
+     * Share of the tool-group flight timeline that each button waits behind the previous
+     * one; the slices compress per-button flights by the same factor, so the group still
+     * finishes together.
+     */
+    private static final float TOOL_GROUP_STAGGER_FRACTION = 0.25f;
     private static final Identifier VIEW_GROUP_ICON = Ids.of(
         "confluxmap", "textures/gui/group_view.png"
     );
@@ -330,7 +339,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     private MapIconButton displayModeButton;
     private MapIconButton mapExportButton;
     private MapIconButton mapImportButton;
-    ButtonWidget clientWorldButton;
+    MapIconButton clientWorldButton;
     private ButtonWidget worldSelectorButton;
     private ButtonWidget dimensionSelectorButton;
     private int waypointControlsBottom;
@@ -339,6 +348,10 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     AnnotationToolbarBounds annotationToolbarBounds;
     AnnotationToolbarBounds annotationColorMenuBounds;
     private FullscreenDisplayMode controlsDisplayMode;
+    /** Buttons of the currently expanded tool group with their settle slots, where each rebuild creates them. */
+    private final List<FullscreenMapToolPanel.FlyingButton> expansionButtons = new ArrayList<>();
+    /** True once the expansion flight has displaced buttons and the settle restore still pends. */
+    private boolean expansionFlightApplied;
     /** Exclusive with every {@link AnnotationTool}: while on, left-click places measure points instead of drawing. */
 
     public FullscreenMapScreen(final KeyBinding openMapKey) {
@@ -405,6 +418,36 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         scale = initialView.scale();
     }
 
+    @Override
+    protected float revealStartScale() {
+        // The fullscreen map fills the window, so it needs a deeper dip than dialogs
+        // for the settle-in to read at all.
+        return 0.96f;
+    }
+
+    //#if MC>=260100
+    //$$ @Override
+    //$$ protected void renderVanillaBackground(
+    //$$     final GuiGraphicsExtractor context,
+    //$$     final int mouseX,
+    //$$     final int mouseY,
+    //$$     final float tickDelta
+    //$$ ) {
+    //$$     // The map fills the window with its own reveal-faded background; the vanilla dim
+    //$$     // would sit under it and resurface once the fade starts.
+    //$$ }
+    //#elseif MC>=12002
+    //$$ @Override
+    //$$ protected void renderVanillaBackground(
+    //$$     final DrawContext context,
+    //$$     final int mouseX,
+    //$$     final int mouseY,
+    //$$     final float tickDelta
+    //$$ ) {
+    //$$     // Same as above; this era extracts the dim before the render pass.
+    //$$ }
+    //#endif
+
     static FullscreenMapScreen focusedOnWaypoint(
         final DimensionId dimension,
         final double x,
@@ -444,6 +487,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     void rebuildWaypointControls() {
         clearChildren();
+        expansionButtons.clear();
         sharedAvailability = viewSharedAvailability();
         localVisibilityButton = null;
         sharedVisibilityButton = null;
@@ -517,6 +561,14 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         if (locationMenu.isOpen()) {
             locationMenu.addLocationMenuButtons();
         }
+        final FullscreenMapToolPanel.RetiringFlight retiring = toolPanel.retiring();
+        if (retiring != null) {
+            // The rebuild dropped the fly-back's widgets; putting them back keeps the
+            // collapse rendering until it lands, and applyToolGroupFlight dismisses them then.
+            for (final FullscreenMapToolPanel.FlyingButton flying : retiring.buttons()) {
+                addWidget(flying.button());
+            }
+        }
     }
 
 
@@ -537,6 +589,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     private void toggleToolGroup(final FullscreenMapToolPanel.Group group) {
         final boolean leavingDrawing = toolPanel.isOpen(FullscreenMapToolPanel.Group.DRAWING);
+        retireExpandedGroupButtons();
         toolPanel.toggle(group);
         annotations.closeColorMenu();
         if (leavingDrawing && !toolPanel.isOpen(FullscreenMapToolPanel.Group.DRAWING)) {
@@ -544,6 +597,189 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             return;
         }
         rebuildWaypointControls();
+    }
+
+    /**
+     * Hands the expanded group's buttons to a fly-back instead of letting the rebuild
+     * remove them outright. The capture only preps state: the rebuild that follows drops
+     * the widgets, re-adds the retiring ones, and per-frame flight lives in
+     * {@link #applyToolGroupFlight}. With transitions off every collapse stays instant.
+     */
+    private void retireExpandedGroupButtons() {
+        if (!config.uiTransitionsEnabled || expansionButtons.isEmpty()) {
+            return;
+        }
+        final MapIconButton originButton = expandedGroupButton();
+        if (originButton == null) {
+            return;
+        }
+        toolPanel.beginRetire(
+            List.copyOf(expansionButtons),
+            Widgets.x(originButton),
+            Widgets.y(originButton),
+            toolPanel.revealProgress(),
+            UiMotion.durationSeconds(config.uiTransitionSpeed)
+        );
+    }
+
+    /**
+     * The expanded group's own button, where its children fly out from and back to. The
+     * drawing grid flies from its group button too; its layout lives in the annotation
+     * controller.
+     */
+    private MapIconButton expandedGroupButton() {
+        final FullscreenMapToolPanel.Group group = toolPanel.openGroup();
+        if (group == FullscreenMapToolPanel.Group.VIEW) {
+            return viewGroupButton;
+        }
+        if (group == FullscreenMapToolPanel.Group.WAYPOINTS) {
+            return waypointGroupButton;
+        }
+        if (group == FullscreenMapToolPanel.Group.DRAWING) {
+            return drawingGroupButton;
+        }
+        if (group == FullscreenMapToolPanel.Group.ACTIONS) {
+            return actionsGroupButton;
+        }
+        return null;
+    }
+
+    /**
+     * Drives the expanded tool group's staggered fly-out and fly-back. Each button fades
+     * through its own widget alpha — which reaches both the vanilla button texture and the
+     * icon contents — while its position runs from its group button's slot with a slight
+     * overshoot, so the buttons read as leaving and entering that button. Retiring buttons
+     * keep rendering until their fly-back lands and are dismissed only then.
+     */
+    private void applyToolGroupFlight() {
+        final boolean transitionsEnabled = config.uiTransitionsEnabled;
+        final float durationSeconds = UiMotion.durationSeconds(config.uiTransitionSpeed);
+        toolPanel.tickReveal(transitionsEnabled, durationSeconds);
+        settleRetiredButtons(toolPanel.tickRetiring(transitionsEnabled, durationSeconds));
+
+        if (!toolPanel.revealAnimating()) {
+            if (expansionFlightApplied) {
+                expansionFlightApplied = false;
+                restoreExpandedButtons();
+            }
+        } else {
+            expansionFlightApplied = true;
+            applyExpansionFlight();
+        }
+        applyRetiringFlight();
+    }
+
+    /** Dismisses a fly-back that just landed; its buttons sit on their group button, at alpha 0. */
+    private void settleRetiredButtons(final List<FullscreenMapToolPanel.FlyingButton> landed) {
+        if (landed == null) {
+            return;
+        }
+        for (final FullscreenMapToolPanel.FlyingButton flying : landed) {
+            flying.button().visible = false;
+            flying.button().active = false;
+        }
+    }
+
+    private void applyExpansionFlight() {
+        final MapIconButton originButton = expandedGroupButton();
+        if (originButton == null) {
+            return;
+        }
+        applyGroupFlight(
+            expansionButtons,
+            toolPanel.revealProgress(),
+            Widgets.x(originButton),
+            Widgets.y(originButton)
+        );
+    }
+
+    private void applyRetiringFlight() {
+        final FullscreenMapToolPanel.RetiringFlight retiring = toolPanel.retiring();
+        if (retiring == null) {
+            return;
+        }
+        applyGroupFlight(
+            retiring.buttons(),
+            toolPanel.retiringProgress(),
+            retiring.originX(),
+            retiring.originY()
+        );
+    }
+
+    /** Slices the group's shared progress into per-button progress and places each button. */
+    private void applyGroupFlight(
+        final List<FullscreenMapToolPanel.FlyingButton> buttons,
+        final float progress,
+        final int originX,
+        final int originY
+    ) {
+        final int count = buttons.size();
+        for (int index = 0; index < count; index++) {
+            applyFlightStep(
+                buttons.get(index),
+                Stagger.slice(progress, index, count, TOOL_GROUP_STAGGER_FRACTION),
+                originX,
+                originY
+            );
+        }
+    }
+
+    private void applyFlightStep(
+        final FullscreenMapToolPanel.FlyingButton flying,
+        final float buttonProgress,
+        final int originX,
+        final int originY
+    ) {
+        final ButtonWidget button = flying.button();
+        // Alpha follows the shared cubic so it stays within [0, 1]; the position takes the
+        // back curve, whose rebound past the slot is what makes the landing read.
+        button.setAlpha(Easing.easeOutCubic(buttonProgress));
+        final float settled = Easing.easeOutBack(buttonProgress);
+        Widgets.setX(
+            button,
+            Math.round(flying.settleX() + (1.0f - settled) * (originX - flying.settleX()))
+        );
+        Widgets.setY(
+            button,
+            Math.round(flying.settleY() + (1.0f - settled) * (originY - flying.settleY()))
+        );
+    }
+
+    /** Returns a settled expansion to its exact pre-flight widgets, so steady frames stay untouched. */
+    private void restoreExpandedButtons() {
+        for (final FullscreenMapToolPanel.FlyingButton flying : expansionButtons) {
+            flying.button().setAlpha(1.0f);
+            Widgets.setX(flying.button(), flying.settleX());
+            Widgets.setY(flying.button(), flying.settleY());
+        }
+    }
+
+    /**
+     * Records an expansion button's settle slot where its rebuild creates it. Package-private:
+     * the annotation controller tracks the drawing grid's controls through the same seam.
+     */
+    void trackExpansionButton(final ButtonWidget button) {
+        expansionButtons.add(new FullscreenMapToolPanel.FlyingButton(
+            button,
+            Widgets.x(button),
+            Widgets.y(button)
+        ));
+    }
+
+    /** Clicks under buttons still flying back must not re-fire the actions they are leaving with. */
+    private boolean consumesRetiringButtonClick(final double mouseX, final double mouseY) {
+        final FullscreenMapToolPanel.RetiringFlight retiring = toolPanel.retiring();
+        if (retiring == null) {
+            return false;
+        }
+        for (final FullscreenMapToolPanel.FlyingButton flying : retiring.buttons()) {
+            final ButtonWidget button = flying.button();
+            if (mouseX >= Widgets.x(button) && mouseX < Widgets.x(button) + button.getWidth()
+                && mouseY >= Widgets.y(button) && mouseY < Widgets.y(button) + button.getHeight()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private int secondaryControlsX() {
@@ -561,6 +797,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 Texts.translatable(displayModeValueKey(mode)),
                 ignored -> setDisplayMode(mode)
             ));
+            trackExpansionButton(button);
             button.setSelected(displayMode() == mode);
             button.active = available;
             annotationTooltips.put(button, displayModeValueKey(mode));
@@ -585,6 +822,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 refreshWaypointVisibilityButtons();
             }
         ));
+        trackExpansionButton(localVisibilityButton);
         y += CONTROL_SIZE + CONTROL_GAP;
         if (sharedAvailability.visible()) {
             sharedVisibilityButton = addDrawableChild(new MapIconButton(
@@ -594,6 +832,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                     refreshWaypointVisibilityButtons();
                 }
             ));
+            trackExpansionButton(sharedVisibilityButton);
             y += CONTROL_SIZE + CONTROL_GAP;
         }
         refreshWaypointVisibilityButtons();
@@ -604,6 +843,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 MinecraftClient.getInstance(), new WaypointListScreen(this, WaypointListScreen.Tab.LOCAL)
             )
         ));
+        trackExpansionButton(manageWaypointsButton);
         manageWaypointsButton.active = viewingLiveWorld();
         annotationToolbarBounds = new AnnotationToolbarBounds(
             x, top, CONTROL_SIZE, y + CONTROL_SIZE - top
@@ -641,12 +881,14 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             x, y, STRUCTURE_SEARCH_ICON, Texts.translatable("confluxmap.map.search"),
             ignored -> openStructureSearch()
         ));
+        trackExpansionButton(structureSearchButton);
         refreshStructureSearchButton();
         y += CONTROL_SIZE + CONTROL_GAP;
         mapExportButton = addDrawableChild(new MapIconButton(
             x, y, MAP_EXPORT_ICON, Texts.translatable("confluxmap.screen.map_export.tooltip"),
             ignored -> exportControls.openMapExport()
         ));
+        trackExpansionButton(mapExportButton);
         mapExportButton.active = !mapBrowser.browsing();
         annotationTooltips.put(mapExportButton, "confluxmap.screen.map_export.tooltip");
         y += CONTROL_SIZE + CONTROL_GAP;
@@ -656,6 +898,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 MinecraftClient.getInstance(), new XaeroImportScreen(this)
             )
         ));
+        trackExpansionButton(mapImportButton);
         annotationTooltips.put(mapImportButton, "confluxmap.screen.map_import.tooltip");
         y += CONTROL_SIZE + CONTROL_GAP;
         if (clientMultiworld.canManageProfiles()) {
@@ -668,6 +911,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                     MinecraftClient.getInstance(), new ClientWorldSelectScreen(this, openMapKey, false)
                 )
             ));
+            trackExpansionButton(clientWorldButton);
             annotationTooltips.put(clientWorldButton, "confluxmap.map.client_world");
             y += CONTROL_SIZE + CONTROL_GAP;
         }
@@ -760,9 +1004,24 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         return false;
     }
 
-    /** Funnel point for every close path (ESC via the default {@code keyPressed}, or M below). */
+    /**
+     * Funnel point for every close path (ESC via the default {@code keyPressed}, or M
+     * below). The map always closes to the world, so with transitions on this defers both
+     * the switch and the cleanup until the fade lands — the viewport clears must not run
+     * while the map is still fading over them — while a second close request finishes
+     * immediately instead of restarting.
+     */
     @Override
     public void onClose() {
+        // An expanded group collapses alongside the close fade: its buttons fly back into
+        // their group button while the screen sinks, and die with the switch instead of
+        // vanishing mid-flight at the fade's first frame.
+        retireExpandedGroupButtons();
+        requestClose(null, this::releaseMapView);
+    }
+
+    /** Detaches the live map pipeline and persists view state; runs exactly once per close. */
+    private void releaseMapView() {
         viewState.rememberScale(viewSession().dimension(), scale);
         chunkLoadStates.deactivate();
         tiles.clearViewport();
@@ -771,8 +1030,19 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         ConfluxMapClient.get().mapSyncClient().clearViewport();
         structureMarkers.flush();
         mapBrowser.clear();
-        super.onClose();
     }
+
+    @Override
+    //#if MC>=12109
+    //$$ protected boolean isCloseInterruptKey(final KeyInput input) {
+    //$$     return super.isCloseInterruptKey(input) || openMapKey != null && openMapKey.matchesKey(input);
+    //$$ }
+    //#else
+    protected boolean isCloseInterruptKey(final int keyCode, final int scanCode) {
+        return super.isCloseInterruptKey(keyCode, scanCode)
+            || openMapKey != null && openMapKey.matchesKey(keyCode, scanCode);
+    }
+    //#endif
 
     @Override
     public void removed() {
@@ -794,8 +1064,14 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     //$$ public boolean keyPressed(final KeyInput input) {
     //$$     final int keyCode = input.key();
     //$$     final int modifiers = input.modifiers();
+    //$$     if (swallowWhileClosing(input)) {
+    //$$         return true;
+    //$$     }
     //#else
     public boolean keyPressed(final int keyCode, final int scanCode, final int modifiers) {
+        if (swallowWhileClosing(keyCode, scanCode)) {
+            return true;
+        }
     //#endif
         regionSelection = null;
         if (regionSelectDragging && keyCode == cn.net.rms.confluxmap.compat.Keys.ESCAPE) {
@@ -851,6 +1127,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
         if (keyCode == cn.net.rms.confluxmap.compat.Keys.ESCAPE && toolPanel.openGroup() != null) {
             final boolean closingDrawing = toolPanel.isOpen(FullscreenMapToolPanel.Group.DRAWING);
+            retireExpandedGroupButtons();
             toolPanel.close();
             if (closingDrawing) {
                 annotations.selectAnnotationTool(AnnotationTool.SELECT);
@@ -889,6 +1166,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     //#else
     public boolean mouseClicked(final double mouseX, final double mouseY, final int button) {
     //#endif
+        if (isClosing()) {
+            return true;
+        }
+        if (button == MouseButtons.LEFT && consumesRetiringButtonClick(mouseX, mouseY)) {
+            return true;
+        }
         regionSelection = null;
         if (button == MouseButtons.LEFT && selectors.selectTargetDropdownOption(mouseX, mouseY)) {
             mapPointerPress = false;
@@ -1077,6 +1360,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     //#else
     public boolean mouseReleased(final double mouseX, final double mouseY, final int button) {
     //#endif
+        if (isClosing()) {
+            return true;
+        }
         if (button == MouseButtons.RIGHT && regionSelectPress) {
             regionSelectPress = false;
             if (regionSelectDragging) {
@@ -1200,6 +1486,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     //#else
     public boolean mouseScrolled(final double mouseX, final double mouseY, final double amount) {
     //#endif
+        if (isClosing()) {
+            return true;
+        }
         if (!regionSelectDragging) {
             regionSelection = null;
         }
@@ -1307,6 +1596,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     @Override
     protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
         final MatrixStack matrices = draw.matrices();
+        applyToolGroupFlight();
         final TileService visibleTiles = viewTiles();
         if (mapBrowser.browsing()) {
             mapBrowser.textures().beginFrame();
@@ -1458,7 +1748,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 centerX, centerZ, width / 2.0, height / 2.0, scale, 0.0, width, height
             ),
             config.playerTrailDurationSeconds,
-            config.playerTrailDotSize
+            config.playerTrailDotSize,
+            1f
         );
     }
 
@@ -1575,7 +1866,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         }
     }
 
-    final class MapIconButton extends ButtonWidget {
+    final class MapIconButton extends ButtonWidget implements SelfFadingWidget {
         private Identifier icon;
         private boolean selected;
 
@@ -1674,7 +1965,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         //$$         y,
         //$$         getWidth(),
         //$$         getHeight(),
-        //$$         ((int) (alpha * 255.0f) << 24) | 0x00FFFFFF
+        //$$         ((int) (alpha * GuiShapes.revealAlpha() * 255.0f) << 24) | 0x00FFFFFF
         //$$     );
         //$$     drawContents(GuiDraw.of(context), x, y);
         //$$ }
@@ -1697,7 +1988,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         //$$         y,
         //$$         getWidth(),
         //$$         getHeight(),
-        //$$         ((int) (alpha * 255.0f) << 24) | 0x00FFFFFF
+        //$$         ((int) (alpha * GuiShapes.revealAlpha() * 255.0f) << 24) | 0x00FFFFFF
         //$$     );
         //$$     context.draw();
         //$$     drawContents(GuiDraw.of(context), x, y);
@@ -1714,7 +2005,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         //$$     final Identifier background = !active
         //$$         ? Ids.of("widget/button_disabled")
         //$$         : isHovered() ? Ids.of("widget/button_highlighted") : Ids.of("widget/button");
-        //$$     context.setShaderColor(1.0f, 1.0f, 1.0f, alpha);
+        //$$     context.setShaderColor(1.0f, 1.0f, 1.0f, alpha * GuiShapes.revealAlpha());
         //$$     context.drawGuiTexture(background, x, y, getWidth(), getHeight());
         //$$     context.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
         //$$     context.draw();
@@ -1727,7 +2018,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         //$$     final int mouseY,
         //$$     final float delta
         //$$ ) {
-        //$$     context.setShaderColor(1.0f, 1.0f, 1.0f, alpha);
+        //$$     context.setShaderColor(1.0f, 1.0f, 1.0f, alpha * GuiShapes.revealAlpha());
         //$$     final int v = 46 + (!active ? 0 : isHovered() ? 2 : 1) * 20;
         //$$     final int x = Widgets.x(this);
         //$$     final int y = Widgets.y(this);
@@ -1755,7 +2046,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         ) {
             RenderSystem.setShader(GameRenderer::getPositionTexShader);
             RenderSystem.setShaderTexture(0, WIDGETS_TEXTURE);
-            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, alpha);
+            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, alpha * GuiShapes.revealAlpha());
             RenderSystem.enableBlend();
             RenderSystem.defaultBlendFunc();
             RenderSystem.enableDepthTest();
@@ -1781,20 +2072,27 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 active, selected, isHovered(), resolvedIcon.colorMode(),
                 uiTheme.useVanillaButtonStyle()
             );
-            if (visual.background() != 0) {
-                GuiShapes.fillRect(
-                    matrices, x, y, getWidth(), getHeight(), visual.background()
-                );
+            // The tool-group reveal fades buttons through the widget alpha; the vanilla
+            // texture paths above fold it in, these custom surfaces scale it themselves,
+            // and a screen-level reveal frame multiplies the shape layer on top of both.
+            // alpha is 1 outside reveals, so the steady state keeps its exact colors.
+            final int background = alpha == 1.0f
+                ? visual.background()
+                : Argb.scaleAlpha(visual.background(), alpha);
+            final int border = alpha == 1.0f
+                ? visual.border()
+                : Argb.scaleAlpha(visual.border(), alpha);
+            final int iconTint = alpha == 1.0f
+                ? visual.iconTint()
+                : Argb.scaleAlpha(visual.iconTint(), alpha);
+            if (background != 0) {
+                GuiShapes.fillRect(matrices, x, y, getWidth(), getHeight(), background);
             }
-            if (visual.border() != 0) {
-                GuiShapes.fillRect(matrices, x, y, getWidth(), 1, visual.border());
-                GuiShapes.fillRect(
-                    matrices, x, y + getHeight() - 1, getWidth(), 1, visual.border()
-                );
-                GuiShapes.fillRect(matrices, x, y, 1, getHeight(), visual.border());
-                GuiShapes.fillRect(
-                    matrices, x + getWidth() - 1, y, 1, getHeight(), visual.border()
-                );
+            if (border != 0) {
+                GuiShapes.fillRect(matrices, x, y, getWidth(), 1, border);
+                GuiShapes.fillRect(matrices, x, y + getHeight() - 1, getWidth(), 1, border);
+                GuiShapes.fillRect(matrices, x, y, 1, getHeight(), border);
+                GuiShapes.fillRect(matrices, x + getWidth() - 1, y, 1, getHeight(), border);
             }
             final int iconX = x + (getWidth() - CONTROL_ICON_SIZE) / 2;
             final int iconY = y + (getHeight() - CONTROL_ICON_SIZE) / 2;
@@ -1810,7 +2108,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
                 texture.v0(),
                 texture.u1(),
                 texture.v1(),
-                visual.iconTint()
+                iconTint
             );
         }
     }
@@ -1835,6 +2133,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         mapBrowser.select(target, live);
         final SessionGuard.Session selected = viewSession();
         if (targetChanged) {
+            retireExpandedGroupButtons();
             toolPanel.close();
             annotations.resetForTargetChange();
         }
@@ -2175,7 +2474,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         RadarMarkerRenderer.drawAll(
             draw, this.client, config, radarIconManager, markers,
             RadarMarkerRenderer.Presentation.detailed(config.radarShowPlayerNames),
-            marker -> !radarMarkerIntersectsUi(marker)
+            marker -> !radarMarkerIntersectsUi(marker),
+            1f
         );
     }
 

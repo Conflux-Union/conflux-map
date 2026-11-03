@@ -1,6 +1,5 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
-import cn.net.rms.confluxmap.compat.MinecraftAccess;
 import cn.net.rms.confluxmap.compat.MouseButtons;
 import cn.net.rms.confluxmap.compat.Texts;
 import cn.net.rms.confluxmap.compat.Widgets;
@@ -96,12 +95,12 @@ final class WaypointColorPickerScreen extends ConfluxScreen {
             return;
         }
         onApply.accept(color.colorArgb());
-        MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
+        requestClose(parent);
     }
 
     @Override
     public void onClose() {
-        MinecraftAccess.setScreen(MinecraftClient.getInstance(), parent);
+        requestClose(parent);
     }
 
     @Override
