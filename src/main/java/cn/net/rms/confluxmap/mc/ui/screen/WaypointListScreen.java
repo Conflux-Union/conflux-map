@@ -1374,6 +1374,9 @@ public final class WaypointListScreen extends ConfluxScreen {
     }
 
     private void teleport(final RowInfo row) {
+        if (!ConfluxMapClient.get().companionSession().waypointsAllowed()) {
+            return;
+        }
         final TeleportCommandAccess.Result access = teleportAccess(row);
         if (!access.available()) {
             return;

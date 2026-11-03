@@ -85,6 +85,44 @@ class MsgCodecTest {
     }
 
     @Test
+    void featureRestrictionsRoundTripEveryCombination() throws ProtoException {
+        for (int bits = 0; bits < 16; bits++) {
+            final FeatureRestrictionsS2C original = new FeatureRestrictionsS2C(
+                (bits & 1) != 0,
+                (bits & 2) != 0,
+                (bits & 4) != 0,
+                (bits & 8) != 0
+            );
+            final FeatureRestrictionsS2C decoded = (FeatureRestrictionsS2C) MsgCodec.decode(
+                MsgCodec.encode(original)
+            );
+            assertEquals(original, decoded);
+            assertEquals(bits != 0, !decoded.isEmpty());
+            assertEquals(Proto.MSG_FEATURE_RESTRICTIONS_S2C, decoded.typeId());
+        }
+        assertTrue(FeatureRestrictionsS2C.none().isEmpty());
+    }
+
+    @Test
+    void restrictionMessagesRoundTripWithoutChangingTheEmptyMessageFrame() throws ProtoException {
+        assertArrayEquals(new byte[] {0x19, 3}, MsgCodec.encode(
+            new FeatureRestrictionsS2C(true, true, false, false)
+        ));
+        final FeatureRestrictionsS2C message = new FeatureRestrictionsS2C(
+            true, true, false, false, "Maps are disabled. 🌍"
+        );
+        assertEquals(message, MsgCodec.decode(MsgCodec.encode(message)));
+        assertEquals("", ((FeatureRestrictionsS2C) MsgCodec.decode(new byte[] {0x19, 3})).message());
+        assertThrows(ProtoException.class, () -> MsgCodec.encode(new FeatureRestrictionsS2C(
+            true, true, false, false, "x".repeat(Proto.MAX_UTF8_BYTES + 1)
+        )));
+        final byte[] encoded = MsgCodec.encode(message);
+        assertThrows(ProtoException.class, () -> MsgCodec.decode(Arrays.copyOf(encoded, encoded.length - 1)));
+        assertThrows(ProtoException.class, () -> MsgCodec.decode(new byte[] {0x19, 3, 0, 1, (byte) 0xFF}));
+        assertThrows(ProtoException.class, () -> MsgCodec.decode(new byte[] {0x19, 3, 0, 0, 1}));
+    }
+
+    @Test
     void playerPositionsRoundTripEveryIdentityAndPositionField() throws ProtoException {
         final PlayerPositionsS2C original = new PlayerPositionsS2C(List.of(
             new PlayerPositionsS2C.Entry(

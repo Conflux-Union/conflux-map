@@ -1,5 +1,6 @@
 package cn.net.rms.confluxmap.server;
 
+import cn.net.rms.confluxmap.core.net.FeatureRestrictionsS2C;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.MapSyncCapability;
 import cn.net.rms.confluxmap.core.net.NegotiatedMapSync;
@@ -7,6 +8,21 @@ import cn.net.rms.confluxmap.core.net.NegotiatedMapSync;
 /** Platform-neutral policy projection shared by the Fabric and Paper transports. */
 public final class CompanionPolicy {
     private CompanionPolicy() {
+    }
+
+    /**
+     * Client feature restrictions for the handshake. Returns {@link FeatureRestrictionsS2C#isEmpty()
+     * empty} unless the companion is enabled and at least one surface is forbidden, so default
+     * configurations never send the frame and older clients never see it.
+     */
+    public static FeatureRestrictionsS2C configuredRestrictions(final ServerConfig config) {
+        return new FeatureRestrictionsS2C(
+            config.enabled && !config.allowMinimap,
+            config.enabled && !config.allowWorldMap,
+            config.enabled && !config.allowWaypoints,
+            config.enabled && !config.allowPrediction,
+            config.restrictionMessage
+        );
     }
 
     public static HelloPolicyS2C.Flags configuredFlags(final ServerConfig config) {

@@ -56,6 +56,28 @@ public final class ServerConfig {
      * every online player's position; disabling it stops that stream and hides the client radar.
      */
     public boolean allowEntityRadar = true;
+    /**
+     * Whether cooperating clients may render the HUD minimap. Honest-client enforcement only,
+     * like {@link #allowEntityRadar}: a modified client can ignore it.
+     */
+    public boolean allowMinimap = true;
+    /**
+     * Whether cooperating clients may open the fullscreen world map (including map export,
+     * annotations, and map markers reached through it).
+     */
+    public boolean allowWorldMap = true;
+    /**
+     * Whether cooperating clients may use local waypoints: the list and editor screens plus
+     * in-world beam/label rendering. Independent of {@link #shareWaypoints}, which governs the
+     * server-owned shared catalog.
+     */
+    public boolean allowWaypoints = true;
+    /**
+     * Whether cooperating clients may display the seed-prediction underlay. Disabling this hides
+     * predicted tiles even on servers that share the seed for map-sync corrections.
+     */
+    public boolean allowPrediction = true;
+    public String restrictionMessage = "";
     /** Whether the server-owned shared waypoint catalog is enabled. */
     public boolean shareWaypoints = true;
     /** Whether non-operators may create and manage shared waypoints they published. */
@@ -81,6 +103,18 @@ public final class ServerConfig {
 
     /** Clamp out-of-range values loaded from a hand-edited file. */
     public void normalize() {
+        restrictionMessage = restrictionMessage == null ? "" : restrictionMessage.strip();
+        int messageEnd = 0;
+        int messageBytes = 0;
+        while (messageEnd < restrictionMessage.length()) {
+            final int codePoint = restrictionMessage.codePointAt(messageEnd);
+            messageBytes += codePoint <= 0x7F ? 1 : codePoint <= 0x7FF ? 2 : codePoint <= 0xFFFF ? 3 : 4;
+            if (messageBytes > Proto.MAX_UTF8_BYTES) {
+                break;
+            }
+            messageEnd += Character.charCount(codePoint);
+        }
+        restrictionMessage = restrictionMessage.substring(0, messageEnd);
         if (webMap == null) {
             webMap = new WebMapConfig();
         }

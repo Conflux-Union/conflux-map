@@ -11,6 +11,7 @@ import cn.net.rms.confluxmap.core.net.BiomeLangReqC2S;
 import cn.net.rms.confluxmap.core.net.BiomeLangS2C;
 import cn.net.rms.confluxmap.core.net.CorrectionProfile;
 import cn.net.rms.confluxmap.core.net.ErrorS2C;
+import cn.net.rms.confluxmap.core.net.FeatureRestrictionsS2C;
 import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
 import cn.net.rms.confluxmap.core.net.HelloC2S;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
@@ -339,6 +340,12 @@ public final class ServerNetworking {
             sendNegotiated(
                 player, session, new ServerInstanceS2C(companion.instanceId().toString())
             );
+        }
+        // Pre-policy so the gates apply before the session opens; older clients drop the frame.
+        final FeatureRestrictionsS2C restrictions =
+            CompanionPolicy.configuredRestrictions(companion.config());
+        if (!restrictions.isEmpty()) {
+            send(player, restrictions);
         }
         final HelloPolicyS2C policy = buildPolicy(server, session);
         send(player, policy);

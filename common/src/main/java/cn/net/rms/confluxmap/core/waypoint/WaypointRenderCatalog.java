@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -24,6 +25,7 @@ public final class WaypointRenderCatalog {
     private final Supplier<List<SharedWaypoint>> sharedWaypoints;
     private final Supplier<List<SiblingWaypoint>> siblingWaypoints;
     private final ConfluxConfig config;
+    private final BooleanSupplier serverPolicyAllowsWaypoints;
 
     public WaypointRenderCatalog(
         final WaypointService localWaypoints,
@@ -39,10 +41,22 @@ public final class WaypointRenderCatalog {
         final Supplier<List<SiblingWaypoint>> siblingWaypoints,
         final ConfluxConfig config
     ) {
+        this(localWaypoints, sharedWaypoints, siblingWaypoints, config, () -> true);
+    }
+
+    public WaypointRenderCatalog(
+        final WaypointService localWaypoints,
+        final Supplier<List<SharedWaypoint>> sharedWaypoints,
+        final Supplier<List<SiblingWaypoint>> siblingWaypoints,
+        final ConfluxConfig config,
+        final BooleanSupplier serverPolicyAllowsWaypoints
+    ) {
         this.localWaypoints = Objects.requireNonNull(localWaypoints, "localWaypoints");
         this.sharedWaypoints = Objects.requireNonNull(sharedWaypoints, "sharedWaypoints");
         this.siblingWaypoints = Objects.requireNonNull(siblingWaypoints, "siblingWaypoints");
         this.config = Objects.requireNonNull(config, "config");
+        this.serverPolicyAllowsWaypoints =
+            Objects.requireNonNull(serverPolicyAllowsWaypoints, "serverPolicyAllowsWaypoints");
     }
 
     /**
@@ -75,6 +89,9 @@ public final class WaypointRenderCatalog {
     }
 
     private List<WaypointRenderEntry> uncollapsedSnapshot() {
+        if (!serverPolicyAllowsWaypoints.getAsBoolean()) {
+            return List.of();
+        }
         final List<Waypoint> local = config.localWaypointsVisible ? localWaypoints.list() : List.of();
         final List<SharedWaypoint> allShared =
             config.sharedWaypointsVisible ? sharedWaypoints.get() : List.of();

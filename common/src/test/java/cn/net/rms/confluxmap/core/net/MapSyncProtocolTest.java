@@ -17,6 +17,29 @@ class MapSyncProtocolTest {
     private static final String PREDICTOR = "cb:9afc1038ea5a|shim:9|base:14";
 
     @Test
+    void featureRestrictionsReachClientsBeforeAndAfterNegotiation() throws Exception {
+        final FeatureRestrictionsS2C restrictions = new FeatureRestrictionsS2C(
+            true, true, true, true, "Maps are disabled."
+        );
+        final byte[] payload = MsgCodec.encode(restrictions);
+        assertEquals(restrictions, MapSyncProtocol.decodeClientbound(payload));
+        assertThrows(ProtoException.class, () -> MapSyncProtocol.decodeServerbound(payload));
+
+        final MapSyncProtocol.ServerHandshake handshake = MapSyncProtocol.acceptClient(
+            MapSyncProtocol.clientHello("0.2.0", PREDICTOR), "0.2.0", PREDICTOR
+        );
+        final HelloPolicyS2C policy = new HelloPolicyS2C(
+            new HelloPolicyS2C.Flags(false, false, false, false, false, false, false, false),
+            "11111111-2222-3333-4444-555555555555", "1.17.1",
+            new HelloPolicyS2C.Budgets(65_536, 8, 300, 4), List.of()
+        );
+        final NegotiatedMapSync client = MapSyncProtocol.acceptServer(handshake.selection(), policy, PREDICTOR);
+        assertEquals(restrictions, client.decodeInbound(handshake.session().encodeOutbound(restrictions)));
+        assertThrows(ProtoException.class, () -> handshake.session().decodeInbound(payload));
+        assertThrows(ProtoException.class, () -> client.encodeOutbound(restrictions));
+    }
+
+    @Test
     void currentHelloKeepsItsReleasedShapeAndSelectsTheHighestCommonContract() throws Exception {
         final HelloC2S hello = (HelloC2S) MsgCodec.decode(MsgCodec.encode(
             MapSyncProtocol.clientHello("0.2.0", PREDICTOR)

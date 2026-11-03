@@ -114,6 +114,11 @@ public final class MsgCodec {
                 encodeBiomeLangS2C(out, m);
             } else if (msg instanceof final MapFullSyncManifestS2C m) {
                 encodeMapFullSyncManifestS2C(out, m);
+            } else if (msg instanceof final FeatureRestrictionsS2C m) {
+                out.writeByte(restrictionBits(m));
+                if (!m.message().isEmpty()) {
+                    writeUtf(out, m.message());
+                }
             } else {
                 throw new ProtoException("unknown message type: " + msg.getClass().getName());
             }
@@ -145,6 +150,7 @@ public final class MsgCodec {
             || typeId == Proto.MSG_POLICY_UPDATE_S2C
             || typeId == Proto.MSG_ERROR_S2C
             || typeId == Proto.MSG_FLAT_BASELINE_S2C
+            || typeId == Proto.MSG_FEATURE_RESTRICTIONS_S2C
             || typeId == Proto.MSG_LOAD_STATE_DELTA_S2C
             || typeId == Proto.MSG_MAP_INVALIDATE_S2C
             || typeId == Proto.MSG_MAP_REGION_PATCH_S2C
@@ -332,6 +338,23 @@ public final class MsgCodec {
             out.writeByte(dimBits);
             out.writeLong(d.seed());
         }
+    }
+
+    private static int restrictionBits(final FeatureRestrictionsS2C m) {
+        int bits = 0;
+        if (m.minimapForbidden()) {
+            bits |= 1;
+        }
+        if (m.worldMapForbidden()) {
+            bits |= 2;
+        }
+        if (m.waypointsForbidden()) {
+            bits |= 4;
+        }
+        if (m.predictionForbidden()) {
+            bits |= 8;
+        }
+        return bits;
     }
 
     private static void encodeMapViewReqC2S(final DataOutputStream out, final MapViewReqC2S m) throws IOException, ProtoException {
@@ -694,6 +717,16 @@ public final class MsgCodec {
                 case Proto.MSG_BIOME_LANG_REQ_C2S -> new BiomeLangReqC2S(readUtf(in));
                 case Proto.MSG_BIOME_LANG_S2C -> decodeBiomeLangS2C(in);
                 case Proto.MSG_MAP_FULL_SYNC_MANIFEST_S2C -> decodeMapFullSyncManifestS2C(in);
+                case Proto.MSG_FEATURE_RESTRICTIONS_S2C -> {
+                    final int bits = in.readUnsignedByte();
+                    yield new FeatureRestrictionsS2C(
+                        (bits & 1) != 0,
+                        (bits & 2) != 0,
+                        (bits & 4) != 0,
+                        (bits & 8) != 0,
+                        in.available() == 0 ? "" : readUtf(in)
+                    );
+                }
                 default -> throw new ProtoException("unhandled message type id: 0x" + Integer.toHexString(typeId));
             };
             if (in.available() != 0) {

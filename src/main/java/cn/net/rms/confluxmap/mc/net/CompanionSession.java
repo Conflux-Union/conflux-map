@@ -3,6 +3,7 @@ package cn.net.rms.confluxmap.mc.net;
 import cn.net.rms.confluxmap.ConfluxMapMod;
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.net.CorrectionProfile;
+import cn.net.rms.confluxmap.core.net.FeatureRestrictionsS2C;
 import cn.net.rms.confluxmap.core.net.FlatBaselineS2C;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.MapCapabilitiesS2C;
@@ -59,6 +60,7 @@ public final class CompanionSession {
     private volatile HelloPolicyS2C policy;
     private volatile FlatBaselineS2C flatBaselines;
     private volatile QuadraLayoutS2C quadraLayouts;
+    private volatile FeatureRestrictionsS2C featureRestrictions = FeatureRestrictionsS2C.none();
     private volatile Message pendingSelection;
     private volatile NegotiatedMapSync negotiatedMapSync;
     private volatile int serverViewDistance = -1;
@@ -73,6 +75,7 @@ public final class CompanionSession {
         policy = null;
         flatBaselines = null;
         quadraLayouts = null;
+        featureRestrictions = FeatureRestrictionsS2C.none();
         pendingSelection = null;
         negotiatedMapSync = null;
         serverViewDistance = -1;
@@ -170,12 +173,20 @@ public final class CompanionSession {
         this.quadraLayouts = message;
     }
 
+    /** Called from {@link ClientNetworking}'s receiver: feature restrictions arrive just before the policy. */
+    public void onFeatureRestrictions(final FeatureRestrictionsS2C message) {
+        if (message != null) {
+            this.featureRestrictions = message;
+        }
+    }
+
     /** Called from {@link ClientPlayConnectionEvents#DISCONNECT}; forget everything. */
     public void reset() {
         state.set(State.NONE);
         policy = null;
         flatBaselines = null;
         quadraLayouts = null;
+        featureRestrictions = FeatureRestrictionsS2C.none();
         pendingSelection = null;
         negotiatedMapSync = null;
         serverViewDistance = -1;
@@ -290,6 +301,34 @@ public final class CompanionSession {
     public boolean structureSearchAllowed() {
         final HelloPolicyS2C current = policy;
         return state.get() != State.ACTIVE || current == null || !current.flags().structureSearchForbidden();
+    }
+
+    /**
+     * Whether the HUD minimap is permitted for the current connection. Servers predating
+     * FEATURE_RESTRICTIONS never send the frame, and a handshake that never reaches ACTIVE
+     * leaves the connection non-companion - both preserve the historical allowed behavior.
+     */
+    public boolean minimapAllowed() {
+        return state.get() != State.ACTIVE || !featureRestrictions.minimapForbidden();
+    }
+
+    /** Whether the fullscreen world map is permitted; see {@link #minimapAllowed()}. */
+    public boolean worldMapAllowed() {
+        return state.get() != State.ACTIVE || !featureRestrictions.worldMapForbidden();
+    }
+
+    public String restrictionMessage() {
+        return state.get() == State.ACTIVE ? featureRestrictions.message() : "";
+    }
+
+    /** Whether local waypoints (list, editor, in-world rendering) are permitted; see {@link #minimapAllowed()}. */
+    public boolean waypointsAllowed() {
+        return state.get() != State.ACTIVE || !featureRestrictions.waypointsForbidden();
+    }
+
+    /** Whether the prediction underlay is permitted; see {@link #minimapAllowed()}. */
+    public boolean predictionAllowed() {
+        return state.get() != State.ACTIVE || !featureRestrictions.predictionForbidden();
     }
 
     /** Whether an active companion explicitly withheld the seed from this client. */

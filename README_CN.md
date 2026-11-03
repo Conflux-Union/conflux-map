@@ -149,6 +149,8 @@ Conflux Map 是一款 Fabric 平台的小地图与世界地图模组。客户端
 - `fullSyncEnabled` 允许管理员执行 `/confluxmap fullsync`，把当前维度全部已生成区域一次性同步到自己的客户端（`/confluxmap fullsync cancel` 可中止）。该操作会暴露整张已生成地图，因此默认关闭，且需要管理员权限与 Fabric 组件。
 - `shareChunkLoadState` 公开服务端保持加载的区块，默认关闭，以减少玩家活动与农场位置的暴露。
 - `allowEntityRadar` 默认开启，向客户端发送所有在线玩家的实时位置；关闭后位置流停止，客户端实体雷达不可用。
+- `allowMinimap`、`allowWorldMap`、`allowWaypoints`、`allowPrediction` 可逐项关闭客户端功能：HUD 小地图、全屏世界地图（含地图导出、标注与地图标记）、本地路径点、种子预测图层。全部默认开启；功能被关闭时，兼容的客户端会隐藏该功能，设置界面也会显示"此服务器已禁用"提示。与所有客户端限制一样，这只对配合的客户端生效。
+- `restrictionMessage` 设置玩家尝试打开受限地图或切换受限小地图时显示的纯文本说明。留空时使用客户端语言对应的默认提示；消息最多保留 256 个 UTF-8 字节。
 - `shareWaypoints` 启用共享路径点列表，默认开启；`allowNonOperatorSharedWaypointManagement` 默认允许普通玩家管理自己发布的条目。
 - `webMap.*` 控制网页地图，默认开启：监听 `127.0.0.1:8123`，不显示玩家位置。如需公开访问，应置于保留原始 `Host` 请求头的 HTTPS 反向代理之后；`sharePlayers` 控制是否包含玩家位置。
 

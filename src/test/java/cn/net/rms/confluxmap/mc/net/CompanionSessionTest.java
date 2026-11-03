@@ -8,12 +8,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.WorldIdentity;
 import cn.net.rms.confluxmap.core.net.CorrectionProfile;
+import cn.net.rms.confluxmap.core.net.FeatureRestrictionsS2C;
 import cn.net.rms.confluxmap.core.net.HelloPolicyS2C;
 import cn.net.rms.confluxmap.core.net.MapCompatibilityS2C;
 import cn.net.rms.confluxmap.core.net.MapSyncCompatibility;
+import cn.net.rms.confluxmap.core.net.MsgCodec;
 import cn.net.rms.confluxmap.core.net.PatchCodec;
 import cn.net.rms.confluxmap.core.net.ChunkPatchCodec;
 import cn.net.rms.confluxmap.core.net.Proto;
+import cn.net.rms.confluxmap.core.net.ProtoException;
 import cn.net.rms.confluxmap.core.net.ServerInstanceS2C;
 import cn.net.rms.confluxmap.core.net.ServerViewDistanceS2C;
 import cn.net.rms.confluxmap.nativepredict.PredictorVersion;
@@ -24,6 +27,52 @@ class CompanionSessionTest {
     private static final String SHARED_WORLD = "11111111-2222-3333-4444-555555555555";
     private static final String SURVIVAL_INSTANCE = "aaaaaaaa-0000-0000-0000-000000000000";
     private static final String MIRROR_INSTANCE = "bbbbbbbb-0000-0000-0000-000000000000";
+
+    @Test
+    void featureRestrictionsOnlyApplyToActiveSessions() throws ProtoException {
+        final CompanionSession session = new CompanionSession();
+        assertTrue(session.minimapAllowed());
+        assertTrue(session.worldMapAllowed());
+        assertTrue(session.waypointsAllowed());
+        assertTrue(session.predictionAllowed());
+
+        session.onHelloSent();
+        session.onFeatureRestrictions((FeatureRestrictionsS2C) session.decodeInbound(MsgCodec.encode(
+            new FeatureRestrictionsS2C(true, true, true, true, "Server rules")
+        )));
+        assertEquals("", session.restrictionMessage());
+        // HELLO_POLICY has not activated the session yet, so the historical behavior holds.
+        assertTrue(session.minimapAllowed());
+        assertTrue(session.worldMapAllowed());
+        assertTrue(session.waypointsAllowed());
+        assertTrue(session.predictionAllowed());
+
+        session.onPolicy(policyWithCorrections(false));
+        assertFalse(session.minimapAllowed());
+        assertFalse(session.worldMapAllowed());
+        assertFalse(session.waypointsAllowed());
+        assertFalse(session.predictionAllowed());
+        assertEquals("Server rules", session.restrictionMessage());
+
+        session.reset();
+        assertEquals("", session.restrictionMessage());
+        assertTrue(session.minimapAllowed());
+        assertTrue(session.worldMapAllowed());
+        assertTrue(session.waypointsAllowed());
+        assertTrue(session.predictionAllowed());
+    }
+
+    @Test
+    void absentFeatureRestrictionsKeepEverythingAllowed() {
+        final CompanionSession session = new CompanionSession();
+        session.onHelloSent();
+        session.onPolicy(policyWithCorrections(false));
+
+        assertTrue(session.minimapAllowed());
+        assertTrue(session.worldMapAllowed());
+        assertTrue(session.waypointsAllowed());
+        assertTrue(session.predictionAllowed());
+    }
 
     @Test
     void explicitCompatibilitySelectsResidualOrAbsoluteBeforePolicy() {

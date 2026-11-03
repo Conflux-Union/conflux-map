@@ -13,6 +13,7 @@ import cn.net.rms.confluxmap.core.waypoint.Waypoint;
 import cn.net.rms.confluxmap.core.waypoint.WaypointService;
 import cn.net.rms.confluxmap.mc.input.KeybindAction;
 import cn.net.rms.confluxmap.mc.input.Keybinds;
+import cn.net.rms.confluxmap.mc.net.CompanionSession;
 import cn.net.rms.confluxmap.mc.teleport.ClientGroundTeleportService;
 import cn.net.rms.confluxmap.mc.ui.screen.FullscreenMapScreen;
 import cn.net.rms.confluxmap.mc.ui.screen.WaypointEditScreen;
@@ -37,6 +38,7 @@ public final class FabricActionApi implements ActionApi {
     private final ClientGroundTeleportService groundTeleport;
     private final LayerSelector layerSelector;
     private final SessionGuard guard;
+    private final CompanionSession companion;
 
     public FabricActionApi(
         final MinecraftClient client,
@@ -47,7 +49,8 @@ public final class FabricActionApi implements ActionApi {
         final WaypointService waypoints,
         final ClientGroundTeleportService groundTeleport,
         final LayerSelector layerSelector,
-        final SessionGuard guard
+        final SessionGuard guard,
+        final CompanionSession companion
     ) {
         this.client = client;
         this.bridge = bridge;
@@ -58,6 +61,7 @@ public final class FabricActionApi implements ActionApi {
         this.groundTeleport = groundTeleport;
         this.layerSelector = layerSelector;
         this.guard = guard;
+        this.companion = companion;
     }
 
     @Override
@@ -89,6 +93,9 @@ public final class FabricActionApi implements ActionApi {
             return;
         }
         onMain(() -> {
+            if (!companion.waypointsAllowed()) {
+                return;
+            }
             final Waypoint waypoint = findWaypoint(waypointId);
             if (waypoint != null && client.player != null && MinecraftAccess.screen(client) == null) {
                 MinecraftAccess.setScreen(client, WaypointEditScreen.forEdit(null, waypoint));
@@ -105,6 +112,9 @@ public final class FabricActionApi implements ActionApi {
             final SessionGuard.Session session = guard.current();
             if (!session.active()) {
                 return TeleportResult.NO_SESSION;
+            }
+            if (!companion.waypointsAllowed()) {
+                return TeleportResult.FORBIDDEN_BY_SERVER;
             }
             final Waypoint waypoint = findWaypoint(waypointId);
             if (waypoint == null) {

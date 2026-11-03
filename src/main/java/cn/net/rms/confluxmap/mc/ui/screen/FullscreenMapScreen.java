@@ -458,6 +458,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     @Override
     protected void init() {
+        if (applyServerRestriction()) {
+            return;
+        }
         locationMenu.reset();
         // init() reruns on resize; announce the open event exactly once per screen life.
         if (!openAnnounced) {
@@ -844,7 +847,8 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             )
         ));
         trackExpansionButton(manageWaypointsButton);
-        manageWaypointsButton.active = viewingLiveWorld();
+        manageWaypointsButton.active = viewingLiveWorld()
+            && ConfluxMapClient.get().companionSession().waypointsAllowed();
         annotationToolbarBounds = new AnnotationToolbarBounds(
             x, top, CONTROL_SIZE, y + CONTROL_SIZE - top
         );
@@ -957,6 +961,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     @Override
     public void tick() {
         super.tick();
+        if (applyServerRestriction()) {
+            return;
+        }
         if (!chunkLoadStates.available() && chunkLoadStates.snapshot().active()) {
             chunkLoadStates.reset();
         }
@@ -980,6 +987,15 @@ public final class FullscreenMapScreen extends ConfluxScreen {
             rebuildWaypointControls();
         }
         refreshStructureSearchButton();
+    }
+
+    private boolean applyServerRestriction() {
+        final Screen permitted = ServerRestrictionScreen.resolve(this, companion);
+        if (permitted == this) {
+            return false;
+        }
+        MinecraftAccess.setScreen(MinecraftClient.getInstance(), permitted);
+        return true;
     }
 
     private Text visibilityTooltip(final boolean local) {
@@ -1554,6 +1570,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     }
 
     boolean renderEmbeddedPanelBlur(final GuiDraw draw, final SplitMapLayout layout) {
+        if (!companion.worldMapAllowed()) {
+            return false;
+        }
         return embeddedBlur.render(
             draw, this.client, layout, matrices -> renderEmbeddedBackdrop(matrices, layout)
         );
@@ -1595,6 +1614,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
 
     @Override
     protected void renderContents(final GuiDraw draw, final int mouseX, final int mouseY, final float tickDelta) {
+        if (!companion.worldMapAllowed()) {
+            return;
+        }
         final MatrixStack matrices = draw.matrices();
         applyToolGroupFlight();
         final TileService visibleTiles = viewTiles();
@@ -2353,6 +2375,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
     ) {
         final SessionGuard.Session live = gameBridge.session();
         return config.predictionEnabled
+            && ConfluxMapClient.get().companionSession().predictionAllowed()
             && session.world().equals(live.world())
             && session.dimension().equals(live.dimension())
             && FullscreenMapLayerPolicy.predictionAllowed(
@@ -3034,6 +3057,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final StructureIndex.Marker marker,
         final Screen returnScreen
     ) {
+        if (!ConfluxMapClient.get().companionSession().waypointsAllowed()) {
+            return;
+        }
         final Optional<PlayerView> player = gameBridge.player();
         final OptionalInt playerY = player.isPresent()
             ? OptionalInt.of(player.get().blockY())
@@ -3053,6 +3079,9 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final BiomeCandidateSearch.Candidate candidate,
         final Screen returnScreen
     ) {
+        if (!ConfluxMapClient.get().companionSession().waypointsAllowed()) {
+            return;
+        }
         final Optional<PlayerView> player = gameBridge.player();
         final OptionalInt playerY = player.isPresent()
             ? OptionalInt.of(player.get().blockY())

@@ -79,6 +79,7 @@ public final class MinimapHudRenderer {
     private final AnnotationService annotations;
     private final OffscreenCanvas canvas = new OffscreenCanvas();
     private final UiResourceTheme uiTheme;
+    private final BooleanSupplier serverPolicyAllowsMinimap;
     private final TransitionClock fadeClock = new TransitionClock();
     private final MinimapHudFade fade = new MinimapHudFade();
 
@@ -105,13 +106,15 @@ public final class MinimapHudRenderer {
         final UiResourceTheme uiTheme,
         final CustomMarkerService customMarkers,
         final Consumer<ChunkViewport> captureViewportPublisher,
-        final BooleanSupplier liveTerrainPaused
+        final BooleanSupplier liveTerrainPaused,
+        final BooleanSupplier serverPolicyAllowsMinimap
     ) {
         this.client = client;
         this.config = config;
         this.gameBridge = gameBridge;
         this.annotations = annotations;
         this.uiTheme = uiTheme;
+        this.serverPolicyAllowsMinimap = serverPolicyAllowsMinimap;
         this.tilePainter = new MinimapTilePainter(
             tiles, textures, gameBridge, layerSelector, captureViewportPublisher
         );
@@ -166,7 +169,7 @@ public final class MinimapHudRenderer {
         final boolean containerOpen = MinecraftAccess.isContainerScreen(MinecraftAccess.screen(client));
         final boolean sessionActive = gameBridge.session().active();
         final boolean targetVisible = MinimapHudVisibility.shouldRender(
-            config.minimapEnabled,
+            config.minimapEnabled && serverPolicyAllowsMinimap.getAsBoolean(),
             sessionActive,
             fullscreenOpen,
             containerOpen,

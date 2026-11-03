@@ -181,7 +181,7 @@ position leaves the minimap frame are culled rather than clamped to the edge.
 api.actions().openFullscreenMap();
 api.actions().openWaypointEditor(waypointId);
 api.actions().requestTeleport(waypointId).thenAccept(result -> {
-    // STARTED, NO_WAYPOINT, or NO_SESSION
+    // STARTED, NO_WAYPOINT, NO_SESSION, or FORBIDDEN_BY_SERVER
 });
 api.actions().setLayerOverride(ActionApi.LayerOverride.UNDERGROUND);
 ```

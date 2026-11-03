@@ -104,6 +104,8 @@ public final class ConfigScreen extends ConfluxScreen {
     PlayerMarkerSettingsAccess playerMarkerAccess =
         PlayerMarkerSettingsAccess.from(false);
     boolean manualSeedAvailable;
+    boolean minimapRestrictedByServer;
+    boolean waypointsRestrictedByServer;
     /** True while the open reveal should still drive the rows' staggered fade-in. */
     private boolean rowFadeArmed;
     /** Pure two-act tab-switch state: the screen executes its decisions. */
@@ -186,6 +188,20 @@ public final class ConfigScreen extends ConfluxScreen {
         if (!currentPlayerMarkerAccess.equals(playerMarkerAccess)) {
             playerMarkerAccess = currentPlayerMarkerAccess;
             if (category == Category.MINIMAP) {
+                rebuild();
+            }
+        }
+        final boolean currentMinimapRestricted = !companionSession.minimapAllowed();
+        if (currentMinimapRestricted != minimapRestrictedByServer) {
+            minimapRestrictedByServer = currentMinimapRestricted;
+            if (category == Category.MINIMAP) {
+                rebuild();
+            }
+        }
+        final boolean currentWaypointsRestricted = !companionSession.waypointsAllowed();
+        if (currentWaypointsRestricted != waypointsRestrictedByServer) {
+            waypointsRestrictedByServer = currentWaypointsRestricted;
+            if (category == Category.WAYPOINTS) {
                 rebuild();
             }
         }
@@ -656,7 +672,8 @@ public final class ConfigScreen extends ConfluxScreen {
             companionSession.seedSharingDisabledByServer(),
             manualSeedService.available(),
             companionSession.mapCorrectionDisabledReasonKey(),
-            companionSession.structureSearchAllowed()
+            companionSession.structureSearchAllowed(),
+            !companionSession.predictionAllowed()
         );
     }
 

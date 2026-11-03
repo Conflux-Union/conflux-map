@@ -37,6 +37,10 @@ class ServerConfigTest {
         assertTrue(c.shareCorrections);
         assertFalse(c.shareChunkLoadState);
         assertTrue(c.allowEntityRadar);
+        assertTrue(c.allowMinimap);
+        assertTrue(c.allowWorldMap);
+        assertTrue(c.allowWaypoints);
+        assertTrue(c.allowPrediction);
         assertTrue(c.shareWaypoints);
         assertTrue(c.allowNonOperatorSharedWaypointManagement);
         assertEquals(
@@ -215,6 +219,7 @@ class ServerConfigTest {
         original.allowStructureSearch = false;
         original.shareChunkLoadState = true;
         original.allowEntityRadar = false;
+        original.restrictionMessage = "Maps are disabled on this server.";
         original.maxTilesPerRequest = 5;
         original.maxBytesPerSecondPerPlayer = 131_072;
         original.minRequestIntervalMs = 500;
@@ -238,6 +243,7 @@ class ServerConfigTest {
         assertEquals(original.shareCorrections, loaded.shareCorrections);
         assertEquals(original.shareChunkLoadState, loaded.shareChunkLoadState);
         assertEquals(original.allowEntityRadar, loaded.allowEntityRadar);
+        assertEquals(original.restrictionMessage, loaded.restrictionMessage);
         assertEquals(original.maxTilesPerRequest, loaded.maxTilesPerRequest);
         assertEquals(original.maxPendingTilesPerPlayer, loaded.maxPendingTilesPerPlayer);
         assertEquals(original.maxBytesPerSecondPerPlayer, loaded.maxBytesPerSecondPerPlayer);

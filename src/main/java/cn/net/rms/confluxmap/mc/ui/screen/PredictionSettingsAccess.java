@@ -9,7 +9,8 @@ record PredictionSettingsAccess(
     boolean underlayDisabledByServer,
     String networkSyncDisabledReasonKey,
     boolean structuresDisabledByServer,
-    boolean structureSearchAllowed
+    boolean structureSearchAllowed,
+    boolean featureForbiddenByServer
 ) {
     static PredictionSettingsAccess from(
         final boolean singleplayer,
@@ -36,6 +37,26 @@ record PredictionSettingsAccess(
         final String networkSyncDisabledReasonKey,
         final boolean structureSearchAllowed
     ) {
+        return from(
+            singleplayer,
+            seedIndependentUnderlay,
+            seedSharingDisabledByServer,
+            manualSeedAvailable,
+            networkSyncDisabledReasonKey,
+            structureSearchAllowed,
+            false
+        );
+    }
+
+    static PredictionSettingsAccess from(
+        final boolean singleplayer,
+        final boolean seedIndependentUnderlay,
+        final boolean seedSharingDisabledByServer,
+        final boolean manualSeedAvailable,
+        final String networkSyncDisabledReasonKey,
+        final boolean structureSearchAllowed,
+        final boolean featureForbiddenByServer
+    ) {
         final boolean remoteSeedDisabled = !singleplayer
             && seedSharingDisabledByServer
             && !manualSeedAvailable;
@@ -43,11 +64,15 @@ record PredictionSettingsAccess(
             remoteSeedDisabled && !seedIndependentUnderlay,
             networkSyncDisabledReasonKey,
             remoteSeedDisabled,
-            structureSearchAllowed
+            structureSearchAllowed,
+            featureForbiddenByServer
         );
     }
 
     String disabledReasonKey(final PredictionControl control) {
+        if (featureForbiddenByServer) {
+            return "confluxmap.screen.config.prediction.forbidden_by_server";
+        }
         return switch (control) {
             case UNDERLAY -> underlayDisabledByServer
                 ? "confluxmap.screen.config.prediction.seed_disabled_by_server"

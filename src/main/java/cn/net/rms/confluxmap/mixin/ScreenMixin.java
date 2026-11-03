@@ -126,6 +126,10 @@ public abstract class ScreenMixin {
             if (client.world == null) {
                 return true;
             }
+            final ConfluxMapClient app = ConfluxMapClient.get();
+            if (app != null && !app.companionSession().waypointsAllowed()) {
+                return true;
+            }
             final WaypointChatCodec.Candidate waypoint = candidate.get();
             MinecraftAccess.setScreen(client, WaypointEditScreen.forCreate(
                 parent,
