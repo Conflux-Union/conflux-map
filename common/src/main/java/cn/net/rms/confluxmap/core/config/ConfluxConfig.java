@@ -309,6 +309,8 @@ public final class ConfluxConfig {
     public int waypointRenderDistance = DEFAULT_WAYPOINT_RENDER_DISTANCE;
     /** Show private, client-owned waypoints on every map/world rendering surface. */
     public boolean localWaypointsVisible = true;
+    /** In singleplayer, scan unexplored map regions straight from the save's .mca files. */
+    public boolean mcaBackfillEnabled = true;
     /** Show server-synchronized public waypoints on every map/world rendering surface. */
     public boolean sharedWaypointsVisible = true;
     /** Public waypoint IDs allowed to render from the portal-linked dimension on this client. */
@@ -492,6 +494,7 @@ public final class ConfluxConfig {
         c.radarPlayerHighlightGhostSeconds = radarPlayerHighlightGhostSeconds;
         c.waypointRenderDistance = waypointRenderDistance;
         c.localWaypointsVisible = localWaypointsVisible;
+        c.mcaBackfillEnabled = mcaBackfillEnabled;
         c.sharedWaypointsVisible = sharedWaypointsVisible;
         c.sharedWaypointCrossDimensionVisibleIds =
             sharedWaypointCrossDimensionVisibleIds == null
