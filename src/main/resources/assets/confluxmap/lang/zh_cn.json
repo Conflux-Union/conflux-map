@@ -348,6 +348,7 @@
   "confluxmap.config.player_trail.duration": "足迹保留时间：%s",
   "confluxmap.config.player_trail.dot_size": "足迹红点大小：%s",
   "confluxmap.config.fullmap.chunk_grid": "区块网格：%s",
+  "confluxmap.config.fullmap.mca_backfill": "从已保存的区块加载地图：%s",
   "confluxmap.config.fullmap.chunk_grid_opacity": "区块网格不透明度：%s",
   "confluxmap.config.portals.enabled": "传送门标记：%s",
   "confluxmap.config.portals.show_icons": "传送门图标：%s",

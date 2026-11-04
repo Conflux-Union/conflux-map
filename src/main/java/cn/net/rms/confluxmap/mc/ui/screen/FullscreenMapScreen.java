@@ -1044,6 +1044,7 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         mapBrowser.tiles().clearViewport();
         predictionTiles.clearViewport();
         ConfluxMapClient.get().mapSyncClient().clearViewport();
+        ConfluxMapClient.get().mcaBackfillService().clearViewport();
         structureMarkers.flush();
         mapBrowser.clear();
     }
@@ -2263,6 +2264,13 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         final boolean preloadPaddedRing = updateViewport && predictionActive;
         if (updateViewport) {
             viewTiles().setViewport(layer, lod, firstTileX, lastTileX, firstTileZ, lastTileZ);
+            if (!mapBrowser.browsing()) {
+                ConfluxMapClient.get().mcaBackfillService().reportViewport(
+                    session.dimension(), lod, firstTileX, lastTileX, firstTileZ, lastTileZ
+                );
+            } else {
+                ConfluxMapClient.get().mcaBackfillService().clearViewport();
+            }
             if (predictionActive) {
                 if (session.dimension().equals(DimensionId.NETHER)) {
                     predictionTiles.setNetherBiomeY(layerSelector.current().pivotY());

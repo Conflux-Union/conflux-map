@@ -14,6 +14,9 @@ import cn.net.rms.confluxmap.core.config.ConfigIo;
 import cn.net.rms.confluxmap.core.config.ConfluxConfig;
 import cn.net.rms.confluxmap.core.export.MapExportService;
 import cn.net.rms.confluxmap.core.xaeroimport.XaeroImportService;
+import cn.net.rms.confluxmap.core.backfill.McaBackfillService;
+import cn.net.rms.confluxmap.mc.mapbackfill.ClientMcaRegionScanner;
+import cn.net.rms.confluxmap.mc.snapshot.McaSnapshotBaker;
 import cn.net.rms.confluxmap.mc.snapshot.XaeroSnapshotBaker;
 import cn.net.rms.confluxmap.core.export.ServiceMapExportTileSource;
 import cn.net.rms.confluxmap.core.loadstate.FullscreenDisplayMode;
@@ -160,6 +163,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
     private PredictionTileService predictionTileService;
     private MapExportService mapExportService;
     private XaeroImportService xaeroImportService;
+    private McaBackfillService mcaBackfillService;
     private PredictionBootstrap predictionBootstrap;
     private ManualSeedService manualSeedService;
     private PredictionPaletteBuilder predictionPaletteBuilder;
@@ -317,6 +321,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
         xaeroImportService = new XaeroImportService(
             mapWorlds, regionCache, tileService, cacheRoot, new XaeroSnapshotBaker(client), ConfluxMapMod.LOGGER
         );
+        mcaBackfillService = new McaBackfillService(
+            mapWorlds, regionCache, tileService, executors, config,
+            new ClientMcaRegionScanner(client), new McaSnapshotBaker(client), ConfluxMapMod.LOGGER
+        );
         clientNetworking.bindMapSync(mapSyncClient);
         clientNetworking.bindChunkLoadStates(chunkLoadStateClient);
         clientNetworking.bindPlayerRadar(serverPlayerRadar);
@@ -424,6 +432,7 @@ public final class ConfluxMapClient implements ClientModInitializer {
         sessionTracker.addListener(regionCache::onSessionChanged);
         sessionTracker.addListener(chunkCapture::onSessionChanged);
         sessionTracker.addListener(tileService::onSessionChanged);
+        sessionTracker.addListener(mcaBackfillService::onSessionChanged);
         sessionTracker.addListener(radarScanner::onSessionChanged);
         sessionTracker.addListener(serverPlayerRadar::onSessionChanged);
         sessionTracker.addListener(session -> gameBridge.runOnRenderThread(entityIconManager::onSessionChanged));
@@ -762,6 +771,10 @@ public final class ConfluxMapClient implements ClientModInitializer {
 
     public XaeroImportService xaeroImportService() {
         return xaeroImportService;
+    }
+
+    public McaBackfillService mcaBackfillService() {
+        return mcaBackfillService;
     }
 
     public StructureMarkerService structureMarkerService() {

@@ -8,12 +8,16 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Thread pools owned by the mod: a bounded worker pool for sampling/compositing
- * and one IO thread for disk reads/writes. All threads are daemons so a hung
- * task can never block game shutdown.
+ * Thread pools owned by the mod: a bounded worker pool for sampling/compositing,
+ * a small scan pool for multi-second region-file backfill scans, and one IO
+ * thread for disk reads/writes. All threads are daemons so a hung task can
+ * never block game shutdown.
  */
 public final class MapExecutors {
+    private static final int SCAN_THREADS = 2;
+
     private final ExecutorService workers;
+    private final ExecutorService scans;
     private final ExecutorService io;
     private final int workerCount;
 
@@ -37,6 +41,7 @@ public final class MapExecutors {
     public MapExecutors(final int workerCount) {
         this.workerCount = Math.max(1, workerCount);
         workers = Executors.newFixedThreadPool(this.workerCount, factory("ConfluxMap-Worker"));
+        scans = Executors.newFixedThreadPool(SCAN_THREADS, factory("ConfluxMap-Scan"));
         io = Executors.newSingleThreadExecutor(factory("ConfluxMap-IO"));
     }
 
@@ -53,6 +58,10 @@ public final class MapExecutors {
         return workers;
     }
 
+    public ExecutorService scans() {
+        return scans;
+    }
+
     public ExecutorService io() {
         return io;
     }
@@ -62,8 +71,8 @@ public final class MapExecutors {
     }
 
     /**
-     * Stops accepting worker jobs, drains them while IO remains open, then drains queued IO. This
-     * ordering lets an already-accepted worker finish scheduling its persistence work.
+     * Stops accepting worker and scan jobs, drains them while IO remains open, then drains queued
+     * IO. This ordering lets an already-accepted task finish scheduling its persistence work.
      */
     public void shutdown(final long timeoutMs) {
         final long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.max(0L, timeoutMs));
@@ -71,6 +80,12 @@ public final class MapExecutors {
         workers.shutdown();
         try {
             workers.awaitTermination(remainingNanos(deadline), TimeUnit.NANOSECONDS);
+        } catch (final InterruptedException e) {
+            interrupted = true;
+        }
+        scans.shutdown();
+        try {
+            scans.awaitTermination(remainingNanos(deadline), TimeUnit.NANOSECONDS);
         } catch (final InterruptedException e) {
             interrupted = true;
         }

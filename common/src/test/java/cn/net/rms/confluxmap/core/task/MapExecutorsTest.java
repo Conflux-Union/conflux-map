@@ -42,7 +42,7 @@ class MapExecutorsTest {
 
         final Thread shutdown = new Thread(() -> executors.shutdown(2_000L));
         shutdown.start();
-        awaitWorkerShutdown(executors);
+        awaitPoolShutdown(executors.workers());
         releaseWorker.countDown();
         shutdown.join(3_000L);
 
@@ -50,11 +50,58 @@ class MapExecutorsTest {
         assertTrue(ioFinished.await(1, TimeUnit.SECONDS));
     }
 
-    private static void awaitWorkerShutdown(final MapExecutors executors) throws InterruptedException {
+    @Test
+    void scanWorkRunsOnDedicatedThreads() throws Exception {
+        final MapExecutors executors = new MapExecutors(2);
+        try {
+            final CountDownLatch done = new CountDownLatch(1);
+            final AtomicReference<String> threadName = new AtomicReference<>();
+            executors.scans().execute(() -> {
+                threadName.set(Thread.currentThread().getName());
+                done.countDown();
+            });
+            assertTrue(done.await(2, TimeUnit.SECONDS));
+            assertTrue(threadName.get().startsWith("ConfluxMap-Scan"),
+                "scan work must not share the worker pool, ran on " + threadName.get());
+        } finally {
+            executors.shutdown(1_000L);
+        }
+    }
+
+    @Test
+    void shutdownDrainsScanWorkBeforeIoCloses() throws Exception {
+        final MapExecutors executors = new MapExecutors(2);
+        final CountDownLatch scanStarted = new CountDownLatch(1);
+        final CountDownLatch releaseScan = new CountDownLatch(1);
+        final CountDownLatch ioFinished = new CountDownLatch(1);
+        final AtomicReference<Throwable> scanFailure = new AtomicReference<>();
+        executors.scans().execute(() -> {
+            scanStarted.countDown();
+            try {
+                releaseScan.await();
+                executors.io().execute(ioFinished::countDown);
+            } catch (final Throwable failure) {
+                scanFailure.set(failure);
+            }
+        });
+        assertTrue(scanStarted.await(1, TimeUnit.SECONDS));
+
+        final Thread shutdown = new Thread(() -> executors.shutdown(2_000L));
+        shutdown.start();
+        awaitPoolShutdown(executors.scans());
+        releaseScan.countDown();
+        shutdown.join(3_000L);
+
+        assertNull(scanFailure.get());
+        assertTrue(ioFinished.await(1, TimeUnit.SECONDS));
+    }
+
+    private static void awaitPoolShutdown(final java.util.concurrent.ExecutorService pool)
+        throws InterruptedException {
         final long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
-        while (!executors.workers().isShutdown() && System.nanoTime() < deadline) {
+        while (!pool.isShutdown() && System.nanoTime() < deadline) {
             Thread.sleep(1L);
         }
-        assertTrue(executors.workers().isShutdown());
+        assertTrue(pool.isShutdown());
     }
 }
