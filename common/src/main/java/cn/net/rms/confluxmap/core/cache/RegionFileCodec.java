@@ -7,6 +7,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -320,23 +321,47 @@ public final class RegionFileCodec {
                     throw new RegionFileException("empty biome identifier at palette index " + i);
                 }
             }
-            for (int i = 0; i < COLUMN_COUNT; i++) {
-                surfaceY[i] = columns.readShort();
-                fluidDepth[i] = columns.readByte();
-                kind[i] = columns.readByte();
-                final int biomeIndex = columns.readUnsignedShort();
+            // Bulk-inflate then parse by offset: per-field stream reads cost ~91 ms/region vs ~3 ms for the inflate.
+            int cursor = 2 + 1 + 1 + 2; // surfaceY, fluidDepth, kind, biomeIndex
+            final int baseArgbOff = cursor;
+            cursor += 4;
+            final boolean hasXaeroBase = schemaVersion >= 5;
+            final int xaeroBaseArgbOff = hasXaeroBase ? cursor : -1;
+            if (hasXaeroBase) {
+                cursor += 4;
+            }
+            final int biomeTintOff = cursor;
+            cursor += 4;
+            final int overlayArgbOff = cursor;
+            cursor += 4;
+            final boolean hasXaeroOverlay = schemaVersion >= 6;
+            final int xaeroOverlayArgbOff = hasXaeroOverlay ? cursor : -1;
+            if (hasXaeroOverlay) {
+                cursor += 4;
+            }
+            final int lightOff = cursor;
+            final int recordSize = lightOff + 1;
+            final byte[] records = new byte[COLUMN_COUNT * recordSize];
+            columns.readFully(records);
+            // ByteBuffer is big-endian by default, matching the on-disk field order.
+            final ByteBuffer recordBuffer = ByteBuffer.wrap(records);
+            for (int i = 0, off = 0; i < COLUMN_COUNT; i++, off += recordSize) {
+                surfaceY[i] = recordBuffer.getShort(off);
+                fluidDepth[i] = records[off + 2];
+                kind[i] = records[off + 3];
+                final int biomeIndex = recordBuffer.getShort(off + 4) & 0xFFFF;
                 if (biomeIndex > biomePaletteSize) {
                     throw new RegionFileException(
                         "biome index " + biomeIndex + " exceeds palette size " + biomePaletteSize
                     );
                 }
                 biomeId[i] = biomePalette[biomeIndex];
-                baseArgb[i] = columns.readInt();
-                xaeroBaseArgb[i] = schemaVersion >= 5 ? columns.readInt() : baseArgb[i];
-                biomeTint[i] = columns.readInt();
-                overlayArgb[i] = columns.readInt();
-                xaeroOverlayArgb[i] = schemaVersion >= 6 ? columns.readInt() : 0;
-                light[i] = columns.readByte();
+                baseArgb[i] = recordBuffer.getInt(off + baseArgbOff);
+                xaeroBaseArgb[i] = hasXaeroBase ? recordBuffer.getInt(off + xaeroBaseArgbOff) : baseArgb[i];
+                biomeTint[i] = recordBuffer.getInt(off + biomeTintOff);
+                overlayArgb[i] = recordBuffer.getInt(off + overlayArgbOff);
+                xaeroOverlayArgb[i] = hasXaeroOverlay ? recordBuffer.getInt(off + xaeroOverlayArgbOff) : 0;
+                light[i] = records[off + lightOff];
             }
         } finally {
             inflater.end();
