@@ -177,6 +177,124 @@ class RegionFileCodecTest {
     }
 
     @Test
+    void decodeRoundTripsExtremeFieldValues() throws IOException, RegionFileCodec.RegionFileException {
+        final int rx = 1;
+        final int rz = 1;
+        final int layerOrdinal = 0;
+        final short[] surfaceY = new short[RegionFileCodec.COLUMN_COUNT];
+        final byte[] fluidDepth = new byte[RegionFileCodec.COLUMN_COUNT];
+        final byte[] kind = new byte[RegionFileCodec.COLUMN_COUNT];
+        final String[] biomeId = new String[RegionFileCodec.COLUMN_COUNT];
+        final int[] baseArgb = new int[RegionFileCodec.COLUMN_COUNT];
+        final int[] xaeroBaseArgb = new int[RegionFileCodec.COLUMN_COUNT];
+        final int[] biomeTint = new int[RegionFileCodec.COLUMN_COUNT];
+        final int[] overlayArgb = new int[RegionFileCodec.COLUMN_COUNT];
+        final int[] xaeroOverlayArgb = new int[RegionFileCodec.COLUMN_COUNT];
+        final byte[] light = new byte[RegionFileCodec.COLUMN_COUNT];
+        for (int i = 0; i < RegionFileCodec.COLUMN_COUNT; i++) {
+            surfaceY[i] = (i % 2 == 0) ? Short.MIN_VALUE : Short.MAX_VALUE;
+            fluidDepth[i] = (i % 3 == 0) ? Byte.MIN_VALUE : (byte) (i % 7);
+            kind[i] = (i % 5 == 0) ? -1 : (byte) (i % 11);
+            biomeId[i] = (i % 6 == 0) ? null : "example:edge_biome_" + (i % 4);
+            baseArgb[i] = (i % 4 == 0) ? Integer.MIN_VALUE : (i % 4 == 1 ? -1 : 0x7F123456);
+            xaeroBaseArgb[i] = baseArgb[i] ^ -2;
+            biomeTint[i] = (i % 4 == 2) ? Integer.MIN_VALUE + i : 0xFF00FF00;
+            overlayArgb[i] = (i % 8 == 0) ? -1 : 0;
+            xaeroOverlayArgb[i] = (i % 9 == 0) ? Integer.MIN_VALUE + i : 1;
+            light[i] = (i % 2 == 0) ? 0 : (byte) 0xFF;
+        }
+        final RegionFileCodec.RegionData original = new RegionFileCodec.RegionData(
+            rx, rz, -1L,
+            new byte[RegionFileCodec.CHUNK_TABLE_ENTRIES],
+            new int[RegionFileCodec.CHUNK_TABLE_ENTRIES],
+            new long[RegionFileCodec.CHUNK_TABLE_ENTRIES],
+            surfaceY, fluidDepth, kind, biomeId,
+            baseArgb, xaeroBaseArgb, biomeTint, overlayArgb, xaeroOverlayArgb, light
+        );
+
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        RegionFileCodec.encode(out, layerOrdinal, original);
+
+        final RegionFileCodec.RegionData decoded = RegionFileCodec.decode(
+            new ByteArrayInputStream(out.toByteArray()), rx, rz, layerOrdinal
+        );
+
+        assertEquals(original.lastWriteEpochMs(), decoded.lastWriteEpochMs());
+        assertArrayEquals(original.surfaceY(), decoded.surfaceY());
+        assertArrayEquals(original.fluidDepth(), decoded.fluidDepth());
+        assertArrayEquals(original.kind(), decoded.kind());
+        assertArrayEquals(original.biomeId(), decoded.biomeId());
+        assertArrayEquals(original.baseArgb(), decoded.baseArgb());
+        assertArrayEquals(original.xaeroBaseArgb(), decoded.xaeroBaseArgb());
+        assertArrayEquals(original.biomeTint(), decoded.biomeTint());
+        assertArrayEquals(original.overlayArgb(), decoded.overlayArgb());
+        assertArrayEquals(original.xaeroOverlayArgb(), decoded.xaeroOverlayArgb());
+        assertArrayEquals(original.light(), decoded.light());
+    }
+
+    @Test
+    void decodeRejectsBiomeIndexBeyondPalette() throws IOException {
+        final byte[] bytes = handBuiltRegionWithBiomeIndex(5);
+
+        assertThrows(RegionFileCodec.RegionFileException.class, () ->
+            RegionFileCodec.decode(new ByteArrayInputStream(bytes), 4, -8, 0)
+        );
+    }
+
+    @Test
+    void decodeSurfacesTruncatedColumnBodyAsIoException() throws IOException {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        RegionFileCodec.encode(out, 0, sampleData(4, -8));
+        final int bodyStart = RegionFileCodec.HEADER_SIZE + RegionFileCodec.CHUNK_TABLE_SIZE;
+        final byte[] truncated = java.util.Arrays.copyOf(out.toByteArray(), bodyStart + 60);
+
+        assertThrows(IOException.class, () ->
+            RegionFileCodec.decode(new ByteArrayInputStream(truncated), 4, -8, 0)
+        );
+    }
+
+    /** Schema-7 stream whose every column references palette index {@code biomeIdx}. */
+    private static byte[] handBuiltRegionWithBiomeIndex(final int biomeIdx) throws IOException {
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        final DataOutputStream header = new DataOutputStream(out);
+        header.write(RegionFileCodec.MAGIC);
+        header.writeByte(RegionFileCodec.FORMAT_VERSION);
+        header.writeByte(RegionFileCodec.SCHEMA_VERSION);
+        header.writeByte(RegionFileCodec.SOURCE_CLASS);
+        header.writeByte(0);
+        header.writeInt(4);
+        header.writeInt(-8);
+        header.writeLong(1L);
+        header.write(new byte[8]);
+        for (int i = 0; i < RegionFileCodec.CHUNK_TABLE_ENTRIES; i++) {
+            header.writeByte(0);
+            header.writeInt(0);
+            header.writeLong(0L);
+        }
+        header.flush();
+
+        final DeflaterOutputStream compressed = new DeflaterOutputStream(out);
+        final DataOutputStream body = new DataOutputStream(compressed);
+        body.writeInt(1);
+        body.writeUTF("minecraft:plains");
+        for (int i = 0; i < RegionFileCodec.COLUMN_COUNT; i++) {
+            body.writeShort(0);
+            body.writeByte(0);
+            body.writeByte(0);
+            body.writeShort(biomeIdx);
+            body.writeInt(0);
+            body.writeInt(0);
+            body.writeInt(0);
+            body.writeInt(0);
+            body.writeInt(0);
+            body.writeByte(0);
+        }
+        body.flush();
+        compressed.finish();
+        return out.toByteArray();
+    }
+
+    @Test
     void decodeRejectsBadMagic() throws IOException {
         final ByteArrayOutputStream out = new ByteArrayOutputStream();
         RegionFileCodec.encode(out, 0, sampleData(1, 1));

@@ -54,6 +54,8 @@ public final class RegionDiskCache {
     private static final long FLUSH_INTERVAL_MS = 30_000L;
     private static final int EVICT_DISTANCE_REGIONS = 6;
     static final int MAX_PENDING_REGION_LOADS = 64;
+    /** Decoded regions per tile-invalidation flush: first tiles compose while the batch tail still decodes. */
+    static final int INVALIDATE_FLUSH_REGIONS = 8;
 
     private static final MapLayer.Type[] PERSISTENT_LAYER_TYPES = Arrays.stream(MapLayer.Type.values())
         .filter(MapLayer.Type::persistent)
@@ -223,6 +225,7 @@ public final class RegionDiskCache {
             final Map<MapLayer.Type, List<TileService.RegionUnit>> merged =
                 new EnumMap<>(MapLayer.Type.class);
             final Map<RegionSlot, RuntimeException> failures = new java.util.HashMap<>();
+            int unflushed = 0;
             for (final RegionSlot slot : batch) {
                 try {
                     if (loadRegion(slot.layer, slot.regionX, slot.regionZ)) {
@@ -232,13 +235,6 @@ public final class RegionDiskCache {
                 } catch (final RuntimeException e) {
                     failures.put(slot, e);
                 }
-            }
-            for (final Map.Entry<MapLayer.Type, List<TileService.RegionUnit>> entry : merged.entrySet()) {
-                tiles.markRegionsStored(
-                    token, dimension, new MapLayer(entry.getKey(), 0), entry.getValue()
-                );
-            }
-            for (final RegionSlot slot : batch) {
                 final CompletableFuture<Void> completion = regionLoadCompletions.get(slot);
                 final RuntimeException failure = failures.get(slot);
                 if (failure == null) {
@@ -247,8 +243,26 @@ public final class RegionDiskCache {
                     completion.completeExceptionally(failure);
                 }
                 pendingRegionLoads.decrementAndGet();
+                if (++unflushed >= INVALIDATE_FLUSH_REGIONS) {
+                    flushStoredRegions(merged);
+                    unflushed = 0;
+                }
             }
+            flushStoredRegions(merged);
         }
+    }
+
+    /** One tile-invalidation wave covering the regions decoded since the previous flush. */
+    private void flushStoredRegions(final Map<MapLayer.Type, List<TileService.RegionUnit>> merged) {
+        if (merged.isEmpty()) {
+            return;
+        }
+        for (final Map.Entry<MapLayer.Type, List<TileService.RegionUnit>> entry : merged.entrySet()) {
+            tiles.markRegionsStored(
+                token, dimension, new MapLayer(entry.getKey(), 0), entry.getValue()
+            );
+        }
+        merged.clear();
     }
 
     /** Waits for queue capacity when necessary, then completes after this region has loaded. */

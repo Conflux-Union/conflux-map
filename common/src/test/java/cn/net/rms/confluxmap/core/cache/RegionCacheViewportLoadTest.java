@@ -83,6 +83,72 @@ class RegionCacheViewportLoadTest {
     }
 
     @Test
+    void regionInvalidationFlushesBeforeTheEntireBatchDecodes(@TempDir final Path tempDir)
+        throws Exception {
+        final int regionCount = RegionDiskCache.INVALIDATE_FLUSH_REGIONS * 2 + 1;
+        final MapExecutors executors = new MapExecutors();
+        try {
+            final SessionGuard.Session session = new SessionGuard.Session(
+                1L, new WorldIdentity("local", "incremental-cache-test"), DimensionId.OVERWORLD
+            );
+            final MapWorldService mapWorlds = new MapWorldService();
+            mapWorlds.switchSession(session);
+            final TileService tiles = new TileService(
+                mapWorlds, executors, new ConfluxConfig(), new DaylightModel()
+            );
+            final java.util.ArrayList<Runnable> queued = new java.util.ArrayList<>();
+            final RegionDiskCache cache = new RegionDiskCache(
+                tempDir,
+                session,
+                mapWorlds,
+                queued::add,
+                tiles,
+                LogManager.getLogger("RegionCacheViewportLoadTest")
+            );
+            final List<TileService.RegionUnit> regions = new java.util.ArrayList<>();
+            for (int regionX = 0; regionX < regionCount; regionX++) {
+                writeRegion(tempDir, session, regionX, 0);
+                regions.add(new TileService.RegionUnit(regionX, 0));
+            }
+
+            final MapWorld world = mapWorlds.current();
+            final boolean[] sawInvalidation = {false};
+            final boolean[] tailMergedAtFirstInvalidation = {false};
+            tiles.bindRealCoverageListener(key -> {
+                if (sawInvalidation[0]) {
+                    return;
+                }
+                sawInvalidation[0] = true;
+                tailMergedAtFirstInvalidation[0] =
+                    world.store(MapLayer.SURFACE).region(regionCount - 1, 0) != null;
+            });
+            tiles.setViewport(MapLayer.SURFACE, 0, 0, regionCount - 1, 0, 0);
+            final TileKey firstTile = new TileKey(
+                session.world(), session.dimension(), MapLayer.SURFACE.cacheId(), 0, 0, 0
+            );
+            tiles.requestTile(firstTile);
+
+            final List<java.util.concurrent.CompletableFuture<Void>> loads =
+                cache.ensureRegionsLoadedAsync(MapLayer.Type.SURFACE, regions);
+            assertEquals(1, queued.size(), "one IO drain must own the whole pending batch");
+            queued.remove(0).run();
+
+            assertTrue(sawInvalidation[0], "viewport coverage must receive an invalidation");
+            assertFalse(
+                tailMergedAtFirstInvalidation[0],
+                "first invalidation must fire before the batch tail has decoded"
+            );
+            assertTrue(loads.stream().allMatch(java.util.concurrent.CompletableFuture::isDone));
+            assertNotNull(
+                world.store(MapLayer.SURFACE).region(regionCount - 1, 0),
+                "early flushing must not drop the batch tail"
+            );
+        } finally {
+            executors.shutdown(1_000L);
+        }
+    }
+
+    @Test
     void regionReadQueueRejectsWorkBeyondItsBound(@TempDir final Path tempDir) {
         final MapExecutors executors = new MapExecutors();
         try {
