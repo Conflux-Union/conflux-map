@@ -83,8 +83,9 @@ final class BiomeCandidateScreen extends ConfluxScreen {
         this.dimension = dimension;
         this.biome = biome;
         this.mapPane = new SplitMapPane(map);
-        centerX = map.centerBlockX();
-        centerZ = map.centerBlockZ();
+        final SearchCenter center = map.searchCenter();
+        centerX = center.blockX();
+        centerZ = center.blockZ();
     }
 
     @Override

@@ -82,8 +82,9 @@ final class StructureCandidateScreen extends ConfluxScreen {
         this.dimension = dimension;
         this.type = type;
         this.mapPane = new SplitMapPane(map);
-        this.centerX = map.centerBlockX();
-        this.centerZ = map.centerBlockZ();
+        final SearchCenter center = map.searchCenter();
+        this.centerX = center.blockX();
+        this.centerZ = center.blockZ();
     }
 
     @Override

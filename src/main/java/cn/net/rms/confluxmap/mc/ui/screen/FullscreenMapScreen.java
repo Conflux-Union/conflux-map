@@ -3049,6 +3049,12 @@ public final class FullscreenMapScreen extends ConfluxScreen {
         return (int) Math.floor(centerZ);
     }
 
+    SearchCenter searchCenter() {
+        return SearchCenter.defaultCenter(
+            gameBridge.viewpoint(), viewSession().dimension(), centerBlockX(), centerBlockZ()
+        );
+    }
+
     void focusStructure(final StructureIndex.Marker marker) {
         centerX = marker.blockX();
         centerZ = marker.blockZ();
