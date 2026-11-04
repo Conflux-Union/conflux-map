@@ -41,6 +41,7 @@ public final class RegionStoragePaths {
     }
 
     static Path regionDirectory(final Path worldRoot, final String dimension) {
+        // Vanilla 26.1 moved every dimension, including the vanilla three, under dimensions/<ns>/<path>.
         //#if MC<260100
         if ("minecraft:overworld".equals(dimension)) {
             return worldRoot.resolve("region");

@@ -31,9 +31,8 @@ class ClientMcaRegionScannerTest {
 
     @Test
     void mapsSummaryRegionsToVanillaDimensionDirectories() throws IOException {
-        final Path overworldMca = writeMca(tempDir.resolve("region").resolve("r.0.0.mca"), 0, 0);
-        final Path netherMca = writeMca(
-            tempDir.resolve("DIM-1").resolve("region").resolve("r.0.0.mca"), 0, 0);
+        final Path overworldMca = writeMca(overworldRegionDir(tempDir).resolve("r.0.0.mca"), 0, 0);
+        final Path netherMca = writeMca(netherRegionDir(tempDir).resolve("r.0.0.mca"), 0, 0);
 
         final ClientMcaRegionScanner scanner = scannerFor(tempDir);
 
@@ -48,7 +47,7 @@ class ClientMcaRegionScannerTest {
     void mapsOneSummaryRegionToItsQuarterMca() throws IOException {
         // Summary region (3,1) covers chunks (48..63, 16..31) = MCA (1,0) local (16..31, 16..31);
         // its first chunk is MCA-local (16,16).
-        final Path mca = writeMca(tempDir.resolve("region").resolve("r.1.0.mca"), 16, 16);
+        final Path mca = writeMca(overworldRegionDir(tempDir).resolve("r.1.0.mca"), 16, 16);
 
         final ClientMcaRegionScanner scanner = scannerFor(tempDir);
         final SummaryCodec.SampledRegion region =
@@ -71,13 +70,30 @@ class ClientMcaRegionScannerTest {
     void expectedMtimeIsCarriedThroughVerbatim() throws IOException {
         // The scanner stamps the scan with the caller's expectation; the backfill service
         // re-reads the file mtime afterwards and discards on drift.
-        final Path mca = writeMca(tempDir.resolve("region").resolve("r.0.0.mca"), 0, 0);
+        final Path mca = writeMca(overworldRegionDir(tempDir).resolve("r.0.0.mca"), 0, 0);
         final ClientMcaRegionScanner scanner = scannerFor(tempDir);
         final SummaryCodec.SampledRegion region =
             scanner.scanRegion(DimensionId.OVERWORLD, 0, 0, 123456789L);
 
         assertNotNull(region);
         assertEquals(123456789L, region.sourceMcaMtimeMs());
+    }
+
+    // Vanilla 26.1 moved every dimension under dimensions/<namespace>/<path>.
+    private static Path overworldRegionDir(final Path root) {
+        //#if MC>=260100
+        //$$ return root.resolve("dimensions/minecraft/overworld/region");
+        //#else
+        return root.resolve("region");
+        //#endif
+    }
+
+    private static Path netherRegionDir(final Path root) {
+        //#if MC>=260100
+        //$$ return root.resolve("dimensions/minecraft/the_nether/region");
+        //#else
+        return root.resolve("DIM-1").resolve("region");
+        //#endif
     }
 
     private ClientMcaRegionScanner scannerFor(final Path root) {
