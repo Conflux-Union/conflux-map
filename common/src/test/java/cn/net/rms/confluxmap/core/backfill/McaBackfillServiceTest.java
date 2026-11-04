@@ -70,12 +70,17 @@ class McaBackfillServiceTest {
     private static final class FakeScanner implements McaRegionScanner {
         final AtomicLong mtime = new AtomicLong(MTIME);
         final AtomicInteger scanCount = new AtomicInteger();
+        /** File-stat probes from the viewport patrol; the throttle test's observation point. */
+        final AtomicInteger mtimeProbes = new AtomicInteger();
         final AtomicReference<CountDownLatch> scanGate = new AtomicReference<>();
+        /** Thread the latest scan ran on; the scan-pool test's observation point. */
+        final AtomicReference<String> lastScanThread = new AtomicReference<>();
         volatile boolean poisonMtimeDuringScan;
         volatile int missingMcaRegionX = Integer.MIN_VALUE;
 
         @Override
         public long mtimeMs(final DimensionId dimension, final int regionX, final int regionZ) {
+            mtimeProbes.incrementAndGet();
             return missingMcaRegionX == regionX ? 0L : mtime.get();
         }
 
@@ -83,6 +88,7 @@ class McaBackfillServiceTest {
         public SummaryCodec.SampledRegion scanRegion(
             final DimensionId dimension, final int regionX, final int regionZ, final long expectedMtimeMs
         ) {
+            lastScanThread.set(Thread.currentThread().getName());
             scanCount.incrementAndGet();
             if (poisonMtimeDuringScan) {
                 mtime.incrementAndGet();
@@ -183,6 +189,39 @@ class McaBackfillServiceTest {
     }
 
     @Test
+    void unchangedMtimeStaysDonePastTheCooldown() throws Exception {
+        // The fixture region is partial (chunk 0 only), so in-memory satisfaction alone can
+        // never close it: a landed scan must record the region as done for its mtime.
+        service.reportViewport(DimensionId.OVERWORLD, 0, 0, 0, 0, 0);
+        awaitChunkSource(mapWorlds.current(), 0, 0, SampleSource.REAL_SCAN);
+        final int scansAfterFirst = scanner.scanCount.get();
+
+        clock.addAndGet(10_000L);
+        service.reportViewport(DimensionId.OVERWORLD, 0, 0, 0, 0, 0);
+        Thread.sleep(200L);
+
+        assertEquals(scansAfterFirst, scanner.scanCount.get(),
+            "a region whose MCA file never changed must not be rescanned once its scan landed");
+    }
+
+    @Test
+    void redoneScanWithIdenticalRevisionsLeavesTheRegionUnchanged() throws Exception {
+        service.reportViewport(DimensionId.OVERWORLD, 0, 0, 0, 0, 0);
+        awaitChunkSource(mapWorlds.current(), 0, 0, SampleSource.REAL_SCAN);
+        final RegionColumns region = mapWorlds.current().store(MapLayer.SURFACE).region(0, 0);
+        final int versionAfterFirstScan = region.version();
+
+        // A done-ledger reset re-opens the region; the rescan of the unchanged file
+        // carries the same (source, revision) for every chunk the region already holds.
+        service.onSessionChanged(session);
+        awaitByPushing(() -> scanner.scanCount.get() >= 2);
+        Thread.sleep(200L);
+
+        assertEquals(versionAfterFirstScan, region.version(),
+            "identical (source, revision) writes must not bump the region version");
+    }
+
+    @Test
     void fullyCapturedRegionHoldsWithoutScans() throws Exception {
         final MapWorld world = mapWorlds.current();
         for (int localZ = 0; localZ < 16; localZ++) {
@@ -254,22 +293,53 @@ class McaBackfillServiceTest {
         scanner.scanGate.set(gate);
         service.reportViewport(DimensionId.OVERWORLD, 1, 0, 1, 0, 1); // 16 candidate regions
         Thread.sleep(200L);
-        assertEquals(MAX_PENDING_SCANS, scanner.scanCount.get(),
-            "pending bound caps concurrent scans");
+        final int whileGated = scanner.scanCount.get();
+        assertTrue(whileGated >= 2, "the two-thread scan pool saturates, saw " + whileGated);
+        assertTrue(whileGated <= MAX_PENDING_SCANS,
+            "pending bound caps queued scans, saw " + whileGated);
         service.reportViewport(DimensionId.OVERWORLD, 1, 0, 1, 0, 1);
         Thread.sleep(100L);
-        assertEquals(MAX_PENDING_SCANS, scanner.scanCount.get(),
+        assertEquals(whileGated, scanner.scanCount.get(),
             "no extra offers while the bound holds");
 
         gate.countDown();
         awaitChunkSource(mapWorlds.current(), 0, 0, SampleSource.REAL_SCAN);
         final long deadline = System.nanoTime() + 5_000_000_000L;
         while (scanner.scanCount.get() <= MAX_PENDING_SCANS && System.nanoTime() < deadline) {
+            clock.addAndGet(250L); // let the patrol throttle window elapse like real frames would
             service.reportViewport(DimensionId.OVERWORLD, 1, 0, 1, 0, 1);
             Thread.sleep(20L);
         }
         assertTrue(scanner.scanCount.get() > MAX_PENDING_SCANS,
             "released capacity lets the next push resume the cursor");
+    }
+
+    @Test
+    void patrolOffersAreThrottledToTheInterval() throws Exception {
+        service.reportViewport(DimensionId.OVERWORLD, 0, 0, 0, 0, 0);
+        final int probesAfterFirst = scanner.mtimeProbes.get();
+        assertTrue(probesAfterFirst > 0, "the first push patrols");
+
+        for (int i = 0; i < 5; i++) {
+            service.reportViewport(DimensionId.OVERWORLD, 0, 0, 0, 0, 0);
+        }
+        assertEquals(probesAfterFirst, scanner.mtimeProbes.get(),
+            "pushes inside the throttle window must not stat files on the render thread");
+
+        clock.addAndGet(250L);
+        service.reportViewport(DimensionId.OVERWORLD, 0, 0, 0, 0, 0);
+        assertTrue(scanner.mtimeProbes.get() > probesAfterFirst,
+            "a push past the interval patrols again");
+    }
+
+    @Test
+    void scansRunOnTheDedicatedScanPool() throws Exception {
+        service.reportViewport(DimensionId.OVERWORLD, 0, 0, 0, 0, 0);
+        awaitChunkSource(mapWorlds.current(), 0, 0, SampleSource.REAL_SCAN);
+
+        assertTrue(scanner.lastScanThread.get().startsWith("ConfluxMap-Scan"),
+            "multi-second scans must not starve tile composition on the worker pool, ran on "
+                + scanner.lastScanThread.get());
     }
 
     // --- helpers ---
@@ -287,6 +357,9 @@ class McaBackfillServiceTest {
         throws InterruptedException {
         final long deadline = System.nanoTime() + 5_000_000_000L;
         while (System.nanoTime() < deadline) {
+            // Real pushes are spaced by real frames; the fake clock must advance with them
+            // or the patrol throttle swallows every retry after the first.
+            clock.addAndGet(250L);
             service.reportViewport(DimensionId.OVERWORLD, 0, 0, 0, 0, 0);
             if (condition.getAsBoolean()) {
                 return;

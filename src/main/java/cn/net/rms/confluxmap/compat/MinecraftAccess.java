@@ -42,6 +42,18 @@ public final class MinecraftAccess {
     }
 
     /**
+     * Identity of the current integrated server (null without one): lets callers cache
+     * per-session values on the client thread and re-resolve when the instance changes.
+     */
+    public static Object singleplayerServerRef(final MinecraftClient client) {
+        //#if MC>=260100
+        //$$ return client.getSingleplayerServer();
+        //#else
+        return client.getServer();
+        //#endif
+    }
+
+    /**
      * The current singleplayer world's save root, or null on a dedicated connection. Read
      * on the client thread; the MCA backfill scanner resolves region files under it.
      */

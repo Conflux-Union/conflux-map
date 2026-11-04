@@ -46,6 +46,11 @@ public final class McaBackfillService {
     private static final int MAX_PENDING_SCANS = 4;
     private static final int MAX_OFFERS_PER_PASS = 8;
     private static final long RESCAN_COOLDOWN_MS = 5_000L;
+    /**
+     * The patrol stats MCA files and walks chunk tables, while pushes arrive once per
+     * rendered frame; files change on autosave time scales, so this loses nothing.
+     */
+    private static final long PATROL_INTERVAL_MS = 200L;
 
     /** One cache-region unit of backfill work, per layer. */
     private record Slot(MapLayer layer, int regionX, int regionZ) {
@@ -71,6 +76,8 @@ public final class McaBackfillService {
     private ViewportRect viewport;
     /** Row-major position inside the current viewport's region expansion; reset on rect change. */
     private long cursor;
+    /** Clock stamp of the last patrol; pushes inside {@link #PATROL_INTERVAL_MS} skip it. */
+    private long lastPatrolAtMs;
 
     private record ViewportRect(int lod, int minTileX, int maxTileX, int minTileZ, int maxTileZ) {
     }
@@ -135,6 +142,11 @@ public final class McaBackfillService {
             viewport = rect;
             cursor = 0;
         }
+        final long now = clock.getAsLong();
+        if (now - lastPatrolAtMs < PATROL_INTERVAL_MS) {
+            return;
+        }
+        lastPatrolAtMs = now;
         offerRegions(current, layer, rect);
     }
 
@@ -148,6 +160,7 @@ public final class McaBackfillService {
         synchronized (this) {
             session = newSession;
             viewport = null;
+            lastPatrolAtMs = 0L;
         }
         inFlight.clear();
         doneRegions.clear();
@@ -253,7 +266,9 @@ public final class McaBackfillService {
         final CompletableFuture<Void> load = disk != null
             ? disk.awaitRegionLoaded(layer.type(), slot.regionX(), slot.regionZ())
             : CompletableFuture.completedFuture(null);
-        load.thenRunAsync(() -> scanAndStore(session, layer, slot, mtime), executors.workers())
+        // Scans read whole MCA files and bake colors for seconds per region; the scan
+        // pool keeps them from queueing ahead of tile composition behind a zoom.
+        load.thenRunAsync(() -> scanAndStore(session, layer, slot, mtime), executors.scans())
             .exceptionally(error -> {
                 logger.warn("mca-backfill: region {},{} failed", slot.regionX(), slot.regionZ(), error);
                 release(slot);
@@ -292,11 +307,28 @@ public final class McaBackfillService {
             if (world == null) {
                 return;
             }
+            // Contents fully absorbed (or declined by higher-priority sources); ungenerated
+            // chunks cannot appear without another file change, so even a partially covered
+            // region is done for this mtime — otherwise it rescans every cooldown forever.
+            if (this.session.token() == session.token()) {
+                doneRegions.put(slot, mtime);
+            }
             final List<ChunkSnapshot> snapshots =
                 McaSnapshotConverter.toSnapshots(scanned, session.token(), layer, baker);
             int accepted = 0;
+            final RegionColumns region = world.store(layer).region(regionX, regionZ);
             final List<TileService.RegionUnit> units = new ArrayList<>(snapshots.size());
             for (final ChunkSnapshot snapshot : snapshots) {
+                // A rescan re-offers identical data; re-accepting it bumps the region
+                // version and invalidates tiles for nothing, and the priority gate cannot
+                // see this (REAL_SCAN overrides itself), so (source, revision) gates the put.
+                final int localX = snapshot.chunkX & (RegionColumns.CHUNKS - 1);
+                final int localZ = snapshot.chunkZ & (RegionColumns.CHUNKS - 1);
+                if (region != null
+                    && region.chunkSource(localX, localZ) == SampleSource.REAL_SCAN
+                    && region.chunkSourceRevision(localX, localZ) == mtime) {
+                    continue;
+                }
                 if (world.put(layer, snapshot, SampleSource.REAL_SCAN)) {
                     accepted++;
                     units.add(new TileService.RegionUnit(snapshot.chunkX, snapshot.chunkZ));

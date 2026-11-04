@@ -17,9 +17,10 @@ import net.minecraft.client.MinecraftClient;
  * Reads summary regions out of the singleplayer save's Anvil files, reusing the
  * server companion's scan stack (native JNI fast path with the Mojang NBT
  * fallback) and the registry-backed map-colour resolver. The save root is
- * resolved on the client thread — {@link #mtimeMs} is called from the viewport
- * push — and reused by the worker-side {@link #scanRegion}; a session change
- * simply re-resolves on the next viewport probe, and stale reads are discarded
+ * resolved on the client thread once per integrated-server instance —
+ * {@link #mtimeMs} is called from the per-frame viewport patrol — and reused by
+ * the worker-side {@link #scanRegion}; a session change swaps the server
+ * instance, which re-resolves on the next probe, and stale reads are discarded
  * by the backfill service's token checks.
  */
 public final class ClientMcaRegionScanner implements McaRegionScanner {
@@ -29,6 +30,8 @@ public final class ClientMcaRegionScanner implements McaRegionScanner {
     private final AnvilMcaScanner scanner;
     private final ChunkSummarizer summarizer;
     private volatile Path saveRoot;
+    /** Server instance {@link #saveRoot} was resolved from; never equal to a fresh instance. */
+    private volatile Object saveRootServer = new Object();
 
     public ClientMcaRegionScanner(final MinecraftClient client) {
         this(client, new AnvilMcaScanner(), new ChunkSummarizer(new RegistryMapColors()), null);
@@ -83,7 +86,11 @@ public final class ClientMcaRegionScanner implements McaRegionScanner {
 
     private Path currentSaveRoot() {
         if (client != null && client.isOnThread()) {
-            saveRoot = MinecraftAccess.singleplayerSaveRoot(client);
+            final Object server = MinecraftAccess.singleplayerServerRef(client);
+            if (server != saveRootServer) {
+                saveRoot = MinecraftAccess.singleplayerSaveRoot(client);
+                saveRootServer = server;
+            }
         }
         return saveRoot;
     }
