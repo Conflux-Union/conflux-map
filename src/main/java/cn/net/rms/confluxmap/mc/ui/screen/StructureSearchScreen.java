@@ -123,12 +123,6 @@ final class StructureSearchScreen extends ConfluxScreen {
 
     @Override
     protected void init() {
-        if (mode == MapSearchMode.STRUCTURE
-            && companion.structureSearchAllowed()
-            && !config.predictionShowStructures) {
-            config.predictionShowStructures = true;
-            saveConfig();
-        }
         visibilityButtons.clear();
         locateButtons.clear();
         biomeLocateButtons.clear();
@@ -303,6 +297,12 @@ final class StructureSearchScreen extends ConfluxScreen {
     private void locate(final StructureIndex.StructureType type) {
         if (!companion.structureSearchAllowed()) {
             return;
+        }
+        // Structure candidates are marked on the map only by structure icons,
+        // so locating one needs the icon layer on; biome locating does not.
+        if (!config.predictionShowStructures) {
+            config.predictionShowStructures = true;
+            saveConfig();
         }
         MinecraftAccess.setScreen(
             MinecraftClient.getInstance(),
