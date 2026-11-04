@@ -423,6 +423,7 @@ final class ConfigRows {
                     ConfigValueLabels::mapQualitySliderText
                 );
                 y = addToggleRow(y, "confluxmap.config.fullmap.chunk_grid", () -> config.fullmapChunkGrid, v -> config.fullmapChunkGrid = v);
+                y = addToggleRow(y, "confluxmap.config.fullmap.mca_backfill", () -> config.mcaBackfillEnabled, v -> config.mcaBackfillEnabled = v);
                 y = addIntSliderRow(
                     y, "confluxmap.config.fullmap.chunk_grid_opacity", 0, 100,
                     () -> config.fullmapChunkGridOpacity, v -> config.fullmapChunkGridOpacity = v,

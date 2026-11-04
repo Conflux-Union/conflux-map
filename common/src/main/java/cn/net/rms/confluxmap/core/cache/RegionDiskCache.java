@@ -463,20 +463,28 @@ public final class RegionDiskCache {
     }
 
     /**
-     * Flushes one region immediately if it holds unwritten changes. The terrain
-     * import calls this after materializing a region so bulk imports never pin
-     * more than a region or two of column data in memory.
+     * Queues a flush of one region that may hold unwritten changes onto the IO
+     * thread; worker-thread callers (backfill scans, terrain import) must not
+     * race the sweep and session-end flush on the target file.
      */
-    public synchronized boolean flushRegionIfDirty(final MapLayer.Type layerType, final int regionX, final int regionZ) {
-        final MapWorld world = mapWorlds.ifCurrent(token);
-        if (world == null) {
-            return false;
+    public void flushRegionIfDirty(final MapLayer.Type layerType, final int regionX, final int regionZ) {
+        try {
+            io.execute(() -> {
+                final MapWorld world = mapWorlds.ifCurrent(token);
+                if (world == null) {
+                    return;
+                }
+                final RegionColumns region =
+                    world.store(new MapLayer(layerType, 0)).region(regionX, regionZ);
+                if (region == null) {
+                    return;
+                }
+                flushIfDirty(region, layerType);
+            });
+        } catch (final RejectedExecutionException e) {
+            // Executors are shutting down (mod unload); an earlier sweep or session-end
+            // flush already persisted everything this session accepted.
         }
-        final RegionColumns region = world.store(new MapLayer(layerType, 0)).region(regionX, regionZ);
-        if (region == null) {
-            return false;
-        }
-        return flushIfDirty(region, layerType).written();
     }
 
     private FlushResult flushIfDirty(final RegionColumns region, final MapLayer.Type type) {

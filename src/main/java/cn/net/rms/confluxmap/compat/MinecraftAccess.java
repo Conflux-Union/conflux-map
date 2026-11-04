@@ -42,6 +42,35 @@ public final class MinecraftAccess {
     }
 
     /**
+     * Identity of the current integrated server (null without one): lets callers cache
+     * per-session values on the client thread and re-resolve when the instance changes.
+     */
+    public static Object singleplayerServerRef(final MinecraftClient client) {
+        //#if MC>=260100
+        //$$ return client.getSingleplayerServer();
+        //#else
+        return client.getServer();
+        //#endif
+    }
+
+    /**
+     * The current singleplayer world's save root, or null on a dedicated connection. Read
+     * on the client thread; the MCA backfill scanner resolves region files under it.
+     */
+    public static java.nio.file.Path singleplayerSaveRoot(final MinecraftClient client) {
+        //#if MC>=260100
+        //$$ return client.getSingleplayerServer() == null
+        //$$     ? null
+        //$$     : client.getSingleplayerServer().getWorldPath(
+        //$$         net.minecraft.world.level.storage.LevelResource.ROOT);
+        //#else
+        return client.getServer() == null
+            ? null
+            : client.getServer().getSavePath(net.minecraft.util.WorldSavePath.ROOT);
+        //#endif
+    }
+
+    /**
      * The current singleplayer world's {@code datapacks} directory, or null on a dedicated
      * connection. Read on the client thread; the returned path stays valid for the whole
      * session. Datapack translations only ever exist server-side, and the companion stays

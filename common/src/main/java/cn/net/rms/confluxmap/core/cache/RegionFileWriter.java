@@ -6,13 +6,18 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.concurrent.atomic.AtomicLong;
 import org.apache.logging.log4j.Logger;
 
 /**
  * Atomic region-file writer shared by the live session flush and the terrain
  * import: tmp file, encode, fsync, atomic move with a non-atomic fallback.
+ * The tmp name is unique per write, so two writers targeting the same file
+ * can never truncate each other's tmp or lose the move race.
  */
 public final class RegionFileWriter {
+    private static final AtomicLong WRITE_SEQ = new AtomicLong();
+
     private RegionFileWriter() {
     }
 
@@ -25,14 +30,19 @@ public final class RegionFileWriter {
     ) {
         try {
             Files.createDirectories(file.getParent());
-            final Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-            try (FileOutputStream fos = new FileOutputStream(tmp.toFile())) {
-                RegionFileCodec.encode(fos, layerOrdinal, data);
-                fos.flush();
-                fos.getChannel().force(true);
+            final Path tmp = file.resolveSibling(file.getFileName()
+                + ".tmp." + Thread.currentThread().getId() + "." + WRITE_SEQ.incrementAndGet());
+            try {
+                try (FileOutputStream fos = new FileOutputStream(tmp.toFile())) {
+                    RegionFileCodec.encode(fos, layerOrdinal, data);
+                    fos.flush();
+                    fos.getChannel().force(true);
+                }
+                move(tmp, file);
+                return true;
+            } finally {
+                Files.deleteIfExists(tmp);
             }
-            move(tmp, file);
-            return true;
         } catch (final IOException e) {
             logger.warn("cache: failed to write region file {} ({})", file, e.toString());
             return false;

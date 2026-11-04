@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import cn.net.rms.confluxmap.core.model.SampleSource;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
@@ -19,7 +20,7 @@ class RegionFileCodecTest {
         final int[] chunkUpdateEpochSeconds = new int[RegionFileCodec.CHUNK_TABLE_ENTRIES];
         final long[] chunkSourceRevision = new long[RegionFileCodec.CHUNK_TABLE_ENTRIES];
         for (int i = 0; i < RegionFileCodec.CHUNK_TABLE_ENTRIES; i++) {
-            chunkSourceOrdinal[i] = (byte) (i % 4);
+            chunkSourceOrdinal[i] = (byte) (i % 6);
             chunkUpdateEpochSeconds[i] = 1_700_000_000 + i;
             chunkSourceRevision[i] = 90_000L + i;
         }
@@ -90,6 +91,26 @@ class RegionFileCodecTest {
         assertArrayEquals(original.overlayArgb(), decoded.overlayArgb());
         assertArrayEquals(original.xaeroOverlayArgb(), decoded.xaeroOverlayArgb());
         assertArrayEquals(original.light(), decoded.light());
+    }
+
+    /** Ordinal 5 (REAL_SCAN) must round-trip; bumping the schema would quarantine new files on old clients. */
+    @Test
+    void schemaStaysSevenAndRealScanOrdinalRoundTrips() throws IOException, RegionFileCodec.RegionFileException {
+        assertEquals(7, RegionFileCodec.SCHEMA_VERSION);
+
+        final RegionFileCodec.RegionData original = sampleData(2, 2);
+        final byte[] ordinals = original.chunkSourceOrdinal();
+        ordinals[0] = 5; // REAL_SCAN as persisted by the MCA backfill writer
+        ordinals[1] = 3; // REAL_CACHED as persisted by older versions
+
+        final ByteArrayOutputStream out = new ByteArrayOutputStream();
+        RegionFileCodec.encode(out, 0, original);
+        final RegionFileCodec.RegionData decoded = RegionFileCodec.decode(
+            new ByteArrayInputStream(out.toByteArray()), 2, 2, 0
+        );
+
+        assertEquals(SampleSource.REAL_SCAN, SampleSource.byOrdinal(decoded.chunkSourceOrdinal()[0]));
+        assertEquals(SampleSource.REAL_CACHED, SampleSource.byOrdinal(decoded.chunkSourceOrdinal()[1]));
     }
 
     @Test
