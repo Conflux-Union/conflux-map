@@ -405,6 +405,36 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
     return CFX_OK;
 }
 
+/* The scale-16 grid samples at quart y=0, where a column under tall terrain resolves
+ * to an underground biome (a stony-peaks summit with surface y=181 reads deep-dark),
+ * so surface-only biomes are invisible to the scan at any stride. Re-test the climate
+ * on the surface slice: depth 0 is where the caller's surface refinement samples, and
+ * the parameter pre-filter has already validated every horizontal parameter. */
+static int cfxSurfaceSliceIsTarget(const CfxContext *ctx, int cx, int cz, int target)
+{
+    const double qx = (double) (cx * 4 + 2);
+    const double qz = (double) (cz * 4 + 2);
+    const float t = (float) sampleDoublePerlin(
+        &ctx->g.bn.climate[NP_TEMPERATURE], qx, 0, qz);
+    const float h = (float) sampleDoublePerlin(
+        &ctx->g.bn.climate[NP_HUMIDITY], qx, 0, qz);
+    const float c = (float) sampleDoublePerlin(
+        &ctx->g.bn.climate[NP_CONTINENTALNESS], qx, 0, qz);
+    const float e = (float) sampleDoublePerlin(
+        &ctx->g.bn.climate[NP_EROSION], qx, 0, qz);
+    const float w = (float) sampleDoublePerlin(
+        &ctx->g.bn.climate[NP_WEIRDNESS], qx, 0, qz);
+    const uint64_t np[6] = {
+        (uint64_t) (int64_t) (10000.0F * t),
+        (uint64_t) (int64_t) (10000.0F * h),
+        (uint64_t) (int64_t) (10000.0F * c),
+        (uint64_t) (int64_t) (10000.0F * e),
+        0,
+        (uint64_t) (int64_t) (10000.0F * w),
+    };
+    return climateToBiome(ctx->g.bn.mc, np, NULL) == target;
+}
+
 /*
  * Search-targeted variant of cfxBiomesSparseStrided: only cells that could still be
  * the target biome pay the full biome query. Overworld post-1.18 at scale 16 consults
@@ -415,9 +445,9 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
  * Parameter quantization mirrors sampleBiomeNoise exactly
  * ((int64_t)(10000.0F * (float) v)) so a cell sitting on an envelope edge cannot be
  * wrongly rejected. Rejected cells are reported as -1; every other cell carries its
- * real biome id, so a caller matching by id sees the same hits with or without the
- * prefilter. Combinations without a parameter table (Nether scale 4, End scale 4/16,
- * unlisted Overworld ids) fall back to the plain per-cell query.
+ * y=0 biome id unless the surface-slice re-test (cfxSurfaceSliceIsTarget) promotes it
+ * to the target. Combinations without a parameter table (Nether scale 4, End scale
+ * 4/16, unlisted Overworld ids) fall back to the plain per-cell query.
  */
 JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_cfxBiomesScanStrided(
     JNIEnv *env, jclass clazz, jlong handle,
@@ -488,6 +518,11 @@ JNIEXPORT jint JNICALL Java_cn_net_rms_confluxmap_nativepredict_CubiomesNative_c
             {
                 free(sampled);
                 return CFX_ERR_GENERATION;
+            }
+            if (lim != NULL && sampled[j * w + i] != target
+                && cfxSurfaceSliceIsTarget(ctx, cx, cz, target))
+            {
+                sampled[j * w + i] = target;
             }
         }
     }

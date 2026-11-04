@@ -2,6 +2,7 @@ package cn.net.rms.confluxmap.core.predict;
 
 import cn.net.rms.confluxmap.core.store.ColumnStore;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.OptionalInt;
 import java.util.concurrent.CountDownLatch;
@@ -22,6 +23,11 @@ public final class BiomeSearchService {
     private static final int REFINE_SIDE = 9;
     private static final int REFINE_STRIDE = 4;
     private static final int REFINE_HALF_SPAN = 16;
+
+    /** Outer radius of the innermost ring; nearby matches earn the densest sampling grid. */
+    private static final int FIRST_RING_RADIUS = 5_000;
+    /** Ring growth factor; keeps the ring count logarithmic in the requested radius. */
+    private static final int RING_GROWTH = 3;
 
     private BiomeSearchService() {
     }
@@ -145,6 +151,74 @@ public final class BiomeSearchService {
         final Executor executor,
         final int parallelism
     ) {
+        final int[] rings = ringRadii(radius);
+        final List<BiomeCandidateSearch.Candidate> merged = new ArrayList<>();
+        if (order == SearchOrder.FARTHEST) {
+            for (int index = rings.length - 1; index >= 0; index--) {
+                merged.addAll(scanRing(
+                    sampler, targetBiomeId, centerX, centerZ, rings[index], limit, order,
+                    executor, parallelism
+                ));
+                if (distinctCount(centerX, centerZ, radius, merged, order) >= limit) {
+                    break;
+                }
+            }
+        } else {
+            for (final int ring : rings) {
+                merged.addAll(scanRing(
+                    sampler, targetBiomeId, centerX, centerZ, ring, limit, order,
+                    executor, parallelism
+                ));
+                if (distinctCount(centerX, centerZ, radius, merged, order) >= limit) {
+                    break;
+                }
+            }
+        }
+        return BiomeCandidateSearch.select(centerX, centerZ, radius, limit, merged, order);
+    }
+
+    /**
+     * Ring schedule for a search radius: the innermost ring is capped at {@link
+     * #FIRST_RING_RADIUS}, each subsequent ring grows by {@link #RING_GROWTH}, and the last
+     * ring always equals the requested radius. Each ring grid is capped at {@link
+     * #MAX_GRID_SIDE} cells per side, so sampling density falls with distance: a match 3k
+     * blocks out resolves at a ~20-block stride while a 100k search still finishes. A
+     * radius below the first-ring cap yields the old single-ring scan, grid math identical.
+     */
+    static int[] ringRadii(final int radius) {
+        int[] rings = new int[8];
+        int count = 0;
+        int outer = Math.min(Math.max(4, radius), FIRST_RING_RADIUS);
+        while (true) {
+            if (count == rings.length) {
+                rings = Arrays.copyOf(rings, rings.length * 2);
+            }
+            rings[count++] = outer;
+            if (outer >= radius) {
+                return Arrays.copyOf(rings, count);
+            }
+            outer = (int) Math.min((long) radius, (long) outer * RING_GROWTH);
+        }
+    }
+
+    /**
+     * Runs the sampling cascade over one ring's full square. Nearest-first scans inner to
+     * outer and stops once the merged candidates fill the limit, so a large radius never
+     * reports a farther "nearest" than a small one would; farthest-first mirrors that.
+     * Overlapping rings can rediscover one occurrence, which {@code select}'s separation
+     * rule absorbs.
+     */
+    private static List<BiomeCandidateSearch.Candidate> scanRing(
+        final BaselineSampler sampler,
+        final int targetBiomeId,
+        final int centerX,
+        final int centerZ,
+        final int radius,
+        final int limit,
+        final SearchOrder order,
+        final Executor executor,
+        final int parallelism
+    ) {
         final int radiusInBlocks = Math.max(4, ((radius + 3) / 4) * 4);
         final int spanInBlocks = radiusInBlocks * 2;
         final int minimumStride = (spanInBlocks + MAX_GRID_SIDE - 2) / (MAX_GRID_SIDE - 1);
@@ -155,10 +229,14 @@ public final class BiomeSearchService {
 
         // Sparse coarse pass first: cells that cannot be the target are rejected by a cheap
         // climate-parameter check inside the scan query, and only survivors pay the full
-        // biome query. Scale 16 (Overworld climate, End) hits are refined back to
-        // surface-biome agreement below; scale 4 (Nether, End source grid) matches the dense
-        // fallback's semantics and returns directly. A miss or an unavailable scan falls
-        // through to the surface pass - the zero-miss guarantee.
+        // biome query. The native scan also re-tests each surviving cell's climate on the
+        // surface slice (depth 0), because the scale-16 grid itself samples at quart y=0,
+        // where a column under tall terrain reads as an underground biome. Scale 16
+        // (Overworld climate, End) hits are refined back to surface-biome agreement below;
+        // scale 4 (Nether, End source grid) matches the dense fallback's semantics and
+        // returns directly. A ring whose coarse scan finds nothing at all falls through to
+        // the surface pass; per-occurrence misses stay possible up to that ring's stride,
+        // which is the resolution a grid capped at MAX_GRID_SIDE can promise.
         final int[] biomeIds = new int[side * side];
 
         // Scale 16: stride rounded up so the coarse grid covers at least the search span.
@@ -180,7 +258,7 @@ public final class BiomeSearchService {
                 order
             );
             if (!coarse16.isEmpty()) {
-                // Refine only the winners: a 100k-radius coarse grid can hold hundreds of
+                // Refine only the winners: a large coarse grid can hold hundreds of
                 // connected components, and each refinement is a small but non-free surface grid.
                 final List<BiomeCandidateSearch.Candidate> winners = BiomeCandidateSearch.select(
                     centerX, centerZ, radius, limit, coarse16, order
@@ -210,6 +288,20 @@ public final class BiomeSearchService {
             sampler, targetBiomeId, originX, originZ, side, strideInBlocks,
             centerX, centerZ, radius, limit, order, executor, parallelism
         );
+    }
+
+    /** Distinct-candidate count for the ring loop's early exit; reuses {@code select}'s
+     *  separation rule so ring overlaps cannot fake a filled limit. */
+    private static int distinctCount(
+        final int centerX,
+        final int centerZ,
+        final int radius,
+        final List<BiomeCandidateSearch.Candidate> merged,
+        final SearchOrder order
+    ) {
+        return BiomeCandidateSearch.select(
+            centerX, centerZ, radius, Integer.MAX_VALUE, merged, order
+        ).size();
     }
 
     /**

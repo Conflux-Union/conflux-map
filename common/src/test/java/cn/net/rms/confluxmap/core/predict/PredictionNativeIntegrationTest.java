@@ -359,6 +359,7 @@ class PredictionNativeIntegrationTest {
             ));
             int rejected = 0;
             int hits = 0;
+            int surfaceSliceHits = 0;
             for (int i = 0; i < scan.length; i++) {
                 if (scan[i] == -1) {
                     rejected++;
@@ -366,6 +367,18 @@ class PredictionNativeIntegrationTest {
                         sparse[i] == target.getAsInt(),
                         "prefilter rejected a cell the full query reports as " + name
                     );
+                } else if (scan[i] == target.getAsInt() && sparse[i] != target.getAsInt()) {
+                    // The scan re-tests surviving cells on the surface slice (depth 0),
+                    // invisible to the y=0 sparse sweep under tall terrain. The slice skips
+                    // the climate shift, so the hit can sit a boundary cell off the accurate
+                    // surface biome; require a match in its neighbourhood.
+                    final int blockX = (-200 + (i % side) * stride) * 16 + 8;
+                    final int blockZ = (60 + (i / side) * stride) * 16 + 8;
+                    assertTrue(surfaceNeighborhoodHolds(
+                        overworld, target.getAsInt(), blockX, blockZ),
+                        "a surface-slice hit at " + blockX + "," + blockZ
+                            + " must have an accurate surface match nearby");
+                    surfaceSliceHits++;
                 } else {
                     assertEquals(
                         sparse[i], scan[i],
@@ -376,7 +389,8 @@ class PredictionNativeIntegrationTest {
                     hits++;
                 }
             }
-            assertTrue(hits > 0 || rejected > 0, "grid must produce a signal for " + name);
+            assertTrue(hits > 0 || rejected > 0 || surfaceSliceHits > 0,
+                "grid must produce a signal for " + name);
         }
 
         // A target without a parameter table degrades to the plain sparse sweep.
@@ -406,6 +420,24 @@ class PredictionNativeIntegrationTest {
             legacy.biomesScanStrided(16, 0, 0, 2, 2, 1, 4, new int[4]),
             "pre-1.18 Overworld layer stacks must keep failing so callers fall back"
         );
+    }
+
+    /** Accurate-surface target check over the 3x3 quart neighbourhood of a coarse cell center. */
+    private static boolean surfaceNeighborhoodHolds(
+        final NativeBaselineSampler sampler, final int target, final int blockX, final int blockZ
+    ) {
+        final int[] terrainY = new int[9];
+        final int[] surface = new int[9];
+        if (!sampler.overviewHeights(blockX - 8, blockZ - 8, 3, 3, 8, terrainY)
+            || !sampler.surfaceBiomes(blockX - 8, blockZ - 8, 3, 3, 8, terrainY, surface)) {
+            return false;
+        }
+        for (final int biome : surface) {
+            if (biome == target) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Test

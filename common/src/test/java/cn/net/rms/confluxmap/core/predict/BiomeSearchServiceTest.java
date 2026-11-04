@@ -1,7 +1,9 @@
 package cn.net.rms.confluxmap.core.predict;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import cn.net.rms.confluxmap.core.model.ChunkSnapshot;
 import cn.net.rms.confluxmap.core.model.DimensionId;
@@ -615,6 +617,107 @@ class BiomeSearchServiceTest {
     }
 
     @Test
+    void ringScheduleGrowsFromTheFirstRingToTheRequestedRadius() {
+        assertArrayEquals(new int[] {5_000, 15_000, 45_000, 100_000},
+            BiomeSearchService.ringRadii(100_000));
+        assertArrayEquals(new int[] {5_000}, BiomeSearchService.ringRadii(5_000));
+        assertArrayEquals(new int[] {2_000}, BiomeSearchService.ringRadii(2_000));
+        assertArrayEquals(new int[] {5_000, 12_499}, BiomeSearchService.ringRadii(12_499));
+    }
+
+    @Test
+    void nearestSearchStopsAtTheInnermostRingThatFillsTheLimit() {
+        final Set<Integer> coarseStrides = java.util.Collections.synchronizedSet(
+            new java.util.HashSet<>());
+        final BaselineSampler sampler = gridHitsSampler((blockX, blockZ) ->
+            Math.abs(blockX) <= 2_000 && Math.abs(blockZ) <= 2_000, coarseStrides);
+
+        final List<BiomeCandidateSearch.Candidate> candidates = BiomeSearchService.samplePredicted(
+            sampler, 7, 0, 0, 100_000, 5
+        );
+
+        assertFalse(candidates.isEmpty(), "the fake layout must produce candidates");
+        for (final BiomeCandidateSearch.Candidate candidate : candidates) {
+            assertTrue(Math.abs(candidate.blockX()) <= 2_100 && Math.abs(candidate.blockZ()) <= 2_100,
+                "every hit lives in the inner band, got " + candidate.blockX() + "," + candidate.blockZ());
+        }
+        assertEquals(Set.of(2), coarseStrides,
+            "only the innermost 5k ring (2-cell coarse stride) may be scanned");
+    }
+
+    @Test
+    void farthestSearchScansTheOutermostRingFirstAndStopsThere() {
+        final Set<Integer> coarseStrides = java.util.Collections.synchronizedSet(
+            new java.util.HashSet<>());
+        final BaselineSampler sampler = gridHitsSampler((blockX, blockZ) ->
+            blockX >= 60_000 && blockX <= 99_000 && Math.abs(blockZ) <= 2_000, coarseStrides);
+
+        final List<BiomeCandidateSearch.Candidate> candidates = BiomeSearchService.samplePredicted(
+            sampler, 7, 0, 0, 100_000, 5, SearchOrder.FARTHEST
+        );
+
+        assertFalse(candidates.isEmpty(), "the fake layout must produce candidates");
+        for (final BiomeCandidateSearch.Candidate candidate : candidates) {
+            assertTrue(candidate.blockX() >= 60_000,
+                "every hit lives in the outer band, got " + candidate.blockX() + "," + candidate.blockZ());
+        }
+        assertEquals(Set.of(25), coarseStrides,
+            "only the outermost 100k ring (25-cell coarse stride) may be scanned");
+    }
+
+    private interface HitRule {
+        boolean hit(int blockX, int blockZ);
+    }
+
+    /** Scale-16 scan fake whose hits sit on the 400-block lattice, so every ring grid sees them. */
+    private static BaselineSampler gridHitsSampler(final HitRule rule, final Set<Integer> strides) {
+        return new BaselineSampler() {
+            @Override
+            public boolean biomesScanStrided(
+                final int scale, final int x, final int z, final int w, final int h,
+                final int stride, final int targetBiomeId, final int[] out
+            ) {
+                if (scale != 16) {
+                    return false;
+                }
+                strides.add(stride);
+                for (int row = 0; row < h; row++) {
+                    for (int column = 0; column < w; column++) {
+                        final int blockX = (x + column * stride) * 16;
+                        final int blockZ = (z + row * stride) * 16;
+                        // Checkerboard over the 400-block lattice: hits are never
+                        // grid-adjacent, so each is its own connected component in every
+                        // ring grid and all pairs clear the 128-block separation rule.
+                        out[row * w + column] =
+                            blockX % 400 == 0 && blockZ % 400 == 0
+                                && (blockX / 400 + blockZ / 400) % 2 == 0
+                                && rule.hit(blockX, blockZ)
+                                ? targetBiomeId : -1;
+                    }
+                }
+                return true;
+            }
+
+            @Override
+            public boolean biomes(
+                final int scale, final int x, final int z, final int w, final int h, final int[] out
+            ) {
+                return false;
+            }
+
+            @Override
+            public boolean heights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+                return false;
+            }
+
+            @Override
+            public boolean endHeights(final int x4, final int z4, final int w, final int h, final int[] outY) {
+                return false;
+            }
+        };
+    }
+
+    @Test
     void parallelScanMatchesSingleThreadedResultsAndCoversEveryRowExactlyOnce() throws InterruptedException {
         final Set<Long> scannedRows = java.util.Collections.synchronizedSet(new java.util.HashSet<>());
         final BaselineSampler sampler = new BaselineSampler() {
@@ -670,8 +773,8 @@ class BiomeSearchServiceTest {
             );
             assertEquals(singleThreaded, parallel, "row-parallel scanning must not change the candidates");
             assertEquals(
-                511, scannedRows.size(),
-                "every grid row must be scanned exactly once across all bands"
+                501, scannedRows.size(),
+                "the innermost 5k ring fills the limit, so exactly its 501 grid rows must be scanned once each"
             );
         } finally {
             pool.shutdownNow();
