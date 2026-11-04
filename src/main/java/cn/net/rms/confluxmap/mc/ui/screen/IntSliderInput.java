@@ -1,17 +1,12 @@
 package cn.net.rms.confluxmap.mc.ui.screen;
 
 import cn.net.rms.confluxmap.compat.Widgets;
-import cn.net.rms.confluxmap.mc.render.GuiShapes;
-import cn.net.rms.confluxmap.mc.ui.GuiDraw;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
 import java.util.regex.Pattern;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.widget.ClickableWidget;
-import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.Text;
 
 /** A slider and raw integer field backed by one range-checked value. */
@@ -112,7 +107,7 @@ final class IntSliderInput {
         }
     }
 
-    private final class ValueSlider extends SliderWidget {
+    private final class ValueSlider extends RevealedSlider {
         private final IntFunction<Text> message;
 
         private ValueSlider(
@@ -122,7 +117,7 @@ final class IntSliderInput {
             final int height,
             final IntFunction<Text> message
         ) {
-            super(x, y, width, height, Text.of(""), IntSliderInput.this.value.position());
+            super(x, y, width, height, IntSliderInput.this.value.position());
             this.message = message;
             updateMessage();
         }
@@ -145,35 +140,5 @@ final class IntSliderInput {
             setter.accept(IntSliderInput.this.value.value());
             replaceInputText(IntSliderInput.this.value.text());
         }
-
-        //#if MC<12000
-        @Override
-        protected void renderBackground(MatrixStack matrices, MinecraftClient client, int mouseX, int mouseY) {
-            // 1.20 folded the handle into renderButton, which already consumes the
-            // widget alpha, so this override is only needed below that.
-            // The 1.17-1.19 handle pass resets the shader color to opaque, so the knob
-            // ignored the widget alpha and floated over rows that had not queued in yet;
-            // redraw it through the shape channel at the widget alpha the stagger set.
-            final float ambient = GuiShapes.revealAlpha();
-            GuiDraw.beginReveal(alpha);
-            try {
-                final int vIndex = isHovered() ? 2 : 1;
-                GuiDraw.drawTexturedQuad(
-                    matrices,
-                    Widgets.x(this) + (int) (value * (getWidth() - 8)),
-                    Widgets.y(this),
-                    4,
-                    20,
-                    0f,
-                    (46f + vIndex * 20f) / 256f,
-                    4f / 256f,
-                    (66f + vIndex * 20f) / 256f,
-                    0xFFFFFFFF
-                );
-            } finally {
-                GuiDraw.beginReveal(ambient);
-            }
-        }
-        //#endif
     }
 }

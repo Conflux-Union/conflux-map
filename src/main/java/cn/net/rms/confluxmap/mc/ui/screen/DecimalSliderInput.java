@@ -6,7 +6,6 @@ import java.util.function.DoubleFunction;
 import java.util.regex.Pattern;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.widget.ClickableWidget;
-import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
@@ -112,7 +111,7 @@ final class DecimalSliderInput {
         }
     }
 
-    private final class ValueSlider extends SliderWidget {
+    private final class ValueSlider extends RevealedSlider {
         private final DoubleFunction<Text> message;
 
         private ValueSlider(
@@ -122,7 +121,7 @@ final class DecimalSliderInput {
             final int height,
             final DoubleFunction<Text> message
         ) {
-            super(x, y, width, height, Text.of(""), DecimalSliderInput.this.value.position());
+            super(x, y, width, height, DecimalSliderInput.this.value.position());
             this.message = message;
             updateMessage();
         }
